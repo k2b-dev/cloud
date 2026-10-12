@@ -7,6 +7,9 @@ export const AI_MEMORY_CONTENT_MAX_CHARS = 500;
 export const AI_MEMORY_HOT_MAX_ITEMS = 20;
 export const AI_MEMORY_HOT_MAX_CHARS = 6_000;
 
+const AI_MEMORY_RELEVANCE_MAX_CANDIDATES = 256;
+const AI_MEMORY_RELEVANCE_MAX_TERMS = 32;
+
 export type AiMemoryKind = "fact" | "preference" | "workflow";
 export type AiMemoryPriority = "normal" | "pinned";
 export type AiMemorySource = "user" | "agent" | "background";
@@ -127,6 +130,43 @@ const listActive = async (userId: string, limit: number): Promise<AiMemory[]> =>
     WHERE user_id = ${userId}::uuid AND deleted_at IS NULL AND superseded_by_id IS NULL
     ORDER BY (priority = 'pinned') DESC, updated_at DESC, id ASC
     LIMIT ${limit}
+  `;
+  return rows.map(toMemory);
+};
+
+const relevanceTerms = (text: string): string[] => {
+  // Letters and digits only: no tsquery operator, quote, or backslash can reach PostgreSQL.
+  const normalized = text.normalize("NFC").toLowerCase();
+  const terms = normalized.match(/[\p{L}\p{Nd}]+/gu) ?? [];
+  return [...new Set(terms.filter((term) => term.length >= 2))].slice(0, AI_MEMORY_RELEVANCE_MAX_CANDIDATES);
+};
+
+const selectRelevant = async (input: { userId: string; text: string; limit: number }): Promise<AiMemory[]> => {
+  const terms = relevanceTerms(input.text);
+  if (terms.length === 0) return [];
+
+  const rows = await sql<MemoryRow[]>`
+    WITH terms AS (
+      SELECT input.ord, ts_lexize('english_stem', input.term) AS english, ts_lexize('german_stem', input.term) AS german
+      FROM unnest(${sql.array(terms, "text")}) WITH ORDINALITY AS input(term, ord)
+    ), meaningful AS (
+      -- An empty array means the word is a stop word in that language.
+      SELECT english, german FROM terms
+      WHERE cardinality(english) > 0 AND cardinality(german) > 0
+      ORDER BY ord
+      LIMIT ${AI_MEMORY_RELEVANCE_MAX_TERMS}
+    ), relevance AS (
+      SELECT to_tsquery('simple', string_agg(DISTINCT lexeme, ' | ')) AS query
+      FROM meaningful, unnest(english || german) AS lexeme
+    )
+    SELECT id, short_id, user_id, kind, content, priority, source, source_conversation_id, source_message_id,
+           resource_type, resource_id, created_at, updated_at
+    FROM ai.memories, relevance
+    WHERE relevance.query IS NOT NULL
+      AND user_id = ${input.userId}::uuid AND deleted_at IS NULL AND superseded_by_id IS NULL
+      AND stem_document @@ relevance.query
+    ORDER BY ts_rank_cd(stem_document, relevance.query) DESC, updated_at DESC, id ASC
+    LIMIT ${input.limit}
   `;
   return rows.map(toMemory);
 };
@@ -609,7 +649,7 @@ export const aiMemories = {
 
     const [pinned, relevant, recent] = await Promise.all([
       listActive(userId, 50).then((items) => items.filter((item) => item.priority === "pinned")),
-      search({ userId, query, limit: 40 }),
+      selectRelevant({ userId, text: query, limit: 40 }),
       listActive(userId, 40),
     ]);
     const seen = new Set<string>();

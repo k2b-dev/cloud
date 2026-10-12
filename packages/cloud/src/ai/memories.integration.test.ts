@@ -24,6 +24,12 @@ const insertConversation = async (userId: string, title: string): Promise<string
   return row!.id;
 };
 
+const insertRecentMemories = async (userId: string): Promise<void> => {
+  for (let index = 0; index < 21; index += 1) {
+    await aiMemories.create({ userId, kind: "fact", content: `Ordinary durable fact ${index}.` });
+  }
+};
+
 databaseSuite()("aiMemories (integration)", () => {
   beforeAll(async () => {
     await migrateCloudAi();
@@ -77,9 +83,6 @@ databaseSuite()("aiMemories (integration)", () => {
   test("large sets keep pinned memories and select lexical matches", async () => {
     const userId = await insertUser();
     try {
-      for (let index = 0; index < 21; index += 1) {
-        await aiMemories.create({ userId, kind: "fact", content: `Ordinary durable fact ${index}.` });
-      }
       const pinned = await aiMemories.create({
         userId,
         kind: "preference",
@@ -87,6 +90,8 @@ databaseSuite()("aiMemories (integration)", () => {
         priority: "pinned",
       });
       const relevant = await aiMemories.create({ userId, kind: "fact", content: "The preferred deployment color is cobalt." });
+      await sql`UPDATE ai.memories SET updated_at = now() - interval '30 days' WHERE user_id = ${userId}::uuid`;
+      await insertRecentMemories(userId);
 
       const hot = await aiMemories.selectHot(userId, "Which deployment color do I prefer?");
       expect(hot.memories[0]?.id).toBe(pinned.id);
@@ -97,6 +102,109 @@ databaseSuite()("aiMemories (integration)", () => {
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
+
+  test("long messages select old matches without selecting stop-word overlap", async () => {
+    const userId = await insertUser();
+    try {
+      const relevant = await aiMemories.create({ userId, kind: "fact", content: "The preferred deployment color is cobalt." });
+      const stopWords = await aiMemories.create({ userId, kind: "fact", content: "It is what it is." });
+      await sql`UPDATE ai.memories SET updated_at = now() - interval '30 days' WHERE user_id = ${userId}::uuid`;
+      await insertRecentMemories(userId);
+
+      const message = `I was thinking about cobalt while walking through the park this morning, but most of what
+        I want to discuss today is about something else entirely. There were birds near the pond and people
+        sitting under trees with their lunches. It is what it is, and I do not know whether the weather will
+        stay warm for the rest of the week. We could take a train somewhere quieter on Saturday or simply
+        walk along the river after breakfast. Please consider how we might arrange the afternoon so that
+        everyone has enough time to relax before returning home. There is no need to make a detailed schedule
+        yet because we have not decided who will join us or where we would like to go.`;
+      const hot = await aiMemories.selectHot(userId, message);
+      expect(hot.memories[0]?.id).toBe(relevant.id);
+      expect(hot.memories.some((memory) => memory.id === stopWords.id)).toBe(false);
+      expect(hot.memories).toHaveLength(20);
+      expect(hot.truncated).toBe(true);
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("more matching terms rank first after pinned memories", async () => {
+    const userId = await insertUser();
+    try {
+      const pinned = await aiMemories.create({ userId, kind: "preference", content: "Keep answers concise.", priority: "pinned" });
+      const oneTerm = await aiMemories.create({ userId, kind: "fact", content: "Cobalt." });
+      const twoTerms = await aiMemories.create({ userId, kind: "fact", content: "Cobalt saffron." });
+      await sql`UPDATE ai.memories SET updated_at = now() - interval '30 days' WHERE user_id = ${userId}::uuid`;
+      await insertRecentMemories(userId);
+
+      const hot = await aiMemories.selectHot(userId, "Could you compare cobalt and saffron for tomorrow's presentation?");
+      expect(hot.memories.slice(0, 3).map((memory) => memory.id)).toEqual([pinned.id, twoTerms.id, oneTerm.id]);
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  for (const { language, content, message } of [
+    { language: "English", content: "The preferred deployment color is cobalt.", message: "How should I arrange my deployments?" },
+    {
+      language: "German",
+      content: "Die bevorzugte Farbe für Präsentationen ist Kobaltblau.",
+      message: "Welche Farben nutze ich für meine Folien?",
+    },
+  ]) {
+    test(`${language} word stems select old memories`, async () => {
+      const userId = await insertUser();
+      try {
+        const relevant = await aiMemories.create({ userId, kind: "fact", content });
+        await sql`UPDATE ai.memories SET updated_at = now() - interval '30 days' WHERE user_id = ${userId}::uuid`;
+        await insertRecentMemories(userId);
+
+        const hot = await aiMemories.selectHot(userId, message);
+        expect(hot.memories[0]?.id).toBe(relevant.id);
+      } finally {
+        await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+      }
+    });
+  }
+
+  test("query syntax and punctuation cannot interfere with relevance", async () => {
+    const userId = await insertUser();
+    try {
+      const relevant = await aiMemories.create({ userId, kind: "fact", content: "The preferred deployment color is cobalt." });
+      await sql`UPDATE ai.memories SET updated_at = now() - interval '30 days' WHERE user_id = ${userId}::uuid`;
+      await insertRecentMemories(userId);
+
+      const hot = await aiMemories.selectHot(userId, String.raw`' '' \ | & ! ( ) :* <-> -word "quoted" OR AND NOT 😀 ½ COBALT`);
+      expect(hot.memories[0]?.id).toBe(relevant.id);
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  for (const { label, message } of [
+    { label: "stop words", message: "the and it is what und die ist für" },
+    { label: "punctuation", message: String.raw`' '' \ | & ! ( ) :* <-> 😀 ½` },
+    { label: "an empty message", message: "" },
+  ]) {
+    test(`${label} fall back to pinned and recent memories`, async () => {
+      const userId = await insertUser();
+      try {
+        const pinned = await aiMemories.create({ userId, kind: "preference", content: "Keep answers concise.", priority: "pinned" });
+        const old = await aiMemories.create({ userId, kind: "fact", content: "It is what it is." });
+        await sql`UPDATE ai.memories SET updated_at = now() - interval '30 days' WHERE user_id = ${userId}::uuid`;
+        await insertRecentMemories(userId);
+        const expected = await aiMemories.list({ userId, limit: 20 });
+
+        const hot = await aiMemories.selectHot(userId, message);
+        expect(hot.memories.map((memory) => memory.id)).toEqual(expected.map((memory) => memory.id));
+        expect(hot.memories[0]?.id).toBe(pinned.id);
+        expect(hot.memories.some((memory) => memory.id === old.id)).toBe(false);
+        expect(hot.truncated).toBe(true);
+      } finally {
+        await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+      }
+    });
+  }
 
   test("supersedes duplicate corrections without crossing user ownership", async () => {
     const firstUser = await insertUser();

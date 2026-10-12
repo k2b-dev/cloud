@@ -478,8 +478,11 @@ capability and permission checks. Manually added facts and preferences start
 pinned.
 
 For up to 20 active records, Cloud adds the bounded set directly to the prompt.
-Above that threshold, pinned and relevant records are selected within a
-6,000-character budget.
+Above 20 records, Cloud takes pinned records first, then records that share the
+most words with the message, then the newest records, up to 20 records and
+6,000 characters. English and German word forms such as "deployments" and
+"deployment" or "Farben" and "Farbe" count as the same word; common words such as
+"the" or "und" are ignored.
 
 The `memory` tool can list, search, add, correct, pin, and forget entries without
 an approval pause. Memory mutations are personal context maintenance, not domain
