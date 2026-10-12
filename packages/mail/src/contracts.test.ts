@@ -520,7 +520,7 @@ describe("incoming automation contracts", () => {
     });
     expect(result.success).toBe(false);
     if (!result.success)
-      expect(result.error.issues.some((issue) => issue.message.includes("already changes the message on the provider"))).toBe(true);
+      expect(result.error.issues.some((issue) => issue.message.includes("one reachable path can move only once"))).toBe(true);
     expect(
       createIncomingAutomationSchema.safeParse({
         name: "Single-result multi routing",
@@ -962,4 +962,41 @@ describe("sender disposition contracts", () => {
     ])
       expect(senderDispositionInputSchema.safeParse({ ...valid, ...changes }).success).toBe(false);
   });
+});
+
+test("guided rules allow flag and keyword changes before one placement", () => {
+  const read = { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } };
+  const keyword = { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "add_keyword", keyword: "review" } };
+  for (const kind of ["junk", "trash", "move_to_folder"]) {
+    const move = {
+      id: crypto.randomUUID(),
+      kind: "mail_action",
+      action: { kind, ...(kind === "move_to_folder" ? { folderId: "Arch01" } : {}) },
+    };
+    const definition = (steps: unknown[]) => ({ name: "Read and file", scope: { mode: "all" }, steps });
+    expect(createIncomingAutomationSchema.safeParse(definition([read, keyword, move])).success).toBe(true);
+    expect(createIncomingAutomationSchema.safeParse(definition([move, read])).success).toBe(false);
+    expect(createIncomingAutomationSchema.safeParse(definition([move, keyword])).success).toBe(false);
+    expect(createIncomingAutomationSchema.safeParse(definition([move, { ...move, id: crypto.randomUUID() }])).success).toBe(false);
+  }
+});
+
+test("guided negation keeps operators field-specific, bounded and strict", () => {
+  const definition = (field: string, operator: string, value: unknown, extra = {}) => ({
+    name: "Exclude sorted senders",
+    scope: { mode: "matching", conditions: { mode: "all", items: [{ field, operator, value, ...extra }] } },
+    steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } }],
+  });
+  for (const field of ["sender_address", "sender_domain", "subject", "body_text"]) {
+    const operator = field.startsWith("sender") ? "is_not" : "not_contains";
+    const value = field === "sender_address" ? "user@example.com" : "example.com";
+    expect(createIncomingAutomationSchema.safeParse(definition(field, operator, value)).success).toBe(true);
+    expect(createIncomingAutomationSchema.safeParse(definition(field, operator, "")).success).toBe(false);
+    expect(createIncomingAutomationSchema.safeParse(definition(field, operator, "x".repeat(1001))).success).toBe(false);
+    expect(createIncomingAutomationSchema.safeParse(definition(field, operator, value, { extra: true })).success).toBe(false);
+    expect(
+      createIncomingAutomationSchema.safeParse(definition(field, field.startsWith("sender") ? "not_contains" : "is_not", value)).success,
+    ).toBe(false);
+  }
+  expect(createIncomingAutomationSchema.safeParse(definition("attachment_presence", "is_not", false)).success).toBe(false);
 });

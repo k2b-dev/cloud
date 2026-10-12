@@ -381,3 +381,17 @@ describe("workflow catalog binding", () => {
     expect(canonicalWorkflowJson(composedFirst)).toBe(canonicalWorkflowJson(decomposedFirst));
   });
 });
+
+test("explains that switch cases require a non-empty entry list", async () => {
+  for (const cases of ["{}", "[]", "{ one: [] }"]) {
+    const result = await compileWorkflow(`steps:\n  - switch: one\n    cases: ${cases}\n`, workflows);
+    expect(result.ok).toBe(false);
+    if (!result.ok)
+      expect(result.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: "switch.cases",
+          message: "switch cases must be a non-empty list of { when, do } entries",
+        }),
+      );
+  }
+});

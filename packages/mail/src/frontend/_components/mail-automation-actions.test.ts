@@ -13,11 +13,32 @@ const catalog: MailWorkflowCatalogSnapshot = {
 };
 
 describe("mail automation action editor model", () => {
-  test("offers one provider action and composable collaboration actions", () => {
+  test("offers one placement after mark as read and composable collaboration actions", () => {
     const actions: MailAutomationAction[] = [{ kind: "mark_read" }];
-    expect(mailAutomationActionKindsFor({ actions, catalog })).toEqual(["add_local_tag", "assign_user", "set_status"]);
+    expect(mailAutomationActionKindsFor({ actions, catalog })).toEqual([
+      "junk",
+      "trash",
+      "move_to_folder",
+      "add_local_tag",
+      "assign_user",
+      "set_status",
+    ]);
     expect(mailAutomationActionKindsFor({ actions, catalog, index: 0 })).toContain("move_to_folder");
     expect(mailAutomationActionKindsFor({ actions: [], catalog })).not.toContain("add_keyword");
+  });
+
+  test("offers no provider action after the message was moved", () => {
+    const actions: MailAutomationAction[] = [{ kind: "move_to_folder", folderId: catalog.folders[0]!.id }];
+    expect(mailAutomationActionKindsFor({ actions, catalog })).toEqual(["add_local_tag", "assign_user", "set_status"]);
+  });
+
+  test("keeps a step before a move from becoming a second move", () => {
+    const actions: MailAutomationAction[] = [{ kind: "mark_read" }];
+    const later: MailAutomationAction[] = [{ kind: "move_to_folder", folderId: catalog.folders[0]!.id }];
+    const kinds = mailAutomationActionKindsFor({ actions, catalog, index: 0, later });
+    expect(kinds).toContain("mark_read");
+    expect(kinds).not.toContain("move_to_folder");
+    expect(kinds).not.toContain("junk");
   });
 
   test("preserves an existing provider keyword action without offering a new one", () => {

@@ -14,6 +14,11 @@ import { mailRemainingMessages } from "./mail-remaining-messages";
 type ConditionField = MailAutomationCondition["field"];
 type TextCondition = Extract<MailAutomationCondition, { field: "subject" | "body_text" }>;
 type TextOperator = TextCondition["operator"];
+type SenderCondition = Extract<MailAutomationCondition, { field: "sender_address" | "sender_domain" }>;
+type SenderOperator = SenderCondition["operator"];
+
+const TEXT_OPERATORS: readonly TextOperator[] = ["is", "contains", "not_contains", "starts_with", "ends_with"];
+const SENDER_OPERATORS: readonly SenderOperator[] = ["is", "is_not"];
 
 const conditionFieldMessage = (field: ConditionField, locale: string): string => {
   const messages = mailRemainingMessages.resolve([locale]).t;
@@ -35,8 +40,10 @@ export const initialMailAutomationCondition = (field: ConditionField = "sender_a
 export const mailAutomationConditionLabel = (condition: MailAutomationCondition, locale = "en"): string => {
   const messages = mailRemainingMessages.resolve([locale]).t;
   if (condition.field === "attachment_presence") return condition.value ? messages.hasAttachments : messages.hasNoAttachments;
-  if (condition.field === "sender_address") return condition.value;
-  if (condition.field === "sender_domain") return `*@${condition.value}`;
+  if (condition.field === "sender_address" || condition.field === "sender_domain") {
+    const sender = condition.field === "sender_domain" ? `*@${condition.value}` : condition.value;
+    return condition.operator === "is_not" ? messages.notSender({ value: sender }) : sender;
+  }
   return `${conditionFieldMessage(condition.field, locale)} ${messages.textOperator({ operator: condition.operator })} ${messages.quoted({ text: condition.value })}`;
 };
 
@@ -53,12 +60,11 @@ export function MailAutomationConditionsEditor(props: {
     body_text: messages().messageBody,
     attachment_presence: messages().attachments,
   }));
-  const textOperatorLabels = createMemo<Record<TextOperator, string>>(() => ({
-    is: messages().textOperator({ operator: "is" }),
-    contains: messages().textOperator({ operator: "contains" }),
-    starts_with: messages().textOperator({ operator: "starts_with" }),
-    ends_with: messages().textOperator({ operator: "ends_with" }),
-  }));
+  const operatorOptions = (field: ConditionField) =>
+    (field === "sender_address" || field === "sender_domain" ? SENDER_OPERATORS : TEXT_OPERATORS).map((operator) => ({
+      id: operator,
+      label: messages().textOperator({ operator }),
+    }));
   const [conditionIds, setConditionIds] = createSignal(props.conditions.items.map(() => crypto.randomUUID()));
   const replace = (index: number, condition: MailAutomationCondition) =>
     props.onChange({
@@ -110,21 +116,20 @@ export function MailAutomationConditionsEditor(props: {
                     options={Object.entries(conditionFieldLabels()).map(([id, label]) => ({ id, label }))}
                   />
                 </div>
-                <Show when={condition().field === "subject" || condition().field === "body_text"}>
+                <Show when={condition().field !== "attachment_presence"}>
                   <div class="min-w-32 flex-[0.75_1_9rem]">
                     <Select
                       label={messages().operator}
-                      value={() => {
-                        const current = condition();
-                        return current.field === "subject" || current.field === "body_text" ? current.operator : "is";
-                      }}
+                      value={() => condition().operator}
                       onValueChange={(operator) => {
                         const current = condition();
                         if (current.field === "subject" || current.field === "body_text") {
                           replace(index(), { ...current, operator: operator as TextOperator });
+                        } else if (current.field === "sender_address" || current.field === "sender_domain") {
+                          replace(index(), { ...current, operator: operator as SenderOperator });
                         }
                       }}
-                      options={Object.entries(textOperatorLabels()).map(([id, label]) => ({ id, label }))}
+                      options={operatorOptions(condition().field)}
                     />
                   </div>
                 </Show>
@@ -227,6 +232,7 @@ export function MailAutomationConditionsEditor(props: {
 export function MailAutomationActionEditor(props: {
   action: MailAutomationAction;
   otherActions: MailAutomationAction[];
+  laterActions?: MailAutomationAction[];
   catalog: MailWorkflowCatalogSnapshot;
   onChange: (action: MailAutomationAction) => void;
 }) {
@@ -237,6 +243,7 @@ export function MailAutomationActionEditor(props: {
       actions: [...props.otherActions, props.action],
       catalog: props.catalog,
       index: props.otherActions.length,
+      later: props.laterActions,
     });
   const setKind = (kind: AutomationActionKind) => {
     const action = createMailAutomationAction({

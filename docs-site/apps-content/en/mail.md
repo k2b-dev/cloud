@@ -33,7 +33,8 @@ context such as assignments, comments, local tags, reminders, and follow-up stat
   and follow the same upload limits as files from the device.
 - Review detected mailing lists and safely request unsubscribe or clean up existing messages when permitted.
 - Use incoming automations, automatic replies, or reviewed workflows for
-  recurring mailbox work.
+  recurring mailbox work. One incoming automation can mark mail read and then
+  move it, and its conditions can exclude senders, domains, or text.
 
 Provider folders and message flags can appear in other mail clients. Cloud-only
 collaboration fields stay in Mail.

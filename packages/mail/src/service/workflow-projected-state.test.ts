@@ -6,6 +6,7 @@ import {
   applyMailConversationTransition,
   applyMailMessageTransition,
   createMailWorkflowProjectedState,
+  rebindMailWorkflowRestoredOutput,
   restoreMailWorkflowProjectedState,
 } from "./workflow-projected-state";
 
@@ -32,6 +33,41 @@ describe("Mail workflow projected state", () => {
     applyMailMessageTransition(projected.source.message, "moveMessage", "archive");
     expect((projected.inputs.message as Record<string, unknown>).folderId).toBe("archive");
     expect(source.message.folderId).toBe("inbox");
+  });
+
+  test("rebinds nested restored message and conversation aliases without changing other objects", async () => {
+    const message = { id: "message", flags: [] };
+    const conversation = { id: "conversation", workStatus: "done" };
+    const output = {
+      nested: [{ message: structuredClone(message), conversation: structuredClone(conversation) }],
+      other: { id: "other" },
+      // Built from the message id only: a separate value in the live run, so it stays one.
+      built: { id: "message", note: "kept" },
+      scalar: null,
+    };
+    const ctx = { invocation: { context: { source: { message, conversation } } } } as unknown as WorkflowExecuteActionContext;
+    const handler = rebindMailWorkflowRestoredOutput({
+      execute: async () => ({ state: "completed" }),
+      restoreCompleted: (_ctx, _step, restored) => {
+        expect(restored.output).toEqual(output);
+        const value = restored.output;
+        if (!value || typeof value !== "object" || Array.isArray(value) || !Array.isArray(value.nested))
+          throw new Error("Expected nested output");
+        const nested = value.nested[0];
+        if (!nested || typeof nested !== "object" || Array.isArray(nested)) throw new Error("Expected nested aliases");
+        expect(nested.message).toBe(message);
+        expect(nested.conversation).toBe(conversation);
+        expect(value.built).not.toBe(message);
+        expect(value.built).toEqual({ id: "message", note: "kept" });
+      },
+    });
+    await handler.restoreCompleted?.(
+      ctx,
+      { kind: "action", action: "setVariable", config: {}, sourcePath: ["steps", 0] } as WorkflowActionStep,
+      { state: "completed", output },
+    );
+    expect(output.nested[0]?.message).not.toBe(message);
+    expect(output.nested[0]?.conversation).not.toBe(conversation);
   });
 
   test("applies message transitions idempotently with stable keyword comparison", () => {

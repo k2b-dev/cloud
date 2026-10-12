@@ -318,7 +318,9 @@ const incomingAutomationCandidateSql = (scope: MailAutomationScope) => {
   const conditions = scopeConditions(scope);
   const senderConditions = conditions.items.flatMap((condition) => {
     const sender = senderCondition(condition);
-    return sender ? [senderMatchSql(sender.kind, sender.value)] : [];
+    if (!sender) return [];
+    const match = senderMatchSql(sender.kind, sender.value);
+    return [condition.operator === "is_not" ? sql`NOT coalesce((${match}), false)` : match];
   });
   if (conditions.mode === "all") return combineSql(senderConditions, "AND");
   return senderConditions.length === conditions.items.length ? combineSql(senderConditions, "OR") : sql`TRUE`;
@@ -346,7 +348,7 @@ const incomingAutomationTargetFrom = sql`
     ON resource.id = folder.remote_resource_id
   JOIN mail.message_contents message
     ON message.id = remote_ref.message_id
-  JOIN mail.message_addresses sender
+  LEFT JOIN mail.message_addresses sender
     ON sender.message_id = message.id
    AND sender.role = 'from'
    AND ${firstFromAddress}
@@ -385,7 +387,9 @@ export const rejectOwnSenderTargets = async (params: {
   db: SqlClient;
   message?: string;
 }): Promise<Result<void>> => {
-  const addresses = params.conditions.items.flatMap((condition) => (condition.field === "sender_address" ? [condition.value] : []));
+  const addresses = params.conditions.items.flatMap((condition) =>
+    condition.field === "sender_address" && condition.operator === "is" ? [condition.value] : [],
+  );
   if (addresses.length === 0) return ok();
   const [identity] = await params.db<{ id: string }[]>`
     SELECT id
@@ -494,7 +498,7 @@ const protectMailboxSenders = async (params: {
         );
   const scopes = params.conditions.items.flatMap((condition) => {
     const scope = senderCondition(condition);
-    return scope ? [scope] : [];
+    return scope && condition.operator === "is" ? [scope] : [];
   });
   const safelyScoped =
     params.conditions.mode === "all"
@@ -565,7 +569,7 @@ export const validateDestructiveIncomingAutomationsForMailbox = async (params: {
           );
     const scopes = conditions.items.flatMap((condition) => {
       const scope = senderCondition(condition);
-      return scope ? [scope] : [];
+      return scope && condition.operator === "is" ? [scope] : [];
     });
     return conditions.mode === "all"
       ? !scopes.some((scope) => !protectedScope(scope))
