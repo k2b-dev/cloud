@@ -117,7 +117,7 @@ export default function ItemsTable(props: Props) {
             return (
               <CellLink href={href} class="block text-secondary" tabIndex={-1}>
                 {column ? (
-                  <Tag size="sm" color={item.completedAt ? "#10b981" : column.color}>
+                  <Tag size="sm" color={column.color ?? (column.isDone ? "#10b981" : null)}>
                     {column.name}
                   </Tag>
                 ) : (
