@@ -36,6 +36,7 @@ import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import { itemCreateDialogOptions } from "../shared/item-form/dialog";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
+import { countCalendarItems } from "./count";
 import { type CalendarColorBy, CalendarColorBySchema, type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
 import { CalendarItemContent } from "./ItemContent";
 import QuickCreate, {
@@ -205,6 +206,17 @@ const chooseRecurringEditScope = async (t: ReturnType<typeof useSpaceMessages>):
 
 export default function Calendar(props: CalendarProps) {
   const t = useSpaceMessages();
+  /** The toolbar counts what the header names: the month's own days, not the padding days of the months around it. */
+  const shownCount = () => {
+    if (props.view !== "month") return props.items.length;
+    const monthStart = calendar.startOfMonth(props.date, props.dateConfig);
+    const firstKey = calendar.formatDateKey(monthStart, props.dateConfig);
+    const lastKey = calendar.formatDateKey(
+      calendar.addDays(calendar.addMonths(monthStart, 1, props.dateConfig), -1, props.dateConfig),
+      props.dateConfig,
+    );
+    return countCalendarItems(props.items, firstKey, lastKey, props.dateConfig);
+  };
   const retryToast = createRetryToasts();
   const [optimisticTimes, setOptimisticTimes] = createSignal<Record<string, CalendarEventTimeChange>>({});
   const [createDialogPending, setCreateDialogPending] = createSignal(false);
@@ -682,7 +694,7 @@ export default function Calendar(props: CalendarProps) {
               />
             </Show>
             <span class="ml-auto min-w-[7.5rem] text-right text-xs text-[var(--k2b-text-muted)] tabular-nums whitespace-nowrap max-sm:hidden">
-              {t.shownCount({ count: props.items.length })}
+              {t.shownCount({ count: shownCount() })}
             </span>
           </>
         }
