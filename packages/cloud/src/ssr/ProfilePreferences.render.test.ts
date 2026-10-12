@@ -77,7 +77,7 @@ describe("ProfilePreferences SSR", () => {
     // The header has no avatar: from md the rail holds it, and phones reach the profile through the app menu.
     expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
     expect(html).toContain('href="/me"');
-    expect(html).toContain("Heller Modus");
+    expect(html).toContain("Automatisch");
     expect(html).toContain("English");
     expect(html).toContain("Profileinstellungen");
     expect(html).toContain("Abmelden");

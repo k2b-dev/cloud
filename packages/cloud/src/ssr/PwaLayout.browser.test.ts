@@ -110,12 +110,15 @@ afterAll(async () => {
   for (const spy of spies) spy.mockRestore();
 });
 
-const open = async (theme: "light" | "dark") => {
-  const response = await server.request(`${origin}/pwa/inventory`, { headers: { Cookie: `pwa_session=test-session; theme=${theme}` } });
+const open = async (theme: "light" | "dark", automatic = false) => {
+  const response = await server.request(`${origin}/pwa/inventory`, {
+    headers: { Cookie: `pwa_session=test-session${automatic ? "" : `; theme=${theme}`}` },
+  });
   expect(response.status).toBe(200);
   const document = await response.text();
   const page = await browser.newPage({
-    javaScriptEnabled: false,
+    javaScriptEnabled: automatic,
+    colorScheme: theme,
     viewport: { width: 390, height: 844 },
     deviceScaleFactor: 2,
     isMobile: true,
@@ -132,53 +135,56 @@ const open = async (theme: "light" | "dark") => {
 };
 
 describe("PwaLayout in a phone browser", () => {
-  for (const theme of ["light", "dark"] as const)
-    test(`gives the status bar the page canvas and keeps the top edge free of fixed layers (${theme})`, async () => {
-      const page = await open(theme);
-      try {
-        const result = await page.evaluate(() => {
-          let topEdge: string | null = null;
-          for (let element = document.elementFromPoint(innerWidth / 2, 4); element && !topEdge; element = element.parentElement) {
-            const { position } = getComputedStyle(element);
-            if (position === "fixed" || position === "sticky") topEdge = element.className;
-          }
-          const body = document.querySelector<HTMLElement>(".k2b-mobile-shell__body")!;
-          const swatch = document.createElement("i");
-          swatch.style.color = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content;
-          document.body.append(swatch);
-          const themeColor = getComputedStyle(swatch).color;
-          swatch.remove();
-          return {
-            themeColor,
-            html: getComputedStyle(document.documentElement).backgroundColor,
-            body: getComputedStyle(document.body).backgroundColor,
-            header: getComputedStyle(document.querySelector(".k2b-mobile-shell__header")!).backgroundColor,
-            tabBar: getComputedStyle(document.querySelector(".k2b-tab-bar")!).position,
-            documentScrolls: document.scrollingElement!.scrollHeight > innerHeight,
-            contentScrolls: body.scrollHeight > body.clientHeight,
-            touchAction: getComputedStyle(document.querySelector(".k2b-field")!).touchAction,
-            inputFontSize: getComputedStyle(document.querySelector("input")!).fontSize,
-            topEdge,
-          };
-        });
-        const rgb = (hex: string) => `rgb(${[1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16)).join(", ")})`;
-        const canvas = rgb(PWA_CANVAS_COLORS[theme]);
-        expect(result).toEqual({
-          themeColor: canvas,
-          html: canvas,
-          body: canvas,
-          header: canvas,
-          tabBar: "static",
-          documentScrolls: false,
-          contentScrolls: true,
-          touchAction: "pan-x pan-y",
-          inputFontSize: "16px",
-          topEdge: null,
-        });
-      } finally {
-        await page.close();
-      }
-    }, 60_000);
+  for (const automatic of [false, true])
+    for (const theme of ["light", "dark"] as const)
+      test(`gives the status bar the page canvas and keeps the top edge free of fixed layers (${theme}, ${automatic ? "Automatic" : "explicit"})`, async () => {
+        const page = await open(theme, automatic);
+        try {
+          const result = await page.evaluate(() => {
+            let topEdge: string | null = null;
+            for (let element = document.elementFromPoint(innerWidth / 2, 4); element && !topEdge; element = element.parentElement) {
+              const { position } = getComputedStyle(element);
+              if (position === "fixed" || position === "sticky") topEdge = element.className;
+            }
+            const body = document.querySelector<HTMLElement>(".k2b-mobile-shell__body")!;
+            const swatch = document.createElement("i");
+            swatch.style.color = [...document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')].find(
+              (meta) => !meta.media || matchMedia(meta.media).matches,
+            )!.content;
+            document.body.append(swatch);
+            const themeColor = getComputedStyle(swatch).color;
+            swatch.remove();
+            return {
+              themeColor,
+              html: getComputedStyle(document.documentElement).backgroundColor,
+              body: getComputedStyle(document.body).backgroundColor,
+              header: getComputedStyle(document.querySelector(".k2b-mobile-shell__header")!).backgroundColor,
+              tabBar: getComputedStyle(document.querySelector(".k2b-tab-bar")!).position,
+              documentScrolls: document.scrollingElement!.scrollHeight > innerHeight,
+              contentScrolls: body.scrollHeight > body.clientHeight,
+              touchAction: getComputedStyle(document.querySelector(".k2b-field")!).touchAction,
+              inputFontSize: getComputedStyle(document.querySelector("input")!).fontSize,
+              topEdge,
+            };
+          });
+          const rgb = (hex: string) => `rgb(${[1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16)).join(", ")})`;
+          const canvas = rgb(PWA_CANVAS_COLORS[theme]);
+          expect(result).toEqual({
+            themeColor: canvas,
+            html: canvas,
+            body: canvas,
+            header: canvas,
+            tabBar: "static",
+            documentScrolls: false,
+            contentScrolls: true,
+            touchAction: "pan-x pan-y",
+            inputFontSize: "16px",
+            topEdge: null,
+          });
+        } finally {
+          await page.close();
+        }
+      }, 60_000);
 });
 
 describe("navigations between app pages", () => {

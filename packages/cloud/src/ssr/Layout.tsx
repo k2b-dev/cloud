@@ -10,7 +10,7 @@ import { hasRole, type User } from "../contracts/shared";
 import { getLocale } from "../server/locale";
 import { getDateConfig } from "../server/time";
 import { dates } from "../shared";
-import { readThemeFromCookieHeader } from "../shared/theme";
+import { readThemePreferenceFromCookieHeader } from "../shared/theme";
 import type { AppLaunchpadApp } from "./AppLaunchpad.island";
 import AppWorkspaceController from "./AppWorkspaceController.island";
 import { appAppearanceStyle } from "./app-appearance";
@@ -146,8 +146,7 @@ export default function Layout(props: LayoutProps) {
   const { c, title, fullPage, fullWidth, focusMode, flushCanvas, workspaceSidebarCollapsible } = props;
   const runtime = getLocalizedRuntimeContext(c);
   const cookie = c.req.raw.headers.get("Cookie") ?? "";
-  const theme = readThemeFromCookieHeader(cookie);
-  c.get("page").theme = theme;
+  const theme = readThemePreferenceFromCookieHeader(cookie);
   // One request-scoped locale drives <html lang>, the LocaleProvider below,
   // and date formatting. The SSR seam and this component both resolve through
   // the same canonical getLocale(c), so pages cannot diverge the three seams.

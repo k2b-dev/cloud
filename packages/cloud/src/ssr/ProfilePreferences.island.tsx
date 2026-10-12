@@ -1,12 +1,12 @@
-import { Avatar, Dropdown } from "@k2b/ui";
-import type { CloudTheme } from "../shared/theme";
+import { Avatar, Dropdown, SegmentedControl } from "@k2b/ui";
+import type { CloudThemePreference } from "../shared/theme";
 import { createProfileActions } from "./profile-actions";
 
 type ProfilePreferencesProps = {
   /** Set while the installation offers the mobile app. */
   appHref?: string;
   avatarSrc?: string;
-  initialTheme: CloudTheme;
+  initialTheme: CloudThemePreference;
   name: string;
 };
 
@@ -26,10 +26,15 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
         {avatar()}
       </button>
       <div class="layout-profile-preferences__panel dropdown-menu-surface">
-        <button type="button" class="menu-item" onClick={preferences.toggleTheme}>
-          <i class={`ti ${preferences.theme() === "light" ? "ti-moon" : "ti-sun-high"}`} aria-hidden="true" />
-          <span>{preferences.themeLabel()}</span>
-        </button>
+        <div class="layout-profile-preferences__appearance">
+          <SegmentedControl
+            size="sm"
+            ariaLabel={preferences.messages().appearance}
+            options={preferences.themeOptions().map(({ value, label }) => ({ value, label }))}
+            value={preferences.theme}
+            onValueChange={preferences.setTheme}
+          />
+        </div>
         <button type="button" class="menu-item" onClick={preferences.toggleLanguage}>
           <i class="ti ti-language" aria-hidden="true" />
           <span>{preferences.languageLabel()}</span>

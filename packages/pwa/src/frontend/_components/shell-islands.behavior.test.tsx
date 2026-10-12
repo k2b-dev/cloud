@@ -139,6 +139,15 @@ else {
       await waitFor(() => repaints === 1, "repaint");
       expect(page.dom.document.documentElement.classList.contains("dark")).toBe(true);
       expect(page.dom.document.cookie).toContain("theme=dark");
+      const automatic = [...page.dom.document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((radio) =>
+        radio.textContent?.includes("Automatic"),
+      )!;
+      automatic.click();
+      await waitFor(() => repaints === 2, "Automatic repaint");
+      expect(page.dom.document.cookie).toContain("theme=system");
+      expect(page.dom.document.documentElement.classList.contains("dark")).toBe(
+        page.dom.window.matchMedia("(prefers-color-scheme: dark)").matches,
+      );
       const german = [...page.dom.document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((radio) =>
         radio.textContent?.includes("Deutsch"),
       )!;

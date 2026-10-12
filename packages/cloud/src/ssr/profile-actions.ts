@@ -2,11 +2,11 @@ import { type DropdownItem, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal } from "solid-js";
 import { browserNotificationClient } from "../browser/notifications";
 import { apiClient } from "../clients/core";
-import type { CloudTheme } from "../shared/theme";
+import type { CloudThemePreference } from "../shared/theme";
 import { createPreferenceController } from "./preference-controller";
 
 /** `appHref` is set while the installation offers the mobile app; the item then leads to `/me/app`. */
-export function createProfileActions(initialTheme: CloudTheme, appHref?: string) {
+export function createProfileActions(initialTheme: CloudThemePreference, appHref?: string) {
   const locale = useLocale();
   const preferences = createPreferenceController(initialTheme, locale);
   const [signingOut, setSigningOut] = createSignal(false);
@@ -25,18 +25,23 @@ export function createProfileActions(initialTheme: CloudTheme, appHref?: string)
   };
 
   const items = createMemo<DropdownItem[]>(() => [
-    ...preferences.items(),
+    preferences.appearance(),
     {
-      href: "/me",
-      icon: "ti ti-user-circle",
-      label: preferences.messages().profileSettings,
-    },
-    ...(appHref ? [{ href: appHref, icon: "ti ti-device-mobile", label: preferences.messages().app }] : []),
-    {
-      action: signOut,
-      icon: "ti ti-logout",
-      label: preferences.messages().signOut,
-      disabled: signingOut(),
+      items: [
+        preferences.languageItem(),
+        {
+          href: "/me",
+          icon: "ti ti-user-circle",
+          label: preferences.messages().profileSettings,
+        },
+        ...(appHref ? [{ href: appHref, icon: "ti ti-device-mobile", label: preferences.messages().app }] : []),
+        {
+          action: signOut,
+          icon: "ti ti-logout",
+          label: preferences.messages().signOut,
+          disabled: signingOut(),
+        },
+      ],
     },
   ]);
 

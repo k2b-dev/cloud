@@ -5,7 +5,7 @@ section: Frontend
 order: 890
 description: Apply Cloud's visual and interaction rules without forking shared primitives.
 tags: [css, accessibility, themes, design]
-updated: 2026-09-29
+updated: 2026-10-12
 ---
 
 # Styling and accessibility
@@ -369,6 +369,19 @@ animations respect reduced-motion preferences; see the
 
 Do not add `aria-grabbed` as a substitute for keyboard-operable movement and
 clear announcements.
+
+## Follow the person's theme
+
+People choose **Light**, **Dark**, or **Automatic**. Automatic is the default
+and follows the device's appearance. Cloud sets the `<html>` class to the
+resolved `light` or `dark` before the first paint. Browser code reads that
+class and observes class changes to follow live updates.
+
+On the server, `readThemeFromCookieHeader()` from `@k2b/cloud/shared` returns
+the resolved theme. For Automatic, it uses the browser's last reported scheme
+as a hint. `readThemePreferenceFromCookieHeader()` returns the choice itself:
+`light`, `dark`, or `system`. Set `page.theme` to fix a public display to one
+theme. Never read `prefers-color-scheme` in application CSS.
 
 ## Verify both themes and interaction modes
 

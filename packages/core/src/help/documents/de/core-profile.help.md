@@ -3,7 +3,7 @@ id: core-profile
 title: Profil und Konto
 icon: ti ti-user-circle
 description: Konto, Gruppen und Aktivitäten prüfen, FreeIPA-Zugang beantragen und API-Schlüssel und Passkeys nutzen.
-updated: 2026-10-11
+updated: 2026-10-12
 order: 110
 ---
 
@@ -25,3 +25,9 @@ Der Kontobereich bündelt lokale Cloud-Daten, optionale FreeIPA-Daten und die Ak
 - **Entwicklung → API-Schlüssel:** Persönliche Schlüssel für Automatisierung. Ein Schlüssel mit **Vollzugriff** hat denselben Zugriff wie dein Konto. Wenn deine Administration die OpenAI-kompatible API anbietet, kannst du stattdessen **Nur KI-Modelle** wählen: So ein Schlüssel kann nur die KI-Modelle aufrufen, die du im Assistenten nutzen darfst, zum Beispiel aus einer Diktier-App. Cloud zeigt den vollständigen Schlüssel nur einmal, direkt nach dem Erstellen.
 - **Anmeldung → Passkeys:** WebAuthn-Passkeys für die Anmeldung an deinem Konto. Nachdem du einen Passkey entfernt hast, kann sich niemand mehr damit anmelden.
 :::
+
+## Darstellung wählen
+
+Im Profilmenü kannst du unter **Darstellung** zwischen **Hell**, **Dunkel**
+und **Automatisch** wählen. Automatisch ist die Standardeinstellung. Sie
+folgt der hellen oder dunklen Einstellung deines Geräts.

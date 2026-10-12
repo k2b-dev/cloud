@@ -1,5 +1,6 @@
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { PWA_LIMITS } from "@k2b/cloud/contracts";
+import type { CloudThemePreference } from "@k2b/cloud/shared";
 import { createPreferenceController } from "@k2b/cloud/ssr/preference-controller";
 import { Avatar, Button, SegmentedControl, SettingsSection, TextInput, toast, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
@@ -10,7 +11,7 @@ import SignOutButton from "./SignOutButton";
 export type PhoneSettingsProps = {
   /** The signed-in person, as the page read them. */
   account: { name: string; mail?: string; avatar?: string };
-  theme: "light" | "dark";
+  theme: CloudThemePreference;
   /** This phone's name; empty when the request carries no device. */
   name: string;
   cloud: string;
@@ -70,14 +71,9 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
       <SettingsSection title={t().appearance}>
         <SegmentedControl
           ariaLabel={t().appearance}
-          options={[
-            { value: "light", label: t().light, icon: "ti ti-sun-high" },
-            { value: "dark", label: t().dark, icon: "ti ti-moon" },
-          ]}
+          options={preferences.themeOptions()}
           value={preferences.theme}
-          onValueChange={(value) => {
-            if (value !== preferences.theme()) preferences.toggleTheme();
-          }}
+          onValueChange={preferences.setTheme}
         />
       </SettingsSection>
       <SettingsSection title={t().thisPhone}>

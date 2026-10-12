@@ -28,7 +28,7 @@ const readEmbeddedContext = (): AppLaunchpadContext | undefined => {
     return {
       apps: parsed.apps,
       profile:
-        parsed.profile?.name && (parsed.profile.theme === "dark" || parsed.profile.theme === "light")
+        parsed.profile?.name && (parsed.profile.theme === "dark" || parsed.profile.theme === "light" || parsed.profile.theme === "system")
           ? {
               name: parsed.profile.name,
               theme: parsed.profile.theme,

@@ -74,7 +74,7 @@ import { createSyncOpsRoutes } from "../services/sync-ops";
 import { capabilityMessages } from "../shared/capability-messages";
 import { normalizeLocale } from "../shared/locale";
 import { escapeHtml } from "../shared/markdown/shared";
-import { themeBootstrapScript } from "../shared/theme";
+import { type CloudThemePreference, readThemePreferenceFromCookieHeader, themeBootstrapScript } from "../shared/theme";
 import { appFaviconHref } from "./app-favicon";
 import { compileAppPresentation } from "./app-presentation";
 import { readBoundedJson } from "./bounded-json";
@@ -102,6 +102,7 @@ const v = Date.now();
 export type PageOptions = {
   title?: string;
   description?: string;
+  /** Fix public displays such as Pulse, Weather and Venue monitors to one theme; otherwise follow the person's preference. */
   theme?: "light" | "dark";
   /** Framework-resolved BCP 47 document language — always the canonical request locale, never a page override. */
   lang?: string;
@@ -109,7 +110,7 @@ export type PageOptions = {
   pwa?: { name: string };
 };
 
-type ResolvedPageOptions = PageOptions & { performanceRoute?: string };
+type ResolvedPageOptions = PageOptions & { performanceRoute?: string; themePreference?: CloudThemePreference };
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -411,17 +412,24 @@ export const defineApp = <
     // Every island instance already mounts inside its own error boundary; this
     // only gives the fallback Cloud's look and the reader's language.
     errorFallback: fileURLToPath(new URL("../ssr/IslandError.tsx", import.meta.url)),
-    template: ({ body, scripts, title, description, theme, lang, performanceRoute, pwa }) => {
-      const themeFixed = theme !== undefined;
+    template: ({ body, scripts, title, description, theme, themePreference, lang, performanceRoute, pwa }) => {
+      const fixed = theme !== undefined;
+      const resolved = theme ?? (themePreference === "light" || themePreference === "dark" ? themePreference : undefined);
       // App pages paint the canvas before any stylesheet and give it to the
       // status bar. No status-bar style: `black-translucent` lays a blur band
       // over the top edge on iOS 26.
-      const canvas = PWA_CANVAS_COLORS[theme ?? "light"];
+      const canvas = resolved ? PWA_CANVAS_COLORS[resolved] : undefined;
       const head = pwa
         ? {
-            html: ` style="background-color:${canvas}"`,
+            html: canvas ? ` style="background-color:${canvas}"` : "",
             viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
-            app: `<meta name="theme-color" content="${canvas}">
+            app: `${
+              canvas
+                ? `<meta name="theme-color" content="${canvas}">`
+                : `<meta name="theme-color" media="(prefers-color-scheme: light)" content="${PWA_CANVAS_COLORS.light}">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="${PWA_CANVAS_COLORS.dark}">
+    <style data-cloud-canvas>html{background-color:${PWA_CANVAS_COLORS.light}}@media (prefers-color-scheme: dark){html{background-color:${PWA_CANVAS_COLORS.dark}}}</style>`
+            }
     <link rel="manifest" href="${PWA_MANIFEST_PATH}">
     <link rel="apple-touch-icon" href="/branding/apple-touch-icon.png">
     <meta name="apple-mobile-web-app-title" content="${escapeHtml(pwa.name)}">`,
@@ -442,7 +450,7 @@ export const defineApp = <
       // stylesheet declares a layer. Tailwind's `properties` layer resets
       // `--tw-*` in browsers without `@property` and must stay lowest.
       return `<!DOCTYPE html>
-<html lang="${normalizeLocale(lang)}" class="${theme ?? "light"}"${themeFixed ? " data-theme-fixed" : ""}${head.html}>
+<html lang="${normalizeLocale(lang)}" class="${resolved ?? "light"}"${fixed ? " data-theme-fixed" : ""}${head.html}>
   <head><meta charset="UTF-8"><meta name="viewport" content="${head.viewport}">
     <meta name="view-transition" content="same-origin">
     <title>${escapeHtml(title ?? "Cloud")}</title>
@@ -480,6 +488,7 @@ export const defineApp = <
   const ssr = Object.assign(
     createStatusPreservingSsrHandler<ResolvedPageOptions>(html, async (c) => {
       c.get("page").lang = getLocale(c);
+      c.get("page").themePreference = readThemePreferenceFromCookieHeader(c.req.header("Cookie"));
       const user = c.get("user");
       c.get("page").performanceRoute =
         user && c.get("settings")?.observability?.web_vitals?.enabled === true ? (matchedRouteTemplate(c) ?? undefined) : undefined;

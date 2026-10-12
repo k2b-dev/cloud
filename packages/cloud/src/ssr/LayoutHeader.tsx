@@ -1,6 +1,6 @@
 import { ButtonLink, IconButtonLink } from "@k2b/ui";
 import type { NavigationSearchItem } from "../browser/navigation-search";
-import type { CloudTheme } from "../shared/theme";
+import type { CloudThemePreference } from "../shared/theme";
 import AppLaunchpad, { type AppLaunchpadApp } from "./AppLaunchpad.island";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import GlobalSearchTrigger from "./GlobalSearchTrigger.island";
@@ -24,7 +24,7 @@ type LayoutHeaderProps = {
   searchHelpApps: GlobalSearchHelpApp[];
   searchLinks?: NavigationSearchItem[];
   signInLabel: string;
-  theme: CloudTheme;
+  theme: CloudThemePreference;
 };
 
 /**

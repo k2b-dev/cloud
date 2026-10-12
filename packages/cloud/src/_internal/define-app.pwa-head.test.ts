@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { PWA_CANVAS_COLORS } from "../contracts/pwa";
+import { themeBootstrapScript } from "../shared/theme";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-pwa-head-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -35,13 +36,12 @@ const server = new Hono()
   .get(
     "/pwa/head-probe",
     ...app.ssr((c) => {
-      const theme = c.req.query("theme") === "dark" ? "dark" : "light";
       c.get("page").title = "Tasks";
-      c.get("page").theme = theme;
       c.get("page").pwa = { name: 'Example "Cloud" & Co' };
       return () => "body";
     }),
-  );
+  )
+  .get("/app/theme-probe", ...app.ssr(() => () => "body"));
 
 /** Cache-busting stamps change on every start. */
 const stable = (html: string) => html.replace(/\?v=\d+/g, "?v=*").replace(/\/_ssr\/\d+/g, "/_ssr/*");
@@ -65,7 +65,7 @@ const WEB_DOCUMENT = `<!DOCTYPE html>
     <link rel="stylesheet" href="/public/tabler-icons.css?v=*">
     <link rel="stylesheet" href="/public/head-probe/app.css?v=*">
     <link rel="stylesheet" href="/public/global.css?v=*">
-    <script>!function(){var e=document.documentElement;if(!e.hasAttribute("data-theme-fixed")){var t="light";document.cookie.split(";").forEach(function(e){var r=e.trim(),i=r.indexOf("=");if(i>0&&r.slice(0,i)==="theme"){var o;try{o=decodeURIComponent(r.slice(i+1))}catch(e){o=r.slice(i+1)}(o==="light"||o==="dark")&&(t=o)}});e.classList.remove("light","dark");e.classList.add(t)}}();</script>
+    <script>${themeBootstrapScript}</script>
   </head>
   <body class="k2b-ui" data-k2b-app-workspace-controller="global">
     body
@@ -78,15 +78,15 @@ ${"  "}
 const head = (html: string) => html.slice(0, html.indexOf("</head>"));
 
 describe("document head", () => {
-  test("keeps web documents byte-identical", async () => {
+  test("keeps the fixed web head apart from the shared bootstrap", async () => {
     expect(stable(await (await server.request("/app/head-probe")).text())).toBe(WEB_DOCUMENT);
   });
 
   test("gives app pages the manifest, the Home Screen title and the canvas as status bar colour", async () => {
     for (const theme of ["light", "dark"] as const) {
-      const html = head(await (await server.request(`/pwa/head-probe?theme=${theme}`)).text());
+      const html = head(await (await server.request("/pwa/head-probe", { headers: { Cookie: `theme=${theme}` } })).text());
       const canvas = PWA_CANVAS_COLORS[theme];
-      expect(html).toContain(`<html lang="en" class="${theme}" data-theme-fixed style="background-color:${canvas}">`);
+      expect(html).toContain(`<html lang="en" class="${theme}" style="background-color:${canvas}">`);
       expect(html).toContain('<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">');
       expect(html).toContain(`<meta name="theme-color" content="${canvas}">`);
       expect(html.match(/name="theme-color"/g)).toHaveLength(1);
@@ -104,6 +104,33 @@ describe("document head", () => {
         html.indexOf("/public/global.css"),
       );
     }
+  });
+
+  test("leaves preference documents unfixed and reserves fixed themes for displays", async () => {
+    for (const [cookie, theme] of [
+      ["", "light"],
+      ["theme=dark", "dark"],
+      ["theme=system; color-scheme=dark", "light"],
+    ] as const) {
+      const html = head(await (await server.request("/app/theme-probe", { headers: { Cookie: cookie } })).text());
+      expect(html).toContain(`class="${theme}"`);
+      expect(html.slice(0, html.indexOf("<head>"))).not.toContain("data-theme-fixed");
+      expect(html).toContain(`<script>${themeBootstrapScript}</script>`);
+      const fixed = head(await (await server.request("/app/head-probe", { headers: { Cookie: cookie } })).text());
+      expect(fixed).toContain('class="dark" data-theme-fixed');
+    }
+  });
+
+  test("Automatic app pages paint both system canvases before stylesheets", async () => {
+    const html = head(await (await server.request("/pwa/head-probe")).text());
+    expect(html).toContain('<html lang="en" class="light">');
+    expect(html.slice(0, html.indexOf("<head>"))).not.toContain("data-theme-fixed");
+    for (const theme of ["light", "dark"] as const)
+      expect(html).toContain(`<meta name="theme-color" media="(prefers-color-scheme: ${theme})" content="${PWA_CANVAS_COLORS[theme]}">`);
+    expect(html).toContain(
+      `<style data-cloud-canvas>html{background-color:${PWA_CANVAS_COLORS.light}}@media (prefers-color-scheme: dark){html{background-color:${PWA_CANVAS_COLORS.dark}}}</style>`,
+    );
+    expect(html.indexOf("data-cloud-canvas")).toBeLessThan(html.indexOf('rel="stylesheet"'));
   });
 
   test("paints the app canvas in the colours of the @k2b/ui canvas token", () => {

@@ -1,21 +1,15 @@
-import { Button, Dropdown, useLocale } from "@k2b/ui";
+import { Dropdown, useLocale } from "@k2b/ui";
 import { canonicalLocale } from "../shared/locale";
 import { type ProfilePreferenceLocale, profilePreferenceLocale, setLocalePreference } from "../shared/locale-preference";
-import type { CloudTheme } from "../shared/theme";
+import type { CloudThemePreference } from "../shared/theme";
 import { createPreferenceController } from "./preference-controller";
 
-/**
- * Labeled language and theme controls for the MinimalLayout footer. The
- * language trigger names the current language; the theme button names the
- * mode it switches to, like every other Cloud preference menu. Below `md` both
- * are compact, the language code and the theme icon with the full names as
- * accessible labels, so they fit next to the legal links on a phone. CSS picks
- * the form, so the server response is already final.
- */
-export default function MinimalLayoutPreferences(props: { initialTheme: CloudTheme }) {
+/** Both menus name the current choice; compact triggers keep accessible names below md. */
+export default function MinimalLayoutPreferences(props: { initialTheme: CloudThemePreference }) {
   const locale = useLocale();
   const preferences = createPreferenceController(props.initialTheme, locale);
   const t = preferences.messages;
+  const currentTheme = () => preferences.themeOption(preferences.theme());
   const language = () => profilePreferenceLocale(locale());
   const languageName = () => (language() === "de" ? t().switchToGerman : t().switchToEnglish);
   // Keep a regional locale such as en-GB when its language is chosen again,
@@ -43,10 +37,13 @@ export default function MinimalLayoutPreferences(props: { initialTheme: CloudThe
           <i class="ti ti-chevron-down hidden md:inline" aria-hidden="true" />
         </Dropdown.Trigger>
       </Dropdown.Root>
-      <Button aria-label={preferences.themeLabel()} onClick={preferences.toggleTheme} size="sm" variant="ghost">
-        <i class={preferences.theme() === "light" ? "ti ti-moon" : "ti ti-sun-high"} aria-hidden="true" />
-        <span class="hidden md:inline">{preferences.themeLabel()}</span>
-      </Button>
+      <Dropdown.Root label={t().appearance} position="top-right" width="12rem" items={preferences.appearance().items}>
+        <Dropdown.Trigger label={`${t().appearance}: ${currentTheme().label}`} size="sm" tooltip={false} variant="ghost">
+          <i class={currentTheme().icon} aria-hidden="true" />
+          <span class="hidden md:inline">{currentTheme().label}</span>
+          <i class="ti ti-chevron-down hidden md:inline" aria-hidden="true" />
+        </Dropdown.Trigger>
+      </Dropdown.Root>
     </div>
   );
 }

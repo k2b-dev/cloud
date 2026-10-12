@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-10
+updated: 2026-10-12
 ---
 
 # Build and deploy
@@ -354,3 +354,11 @@ clears chat presentations saved in the old format once; see
 [Studio apps are plain HTML](/en/docs/reference/deprecations-and-migrations#studio-apps-are-plain-html).
 Public links to Studio apps are switched off in this release: existing public
 grants stay listed but open nothing.
+
+## Update theme preferences
+
+Rebuild application images to receive the Automatic theme preference and its
+head script. Existing `theme=light` and `theme=dark` cookies retain their
+meaning. People without a saved choice follow their device's appearance.
+No data migration or configuration change is required. See
+[Follow the person's theme](/en/docs/frontend/styling-and-accessibility#follow-the-persons-theme).

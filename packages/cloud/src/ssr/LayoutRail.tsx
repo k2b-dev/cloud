@@ -1,6 +1,6 @@
 import type { NavigationSearchItem } from "../browser/navigation-search";
 import type { RailSnapshot } from "../contracts/rail-preferences";
-import type { CloudTheme } from "../shared/theme";
+import type { CloudThemePreference } from "../shared/theme";
 import AppLaunchpad, { type AppLaunchpadApp } from "./AppLaunchpad.island";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import GlobalSearchTrigger from "./GlobalSearchTrigger.island";
@@ -27,7 +27,7 @@ type LayoutRailProps = {
   profileName: string;
   searchHelpApps: GlobalSearchHelpApp[];
   searchLinks?: NavigationSearchItem[];
-  theme: CloudTheme;
+  theme: CloudThemePreference;
 };
 
 const jsonScript = (value: unknown): string => JSON.stringify(value).replace(/</g, "\\u003c");

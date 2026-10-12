@@ -5,7 +5,7 @@ section: Frontend
 order: 835
 description: Add phone-first pages of an application to the installable mobile app.
 tags: [mobile, pwa, routing, layout]
-updated: 2026-10-06
+updated: 2026-10-12
 ---
 
 # Pages in the mobile app
@@ -144,11 +144,11 @@ It renders the app's document head, a
 [`MobileShell`](/en/ui/layout/mobile-shell) with a header, and a
 [`TabBar`](/en/ui/layout/tab-bar) with Start and the first three parts. Start
 lists every part, so it also serves as "More", and opens Settings from its
-header. The layout
-provides the request locale, follows the person's light or dark theme, and
-sets `Referrer-Policy: no-referrer` and `frame-ancestors 'none'`. In the
-browser, it registers the app's service worker, shows an offline notice, and
-keeps the app session alive.
+header. The layout provides the request locale, follows the person's Light,
+Dark, or Automatic theme preference, and sets `Referrer-Policy: no-referrer`
+and `frame-ancestors 'none'`. In the browser, it registers the app's service
+worker, shows an offline notice, and keeps the app session alive. With
+Automatic, the status bar color follows the device's appearance.
 
 App pages switch at once, without the cross-fade that web pages use between
 documents. A browser ignores taps while such a transition runs, so a quick

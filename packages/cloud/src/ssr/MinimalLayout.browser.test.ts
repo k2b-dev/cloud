@@ -134,7 +134,13 @@ describe("MinimalLayout footer in a browser", () => {
         // Other pages end with the footer at the bottom of the first screen.
         else expect(Math.abs(footer.bottom - viewport.height), context).toBeLessThan(1);
 
-        expect(controls.map((control) => control.name)).toEqual(["Imprint", "Privacy", "Terms", "Language: English", "Dark mode"]);
+        expect(controls.map((control) => control.name)).toEqual([
+          "Imprint",
+          "Privacy",
+          "Terms",
+          "Language: English",
+          "Appearance: Automatic",
+        ]);
         for (const control of controls) {
           const name = `${context} ${control.name}`;
           expect(control.box.left, name).toBeGreaterThanOrEqual(0);
@@ -429,14 +435,14 @@ describe("standalone page load in a browser", () => {
                 ["Privacy", "Privacy"],
                 ["Terms", "Terms"],
                 ["Language: English", "EN"],
-                ["Dark mode", ""],
+                ["Appearance: Automatic", ""],
               ]
             : [
                 ["Impressum", "Impressum"],
                 ["Datenschutz", "Datenschutz"],
                 ["Nutzungsbedingungen", "Nutzungsbedingungen"],
                 ["Sprache: Deutsch", "DE"],
-                ["Dunkler Modus", ""],
+                ["Darstellung: Automatisch", ""],
               ],
         );
         for (const control of controls) {

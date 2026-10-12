@@ -1,7 +1,7 @@
 import { PWA_SCOPE } from "@k2b/cloud/contracts";
 import { type AuthContext, buildMetadata, expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { pwaDevices } from "@k2b/cloud/services";
-import { readThemeFromCookieHeader } from "@k2b/cloud/shared";
+import { readThemePreferenceFromCookieHeader } from "@k2b/cloud/shared";
 import { PwaLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { shellMessages } from "../messages";
@@ -24,7 +24,7 @@ export default ssr<AuthContext>(async (c) => {
     <PwaLayout c={c} title={t.settings} back={{ href: PWA_SCOPE, label: t.back }}>
       <PhoneSettings
         account={{ name, mail: user.mail || undefined, avatar }}
-        theme={readThemeFromCookieHeader(c.req.header("Cookie"))}
+        theme={readThemePreferenceFromCookieHeader(c.req.header("Cookie"))}
         name={device?.name ?? ""}
         cloud={cloud}
         version={t.version({ version: buildMetadata.version })}

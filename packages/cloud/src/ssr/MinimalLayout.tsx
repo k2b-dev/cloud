@@ -2,7 +2,7 @@ import { LocaleProvider } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { getLocale } from "../server/locale";
 import { resolveAppPresentations } from "../shared/app-presentation";
-import { readThemeFromCookieHeader } from "../shared/theme";
+import { readThemePreferenceFromCookieHeader } from "../shared/theme";
 import type { MinimalLayoutContext } from "./layout-context";
 import MinimalLayoutPreferences from "./MinimalLayoutPreferences.island";
 import { profilePreferencesMessages } from "./profile-preferences-messages";
@@ -26,9 +26,8 @@ export type MinimalLayoutProps = {
 
 export default function MinimalLayout(props: MinimalLayoutProps) {
   const cookie = props.c.req.raw.headers.get("Cookie") ?? "";
-  const theme = readThemeFromCookieHeader(cookie);
+  const theme = readThemePreferenceFromCookieHeader(cookie);
   const locale = getLocale(props.c);
-  props.c.get("page").theme = theme;
 
   if (props.preferences === false) {
     return (
