@@ -784,6 +784,18 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     }
   });
 
+  test("rejects a body whose inlining work exceeds the budget with the built-in design alone", () => {
+    // One paragraph renders as `<p>${"&amp;".repeat(n)}</p>\n`; the fallback estimate adds the built-in CSS and its separator once.
+    // This body is one byte over that budget, so the fallback must fail before juice runs. The 8 MB render takes a few seconds.
+    const budget = 8 * 1024 * 1024;
+    const builtInCssBytes = Buffer.byteLength(`${DEFAULT_MAIL_CSS}\n`);
+    const body = "&".repeat(Math.floor((budget - builtInCssBytes - "<p></p>\n".length) / "&amp;".length) + 1);
+    expect(renderComposeContent({ body, format: "markdown", customCss: largeMailboxCss, context, renderLiquid: false })).toMatchObject({
+      ok: false,
+      error: { composeRender: { reason: "tooComplex" } },
+    });
+  }, 30_000);
+
   test("keeps the built-in stylesheet valid", () => {
     // Mailbox CSS may not use pseudo-classes; the built-in design uses `:where()` only to lower its specificity.
     expect(validateComposeCss(DEFAULT_MAIL_CSS.replace(/:where\((\.[a-z-]+)\)/g, "$1")).ok).toBe(true);

@@ -550,11 +550,12 @@ export const renderComposeContent = (params: {
       return fail(composeRenderFailure("tooComplex"));
     }
     const stored = storedComposeCss(params.customCss);
-    let inlined = inlineMailHtml(fragment, elementCount, stored.css ? `${DEFAULT_MAIL_CSS}\n${stored.css}` : DEFAULT_MAIL_CSS);
+    const builtInCss = `${DEFAULT_MAIL_CSS}\n`;
+    let inlined = inlineMailHtml(fragment, elementCount, `${builtInCss}${stored.css}`);
     let formattingWarnings = stored.formattingWarnings;
     // A mailbox design never stops a message that renders with the built-in design alone.
     if (!inlined.ok && stored.css) {
-      inlined = inlineMailHtml(fragment, elementCount, DEFAULT_MAIL_CSS);
+      inlined = inlineMailHtml(fragment, elementCount, builtInCss);
       formattingWarnings = [{ code: "ignored_mailbox_css" }];
     }
     if (!inlined.ok) return inlined;
