@@ -109,7 +109,8 @@ export default function MailConversationReader(props: {
   error: string | null;
   dateConfig: DateContext;
   readingFormat: MailReadingFormat;
-  theme: CloudTheme;
+  /** `null` while the browser has not yet resolved Automatic for this island. */
+  theme: CloudTheme | null;
   calendarIntegrationAvailable: boolean;
   listCollapsed: boolean;
   detailsOpen: boolean;

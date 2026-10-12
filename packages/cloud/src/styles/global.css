@@ -376,4 +376,5 @@ solid-island {
   width: 100%; white-space: normal; overflow-wrap: anywhere; font-size: .8125rem; line-height: 1.3;
 }
 .cloud-mobile-profile { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; border-top: 1px solid var(--ui-border); padding-top: 1rem; }
-.cloud-mobile-profile :is(a, button) { min-height: 2.75rem; white-space: normal; text-align: start; justify-content: flex-start; }
+.cloud-mobile-profile > :is(a, button) { min-height: 2.75rem; white-space: normal; text-align: start; justify-content: flex-start; }
+.cloud-mobile-profile__appearance { grid-column: 1 / -1; }

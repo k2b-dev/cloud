@@ -106,7 +106,8 @@ function MailWorkspaceView(props: {
   dateConfig: DateContext;
   initialPreferences: MailWorkspacePreferences;
   initialUserPreferences: MailUserPreferences;
-  initialTheme: CloudTheme;
+  /** `null` under Automatic: only the browser knows the device scheme, and it is read on mount. */
+  initialTheme: CloudTheme | null;
   calendarIntegrationAvailable: boolean;
 }) {
   const locale = useLocale();
@@ -119,7 +120,7 @@ function MailWorkspaceView(props: {
   const [listCollapsed, setListCollapsed] = createSignal(props.initialPreferences.listCollapsed);
   const [detailsOpen, setDetailsOpen] = createSignal(props.initialPreferences.detailsOpen);
   const [toolbarActions, setToolbarActions] = createSignal(props.initialPreferences.toolbarActions);
-  const [theme, setTheme] = createSignal(props.initialTheme);
+  const [theme, setTheme] = createSignal<CloudTheme | null>(props.initialTheme);
   const [presence, setPresence] = createSignal<ConversationPresenceSnapshot>({
     participants: [],
   });

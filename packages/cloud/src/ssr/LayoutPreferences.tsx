@@ -1,9 +1,9 @@
 import { Dropdown, type DropdownPosition, useLocale } from "@k2b/ui";
-import type { CloudTheme } from "../shared/theme";
+import type { CloudThemePreference } from "../shared/theme";
 import { createPreferenceController } from "./preference-controller";
 
 type LayoutPreferencesProps = {
-  initialTheme: CloudTheme;
+  initialTheme: CloudThemePreference;
   position: DropdownPosition;
 };
 

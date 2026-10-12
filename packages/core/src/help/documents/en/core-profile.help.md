@@ -3,7 +3,7 @@ id: core-profile
 title: Profile
 icon: ti ti-user-circle
 description: Review your account, groups, and activity, request FreeIPA access, and use API keys and passkeys.
-updated: 2026-10-11
+updated: 2026-10-12
 order: 110
 ---
 
@@ -25,3 +25,9 @@ Your account area combines local Cloud data, optional FreeIPA data, and the acti
 - **Developer → API keys:** Personal keys for automation. A key with **Full access** has the same access as your account. When your administrator offers the OpenAI-compatible API, you can choose **AI models only** instead: such a key can only call the AI models you may use in Assistant, for example from a dictation app. Cloud shows the full key only once, right after you create it.
 - **Sign-in → Passkeys:** WebAuthn passkeys for passkey sign-in to your account. After you remove a passkey, nobody can sign in with it.
 :::
+
+## Choose your appearance {icon="palette"}
+
+In the profile menu, **Appearance** offers **Light**, **Dark**, and
+**Automatic**. Automatic is the default. It follows your device's light or
+dark setting.

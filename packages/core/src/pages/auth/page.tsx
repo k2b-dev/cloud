@@ -2,7 +2,7 @@ import { listLegalLinks } from "@k2b/cloud";
 import { type AccountCategory, resolveAccountCategoryLogin } from "@k2b/cloud/contracts";
 import { getLocale } from "@k2b/cloud/server";
 import { appApproval, coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
-import { normalizeRedirectTo, readLoginMethodFromCookieHeader, readThemeFromCookieHeader } from "@k2b/cloud/shared";
+import { normalizeRedirectTo, readLoginMethodFromCookieHeader } from "@k2b/cloud/shared";
 import { ButtonLink, LocaleProvider, NoticeCard } from "@k2b/ui";
 import { ssr } from "../../config";
 import { useAppSignIn } from "../app-approval/availability";
@@ -47,7 +47,6 @@ export default ssr(async (c) => {
   const hide = params.get("hide") ?? undefined;
 
   const cookie = c.req.raw.headers.get("Cookie") ?? "";
-  c.get("page").theme = readThemeFromCookieHeader(cookie);
   const persistedLoginMethod = readLoginMethodFromCookieHeader(cookie);
 
   // If guest is hidden, force IPA method

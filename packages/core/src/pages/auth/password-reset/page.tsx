@@ -1,7 +1,7 @@
 import { listLegalLinks } from "@k2b/cloud";
 import { getLocale } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
-import { normalizeRedirectTo, readThemeFromCookieHeader } from "@k2b/cloud/shared";
+import { normalizeRedirectTo } from "@k2b/cloud/shared";
 import { ButtonLink, LocaleProvider } from "@k2b/ui";
 import { ssr } from "../../../config";
 import AuthFooter from "../AuthFooter";
@@ -21,9 +21,6 @@ export default ssr(async (c) => {
   const loginParams = new URLSearchParams();
   if (redirectTo) loginParams.set("redirectTo", redirectTo);
   const loginHref = loginParams.size > 0 ? `/auth/login?${loginParams.toString()}` : "/auth/login";
-
-  const cookie = c.req.raw.headers.get("Cookie") ?? "";
-  c.get("page").theme = readThemeFromCookieHeader(cookie);
 
   const title = token ? t.setNewPassword : t.resetYourPassword;
   const subtitle = token ? t.newPasswordIntro : t.resetIntro;

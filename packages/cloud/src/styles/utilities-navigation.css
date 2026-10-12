@@ -883,6 +883,19 @@
   transition: opacity 120ms ease-out;
 }
 
+.layout-profile-preferences__appearance {
+  padding: 0.125rem 0.125rem 0.25rem;
+}
+
+.layout-profile-preferences__appearance .k2b-segmented-control {
+  width: 100%;
+}
+
+/* Content-sized segments: "Automatisch" needs more room than "Hell" in the narrow panel. */
+.layout-profile-preferences__appearance .k2b-segmented-control__option {
+  flex: 1 1 auto;
+}
+
 .dark .layout-profile-preferences__panel {
   color: var(--color-zinc-300);
 }

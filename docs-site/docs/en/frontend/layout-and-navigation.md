@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-10-11
+updated: 2026-10-12
 ---
 
 # Layout and navigation
@@ -275,12 +275,13 @@ footer that holds the legal links of all running applications and the
 language and theme settings for visitors. The legal links come from the
 runtime registry, so they appear when the router installs
 `middleware.runtime()`. The language control shows the current language and
-switches between English and German; the theme control names the mode it
-switches to. Below the `md` breakpoint both controls are compact: the language
-control shows the language code, such as `DE`, and the theme control only its
-icon, while the full names remain their accessible labels and fill the
-language menu. Where the legal links and the controls do not fit one row, the
-controls move to a second row below the links. On touch screens, every footer
+switches between English and German. The theme menu offers **Light**,
+**Dark**, and **Automatic** and names the current choice. Below the `md`
+breakpoint both controls are compact: the language control shows the
+language code, such as `DE`, and the theme control only its icon. The full
+names remain their accessible labels and fill the menus. Where the legal
+links and the controls do not fit one row, the controls move to a second row
+below the links. On touch screens, every footer
 control is at least 44 px tall, and no control covers another.
 
 The page content and the footer share one column that is at least one

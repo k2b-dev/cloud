@@ -1,10 +1,10 @@
 import { documentNavigate } from "@k2b/ssr/nav";
-import { Button, ButtonLink } from "@k2b/ui";
-import type { CloudTheme } from "../shared/theme";
+import { Button, ButtonLink, SegmentedControl } from "@k2b/ui";
+import type { CloudThemePreference } from "../shared/theme";
 import { createProfileActions } from "./profile-actions";
 
 export function MobileProfileActions(props: {
-  profile: { name: string; theme: CloudTheme; appHref?: string };
+  profile: { name: string; theme: CloudThemePreference; appHref?: string };
   beforeSelect: () => Promise<boolean>;
 }) {
   const { preferences, signingOut, signOut } = createProfileActions(props.profile.theme, props.profile.appHref);
@@ -17,6 +17,13 @@ export function MobileProfileActions(props: {
   };
   return (
     <section class="cloud-mobile-profile" aria-label={preferences.messages().menuLabel}>
+      <SegmentedControl
+        class="cloud-mobile-profile__appearance"
+        ariaLabel={preferences.messages().appearance}
+        options={preferences.themeOptions()}
+        value={preferences.theme}
+        onValueChange={preferences.setTheme}
+      />
       <ButtonLink href="/me" variant="ghost" onClick={navigate("/me")}>
         <i class="ti ti-user-circle" aria-hidden="true" />
         {preferences.messages().profileSettings}
@@ -27,10 +34,6 @@ export function MobileProfileActions(props: {
           {preferences.messages().app}
         </ButtonLink>
       )}
-      <Button variant="ghost" onClick={preferences.toggleTheme}>
-        <i class={`ti ${preferences.theme() === "light" ? "ti-moon" : "ti-sun-high"}`} aria-hidden="true" />
-        {preferences.themeLabel()}
-      </Button>
       <Button
         variant="ghost"
         onClick={async () => {

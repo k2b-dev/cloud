@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-11
+updated: 2026-10-12
 ---
 
 # API surface
@@ -203,6 +203,13 @@ inferring support from autocomplete.
 | `@k2b/cloud/browser` | Typed Hono client factory | Utility helpers are outside the documented typed-client contract |
 | `@k2b/cloud/shared` | Cloud-specific helpers named by feature guides | Generic utility re-exports are compatibility-only |
 | `@k2b/cloud/cli` | APIs for application CLI modules | Built-in account, application, and admin modules are platform-owned |
+
+For theme-aware server work, `readThemeFromCookieHeader()` returns a resolved
+`CloudTheme` (`light` or `dark`); for Automatic it is a best-effort hint that
+can be stale. `readThemePreferenceFromCookieHeader()`
+returns a `CloudThemePreference` (`light`, `dark`, or `system`). Both readers
+and types come from `@k2b/cloud/shared`. See
+[Follow the person's theme](/en/docs/frontend/styling-and-accessibility#follow-the-persons-theme).
 
 `@k2b/cloud/config` exports `env.APP_SECRET`, `env.PORT`,
 `env.IS_DEVELOPMENT`, and `env.ADMIN_LOGIN_TOKEN`. The

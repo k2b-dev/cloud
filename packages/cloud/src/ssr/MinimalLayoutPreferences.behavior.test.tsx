@@ -67,16 +67,46 @@ test("a visitor on an unsupported locale can still choose the English fallback",
   expect(reload).toHaveBeenCalledTimes(1);
 });
 
-test("the theme button switches the theme and names the next mode", async () => {
-  await mount("en");
-  const button = Array.from(dom.root.querySelectorAll("button")).find((item) => item.textContent?.trim() === "Dark mode")!;
+for (const [locale, labels, appearance] of [
+  ["en", ["Light", "Dark", "Automatic"], "Appearance"],
+  ["de", ["Hell", "Dunkel", "Automatisch"], "Darstellung"],
+] as const) {
+  test(`the appearance menu persists all three choices (${locale})`, async () => {
+    const media = spyOn(window, "matchMedia").mockImplementation(() => ({
+      matches: true,
+      media: "(prefers-color-scheme: dark)",
+      onchange: null,
+      addListener() {},
+      removeListener() {},
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent: () => true,
+    }));
+    try {
+      const { choose } = await mount(locale);
+      const radios = Array.from(dom.root.querySelectorAll('[role="menuitemradio"]')).slice(2);
+      expect(radios.map((item) => item.textContent?.trim())).toEqual([...labels]);
+      const trigger = dom.root.querySelectorAll("[aria-haspopup]")[1]!;
+      expect(trigger.getAttribute("aria-label")).toBe(`${appearance}: ${labels[2]}`);
+      let changes = 0;
+      window.addEventListener("cloud:theme-preference", () => changes++);
 
-  // Phones show only the icon, so the button carries its name as a label too.
-  expect(button.getAttribute("aria-label")).toBe("Dark mode");
+      choose(labels[2]);
+      expect(document.cookie).toContain("theme=system");
+      expect(document.documentElement.className).toBe("dark");
+      expect(radios[2]!.getAttribute("aria-checked")).toBe("true");
 
-  button.click();
+      choose(labels[1]);
+      expect(document.cookie).toContain("theme=dark");
+      expect(document.documentElement.className).toBe("dark");
+      expect(trigger.getAttribute("aria-label")).toBe(`${appearance}: ${labels[1]}`);
+      expect(changes).toBe(2);
 
-  expect(document.documentElement.classList.contains("dark")).toBe(true);
-  expect(document.cookie).toContain("theme=dark");
-  expect([button.textContent?.trim(), button.getAttribute("aria-label")]).toEqual(["Light mode", "Light mode"]);
-});
+      choose(labels[0]);
+      expect(document.cookie).toContain("theme=light");
+      expect(document.documentElement.className).toBe("light");
+    } finally {
+      media.mockRestore();
+    }
+  });
+}

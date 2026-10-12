@@ -54,6 +54,9 @@ differ from the general application accent.
 Component APIs use the shared `IntentTone` vocabulary (`neutral`, `info`, `success`, `warning`, `danger`) when they describe user-facing intent, and `AccentColor` (`zinc`, `blue`, `emerald`, `amber`, `red`) for data presentation. Operational states such as `running`, `degraded`, and `error` remain a separate status vocabulary.
 
 Use `data-theme="dark"` or `k2b-dark` on the scope, or place it inside a host `.dark` element.
+The library does not read `prefers-color-scheme` itself; the host resolves light
+or dark (for example, from a Cloud Automatic preference) and sets the class or
+attribute.
 
 ## Accessibility
 

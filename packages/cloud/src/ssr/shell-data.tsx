@@ -1,7 +1,7 @@
 import { createContext, type JSX, useContext } from "solid-js";
 import type { AppSearchLink } from "../contracts/app";
 import type { RailSnapshot } from "../contracts/rail-preferences";
-import type { CloudTheme } from "../shared/theme";
+import type { CloudThemePreference } from "../shared/theme";
 import type { AppLaunchpadLegalLink } from "./app-launchpad";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import type { RailApp } from "./rail-navigation";
@@ -14,7 +14,7 @@ export type ShellData = {
   legalLinks: AppLaunchpadLegalLink[];
   /** Signed-in pages: the person, for the profile menu and the phone menu's profile actions. */
   profile?: { name: string; avatarSrc?: string; appHref?: string };
-  theme: CloudTheme;
+  theme: CloudThemePreference;
   /** The current app's accent, for the Help dialog. */
   accent?: string;
   /** The search destinations of each app in `apps`, by app id in registry order; the search host expands them into rows. */

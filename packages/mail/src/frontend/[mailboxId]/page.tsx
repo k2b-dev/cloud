@@ -1,5 +1,5 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
-import { readThemeFromCookieHeader } from "@k2b/cloud/shared";
+import { readThemePreferenceFromCookieHeader } from "@k2b/cloud/shared";
 import { Layout, requestPath } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { requestContactDirectory } from "../../contact-directory-settings";
@@ -31,7 +31,7 @@ export default ssr<AuthContext>(async (c) => {
   const cookieHeader = c.req.header("cookie");
   const workspacePreferences = readMailWorkspacePreferences(cookieHeader);
   const userPreferences = readMailUserPreferencesFromCookieHeader(cookieHeader, mailboxShortId);
-  const theme = readThemeFromCookieHeader(cookieHeader);
+  const themePreference = readThemePreferenceFromCookieHeader(cookieHeader);
   const [internalData, spacesIntegration] = await Promise.all([
     loadMailboxPageData({ context, mailboxId, ...request, listMode: workspacePreferences.listMode, locale }),
     getSpacesMailIntegrationAvailability(),
@@ -56,7 +56,7 @@ export default ssr<AuthContext>(async (c) => {
         dateConfig={dateConfig}
         initialPreferences={workspacePreferences}
         initialUserPreferences={userPreferences}
-        initialTheme={theme}
+        initialTheme={themePreference === "system" ? null : themePreference}
         calendarIntegrationAvailable={spacesIntegration.invitations}
       />
     </Layout>

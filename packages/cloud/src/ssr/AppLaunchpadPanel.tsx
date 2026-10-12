@@ -3,7 +3,7 @@ import { IconButton, ScrollArea, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { importOnDemand } from "../browser/reload";
-import type { CloudTheme } from "../shared/theme";
+import type { CloudThemePreference } from "../shared/theme";
 import { AppBadge, useAppBadgeDescription } from "./AppBadge";
 import { MobileProfileActions } from "./MobileProfileActions";
 import { platformMessages } from "./platform-messages";
@@ -29,7 +29,7 @@ export type AppLaunchpadLegalLink = {
 };
 
 export type AppLaunchpadContext = {
-  profile?: { name: string; theme: CloudTheme; appHref?: string };
+  profile?: { name: string; theme: CloudThemePreference; appHref?: string };
   apps: AppLaunchpadApp[];
   legalLinks: AppLaunchpadLegalLink[];
 };
