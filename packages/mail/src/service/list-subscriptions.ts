@@ -19,8 +19,8 @@ import {
 } from "../contracts";
 import type { MailRequestContext } from "./auth";
 import { actorRefFromRequest } from "./auth";
+import { queueBulkMoves } from "./bulk-disposition";
 import { requireMailboxCollaborationPermission } from "./collaboration";
-import { createActorCommands } from "./commands";
 import { resolveRoleFolder } from "./folders";
 import { mailLive } from "./live";
 import { allowedExternalHref, mailingListMetadata, normalizeListId, oneClickEnabled } from "./mailing-list-metadata";
@@ -31,7 +31,6 @@ export { mailingListMetadata, subscriptionLink } from "./mailing-list-metadata";
 const MAX_REDIRECTS = 3;
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const REQUEST_TIMEOUT_MS = 10_000;
-const DISPOSITION_LIMIT = 500;
 const internalMailSubscriptionPageSchema = mailSubscriptionPageSchema.extend({
   items: mailSubscriptionPageSchema.shape.items.element
     .extend({ lastMessageId: z.string().uuid(), lastConversationId: z.string().uuid().nullable() })
@@ -53,11 +52,6 @@ type SubscriptionRow = {
   subscription_state: "requesting" | "unsubscribe_requested" | "failed" | null;
   requested_at: Date | string | null;
   last_error_code: string | null;
-};
-type DispositionTarget = {
-  remote_message_ref_id: string;
-  message_id: string;
-  source_folder_id: string;
 };
 type SubscriptionClaimRow = {
   id: string;
@@ -533,43 +527,18 @@ export const applyMailingListDisposition = async (params: {
   const destination = await resolveRoleFolder(params.mailboxId, parsed.data.disposition);
   if (!destination.ok) return destination;
 
-  const targets = await sql<DispositionTarget[]>`
-    SELECT DISTINCT ON (remote_ref.id)
-      remote_ref.id AS remote_message_ref_id,
-      content.id AS message_id,
-      folder.id AS source_folder_id
-    FROM mail.message_contents content
-    JOIN mail.remote_message_refs remote_ref ON remote_ref.message_id = content.id AND remote_ref.stale_at IS NULL
-    JOIN mail.message_placements placement
-      ON placement.remote_message_ref_id = remote_ref.id
-     AND placement.deleted_at IS NULL
-    JOIN mail.folders folder ON folder.id = placement.folder_id
-    JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
-    WHERE content.mailbox_id = ${params.mailboxId}::uuid
-      AND resource.mailbox_id = ${params.mailboxId}::uuid
-      AND ${listKeyHashSql} = md5(${parsed.data.listKey})
-      AND ${listKeySql} = ${parsed.data.listKey}
-      AND placement.folder_id <> ${destination.data.id}::uuid
-      AND folder.role NOT IN ('sent', 'drafts')
-    ORDER BY remote_ref.id, placement.updated_at DESC
-    LIMIT ${DISPOSITION_LIMIT + 1}
-  `;
-  const limited = targets.slice(0, DISPOSITION_LIMIT);
-  if (limited.length === 0) return ok({ commandCount: 0, truncated: false });
-  const commands = await createActorCommands({
+  return queueBulkMoves({
     context: params.context,
     mailboxId: params.mailboxId,
-    inputs: limited.map((target) => ({
-      kind: "move" as const,
-      messageId: target.message_id,
-      sourceFolderId: target.source_folder_id,
-      destinationFolderId: destination.data.id,
-      idempotencyKey: `${parsed.data.idempotencyKey}:${target.remote_message_ref_id}`,
-      correlationId: parsed.data.idempotencyKey,
-    })),
+    destinationFolderId: destination.data.id,
+    idempotencyKey: parsed.data.idempotencyKey,
+    matches: sql`EXISTS (
+      SELECT 1 FROM mail.message_contents content
+      WHERE content.id = message.id
+        AND ${listKeyHashSql} = md5(${parsed.data.listKey})
+        AND ${listKeySql} = ${parsed.data.listKey}
+    )`,
   });
-  if (!commands.ok) return commands;
-  return ok({ commandCount: commands.data.length, truncated: targets.length > DISPOSITION_LIMIT });
 };
 
 export const __test = {

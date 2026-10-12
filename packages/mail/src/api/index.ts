@@ -26,6 +26,7 @@ import {
   automaticReplyManagementPermissionSchema,
   cancelConversationReminderSchema,
   cancelScheduledSendInputSchema,
+  commandStateSchema,
   composePreviewInputSchema,
   composeSafetyConfigSchema,
   composeSafetyReviewInputSchema,
@@ -88,6 +89,7 @@ import {
   renderComposeSnippetInputSchema,
   searchBackendSchema,
   searchRequestSchema,
+  senderDispositionInputSchema,
   setComposeSignatureDefaultInputSchema,
   setConversationReminderSchema,
   splitConversationInputSchema,
@@ -147,6 +149,7 @@ import {
   scheduledSends,
   search,
   security,
+  senderDisposition,
   senderIdentities,
   senderIdentityTransports,
   settingsContext,
@@ -185,6 +188,10 @@ const mailboxAndTwoIdsParamSchema = (first: string, second: string) =>
   z.object({ mailboxId: ResourceShortIdSchema, [first]: ResourceShortIdSchema, [second]: ResourceShortIdSchema });
 const limitQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(100),
+});
+const commandListQuerySchema = limitQuerySchema.extend({
+  state: commandStateSchema.optional(),
+  before: z.string().uuid().optional(),
 });
 const mailboxListQuerySchema = limitQuerySchema.extend({
   name: z.string().trim().min(1).max(160).optional(),
@@ -1318,6 +1325,16 @@ const mailOperationsApi = new Hono<MailApiContext>()
           input: await internalInput(c, c.req.valid("json")),
         }),
       ),
+  )
+  .post("/mailboxes/:mailboxId/senders/disposition", v("param", mailboxParamSchema), v("json", senderDispositionInputSchema), async (c) =>
+    respondPublic(
+      c,
+      senderDisposition.applySenderDisposition({
+        context: requestContext(c),
+        mailboxId: internalMailboxId(c),
+        input: await internalInput(c, c.req.valid("json")),
+      }),
+    ),
   )
   .get("/mailboxes/:mailboxId/operations", v("param", mailboxParamSchema), v("query", mailboxOperationsQuerySchema), async (c) =>
     respondPublic(
@@ -2946,11 +2963,8 @@ const mailOperationsApi = new Hono<MailApiContext>()
       }),
     ),
   )
-  .get("/mailboxes/:mailboxId/commands", v("param", mailboxParamSchema), v("query", limitQuerySchema), async (c) =>
-    respondCommands(
-      c,
-      commands.listCommands(requestContext(c), internalMailboxId(c), (await internalInput(c, c.req.valid("query"))).limit),
-    ),
+  .get("/mailboxes/:mailboxId/commands", v("param", mailboxParamSchema), v("query", commandListQuerySchema), async (c) =>
+    respondCommands(c, commands.listCommands(requestContext(c), internalMailboxId(c), await internalInput(c, c.req.valid("query")))),
   )
   .post(
     "/mailboxes/:mailboxId/commands/outcomes",

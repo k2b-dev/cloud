@@ -292,6 +292,26 @@ export const dismissUnavailableFolder = async (params: {
   }
 };
 
+/** Active selectable All Mail folders reachable through a live Gmail-capable binding. */
+export const gmailAllMailFoldersSql = (mailboxId: Bun.SQL.Query<unknown>) => sql`
+  SELECT folder.id
+  FROM mail.folders folder
+  JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
+  WHERE resource.mailbox_id = ${mailboxId}
+    AND folder.discovery_state = 'active'
+    AND folder.selectable
+    AND folder.role = 'all'
+    AND EXISTS (
+      SELECT 1
+      FROM mail.binding_folder_refs ref
+      JOIN mail.provider_bindings binding ON binding.id = ref.binding_id
+      WHERE ref.folder_id = folder.id
+        AND ref.missing_since IS NULL
+        AND binding.state <> 'revoked'
+        AND binding.capabilities ->> 'gmailExtensions' = 'true'
+    )
+`;
+
 export const resolveRoleFolder = async (
   mailboxId: string,
   role: ConfigurableFolderRole | "inbox",
@@ -326,24 +346,7 @@ export const resolveRoleFolder = async (
   }
   if (rows.length === 0 && parsedRole.data === "archive") {
     // Gmail has no \Archive folder: archiving removes the Inbox label, which IMAP expresses as a move to \All.
-    const gmailAllMail = await db<{ id: string }[]>`
-      SELECT folder.id
-      FROM mail.folders folder
-      JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
-      WHERE resource.mailbox_id = ${mailboxId}::uuid
-        AND folder.discovery_state = 'active'
-        AND folder.selectable
-        AND folder.role = 'all'
-        AND EXISTS (
-          SELECT 1
-          FROM mail.binding_folder_refs ref
-          JOIN mail.provider_bindings binding ON binding.id = ref.binding_id
-          WHERE ref.folder_id = folder.id
-            AND ref.missing_since IS NULL
-            AND binding.state <> 'revoked'
-            AND binding.capabilities ->> 'gmailExtensions' = 'true'
-        )
-    `;
+    const gmailAllMail = await db<{ id: string }[]>`${gmailAllMailFoldersSql(sql`${mailboxId}::uuid`)}`;
     if (gmailAllMail.length === 1) return ok({ id: gmailAllMail[0]!.id, role: "archive", providerRole: "all", configured: false });
   }
   return rows.length === 0

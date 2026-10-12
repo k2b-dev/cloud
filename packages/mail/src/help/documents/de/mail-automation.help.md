@@ -101,6 +101,19 @@ Für Automatisierung über `cld` nutzt du `mail automation catalog`, um gültige
 
 Mail nutzt das Workflow-Modell der Plattform automatisch und bietet keine eigene Modellauswahl. Nutze erweiterte **Workflows** nur, wenn die geführten Bausteine die Aufgabe nicht abdecken.
 
+## Vorhandene E-Mails nach Absender aufräumen {icon="mail"}
+
+E-Mails, die schon im Postfach liegen, verschiebst du im Terminal. Prüfe zuerst, wie viele passen, und verschiebe sie dann. Zum Verschieben brauchst du Zugriff **Bearbeiten** oder **Verwalten** auf das ganze Postfach; **Nur zugewiesene bearbeiten** reicht nicht.
+
+```bash
+cld mail sender preview --match domain --value example.com
+cld mail sender move --match domain --value example.com --destination archive --yes
+```
+
+Nutze `--match sender` für eine einzelne Adresse und `--destination trash` oder `--folder <name-or-id>` für ein anderes Ziel. Wie Eingangsautomatisierungen vergleicht Mail die erste From-Adresse und nie die eigenen Absenderadressen des Postfachs.
+
+Nachrichten in Gesendet, Entwürfe, Papierkorb und Spam bleiben, wo sie sind, und aufbewahrte Unterhaltungen kommen nicht in den Papierkorb. Bei Gmail wird jede Nachricht einmal aus dem Posteingang verschoben: Archivieren entfernt nur das Label Posteingang, und ein anderer Ordner ersetzt es durch sein Label. Nur Papierkorb und Spam erfassen auch archivierte Nachrichten; bei anderen Zielen bleiben archivierte Nachrichten, wo sie sind. Die Vorschau kann mehr Nachrichten zählen, als Mail verschiebt. Ein Aufruf verschiebt höchstens 500 Nachrichten. Meldet Mail, dass weitere übrig sind, führe ihn erneut aus, sobald diese Verschiebungen abgeschlossen sind.
+
 ## Eine automatische Antwort einrichten {icon="send"}
 
 :::steps

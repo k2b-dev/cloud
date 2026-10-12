@@ -7,6 +7,7 @@ Read this reference when configuring managed automatic replies, conversation ref
 | Need | Use |
 | --- | --- |
 | Out-of-office or receipt acknowledgement | `automatic-reply ...` |
+| Clean up existing mail from one sender or domain | `sender preview`, `sender move` |
 | Guided sender, content, or attachment routing plus Mail and AI actions | `automation ...` |
 | Permanent human-facing conversation ids | `reference ...` plus `ensureConversationReference` |
 | Conditional routing, tagging, assignment, drafts, sends, or notifications | `workflow ...` |
@@ -163,7 +164,21 @@ The incoming-automation file is strict: unknown fields are rejected. An invalid 
 
 Automations apply to incoming mail only; Cloud rejects a mailbox's own active identities. Destructive flows must restrict every possible match to an external sender or domain and reject configured internal domains, subdomains, and unsafe parent domains. `automation get` exposes the exact generated workflow YAML.
 
-Preview sender-scoped work before changing existing messages:
+Preview sender-scoped work before changing existing messages. Preview, moves, and incoming automations match only the first From address; a message without one matches nothing:
+
+```bash
+cld --json mail sender preview --match domain --value example.com
+cld --json mail sender move --match domain --value example.com --destination archive --yes
+cld --json mail sender move --match sender --value news@example.com --folder Projects --yes
+```
+
+`sender move` requires mailbox-wide write access and `--yes`. Choose exactly one of `--destination archive|trash` or `--folder <name-or-id>`. Addresses must be valid and domains complete; the mailbox's own active sender identities are rejected and their mail is excluded from domain matches. Disabled identities and aliases not configured in Cloud count as external senders.
+
+Moves select live synchronized copies in active folders. They skip the destination and folders whose provider or configured role is Sent, Drafts, Trash, or Junk. Kept conversations are not moved to a folder whose provider or configured role is Trash, Junk, or Drafts; Archive and other folders remain allowed. Preview counts matching incoming copies before these cleanup exclusions, so its count can exceed the queued count.
+
+Each call queues at most 500 move commands and returns `{ commandCount, truncated }`. If `truncated` is true, wait for those commands to complete, then rerun the command; a rerun before then queues the same copies again. The idempotency key deduplicates each copy, not the request: replaying a key after its moves ran selects again and queues the next matching batch with a new count. Most providers get one move per live copy. On Gmail, where folders are labels of one message, Mail queues at most one move per message, from its Inbox copy. Only for a Trash or Junk destination does a message without an Inbox copy move from its All Mail copy, and only when All Mail is visible over IMAP. Other labels are never sources, and a message with a live Sent, Drafts, Trash, or Junk copy or a `\Sent` or `\Draft` label is skipped. So Archive (All Mail) removes only the Inbox label, a folder move replaces the Inbox label with the folder label and leaves archived mail alone, and Trash or Junk takes the whole message once, including archived mail.
+
+To apply a saved automation to existing mail:
 
 ```bash
 cld --json mail sender preview --match sender --value news@example.com
@@ -551,6 +566,7 @@ The Mail API manages definitions and activations only. Runtime observability and
 | Area | Commands |
 | --- | --- |
 | Automatic replies | `automatic-reply list|create|update` |
+| Sender cleanup | `sender preview`, `sender move` |
 | Incoming automations | `automation catalog|list|get|create|update|delete`, `automation backfill start|status|cancel` |
 | References | `reference config show|set`, `reference list|ensure|find` |
 | Workflow lifecycle | `workflow list|get|validate|create|update|export|activate|deactivate`, `workflow version list|get|create|restore` |
