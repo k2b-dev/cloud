@@ -172,6 +172,26 @@ describe("ChatWorkspace browser full view", () => {
       }
     }, 30_000);
   }
+  test("going back to a deep link in the same chat shows and highlights its message again", async () => {
+    const chat = harness.addChat({ members: [viewer, nora], count: 120, end: new Date() });
+    const message = harness.messageId(chat, 60);
+    const { page, errors } = await load(viewports[0]!.options, { chat, message });
+    try {
+      const selector = `[data-key="${message}"]`;
+      await page.locator(`${selector}[data-highlighted]`).waitFor();
+      await page.locator(`${selector}[data-highlighted]`).waitFor({ state: "detached" });
+      await page.locator(`.k2b-app-workspace__sidebar a[href="/app/chat/c/${chat}"]`).click();
+      await page.waitForURL(`**/app/chat/c/${chat}`);
+      await page.locator(selector).waitFor({ state: "detached" });
+      await page.goBack();
+      await page.waitForURL(`**/app/chat/c/${chat}/m/${message}`);
+      await page.locator(`${selector}[data-highlighted]`).waitFor();
+      await inFeed(page, selector);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
   test("sidebar navigation and browser Back change the chat without reloading", async () => {
     const first = harness.addChat({ members: [viewer, nora], name: "First chat", count: 4, end: new Date() });
     const second = harness.addChat({ members: [viewer, tobias], name: "Second chat", count: 4, end: new Date() });

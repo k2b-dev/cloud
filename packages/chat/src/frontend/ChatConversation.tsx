@@ -77,10 +77,12 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   onMount(() => onCleanup(followVisualViewport(frame)));
 
   // A deep link highlights its message once the history holds it; a later page or a live message does not repeat it.
+  // An address without a message ends that link, so returning to it in the same chat highlights the message again.
   let focused: string | null = null;
   createEffect(() => {
     const key = props.focusKey;
     const controller = feed();
+    if (!key) focused = null;
     if (!key || key === focused || !controller || !props.items.some((item) => item.key === key)) return;
     if (controller.scrollToKey(key, { highlight: true })) focused = key;
   });
