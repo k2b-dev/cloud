@@ -713,7 +713,7 @@ const CalendarHeader = <V extends string>(props: {
   /** The date the header pages from: the first day a day or week view shows, else the date. */
   const base = () => {
     const shown = timeView()?.visibleKeys().first;
-    return shown ? parseKey(shown) : (monthView()?.focusMonth() ?? props.date);
+    return shown ? parseKey(shown) : (monthView()?.stepFrom() ?? props.date);
   };
   const previous = () => adjacentCalendarDate(base(), props.view, -1, dateConfig());
   const next = () => adjacentCalendarDate(base(), props.view, 1, dateConfig());
@@ -1240,14 +1240,17 @@ type MonthItem = {
 
 type MonthSelection = { first: string; last: string };
 
-/** What the calendar's controller asks of the month view. */
+/** What the calendar's controller and header ask of the month view; the rest serves the month that scrolls. */
 type MonthHandle = Pick<CalendarController, "quickCreate" | "createTarget"> & {
   /** The quiet quick create waits for the person to type its title. */
   typing: () => boolean;
   continuous: () => boolean;
+  /** The 1st of the month in the middle of the view, which the title names. */
   focusMonth: () => Date;
+  /** The 1st of the month the next step goes on from: where quick repeated steps head, else the month in focus. */
+  stepFrom: () => Date;
+  /** The day the view stands for, as `onVisibleDateChange` reports it as `focus`. */
   focusDay: () => Date;
-  visibleKeys: () => { first: string; last: string };
   step: (direction: -1 | 1) => boolean;
   goTo: (key: string) => boolean;
   today: () => boolean;
@@ -1413,7 +1416,8 @@ const MonthView = (props: {
   let glideTimer = 0;
   let arrivalTimer = 0;
   let pulseTimer = 0;
-  let queuedMonth: string | null = null;
+  /** The month that quick repeated steps head for; the next step and the arrows' links go on from it. */
+  const [queuedMonth, setQueuedMonth] = createSignal<string | null>(null);
   let pendingTarget: string | null = null;
   let glideTarget: { week: string; offset: number; expires: number } | null = null;
   let pulseOnArrival = false;
@@ -1555,7 +1559,7 @@ const MonthView = (props: {
     // A clamped glide may still be waiting for more weeks below; scrollend is not arrival then.
     if (target && row !== undefined && Math.abs(scroller.scrollTop - (row * rowHeight() + target.offset)) > 1) return;
     glideTarget = null;
-    queuedMonth = null;
+    setQueuedMonth(null);
     window.clearTimeout(queueTimer);
     window.clearTimeout(glideTimer);
     window.clearTimeout(arrivalTimer);
@@ -1570,7 +1574,7 @@ const MonthView = (props: {
     // A reader's wheel or touch takes over from navigation, including any target waiting for more weeks.
     glideTarget = null;
     pulseOnArrival = false;
-    queuedMonth = null;
+    setQueuedMonth(null);
     for (const timer of [queueTimer, glideTimer, arrivalTimer]) window.clearTimeout(timer);
     scroller.scrollTo({ top: scroller.scrollTop, behavior: "instant" });
   };
@@ -1594,13 +1598,16 @@ const MonthView = (props: {
     const row = Math.max(0, Math.min(trackWeeks().length - 1, Math.floor(top / rowHeight())));
     const week = trackWeeks()[row];
     if (!week) return;
-    glideTarget = { week, offset: top - row * rowHeight(), expires: performance.now() + 1600 };
+    // A target past the loaded weeks waits for them however long they take; the reader's own scrolling ends the wait.
+    const waiting = top > scroller.scrollHeight - scroller.clientHeight + 1;
+    glideTarget = { week, offset: top - row * rowHeight(), expires: waiting ? Number.POSITIVE_INFINITY : performance.now() + 1600 };
     window.clearTimeout(glideTimer);
     window.clearTimeout(arrivalTimer);
-    glideTimer = window.setTimeout(() => {
-      glideTarget = null;
-      pulseOnArrival = false;
-    }, 1600);
+    if (!waiting)
+      glideTimer = window.setTimeout(() => {
+        glideTarget = null;
+        pulseOnArrival = false;
+      }, 1600);
     arrivalTimer = window.setTimeout(finishGlide, 900);
     issueGlide(top, smooth);
   };
@@ -1618,16 +1625,14 @@ const MonthView = (props: {
   const stepMonth = (direction: -1 | 1) => {
     if (!continuous() || !scroller) return false;
     const target = calendar.formatDateKey(
-      calendar.addMonths(parseKey(queuedMonth ?? focusMonthKey()), direction, dateConfig()),
+      calendar.addMonths(parseKey(queuedMonth() ?? focusMonthKey()), direction, dateConfig()),
       dateConfig(),
     );
     if (!positionMonth(target)) return false;
     // Instant positioning may finish during positionMonth; queue afterwards so rapid clicks still accumulate.
-    queuedMonth = target;
+    setQueuedMonth(target);
     window.clearTimeout(queueTimer);
-    queueTimer = window.setTimeout(() => {
-      queuedMonth = null;
-    }, 1200);
+    queueTimer = window.setTimeout(() => setQueuedMonth(null), 1200);
     return true;
   };
   const goToday = () => {
@@ -1735,48 +1740,55 @@ const MonthView = (props: {
       { defer: true },
     ),
   );
-  onMount(() => {
-    if (!continuous() || !scroller) return;
-    setMounted(true);
-    measureScroll();
-    previousWeeks = trackWeeks();
-    const row = monthRowOf(previousWeeks, hostMonthKey());
-    if (row !== undefined && loaded(hostKey())) scroller.scrollTop = row * rowHeight();
-    // Too few weeks below the month, such as the days of another view while the month's own load, cannot put its
-    // first week on top yet; the month goes there once its weeks arrive.
-    positioned = row !== undefined && Math.abs(scroller.scrollTop - row * rowHeight()) < 1;
-    if (!positioned) pendingTarget = hostKey();
-    readScroll(false);
-    silentTop = scroller.scrollTop;
-    ready = true;
-    reportVisible();
-    scroller.addEventListener("scrollend", finishGlide);
-    const resize =
-      typeof ResizeObserver === "undefined"
-        ? undefined
-        : new ResizeObserver(() => {
-            if (!scroller) return;
-            const height = untrack(rowHeight);
-            const position = scroller.scrollTop / height;
-            measureScroll();
-            if (height !== untrack(rowHeight)) {
-              scroller.scrollTop = position * untrack(rowHeight);
-              if (glideTarget) {
-                const target = monthRowOf(untrack(trackWeeks), glideTarget.week);
-                if (target !== undefined) issueGlide(target * untrack(rowHeight) + glideTarget.offset, true);
+  // The scrolling starts once the grid is on the page, also when a host passes `range` only later.
+  createEffect(
+    on(continuous, (active) => {
+      if (!active || !scroller) return;
+      setMounted(true);
+      measureScroll();
+      previousWeeks = trackWeeks();
+      const row = monthRowOf(previousWeeks, hostMonthKey());
+      if (row !== undefined && loaded(hostKey())) scroller.scrollTop = row * rowHeight();
+      // Too few weeks below the month, such as the days of another view while the month's own load, cannot put its
+      // first week on top yet; the month goes there once its weeks arrive.
+      positioned = row !== undefined && Math.abs(scroller.scrollTop - row * rowHeight()) < 1;
+      if (!positioned) pendingTarget = hostKey();
+      readScroll(false);
+      silentTop = scroller.scrollTop;
+      ready = true;
+      reportVisible();
+      scroller.addEventListener("scrollend", finishGlide);
+      const resize =
+        typeof ResizeObserver === "undefined"
+          ? undefined
+          : new ResizeObserver(() => {
+              if (!scroller) return;
+              const height = untrack(rowHeight);
+              const position = scroller.scrollTop / height;
+              measureScroll();
+              if (height !== untrack(rowHeight)) {
+                scroller.scrollTop = position * untrack(rowHeight);
+                if (glideTarget) {
+                  const target = monthRowOf(untrack(trackWeeks), glideTarget.week);
+                  if (target !== undefined) issueGlide(target * untrack(rowHeight) + glideTarget.offset, true);
+                }
+                silentTop = scroller.scrollTop;
               }
-              silentTop = scroller.scrollTop;
-            }
-            readScroll(false);
-          });
-    resize?.observe(scroller);
-    onCleanup(() => {
-      resize?.disconnect();
-      scroller?.removeEventListener("scrollend", finishGlide);
-      for (const timer of [labelTimer, reportTimer, queueTimer, glideTimer, arrivalTimer, pulseTimer]) window.clearTimeout(timer);
-      if (frame) cancelAnimationFrame(frame);
-    });
-  });
+              readScroll(false);
+            });
+      resize?.observe(scroller);
+      const element = scroller;
+      onCleanup(() => {
+        resize?.disconnect();
+        element.removeEventListener("scrollend", finishGlide);
+        for (const timer of [labelTimer, reportTimer, queueTimer, glideTimer, arrivalTimer, pulseTimer]) window.clearTimeout(timer);
+        if (frame) cancelAnimationFrame(frame);
+        frame = 0;
+        ready = false;
+        setMounted(false);
+      });
+    }),
+  );
 
   const visibleKeys = createMemo(() =>
     continuous()
@@ -1941,6 +1953,11 @@ const MonthView = (props: {
     popoverFocusable()?.focus();
     return true;
   };
+  /**
+   * The day to create on without a selection. The month that scrolls takes the day it stands for, today or the 1st of
+   * the month in focus, never a day the keyboard last visited in another month.
+   */
+  const unselectedKey = () => (continuous() ? scrollFocusDay() : rovingKey());
   /** Enter, a double-click, and N create on the selection, with the quick create or the host's own create action. */
   const createOnSelection = () => {
     const range = selection();
@@ -1951,16 +1968,16 @@ const MonthView = (props: {
   onMount(() =>
     props.register?.({
       quickCreate: (create) => {
-        const range = selection() ?? { first: rovingKey(), last: rovingKey() };
+        const range = selection() ?? { first: unselectedKey(), last: unselectedKey() };
         select(range.first, range.last);
         if (!openCreate(range, { active: true, create })) props.owner.onSlotActivate?.(rangeOf(range));
       },
-      createTarget: () => rangeOf(selection() ?? { first: rovingKey(), last: rovingKey() }),
+      createTarget: () => rangeOf(selection() ?? { first: unselectedKey(), last: unselectedKey() }),
       typing: () => popover()?.kind === "create" && !createActive(),
       continuous,
       focusMonth: () => parseKey(focusMonthKey()),
+      stepFrom: () => parseKey(queuedMonth() ?? focusMonthKey()),
       focusDay: () => parseKey(scrollFocusDay()),
-      visibleKeys: visibleRange,
       step: stepMonth,
       goTo: goToMonth,
       today: goToday,
@@ -2050,7 +2067,8 @@ const MonthView = (props: {
       const target = calendar.formatDateKey(addMonthsClamped(day, event.key === "PageUp" ? -1 : 1, dateConfig()), dateConfig());
       if (continuous() && loaded(target)) {
         moveFocus(target, event.shiftKey);
-        positionMonth(target);
+        // The month's first week goes on top, unless the day lies in a sixth week that would then stay out of view.
+        goToMonth(target);
       } else pageTo(target);
       return;
     }
@@ -2149,7 +2167,7 @@ const MonthView = (props: {
   // Until a day is selected, the menu acts on the day that takes focus, so it is never empty.
   const menuItems = createMemo((): DropdownItem[] => {
     if (!hasMenu()) return [];
-    const range = selection() ?? { first: rovingKey(), last: rovingKey() };
+    const range = selection() ?? { first: unselectedKey(), last: unselectedKey() };
     const own =
       props.owner.selectionMenu?.(rangeOf(range), {
         quickCreate: (create) => {
@@ -3434,7 +3452,7 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
   };
   const step = (direction: -1 | 1) => {
     if (scrollingView()?.step(direction)) return;
-    go(adjacentCalendarDate(monthView()?.focusMonth() ?? shownDay() ?? date(), view(), direction, dateConfig()), view());
+    go(adjacentCalendarDate(monthView()?.stepFrom() ?? shownDay() ?? date(), view(), direction, dateConfig()), view());
   };
   const goToday = () => {
     if (scrollingView()?.today()) return;

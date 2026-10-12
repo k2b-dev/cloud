@@ -133,6 +133,15 @@ export default function SpacesCalendarRoute(props: Props) {
     );
   };
   /**
+   * The source a block loads from names the view it fills: a link without a view or an old timeline link opens the
+   * month, and the server loads the days a block asks for only for a view that scrolls.
+   */
+  const blockSource = (current: StreamState) => {
+    const url = new URL(current.source, "http://spaces.local");
+    url.searchParams.set("cv", current.view);
+    return `${url.pathname}${url.search}`;
+  };
+  /**
    * Loads the week before or after the loaded days. A snapshot that started meanwhile, such as a refresh after a change
    * or another filter, may bring something the week predates; such a week never joins. It loads again once that
    * snapshot is in, against the days it brings, so the reader still gets the week they scrolled to. Another anchor
@@ -154,7 +163,7 @@ export default function SpacesCalendarRoute(props: Props) {
         if (!block) return;
         const started = snapshotsStarted;
         // The tray stays with the snapshot of the days, so a week loads without it.
-        const snapshot = await loadSpacesViewSnapshot(current.source, load.signal, locale(), { ...block, includeTray: "false" });
+        const snapshot = await loadSpacesViewSnapshot(blockSource(current), load.signal, locale(), { ...block, includeTray: "false" });
         const latest = stream();
         if (snapshot.kind !== "calendar" || !latest || !sameDays(previous, latest)) return;
         previous = latest;
