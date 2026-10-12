@@ -16,7 +16,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { default: CloudShell } = await import("./CloudShell.island");
+const { default: LayoutHeader } = await import("./LayoutHeader");
 const { ShellDataProvider } = await import("./shell-data");
 
 let browser: Browser;
@@ -43,8 +43,7 @@ const header = (authenticated: boolean) =>
         searchHelpApps: [],
       },
       get children() {
-        return createComponent(CloudShell, {
-          slot: "header",
+        return createComponent(LayoutHeader, {
           authenticated,
           title: "Files",
           launchpad: true,

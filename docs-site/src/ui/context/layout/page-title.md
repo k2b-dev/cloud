@@ -99,7 +99,8 @@ Once the host runs `followPageTrail()`, a
 server-rendered title of the host's trail that never hydrates follows
 `setPageTrail()`: a workspace head and a page's own header title alike. The
 live title takes the same place, element, class, and subtitle, and the
-head's hidden heading follows.
+head's hidden heading follows. When a way-up link of the server title has
+focus, the matching link of the live title takes it over.
 
 ## Collapse paths outside components
 

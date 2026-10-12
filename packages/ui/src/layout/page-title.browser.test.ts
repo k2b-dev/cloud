@@ -12,7 +12,7 @@ const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "page-title.fixture.ts");
 const fixture = `
 import { createComponent, render } from "solid-js/web";
-import { AppWorkspace, installPageTitleController, LocaleProvider, PageTitle, setPageTrail } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AppWorkspace, followPageTrail, installPageTitleController, LocaleProvider, PageTitle, setPageTrail } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const params = new URLSearchParams(window.fixtureParams ?? "");
 const levels = ["Projects for the new community centre", "2026 budget year with the second construction phase", "Quotes from all invited suppliers", "Supplier A, Hartmann and Sons, Bremen branch"];
@@ -24,6 +24,8 @@ const own = () =>
   createComponent(PageTitle, { trail: { title: "Entry", ancestors: levels.slice(0, ownDepth).map((title, index) => ({ title, href: "#level-" + index })) }, subtitle: "2:15 h" });
 // A host that installs the document's controller after a title installed its own, as an island may mount first.
 window.installDocumentController = () => installPageTitleController(document);
+window.followPageTrail = () => followPageTrail(document);
+window.renameTrail = () => setPageTrail({ title: "Renamed entry", ancestors: [{ title: "Projects", href: "/projects" }] });
 // A host that installs it before, as Cloud's shell does for its titles.
 if (params.has("document")) installPageTitleController(document);
 const header = document.querySelector("header");
@@ -96,6 +98,28 @@ const read = (page: Page) =>
   });
 
 describe("PageTitle without a host", () => {
+  test("upgrading a server title preserves focus on its up link after a rename", async () => {
+    const page = await load(1180, "own=640&depth=1");
+    try {
+      await page.evaluate(() => {
+        const header = document.querySelector("header")!;
+        header.innerHTML =
+          '<div class="k2b-page-title" data-k2b-server><div class="k2b-page-title__copy"><nav class="k2b-page-title__trail"><a class="k2b-page-title__up" href="/projects" data-k2b-page-trail-link data-k2b-page-trail-up>Projects</a></nav><h1 class="k2b-page-title__title"><span class="k2b-page-title__text">Entry</span></h1></div></div>';
+        (window as unknown as { followPageTrail: () => void }).followPageTrail();
+      });
+      const up = page.locator("header .k2b-page-title__up");
+      await up.focus();
+      expect(await up.evaluate((link) => document.activeElement === link)).toBe(true);
+      await page.evaluate(() => (window as unknown as { renameTrail: () => void }).renameTrail());
+      await settle(page);
+      expect(await page.locator("header .k2b-page-title[data-k2b-server]").count()).toBe(0);
+      expect(await page.locator("header .k2b-page-title__text").textContent()).toBe("Renamed entry");
+      expect(await up.evaluate((link) => document.activeElement === link)).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("the workspace head follows the published trail and keeps the title in place at every depth", async () => {
     const page = await load(1180);
     try {

@@ -37,6 +37,43 @@ const mount = () => {
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
+  test("Help opens once when invoked twice while its module is loading", async () => {
+    const dom = createDomTestHarness();
+    const reload = await import("../browser/reload");
+    const help = await import("./LayoutHelp");
+    const { collectContextAwareCommands } = await import("../browser/command-bridge");
+    const { runContextAwareCommand } = await import("../browser/commands");
+    const pending = Promise.withResolvers<void>();
+    const load = spyOn(reload, "importOnDemand").mockImplementation(async (loader) => {
+      await pending.promise;
+      return loader();
+    });
+    const open = spyOn(help, "openLayoutHelpDialog").mockImplementation(() => {});
+    const dispose = render(() => createComponent(ShellRuntime!, { commands: { searchResources: false } }), dom.root);
+    let first: Promise<void> | undefined;
+    let second: Promise<void> | undefined;
+    try {
+      const command = collectContextAwareCommands().find((command) => command.id === "cloud.help")!;
+      first = runContextAwareCommand(command);
+      await Bun.sleep(10);
+      second = runContextAwareCommand(command);
+      await Bun.sleep(10);
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(open).not.toHaveBeenCalled();
+      pending.resolve();
+      await Promise.all([first, second]);
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(open).toHaveBeenCalledWith([], undefined);
+    } finally {
+      pending.resolve();
+      await Promise.all([first, second]);
+      dispose();
+      load.mockRestore();
+      open.mockRestore();
+      dom.cleanup();
+    }
+  });
+
   test("stores a changed timezone and reloads once", () => {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const page = mount();

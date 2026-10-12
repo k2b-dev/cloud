@@ -1,7 +1,41 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
+
+test("the public launcher opens once during loading and can open again afterwards", async () => {
+  const dom = createDomTestHarness();
+  const reload = await import("../browser/reload");
+  const surface = await import("./launchpad-surface");
+  const { openAppLaunchpad, setAppLaunchpadContext } = await import("./app-launchpad");
+  const pending = Promise.withResolvers<void>();
+  const load = spyOn(reload, "importOnDemand").mockImplementation(async (loader) => {
+    await pending.promise;
+    return loader();
+  });
+  const open = spyOn(surface, "openLaunchpadSurface").mockImplementation(() => {});
+  setAppLaunchpadContext([{ id: "mail", label: "Mail", href: "/app/mail", iconClass: "ti ti-mail" }]);
+  let first: ReturnType<typeof openAppLaunchpad>;
+  try {
+    first = openAppLaunchpad();
+    // A second click through the global entry point arrives while the first load runs.
+    window.cloud?.openAppLaunchpad?.();
+    await Bun.sleep(10);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(open).not.toHaveBeenCalled();
+    pending.resolve();
+    await first;
+    expect(open).toHaveBeenCalledTimes(1);
+    await openAppLaunchpad();
+    expect(open).toHaveBeenCalledTimes(2);
+  } finally {
+    pending.resolve();
+    await first;
+    load.mockRestore();
+    open.mockRestore();
+    dom.cleanup();
+  }
+});
 
 test("the public mobile launcher keeps profile actions and filters apps without nesting a panel", async () => {
   const dom = createDomTestHarness();

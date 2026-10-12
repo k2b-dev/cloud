@@ -72,14 +72,13 @@ html:has(.cloud-app-canvas[data-layout-full-page="true"]) {
   overscroll-behavior: none;
 }
 
-.cloud-app-canvas > .layout-shell-content,
-.cloud-app-canvas > solid-island > .layout-rail {
+.cloud-app-canvas > :is(.layout-rail, .layout-shell-content) {
   gap: var(--ui-space-shell);
 }
 
 /* The authenticated rail is part of the canvas. Keeping it transparent also
    covers shell-only routes such as 404 pages that have no app workspace. */
-.cloud-app-canvas > solid-island > .layout-rail {
+.cloud-app-canvas > .layout-rail {
   width: calc(2.5rem + var(--ui-space-shell));
   margin-inline-start: calc(-1 * var(--ui-space-shell));
   background-color: transparent !important;
@@ -326,7 +325,7 @@ solid-island {
   .cloud-app-canvas[data-layout-authenticated] {
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
   }
-  .cloud-app-canvas[data-layout-authenticated] > solid-island > .layout-rail {
+  .cloud-app-canvas[data-layout-authenticated] > .layout-rail {
     width: 3rem;
     margin-inline-start: 0;
     padding-bottom: var(--ui-space-shell);

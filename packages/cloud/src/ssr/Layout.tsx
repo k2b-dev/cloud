@@ -13,11 +13,11 @@ import { readThemeFromCookieHeader } from "../shared/theme";
 import AnnouncementBanners from "./AnnouncementBanners";
 import { appAppearanceStyle } from "./app-appearance";
 import { resolveRuntimeRoute, visibleNavigationApps } from "./app-navigation";
-import CloudShell from "./CloudShell.island";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import { getLayoutHelp } from "./help";
 import LayoutFooter from "./LayoutFooter";
-import type { LayoutAppLink } from "./LayoutRail";
+import LayoutHeader from "./LayoutHeader";
+import LayoutRail, { type LayoutAppLink } from "./LayoutRail";
 import type { LayoutContext } from "./layout-context";
 import type { LayoutBreadcrumb } from "./layout-runtime";
 import PageTrailRow from "./PageTrailRow";
@@ -277,10 +277,9 @@ export default function Layout(props: LayoutProps) {
           banners={user && announcements?.banners.length ? true : undefined}
         />
         <ShellDataProvider data={shellData}>
-          {showRail && <CloudShell slot="rail" currentPath={requestPath(c)} />}
+          {showRail && <LayoutRail currentPath={requestPath(c)} />}
           <div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col">
-            <CloudShell
-              slot="header"
+            <LayoutHeader
               authenticated={showRail}
               title={appLabel ?? breadcrumbs.at(-1)?.title}
               launchpad={!!(user || appLabel)}

@@ -42,12 +42,20 @@ export function setAppLaunchpadContext(
   };
 }
 
+/** Every caller of the public opener shares one load, so a double click opens one dialog. */
+let launchpadPending: Promise<void> | undefined;
+
 export function openAppLaunchpad(apps?: AppLaunchpadApp[], legalLinks?: AppLaunchpadLegalLink[], profile?: AppLaunchpadContext["profile"]) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || launchpadPending) return;
   const context = apps ? { apps, legalLinks: legalLinks ?? [], profile } : (window.__cloudAppLaunchpad ?? readEmbeddedContext());
   if (!context) return;
   window.__cloudAppLaunchpad = context;
-  void importOnDemand(() => import("./launchpad-surface")).then((loaded) => loaded?.openLaunchpadSurface(context));
+  launchpadPending = importOnDemand(() => import("./launchpad-surface"))
+    .then((loaded) => loaded?.openLaunchpadSurface(context))
+    .finally(() => {
+      launchpadPending = undefined;
+    });
+  return launchpadPending;
 }
 
 export function AppLaunchpadProvider(props: AppLaunchpadContext) {
