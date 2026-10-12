@@ -40,8 +40,9 @@ the app area; from 768 to 1535 px it has no radius or border.
 
 The installed app on a tablet reports safe areas, such as the status bar and
 the home indicator. From 768 to 1535 px the app bar and the app area still
-reach the window's edges and fill those areas with their own surface, and their
-content stays inside them: a regular page scrolls to its end above the home
+reach the window's edges. The app bar fills those areas with the app
+background, and the app area fills them with its surface. Their content stays
+inside the safe areas: a regular page scrolls to its end above the home
 indicator, and `AppWorkspace` keeps the content of its sidebar, panes, and
 drawer above it. Below 768 px the whole canvas keeps the safe areas as padding,
 because it is one flat surface there.

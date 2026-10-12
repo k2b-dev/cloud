@@ -942,6 +942,25 @@
   border-bottom: var(--k2b-workspace-inset-bottom) solid transparent;
 }
 
+/* The scroll fade's mask covers the border box, so a scrolling Main or pane
+   ends its bottom fade above the inset, over the content. The inset keeps the
+   fade's end, as the window edge does without an inset. */
+.k2b-ui :is(.k2b-app-workspace__main, .k2b-app-workspace__main-pane):is([data-scroll-fade="bottom"], [data-scroll-fade="both"]) {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--scroll-fade-top),
+    #000 calc(100% - var(--k2b-workspace-inset-bottom) - var(--scroll-fade-bottom)),
+    transparent calc(100% - var(--k2b-workspace-inset-bottom))
+  );
+}
+
+@media (forced-colors: active) {
+  .k2b-ui :is(.k2b-app-workspace__main, .k2b-app-workspace__main-pane)[data-scroll-fade] {
+    mask-image: none;
+  }
+}
+
 .k2b-ui
   .k2b-app-workspace:has(
     > .k2b-app-workspace__drawer:not([hidden]),

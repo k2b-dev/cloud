@@ -11,9 +11,9 @@ const fixture = `
 import { createComponent, render } from "solid-js/web";
 import { AppWorkspace } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const params = new URLSearchParams(document.body.dataset.params);
-const rows = () => Array.from({length:40}, (_, index) => {
+const rows = (prefix = "row-") => Array.from({length:40}, (_, index) => {
   const row = document.createElement("div");
-  row.id = "row-" + index;
+  row.id = prefix + index;
   row.textContent = "Row " + index;
   row.style.cssText = "height:40px;flex:none";
   return row;
@@ -33,7 +33,8 @@ render(() => createComponent(AppWorkspace, {
     createComponent(AppWorkspace.Content, { get children() { return [
       createComponent(AppWorkspace.Main, { get children() { return [
         ...(params.has("panes") ? [createComponent(AppWorkspace.MainPane, {
-          id:"navigation", label:"Navigation", surface:"navigation", children:"Folders",
+          id:"navigation", label:"Navigation", surface:"navigation",
+          get children() { return params.has("long-navigation") ? rows("navigation-row-") : "Folders"; },
         })] : []),
         ...rows(),
       ]; } }),
@@ -55,12 +56,13 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const load = async (params = "", width = 1180, inset = true) => {
+const load = async (params = "", width = 1180, inset = true, style = "") => {
   const page = await browser.newPage({ viewport: { width, height: 820 }, reducedMotion: "reduce" });
   // The inset belongs to the workspace edge, including when embedded away from the viewport edge.
   await page.setContent(`<!doctype html><html lang="en"><head><style>${css}</style><style>
     .k2b-ui .k2b-app-workspace{border:0;--k2b-workspace-radius:0px}
     ${inset ? ".k2b-ui .k2b-app-workspace:not(.k2b-app-workspace *){--k2b-workspace-inset-bottom:20px}" : ""}
+    ${style}
     </style></head><body class="k2b-ui" style="margin:0">
     <div id="app" style="height:640px;margin:40px 24px"></div></body></html>`);
   await page.evaluate((params) => {
@@ -170,6 +172,79 @@ test("a stacked sidebar keeps no bottom inset above Main", async () => {
     await page.close();
   }
 });
+
+// Screenshot pixels at one column, decoded in the page so the test needs no image library.
+const pixels = async (page: Page, x: number, ys: number[]) => {
+  const png = (await page.screenshot()).toString("base64");
+  return page.evaluate(
+    async ({ png, x, ys }) => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${png}`;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext("2d")!;
+      context.drawImage(image, 0, 0);
+      return ys.map((y) => Array.from(context.getImageData(Math.round(x), Math.round(y), 1, 1).data.slice(0, 3)));
+    },
+    { png, x, ys },
+  );
+};
+
+// Rows are blue, the scroller's own surface yellow, and what lies behind it red.
+const blue = [0, 0, 255];
+const yellow = [255, 255, 0];
+const red = [255, 0, 0];
+const near = (actual: number[], expected: number[]) =>
+  expect(
+    actual.every((channel, index) => Math.abs(channel - expected[index]!) <= 12),
+    `${actual} is not ${expected}`,
+  ).toBe(true);
+
+for (const [name, params, scroller, behind] of [
+  ["a scrolling Main", "", ".k2b-app-workspace__main", ".k2b-app-workspace"],
+  ["a navigation pane", "panes long-navigation", '.k2b-app-workspace__main-pane[data-surface="navigation"]', ".k2b-app-workspace__main"],
+] as const) {
+  test(`${name} fades its last rows above the bottom inset, and the inset keeps the fade's end`, async () => {
+    const page = await load(
+      params.split(" ").join("&"),
+      1180,
+      true,
+      `.k2b-ui ${behind}{background:rgb(255,0,0)}
+      .k2b-ui ${scroller}{background:rgb(255,255,0);gap:0;padding:0}
+      [id^="row-"],[id^="navigation-row-"]{background:rgb(0,0,255)}`,
+    );
+    try {
+      const sample = async () => {
+        const { x, bottom } = await page.evaluate((selector) => {
+          const rect = document.querySelector(selector)!.getBoundingClientRect();
+          return { x: rect.left + rect.width / 2, bottom: rect.bottom };
+        }, scroller);
+        const [above, edge, inset] = await pixels(page, x, [bottom - 20 - 24, bottom - 20 - 2, bottom - 10]);
+        return { above: above!, edge: edge!, inset: inset! };
+      };
+      await page.waitForFunction((selector) => document.querySelector(selector)?.getAttribute("data-scroll-fade") === "bottom", scroller);
+      const fading = await sample();
+      near(fading.above, blue);
+      // The last rows above the inset fade towards what lies behind the scroller.
+      expect(fading.edge[0]!).toBeGreaterThan(160);
+      expect(fading.edge[2]!).toBeLessThan(96);
+      near(fading.inset, red);
+
+      await page.evaluate((selector) => {
+        const element = document.querySelector<HTMLElement>(selector)!;
+        element.scrollTop = element.scrollHeight;
+      }, scroller);
+      await page.waitForFunction((selector) => document.querySelector(selector)?.getAttribute("data-scroll-fade") === "top", scroller);
+      const end = await sample();
+      near(end.edge, blue);
+      near(end.inset, yellow);
+    } finally {
+      await page.close();
+    }
+  });
+}
 
 for (const params of ["", "drawer", "detail"]) {
   test(`without a host inset, ${params || "sidebar and Main"} keep their existing geometry`, async () => {
