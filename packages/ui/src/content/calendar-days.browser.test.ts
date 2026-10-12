@@ -537,6 +537,101 @@ describe(`Calendar day and week views in ${browserName}`, () => {
     }, 30_000);
   }
 
+  test("the week view opens at the week of its date, and on a phone at that day", async () => {
+    const desktopPage = await open(desktop, { view: "week", date: "2026-10-14" });
+    try {
+      await desktopPage.waitForFunction(() => (window as unknown as Fixture).visible.at(-1) === "2026-10-12");
+      await titled(desktopPage, "Oct 12 – 18, 2026");
+      expect(await desktopPage.evaluate(() => (window as unknown as Fixture).visible.at(-1))).toBe("2026-10-12");
+    } finally {
+      await desktopPage.close();
+    }
+
+    // Tuesday of today's week: the phone keeps the named day in front instead of jumping to today, Friday.
+    const phonePage = await open(phone, { view: "week", date: "2026-10-06" });
+    try {
+      await phonePage.waitForFunction(() => (window as unknown as Fixture).visible.at(-1) === "2026-10-06");
+      await titled(phonePage, "Oct 6 – 8, 2026");
+    } finally {
+      await phonePage.close();
+    }
+  }, 30_000);
+
+  test("the week title reserves the width of a range across the new year", async () => {
+    const page = await open(desktop, { view: "week" });
+    try {
+      await page.waitForFunction(() =>
+        [...document.querySelectorAll(".k2b-calendar-header__title-size")].some(
+          (element) => element.textContent === "Dec 28, 2026 – Jan 3, 2027",
+        ),
+      );
+      expect(await page.locator(".k2b-calendar-header__title-size").allTextContents()).toContain("Dec 28, 2026 – Jan 3, 2027");
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("the Today button keeps its width when its dot turns into an arrow", async () => {
+    const page = await open(desktop);
+    try {
+      // The real icon font: the dot and the arrow are glyphs of their own width.
+      const assets = "http://k2b-ui.test/";
+      await page.route(`${assets}**`, (route) =>
+        route.fulfill({ path: resolve(packageRoot, "dist", new URL(route.request().url()).pathname.slice(1)) }),
+      );
+      await page.addStyleTag({
+        content: readFileSync(resolve(packageRoot, "dist/tabler.css"), "utf8").replace(
+          /url\((["']?)(?:\.\/)?(?!data:|https?:)/g,
+          `url($1${assets}`,
+        ),
+      });
+      expect(await page.evaluate(async () => (await document.fonts.load("16px tabler-icons")).length)).toBeGreaterThan(0);
+      const today = page.locator(".k2b-calendar-header__today");
+      expect(await today.getAttribute("data-direction")).toBe("here");
+      const before = await place(page, ".k2b-calendar-header__today");
+      const top = await dayStart(page, "2026-10-20");
+      await page.locator(DAYS).evaluate((element, value) => {
+        element.scrollTop = value;
+      }, top);
+      await page.waitForFunction(() => document.querySelector(".k2b-calendar-header__today")?.getAttribute("data-direction") === "up");
+      expect(await place(page, ".k2b-calendar-header__today")).toEqual(before);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  for (const view of ["day", "week"] as const) {
+    test(`two to-dos due at the same time keep their own pills and checkboxes (${view})`, async () => {
+      const due = (id: string, title: string): CalendarEvent => ({
+        id,
+        title,
+        start: "2026-10-09T17:00:00+02:00",
+        display: "marker",
+        checked: false,
+        colorHex: "#f59e0b",
+      });
+      const page = await open(desktop, { view, events: [due("invoice", "Pay supplier invoice"), due("report", "Send report")] });
+      try {
+        const pill = (id: string) => `[data-calendar-body="2026-10-09"] [data-calendar-entry="${id}"] .k2b-calendar-marker__pill`;
+        await page.locator(pill("report")).scrollIntoViewIfNeeded();
+        const [a, b] = await Promise.all([page.locator(pill("invoice")).boundingBox(), page.locator(pill("report")).boundingBox()]);
+        // The earlier entry sits on the left, and the pills leave each other room.
+        expect(a!.x + a!.width).toBeLessThanOrEqual(b!.x);
+        for (const id of ["invoice", "report"]) {
+          expect(
+            await page.locator(`${pill(id)} .k2b-calendar-check`).evaluate((element, entry) => {
+              const box = element.getBoundingClientRect();
+              const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+              return hit?.closest("[data-calendar-entry]")?.getAttribute("data-calendar-entry") === entry;
+            }, id),
+          ).toBe(true);
+        }
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+  }
+
   test("a host date that names the first day on screen keeps the place", async () => {
     const page = await open(desktop);
     try {

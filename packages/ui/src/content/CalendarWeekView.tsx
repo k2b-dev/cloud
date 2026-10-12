@@ -24,6 +24,7 @@ import {
   dayMinuteAt,
   dayY,
   dayYTerms,
+  markerLanes,
   readDayGeometry,
   termsCss,
 } from "./calendar-days";
@@ -148,7 +149,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
     measureCount();
     const today = view.nowKey();
     const inWeek = weekKeysOf(view, key).includes(today);
-    scroller.scrollLeft = leftOf(columnFor(key, inWeek ? today : key));
+    scroller.scrollLeft = leftOf(columnFor(key, key));
     scroller.scrollTop = inWeek ? topFor(view.nowMinute()) : topFor(60);
     lastLeft = scroller.scrollLeft;
     syncFirst();
@@ -968,6 +969,8 @@ const WeekColumn = (props: {
   const bands = createMemo(() => dayBands(view, props.dayKey, props.expanded));
   const gaps = createMemo(() => dayGaps(view, props.dayKey));
   const markers = () => model().markers.filter((marker) => marker.minute < (props.expanded ? DAY_MINUTES : wake()));
+  /** Deadlines whose pills would cover each other share the width; keyed by marker, so rows keep their elements. */
+  const lanes = createMemo(() => new Map(markerLanes(markers(), wake()).map((entry) => [entry.item, entry])));
   const folded = () => (props.expanded ? [] : foldedEntries(view, props.dayKey));
   const isEmptyTarget = (target: EventTarget | null) =>
     target instanceof Element &&
@@ -1076,6 +1079,8 @@ const WeekColumn = (props: {
               dayKey={props.dayKey}
               expanded={props.expanded}
               above={markerAbove(model(), entry.marker.minute)}
+              lane={lanes().get(entry.marker)?.lane ?? 0}
+              lanes={lanes().get(entry.marker)?.lanes ?? 1}
               showTime={false}
               tabIndex={props.tabOf(`m:${entry.marker.item.id}`)}
               stop={{ id: `m:${entry.marker.item.id}`, column: props.column, minute: entry.marker.minute }}

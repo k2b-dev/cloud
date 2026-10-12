@@ -19,6 +19,7 @@ import {
   gapProposal,
   instantInDay,
   instantsInDay,
+  markerLanes,
   minuteInDay,
   placeEntry,
   resizedInDay,
@@ -302,6 +303,23 @@ describe("lanes and geometry", () => {
       ["a", 0, 2],
       ["b", 1, 2],
       ["c", 0, 1],
+    ]);
+  });
+
+  test("deadlines whose pills would cover each other share the width; one alone keeps it", () => {
+    const marker = (item: string, minute: number) => ({ item, minute });
+    const lanes = markerLanes(
+      [marker("a", 660), marker("b", 660), marker("c", 680), marker("d", 720), marker("e", 960), marker("f", 1010)],
+      960,
+    );
+    expect(lanes.map((entry) => [entry.item.item, entry.lane, entry.lanes])).toEqual([
+      ["a", 0, 3],
+      ["b", 1, 3],
+      ["c", 2, 3],
+      ["d", 0, 1],
+      // The open night is half as tall, so 50 minutes there are as close as 25 in the waking hours.
+      ["e", 0, 2],
+      ["f", 1, 2],
     ]);
   });
 

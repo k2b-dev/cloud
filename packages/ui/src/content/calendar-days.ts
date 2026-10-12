@@ -269,6 +269,19 @@ export const dayLanes = <T>(bands: readonly DayBand<T>[], minimum: number): DayL
     ({ item, lane, lanes }) => ({ ...item, lane, lanes }),
   );
 
+/** About the minutes a deadline's pill covers in the waking hours; the open night is half as tall, so twice as many. */
+export const MARKER_MINUTES = 30;
+
+/**
+ * Deadlines whose pills would cover each other side by side, in time order from the left; each line stays at its own
+ * minute. Two to-dos due at the same time, such as Spaces' default 17:00, so both keep their title and checkbox.
+ */
+export const markerLanes = <T>(markers: readonly DayMarker<T>[], wake: number) =>
+  layoutCalendarIntervals(markers, (marker) => ({
+    start: marker.minute,
+    end: marker.minute + (marker.minute >= wake ? 2 * MARKER_MINUTES : MARKER_MINUTES),
+  }));
+
 export type DayGroup = { kind: "day"; key: string } | { kind: "empty"; keys: string[] };
 
 /**

@@ -72,6 +72,9 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html).toContain('aria-busy="true"');
     expect(html).toMatch(/class="k2b-button k2b-calendar-header__today[^"]*"[^>]*data-size="sm"[^>]*data-variant="input"/);
     expect(html).toContain('<span class="k2b-button__label">Today</span>');
+    // Only the day and week views that scroll through their days point the Today button toward today.
+    expect(html).not.toContain("k2b-calendar-header__today-direction");
+    expect(html).not.toMatch(/k2b-calendar-header__today[^>]*data-direction/);
     expect(html).toContain("Review");
     expect(html).toContain("Review, 09:00 to 10:00");
     expect(html).toContain("view=day");

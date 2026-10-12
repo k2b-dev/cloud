@@ -948,6 +948,9 @@ export const TimeMarker = (props: {
   dayKey: string;
   expanded: boolean;
   above: boolean;
+  /** The pill's place among deadlines whose pills would cover each other, from the left. */
+  lane: number;
+  lanes: number;
   showTime: boolean;
   tabIndex?: number;
   stop?: CalendarStop;
@@ -966,7 +969,12 @@ export const TimeMarker = (props: {
       data-just-checked={view.justChecked().has(props.event.id) ? "true" : undefined}
       data-above={props.above ? "true" : undefined}
       data-moving={view.movingId() === props.event.id ? "true" : undefined}
-      style={{ "--k2b-calendar-accent": eventAccent(props.event), top: termsCss(dayTopTerms(view.wake(), props.expanded, props.minute)) }}
+      style={{
+        "--k2b-calendar-accent": eventAccent(props.event),
+        "--k2b-calendar-marker-lane": String(props.lane),
+        "--k2b-calendar-marker-lanes": String(props.lanes),
+        top: termsCss(dayTopTerms(view.wake(), props.expanded, props.minute)),
+      }}
     >
       <span class="k2b-calendar-marker__line" aria-hidden="true" />
       <span class="k2b-calendar-marker__pill">

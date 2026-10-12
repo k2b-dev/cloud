@@ -22,6 +22,7 @@ import {
   dayMinuteAt,
   dayY,
   dayYTerms,
+  markerLanes,
   readDayGeometry,
   termsCss,
 } from "./calendar-days";
@@ -568,6 +569,8 @@ const DaySection = (props: {
   const bands = createMemo(() => dayBands(view, props.dayKey, expanded()));
   const gaps = createMemo(() => dayGaps(view, props.dayKey));
   const markers = () => model().markers.filter((marker) => marker.minute < (expanded() ? DAY_MINUTES : wake()));
+  /** Deadlines whose pills would cover each other share the width; keyed by marker, so rows keep their elements. */
+  const lanes = createMemo(() => new Map(markerLanes(markers(), wake()).map((entry) => [entry.item, entry])));
   const folded = () => (expanded() ? [] : foldedEntries(view, props.dayKey));
   const nightLabel = () =>
     view.messages().calendarNight({ from: shortDay(view, props.dayKey), to: shortDay(view, addDayKeys(props.dayKey, 1)) });
@@ -856,6 +859,8 @@ const DaySection = (props: {
                 dayKey={props.dayKey}
                 expanded={expanded()}
                 above={markerAbove(model(), entry.marker.minute)}
+                lane={lanes().get(entry.marker)?.lane ?? 0}
+                lanes={lanes().get(entry.marker)?.lanes ?? 1}
                 showTime
                 scroller={props.scroller}
               />

@@ -239,11 +239,14 @@ and the visible hours.
   and Today returns to this week, on a phone to today within it. Nights open
   for the whole strip when an entry of the shown week lies in one. The all-day
   row is as high as the weeks in view need, so a week that loads off screen
-  moves nothing.
+  moves nothing. It opens at the start of the week of `date`, or on a phone
+  at that day within its week.
 - **Entries.** Timed events are bands as long as they last, side by side when
   they overlap, with their time; the running one fills up with the time that
   passed and says what is left, such as "27 min left". `display: "marker"`
-  draws a deadline with a time as a dashed line with a pill. An all-day
+  draws a deadline with a time as a dashed line with a pill; pills that
+  would cover each other, such as two to-dos due at 17:00, sit side by side,
+  the earlier one on the left, and each line stays at its own time. An all-day
   event, a timed event that runs past the start hour of a later date, and a
   date-only marker sit in the all-day row; in the week view a long event is one bar per week with a torn
   edge and, where it has room, "from 20" and "until 27".
@@ -299,9 +302,11 @@ position once they mount.
 
 ### Shortcuts and the Today button
 
-The Today button shows an arrow toward today, left or right, and up or down
-in the day view, or a calm dot while today is on screen. Its icon always
-keeps its place.
+In the day and week views with `dayHours`, the Today button shows an arrow
+toward today, left or right in the week and up or down in the day view, or a
+calm dot while today is on screen. Its icon always keeps its place, so the
+button never changes its width. The other views name their period in the
+title and keep a plain Today button.
 
 `onCommandsChange(commands)` receives the calendar's commands for the host's
 shortcut dispatcher, command palette, and help: Today (H), Next (J),

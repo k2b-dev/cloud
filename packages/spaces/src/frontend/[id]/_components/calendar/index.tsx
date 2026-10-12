@@ -790,7 +790,8 @@ export default function Calendar(props: CalendarProps) {
         onVisibleDateChange={(first, last) => {
           setVisibleDays({ first: calendar.formatDateKey(first, props.dateConfig), last: calendar.formatDateKey(last, props.dateConfig) });
           setVisibleDate(first);
-          // The URL follows the day the reader scrolled to, so a reload or a shared link opens there.
+          // The URL follows the visible day: the day view reopens there, the week view at its week's start,
+          // or on a phone at that day within its week.
           const url = new URL(window.location.href);
           const day = calendar.formatDateKey(first, props.dateConfig);
           if (url.searchParams.get("cd") === day) return;

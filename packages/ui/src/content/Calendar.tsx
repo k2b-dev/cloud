@@ -666,19 +666,16 @@ type CalendarHeaderNav = {
 const dayTitleOptions: Intl.DateTimeFormatOptions = { weekday: "short", day: "numeric", month: "short", year: "numeric" };
 const weekTitleOptions: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" };
 
-/** Where today lies from the shown period: the arrow of the Today button, or nothing while today shows. */
+/** Where today lies from the shown day or week before its view measured: the arrow of the Today button, or nothing. */
 const todayDirectionOf = (view: string, date: Date, context: DateContext): TodayDirection => {
   const today = calendar.formatDateKey(new Date(), context);
-  const shown = calendar.formatDateKey(date, context);
-  if (view === "year") return today.slice(0, 4) < shown.slice(0, 4) ? "left" : today.slice(0, 4) > shown.slice(0, 4) ? "right" : "";
-  if (view === "month" || view === "mobile-month")
-    return today.slice(0, 7) < shown.slice(0, 7) ? "left" : today.slice(0, 7) > shown.slice(0, 7) ? "right" : "";
   if (view === "week") {
     const start = calendar.formatDateKey(calendar.startOfWeek(date, context), context);
     const end = calendar.formatDateKey(calendar.addDays(calendar.startOfWeek(date, context), 6, context), context);
     return today < start ? "left" : today > end ? "right" : "";
   }
-  return today < shown ? "left" : today > shown ? "right" : "";
+  const shown = calendar.formatDateKey(date, context);
+  return today < shown ? "up" : today > shown ? "down" : "";
 };
 
 const CalendarHeader = <V extends string>(props: {
@@ -736,8 +733,8 @@ const CalendarHeader = <V extends string>(props: {
     return formatMonth(props.date, dateConfig());
   };
   /**
-   * The titles this view can show around the current date: the months of the year, the weeks of the month, or a day
-   * of each weekday in every month. Their widest one sets the title's width.
+   * The titles this view can show around the current date: the months of the year, the weeks of the month and across
+   * each month boundary, or a day of each weekday in every month. Their widest one sets the title's width.
    */
   const titleWidths = createMemo(() => {
     const context = dateConfig();
@@ -747,11 +744,21 @@ const CalendarHeader = <V extends string>(props: {
       return Array.from({ length: 12 }, (_, month) => formatMonth(zonedMonthDate(year, month, context), context));
     if (props.view === "week") {
       const first = calendar.startOfWeek(calendar.startOfMonth(props.date, context), context);
-      return Array.from({ length: 6 }, (_, week) => {
+      const weeks = Array.from({ length: 6 }, (_, week) => {
         const start = calendar.addDays(first, week * 7, context);
         if (timeMode()) return formatRange(start, calendar.addDays(start, 6, context));
         return `${formatDay(start, context)} - ${formatDay(calendar.addDays(start, 6, context), context)}`;
       });
+      if (timeMode()) {
+        return [
+          ...weeks,
+          ...Array.from({ length: 12 }, (_, month) => {
+            const day28 = calendar.addDays(zonedMonthDate(year, month, context), 27, context);
+            return formatRange(day28, calendar.addDays(day28, 6, context));
+          }),
+        ];
+      }
+      return weeks;
     }
     return Array.from({ length: 12 }, (_, month) => month).flatMap((month) => {
       const first = zonedMonthDate(year, month, context);
@@ -819,12 +826,20 @@ const CalendarHeader = <V extends string>(props: {
       </CalendarNavigationLink>
     );
   };
-  /** Today points where today lies, or shows a calm dot while it is on screen; the icon keeps its place either way. */
-  const direction = () => timeView()?.todayDirection() ?? todayDirectionOf(String(props.view), props.date, dateConfig());
+  /**
+   * In the day and week views that scroll through their days, Today points where today lies, or shows a calm dot while
+   * it is on screen; the icon keeps its place either way. The other views name their period in the title.
+   */
+  const direction = () =>
+    timeMode() ? (timeView()?.todayDirection() ?? todayDirectionOf(String(props.view), props.date, dateConfig())) || "here" : undefined;
   /** One arrow that the stylesheet turns toward today, or the dot while today shows. */
   const todayIcon = () => (
-    <Show when={direction()} fallback={<i class="ti ti-point k2b-calendar-header__today-direction" aria-hidden="true" />}>
-      <i class="ti ti-arrow-narrow-right k2b-calendar-header__today-direction" aria-hidden="true" />
+    <Show when={direction()}>
+      {(current) => (
+        <Show when={current() !== "here"} fallback={<i class="ti ti-point k2b-calendar-header__today-direction" aria-hidden="true" />}>
+          <i class="ti ti-arrow-narrow-right k2b-calendar-header__today-direction" aria-hidden="true" />
+        </Show>
+      )}
     </Show>
   );
   const todayButton = () => {
@@ -847,7 +862,7 @@ const CalendarHeader = <V extends string>(props: {
           class: "k2b-button k2b-calendar-header__today",
           "data-size": "sm",
           "data-variant": "input",
-          "data-direction": direction() || "here",
+          "data-direction": direction(),
           title: title(),
         }}
       >
@@ -859,7 +874,7 @@ const CalendarHeader = <V extends string>(props: {
         variant="input"
         size="sm"
         class="k2b-calendar-header__today"
-        data-direction={direction() || "here"}
+        data-direction={direction()}
         title={title()}
         onClick={() => {
           if (!intercept()) goDate(today);
@@ -877,7 +892,7 @@ const CalendarHeader = <V extends string>(props: {
           class: "k2b-button k2b-calendar-header__today",
           "data-size": "sm",
           "data-variant": "input",
-          "data-direction": direction() || "here",
+          "data-direction": direction(),
           title: title(),
         }}
       >

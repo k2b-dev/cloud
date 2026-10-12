@@ -1785,7 +1785,7 @@
 }
 
 .k2b-ui .k2b-calendar-band:focus-within {
-  z-index: 4;
+  z-index: 5;
 }
 
 .k2b-ui .k2b-calendar-band > .k2b-calendar-event {
@@ -2096,11 +2096,13 @@
   }
 }
 
-/* Deadlines with a time: a dashed line and a pill at the right end. */
+/* Deadlines with a time: a dashed line and a pill at the right end. The marker forms no layer of its own, so every
+   pill lies above every line, also where the line of a deadline at the same time crosses the pill beside it. */
 .k2b-ui .k2b-calendar-marker {
   --k2b-calendar-accent: #a1a1aa;
+  --k2b-calendar-marker-lane: 0;
+  --k2b-calendar-marker-lanes: 1;
   position: absolute;
-  z-index: 3;
   right: var(--k2b-calendar-inset);
   left: calc(var(--k2b-calendar-inset-start, 0px) + var(--k2b-calendar-inset));
   height: 0;
@@ -2108,6 +2110,7 @@
 
 .k2b-ui .k2b-calendar-marker__line {
   position: absolute;
+  z-index: 3;
   top: -1px;
   right: 0;
   left: 0;
@@ -2115,13 +2118,16 @@
   pointer-events: none;
 }
 
+/* Pills that would cover each other share the width side by side, the earliest on the left. */
 .k2b-ui .k2b-calendar-marker__pill {
+  --k2b-calendar-marker-share: calc((100% - (var(--k2b-calendar-marker-lanes) - 1) * 0.25rem) / var(--k2b-calendar-marker-lanes));
   position: absolute;
+  z-index: 4;
   top: -0.6875rem;
-  right: 0;
+  right: calc((var(--k2b-calendar-marker-lanes) - 1 - var(--k2b-calendar-marker-lane)) * (var(--k2b-calendar-marker-share) + 0.25rem));
   box-sizing: border-box;
   display: flex;
-  max-width: 100%;
+  max-width: var(--k2b-calendar-marker-share);
   height: 1.375rem;
   align-items: center;
   gap: 0.3125rem;
@@ -3227,8 +3233,15 @@
   }
 }
 
+/* The icon keeps one box whether it shows the dot or an arrow, so the button never changes its width. */
 .k2b-ui .k2b-calendar-header__today-direction {
+  display: inline-grid;
+  inline-size: 0.875rem;
+  block-size: 0.875rem;
+  flex: none;
+  place-items: center;
   font-size: 0.875rem;
+  line-height: 1;
 }
 
 .k2b-ui .k2b-calendar-header__today[data-direction="left"] .k2b-calendar-header__today-direction {
@@ -3245,7 +3258,7 @@
 
 .k2b-ui .k2b-calendar-header__today[data-direction="here"] .k2b-calendar-header__today-direction {
   color: var(--k2b-text-muted);
-  font-size: 0.75rem;
+  transform: scale(0.85);
 }
 
 .k2b-ui .k2b-calendar-header__shortcuts {
