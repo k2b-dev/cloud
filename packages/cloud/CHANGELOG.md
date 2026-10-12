@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.32.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.31.0...npm-cloud-v0.32.0) (2026-10-12)
+
+
+### Features
+
+* **ai:** chart groups with a shared cursor, more chart kinds and one render path ([#965](https://github.com/k2b-dev/cloud/issues/965)) ([98fd68a](https://github.com/k2b-dev/cloud/commit/98fd68af0d2a6c09a7bff6c6b858f27c493091a3))
+* **ai:** explore a computed dataset in the chat with views, filters and comparison ([#986](https://github.com/k2b-dev/cloud/issues/986)) ([cf55b85](https://github.com/k2b-dev/cloud/commit/cf55b850f6a15d1c1f71cecf247dfac83aa54c3d))
+* **ai:** serve Assistant models through an OpenAI-compatible endpoint with models-only keys ([#969](https://github.com/k2b-dev/cloud/issues/969)) ([fff481b](https://github.com/k2b-dev/cloud/commit/fff481bd88056531c9125745c25b867dcfd25c81))
+* **ai:** show charts and tables computed in code runs without retyping their values ([#949](https://github.com/k2b-dev/cloud/issues/949)) ([49399e0](https://github.com/k2b-dev/cloud/commit/49399e0a7f3d9f4e0880697e60794bfa1f30e52f))
+* **ai:** show key figures, record details and linked Cloud objects from code runs ([#972](https://github.com/k2b-dev/cloud/issues/972)) ([0898cc3](https://github.com/k2b-dev/cloud/commit/0898cc380ba2f7b77eee23286113a18bac56fbaa))
+* **ai:** show the time on approval receipts, live and in history ([#959](https://github.com/k2b-dev/cloud/issues/959)) ([d585ebc](https://github.com/k2b-dev/cloud/commit/d585ebcdab91e4afd5e54f52f1553ee1acf21ce1)), closes [#810](https://github.com/k2b-dev/cloud/issues/810)
+* **assistant:** keep Cloud skills compatible with Agent Skills ([#987](https://github.com/k2b-dev/cloud/issues/987)) ([a04da4b](https://github.com/k2b-dev/cloud/commit/a04da4b5343293851928c4535f124aab77de2580))
+* **assistant:** let cld work with local files and folders ([#971](https://github.com/k2b-dev/cloud/issues/971)) ([0926d75](https://github.com/k2b-dev/cloud/commit/0926d756f3b7e042e4d32e98c6558976b19de240))
+* **assistant:** run the Cloud Assistant in editors through ACP ([#980](https://github.com/k2b-dev/cloud/issues/980)) ([df00d89](https://github.com/k2b-dev/cloud/commit/df00d89d550913e072d7c019227aac23aef4b1ba))
+* **chat:** deliver live updates and recover after reconnects and gaps ([#1029](https://github.com/k2b-dev/cloud/issues/1029)) ([953aad1](https://github.com/k2b-dev/cloud/commit/953aad1bb7368f9acd6f2123e2b5d918a3923c38))
+* **cloud-login:** approve Cloud actions from the Cloud Login app ([#973](https://github.com/k2b-dev/cloud/issues/973)) ([73eab63](https://github.com/k2b-dev/cloud/commit/73eab63fa6bafe4a840ed28adcf071f778d7c6ae))
+* **cloud:** approve pending actions inside Cloud, in the owning app and in the Assistant ([#963](https://github.com/k2b-dev/cloud/issues/963)) ([cf15171](https://github.com/k2b-dev/cloud/commit/cf151710d46bceb04f21059f46179f63f1831c6f))
+* **cloud:** keep Zod out of the mailbox first load and add a validator-free isCommandPath ([#1009](https://github.com/k2b-dev/cloud/issues/1009)) ([0843aec](https://github.com/k2b-dev/cloud/commit/0843aec9ec819891661e25d6d58d2d286757790e))
+* **mail:** keep quotes and code blocks in sent Markdown mail ([#1022](https://github.com/k2b-dev/cloud/issues/1022)) ([ac68216](https://github.com/k2b-dev/cloud/commit/ac6821637c67bfbb6617c685cc2232d08d90a0b5))
+* **ui:** give the detail panel the full height and drop page titles the sidebar already shows ([#1003](https://github.com/k2b-dev/cloud/issues/1003)) ([081daf9](https://github.com/k2b-dev/cloud/commit/081daf9c4497590c181648ac5d3f13de7cde5038))
+
+
+### Bug Fixes
+
+* **ai:** let the model repair a malformed tool call instead of ending the turn silently ([#968](https://github.com/k2b-dev/cloud/issues/968)) ([6e28096](https://github.com/k2b-dev/cloud/commit/6e28096c5985aca6f0319e45f906f8cac0c6d834)), closes [#833](https://github.com/k2b-dev/cloud/issues/833)
+* **ai:** stop chat compaction when the model provider stalls ([#993](https://github.com/k2b-dev/cloud/issues/993)) ([7b938cd](https://github.com/k2b-dev/cloud/commit/7b938cdfe0c7bb51e58c62dbee599d6f6afbc368)), closes [#960](https://github.com/k2b-dev/cloud/issues/960) [#961](https://github.com/k2b-dev/cloud/issues/961)
+* **cloud:** mark required flags in cld help and document Mail template variables ([#951](https://github.com/k2b-dev/cloud/issues/951)) ([c69438b](https://github.com/k2b-dev/cloud/commit/c69438b9c9df8e3e29849689bfb9afa7f4a1b11f))
+* **cloud:** update the MCP SDK past its OAuth credential advisory ([#988](https://github.com/k2b-dev/cloud/issues/988)) ([c019fc5](https://github.com/k2b-dev/cloud/commit/c019fc50835773159c23ff7e59d1dc44344a3401))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.22.0 to 0.23.0
+
 ## [0.31.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.30.0...npm-cloud-v0.31.0) (2026-10-11)
 
 

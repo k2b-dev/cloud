@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.23.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.22.0...npm-ui-v0.23.0) (2026-10-12)
+
+
+### Features
+
+* **ai:** chart groups with a shared cursor, more chart kinds and one render path ([#965](https://github.com/k2b-dev/cloud/issues/965)) ([98fd68a](https://github.com/k2b-dev/cloud/commit/98fd68af0d2a6c09a7bff6c6b858f27c493091a3))
+* **ai:** explore a computed dataset in the chat with views, filters and comparison ([#986](https://github.com/k2b-dev/cloud/issues/986)) ([cf55b85](https://github.com/k2b-dev/cloud/commit/cf55b850f6a15d1c1f71cecf247dfac83aa54c3d))
+* **ai:** show charts and tables computed in code runs without retyping their values ([#949](https://github.com/k2b-dev/cloud/issues/949)) ([49399e0](https://github.com/k2b-dev/cloud/commit/49399e0a7f3d9f4e0880697e60794bfa1f30e52f))
+* **ai:** show key figures, record details and linked Cloud objects from code runs ([#972](https://github.com/k2b-dev/cloud/issues/972)) ([0898cc3](https://github.com/k2b-dev/cloud/commit/0898cc380ba2f7b77eee23286113a18bac56fbaa))
+* **cloud:** approve pending actions inside Cloud, in the owning app and in the Assistant ([#963](https://github.com/k2b-dev/cloud/issues/963)) ([cf15171](https://github.com/k2b-dev/cloud/commit/cf151710d46bceb04f21059f46179f63f1831c6f))
+* **notebooks:** list numbers repair themselves, indent without Tab, and move items with their sub-items ([#1010](https://github.com/k2b-dev/cloud/issues/1010)) ([6e7b973](https://github.com/k2b-dev/cloud/commit/6e7b9737dc7d0b599c53732e67385e6a8f9139e0))
+* **spaces:** day and week views with a 06:00 day start, folded nights and scrolling between days ([#1025](https://github.com/k2b-dev/cloud/issues/1025)) ([d8d1bdf](https://github.com/k2b-dev/cloud/commit/d8d1bdf8a9d3ae55601914f2b5601eef32bdeb7b))
+* **spaces:** step through items with J and K while the detail panel is open ([#1040](https://github.com/k2b-dev/cloud/issues/1040)) ([d1d84b4](https://github.com/k2b-dev/cloud/commit/d1d84b40a9de586d02a01dac812f65b6c3353656))
+* **ui:** give the detail panel the full height and drop page titles the sidebar already shows ([#1003](https://github.com/k2b-dev/cloud/issues/1003)) ([081daf9](https://github.com/k2b-dev/cloud/commit/081daf9c4497590c181648ac5d3f13de7cde5038))
+* **ui:** show row actions only on the hovered row when a tablet has a mouse ([#989](https://github.com/k2b-dev/cloud/issues/989)) ([32bb9d0](https://github.com/k2b-dev/cloud/commit/32bb9d0dd118e86c9d6716280c7f82f0829d7124))
+
+
+### Bug Fixes
+
+* **ui:** give sidebar rows the same inset on the right as on the left ([#974](https://github.com/k2b-dev/cloud/issues/974)) ([514b9f9](https://github.com/k2b-dev/cloud/commit/514b9f9a8dff7b3f656e18becaaef77cbd54a067))
+* **ui:** keep the conversation composer's placeholder on one line on phones ([#995](https://github.com/k2b-dev/cloud/issues/995)) ([3cbd442](https://github.com/k2b-dev/cloud/commit/3cbd4429aaa6bcad3e7e653157d323b3a05af34c))
+* **ui:** keep the selected week or day calendar event beside the tablet detail drawer ([#1032](https://github.com/k2b-dev/cloud/issues/1032)) ([f220f1e](https://github.com/k2b-dev/cloud/commit/f220f1ec0679d9906dc6f9feb5613b33c4bd21d3)), closes [#945](https://github.com/k2b-dev/cloud/issues/945)
+* **ui:** let one Escape close a dialog whose first field is a Combobox ([#970](https://github.com/k2b-dev/cloud/issues/970)) ([c68cb37](https://github.com/k2b-dev/cloud/commit/c68cb375599197df0722c0bbeebe4e313f5d2628))
+
 ## [0.22.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.21.0...npm-ui-v0.22.0) (2026-10-11)
 
 
