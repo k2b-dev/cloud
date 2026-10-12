@@ -1060,20 +1060,30 @@ const WeekColumn = (props: {
       <Show when={!props.expanded && folded().length > 0}>
         <div class="k2b-calendar-week__fold-cell" style={{ top: `calc(${termsCss(dayYTerms(wake(), false, wake()))} + 3px)` }}>
           <ul class="k2b-calendar-fold__chips">
+            {/* The arrows reach the entries of a folded night after the waking hours, and Space checks a to-do off. */}
             <For each={folded()}>
-              {(entry) => (
-                <li>
-                  <EventChip
-                    event={view.normalized(entry.event, props.dayKey)}
-                    owner={view.props.owner}
-                    href={eventHref(view.props.owner, entry.event)}
-                    compact
-                    timeline
-                    leadingTime={entry.time}
-                    tabIndex={-1}
-                  />
-                </li>
-              )}
+              {(entry, index) => {
+                const checked = () => view.checkedOf(entry.event);
+                return (
+                  <li data-checked={checked() ? "true" : undefined}>
+                    <Show when={checked() !== undefined}>
+                      <TimeCheck view={view} event={entry.event} tabIndex={-1} />
+                    </Show>
+                    <EventChip
+                      event={view.normalized(entry.event, props.dayKey)}
+                      owner={view.props.owner}
+                      href={eventHref(view.props.owner, entry.event)}
+                      compact
+                      timeline
+                      leadingTime={entry.time}
+                      checkbox={checked() !== undefined}
+                      onCheck={view.checkOf(entry.event)}
+                      tabIndex={props.tabOf(`f:${entry.event.id}:${props.dayKey}`)}
+                      stop={{ id: `f:${entry.event.id}:${props.dayKey}`, column: props.column, minute: wake() + index() / 100 }}
+                    />
+                  </li>
+                );
+              }}
             </For>
           </ul>
         </div>

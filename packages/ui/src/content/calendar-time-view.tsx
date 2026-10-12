@@ -1019,9 +1019,12 @@ export const TimeGap = (props: {
     return current && current.key === props.dayKey && current.start === props.gap.start ? current : null;
   };
   const top = () => dayYTerms(view.wake(), props.expanded, props.gap.start);
-  /** Shorter free time is hidden until something is dragged into it, so it is no keyboard stop. */
+  /**
+   * Shorter free time is hidden until something is dragged into it, and past free time has no label, so neither is a
+   * keyboard stop.
+   */
   const labelled = () => length() >= GAP_LABEL_MINUTES;
-  const stop = () => (labelled() ? props.stop : undefined);
+  const stop = () => (labelled() && !props.gap.past ? props.stop : undefined);
   return (
     <div
       class="k2b-calendar-gap"

@@ -42,6 +42,7 @@ import {
   shortDay,
   soonNote,
   TimeBand,
+  TimeCheck,
   TimeGap,
   TimeMarker,
   TimeOverlays,
@@ -724,18 +725,26 @@ const DaySection = (props: {
               <Show when={folded().length > 0}>
                 <ul class="k2b-calendar-fold__chips">
                   <For each={folded()}>
-                    {(entry) => (
-                      <li>
-                        <EventChip
-                          event={view.normalized(entry.event, props.dayKey)}
-                          owner={view.props.owner}
-                          href={eventHref(view.props.owner, entry.event)}
-                          compact
-                          timeline
-                          leadingTime={entry.time}
-                        />
-                      </li>
-                    )}
+                    {(entry) => {
+                      const checked = () => view.checkedOf(entry.event);
+                      return (
+                        <li data-checked={checked() ? "true" : undefined}>
+                          <Show when={checked() !== undefined}>
+                            <TimeCheck view={view} event={entry.event} />
+                          </Show>
+                          <EventChip
+                            event={view.normalized(entry.event, props.dayKey)}
+                            owner={view.props.owner}
+                            href={eventHref(view.props.owner, entry.event)}
+                            compact
+                            timeline
+                            leadingTime={entry.time}
+                            checkbox={checked() !== undefined}
+                            onCheck={view.checkOf(entry.event)}
+                          />
+                        </li>
+                      );
+                    }}
                   </For>
                 </ul>
               </Show>

@@ -2445,6 +2445,18 @@
   opacity: 0.8;
 }
 
+/* A to-do of a folded night keeps its checkbox beside its chip, as in the open hours. */
+.k2b-ui .k2b-calendar-fold__chips > li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-calendar-fold__chips > li > .k2b-calendar-check {
+  margin-inline-start: 0;
+}
+
 /* The selected slot, a tapped proposal with handles, and drag previews. */
 .k2b-ui .k2b-calendar-slot {
   position: absolute;
