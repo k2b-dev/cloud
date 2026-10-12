@@ -26,7 +26,7 @@ Your account area combines local Cloud data, optional FreeIPA data, and the acti
 - **Sign-in → Passkeys:** WebAuthn passkeys for passkey sign-in to your account. After you remove a passkey, nobody can sign in with it.
 :::
 
-## Choose your appearance
+## Choose your appearance {icon="palette"}
 
 In the profile menu, **Appearance** offers **Light**, **Dark**, and
 **Automatic**. Automatic is the default. It follows your device's light or

@@ -26,7 +26,7 @@ Der Kontobereich bündelt lokale Cloud-Daten, optionale FreeIPA-Daten und die Ak
 - **Anmeldung → Passkeys:** WebAuthn-Passkeys für die Anmeldung an deinem Konto. Nachdem du einen Passkey entfernt hast, kann sich niemand mehr damit anmelden.
 :::
 
-## Darstellung wählen
+## Darstellung wählen {icon="palette"}
 
 Im Profilmenü kannst du unter **Darstellung** zwischen **Hell**, **Dunkel**
 und **Automatisch** wählen. Automatisch ist die Standardeinstellung. Sie
