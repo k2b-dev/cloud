@@ -49,7 +49,8 @@ describe("Notebook settings", () => {
   });
   test("offers the personal Tab key preference, off by default, with the keyboard escape", () => {
     const html = renderToString(() => <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} />);
-    expect(html).toContain("Editor");
+    expect(html).toContain("Only for you");
+    expect(html).toContain("Full width");
     expect(html).toContain('role="switch"');
     expect(html).toContain("Tab moves focus instead of indenting");
     expect(html).toContain("Press Esc, then Tab to leave the editor.");

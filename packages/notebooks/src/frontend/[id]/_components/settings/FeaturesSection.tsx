@@ -4,16 +4,18 @@ import { createSignal, onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
 import { isPresentationMode, type PresentationMode } from "@/lib/presentation-mode";
 import { TAB_KEY_PREFERENCE_EVENT } from "../detail/events";
+import { changeFullWidth, createFullWidth } from "../full-width";
 import type { Notebook } from "../sidebar/types";
 import { notebookSettingsMessages } from "./messages";
-import { readTabMovesFocus, setTabMovesFocus } from "./NotebookSettingsStore";
+import { readFullWidth, readTabMovesFocus, setTabMovesFocus } from "./NotebookSettingsStore";
 import { SaveStatus } from "./shared";
 import { readErrorMessage } from "./utils";
 
-/** Personal Tab key preference; an open note editor applies it without a reload. */
-function EditorKeyboardSection() {
+/** Personal preferences stored in this browser; an open note applies them without a reload. */
+function PersonalViewSection() {
   const locale = useLocale();
   const t = () => notebookSettingsMessages.resolve([locale()]).t;
+  const fullWidth = createFullWidth(readFullWidth());
   const [tabMovesFocus, setTabMovesFocusValue] = createSignal(readTabMovesFocus());
 
   const change = (next: boolean) => {
@@ -23,7 +25,14 @@ function EditorKeyboardSection() {
   };
 
   return (
-    <SettingsGroup title={t().editor} description={t().yourViewDescription}>
+    <SettingsGroup title={t().onlyForYou} description={t().yourViewDescription}>
+      <Switch
+        class="notebooks-full-width-option"
+        label={t().fullWidth}
+        description={t().fullWidthDescription}
+        value={fullWidth}
+        onValueChange={changeFullWidth}
+      />
       <Switch label={t().tabMovesFocus} description={t().tabMovesFocusDescription} value={tabMovesFocus} onValueChange={change} />
       <SaveStatus loading={false} saved error={null} label={t().savedBrowser} />
     </SettingsGroup>
@@ -80,7 +89,7 @@ export function FeaturesSection(props: { notebook: Notebook; isAdmin: boolean; o
   return (
     <>
       <DefaultPresentationSection notebook={props.notebook} isAdmin={props.isAdmin} onNotebookChange={props.onNotebookChange} />
-      <EditorKeyboardSection />
+      <PersonalViewSection />
     </>
   );
 }

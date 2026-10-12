@@ -56,6 +56,7 @@ const renderPanel = (overrides: Partial<Parameters<typeof NotebookDetailPanel>[0
   renderToString(() => (
     <NotebookDetailPanel
       mode="edit"
+      fullWidth={false}
       initiallyOpen
       tocItems={tocItems}
       taskProgress={taskProgress}
@@ -89,6 +90,18 @@ const legacyDetailClasses = [
 ];
 
 describe("Notebook note detail panel", () => {
+  for (const mode of ["edit", "read"] as const) {
+    test(`${mode}: full width renders the personal SSR preference`, () => {
+      for (const fullWidth of [false, true]) {
+        const html = renderPanel({ mode, fullWidth });
+        expect(html).toContain('class="k2b-detail-panel__section notebooks-full-width-option"');
+        const input = html.match(/<input[^>]*role="switch"[^>]*>/)?.[0];
+        expect(input).toBeDefined();
+        expect(input?.includes("checked")).toBe(fullWidth);
+        expect(html).toContain("Only for you in this browser");
+      }
+    });
+  }
   test("offers presentation actions appropriate to mode, permission and lock", () => {
     const edit = renderPanel();
     expect(edit).toContain("/notes/note01?mode=book");

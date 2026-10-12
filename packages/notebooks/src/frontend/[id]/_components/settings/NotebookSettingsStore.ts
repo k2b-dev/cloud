@@ -24,6 +24,8 @@ type AllNotebookSettings = {
   navigationHidden: boolean;
   /** Personal editor preference: Tab moves focus instead of indenting. */
   tabMovesFocus: boolean;
+  /** Personal view preference: lifts the reading column in Write, Read-only and Book. */
+  fullWidth: boolean;
   notebooks: Record<string, StoredNotebookSettings>;
 };
 
@@ -41,12 +43,26 @@ const DEFAULT_ALL: AllNotebookSettings = {
   detailPanelOpen: false,
   navigationHidden: false,
   tabMovesFocus: false,
+  fullWidth: false,
   notebooks: {},
 };
 
 // --- Cookie helpers ---
 
-const writeCookie = (data: AllNotebookSettings) => cookies.writeJsonCookie(COOKIE_NAME, data);
+const writeCookie = (data: AllNotebookSettings) => {
+  // Every setting needs an entry here, so a new one cannot be dropped on the next write by
+  // mistake. A default is `undefined`, which JSON leaves out of the cookie.
+  const compact: { [Key in keyof AllNotebookSettings]: AllNotebookSettings[Key] | undefined } = {
+    lastNotebookId: data.lastNotebookId ?? undefined,
+    pinnedNotebookIds: data.pinnedNotebookIds.length > 0 ? data.pinnedNotebookIds : undefined,
+    detailPanelOpen: data.detailPanelOpen || undefined,
+    navigationHidden: data.navigationHidden || undefined,
+    tabMovesFocus: data.tabMovesFocus || undefined,
+    fullWidth: data.fullWidth || undefined,
+    notebooks: Object.keys(data.notebooks).length > 0 ? data.notebooks : undefined,
+  };
+  cookies.writeJsonCookie(COOKIE_NAME, compact);
+};
 
 const isTreeSort = (value: unknown): value is NotebookSettings["treeSort"] =>
   value === "updated" || value === "created" || value === "title";
@@ -98,6 +114,7 @@ const normalizeSettings = (value: unknown): AllNotebookSettings => {
     detailPanelOpen: parsed.detailPanelOpen === true,
     navigationHidden: parsed.navigationHidden === true,
     tabMovesFocus: parsed.tabMovesFocus === true,
+    fullWidth: parsed.fullWidth === true,
     notebooks,
   };
 };
@@ -203,6 +220,16 @@ export const setTabMovesFocus = (tabMovesFocus: boolean) => {
   });
 };
 
+/** Reads and writes the personal reading-column preference. */
+export const readFullWidth = (): boolean => readCookie().fullWidth;
+
+export const setFullWidth = (fullWidth: boolean) => {
+  writeCookie({
+    ...readCookie(),
+    fullWidth,
+  });
+};
+
 // --- Server-side ---
 
 /**
@@ -226,6 +253,9 @@ export const parseDetailPanelOpen = (cookieHeader: string | undefined): boolean 
 
 /** Parses the hidden-navigation preference so the first paint never shows the note tree. */
 export const parseNavigationHidden = (cookieHeader: string | undefined): boolean => parseCookieHeader(cookieHeader).navigationHidden;
+
+/** Parses the personal full-width preference for the first paint. */
+export const parseFullWidth = (cookieHeader: string | undefined): boolean => parseCookieHeader(cookieHeader).fullWidth;
 
 /**
  * Parses only the last notebook id from a raw cookie header for SSR redirects.

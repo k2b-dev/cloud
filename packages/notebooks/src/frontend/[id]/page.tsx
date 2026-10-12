@@ -49,6 +49,7 @@ export default ssr<AuthContext>(async (c) => {
           appUrl={data.appUrl}
           cursor={data.ctx.workspaceCursor}
           navigationHidden={data.ctx.navigationHidden}
+          fullWidth={data.ctx.fullWidth}
         />
       </Layout>
     );
@@ -123,7 +124,7 @@ export default ssr<AuthContext>(async (c) => {
             ) : isGraphMode && graph ? (
               <NotebookGraph notebookId={notebook.id} selectedNoteId={selectedNoteId} graph={graph} />
             ) : selectedNote ? (
-              <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col">
+              <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col" data-full-width={ctx.fullWidth ? "" : undefined}>
                 {readonlyMode && (
                   <FloatingEditButton href={currentHref} mode="readonly" locked={!!selectedNote.lockedAt} canWrite={canWrite} />
                 )}
@@ -180,6 +181,7 @@ export default ssr<AuthContext>(async (c) => {
             <NotebookDetailPanel
               mode={readonlyMode ? "read" : "edit"}
               initiallyOpen={readonlyMode ? true : detailPanelOpen}
+              fullWidth={ctx.fullWidth}
               tocItems={tocItems}
               taskProgress={selectedRouteState?.taskProgress ?? { done: 0, total: 0 }}
               attachments={panelAttachments}

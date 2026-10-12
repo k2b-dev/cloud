@@ -50,6 +50,8 @@ export type NotebookContext = {
   settings: NotebookSettings;
   /** Global preference: the desktop navigation is hidden completely. */
   navigationHidden: boolean;
+  /** Personal reading-column preference shared by Write, Read-only and Book. */
+  fullWidth: boolean;
   permission: string;
   /** Number of attachments in the notebook — gates the sidebar link. */
   attachmentCount: number;

@@ -51,6 +51,7 @@ import {
   TOC_UPDATE_EVENT,
   TOGGLE_RICH_MODE_EVENT,
 } from "./events";
+import { FullWidthSection } from "./FullWidthSection";
 import NoteCommentsSection from "./NoteCommentsSection";
 import { openNotePdfDialog } from "./NotePdfDialog";
 import { launchNotebookNoteAssistant } from "./notebook-assistant-launch";
@@ -60,6 +61,7 @@ import type { TocItem } from "./toc";
 type Props = {
   mode: "edit" | "read";
   initiallyOpen: boolean;
+  fullWidth: boolean;
   tocItems: TocItem[];
   taskProgress: TaskProgress;
   /** Attachments referenced from the current note's markdown — initial SSR
@@ -518,6 +520,7 @@ export default function NotebookDetailPanel(props: Props) {
               </Show>
             </nav>
           </Show>
+          <FullWidthSection initial={props.fullWidth} />
           <Show when={tasks().total > 0}>
             <DetailPanel.Summary title={t().taskProgress}>
               <div class="flex items-center justify-between text-xs">

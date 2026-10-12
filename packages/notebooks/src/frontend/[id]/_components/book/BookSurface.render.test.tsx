@@ -33,6 +33,7 @@ const render = (
           appUrl: "https://cloud.example.test",
           cursor: null,
           navigationHidden: false,
+          fullWidth: false,
           tags: [{ tag: "handbook", count: 2 }],
           tree: [{ id: "note01", title: "Getting started", children: [{ id: "note02", title: "Welcome", children: [] }] }],
         });

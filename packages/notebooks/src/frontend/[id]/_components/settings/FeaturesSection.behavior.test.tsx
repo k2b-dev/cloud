@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
-import { TAB_KEY_PREFERENCE_EVENT } from "../detail/events";
+import { FULL_WIDTH_PREFERENCE_EVENT, TAB_KEY_PREFERENCE_EVENT } from "../detail/events";
 import type { Notebook } from "../sidebar/types";
 
 const notebook: Notebook = {
@@ -18,11 +18,44 @@ const notebook: Notebook = {
   updatedAt: "2026-08-10T10:00:00.000Z",
 };
 
-describe("personal Tab key preference", () => {
+const switchByLabel = (root: HTMLElement, label: string) =>
+  Array.from(root.querySelectorAll("label"))
+    .find((element) => element.textContent?.trim() === label)
+    ?.querySelector<HTMLInputElement>('input[role="switch"]');
+
+describe("personal view preferences", () => {
   if (isServer) {
     test.skip("runs with browser export conditions", () => {});
     return;
   }
+
+  test("full width persists and notifies the open reading surface once per click", async () => {
+    const dom = createDomTestHarness();
+    const { FeaturesSection } = await import("./FeaturesSection");
+    const { readFullWidth } = await import("./NotebookSettingsStore");
+    let notified = 0;
+    const onPreference = () => notified++;
+    window.addEventListener(FULL_WIDTH_PREFERENCE_EVENT, onPreference);
+    const dispose = render(() => <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} />, dom.root);
+    try {
+      const toggle = switchByLabel(dom.root, "Full width");
+      expect(toggle).toBeDefined();
+      expect(toggle?.checked).toBe(false);
+      expect(readFullWidth()).toBe(false);
+      toggle?.click();
+      expect(toggle?.checked).toBe(true);
+      expect(readFullWidth()).toBe(true);
+      expect(notified).toBe(1);
+      toggle?.click();
+      expect(toggle?.checked).toBe(false);
+      expect(readFullWidth()).toBe(false);
+      expect(notified).toBe(2);
+    } finally {
+      window.removeEventListener(FULL_WIDTH_PREFERENCE_EVENT, onPreference);
+      dispose();
+      dom.cleanup();
+    }
+  });
 
   test("saves in this browser and tells an open editor to apply it", async () => {
     const dom = createDomTestHarness();
@@ -34,7 +67,7 @@ describe("personal Tab key preference", () => {
     const dispose = render(() => <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} />, dom.root);
 
     try {
-      const toggle = dom.root.querySelector<HTMLInputElement>('input[role="switch"]');
+      const toggle = switchByLabel(dom.root, "Tab moves focus instead of indenting");
       expect(toggle?.checked).toBe(false);
       expect(readTabMovesFocus()).toBe(false);
 

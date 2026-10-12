@@ -101,7 +101,8 @@ describe("editor toolbar navigation toggle", () => {
       toggle.click();
       expect(changes).toEqual([true, false]);
       expect(toggle.getAttribute("aria-label")).toBe("Navigation ausblenden");
-      expect(decodeURIComponent(dom.document.cookie)).toContain('"navigationHidden":false');
+      // A default value stays out of the cookie.
+      expect(decodeURIComponent(dom.document.cookie)).not.toContain('"navigationHidden"');
     } finally {
       window.removeEventListener(NAVIGATION_VISIBILITY_EVENT, onChange);
       dispose();

@@ -286,7 +286,7 @@ test.each([
   expect(island?.attributes["data-props"]).toBe("({notebookId:&quot;book01&quot;})");
 });
 
-const renderNotebookWithNotes = async (preferences: Record<string, unknown>) => {
+const renderNotebookWithNotes = async (preferences: Record<string, unknown>, mode: "graph" | "write" | "readonly" = "graph") => {
   const note = (shortId: string, title: string) => ({
     id: `uuid-${shortId}`,
     shortId,
@@ -323,14 +323,35 @@ const renderNotebookWithNotes = async (preferences: Record<string, unknown>) => 
     c.set("runtime", { apps: [] });
     await next();
   });
+  if (mode !== "graph") {
+    spies.push(spyOn(notebooksService.note, "getByShortId").mockResolvedValue(note("note01", "Private folder")));
+    spies.push(
+      spyOn(routeState, "loadSelectedNoteRouteState").mockResolvedValue({
+        note: { ...note("note01", "Private folder"), id: "note01", yjsSnapshot: null },
+        readonlyMode: mode === "readonly",
+        tocItems: [],
+        namedBlocks: [],
+        taskProgress: { done: 0, total: 0 },
+        panelAttachments: [],
+        backlinks: [],
+      }),
+    );
+    spies.push(
+      spyOn(notebooksService.note.comments, "listPage").mockResolvedValue({ items: [], page: 1, perPage: 30, total: 0, hasNext: false }),
+    );
+  }
+  app.get("/app/notebooks/:id/notes/:noteId", ...handler);
   app.get("/app/notebooks/:id", ...handler);
   // The graph view keeps the notebook route without redirecting to a note.
-  const response = await app.request("https://cloud.example.test/app/notebooks/book01?mode=graph", {
-    headers: {
-      "accept-language": "de",
-      cookie: `settings-app-notebooks=${encodeURIComponent(JSON.stringify(preferences))}`,
+  const response = await app.request(
+    `https://cloud.example.test/app/notebooks/book01${mode === "graph" ? "" : "/notes/note01"}?mode=${mode}`,
+    {
+      headers: {
+        "accept-language": "de",
+        cookie: `settings-app-notebooks=${encodeURIComponent(JSON.stringify(preferences))}`,
+      },
     },
-  });
+  );
   expect(response.status).toBe(200);
   return response.text();
 };
@@ -527,4 +548,26 @@ test("null saved text keeps the editor's single empty line", async () => {
   const html = await renderEditorPage({ mode: "readonly", markdown: null, snapshot: null });
   expect((await select(html, "#notebook-note-preview .notebook-note-preview__line")).map((row) => row.text)).toEqual([""]);
   expect(await select(html, "#notebook-note-preview .notebook-note-preview__line br")).toHaveLength(1);
+});
+
+for (const mode of ["write", "readonly"] as const) {
+  test(`${mode}: the first HTML renders full width and its checked panel switch from the cookie`, async () => {
+    for (const fullWidth of [false, true]) {
+      const html = await renderNotebookWithNotes(fullWidth ? { fullWidth: true } : {}, mode);
+      const surfaces = await select(html, ".notebook-document-surface");
+      expect(surfaces).toHaveLength(1);
+      expect(surfaces[0]?.attributes["data-full-width"]).toBe(fullWidth ? "" : undefined);
+      const switches = await select(html, '.notebooks-full-width-option input[role="switch"]');
+      expect(switches).toHaveLength(1);
+      expect(switches[0]?.attributes.checked !== undefined).toBe(fullWidth);
+    }
+  });
+}
+
+test("Book renders the full-width attribute in its first HTML", async () => {
+  for (const fullWidth of [false, true]) {
+    const surfaces = await select(await renderBookPage(fullWidth ? { fullWidth: true } : {}), ".notebook-document-surface");
+    expect(surfaces).toHaveLength(1);
+    expect(surfaces[0]?.attributes["data-full-width"]).toBe(fullWidth ? "" : undefined);
+  }
 });

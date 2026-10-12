@@ -38,6 +38,7 @@ const render = (navigationHidden: boolean, html = welcome) =>
           cursor: null,
           tags: [],
           navigationHidden,
+          fullWidth: false,
           tree: [{ id: "note01", title: "Private folder", children: [{ id: "note02", title: "Welcome", children: [] }] }],
         });
       },
