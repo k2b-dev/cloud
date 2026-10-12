@@ -39,8 +39,9 @@ build, mount runtime, or adapters reaches every application: also run the
 
 ## Key invariants
 
-- `.island.tsx` and `.client.tsx` use default exports; nested island or
-  client imports are invalid usage.
+- `.island.tsx` and `.client.tsx` use default exports. Nested island/client
+  imports fail the build: direct, transitive through plain modules, named,
+  and dynamic `import()` imports all count. Type-only imports are fine.
 - Every island and client instance mounts through `src/mount.ts` in its own
   error boundary; protection never depends on the optional `errorFallback`.
 - Props must be `seroval`-serializable: broader than JSON, but no functions,
@@ -72,9 +73,11 @@ build, mount runtime, or adapters reaches every application: also run the
    `splitting: true`. Each entry imports the component and the shared
    `src/mount.ts` runtime (plus the optional `errorFallback` module) and calls
    `mount(C, selector, Fallback?)`.
-4. Removes obsolete generated JavaScript and source maps after a successful
+4. Checks the successful build's metafile for nested island/client imports
+   and throws before any cleanup if it finds them.
+5. Removes obsolete generated JavaScript and source maps after a successful
    build.
-5. In production only, runs `dedupeSharedChunkExports()`, a workaround for
+6. In production only, runs `dedupeSharedChunkExports()`, a workaround for
    duplicate exports in Bun shared chunks.
 
 Production builds emit no source maps. Development builds use linked maps by

@@ -39,8 +39,6 @@ const getComponentType = (path: string): ComponentType | null =>
   path.includes(".island") ? "island" : path.includes(".client") ? "client" : null;
 
 const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean) => {
-  const parentType = getComponentType(filename);
-
   return {
     visitor: {
       Program(programPath: any) {
@@ -57,10 +55,6 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
             const source: string = path.node.source.value;
             const type = getComponentType(source);
             if (!type) return;
-
-            if (parentType) {
-              console.warn(`[ssr] Warning: ${parentType} imports ${type} (${source}) - nested islands/clients are not supported`);
-            }
 
             const spec = path.node.specifiers.find((s: any) => s.type === "ImportDefaultSpecifier");
             if (!spec) return;

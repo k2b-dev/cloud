@@ -27,6 +27,148 @@ afterEach(() => {
   }
 });
 
+describe("buildIslands() nested imports", () => {
+  test.each([
+    {
+      name: "direct default import in dev",
+      dev: true,
+      nested: "Inner.island.tsx",
+      source: `import Inner from "./Inner.island"; export default () => <Inner />;`,
+      via: "",
+    },
+    {
+      name: "direct default import in production",
+      dev: false,
+      nested: "Inner.island.tsx",
+      source: `import Inner from "./Inner.island"; export default () => <Inner />;`,
+      via: "",
+    },
+    {
+      name: "transitive import",
+      dev: true,
+      nested: "Inner.island.tsx",
+      source: `import Shared from "./shared"; export default () => <Shared />;`,
+      via: " via src/shared.tsx",
+    },
+    {
+      name: "named import",
+      dev: true,
+      nested: "Inner.island.tsx",
+      source: `import { Section } from "./Inner.island"; export default () => <Section />;`,
+      via: "",
+    },
+    {
+      name: "client import",
+      dev: true,
+      nested: "Inner.client.tsx",
+      source: `import Inner from "./Inner.client"; export default () => <Inner />;`,
+      via: "",
+    },
+    {
+      name: "dynamic import",
+      dev: true,
+      nested: "Inner.island.tsx",
+      source: `export default () => <button onClick={() => import("./Inner.island")}>Load</button>;`,
+      via: "",
+    },
+    {
+      name: "dynamic import in production",
+      dev: false,
+      nested: "Inner.island.tsx",
+      source: `export default () => <button onClick={() => import("./Inner.island")}>Load</button>;`,
+      via: "",
+    },
+  ])("rejects $name", async ({ dev, nested, source, via }) => {
+    const cwd = makeTempRoot();
+    const outdir = join(cwd, "dist");
+    writeTempFile(join(cwd, "src", "Outer.island.tsx"), source);
+    writeTempFile(join(cwd, "src", nested), `export const Section = () => <span>Inner</span>; export default Section;`);
+    writeTempFile(join(cwd, "src", "shared.tsx"), `import Inner from "./Inner.island"; export default () => <Inner />;`);
+
+    await expect(
+      buildIslands({
+        pattern: "**/*.{island,client}.tsx",
+        cwd,
+        outdir,
+        verbose: false,
+        dev,
+        external: ["solid-js/web", "seroval"],
+      }),
+    ).rejects.toThrow(`src/Outer.island.tsx imports src/${nested}${via}\nMove the shared component into a plain .tsx module`);
+  });
+
+  test.each(["import type { Props }", "import { type Props }"])("allows %s from an island", async (declaration) => {
+    const cwd = makeTempRoot();
+    const outer = join(cwd, "src", "Outer.island.tsx");
+    const inner = join(cwd, "src", "Inner.island.tsx");
+    writeTempFile(outer, `${declaration} from "./Inner.island"; export default (props: Props) => <span>{props.label}</span>;`);
+    writeTempFile(inner, `export type Props = { label: string }; export default (props: Props) => <span>{props.label}</span>;`);
+    for (const dev of [true, false]) {
+      const outdir = join(cwd, dev ? "dev" : "prod");
+      await buildIslands({ pattern: "**/*.{island,client}.tsx", cwd, outdir, verbose: false, dev, external: ["solid-js/web", "seroval"] });
+      for (const file of [outer, inner]) expect(existsSync(join(outdir, `${islandIdFromFile(file, cwd)}.js`))).toBe(true);
+    }
+  });
+
+  test("allows a server page with two islands sharing a plain component", async () => {
+    const cwd = makeTempRoot();
+    const outer = join(cwd, "src", "Outer.island.tsx");
+    const inner = join(cwd, "src", "Inner.island.tsx");
+    writeTempFile(
+      join(cwd, "src", "page.tsx"),
+      `import Outer from "./Outer.island"; import Inner from "./Inner.island"; export default () => <><Outer /><Inner /></>;`,
+    );
+    for (const file of [outer, inner]) writeTempFile(file, `import Shared from "./shared"; export default () => <Shared />;`);
+    writeTempFile(join(cwd, "src", "shared.tsx"), `export default () => <span>Shared</span>;`);
+    for (const dev of [true, false]) {
+      const outdir = join(cwd, dev ? "dev" : "prod");
+      await buildIslands({ pattern: "**/*.{island,client}.tsx", cwd, outdir, verbose: false, dev, external: ["solid-js/web", "seroval"] });
+      for (const file of [outer, inner]) expect(existsSync(join(outdir, `${islandIdFromFile(file, cwd)}.js`))).toBe(true);
+    }
+  });
+
+  test("reports a cycle back to the root through plain modules", async () => {
+    const cwd = makeTempRoot();
+    writeTempFile(
+      join(cwd, "src", "Outer.island.tsx"),
+      `import { getLabel } from "./first"; export const label = "Cycle"; export default () => <span>{getLabel()}</span>;`,
+    );
+    writeTempFile(join(cwd, "src", "first.tsx"), `export { getLabel } from "./second";`);
+    writeTempFile(join(cwd, "src", "second.tsx"), `import { label } from "./Outer.island"; export const getLabel = () => label;`);
+    await expect(
+      buildIslands({
+        pattern: "**/*.{island,client}.tsx",
+        cwd,
+        outdir: join(cwd, "dist"),
+        verbose: false,
+        dev: true,
+        external: ["solid-js/web", "seroval"],
+      }),
+    ).rejects.toThrow(
+      "src/Outer.island.tsx imports src/Outer.island.tsx via src/first.tsx -> src/second.tsx\nMove the shared component into a plain .tsx module",
+    );
+  });
+
+  test("sorts violations, keeps the shortest chain, and stops at nested entries", async () => {
+    const cwd = makeTempRoot();
+    writeTempFile(
+      join(cwd, "src", "Outer.island.tsx"),
+      `import Shared from "./shared"; import Inner from "./Inner.island"; export default () => <><Shared /><Inner /></>;`,
+    );
+    writeTempFile(join(cwd, "src", "shared.tsx"), `import Inner from "./Inner.island"; export default () => <Inner />;`);
+    writeTempFile(join(cwd, "src", "Inner.island.tsx"), `import Leaf from "./Leaf.client"; export default () => <Leaf />;`);
+    writeTempFile(join(cwd, "src", "Leaf.client.tsx"), `export default () => <span>Leaf</span>;`);
+    const outdir = join(cwd, "dist");
+    writeTempFile(join(outdir, "chunk-stale.js"), "stale");
+    await expect(
+      buildIslands({ pattern: "**/*.{island,client}.tsx", cwd, outdir, verbose: false, dev: false, external: ["solid-js/web", "seroval"] }),
+    ).rejects.toThrow(
+      "  src/Inner.island.tsx imports src/Leaf.client.tsx\n  src/Outer.island.tsx imports src/Inner.island.tsx\nMove the shared component into a plain .tsx module",
+    );
+    expect(existsSync(join(outdir, "chunk-stale.js"))).toBe(true);
+  });
+});
+
 describe("buildIslands()", () => {
   test("builds and serves islands from monorepo rootDir", async () => {
     const workspaceRoot = makeTempRoot();
