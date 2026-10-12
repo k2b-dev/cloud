@@ -2,9 +2,10 @@ import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { documentNavigate, listenPopState, navigate } from "@k2b/ssr/nav";
 import { query } from "@k2b/stdlib/solid";
 import { prompts, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, untrack } from "solid-js";
 import { useSpaceMessages } from "../../messages";
 import { CALENDAR_COLOR_PARAM, parseCalendarColorBy, parseCalendarRoute } from "../calendar/filter";
+import type { CalendarRange } from "../calendar/range";
 import { loadSpacesViewSnapshot, SpacesViewUnavailableError } from "./view-query";
 import {
   reconcileSpacesDetailRoute,
@@ -31,7 +32,7 @@ const selectionKey = (url: URL) => JSON.stringify([url.searchParams.get("item"),
  * calendar data, this query only loads the calendar view, and the order of the parameters means nothing. The page's
  * base URL names the view only when it overrides the saved one, while the calendar's own links always name it.
  */
-const calendarViewSource = (href: string) => {
+export const calendarViewSource = (href: string) => {
   const url = new URL(href, "http://spaces.local");
   url.searchParams.delete("item");
   url.searchParams.delete("occurrence");
@@ -47,6 +48,11 @@ export const useSpacesCalendarQuery = (params: {
   initialSource: string;
   initialSnapshot: CalendarSnapshot;
   dateConfig?: Parameters<typeof parseCalendarRoute>[1];
+  /**
+   * The days a day or week view already shows for a source, so a refresh or another filter covers all of them. Called
+   * once as each snapshot starts to load.
+   */
+  rangeFor?: (source: string) => CalendarRange | undefined;
 }) => {
   const locale = useLocale();
   const t = useSpaceMessages();
@@ -60,6 +66,14 @@ export const useSpacesCalendarQuery = (params: {
   const [colorBy, setColorBy] = createSignal(params.initialSnapshot.filter.colorBy);
   let committedSource = initialSource;
   let committedHref = params.initialSource;
+  /**
+   * Sources the committed snapshot also answers: the day and week views name the day the reader scrolled to in the
+   * URL, and the days they loaded hold it. Opening an item or going back there needs no other calendar data.
+   */
+  let followed = new Set<string>();
+  /** The last day on screen, so Back can change the detail without moving the reader. */
+  let lastFollowHref: string | null = null;
+  const answersCommitted = (source: string) => source === committedSource || followed.has(source);
   let nextNavigationId = 0;
   let disposed = false;
   onCleanup(() => {
@@ -70,7 +84,12 @@ export const useSpacesCalendarQuery = (params: {
     source,
     initial: { source: initialSource, data: { source: initialSource, snapshot: params.initialSnapshot } },
     load: async (href, { abortSignal }) => {
-      const snapshot = await loadSpacesViewSnapshot(href, abortSignal, locale());
+      const snapshot = await loadSpacesViewSnapshot(
+        href,
+        abortSignal,
+        locale(),
+        untrack(() => params.rangeFor?.(href)),
+      );
       if (snapshot.kind !== "calendar") throw new SpacesViewUnavailableError(t.workspaceViewChanged);
       return { source: href, snapshot };
     },
@@ -135,6 +154,8 @@ export const useSpacesCalendarQuery = (params: {
         }
       }
       committedSource = request.source;
+      followed = new Set();
+      lastFollowHref = null;
       committedHref = pathWithQuery(target);
       setColorBy(colorByOf(committedHref));
       setPreview(loaded.snapshot);
@@ -161,10 +182,22 @@ export const useSpacesCalendarQuery = (params: {
       return;
     }
     const nextSource = calendarViewSource(href);
-    if (nextSource === committedSource) {
+    if (answersCommitted(nextSource)) {
       if (pending()) {
         setPending(null);
         setSource(committedSource);
+      }
+      // Back or Forward that only opens or closes an item keeps the day the reader scrolled to meanwhile, and the URL
+      // names that day, so a reload opens what the reader sees.
+      if (history === "popstate" && lastFollowHref && calendarViewSource(lastFollowHref) !== nextSource) {
+        const target = new URL(href, window.location.origin);
+        const shownDay = new URL(lastFollowHref, window.location.origin).searchParams.get("cd");
+        if (shownDay) target.searchParams.set("cd", shownDay);
+        committedHref = pathWithQuery(target);
+        navigate(committedHref, { replace: true, scroll: "preserve", viewTransition: false });
+        reconcileSpacesDetailRoute(committedHref);
+        setColorBy(colorByOf(committedHref));
+        return;
       }
       committedHref = href;
       setColorBy(colorByOf(href));
@@ -193,7 +226,7 @@ export const useSpacesCalendarQuery = (params: {
     committedHref = pathWithQuery(new URL(window.location.href));
     const rememberDetailSelection = () => {
       const href = pathWithQuery(new URL(window.location.href));
-      if (calendarViewSource(href) === committedSource) committedHref = href;
+      if (answersCommitted(calendarViewSource(href))) committedHref = href;
     };
     window.addEventListener(SPACES_DETAIL_STATE_EVENT, rememberDetailSelection);
     onCleanup(() => window.removeEventListener(SPACES_DETAIL_STATE_EVENT, rememberDetailSelection));
@@ -203,10 +236,26 @@ export const useSpacesCalendarQuery = (params: {
 
   return {
     current,
+    /** The last snapshot loaded, with its source; it stays while a navigation loads the next one. */
+    loaded: view.data,
     error: view.error,
     refresh: view.refresh,
     pending: () => pending() !== null || view.loading() || view.refreshing(),
     navigateHref: (href: string) => start(href, "push"),
     open: (href: string, options: { replace?: boolean } = {}) => start(href, options.replace ? "replace" : "push"),
+    /**
+     * The day or week view scrolled to another day of the days it loaded: the URL names that day from now on, so a
+     * reload or a shared link opens there, and the open item's detail keeps it. A navigation that loads meanwhile
+     * names its own day.
+     */
+    follow: (rawHref: string) => {
+      const href = normalize(rawHref);
+      if (!href || pending()) return;
+      followed.add(calendarViewSource(href));
+      lastFollowHref = href;
+      committedHref = href;
+      navigate(href, { replace: true, scroll: "manual", viewTransition: false });
+      reconcileSpacesDetailRoute(href);
+    },
   };
 };

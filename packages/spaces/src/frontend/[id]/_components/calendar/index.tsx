@@ -1,8 +1,12 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { dates as calendar } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
   Button,
+  type CalendarCommand,
+  type CalendarController,
   type CalendarEvent,
   type CalendarEventRenderContext,
   type CalendarEventTimeChange,
@@ -17,7 +21,7 @@ import {
   panelDialogOptions,
   toast,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import {
   AssignedToFilterSchema,
@@ -31,10 +35,12 @@ import {
 import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { spaceMessages, useSpaceMessages } from "../../messages";
+import { resolveCompletionClaim } from "../shared/claim/claim";
+import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { createSpaceItem } from "../shared/editItem";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import { itemCreateDialogOptions } from "../shared/item-form/dialog";
-import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
+import { invalidateSpacesData, requestSpacesDetailNavigation, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
 import { countCalendarEvents } from "./count";
 import { type CalendarColorBy, CalendarColorBySchema, type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
@@ -46,6 +52,7 @@ import QuickCreate, {
   quickCreateDefaults,
   quickCreateKind,
 } from "./QuickCreate";
+import { CALENDAR_DAY_HOURS, countCalendarDays, isScrollingCalendarView } from "./range";
 import TaskTray from "./TaskTray";
 import { taskTrayFiltered, taskTrayFilters, taskTrayListHref } from "./tray";
 import type { CalendarProps, CalendarView } from "./types";
@@ -92,6 +99,8 @@ const toCalendarEvent = (
 ): CalendarEvent => {
   const { t } = spaceMessages.resolve(dateConfig?.locale ? [dateConfig.locale] : []);
   const isDeadline = isCalendarTask(item);
+  // A deadline is a point in time where the day and week views have hours; the month and year list it on its day.
+  const timedDeadline = isDeadline && isScrollingCalendarView(view);
   const detailItemId = item.isRecurringInstance ? (item.recurringEventId ?? item.id) : item.id;
   const occurrenceId = item.recurrenceId ?? undefined;
   return {
@@ -100,9 +109,10 @@ const toCalendarEvent = (
     description: item.descriptionPreview ?? undefined,
     start: eventStart(item),
     end: eventEnd(item),
-    allDay: item.allDay || !item.startsAt,
+    allDay: item.allDay || (!item.startsAt && !timedDeadline),
     colorHex: calendarItemColors(item, filter.colorBy, columns).color,
     display: isDeadline ? "marker" : undefined,
+    checked: calendarCheckable(item) ? false : undefined,
     // The checkbox marker and the flag are visual only, so the accessible name says what they show.
     accessibleDetail:
       [isDeadline ? t.deadline : null, isCalendarFlagged(item) ? `${t.priority}: ${item.priority === "urgent" ? t.urgent : t.high}` : null]
@@ -124,6 +134,13 @@ const toCalendarEvent = (
         : undefined,
   };
 };
+
+/**
+ * The calendar lists open items only, so a box is always unchecked: a task with a deadline, or one planned into a time
+ * slot that keeps its deadline. A recurring or blocked task has none; it completes in its detail.
+ */
+const calendarCheckable = (item: CalendarItem) =>
+  Boolean(item.deadline) && !item.recurrence && !item.recurringEventId && !item.isRecurringInstance && item.activeBlockerCount === 0;
 
 type RecurringEditScope = "occurrence" | "future" | "series";
 
@@ -206,23 +223,57 @@ const chooseRecurringEditScope = async (t: ReturnType<typeof useSpaceMessages>):
 
 export default function Calendar(props: CalendarProps) {
   const t = useSpaceMessages();
-  /**
-   * The toolbar counts what the header names: the month's own days, not the padding days of the months around it. It
-   * counts the events the grid paints, so a drag across the month's edge updates it at once.
-   */
-  const shownCount = () => {
-    if (props.view !== "month") return props.items.length;
-    const monthStart = calendar.startOfMonth(props.date, props.dateConfig);
-    const firstKey = calendar.formatDateKey(monthStart, props.dateConfig);
-    const endKey = calendar.formatDateKey(calendar.addMonths(monthStart, 1, props.dateConfig), props.dateConfig);
-    return countCalendarEvents(events(), firstKey, endKey, props.dateConfig);
-  };
   const retryToast = createRetryToasts();
   const [optimisticTimes, setOptimisticTimes] = createSignal<Record<string, CalendarEventTimeChange>>({});
   const [createDialogPending, setCreateDialogPending] = createSignal(false);
   /** The days selected in the month view; New event and the menus create on them. */
   const [selectedDays, setSelectedDays] = createSignal<CalendarDays | null>(null);
   const [seriesItemSource, setSeriesItemSource] = createSignal<string | null>(null);
+  const [controller, setController] = createSignal<CalendarController | null>(null);
+  /** The first day the day or week view shows after scrolling; the URL and other views follow it. */
+  const [visibleDate, setVisibleDate] = createSignal<Date | null>(null);
+  /** The days the day or week view shows, for the count of what is in view. */
+  const [visibleDays, setVisibleDays] = createSignal<{ first: string; last: string } | null>(null);
+  createEffect(
+    on(
+      [() => props.view, () => props.date.getTime()],
+      () => {
+        setVisibleDate(null);
+        setVisibleDays(null);
+      },
+      { defer: true },
+    ),
+  );
+  /** The date filters and the view switcher keep: the day the reader scrolled to, else the route's. */
+  const shownDate = () => visibleDate() ?? props.date;
+  /**
+   * The toolbar counts what is in view: the days the day or week view shows, or what the header names in the month,
+   * its own days without the padding days of the months around it. The month counts the events the grid paints, so a
+   * drag across the month's edge updates it at once.
+   */
+  const shownCount = () => {
+    if (isScrollingCalendarView(props.view)) {
+      const days = visibleDays() ?? routeDays();
+      return countCalendarDays(props.items, days.first, days.last, props.dateConfig);
+    }
+    if (props.view !== "month") return props.items.length;
+    const monthStart = calendar.startOfMonth(props.date, props.dateConfig);
+    const firstKey = calendar.formatDateKey(monthStart, props.dateConfig);
+    const endKey = calendar.formatDateKey(calendar.addMonths(monthStart, 1, props.dateConfig), props.dateConfig);
+    return countCalendarEvents(events(), firstKey, endKey, props.dateConfig);
+  };
+  /** The days the route opens before the view says what it shows: the day, or its week. */
+  const routeDays = () => {
+    const day = calendar.formatDateKey(props.date, props.dateConfig);
+    if (props.view === "day") return { first: day, last: day };
+    // The calendar's weeks start on Monday unless the date context says otherwise.
+    const context = { weekStartsOn: 1 as const, ...props.dateConfig };
+    const start = calendar.startOfWeek(props.date, context);
+    return {
+      first: calendar.formatDateKey(start, context),
+      last: calendar.formatDateKey(calendar.addDays(start, 6, context), context),
+    };
+  };
   const reconcileAfterWrite = (): void =>
     void invalidateSpacesData().catch(() => retryToast(t.calendarRefreshFailed, t.retry, reconcileAfterWrite));
   const seriesItemQuery = query.create<string | null, { source: string; item: SpaceItem }, { cursor: string | null }>({
@@ -355,7 +406,7 @@ export default function Calendar(props: CalendarProps) {
   };
   const setFilter = (patch: Partial<CalendarFilter>) => {
     void navigateRoute(
-      buildCalendarHref(props.baseUrl, props.view, props.date, { ...props.filter, ...patch }, undefined, undefined, props.dateConfig),
+      buildCalendarHref(props.baseUrl, props.view, shownDate(), { ...props.filter, ...patch }, undefined, undefined, props.dateConfig),
       { replace: true },
     );
   };
@@ -365,12 +416,13 @@ export default function Calendar(props: CalendarProps) {
     const item = selection.get("item") ?? undefined;
     const occurrence = selection.get("occurrence") ?? undefined;
     void navigateRoute(
-      buildCalendarHref(props.baseUrl, props.view, props.date, { ...props.filter, colorBy }, item, occurrence, props.dateConfig),
+      buildCalendarHref(props.baseUrl, props.view, shownDate(), { ...props.filter, colorBy }, item, occurrence, props.dateConfig),
       { replace: true },
     );
   };
+  // The day and week views keep the URL on the day the reader scrolled to, so an item opens on the URL as it stands.
   const selectEvent = (event: CalendarEvent) => {
-    if (event.href) requestSpacesRouteNavigation(event.href, { scroll: "preserve" });
+    if (event.href) requestSpacesDetailNavigation(event.href, { scroll: "preserve" });
   };
   const loadSeriesItem = async (itemId: string) => {
     setSeriesItemSource(itemId);
@@ -476,7 +528,8 @@ export default function Calendar(props: CalendarProps) {
     { eventId: string }
   >({
     onBefore: ({ event, sourceItem, next }) => {
-      const optimistic = sourceItem?.deadline && !sourceItem.startsAt ? { ...next, end: next.start, allDay: true } : next;
+      // A deadline moved in the hours of the day or week view keeps its time; the month moves it to a day.
+      const optimistic = sourceItem?.deadline && !sourceItem.startsAt ? { ...next, end: next.start, allDay: next.allDay ?? true } : next;
       setOptimisticTimes({ ...optimisticTimes(), [event.id]: optimistic });
       return { eventId: event.id };
     },
@@ -485,7 +538,7 @@ export default function Calendar(props: CalendarProps) {
         const itemId = event.dataSpaceItemId ?? event.id;
         const res = await apiClient[":id"].items[":itemId"].$patch({
           param: { id: props.spaceId, itemId },
-          json: { deadline: next.start.toISOString(), startsAt: null, endsAt: null, allDay: true },
+          json: { deadline: next.start.toISOString(), startsAt: null, endsAt: null, allDay: next.allDay ?? true },
         });
         if (!res.ok) throw new Error(await readResponseError(res, t.deadlineUpdateFailed));
         return true;
@@ -494,13 +547,13 @@ export default function Calendar(props: CalendarProps) {
         if (!recurringScope || !parent) return false;
         return applyRecurringTimeChange(event, parent, next, recurringScope);
       }
+      // A task planned into a time slot keeps its deadline when its slot moves.
       const itemId = event.dataSpaceItemId ?? event.id;
       const res = await apiClient[":id"].items[":itemId"].$patch({
         param: { id: props.spaceId, itemId },
         json: {
           startsAt: next.start.toISOString(),
           endsAt: next.end.toISOString(),
-          deadline: null,
           allDay: next.allDay ?? false,
         },
       });
@@ -587,9 +640,15 @@ export default function Calendar(props: CalendarProps) {
       endsAt: slot.end.toISOString(),
       allDay: slot.allDay ?? false,
     });
+  /** The days of a range: an all-day range ends at the midnight after its last day, a time slot on its own end. */
   const daysOf = (range: CalendarEventTimeChange): CalendarDays => ({
     first: calendar.formatDateKey(range.start, props.dateConfig),
-    last: calendar.formatDateKey(calendar.addDays(range.end, -1, props.dateConfig), props.dateConfig),
+    last: calendar.formatDateKey(
+      range.allDay === false
+        ? new Date(Math.max(range.start.getTime(), range.end.getTime() - 1))
+        : calendar.addDays(range.end, -1, props.dateConfig),
+      props.dateConfig,
+    ),
   });
   /** One selected day gets an event at nine; several get one all-day event over all of them. */
   const createOnDays = (days: CalendarDays) =>
@@ -607,12 +666,113 @@ export default function Calendar(props: CalendarProps) {
     { label: t.newTaskWithDeadline, icon: "ti ti-square-check", action: () => controls.quickCreate("task" satisfies QuickCreateKind) },
   ];
   const creatingEvent = createDialogPending;
-  /** New event creates on the selected days of the month view, and otherwise at nine on the shown date. */
+  /**
+   * New event creates on the selected days of the month view; in the day and week views at the selected slot or day,
+   * else today at the next full hour while today shows, else at nine on the first shown day; otherwise at nine on the
+   * shown date.
+   */
   const createNewEvent = () => {
-    const days = props.view === "month" ? selectedDays() : null;
+    const target = isScrollingCalendarView(props.view) ? controller()?.createTarget() : undefined;
+    if (target && !target.allDay) return createEventFromSlot(target);
+    const days = props.view === "month" ? selectedDays() : target ? daysOf(target) : null;
     const date = calendar.formatDateKey(props.date, props.dateConfig);
     return createOnDays(days ?? { first: date, last: date });
   };
+
+  /**
+   * Checks off a task from the calendar; the reader's own claim goes with it, and someone else's is taken over only
+   * after a confirmation, as in the task row. A refused or declined change rejects, so the calendar puts the box back.
+   */
+  const checkItem = async (event: CalendarEvent, completed: boolean) => {
+    const itemId = event.dataSpaceItemId ?? event.id;
+    const failed = (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t.updateFailed);
+      reconcileAfterWrite();
+      return error;
+    };
+    let previous: SpaceItem;
+    try {
+      const response = await apiClient[":id"].items[":itemId"].$get({ param: { id: props.spaceId, itemId } });
+      if (!response.ok) throw new Error(await readResponseError(response, t.updateFailed));
+      previous = await response.json();
+    } catch (error) {
+      throw failed(error);
+    }
+    const claim = props.currentUserId ? await resolveCompletionClaim(previous.claim, props.currentUserId, completed, t) : {};
+    if (!claim) throw new Error("declined");
+    let changed: SpaceItem;
+    try {
+      changed = await setItemCompleted({ spaceId: props.spaceId, itemId, completed, ...claim }, t.updateFailed);
+    } catch (error) {
+      throw failed(error);
+    }
+    // A completed task leaves the calendar with the refresh, so the toast confirms it and offers Undo.
+    confirmCompletion({ spaceId: props.spaceId, previous, changed, currentUserId: props.currentUserId }, t);
+    reconcileAfterWrite();
+  };
+
+  /** Plans a task from the row below the day into the free time it was dropped on; its deadline stays. */
+  const scheduleItem = async (item: SpaceItem, slot: CalendarEventTimeChange) => {
+    try {
+      await patchItemTime(item.id, { startsAt: slot.start.toISOString(), endsAt: slot.end.toISOString(), allDay: false });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t.eventTimeUpdateFailed);
+      return;
+    }
+    const day = new Intl.DateTimeFormat(props.dateConfig?.locale ?? "en", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      timeZone: props.dateConfig?.timeZone,
+    }).format(slot.start);
+    const time = (date: Date) => calendar.formatTime(date, props.dateConfig);
+    toast.success(t.taskScheduled({ title: item.title, when: `${day}, ${time(slot.start)}–${time(slot.end)}` }));
+    reconcileAfterWrite();
+  };
+
+  /** The year view has no quick create, so a task opens in the full dialog on the shown date, as New event does. */
+  const createTaskInDialog = () => {
+    const day = calendar.formatDateKey(props.date, props.dateConfig);
+    return openCreateDialog(quickCreateDefaults("task", { first: day, last: day }, props.dateConfig));
+  };
+  // The calendar's shortcuts and the two of Spaces, published as commands of this page for the keys, the command
+  // palette, and the help; the calendar's shortcuts dialog lists the same ones.
+  const spacesCommands = createMemo((): CalendarCommand[] =>
+    props.canWrite
+      ? [
+          {
+            id: "spaces.calendar.new-event",
+            label: t.newEvent,
+            description: t.newEventShortcutDescription,
+            shortcut: "n",
+            icon: "ti ti-calendar-plus",
+            run: () => (props.view === "year" ? void createNewEvent() : controller()?.quickCreate()),
+          },
+          {
+            id: "spaces.calendar.new-task",
+            label: t.newTaskWithDeadline,
+            description: t.newTaskShortcutDescription,
+            shortcut: "shift+n",
+            icon: "ti ti-square-check",
+            run: () => (props.view === "year" ? void createTaskInDialog() : controller()?.quickCreate("task" satisfies QuickCreateKind)),
+          },
+        ]
+      : [],
+  );
+  const [commands, setCommands] = createSignal<readonly CalendarCommand[]>([]);
+  createEffect(() => {
+    for (const command of commands())
+      onCleanup(
+        registerContextAwareCommand({
+          id: command.id,
+          title: command.label,
+          description: command.description ?? command.label,
+          icon: command.icon,
+          shortcut: command.shortcut,
+          action: () => command.run(),
+        }),
+      );
+  });
 
   return (
     <div class="flex min-h-0 flex-1 flex-col">
@@ -623,6 +783,27 @@ export default function Calendar(props: CalendarProps) {
         events={events()}
         startHour={8}
         endHour={20}
+        dayHours={CALENDAR_DAY_HOURS}
+        range={props.range}
+        onLoadEarlier={props.onLoadEarlier}
+        onLoadLater={props.onLoadLater}
+        onVisibleDateChange={(first, last) => {
+          setVisibleDays({ first: calendar.formatDateKey(first, props.dateConfig), last: calendar.formatDateKey(last, props.dateConfig) });
+          setVisibleDate(first);
+          // The URL follows the visible day: the day view reopens there, the week view at its week's start,
+          // or on a phone at that day within its week.
+          const url = new URL(window.location.href);
+          const day = calendar.formatDateKey(first, props.dateConfig);
+          if (url.searchParams.get("cd") === day) return;
+          url.searchParams.set("cd", day);
+          const href = `${url.pathname}${url.search}${url.hash}`;
+          if (props.onFollowHref) props.onFollowHref(href);
+          else navigate(href, { replace: true, scroll: "manual", viewTransition: false });
+        }}
+        onEventCheck={props.canWrite ? (event, checked) => checkItem(event, checked) : undefined}
+        commands={spacesCommands()}
+        onCommandsChange={setCommands}
+        controller={setController}
         withWeekNumbers
         dayBadges={dayBadges()}
         dateConfig={props.dateConfig}
@@ -699,7 +880,7 @@ export default function Calendar(props: CalendarProps) {
           </>
         }
         getViewHref={(view) =>
-          buildCalendarHref(props.baseUrl, asView(view), props.date, props.filter, undefined, undefined, props.dateConfig)
+          buildCalendarHref(props.baseUrl, asView(view), shownDate(), props.filter, undefined, undefined, props.dateConfig)
         }
         getDateHref={(date, view) =>
           buildCalendarHref(props.baseUrl, asView(view), date, props.filter, undefined, undefined, props.dateConfig)
@@ -726,6 +907,7 @@ export default function Calendar(props: CalendarProps) {
                 <QuickCreate
                   spaceId={props.spaceId}
                   days={daysOf(range)}
+                  time={range.allDay ? undefined : { start: range.start.toISOString(), end: range.end.toISOString() }}
                   kind={quickCreateKind(create, daysOf(range))}
                   dateConfig={props.dateConfig}
                   defaults={filterDefaults()}
@@ -757,6 +939,20 @@ export default function Calendar(props: CalendarProps) {
             return query ? taskTrayListHref(new URL(props.baseUrl, "http://spaces.local").pathname, query) : undefined;
           }}
           dateConfig={props.dateConfig}
+          onSchedulePointerDown={
+            props.canWrite
+              ? (event, item) =>
+                  controller()?.dragIn(
+                    event,
+                    {
+                      title: item.title,
+                      colorHex: calendarItemColors({ ...item, assignees: item.assignees ?? [] }, props.filter.colorBy, props.columns).color,
+                      minutes: item.estimatedDurationMinutes ?? 60,
+                    },
+                    (slot) => void scheduleItem(item, slot),
+                  )
+              : undefined
+          }
         />
       </Show>
     </div>

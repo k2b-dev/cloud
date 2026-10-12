@@ -13,6 +13,7 @@ import { defaultFilter } from "../filter/types";
 import { buildSpacesItemLinkBaseUrl } from "../workspace/workspace-types";
 import { calendarPersonColor } from "./colors";
 import { parseCalendarRoute } from "./filter";
+import { calendarWindow } from "./range";
 
 // Whether a color choice moves anything is a layout question, so the calendar route renders on the server and then
 // runs its real island bundle in a real browser, as the workspace page does. The island bundle resolves Solid from
@@ -138,7 +139,15 @@ const serverBody = (url: URL) => {
       }),
       columns,
       tags,
-      initialState: { view, date: route.date, filter: route.filter, items, weather: {}, tray: null },
+      initialState: {
+        view,
+        date: route.date,
+        filter: route.filter,
+        range: calendarWindow(view === "week" ? "week" : "day", new Date(route.date), dateConfig),
+        items,
+        weather: {},
+        tray: null,
+      },
       selectedItemId: url.searchParams.get("item") ?? "",
       dateConfig,
       canWrite: true,
@@ -237,22 +246,20 @@ const layout = (page: Page) =>
     };
   });
 /**
- * The layout once the day and week views have scrolled to the working hours, at once under the reduced motion these
- * pages ask for. A loaded engine can run that scroll late, so two equal samples prove nothing; the scroll is done
- * when the first working hour sits at the top of the time grid, or the grid cannot scroll further.
+ * The layout once the week view took its first place: it puts the shown week at the start of its strip as it mounts,
+ * at once under the reduced motion these pages ask for. A loaded engine can run that late, so two equal samples prove
+ * nothing; the place is taken when the strip has scrolled to the week.
  */
 const settledLayout = async (page: Page) => {
   await page.waitForFunction(
     () => {
-      const grid = window.document.querySelector<HTMLElement>(".k2b-calendar-time-grid__scroll");
-      const start = window.document.querySelector(".k2b-calendar-time-grid__hour:not([data-outside-business])");
-      if (!grid || !start) return false;
-      const atStart = Math.abs(start.getBoundingClientRect().top - grid.getBoundingClientRect().top) <= 1;
-      return atStart || grid.scrollTop >= grid.scrollHeight - grid.clientHeight - 1;
+      const strip = window.document.querySelector<HTMLElement>(".k2b-calendar-week__scroll");
+      return Boolean(strip && strip.scrollLeft > 0);
     },
     undefined,
     { timeout: 15_000 },
   );
+  await settle(page);
   return layout(page);
 };
 type Look = { accent: string; fill: string; marker: boolean; flag: boolean; dots: number };

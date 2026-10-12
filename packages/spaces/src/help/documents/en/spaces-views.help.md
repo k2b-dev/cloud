@@ -31,7 +31,7 @@ Views show the same items in the shape that fits the current job. A good view re
 
 :::reference
 - **What it shows:** In the **Day** view of the calendar, a row below the day shows two kinds of open tasks. First, tasks whose deadline passed before today, most recent first. Second, tasks assigned to you without a deadline, most urgent first. Each part shows up to five tasks. **Show all** opens the **List** view with all of them.
-- **Work with it:** Select a task to open it. If you can edit the Space, you can also check the task off. It stays in the row for a moment, then the row closes the gap. The confirmation offers **Undo**. A task that open tasks still block shows a lock instead of a checkbox.
+- **Work with it:** Select a task to open it. If you can edit the Space, you can also check the task off. It stays in the row for a moment, then the row closes the gap. The confirmation offers **Undo**. Drag a task into free time of the day to plan it there. A task that open tasks still block shows a lock instead of a checkbox.
 - **Layout:** The row keeps its place and size whatever it holds, so the day above never moves. While another day or filter loads, the row stays empty until its tasks are in. When more tasks exist than fit, the row scrolls sideways. A screen reader and **Tab** reach the row right after the day, as on screen. When you check a task off with the keyboard, focus moves to the next task in the row.
 - **Filters:** The scope, priority, status, and tag filters of the calendar apply to the row. When a filter leaves the row empty, the row says so. While the scope shows only events, the row is hidden.
 - **Old links:** Spaces no longer has a calendar timeline. A saved link to the timeline opens the month that contains its day.
@@ -70,6 +70,21 @@ Views show the same items in the shape that fits the current job. A good view re
 - **Open a day or a week:** Select a day and choose **Day** or **Week** in the view switcher. Or use **Open day** in the menu or in the day list. Or choose a week number.
 - **Long events:** An event over several days is one bar per week row, with its title. Where a week row cuts the event off, its end is torn. When there is room, the bar says where the event continues, for example **until 13** or **from 7**. The next row continues the event. When you point at one part, the other parts are highlighted.
 - **Full days:** Each day shows as many entries as fit its height. **+N more** counts the rest and opens the whole day. **Space** on a selected day does the same.
+:::
+
+## Plan in the day and week views {icon="calendar-time"}
+
+:::reference
+- **Day start:** A day runs from 06:00 to 06:00 of the next day. The night after 22:00 belongs to the day before. So an event from 23:00 to 01:30 stays with its evening. An event from 05:30 to 06:30 shows in both days: at the end of the night before and at the top of its day.
+- **Nights:** A night without entries is one slim row. A night with an entry is open at half height. In the week view, the nights of all days open together when one of them holds an entry. Choose the night bar or the moon to fold or open the night.
+- **Day view:** The days run down the page in one scroll. Each day keeps its heading at the top while it is in view. Empty days merge into one **Nothing planned** row. Choose the row to show the days. The view slows down at each day start. When you stop close to a day start, the view moves to it. More days load as you scroll.
+- **Week view:** The days run sideways in one strip: seven on a wide screen, three on a phone. Scroll sideways with a trackpad, with **Shift** and the mouse wheel, or with a finger. The strip stops at a day start. The arrows move by whole weeks. **Today** goes back to this week. A reload or a shared link opens the week of the day in the link, on a phone that day.
+- **Entries:** An event is a band as long as the event. The running event fills up and shows the time left, for example **27 min left**. A task with a deadline is a dashed line with its checkbox. Tasks due at about the same time sit side by side. If you can edit the Space, check the task off there, or press **Space** on it. Drag the line to move the deadline to another time. An event over several days is a bar in the all-day row. Where the week cuts the bar off, its end is torn. When there is room, the bar says where the event continues, for example **from 20** or **until 27**.
+- **Free time:** A gap of an hour or more shows its length, for example **1 hr free**. Choose a gap to create an event there. In the week view, free time shows when you point at a day or select it. Drag across empty time to create an event of that length.
+- **Plan a task:** Drag a task from the row below the day view into free time. The gap shows **fits** or how much time is missing. On a phone, touch and hold the task first. The task gets the time where you drop it and leaves the row. It keeps its deadline, also when you move it later.
+- **Today:** The arrow on **Today** points to today. When today is on the screen, a dot shows instead.
+- **Keyboard shortcuts:** **H** shows today. **J** and **K** move forward and back, and so do the right and left arrow keys. **1** to **4** choose the view, and **G** opens **Go to**. **Go to** takes a date, a weekday such as **Friday**, a month, or a week number. **N** creates an event, and **Shift+N** creates a task. The keyboard button in the toolbar lists the shortcuts, and Cloud Help lists them too. In the month, a letter that you type on a selected day starts the title of a new entry instead.
+- **Count:** The number next to the filters counts the entries of the days that you see.
 :::
 
 ## Choose the calendar colors {icon="palette"}

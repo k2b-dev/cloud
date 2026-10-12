@@ -130,3 +130,18 @@ export const requestSpacesRouteNavigation = (href: string, options: { replace?: 
   if (options.replace) window.location.replace(`${target.pathname}${target.search}`);
   else window.location.assign(`${target.pathname}${target.search}`);
 };
+
+/**
+ * Opens the item a link names in the detail of the page as it stands. A view that keeps its own place in the URL,
+ * such as the calendar's day while the reader scrolls, links items from a place it may have left since.
+ */
+export const requestSpacesDetailNavigation = (href: string, options: { replace?: boolean; scroll?: unknown } = {}) => {
+  const target = new URL(href, window.location.origin);
+  const current = new URL(window.location.href);
+  for (const key of ["item", "occurrence"]) {
+    const value = target.searchParams.get(key);
+    if (value === null) current.searchParams.delete(key);
+    else current.searchParams.set(key, value);
+  }
+  requestSpacesRouteNavigation(`${current.pathname}${current.search}`, options);
+};
