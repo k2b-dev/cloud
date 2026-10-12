@@ -290,6 +290,17 @@ export const startChatHarness = async () => {
     },
     /** Stores a message from another person and delivers it live. */
     receive: (chat: string, author: Person, body: string) => publish(append(chat, author, body, new Date())),
+    /** Renames a chat and announces it live with a system message, as a details change does. */
+    rename: (chat: string, title: string) => {
+      const entry = chats.get(chat)!;
+      entry.conversation = { ...entry.conversation, name: title, title };
+      publish(append(chat, viewer, "", new Date(), "system"));
+    },
+    /** Announces a system message and then answers 404 for the chat, as removing the reader does. */
+    revoke: (chat: string) => {
+      publish(append(chat, nora, "", new Date(), "system"));
+      chats.delete(chat);
+    },
     messageId,
     /** The island's props for an address, as the server renders them. */
     props: (address: { chat?: string; message?: string }, now: Date): ChatWorkspaceProps => {

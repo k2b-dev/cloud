@@ -2,7 +2,7 @@ import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { type LinkNavigateEvent, listenPopState, navigate, refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, announce, type MessageRowStatus, Placeholder, toast, useLocale, type VirtualFeedController } from "@k2b/ui";
-import { batch, createMemo, createSignal, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
 import type { ConversationPageSchema, ConversationSchema, MessagePageSchema } from "../service/contracts";
@@ -97,8 +97,15 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     title ? { title: t().appName, href: "/app/chat" } : { title: t().appName },
     ...(title ? [{ title }] : []),
   ];
-  const publishTrail = () =>
-    layout.update({ breadcrumbs: breadcrumbs(route().chatId ? (conversation()?.title ?? t().noAccessTitle) : undefined) });
+  // The trail names the chat in the address. It follows live renames and lost access, and keeps its last title while
+  // the store already holds the next chat but the address does not name it yet.
+  const trailTitle = createMemo<string | undefined>((previous) => {
+    const id = route().chatId;
+    if (!id) return undefined;
+    if (chat()?.id !== id) return previous;
+    return conversation()?.title ?? t().noAccessTitle;
+  });
+  createEffect(on(trailTitle, (title) => layout.update({ breadcrumbs: breadcrumbs(title) }), { defer: true }));
 
   // A sent message the loaded history covers leaves the outbox; its stored row keeps the send's key.
   const prune = () => {
@@ -172,7 +179,6 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     setDraft(next.chatId ? (drafts.get(next.chatId) ?? "") : "");
     setNow(new Date());
     sortRows();
-    publishTrail();
   };
   /** Loads the chat's snapshot before the address changes; only an applied open may change it. */
   const open = async (next: Route): Promise<"applied" | "superseded" | "failed"> => {

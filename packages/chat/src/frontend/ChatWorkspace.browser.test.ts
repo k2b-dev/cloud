@@ -192,6 +192,24 @@ describe("ChatWorkspace browser full view", () => {
       await page.context().close();
     }
   }, 30_000);
+  test("a live rename and lost access update the page trail and document title", async () => {
+    const chat = harness.addChat({ members: [viewer, nora], name: "Before rename", count: 4, end: new Date() });
+    const { page, errors } = await load(viewports[0]!.options, { chat });
+    try {
+      // Wait for the live subscriptions before the server announces the change.
+      await Bun.sleep(100);
+      harness.rename(chat, "After rename");
+      await page.waitForFunction(() => document.title === "After rename");
+      await page.locator(".chat-conversation__header", { hasText: "After rename" }).waitFor();
+      harness.revoke(chat);
+      await page.waitForFunction(() => document.title === "No access");
+      await page.locator(".k2b-app-workspace__main", { hasText: "No access" }).waitFor();
+      expect(await page.locator(".k2b-app-workspace__main").innerText()).not.toContain("After rename");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
   test("sidebar navigation and browser Back change the chat without reloading", async () => {
     const first = harness.addChat({ members: [viewer, nora], name: "First chat", count: 4, end: new Date() });
     const second = harness.addChat({ members: [viewer, tobias], name: "Second chat", count: 4, end: new Date() });
