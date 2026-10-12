@@ -66,6 +66,9 @@ const load = async (width: number, height: number, view: View, options: BrowserC
   await page.bringToFront();
   const closed = await columns(page);
   await eventOf(page).click();
+  // The workspace reveals the clicked event in the frame after the panel opens, and a reduced-motion panel has no
+  // animation to wait for. A frame requested now runs after that reveal, so every measurement sees its result.
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
   await page.waitForFunction(() => document.querySelector(".k2b-app-workspace__detail")!.getAnimations().length === 0);
   return { page, closed };
 };
