@@ -6,6 +6,7 @@ import {
   DEFAULT_MAIL_CSS,
   hasUnrenderedTemplateSyntax,
   moveSignatureSegment,
+  previewFormattingWarnings,
   removeOrphanComposeSegmentMarks,
   renderComposeContent,
   renderComposeTemplateSource,
@@ -57,6 +58,28 @@ const expectLiteralText = (rendered: ReturnType<typeof renderComposeContent>, va
 };
 
 describe("compose renderer", () => {
+  test("merges preview warnings design first and caps the combined list", () => {
+    const design = storedComposeCss(".mail-content { color: #123456; font-family: var(--font); }");
+    expect(design.formattingWarnings).toEqual([{ code: "ignored_mailbox_css", property: "font-family" }]);
+    expect(
+      previewFormattingWarnings(
+        design.formattingWarnings,
+        "<small>fine print</small>\n\n![logo](https://example.test/logo.png)",
+        "markdown",
+      ),
+    ).toEqual([
+      { code: "ignored_mailbox_css", property: "font-family" },
+      { code: "unsupported_element", element: "small" },
+      { code: "unsupported_element", element: "img" },
+    ]);
+    const body = Array.from({ length: MAX_COMPOSE_FORMATTING_WARNINGS }, (_, index) => `<bad${index}>text</bad${index}>`).join("\n");
+    const capped = previewFormattingWarnings(design.formattingWarnings, body, "markdown");
+    expect(capped).toHaveLength(MAX_COMPOSE_FORMATTING_WARNINGS);
+    expect(capped[0]).toEqual(design.formattingWarnings[0]);
+    expect(capped.at(-1)).toEqual({ code: "unsupported_element", element: `bad${MAX_COMPOSE_FORMATTING_WARNINGS - 2}` });
+    expect(previewFormattingWarnings([], body, "plain")).toEqual([]);
+  });
+
   test("keeps Markdown quotes and code lines without a language label (#932)", () => {
     const rendered = renderComposeContent({
       body: "> quoted line\n> second\n\n```ts\nconst a = 1;\nconst b = 2;\n```",

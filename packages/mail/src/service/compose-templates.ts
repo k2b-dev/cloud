@@ -17,7 +17,6 @@ import {
   type DraftEditableContent,
   type DraftEditableContentInput,
   draftEditableContentInputSchema,
-  MAX_COMPOSE_FORMATTING_WARNINGS,
   type MailboxComposeStyle,
   type RenderComposeSnippetInput,
   renderComposeSnippetInputSchema,
@@ -35,6 +34,7 @@ import { sha256Text } from "./canonical";
 import {
   type ComposeRenderContext,
   composeFormattingWarnings,
+  previewFormattingWarnings,
   type RenderedComposeContent,
   renderComposeContent,
   renderComposeTemplateSource,
@@ -801,10 +801,11 @@ export const previewComposeDraft = async (params: {
   return ok({
     html: rendered.data.html ?? `<pre>${escapeHtml(rendered.data.text)}</pre>`,
     text: rendered.data.text,
-    formattingWarnings: [
-      ...rendered.data.formattingWarnings,
-      ...composeFormattingWarnings(params.input.draft.body ?? "", params.input.draft.format ?? "markdown"),
-    ].slice(0, MAX_COMPOSE_FORMATTING_WARNINGS),
+    formattingWarnings: previewFormattingWarnings(
+      rendered.data.formattingWarnings,
+      params.input.draft.body ?? "",
+      params.input.draft.format ?? "markdown",
+    ),
   });
 };
 

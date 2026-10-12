@@ -2,11 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { DraftMutationDataSchema } from "./capability-contracts";
 import {
+  type AutomaticReplyPreview,
   activateWorkflowInputSchema,
   actorCommandInputSchema,
   addConversationLocalTagsSchema,
   assignConversationsSchema,
   automaticReplyPreviewInputSchema,
+  automaticReplyPreviewSchema,
   type ComposeFormattingWarning,
   cancelScheduledSendInputSchema,
   composeFormattingWarningSchema,
@@ -281,6 +283,25 @@ describe("automatic reply configuration contracts", () => {
         referenceConfiguration,
       }).success,
     ).toBe(false);
+  });
+
+  test("accepts formatting warnings in automatic reply previews and rejects unknown fields", () => {
+    const preview: AutomaticReplyPreview = {
+      subject: "Re: Example request",
+      html: "<p>Fine print</p>",
+      text: "Fine print",
+      formattingWarnings: [
+        { code: "ignored_mailbox_css", property: "font-family" },
+        { code: "unsupported_element", element: "small" },
+      ],
+    };
+    expect(automaticReplyPreviewSchema.parse(preview)).toEqual(preview);
+    expect(automaticReplyPreviewSchema.safeParse({ ...preview, unknown: true }).success).toBe(false);
+    expect(automaticReplyPreviewSchema.safeParse({ ...preview, formattingWarnings: [] }).success).toBe(true);
+  });
+
+  test("requires formatting warnings in automatic reply previews", () => {
+    expect(automaticReplyPreviewSchema.safeParse({ subject: "Reply", html: "<p>Body</p>", text: "Body" }).success).toBe(false);
   });
 
   test("requires the reference format for reference-enabled previews", () => {

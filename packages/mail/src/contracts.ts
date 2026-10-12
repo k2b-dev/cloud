@@ -2147,15 +2147,6 @@ export const automaticReplyPreviewInputSchema = z
   });
 export type AutomaticReplyPreviewInput = z.infer<typeof automaticReplyPreviewInputSchema>;
 
-export const automaticReplyPreviewSchema = z
-  .object({
-    subject: z.string(),
-    html: z.string(),
-    text: z.string(),
-  })
-  .strict();
-export type AutomaticReplyPreview = z.infer<typeof automaticReplyPreviewSchema>;
-
 export const createAutomaticReplySetupSchema = z
   .object({
     automaticReply: createAutomaticReplyConfigurationSchema,
@@ -2824,6 +2815,16 @@ export const composeFormattingWarningSchema = z.discriminatedUnion("code", [
 ]);
 export type ComposeFormattingWarning = z.infer<typeof composeFormattingWarningSchema>;
 export const composeFormattingWarningsSchema = z.array(composeFormattingWarningSchema).max(MAX_COMPOSE_FORMATTING_WARNINGS);
+
+export const automaticReplyPreviewSchema = z
+  .object({
+    subject: z.string(),
+    html: z.string(),
+    text: z.string(),
+    formattingWarnings: composeFormattingWarningsSchema,
+  })
+  .strict();
+export type AutomaticReplyPreview = z.infer<typeof automaticReplyPreviewSchema>;
 
 export const composeTemplateKindSchema = z.enum(["signature", "snippet"]);
 export type ComposeTemplateKind = z.infer<typeof composeTemplateKindSchema>;

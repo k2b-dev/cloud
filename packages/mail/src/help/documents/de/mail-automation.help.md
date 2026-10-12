@@ -113,6 +113,8 @@ Mail nutzt das Workflow-Modell der Plattform automatisch und bietet keine eigene
 7. Wähle **Automatische Antwort speichern**.
 :::
 
+Die **Vorschau** listet die Formatierung auf, die in der E-Mail weggelassen wird, und die Werte des E-Mail-Designs des Postfachs, die Mail ignoriert. Die automatische Antwort wird trotzdem gesendet, nur ohne diese Teile.
+
 Betreff und Nachrichten sind Liquid-Vorlagen. Nutze die Variablen, die du im Editor kopieren kannst, zum Beispiel `{{ inputs.message.subject }}`. Nachdem eine Referenz vergeben wurde, steht auch `{{ reference.value }}` zur Verfügung. Mail lehnt ungültige Syntax und nicht verfügbare Variablen ab, bevor es die Antwort speichert.
 
 In einem Postfach kann nur eine automatische Antwort gleichzeitig eingeschaltet sein. Schalte die aktive Einrichtung aus, bevor du eine andere einschaltest. Standardmäßig können nur Personen mit Zugriff **Verwalten** automatische Antworten ändern. Sie können das unter **Einstellungen → Zugriff → Verwaltungszugriff für automatische Antworten** auch Personen mit Zugriff **Bearbeiten** erlauben.

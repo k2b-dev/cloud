@@ -646,6 +646,13 @@ export const composeFormattingWarnings = (body: string, format: "plain" | "markd
   }
 };
 
+/** Preview warnings list the design first, then the body, capped at the shared limit. */
+export const previewFormattingWarnings = (
+  designWarnings: ComposeFormattingWarning[],
+  body: string,
+  format: "plain" | "markdown",
+): ComposeFormattingWarning[] => [...designWarnings, ...composeFormattingWarnings(body, format)].slice(0, MAX_COMPOSE_FORMATTING_WARNINGS);
+
 const formattingWarnings = (body: string): ComposeFormattingWarning[] => {
   const source = body.replace(COMPOSE_SEGMENT_MARKS, "");
   // A body the renderer refuses reports that error on preview and send instead.

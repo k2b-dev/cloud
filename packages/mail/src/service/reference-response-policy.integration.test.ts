@@ -15,6 +15,7 @@ import {
   updateAutomaticReplySetup,
 } from "./automatic-reply-configuration";
 import { listActivity } from "./collaboration";
+import { getMailboxComposeStyle } from "./compose-templates";
 import {
   ensureConversationReference,
   findConversationByReference,
@@ -618,6 +619,51 @@ suite("conversation references and automatic reply policies", () => {
         text: `Reference: PREVIEW-${new Date().getUTCFullYear()}-000042`,
       },
     });
+    const style = await getMailboxComposeStyle(ownerContext, mailboxId);
+    if (!style.ok) throw new Error(style.error.message);
+    try {
+      await sql`
+        UPDATE mail.compose_styles
+        SET custom_css = ${".mail-content { color: #123456; font-family: var(--font); }"}
+        WHERE mailbox_id = ${mailboxId}::uuid
+      `;
+      const warningInput = {
+        senderIdentityId: identity.id,
+        subject: "Re: {{ inputs.message.subject }}",
+        body: "<small>fine print</small>\n\n![logo](https://example.test/logo.png)",
+        format: "markdown" as const,
+        ensureReference: false,
+        referencePattern: null,
+      };
+      const withWarnings = await previewAutomaticReply({ context: ownerContext, mailboxId, input: warningInput });
+      expect(withWarnings.ok).toBe(true);
+      if (!withWarnings.ok) throw new Error(withWarnings.error.message);
+      expect(withWarnings.data.formattingWarnings).toEqual([
+        { code: "ignored_mailbox_css", property: "font-family" },
+        { code: "unsupported_element", element: "small" },
+        { code: "unsupported_element", element: "img" },
+      ]);
+      expect(withWarnings.data.html).toContain("color:#123456");
+      const plain = await previewAutomaticReply({ context: ownerContext, mailboxId, input: { ...warningInput, format: "plain" } });
+      expect(plain).toMatchObject({ ok: true, data: { formattingWarnings: [] } });
+      const rawBody = await previewAutomaticReply({
+        context: ownerContext,
+        mailboxId,
+        input: { ...warningInput, body: "{% if false %}<small>fine print</small>{% endif %}Visible" },
+      });
+      expect(rawBody).toMatchObject({
+        ok: true,
+        data: {
+          text: "Visible",
+          formattingWarnings: [
+            { code: "ignored_mailbox_css", property: "font-family" },
+            { code: "unsupported_element", element: "small" },
+          ],
+        },
+      });
+    } finally {
+      await sql`UPDATE mail.compose_styles SET custom_css = ${style.data.customCss} WHERE mailbox_id = ${mailboxId}::uuid`;
+    }
     const invalidPreview = await previewAutomaticReply({
       context: ownerContext,
       mailboxId,
