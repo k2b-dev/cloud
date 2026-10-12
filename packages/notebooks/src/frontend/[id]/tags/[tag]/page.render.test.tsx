@@ -114,7 +114,7 @@ describe("Book tag page SSR", () => {
     expect(html).toContain("k2b-field flex-1 min-w-0");
     expect(html).not.toContain('<ul class="flex flex-col gap-1"');
     expect(html).toContain('data-layout-authenticated="true"');
-    expect(html).toContain("AppWorkspaceController");
+    expect(html).toContain("ShellRuntime");
     expect(html).toContain("layout-content-main");
     expect(calls.notes).toHaveBeenCalledWith({
       notebookId: notebook.id,
