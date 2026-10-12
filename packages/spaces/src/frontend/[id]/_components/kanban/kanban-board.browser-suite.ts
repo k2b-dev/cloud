@@ -374,6 +374,16 @@ const cardsIn = (page: Page, key: string) =>
     .locator(`[data-spaces-kanban-column="${key}"] [data-spaces-kanban-card]`)
     .evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.itemId));
 
+const waitForCards = (page: Page, key: string, ids: string[]) =>
+  page.waitForFunction(
+    ([column, expected]) =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>(`[data-spaces-kanban-column="${column}"] [data-spaces-kanban-card]`),
+        (card) => card.dataset.itemId,
+      ).join() === expected.join(),
+    [key, ids] as const,
+  );
+
 const cardControls = (page: Page, title: string) =>
   page
     .locator("article")
@@ -692,7 +702,8 @@ describe("Spaces Kanban board in a browser", () => {
       await page.keyboard.press("Space");
       await moved;
       expect(moves).toEqual([{ columnId: "Col001", afterItemId: "Item02" }]);
-      expect(await cardsIn(page, "column:Col001")).toEqual(["Item02", "Item01", "Item03"]);
+      // The board applies the drop inside a view transition, which WebKit can run a few frames after the response.
+      await waitForCards(page, "column:Col001", ["Item02", "Item01", "Item03"]);
       await refreshed;
       await waitForAnnouncement(page, "Dropped Order banners for the spring fair in Column To do");
       expect(filterRequests.length).toBeGreaterThan(0);
