@@ -1,5 +1,6 @@
 import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
+import { websocket } from "hono/bun";
 import apiRoutes from "./api";
 import { app, ssr } from "./config";
 import pageRoutes, { adminPages } from "./frontend";
@@ -17,7 +18,7 @@ const router = new Hono<AuthContext>()
 router.get("/app/chat/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 router.get("/admin/chat/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
-export default await app.start({
+const result = await app.start({
   fetch: router.fetch,
   help: chatHelp,
   openapi: apiRoutes,
@@ -27,6 +28,8 @@ export default await app.start({
     },
   },
 });
+// `/api/chat/live` upgrades through Bun, which needs the WebSocket handlers on the server definition.
+export default { ...result, websocket };
 export type { ApiType } from "./api";
 export type { ChatHealth, ChatService } from "./service";
 export { chatService as service };
