@@ -50,11 +50,15 @@ calculator, unit converter, tip calculator or timer. Build it in one pass:
 
 The single file follows these rules:
 
-- Cloud styles plain semantic HTML (headings, forms, buttons, tables, `output`)
-  in light and dark. Write little CSS and only with tokens such as
-  `var(--k2b-action)` or `var(--k2b-text-muted)`: no fixed colors, borders,
-  cards or shadows. Use `class="row"` or `class="grid"` for layout and
-  `class="primary"` for the main button.
+- Start with one `<h1>`. Cloud styles plain semantic HTML (headings, forms,
+  buttons, tables, `output`) in light and dark with enough contrast. Write
+  little CSS: no text or background colors of your own, borders, cards or
+  shadows; use tokens such as `var(--k2b-text-muted)` where you must. Use
+  `class="row"` or `class="grid"` for layout and `class="primary"` for the
+  main button.
+- A layout of your own, such as a keypad grid, sets `gap` and
+  `> * { margin: 0 }`; otherwise Cloud's spacing between siblings shifts the
+  second item of a row.
 - No inline handlers (`onclick="…"`), `alert`, `confirm`, `prompt`,
   `localStorage`, `fetch`, CDN scripts or `<link>`. Use `addEventListener`,
   and `await cloud.kv.user.get/set` for what the person keeps, such as
@@ -69,8 +73,11 @@ The single file follows these rules:
   `click`, `check`, `uncheck`, `fill`, `select`, `press`, `upload` and
   `reload`; targets are `{role,name}`, `{label}` or `{text}`.
 
-For anything larger, such as stored records, several people, uploaded files
-or PDFs, read Source workflow and the closest complete example first.
+Records that several people add or see, such as a team form or a shared list,
+need a table: create it with `code_database` before the check and write rows
+with `cloud.db`; read [Database](references/database.md). `cloud.kv.user` keeps
+data only for the person who entered it. For anything larger, such as uploaded
+files or PDFs, read Source workflow and the closest complete example first.
 
 ## Start from the contract
 
