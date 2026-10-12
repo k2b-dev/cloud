@@ -7,6 +7,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { resolveMailSearchRoute } from "../search-state";
 import * as integrations from "../service/app-integrations";
 import * as publicResources from "../service/public-resources";
 import * as workspace from "../service/workspace";
@@ -47,7 +48,7 @@ beforeEach(() => {
   spies.push(spyOn(services, "get").mockResolvedValue("https://cloud.example.test"));
 });
 
-const request = () => {
+const request = (query = "") => {
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
   app.use("*", async (c, next) => {
     c.set("actor", { kind: "user", user });
@@ -57,7 +58,7 @@ const request = () => {
     await next();
   });
   app.get("/app/mail/:mailboxId", ...handler);
-  return app.request(`https://cloud.example.test/app/mail/${mailboxShortId}`);
+  return app.request(`https://cloud.example.test/app/mail/${mailboxShortId}${query}`);
 };
 
 test("missing or deleted active mailbox renders shared HTML 404 before loading workspace data", async () => {
@@ -118,4 +119,31 @@ test("active mailbox denied by workspace preserves 403 in the shared no-store HT
   expect(html).not.toContain("Internal mailbox permission details");
   expect(html).not.toContain(mailboxId);
   expect(html).not.toContain("MailWorkspace");
+});
+
+test.each([
+  "?q=invoice&qFields=from,subject",
+  `?${new URLSearchParams({ search: JSON.stringify({ expression: { type: "local_tag_id", tagId: "Tag001" }, sort: "newest" }) })}`,
+  "?search=invalid&q=invoice",
+])("SSR passes the request's resolved public search to its snapshot loader: %s", async (query) => {
+  spies.push(spyOn(publicResources, "resolveActiveMailboxId").mockResolvedValue(mailboxId));
+  spies.push(spyOn(publicResources, "resolveExistingMailboxPublicIds").mockResolvedValue(new Map()));
+  const load = spyOn(workspace, "loadMailboxPageData").mockResolvedValue({
+    ok: false,
+    error: { code: "FORBIDDEN", message: "Denied", status: 403 },
+  });
+  spies.push(
+    load,
+    spyOn(integrations, "getSpacesMailIntegrationAvailability").mockResolvedValue({
+      invitations: false,
+      settings: false,
+      composer: false,
+      context: false,
+    }),
+  );
+  const response = await request(query);
+  expect(response.status).toBe(403);
+  expect(load.mock.calls[0]?.[0].publicSearch).toEqual(
+    resolveMailSearchRoute(new URL(`https://cloud.example.test/app/mail/${mailboxShortId}${query}`)),
+  );
 });

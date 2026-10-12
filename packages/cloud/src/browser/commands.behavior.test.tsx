@@ -2,9 +2,147 @@ import { expect, spyOn, test } from "bun:test";
 import { isServer } from "solid-js/web";
 import { z } from "zod";
 import { createDomTestHarness } from "../../../ui/test/dom";
-import { commandPath } from "../contracts/commands";
+import { type CommandOptions, commandPath } from "../contracts/commands";
 
 if (!isServer) {
+  test("without a command parameter, consumption leaves history alone and loads no contracts", async () => {
+    const dom = createDomTestHarness();
+    const { toast } = await import("@k2b/ui");
+    const reload = await import("./reload");
+    const { consumeCommandLink } = await import("./commands");
+    const load = spyOn(reload, "importOnDemand").mockResolvedValue(undefined);
+    const error = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    try {
+      for (const query of ["?filter=open", "?filter=open&command="]) {
+        window.history.replaceState({ page: 2 }, "", `/app/demo${query}#details`);
+        const href = window.location.href;
+        await consumeCommandLink();
+        expect(window.location.href).toBe(href);
+        expect(window.history.state).toEqual({ page: 2 });
+      }
+      expect(load).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      load.mockRestore();
+      error.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test("concurrent command link consumers dispatch exactly once after loading", async () => {
+    const dom = createDomTestHarness();
+    const reload = await import("./reload");
+    const { consumeCommandLink, registerCommandHandler } = await import("./commands");
+    const pending = Promise.withResolvers<void>();
+    const load = spyOn(reload, "importOnDemand").mockImplementation(async (loader) => {
+      await pending.promise;
+      return loader();
+    });
+    let calls = 0;
+    const stop = registerCommandHandler("demo.edit", z.object({}), () => {
+      calls++;
+    });
+    try {
+      window.history.replaceState({ page: 2 }, "", commandPath("/app/demo?filter=open#details", "demo.edit", {}));
+      const first = consumeCommandLink();
+      const second = consumeCommandLink();
+      expect(load).toHaveBeenCalledTimes(2);
+      expect(calls).toBe(0);
+      pending.resolve();
+      await Promise.all([first, second]);
+      expect(calls).toBe(1);
+      expect(window.location.href).toBe("http://localhost/app/demo?filter=open#details");
+      expect(window.history.state).toEqual({ page: 2 });
+    } finally {
+      pending.resolve();
+      stop();
+      load.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test.each([
+    ["/app/demo", 0],
+    ["/app/demo?filter=closed#details", 0],
+    [commandPath("/app/demo?filter=closed", "demo.other", {}), 0],
+    [commandPath("/app/demo?filter=closed#details", "demo.edit", {}), 1],
+  ])("command consumption preserves changes made during loading: %s", async (path, expectedCalls) => {
+    const dom = createDomTestHarness();
+    const reload = await import("./reload");
+    const { consumeCommandLink, registerCommandHandler } = await import("./commands");
+    const pending = Promise.withResolvers<void>();
+    const load = spyOn(reload, "importOnDemand").mockImplementation(async (loader) => {
+      await pending.promise;
+      return loader();
+    });
+    let calls = 0;
+    const stops = ["demo.edit", "demo.other"].map((id) =>
+      registerCommandHandler(id, z.object({}), () => {
+        calls++;
+      }),
+    );
+    try {
+      window.history.replaceState(null, "", commandPath("/app/demo?filter=open", "demo.edit", {}));
+      const consumption = consumeCommandLink();
+      window.history.replaceState({ page: 3 }, "", path);
+      const href = window.location.href;
+      pending.resolve();
+      await consumption;
+      expect(calls).toBe(expectedCalls);
+      expect(window.location.href).toBe(expectedCalls ? "http://localhost/app/demo?filter=closed#details" : href);
+      expect(window.history.state).toEqual({ page: 3 });
+    } finally {
+      pending.resolve();
+      stops.forEach((stop) => stop());
+      load.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test("a failed on-demand load ends openCommand without navigation or dispatch", async () => {
+    const dom = createDomTestHarness();
+    const reload = await import("./reload");
+    const { openCommand, registerCommandHandler } = await import("./commands");
+    const load = spyOn(reload, "importOnDemand").mockResolvedValue(undefined);
+    const navigate = spyOn(window.location, "assign").mockImplementation(() => {});
+    let handled = false;
+    const stop = registerCommandHandler("demo.edit", z.object({}), () => {
+      handled = true;
+    });
+    try {
+      await openCommand("demo.edit");
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(navigate).not.toHaveBeenCalled();
+      expect(handled).toBe(false);
+    } finally {
+      stop();
+      load.mockRestore();
+      navigate.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test("openCommand validates options before dispatching to a local owner", async () => {
+    const dom = createDomTestHarness();
+    const { openCommand, registerCommandHandler } = await import("./commands");
+    const navigate = spyOn(window.location, "assign").mockImplementation(() => {});
+    const received: { input: unknown; options: CommandOptions }[] = [];
+    const stop = registerCommandHandler("demo.edit", z.object({ id: z.string() }), (input, options) => {
+      received.push({ input, options });
+    });
+    try {
+      await openCommand("demo.edit", { id: "a", extra: "stripped" }, { returnTo: "/app/demo?filter=open" });
+      expect(received).toEqual([{ input: { id: "a" }, options: { returnTo: "/app/demo?filter=open" } }]);
+      await expect(openCommand("demo.edit", { id: "b" }, { returnTo: "//other.test" })).rejects.toThrow("Expected a Cloud path");
+      expect(received).toHaveLength(1);
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      stop();
+      navigate.mockRestore();
+      dom.cleanup();
+    }
+  });
+
   test("invalid and ownerless Command links are consumed without dropping page state", async () => {
     const dom = createDomTestHarness();
     const { toast } = await import("@k2b/ui");

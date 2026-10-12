@@ -6,6 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { Mailbox } from "../../contracts";
+import { resolveMailSearchRoute } from "../../search-state";
 
 const root = mkdtempSync(join(tmpdir(), "mail-conversation-list-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -23,6 +24,7 @@ const renderList = (overrides: Partial<Parameters<typeof MailConversationList>[0
       mailboxId: mailbox.id,
       requestUrl: "/app/mail/Box001?view=needs_action",
       query: "",
+      search: resolveMailSearchRoute(new URL(overrides.requestUrl ?? "/app/mail/Box001?view=needs_action", "https://cloud.test")),
       title: "Needs action",
       items: [],
       error: null,
@@ -87,6 +89,36 @@ describe("Mail conversation list", () => {
 
     expect(summary(renderList({ requestUrl, localTags: [tag] }))).toBe("Has tag “Invoices”");
     expect(summary(renderList({ requestUrl, localTags: [] }))).toBe("Has a deleted tag");
+  });
+
+  test.each([
+    ["?q=quick", "saved"],
+    ["?search=invalid&q=quick", "saved"],
+    [
+      `?${new URLSearchParams({ search: JSON.stringify({ expression: { type: "text", field: "from", query: "structured", match: "exact" }, sort: "newest" }), q: "quick" })}`,
+      "structured",
+    ],
+  ])("search summary keeps structured, saved-view, quick-search precedence: %s", (query, expected) => {
+    const html = renderList({
+      requestUrl: `/app/mail/Box001${query}`,
+      activeSavedViewId: "View01",
+      savedViews: [
+        {
+          id: "View01",
+          mailboxId: "Box001",
+          scope: "private",
+          ownerUserId: "user-1",
+          name: "Saved",
+          filter: { expression: { type: "text", field: "subject", query: "saved", match: "words" }, sort: "newest" },
+          revision: 1,
+          createdAt: "2026-10-01T00:00:00.000Z",
+          updatedAt: "2026-10-01T00:00:00.000Z",
+        },
+      ],
+    });
+    const summary = /class="mail-search-summary__text"[^>]*>([^<]*)</.exec(html)?.[1];
+    expect(summary).toContain(expected);
+    expect(summary).not.toContain("quick");
   });
 
   test("explains a failed search instead of showing service text", () => {

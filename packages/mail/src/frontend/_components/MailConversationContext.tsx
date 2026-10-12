@@ -1,14 +1,14 @@
 import { openCommand, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { mutation, query } from "@k2b/stdlib/solid";
 import { Button, DetailPanel, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import { mailCommandMessages } from "../../commands";
-import { canCreateDirectoryContacts } from "../../contact-directory-settings";
+import { mailCommandMessages } from "../../command-messages";
+import { canCreateDirectoryContacts } from "../../contact-directory";
 import type { MailConversationContext } from "../../contracts";
 import { assertCursorProgress } from "../pagination";
 import { readApiError } from "./api-response";
-import { createContact, listWritableContactBooks } from "./contact-capabilities";
 import { buildMailContactParticipantRows } from "./mail-contact-context";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
 import { createRetryToasts } from "./mail-feedback";
@@ -86,7 +86,10 @@ export default function MailConversationContext(props: {
   const createParticipantContact = mutation.create<void, ParticipantContactIntent, { intent: ParticipantContactIntent }>({
     onBefore: (intent) => ({ intent }),
     mutation: async ({ participant, book, conversationId, idempotencyKey }, { abortSignal }) => {
-      await createContact(
+      const capabilities = await importOnDemand(() => import("./contact-capabilities"));
+      if (!capabilities) throw new DOMException("Contact code unavailable", "AbortError");
+      if (abortSignal.aborted) return;
+      await capabilities.createContact(
         contactDirectory.create,
         {
           bookId: book.id,
@@ -119,37 +122,46 @@ export default function MailConversationContext(props: {
     }
   };
 
+  const [contactOpening, setContactOpening] = createSignal(false);
   const chooseBookAndCreate = async (participant: { email: string; displayName: string | null }) => {
-    const selected = await prompts.search<{ id: string; name: string }>(
-      async ({ query, abortSignal }) => {
-        const result = await listWritableContactBooks(
-          contactDirectory.listWritableBooks,
-          { query: query.trim() || undefined, limit: 25 },
-          abortSignal,
-        );
-        return result.data.map((book) => ({
-          value: { id: book.id, name: book.name },
-          label: book.name,
-          desc: book.description ?? undefined,
+    if (contactOpening() || createParticipantContact.loading()) return;
+    setContactOpening(true);
+    try {
+      const capabilities = await importOnDemand(() => import("./contact-capabilities"));
+      if (!capabilities || !mounted) return;
+      const selected = await prompts.search<{ id: string; name: string }>(
+        async ({ query, abortSignal }) => {
+          const result = await capabilities.listWritableContactBooks(
+            contactDirectory.listWritableBooks,
+            { query: query.trim() || undefined, limit: 25 },
+            abortSignal,
+          );
+          return result.data.map((book) => ({
+            value: { id: book.id, name: book.name },
+            label: book.name,
+            desc: book.description ?? undefined,
+            icon: "ti ti-address-book",
+          }));
+        },
+        {
+          title: messages().chooseContactBook,
           icon: "ti ti-address-book",
-        }));
-      },
-      {
-        title: messages().chooseContactBook,
-        icon: "ti ti-address-book",
-        placeholder: messages().searchWritableContactBooks,
-        minQueryLength: 0,
-        noResultsText: messages().noWritableContactBooks,
-        size: "small",
-      },
-    );
-    if (!selected?.value) return;
-    createParticipantContact.mutate({
-      participant,
-      book: selected.value,
-      conversationId: props.conversationId,
-      idempotencyKey: crypto.randomUUID(),
-    });
+          placeholder: messages().searchWritableContactBooks,
+          minQueryLength: 0,
+          noResultsText: messages().noWritableContactBooks,
+          size: "small",
+        },
+      );
+      if (!selected?.value || !mounted) return;
+      await createParticipantContact.mutate({
+        participant,
+        book: selected.value,
+        conversationId: props.conversationId,
+        idempotencyKey: crypto.randomUUID(),
+      });
+    } finally {
+      if (mounted) setContactOpening(false);
+    }
   };
 
   const reconcileSpacesAfterWrite = async (mailboxId: string, conversationId: string, title: string) => {
@@ -337,9 +349,16 @@ export default function MailConversationContext(props: {
                             >
                               <DetailPanel.Action
                                 type="button"
-                                disabled={createParticipantContact.loading()}
+                                aria-busy={contactOpening() || createParticipantContact.loading() || undefined}
                                 onClick={() => void chooseBookAndCreate(participant)}
-                                leading={<i class="ti ti-user-plus text-[var(--app-accent)]" aria-hidden="true" />}
+                                leading={
+                                  <Show
+                                    when={contactOpening() || createParticipantContact.loading()}
+                                    fallback={<i class="ti ti-user-plus text-[var(--app-accent)]" aria-hidden="true" />}
+                                  >
+                                    <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
+                                  </Show>
+                                }
                                 title={participant.email}
                                 trailing={<span class="text-[0.6875rem] font-normal">{messages().newContact}</span>}
                               />

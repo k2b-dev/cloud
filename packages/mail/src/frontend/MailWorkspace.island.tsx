@@ -8,11 +8,10 @@ import { AppWorkspace, announce, openSpotlightSearch, Placeholder, prompts, toas
 import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { apiClient } from "../api/client";
-import type { MailContactDirectory } from "../contact-directory-settings";
+import type { MailContactDirectory } from "../contact-directory";
 import { isAggregatedListing } from "../folder-display-rules";
 import { mailFolderPaths } from "../folder-tree";
-import { MailLiveEventSchema } from "../live-events";
-import { resolveMailSearchRoute } from "../search-state";
+import { parseMailLiveEvent } from "../live-event";
 import type { ConversationCollaboration, MailActivityEvent } from "../service/collaboration";
 import type { ConversationLocalTags } from "../service/local-tags";
 import type { ConversationPresenceSnapshot } from "../service/presence";
@@ -128,7 +127,7 @@ function MailWorkspaceView(props: {
   const [detailsOpening, setDetailsOpening] = createSignal(false);
   const [managementOpening, setManagementOpening] = createSignal<"health" | "links" | "remote-content" | "subscriptions" | null>(null);
   const [liveUnavailable, setLiveUnavailable] = createSignal(false);
-  const activeSearch = createMemo(() => resolveMailSearchRoute(mailRouteUrl(requestPath())));
+  const activeSearch = () => data.search;
   const activeTagId = createMemo(() => {
     const expression = activeSearch().expression;
     return expression?.type === "local_tag_id" ? expression.tagId : null;
@@ -670,7 +669,7 @@ function MailWorkspaceView(props: {
       { mailbox: mailboxId },
       {
         cursor: props.data.initialLiveCursor,
-        parse: (data) => MailLiveEventSchema.parse(data),
+        parse: (data) => parseMailLiveEvent(data),
         apply: (events) => refreshLiveData(events.map((event) => event.data.conversationId)),
         resync: () => refreshLiveData(null),
         revoked: () => void documentNavigate("/app/mail", { replace: true }),
@@ -1685,6 +1684,7 @@ function MailWorkspaceView(props: {
                     mailboxId={data.mailbox.id}
                     requestUrl={requestPath()}
                     query={data.query}
+                    search={data.search}
                     title={data.listTitle}
                     items={data.listItems}
                     error={data.listError}

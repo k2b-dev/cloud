@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { z } from "zod";
 import { createDomTestHarness } from "../../../../ui/test/dom";
@@ -103,3 +103,110 @@ if (!isServer)
       dom.cleanup();
     }
   });
+
+test.skipIf(isServer)(
+  "New contact stays busy during code loading and ends without opening the book picker when loading fails",
+  async () => {
+    const dom = createDomTestHarness();
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async () =>
+        Response.json({
+          conversationId: "Conv01",
+          participants: [{ email: "ada@example.test", displayName: "Ada Example" }],
+          contacts: { status: "ready", items: [], matchedEmails: [], nextCursor: null },
+          spaces: { status: "ready", items: [], truncated: false },
+        }),
+      { preconnect: originalFetch.preconnect },
+    );
+    const reload = await import("@k2b/cloud/browser/reload");
+    const { prompts } = await import("@k2b/ui");
+    const { default: MailConversationContext } = await import("./MailConversationContext");
+    let finish!: () => void;
+    const load = spyOn(reload, "importOnDemand").mockImplementationOnce(
+      () =>
+        new Promise<undefined>((resolve) => {
+          finish = () => resolve(undefined);
+        }),
+    );
+    const search = spyOn(prompts, "search").mockResolvedValue(undefined);
+    delegateEvents(["click"]);
+    const dispose = render(
+      () => <MailConversationContext mailboxId="Box001" conversationId="Conv01" requestUrl="/app/mail/Box001" active />,
+      dom.root,
+    );
+    try {
+      for (let i = 0; i < 100 && !dom.root.textContent?.includes("New contact"); i++) await Bun.sleep(10);
+      const trigger = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
+        button.textContent?.includes("New contact"),
+      )!;
+      trigger.click();
+      expect(trigger.getAttribute("aria-busy")).toBe("true");
+      expect(trigger.disabled).toBe(false);
+      expect(trigger.querySelector("i.ti-loader-2")).not.toBeNull();
+      trigger.click();
+      expect(load).toHaveBeenCalledTimes(1);
+      finish();
+      await Bun.sleep(0);
+      expect(trigger.hasAttribute("aria-busy")).toBe(false);
+      expect(search).not.toHaveBeenCalled();
+    } finally {
+      dispose();
+      load.mockRestore();
+      search.mockRestore();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  },
+);
+
+test.skipIf(isServer)("a failed contact-mutation code load neither creates a contact nor refreshes the context as a success", async () => {
+  const dom = createDomTestHarness();
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = Object.assign(
+    async () => {
+      requests += 1;
+      return Response.json({
+        conversationId: "Conv01",
+        participants: [{ email: "ada@example.test", displayName: "Ada Example" }],
+        contacts: { status: "ready", items: [], matchedEmails: [], nextCursor: null },
+        spaces: { status: "ready", items: [], truncated: false },
+      });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const reload = await import("@k2b/cloud/browser/reload");
+  const { prompts } = await import("@k2b/ui");
+  const { default: MailConversationContext } = await import("./MailConversationContext");
+  const load = spyOn(reload, "importOnDemand")
+    .mockImplementationOnce((loader) => loader())
+    .mockResolvedValueOnce(undefined);
+  const search = spyOn(prompts, "search").mockResolvedValue({ value: { id: "Book01", name: "People" }, label: "People" });
+  const errors = spyOn(prompts, "error").mockResolvedValue(undefined);
+  delegateEvents(["click"]);
+  const dispose = render(
+    () => <MailConversationContext mailboxId="Box001" conversationId="Conv01" requestUrl="/app/mail/Box001" active />,
+    dom.root,
+  );
+  try {
+    for (let i = 0; i < 100 && !dom.root.textContent?.includes("New contact"); i++) await Bun.sleep(10);
+    const before = requests;
+    const trigger = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
+      button.textContent?.includes("New contact"),
+    )!;
+    trigger.click();
+    for (let i = 0; i < 100 && trigger.hasAttribute("aria-busy"); i++) await Bun.sleep(10);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(requests).toBe(before);
+    expect(errors).not.toHaveBeenCalled();
+    expect(trigger.hasAttribute("aria-busy")).toBe(false);
+  } finally {
+    dispose();
+    load.mockRestore();
+    search.mockRestore();
+    errors.mockRestore();
+    globalThis.fetch = originalFetch;
+    dom.cleanup();
+  }
+});

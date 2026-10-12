@@ -1,10 +1,11 @@
 import { dialogCore, IconButton, type IconButtonProps, panelDialogWorkspaceOptions, toast, useLocale } from "@k2b/ui";
 import { createSignal, type JSX, splitProps } from "solid-js";
 import type { FileProviderList } from "./FileChooser";
-import { FileSaver, type SavedFile } from "./FileSaver";
+import type { SavedFile } from "./FileSaver";
 import { fileChooserMessages } from "./file-chooser-messages";
 import type { FileProviderCaller, SaveFileSource } from "./file-providers";
 import type { ProviderList } from "./provider-list";
+import { importOnDemand } from "./reload";
 
 export type { SavedFile } from "./FileSaver";
 export type { SaveFileSource } from "./file-providers";
@@ -40,9 +41,19 @@ export const createFileSaving = (
     if (!known) load();
     const saved: SavedFile[] = [];
     const running = new Set<Promise<void>>();
+    let abort = () => {};
+    const saver = await Promise.race([
+      importOnDemand(() => import("./FileSaver")),
+      new Promise<undefined>((resolve) => {
+        abort = () => resolve(undefined);
+        options.signal?.addEventListener("abort", abort, { once: true });
+        if (options.signal?.aborted) abort();
+      }),
+    ]).finally(() => options.signal?.removeEventListener("abort", abort));
+    if (!saver) return [];
     await dialogCore.open<void>(
       (close) => (
-        <FileSaver
+        <saver.FileSaver
           files={files}
           providers={providers}
           retryProviders={load}

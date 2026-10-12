@@ -8,6 +8,8 @@ import type {
 } from "@k2b/cloud/workflows";
 import { z } from "zod";
 import { contactResolveMatchSchema, normalizedContactEmailSchema } from "./app-integration-contracts";
+import { MAX_COMMAND_OUTCOME_IDS } from "./command-outcomes";
+import { RESOURCE_SHORT_ID_PATTERN } from "./resource-short-id";
 
 export const DEFAULT_CONVERSATION_REFERENCE_PATTERN = "REF-{{ short_id }}";
 /** Upper bound for one multi-conversation request; the list selection shares it. */
@@ -20,10 +22,7 @@ export const MAIL_CONVERSATION_ASSIGNEE_LIMIT = 20;
  */
 export const MAX_MAILBOX_PREFERENCES = 200;
 
-export const ResourceShortIdSchema = z
-  .string()
-  .regex(/^[0-9A-Za-z]{6}$/)
-  .describe("Stable 6-character resource ID");
+export const ResourceShortIdSchema = z.string().regex(RESOURCE_SHORT_ID_PATTERN).describe("Stable 6-character resource ID");
 
 export const messageInspectorHeaderSchema = z
   .object({
@@ -1445,8 +1444,7 @@ export const mailCommandSchema = z.object({
 });
 export type MailCommand = z.infer<typeof mailCommandSchema>;
 
-/** At most this many commands per outcome request, the same ceiling as one page of a Mail list. */
-export const MAX_COMMAND_OUTCOME_IDS = 100;
+export { MAX_COMMAND_OUTCOME_IDS } from "./command-outcomes";
 export const mailCommandOutcomesInputSchema = z.object({ commandIds: z.array(z.uuid()).min(1).max(MAX_COMMAND_OUTCOME_IDS) }).strict();
 export const mailCommandOutcomeSchema = z.object({
   id: z.uuid(),

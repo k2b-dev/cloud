@@ -8,7 +8,7 @@ import type { MailSearchExpression } from "../contracts";
 import { projectMailboxPageData } from "../frontend/ssr-public-boundary";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
-import { MAIL_SEARCH_MATCHES_NOTHING } from "../search-state";
+import { MAIL_SEARCH_MATCHES_NOTHING, type ResolvedMailSearchRoute, resolveMailSearchRoute } from "../search-state";
 import type { MailRequestContext } from "../service/auth";
 import { createMailbox } from "../service/mailboxes";
 import type { MailListError } from "../service/workspace";
@@ -39,6 +39,7 @@ const userFor = (row: { id: string; uid: string }): User => ({
 });
 
 type WorkspaceRoute = {
+  search: ResolvedMailSearchRoute;
   listItems: Array<{ id: string; conversationId: string | null }>;
   listError: MailListError | null;
   savedViews: Array<{ id: string; filter: { expression: MailSearchExpression } }>;
@@ -64,7 +65,9 @@ suite("Mail search by public folder and tag IDs", () => {
   const workspaceRoute = async (href: string): Promise<WorkspaceRoute> => {
     const response = await request(`/workspace-route?${new URLSearchParams({ href })}`);
     expect(response.status).toBe(200);
-    return (await response.json()) as WorkspaceRoute;
+    const data = (await response.json()) as WorkspaceRoute;
+    expect(data.search).toEqual(resolveMailSearchRoute(new URL(href, "https://cloud.test")));
+    return data;
   };
   const searchHref = (expression: MailSearchExpression) =>
     `/app/mail/${mailboxShortId}?${new URLSearchParams({ search: JSON.stringify({ expression, sort: "newest" }) })}`;
@@ -170,6 +173,8 @@ suite("Mail search by public folder and tag IDs", () => {
       expect(data.ok && data.data.listError).toBeNull();
       if (!data.ok) return;
       const projected = await projectMailboxPageData(data.data);
+      expect(data.data.search).toEqual(resolveMailSearchRoute(new URL(searchHref(expression), "https://cloud.test")));
+      expect(projected.search).toEqual(data.data.search);
       expect(projected.listItems.map((item) => item.conversationId)).toEqual([conversationShortId]);
     }
   });
@@ -222,6 +227,12 @@ suite("Mail search by public folder and tag IDs", () => {
     const staleLink = await workspaceRoute(searchHref(oldTagged));
     expect(staleLink.listError).toBeNull();
     expect(staleLink.listItems).toEqual([]);
+    const staleRequest = await resolveWorkspaceRequest(new URL(searchHref(oldTagged), "https://cloud.test"), mailboxId);
+    expect(staleRequest?.search.expression).toEqual(MAIL_SEARCH_MATCHES_NOTHING);
+    const stalePage = await loadMailboxPageData({ context, mailboxId, ...staleRequest! });
+    if (!stalePage.ok) throw new Error(stalePage.error.message);
+    expect(stalePage.data.search.expression).toEqual(oldTagged);
+    expect((await projectMailboxPageData(stalePage.data)).search).toEqual(staleLink.search);
     const withoutStaleTag = await workspaceRoute(searchHref({ type: "not", expression: oldTagged }));
     expect(withoutStaleTag.listItems.map((item) => item.conversationId)).toEqual([conversationShortId]);
   });

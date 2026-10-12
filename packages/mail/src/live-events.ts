@@ -10,4 +10,4 @@ import { ResourceShortIdSchema } from "./contracts";
  */
 export const MailLiveEventSchema = z.object({ conversationId: ResourceShortIdSchema.nullable() }).strict();
 
-export type MailLiveEvent = z.infer<typeof MailLiveEventSchema>;
+export type { MailLiveEvent } from "./live-event";

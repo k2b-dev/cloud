@@ -127,8 +127,12 @@ describe("Mail attachment preview", () => {
       expect(labels).toContain("Save all to…");
       expect(labels).toContain("Save Summer_party.md to…");
       dom.root.querySelector<HTMLButtonElement>('button[aria-label="Save all to…"]')!.click();
-      await settle();
-      const dialog = dom.document.querySelector<HTMLElement>(".k2b-dialog[open]")!;
+      let dialog = dom.document.querySelector<HTMLElement>(".k2b-dialog[open]");
+      for (let attempt = 0; attempt < 100 && !dialog; attempt += 1) {
+        await settle();
+        dialog = dom.document.querySelector<HTMLElement>(".k2b-dialog[open]");
+      }
+      if (!dialog) throw new Error("The attachment save dialog did not open");
       expect(dialog.querySelector("h2")?.textContent).toBe("Save 4 files");
       // Nothing is read before a folder is chosen; an outage of the app list is calm and offers a retry.
       expect(requested.some((url) => url.includes("/attachments/"))).toBeFalse();
