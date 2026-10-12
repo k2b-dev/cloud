@@ -101,6 +101,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await sql`CREATE TABLE ai.project_access(project_id uuid,access_id uuid)`;
     await sql`CREATE TABLE ai.turns(id uuid PRIMARY KEY,status text,conversation_id uuid,run_config jsonb)`;
     await sql`CREATE TABLE ai.files(conversation_id uuid,path text,bytes bytea,size bigint,media_type text,origin text,producer_call_key text,dictation_recorded_at timestamptz,updated_at timestamptz DEFAULT now(),version bigint DEFAULT 1,PRIMARY KEY(conversation_id,path))`;
+    // The evaluation attaches uploads to its turn the way a submitted turn does.
+    await sql`CREATE TABLE ai.turn_files(turn_id uuid,path text,bytes bytea,media_type text,size bigint,origin text,dictation_recorded_at timestamptz,updated_at timestamptz DEFAULT now(),version bigint DEFAULT 1,PRIMARY KEY(turn_id,path))`;
     await sql`CREATE TABLE ai.dictations(conversation_id uuid,source_bytes bytea)`;
 
     await sql`CREATE TABLE ai.tool_calls(request_id text,conversation_id uuid,turn_id uuid,location text,call_id text,tool_name text,status text,started_at timestamptz,UNIQUE(turn_id,call_id))`;
