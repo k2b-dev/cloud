@@ -25,6 +25,7 @@ import type { LocalTag } from "../../service/local-tags";
 import type { ConversationViewCounts, MailFolderView } from "../../service/messages";
 import type { SavedConversationView } from "../../service/saved-views";
 import { readApiError } from "./api-response";
+import type { MailboxCreationContext } from "./create-mailbox-dialog";
 import { registerMailtoHandler } from "./mail-compose-route";
 import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree, setsOnlyInFolder } from "./mail-folder-tree";
 import { mailSidebarMessages } from "./mail-sidebar-messages";
@@ -59,44 +60,47 @@ const folderIcon = (role: string): string =>
               ? "ti ti-archive"
               : "ti ti-folder";
 
-export default function MailSidebar(props: {
-  mailboxId: string;
-  mailboxName: string;
-  mailboxAddress?: string;
-  syncEnabled: boolean;
-  needsConnection: boolean;
-  folders: MailFolderView[];
-  localTags: LocalTag[];
-  savedViews: SavedConversationView[];
-  scheduledMode: boolean;
-  scheduledCount: number;
-  activeFolderId: string | null;
-  activeView: ConversationView | null;
-  activeSavedViewId: string | null;
-  activeTagId: string | null;
-  searchActive: boolean;
-  viewCounts: ConversationViewCounts;
-  canWrite: boolean;
-  canAdmin: boolean;
-  /**
-   * The person may see only the conversations assigned to them: no composing, mailbox details, tools,
-   * settings, or Unassigned view, which all need mailbox-wide access.
-   */
-  assignedOnly: boolean;
-  managementOpening: "health" | "links" | "remote-content" | "subscriptions" | null;
-  settingsOpening: boolean;
-  /** The mailbox details are loading; the details button keeps its place and shows progress. */
-  detailsOpening: boolean;
-  onOpenDetails: () => void;
-  onOpenHealth: () => void;
-  onOpenSharedLinks: () => void;
-  onOpenRemoteContent: () => void;
-  onOpenSubscriptions: () => void;
-  onOpenSettings: () => void;
-  /** Moves the conversation of the dragged list row, identified by the row's item ID. */
-  onMoveConversation: (input: { itemId: string; destinationFolderId: string }) => void | Promise<void>;
-  onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
-}) {
+export default function MailSidebar(
+  props: MailboxCreationContext & {
+    canCreate?: boolean;
+    mailboxId: string;
+    mailboxName: string;
+    mailboxAddress?: string;
+    syncEnabled: boolean;
+    needsConnection: boolean;
+    folders: MailFolderView[];
+    localTags: LocalTag[];
+    savedViews: SavedConversationView[];
+    scheduledMode: boolean;
+    scheduledCount: number;
+    activeFolderId: string | null;
+    activeView: ConversationView | null;
+    activeSavedViewId: string | null;
+    activeTagId: string | null;
+    searchActive: boolean;
+    viewCounts: ConversationViewCounts;
+    canWrite: boolean;
+    canAdmin: boolean;
+    /**
+     * The person may see only the conversations assigned to them: no composing, mailbox details, tools,
+     * settings, or Unassigned view, which all need mailbox-wide access.
+     */
+    assignedOnly: boolean;
+    managementOpening: "health" | "links" | "remote-content" | "subscriptions" | null;
+    settingsOpening: boolean;
+    /** The mailbox details are loading; the details button keeps its place and shows progress. */
+    detailsOpening: boolean;
+    onOpenDetails: () => void;
+    onOpenHealth: () => void;
+    onOpenSharedLinks: () => void;
+    onOpenRemoteContent: () => void;
+    onOpenSubscriptions: () => void;
+    onOpenSettings: () => void;
+    /** Moves the conversation of the dragged list row, identified by the row's item ID. */
+    onMoveConversation: (input: { itemId: string; destinationFolderId: string }) => void | Promise<void>;
+    onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
+  },
+) {
   const locale = useLocale();
   const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
   createEffect(() => {
@@ -529,7 +533,11 @@ export default function MailSidebar(props: {
     action: "details",
     disabled: props.detailsOpening,
   });
-  const switcher = createMailboxSwitcher(() => ({ id: props.mailboxId, name: props.mailboxName, address: props.mailboxAddress }));
+  const switcher = createMailboxSwitcher(
+    () => ({ id: props.mailboxId, name: props.mailboxName, address: props.mailboxAddress }),
+    Boolean(props.canCreate),
+    props,
+  );
   const navigation = createNavigation({
     switcher,
     items: () => [

@@ -264,7 +264,7 @@ export default function NotebookSidebar(props: Props) {
         ]
       : []),
   ];
-  const switcher = createNotebookSwitcher(notebook);
+  const switcher = createNotebookSwitcher(notebook, Boolean(props.ctx.userId));
   const mobileNavigation = createNavigation({
     switcher,
     items: () => [

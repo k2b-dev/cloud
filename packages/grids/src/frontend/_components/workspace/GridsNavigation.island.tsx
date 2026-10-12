@@ -11,7 +11,7 @@ import { workspaceMessages } from "./messages";
 import { activeNavigationKey, type NavigationResource, navigationResources } from "./navigation-catalog";
 import type { PublicOkWorkspaceState } from "./workspace-public-state-model";
 
-export default function GridsNavigation(props: { state: PublicOkWorkspaceState }) {
+export default function GridsNavigation(props: { canCreate: boolean; state: PublicOkWorkspaceState }) {
   const locale = useLocale();
   const t = () => workspaceMessages.resolve([locale()]).t;
   const navText = () => navigationMessages.resolve([locale()]).t;
@@ -60,7 +60,7 @@ export default function GridsNavigation(props: { state: PublicOkWorkspaceState }
     workflow: t().workflows,
     customApp: t().apps,
   });
-  const switcher = createBaseSwitcher(() => state.base);
+  const switcher = createBaseSwitcher(() => state.base, props.canCreate);
   const navigation = createNavigation({
     switcher,
     items: () => [

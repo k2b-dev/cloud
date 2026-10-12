@@ -84,7 +84,7 @@ const mapDeletedMailbox = (row: DbMailbox): DeletedMailbox => {
   return { ...mapMailbox(row), deletedAt: toIso(row.deleted_at) };
 };
 
-const getMailboxReceivingAddress = async (mailboxId: string): Promise<string | null> => {
+export const getMailboxReceivingAddress = async (mailboxId: string): Promise<string | null> => {
   const [row] = await sql<{ email: string }[]>`
     SELECT email
     FROM mail.provider_connections

@@ -87,7 +87,7 @@ export default function SpaceNavigation(props: { ctx: SpaceContext; baseUrl: str
       return props.ctx.currentView;
     },
   });
-  const switcher = createSpaceSwitcher(() => props.ctx.space);
+  const switcher = createSpaceSwitcher(() => props.ctx.space, Boolean(props.ctx.userId));
   const navigation = createNavigation({
     switcher,
     items: () => [

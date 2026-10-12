@@ -32,6 +32,7 @@ const MAILBOX_ID = "Box001";
 const now = "2026-10-03T10:00:00.000Z";
 
 const data: MailboxPageData = {
+  receivingAddress: null,
   mailbox: {
     id: MAILBOX_ID,
     name: "Support",
@@ -221,6 +222,63 @@ describe("Mail workspace hint for folders whose mail stays inside them", () => {
     );
   };
   const hint = () => dom.root.querySelector("[data-mail-folder-only-hint]");
+
+  test("the switcher head shows the receiving address instead of the default sender", () => {
+    mount({
+      receivingAddress: "incoming@example.test",
+      identities: [
+        {
+          id: "Ident1",
+          mailboxId: MAILBOX_ID,
+          label: "Support",
+          displayName: "Support",
+          fromAddress: "outgoing@example.test",
+          replyTo: null,
+          defaultCc: [],
+          defaultBcc: [],
+          defaultFormat: "markdown",
+          defaultPriority: "normal",
+          defaultDeliveryReceipt: false,
+          defaultReadReceipt: false,
+          vcard: null,
+          envelopeSender: null,
+          defaultSignatureTemplateId: null,
+          transport: {
+            mode: "mailbox",
+            host: null,
+            port: null,
+            tlsMode: null,
+            username: null,
+            secret: { kind: null, isSet: false },
+            revision: 0,
+            status: "active",
+            capabilities: { dsn: false, size: false, maxMessageBytes: null },
+            lastVerifiedAt: null,
+            lastError: null,
+          },
+          authenticationPolicy: { automation: "mailbox" },
+          sentFolderId: null,
+          draftsFolderId: null,
+          isDefault: true,
+          status: "verified",
+          statusReason: null,
+          pendingVerificationCommandId: null,
+          createdAt: "2026-08-01T00:00:00.000Z",
+          updatedAt: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+    });
+    const head = dom.root.querySelector(".k2b-sidebar-switcher__trigger");
+    expect(head?.textContent).toContain("incoming@example.test");
+    expect(head?.textContent).not.toContain("outgoing@example.test");
+  });
+
+  test("the switcher head omits an address when the mailbox has no receiving connection", () => {
+    mount({ receivingAddress: null });
+    const head = dom.root.querySelector(".k2b-sidebar-switcher__trigger");
+    expect(head?.textContent).toContain("Support");
+    expect(head?.textContent).not.toContain("@");
+  });
 
   test("names the first such folder in a combined view and moves on to the next once dismissed", () => {
     mount({ activeView: "needs_action" });

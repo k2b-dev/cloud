@@ -139,6 +139,7 @@ describe("Mail SSR public boundary", () => {
         { id: ids.folder, parentId: null, displayInheritedFromFolderId: null },
         { id: ids.childFolder, parentId: ids.folder, displayInheritedFromFolderId: ids.folder },
       ],
+      receivingAddress: "incoming@example.test",
       identities: [],
       savedViewId: null,
       savedViews: [],
@@ -177,6 +178,7 @@ describe("Mail SSR public boundary", () => {
     const projected = await projectMailboxPageData(data, loadIds);
     expect(projected.search).toEqual(data.search);
     expect(projected.mailbox.id).toBe("Box001");
+    expect(projected.receivingAddress).toBe("incoming@example.test");
     expect(projected.selectedConversationId).toBe("Conv01");
     // A subfolder names the parent whose display it inherits by the same public ID as its parent.
     expect(projected.folders[1]).toMatchObject({ id: "Fold02", parentId: "Fold01", displayInheritedFromFolderId: "Fold01" });

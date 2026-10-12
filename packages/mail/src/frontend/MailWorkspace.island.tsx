@@ -1629,9 +1629,12 @@ function MailWorkspaceView(props: {
   return (
     <AppWorkspace mobileSurface="flush" class="mail-workspace">
       <MailSidebar
+        canCreate={Boolean(props.currentUserId)}
+        currentUserEmail={props.currentUserEmail}
+        contactDirectory={props.contactDirectory}
         mailboxId={data.mailbox.id}
         mailboxName={data.mailbox.name}
-        mailboxAddress={data.identities.find((identity) => identity.isDefault)?.fromAddress}
+        mailboxAddress={data.receivingAddress ?? undefined}
         syncEnabled={data.mailbox.syncEnabled}
         needsConnection={mailboxNeedsConnection(data.mailbox.health)}
         folders={data.folders}

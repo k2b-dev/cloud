@@ -31,6 +31,7 @@ const MAILBOX_ID = "Box001";
 const now = "2026-10-03T10:00:00.000Z";
 
 const data: MailboxPageData = {
+  receivingAddress: null,
   mailbox: {
     id: MAILBOX_ID,
     name: "Support",

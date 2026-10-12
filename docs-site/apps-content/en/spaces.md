@@ -14,6 +14,10 @@ Spaces organizes tasks and events for a team, project, household, class, or
 recurring process. The same items can be viewed as a list, table, Kanban board,
 or calendar without copying the work into separate systems.
 
+Open the Space name in the sidebar or phone menu to switch Spaces. Signed-in
+users can choose **New space** to create and open a blank Space. The overview
+also offers the task board, event calendar, and project tracker starters.
+
 ## Use Spaces
 
 - Track tasks with status, priority, assignees, deadlines, simple checklists,

@@ -138,6 +138,7 @@ export default ssr<AuthContext>(async (c) => {
       <Layout c={c} fullPage fullWidth title={notebook.name}>
         <RememberNotebook notebookId={notebook.shortId} />
         <BookSurface
+          userId={ctx.userId}
           notebookId={notebook.shortId}
           notebookName={notebook.name}
           notebookIcon={notebook.icon}

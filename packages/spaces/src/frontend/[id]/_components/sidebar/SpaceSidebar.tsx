@@ -24,7 +24,10 @@ export default function SpaceSidebar(props: Props) {
       <SpaceNavigation ctx={props.ctx} baseUrl={props.baseUrl} dateConfig={props.dateConfig} />
       <AppWorkspace.Sidebar collapsible>
         <AppWorkspace.SidebarDesktop>
-          <SpaceSwitcher space={{ id: props.ctx.space.id, name: props.ctx.space.name, color: props.ctx.space.color }} />
+          <SpaceSwitcher
+            canCreate={Boolean(props.ctx.userId)}
+            space={{ id: props.ctx.space.id, name: props.ctx.space.name, color: props.ctx.space.color }}
+          />
           <div class="flex flex-col gap-3">
             <Show
               when={props.ctx.canWrite}

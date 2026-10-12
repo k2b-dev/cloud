@@ -31,7 +31,7 @@ const SidebarLink = (props: Parameters<typeof AppWorkspace.SidebarItem>[0]) => (
   <AppWorkspace.SidebarItem {...props} navigation="document" />
 );
 
-export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
+export default function GridsSidebar(props: { userId?: string; state: PublicOkWorkspaceState }) {
   const { t } = workspaceMessages.resolve([useLocale()()]);
   const state = props.state;
   const { t: navText } = navigationMessages.resolve([useLocale()()]);
@@ -225,10 +225,10 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
 
   return (
     <>
-      <GridsNavigation state={state} />
+      <GridsNavigation canCreate={Boolean(props.userId)} state={state} />
       <AppWorkspace.Sidebar>
         <AppWorkspace.SidebarDesktop>
-          <BaseSwitcher base={{ id: state.base.id, name: state.base.name }} />
+          <BaseSwitcher canCreate={Boolean(props.userId)} base={{ id: state.base.id, name: state.base.name }} />
           <AppWorkspace.SidebarSection>
             {renderQueryItem()}
             {overviewLink()}

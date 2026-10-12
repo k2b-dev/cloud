@@ -27,6 +27,10 @@ notebook or note directly. Activity stays beside the overview on larger
 screens and opens as a separate panel on mobile so it does not replace the
 note list.
 
+Open the notebook name in the sidebar or phone menu to switch notebooks.
+Signed-in users can choose **New notebook** to create and open a blank notebook,
+including from Book view. Use the overview to start from a template.
+
 ## Use Notebooks
 
 - Capture project notes, decisions, research, meeting records, recipes, or

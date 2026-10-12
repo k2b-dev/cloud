@@ -17,6 +17,7 @@ import { bookMessages } from "./messages";
 
 export type BookTreeNode = { id: string; title: string; children: BookTreeNode[] };
 export type BookNavigatorProps = {
+  userId?: string;
   notebookId: string;
   notebookName: string;
   notebookIcon: string | null;
@@ -137,7 +138,10 @@ export default function BookNavigator(props: BookNavigatorProps) {
     expanded: expanded().includes(node.id),
     children: node.children.map(noteEntry),
   });
-  const switcher = createNotebookSwitcher(() => ({ id: props.notebookId, name: state().notebookName, icon: props.notebookIcon }));
+  const switcher = createNotebookSwitcher(
+    () => ({ id: props.notebookId, name: state().notebookName, icon: props.notebookIcon }),
+    Boolean(props.userId),
+  );
   const mobileNavigation = createNavigation({
     switcher,
     items: () => [

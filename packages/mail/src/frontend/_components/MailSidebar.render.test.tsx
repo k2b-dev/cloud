@@ -6,6 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { selectHtml } from "../../../../../tests/fixtures/select-html";
+import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
 import type { MailFolderView } from "../../service/messages";
 
 const root = mkdtempSync(join(tmpdir(), "mail-sidebar-render-tests-"));
@@ -17,6 +18,8 @@ const [{ default: MailSidebar }, { LocaleProvider }] = await Promise.all([import
 
 const sidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {}) =>
   createComponent(MailSidebar, {
+    currentUserEmail: null,
+    contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
     mailboxId: "Box001",
     mailboxName: "Support",
     syncEnabled: true,
