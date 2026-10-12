@@ -5,7 +5,9 @@ import { layoutCalendarIntervals } from "./calendar-event-layout";
  * The time model of the day and week views with `dayHours`: a day runs from its start hour to the same hour of the next
  * day, so the night after the waking hours belongs to the day before it. Every place in a day is a count of minutes on
  * the wall clock after that start, which keeps a day 24 hours long on the clock across a change to or from summer
- * time. The functions here are pure and work on `YYYY-MM-DD` day keys in the calendar's time zone.
+ * time. Timed events over calendar dates go to the all-day row, unless they end by the next day's start hour.
+ * An event that crosses only the day start stays bands in both days. The functions here are pure and work on
+ * `YYYY-MM-DD` day keys in the calendar's time zone.
  */
 
 /** Waking hours: `start` begins the day, `end` begins its night, which lasts until `start` of the next day. */
@@ -66,7 +68,7 @@ export const instantInDay = (key: string, minute: number, hours: CalendarDayHour
 
 /**
  * The instants of a slot of the day `key`. A time the change to summer time skips moves forward, so a slot drawn there
- * could end before it starts; it then keeps the length it was drawn with.
+ * could end at or before its start; it then keeps the length it was drawn with.
  */
 export const instantsInDay = (
   key: string,
@@ -77,7 +79,7 @@ export const instantsInDay = (
 ): { start: Date; end: Date } => {
   const from = instantInDay(key, start, hours, context);
   const to = instantInDay(key, end, hours, context);
-  return { start: from, end: to >= from ? to : new Date(from.getTime() + Math.max(0, end - start) * 60_000) };
+  return { start: from, end: to > from ? to : new Date(from.getTime() + Math.max(0, end - start) * 60_000) };
 };
 
 /**
@@ -131,7 +133,10 @@ export type DayEntry<T> = {
 /** A timed entry of one day, in minutes of that day. */
 export type DayBand<T> = { item: T; start: number; end: number };
 export type DayMarker<T> = { item: T; minute: number };
-/** An entry of the all-day row: all-day events, timed events over several days, and points due on a day. */
+/**
+ * An entry of the all-day row: all-day events, points due on a day, and timed events over calendar dates, ignoring
+ * the end date when the event ends by its day start. Events crossing only the day start stay bands in both days.
+ */
 export type DaySpan<T> = { item: T; firstKey: string; lastKey: string; marker: boolean };
 
 export type DayModel<T> = {
@@ -144,13 +149,13 @@ export type DayModel<T> = {
   empty: boolean;
 };
 
-/** Where an entry goes: one day's timeline, or the all-day row over its days. */
+/** Where an entry goes: the timelines of the days it touches, or the all-day row over its calendar dates. */
 export const placeEntry = <T>(
   entry: DayEntry<T>,
   hours: CalendarDayHours,
   context?: DateContext,
 ):
-  | { kind: "band"; key: string; band: DayBand<T> }
+  | { kind: "band"; bands: { key: string; band: DayBand<T> }[] }
   | { kind: "marker"; key: string; marker: DayMarker<T> }
   | { kind: "span"; span: DaySpan<T> } => {
   if (entry.allDay) {
@@ -163,13 +168,21 @@ export const placeEntry = <T>(
   const key = dayKeyOf(entry.start, hours, context);
   const start = minuteInDay(key, entry.start, hours, context);
   if (entry.marker) return { kind: "marker", key, marker: { item: entry.item, minute: start } };
+  const startDate = wallClock(entry.start, context).slice(0, 10);
+  const endWall = wallClock(entry.end, context);
+  let endDate = endWall.slice(0, 10);
+  if (endDate > startDate && wallMinutes(endWall) <= hours[0] * 60) endDate = addDayKeys(endDate, -1);
+  if (endDate > startDate) return { kind: "span", span: { item: entry.item, firstKey: startDate, lastKey: endDate, marker: false } };
   const lastKey = dayKeyOf(new Date(Math.max(entry.start.getTime(), entry.end.getTime() - 60_000)), hours, context);
-  if (lastKey !== key) return { kind: "span", span: { item: entry.item, firstKey: key, lastKey, marker: false } };
-  let end = minuteInDay(key, entry.end, hours, context);
-  // In the hour a clock change repeats, the wall clock can end before it starts; the entry keeps its real length.
   const real = Math.round((entry.end.getTime() - entry.start.getTime()) / 60_000);
-  if (end <= start && real > 0) end = start + real;
-  return { kind: "band", key, band: { item: entry.item, start, end: Math.max(end, start) } };
+  const bands = dayKeyRange(key, lastKey).map((key) => {
+    const start = minuteInDay(key, entry.start, hours, context);
+    let end = minuteInDay(key, entry.end, hours, context);
+    // In the hour a clock change repeats, the wall clock can end before it starts; the entry keeps its real length.
+    if (end <= start && real > 0) end = start + real;
+    return { key, band: { item: entry.item, start, end: Math.max(end, start) } };
+  });
+  return { kind: "band", bands };
 };
 
 /** The model of each day from `first` to `last`. */
@@ -186,10 +199,12 @@ export const buildDays = <T>(
   for (const entry of entries) {
     const placed = placeEntry(entry, hours, context);
     if (placed.kind === "band") {
-      const day = days.get(placed.key);
-      if (!day) continue;
-      day.bands.push(placed.band);
-      if (placed.band.end > wake) day.night = true;
+      for (const { key, band } of placed.bands) {
+        const day = days.get(key);
+        if (!day) continue;
+        day.bands.push(band);
+        if (band.end > wake) day.night = true;
+      }
     } else if (placed.kind === "marker") {
       const day = days.get(placed.key);
       if (!day) continue;

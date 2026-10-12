@@ -56,7 +56,68 @@ describe("the day starts at 06:00", () => {
 
   test("an event across midnight that ends by six stays one band of the evening's day", () => {
     const placed = placeEntry(entry("Stage", "2026-10-10T22:30", "2026-10-11T02:00"), hours, berlin);
-    expect(placed).toEqual({ kind: "band", key: "2026-10-10", band: { item: "Stage", start: 990, end: 1200 } });
+    expect(placed).toEqual({ kind: "band", bands: [{ key: "2026-10-10", band: { item: "Stage", start: 990, end: 1200 } }] });
+  });
+
+  test("an event across six on one calendar date stays bands in both days", () => {
+    const event = entry("Early", "2026-10-12T05:30", "2026-10-12T06:30");
+    expect(placeEntry(event, hours, berlin)).toEqual({
+      kind: "band",
+      bands: [
+        { key: "2026-10-11", band: { item: "Early", start: 1410, end: 1470 } },
+        { key: "2026-10-12", band: { item: "Early", start: -30, end: 30 } },
+      ],
+    });
+    const days = buildDays("2026-10-11", "2026-10-12", [event], hours, berlin);
+    expect(days.get("2026-10-11")?.bands).toEqual([{ item: "Early", start: 1410, end: 1470 }]);
+    expect(days.get("2026-10-11")?.night).toBe(true);
+    expect(days.get("2026-10-12")?.night).toBe(false);
+    expect(days.get("2026-10-12")?.bands).toEqual([{ item: "Early", start: -30, end: 30 }]);
+    expect(freeGaps(days.get("2026-10-12")!.bands, 960, Number.NEGATIVE_INFINITY)).toEqual([{ start: 30, end: 960, past: false }]);
+    expect([...days.values()].map((day) => [day.empty, day.spans.length])).toEqual([
+      [false, 0],
+      [false, 0],
+    ]);
+    const morning = buildDays("2026-10-12", "2026-10-12", [event], hours, berlin);
+    expect(morning.get("2026-10-12")?.bands).toEqual([{ item: "Early", start: -30, end: 30 }]);
+  });
+
+  test("an early event into the afternoon keeps its full times in both days", () => {
+    expect(placeEntry(entry("Morning", "2026-10-12T05:00", "2026-10-12T13:00"), hours, berlin)).toEqual({
+      kind: "band",
+      bands: [
+        { key: "2026-10-11", band: { item: "Morning", start: 1380, end: 1860 } },
+        { key: "2026-10-12", band: { item: "Morning", start: -60, end: 420 } },
+      ],
+    });
+  });
+
+  test("an event wholly before six stays in the previous day's night", () => {
+    expect(placeEntry(entry("Early", "2026-10-12T04:00", "2026-10-12T05:00"), hours, berlin)).toEqual({
+      kind: "band",
+      bands: [{ key: "2026-10-11", band: { item: "Early", start: 1320, end: 1380 } }],
+    });
+  });
+
+  test("an event ending exactly at six stays in the evening's day", () => {
+    expect(placeEntry(entry("Night", "2026-10-11T23:00", "2026-10-12T06:00"), hours, berlin)).toEqual({
+      kind: "band",
+      bands: [{ key: "2026-10-11", band: { item: "Night", start: 1020, end: 1440 } }],
+    });
+  });
+
+  test("an evening event past six on the next calendar date becomes an all-day bar", () => {
+    expect(placeEntry(entry("Night", "2026-10-12T22:00", "2026-10-13T07:00"), hours, berlin)).toEqual({
+      kind: "span",
+      span: { item: "Night", firstKey: "2026-10-12", lastKey: "2026-10-13", marker: false },
+    });
+  });
+
+  test("a bar starting before six starts on its calendar date", () => {
+    expect(placeEntry(entry("Trip", "2026-10-12T05:00", "2026-10-13T07:00"), hours, berlin)).toEqual({
+      kind: "span",
+      span: { item: "Trip", firstKey: "2026-10-12", lastKey: "2026-10-13", marker: false },
+    });
   });
 
   test("an event that runs past six into the next day is a bar of the all-day row", () => {
@@ -74,7 +135,7 @@ describe("clock changes", () => {
   test("the night of the spring change keeps eight rows on the wall clock", () => {
     // 2026-03-29: 02:00 becomes 03:00 in Berlin, so the night has seven real hours.
     const band = placeEntry(entry("Shift", "2026-03-28T22:00", "2026-03-29T06:00"), hours, berlin);
-    expect(band).toEqual({ kind: "band", key: "2026-03-28", band: { item: "Shift", start: 960, end: 1440 } });
+    expect(band).toEqual({ kind: "band", bands: [{ key: "2026-03-28", band: { item: "Shift", start: 960, end: 1440 } }] });
     // A wall time the change skips moves forward, as the clock does.
     expect(instantInDay("2026-03-28", 1230, hours, berlin).toISOString()).toBe("2026-03-29T01:30:00.000Z");
   });
@@ -84,7 +145,12 @@ describe("clock changes", () => {
     const start = new Date("2026-10-25T00:30:00.000Z");
     const end = new Date("2026-10-25T01:15:00.000Z");
     const placed = placeEntry({ item: "Backup", start, end, allDay: false, marker: false }, hours, berlin);
-    expect(placed).toEqual({ kind: "band", key: "2026-10-24", band: { item: "Backup", start: 1230, end: 1275 } });
+    expect(placed).toEqual({ kind: "band", bands: [{ key: "2026-10-24", band: { item: "Backup", start: 1230, end: 1275 } }] });
+  });
+
+  test("a slot in the skipped spring hour keeps its drawn length when both ends resolve to one instant", () => {
+    const slot = instantsInDay("2026-03-28", 1200, 1260, hours, berlin);
+    expect([slot.start.toISOString(), slot.end.toISOString()]).toEqual(["2026-03-29T01:00:00.000Z", "2026-03-29T02:00:00.000Z"]);
   });
 
   test("a slot the spring change cuts into keeps the length it was drawn with", () => {
