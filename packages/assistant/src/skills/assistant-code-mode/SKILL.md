@@ -32,10 +32,23 @@ person will use is a saved Studio App: it appears in their Studio Apps, and
 they can reopen, change and share it. Never answer such a request with a view
 or a one-off chat card.
 
-A small tool has one screen and keeps at most the person's own settings or
-history: no list of records, no PDF, no uploaded file and no data shared with
-others. Examples are a calculator, unit converter, tip calculator or timer.
-Build it in one pass:
+First decide which kind it is:
+
+- A **small tool** has one screen and keeps at most the person's own settings
+  or history, such as a calculator, unit converter, tip calculator or timer.
+  Build it in one pass, as below.
+- Any other app collects records, involves several people, creates a PDF or
+  reads uploaded files, such as a form, list, tracker or generator. A form
+  always stores what is submitted, and records that several people add or see
+  go into a table: create it with `code_database` and write rows with
+  `cloud.db`, never `cloud.kv.user`, which only the person who entered them
+  sees. First read [HTML apps](references/apps.md),
+  [Source workflow](references/source-workflow.md), the closest complete
+  [example](references/examples.md) and the references it uses, such as
+  [Database](references/database.md) or [PDF generation](references/pdf.md).
+  Then create it with its first `html` and `steps` like a small tool.
+
+A small tool in one pass:
 
 1. Load `code_create`, `code_write`, `code_check` and `code_open` with one
    `load_tools` call if they are not loaded yet. Read no references and run no
@@ -74,15 +87,6 @@ The single file follows these rules:
   {"action":"click","target":{"role":"button","name":"+"}}]`. Actions are
   `click`, `check`, `uncheck`, `fill`, `select`, `press`, `upload` and
   `reload`; targets are `{role,name}`, `{label}` or `{text}`.
-
-Every other app, such as one with records, several people, a PDF or an
-uploaded file, is not a small tool: first read [HTML apps](references/apps.md),
-[Source workflow](references/source-workflow.md) and the closest complete
-[example](references/examples.md), plus the references it uses,
-such as [Database](references/database.md) for records several people add or
-see and [PDF generation](references/pdf.md) for a PDF. Then create it with its
-first `html` and `steps` the same way. `cloud.kv.user` keeps data only for the
-person who entered it.
 
 ## Start from the contract
 
