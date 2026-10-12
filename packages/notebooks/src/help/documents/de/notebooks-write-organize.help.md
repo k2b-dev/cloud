@@ -25,6 +25,16 @@ Dauerhaftes Handbuchwissen gehört in die Notiz selbst. Nutze Kommentare, um die
 
 **Mit KI bearbeiten** öffnet Assistant mit der Seite und ihrer Diskussion. Nach einer Prüfung kann Assistant auch deine neuen Kommentare korrigieren oder löschen. Es gelten dieselben Regeln für Autor und zehn Minuten. Assistant kann Entwürfe für Abfragen und Inhaltsverzeichnisse prüfen, ohne sie zu speichern. Diese Prüfung deckt nicht alle Markdown-Funktionen oder Tabellenformeln ab.
 
+## Eine gespeicherte Version wiederherstellen {icon="history"}
+
+Öffne die Notizdetails und wähle **Versionsverlauf**. Wähle eine Version, um ihren Inhalt oder die Änderungen anzusehen.
+
+**Diese Version wiederherstellen** macht sie zum aktuellen Inhalt für alle, die in der Notiz arbeiten. Der vorherige Inhalt bleibt im Verlauf. Wähle **Rückgängig** in der Bestätigung, um ihn zurückzuholen.
+
+**Als Kopie wiederherstellen** erstellt eine neue Notiz direkt unter dem Original auf derselben Ebene. Das Original bleibt unverändert.
+
+Zum Wiederherstellen brauchst du Zugriff **Bearbeiten**. Eine gesperrte Notiz kannst du nur als Kopie wiederherstellen.
+
 **Markdown**
 
 ## Eine nützliche Notiz schreiben {icon="pencil"}

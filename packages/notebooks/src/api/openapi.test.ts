@@ -55,3 +55,30 @@ test("the typed client exposes alphabetical reset with its parent selection", as
   await client[":id"]["note-order"].reset.$post({ param: { id: "abc123" }, json: { parentId: null } });
   expect(requests).toEqual([{ url: "http://example.test/abc123/note-order/reset", body: { parentId: null } }]);
 });
+
+test("version restores document their public results and expose bodyless typed client actions", async () => {
+  const spec = (await generateSpecs(app)) as Spec;
+  const path = "/{id}/notes/{noteId}/versions/{versionId}";
+  expect(Object.keys(responseSchema(spec, `${path}/restore`, "post")?.properties ?? {}).sort()).toEqual([
+    "changed",
+    "note",
+    "previousVersionId",
+    "versionId",
+  ]);
+  expect(responseSchema(spec, `${path}/copy`, "post")?.$ref).toBe(responseSchema(spec, "/{id}/notes", "post")?.$ref);
+  for (const status of ["403", "404", "409"]) expect(responseSchema(spec, `${path}/restore`, "post", status)).toBeDefined();
+  const requests: { url: string; method?: string; body: BodyInit | null | undefined }[] = [];
+  const client = hc<typeof app>("http://example.test", {
+    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({ url: String(input), method: init?.method, body: init?.body });
+      return Response.json({});
+    },
+  });
+  const param = { id: "abc123", noteId: "def456", versionId: "version" };
+  await client[":id"].notes[":noteId"].versions[":versionId"].restore.$post({ param });
+  await client[":id"].notes[":noteId"].versions[":versionId"].copy.$post({ param });
+  expect(requests).toEqual([
+    { url: "http://example.test/abc123/notes/def456/versions/version/restore", method: "POST", body: undefined },
+    { url: "http://example.test/abc123/notes/def456/versions/version/copy", method: "POST", body: undefined },
+  ]);
+});

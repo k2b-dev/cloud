@@ -10,6 +10,8 @@ import {
   prompts,
   ScrollArea,
   SegmentedControl,
+  SplitButton,
+  toast,
   useLocale,
 } from "@k2b/ui";
 import { diffLines } from "diff";
@@ -18,6 +20,8 @@ import { apiClient } from "@/api/client";
 import { renderNotebookBook } from "@/lib/book-renderer";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
+import { readErrorMessage } from "../settings/utils";
+import { rememberRestoredVersion, restoreVersionInPlace } from "./restore-notice";
 import { buildDiffRows, type DiffRow, orderComparison, summarizeDiff } from "./version-history";
 
 type NoteVersion = {
@@ -212,50 +216,43 @@ export default function VersionHistory(props: Props) {
 
   // ── Restore ──
 
-  const getRestoreSnapshot = (): string | null => {
-    const selectedId = selectedVersionId();
-    if (!selectedId) return null;
-    return selectedVersionData()?.yjsSnapshot ?? null;
-  };
-
-  const restoreAsNewMut = mutations.create<{ id: string }, string>({
-    mutation: async (snapshot) => {
-      const createRes = await apiClient[":id"].notes.$post({
-        param: { id: props.notebookId },
-        json: {},
-      });
-      if (!createRes.ok) throw new Error(t().failedCreateNote);
-      const newNote = (await createRes.json()) as { id: string };
-
-      const restoreRes = await apiClient[":id"].notes[":noteId"].restore.$post({
-        param: { id: props.notebookId, noteId: newNote.id },
-        json: { yjsSnapshot: snapshot },
-      });
-      if (!restoreRes.ok) {
-        await apiClient[":id"].notes[":noteId"].$delete({
-          param: { id: props.notebookId, noteId: newNote.id },
-        });
-        throw new Error(t().restoreFailed);
-      }
-      return newNote;
+  const restoreMut = mutations.create<{ previousVersionId: string | null }, string>({
+    mutation: (versionId) =>
+      restoreVersionInPlace({ notebookId: props.notebookId, noteId: props.noteId, versionId, failed: t().restoreFailed }),
+    onSuccess: ({ previousVersionId }) => {
+      rememberRestoredVersion(props.noteId, previousVersionId);
+      navigateTo(backUrl);
     },
-    onSuccess: (data) => {
-      navigateTo(buildNoteUrl(props.notebookId, data.id));
-    },
-    onError: (err) => prompts.error(err.message),
+    onError: (error) => toast.error(error.message),
   });
 
-  const handleRestoreAsNew = async () => {
-    const snapshot = getRestoreSnapshot();
-    if (!snapshot) return;
-    restoreAsNewMut.mutate(snapshot);
+  const restoreAsCopyMut = mutations.create<{ id: string }, string>({
+    mutation: async (versionId) => {
+      const response = await apiClient[":id"].notes[":noteId"].versions[":versionId"].copy.$post({
+        param: { id: props.notebookId, noteId: props.noteId, versionId },
+      });
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().restoreFailed));
+      return response.json();
+    },
+    onSuccess: (copy) => navigateTo(buildNoteUrl(props.notebookId, copy.id)),
+    onError: (error) => toast.error(error.message),
+  });
+
+  const restore = () => {
+    const versionId = selectedVersionId();
+    if (versionId) restoreMut.mutate(versionId);
+  };
+
+  const restoreAsCopy = () => {
+    const versionId = selectedVersionId();
+    if (versionId) restoreAsCopyMut.mutate(versionId);
   };
 
   // ── Helpers ──
 
   const formatDate = (iso: string) => dates.formatDateTime(iso, props.dateConfig);
 
-  const isWorking = () => restoreAsNewMut.loading();
+  const isWorking = () => restoreMut.loading() || restoreAsCopyMut.loading();
 
   const comparisonLabel = createMemo((): { from: string; fromId: string; to: string; toId: string } | null => {
     const selectedId = selectedVersionId();
@@ -306,8 +303,7 @@ export default function VersionHistory(props: Props) {
 
   return (
     <div class="flex min-h-0 flex-1 flex-col gap-2">
-      {/* Header */}
-      <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 px-2 pt-2">
+      <header class="flex shrink-0 flex-wrap items-center justify-between gap-2 px-2 pt-2">
         <div class="flex items-center gap-2">
           <IconButtonLink href={backUrl} size="sm" class="text-dimmed" label={t().backToEditor} tooltip={t().backToEditor}>
             <i class="ti ti-arrow-left" />
@@ -318,38 +314,62 @@ export default function VersionHistory(props: Props) {
           </div>
         </div>
 
-        <Show when={selectedVersionId()}>
-          <div class="flex flex-wrap items-center justify-end gap-2">
+        {/* The actions stay in place while no version is chosen, so choosing one never moves the page. */}
+        <Show when={versions().length > 0}>
+          <div class="notebooks-version-actions">
             <SegmentedControl
+              class="notebooks-version-preview-mode"
               ariaLabel={t().versionPreview}
               size="sm"
               value={previewMode}
               onValueChange={setPreviewMode}
+              disabled={!selectedVersionId()}
               options={[
                 { value: "content", label: t().content, icon: "ti ti-file-text" },
                 { value: "changes", label: t().changes, icon: "ti ti-git-compare" },
               ]}
             />
-            <Show when={props.isLocked}>
-              <span class="text-xs text-dimmed flex items-center gap-1">
-                <i class="ti ti-lock text-xs" />
-                {t().locked}
-              </span>
-            </Show>
-            <Button
-              size="sm"
-              onClick={handleRestoreAsNew}
-              disabled={isWorking() || previewLoading() || !getRestoreSnapshot()}
-              loading={restoreAsNewMut.loading()}
-              loadingLabel={t().creatingNote}
-              title={t().createFromVersionHint}
+            <Show
+              when={!props.isLocked}
+              fallback={
+                <>
+                  <span class="text-xs text-dimmed flex items-center gap-1">
+                    <i class="ti ti-lock text-xs" />
+                    {t().locked}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={restoreAsCopy}
+                    disabled={!selectedVersionId() || isWorking()}
+                    loading={restoreAsCopyMut.loading()}
+                    loadingLabel={t().restoringVersion}
+                    tooltip={t().restoreAsCopyHint}
+                  >
+                    <i class="ti ti-copy" aria-hidden="true" />
+                    {t().restoreAsCopy}
+                  </Button>
+                </>
+              }
             >
-              <i class="ti ti-file-plus mr-1" />
-              {t().createFromVersion}
-            </Button>
+              <SplitButton
+                size="sm"
+                onClick={restore}
+                disabled={!selectedVersionId() || isWorking()}
+                loading={isWorking()}
+                loadingLabel={t().restoringVersion}
+                tooltip={t().restoreVersionHint}
+                menuLabel={t().moreRestoreOptions}
+                menuPosition="bottom-right"
+                items={[{ label: t().restoreAsCopy, description: t().restoreAsCopyHint, icon: "ti ti-copy", action: restoreAsCopy }]}
+              >
+                <i class="ti ti-history" aria-hidden="true" />
+                {t().restoreVersion}
+              </SplitButton>
+            </Show>
           </div>
         </Show>
-      </div>
+      </header>
 
       {/* Loading */}
       <Show when={versionPages.loading()}>

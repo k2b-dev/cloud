@@ -70,7 +70,7 @@ testFor("nats")(
         contentMd: null,
         historyIncomplete: false,
       });
-      const save = spyOn(notes, "save").mockResolvedValue({ ok: true, data: undefined });
+      const save = spyOn(notes, "save").mockResolvedValue({ ok: true, data: { versionId: null } });
       const adopt = spyOn(notes, "adoptSnapshotAtHead").mockResolvedValue({ cursor: second.cursor });
       try {
         await yjsSnapshotWorker.start();

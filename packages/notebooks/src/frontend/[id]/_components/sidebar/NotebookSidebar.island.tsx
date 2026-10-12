@@ -30,6 +30,7 @@ import { openNoteSearchPrompt } from "../search/openNoteSearchPrompt";
 import NotebookSettingsButton from "../settings/NotebookSettingsButton";
 import { openNotebookSettingsDialog } from "../settings/NotebookSettingsPanel";
 import { writeSettings } from "../settings/NotebookSettingsStore";
+import { showRestoredVersionNotice } from "../versions/restore-notice";
 import NavigationVisibilityControls from "./NavigationVisibilityControls";
 import NoteTree, { findNoteInLevel, noteActionItems, noteIcon, placementForMove, useNoteActions } from "./NoteTree";
 import { createNavigationHidden, followStoredNavigationHidden, NOTEBOOK_NAVIGATION_ID, setNavigationHidden } from "./navigation-visibility";
@@ -102,6 +103,9 @@ export default function NotebookSidebar(props: Props) {
   };
   const toggleFilter = (view: "favorites" | "recents") => setFilter(filter().view === view ? {} : { view });
   onMount(() => {
+    // The sidebar is the island on every view of a note, so it confirms a version restore wherever the note opens.
+    const noteId = selectedNoteId();
+    if (noteId) showRestoredVersionNotice({ notebookId: notebook().id, noteId, t: t() });
     const follow = (next: SidebarFilter) => {
       if (!sameFilter(next, filter())) setFilterState(next);
     };
