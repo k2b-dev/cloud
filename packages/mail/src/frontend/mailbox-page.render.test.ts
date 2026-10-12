@@ -7,9 +7,9 @@ import type { AuthContext } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { resolveMailSearchRoute } from "../search-state";
 import * as integrations from "../service/app-integrations";
 import * as publicResources from "../service/public-resources";
-import { resolveMailSearchRoute } from "../search-state";
 import * as workspace from "../service/workspace";
 
 const root = mkdtempSync(join(tmpdir(), "mailbox-page-tests-"));

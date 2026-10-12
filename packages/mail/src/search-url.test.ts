@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { mailExactAddressSearch, mailTagSearch } from "./search-url";
 import { MAIL_SEARCH_PARAMETER, parseMailSearchState, resolveMailSearchRoute, serializeMailSearchState } from "./search-state";
+import { mailExactAddressSearch, mailTagSearch } from "./search-url";
 
 test.each(["AbCd12", "000000", "abcdef", "", "abcde", "abcdefg", "AbCd1!", " abc12", "AbCd12\n", "éabc12", "a".repeat(4_000)])(
   "tag search serialization agrees with the schema for %j",

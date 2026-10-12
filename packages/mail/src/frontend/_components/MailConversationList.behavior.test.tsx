@@ -2,8 +2,8 @@ import { expect, mock, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
-import { resolveMailSearchRoute } from "../../search-state";
 import type { Mailbox } from "../../contracts";
+import { resolveMailSearchRoute } from "../../search-state";
 
 /** The builder's dialog itself has its own tests; here only how often the list opens it matters. */
 const searchBuilderOpens: unknown[] = [];

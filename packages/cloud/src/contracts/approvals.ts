@@ -2,7 +2,7 @@ import { z } from "zod";
 import { APP_APPROVAL_LIMITS } from "./app-approval";
 import { CapabilityActionReviewSchema, CapabilityAppIdSchema } from "./capabilities";
 
-export { APPROVALS_API_PATH, APPROVAL_COUNTS_PATH, APPROVALS_PAGE_PATH } from "./approval-paths";
+export { APPROVAL_COUNTS_PATH, APPROVALS_API_PATH, APPROVALS_PAGE_PATH } from "./approval-paths";
 
 /**
  * Pending Action approvals as every app lists and decides them: one Core route under `/api/approvals` and the

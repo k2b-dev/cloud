@@ -7,9 +7,9 @@ import type {
   WorkflowJsonValue,
 } from "@k2b/cloud/workflows";
 import { z } from "zod";
+import { contactResolveMatchSchema, normalizedContactEmailSchema } from "./app-integration-contracts";
 import { MAX_COMMAND_OUTCOME_IDS } from "./command-outcomes";
 import { RESOURCE_SHORT_ID_PATTERN } from "./resource-short-id";
-import { contactResolveMatchSchema, normalizedContactEmailSchema } from "./app-integration-contracts";
 
 export const DEFAULT_CONVERSATION_REFERENCE_PATTERN = "REF-{{ short_id }}";
 /** Upper bound for one multi-conversation request; the list selection shares it. */

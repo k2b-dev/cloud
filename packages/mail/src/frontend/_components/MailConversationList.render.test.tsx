@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { resolveMailSearchRoute } from "../../search-state";
 import type { Mailbox } from "../../contracts";
+import { resolveMailSearchRoute } from "../../search-state";
 
 const root = mkdtempSync(join(tmpdir(), "mail-conversation-list-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });

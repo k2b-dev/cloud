@@ -8,7 +8,7 @@ import type { MailSearchExpression } from "../contracts";
 import { projectMailboxPageData } from "../frontend/ssr-public-boundary";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
-import { MAIL_SEARCH_MATCHES_NOTHING, resolveMailSearchRoute, type ResolvedMailSearchRoute } from "../search-state";
+import { MAIL_SEARCH_MATCHES_NOTHING, type ResolvedMailSearchRoute, resolveMailSearchRoute } from "../search-state";
 import type { MailRequestContext } from "../service/auth";
 import { createMailbox } from "../service/mailboxes";
 import type { MailListError } from "../service/workspace";
