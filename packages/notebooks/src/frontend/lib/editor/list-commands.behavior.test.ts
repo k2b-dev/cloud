@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { forceParsing, syntaxTreeAvailable } from "@codemirror/language";
-import { EditorSelection, EditorState, type Extension, Transaction } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { EditorSelection, EditorState, type Extension, StateEffect, Transaction } from "@codemirror/state";
+import { EditorView, keymap } from "@codemirror/view";
 import { isServer } from "solid-js/web";
 import { YSyncConfig, yCollab, ySyncAnnotation } from "y-codemirror.next";
 import * as Y from "yjs";
@@ -58,6 +58,170 @@ describe("notebook structural list commands", () => {
     test.skip("list keys need browser export conditions", () => {});
     return;
   }
+
+  test.each(["delete", "enter", "move"] as const)("concurrent %s preserves list syntax and retained subtree edits", (action) => {
+    const original =
+      action === "delete"
+        ? "1. A\n2. B\n3. C\n4. D\n5. E\n6. F"
+        : action === "enter"
+          ? "1. A\n2. B\n3. C\n4. D"
+          : "- A\n- B\n  - child\n- C";
+    const a = new Y.Doc();
+    const b = new Y.Doc();
+    a.getText("codemirror").insert(0, original);
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a));
+    using clientA = mount(original, action === "enter" ? original.indexOf("A") + 1 : original.indexOf("B"), true, [
+      yCollab(a.getText("codemirror"), null),
+    ]);
+    using clientB = mount(original, original.length, true, [yCollab(b.getText("codemirror"), null)]);
+    try {
+      if (action === "delete") {
+        clientA.view.dispatch({ changes: { from: original.indexOf("2. B"), to: original.indexOf("3. C") }, userEvent: "delete.line" });
+        clientB.view.dispatch({ changes: { from: original.indexOf("4. D"), to: original.indexOf("5. E") }, userEvent: "delete.line" });
+      } else if (action === "enter") {
+        expect(clientA.press("Enter")).toBe(true);
+        clientB.view.dispatch({ changes: { from: original.indexOf("2. B"), to: original.indexOf("3. C") }, userEvent: "delete.line" });
+      } else {
+        expect(clientA.press("ArrowUp", { altKey: true })).toBe(true);
+        clientB.view.dispatch({ changes: { from: original.indexOf("child") + 1, insert: "X" }, userEvent: "input.type" });
+      }
+      Y.applyUpdate(a, Y.encodeStateAsUpdate(b), "remote");
+      Y.applyUpdate(b, Y.encodeStateAsUpdate(a), "remote");
+      expect(clientA.text()).toBe(clientB.text());
+      if (action === "move") expect(clientA.text()).toBe("- B\n  - cXhild\n- A\n- C");
+      else {
+        for (const client of [clientA, clientB]) {
+          forceParsing(client.view, client.text().length, 5000);
+          const items = client.structure().items;
+          expect(items).toHaveLength(4);
+          expect(items.every((item) => item.ordered && item.depth === 0)).toBe(true);
+          expect(new Set(items.map((item) => item.listFrom)).size).toBe(1);
+        }
+      }
+    } finally {
+      a.destroy();
+      b.destroy();
+    }
+  });
+
+  test.each([
+    ["9) A\n   - lift\n   1) following\n10) end", "lift", "9) A\n10) lift\n    1) following\n11) end"],
+    ["9. A\n   - B\n\n   para of A\n10. D", "B", "9. A\n10. B\n\n    para of A\n11. D"],
+  ])("lifting shifts all following parent content: %s", (doc, caret, expected) => {
+    using editor = mount(doc, doc.indexOf(caret));
+    expect(editor.press("Tab", { shiftKey: true })).toBe(true);
+    expect(editor.text()).toBe(expected);
+  });
+
+  test.each([
+    ["1. a\n2. b\n3. c", 0, 5, "delete.line", "1. b\n2. c"],
+    ["5. a\n6. b\n7. c", 0, 5, "delete.line", "5. b\n6. c"],
+    ["- x\n  1. a\n  2. b", 4, 11, "delete.line", "- x\n  1. b"],
+    ["1. a\n2. b\n3. c", 0, 5, "delete.cut", "1. b\n2. c"],
+  ] as const)("removing the first marker retains the list start: %s (%i..%i, %s)", (doc, from, to, userEvent, expected) => {
+    using editor = mount(doc);
+    editor.view.dispatch({ changes: { from, to }, userEvent });
+    expect(editor.text()).toBe(expected);
+  });
+
+  test("removing the first nested marker restores parsing and repairs all surviving siblings", () => {
+    using editor = mount("- x\n  1. a\n  2. b\n  3. c");
+    editor.view.dispatch({ changes: { from: 4, to: 11 }, userEvent: "delete.line" });
+    expect(editor.text()).toBe("- x\n  1. b\n  2. c");
+  });
+
+  test.each(["ArrowUp", "ArrowDown"] as const)("macOS Cmd-Shift-%s retains document selection", (key) => {
+    const doc = "1. A\n2. B\n3. C";
+    using editor = mount(doc, doc.indexOf("B"));
+    // Resolve macOS bindings onto the test platform so the real key handlers run with their normal precedence.
+    const bindings = editor.view.state
+      .facet(keymap)
+      .flat()
+      .map((binding) => ({
+        ...binding,
+        key: (binding.mac ?? binding.key)?.replace(/^(?:Mod|Cmd)-/, "Ctrl-"),
+        mac: undefined,
+        win: undefined,
+        linux: undefined,
+      }));
+    editor.view.dispatch({ effects: StateEffect.reconfigure.of([markdownExtension(), keymap.of(bindings)]) });
+    expect(editor.press(key, { ctrlKey: true, shiftKey: true })).toBe(true);
+    expect(editor.text()).toBe(doc);
+    expect(editor.view.state.selection.main.anchor).toBe(doc.indexOf("B"));
+    expect(editor.view.state.selection.main.head).toBe(key === "ArrowUp" ? 0 : doc.length);
+  });
+
+  test.each([
+    ["1. A\n1. B\n\nplain", 10, "1. A\n1. B\n\n\nplain"],
+    ["- a\n  1. x\n  1. y\n- b\n- c", 25, "- a\n  1. x\n  1. y\n- b\n- c\n- "],
+  ] as const)("Enter leaves untouched adjacent or nested ordered lists alone: %s", (doc, head, expected) => {
+    using editor = mount(doc, head);
+    expect(editor.press("Enter")).toBe(true);
+    expect(editor.text()).toBe(expected);
+  });
+
+  test("plain line move falls back when parsing times out", () => {
+    const prefix = "paragraph\n\n".repeat(50000);
+    const doc = prefix + "one\ntwo";
+    using editor = mount(doc, doc.length, true, [], false);
+    expect(editor.press("ArrowUp", { altKey: true })).toBe(true);
+    expect(editor.text()).toBe(prefix + "two\none");
+  });
+
+  test("raw mode caches excluded spans across caret moves in the same document", () => {
+    const doc = "- A\n- B";
+    using editor = mount(doc);
+    const source = spyOn(editor.view.state.doc, "toString");
+    try {
+      expect(listIndentAvailability(editor.view.state)).toEqual({ indent: true, outdent: false });
+      editor.view.dispatch({ selection: { anchor: doc.indexOf("B") } });
+      expect(listIndentAvailability(editor.view.state)).toEqual({ indent: true, outdent: false });
+      expect(source.mock.calls.length).toBeLessThanOrEqual(1);
+    } finally {
+      source.mockRestore();
+    }
+  });
+
+  test.each(["- - -", "* * *", "-  -  -"])("spaced thematic break stays a rule on Tab and Mod brackets: %s", (rule) => {
+    const doc = `- A\n  1. child\n\n${rule}`;
+    for (const key of ["Tab", "]"] as const) {
+      using editor = mount(doc);
+      expect(editor.press(key, key === "]" ? mod : {})).toBe(true);
+      expect(editor.text()).toContain(rule);
+      expect(editor.text()).not.toContain("2.");
+    }
+  });
+
+  test("selected siblings share one column across an ordinal width boundary", () => {
+    const doc = "999. A\n1000. B\n1001. C\n1002. D";
+    using editor = mount(doc);
+    editor.view.dispatch({ selection: { anchor: doc.indexOf("1000"), head: doc.indexOf("C") + 1 } });
+    expect(editor.press("Tab")).toBe(true);
+    expect(editor.text()).toBe("999. A\n     1. B\n     2. C\n1000. D");
+    expect(editor.press("Tab", { shiftKey: true })).toBe(true);
+    expect(editor.text()).toBe(doc);
+  });
+
+  test.each([
+    ["- a\n- b\n- c", "- b\n- c\n- a"],
+    ["1. a\n2. b\n3. c", "1. b\n2. c\n3. a"],
+  ])("selection outside the caret subtree uses the default line move: %s", (doc, expected) => {
+    using editor = mount(doc);
+    editor.view.dispatch({ selection: { anchor: doc.indexOf("b"), head: doc.indexOf("c") + 1 } });
+    expect(editor.press("ArrowUp", { altKey: true })).toBe(true);
+    expect(editor.text()).toBe(expected);
+  });
+
+  test.each([
+    ["- A\n- B", "B", "ArrowUp", "- B\n- A"],
+    ["1. A\n2. B\n3. C", "B", "ArrowUp", "1. B\n2. A\n3. C"],
+    ["- A\n- B\n- C", "A", "ArrowDown", "- B\n- A\n- C"],
+  ] as const)("moving an item keeps its end caret: %s (%s, %s)", (doc, item, key, expected) => {
+    using editor = mount(doc, doc.indexOf(item) + 1);
+    expect(editor.press(key, { altKey: true })).toBe(true);
+    expect(editor.text()).toBe(expected);
+    expect(editor.view.state.selection.main.head).toBe(expected.indexOf(item) + 1);
+  });
 
   test("Tab creates a real ordered sublist and repairs following numbers in one dispatch", () => {
     const doc = "1. A\n2. B\n3. C";
@@ -410,14 +574,14 @@ describe("notebook structural list commands", () => {
     expect(plain.text()).toBe("two\none");
   });
 
-  test("move stops at another list and rejects a selection outside the subtree", () => {
+  test("move stops at another list and falls back for a selection outside the subtree", () => {
     using editor = mount("- A\n* B");
     expect(editor.press("ArrowUp", { altKey: true })).toBe(true);
     expect(editor.text()).toBe("- A\n* B");
     using selected = mount("- A\n- B\n- C");
-    selected.view.dispatch({ selection: { anchor: 0, head: 6 } });
+    selected.view.dispatch({ selection: { anchor: 6, head: 11 } });
     expect(selected.press("ArrowUp", { altKey: true })).toBe(true);
-    expect(selected.text()).toBe("- A\n- B\n- C");
+    expect(selected.text()).toBe("- B\n- C\n- A");
   });
 
   test("remote, undo, redo and ordinary text edits never repair lazy numbering", () => {

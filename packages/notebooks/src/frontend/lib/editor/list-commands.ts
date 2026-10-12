@@ -1,13 +1,14 @@
 /** List indentation, subtree moves and local structural number repair, shared by keys and the toolbar. */
 import { ensureSyntaxTree, language, syntaxTreeAvailable } from "@codemirror/language";
 import {
-  type ChangeSet,
+  ChangeSet,
   type ChangeSpec,
-  EditorSelection,
   EditorState,
   type Extension,
   type Line,
+  MapMode,
   Prec,
+  type Text,
   Transaction,
 } from "@codemirror/state";
 import { type Command, keymap } from "@codemirror/view";
@@ -19,9 +20,17 @@ import { listStateField } from "./lists";
 
 type Direction = 1 | -1;
 
+const rawExcludedSpans = new WeakMap<Text, readonly ExcludedSpan[]>();
 const excludedLines = (state: EditorState): (() => readonly ExcludedSpan[]) => {
-  let spans = state.field(listStateField, false)?.excluded;
-  return () => (spans ??= excludedSpans(state));
+  const listState = state.field(listStateField, false);
+  let spans = listState ? listState.excluded : rawExcludedSpans.get(state.doc);
+  return () => {
+    if (!spans) {
+      spans = excludedSpans(state);
+      if (!listState) rawExcludedSpans.set(state.doc, spans);
+    }
+    return spans;
+  };
 };
 
 const sameKind = (a: string, b: string) => a.at(-1) === b.at(-1);
@@ -152,7 +161,7 @@ const shiftChanges = (state: EditorState, direction: Direction): ChangeSet | nul
       if (direction > 0 && !target) return state.changes([]);
       itemWidth = target
         ? direction > 0
-          ? listItemLine(tree, target, excluded)!.content - item.indent
+          ? (deltas.get(target.number) ?? listItemLine(tree, target, excluded)!.content - item.indent)
           : item.indent - listItemLine(tree, target, excluded)!.indent
         : Math.min(item.indent, 2);
       let marker = item.marker;
@@ -192,18 +201,17 @@ const shiftChanges = (state: EditorState, direction: Direction): ChangeSet | nul
   }
   for (const current of lifted) {
     const { item, end, marker, width } = current;
-    const next = end < state.doc.lines ? state.doc.line(end + 1) : null;
+    // All remaining parent content becomes content of the lifted item, regardless of its kind.
+    const delta = item.content - width + marker.length - item.marker.length - item.indent;
+    const parent = itemAbove(state, current.line, item, "parent", excluded, tree);
+    let followingEnd = parent ? nestedEnd(state, parent, listItemLine(tree, parent, excluded)!.indent) : state.doc.lines;
+    const nextLifted = lifted.find((other) => other.line.number > end);
+    if (nextLifted) followingEnd = Math.min(followingEnd, nextLifted.line.number - 1);
+    for (let number = end + 1; number <= followingEnd; number++) if (!deltas.has(number)) deltas.set(number, delta);
+    const next = end < followingEnd ? state.doc.line(end + 1) : null;
     const sibling = next && listItemLine(tree, next, excluded);
-    if (next && sibling && !deltas.has(next.number) && sibling.indent === item.indent && sameKind(sibling.marker, item.marker)) {
-      // These old siblings become children of the lifted item, including when its new marker is wider.
-      const delta = item.content - width + marker.length - item.marker.length - sibling.indent;
-      const parent = itemAbove(state, current.line, item, "parent", excluded, tree);
-      let followingEnd = parent ? nestedEnd(state, parent, listItemLine(tree, parent, excluded)!.indent) : state.doc.lines;
-      const nextLifted = lifted.find((other) => other.line.number > next.number);
-      if (nextLifted) followingEnd = Math.min(followingEnd, nextLifted.line.number - 1);
-      for (let number = next.number; number <= followingEnd; number++) if (!deltas.has(number)) deltas.set(number, delta);
-      if (/^\d/.test(sibling.marker)) rewrite(next, sibling, nestedEnd(state, next, sibling.indent), `1${sibling.marker.at(-1)}`);
-    }
+    if (next && sibling && sibling.indent === item.indent && sameKind(sibling.marker, item.marker) && /^\d/.test(sibling.marker))
+      rewrite(next, sibling, nestedEnd(state, next, sibling.indent), `1${sibling.marker.at(-1)}`);
   }
   const specs: ChangeSpec[] = [];
   for (const [number, delta] of deltas) {
@@ -253,7 +261,7 @@ export const listIndentAvailability = (state: EditorState): { indent: boolean; o
   if (!item) return disabled;
   return {
     indent: !!itemAbove(state, line, item, "previous", excluded, tree),
-    outdent: item.indent > 0 || !!itemAbove(state, line, item, "parent", excluded, tree),
+    outdent: item.indent > 0,
   };
 };
 
@@ -300,11 +308,11 @@ const moveListItem =
     const head = state.selection.main.head;
     const line = state.doc.lineAt(head);
     const tree = ensureSyntaxTree(state, line.to, 50);
-    if (!tree) return true;
+    if (!tree) return LIST_ITEM.test(line.text) || leadingWhitespace(line.text) > 0;
     const excluded = excludedLines(state);
     if (LIST_ITEM.test(line.text) && !listItemLine(tree, line, excluded)) return false;
     const parsed = parsedListBlocks(state, [{ from: line.from, to: line.to + 1 }]);
-    if (!parsed) return true;
+    if (!parsed) return LIST_ITEM.test(line.text) || leadingWhitespace(line.text) > 0;
     const block = parsed.blocks[0];
     if (!block) return !!listItemLine(parsed.tree, line, excluded);
     if (excluded().some((span) => head >= span.from && head < span.to)) return false;
@@ -313,7 +321,8 @@ const moveListItem =
     if (index < 0) return false;
     const item = structure.items[index]!;
     const end = state.doc.lineAt(item.to).to;
-    if (state.readOnly || state.selection.ranges.some((range) => range.from < item.from || range.to > end)) return true;
+    if (state.readOnly) return true;
+    if (state.selection.ranges.some((range) => range.from < item.from || range.to > end)) return false;
     const sibling = siblingIndex(structure, index, direction);
     if (sibling < 0) return true;
     const upperIndex = direction < 0 ? sibling : index;
@@ -332,19 +341,22 @@ const moveListItem =
         )
       : state.changes([]);
     const repairedDoc = repair.apply(state.doc);
-    const lowerText = repairedDoc.sliceString(repair.mapPos(lower.from), repair.mapPos(lowerEnd, 1));
-    const changes = state.changes([
-      { from: upper.from, to: upperEnd, insert: lowerText },
-      { from: lower.from, to: lowerEnd, insert: state.sliceDoc(upper.from, upperEnd) },
-    ]);
-    const targetFrom = direction < 0 ? upper.from : upper.from + lowerText.length + gap.length;
-    const sourceFrom = repair.mapPos(item.from);
-    const selection = EditorSelection.create(
-      state.selection.ranges.map((range) =>
-        EditorSelection.range(targetFrom + repair.mapPos(range.anchor) - sourceFrom, targetFrom + repair.mapPos(range.head) - sourceFrom),
-      ),
-      state.selection.mainIndex,
-    );
+    const upperFrom = repair.mapPos(upper.from);
+    const repairedUpperEnd = repair.mapPos(upperEnd, 1);
+    const lowerFrom = repair.mapPos(lower.from);
+    const repairedLowerEnd = repair.mapPos(lowerEnd, 1);
+    const relocation =
+      direction < 0
+        ? [
+            { from: upperFrom, to: lowerFrom },
+            { from: repairedLowerEnd, insert: gap + repairedDoc.sliceString(upperFrom, repairedUpperEnd) },
+          ]
+        : [
+            { from: upperFrom, insert: repairedDoc.sliceString(lowerFrom, repairedLowerEnd) + gap },
+            { from: repairedUpperEnd, to: repairedLowerEnd },
+          ];
+    const changes = repair.compose(ChangeSet.of(relocation, repairedDoc.length));
+    const selection = state.selection.map(changes, direction);
     view.dispatch({ changes, selection, scrollIntoView: true, userEvent: "move.line" });
     return true;
   };
@@ -394,7 +406,7 @@ const continuedListColumns = (tr: Transaction, deadline: number): ChangeSet => {
         markers.set(index, number.marker + old.sliceDoc(item.markerTo - 1, item.markerTo));
     });
     markerChanges(old, structure, markers).iterChanges((from, to, _fromB, _toB, insert) => {
-      if (!numbers.has(from)) specs.push({ from, to, insert });
+      if (![...numbers].some(([numberFrom, number]) => from >= numberFrom && to <= number.to)) specs.push({ from, to, insert });
     });
   }
   return old.changes(specs).map(tr.changes);
@@ -411,8 +423,12 @@ const renumber = EditorState.transactionFilter.of((tr: Transaction) => {
     return tr;
   const deadline = performance.now() + 50;
   const windows: ExcludedSpan[] = [];
+  const oldRanges: ExcludedSpan[] = [];
+  const changedRanges: ExcludedSpan[] = [];
   let structural = false;
   tr.changes.iterChangedRanges((fromA, toA, fromB, toB) => {
+    oldRanges.push({ from: fromA, to: toA });
+    changedRanges.push({ from: fromB, to: toB });
     if (
       tr.startState.sliceDoc(fromA, toA).includes("\n") ||
       tr.state.sliceDoc(fromB, toB).includes("\n") ||
@@ -425,23 +441,74 @@ const renumber = EditorState.transactionFilter.of((tr: Transaction) => {
     windows.push({ from: tr.newDoc.line(first).from, to: tr.newDoc.line(last).to + 1 });
   });
   if (!structural) return tr;
+  // When the first item of an ordered list goes, the first remaining item takes over the list's start before the
+  // reparse. This also keeps a nested list that would otherwise read as paragraph text (it must start at 1) a list.
+  const survivors: Array<{ markerFrom: number; markerTo: number; to: number; start: number }> = [];
   const columns = continuedListColumns(tr, deadline);
-  const state = columns.empty
+  const oldParsed = parsedListBlocks(tr.startState, oldRanges, deadline);
+  if (oldParsed) {
+    const excluded = excludedLines(tr.startState);
+    for (const block of oldParsed.blocks) {
+      const lost = new Map<number, number | null>();
+      for (const item of listStructure(tr.startState, excluded, block, oldParsed.tree).items) {
+        if (!item.ordered || item.start === null || lost.get(item.listFrom) === null) continue;
+        const deleted =
+          tr.changes.mapPos(item.markerFrom, 1, MapMode.TrackAfter) === null &&
+          tr.changes.mapPos(item.markerTo, -1, MapMode.TrackBefore) === null;
+        if (deleted) {
+          if (!lost.has(item.listFrom)) lost.set(item.listFrom, item.start);
+          continue;
+        }
+        const start = lost.get(item.listFrom);
+        lost.set(item.listFrom, null);
+        if (start === undefined || start === null) continue;
+        survivors.push({
+          markerFrom: columns.mapPos(tr.changes.mapPos(item.markerFrom, 1), 1),
+          markerTo: columns.mapPos(tr.changes.mapPos(item.markerTo, -1), -1),
+          to: columns.mapPos(tr.changes.mapPos(item.to, -1), -1),
+          start,
+        });
+      }
+    }
+  }
+  const shifted = columns.empty ? tr.newDoc : columns.apply(tr.newDoc);
+  const restoring = EditorState.create({ doc: shifted });
+  const restorable = survivors
+    .filter((item) => /^\d{1,9}[.)]$/.test(restoring.sliceDoc(item.markerFrom, item.markerTo)))
+    .map((item) => ({ ...item, line: shifted.lineAt(item.markerFrom).number }));
+  const restored = markerChanges(
+    restoring,
+    { items: restorable },
+    new Map(restorable.map((item, index) => [index, `${item.start}${restoring.sliceDoc(item.markerTo - 1, item.markerTo)}`])),
+  );
+  const prepared = columns.compose(restored);
+  const state = prepared.empty
     ? tr.state
-    : EditorState.create({ doc: columns.apply(tr.newDoc), extensions: tr.state.facet(language)?.extension ?? [] });
-  for (const window of windows) {
-    window.from = columns.mapPos(window.from);
-    window.to = columns.mapPos(Math.min(window.to, tr.newDoc.length), 1);
+    : EditorState.create({ doc: prepared.apply(tr.newDoc), extensions: tr.state.facet(language)?.extension ?? [] });
+  for (const range of [...changedRanges, ...windows]) {
+    range.from = prepared.mapPos(range.from);
+    range.to = prepared.mapPos(Math.min(range.to, tr.newDoc.length), 1);
   }
   const parsed = parsedListBlocks(state, windows, deadline);
   if (!parsed) return tr;
   const excluded = excludedLines(state);
   const changes: ChangeSpec[] = [];
   for (const block of parsed.blocks) {
-    const repair = renumberChanges(state, listStructure(state, excluded, block, parsed.tree));
-    repair.iterChanges((from, to, _fromB, _toB, insert) => changes.push({ from, to, insert }));
+    const structure = listStructure(state, excluded, block, parsed.tree);
+    const lists = new Map<number, { from: number; to: number; start: number }>();
+    for (const item of structure.items) {
+      if (!item.ordered || item.start === null) continue;
+      const list = lists.get(item.listFrom);
+      if (list) list.to = item.to;
+      else lists.set(item.listFrom, { from: item.from, to: item.to, start: item.start });
+    }
+    const starts = new Map<number, number>();
+    for (const [listFrom, list] of lists) {
+      if (changedRanges.some((range) => list.from <= range.to && list.to >= range.from)) starts.set(listFrom, list.start);
+    }
+    renumberChanges(state, structure, starts).iterChanges((from, to, _fromB, _toB, insert) => changes.push({ from, to, insert }));
   }
-  const repair = columns.compose(state.changes(changes));
+  const repair = prepared.compose(state.changes(changes));
   return repair.empty ? tr : [tr, { changes: repair, sequential: true }];
 });
 
@@ -452,8 +519,8 @@ export const listCommandsExtension = (): Extension => [
       { key: "Mod-[", run: outdentListItems },
       { key: "Alt-ArrowUp", run: moveListItem(-1) },
       { key: "Alt-ArrowDown", run: moveListItem(1) },
-      { key: "Mod-Shift-ArrowUp", run: moveListItem(-1) },
-      { key: "Mod-Shift-ArrowDown", run: moveListItem(1) },
+      { win: "Ctrl-Shift-ArrowUp", linux: "Ctrl-Shift-ArrowUp", run: moveListItem(-1) },
+      { win: "Ctrl-Shift-ArrowDown", linux: "Ctrl-Shift-ArrowDown", run: moveListItem(1) },
     ]),
   ),
   renumber,

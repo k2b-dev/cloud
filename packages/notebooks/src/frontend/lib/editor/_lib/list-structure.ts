@@ -125,8 +125,18 @@ export const markerChanges = (
   const deltas = new Map<number, number>();
   for (const [index, marker] of markers) {
     const item = structure.items[index]!;
-    if (state.sliceDoc(item.markerFrom, item.markerTo) === marker) continue;
-    changes.push({ from: item.markerFrom, to: item.markerTo, insert: marker });
+    const old = state.sliceDoc(item.markerFrom, item.markerTo);
+    if (old === marker) continue;
+    let prefix = 0;
+    while (prefix < old.length && prefix < marker.length && old[prefix] === marker[prefix]) prefix++;
+    let suffix = 0;
+    while (
+      suffix < old.length - prefix &&
+      suffix < marker.length - prefix &&
+      old[old.length - suffix - 1] === marker[marker.length - suffix - 1]
+    )
+      suffix++;
+    changes.push({ from: item.markerFrom + prefix, to: item.markerTo - suffix, insert: marker.slice(prefix, marker.length - suffix) });
     const delta = marker.length - (item.markerTo - item.markerFrom);
     if (!delta) continue;
     for (let number = item.line + 1; number <= state.doc.lineAt(item.to).number; number++) {
@@ -142,13 +152,14 @@ export const markerChanges = (
   return state.changes(changes);
 };
 
-/** Repair the written numbers to the ordinals Book displays, preserving each list's start and delimiter. */
-export const renumberChanges = (state: EditorState, structure: ListStructure): ChangeSet => {
+/** Repair only the specified ordered lists, using their supplied starts and preserving delimiters. */
+export const renumberChanges = (state: EditorState, structure: ListStructure, starts: ReadonlyMap<number, number>): ChangeSet => {
   const markers = new Map<number, string>();
   structure.items.forEach((item, index) => {
-    if (!item.ordered) return;
+    const start = starts.get(item.listFrom);
+    if (!item.ordered || start === undefined || item.ordinal === null || item.start === null) return;
     const written = state.sliceDoc(item.markerFrom, item.markerTo);
-    const marker = `${item.ordinal}${written.at(-1)}`;
+    const marker = `${item.ordinal - item.start + start}${written.at(-1)}`;
     if (written !== marker) markers.set(index, marker);
   });
   return markerChanges(state, structure, markers);

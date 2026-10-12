@@ -200,6 +200,21 @@ describe("cached notebook block exclusions", () => {
 describe("source list marker repair", () => {
   const structureFor = (state: EditorState) => listStructure(state, () => excludedSpans(state));
 
+  test.each([
+    ["4.", "3.", 0, 1, "3"],
+    ["12.", "11.", 1, 2, "1"],
+    ["9)", "10)", 0, 1, "10"],
+    ["100.", "10.", 2, 3, ""],
+    ["12.", "12.", 0, 0, ""],
+  ] as const)("marker repair trims common prefix and suffix: %s → %s", (old, marker, from, to, insert) => {
+    const state = stateFor(`${old} item`);
+    const changes = markerChanges(state, structureFor(state), new Map([[0, marker]]));
+    const edits: Array<{ from: number; to: number; insert: string }> = [];
+    changes.iterChanges((from, to, _fromB, _toB, insert) => edits.push({ from, to, insert: insert.toString() }));
+    expect(edits).toEqual(old === marker ? [] : [{ from, to, insert }]);
+    expect(changes.apply(state.doc).toString()).toBe(`${marker} item`);
+  });
+
   test("marker width shifts a continuation and the entire child subtree, leaving blank lines blank", () => {
     const state = stateFor("9. root\n   continuation\n\n   - child\n     - grandchild");
     const structure = structureFor(state);
@@ -259,17 +274,39 @@ describe("source list marker repair", () => {
 
   test("renumber preserves start, delimiter and tasks, and is idempotent", () => {
     const state = stateFor("8) [ ] one\n1) [x] two\n2) three\n   continuation\n   - child");
-    const changes = renumberChanges(state, structureFor(state));
+    const starts = new Map([[0, 8]]);
+    const changes = renumberChanges(state, structureFor(state), starts);
     expect(changes.apply(state.doc).toString()).toBe("8) [ ] one\n9) [x] two\n10) three\n    continuation\n    - child");
     const after = stateFor(changes.apply(state.doc).toString());
-    expect(renumberChanges(after, structureFor(after)).empty).toBe(true);
+    expect(renumberChanges(after, structureFor(after), starts).empty).toBe(true);
+  });
+
+  test("renumber uses an overridden start for every item in the list", () => {
+    const state = stateFor("3. one\n1. two\n2. three");
+    expect(
+      renumberChanges(state, structureFor(state), new Map([[0, 8]]))
+        .apply(state.doc)
+        .toString(),
+    ).toBe("8. one\n9. two\n10. three");
+  });
+
+  test("renumber leaves lists absent from the starts map alone", () => {
+    const state = stateFor("3. one\n1. two\n\nparagraph\n\n8. other\n1. last");
+    const structure = structureFor(state);
+    expect(
+      renumberChanges(state, structure, new Map([[0, 3]]))
+        .apply(state.doc)
+        .toString(),
+    ).toBe("3. one\n4. two\n\nparagraph\n\n8. other\n1. last");
+    expect(renumberChanges(state, structure, new Map()).empty).toBe(true);
   });
 
   test("repair ignores data, query, code and quote lists", () => {
     const doc =
       "1. real\n1. real\n\n:::data\n1. data\n1. data\n:::\n\n:::query\n1. query\n1. query\n:::\n\n```md\n1. code\n1. code\n```\n\n> 1. quote\n> 1. quote";
     const state = stateFor(doc);
-    expect(renumberChanges(state, structureFor(state)).apply(state.doc).toString()).toBe(
+    const starts = new Map([...doc.matchAll(/1\./g)].map((match) => [match.index, 1] as const));
+    expect(renumberChanges(state, structureFor(state), starts).apply(state.doc).toString()).toBe(
       doc.replace("1. real\n1. real", "1. real\n2. real"),
     );
   });

@@ -23,7 +23,7 @@ const inCode = (tree: Tree, pos: number): boolean => {
  */
 export const listItemLine = (tree: Tree, line: Line, excluded: () => readonly ExcludedSpan[]): ListItemLine | null => {
   const match = LIST_ITEM.exec(line.text);
-  if (!match) return null;
+  if (!match || /^([-*_])(?: *\1){2,} *$/.test(line.text.trimStart())) return null;
   const indent = match[1]!.length;
   if (inCode(tree, line.from + indent) || excluded().some((span) => line.from + indent >= span.from && line.from + indent < span.to))
     return null;
