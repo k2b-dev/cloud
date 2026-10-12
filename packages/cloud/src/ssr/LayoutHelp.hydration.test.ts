@@ -8,7 +8,7 @@ const helpRegistration = /<Layout\.(?:HelpDocuments|HelpPage)(?:\s|>)/;
 const withoutTsx = (path: string) => path.replace(/\.tsx$/, "");
 const withoutComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 const isHelpRegistration = (path: string, source: string) =>
-  path.endsWith("/RegisteredHelpDocuments.island.tsx") || helpRegistration.test(withoutComments(source));
+  path.endsWith("/ShellRuntime.island.tsx") || helpRegistration.test(withoutComments(source));
 const loadSources = async () => {
   const sources = new Map<string, string>();
   for await (const path of sourceGlob.scan({ cwd: repoRoot })) {

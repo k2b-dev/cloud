@@ -4,7 +4,14 @@ import { publishRailPreferences, RAIL_PREFERENCES_EVENT, readRailContext } from 
 
 test("saving and resetting personal preferences preserves managed shortcuts in the shared launcher snapshot", () => {
   const managedShortcuts = [{ id: "global", kind: "link" as const, title: "Global <link>", href: "/global", icon: "ti ti-link" }];
-  const script = { textContent: JSON.stringify({ apps: [], settings: { ...defaultRailPreferences(), managedShortcuts } }) };
+  const script = {
+    textContent: JSON.stringify({
+      apps: [],
+      rail: { ...defaultRailPreferences(), managedShortcuts },
+      theme: "dark",
+      searchLinks: { mail: [{ label: "Keep me", href: "/app/mail" }] },
+    }),
+  };
   const oldDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
   const oldWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   const events = new EventTarget();
@@ -24,6 +31,8 @@ test("saving and resetting personal preferences preserves managed shortcuts in t
     expect(readRailContext()?.settings).toEqual({ ...defaultRailPreferences(), revision: 2, managedShortcuts });
     expect(notifications).toBe(2);
     expect(script.textContent).not.toContain("<link>");
+    expect(JSON.parse(script.textContent).theme).toBe("dark");
+    expect(JSON.parse(script.textContent).searchLinks).toEqual({ mail: [{ label: "Keep me", href: "/app/mail" }] });
   } finally {
     if (oldDocument) Object.defineProperty(globalThis, "document", oldDocument);
     else Reflect.deleteProperty(globalThis, "document");

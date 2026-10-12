@@ -286,8 +286,8 @@ describe("Cloud layouts SSR", () => {
     const embedded = (id: string) => JSON.parse(html.match(new RegExp(`<script id="${id}" type="application/json">(.*?)</script>`))![1]!);
     const badges = (apps: { id: string; badge?: string }[]) => Object.fromEntries(apps.map((entry) => [entry.id, entry.badge ?? null]));
     const expected = { "chat-probe": "/api/chat-probe/badge", "mail-probe": null };
-    expect(badges(embedded("cloud-rail-data").apps)).toEqual(expected);
-    expect(badges(embedded("cloud-app-launchpad-data").apps)).toEqual(expected);
+    expect(badges(embedded("cloud-shell-data").apps)).toEqual(expected);
+    expect(html.match(/id="cloud-shell-data"/g)).toHaveLength(1);
     expect(html).toContain('aria-label="Chat probe"');
     expect(html).not.toContain("cloud-app-badge");
   });

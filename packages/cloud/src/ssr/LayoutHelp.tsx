@@ -1,29 +1,17 @@
 import type { HelpDocumentManifest, HelpDocumentPayload, HelpSearchPayload } from "@k2b/cloud/shared";
 import { clipboard } from "@k2b/stdlib/solid";
 import { Button, IconButton, IconButtonLink, MarkdownView, NoticeCard, Placeholder, prompts, ScrollArea, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { COMMANDS_CHANGED, contextCommandsWithShortcuts, shortcutLabel } from "../browser/command-shortcuts";
 import { appAccentStyle } from "./app-appearance";
 import { type GlobalSearchHelpApp, openGlobalSearchHelpDialog } from "./GlobalSearchHelpDialog";
 import { helpMessages } from "./help-messages";
 import { formatHelpBundleMarkdown, formatHelpDocumentMarkdown } from "./layout-help-markdown";
 import { adjacentHelpDocuments, focusHelpArticleHeading, resetHelpArticleScroll } from "./layout-help-navigation";
+import { HELP_TOPICS_EVENT, type HelpTopic, registry } from "./layout-help-registry";
 import { searchHelpTopics } from "./layout-help-search";
 import { layoutHelpTopicHref } from "./layout-help-url";
 
-type HelpTopicBase = {
-  id: string;
-  title: string;
-  icon?: string;
-  description?: string;
-  order?: number;
-};
-
-export type LayoutHelpDocumentsProps = {
-  documents: readonly HelpDocumentManifest[];
-  /** Canonical standalone Help route owned by the current app. */
-  pageBase: string;
-};
 export type LayoutHelpPageProps = {
   documents: readonly HelpDocumentManifest[];
   initialTopic?: string;
@@ -35,7 +23,6 @@ export type LayoutHelpPageProps = {
   pageBase?: string;
 };
 
-type HelpTopic = (HelpTopicBase & { kind: "content"; children: JSX.Element }) | (HelpDocumentManifest & { kind: "document" });
 type HelpView = "hub" | "search" | "article";
 type HelpSession = {
   view: HelpView;
@@ -51,23 +38,8 @@ type HelpSection = {
   title: string;
 };
 
-const HELP_TOPICS_EVENT = "cloud:layout-help-topics";
 const LAST_TOPIC_KEY = "cloud.layoutHelp.activeTopic";
 
-declare global {
-  interface Window {
-    __cloudLayoutHelpTopics?: Map<string, HelpTopic>;
-    __cloudLayoutHelpPageBase?: string;
-  }
-}
-
-const registry = () => {
-  if (typeof window === "undefined") return null;
-  window.__cloudLayoutHelpTopics ??= new Map<string, HelpTopic>();
-  return window.__cloudLayoutHelpTopics;
-};
-
-const emitTopicsChanged = () => window.dispatchEvent(new Event(HELP_TOPICS_EVENT));
 const iconClass = (icon?: string) => (icon?.startsWith("ti ") ? icon : `ti ${icon ?? "ti-circle"}`);
 const legacyTopicContent = (topic: HelpTopic) => (topic.kind === "content" ? topic.children : null);
 const sortedTopics = () =>
@@ -79,33 +51,6 @@ const mergeTopics = (registered: readonly HelpTopic[], documents: readonly HelpD
   for (const topic of documentTopics(documents)) topics.set(topic.id, topic);
   return [...topics.values()].sort((a, b) => (a.order ?? 100) - (b.order ?? 100) || a.title.localeCompare(b.title));
 };
-
-const registerTopic = (topic: HelpTopic) => {
-  const topics = registry();
-  if (!topics) return () => {};
-  topics.set(topic.id, topic);
-  emitTopicsChanged();
-  return () => {
-    if (topics.get(topic.id) !== topic) return;
-    topics.delete(topic.id);
-    emitTopicsChanged();
-  };
-};
-
-/** Register an app's server-prepared Markdown manifest with the shared help UI. */
-export function LayoutHelpDocuments(props: LayoutHelpDocumentsProps) {
-  onMount(() => {
-    // Cleanup runs while this unmounts, when a parent `<Show>` may already have dropped the props' source.
-    const pageBase = props.pageBase;
-    window.__cloudLayoutHelpPageBase = pageBase;
-    const disposers = props.documents.map((document) => registerTopic({ ...document, kind: "document" }));
-    onCleanup(() => {
-      disposers.forEach((dispose) => dispose());
-      if (window.__cloudLayoutHelpPageBase === pageBase) delete window.__cloudLayoutHelpPageBase;
-    });
-  });
-  return null;
-}
 
 const Shortcuts = (props: { openSearchHelp: () => void }) => {
   const locale = useLocale();

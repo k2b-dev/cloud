@@ -1,75 +1,43 @@
-import type { NavigationSearchItem } from "../browser/navigation-search";
-import type { RailSnapshot } from "../contracts/rail-preferences";
-import type { CloudTheme } from "../shared/theme";
-import AppLaunchpad, { type AppLaunchpadApp } from "./AppLaunchpad.island";
-import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
-import GlobalSearchTrigger from "./GlobalSearchTrigger.island";
-import LayoutHelpTrigger from "./LayoutHelpTrigger.island";
-import ProfilePreferences from "./ProfilePreferences.island";
-import RailApps from "./RailApps.island";
+import { useLocale } from "@k2b/ui";
+import { createEffect } from "solid-js";
+import { AppLaunchpadButton, setAppLaunchpadContext } from "./app-launchpad";
+import GlobalSearchTrigger from "./GlobalSearchTrigger";
+import LayoutHelpTrigger from "./LayoutHelpTrigger";
+import ProfilePreferences from "./ProfilePreferences";
+import { platformMessages } from "./platform-messages";
+import RailApps from "./RailApps";
 import type { RailApp } from "./rail-navigation";
+import { useShellData } from "./shell-data";
 export type LayoutAppLink = RailApp;
 
-type LayoutRailProps = {
-  accent?: string;
-  /** Set while the installation offers the mobile app. */
-  appHref?: string;
-  appsLabel: string;
-  homeLabel: string;
-  launchpadApps: AppLaunchpadApp[];
-  legalLinks: Array<{ label: string; href: string; icon?: string }>;
-  openAppsLabel: string;
-  apps: RailApp[];
-  railSettings: RailSnapshot;
-  /** `pathname + search` of the request; the island resolves it against the browser origin. */
-  currentPath: string;
-  profileAvatarSrc?: string;
-  profileName: string;
-  searchHelpApps: GlobalSearchHelpApp[];
-  searchLinks?: NavigationSearchItem[];
-  theme: CloudTheme;
-};
-
-const jsonScript = (value: unknown): string => JSON.stringify(value).replace(/</g, "\\u003c");
-
-export default function LayoutRail(props: LayoutRailProps) {
-  const profile = { name: props.profileName, theme: props.theme, ...(props.appHref ? { appHref: props.appHref } : {}) };
+export default function LayoutRail(props: { currentPath: string }) {
+  const data = useShellData();
+  const locale = useLocale();
+  const t = () => platformMessages.resolve([locale()]).t;
+  if (!data?.rail || !data.profile) return null;
+  const profile = { name: data.profile.name, theme: data.theme, ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}) };
+  createEffect(() => setAppLaunchpadContext(data.apps, data.legalLinks, profile));
   return (
-    <>
-      <AppLaunchpad profile={profile} apps={props.launchpadApps} legalLinks={props.legalLinks} />
-      <script id="cloud-app-launchpad-data" type="application/json">
-        {jsonScript({ apps: props.launchpadApps, legalLinks: props.legalLinks, profile })}
-      </script>
-      <script id="cloud-rail-data" type="application/json">
-        {jsonScript({ apps: props.apps, settings: props.railSettings })}
-      </script>
-      <aside class="layout-rail hidden w-10 shrink-0 flex-col md:flex">
-        <div class="layout-rail-logo flex h-[2.875rem] shrink-0 items-center justify-center">
-          <a href="/" aria-label={props.homeLabel}>
-            <img src="/branding/logo" alt="Logo" class="h-5 w-5" />
-          </a>
-        </div>
-        <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label={props.appsLabel}>
-          <RailApps apps={props.apps} settings={props.railSettings} currentPath={props.currentPath} />
-          <AppLaunchpad
-            profile={profile}
-            apps={props.launchpadApps}
-            legalLinks={props.legalLinks}
-            variant="rail"
-            label={props.openAppsLabel}
+    <aside class="layout-rail hidden w-10 shrink-0 flex-col md:flex">
+      <div class="layout-rail-logo flex h-[2.875rem] shrink-0 items-center justify-center">
+        <a href="/" aria-label={t().home}>
+          <img src="/branding/logo" alt="Logo" class="h-5 w-5" />
+        </a>
+      </div>
+      <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label={t().apps}>
+        <RailApps apps={data.apps} settings={data.rail} currentPath={props.currentPath} />
+        <AppLaunchpadButton profile={profile} apps={data.apps} legalLinks={data.legalLinks} variant="rail" label={t().openApps} />
+        <div class="mt-auto shrink-0 flex flex-col items-center gap-1">
+          <GlobalSearchTrigger variant="rail" />
+          <LayoutHelpTrigger variant="rail" />
+          <ProfilePreferences
+            appHref={data.profile.appHref}
+            avatarSrc={data.profile.avatarSrc}
+            initialTheme={data.theme}
+            name={data.profile.name}
           />
-          <div class="mt-auto shrink-0 flex flex-col items-center gap-1">
-            <GlobalSearchTrigger variant="rail" searchLinks={props.searchLinks} />
-            <LayoutHelpTrigger variant="rail" registerCommand searchHelpApps={props.searchHelpApps} accent={props.accent} />
-            <ProfilePreferences
-              appHref={props.appHref}
-              avatarSrc={props.profileAvatarSrc}
-              initialTheme={props.theme}
-              name={props.profileName}
-            />
-          </div>
-        </nav>
-      </aside>
-    </>
+        </div>
+      </nav>
+    </aside>
   );
 }

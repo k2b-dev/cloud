@@ -6,13 +6,13 @@ import { createDomTestHarness } from "../../../ui/test/dom";
 const openMobileMenu = async (profile: { name: string; theme: "light"; appHref?: string }) => {
   const dom = createDomTestHarness();
   dom.window.innerWidth = 390;
-  const { default: AppLaunchpad } = await import("./AppLaunchpad.island");
+  const { AppLaunchpadButton: AppLaunchpad } = await import("./app-launchpad");
   const dispose = render(
     () => createComponent(AppLaunchpad, { variant: "header", apps: [], legalLinks: [{ label: "Profile", href: "/me" }], profile }),
     dom.root,
   );
   dom.root.querySelector<HTMLButtonElement>("button")!.click();
-  await Bun.sleep(20);
+  for (let attempt = 0; !document.querySelector("dialog .cloud-mobile-profile") && attempt < 100; attempt += 1) await Bun.sleep(10);
   return async () => {
     window.dispatchEvent(new Event("pagehide"));
     await Bun.sleep(20);

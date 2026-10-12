@@ -16,7 +16,8 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { default: LayoutHeader } = await import("./LayoutHeader");
+const { default: CloudShell } = await import("./CloudShell.island");
+const { ShellDataProvider } = await import("./shell-data");
 
 let browser: Browser;
 let css: string;
@@ -32,18 +33,24 @@ afterAll(async () => {
 
 const header = (authenticated: boolean) =>
   renderToString(() =>
-    createComponent(LayoutHeader, {
-      authenticated,
-      appLabel: "Files",
-      breadcrumbs: [{ title: "Files", href: "/app/files" }],
-      homeLabel: "Home",
-      launchpadApps: [],
-      legalLinks: [],
-      openAppsLabel: "Open apps",
-      profileName: "Demo User",
-      searchHelpApps: [],
-      signInLabel: "Sign in",
-      theme: "light",
+    createComponent(ShellDataProvider, {
+      data: {
+        apps: [],
+        legalLinks: [],
+        profile: authenticated ? { name: "Demo User" } : undefined,
+        theme: "light",
+        searchLinks: {},
+        searchHelpApps: [],
+      },
+      get children() {
+        return createComponent(CloudShell, {
+          slot: "header",
+          authenticated,
+          title: "Files",
+          launchpad: true,
+          breadcrumbs: authenticated ? undefined : [{ title: "Files", href: "/app/files" }],
+        });
+      },
     }),
   );
 

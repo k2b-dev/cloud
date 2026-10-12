@@ -18,3 +18,24 @@ test("shell islands and browser helpers keep Zod out of static imports", async (
     throw new Error(`Zod reached the first load through:\n${importers.join("\n")}\nZod inputs:\n${zod.join("\n")}`);
   }
 }, 30_000);
+
+test("the visible shell and runtime load panels only on open", async () => {
+  const closure = await staticImportClosure([
+    resolve(import.meta.dir, "CloudShell.island.tsx"),
+    resolve(import.meta.dir, "ShellRuntime.island.tsx"),
+  ]);
+  for (const file of [
+    "ssr/AppLaunchpadPanel.tsx",
+    "ssr/MobileNavigation.tsx",
+    "ssr/launchpad-surface.tsx",
+    "ssr/LayoutHelp.tsx",
+    "ssr/GlobalSearchDialog.tsx",
+    "ssr/RailEditor.tsx",
+    "ssr/announcements-dialog.tsx",
+    // Only sign-out and the push refresh after mount use them.
+    "browser/notifications.ts",
+    "clients/core.ts",
+  ]) {
+    expect(closure.map((path) => resolve(path))).not.toContain(resolve(import.meta.dir, "..", file));
+  }
+}, 30_000);

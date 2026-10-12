@@ -75,7 +75,7 @@ describe("profile menu App item", () => {
     expect(html.match(/<a href="\/me\/app" class="menu-item">/g)).toHaveLength(1);
     expect(html).toContain("ti ti-device-mobile");
     // The mobile launcher reads the profile from embedded data.
-    const data = html.match(/<script id="cloud-app-launchpad-data" type="application\/json">(.*?)<\/script>/)?.[1] ?? "";
+    const data = html.match(/<script id="cloud-shell-data" type="application\/json">(.*?)<\/script>/)?.[1] ?? "";
     expect(JSON.parse(data).profile).toMatchObject({ appHref: "/me/app" });
   });
 
