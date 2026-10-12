@@ -6,8 +6,9 @@
  * indentation all rely on equal-width glyphs.
  *
  * This extension walks the markdown syntax tree and adds a `cm-md-code`
- * class to every FencedCode / InlineCode / CodeBlock node. The theme
- * styles that class with `var(--font-mono)`.
+ * class to every FencedCode / InlineCode / CodeBlock node, plus
+ * `cm-md-code-block` on blocks. The theme styles them with `var(--font-mono)`
+ * at the Book's code sizes.
  *
  * Only registered in rich mode — raw mode renders the entire document as
  * mono via the theme directly (it's a source view).
@@ -20,15 +21,16 @@ import { Decoration, EditorView } from "@codemirror/view";
 import { refreshMarkdownDecorationsEffect, treeOrDocChanged } from "./_lib/cursor-zone-field";
 
 const codeMark = Decoration.mark({ class: "cm-md-code" });
+const blockCodeMark = Decoration.mark({ class: "cm-md-code cm-md-code-block" });
 
 const buildCodeFontDecorations = (state: EditorState): Range<Decoration>[] => {
   const decorations: Range<Decoration>[] = [];
   syntaxTree(state).iterate({
     enter: (node) => {
       const { name, from, to } = node;
-      if (name === "FencedCode" || name === "InlineCode" || name === "CodeBlock") {
-        if (to > from) decorations.push(codeMark.range(from, to));
-      }
+      if (to <= from) return;
+      if (name === "InlineCode") decorations.push(codeMark.range(from, to));
+      else if (name === "FencedCode" || name === "CodeBlock") decorations.push(blockCodeMark.range(from, to));
     },
   });
   return decorations;

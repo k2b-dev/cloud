@@ -60,7 +60,7 @@ const view = new EditorView({
       editor.searchTheme(),
       fadeScrollMarginsExtension(() => port),
       editor.customLightInit(),
-      EditorView.theme({ ".cm-editor": { minHeight: "100%" }, ".cm-scroller": { width: "100%", minHeight: "100%", padding: "1rem" } }),
+      editor.noteScrollerTheme,
       editor.tablesExtension("n1"),
       editor.imageExtension("n1"),
       editor.listsExtension(),

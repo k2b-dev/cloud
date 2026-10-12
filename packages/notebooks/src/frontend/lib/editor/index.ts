@@ -17,7 +17,7 @@ import { searchTheme } from "./search-theme";
 import { subSupExtension } from "./sub-sup";
 import { tablesExtension } from "./tables";
 import { tagPillExtension } from "./tag-pill";
-import { customDarkInit, customLightInit, rawDarkInit, rawLightInit } from "./theme";
+import { customDarkInit, customLightInit, noteScrollerTheme, rawDarkInit, rawLightInit } from "./theme";
 
 export {
   basicExtensions,
@@ -37,6 +37,7 @@ export {
   markupExtension,
   mermaidExtension,
   namedBlocksExtension,
+  noteScrollerTheme,
   pointerSelectionMarkdownRefreshExtension,
   rawDarkInit,
   rawLightInit,
@@ -69,6 +70,7 @@ export const editor = {
   tagPillExtension,
   customDarkInit,
   customLightInit,
+  noteScrollerTheme,
   rawDarkInit,
   rawLightInit,
 } as const;

@@ -462,12 +462,7 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
     return isDark() ? editor.rawDarkInit() : editor.rawLightInit();
   });
 
-  addExtension(
-    EditorView.theme({
-      ".cm-editor": { minHeight: "100%" },
-      ".cm-scroller": { width: "100%", minHeight: "100%", padding: "1rem" },
-    }),
-  );
+  addExtension(editor.noteScrollerTheme);
 
   addExtension(() => (richMode() ? [] : lineNumbers()));
 

@@ -8,6 +8,7 @@ import { basicExtensions } from "../../../lib/editor/basic";
 import { listCommandsExtension, listIndentAvailability } from "../../../lib/editor/list-commands";
 import { listsExtension } from "../../../lib/editor/lists";
 import { markdownExtension } from "../../../lib/editor/markdown";
+import { noteScrollerTheme } from "../../../lib/editor/theme";
 import EditorToolbar from "./EditorToolbar";
 
 function Harness() {
@@ -31,10 +32,7 @@ function Harness() {
             if (update.docChanged || update.selectionSet) setListIndent(listIndentAvailability(update.state));
           }),
           listsExtension(),
-          EditorView.theme({
-            "&": { minHeight: "100%" },
-            ".cm-scroller": { width: "100%", minHeight: "100%", padding: "1rem" },
-          }),
+          noteScrollerTheme,
         ],
       }),
     });
