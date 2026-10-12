@@ -36,7 +36,7 @@ import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import { itemCreateDialogOptions } from "../shared/item-form/dialog";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
-import { countCalendarItems } from "./count";
+import { countCalendarEvents } from "./count";
 import { type CalendarColorBy, CalendarColorBySchema, type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
 import { CalendarItemContent } from "./ItemContent";
 import QuickCreate, {
@@ -206,16 +206,16 @@ const chooseRecurringEditScope = async (t: ReturnType<typeof useSpaceMessages>):
 
 export default function Calendar(props: CalendarProps) {
   const t = useSpaceMessages();
-  /** The toolbar counts what the header names: the month's own days, not the padding days of the months around it. */
+  /**
+   * The toolbar counts what the header names: the month's own days, not the padding days of the months around it. It
+   * counts the events the grid paints, so a drag across the month's edge updates it at once.
+   */
   const shownCount = () => {
     if (props.view !== "month") return props.items.length;
     const monthStart = calendar.startOfMonth(props.date, props.dateConfig);
     const firstKey = calendar.formatDateKey(monthStart, props.dateConfig);
-    const lastKey = calendar.formatDateKey(
-      calendar.addDays(calendar.addMonths(monthStart, 1, props.dateConfig), -1, props.dateConfig),
-      props.dateConfig,
-    );
-    return countCalendarItems(props.items, firstKey, lastKey, props.dateConfig);
+    const endKey = calendar.formatDateKey(calendar.addMonths(monthStart, 1, props.dateConfig), props.dateConfig);
+    return countCalendarEvents(events(), firstKey, endKey, props.dateConfig);
   };
   const retryToast = createRetryToasts();
   const [optimisticTimes, setOptimisticTimes] = createSignal<Record<string, CalendarEventTimeChange>>({});
