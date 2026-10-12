@@ -144,6 +144,7 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
           </AppWorkspace.Main>
 
           <ItemDetailRoute
+            steppable={state.currentView !== "calendar"}
             spaceId={state.space.id}
             initialSource={route.initialHref}
             currentUserId={state.currentUserId}

@@ -87,6 +87,7 @@ You can edit or delete your own comment for 10 minutes after you post it. Commen
 
 ## Work quickly with the keyboard {icon="keyboard"}
 
+- With an item open, press **J** for the next and **K** for the previous item in List, Table, and Kanban.
 - Press **Cmd/Ctrl+Alt+N** to create a task, or an event in the calendar view.
 - Press **Cmd/Ctrl+Shift+K** to search the current Space.
 - In Kanban, focus the board and use the arrow keys to move between cards. The keyboard button above the board lists these shortcuts.
