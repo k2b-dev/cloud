@@ -181,6 +181,42 @@ const chip = (html: string, title: string) => {
   return match[0];
 };
 
+describe("Spaces calendar month toolbar", () => {
+  test("counts only the entries of the month it names, not those on the padding days, in English and German", () => {
+    const monthItems = [
+      base({ id: "Event1", startsAt: "2026-09-29T10:00:00+02:00", endsAt: "2026-09-29T11:00:00+02:00" }),
+      base({ id: "Event2", startsAt: "2026-09-30T23:30:00+02:00", endsAt: "2026-09-30T23:59:00+02:00" }),
+      base({ id: "Event3", startsAt: "2026-10-31T23:30:00+01:00", endsAt: "2026-11-01T00:30:00+01:00" }),
+      base({ id: "Event4", allDay: true, startsAt: "2026-09-29T22:00:00.000Z", endsAt: "2026-10-02T22:00:00.000Z" }),
+      base({ id: "Event5", allDay: true, startsAt: "2026-10-31T23:00:00.000Z", endsAt: "2026-11-01T23:00:00.000Z" }),
+      base({ id: "Task01", deadline: "2026-10-14T22:00:00.000Z" }),
+    ];
+    for (const locale of ["en", "de"] as const) {
+      const html = renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(Calendar, {
+              spaceId: "Space1",
+              items: monthItems,
+              columns,
+              tags: [],
+              filter: defaultCalendarFilter,
+              view: "month",
+              date: new Date("2026-10-14T22:00:00.000Z"),
+              baseUrl: "/app/spaces/Space1",
+              dateConfig: { locale, timeZone: "Europe/Berlin", weekStartsOn: 1 },
+              canWrite: false,
+            });
+          },
+        }),
+      );
+      expect(html).toContain(locale === "de" ? "3 angezeigt" : "3 shown");
+      expect(html).not.toContain(locale === "de" ? "6 angezeigt" : "6 shown");
+    }
+  });
+});
+
 describe("Spaces calendar colors", () => {
   for (const locale of ["en", "de"] as const) {
     for (const view of ["day", "week", "month"] as const) {
