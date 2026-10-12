@@ -5,8 +5,9 @@ import type { AiModelProfile } from "./types";
 /** Bound the first token and every gap between chunks to 60s, for chat and complete() calls. */
 export const PROVIDER_TIMEOUTS = { firstByteMs: 60_000, idleMs: 60_000 } as const;
 
-// Non-streaming calls receive headers only after the whole answer, so a first-byte timeout would cap total generation.
-// Streaming makes the timeouts bound the first token and gaps between chunks, as for chat.
+// Native complete() receives headers only after the whole answer, so Nessi can bound it only by total time (totalMs),
+// which cuts off slow healthy answers or detects a stall late. Streaming bounds the first token and every gap between
+// chunks, as for chat.
 export const completeThroughStream = (provider: Provider): Provider => ({
   ...provider,
   complete: (request) => completeFromStream(provider, request),
