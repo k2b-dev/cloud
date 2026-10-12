@@ -53,12 +53,14 @@ test("colors each status tag with its column color and falls back to green only 
             task({ id: "Item01", columnId: "Open01", title: "Book a room" }),
             task({ id: "Item02", columnId: "Done01", title: "Confirm the booking", completedAt: "2026-08-21T10:00:00.000Z" }),
             task({ id: "Item03", columnId: "Done02", title: "Cancel the alternative booking", completedAt: "2026-08-21T10:00:00.000Z" }),
+            task({ id: "Item04", columnId: "Open02", title: "Send the agenda", completedAt: "2026-08-21T10:00:00.000Z" }),
           ],
           spaceId: "Space1",
           columns: [
             { id: "Open01", spaceId: "Space1", name: "In progress", color: "#3b82f6", rank: "1024", isDone: false },
             { id: "Done01", spaceId: "Space1", name: "Erledigt", color: null, rank: "2048", isDone: true },
             { id: "Done02", spaceId: "Space1", name: "Verworfen", color: "#ef4444", rank: "3072", isDone: true },
+            { id: "Open02", spaceId: "Space1", name: "Backlog", color: null, rank: "4096", isDone: false },
           ],
           tags: [],
           baseUrl: "/app/spaces/Space1",
@@ -74,4 +76,7 @@ test("colors each status tag with its column color and falls back to green only 
   expect(statusTag("Verworfen")).not.toContain("--k2b-choice-color:#10b981");
   expect(statusTag("Erledigt")).toContain("--k2b-choice-color:#10b981;");
   expect(statusTag("In progress")).toContain("--k2b-choice-color:#3b82f6;");
+  // A completed item in an open column without a color stays untinted, as in List and Kanban.
+  expect(statusTag("Backlog")).toBeDefined();
+  expect(statusTag("Backlog")).not.toContain("--k2b-choice-color");
 });
