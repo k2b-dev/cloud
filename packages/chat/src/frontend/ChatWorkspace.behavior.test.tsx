@@ -56,12 +56,21 @@ describe("ChatWorkspace interactions", () => {
   let dispose = () => {};
   const originalFetch = globalThis.fetch;
   const originalWebSocket = Object.getOwnPropertyDescriptor(globalThis, "WebSocket");
+  const originalCss = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+  const originalConsoleError = console.error;
+  const consoleErrors: unknown[][] = [];
   const posted: { clientId: string; body: string }[] = [];
   let answer: (response: Response) => void;
   beforeEach(() => {
     dom = createDomTestHarness();
     delegateEvents(["click", "input", "keydown"], dom.document);
     posted.length = 0;
+    consoleErrors.length = 0;
+    console.error = (...args: unknown[]) => {
+      consoleErrors.push(args);
+    };
+    // Enhanced navigation restores scroll regions by selector.
+    Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
     Object.defineProperty(globalThis, "WebSocket", { configurable: true, writable: true, value: FakeWebSocket });
     Object.defineProperty(dom.window, "WebSocket", { configurable: true, value: FakeWebSocket });
     const fetchChat = Object.assign(
@@ -85,6 +94,9 @@ describe("ChatWorkspace interactions", () => {
     dispose();
     await Bun.sleep(20);
     globalThis.fetch = originalFetch;
+    console.error = originalConsoleError;
+    if (originalCss) Object.defineProperty(globalThis, "CSS", originalCss);
+    else Reflect.deleteProperty(globalThis, "CSS");
     if (originalWebSocket) Object.defineProperty(globalThis, "WebSocket", originalWebSocket);
     else Reflect.deleteProperty(globalThis, "WebSocket");
     dom.cleanup();
@@ -159,7 +171,7 @@ describe("ChatWorkspace interactions", () => {
     const rows = [...dom.root.querySelectorAll(".k2b-message-row")].filter((row) => row.textContent?.includes("Please confirm delivery"));
     expect(rows).toHaveLength(1);
     expect(rows[0]?.getAttribute("data-status")).toBe("sent");
-    expect(rows[0]?.querySelector('[aria-label="Sent"]')).not.toBeNull();
+    expect([...(rows[0]?.querySelectorAll(".k2b-sr-only") ?? [])].map((label) => label.textContent)).toContain("Sent");
   });
   test("an enhanced open with a 404 updates the address without revealing the title in the work area", async () => {
     await mount(false);
@@ -170,6 +182,9 @@ describe("ChatWorkspace interactions", () => {
     expect(area.textContent).toContain("No access");
     expect(area.textContent).toContain("This chat does not exist, or you are not a member of it.");
     expect(area.textContent).not.toContain("Secret board");
+    // The open stayed in place: no document-navigation fallback.
+    expect(consoleErrors).toEqual([]);
+    expect(dom.window.history.state).toEqual({ chatFromList: true });
   });
   // happy-dom has no viewport layout; the 120-message deep link is verified in the browser suite.
 });
