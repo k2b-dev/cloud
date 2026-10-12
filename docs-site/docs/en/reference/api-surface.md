@@ -399,3 +399,7 @@ The standalone UI exports `createNavigation`, `Navigation`, `NavigationItem`,
 [Commands](/en/docs/platform/capabilities#open-an-interactive-flow-with-commands)
 and context actions in the global palette. `@k2b/cloud/capabilities` exports
 `resolveCommand` for authenticated HTTP clients that need an entry URL.
+
+`@k2b/cloud/contracts` also exports `isCommandPath` to check Cloud paths.
+Import it from `@k2b/cloud/contracts/command-path` to use the check without
+loading validators.

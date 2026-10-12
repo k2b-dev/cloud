@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { FileProviderCaller, FileProviderSource } from "./file-providers";
@@ -16,6 +16,27 @@ const drive: FileProviderSource = {
 };
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const json = (body: unknown, status = 200) => Response.json(body, { status });
+
+domTest("a failed on-demand saver load resolves no files without opening a dialog", async () => {
+  const dom = createDomTestHarness();
+  const { dialogCore } = await import("@k2b/ui");
+  const reload = await import("./reload");
+  const { createFileSaving } = await import("./save-files");
+  const { createProviderList } = await import("./provider-list");
+  const load = spyOn(reload, "importOnDemand").mockResolvedValue(undefined);
+  const open = spyOn(dialogCore, "open");
+  try {
+    const saving = createFileSaving(createProviderList(async () => [drive]));
+    expect(await saving.saveFiles([{ name: "a.txt", content: new Blob(["a"]) }])).toEqual([]);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(open).not.toHaveBeenCalled();
+    expect(dom.document.querySelector("dialog[open]")).toBeNull();
+  } finally {
+    load.mockRestore();
+    open.mockRestore();
+    dom.cleanup();
+  }
+});
 
 /** One provider: its root lists a base that cannot take files, inside it a writable folder with a taken name. */
 const provider = () => {
@@ -76,7 +97,7 @@ const open = async (
   const list = createProviderList(async () => providers);
   const saving = createFileSaving(list, () => ({ locale: "en", fetch }));
   const result = saving.saveFiles([{ name, content: new Blob(["hello"], { type: "application/pdf" }) }]);
-  await settle();
+  for (let attempt = 0; attempt < 100 && !dom.document.querySelector("dialog[open] .cloud-file-chooser"); attempt++) await Bun.sleep(10);
   await settle();
   const dialog = () => dom.document.querySelector("dialog[open] .cloud-file-chooser");
   const button = (label: string) =>

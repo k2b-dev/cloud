@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import { APP_BADGES_REFRESH_EVENT } from "../browser/app-badges";
-import { APPROVAL_COUNTS_PATH, type ApprovalCounts, ApprovalCountsSchema } from "../contracts/approvals";
+import { APPROVAL_COUNTS_PATH } from "../contracts/approval-paths";
+import type { ApprovalCounts } from "../contracts/approvals";
 
 /**
  * Shortest time between two scheduled reads in one tab, and the longest one
@@ -46,12 +47,26 @@ const readBadge = async (endpoint: string, signal: AbortSignal): Promise<number>
   }
 };
 
+const isCount = (value: unknown, minimum: number): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= minimum;
+
+/** What `ApprovalCountsSchema` accepts from a JSON body, without loading validators into the shell; a test compares both. */
+export const parseApprovalCounts = (body: unknown): ApprovalCounts | null => {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
+  if (Object.keys(body).length !== 2 || !("total" in body) || !("apps" in body)) return null;
+  const { total, apps } = body;
+  if (!isCount(total, 0) || typeof apps !== "object" || apps === null || Array.isArray(apps)) return null;
+  // Like Zod's record, ignore a `__proto__` key that JSON.parse keeps as an own property.
+  const entries = Object.entries(apps).filter(([app]) => app !== "__proto__");
+  return entries.every(([, count]) => isCount(count, 1)) ? { total, apps: Object.fromEntries(entries) } : null;
+};
+
 const readApprovalCounts = async (signal: AbortSignal): Promise<ApprovalCounts> => {
   try {
     const response = await fetch(APPROVAL_COUNTS_PATH, { credentials: "same-origin", headers: { accept: "application/json" }, signal });
     if (response.status === 200) {
-      const parsed = ApprovalCountsSchema.safeParse(await response.json());
-      if (parsed.success) return parsed.data;
+      const parsed = parseApprovalCounts(await response.json());
+      if (parsed) return parsed;
     }
   } catch {
     // A failing read clears approval counts just like an app badge.

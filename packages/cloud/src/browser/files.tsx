@@ -1,5 +1,4 @@
 import { createFileChoosing } from "./choose-files";
-import { loadFileProviders } from "./file-providers";
 import { createProviderList } from "./provider-list";
 import { createFileSaving } from "./save-files";
 
@@ -7,7 +6,7 @@ export type { ChooseFilesOptions } from "./FileChooser";
 export { SAVE_FILES_ICON, type SavedFile, type SaveFileSource, type SaveFilesOptions } from "./save-files";
 
 const pageLocale = () => (typeof document === "undefined" ? "en" : document.documentElement.lang || "en");
-const providers = createProviderList(() => loadFileProviders({ locale: pageLocale() }));
+const providers = createProviderList(async () => (await import("./file-providers")).loadFileProviders({ locale: pageLocale() }));
 const saving = createFileSaving(providers);
 
 /**

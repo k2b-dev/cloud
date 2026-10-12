@@ -1,9 +1,10 @@
 import { showFileDialog } from "@k2b/stdlib/browser";
 import { dialogCore, panelDialogWorkspaceOptions } from "@k2b/ui";
 import { createSignal } from "solid-js";
-import { type ChooseFilesOptions, FileChooser, type FileProviderList } from "./FileChooser";
+import type { ChooseFilesOptions, FileProviderList } from "./FileChooser";
 import type { FileProviderCaller } from "./file-providers";
 import type { ProviderList } from "./provider-list";
+import { importOnDemand } from "./reload";
 
 /**
  * One page's file choosing over its provider list. `caller` carries the locale and, in tests, the transport.
@@ -39,18 +40,22 @@ export const createFileChoosing = (
       );
     };
     if (!known) load();
-    return dialogCore
-      .open<File[]>(
-        (close) => <FileChooser options={options} providers={providers} retryProviders={load} caller={caller} close={close} />,
-        {
-          ...panelDialogWorkspaceOptions,
-          panelClassName: `${panelDialogWorkspaceOptions.panelClassName} cloud-file-chooser-dialog`,
-          initialFocus: (dialog) => dialog.querySelector<HTMLElement>('[role="gridcell"][tabindex="0"]'),
-          signal: options.signal,
-          history: true,
-        },
-      )
-      .then((files) => files ?? []);
+    return (async () => {
+      const chooser = await importOnDemand(() => import("./FileChooser"));
+      if (!chooser) return [];
+      return dialogCore
+        .open<File[]>(
+          (close) => <chooser.FileChooser options={options} providers={providers} retryProviders={load} caller={caller} close={close} />,
+          {
+            ...panelDialogWorkspaceOptions,
+            panelClassName: `${panelDialogWorkspaceOptions.panelClassName} cloud-file-chooser-dialog`,
+            initialFocus: (dialog) => dialog.querySelector<HTMLElement>('[role="gridcell"][tabindex="0"]'),
+            signal: options.signal,
+            history: true,
+          },
+        )
+        .then((files) => files ?? []);
+    })();
   };
 
   return chooseFiles;

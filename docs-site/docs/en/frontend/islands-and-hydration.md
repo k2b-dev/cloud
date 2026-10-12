@@ -103,6 +103,12 @@ service that imports Bun SQL.
 
 ## Keep the first load small
 
+Validators are large. Import schema-free values such as paths, limits, and
+messages from their named module instead of a contract barrel such as
+`@k2b/cloud/contracts`. Parse untrusted data with the schema in the code path
+that receives it on demand. Cloud's own file, command, and live helpers keep
+Zod out of the first load.
+
 Every static import of an island downloads and runs before the island mounts,
 on every page that renders it. Load code that only an action needs, such as a
 settings dialog, an editor, an inspector, or a handoff to another app, inside
