@@ -2973,7 +2973,13 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
   const headerNav: CalendarHeaderNav = {
     timeView,
     commands: () => (props.onCommandsChange ? allCommands() : []),
-    openShortcuts: () => void openCalendarShortcuts(allCommands(), calendarMessages()),
+    // The arrow keys page like J and K, so the list names them beside those keys.
+    openShortcuts: () =>
+      void openCalendarShortcuts(
+        allCommands(),
+        calendarMessages(),
+        custom() ? {} : { "calendar.next": "arrowright", "calendar.previous": "arrowleft" },
+      ),
   };
   const controller: CalendarController = {
     quickCreate: (create) => {

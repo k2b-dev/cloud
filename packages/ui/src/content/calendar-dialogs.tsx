@@ -16,14 +16,23 @@ export const shortcutKeys = (shortcut: string): string[] => {
     ctrl: mac ? "⌃" : "Ctrl",
     meta: mac ? "⌘" : "Meta",
     mod: mac ? "⌘" : "Ctrl",
+    arrowup: "↑",
+    arrowdown: "↓",
+    arrowleft: "←",
+    arrowright: "→",
   };
-  return shortcut
-    .split("+")
-    .map((part) => names[part.toLowerCase()] ?? (part.length === 1 ? part.toUpperCase() : part.replace(/^arrow/i, "")));
+  return shortcut.split("+").map((part) => names[part.toLowerCase()] ?? (part.length === 1 ? part.toUpperCase() : part));
 };
 
-/** The calendar's shortcuts: the same list the host registers for its dispatcher and its help. */
-export const openCalendarShortcuts = (commands: readonly CalendarCommand[], messages: CalendarMessages) =>
+/**
+ * The calendar's shortcuts: the same list the host registers for its dispatcher and its help. `alternatives` names
+ * other keys the calendar itself handles for a command, such as the arrow keys that page like J and K.
+ */
+export const openCalendarShortcuts = (
+  commands: readonly CalendarCommand[],
+  messages: CalendarMessages,
+  alternatives: Readonly<Record<string, string>> = {},
+) =>
   dialogCore.open<void>(
     (close) => (
       <div class="k2b-dialog__panel">
@@ -35,6 +44,14 @@ export const openCalendarShortcuts = (commands: readonly CalendarCommand[], mess
                 <>
                   <dt>
                     <For each={shortcutKeys(command.shortcut!)}>{(key) => <kbd class="k2b-calendar-shortcuts__key">{key}</kbd>}</For>
+                    <Show when={alternatives[command.id]}>
+                      {(other) => (
+                        <>
+                          <span class="k2b-calendar-shortcuts__or">/</span>
+                          <For each={shortcutKeys(other())}>{(key) => <kbd class="k2b-calendar-shortcuts__key">{key}</kbd>}</For>
+                        </>
+                      )}
+                    </Show>
                   </dt>
                   <dd>{command.label}</dd>
                 </>
@@ -63,8 +80,9 @@ const isoWeekStart = (year: number, week: number) => {
 };
 
 /**
- * Reads a date for Go to: `15.3.`, `15.3.2027`, `2027-03-15`, `3/15`, `3/15/2027`, a week number such as `KW 12` or
- * `W 12`, `today`, or `tomorrow`. A day without a year is this year's. Returns a `YYYY-MM-DD` key or `null`.
+ * Reads German and English dates, weekdays, months, week numbers, today, and tomorrow for Go to. Weekdays include
+ * today unless preceded by next; a month alone uses the next year if it has passed. A date without a year is this
+ * year's. Names ignore case and accents and allow a trailing dot. Returns a `YYYY-MM-DD` key or `null`.
  */
 export const parseGoTo = (text: string, today: string): string | null => {
   const value = text.trim().toLowerCase();
@@ -83,6 +101,57 @@ export const parseGoTo = (text: string, today: string): string | null => {
   if (match) {
     const week = Number(match[1]);
     return week >= 1 && week <= 53 ? isoWeekStart(match[2] ? Number(match[2]) : year, week) : null;
+  }
+  const named = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\.$/, "")
+    .trim();
+  const weekdays = [
+    "montag mo monday mon",
+    "dienstag di tuesday tue tues",
+    "mittwoch mi wednesday wed",
+    "donnerstag do thursday thu thur thurs",
+    "freitag fr friday fri",
+    "samstag sa saturday sat",
+    "sonntag so sunday sun",
+  ];
+  match = /^(?:(am|on|nachste|nachsten|nachster|naechsten|kommende|kommenden|next)\s+)?([a-z]+)$/.exec(named);
+  if (match) {
+    const name = match[2];
+    const weekday = weekdays.findIndex((names) => names.split(" ").includes(name ?? ""));
+    if (weekday >= 0) {
+      const date = new Date(Date.UTC(year, Number(today.slice(5, 7)) - 1, Number(today.slice(8, 10))));
+      const todayWeekday = (date.getUTCDay() + 6) % 7;
+      let diff = (weekday - todayWeekday + 7) % 7;
+      if (match[1] && match[1] !== "am" && match[1] !== "on" && diff === 0) diff = 7;
+      return addDayKeys(today, diff);
+    }
+  }
+  const months = [
+    "januar jan january",
+    "februar feb february",
+    "marz maerz mar mrz march",
+    "april apr",
+    "mai may",
+    "juni jun june",
+    "juli jul july",
+    "august aug",
+    "september sep sept",
+    "oktober okt october oct",
+    "november nov",
+    "dezember dez december dec",
+  ];
+  const monthOf = (name: string | undefined) => months.findIndex((names) => names.split(" ").includes(name ?? "")) + 1;
+  match = /^(\d{1,2})\.?\s+([a-z]+)\.?(?:\s+(\d{4}))?$/.exec(named);
+  if (match) return validKey(fullYear(match[3]), monthOf(match[2]), Number(match[1]));
+  match = /^([a-z]+)\.?\s+(\d{1,2})(?:,?\s+(\d{4}))?$/.exec(named);
+  if (match) return validKey(fullYear(match[3]), monthOf(match[1]), Number(match[2]));
+  match = /^([a-z]+)\.?(?:\s+(\d{4}))?$/.exec(named);
+  if (match) {
+    const month = monthOf(match[1]);
+    const monthYear = match[2] ? Number(match[2]) : year + (month < Number(today.slice(5, 7)) ? 1 : 0);
+    return validKey(monthYear, month, 1);
   }
   return null;
 };

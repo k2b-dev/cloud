@@ -3263,6 +3263,12 @@
   font-weight: 500;
 }
 
+.k2b-ui .k2b-calendar-shortcuts__or {
+  align-self: center;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
 .k2b-ui .k2b-calendar-shortcuts__note {
   margin: 1rem 0 0;
   color: var(--k2b-text-muted);
