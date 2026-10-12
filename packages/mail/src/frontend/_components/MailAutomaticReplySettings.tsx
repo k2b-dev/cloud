@@ -26,6 +26,7 @@ import type { AutomaticReplyConfiguration, AutomaticReplySetup } from "../../ser
 import type { ConversationReferenceConfiguration } from "../../service/conversation-reference";
 import type { ResponseScheduleDefinition } from "../../service/response-schedule";
 import { readApiError } from "./api-response";
+import MailFormattingWarnings from "./MailFormattingWarnings";
 import { MailReferenceConfigurationFields, referenceConfigurationDraft } from "./MailResponsePolicySettings";
 import MailResponseScheduleFields, { responseScheduleSummary } from "./MailResponseScheduleFields";
 import MailTemplateHelpDisclosure, { MailTemplateToken } from "./MailTemplateHelpDisclosure";
@@ -645,7 +646,7 @@ function AutomaticReplyEditor(props: {
             <Show
               when={contentTab() === "write"}
               fallback={
-                <div class="min-h-64 overflow-hidden rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-white">
+                <div class="min-h-64 overflow-hidden rounded-[var(--ui-radius-control)] border border-[var(--ui-border)]">
                   <Show
                     when={preview()}
                     fallback={
@@ -672,6 +673,7 @@ function AutomaticReplyEditor(props: {
                           class="h-80 w-full border-0 bg-white"
                           srcdoc={content().html}
                         />
+                        <MailFormattingWarnings warnings={content().formattingWarnings} />
                       </>
                     )}
                   </Show>

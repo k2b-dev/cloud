@@ -113,6 +113,8 @@ Mail uses the platform workflow model automatically and offers no separate model
 7. Choose **Save automatic reply**.
 :::
 
+**Preview** lists the formatting that email leaves out and the values of the mailbox email design that Mail ignores. The automatic reply still sends without them.
+
 Subjects and messages are Liquid templates. Use the variables that you can copy in the editor, for example `{{ inputs.message.subject }}`. After a reference is assigned, `{{ reference.value }}` is also available. Mail rejects invalid syntax and unavailable variables before it saves the reply.
 
 Only one automatic reply can be on for a mailbox at a time. Turn off the active configuration before you turn on another one. By default, only people with **Manage** access can change automatic replies. They can allow people with **Edit** access in **Settings → Access → Automatic reply management access**.
