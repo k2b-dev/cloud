@@ -22,6 +22,9 @@ test.skipIf(isServer)("deleted mailboxes load on disclosure, retry failures, and
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL) => {
       const url = String(input);
+      // Idle file-provider discovery is independent of Mail's Focus and preference requests.
+      if (new URL(url, "http://localhost").pathname === "/api/capabilities/v1/catalog")
+        return Response.json({ code: "APP_UNAVAILABLE", message: "Down" }, { status: 503 });
       requests.push(url);
       if (!url.includes("/mailboxes/deleted")) throw new Error(`Unexpected request: ${url}`);
       if (fail) return Response.json({ message: "Temporarily unavailable" }, { status: 503 });
@@ -202,6 +205,9 @@ test.skipIf(isServer)("hiding a mailbox moves it under Hidden and refreshes Focu
         saves.push({ mailboxId: url.pathname.split("/").at(-2), body });
         return Response.json({ pinned: body.pinned ?? false, hidden: body.hidden ?? false });
       }
+      // Idle file-provider discovery is independent of Mail's Focus and preference requests.
+      if (url.pathname === "/api/capabilities/v1/catalog")
+        return Response.json({ code: "APP_UNAVAILABLE", message: "Down" }, { status: 503 });
       requests.push(url);
       if (!url.pathname.endsWith("/overview/conversations")) return Response.json({ message: "Unexpected request" }, { status: 500 });
       const excluded = url.searchParams.get("excludeMailboxIds");
@@ -351,6 +357,10 @@ test.skipIf(isServer)("a full hidden list keeps the mailbox in place and says wh
   const requests: string[] = [];
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      // Idle file-provider discovery is independent of Mail's Focus and preference requests.
+      if (url.pathname === "/api/capabilities/v1/catalog")
+        return Response.json({ code: "APP_UNAVAILABLE", message: "Down" }, { status: 503 });
       requests.push(String(input));
       return Response.json({ message: "Unexpected request" }, { status: 500 });
     },

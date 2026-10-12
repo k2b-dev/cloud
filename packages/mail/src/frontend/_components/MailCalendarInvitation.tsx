@@ -5,7 +5,7 @@ import { mutation, query } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, InlineGuidance, Placeholder, prompts, Select, StatusBadge, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import { mailCommandMessages } from "../../commands";
+import { mailCommandMessages } from "../../command-messages";
 import { readApiError } from "./api-response";
 import { mailDraftHref } from "./mail-compose-route";
 import { createRetryToasts } from "./mail-feedback";

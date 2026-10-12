@@ -120,3 +120,7 @@ describe("contact directory proposals", () => {
     expect(usesContactDirectoryDefaults(crm)).toBe(false);
   });
 });
+
+test("the validator-free default directory is what the resolver makes of the defaults", () => {
+  expect(DEFAULT_MAIL_CONTACT_DIRECTORY).toEqual(resolveMailContactDirectory(MAIL_CONTACT_DIRECTORY_DEFAULTS));
+});

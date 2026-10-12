@@ -861,6 +861,7 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
         mailboxId,
         requestUrl: new URL(`http://localhost/app/mail/${mailboxShortId}?conversation=${c1.id}`),
         search: { query: "", expression: null, sort: "newest", error: null },
+        publicSearch: { query: "", expression: null, sort: "relevance", error: null },
       }),
     );
     expect(page.access).toEqual({ scope: "assigned", permission: "read" });

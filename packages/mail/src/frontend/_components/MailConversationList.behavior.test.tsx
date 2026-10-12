@@ -2,6 +2,7 @@ import { expect, mock, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import { resolveMailSearchRoute } from "../../search-state";
 import type { Mailbox } from "../../contracts";
 
 /** The builder's dialog itself has its own tests; here only how often the list opens it matters. */
@@ -17,6 +18,7 @@ const listProps = (requestUrl: string) => ({
   mailbox: { id: "Box001", name: "Support", health: "healthy" } as unknown as Mailbox,
   mailboxId: "Box001",
   requestUrl,
+  search: resolveMailSearchRoute(new URL(requestUrl, "https://cloud.test")),
   query: "",
   title: "Needs action",
   items: [],

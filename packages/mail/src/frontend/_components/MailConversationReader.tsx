@@ -1,4 +1,5 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { CloudTheme } from "@k2b/cloud/shared";
 import { documentNavigate, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
@@ -23,7 +24,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import { mailCommandMessages } from "../../commands";
+import { mailCommandMessages } from "../../command-messages";
 import type {
   ConversationDraftSummary,
   DeriveDraftFromMessageInput,
@@ -54,7 +55,6 @@ import { initialConversationMessageId, isNearConversationStart, newestFirstMessa
 import { buildMailConversationTimeline } from "./mail-conversation-timeline";
 import { getMailConversationToolbarSections, type MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
-import { storeMailDraftSeed } from "./mail-draft-seed-store";
 import { createRetryToasts } from "./mail-feedback";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
@@ -305,9 +305,11 @@ export default function MailConversationReader(props: {
     documentNavigate(mailDraftHref(props.mailboxId, draftId, props.requestUrl));
   };
 
-  const openDraftSeed = (seed: MailDraftSeed) => {
+  const openDraftSeed = async (seed: MailDraftSeed) => {
+    const store = await importOnDemand(() => import("./mail-draft-seed-store"));
+    if (!store || disposed) return;
     try {
-      storeMailDraftSeed(localStorage, seed);
+      store.storeMailDraftSeed(localStorage, seed);
     } catch {
       void prompts.error(t().localDraftFailed, {
         title: t().startMessageFailed,
@@ -441,7 +443,7 @@ export default function MailConversationReader(props: {
       return response.json();
     },
     onSuccess: (seed, lookup) => {
-      if (lookup && isCurrentLookup(lookup)) openDraftSeed(seed);
+      if (lookup && isCurrentLookup(lookup)) void openDraftSeed(seed);
     },
     onError: (error) => prompts.error(error.message, { title: t().startMessageFailed }),
   });
@@ -536,7 +538,7 @@ export default function MailConversationReader(props: {
     },
     onSuccess: (seed, context) => {
       if (context && props.messages.some((message) => message.id === context.message.id)) {
-        openDraftSeed(seed);
+        void openDraftSeed(seed);
       }
     },
     onError: (error) => prompts.error(error.message),

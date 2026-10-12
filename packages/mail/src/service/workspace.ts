@@ -160,6 +160,8 @@ export type MailboxPageData = {
   folderId: string | null;
   viewCounts: ConversationViewCounts;
   query: string;
+  /** The search of the public request URL, with public folder and tag IDs; the browser reads it instead of parsing the URL. */
+  search: ResolvedMailSearchRoute;
   selectedConversationId: string | null;
   selectedMessageId: string | null;
   listItems: MailListItem[];
@@ -569,7 +571,7 @@ const loadListItems = async (params: {
 };
 
 /** A workspace URL after its public IDs were resolved: resource parameters and search conditions carry internal IDs. */
-export type MailWorkspaceRequest = { requestUrl: URL; search: ResolvedMailSearchRoute };
+export type MailWorkspaceRequest = { requestUrl: URL; search: ResolvedMailSearchRoute; publicSearch: ResolvedMailSearchRoute };
 
 /**
  * Resolves the public IDs of a browser workspace URL once, for the SSR page and the workspace-route API alike.
@@ -602,7 +604,7 @@ export const resolveWorkspaceRequest = async (publicUrl: URL, mailboxId: string)
   }
   requestUrl.searchParams.delete(MAIL_SEARCH_PARAMETER);
   const search = resolveMailSearchRoute(publicUrl);
-  if (!search.expression) return { requestUrl, search };
+  if (!search.expression) return { requestUrl, search, publicSearch: search };
   const references = mailSearchReferences(search.expression);
   const [folders, tags] = await Promise.all([
     publicResources.resolveExistingMailboxPublicIds(
@@ -621,7 +623,7 @@ export const resolveWorkspaceRequest = async (publicUrl: URL, mailboxId: string)
     if (!id) return MAIL_SEARCH_MATCHES_NOTHING;
     return reference.type === "folder_id" ? { ...reference, folderId: id } : { ...reference, tagId: id };
   });
-  return { requestUrl, search: { ...search, expression } };
+  return { requestUrl, search: { ...search, expression }, publicSearch: search };
 };
 
 export const loadMailboxPageData = async (params: {
@@ -629,6 +631,7 @@ export const loadMailboxPageData = async (params: {
   mailboxId: string;
   requestUrl: URL;
   search: ResolvedMailSearchRoute;
+  publicSearch: ResolvedMailSearchRoute;
   listMode?: MailListMode;
   locale?: string | null;
 }): Promise<Result<MailboxPageData>> => {
@@ -769,6 +772,7 @@ export const loadMailboxPageData = async (params: {
     folderId,
     viewCounts: viewCountsResult.ok ? viewCountsResult.data : EMPTY_VIEW_COUNTS,
     query,
+    search: params.publicSearch,
     selectedConversationId,
     selectedMessageId,
     listItems: list.items,

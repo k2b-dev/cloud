@@ -1,4 +1,4 @@
-import { serializeMailSearchState } from "../../search-state";
+import { mailExactAddressSearch } from "../../search-url";
 import type { MailListItem } from "../../service/workspace";
 
 export type { MailListItem } from "../../service/workspace";
@@ -78,10 +78,7 @@ export const senderDomainFromAddress = (address: string): string | null => {
 };
 
 export const buildExactSenderSearchHref = (requestUrl: URL, address: string): string | null => {
-  const serialized = serializeMailSearchState({
-    expression: { type: "text", field: "from", query: address, match: "exact" },
-    sort: "newest",
-  });
+  const serialized = mailExactAddressSearch("from", address);
   if (!serialized.ok) return null;
   const next = new URL(buildMailListHref(requestUrl, true), requestUrl.origin);
   next.searchParams.set("search", serialized.value);
@@ -89,10 +86,7 @@ export const buildExactSenderSearchHref = (requestUrl: URL, address: string): st
 };
 
 export const buildExactParticipantSearchHref = (requestUrl: URL, address: string): string | null => {
-  const serialized = serializeMailSearchState({
-    expression: { type: "text", field: "participants", query: address, match: "exact" },
-    sort: "newest",
-  });
+  const serialized = mailExactAddressSearch("participants", address);
   if (!serialized.ok) return null;
   const next = new URL(buildMailListHref(requestUrl, true), requestUrl.origin);
   next.searchParams.set("search", serialized.value);

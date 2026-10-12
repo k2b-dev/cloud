@@ -1,7 +1,7 @@
 import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { ssr } from "../config";
-import { mailCalendarCommandHref } from "./_components/mail-compose-route";
+import { mailCalendarCommandHref } from "./mail-calendar-command";
 import automationActivityPage from "./[mailboxId]/automations/activity/page";
 import incomingAutomationsPage from "./[mailboxId]/automations/incoming/page";
 import automationsPage from "./[mailboxId]/automations/page";

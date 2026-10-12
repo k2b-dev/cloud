@@ -162,6 +162,7 @@ window.mountMailList = (options) => {
                   mailboxId="Box001"
                   requestUrl={requestUrl()}
                   query=""
+                  search={{ query: "", expression: null, sort: "relevance", error: null }}
                   title="Inbox"
                   items={list.items}
                   error={null}

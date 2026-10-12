@@ -3,7 +3,7 @@ import type { Accessor } from "solid-js";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { AcquiredDraftLease, DraftEditableContent, DraftLease, MailDraft, MailDraftSeed } from "../../contracts";
-import { MailLiveEventSchema } from "../../live-events";
+import { parseMailLiveEvent } from "../../live-event";
 import { readApiError } from "./api-response";
 import { mailComposerMessages } from "./mail-composer-messages";
 import {
@@ -554,7 +554,7 @@ export const createMailDraftSession = (options: {
       { mailbox: options.mailboxId },
       {
         cursor: null,
-        parse: (data) => MailLiveEventSchema.parse(data),
+        parse: (data) => parseMailLiveEvent(data),
         apply: async (events) => {
           const conversationId = draft()?.conversationId ?? null;
           if (events.some(({ data }) => data.conversationId === null || data.conversationId === conversationId)) await reconcile();

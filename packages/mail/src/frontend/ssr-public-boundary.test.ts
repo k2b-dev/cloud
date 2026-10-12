@@ -172,8 +172,10 @@ describe("Mail SSR public boundary", () => {
         },
       ],
       scheduledPage: null,
+      search: { query: "", expression: { type: "local_tag_id", tagId: "Tag001" }, sort: "newest", error: null },
     } as unknown as MailboxPageData;
     const projected = await projectMailboxPageData(data, loadIds);
+    expect(projected.search).toEqual(data.search);
     expect(projected.mailbox.id).toBe("Box001");
     expect(projected.selectedConversationId).toBe("Conv01");
     // A subfolder names the parent whose display it inherits by the same public ID as its parent.

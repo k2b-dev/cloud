@@ -1,4 +1,5 @@
-import { MAX_COMMAND_OUTCOME_IDS, type MailCommandOutcome } from "../../contracts";
+import { MAX_COMMAND_OUTCOME_IDS } from "../../command-outcomes";
+import type { MailCommandOutcome } from "../../contracts";
 import type { MailActionId } from "./mail-actions";
 
 /**

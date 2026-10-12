@@ -17,10 +17,10 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import { mailCommandMessages } from "../../commands";
+import { mailCommandMessages } from "../../command-messages";
 import type { ConversationView } from "../../contracts";
 import type { MailFolderTreeNode } from "../../folder-tree";
-import { serializeMailSearchState } from "../../search-state";
+import { mailTagSearch } from "../../search-url";
 import type { LocalTag } from "../../service/local-tags";
 import type { ConversationViewCounts, MailFolderView } from "../../service/messages";
 import type { SavedConversationView } from "../../service/saved-views";
@@ -462,7 +462,7 @@ export default function MailSidebar(props: {
   const tagItems = (suffix: string) => (
     <For each={props.localTags}>
       {(tag) => {
-        const search = serializeMailSearchState({ expression: { type: "local_tag_id", tagId: tag.id }, sort: "newest" });
+        const search = mailTagSearch(tag.id);
         return (
           <AppWorkspace.SidebarItem
             href={`/app/mail/${props.mailboxId}?search=${encodeURIComponent(search.ok ? search.value : "")}`}
@@ -584,7 +584,7 @@ export default function MailSidebar(props: {
               id: "tags",
               label: messages().tags,
               children: props.localTags.map((tag) => {
-                const search = serializeMailSearchState({ expression: { type: "local_tag_id", tagId: tag.id }, sort: "newest" });
+                const search = mailTagSearch(tag.id);
                 return {
                   ...link(
                     `tag:${tag.id}`,

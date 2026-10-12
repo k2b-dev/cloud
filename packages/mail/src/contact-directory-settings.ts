@@ -1,28 +1,34 @@
 import { CapabilityAppIdSchema, CapabilityLocalIdSchema, type ContactDirectoryFunction } from "@k2b/cloud/contracts";
 import type { Context } from "hono";
 import { z } from "zod";
+import {
+  type ContactDirectoryTarget,
+  MAIL_CONTACT_DIRECTORY_DEFAULTS,
+  type MailContactDirectory,
+  type MailContactDirectoryConfig,
+} from "./contact-directory";
+
+export * from "./contact-directory";
 
 /**
- * Mail's contact directory: one provider application and one capability per
- * contact-directory function. The defaults point at the built-in Contacts app,
- * so an installation without stored settings behaves exactly as before.
+ * The one resolver every Mail call site uses. An empty or malformed stored ID
+ * leaves the function unmapped, so Mail degrades instead of calling a guess.
  */
-
-export const MAIL_CONTACT_DIRECTORY_REQUIRED = ["suggest", "resolve"] as const satisfies readonly ContactDirectoryFunction[];
-export const MAIL_CONTACT_DIRECTORY_OPTIONAL = [
-  "read",
-  "listWritableBooks",
-  "create",
-] as const satisfies readonly ContactDirectoryFunction[];
-
-export const MAIL_CONTACT_DIRECTORY_DEFAULTS = {
-  appId: "contacts",
-  suggest: "contact.suggest",
-  resolve: "contact.resolve",
-  read: "contact.read",
-  listWritableBooks: "book.list",
-  create: "contact.create",
-} as const satisfies { appId: string } & Record<ContactDirectoryFunction, string>;
+export const resolveMailContactDirectory = (config: MailContactDirectoryConfig): MailContactDirectory => {
+  const appId = config.appId.trim();
+  const validApp = CapabilityAppIdSchema.safeParse(appId).success;
+  const target = (fn: ContactDirectoryFunction): ContactDirectoryTarget | null => {
+    const capabilityId = config[fn].trim();
+    return validApp && CapabilityLocalIdSchema.safeParse(capabilityId).success ? { appId, capabilityId } : null;
+  };
+  return {
+    suggest: target("suggest"),
+    resolve: target("resolve"),
+    read: target("read"),
+    listWritableBooks: target("listWritableBooks"),
+    create: target("create"),
+  };
+};
 
 export const MAIL_CONTACT_DIRECTORY_SETTING_KEYS = {
   appId: "mail.contact_directory.app",
@@ -100,41 +106,6 @@ export const MAIL_CONTACT_DIRECTORY_SETTINGS = {
     true,
   ),
 } as const;
-
-export type ContactDirectoryTarget = { appId: string; capabilityId: string };
-
-/** Resolved runtime mapping. `null` means the function is not available in this installation. */
-export type MailContactDirectory = Record<ContactDirectoryFunction, ContactDirectoryTarget | null>;
-
-export type MailContactDirectoryConfig = {
-  appId: string;
-} & Record<ContactDirectoryFunction, string>;
-
-/**
- * The one resolver every Mail call site uses. An empty or malformed stored ID
- * leaves the function unmapped, so Mail degrades instead of calling a guess.
- */
-export const resolveMailContactDirectory = (config: MailContactDirectoryConfig): MailContactDirectory => {
-  const appId = config.appId.trim();
-  const validApp = CapabilityAppIdSchema.safeParse(appId).success;
-  const target = (fn: ContactDirectoryFunction): ContactDirectoryTarget | null => {
-    const capabilityId = config[fn].trim();
-    return validApp && CapabilityLocalIdSchema.safeParse(capabilityId).success ? { appId, capabilityId } : null;
-  };
-  return {
-    suggest: target("suggest"),
-    resolve: target("resolve"),
-    read: target("read"),
-    listWritableBooks: target("listWritableBooks"),
-    create: target("create"),
-  };
-};
-
-/** "New contact" needs a writable-book list and the create Action; without both Mail hides it. */
-export const canCreateDirectoryContacts = (directory: MailContactDirectory): boolean =>
-  directory.listWritableBooks !== null && directory.create !== null;
-
-export const DEFAULT_MAIL_CONTACT_DIRECTORY = resolveMailContactDirectory(MAIL_CONTACT_DIRECTORY_DEFAULTS);
 
 const MAIL_CONTACT_DIRECTORY_FIELDS = ["appId", "suggest", "resolve", "read", "listWritableBooks", "create"] as const;
 
