@@ -9,7 +9,7 @@ import {
   query,
 } from "@k2b/stdlib/solid";
 import { announce, Dropdown, IconButton, Tooltip, toast, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { apiClient } from "@/api/client";
 import {
   INACTIVE_ITEM_DAYS,
@@ -747,7 +747,7 @@ export default function KanbanBoard(props: Props) {
    * A drop that completes or reopens a task someone else claimed asks once to take the claim over. Declining leaves the
    * card where it was, as after any drop that changes nothing: the board only moves it once the move is under way.
    */
-  const dropCard = async (itemId: string, intent: DropIntent) => {
+  const dropCard = async (itemId: string, intent: DropIntent, onMove?: () => void) => {
     const resolved = intent.kind === "column" ? resolveMoveTargets({ itemId, bucketKey: intent.bucketKey }) : null;
     const completed = resolved?.targetBucket.isDone ?? false;
     const claim =
@@ -755,6 +755,7 @@ export default function KanbanBoard(props: Props) {
         ? await resolveCompletionClaim(resolved.source.item.claim, props.currentUserId, completed, t)
         : {};
     if (!claim || movingItemId() || moveMutation.loading() || transferMutation.loading()) return;
+    onMove?.();
     await moveMutation.mutate({ itemId, intent, claim });
   };
 
@@ -770,8 +771,33 @@ export default function KanbanBoard(props: Props) {
   /** A card picked up from its grip, and the slot it would take: `position` is its index there once it has moved. */
   type KeyboardMove = { itemId: string; title: string; bucketKey: string; position: number };
   const [keyboardMove, setKeyboardMove] = createSignal<KeyboardMove | null>(null);
-  /** A keyboard drop draws the card again in its new place; its new grip takes over the focus the old one lost. */
-  let gripFocusItemId: string | null = null;
+  /**
+   * A keyboard drop draws the columns again, so the grip it started from is gone. The card's new grip takes over the
+   * focus, or, when the card went into a folded column that shows no cards, that column's strip. The person's next
+   * focus change or click ends this, so a later redraw never pulls the focus back.
+   */
+  let dropFocus: { itemId: string; bucketKey: string } | null = null;
+  const isDropFocusTarget = (element: Element, focus: { itemId: string; bucketKey: string }) =>
+    element.closest<HTMLElement>("[data-spaces-kanban-grip]")?.dataset.spacesKanbanGrip === focus.itemId ||
+    element.closest<HTMLElement>("[data-spaces-kanban-fold]")?.dataset.spacesKanbanFold === focus.bucketKey;
+  const restoreDropFocus = (element: HTMLElement, owns: (focus: { itemId: string; bucketKey: string }) => boolean) => {
+    const focus = dropFocus;
+    if (!focus) return;
+    queueMicrotask(() => {
+      // Only while focus fell to the page because the dropped card was drawn again.
+      const focusLost = !document.activeElement || document.activeElement === document.body;
+      if (dropFocus !== focus || !element.isConnected || !focusLost || !owns(focus)) return;
+      element.focus({ preventScroll: true });
+      element.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
+  };
+  onMount(() => {
+    const endDropFocus = () => {
+      dropFocus = null;
+    };
+    document.addEventListener("pointerdown", endDropFocus, true);
+    onCleanup(() => document.removeEventListener("pointerdown", endDropFocus, true));
+  });
   /** The slots a column offers the card: one more than its cards, unless the card already counts among them. */
   const slotCount = (move: KeyboardMove, bucket: KanbanBucketInitial) =>
     bucket.items.length + (bucket.items.some((item) => item.id === move.itemId) ? 0 : 1);
@@ -785,16 +811,16 @@ export default function KanbanBoard(props: Props) {
     const rawIndex = source.bucket.key === move.bucketKey && move.position > source.index ? move.position + 1 : move.position;
     return columnDropIntent(move.itemId, move.bucketKey, rawIndex);
   };
-  /** Where a pointer or keyboard drag would drop the card now; the drop line and the target column show it. */
-  const cardDropIntent = () => {
+  /** Where a pointer or keyboard drag would drop the card now; the drop line and the target column show it. Every drop line reads it. */
+  const cardDropIntent = createMemo(() => {
     const move = keyboardMove();
     if (move) return keyboardIntent(move);
     return boardDnd.isDragging() ? boardDnd.intent() : null;
-  };
+  });
   const showKeyboardMove = (move: KeyboardMove) => {
     setKeyboardMove(move);
     const bucket = getBucketByKey(move.bucketKey);
-    if (bucket) announce(t.dragPosition({ column: bucket.label, position: move.position + 1, count: slotCount(move, bucket) }));
+    if (bucket) announce(t.dragPosition({ column: bucket.label, position: move.position + 1, count: lastPosition(move, bucket) + 1 }));
     requestAnimationFrame(() =>
       (
         boardScrollContainer?.querySelector("[data-spaces-kanban-drop-indicator]") ??
@@ -819,8 +845,10 @@ export default function KanbanBoard(props: Props) {
       return;
     }
     announce(t.dragDropped({ item: move.title, target: t.columnTarget({ column: bucket.label }) }));
-    gripFocusItemId = move.itemId;
-    void dropCard(move.itemId, intent);
+    // Set once the claim question, if any, is answered: a click in it must not end the restore.
+    void dropCard(move.itemId, intent, () => {
+      dropFocus = { itemId: move.itemId, bucketKey: move.bucketKey };
+    });
   };
   const handleGripKeyDown = (event: KeyboardEvent, itemId: string) => {
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
@@ -832,7 +860,7 @@ export default function KanbanBoard(props: Props) {
       if (!source) return;
       event.preventDefault();
       event.stopPropagation();
-      gripFocusItemId = null;
+      dropFocus = null;
       announce(t.dragPickedUp({ item: source.item.title }));
       showKeyboardMove({ itemId, title: source.item.title, bucketKey: source.bucket.key, position: source.index });
       return;
@@ -846,15 +874,25 @@ export default function KanbanBoard(props: Props) {
       return;
     }
     const vertical = event.key === "ArrowUp" || event.key === "ArrowDown";
-    if (!vertical && event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    if (!vertical && event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+      // Single-key shortcuts such as J and K, which step the detail panel, wait until the card is dropped.
+      if (event.key.length === 1) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     const list = buckets();
     const current = list.find((bucket) => bucket.key === move.bucketKey);
     if (!current) return;
     if (vertical) {
-      // An automatic column orders its cards itself.
-      if (current.kind !== "column") return;
+      // An automatic column orders its cards itself; the card stays where it is and says so again.
+      if (current.kind !== "column") {
+        showKeyboardMove(move);
+        return;
+      }
       const position = clamp(move.position + (event.key === "ArrowUp" ? -1 : 1), 0, lastPosition(move, current));
       showKeyboardMove({ ...move, position });
       return;
@@ -1163,10 +1201,11 @@ export default function KanbanBoard(props: Props) {
         onKeyDown={handleBoardKeyDown}
         onFocusIn={(event) => {
           setFocusedItemId(event.target.closest<HTMLElement>("[data-spaces-kanban-card]")?.dataset.itemId);
-          if (event.target.closest<HTMLElement>("[data-spaces-kanban-grip]")?.dataset.spacesKanbanGrip !== gripFocusItemId)
-            gripFocusItemId = null;
+          if (dropFocus && !isDropFocusTarget(event.target, dropFocus)) dropFocus = null;
         }}
-        onFocusOut={() => {
+        onFocusOut={(event) => {
+          // Focus that leaves the board for another control ends the drop's focus restore; a redrawn grip has none.
+          if (event.relatedTarget instanceof Node && !boardScrollContainer?.contains(event.relatedTarget)) dropFocus = null;
           // Opening the palette transfers focus into a dialog; keep its explicit card actions.
           queueMicrotask(() => {
             if (
@@ -1259,6 +1298,13 @@ export default function KanbanBoard(props: Props) {
                             disabled: cardDropDisabled(),
                             meta: { kind: "column", bucketKey: bucket.key },
                           }));
+                          // The strip takes the focus of a card dropped here, unless the card still shows elsewhere.
+                          restoreDropFocus(
+                            element,
+                            (focus) =>
+                              focus.bucketKey === bucket.key &&
+                              !boardScrollContainer?.querySelector(`[data-spaces-kanban-grip="${CSS.escape(focus.itemId)}"]`),
+                          );
                         }}
                         data-spaces-kanban-fold={bucket.key}
                         aria-expanded="false"
@@ -1456,16 +1502,7 @@ export default function KanbanBoard(props: Props) {
                                           // handle must not scroll the board: the browser would cancel the drag.
                                           <div class="k2b-progressive-action absolute right-1.5 top-1.5 flex">
                                             <IconButton
-                                              ref={(grip) => {
-                                                if (gripFocusItemId !== item.id) return;
-                                                queueMicrotask(() => {
-                                                  // Only while focus fell to the page because the dropped card was drawn again.
-                                                  const focusLost = !document.activeElement || document.activeElement === document.body;
-                                                  if (gripFocusItemId !== item.id || !grip.isConnected || !focusLost) return;
-                                                  grip.focus({ preventScroll: true });
-                                                  grip.scrollIntoView({ block: "nearest", inline: "nearest" });
-                                                });
-                                              }}
+                                              ref={(grip) => restoreDropFocus(grip, (focus) => focus.itemId === item.id)}
                                               data-dnd-card-handle
                                               data-spaces-kanban-grip={item.id}
                                               label={t.dragItem({ title: item.title })}

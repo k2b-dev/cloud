@@ -891,6 +891,119 @@ describe("Spaces Kanban board in a browser", () => {
     }, 30_000);
   }
 
+  test("keyboard: a card dropped on a folded column goes to its top, and the column's strip takes the focus", async () => {
+    const page = await open(desktop, { locale: "en", folded: ["column:Col002"] });
+    try {
+      moves.splice(0);
+      await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
+      await page.keyboard.press("Space");
+      await page.keyboard.press("ArrowRight");
+      // A folded column offers only its top.
+      await waitForAnnouncement(page, "In progress, position 1 of 1");
+      const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item01/move"));
+      await page.keyboard.press("Space");
+      await moved;
+      expect(moves).toEqual([{ columnId: "Col002" }]);
+      await page.waitForFunction(() => document.activeElement?.getAttribute("data-spaces-kanban-fold") === "column:Col002");
+      expect(await cardsIn(page, "column:Col001")).toEqual(["Item02", "Item03"]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("keyboard: while a card is picked up, single-key shortcuts wait and the move stays", async () => {
+    const page = await open(desktop, { locale: "en" });
+    try {
+      moves.splice(0);
+      // As the workspace controller: an unprevented J or K that reaches the window steps the detail panel.
+      await page.evaluate(() => {
+        const keys: string[] = [];
+        Object.assign(window, { __workspaceKeys: keys });
+        window.addEventListener("keydown", (event) => {
+          if (!event.defaultPrevented) keys.push(event.key);
+        });
+      });
+      const commandShortcuts = () =>
+        page.evaluate(() => {
+          const detail = { commands: [] as { shortcut?: string }[] };
+          window.dispatchEvent(new CustomEvent("cloud.command.collect", { detail }));
+          return detail.commands.flatMap((command) => (command.shortcut ? [command.shortcut] : []));
+        });
+      await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
+      await page.keyboard.press("Space");
+      await page.keyboard.press("ArrowDown");
+      // The card's M and D belong to its link, not to the grip that moves it.
+      expect(await commandShortcuts()).toEqual([]);
+      for (const key of ["j", "k", "m", "d"]) await page.keyboard.press(key);
+      expect(await page.evaluate<unknown>(() => Reflect.get(window, "__workspaceKeys"))).toEqual([]);
+      expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(1);
+      expect(await focusedGrip(page)).toBe("Item01");
+      await page.keyboard.press("Escape");
+      expect(moves).toEqual([]);
+      // Once the card is down, the keys are the workspace's again.
+      await page.keyboard.press("j");
+      expect(await page.evaluate<unknown>(() => Reflect.get(window, "__workspaceKeys"))).toEqual(["j"]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("keyboard: Up and Down on a card from an automatic column keep its place and say so", async () => {
+    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
+    try {
+      await page.locator('[data-spaces-kanban-grip="Item08"]').focus();
+      await page.keyboard.press("Space");
+      await waitForAnnouncement(page, "Blocked, position 1 of 2");
+      await page.keyboard.press("ArrowDown");
+      await page.waitForFunction(
+        () =>
+          Array.from(document.querySelectorAll('[data-k2b-live] [data-politeness="polite"] > div')).filter(
+            (line) => line.textContent === "Blocked, position 1 of 2",
+          ).length === 2,
+      );
+      expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(0);
+      await page.keyboard.press("Escape");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("keyboard: a click while a dropped card saves ends the focus restore, so its rollback does not pull focus back", async () => {
+    const page = await open(desktop, { locale: "en" });
+    try {
+      let fail!: () => void;
+      const failing = new Promise<void>((resolve) => {
+        fail = resolve;
+      });
+      await page.route("**/items/Item01/move", async (route) => {
+        await failing;
+        await route.fulfill({ status: 500, json: { message: "Move failed" } });
+      });
+      await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
+      await page.keyboard.press("Space");
+      await page.keyboard.press("ArrowDown");
+      const requested = page.waitForRequest((request) => request.url().endsWith("/items/Item01/move"));
+      await page.keyboard.press("Space");
+      await requested;
+      // While the move saves, a spinner stands in for the grip; the person clicks the page's padding, which takes no focus.
+      await page.mouse.click(2, 2);
+      expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+      fail();
+      await page.waitForFunction(
+        () =>
+          Array.from(document.querySelectorAll('[data-spaces-kanban-column="column:Col001"] [data-spaces-kanban-card]'))
+            .map((card) => (card as HTMLElement).dataset.itemId)
+            .join() === "Item01,Item02,Item03",
+      );
+      // The grip is back once the move has ended; a restore would focus it in the same task.
+      await page.waitForSelector('[data-spaces-kanban-grip="Item01"]', { state: "attached" });
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("keyboard: the grip has an accessible description of how to move a card", async () => {
     const page = await open(desktop, { locale: "en" });
     try {
