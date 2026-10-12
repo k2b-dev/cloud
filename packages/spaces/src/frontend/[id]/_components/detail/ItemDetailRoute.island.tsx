@@ -9,6 +9,7 @@ import { readResponseError } from "../../../lib/response";
 import { useSpaceMessages } from "../../messages";
 import {
   publishSpacesDetailState,
+  requestSpacesDetailStep,
   requestSpacesRouteNavigation,
   SPACES_DETAIL_NAVIGATION_EVENT,
   type SpacesDetailNavigation,
@@ -27,6 +28,8 @@ type Props = {
   wormholes: SpaceWormhole[];
   initialDetail: SpaceItemDetail | null;
   dateConfig?: DateContext;
+  /** List, Table and Kanban step with J and K; the Calendar does not. */
+  steppable?: boolean;
   canWrite: boolean;
   mailIntegrationAvailable: boolean;
 };
@@ -300,6 +303,7 @@ export default function ItemDetailRoute(props: Props) {
     <AppWorkspace.Detail
       id="space-detail-panel"
       open={hasDetailSelection()}
+      onStep={props.steppable ? (direction) => requestSpacesDetailStep(direction, detailRequest(source())) : undefined}
       onClose={() => requestSpacesRouteNavigation(detailBaseHref(source()), { scroll: "preserve" })}
       viewTransitionName="space-detail-panel-shell"
     >
