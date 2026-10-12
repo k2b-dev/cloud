@@ -55,6 +55,7 @@ suite("sender bulk disposition", () => {
   let ownerContext: MailRequestContext;
   let readerContext: MailRequestContext;
   let writerContext: MailRequestContext;
+  let assignedWriterContext: MailRequestContext;
   let verifyToken: ReturnType<typeof spyOn<typeof oauthTokens, "verifyAccessToken">> | undefined;
   let uid = 0;
   let bindingId = "";
@@ -121,7 +122,7 @@ suite("sender bulk disposition", () => {
 
   beforeAll(async () => {
     await migrate();
-    for (const role of ["owner", "reader", "writer"]) {
+    for (const role of ["owner", "reader", "writer", "assigned-writer"]) {
       const [row] = await sql<{ id: string; uid: string }[]>`
         INSERT INTO auth.users (uid, provider, profile, display_name, admin)
         VALUES (${`sender-${role}-${suffix}`}, 'local', 'user', ${role}, false) RETURNING id, uid
@@ -131,6 +132,7 @@ suite("sender bulk disposition", () => {
     ownerContext = contextFor(required(users[0]));
     readerContext = contextFor(required(users[1]));
     writerContext = contextFor(required(users[2]));
+    assignedWriterContext = contextFor(required(users[3]));
     const mailbox = await createMailbox(ownerContext, { name: `Sender disposition ${suffix}` });
     if (!mailbox.ok) throw new Error(mailbox.error.message);
     mailboxId = mailbox.data.id;
@@ -145,6 +147,14 @@ suite("sender bulk disposition", () => {
       });
       if (!access.ok) throw new Error(access.error.message);
     }
+    const assignedAccess = await grantMailboxAccess({
+      context: ownerContext,
+      mailboxId,
+      principal: { type: "user", userId: required(users[3]).id },
+      permission: "write",
+      scope: "assigned",
+    });
+    if (!assignedAccess.ok) throw new Error(assignedAccess.error.message);
     const [connection] = await sql<{ id: string }[]>`
       INSERT INTO mail.provider_connections (owner_mailbox_id, name, email, username, imap_host, imap_port, imap_tls_mode,
         smtp_host, smtp_port, smtp_tls_mode, secret_kind, encrypted_secret, status)
@@ -258,11 +268,25 @@ suite("sender bulk disposition", () => {
     ] as const) {
       const result = await move({ match, value, destination: "trash" });
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.status).toBe(400);
+      if (!result.ok) {
+        expect(result.error.status).toBe(400);
+        if (match === "sender") {
+          expect(result.error.message).toBe("Choose an external sender; this address is one of the mailbox's own sender addresses");
+        }
+      }
     }
     const denied = await move({ match: "domain", value: "cleanup.test", destination: "trash" }, crypto.randomUUID(), readerContext);
     expect(denied.ok).toBe(false);
     if (!denied.ok) expect(denied.error.status).toBe(403);
+  });
+
+  test("rejects assigned-only writers without queuing commands", async () => {
+    await addMessage("INBOX", "sender@assigned-writer.test");
+    const key = crypto.randomUUID();
+    const result = await move({ match: "domain", value: "assigned-writer.test", destination: "trash" }, key, assignedWriterContext);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.status).toBe(403);
+    expect(await sourcesFor(key)).toEqual([]);
   });
 
   test("translates public folder IDs, validates the strict destination contract, and supports sender matching", async () => {
@@ -380,6 +404,46 @@ suite("sender bulk disposition", () => {
     });
   });
 
+  test("matches the domain after the last @ in both preview and sender moves", async () => {
+    const source = await addMessage("INBOX", "placeholder@other.test");
+    await sql`UPDATE mail.message_addresses SET normalized_email = ${'"a@b"@lastat.test'}
+      WHERE message_id = (SELECT message_id FROM mail.remote_message_refs WHERE id = ${source}::uuid)`;
+    const preview = await previewIncomingAutomationMatches({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        scope: {
+          mode: "matching",
+          conditions: { mode: "all", items: [{ field: "sender_domain", operator: "is", value: "lastat.test" }] },
+        },
+      },
+    });
+    expect(preview.ok).toBe(true);
+    if (preview.ok) expect(preview.data.messageCount).toBe(1);
+    const key = crypto.randomUUID();
+    expect(await move({ match: "domain", value: "lastat.test", destination: "trash" }, key)).toEqual({
+      ok: true,
+      data: { commandCount: 1, truncated: false },
+    });
+    expect(await sourcesFor(key)).toEqual([source]);
+  });
+
+  test("protects provider Junk even when configured as Archive on non-Gmail mailboxes", async () => {
+    await addMessage("Junk", "sender@provider-junk.test");
+    try {
+      await sql`INSERT INTO mail.folder_role_overrides (mailbox_id, role, folder_id)
+        VALUES (${mailboxId}::uuid, 'archive', ${required(folders.get("Junk")).id}::uuid)`;
+      const key = crypto.randomUUID();
+      expect(await move({ match: "domain", value: "provider-junk.test", destination: "trash" }, key)).toEqual({
+        ok: true,
+        data: { commandCount: 0, truncated: false },
+      });
+      expect(await sourcesFor(key)).toEqual([]);
+    } finally {
+      await sql`DELETE FROM mail.folder_role_overrides WHERE mailbox_id = ${mailboxId}::uuid AND role = 'archive'`;
+    }
+  });
+
   test("rejects unknown folder destinations", async () => {
     const result = await move({ match: "domain", value: "cleanup.test", folderId: crypto.randomUUID() });
     expect(result.ok).toBe(false);
@@ -390,10 +454,10 @@ suite("sender bulk disposition", () => {
   });
 
   test("Gmail uses one Inbox or All Mail source per message, never a label, and skips protected messages", async () => {
-    await sql`UPDATE mail.provider_bindings SET capabilities = '{"gmailExtensions":true}'::jsonb WHERE id = ${bindingId}::uuid`;
-    // Exercise the All Mail archive fallback, with no provider or configured Archive.
-    await sql`UPDATE mail.folders SET role = 'other' WHERE id = ${required(folders.get("Archive")).id}::uuid`;
     try {
+      await sql`UPDATE mail.provider_bindings SET capabilities = '{"gmailExtensions":true}'::jsonb WHERE id = ${bindingId}::uuid`;
+      // Exercise the All Mail archive fallback, with no provider or configured Archive.
+      await sql`UPDATE mail.folders SET role = 'other' WHERE id = ${required(folders.get("Archive")).id}::uuid`;
       const inbox = await addMessage("INBOX", "one@gmail-cleanup.test");
       await addCopy(inbox, "All Mail");
       await addCopy(inbox, "Custom");
@@ -408,6 +472,11 @@ suite("sender bulk disposition", () => {
       await addCopy(sent, "Sent");
       const drafts = await addMessage("All Mail", "draft@gmail-cleanup.test");
       await addCopy(drafts, "Drafts");
+      for (const keyword of ["\\Sent", "\\dRaFt"]) {
+        const own = await addMessage("All Mail", "own-label@gmail-cleanup.test");
+        await sql`UPDATE mail.message_placements SET keywords = ${toPgTextArray([keyword])}::text[]
+          WHERE remote_message_ref_id = ${own}::uuid`;
+      }
       const alreadyInFolder = await addMessage("All Mail", "destination@gmail-cleanup.test");
       await addCopy(alreadyInFolder, "Archive");
       const archiveKey = crypto.randomUUID();
@@ -416,6 +485,8 @@ suite("sender bulk disposition", () => {
         data: { commandCount: 1, truncated: false },
       });
       expect(await sourcesFor(archiveKey)).toEqual([inbox]);
+      await sql`INSERT INTO mail.folder_role_overrides (mailbox_id, role, folder_id)
+        VALUES (${mailboxId}::uuid, 'archive', ${required(folders.get("Sent")).id}::uuid)`;
       const trashKey = crypto.randomUUID();
       expect(await move({ match: "domain", value: "gmail-cleanup.test", destination: "trash" }, trashKey)).toEqual({
         ok: true,
@@ -426,11 +497,40 @@ suite("sender bulk disposition", () => {
       const folderKey = crypto.randomUUID();
       expect(
         await move({ match: "domain", value: "gmail-cleanup.test", folderId: required(folders.get("Archive")).id }, folderKey),
-      ).toEqual({ ok: true, data: { commandCount: 2, truncated: false } });
-      expect(await sourcesFor(folderKey)).toEqual([inbox, archived].sort());
+      ).toEqual({ ok: true, data: { commandCount: 1, truncated: false } });
+      expect(await sourcesFor(folderKey)).toEqual([inbox]);
+      const inboxKey = crypto.randomUUID();
+      expect(await move({ match: "domain", value: "gmail-cleanup.test", folderId: required(folders.get("INBOX")).id }, inboxKey)).toEqual({
+        ok: true,
+        data: { commandCount: 0, truncated: false },
+      });
+      expect(await sourcesFor(inboxKey)).toEqual([]);
     } finally {
       await sql`UPDATE mail.provider_bindings SET capabilities = '{}'::jsonb WHERE id = ${bindingId}::uuid`;
       await sql`UPDATE mail.folders SET role = 'archive' WHERE id = ${required(folders.get("Archive")).id}::uuid`;
+      await sql`DELETE FROM mail.folder_role_overrides WHERE mailbox_id = ${mailboxId}::uuid AND role = 'archive'`;
+    }
+  });
+
+  test("Gmail without usable All Mail selects only Inbox copies for Trash and folders", async () => {
+    try {
+      await sql`UPDATE mail.provider_bindings SET capabilities = '{"gmailExtensions":true}'::jsonb WHERE id = ${bindingId}::uuid`;
+      const inbox = await addMessage("INBOX", "incoming@gmail-missing-all.test");
+      await addCopy(inbox, "Custom");
+      const archived = await addMessage("All Mail", "archived@gmail-missing-all.test");
+      await addCopy(archived, "Custom");
+      await sql`UPDATE mail.folders SET discovery_state = 'missing' WHERE id = ${required(folders.get("All Mail")).id}::uuid`;
+      for (const destination of [{ destination: "trash" }, { folderId: required(folders.get("Archive")).id }] as const) {
+        const key = crypto.randomUUID();
+        expect(await move({ match: "domain", value: "gmail-missing-all.test", ...destination }, key)).toEqual({
+          ok: true,
+          data: { commandCount: 1, truncated: false },
+        });
+        expect(await sourcesFor(key)).toEqual([inbox]);
+      }
+    } finally {
+      await sql`UPDATE mail.provider_bindings SET capabilities = '{}'::jsonb WHERE id = ${bindingId}::uuid`;
+      await sql`UPDATE mail.folders SET discovery_state = 'active' WHERE id = ${required(folders.get("All Mail")).id}::uuid`;
     }
   });
 });

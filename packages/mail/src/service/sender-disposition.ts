@@ -30,6 +30,7 @@ export const applySenderDisposition = async (params: {
       items: [{ field: input.match === "sender" ? "sender_address" : "sender_domain", operator: "is", value: normalized.data }],
     },
     db: sql,
+    message: "Choose an external sender; this address is one of the mailbox's own sender addresses",
   });
   if (!incoming.ok) return incoming;
 

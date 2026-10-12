@@ -272,7 +272,7 @@ export const normalizeSenderMatch = (kind: SenderMatchKind, value: string): Resu
 };
 
 const senderMatchSql = (kind: SenderMatchKind, value: string) =>
-  kind === "sender" ? sql`sender.normalized_email = ${value}` : sql`split_part(sender.normalized_email, '@', 2) = ${value}`;
+  kind === "sender" ? sql`sender.normalized_email = ${value}` : sql`substring(sender.normalized_email from '@([^@]*)$') = ${value}`;
 type SqlFragment = ReturnType<typeof senderMatchSql>;
 
 export const normalizeMailAutomationConditions = (conditions: MailAutomationConditions): Result<MailAutomationConditions> => {
@@ -383,6 +383,7 @@ export const rejectOwnSenderTargets = async (params: {
   mailboxId: string;
   conditions: AutomationConditionSet;
   db: SqlClient;
+  message?: string;
 }): Promise<Result<void>> => {
   const addresses = params.conditions.items.flatMap((condition) => (condition.field === "sender_address" ? [condition.value] : []));
   if (addresses.length === 0) return ok();
@@ -394,7 +395,9 @@ export const rejectOwnSenderTargets = async (params: {
       AND status <> 'disabled'
     LIMIT 1
   `;
-  return identity ? fail(err.badInput("Incoming automations apply only to incoming mail; remove the mailbox's own sender address")) : ok();
+  return identity
+    ? fail(err.badInput(params.message ?? "Incoming automations apply only to incoming mail; remove the mailbox's own sender address"))
+    : ok();
 };
 
 /**

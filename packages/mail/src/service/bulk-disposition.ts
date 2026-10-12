@@ -36,12 +36,20 @@ export const queueBulkMoves = async (params: {
   matches: Bun.SQL.Query<unknown>;
 }): Promise<Result<MailingListDispositionResult>> => {
   const targets = await sql<DispositionTarget[]>`
-    WITH gmail_folders AS (
+    WITH gmail AS (
+      SELECT EXISTS (
+        SELECT 1 FROM mail.provider_bindings binding
+        JOIN mail.remote_resources resource ON resource.id = binding.remote_resource_id
+        WHERE resource.mailbox_id = ${params.mailboxId}::uuid
+          AND binding.state <> 'revoked'
+          AND binding.capabilities ->> 'gmailExtensions' = 'true'
+      ) AS enabled
+    ), gmail_folders AS (
       ${gmailAllMailFoldersSql(sql`${params.mailboxId}::uuid`)}
     ), provider AS (
       SELECT CASE WHEN count(*) = 1 THEN min(id::text)::uuid END AS all_folder_id FROM gmail_folders
     )
-    SELECT DISTINCT ON (CASE WHEN provider.all_folder_id IS NULL THEN remote_ref.id ELSE message.id END)
+    SELECT DISTINCT ON (CASE WHEN gmail.enabled THEN message.id ELSE remote_ref.id END)
       remote_ref.id AS remote_message_ref_id,
       message.id AS message_id,
       folder.id AS source_folder_id
@@ -53,26 +61,43 @@ export const queueBulkMoves = async (params: {
     LEFT JOIN mail.folder_role_overrides role_override
       ON role_override.folder_id = folder.id AND role_override.mailbox_id = resource.mailbox_id
     CROSS JOIN provider
+    CROSS JOIN gmail
     WHERE message.mailbox_id = ${params.mailboxId}::uuid
       AND resource.mailbox_id = ${params.mailboxId}::uuid
       AND ${params.matches}
       AND folder.id <> ${params.destinationFolderId}::uuid
-      AND COALESCE(role_override.role, folder.role) NOT IN ('sent', 'drafts', 'trash', 'junk')
+      AND folder.role NOT IN ('sent', 'drafts', 'trash', 'junk')
+      AND NOT COALESCE(role_override.role IN ('sent', 'drafts', 'trash', 'junk'), false)
       AND NOT (
         ${isKeepProtectedDestination(sql`${params.destinationFolderId}::uuid`)}
         AND ${isKeptMessage(sql`message.id`)}
       )
       AND (
-        provider.all_folder_id IS NULL OR (
-          NOT ${liveCopyExists(sql`COALESCE(copy_role.role, copy_folder.role) IN ('sent', 'drafts', 'trash', 'junk')`)}
+        NOT gmail.enabled OR (
+          NOT ${liveCopyExists(sql`(copy_folder.role IN ('sent', 'drafts', 'trash', 'junk')
+            OR COALESCE(copy_role.role IN ('sent', 'drafts', 'trash', 'junk'), false))`)}
+          AND NOT ${liveCopyExists(sql`EXISTS (
+            SELECT 1 FROM unnest(copy.keywords) AS keyword
+            WHERE lower(keyword) IN (${"\\sent"}, ${"\\draft"})
+          )`)}
           AND (
             COALESCE(role_override.role, folder.role) = 'inbox'
-            OR (folder.id = provider.all_folder_id AND NOT ${liveCopyExists(sql`copy.folder_id = ${params.destinationFolderId}::uuid`)})
+            OR (
+              provider.all_folder_id IS NOT NULL AND folder.id = provider.all_folder_id
+              AND EXISTS (
+                SELECT 1 FROM mail.folders destination
+                LEFT JOIN mail.folder_role_overrides destination_role
+                  ON destination_role.folder_id = destination.id AND destination_role.mailbox_id = resource.mailbox_id
+                WHERE destination.id = ${params.destinationFolderId}::uuid
+                  AND (destination.role IN ('trash', 'junk') OR destination_role.role IN ('trash', 'junk'))
+              )
+              AND NOT ${liveCopyExists(sql`copy.folder_id = ${params.destinationFolderId}::uuid`)}
+            )
           )
         )
       )
-    ORDER BY CASE WHEN provider.all_folder_id IS NULL THEN remote_ref.id ELSE message.id END,
-      CASE WHEN provider.all_folder_id IS NOT NULL AND COALESCE(role_override.role, folder.role) = 'inbox' THEN 0 ELSE 1 END,
+    ORDER BY CASE WHEN gmail.enabled THEN message.id ELSE remote_ref.id END,
+      CASE WHEN gmail.enabled AND COALESCE(role_override.role, folder.role) = 'inbox' THEN 0 ELSE 1 END,
       placement.updated_at DESC, folder.id, remote_ref.id
     LIMIT ${DISPOSITION_LIMIT + 1}
   `;
