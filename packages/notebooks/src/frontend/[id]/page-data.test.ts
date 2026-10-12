@@ -142,7 +142,7 @@ describe("notebook page presentation authorization", () => {
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain('data-layout-authenticated="true"');
-    expect(html).toContain("AppWorkspaceController");
+    expect(html).toContain("ShellRuntime");
     expect(html).toContain("layout-content-main");
     expect(html).toContain("notebook-book-workspace");
     expect(html).toContain("<strong>handbook</strong>");

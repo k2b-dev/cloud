@@ -79,7 +79,7 @@ afterEach(() => {
 });
 
 const mountRail = async () => {
-  const { default: RailApps } = await import("./RailApps.island");
+  const { default: RailApps } = await import("./RailApps");
   return render(() => createComponent(RailApps, { apps, settings, currentPath: "/app/mail" }), dom.root);
 };
 
@@ -236,11 +236,11 @@ test("after the rail unmounts, nothing reads badges any more", async () => {
 test("the app grid shows the same count on the icon and on a pinned app, and tells screen readers", async () => {
   const disposeRail = await mountRail();
   const railData = dom.window.document.createElement("script");
-  railData.id = "cloud-rail-data";
+  railData.id = "cloud-shell-data";
   railData.type = "application/json";
   railData.textContent = JSON.stringify({
     apps,
-    settings: { ...settings, shortcuts: [{ id: "pinned-chat", kind: "app", appId: "chat" }] },
+    rail: { ...settings, shortcuts: [{ id: "pinned-chat", kind: "app", appId: "chat" }] },
   });
   dom.window.document.body.append(railData);
   const { AppLaunchpadPanel } = await import("./AppLaunchpadPanel");
@@ -269,7 +269,7 @@ test("the app grid shows the same count on the icon and on a pinned app, and tel
 
 test("approval counts reach catalog apps and app shortcuts, while link shortcuts stay unchanged", async () => {
   responses[APPROVAL_COUNTS_PATH] = () => Response.json({ total: 5, apps: { chat: 2, mail: 3 } });
-  const { default: RailApps } = await import("./RailApps.island");
+  const { default: RailApps } = await import("./RailApps");
   const dispose = render(
     () =>
       createComponent(RailApps, {

@@ -8,7 +8,7 @@ if (isServer) test.skip("requires browser conditions", () => {});
 else {
   test("help documents leave a closing non-keyed Show without reading their props again", async () => {
     const dom = createDomTestHarness();
-    const { LayoutHelpDocuments } = await import("./LayoutHelp");
+    const { LayoutHelpDocuments } = await import("./layout-help-registry");
     const document: HelpDocumentManifest = {
       id: "inventory-start",
       title: "Start",

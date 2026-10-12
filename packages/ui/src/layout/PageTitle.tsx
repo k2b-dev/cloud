@@ -237,6 +237,15 @@ export const followPageTrail = (root: ParentNode = document): (() => void) => {
       const extra = [...element.classList].filter((name) => name !== "k2b-page-title").join(" ") || undefined;
       const subtitle = element.querySelector(".k2b-page-title__subtitle");
       const subtitleNodes = subtitle ? [...subtitle.childNodes] : undefined;
+      // A link focused in the server title keeps focus in the live one: same kind, then same address.
+      const active = document.activeElement;
+      const focused =
+        active && element.contains(active)
+          ? {
+              kind: ["k2b-page-title__up", "k2b-page-title__back"].find((name) => active.classList.contains(name)),
+              href: active.getAttribute("href"),
+            }
+          : undefined;
       // The live title takes the server title's place, before whatever follows it in the row.
       const place = document.createTextNode("");
       row.insertBefore(place, element);
@@ -256,6 +265,15 @@ export const followPageTrail = (root: ParentNode = document): (() => void) => {
           return dispose;
         }),
       );
+      const upgraded = place.previousSibling;
+      if (focused && upgraded instanceof HTMLElement && upgraded.classList.contains("k2b-page-title")) {
+        const links = focused.kind ? [...upgraded.querySelectorAll<HTMLElement>(`a.${focused.kind}`)] : [];
+        const link =
+          links.find((candidate) => candidate.getAttribute("href") === focused.href) ??
+          links[0] ??
+          upgraded.querySelector<HTMLElement>("a[data-k2b-page-trail-up]");
+        link?.focus({ preventScroll: true });
+      }
     }
     // A server-rendered workspace heading carries only the title.
     for (const heading of root.querySelectorAll<HTMLElement>("[data-k2b-page-trail-title][data-k2b-server]"))

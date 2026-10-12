@@ -2,7 +2,6 @@ import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, appWorkspaceLayoutStyle, LocaleProvider, NoticeCard, PageTrailProvider } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { readAppWorkspaceLayoutCookie, resolveAppWorkspaceLayoutForSidebar } from "../_internal/app-workspace-state";
-import { navigationSearchItems } from "../browser/navigation-search";
 import { resolveNavMatch } from "../contracts/app"; // ==========================
 import { isPwaShellAvailable } from "../contracts/pwa";
 import { defaultRailPreferences } from "../contracts/rail-preferences";
@@ -11,12 +10,9 @@ import { getLocale } from "../server/locale";
 import { getDateConfig } from "../server/time";
 import { dates } from "../shared";
 import { readThemePreferenceFromCookieHeader } from "../shared/theme";
-import type { AppLaunchpadApp } from "./AppLaunchpad.island";
-import AppWorkspaceController from "./AppWorkspaceController.island";
+import AnnouncementBanners from "./AnnouncementBanners";
 import { appAppearanceStyle } from "./app-appearance";
 import { resolveRuntimeRoute, visibleNavigationApps } from "./app-navigation";
-import BrowserPushRegistration from "./BrowserPushRegistration.island";
-import GlobalAnnouncements from "./GlobalAnnouncements.island";
 import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import { getLayoutHelp } from "./help";
 import LayoutFooter from "./LayoutFooter";
@@ -24,15 +20,14 @@ import LayoutHeader from "./LayoutHeader";
 import LayoutRail, { type LayoutAppLink } from "./LayoutRail";
 import type { LayoutContext } from "./layout-context";
 import type { LayoutBreadcrumb } from "./layout-runtime";
-import PageTrailRow from "./PageTrailRow.island";
-import PageTrailRuntime from "./PageTrailRuntime.island";
+import PageTrailRow from "./PageTrailRow";
 import { derivePageTrail } from "./page-trail";
 import { platformMessages } from "./platform-messages";
-import RegisteredHelpDocuments from "./RegisteredHelpDocuments.island";
 import { sortRailApps } from "./rail-navigation";
 import { requestPath } from "./request-path";
 import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
-import TimezoneCookie from "./TimezoneCookie.island";
+import ShellRuntime from "./ShellRuntime.island";
+import { type ShellData, ShellDataProvider } from "./shell-data";
 
 // Types
 type Breadcrumb = LayoutBreadcrumb;
@@ -158,24 +153,16 @@ export default function Layout(props: LayoutProps) {
   const currentRoute = resolveRuntimeRoute(runtime.apps, pathname);
   const currentApp = currentRoute?.app;
   const registeredHelp = getLayoutHelp(c);
+  const runtimeHelp = registeredHelp ? { documents: registeredHelp.documents, pageBase: registeredHelp.pageBase } : undefined;
   const workspaceLayout = resolveAppWorkspaceLayoutForSidebar(
     readAppWorkspaceLayoutCookie(cookie, currentApp?.id),
     workspaceSidebarCollapsible,
   );
   const { primary: primaryApps, more: moreApps } = buildNavLinks(runtime.apps, user, lang);
   const allApps = sortRailApps([...primaryApps, ...moreApps], lang);
-  const launchpadApps: AppLaunchpadApp[] = allApps.map((app) => ({
-    id: app.id,
-    iconClass: app.iconClass,
-    label: app.label,
-    href: app.href,
-    description: app.description,
-    accent: app.accent,
-    badge: app.badge,
-  }));
-  const searchLinks = navigationSearchItems(
-    runtime.apps,
-    allApps.map((app) => app.id),
+  const visibleAppIds = new Set(allApps.map((app) => app.id));
+  const searchLinks = Object.fromEntries(
+    runtime.apps.flatMap((app) => (visibleAppIds.has(app.id) && app.searchLinks?.length ? [[app.id, app.searchLinks] as const] : [])),
   );
   const searchHelpApps: GlobalSearchHelpApp[] = runtime.apps
     .filter((app) => (app.searchTags?.length ?? 0) > 0)
@@ -226,6 +213,18 @@ export default function Layout(props: LayoutProps) {
     [appAppearanceStyle(currentApp?.appearance), appWorkspaceLayoutStyle(workspaceLayout), focusMode && flushCanvas ? "padding:0" : ""]
       .filter(Boolean)
       .join(";") || undefined;
+  const appLabel = currentApp?.name ?? (pathname.startsWith("/admin") ? t.admin : undefined);
+  const shellData: ShellData = {
+    apps: allApps,
+    ...(user
+      ? { rail: c.get("railPreferences") ?? defaultRailPreferences(), profile: { name: profileName, avatarSrc: profileAvatarSrc, appHref } }
+      : {}),
+    legalLinks,
+    theme,
+    accent: currentApp?.appearance?.accent,
+    searchLinks,
+    searchHelpApps,
+  };
   if (focusMode) {
     return (
       <LocaleProvider locale={lang}>
@@ -238,10 +237,8 @@ export default function Layout(props: LayoutProps) {
           data-layout-full-page="true"
           data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
         >
-          <TimezoneCookie />
-          {registeredHelp && <RegisteredHelpDocuments documents={registeredHelp.documents} pageBase={registeredHelp.pageBase} />}
+          <ShellRuntime pageTrail help={runtimeHelp} />
           <PageTrailProvider trail={pageTrail}>
-            <PageTrailRuntime />
             <main class="min-h-0 min-w-0 flex-1">
               <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
             </main>
@@ -265,65 +262,40 @@ export default function Layout(props: LayoutProps) {
         data-layout-authenticated={showRail ? "true" : undefined}
         data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
       >
-        <TimezoneCookie />
-        {registeredHelp && <RegisteredHelpDocuments documents={registeredHelp.documents} pageBase={registeredHelp.pageBase} />}
-        <AppWorkspaceController appId={currentApp?.id} />
-        {user && <BrowserPushRegistration />}
-        {showRail && (
-          <LayoutRail
-            accent={currentApp?.appearance?.accent}
-            appHref={appHref}
-            appsLabel={t.apps}
-            homeLabel={t.home}
-            launchpadApps={launchpadApps}
-            legalLinks={legalLinks}
-            openAppsLabel={t.openApps}
-            apps={allApps}
-            railSettings={c.get("railPreferences") ?? defaultRailPreferences()}
-            currentPath={requestPath(c)}
-            profileAvatarSrc={profileAvatarSrc}
-            profileName={profileName}
-            searchHelpApps={searchHelpApps}
-            searchLinks={searchLinks}
-            theme={theme}
-          />
-        )}
-        <div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col">
-          <LayoutHeader
-            appHref={appHref}
-            appLabel={currentApp?.name ?? (pathname.startsWith("/admin") ? t.admin : undefined)}
-            accent={currentApp?.appearance?.accent}
-            authenticated={showRail}
-            breadcrumbs={breadcrumbs}
-            homeLabel={t.home}
-            launchpadApps={launchpadApps}
-            legalLinks={legalLinks}
-            openAppsLabel={t.openApps}
-            profileName={profileName}
-            searchHelpApps={searchHelpApps}
-            searchLinks={searchLinks}
-            signInLabel={t.signIn}
-            theme={theme}
-          />
-          {user && announcements && (
-            <GlobalAnnouncements
-              banners={announcements.banners}
-              announcements={announcements.announcements}
-              latestAnnouncementVersion={announcements.latestAnnouncementVersion}
-              cookieState={announcements.cookieState}
+        <ShellRuntime
+          workspace={{ appId: currentApp?.id }}
+          pageTrail
+          help={runtimeHelp}
+          commands={{ searchResources: !!user }}
+          push={!!user}
+          announcements={
+            user && announcements?.announcements.length
+              ? { entries: announcements.announcements, latestVersion: announcements.latestAnnouncementVersion }
+              : undefined
+          }
+          banners={user && announcements?.banners.length ? true : undefined}
+        />
+        <ShellDataProvider data={shellData}>
+          {showRail && <LayoutRail currentPath={requestPath(c)} />}
+          <div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col">
+            <LayoutHeader
+              authenticated={showRail}
+              title={appLabel ?? breadcrumbs.at(-1)?.title}
+              launchpad={!!(user || appLabel)}
+              breadcrumbs={user ? undefined : breadcrumbs}
             />
-          )}
-          {user && <ProfileWarnings user={user} locale={lang} />}
-          {user && <ExpiryWarnings user={user} dateConfig={dateConfig} locale={lang} />}
-          <PageTrailProvider trail={pageTrail}>
-            <PageTrailRuntime />
-            <PageTrailRow />
-            <main class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}>
-              <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
-            </main>
-          </PageTrailProvider>
-          {!fullPage && !showRail && <LayoutFooter appName={settings?.app?.copyright || appName} legalLinks={legalLinks} />}
-        </div>
+            {user && announcements && <AnnouncementBanners banners={announcements.banners} />}
+            {user && <ProfileWarnings user={user} locale={lang} />}
+            {user && <ExpiryWarnings user={user} dateConfig={dateConfig} locale={lang} />}
+            <PageTrailProvider trail={pageTrail}>
+              <PageTrailRow trail={pageTrail} />
+              <main class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}>
+                <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
+              </main>
+            </PageTrailProvider>
+            {!fullPage && !showRail && <LayoutFooter appName={settings?.app?.copyright || appName} legalLinks={legalLinks} />}
+          </div>
+        </ShellDataProvider>
       </div>
     </LocaleProvider>
   );
