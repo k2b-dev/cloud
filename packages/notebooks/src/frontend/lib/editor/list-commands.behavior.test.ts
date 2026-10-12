@@ -1,4 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { autocompletion, completionStatus, startCompletion } from "@codemirror/autocomplete";
+import { history, undo } from "@codemirror/commands";
 import { forceParsing, syntaxTreeAvailable } from "@codemirror/language";
 import { EditorSelection, EditorState, type Extension, StateEffect, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
@@ -6,13 +8,16 @@ import { isServer } from "solid-js/web";
 import { YSyncConfig, yCollab, ySyncAnnotation } from "y-codemirror.next";
 import * as Y from "yjs";
 import { createDomTestHarness } from "../../../../../ui/test/dom";
+import { isolateYjsHistory } from "../yjs/history";
 import { basicExtensions } from "./basic";
 import { markdownExtension } from "./markdown";
 
 // Notebook block scanners load UI browser exports after DOM globals exist.
 const loading = createDomTestHarness();
 const { excludedSpans, listStructure } = await import("./_lib/list-structure");
-const { indentListItems, listCommandsExtension, listIndentAvailability, outdentListItems } = await import("./list-commands");
+const { indentListItems, listCommandsExtension, listIndentAvailability, outdentListItems, setListKind, toggleTaskAtCaret } = await import(
+  "./list-commands"
+);
 const { tabIndentExtension } = await import("./tab-indent");
 const { listsExtension } = await import("./lists");
 loading.cleanup();
@@ -29,19 +34,26 @@ const mount = (doc: string, head = doc.length, tab = true, extensions: Extension
   });
   if (parse) forceParsing(view, doc.length, 5000);
   const press = (
-    key: "Tab" | "Enter" | "Backspace" | "ArrowUp" | "ArrowDown" | "]" | "[",
+    key: "Tab" | "Enter" | "Backspace" | "ArrowUp" | "ArrowDown" | "]" | "[" | "&" | "*" | "(",
     modifiers: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean } = {},
   ) => {
-    const keyCode = { Tab: 9, Enter: 13, Backspace: 8, ArrowUp: 38, ArrowDown: 40, "]": 221, "[": 219 }[key];
+    const keyCode = { Tab: 9, Enter: 13, Backspace: 8, ArrowUp: 38, ArrowDown: 40, "]": 221, "[": 219, "&": 55, "*": 56, "(": 57 }[key];
     const event = new KeyboardEvent("keydown", { key, keyCode, ...modifiers, bubbles: true, cancelable: true });
     view.contentDOM.dispatchEvent(event);
     return event.defaultPrevented;
+  };
+  const type = (text: string) => {
+    const { from, to } = view.state.selection.main;
+    const insert = () =>
+      view.state.update({ changes: { from, to, insert: text }, selection: { anchor: from + text.length }, userEvent: "input.type" });
+    if (!view.state.facet(EditorView.inputHandler).some((handler) => handler(view, from, to, text, insert))) view.dispatch(insert());
   };
   const text = () => view.state.doc.toString();
   const structure = () => listStructure(view.state, () => excludedSpans(view.state));
   return {
     view,
     press,
+    type,
     text,
     structure,
     [Symbol.dispose]() {
@@ -683,6 +695,408 @@ describe("notebook structural list commands", () => {
     expect(localB).toBe(1);
     aUndo.destroy();
     bUndo.destroy();
+    a.destroy();
+    b.destroy();
+  });
+});
+
+describe("notebook list typing and kinds", () => {
+  test.each([
+    ["1. a\n2. b\n3. c", "task", 8, 8, "1. a\n- [ ] b\n1. c", 11, 11],
+    ["1. a\n2. b\n3. c", "bullet", 8, 8, "1. a\n- b\n1. c", 7, 7],
+    ["1. a\n2. b\n3. c\n4. d", "bullet", 8, 14, "1. a\n- b\n- c\n1. d", 7, 12],
+    ["1. a\n2. b\n3. c", "ordered", 8, 8, "1. a\n\nb\n\n1. c", 6, 6],
+  ] as const)(
+    "leaving ordered siblings via %s to %s restarts numbers with one undo",
+    (doc, kind, anchor, head, expected, nextAnchor, nextHead) => {
+      using editor = mount(doc, anchor, true, [history()]);
+      editor.view.dispatch({ selection: { anchor, head } });
+      const selection = editor.view.state.selection;
+      expect(setListKind(kind)(editor.view)).toBe(true);
+      expect(editor.text()).toBe(expected);
+      expect(editor.view.state.selection.main.anchor).toBe(nextAnchor);
+      expect(editor.view.state.selection.main.head).toBe(nextHead);
+      expect(undo(editor.view)).toBe(true);
+      expect(editor.text()).toBe(doc);
+      expect(editor.view.state.selection.eq(selection)).toBe(true);
+    },
+  );
+
+  test.each([
+    ["1. a\n2. \n3. c", "Enter", "1. a\n\n\n\n1. c"],
+    ["1. a\n2. b\n3. c", "Backspace", "1. a\n\nb\n\n1. c"],
+  ] as const)("leaving ordered siblings via %s with %s restarts numbers with one undo", (doc, key, expected) => {
+    using editor = mount(doc, 8, true, [history()]);
+    expect(editor.press(key)).toBe(true);
+    expect(editor.text()).toBe(expected);
+    expect(editor.view.state.selection.main.anchor).toBe(6);
+    expect(editor.view.state.selection.main.head).toBe(6);
+    expect(undo(editor.view)).toBe(true);
+    expect(editor.text()).toBe(doc);
+    expect(editor.view.state.selection.main.head).toBe(8);
+  });
+
+  test.each([
+    ["    - child", "   - child", 1],
+    ["    continuation\n    1) child\n    2) next", "   continuation\n   1) child\n   2) next", 2],
+  ] as const)("leaving ordered siblings repairs marker width and child indentation with one undo: %s", (tail, nextTail, children) => {
+    const doc = Array.from({ length: 10 }, (_, i) => `${i + 1}. ${String.fromCharCode(97 + i)}`).join("\n") + "\n" + tail;
+    const expected =
+      "1. a\n- b\n" + Array.from({ length: 8 }, (_, i) => `${i + 1}. ${String.fromCharCode(99 + i)}`).join("\n") + "\n" + nextTail;
+    using editor = mount(doc, 8, true, [history()]);
+    expect(setListKind("bullet")(editor.view)).toBe(true);
+    expect(editor.text()).toBe(expected);
+    expect(editor.view.state.selection.main.head).toBe(7);
+    forceParsing(editor.view, expected.length, 5000);
+    expect(editor.structure().items.map((item) => item.depth)).toEqual([...Array(10).fill(0), ...Array(children).fill(1)]);
+    expect(undo(editor.view)).toBe(true);
+    expect(editor.text()).toBe(doc);
+    expect(editor.view.state.selection.main.head).toBe(8);
+  });
+
+  test.each([
+    ["1) a\n2) b\n3) c\n- stop\n7) later", "1) a\n- b\n1) c\n- stop\n7) later"],
+    ["1. a\n2. b\n3. c\n7) later", "1. a\n- b\n1. c\n7) later"],
+    ["- parent\n  1. a\n  2. b\n  3. c\n- other\n  7. untouched", "- parent\n  1. a\n  - b\n  1. c\n- other\n  7. untouched"],
+    ["1. a\n2. b\n3. c\n   1) child\n   2) next\n4. d", "1. a\n- b\n1. c\n   1) child\n   2) next\n2. d"],
+  ])("leaving ordered siblings preserves other kinds, delimiters, parents and sub-list numbers: %s", (doc, expected) => {
+    using editor = mount(doc, doc.indexOf("b"), true, [history()]);
+    expect(setListKind("bullet")(editor.view)).toBe(true);
+    expect(editor.text()).toBe(expected);
+    expect(editor.view.state.selection.main.head).toBe(expected.indexOf("b"));
+    expect(undo(editor.view)).toBe(true);
+    expect(editor.text()).toBe(doc);
+    expect(editor.view.state.selection.main.head).toBe(doc.indexOf("b"));
+  });
+
+  test.each([
+    ["- a\n  - ", 8, "Enter", "- a\n- ", 6],
+    ["1. a\n   1. \n2. b", 11, "Enter", "1. a\n2. \n3. b", 8],
+    ["- a\n- ", 6, "Enter", "- a\n\n", 5],
+    ["- a\n-    ", 9, "Enter", "- a\n\n", 5],
+    ["- a\n- b", 4, "Enter", "- a\n- \n- b", 9],
+    ["- a\n- b", 4, "Backspace", "- a\n\nb", 5],
+    ["- a\n  continuation\n- b", 21, "Backspace", "- a\n  continuation\n\nb", 20],
+    ["- a\n  continuation", 3, "Backspace", "- \n  continuation", 2],
+    ["- a\n- \n- c", 6, "Enter", "- a\n\n\n\n- c", 5],
+    ["- \n  - child", 2, "Enter", "- \n  - child", 2],
+    ["- a", 2, "Enter", "- \n- a", 5],
+    ["1. a\n2. b", 3, "Enter", "1. \n2. a\n3. b", 7],
+    ["- [x] a", 6, "Enter", "- [ ] \n- [x] a", 13],
+    ["para\n- a", 7, "Enter", "para\n\n- \n- a", 11],
+    ["- parent\n  1) old\n  2) next", 8, "Enter", "- parent\n  1) \n  2) old\n  3) next", 14],
+    ["- par ent\n  - [x] old", 6, "Enter", "- par\n  - [ ] ent\n  - [x] old", 14],
+    ["- parent\n  1. [x] old", 8, "Enter", "- parent\n  1. [ ] \n  2. [x] old", 18],
+    ["1. a\n2. b", 4, "Enter", "1. a\n2. \n3. b", 8],
+    ["- a\n  - b", 8, "Backspace", "- a\n- b", 6],
+    ["- a\n- b\n- c", 6, "Backspace", "- a\n\nb\n\n- c", 5],
+    ["- a\n  - child", 2, "Backspace", "- a\n  - child", 2],
+    ["- [x] a", 6, "Backspace", "a", 0],
+    ["a\nb", 2, "Backspace", "ab", 1],
+    ["- ab", 4, "Backspace", "- a", 3],
+    ["# Titel", 2, "Backspace", "Titel", 0],
+    ["### Titel", 4, "Backspace", "Titel", 0],
+    ["```\n# Titel\n```", 6, "Backspace", "```\n#Titel\n```", 5],
+  ] as const)("%s at %i: %s keeps structure, caret and one undo", (doc, head, key, expected, nextHead) => {
+    using editor = mount(doc, head, true, [history()]);
+    expect(editor.press(key)).toBe(true);
+    expect(editor.text()).toBe(expected);
+    expect(editor.view.state.selection.main.head).toBe(nextHead);
+    if (doc !== expected) {
+      expect(undo(editor.view)).toBe(true);
+      expect(editor.text()).toBe(doc);
+    }
+  });
+
+  test("Shift+Enter keeps its plain newline", () => {
+    using editor = mount("- ab", 3);
+    expect(editor.press("Enter", { shiftKey: true })).toBe(true);
+    expect(editor.text()).toBe("- a\nb");
+  });
+
+  test("an active completion keeps Enter", async () => {
+    using editor = mount("- a", 2, true, [
+      autocompletion({ override: [() => ({ from: 2, options: [{ label: "chosen" }] })], activateOnTyping: false, interactionDelay: 0 }),
+    ]);
+    startCompletion(editor.view);
+    for (let attempt = 0; attempt < 30 && completionStatus(editor.view.state) !== "active"; attempt++) await Bun.sleep(10);
+    expect(completionStatus(editor.view.state)).toBe("active");
+    expect(editor.press("Enter")).toBe(true);
+    expect(editor.text()).toBe("- chosena");
+  });
+
+  test.each([
+    ["&", "1. a"],
+    ["*", "a"],
+    ["(", "- [ ] a"],
+  ] as const)("shifted digit %s uses keyCode", (key, expected) => {
+    using editor = mount("- a");
+    expect(editor.press(key, { ctrlKey: true, shiftKey: true })).toBe(true);
+    expect(editor.text()).toBe(expected);
+  });
+
+  test("kind conversion preserves three selected depths and selection text", () => {
+    using editor = mount("- a\n  - b\n    - c", 2);
+    editor.view.dispatch({ selection: { anchor: 2, head: editor.text().length } });
+    expect(editor.press("&", { ctrlKey: true, shiftKey: true })).toBe(true);
+    expect(editor.text()).toBe("1. a\n   1. b\n      1. c");
+    expect(editor.view.state.sliceDoc(editor.view.state.selection.main.anchor, editor.view.state.selection.main.anchor + 1)).toBe("a");
+    expect(editor.view.state.selection.main.head).toBe(editor.text().length);
+  });
+
+  test.each([
+    ["- a", "task", "- [ ] a"],
+    ["- [x] a", "bullet", "- a"],
+    ["1. a", "task", "- [ ] a"],
+    ["- a", "bullet", "a"],
+    ["- a\n  - b", "bullet", "- a\n  - b"],
+    ["", "ordered", "1. "],
+    ["para\n", "task", "para\n\n- [ ] "],
+  ] as const)("%s to %s has one undo", (doc, kind, expected) => {
+    using editor = mount(doc, doc.length, true, [history()]);
+    expect(setListKind(kind)(editor.view)).toBe(true);
+    expect(editor.text()).toBe(expected);
+    if (doc !== expected) {
+      expect(undo(editor.view)).toBe(true);
+      expect(editor.text()).toBe(doc);
+    }
+  });
+
+  test.each(["bullet", "ordered", "task"] as const)("count creates %s items on an empty line and keeps the first caret", (kind) => {
+    using editor = mount("");
+    setListKind(kind, 3)(editor.view);
+    const prefix = kind === "bullet" ? "- " : kind === "ordered" ? "1. " : "- [ ] ";
+    expect(editor.text()).toBe(kind === "ordered" ? "1. \n2. \n3. " : [prefix, prefix, prefix].join("\n"));
+    expect(editor.view.state.selection.main.head).toBe(prefix.length);
+  });
+
+  test("same-kind parent keeps its children", () => {
+    using editor = mount("- parent\n  - child", 2);
+    setListKind("bullet")(editor.view);
+    expect(editor.text()).toBe("- parent\n  - child");
+  });
+
+  test("kind conversion skips blank lines, code, data and directives", () => {
+    const doc = "text\n\n```\n- code\n```\n:::data\n- data\n:::\n:::query\n- query\n:::\nlast";
+    using editor = mount(doc);
+    editor.view.dispatch({ selection: { anchor: 0, head: doc.length } });
+    setListKind("bullet")(editor.view);
+    expect(editor.text()).toBe(doc.replace("text", "- text").replace("last", "- last"));
+  });
+
+  test("kind conversion shifts continuation and children across marker widths", () => {
+    using editor = mount("- root\n  continuation\n  - child", 2);
+    setListKind("ordered")(editor.view);
+    expect(editor.text()).toBe("1. root\n   continuation\n   - child");
+    expect(editor.structure().items.map((item) => item.depth)).toEqual([0, 1]);
+  });
+
+  test("ordered conversion adopts the next sibling's delimiter", () => {
+    using editor = mount("- before\n- a\n1) b", 11);
+    setListKind("ordered")(editor.view);
+    expect(editor.text()).toBe("- before\n1) a\n2) b");
+  });
+
+  test("bullet, task and bullet keep the text caret", () => {
+    using editor = mount("- word", 4);
+    setListKind("task")(editor.view);
+    expect(editor.text()).toBe("- [ ] word");
+    expect(editor.view.state.selection.main.head).toBe(8);
+    setListKind("bullet")(editor.view);
+    expect(editor.text()).toBe("- word");
+    expect(editor.view.state.selection.main.head).toBe(4);
+  });
+
+  test("ordered count at nested depth repairs source-only empty items", () => {
+    using editor = mount("- root\n  - child", 11);
+    setListKind("ordered", 3)(editor.view);
+    expect(editor.text()).toBe("- root\n  1. child\n  2. \n  3. ");
+    expect(editor.view.state.selection.main.head).toBe(12);
+  });
+
+  test.each(["newline", "delete line"] as const)("%s inside lazy ordered-looking text preserves its written numbers", (edit) => {
+    const doc = edit === "newline" ? "- x\n  5. foo\n  7. bar" : "- x\n  5. foo\n  continuation\n  7. bar";
+    using editor = mount(doc);
+    expect(editor.structure().items).toHaveLength(1);
+    if (edit === "newline") {
+      editor.view.dispatch({ changes: { from: doc.indexOf("foo") + 1, insert: "\n  " }, userEvent: "input.type" });
+      expect(editor.text()).toBe("- x\n  5. f\n  oo\n  7. bar");
+    } else {
+      editor.view.dispatch({ changes: { from: doc.indexOf("  continuation"), to: doc.indexOf("  7.") }, userEvent: "delete.line" });
+      expect(editor.text()).toBe("- x\n  5. foo\n  7. bar");
+    }
+  });
+
+  test("read-only commands and typed input do not convert", () => {
+    using editor = mount("[]", 2, true, [EditorState.readOnly.of(true)]);
+    expect(setListKind("task")(editor.view)).toBe(false);
+    expect(toggleTaskAtCaret(editor.view)).toBe(false);
+    const handled = editor.view.state
+      .facet(EditorView.inputHandler)
+      .some((handler) => handler(editor.view, 2, 2, " ", () => editor.view.state.update({ changes: { from: 2, insert: " " } })));
+    expect(handled).toBe(false);
+    expect(editor.text()).toBe("[]");
+  });
+
+  test("task typing waits for composition to finish", () => {
+    using editor = mount("[]");
+    Object.defineProperty(editor.view, "compositionStarted", { configurable: true, get: () => true });
+    editor.type(" ");
+    expect(editor.text()).toBe("[] ");
+  });
+
+  test("toggle-off separates groups, without blanks between converted lines", () => {
+    using editor = mount("- a\n- b\n- c\n- d");
+    editor.view.dispatch({ selection: { anchor: 6, head: 11 } });
+    setListKind("bullet")(editor.view);
+    expect(editor.text()).toBe("- a\n\nb\nc\n\n- d");
+  });
+
+  test.each([
+    ["- a\n  continuation\n- b\n- c\n\n", 21, "Backspace", "- a\n  continuation\n\nb\n\n- c\n\n"],
+    ["para\n- a\n\n", 7, "Enter", "para\n\n- \n- a\n\n"],
+    ["- a\n- b\n- c\n- d\n\n", 6, "kind", "- a\n\nb\nc\n\n- d\n\n"],
+  ] as const)("%s at %i: %s separates neighbours without parsing a long note's tail", (prefix, head, command, expected) => {
+    const tail = "paragraph\n\n".repeat(50000);
+    using editor = mount(prefix + tail, head, true, [], false);
+    expect(syntaxTreeAvailable(editor.view.state, editor.text().length)).toBe(false);
+    if (command === "kind") {
+      editor.view.dispatch({ selection: { anchor: head, head: 11 } });
+      expect(setListKind("bullet")(editor.view)).toBe(true);
+    } else {
+      expect(editor.press(command)).toBe(true);
+    }
+    expect(editor.text()).toBe(expected + tail);
+    expect(syntaxTreeAvailable(editor.view.state, editor.text().length)).toBe(false);
+  });
+
+  test("ordered count on an empty line after prose keeps the first caret without parsing the tail", () => {
+    const tail = "paragraph\n\n".repeat(50000);
+    using editor = mount("para\n\n" + tail, 5, true, [], false);
+    expect(setListKind("ordered", 3)(editor.view)).toBe(true);
+    expect(editor.text()).toBe("para\n\n1. \n2. \n3. \n" + tail);
+    expect(editor.view.state.selection.main.head).toBe(9);
+    expect(syntaxTreeAvailable(editor.view.state, editor.text().length)).toBe(false);
+  });
+
+  test.each([
+    ["7) a\n   continuation\n   - child\n8) b", "ordered", "7) a\n   continuation\n   - child\n8) \n9) \n10) b", 3],
+    ["- \n- b", "task", "- [ ] \n- [ ] \n- [ ] \n- b", 6],
+    ["7) [x] a", "task", "7) [x] a\n8) [ ] \n9) [ ] ", 7],
+    ["* a", "bullet", "* a\n* \n* ", 2],
+  ] as const)("count converts %s to %s and maps the first text caret", (doc, kind, expected, head) => {
+    using editor = mount(doc, doc.indexOf(" ") + 1, true, [history()]);
+    expect(setListKind(kind, 3)(editor.view)).toBe(true);
+    expect(editor.text()).toBe(expected);
+    expect(editor.view.state.selection.main.head).toBe(head);
+    expect(undo(editor.view)).toBe(true);
+    expect(editor.text()).toBe(doc);
+  });
+
+  test("todo3 inserts after the subtree, never toggling off", () => {
+    using editor = mount("- [x] a\n  - child\n- b", 6);
+    setListKind("task", 3)(editor.view);
+    expect(editor.text()).toBe("- [x] a\n  - child\n- [ ] \n- [ ] \n- b");
+    expect(editor.view.state.selection.main.head).toBe(6);
+  });
+
+  test.each(["[]", "[ ]", "- []", "1. []"])("typed %s space converts, and undo keeps the typed space", (prefix) => {
+    using editor = mount(prefix, prefix.length, true, [history()]);
+    editor.type(" ");
+    expect(editor.text()).toBe(prefix.startsWith("1.") ? "1. [ ] " : "- [ ] ");
+    expect(editor.view.state.selection.main.head).toBe(editor.text().length);
+    expect(undo(editor.view)).toBe(true);
+    expect(editor.text()).toBe(prefix + " ");
+  });
+
+  test("a typed `- [ ] ` is already a task and adds no extra undo step", () => {
+    using editor = mount("- [ ]", 5, true, [history()]);
+    editor.type(" ");
+    expect(editor.text()).toBe("- [ ] ");
+    expect(undo(editor.view)).toBe(true);
+    expect(editor.text()).toBe("- [ ]");
+  });
+
+  test("collaborative undo restores the typed task prefix and space", () => {
+    const doc = new Y.Doc();
+    const text = doc.getText("codemirror");
+    text.insert(0, "[]");
+    const undoManager = new Y.UndoManager(text);
+    using editor = mount("[]", 2, true, [yCollab(text, null, { undoManager }), isolateYjsHistory(undoManager)]);
+    editor.type(" ");
+    expect(editor.text()).toBe("- [ ] ");
+    undoManager.undo();
+    expect(editor.text()).toBe("[] ");
+    undoManager.destroy();
+    doc.destroy();
+  });
+
+  test.each([false, true])("closeBrackets typing path with a space inside: %s", (space) => {
+    using editor = mount("");
+    editor.type("[");
+    expect(editor.text()).toBe("[]");
+    expect(editor.view.state.selection.main.head).toBe(1);
+    if (space) editor.type(" ");
+    editor.type("]");
+    editor.type(" ");
+    expect(editor.text()).toBe("- [ ] ");
+  });
+
+  test("typed shortcut stays literal in code", () => {
+    using editor = mount("```\n[]\n```", 6);
+    editor.type(" ");
+    expect(editor.text()).toBe("```\n[] \n```");
+  });
+
+  test("an uppercase X is a checked task", () => {
+    using editor = mount("1. [X] done", 10);
+    toggleTaskAtCaret(editor.view);
+    expect(editor.text()).toBe("1. [ ] done");
+    expect(editor.view.state.selection.main.head).toBe(10);
+  });
+
+  test("Mod-Enter changes only the box and never scrolls", () => {
+    const transactions: Transaction[] = [];
+    using editor = mount("- [ ] a", 7, true, [
+      history(),
+      EditorView.updateListener.of((update) => transactions.push(...update.transactions)),
+    ]);
+    const selection = editor.view.state.selection;
+    editor.press("Enter", mod);
+    expect(editor.text()).toBe("- [x] a");
+    expect(editor.view.state.selection.eq(selection)).toBe(true);
+    expect(transactions.at(-1)!.scrollIntoView).toBe(false);
+    expect(undo(editor.view)).toBe(true);
+    expect(editor.text()).toBe("- [ ] a");
+    editor.press("Enter", mod);
+    editor.press("Enter", mod);
+    expect(editor.text()).toBe("- [ ] a");
+    using plain = mount("plain");
+    expect(toggleTaskAtCaret(plain.view)).toBe(false);
+  });
+
+  test.each(["Enter", "Backspace"] as const)("concurrent %s and another item edit converge", (key) => {
+    const original = "- parent\n  - child\n- other";
+    const a = new Y.Doc(),
+      b = new Y.Doc();
+    a.getText("codemirror").insert(0, original);
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a));
+    using clientA = mount(original, key === "Enter" ? original.indexOf("parent") + 3 : original.indexOf("child"), true, [
+      yCollab(a.getText("codemirror"), null),
+    ]);
+    using clientB = mount(original, original.length, true, [yCollab(b.getText("codemirror"), null)]);
+    clientA.press(key);
+    clientB.type("!");
+    Y.applyUpdate(a, Y.encodeStateAsUpdate(b), "remote");
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a), "remote");
+    expect(clientA.text()).toBe(clientB.text());
+    expect(clientA.text()).toBe(key === "Enter" ? "- par\n  - ent\n  - child\n- other!" : "- parent\n- child\n- other!");
+    for (const client of [clientA, clientB]) {
+      forceParsing(client.view, client.text().length, 5000);
+      expect(client.structure().items).toHaveLength(key === "Enter" ? 4 : 3);
+      expect(client.structure().items.every((item) => item.kind === "bullet")).toBe(true);
+      expect(client.text()).toContain("- other!");
+    }
     a.destroy();
     b.destroy();
   });

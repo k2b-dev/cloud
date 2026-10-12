@@ -98,6 +98,17 @@ moves those lines instead. After your own structural change, the numbered list
 you changed gets its Markdown numbers repaired, keeping its first number, in the
 same undo step; other lists keep theirs.
 
+Enter continues a list; on an empty item it lifts one level or ends the list.
+At an item's text start, Enter inserts an empty item above. Splitting an item
+with children adds a new first child and keeps the existing children under it.
+Backspace at an item's start lifts it or turns a top-level item without children
+into normal text. Empty top-level items with children stay in place.
+**Ctrl/⌘+Shift+7/8/9** changes selected lines to numbered lists, bullet lists,
+or checklists. Repeat to turn top-level items without children into normal text.
+**Ctrl/⌘+Enter** checks or unchecks the task on the cursor's line. Type `[] `
+at a line start to begin a checklist. Backspace after `# ` turns a heading
+into normal text.
+
 Mermaid diagrams enhance their server-rendered source in the browser. Without
 JavaScript, or if a diagram cannot render, its source stays readable. On mobile,
 expand the compact navigation to browse pages and tags.

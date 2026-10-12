@@ -9,7 +9,7 @@ export type ListItemLine = { indent: number; content: number; marker: string };
 
 export const leadingWhitespace = (text: string) => text.length - text.trimStart().length;
 
-const inCode = (tree: Tree, pos: number): boolean => {
+export const inCode = (tree: Tree, pos: number): boolean => {
   for (let node: SyntaxNode | null = tree.resolveInner(pos, 1); node; node = node.parent) {
     if (CODE.has(node.name)) return true;
   }
