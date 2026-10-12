@@ -99,7 +99,7 @@ Rules:
 
 - use `export default` for islands and client components
 - props must be `seroval`-serializable
-- island/client modules must not import other island/client modules, directly, through plain modules, as named imports, or with dynamic `import()`; the build fails and names the files. Type-only imports are fine. Move the shared component into a plain `.tsx` module and keep the island/client file as a thin re-export: `export { default } from "./Inner";`.
+- island/client modules must not import other island/client modules, directly, through plain modules, as named imports, or with a literal dynamic `import()`; an island must also not import itself back through plain modules. The build fails and names the files; a computed `import()` path is not detected. Type-only imports are fine. Move the shared component into a plain `.tsx` module and keep the island/client file as a thin re-export: `export { default } from "./Inner";`.
 
 `seroval` supports more than JSON, including values like `Date`, `RegExp`, `Map`, and `Set`, but still excludes functions, DOM nodes, and arbitrary class instances.
 

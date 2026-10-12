@@ -41,7 +41,9 @@ build, mount runtime, or adapters reaches every application: also run the
 
 - `.island.tsx` and `.client.tsx` use default exports. Nested island/client
   imports fail the build: direct, transitive through plain modules, named,
-  and dynamic `import()` imports all count. Type-only imports are fine.
+  and literal dynamic `import()` imports all count, and so does a cycle back
+  to the island itself. The check reads Bun's metafile, so a computed
+  `import()` specifier is not detected. Type-only imports are fine.
 - Every island and client instance mounts through `src/mount.ts` in its own
   error boundary; protection never depends on the optional `errorFallback`.
 - Props must be `seroval`-serializable: broader than JSON, but no functions,

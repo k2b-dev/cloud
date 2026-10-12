@@ -485,7 +485,7 @@ per-tab connections as a compatibility fallback.
 
 - islands must use default export
 - props must be serializable via `seroval`; do not pass functions, callbacks, event handlers, Solid signals/stores, DOM nodes, or class instances as island/client props
-- island/client modules must not import other island/client modules, directly, through plain modules, as named imports, or with dynamic `import()`; the build fails in dev and production. Type-only imports are fine.
+- island/client modules must not import other island/client modules, directly, through plain modules, as named imports, or with a literal dynamic `import()`; an island must also not import itself back through plain modules. The build fails in dev and production. A computed `import()` path is not detected. Type-only imports are fine.
 - move shared components into plain `.tsx` modules and import them from both files; keep each island/client entry as a thin re-export, such as `export { default } from "./Inner";`
 
 ## Development

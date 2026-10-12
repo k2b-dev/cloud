@@ -172,8 +172,10 @@ for typed calls and writes from an island.
 
 An island or client module must never import another island or client module.
 This includes direct imports, imports through plain modules, named imports,
-and dynamic `import()`. Type-only imports are fine. The build fails in dev
-and production and names both files.
+and dynamic `import()` with a literal path. An island must also not import
+itself back through plain modules. Type-only imports are fine. The build fails
+in dev and production and names both files. The build cannot see an
+`import()` whose path is computed at runtime, so do not use one for an island.
 
 Each island file is its own browser entry with its own mount and error
 boundary; imported into another island, it would render as a plain component.

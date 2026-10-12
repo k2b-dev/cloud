@@ -28,6 +28,62 @@ afterEach(() => {
 });
 
 describe("buildIslands() nested imports", () => {
+  test("createConfig retries a rejected island build on the same config", async () => {
+    const cwd = makeTempRoot();
+    writeTempFile(join(cwd, "src", "Outer.island.tsx"), `import Inner from "./Inner.island"; export default () => <Inner />;`);
+    writeTempFile(join(cwd, "src", "Inner.island.tsx"), `export default () => <span>Inner</span>;`);
+    const { plugin } = createConfig({ rootDir: cwd, dev: true, verbose: false, external: ["solid-js/web", "seroval"] });
+    const starts: Bun.OnStartCallback[] = [];
+    await plugin().setup({
+      config: { entrypoints: [], plugins: [] },
+      onStart(callback) {
+        starts.push(callback);
+        return this;
+      },
+      onLoad() {
+        return this;
+      },
+      onResolve() {
+        return this;
+      },
+      onEnd() {
+        return this;
+      },
+      onBeforeParse() {
+        return this;
+      },
+      module() {
+        return this;
+      },
+    });
+    expect(starts).toHaveLength(1);
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await expect(starts[0]!()).rejects.toThrow("Island and client modules must not import other island or client modules");
+    }
+  });
+
+  test("reports nested imports relative to a symlinked rootDir", async () => {
+    const workspace = makeTempRoot();
+    const root = join(workspace, "real");
+    const linkedRoot = join(workspace, "linked");
+    writeTempFile(join(root, "src", "Outer.island.tsx"), `import Shared from "./shared"; export default () => <Shared />;`);
+    writeTempFile(join(root, "src", "shared.tsx"), `import Inner from "./Inner.island"; export default () => <Inner />;`);
+    writeTempFile(join(root, "src", "Inner.island.tsx"), `export default () => <span>Inner</span>;`);
+    symlinkSync(root, linkedRoot, "dir");
+
+    const build = buildIslands({
+      pattern: "**/*.{island,client}.tsx",
+      cwd: linkedRoot,
+      outdir: join(workspace, "dist"),
+      verbose: false,
+      dev: true,
+      external: ["solid-js/web", "seroval"],
+    });
+    await expect(build).rejects.toThrow("src/Outer.island.tsx imports src/Inner.island.tsx via src/shared.tsx");
+    await expect(build).rejects.not.toThrow("../");
+  });
+
   test.each([
     {
       name: "direct default import in dev",

@@ -29,12 +29,17 @@ const rejectNestedComponentImports = (
   cwd: string,
 ): void => {
   if (!metafile) throw new Error("[ssr] Bun.build() returned no metafile, so nested island imports cannot be checked.");
+  const canonicalCwd = canonicalFilePath(cwd);
   const inputKeys = new Map(Object.keys(metafile.inputs).map((key) => [resolve(process.cwd(), key), key]));
   const violations: { importer: string; nested: string; via: string[] }[] = [];
 
   for (const component of components) {
     const root = inputKeys.get(component.path);
-    if (!root) continue;
+    if (!root) {
+      throw new Error(
+        `[ssr] Bun.build() metafile has no input for ${relative(canonicalCwd, component.path)}, so nested island imports cannot be checked.`,
+      );
+    }
     const parents = new Map<string, string | null>([[root, null]]);
     const queue = [root];
     const nestedFiles = new Set<string>();
@@ -68,7 +73,7 @@ const rejectNestedComponentImports = (
     const details = violations
       .map(
         ({ importer, nested, via }) =>
-          `  ${relative(cwd, importer)} imports ${relative(cwd, nested)}${via.length ? ` via ${via.map((file) => relative(cwd, file)).join(" -> ")}` : ""}`,
+          `  ${relative(canonicalCwd, importer)} imports ${relative(canonicalCwd, nested)}${via.length ? ` via ${via.map((file) => relative(canonicalCwd, file)).join(" -> ")}` : ""}`,
       )
       .sort()
       .join("\n");
@@ -212,7 +217,7 @@ export const buildIslands = async (options: {
   if (collisions.length > 0) {
     const details = collisions
       .map(([id, items]) => {
-        const list = items.map((item) => `    - ${item.key} (${relative(resolvedCwd, item.path)})`).join("\n");
+        const list = items.map((item) => `    - ${item.key} (${relative(canonicalFilePath(resolvedCwd), item.path)})`).join("\n");
         return `  ID ${id}:\n${list}`;
       })
       .join("\n");
