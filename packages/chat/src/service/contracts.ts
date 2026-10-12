@@ -77,6 +77,7 @@ export const ConversationSchema = z.object({
   purpose: z.string().nullable(),
   title: z.string(),
   memberCount: z.number().int(),
+  rev: z.number().int().nonnegative(),
   permission: PermissionSchema,
   createdAt: z.string(),
   lastActivityAt: z.string(),
@@ -150,8 +151,9 @@ export const ChangesPageSchema = z.object({
   messages: z.array(MessageViewSchema),
 });
 export const ChatLiveEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("membership"), conversationId: ShortIdSchema }),
   z.object({ type: z.literal("message"), message: MessageSchema }),
-  MessageSchema.pick({ conversationId: true, id: true, seq: true, rev: true, kind: true, author: true }).extend({
+  MessageSchema.pick({ conversationId: true, id: true, seq: true, rev: true, kind: true, author: true, createdAt: true }).extend({
     type: z.literal("summary"),
     preview: z.string().nullable(),
     mention: z.boolean(),

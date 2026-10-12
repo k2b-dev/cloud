@@ -6,6 +6,7 @@ import { messagePreview, renderSystemMessage } from "../system-messages";
 import { type ChatContext, type ConversationRow, subjectPrincipal } from "./access";
 import { type MessageSchema, type SystemMessage, SystemMessageSchema } from "./contracts";
 import { chatLive } from "./live";
+import { chatLiveUpdates } from "./live-updates";
 
 export type MessageRow = {
   short_id: string;
@@ -47,7 +48,13 @@ export const personSnapshots = async (db: typeof sql, ids: string[]) => {
 
 type NewMessage = { kind: "text"; clientId: string; body: string } | { kind: "system"; system: SystemMessage };
 // The caller holds the conversation lock until commit, so numbers cannot become visible out of order.
-export const appendMessage = async (db: typeof sql, conversation: ConversationRow, context: ChatContext, message: NewMessage) => {
+export const appendMessage = async (
+  db: typeof sql,
+  conversation: ConversationRow,
+  context: ChatContext,
+  message: NewMessage,
+  affected: readonly string[] = [],
+) => {
   const author = subjectPrincipal(context.accessSubject);
   const [snapshot] = await personSnapshots(db, [author.id]);
   if (!snapshot) throw new Error("Chat message has no author");
@@ -69,27 +76,12 @@ export const appendMessage = async (db: typeof sql, conversation: ConversationRo
   }
   if (!row) throw new Error("Chat message ID could not be allocated");
   const projected = projectMessage(row, conversation.short_id);
-  const access =
-    message.kind === "system" && ["members_added", "member_removed", "member_left", "permission_changed"].includes(message.system.code);
-  await chatLive.publish(db, {
-    key: `c:${conversation.short_id}`,
-    data: { type: "message", message: projected },
-    ...(access ? { access: true } : {}),
-  });
-  await chatLive.publish(db, {
-    key: `l:${conversation.short_id}`,
-    data: {
-      type: "summary",
-      conversationId: projected.conversationId,
-      id: projected.id,
-      seq: projected.seq,
-      rev: projected.rev,
-      kind: projected.kind,
-      author: projected.author,
-      preview: message.kind === "text" ? messagePreview(message.body) : null,
-      mention: false,
-    },
-    ...(access ? { access: true } : {}),
-  });
+  for (const row of chatLiveUpdates(
+    conversation.short_id,
+    projected,
+    message.kind === "text" ? messagePreview(message.body) : null,
+    affected,
+  ))
+    await chatLive.publish(db, row);
   return row;
 };

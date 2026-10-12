@@ -53,3 +53,18 @@ test("documents message retry, creation, send limits and restore resync", async 
   for (const status of ["200", "201", "429"]) expect(send?.responses[status]).toBeDefined();
   expect(spec.paths["/api/chat/conversations/{conversation}/changes"]?.get?.responses["409"]).toBeDefined();
 });
+
+test("conversation responses require the revision used to guard live summaries", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const response = z
+    .object({
+      content: z.object({
+        "application/json": z.object({
+          schema: z.object({ required: z.array(z.string()), properties: z.record(z.string(), z.unknown()) }),
+        }),
+      }),
+    })
+    .parse(spec.paths["/api/chat/conversations/{conversation}"]?.get?.responses["200"]);
+  expect(response.content["application/json"].schema.required).toContain("rev");
+  expect(response.content["application/json"].schema.properties.rev).toBeDefined();
+});

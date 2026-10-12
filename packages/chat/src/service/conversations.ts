@@ -25,7 +25,7 @@ import {
   capPermission,
   messages,
   permissionFromRank,
-  principalCondition,
+  readableMemberCondition,
   requireConversation,
   subjectPrincipal,
 } from "./access";
@@ -184,6 +184,7 @@ const project = (
   icon: row.icon,
   purpose: row.purpose,
   memberCount: row.member_count,
+  rev: Number(row.rev),
   permission,
   title,
   createdAt: row.created_at.toISOString(),
@@ -260,10 +261,16 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
       if (!row) throw new TransactionFailure(err.internal(t.createFailed));
       for (const id of allIds) await addDirectMember(db, row, id, id === callerId ? "admin" : "write", input);
       value(await requireConversation({ ...input, conversationId: row.short_id, required: "admin" }, db));
-      await appendMessage(db, row, input, { kind: "system", system: { code: "conversation_created", params: {} } });
+      const createdMessage = await appendMessage(
+        db,
+        row,
+        input,
+        { kind: "system", system: { code: "conversation_created", params: {} } },
+        allIds,
+      );
       await record(db, input, row.short_id, "chat.conversation.create", { memberCount: allIds.length });
       const names = await titles([row], input, db);
-      return ok({ outcome: "created", conversation: project(row, "admin", names.get(row.id)!) });
+      return ok({ outcome: "created", conversation: project({ ...row, rev: createdMessage.rev }, "admin", names.get(row.id)!) });
     });
     if (result.ok) chatLive.wake();
     return result;
@@ -291,8 +298,7 @@ const list = async (input: ChatContext & { query?: unknown }) => {
     SELECT c.*, MAX(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END)::int AS permission_rank,
       to_char(c.last_activity_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
     FROM chat.conversations c JOIN chat.conversation_access ca ON ca.conversation_id = c.id JOIN auth.access a ON a.id = ca.access_id
-    WHERE ca.role = 'member' AND ${principalCondition(input.accessSubject)} AND a.permission IN ('read', 'write', 'admin')
-      AND ${bound.data ? sql`c.short_id = ${bound.data}` : sql`true`}
+    WHERE ${readableMemberCondition(input.accessSubject, bound.data)}
       AND ${cursor ? sql`(c.last_activity_at, c.short_id) < (${cursor.at}::timestamptz, ${cursor.id})` : sql`true`}
     GROUP BY c.id ORDER BY c.last_activity_at DESC, c.short_id DESC LIMIT ${CONVERSATION_PAGE_SIZE + 1}
   `;
@@ -406,13 +412,19 @@ const addMembers = async (input: ChatContext & { conversationId: string; input: 
     for (const id of ids) await addDirectMember(db, allowed.data, id, "write", input);
     if (ids.length) {
       await db`UPDATE chat.conversations SET member_count = member_count + ${ids.length} WHERE id = ${allowed.data.id}::uuid`;
-      await appendMessage(db, allowed.data, input, {
-        kind: "system",
-        system: {
-          code: "members_added",
-          params: { members: await personSnapshots(db, ids) },
+      await appendMessage(
+        db,
+        allowed.data,
+        input,
+        {
+          kind: "system",
+          system: {
+            code: "members_added",
+            params: { members: await personSnapshots(db, ids) },
+          },
         },
-      });
+        ids,
+      );
     }
     await record(db, input, allowed.data.short_id, "chat.member.add", { count: ids.length });
     return ok({ added: ids.length });
@@ -437,13 +449,19 @@ const updateMember = async (input: ChatContext & { conversationId: string; acces
     if (member.permission !== parsed.data.permission) {
       value(await updateAccess({ id: input.accessId, permission: parsed.data.permission }, db));
       const [snapshot] = await personSnapshots(db, [member.user_id]);
-      await appendMessage(db, allowed.data, input, {
-        kind: "system",
-        system: {
-          code: "permission_changed",
-          params: { member: snapshot!, permission: parsed.data.permission },
+      await appendMessage(
+        db,
+        allowed.data,
+        input,
+        {
+          kind: "system",
+          system: {
+            code: "permission_changed",
+            params: { member: snapshot!, permission: parsed.data.permission },
+          },
         },
-      });
+        [member.user_id],
+      );
     }
     await record(db, input, allowed.data.short_id, "chat.member.update", { permission: parsed.data.permission });
     return ok({ success: true as const });
@@ -471,7 +489,9 @@ const removeMember = async (input: ChatContext & { conversationId: string; acces
     if (!guarded.ok) return guarded;
     const [snapshot] = await personSnapshots(db, [member.user_id]);
     await deleteDirect(db, allowed.data, member);
-    await appendMessage(db, allowed.data, input, { kind: "system", system: { code: "member_removed", params: { member: snapshot! } } });
+    await appendMessage(db, allowed.data, input, { kind: "system", system: { code: "member_removed", params: { member: snapshot! } } }, [
+      member.user_id,
+    ]);
     await record(db, input, allowed.data.short_id, "chat.member.remove", { count: 1 });
     return ok({ success: true as const });
   });
@@ -502,13 +522,19 @@ const leave = async (input: ChatContext & { conversationId: string; input: unkno
     const successorMember = needsSuccessor ? others.find((row) => row.access_id === successor) : undefined;
     const [snapshot] = successorMember ? await personSnapshots(db, [successorMember.user_id]) : [];
     await deleteDirect(db, allowed.data, own);
-    await appendMessage(db, allowed.data, input, {
-      kind: "system",
-      system: {
-        code: "member_left",
-        params: snapshot ? { successor: snapshot } : {},
+    await appendMessage(
+      db,
+      allowed.data,
+      input,
+      {
+        kind: "system",
+        system: {
+          code: "member_left",
+          params: snapshot ? { successor: snapshot } : {},
+        },
       },
-    });
+      [own.user_id, ...(successorMember ? [successorMember.user_id] : [])],
+    );
     await record(db, input, allowed.data.short_id, "chat.member.leave", { count: 1, ...(needsSuccessor ? { permission: "admin" } : {}) });
     return ok({ success: true as const });
   });

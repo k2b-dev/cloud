@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import { toPgUuidArray } from "../../services/postgres";
 import "../../../../../scripts/fixtures/authorization-preload";
 import {
   createAccess,
@@ -301,6 +302,12 @@ suite("effective access", () => {
       for (const accessIds of grantSets) {
         const one = await Promise.all(subjects.map((subject) => getEffectivePermission({ accessIds, subject })));
         expect(await getEffectivePermissions({ accessIds, subjects })).toEqual(one);
+        expect(
+          await getEffectivePermissions({
+            accessIds: sql`SELECT id FROM auth.access WHERE id = ANY(${toPgUuidArray(accessIds)}::uuid[])`,
+            subjects,
+          }),
+        ).toEqual(one);
       }
       expect(await getEffectivePermissions({ accessIds: fixture.accessIds, subjects: [] })).toEqual([]);
     } finally {

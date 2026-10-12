@@ -108,6 +108,7 @@ test("maps creation and duplicate outcomes to 201 and 200", async () => {
         purpose: null,
         title: "You",
         memberCount: 1,
+        rev: 1,
         permission: "admin",
         createdAt: "2026-10-09T00:00:00Z",
         lastActivityAt: "2026-10-09T00:00:00Z",
