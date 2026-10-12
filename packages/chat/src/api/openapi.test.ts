@@ -29,6 +29,7 @@ test("publishes every conversation operation with typed request and response sch
     ["/conversations/{conversation}/messages", "get"],
     ["/conversations/{conversation}/messages/{message}", "get"],
     ["/conversations/{conversation}/changes", "get"],
+    ["/conversations/{conversation}/snapshot", "get"],
   ] as const) {
     const operation = spec.paths[`/api/chat${path}`]?.[method];
     expect(operation).toBeDefined();
@@ -67,4 +68,15 @@ test("conversation responses require the revision used to guard live summaries",
     .parse(spec.paths["/api/chat/conversations/{conversation}"]?.get?.responses["200"]);
   expect(response.content["application/json"].schema.required).toContain("rev");
   expect(response.content["application/json"].schema.properties.rev).toBeDefined();
+});
+
+test("snapshot documents its canonical response and hidden-chat 404", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const operation = spec.paths["/api/chat/conversations/{conversation}/snapshot"]?.get;
+  expect(operation?.summary).toBe("Open a chat: details, a page of history, and the live cursor");
+  expect(operation?.responses["404"]).toBeDefined();
+  const response = z
+    .object({ content: z.object({ "application/json": z.object({ schema: z.object({ required: z.array(z.string()) }) }) }) })
+    .parse(operation?.responses["200"]);
+  expect(response.content["application/json"].schema.required).toEqual(["cursor", "conversation", "page", "focus"]);
 });

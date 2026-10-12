@@ -192,6 +192,12 @@ class World {
         "en",
       ),
       memberCount: m.members.size,
+      lastMessage: (() => {
+        const latest = m.msgs.findLast((message) => message.kind === "text");
+        if (!latest) return null;
+        const message = this.message(id, latest);
+        return { id: message.id, author: message.author, preview: messagePreview(message.body ?? ""), createdAt: message.createdAt };
+      })(),
       permission: m.members.get(person),
       rev: m.rev,
       createdAt: this.dates.get(m.msgs[0]!),
@@ -221,6 +227,11 @@ class World {
   }
   api(person: string): ChatStoreApi {
     return {
+      snapshot: async (id) => {
+        const conversation = this.conversation(person, id),
+          page = this.page(person, id);
+        return conversation && page ? { cursor: "snapshot", conversation, page, focus: null } : null;
+      },
       conversations: async () => this.list(person),
       conversation: async (id) => this.conversation(person, id),
       messages: async (id) => {

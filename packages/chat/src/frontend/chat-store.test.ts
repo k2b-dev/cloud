@@ -11,6 +11,7 @@ const conversation = ConversationSchema.parse({
   icon: null,
   purpose: null,
   memberCount: 2,
+  lastMessage: null,
   permission: "write",
   rev: 1,
   createdAt: "2026-10-12T00:00:00.000Z",
@@ -36,6 +37,7 @@ type Controls = {
   revoked(): void;
   unavailable(): void;
   closed: boolean;
+  cursor: string | null;
 };
 class ManualConnection implements LiveConnection {
   channels = new Map<string, Controls>();
@@ -47,6 +49,7 @@ class ManualConnection implements LiveConnection {
       revoked: () => handlers.revoked?.("access_denied"),
       unavailable: handlers.unavailable,
       closed: false,
+      cursor: handlers.cursor,
     };
     this.channels.set(channel, controls);
     return {
@@ -64,6 +67,7 @@ class ManualConnection implements LiveConnection {
 const fixture = (overrides: Partial<ChatStoreApi> = {}) => {
   const connection = new ManualConnection();
   const api: ChatStoreApi = {
+    snapshot: async () => ({ cursor: "snapshot", conversation, page: page(1), focus: null }),
     conversations: async () => ({ items: [conversation], nextCursor: null }),
     conversation: async () => conversation,
     messages: async () => page(1),
@@ -302,6 +306,7 @@ test("a system event already in the SSR page still refreshes older SSR metadata"
     system: { code: "details_changed", params: { name: "Renamed" } },
   });
   const api: ChatStoreApi = {
+    snapshot: async () => ({ cursor: "snapshot", conversation, page: page(1), focus: null }),
     conversations: async () => ({ items: [conversation], nextCursor: null }),
     conversation: async () => ({ ...conversation, rev: 2, name: "Renamed", title: "Renamed" }),
     messages: async () => ({ ...page(2), items: [{ ...system, systemText: null }] }),
@@ -327,6 +332,7 @@ const storeAt = (rev: number, api: Partial<ChatStoreApi>, sidebar = { items: [co
     { cursor: "before", sidebar, open: { conversation: { ...conversation, rev }, page: page(rev) } },
     {
       api: {
+        snapshot: async () => ({ cursor: "snapshot", conversation, page: page(1), focus: null }),
         conversations: async () => sidebar,
         conversation: async () => conversation,
         messages: async () => page(rev),
@@ -428,5 +434,302 @@ test("the sidebar keeps server order and only rows inside its loaded prefix", as
   expect(store.sidebar.map((row) => row.id)).toEqual(["aaaaaa", "zzzzzz"]);
   await connection.get("list").apply(summary(newer, "text"));
   expect(store.sidebar.map((row) => row.id)).toEqual(["nnnnnn", "aaaaaa", "zzzzzz"]);
+  store.dispose();
+});
+
+const windowPage = (from: number, to: number, head = to, rev = head) => ({
+  items: Array.from({ length: to - from + 1 }, (_, i) => ({ ...message(from + i), systemText: null })),
+  seqHead: head,
+  rev,
+});
+const deferred = <T>() => {
+  let resolve = (_value: T) => {};
+  let reject = (_error: Error) => {};
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+};
+
+test("a middle window holds distant live messages until newer pages close the gap", async () => {
+  const queries: unknown[] = [];
+  const { store, connection } = fixture({
+    messages: async (_id, query) => {
+      queries.push(query);
+      return windowPage(6, 9, 10);
+    },
+  });
+  store.open({ cursor: "middle", conversation, page: windowPage(3, 5, 9) });
+  expect(store.openConversation).toMatchObject({ seqHead: 9, hasOlder: true, hasNewer: true, watermark: 9 });
+  await connection.get("conversation").apply({ type: "message", message: message(10) });
+  expect(store.openConversation?.messages.map((m) => m.seq)).toEqual([3, 4, 5]);
+  expect(store.openConversation?.seqHead).toBe(10);
+  expect(await store.loadNewer()).toBe(true);
+  expect(queries).toEqual([{ after: 5 }]);
+  expect(store.openConversation?.messages.map((m) => m.seq)).toEqual([3, 4, 5, 6, 7, 8, 9, 10]);
+  expect(store.openConversation?.hasNewer).toBe(false);
+  expect(await store.loadNewer()).toBe(false);
+  expect(queries).toHaveLength(1);
+  store.dispose();
+});
+
+test("older paging prepends fresh history without moving the live watermark", async () => {
+  const queries: unknown[] = [];
+  const { store, connection } = fixture({
+    messages: async (_id, query) => {
+      queries.push(query);
+      return windowPage(1, 2, 10, 20);
+    },
+  });
+  store.open({ cursor: "middle", conversation, page: windowPage(3, 5, 10) });
+  await connection.get("conversation").apply({ type: "message", message: { ...message(1), rev: 15, body: "Outside the window" } });
+  expect(store.openConversation?.messages.map((m) => m.seq)).toEqual([3, 4, 5]);
+  expect(await store.loadOlder()).toBe(true);
+  expect(queries).toEqual([{ before: 3 }]);
+  expect(store.openConversation?.messages).toEqual([1, 2, 3, 4, 5].map(message));
+  expect(store.openConversation).toMatchObject({ watermark: 15, hasOlder: false, hasNewer: true });
+  expect(await store.loadOlder()).toBe(false);
+  store.dispose();
+});
+
+test("loadLatest replaces a middle window and its watermark", async () => {
+  const { store } = fixture({ messages: async () => windowPage(8, 10, 10, 20) });
+  store.open({ cursor: "middle", conversation, page: windowPage(3, 5, 10) });
+  await store.loadLatest();
+  expect(store.openConversation?.messages).toEqual([8, 9, 10].map(message));
+  expect(store.openConversation).toMatchObject({ watermark: 20, seqHead: 10, hasNewer: false, hasOlder: true });
+  store.dispose();
+});
+
+for (const direction of ["older", "newer"] as const)
+  test(`${direction} paging shares an in-flight request and ignores a switched chat`, async () => {
+    const pending = deferred<ReturnType<typeof windowPage> | null>();
+    let calls = 0;
+    const { store } = fixture({
+      messages: async () => {
+        calls++;
+        return pending.promise;
+      },
+    });
+    store.open({ cursor: "middle", conversation, page: windowPage(3, 5, 10) });
+    const loading = direction === "older" ? store.loadOlder() : store.loadNewer();
+    const repeated = direction === "older" ? store.loadOlder() : store.loadNewer();
+    expect(calls).toBe(1);
+    store.open({ cursor: "other", conversation: { ...conversation, id: "ghijkl" }, page: { items: [], rev: 0, seqHead: 0 } });
+    pending.resolve(windowPage(1, 10));
+    expect(await loading).toBe(false);
+    expect(await repeated).toBe(false);
+    expect(store.openConversation?.id).toBe("ghijkl");
+    expect(store.openConversation?.messages).toEqual([]);
+    store.dispose();
+  });
+
+for (const direction of ["older", "newer"] as const)
+  test(`${direction} paging uses the no-access path on 404`, async () => {
+    const { store, connection } = fixture({ messages: async () => null });
+    store.open({ cursor: "middle", conversation, page: windowPage(3, 5, 10) });
+    expect(await (direction === "older" ? store.loadOlder() : store.loadNewer())).toBe(false);
+    expect(store.openConversation).toMatchObject({
+      status: "no-access",
+      conversation: null,
+      messages: [],
+      hasOlder: false,
+      hasNewer: false,
+    });
+    expect(connection.get("conversation").closed).toBe(true);
+    store.dispose();
+  });
+
+test("openChat uses the winning snapshot and its focus when requests finish out of order", async () => {
+  type Snapshot = NonNullable<Awaited<ReturnType<ChatStoreApi["snapshot"]>>>;
+  const first = deferred<Snapshot | null>(),
+    second = deferred<Snapshot | null>();
+  const calls: unknown[] = [];
+  const { store, connection } = fixture({
+    snapshot: async (id, focus) => {
+      calls.push([id, focus]);
+      return id === "abcdef" ? first.promise : second.promise;
+    },
+  });
+  const a = store.openChat("abcdef"),
+    b = store.openChat("ghijkl", message(5).id);
+  second.resolve({
+    cursor: "second",
+    conversation: { ...conversation, id: "ghijkl" },
+    page: { items: [], seqHead: 0, rev: 0 },
+    focus: message(5).id,
+  });
+  expect(await b).toEqual({ status: "opened", focus: message(5).id });
+  expect(connection.get("conversation").cursor).toBe("second");
+  first.resolve({ cursor: "first", conversation, page: page(1), focus: null });
+  expect(await a).toEqual({ status: "superseded" });
+  expect(store.openConversation?.id).toBe("ghijkl");
+  expect(calls).toEqual([
+    ["abcdef", undefined],
+    ["ghijkl", message(5).id],
+  ]);
+  store.dispose();
+});
+
+for (const action of ["open", "close", "dispose"] as const)
+  test(`${action} supersedes an in-flight openChat`, async () => {
+    const pending = deferred<Awaited<ReturnType<ChatStoreApi["snapshot"]>>>();
+    const { store } = fixture({ snapshot: async () => pending.promise });
+    const opening = store.openChat("ghijkl");
+    if (action === "open") store.open({ cursor: "direct", conversation, page: page(1) });
+    else if (action === "close") store.closeConversation();
+    else store.dispose();
+    pending.resolve(null);
+    expect(await opening).toEqual({ status: "superseded" });
+    expect(store.openConversation?.status).not.toBe("no-access");
+    store.dispose();
+  });
+
+test("openChat 404 replaces the current chat without leaking its details", async () => {
+  const { store, connection } = fixture({ snapshot: async () => null });
+  let notified = 0;
+  store.subscribe(() => notified++);
+  expect(await store.openChat("ghijkl")).toEqual({ status: "no-access" });
+  expect(store.openConversation).toEqual({
+    id: "ghijkl",
+    status: "no-access",
+    conversation: null,
+    messages: [],
+    watermark: 0,
+    seqHead: 0,
+    hasOlder: false,
+    hasNewer: false,
+  });
+  expect(connection.get("conversation").closed).toBe(true);
+  expect(notified).toBe(1);
+  store.dispose();
+});
+
+test("openChat network failure leaves the current view untouched", async () => {
+  const { store } = fixture({
+    snapshot: async () => {
+      throw new Error("offline");
+    },
+  });
+  const before = store.openConversation;
+  await expect(store.openChat("ghijkl")).rejects.toThrow("offline");
+  expect(store.openConversation).toBe(before);
+  store.dispose();
+});
+
+test("text summaries project lastMessage, including an absent preview", async () => {
+  const { store, connection } = fixture();
+  for (const preview of ["A preview", null]) {
+    const m = message(preview === null ? 3 : 2);
+    const summary = chatLiveUpdates(conversation.id, m, preview, [])[1]!.data;
+    await connection.get("list").apply(summary);
+    expect(store.sidebar[0]?.lastMessage).toEqual({ id: m.id, author: m.author, preview: preview ?? "", createdAt: m.createdAt });
+  }
+  store.dispose();
+});
+
+test("sidebar paging appends server rows without duplicates and shares the request", async () => {
+  const pending = deferred<{ items: (typeof conversation)[]; nextCursor: string | null }>();
+  const cursors: (string | undefined)[] = [];
+  const first = { ...conversation, id: "bbbbbb" },
+    second = { ...conversation, id: "aaaaaa" };
+  const { store } = storeAt(
+    1,
+    {
+      conversations: async (cursor) => {
+        cursors.push(cursor);
+        return pending.promise;
+      },
+    },
+    { items: [first], nextCursor: "more" },
+  );
+  expect(store.hasMoreSidebar).toBe(true);
+  const a = store.loadMoreSidebar(),
+    b = store.loadMoreSidebar();
+  await Promise.resolve();
+  pending.resolve({ items: [first, second, second], nextCursor: null });
+  await Promise.all([a, b]);
+  expect(cursors).toEqual(["more"]);
+  expect(store.sidebar.map((row) => row.id)).toEqual([first.id, second.id]);
+  expect(store.hasMoreSidebar).toBe(false);
+  await store.loadMoreSidebar();
+  expect(cursors).toEqual(["more"]);
+  store.dispose();
+});
+
+test("an empty window has no paging; its first live message establishes a range", async () => {
+  let calls = 0;
+  const { store, connection } = fixture({
+    messages: async () => {
+      calls++;
+      return page(1);
+    },
+  });
+  store.open({ cursor: "empty", conversation, page: { items: [], seqHead: 0, rev: 0 } });
+  expect(store.openConversation).toMatchObject({ messages: [], seqHead: 0, hasOlder: false, hasNewer: false });
+  expect(await store.loadOlder()).toBe(false);
+  expect(await store.loadNewer()).toBe(false);
+  await store.loadLatest();
+  expect(calls).toBe(0);
+  await connection.get("conversation").apply({ type: "message", message: message(1) });
+  expect(store.openConversation).toMatchObject({ messages: [message(1)], seqHead: 1, hasOlder: false, hasNewer: false });
+  store.dispose();
+});
+
+test("paging cannot merge an old window after loadLatest replaced it", async () => {
+  const older = deferred<ReturnType<typeof windowPage>>();
+  const { store } = fixture({ messages: async (_id, query) => (query?.before ? older.promise : windowPage(8, 10)) });
+  store.open({ cursor: "middle", conversation, page: windowPage(3, 5, 10) });
+  const loading = store.loadOlder();
+  await store.loadLatest();
+  older.resolve(windowPage(1, 2));
+  expect(await loading).toBe(false);
+  expect(store.openConversation?.messages).toEqual([8, 9, 10].map(message));
+  store.dispose();
+});
+
+test("the typed API transports sidebar and message cursors and parses focused snapshots", async () => {
+  const original = globalThis.fetch;
+  const urls: string[] = [];
+  const snapshot = { cursor: "own-cursor", conversation, page: page(1), focus: message(1).id };
+  globalThis.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0]) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.includes("absent")) return Response.json({}, { status: 404 });
+      if (url.includes("snapshot")) return Response.json(snapshot);
+      if (url.includes("messages")) return Response.json(page(1));
+      return Response.json({ items: [conversation], nextCursor: null });
+    },
+    { preconnect: original.preconnect },
+  );
+  try {
+    const api = createChatStoreApi();
+    const cursor = JSON.stringify({ at: conversation.lastActivityAt, id: conversation.id });
+    await api.conversations(cursor);
+    expect(new URL(urls[0]!, "https://example.test").searchParams.get("cursor")).toBe(cursor);
+    await api.messages(conversation.id, { before: 10 });
+    expect(urls[1]).toBe("/api/chat/conversations/abcdef/messages?before=10");
+    await api.messages(conversation.id, { after: 10 });
+    expect(urls[2]).toBe("/api/chat/conversations/abcdef/messages?after=10");
+    expect(await api.snapshot(conversation.id, message(1).id)).toEqual(snapshot);
+    expect(urls[3]).toBe(`/api/chat/conversations/abcdef/snapshot?message=${message(1).id}`);
+    expect(await api.snapshot("absent")).toBeNull();
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("loadLatest retains live arrivals newer than its in-flight page", async () => {
+  const latest = deferred<ReturnType<typeof windowPage>>();
+  const { store, connection } = fixture({ messages: async () => latest.promise });
+  store.open({ cursor: "middle", conversation, page: windowPage(3, 5, 10) });
+  const loading = store.loadLatest();
+  await connection.get("conversation").apply({ type: "message", message: message(11) });
+  latest.resolve(windowPage(8, 10));
+  await loading;
+  expect(store.openConversation?.messages).toEqual([8, 9, 10, 11].map(message));
+  expect(store.openConversation).toMatchObject({ seqHead: 11, watermark: 11, hasNewer: false });
   store.dispose();
 });

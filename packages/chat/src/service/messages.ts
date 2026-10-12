@@ -5,6 +5,7 @@ import { type ChatContext, messages as catalog, requireConversation, subjectPrin
 import {
   CHANGES_PAGE_SIZE,
   ChangesQuerySchema,
+  type ChatSnapshotSchema,
   MESSAGE_PAGE_SIZE,
   MessageIdSchema,
   MessageQuerySchema,
@@ -95,6 +96,31 @@ const list = async (input: Input & { query?: unknown }) => {
     });
   });
 };
+const snapshot = async (input: Input & { messageId?: string }): Promise<Result<Omit<z.infer<typeof ChatSnapshotSchema>, "cursor">>> =>
+  sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
+    const allowed = await requireConversation({ ...input, required: "read" }, db);
+    if (!allowed.ok) return allowed;
+    const conversation = await conversations.get(input, db);
+    if (!conversation.ok) return conversation;
+    const id = MessageIdSchema.safeParse(input.messageId);
+    const [target] = id.success
+      ? await db<{ short_id: string; seq: bigint | string }[]>`SELECT short_id, seq FROM chat.messages
+          WHERE conversation_id = ${allowed.data.id}::uuid AND short_id = ${id.data}`
+      : [];
+    const rows = await db<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid
+      AND ${target ? db`seq < ${Number(target.seq) + MESSAGE_PAGE_SIZE / 2}` : db`true`}
+      ORDER BY seq DESC LIMIT ${MESSAGE_PAGE_SIZE}`;
+    rows.reverse();
+    return ok({
+      conversation: conversation.data,
+      page: {
+        items: rows.map((row) => messageView(row, input.conversationId, input.locale)),
+        seqHead: Number(allowed.data.seq_head),
+        rev: Number(allowed.data.rev),
+      },
+      focus: target?.short_id ?? null,
+    });
+  });
 const get = async (input: Input & { messageId: string }) => {
   const allowed = await requireConversation({ ...input, required: "read" });
   if (!allowed.ok) return allowed;
@@ -130,4 +156,4 @@ const changes = async (input: Input & { query: unknown }) => {
   });
 };
 
-export const messages = { send, list, get, changes };
+export const messages = { send, list, get, changes, snapshot };
