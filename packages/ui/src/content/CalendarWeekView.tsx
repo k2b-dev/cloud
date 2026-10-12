@@ -262,6 +262,8 @@ export const CalendarWeekView = (props: TimeViewProps) => {
 
   // Days loaded before the strip's first day shift it; the view keeps its days in place.
   let anchor: { key: string; offset: number } | null = null;
+  /** A day the host moved to before its days loaded; it goes on screen once they arrive. */
+  let pendingTarget: string | null = null;
   /** Notes the day at the start of the strip, read against the days the strip draws, which may still be the old ones. */
   const rememberAnchor = (drawn = untrack(keys)) => {
     if (!scroller) return;
@@ -291,7 +293,15 @@ export const CalendarWeekView = (props: TimeViewProps) => {
     on(
       keys,
       () => {
-        if (!untrack(mounted) || !scroller || !anchor) return;
+        if (!untrack(mounted) || !scroller) return;
+        if (pendingTarget && loaded(pendingTarget)) {
+          positionAt(pendingTarget);
+          pendingTarget = null;
+          rememberAnchor();
+          syncFirst();
+          return;
+        }
+        if (!anchor) return;
         const index = indexOf(anchor.key);
         const left = leftOf(index) + anchor.offset;
         if (Math.abs(scroller.scrollLeft - left) > 0.5) scroller.scrollLeft = left;
@@ -334,6 +344,12 @@ export const CalendarWeekView = (props: TimeViewProps) => {
       (key) => {
         if (!untrack(mounted)) return;
         setNightWeek(key);
+        pendingTarget = loaded(key) ? null : key;
+        if (pendingTarget) return;
+        if (key === untrack(visibleKeys).first) {
+          rememberAnchor();
+          return;
+        }
         queueMicrotask(() => {
           positionAt(key);
           rememberAnchor();

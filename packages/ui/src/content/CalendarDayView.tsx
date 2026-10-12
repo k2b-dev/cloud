@@ -100,6 +100,8 @@ export const CalendarDayView = (props: TimeViewProps) => {
 
   /** The group at the top of the view and how far into it the view is, kept across changes above it. */
   let anchor: { key: string; delta: number } | null = null;
+  /** A day the host moved to before its days loaded; it goes on screen once they arrive. */
+  let pendingTarget: string | null = null;
   /** The last scroll position the view read, to tell the reader's direction. */
   let lastScrollTop = 0;
   const rememberAnchor = () => {
@@ -327,7 +329,11 @@ export const CalendarDayView = (props: TimeViewProps) => {
       () => {
         if (!untrack(mounted)) return;
         measure();
-        restoreAnchor();
+        if (pendingTarget && loaded(pendingTarget)) {
+          positionAt(pendingTarget);
+          pendingTarget = null;
+          rememberAnchor();
+        } else restoreAnchor();
         updateChrome();
       },
       { defer: true },
@@ -339,6 +345,12 @@ export const CalendarDayView = (props: TimeViewProps) => {
       view.anchorKey,
       (key) => {
         if (!untrack(mounted)) return;
+        pendingTarget = loaded(key) ? null : key;
+        if (pendingTarget) return;
+        if (key === untrack(visibleKeys).first) {
+          rememberAnchor();
+          return;
+        }
         queueMicrotask(() => {
           positionAt(key);
           rememberAnchor();
