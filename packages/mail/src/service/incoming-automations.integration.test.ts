@@ -2001,7 +2001,8 @@ suite("incoming automations", () => {
       WHERE id IN (${older.id}::uuid, ${newer.id}::uuid)
     `;
 
-    const uid = 9000 + Math.floor(Math.random() * 800);
+    // A UID no other test in this folder uses: a reused UID is the same message and triggers nothing.
+    const uid = 32_000;
     await ingestEnvelope({
       db: sql,
       mailboxId,
