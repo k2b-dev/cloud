@@ -46,7 +46,9 @@ First decide which kind it is:
   [Source workflow](references/source-workflow.md), the closest complete
   [example](references/examples.md) and the references it uses, such as
   [Database](references/database.md) or [PDF generation](references/pdf.md).
-  Then create it with its first `html` and `steps` like a small tool.
+  Then create it with its first `html` and `steps`, and fix and check again
+  until the check passes; the one-correction limit below is only for small
+  tools.
 
 A small tool in one pass:
 
