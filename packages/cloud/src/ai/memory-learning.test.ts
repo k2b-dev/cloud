@@ -5,6 +5,7 @@ import {
   buildFinalAssistantMarkdown,
   buildMemoryLearningTranscript,
   learnAiMemoriesFromPrivateChats,
+  MEMORY_LEARNING_PROMPT,
 } from "./memory-learning";
 import type { AiStoredMessage } from "./types";
 
@@ -28,6 +29,40 @@ const stored = (seq: number, message: AiStoredMessage["message"], meta: AiStored
 });
 
 describe("AI memory learning", () => {
+  test("excludes third-party profiles", () => {
+    expect(MEMORY_LEARNING_PROMPT).toContain("Store information about the user only");
+    expect(MEMORY_LEARNING_PROMPT).toContain(
+      "Never store facts, opinions, or health, relationship, or behavior details about other people",
+    );
+    expect(MEMORY_LEARNING_PROMPT).toContain("'Anna is on parental leave until March' and 'Tom is difficult' add nothing");
+  });
+
+  test("excludes special categories unless explicitly asked to remember the exact information", () => {
+    for (const category of [
+      "health",
+      "religion or beliefs",
+      "political opinions",
+      "sexual orientation or sex life",
+      "racial or ethnic origin",
+      "trade union membership",
+      "genetic or biometric data",
+    ]) {
+      expect(MEMORY_LEARNING_PROMPT).toContain(category);
+    }
+    expect(MEMORY_LEARNING_PROMPT).toContain("unless the user explicitly asks to remember that exact information");
+  });
+
+  test("leaves Project knowledge in Projects", () => {
+    expect(MEMORY_LEARNING_PROMPT).toContain("facts already owned by Projects");
+    expect(MEMORY_LEARNING_PROMPT).toContain("In a Project chat, the Project owns its facts, decisions, and people");
+    expect(MEMORY_LEARNING_PROMPT).toContain("Learn only what the user states about themselves beyond that Project");
+  });
+
+  test("allows a named person inside the user's stated working rule", () => {
+    expect(MEMORY_LEARNING_PROMPT).toContain("A named person may appear only inside a working rule the user stated");
+    expect(MEMORY_LEARNING_PROMPT).toContain("'Send invoices to Anna' adds a preference");
+  });
+
   test("accepts bounded create and replacement candidates", () => {
     expect(
       AiLearnedMemoriesSchema.parse({

@@ -97,6 +97,12 @@ describe("renderAiPlatformPrompt", () => {
     expect(readOnlyMemory).not.toContain("memory add");
     expect(readOnlyMemory).not.toContain("call memory before replying");
 
+    for (const prompt of [withMemory, readOnlyMemory]) {
+      expect(prompt).toContain("only when one changes the answer");
+      expect(prompt).toContain("Do not mention or recite them");
+      expect(prompt).toContain("The current message wins over a conflicting memory");
+    }
+
     expect(renderAiPlatformPrompt({ user, memoryEnabled: false })).not.toContain("# Personalization rules");
   });
 

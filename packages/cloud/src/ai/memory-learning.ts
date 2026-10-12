@@ -57,6 +57,7 @@ type Candidate = {
   conversationId: string;
   turnId: string;
   userId: string;
+  projectChat: boolean;
   completedAsOf: string;
   failCount: number;
   locale?: string | null;
@@ -94,15 +95,18 @@ export type AiMemoryLearningRunSummary = {
 const log = logger("ai:memory-learning");
 
 export const MEMORY_LEARNING_PROMPT = [
-  "Maintain a small, useful personal profile from one newly completed private chat turn.",
+  "Maintain a small, useful personal profile of the user from one newly completed chat turn.",
   "The normal result is no changes. Keep only durable information likely to help in multiple future chats.",
   "Facts and preferences require an explicit statement in NEW USER TEXT. Do not infer them from Assistant text or actions.",
+  "Store information about the user only. Never store facts, opinions, or health, relationship, or behavior details about other people. A named person may appear only inside a working rule the user stated, such as 'Send invoices to Anna'.",
+  "Exclude health, religion or beliefs, political opinions, sexual orientation or sex life, racial or ethnic origin, trade union membership, and genetic or biometric data unless the user explicitly asks to remember that exact information.",
   "A workflow links a recurring request type to one Cloud resource. Add one from this turn only when the user explicitly establishes a lasting routing rule and the matching resource appears in SUCCESSFUL ACTIONS.",
   "FINAL ASSISTANT MARKDOWN may clarify what happened, but it is model-written context and never evidence by itself.",
-  "Exclude secrets, credentials, sensitive inferences, temporary plans, task details, quoted or attached content, and facts already owned by Contacts, Spaces, Notebooks, or another Cloud resource.",
+  "Exclude secrets, credentials, sensitive inferences, temporary plans, task details, quoted or attached content, and facts already owned by Projects, Contacts, Spaces, Notebooks, or another Cloud resource.",
+  "In a Project chat, the Project owns its facts, decisions, and people. Learn only what the user states about themselves beyond that Project.",
   "Use replace for one clearly corrected mutable memory, merge for two or more overlapping mutable memories, and retire only when the user explicitly makes mutable background information obsolete.",
   "Protected memories are context only. Never replace, merge, or retire them.",
-  "Examples: 'Always answer briefly in German' adds a preference. 'Use Accounting for invoice mail' plus a successful mail.mailbox ref adds a workflow. 'Find this invoice in Accounting' does not establish a lasting workflow.",
+  "Examples: 'Always answer briefly in German' adds a preference. 'Send invoices to Anna' adds a preference. 'Anna is on parental leave until March' and 'Tom is difficult' add nothing. 'Use Accounting for invoice mail' plus a successful mail.mailbox ref adds a workflow. 'Find this invoice in Accounting' does not establish a lasting workflow.",
 ].join("\n");
 
 export const MEMORY_LEARNING_OUTPUT_CONTRACT = [
@@ -141,6 +145,7 @@ export const listAiMemoryLearningCandidates = async (limit: number, monthlyToken
         conversation.id AS conversation_id,
         turn.id AS turn_id,
         conversation.created_by_user_id AS user_id,
+        conversation.project_id IS NOT NULL AS project_chat,
         turn.completed_at,
         turn.memory_learn_fail_count,
         turn.run_config->>'locale' AS locale,
@@ -168,6 +173,7 @@ export const listAiMemoryLearningCandidates = async (limit: number, monthlyToken
       conversation_id AS "conversationId",
       turn_id AS "turnId",
       user_id AS "userId",
+      project_chat AS "projectChat",
       completed_at::text AS "completedAsOf",
       memory_learn_fail_count AS "failCount",
       locale
@@ -292,6 +298,8 @@ const actionLines = (actions: AiMemoryWorkflowEvidence[]): string =>
 
 const learningInput = (evidence: TurnEvidence, memories: Awaited<ReturnType<typeof aiMemories.list>>): string =>
   [
+    evidence.candidate.projectChat ? "CHAT: Project chat" : "CHAT: chat outside Projects",
+    "",
     "NEW USER TEXT:",
     evidence.userText || "(none)",
     "",
@@ -361,8 +369,9 @@ const workflowPatternInput = async (
   if (!(await isAiWorkflowPatternEligible(pattern))) return { input: "", source: null, mutableMemoryIds: new Set() };
   const sources = await Promise.all(
     pattern.turnIds.map(async (turnId) => {
-      const [row] = await sql<{ conversation_id: string; completed_as_of: string; fail_count: number }[]>`
-        SELECT turn.conversation_id, turn.completed_at::text AS completed_as_of, turn.memory_learn_fail_count AS fail_count
+      const [row] = await sql<{ conversation_id: string; project_chat: boolean; completed_as_of: string; fail_count: number }[]>`
+        SELECT turn.conversation_id, conversation.project_id IS NOT NULL AS project_chat,
+          turn.completed_at::text AS completed_as_of, turn.memory_learn_fail_count AS fail_count
         FROM ai.turns turn
         JOIN ai.conversations conversation ON conversation.id = turn.conversation_id
         WHERE turn.id = ${turnId}::uuid AND conversation.created_by_user_id = ${pattern.userId}::uuid
@@ -373,6 +382,7 @@ const workflowPatternInput = async (
         conversationId: row.conversation_id,
         turnId,
         userId: pattern.userId,
+        projectChat: row.project_chat,
         completedAsOf: row.completed_as_of,
         failCount: row.fail_count,
       });
