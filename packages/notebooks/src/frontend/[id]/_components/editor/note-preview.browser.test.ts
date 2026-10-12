@@ -109,6 +109,8 @@ beforeAll(async () => {
       const mode = url.searchParams.get("mode") === "source" ? "source" : "rich";
       const readOnly = url.searchParams.has("readonly");
       const historyIncomplete = url.searchParams.has("historyIncomplete");
+      // The personal "Full width": the server renders the attribute from the cookie the editor reads at mount.
+      const fullWidth = url.searchParams.has("fullWidth");
       const props = {
         noteId: "note01",
         noteTitle: "Wochenplan",
@@ -149,9 +151,16 @@ beforeAll(async () => {
         <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style>
         <style>solid-client,solid-island{display:contents}#layout{display:flex;height:100dvh}#navigation{width:288px;flex:none}#main{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column}@media(max-width:600px){#navigation{display:none}}</style>
         </head><body class="k2b-ui" style="margin:0"><div id="layout"><nav id="navigation">Notizbuch</nav><main id="main">
-        <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col"><solid-client data-id="note-editor" data-props="${serialized}"></solid-client>${preview}</div>
+        <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col"${fullWidth ? " data-full-width" : ""}><solid-client data-id="note-editor" data-props="${serialized}"></solid-client>${preview}</div>
         </main></div><script type="module" src="/editor.js"></script></body></html>`,
-        { headers: { "content-type": "text/html; charset=utf-8" } },
+        {
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            ...(fullWidth
+              ? { "set-cookie": `settings-app-notebooks=${encodeURIComponent(JSON.stringify({ fullWidth: true }))}; Path=/` }
+              : {}),
+          },
+        },
       );
     },
     websocket: {
@@ -211,8 +220,10 @@ for (const fixture of [
   { mode: "rich", width: 1280, height: 800, readOnly: true, dark: false, historyIncomplete: false, headings: false },
   { mode: "rich", width: 1280, height: 800, readOnly: false, dark: true, historyIncomplete: true, headings: false },
   { mode: "rich", width: 1280, height: 800, readOnly: false, dark: false, historyIncomplete: false, headings: true },
+  { mode: "rich", width: 1280, height: 800, readOnly: false, dark: false, historyIncomplete: false, headings: false, fullWidth: true },
+  { mode: "source", width: 1280, height: 800, readOnly: false, dark: false, historyIncomplete: false, headings: false, fullWidth: true },
 ] as const) {
-  test(`preview hands off without moving lines or glyphs: ${fixture.mode}, ${fixture.width}px, ${fixture.readOnly ? "read-only" : "write"}, ${fixture.dark ? "dark" : "light"}${fixture.headings ? ", heading code" : ""}`, async () => {
+  test(`preview hands off without moving lines or glyphs: ${fixture.mode}, ${fixture.width}px, ${fixture.readOnly ? "read-only" : "write"}, ${fixture.dark ? "dark" : "light"}${fixture.headings ? ", heading code" : ""}${"fullWidth" in fixture ? ", full width" : ""}`, async () => {
     const page = await browser.newPage({
       viewport: { width: fixture.width, height: fixture.height },
       isMobile: fixture.width === 390,
@@ -230,7 +241,7 @@ for (const fixture of [
     });
     try {
       await page.goto(
-        `${server.url}?mode=${fixture.mode}${fixture.readOnly ? "&readonly" : ""}${fixture.dark ? "&dark" : ""}${fixture.historyIncomplete ? "&historyIncomplete" : ""}${fixture.headings ? "&headings" : ""}`,
+        `${server.url}?mode=${fixture.mode}${fixture.readOnly ? "&readonly" : ""}${fixture.dark ? "&dark" : ""}${fixture.historyIncomplete ? "&historyIncomplete" : ""}${fixture.headings ? "&headings" : ""}${"fullWidth" in fixture ? "&fullWidth" : ""}`,
         { waitUntil: "commit" },
       );
       const preview = page.locator(`#${NOTE_PREVIEW_ID}`);
@@ -246,6 +257,8 @@ for (const fixture of [
       if (fixture.mode === "rich") expect(await preview.textContent()).not.toContain("a list item");
       await settle(page);
       const before = await measure(page, ".notebook-note-preview__line", count);
+      // The paragraph fills the note beside the 288px navigation instead of the 44rem (704px) column.
+      if ("fullWidth" in fixture) expect(before[2]!.box.width).toBeGreaterThan(900);
       release?.();
       await page.waitForSelector(".cm-content");
       await preview.waitFor({ state: "detached" });
