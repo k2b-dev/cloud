@@ -10,7 +10,7 @@ const entry = resolve(import.meta.dir, "detail-float.fixture.ts");
 const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { AppWorkspace, DetailPanel } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AppWorkspace, DetailPanel, DataTable, PageTrailProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const params = new URLSearchParams(document.body.dataset.params);
 const [open, setOpen] = createSignal(params.has("initial"));
 const close = () => { document.body.dataset.closes = String(Number(document.body.dataset.closes || 0) + 1); setOpen(false); };
@@ -27,24 +27,20 @@ const mainContent = () => {
   const toolbar = document.createElement("div");
   toolbar.id = "toolbar";
   toolbar.textContent = "Fixed toolbar";
-  toolbar.style.cssText = "height:40px;flex-shrink:0;padding-inline-end:var(--k2b-detail-space,0px)";
+  toolbar.style.cssText = "height:40px;flex-shrink:0";
   if (params.has("table")) {
-    // A data table that fits its scroller, as a Grids table with few fields does.
-    const wrap = document.createElement("div");
-    wrap.id = "table";
-    wrap.className = "k2b-table-wrap k2b-detail-trail";
-    wrap.style.cssText = "flex:1;min-height:0;height:auto";
-    const table = document.createElement("table");
-    table.className = "k2b-data-table";
-    table.innerHTML = "<tbody>" + Array.from({length:6}, (_, row) => "<tr>" + Array.from({length:4}, (_, column) => "<td>Cell " + row + "." + column + "</td>").join("") + "</tr>").join("") + "</tbody>";
-    table.querySelector("td").replaceChildren(button(0));
-    wrap.append(table);
-    return [toolbar, wrap];
+    return [toolbar, createComponent(DataTable, {
+      class:"fixture-table", surface:"paper", fillHeight:true, scrollClass:"k2b-detail-trail",
+      rows:Array.from({length:2}, (_, index) => ({index})),
+      onRowClick:() => setOpen(true),
+      columns:Array.from({length:8}, (_, index) => ({id:String(index), header:"Field " + index, value:row => "Cell " + row.index + "." + index})),
+      renderCell:({row,col,value}) => col.id === "0" ? button(row.index) : value,
+    })];
   }
   if (!params.has("trail")) return [toolbar, ...Array.from({length:40}, (_, index) => button(index))];
   const trail = document.createElement("div");
   trail.id = "board";
-  trail.className = "k2b-detail-trail";
+  trail.className = "k2b-detail-trail fixture-board";
   trail.style.cssText = "min-height:0;flex:1;overflow:auto";
   const cards = document.createElement("div");
   cards.style.cssText = "display:flex;width:max-content;gap:16px";
@@ -54,14 +50,14 @@ const mainContent = () => {
 };
 // A documentation-style frame that contains layout, inside a longer page.
 if (params.has("frame")) document.getElementById("app").style.cssText = "height:480px;margin-top:100px;contain:layout";
-render(() => createComponent(AppWorkspace, {
+render(() => createComponent(PageTrailProvider, { trail:{title:"Devices",ancestors:[{title:"Inventory",href:"/inventory"}]}, get children() { return createComponent(AppWorkspace, {
   layoutState: () => ({version:2, sidebarWidth: Number(params.get("sidebar")) || 208, detailWidths: params.has("persisted") ? {record:Number(params.get("persisted"))} : undefined}),
   get children() { return [
-    createComponent(AppWorkspace.Sidebar, { id:"navigation", maxSize:960, children:"Navigation" }),
+    createComponent(AppWorkspace.Sidebar, { id:"navigation", maxSize:960, get children() { return createComponent(AppWorkspace.SidebarDesktop, {get children() {return createComponent(AppWorkspace.SidebarItem, {href:"/devices", active:true, children:"Devices"});}}); } }),
     createComponent(AppWorkspace.Content, { get children() { return [
-      createComponent(AppWorkspace.Main, { scroll:!params.has("trail") && !params.has("table"), get children() { return mainContent(); } }),
+      createComponent(AppWorkspace.Main, { class:"fixture-main", scroll:!params.has("trail") && !params.has("table"), get children() { return mainContent(); } }),
       createComponent(AppWorkspace.Detail, {
-        id:"record", width:params.get("width") || "md", get open() { return open(); }, onClose:params.has("fixed") ? undefined : close,
+        id:"record", width:params.get("width") || "md", get open() { return open(); }, onClose:params.has("fixed") ? undefined : close, onStep:direction => {document.body.dataset.steps = String(Number(document.body.dataset.steps || 0) + direction);},
         get children() { return createComponent(DetailPanel, { get children() { return [
           createComponent(DetailPanel.Header, { title:"Selected record", get actions() { const element = document.createElement("button"); element.id="close"; element.textContent="Close"; element.addEventListener("click", close); return element; } }),
           createComponent(DetailPanel.Body, { get children() { const text = document.createElement("p"); text.id="detail-text"; text.textContent="Text in the selected record"; return text; } }),
@@ -70,7 +66,7 @@ render(() => createComponent(AppWorkspace, {
     ]; } }),
     createComponent(AppWorkspace.BottomDrawer, { id:"events", get open() { return params.has("drawer"); }, height:"sm", children:"Recent events" }),
   ]; },
-}), document.getElementById("app"));
+}); } }), document.getElementById("app"));
 const workspace = document.querySelector("[data-k2b-app-workspace]");
 const aside = document.querySelector(".k2b-app-workspace__detail");
 document.body.dataset.initialMotion = String(workspace.hasAttribute("data-workspace-motion"));
@@ -98,13 +94,21 @@ afterAll(async () => {
 const load = async (width: number, height: number, params = "", options: BrowserContextOptions = {}) => {
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce", ...options });
   await page.setContent(
-    `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="app" style="height:100vh"></div></body></html>`,
+    // Flush by default, as Cloud's shell is up to 1535 px; `card` frames the workspace as Cloud does from 1536 px.
+    `<!doctype html><html lang="en"><head><style>${css}</style><style>${
+      new URLSearchParams(params).has("card")
+        ? "#app{box-sizing:border-box;padding:0.5rem}"
+        : ".k2b-ui .k2b-app-workspace{border:0;--k2b-workspace-radius:0px}"
+    }.fixture-main{padding:0.5rem}${
+      new URLSearchParams(params).has("wide") ? ".fixture-table td,.fixture-table th{min-width:240px}" : ""
+    }</style></head><body class="k2b-ui" style="margin:0"><div id="app" style="height:100vh"></div></body></html>`,
   );
   await page.evaluate((params) => {
     document.body.dataset.params = params;
   }, params);
   await page.addScriptTag({ content: script });
   await page.locator("#row-0").waitFor();
+  await page.bringToFront();
   return page;
 };
 const geometry = (page: Page) =>
@@ -118,6 +122,9 @@ const geometry = (page: Page) =>
     const aside = document.querySelector<HTMLElement>(".k2b-app-workspace__detail")!;
     const board = document.querySelector<HTMLElement>("#board");
     return {
+      root: box(".k2b-app-workspace"),
+      // The inset is measured inside the workspace's border, which a framed workspace has.
+      border: document.querySelector<HTMLElement>(".k2b-app-workspace")!.clientTop,
       content: box(".k2b-app-workspace__content"),
       main: box(".k2b-app-workspace__main"),
       detail: box(".k2b-app-workspace__detail"),
@@ -129,7 +136,6 @@ const geometry = (page: Page) =>
             width: board.clientWidth,
             scrollWidth: board.scrollWidth,
             left: board.scrollLeft,
-            hold: board.style.getPropertyValue("--k2b-detail-trail-hold"),
           }
         : null,
       toolbarPadding: Number.parseFloat(getComputedStyle(document.getElementById("toolbar")!).paddingInlineEnd),
@@ -142,9 +148,9 @@ const openRow = async (page: Page, id = "row-0") => {
   await settlePanel(page);
 };
 const expectInset = (shape: Awaited<ReturnType<typeof geometry>>) => {
-  expect(shape.detail.top - shape.content.top).toBeCloseTo(8, 1);
-  expect(shape.content.right - shape.detail.right).toBeCloseTo(8, 1);
-  expect(shape.content.bottom - shape.detail.bottom).toBeCloseTo(8, 1);
+  expect(shape.detail.top - shape.root.top - shape.border).toBeCloseTo(8, 1);
+  expect(shape.root.right - shape.border - shape.detail.right).toBeCloseTo(8, 1);
+  expect(shape.root.bottom - shape.border - shape.detail.bottom).toBeCloseTo(8, 1);
 };
 
 describe("floating workspace detail", () => {
@@ -166,7 +172,7 @@ describe("floating workspace detail", () => {
           const shape = await geometry(page);
           expectInset(shape);
           expect(shape.detail.width).toBeCloseTo(wanted, 1);
-          expect(shape.detail.left - shape.main.right).toBeCloseTo(8, 1);
+          expect(shape.detail.left - shape.main.right).toBeCloseTo(0, 1);
           expect(shape.main.width).toBeGreaterThanOrEqual(320);
         } finally {
           await page.close();
@@ -181,8 +187,8 @@ describe("floating workspace detail", () => {
       const shape = await geometry(page);
       expectInset(shape);
       expect(shape.main.width).toBeCloseTo(320, 1);
-      expect(shape.detail.width).toBeCloseTo(shape.content.width - 336, 1);
-      expect(shape.detail.left - shape.main.right).toBeCloseTo(8, 1);
+      expect(shape.detail.width).toBeCloseTo(shape.root.width - 208 - 328, 1);
+      expect(shape.detail.left - shape.main.right).toBeCloseTo(0, 1);
     } finally {
       await page.close();
     }
@@ -200,7 +206,7 @@ describe("floating workspace detail", () => {
       await page.close();
     }
   });
-  test("a trail board reveals its card, pads the toolbar, and retains only visible space on close", async () => {
+  test("a board reveals its card beside the panel without extra scroll content", async () => {
     const page = await load(1366, 900, "trail=1");
     try {
       const before = await geometry(page);
@@ -214,49 +220,230 @@ describe("floating workspace detail", () => {
           document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect().left,
       );
       const opened = await geometry(page);
-      expect(opened.main.width).toBeCloseTo(opened.content.width, 1);
-      expect(opened.board!.scrollWidth - before.board!.scrollWidth).toBeCloseTo(opened.detail.width + 16, 1);
-      expect(opened.toolbarPadding).toBeCloseTo(opened.detail.width + 16, 1);
-      await page.locator("#board").evaluate((element) => {
-        element.scrollLeft = element.scrollWidth;
-      });
-      const atEnd = (await geometry(page)).board!.left;
+      expect(opened.board!.scrollWidth).toBe(before.board!.scrollWidth);
+      expect(opened.main.right).toBeCloseTo(opened.detail.left, 1);
       await page.locator("#close").click();
       await settlePanel(page);
-      const closed = await geometry(page);
-      expect(closed.board!.left).toBeCloseTo(atEnd, 1);
-      expect(Number.parseFloat(closed.board!.hold)).toBeCloseTo(opened.detail.width + 16, 1);
-      await page.locator("#board").evaluate((element) => {
-        element.scrollLeft = 0;
-      });
-      await page.waitForFunction(() => document.getElementById("board")!.style.getPropertyValue("--k2b-detail-trail-hold") === "");
+      expect((await geometry(page)).board!.scrollWidth).toBe(before.board!.scrollWidth);
     } finally {
       await page.close();
     }
   });
-  test("a table that fits keeps its width under the panel, gets the space after it, and lets it go on close", async () => {
-    const page = await load(1920, 1080, "table=1");
+  for (const [width, height, params] of [
+    [1180, 820, "table=1"],
+    [1366, 900, "table=1"],
+    [1920, 1080, "table=1&card=1"],
+    [2560, 1440, "table=1&card=1"],
+  ] as const) {
+    test(`${width}×${height}: full-height detail, rounded table, unclipped shadow and stable columns`, async () => {
+      const page = await load(width, height, params);
+      try {
+        const table = () =>
+          page.locator(".fixture-table").evaluate((shell) => {
+            const wrap = shell.querySelector<HTMLElement>(".k2b-table-wrap")!;
+            const table = wrap.querySelector("table")!;
+            const style = getComputedStyle(shell);
+            return {
+              right: shell.getBoundingClientRect().right,
+              width: table.getBoundingClientRect().width,
+              columns: [...table.querySelectorAll("th")].map((cell) => cell.getBoundingClientRect().width),
+              client: wrap.clientWidth,
+              scroll: wrap.scrollWidth,
+              radii: [style.borderTopRightRadius, style.borderBottomRightRadius].map(Number.parseFloat),
+            };
+          });
+        const before = await table();
+        await openRow(page);
+        const shape = await geometry(page);
+        expectInset(shape);
+        const head = await page.locator(".k2b-app-workspace__head").boundingBox();
+        expect(head!.height).toBeLessThanOrEqual(1);
+        expect(head!.width).toBeLessThanOrEqual(1);
+        expect(shape.main.top).toBeCloseTo(shape.root.top + shape.border, 1);
+        const opened = await table();
+        expect(opened.right).toBeCloseTo(shape.detail.left - 8, 1);
+        for (const radius of opened.radii) expect(radius).toBeGreaterThan(0);
+        expect(opened.width).toBeCloseTo(before.width, 0);
+        opened.columns.forEach((column, index) => expect(column).toBeCloseTo(before.columns[index]!, 0));
+        expect(opened.scroll).toBeGreaterThan(opened.client);
+        const clipping = await page.locator(".k2b-app-workspace__detail").evaluate((panel) => {
+          if (!(panel instanceof HTMLElement)) throw new Error("Expected an HTML detail panel.");
+          const rect = panel.getBoundingClientRect();
+          const failures: string[] = [];
+          // Only the containing block and its ancestors can clip an absolutely positioned panel.
+          if (!panel.offsetParent?.matches(".k2b-app-workspace")) failures.push("the workspace is not the containing block");
+          for (let ancestor = panel.offsetParent; ancestor; ancestor = ancestor.parentElement) {
+            const style = getComputedStyle(ancestor),
+              box = ancestor.getBoundingClientRect();
+            const viewport =
+              Math.abs(box.left) <= 1 &&
+              Math.abs(box.top) <= 1 &&
+              Math.abs(box.width - innerWidth) <= 1 &&
+              Math.abs(box.height - innerHeight) <= 1;
+            if (style.clipPath !== "none" || /\bpaint\b/.test(style.contain)) failures.push(ancestor.className + ": clip/paint");
+            if (
+              !viewport &&
+              (style.overflowX !== "visible" || style.overflowY !== "visible") &&
+              (box.left > rect.left - 64 || box.top > rect.top - 64 || box.right < rect.right + 64 || box.bottom < rect.bottom + 64)
+            )
+              failures.push(ancestor.className + ": overflow");
+          }
+          return failures;
+        });
+        expect(clipping).toEqual([]);
+        await page.locator("#close").click();
+        const closed = await table();
+        expect(closed.right).toBeCloseTo(shape.root.right - shape.border - 8, 1);
+        expect(closed.width).toBeCloseTo(closed.client, 0);
+        expect(
+          await page
+            .locator(".k2b-app-workspace")
+            .evaluate((root) =>
+              [root, ...root.querySelectorAll<HTMLElement>("*")].some(
+                (element) => getComputedStyle(element).getPropertyValue("--k2b-detail-trail-hold") !== "",
+              ),
+            ),
+        ).toBe(false);
+        expect(css).not.toContain("--k2b-detail-trail-hold");
+      } finally {
+        await page.close();
+      }
+    });
+  }
+  for (const [width, height, params] of [
+    [1366, 900, "table=1&wide=1"],
+    [1920, 1080, "table=1&wide=1&card=1"],
+  ] as const) {
+    test(`${width}×${height}: reveals the last visible table cell beside the detail panel`, async () => {
+      const page = await load(width, height, params);
+      try {
+        const column = await page.locator(".k2b-table-wrap").evaluate((wrap) => {
+          const bounds = wrap.getBoundingClientRect();
+          const cells = [...wrap.querySelectorAll("tbody tr:first-child td")];
+          return cells.findLastIndex((cell) => {
+            const rect = cell.getBoundingClientRect();
+            return rect.left >= bounds.left && rect.right <= bounds.right;
+          });
+        });
+        expect(column).toBeGreaterThan(0);
+        const selector = `.k2b-table-wrap tbody tr:first-child td:nth-child(${column + 1})`;
+        await page.locator(selector).click();
+        await settlePanel(page);
+        await page.waitForFunction((selector) => {
+          const cell = document.querySelector(selector)!.getBoundingClientRect();
+          const wrap = document.querySelector(".k2b-table-wrap")!.getBoundingClientRect();
+          return cell.left >= wrap.left - 0.5 && cell.right <= wrap.right + 0.5;
+        }, selector);
+        const shape = await page.locator(selector).evaluate((cell) => {
+          const rect = cell.getBoundingClientRect();
+          const wrap = cell.closest(".k2b-table-wrap")!.getBoundingClientRect();
+          const detail = document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect();
+          return { left: rect.left, right: rect.right, wrapLeft: wrap.left, wrapRight: wrap.right, detailLeft: detail.left };
+        });
+        expect(shape.left).toBeGreaterThanOrEqual(shape.wrapLeft - 0.5);
+        expect(shape.right).toBeLessThanOrEqual(shape.wrapRight + 0.5);
+        expect(shape.right).toBeLessThanOrEqual(shape.detailLeft);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+  for (const reducedMotion of ["no-preference", "reduce"] as const) {
+    test(`${reducedMotion}: opening reserves the track first; closing releases it after the slide`, async () => {
+      const page = await load(1366, 900, "table=1", { reducedMotion });
+      try {
+        await page.waitForSelector("[data-workspace-motion]");
+        const sample = (action: "open" | "close") =>
+          page.evaluate(
+            (action) =>
+              new Promise<{ time: number; width: number; x: number; display: string; translate: number }[]>((resolve) => {
+                const panel = document.querySelector<HTMLElement>(".k2b-app-workspace__detail")!;
+                const wrap = document.querySelector<HTMLElement>(".k2b-table-wrap")!;
+                const samples: { time: number; width: number; x: number; display: string; translate: number }[] = [];
+                let start: number;
+                const frame = () => {
+                  const width = wrap.clientWidth;
+                  const x = panel.getBoundingClientRect().x;
+                  const style = getComputedStyle(panel);
+                  samples.push({
+                    time: performance.now() - start,
+                    width,
+                    x,
+                    display: style.display,
+                    translate: style.transform === "none" ? 0 : new DOMMatrix(style.transform).m41,
+                  });
+                  // An ease-out slide comes close to its end long before it reaches it; the open sample stops only there.
+                  if ((action === "close" && style.display === "none") || (action === "open" && samples.at(-1)!.translate === 0))
+                    resolve(samples);
+                  else if (performance.now() - start > 300) resolve(samples);
+                  else requestAnimationFrame(frame);
+                };
+                requestAnimationFrame(() => {
+                  // Start the action in a rendering frame so the sample measures
+                  // the transition rather than waiting for the browser to wake up.
+                  getComputedStyle(panel).transform;
+                  start = performance.now();
+                  document.getElementById(action === "open" ? "row-0" : "close")!.click();
+                  frame();
+                });
+              }),
+            action,
+          );
+        const wide = await page.locator(".k2b-table-wrap").evaluate((wrap) => wrap.clientWidth);
+        const opening = await sample("open");
+        const narrow = opening[0]!.width;
+        expect(narrow).toBeLessThan(wide);
+        if (reducedMotion === "no-preference") expect(opening[0]!.translate).toBeGreaterThan(0);
+        else {
+          expect(opening).toHaveLength(1);
+          expect(opening[0]!.translate).toBe(0);
+        }
+        expect(opening.at(-1)!.translate).toBeCloseTo(0, 1);
+        await settlePanel(page);
+        const closing = await sample("close");
+        let previousX = closing[0]!.x;
+        for (const frame of closing) {
+          if (frame.display !== "none") {
+            expect(frame.width).toBe(narrow);
+            expect(frame.x).toBeGreaterThanOrEqual(previousX - 0.5);
+            previousX = frame.x;
+          }
+          if (frame.width > narrow) expect(frame.display).toBe("none");
+        }
+        expect(closing.at(-1)!.display).toBe("none");
+        expect(closing.at(-1)!.width).toBe(wide);
+        expect(closing.at(-1)!.time).toBeLessThanOrEqual(300);
+        if (reducedMotion === "reduce") expect(closing).toHaveLength(1);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+  test("1920×1080 framed: the workspace clips its end edge only while the panel slides", async () => {
+    const page = await load(1920, 1080, "table=1&card=1", { reducedMotion: "no-preference" });
     try {
-      const table = () =>
-        page.locator("#table").evaluate((wrap) => ({
-          width: wrap.querySelector("table")!.getBoundingClientRect().width,
-          client: wrap.clientWidth,
-          scroll: wrap.scrollWidth,
-          hold: wrap.style.getPropertyValue("--k2b-detail-trail-hold"),
+      await page.waitForSelector("[data-workspace-motion]");
+      const clipAfter = (id: string) =>
+        page.evaluate(async (id) => {
+          const root = document.querySelector<HTMLElement>(".k2b-app-workspace")!;
+          document.getElementById(id)!.click();
+          // The controller marks the slide as soon as the panel's visibility changes, before any frame.
+          await Promise.resolve();
+          return getComputedStyle(root).clipPath;
+        }, id);
+      const rest = () =>
+        page.locator(".k2b-app-workspace").evaluate((root) => ({
+          sliding: root.hasAttribute("data-workspace-detail-sliding"),
+          clip: getComputedStyle(root).clipPath,
         }));
-      const before = await table();
-      expect(before.width).toBeCloseTo(before.client, 0);
-      await openRow(page);
-      const opened = await table();
-      const shape = await geometry(page);
-      // Main keeps its width, the columns keep theirs, and the panel's space follows the table.
-      expect(shape.main.width).toBeCloseTo(shape.content.width, 1);
-      expect(opened.width).toBeCloseTo(before.width, 0);
-      expect(opened.scroll - opened.client).toBeCloseTo(shape.detail.width + 16, 0);
-      await page.locator("#close").click();
+      expect(await clipAfter("row-0")).toContain("inset");
       await settlePanel(page);
-      // At the start of the scroller, nothing can move, so the space goes at once.
-      expect(await table()).toEqual(before);
+      await page.waitForFunction(() => !document.querySelector("[data-workspace-detail-sliding]"));
+      expect(await rest()).toEqual({ sliding: false, clip: "none" });
+      expect(await clipAfter("close")).toContain("inset");
+      await page.waitForFunction(() => getComputedStyle(document.querySelector(".k2b-app-workspace__detail")!).display === "none");
+      await page.waitForFunction(() => !document.querySelector("[data-workspace-detail-sliding]"));
+      expect(await rest()).toEqual({ sliding: false, clip: "none" });
     } finally {
       await page.close();
     }
@@ -268,7 +455,30 @@ describe("floating workspace detail", () => {
         await openRow(page);
         const shape = await geometry(page);
         expectInset(shape);
-        expect(shape.main.width).toBeCloseTo(fixed ? shape.content.width - shape.detail.width - 16 : shape.content.width, 1);
+        expect(shape.main.width).toBeCloseTo(fixed ? shape.root.width - shape.detail.width - 8 : shape.content.width, 1);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+  for (const params of ["trail=1", "table=1&wide=1"]) {
+    test(`820×1180 touch tablet: the last ${params.startsWith("trail") ? "card" : "column"} scrolls out from under the drawer`, async () => {
+      const page = await load(820, 1180, params, { hasTouch: true });
+      try {
+        await openRow(page);
+        const scroller = params.startsWith("trail") ? "#board" : ".k2b-table-wrap";
+        const shape = await page.locator(scroller).evaluate((element, board) => {
+          element.scrollLeft = element.scrollWidth;
+          const last = board ? document.getElementById("row-7")! : [...element.querySelectorAll("thead th")].at(-1)!;
+          return {
+            last: last.getBoundingClientRect().right,
+            drawer: document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect().left,
+            scroller: element.getBoundingClientRect().right,
+          };
+        }, params.startsWith("trail"));
+        // The drawer overlays the scroller, and the scroller's end space brings its last column beside it.
+        expect(shape.drawer).toBeLessThan(shape.scroller);
+        expect(shape.last).toBeLessThanOrEqual(shape.drawer);
       } finally {
         await page.close();
       }
@@ -354,6 +564,22 @@ describe("floating workspace detail", () => {
       expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Selected record");
       await page.keyboard.press("Escape");
       await settlePanel(page);
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe("row-2");
+    } finally {
+      await page.close();
+    }
+  });
+  test("J/K step selection and F6 switches focus between the item and detail title", async () => {
+    const page = await load(1366, 900);
+    try {
+      await openRow(page, "row-2");
+      await page.keyboard.press("j");
+      expect(await page.locator("body").getAttribute("data-steps")).toBe("1");
+      await page.keyboard.press("k");
+      expect(await page.locator("body").getAttribute("data-steps")).toBe("0");
+      await page.keyboard.press("F6");
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Selected record");
+      await page.keyboard.press("Shift+F6");
       expect(await page.evaluate(() => document.activeElement?.id)).toBe("row-2");
     } finally {
       await page.close();

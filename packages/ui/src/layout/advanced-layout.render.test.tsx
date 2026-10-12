@@ -24,8 +24,66 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: AppWorkspace } = await import("./AppWorkspace");
+const { PageTrailProvider } = await import("./PageTitle");
 
 describe("@k2b/ui complete advanced layout migrations", () => {
+  for (const active of [true, "ancestor"] as const) {
+    test(`renders a sidebar item marked ${active} with the current-page semantics`, () => {
+      const html = renderToString(() => createComponent(AppWorkspace.SidebarItem, { href: "/devices", active, children: "Devices" }));
+      expect(html).toMatch(/class="[^"]*\bis-active\b/);
+      expect(html).toContain(`aria-current="${active === "ancestor" ? "true" : "page"}"`);
+    });
+  }
+
+  test("renders the page heading and exact-current navigation before hydration", () => {
+    const html = renderToString(() =>
+      createComponent(PageTrailProvider, {
+        trail: { title: "Devices", ancestors: [{ title: "Inventory", href: "/inventory" }] },
+        get children() {
+          return createComponent(AppWorkspace, {
+            get children() {
+              return [
+                createComponent(AppWorkspace.Sidebar, {
+                  get children() {
+                    return createComponent(AppWorkspace.SidebarDesktop, {
+                      get children() {
+                        return createComponent(AppWorkspace.SidebarItem, { href: "/devices", active: true, children: "Devices" });
+                      },
+                    });
+                  },
+                }),
+                createComponent(AppWorkspace.Content, {
+                  get children() {
+                    return createComponent(AppWorkspace.Main, { children: "Devices table" });
+                  },
+                }),
+              ];
+            },
+          });
+        },
+      }),
+    );
+    expect(html).toMatch(/class="k2b-app-workspace__head"[^>]*data-trail="up"/);
+    // The visible title is no heading; the head's heading stands in once the sidebar hides the row.
+    expect(html).toMatch(/<p[^>]*class="k2b-page-title__title\s*"[^>]*>.*?Devices.*?<\/p>/);
+    expect(html).toMatch(/<h1[^>]*class="k2b-app-workspace__head-heading"[^>]*data-k2b-server[^>]*>.*?Devices.*?<\/h1>/);
+    expect(html).toMatch(/<a[^>]*href="\/devices"[^>]*aria-current="page"/);
+    const source = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
+    expect(source).toMatch(
+      /@media \(min-width: 64rem\) \{[^}]*\[aria-current="page"\][^}]*> \.k2b-app-workspace__head\[data-trail="up"\] \{[^}]*clip-path: inset\(50%\)/,
+    );
+  });
+
+  test("a flat workspace marks itself and its stylesheet drops the frame", () => {
+    const html = renderToString(() => createComponent(AppWorkspace, { flat: true, children: "Overview" }));
+    expect(html).toMatch(/class="k2b-app-workspace\s*"[^>]*data-flat="true"/);
+    expect(renderToString(() => createComponent(AppWorkspace, { children: "Workspace" }))).not.toContain("data-flat");
+    const source = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
+    expect(source).toMatch(
+      /\.k2b-app-workspace\[data-flat="true"\] \{\s*--k2b-workspace-radius: 0px;\s*border-color: transparent;\s*box-shadow: none;/,
+    );
+  });
+
   test("renders the complete workspace compound composition", () => {
     const html = renderToString(() =>
       createComponent(AppWorkspace, {
@@ -757,14 +815,16 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       const paneResize = rule(".k2b-app-workspace__main>.k2b-app-workspace__resize[data-app-workspace-resize=pane]");
       expect(paneResize).toContain("flex:0 0 var(--k2b-workspace-resize-hit-size)");
       const detailResize = rule(".k2b-app-workspace__resize[data-app-workspace-resize=detail]");
-      expect(detailResize).toContain("right:calc(var(--k2b-workspace-detail-fit) + .5rem)");
+      expect(detailResize).toContain(
+        "right:calc(max(var(--k2b-workspace-panel-min),100% - var(--k2b-workspace-detail-inset)) + var(--k2b-workspace-detail-inset))",
+      );
       expect(detailResize).not.toContain("order:");
     });
 
     test("keeps workspace geometry transparent across Solid island wrappers", () => {
       expect(css).toMatch(/>:is\(solid-island,solid-client\)>\.k2b-app-workspace__sidebar/);
       expect(css).toMatch(/>:is\(solid-island,solid-client\)>\.k2b-app-workspace__detail:not\(\[hidden\]\)/);
-      expect(rule(".k2b-app-workspace__resize[data-app-workspace-resize=detail]")).toContain("--k2b-workspace-detail-fit");
+      expect(rule(".k2b-app-workspace__resize[data-app-workspace-resize=detail]")).toContain("grid-area:detail");
       expect(css).toMatch(/>:is\(solid-island,solid-client\)>\.k2b-app-workspace__resize\[data-app-workspace-resize=drawer\]/);
     });
 

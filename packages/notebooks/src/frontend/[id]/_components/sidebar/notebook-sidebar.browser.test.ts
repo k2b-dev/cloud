@@ -742,3 +742,40 @@ describe("Notebook sidebar order by hand", () => {
     }
   }, 30_000);
 });
+
+describe("Notebook sidebar names the open note", () => {
+  test("from 64 rem the marked note replaces the title row; the head names the note only while the note has no heading", async () => {
+    const page = await (await browser.newContext(desktop)).newPage();
+    try {
+      await page.goto(new URL("/app/notebooks/Book01/notes/Exam01", server.url).href);
+      // The trail Cloud's layout publishes for a note: the notebook above it.
+      await page.evaluate(() => {
+        const script = document.createElement("script");
+        script.type = "application/json";
+        script.setAttribute("data-k2b-page-trail", "");
+        script.textContent = JSON.stringify({ title: "Examples", ancestors: [{ title: "Social media", href: "/app/notebooks/Book01" }] });
+        document.body.append(script);
+      });
+      await page.evaluate((value) => window.mountNotebookSidebar(value, "en"), { ...ctx(), selectedNoteId: "Exam01" });
+      const current = page.locator('.k2b-app-workspace__sidebar [aria-current="page"]');
+      await expect(current.getAttribute("href")).resolves.toBe("/app/notebooks/Book01/notes/Exam01");
+      const head = await page.locator('.k2b-app-workspace__head[data-trail="up"]').boundingBox();
+      expect(head!.width).toBeLessThanOrEqual(1);
+      expect(head!.height).toBeLessThanOrEqual(1);
+      await expect(page.locator(".k2b-page-title__up:visible, .k2b-page-title__title:visible").count()).resolves.toBe(0);
+      await expect(page.locator("h1").allTextContents()).resolves.toEqual(["Examples"]);
+      // The note's own first heading names it; the head adds no second one.
+      await page.evaluate(() => {
+        const heading = document.createElement("h1");
+        heading.textContent = "Examples";
+        document.querySelector(".notebook-document-surface")!.append(heading);
+      });
+      await expect(page.getByRole("heading", { level: 1 }).count()).resolves.toBe(1);
+      await expect(page.locator(".k2b-app-workspace__head-heading").evaluate((element) => getComputedStyle(element).display)).resolves.toBe(
+        "none",
+      );
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+});

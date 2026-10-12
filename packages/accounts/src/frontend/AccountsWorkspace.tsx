@@ -4,6 +4,7 @@ import AccountsNavSidebar, { type AccountsNavActiveKey } from "./AccountsNavSide
 
 type Props = {
   active: AccountsNavActiveKey;
+  ancestor?: boolean;
   isAdmin: boolean;
   pendingRequests: number;
   scrollPreserveKey: string;
@@ -13,7 +14,7 @@ type Props = {
 export default function AccountsWorkspace(props: Props) {
   return (
     <AppWorkspace mobileSurface="flush" class="h-full">
-      <AccountsNavSidebar active={props.active} isAdmin={props.isAdmin} pendingRequests={props.pendingRequests} />
+      <AccountsNavSidebar active={props.active} ancestor={props.ancestor} isAdmin={props.isAdmin} pendingRequests={props.pendingRequests} />
       <AppWorkspace.Content>
         <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scrollPreserveKey={props.scrollPreserveKey}>
           {props.children}

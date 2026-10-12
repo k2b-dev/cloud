@@ -92,7 +92,9 @@ const workspace = (prefix, detail) =>
                   return [createComponent(AppWorkspace.MainPane, { id: prefix + "list", label: "List", children: "List" }), "Reader"];
                 },
               }),
-              createComponent(AppWorkspace.Detail, { id: prefix + "detail", open: true, width: "sm", children: detail }),
+              // The inner workspace tests overlay ownership inside a narrow panel;
+              // its own full-height detail would cover the navigation button.
+              createComponent(AppWorkspace.Detail, { id: prefix + "detail", open: prefix === "", width: "sm", children: detail }),
             ];
           },
         }),
@@ -207,12 +209,12 @@ describe("compact workspace sidebar", () => {
     try {
       const closed = await read(page);
       // The workspace's own 1 px frame surrounds the head; the head adds no line.
-      expect(closed.bar).toMatchObject({ display: "flex", left: 1, top: 1, width: 818, borders: "0px 0px 0px 0px" });
+      expect(closed.bar).toMatchObject({ display: "flex", left: 1, top: 1, width: 490, borders: "0px 0px 0px 0px" });
       expect(closed.title).toBe("Reports");
       expect(closed.sidebar.visibility).toBe("hidden");
       expect(closed.pane.left).toBe(1);
       expect(closed.pane.top).toBe(47);
-      expect(closed.detail.top).toBe(55);
+      expect(closed.detail.top).toBe(9);
       expect(closed).toMatchObject({ label: "Show navigation", expanded: "false" });
 
       await page.locator("[data-app-workspace-sidebar-toggle]").click();
@@ -319,7 +321,13 @@ describe("compact workspace sidebar", () => {
         atRender: (window as unknown as { detailAtRender: number }).detailAtRender,
         attached: Math.round(width(".k2b-app-workspace__detail")),
         max: Number(document.querySelector("[data-app-workspace-resize='detail']")!.getAttribute("aria-valuemax")),
-        room: Math.round(width(".k2b-app-workspace__content") - 320 - 16),
+        room: Math.round(
+          document.querySelector(".k2b-app-workspace")!.getBoundingClientRect().right -
+            document.querySelector<HTMLElement>(".k2b-app-workspace")!.clientLeft -
+            document.querySelector(".k2b-app-workspace__content")!.getBoundingClientRect().left -
+            320 -
+            8,
+        ),
         main: Math.round(width(".k2b-app-workspace__main")),
       };
     });
@@ -357,13 +365,13 @@ describe("compact workspace sidebar", () => {
     }
   });
 
-  test("at 820 px a stacked sidebar stays above the content, with no bar and no share of the detail's width", async () => {
+  test("at 820 px a stacked sidebar stays above the content beside the full-height detail, with no bar", async () => {
     const page = await load(820, "stacked=1&detail=400");
     try {
       await settle(page);
       const shape = await read(page);
       expect(shape.bar.display).toBe("none");
-      expect(shape.sidebar).toMatchObject({ display: "flex", visibility: "visible", left: 1, top: 1, width: 818 });
+      expect(shape.sidebar).toMatchObject({ display: "flex", visibility: "visible", left: 1, top: 1, width: 410 });
       expect(shape.pane.top).toBeGreaterThan(shape.sidebar.top);
       expect(await page.getByText("Projects").isVisible()).toBe(true);
       const detail = await detailSizes(page);

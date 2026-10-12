@@ -251,7 +251,7 @@ export default function FilterBar(props: FilterBarProps) {
     // fixed, chips that count selections come last, and Clear takes the free space after the chips.
     // Chips that still outgrow the row scroll in their own box, so Clear and the actions stay reachable.
     return (
-      <div class="@container pr-[var(--k2b-detail-space,0px)]" style="view-transition-name: filter-bar">
+      <div class="@container" style="view-transition-name: filter-bar">
         <div class="flex items-center gap-2" data-spaces-board-toolbar>
           <SearchInput
             class="min-w-0 flex-1 @min-[68rem]:w-52 @min-[68rem]:flex-none"
@@ -330,7 +330,7 @@ export default function FilterBar(props: FilterBarProps) {
   }
 
   return (
-    <div class="flex flex-col gap-2 pr-[var(--k2b-detail-space,0px)]" style="view-transition-name: filter-bar">
+    <div class="flex flex-col gap-2" style="view-transition-name: filter-bar">
       <SearchInput
         value={props.filter.search}
         busy={props.searchBusy}

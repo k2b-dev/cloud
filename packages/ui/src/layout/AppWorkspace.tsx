@@ -14,6 +14,7 @@ import {
   Show,
   useContext,
 } from "solid-js";
+import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
 import {
   APP_WORKSPACE_DETAIL_CLOSE_EVENT,
@@ -147,6 +148,8 @@ export type AppWorkspaceProps = {
   class?: string;
   /** A host with its own phone chrome can use the full canvas below 48rem (768 px). */
   mobileSurface?: "contained" | "flush";
+  /** Draws no frame: no border, corner radius, or shadow, for an overview that is the page itself. */
+  flat?: boolean;
   resizable?: boolean;
   /**
    * Restores a persisted layout when the workspace mounts. Persistence itself
@@ -311,7 +314,12 @@ export type AppWorkspaceSidebarItemProps = {
   scroll?: NavigationScrollMode;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   onClick?: (event: MouseEvent) => void;
-  active?: boolean;
+  /**
+   * Marks the current page (`aria-current="page"`). On a page deeper than the
+   * sidebar lists, pass `"ancestor"` for the item that contains it: it keeps
+   * the highlight, and the page keeps its back link.
+   */
+  active?: boolean | "ancestor";
   activeClass?: string;
   disabled?: boolean;
   icon?: string;
@@ -611,13 +619,13 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
     "--k2b-workspace-panel-min": `${minWidth()}px`,
     "--k2b-workspace-panel-max": `${maxWidth()}px`,
   });
-  // The panel floats over the content area, and `Main` beside it makes room
-  // in CSS alone, so a server-rendered page arrives in its final geometry. A
-  // sibling cannot read the panel's own variables, so this rule hands the
-  // open panel's size to the content area around it.
-  const contentRule = () => {
+  // An open panel takes a column at the workspace's end, sized in CSS alone,
+  // so a server-rendered page arrives in its final geometry. The workspace
+  // cannot read the panel's own variables, so this rule hands the open
+  // panel's size to its workspace.
+  const workspaceRule = () => {
     const open = `#${domId()}:not([hidden])`;
-    return `.k2b-app-workspace__content:has(> ${open}, > :is(solid-island, solid-client) > ${open}){--k2b-detail-size:${size()};--k2b-detail-min:${minWidth()}px;--k2b-detail-max:${maxWidth()}px}`;
+    return `.k2b-app-workspace:has(> .k2b-app-workspace__content > ${open}, > .k2b-app-workspace__content > :is(solid-island, solid-client) > ${open}){--k2b-detail-size:${size()};--k2b-detail-min:${minWidth()}px;--k2b-detail-max:${maxWidth()}px}`;
   };
   let aside: HTMLElement | undefined;
   onMount(() => {
@@ -635,7 +643,7 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
   });
   return (
     <>
-      <style innerHTML={contentRule()} />
+      <style innerHTML={workspaceRule()} />
       <Show when={resizable()}>
         <ResizeHandle
           kind="detail"
@@ -781,8 +789,9 @@ const AppWorkspaceSidebarDesktop = (props: { children: JSX.Element }): JSX.Eleme
 // hydrates. Islands load asynchronously and server-only sidebars never mount,
 // so `onMount` would be too late or never run. The memory is one
 // `sessionStorage` entry per path segment and sidebar position and ends with
-// the tab. A stored offset is applied first; the current item is then kept in
-// view, which is a no-op when the offset already shows it. The frame callback
+// the tab. A stored offset is applied first; the current item, or on a deeper
+// page the item that contains it, is then kept in view, which is a no-op when
+// the offset already shows it. The frame callback
 // repeats the restore once the whole document is parsed, because content that
 // follows the sidebar can still change its height before the first paint.
 const SIDEBAR_SCROLL_MEMORY_SCRIPT = [
@@ -792,7 +801,7 @@ const SIDEBAR_SCROLL_MEMORY_SCRIPT = [
   'var key="k2b-sidebar-scroll:"+location.pathname.split("/")[1]+":"+document.querySelectorAll(".k2b-app-workspace__sidebar-body").length;',
   "var restore=function(){",
   "var stored=storage.getItem(key);if(stored!==null)body.scrollTop=Number(stored);",
-  'var current=body.querySelector(\'[aria-current="page"]\');if(current)current.scrollIntoView({block:"nearest"});',
+  'var current=body.querySelector(\'[aria-current="page"]\')||body.querySelector(\'[aria-current="true"]\');if(current)current.scrollIntoView({block:"nearest"});',
   "};",
   "restore();requestAnimationFrame(restore);",
   "var frame=0;",
@@ -971,7 +980,7 @@ type AppWorkspaceSidebarRowProps = {
   scroll?: NavigationScrollMode;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   onClick?: (event: MouseEvent) => void;
-  active?: boolean;
+  active?: boolean | "ancestor";
   activeClass?: string;
   disabled?: boolean;
   tone?: AppWorkspaceSidebarItemTone;
@@ -1003,7 +1012,7 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
     },
     ...data(),
   });
-  const current = () => (props.active ? ("page" as const) : undefined);
+  const current = (): "page" | "true" | undefined => (props.active === "ancestor" ? "true" : props.active ? "page" : undefined);
 
   const Control = (control: { grouped: boolean }) => {
     const attrs = () => (control.grouped ? { class: "k2b-app-workspace__sidebar-item-main" } : common());
@@ -1691,11 +1700,14 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
 
 /**
  * The row above the work area. From 48 to 64 rem it holds the button that
- * opens the overlay sidebar. On a page with a page above it, at every width,
- * it shows the host's page title with the way up (see `PageTitle`); the
- * page's own `PageTitle` takes its place. It is one fixed height and draws no
- * line; CSS decides when it shows, so the server-rendered page already has
- * its final geometry.
+ * opens the overlay sidebar. On a page with a page above it, it shows the
+ * host's page title with the way up (see `PageTitle`); the page's own
+ * `PageTitle` takes its place. The visible title is no heading, because many
+ * pages render their own `h1`. From 64 rem a sidebar that marks the current
+ * page names it already: the row hides, and only on a page without its own
+ * `h1` its heading stays for assistive technology. It is one fixed height
+ * and draws no line; CSS decides when it shows, so the server-rendered page
+ * already has its final geometry.
  */
 function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean }): JSX.Element {
   const messages = useWorkspaceMessages();
@@ -1712,7 +1724,17 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean }): 
       >
         <i class="ti ti-layout-sidebar" aria-hidden="true" />
       </IconButton>
-      <Show when={trail()}>{(current) => <PageTitle trail={current()} as="p" fallback />}</Show>
+      <Show when={trail()}>
+        {(current) => (
+          <>
+            <PageTitle trail={current()} as="p" fallback />
+            {/* A head that never hydrates follows a new trail through `followPageTrail`. */}
+            <h1 class="k2b-app-workspace__head-heading" data-k2b-page-trail-title="" data-k2b-server={isServer ? "" : undefined}>
+              {current().title}
+            </h1>
+          </>
+        )}
+      </Show>
     </div>
   );
 }
@@ -1749,6 +1771,7 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
           class={`k2b-app-workspace ${props.class ?? ""}`}
           data-k2b-app-workspace
           data-mobile-surface={props.mobileSurface}
+          data-flat={props.flat ? "true" : undefined}
           data-sidebar-collapsed={
             initialLayoutState()?.sidebarCollapsed === undefined ? undefined : String(initialLayoutState()?.sidebarCollapsed)
           }

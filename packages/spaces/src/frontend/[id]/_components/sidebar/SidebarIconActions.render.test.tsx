@@ -15,6 +15,7 @@ const { default: CreateItemButton } = await import("./CreateItemButton");
 const { default: CopyICalButton } = await import("./CopyICalButton");
 const { default: SearchButton } = await import("../search/SearchButton");
 const { default: ViewLinks } = await import("./ViewLinks");
+const { default: SpaceSidebar } = await import("./SpaceSidebar");
 const { LocaleProvider } = await import("@k2b/ui");
 
 describe("Spaces sidebar icon actions", () => {
@@ -65,5 +66,41 @@ describe("Spaces sidebar icon actions", () => {
 
     expect(html).toContain("k2b-app-workspace__sidebar-icon-action");
     expect(html).not.toContain("k2b-icon-button");
+  });
+
+  test("names the space above its views, as the page shows no title row beside a sidebar that marks the view", () => {
+    const space = {
+      id: "Space1",
+      name: "Launch plan",
+      description: null,
+      color: "#6366f1",
+      icalToken: "calendar-token",
+      createdAt: "2026-08-10T10:00:00.000Z",
+      updatedAt: "2026-08-10T10:00:00.000Z",
+      columns: [],
+      virtualColumns: [],
+      tags: [],
+      templates: [],
+    };
+    const html = renderToString(() =>
+      createComponent(SpaceSidebar, {
+        ctx: {
+          space,
+          columns: [],
+          tags: [],
+          currentView: "list",
+          hasOverride: false,
+          settings: { view: "list", hideSettings: false },
+          query: "view=list",
+          canWrite: false,
+        },
+        baseUrl: "/app/spaces/Space1",
+      }),
+    );
+    const section = html
+      .match(/<section\b[^>]*k2b-app-workspace__sidebar-section[\s\S]*?<\/section>/g)
+      ?.find((part) => part.includes("view=list"));
+    expect(section?.replace(/<!--[^>]*-->/g, "")).toContain("<h2>Launch plan</h2>");
+    expect(section).toMatch(/<a\b[^>]*aria-current="page"[^>]*>/);
   });
 });

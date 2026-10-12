@@ -32,7 +32,7 @@ import {
 as direct children of `Content`, possibly through a Solid island wrapper. The
 floating geometry depends on that placement. Put `BottomDrawer` at the workspace root.
 
-`Main` adds no padding. Pass an application class through `class` when the workspace needs an inset. Omit it for edge-to-edge tables, editors, canvases, or `Panes`. Set `width="content"` on an overview or reading page: each direct child then becomes one centered column with the shared 72 rem page width on large screens and full width below, while the detail panel floats inside the content area. `Main` is the default scroll owner and reserves a stable scrollbar gutter. Pass `scrollPreserveKey` when enhanced navigation should restore its position.
+`Main` adds no padding. Pass an application class through `class` when the workspace needs an inset. Omit it for edge-to-edge tables, editors, canvases, or `Panes`. Set `width="content"` on an overview or reading page: each direct child then becomes one centered column with the shared 72 rem page width on large screens and full width below, while the detail panel occupies its own full-height column at the workspace's end. `Main` is the default scroll owner and reserves a stable scrollbar gutter. Pass `scrollPreserveKey` when enhanced navigation should restore its position.
 
 `Main` and `MainPane` show subtle 16 px overflow hints by default when they
 own scrolling. Set `scrollFade={false}` to opt out. A split `Main` wrapper
@@ -80,15 +80,23 @@ element whose `touch-action` keeps that direction for itself. An open panel
 adds that space to Main even when the application hides it with its own CSS,
 so keep `open` false while the panel should not show.
 
-For a board, wide table, or week calendar, add `k2b-detail-trail` to its
-horizontal scroll container inside Main. Main then keeps its full width, and
-the scroller gains trailing space beside the panel. Use
-`scrollClass="k2b-detail-trail"` on DataTable; a table that fits keeps its
-width and the space follows it. Pad fixed rows in Main, such as toolbars,
-filters, error rows, and pagination, with
-`padding-inline-end: var(--k2b-detail-space, 0px)`, adding any existing inset.
-The variable is zero when Main reflows. Closing retains only trailing space
-still in view and releases it as the person scrolls back.
+From 48 rem, Detail occupies a column at the workspace's end, beside the
+head and all panes, with a 0.5 rem inset on the top, right, and bottom. Main
+keeps at least 20 rem. Give Main 0.5 rem padding so its surfaces end one gap
+before the panel, with their own rounded right corners. From 64 rem the
+workspace allows the panel's shadow beyond its edges; sidebar, content, and
+bottom drawer round their own outer corners. On touch tablets from 48 to
+64 rem, a closable panel overlays Main as a drawer instead.
+
+Use `scrollClass="k2b-detail-trail"` on DataTable to keep the columns at their
+width without the panel. The scroller narrows beside Detail and scrolls the
+same table. Where Main is already at its 20 rem minimum, the panel's column
+narrows, and the table grows by the part of the panel's width the column does
+not get. Boards and calendars
+narrow with Main and keep their own scroll content. Mark a board's horizontal
+scroller with `k2b-detail-trail` too: under the tablet drawer, which leaves
+Main its width, a marked scroller gets the drawer's width as space at its end,
+so its last column scrolls out from under the drawer.
 
 Escape closes a closable panel. J and K step a steppable panel. F6 switches
 focus between Main’s remembered item and the panel title, with or without
@@ -104,13 +112,15 @@ panel is open moves focus to the new title. A phone sheet also focuses its
 title after a pointer selection; wider pointer opens keep focus on the item.
 Focus stays where it is when the person moves it first. The controller keeps
 the selected row at its vertical position through reflow and reveals a freshly
-selected item beside a trail panel. Closing returns focus to the remembered
+selected item beside the panel; in a table it reveals the clicked cell, also
+in a row wider than its scroller. Closing returns focus to the remembered
 item when focus was in the panel.
 
 The first server-rendered or newly inserted panel appears without motion.
-After two animation frames, later opens and closes use the shared transitions.
-Reduced motion disables them and makes item reveal immediate. Dragging tracks
-the pointer without easing.
+After two animation frames, opening reserves the column immediately and slides
+the panel in. Closing slides the panel out over 140 ms while the column stays
+reserved, then gives the room back in one step. Reduced motion makes opening,
+closing, and item reveal immediate. Dragging tracks the pointer without easing.
 
 ## Navigation
 
@@ -121,7 +131,7 @@ follows the viewport width:
 | --- | --- | --- |
 | Below 48 rem (768 px) | Hidden; the host renders its mobile navigation | One pane at a time; Detail is a sheet over the lower 55% of the window, and Main scrolls its rows above it; full height covers Main |
 | 48 to 64 rem (768 to 1023 px) | An overlay that a button in the head opens; a `mobile="stacked"` sidebar stays above the content | Panes side by side; Detail floats with reflow, or overlays Main as a closable drawer on coarse pointers |
-| From 64 rem (1024 px) | A column beside the work area | Panes side by side; Detail floats 8 px inside Content and Main makes room |
+| From 64 rem (1024 px) | A column beside the work area | Panes side by side; Detail spans the workspace height with an 8 px inset and Main makes room |
 | From 96 rem (1536 px) | Same navigation | Same workspace geometry inside the host’s app card |
 
 Below 48 rem the host renders its mobile navigation using
@@ -157,7 +167,13 @@ draws no line; only its place separates it from the content. It shows:
 - at every width, when the host's page trail has a page above the current one.
   It then holds a [PageTitle](/en/ui/layout/page-title) with the way up: from
   48 rem `‹ Parent` or a path above the title, below 48 rem a back arrow left
-  of it.
+  of it. The title is the page's `h1`. From 64 rem, a visible, non-collapsed
+  sidebar with `[aria-current="page"]` hides the title row and its back link;
+  the `h1` remains visually hidden for assistive technology. Mark the exact
+  current page with `SidebarItem active`; on a page deeper than the sidebar
+  lists, mark the containing item with `active="ancestor"` so it stays
+  highlighted and the page keeps its back link. Compact layouts keep the way
+  up. A host's Alt+Up shortcut still reads the trail.
 
 The title comes from the host's page trail: a host renders
 `PageTrailProvider` around the page during server rendering and calls
@@ -173,6 +189,10 @@ new trail once the host runs `followPageTrail()`; Cloud's `Layout` does.
 Set `mobileSurface="flush"` on an outer workspace when the host supplies the
 phone chrome. This removes its exterior border, radius, shadow, and background
 below 48 rem. Embedded workspaces keep the default contained surface.
+
+Set `flat` on a workspace that is the page itself, such as an app's overview.
+It draws no border, corner radius, or shadow at any width, and its sidebar and
+content keep square outer corners.
 
 Sidebar links use document navigation by default. Set `navigation="enhanced"`
 only inside an island that loads and applies the target state before committing
@@ -280,6 +300,10 @@ Active rows use the workspace accent color and a stronger text weight without
 a persistent fill. Hover retains its quiet background, and keyboard focus keeps
 the shared focus ring. Standalone themes can override
 `--k2b-app-workspace-active`; Cloud maps it to the current application accent.
+
+Mark the exact current page with `active`; on a page deeper than the sidebar
+lists, use `active="ancestor"` on the containing item to keep its highlight and
+the page's back link.
 
 ```tsx
 <AppWorkspace.SidebarSection
@@ -471,7 +495,7 @@ const [expanded, setExpanded] = createSignal<readonly string[]>(["mail"]);
 
 ```ts
 type AppWorkspaceProps = {
-  mobileSurface?: "contained" | "flush";
+  mobileSurface?: "contained" | "flush"; flat?: boolean;
   children: JSX.Element; class?: string; resizable?: boolean;
   layoutState?: () => AppWorkspaceLayoutState | null | undefined;
   onLayoutChange?: (state: AppWorkspaceLayoutState) => void; controller?: false;
@@ -533,7 +557,7 @@ type AppWorkspaceSidebarItemProps = {
   description?: JSX.Element; preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; align?: "center" | "end"; viewportSize?: "compact"; onOpenChange?: (open: boolean) => void };
   children: JSX.Element; href?: string; navigation?: "enhanced" | "document"; replace?: boolean;
   scroll?: NavigationScrollMode; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
-  onClick?: (event: MouseEvent) => void; active?: boolean; activeClass?: string; disabled?: boolean;
+  onClick?: (event: MouseEvent) => void; active?: boolean | "ancestor"; activeClass?: string; disabled?: boolean;
   icon?: string; meta?: JSX.Element; metaVisibility?: AppWorkspaceSidebarAccessoryVisibility;
   actions?: JSX.Element; tone?: AppWorkspaceSidebarItemTone; title?: string; viewTransitionName?: string;
   class?: string; depth?: number; actionIcon?: string; actionLabel?: string;

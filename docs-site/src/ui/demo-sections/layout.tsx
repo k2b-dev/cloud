@@ -181,7 +181,7 @@ const WorkspaceDemo = () => {
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
-        <AppWorkspace.Main mobilePane="main">
+        <AppWorkspace.Main mobilePane="main" class="p-2">
           <div class="ui-demo-pane">
             <div class="ui-workspace-demo__body">
               <strong>{activeView() === "activity" ? "Recent activity" : `Inventory · ${activeView()}`}</strong>
@@ -264,7 +264,7 @@ const [navigationHidden, setNavigationHidden] = createSignal(false);
     </AppWorkspace.SidebarSection>
   </AppWorkspace.Sidebar>
   <AppWorkspace.Content>
-    <AppWorkspace.Main>
+    <AppWorkspace.Main class="p-2">
       <AppWorkspace.MainPane id="main-2" label="Main 2" open={paneOpen()}>…</AppWorkspace.MainPane>
       …
     </AppWorkspace.Main>

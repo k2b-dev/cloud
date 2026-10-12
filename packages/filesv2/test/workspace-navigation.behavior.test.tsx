@@ -347,7 +347,7 @@ describe("Filesv2 progressive navigation", () => {
       expect(apiRequests.at(-1)!.input).toEqual({ param: { baseId }, query: { after: undefined } });
       apiRequests.at(-1)!.resolve(Response.json({ entries: [], next: null }));
       await flush();
-      expect(dom.root.querySelector("h1")?.textContent).toBe("Trash");
+      expect(dom.root.querySelector("h1:not(.k2b-app-workspace__head-heading)")?.textContent).toBe("Trash");
       expect(dom.root.textContent).toContain("The trash is empty.");
       // The trash belongs to its storage root, which stays the highlighted tree node.
       expect(selectedNode()).toBe(JSON.stringify([baseId, null, ""]));
@@ -620,7 +620,7 @@ describe("Filesv2 progressive navigation", () => {
     expect(apiRequests[1]!.kind).toBe("shares");
     apiRequests[1]!.resolve(Response.json({ items: [], next: null }));
     await flush();
-    expect(dom.root.querySelector("h1")?.textContent).toBe("Shares");
+    expect(dom.root.querySelector("h1:not(.k2b-app-workspace__head-heading)")?.textContent).toBe("Shares");
     expect(dom.root.textContent).not.toContain("This directory is missing");
   });
 

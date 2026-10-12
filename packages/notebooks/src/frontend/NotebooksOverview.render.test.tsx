@@ -70,6 +70,7 @@ describe("Notebooks overview", () => {
   test("renders the recent cross-notebook workspace and stable desktop activity panel", () => {
     const html = renderOverview();
     expect(html).toContain('class="k2b-app-workspace notebooks-overview-workspace"');
+    expect(html).toMatch(/class="k2b-app-workspace notebooks-overview-workspace"[^>]*data-flat="true"/);
     // Notebooks are object rows in a stacked-on-mobile sidebar, not a page tree.
     expect(html).toMatch(/<aside[^>]*aria-label="Notebooks"[^>]*data-mobile="stacked"/);
     expect(html).not.toContain("k2b-app-workspace__nav-tree");

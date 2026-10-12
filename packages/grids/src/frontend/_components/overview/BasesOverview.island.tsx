@@ -441,7 +441,7 @@ export default function BasesOverview(props: Props) {
   );
 
   return (
-    <AppWorkspace mobileSurface="flush" class="grids-overview-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
+    <AppWorkspace mobileSurface="flush" flat class="grids-overview-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
       <h1 class="sr-only">Grids</h1>
       <AppWorkspace.Sidebar label={t.bases} mobile="stacked" resizable={false}>
         <AppWorkspace.SidebarDesktop>

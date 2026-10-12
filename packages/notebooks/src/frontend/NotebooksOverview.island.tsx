@@ -365,7 +365,7 @@ export default function NotebooksOverview(props: Props) {
   });
 
   return (
-    <AppWorkspace mobileSurface="flush" class="notebooks-overview-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
+    <AppWorkspace mobileSurface="flush" flat class="notebooks-overview-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
       <h1 class="sr-only">{t().notebooks}</h1>
       <AppWorkspace.Sidebar label={t().notebooks} mobile="stacked" resizable={false}>
         <AppWorkspace.SidebarDesktop>

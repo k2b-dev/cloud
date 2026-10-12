@@ -18,6 +18,7 @@ export type AccountsNavActiveKey =
 
 type Props = {
   active: AccountsNavActiveKey;
+  ancestor?: boolean;
   isAdmin: boolean;
   pendingRequests: number;
 };
@@ -30,11 +31,11 @@ type NavItem = {
   badge?: string;
 };
 
-const renderItem = (item: NavItem) => (
+const renderItem = (item: NavItem, ancestor: boolean) => (
   <AppWorkspace.SidebarItem
     href={item.href}
     icon={item.icon}
-    active={item.active}
+    active={item.active && (ancestor ? "ancestor" : true)}
     navigation="document"
     meta={item.badge ? <span class="text-xs text-dimmed">{item.badge}</span> : undefined}
   >
@@ -106,10 +107,12 @@ export default function AccountsNavSidebar(props: Props) {
           <AppWorkspace.SidebarBody scrollPreserveKey="accounts-sidebar">
             <AppWorkspace.SidebarSection>
               <AccountsSearchButton isAdmin={props.isAdmin} variant="sidebar" registerCommand />
-              {generalItems().map(renderItem)}
+              {generalItems().map((item) => renderItem(item, Boolean(props.ancestor)))}
             </AppWorkspace.SidebarSection>
             {props.isAdmin ? (
-              <AppWorkspace.SidebarSection title={messages().admin}>{adminItems().map(renderItem)}</AppWorkspace.SidebarSection>
+              <AppWorkspace.SidebarSection title={messages().admin}>
+                {adminItems().map((item) => renderItem(item, Boolean(props.ancestor)))}
+              </AppWorkspace.SidebarSection>
             ) : null}
           </AppWorkspace.SidebarBody>
         </AppWorkspace.SidebarDesktop>

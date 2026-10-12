@@ -82,6 +82,7 @@ describe("Grids bases overview", () => {
   test("lists bases as sidebar objects and recent tables across all bases", () => {
     const html = renderOverview();
     expect(html).toContain('class="k2b-app-workspace grids-overview-workspace"');
+    expect(html).toMatch(/class="k2b-app-workspace grids-overview-workspace"[^>]*data-flat="true"/);
     expect(html).toMatch(/<aside[^>]*aria-label="Bases"[^>]*data-mobile="stacked"/);
     expect(html).not.toContain("k2b-app-workspace__nav-tree");
     expect(html).toContain("--k2b-workspace-sidebar-width:304px");

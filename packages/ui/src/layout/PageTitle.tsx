@@ -217,7 +217,8 @@ export function PageTitle(props: PageTitleProps): JSX.Element {
 
 /**
  * Keeps server-rendered titles of the host's trail current: a workspace head
- * that never hydrates, and an app's own header title from the host's trail.
+ * that never hydrates, its heading, and an app's own header title from the
+ * host's trail.
  * When the host publishes a new trail, for example after `setPageTrail()`,
  * each such title is replaced in place by a live one with the same element,
  * class, and subtitle, and a head learns whether it now has a page above it.
@@ -256,6 +257,9 @@ export const followPageTrail = (root: ParentNode = document): (() => void) => {
         }),
       );
     }
+    // A server-rendered workspace heading carries only the title.
+    for (const heading of root.querySelectorAll<HTMLElement>("[data-k2b-page-trail-title][data-k2b-server]"))
+      if (trail && !heading.closest("solid-island, solid-client")) heading.textContent = trail.title;
     // The row's `data-trail` decides whether it shows; it follows the depth.
     for (const row of root.querySelectorAll<HTMLElement>("[data-trail]:has(> .k2b-page-title[data-fallback])"))
       if (!row.closest("solid-island, solid-client")) row.dataset.trail = trail?.ancestors.length ? "up" : "title";

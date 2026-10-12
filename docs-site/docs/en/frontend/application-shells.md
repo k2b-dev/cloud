@@ -93,10 +93,13 @@ Their header controls exist only on phones.
 
 Below 768 px, Detail is a sheet over the lower 55% of the window, also on pages
 without `fullPage` that grow with their content. Main’s rows scroll above it;
-the grabber switches to full height. From 768 px, it floats 8 px inside
-Content and Main makes room while keeping at least 320 px. On coarse pointers
-from 768 to 1023 px, a closable detail overlays Main as a drawer. The host’s
-app card from 1536 px surrounds this same workspace geometry.
+the grabber switches to full height. From 768 px, it occupies a full-height
+column beside the head and panes, with a 0.5 rem inset at the workspace's top,
+right, and bottom. Main keeps at least 320 px. Give Main 0.5 rem padding so
+its surfaces end one gap before the panel with their own rounded corners.
+From 1024 px the workspace lets the panel's shadow extend beyond its edges.
+On coarse pointers from 768 to 1023 px, a closable detail overlays Main as a
+drawer. The host’s app card from 1536 px surrounds this same workspace geometry.
 
 In an island or client component, pass `onClose` the panel’s existing close or
 deselect action. Escape and dismissal gestures then use that action too. A detail that
@@ -107,13 +110,18 @@ owns `open` and URL selection. The panel’s Escape, J, K, and F6 run after the
 page’s own keyboard handlers, so a handler that uses one of these keys for
 local state calls `preventDefault()`.
 
-Add `k2b-detail-trail` to the horizontal scroll container of a board, wide
-table, or week calendar that should continue under the panel. For DataTable,
-pass `scrollClass="k2b-detail-trail"`. Main keeps its width and the scroller
-adds space at its end. Add `var(--k2b-detail-space, 0px)` to the trailing
-padding of every fixed row in Main, such as toolbars, filters, error rows, and
-pagination. The variable is zero when Main reflows. See
-[AppWorkspace](/en/ui/layout/workspace#floating-detail) for focus, keyboard
+Opening reserves the column immediately, then slides the panel in. Closing
+slides it out over 140 ms with the column still reserved, then returns the
+room in one step. The initial server-rendered panel appears without motion;
+reduced motion makes opening and closing instant.
+
+For DataTable, pass `scrollClass="k2b-detail-trail"` to keep column widths
+while the scroller narrows beside the panel. Closing returns the full width
+without extra space. Mark a board's horizontal scroller with
+`k2b-detail-trail` as well: under the tablet drawer, the marked scroller gets
+the drawer's width as space at its end, so its last column scrolls out from
+under the drawer.
+See [AppWorkspace](/en/ui/layout/workspace#floating-detail) for focus, keyboard
 shortcuts, gestures, motion, and sizing.
 
 ## Choose a dialog

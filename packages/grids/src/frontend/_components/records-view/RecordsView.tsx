@@ -761,6 +761,7 @@ export default function RecordsView(props: Props) {
               tableKind={props.tableKind}
               baseId={props.baseId}
               tableId={props.tableId}
+              tableName={tableName()}
               recordCountText={recordCountText()}
               busy={recordsBusy()}
               needsManualRefresh={needsManualRefresh()}
@@ -786,7 +787,7 @@ export default function RecordsView(props: Props) {
 
             {/* Saved views use their settings dialog; trash mode only exposes recovery actions. */}
             <Show when={!props.viewMode && !props.trashMode}>
-              <div class="shrink-0 pr-[var(--k2b-detail-space,0px)]">
+              <div class="shrink-0">
                 <GridToolbar
                   baseId={props.baseId}
                   tableId={props.tableId}
@@ -846,7 +847,7 @@ export default function RecordsView(props: Props) {
                   align="left"
                   title={t().refreshFailed}
                   description={failure().error.message}
-                  class="shrink-0 py-2 mr-[var(--k2b-detail-space,0px)]"
+                  class="shrink-0 py-2"
                   action={
                     <Button variant="secondary" size="sm" type="button" onClick={retryQuery}>
                       <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}

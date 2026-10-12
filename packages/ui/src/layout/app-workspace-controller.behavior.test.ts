@@ -1064,111 +1064,6 @@ describe("floating detail controller", () => {
     dispose();
   });
 
-  test("holds trailing space before measuring a closed board, then shrinks it as it scrolls out", async () => {
-    const { root, main, aside } = detailWorkspace();
-    const trail = document.createElement("div");
-    trail.className = "k2b-detail-trail";
-    trail.style.paddingInlineEnd = "432px";
-    let left = 1032;
-    Object.defineProperties(trail, {
-      clientWidth: { get: () => 1000 },
-      scrollWidth: {
-        get: () => 1600 + (aside.hidden ? Number.parseFloat(trail.style.getPropertyValue("--k2b-detail-trail-hold")) || 0 : 432),
-      },
-      scrollLeft: {
-        get: () => left,
-        set: (value: number) => {
-          left = value;
-        },
-      },
-    });
-    main.append(trail);
-    const dispose = installAppWorkspaceController({ root });
-    aside.hidden = true;
-    await window.happyDOM.whenAsyncComplete();
-    expect(trail.style.getPropertyValue("--k2b-detail-trail-hold")).toBe("432px");
-    expect(trail.scrollLeft).toBe(1032);
-    trail.scrollLeft = 800;
-    trail.dispatchEvent(new Event("scroll"));
-    expect(trail.style.getPropertyValue("--k2b-detail-trail-hold")).toBe("200px");
-    trail.scrollLeft = 600;
-    trail.dispatchEvent(new Event("scroll"));
-    expect(trail.style.getPropertyValue("--k2b-detail-trail-hold")).toBe("");
-    dispose();
-  });
-
-  for (const condition of ["no overflow", "at start"]) {
-    test(`closing releases trailing space ${condition}`, async () => {
-      const { root, main, aside } = detailWorkspace();
-      const trail = document.createElement("div");
-      trail.className = "k2b-detail-trail";
-      trail.style.paddingInlineEnd = "432px";
-      Object.defineProperties(trail, {
-        clientWidth: { value: 1000 },
-        scrollWidth: { value: condition === "no overflow" ? 1000 : 1200 },
-        scrollLeft: { value: condition === "at start" ? 0 : 200 },
-      });
-      main.append(trail);
-      const dispose = installAppWorkspaceController({ root });
-      aside.hidden = true;
-      await window.happyDOM.whenAsyncComplete();
-      expect(trail.style.getPropertyValue("--k2b-detail-trail-hold")).toBe("");
-      dispose();
-    });
-  }
-
-  test("a resize reconciles held trailing space", async () => {
-    const { root, main, aside } = detailWorkspace();
-    const trail = document.createElement("div");
-    trail.className = "k2b-detail-trail";
-    trail.style.paddingInlineEnd = "432px";
-    let width = 1000;
-    Object.defineProperties(trail, {
-      clientWidth: { get: () => width },
-      scrollWidth: { value: 2032 },
-      scrollLeft: { value: 1032 },
-    });
-    main.append(trail);
-    const dispose = installAppWorkspaceController({ root });
-    aside.hidden = true;
-    await window.happyDOM.whenAsyncComplete();
-    expect(trail.style.getPropertyValue("--k2b-detail-trail-hold")).toBe("432px");
-    width = 2032;
-    window.dispatchEvent(new window.Event("resize"));
-    flushFrames();
-    expect(trail.style.getPropertyValue("--k2b-detail-trail-hold")).toBe("");
-    dispose();
-  });
-
-  for (const resize of ["keyboard", "pointer", "reset"]) {
-    test(`a detail ${resize} resize refreshes padding held on close`, async () => {
-      const { root, main, aside, handle } = detailWorkspace();
-      const trail = document.createElement("div");
-      trail.className = "k2b-detail-trail";
-      trail.style.paddingInlineEnd = "432px";
-      Object.defineProperties(trail, {
-        clientWidth: { value: 1000 },
-        scrollWidth: { value: 2200 },
-        scrollLeft: { value: 1200 },
-      });
-      main.append(trail);
-      const dispose = installAppWorkspaceController({ root });
-      flushFrames();
-      trail.style.paddingInlineEnd = "500px";
-      if (resize === "keyboard") detailKey(handle, "ArrowLeft");
-      else if (resize === "reset") handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-      else {
-        handle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 4, clientX: 500 }));
-        window.dispatchEvent(new window.PointerEvent("pointermove", { pointerId: 4, clientX: 480 }));
-        window.dispatchEvent(new window.PointerEvent("pointerup", { pointerId: 4 }));
-      }
-      aside.hidden = true;
-      await window.happyDOM.whenAsyncComplete();
-      expect(trail.style.getPropertyValue("--k2b-detail-trail-hold")).toBe("500px");
-      dispose();
-    });
-  }
-
   test("sync prunes detached detail, title, and motion cleanup references", async () => {
     const { root, aside, item, title } = detailWorkspace({ open: false });
     const dispose = installAppWorkspaceController({ root: document });
@@ -1320,6 +1215,40 @@ describe("floating detail layout changes", () => {
     dispose();
   });
 
+  test("anchors a closing panel only after its motion releases the detail column", async () => {
+    Object.defineProperty(window, "matchMedia", {
+      value: (query: string) => ({ matches: query === "(min-width: 48rem)", addEventListener() {}, removeEventListener() {} }),
+    });
+    const { root, main, item, aside } = detailWorkspace();
+    root.dataset.workspaceMotion = "true";
+    main.style.overflowY = "auto";
+    Object.defineProperties(main, { scrollHeight: { value: 1000 }, clientHeight: { value: 500 } });
+    main.scrollTop = 180;
+    let columnReleased = false;
+    Object.defineProperty(item, "getBoundingClientRect", {
+      value: () => ({ top: (columnReleased ? 100 : 180) - main.scrollTop }),
+    });
+    const dispose = installAppWorkspaceController({ root });
+    rememberPointer(item);
+    aside.hidden = true;
+    await window.happyDOM.whenAsyncComplete();
+    expect(main.scrollTop).toBe(180);
+    columnReleased = true;
+    const transition = (propertyName: string) => {
+      const event = new Event("transitionend", { bubbles: true });
+      Object.defineProperty(event, "propertyName", { value: propertyName });
+      return event;
+    };
+    root.dispatchEvent(transition("opacity"));
+    aside.dispatchEvent(transition("--k2b-workspace-detail-track"));
+    expect(main.scrollTop).toBe(180);
+    root.dispatchEvent(transition("--k2b-workspace-detail-track"));
+    expect(main.scrollTop).toBe(100);
+    root.dispatchEvent(transition("--k2b-workspace-detail-track"));
+    expect(main.scrollTop).toBe(100);
+    dispose();
+  });
+
   test("phone grabber drags settle at detents, suppress their click, and clean up on cancellation", () => {
     Object.defineProperty(window, "matchMedia", {
       value: (query: string) => ({ matches: query === "(max-width: 47.999rem)", addEventListener() {}, removeEventListener() {} }),
@@ -1358,16 +1287,17 @@ describe("floating detail layout changes", () => {
     expect(grabber.getAttribute("aria-pressed")).toBe("false");
   });
 
-  test("detail resize limits reserve both gaps instead of another floating panel", () => {
+  test("detail resize limits include the root column and reserve its end inset", () => {
     const { root, content, handle } = detailWorkspace();
-    setRect(content, { width: 900, height: 700 });
+    setRect(root, { width: 900, height: 700 });
+    setRect(content, { width: 480, height: 700 });
     const second = document.createElement("aside");
     second.className = "k2b-app-workspace__detail";
     setRect(second, { width: 416, height: 684 });
     content.append(second);
     const dispose = installAppWorkspaceController({ root });
     flushFrames();
-    expect(handle.getAttribute("aria-valuemax")).toBe("564");
+    expect(handle.getAttribute("aria-valuemax")).toBe("572");
     dispose();
   });
 });

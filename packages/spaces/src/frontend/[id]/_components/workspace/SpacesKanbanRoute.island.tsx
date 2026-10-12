@@ -124,7 +124,7 @@ export default function SpacesKanbanRoute(props: Props) {
       />
       <Show when={view.error()}>
         {(error) => (
-          <div class="flex items-center justify-between gap-2 pt-1 pr-[var(--k2b-detail-space,0px)] text-xs text-red-600" role="alert">
+          <div class="flex items-center justify-between gap-2 pt-1 text-xs text-red-600" role="alert">
             <span>{error().message}</span>
             <Button type="button" variant="ghost" size="xs" disabled={view.busy()} onClick={() => void view.refresh()}>
               {t.retry}
