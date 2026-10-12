@@ -1317,7 +1317,9 @@ export default function KanbanBoard(props: Props) {
                                       }));
                                     }}
                                     data-card-index={itemIndex()}
-                                    class={`k2b-progressive-row relative rounded-[var(--ui-radius-control)] border p-2.5 shadow-none transition-[background-color,border-color] ${
+                                    // On touch screens the grip's 44 px area ends 39 px below the card's top and the claim button's
+                                    // starts 43 px above its bottom. A card with both is 82 px tall at least, so neither takes the other's taps.
+                                    class={`k2b-progressive-row relative rounded-[var(--ui-radius-control)] border p-2.5 shadow-none transition-[background-color,border-color] any-pointer-coarse:has-[[data-spaces-claim-action]]:min-h-[5.125rem] ${
                                       isSelected()
                                         ? "border-[var(--ui-border-strong)] bg-[var(--ui-selected)]"
                                         : "border-[var(--ui-border)] bg-[var(--ui-surface)] hover:bg-[var(--ui-hover)]"
@@ -1335,7 +1337,7 @@ export default function KanbanBoard(props: Props) {
                                               label={t.dragItem({ title: item.title })}
                                               tooltip={t.drag}
                                               size="xs"
-                                              class="!h-5 !min-h-5 !w-5 cursor-grab touch-none !text-dimmed hover:!text-primary active:cursor-grabbing"
+                                              class="!h-5 !min-h-5 !w-5 !cursor-grab touch-none !text-dimmed hover:!text-primary active:!cursor-grabbing"
                                               onClick={(event) => {
                                                 event.preventDefault();
                                                 event.stopPropagation();
@@ -1381,7 +1383,8 @@ export default function KanbanBoard(props: Props) {
                                         setSelectedItemId(item.id);
                                         requestSpacesRouteNavigation(href, { scroll: "preserve" });
                                       }}
-                                      class={`focus-ui block rounded-[var(--ui-radius-control)] ${props.canWrite ? "pr-5" : ""}`}
+                                      // On touch screens the grip's area reaches 12 px past its box; the text ends before it, so a tap on it opens the item.
+                                      class={`focus-ui block rounded-[var(--ui-radius-control)] ${props.canWrite ? "pr-5 any-pointer-coarse:pr-8" : ""}`}
                                     >
                                       <div class="flex items-start gap-2">
                                         <Show when={priority}>

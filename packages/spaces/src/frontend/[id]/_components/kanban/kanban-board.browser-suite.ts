@@ -379,17 +379,30 @@ const cardControls = (page: Page, title: string) =>
         const rect = box(button);
         const horizontalReach = (44 - rect.width) / 2 - 2;
         const verticalReach = (44 - rect.height) / 2 - 2;
+        const hits = (x: number, y: number) => document.elementFromPoint(x, y)?.closest(selector) === button;
+        const centerX = rect.x + rect.width / 2;
         return {
           opacity,
+          cursor: getComputedStyle(button).cursor,
           box: rect,
           horizontalReach,
           verticalReach,
-          leftHit: document.elementFromPoint(rect.x - horizontalReach, rect.y + rect.height / 2)?.closest(selector) === button,
-          // Above, not below: on a one-line card the claim button's area, which paints later, takes the strip below the grip.
-          topHit: document.elementFromPoint(rect.x + rect.width / 2, rect.y - verticalReach)?.closest(selector) === button,
+          leftHit: hits(rect.x - horizontalReach, rect.y + rect.height / 2),
+          topHit: hits(centerX, rect.y - verticalReach),
+          // On a one-line card the grip sits right above the claim button: each keeps the strip next to its own box.
+          bottomHit: hits(centerX, rect.y + rect.height + verticalReach),
+          bottomEdgeHit: hits(centerX, rect.y + rect.height - 1),
         };
       };
+      const link = article.querySelector("[data-spaces-kanban-card]")!;
+      const linkBox = link.getBoundingClientRect();
+      const firstLine = article.querySelector("p")!.getBoundingClientRect();
       return {
+        // The last pixel the title's first line can reach still opens the item.
+        textEndHit:
+          document
+            .elementFromPoint(linkBox.right - Number.parseFloat(getComputedStyle(link).paddingRight) - 1, firstLine.top + 2)
+            ?.closest("[data-spaces-kanban-card]") === link,
         article: box(article),
         border: {
           top: Number.parseFloat(getComputedStyle(article).borderTopWidth),
@@ -412,6 +425,8 @@ const expectHitArea = (control: Awaited<ReturnType<typeof cardControls>>["grip"]
   expect(control.verticalReach).toBeGreaterThanOrEqual(6);
   expect(control.leftHit).toBe(true);
   expect(control.topHit).toBe(true);
+  expect(control.bottomHit).toBe(true);
+  expect(control.bottomEdgeHit).toBe(true);
 };
 
 describe("Spaces Kanban board in a browser", () => {
@@ -427,6 +442,18 @@ describe("Spaces Kanban board in a browser", () => {
         expectGripBox(state);
         expectHitArea(state.grip);
         expectHitArea(state.claim);
+        expect(state.textEndHit).toBe(true);
+        // A finger that lands just below the grip, as for a long-press, must not claim the task for everyone.
+        const claims: string[] = [];
+        page.on("request", (request) => {
+          if (request.url().endsWith("/claim")) claims.push(request.url());
+        });
+        await page.touchscreen.tap(
+          state.grip.box.x + state.grip.box.width / 2,
+          state.grip.box.y + state.grip.box.height + state.grip.verticalReach,
+        );
+        await page.waitForTimeout(100);
+        expect(claims).toEqual([]);
         // Without the fixture's case parameter the item link differs from the page only in its item, so it opens in place.
         await page.evaluate(() => history.replaceState(null, "", window.location.pathname));
         const opening = page.evaluate(
@@ -476,6 +503,7 @@ describe("Spaces Kanban board in a browser", () => {
       const card = page.locator("article").filter({ hasText: "Ask the bakery about a stand" });
       const rest = await cardControls(page, "Ask the bakery about a stand");
       expect([rest.grip.opacity, rest.claim.opacity]).toEqual([0, 0]);
+      expect(rest.grip.cursor).toBe("grab");
       const released = await cardControls(page, "Collect insurance quotes");
       expect(released.claim.opacity).toBe(1);
       expect(await page.locator('[data-spaces-claim-action="release"]').count()).toBe(1);
