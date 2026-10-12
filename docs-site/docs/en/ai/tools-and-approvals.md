@@ -5,7 +5,7 @@ section: AI
 order: 1040
 description: Let models request application actions while keeping authorization and approval explicit.
 tags: [ai, tools, approvals]
-updated: 2026-10-11
+updated: 2026-10-12
 ---
 
 # Tools and approvals
@@ -238,8 +238,9 @@ gets the reason. `parseCloudAiChartInput()` reads one chart without drawing;
 Cloud answers chart calls without a browser, also in background and scheduled
 runs. The transcript shows them later. Readers can switch each chart to its
 data table and use Copy data. Filters, steps and comparison over computed rows
-use `cloud.view.explorer` in `code_run`. Interaction beyond that uses a chat app
-delivered with `code_present`; kept data or a reused app belongs in a saved Studio App.
+use `cloud.view.explorer` in `code_run`. Anything else the person interacts
+with, such as a calculator, converter, timer or form, is a saved Studio App
+created with `code_create`, even when it keeps no data.
 
 Computed results stay in `code_run`: the script calls `cloud.view.chart`,
 `cloud.view.group`, `cloud.view.table`, `cloud.view.stats`,

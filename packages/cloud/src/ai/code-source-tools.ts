@@ -50,6 +50,7 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
     inputSchema: definition.input,
     outputSchema: z.unknown(),
     approval: "never",
+    promptHint: "promptHint" in definition ? definition.promptHint : undefined,
   }).server(async (input, context) => {
     if (!context.conversationId) throw new Error("Code tools require an Assistant conversation.");
     const { actor } = await resolveAiCapabilityActor({

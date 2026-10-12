@@ -804,6 +804,64 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await expect(artifacts.get(app.id, reader)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
   });
 
+  test("agent creates save the first HTML and steps in one revision and report diagnostics", async () => {
+    const context = {
+      ...owner,
+      locale: "en",
+      timeZone: "UTC",
+      requestId: crypto.randomUUID(),
+      origin: "assistant" as const,
+      signal: new AbortController().signal,
+    };
+    const html = `<main><button type="button">Add</button><output>0</output></main>
+<style>output { color: var(--k2b-action) }</style>
+<script type="module">
+  const output = document.querySelector("output");
+  document.querySelector("button").addEventListener("click", () => { output.value = Number(output.value) + 1; });
+</script>
+`;
+    const steps = '[{"action":"click","target":{"role":"button","name":"Add"}}]';
+    const created = await artifactCodeHandlers.code_create({ title: "Counter", html, steps }, context);
+    if (!created.ok) throw new Error(created.error.message);
+    expect(created.data.data).toMatchObject({
+      revision: 1,
+      entry: "index.html",
+      diagnostics: [],
+      files: [
+        { path: "index.html", lines: 6, length: html.length },
+        { path: "steps.json", lines: 1, length: steps.length },
+      ],
+    });
+    expect((await artifacts.get(created.data.data.id, owner)).source).toEqual({
+      entry: "index.html",
+      files: [
+        { path: "index.html", content: html },
+        { path: "steps.json", content: steps },
+      ],
+    });
+    for (const [input, finding] of [
+      [{ title: "Invalid steps", html, steps: '[{"action":"fly"}]' }, /error steps\.json:.*step 1 \(fly\)/],
+      [{ title: "Invalid JSON", steps: "{" }, /error steps\.json: steps\.json is not valid JSON/],
+    ] as const) {
+      const saved = await artifactCodeHandlers.code_create(input, context);
+      if (!saved.ok) throw new Error(saved.error.message);
+      expect(saved.data.data.revision).toBe(1);
+      expect(saved.data.data.diagnostics).toContainEqual(expect.stringMatching(finding));
+      const source = (await artifacts.get(saved.data.data.id, owner)).source;
+      expect(source.files.find((file) => file.path === "index.html")?.content).toBe(
+        "html" in input ? input.html : `<main>\n  <h1>${input.title}</h1>\n</main>\n`,
+      );
+      expect(source.files.find((file) => file.path === "steps.json")?.content).toBe("steps" in input ? input.steps : undefined);
+    }
+    const empty = await artifactCodeHandlers.code_create({ title: "Empty source", html: "", steps: "" }, context);
+    if (!empty.ok) throw new Error(empty.error.message);
+    expect(empty.data.data).toMatchObject({ revision: 1, diagnostics: [] });
+    expect((await artifacts.get(empty.data.data.id, owner)).source.files).toEqual([
+      { path: "index.html", content: "" },
+      { path: "steps.json", content: "" },
+    ]);
+  });
+
   test("agent file writes persist incomplete code, preserve helpers and enforce permissions", async () => {
     const context = {
       ...owner,
@@ -813,11 +871,16 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       origin: "assistant" as const,
       signal: new AbortController().signal,
     };
-    const created = await artifactCodeHandlers.code_create({ title: "Agent test" }, context);
+    const created = await artifactCodeHandlers.code_create({ title: "Agent & <test>" }, context);
     if (!created.ok) throw new Error(created.error.message);
     const id = created.data.data.id;
     // A new App starts as an index.html interface; static findings of its JavaScript come back on write.
-    expect((await artifacts.get(id, owner)).source.entry).toBe("index.html");
+    expect((await artifacts.get(id, owner)).source).toEqual({
+      entry: "index.html",
+      files: [{ path: "index.html", content: "<main>\n  <h1>Agent &#38; &#60;test&#62;</h1>\n</main>\n" }],
+    });
+    expect(created.data.data).toMatchObject({ revision: 1 });
+    expect(created.data.data).not.toHaveProperty("diagnostics");
     const write = async (path: string, content: string, entry?: string) =>
       artifactCodeHandlers.code_write({ id, expectedRevision: (await artifacts.get(id, owner)).revision, path, content, entry }, context);
     const html = await write("app.js", 'alert("hi"); import x from "lodash";');

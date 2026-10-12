@@ -300,7 +300,7 @@ number columns. No extra keys, markup options or functions belong in the spec.
 Filtering, steps, comparison, row selection and sorting happen locally and reset
 on reload. The table shows the rows of the current state, including the pinned
 step when comparing; **Copy data** copies those rows. The CLI prints the initial
-state's table. Use a chat app only for interaction an explorer cannot express.
+state's table. Interaction an explorer cannot express belongs in a Studio App.
 
 ## Choose and label
 

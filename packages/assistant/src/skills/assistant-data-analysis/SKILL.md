@@ -13,14 +13,14 @@ groups, tables, key figures and record details,
 `cloud.chart()` in apps/PDFs, and `/skills/assistant-code-mode/references/apps.md`
 for interfaces. Loading a skill installs no library and grants no access.
 
-Choose a direct answer, views, an exported file, a chat app or a reusable Studio
-App by the question. Computed values stay in `code_run` and reach the reader
+Choose a direct answer, views, an exported file or a Studio App by the
+question. Computed values stay in `code_run` and reach the reader
 through `cloud.view.*` and `present({path})`. Never retype run values into tool
 arguments, app data or Markdown. Return only key figures the answer mentions.
 If a view is missing, rerun with `cloud.view.*`. A few non-run values use the
 `chart` tool. Filters, steps and comparison over a computed dataset use
-`cloud.view.explorer`; a chat app is only for interaction an explorer cannot
-express. Kept data, reuse, sharing, live loading or actions may need a Studio App.
+`cloud.view.explorer`. Interaction an explorer cannot express, and kept data,
+reuse, sharing, live loading or actions, need a Studio App.
 For categorical CSV or spreadsheet analyses where the reader will compare or
 filter (status per category, price against stock), deliver `cloud.view.stats`
 key figures plus an explorer over the rows instead of isolated
@@ -132,10 +132,10 @@ repeat actions.
 
 ## Deliver and retain the result
 
-Present views or exported files; a successful run alone is not visible. Use a
-chat app for interaction, delivered with `code_present({title, files})` after
-checking numbers and rendering. The user can download its current view as PDF
-or static HTML. The answer carries findings, caveats and decisions, not values
+Present views or exported files; a successful run alone is not visible. A
+dashboard the person asked for is a Studio App, opened with `code_open` or
+shown with `code_present({id})` after checking numbers and rendering. The user
+can download its current view as PDF or static HTML. The answer carries findings, caveats and decisions, not values
 already shown in views. Include the result link/path, data timestamp and material
 coverage limits; say whether it is a snapshot or reloads from sources.
 

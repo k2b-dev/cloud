@@ -5,7 +5,7 @@ section: Work
 order: 100
 description: A personal AI workspace for conversations, files, Projects, and reusable preferences.
 tags: [assistant, ai, chats]
-updated: 2026-10-11
+updated: 2026-10-12
 ---
 
 # Assistant
@@ -1025,12 +1025,17 @@ Cmd/Ctrl+Shift+K searches the open chat, falling back to all chats outside a cha
 
 ### Apps in chat
 
+When you ask for an app, a calculator, a converter, a form or another tool to
+work with, Assistant builds a Studio App: it appears in **Studio**, and you can
+reopen, change and share it. Charts, tables and explorers of a one-off result
+stay in the chat as views.
+
 `code_present` shows an HTML app as a card in the conversation. It takes either
-one-off files, which are stored with the chat and have no database, `cloud.kv`
-or `cloud.files`, or a saved Studio app, which the card runs with its current
-source and data under the viewer's access. Presenting creates no Studio App and
-no chat file. Before anything is saved, the call checks the files and refuses
-static errors.
+a saved Studio app, which the card runs with its current source and data under
+the viewer's access, or one-off files for a quick preview you asked not to keep;
+those are stored with the chat and have no database, `cloud.kv` or
+`cloud.files`. Presenting creates no Studio App and no chat file. Before
+anything is saved, the call checks the files and refuses static errors.
 
 The card shows the app's title, **Studio app**, and its actions. It keeps a
 fixed height, 45% of the viewport and at most 600 pixels, from the moment the
