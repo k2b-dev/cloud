@@ -1,4 +1,4 @@
-import { createNavigation, type NavigationController, type NavigationItem } from "@k2b/ui";
+import { type AppWorkspaceSidebarSwitcherProps, createNavigation, type NavigationController, type NavigationItem } from "@k2b/ui";
 import { createEffect, onCleanup, onMount } from "solid-js";
 
 export type WorkspaceNavigationState = { navigation: NavigationController; label: string; owner: Element };
@@ -44,6 +44,28 @@ function validItems(value: unknown): value is NavigationItem[] {
   );
 }
 
+function readSwitcher(value: unknown): AppWorkspaceSidebarSwitcherProps | undefined {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("currentId" in value) ||
+    typeof value.currentId !== "string" ||
+    !("label" in value) ||
+    typeof value.label !== "string" ||
+    !("icon" in value) ||
+    typeof value.icon !== "string" ||
+    !("switchLabel" in value) ||
+    typeof value.switchLabel !== "string"
+  )
+    return;
+  const description = "description" in value ? value.description : undefined;
+  const color = "color" in value ? value.color : undefined;
+  if (description !== undefined && typeof description !== "string") return;
+  if (color !== undefined && typeof color !== "string") return;
+  // The snapshot carries only the head; options and actions wait for the owning island.
+  return { currentId: value.currentId, label: value.label, icon: value.icon, switchLabel: value.switchLabel, description, color };
+}
+
 export function readWorkspaceNavigation(): WorkspaceNavigationState | undefined {
   if (typeof window === "undefined") return;
   const current = window.__cloudWorkspaceNavigation;
@@ -67,10 +89,11 @@ export function readWorkspaceNavigation(): WorkspaceNavigationState | undefined 
         ...(item.inlineActions ? { inlineActions: item.inlineActions.map((action) => ({ ...action, disabled: true })) } : {}),
       }));
     const items = links(value.items);
+    const switcher = "switcher" in value ? readSwitcher(value.switcher) : undefined;
     return {
       owner,
       label: "label" in value && typeof value.label === "string" ? value.label : "",
-      navigation: createNavigation({ items: () => items }),
+      navigation: createNavigation({ items: () => items, ...(switcher ? { switcher: () => switcher } : {}) }),
     };
   } catch {
     return;

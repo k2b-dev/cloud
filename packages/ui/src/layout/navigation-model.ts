@@ -1,6 +1,7 @@
 import type { LinkNavigateEvent, NavigationScrollMode } from "@k2b/ssr/nav";
 import type { Accessor } from "solid-js";
 import type { IntentTone } from "../semantics";
+import type { AppWorkspaceSidebarSwitcherProps } from "./SidebarSwitcher";
 
 /** A status icon at a row's end, such as "running". `label` names it for screen readers and as its tooltip. */
 export type NavigationStatus = { icon: string; label: string; tone?: IntentTone };
@@ -71,6 +72,8 @@ export type NavigationItem = NavigationEntry &
 
 export type NavigationOptions = {
   items: Accessor<readonly NavigationItem[]>;
+  /** The container the navigation works in, shown above the items with the same switcher as the sidebar's head. */
+  switcher?: Accessor<AppWorkspaceSidebarSwitcherProps>;
   onAction?: (action: string) => void | Promise<void>;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   /** Receives disclosure toggles of items that carry `expanded`; the owner decides the next state. */
@@ -93,6 +96,7 @@ export function findNavigationItem(items: readonly NavigationItem[], id: string)
 export function createNavigation(options: NavigationOptions) {
   return {
     items: options.items,
+    switcher: options.switcher,
     onNavigate: options.onNavigate,
     onExpandedChange: options.onExpandedChange,
     async activate(id: string) {

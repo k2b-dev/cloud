@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { selectHtml } from "../../../../../../../tests/fixtures/select-html";
 import { katexStylesHref } from "../../../../lib/katex-assets";
 import { bookMessages } from "./messages";
 import "../detail/ssr-test-plugin";
@@ -23,6 +24,7 @@ const render = (
         return createComponent(BookSurface, {
           notebookId: "book01",
           notebookName: "Company handbook",
+          notebookIcon: null,
           selectedNoteId,
           currentHref: html === null ? "/app/notebooks/book01" : "/app/notebooks/book01/notes/note02",
           canWrite,
@@ -42,6 +44,24 @@ const render = (
   );
 
 describe("Book surface", () => {
+  test.each([
+    ["en", "Switch notebook"],
+    ["de", "Notizbuch wechseln"],
+  ])("names the container and puts its overview only in switcher actions (%s)", async (locale, purpose) => {
+    const html = render(false, false, locale);
+    const trigger = await selectHtml(html, ".k2b-sidebar-switcher__trigger");
+    expect(trigger).toHaveLength(1);
+    expect(trigger[0]?.attributes["aria-label"]).toBe("Company handbook");
+    expect((await selectHtml(html, ".k2b-sidebar-switcher .k2b-sr-only"))[0]?.text).toContain(purpose);
+    const snapshot = (await selectHtml(html, "script[data-cloud-workspace-navigation]"))[0]?.text;
+    expect(snapshot).toContain('"switchLabel":"' + purpose + '"');
+    expect(snapshot).not.toContain('"id":"all"');
+    expect(await selectHtml(html, '.k2b-app-workspace__sidebar-item[href="/app/notebooks"]')).toHaveLength(0);
+    expect((await selectHtml(html, '.k2b-sidebar-switcher__actions a[href="/app/notebooks"]'))[0]?.text).toContain(
+      locale === "en" ? "All notebooks" : "Alle Notizbücher",
+    );
+  });
+
   test("loads math styles even when entering through an empty or tag reading surface", () => {
     expect(render()).toContain(`rel="stylesheet" href="${katexStylesHref}"`);
     expect(render(false, false, "en", null)).toContain(`rel="stylesheet" href="${katexStylesHref}"`);

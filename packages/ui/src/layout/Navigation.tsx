@@ -3,6 +3,7 @@ import { createSignal, createUniqueId, For, Show } from "solid-js";
 import { IconButton } from "../actions/Button";
 import { Dropdown } from "../actions/Dropdown";
 import type { NavigationController, NavigationItem } from "./navigation-model";
+import { AppWorkspaceSidebarSwitcher } from "./SidebarSwitcher";
 import { useWorkspaceMessages } from "./workspace-messages";
 
 export type NavigationProps = {
@@ -196,6 +197,9 @@ export default function Navigation(props: NavigationProps) {
   );
   return (
     <nav class="k2b-navigation" aria-label={props.label}>
+      <Show when={props.navigation.switcher?.()}>
+        {(switcher) => <AppWorkspaceSidebarSwitcher {...switcher()} beforeSelect={props.beforeSelect} />}
+      </Show>
       <Rows items={props.navigation.items()} />
     </nav>
   );

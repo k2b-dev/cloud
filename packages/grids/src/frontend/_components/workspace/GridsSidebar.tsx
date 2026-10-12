@@ -4,6 +4,7 @@ import BaseSettingsButton from "../sidebar/BaseSettingsButton.island";
 import FormSidebarEntry from "../sidebar/FormSidebarEntry.island";
 import NewResourceButton from "../sidebar/NewResourceButton.island";
 import SidebarTableMeta from "../sidebar/SidebarTableMeta";
+import BaseSwitcher from "./BaseSwitcher.island";
 import GridsNavigation from "./GridsNavigation.island";
 import GroupedNavigation from "./GroupedNavigation.island";
 import { workspaceMessages } from "./messages";
@@ -30,7 +31,7 @@ const SidebarLink = (props: Parameters<typeof AppWorkspace.SidebarItem>[0]) => (
   <AppWorkspace.SidebarItem {...props} navigation="document" />
 );
 
-export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
+export default function GridsSidebar(props: { userId?: string; state: PublicOkWorkspaceState }) {
   const { t } = workspaceMessages.resolve([useLocale()()]);
   const state = props.state;
   const { t: navText } = navigationMessages.resolve([useLocale()()]);
@@ -224,14 +225,11 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
 
   return (
     <>
-      <GridsNavigation state={state} />
+      <GridsNavigation canCreate={Boolean(props.userId)} state={state} />
       <AppWorkspace.Sidebar>
         <AppWorkspace.SidebarDesktop>
+          <BaseSwitcher canCreate={Boolean(props.userId)} base={{ id: state.base.id, name: state.base.name }} />
           <AppWorkspace.SidebarSection>
-            <SidebarLink href="/app/grids">
-              <AppWorkspace.SidebarItemIcon icon="ti ti-layout-grid" />
-              <AppWorkspace.SidebarItemLabel>{t.allGrids}</AppWorkspace.SidebarItemLabel>
-            </SidebarLink>
             {renderQueryItem()}
             {overviewLink()}
             {createButton()}

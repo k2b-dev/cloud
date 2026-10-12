@@ -2,6 +2,7 @@ import { AppWorkspace, LocaleProvider, Navigation } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { apiClient } from "../../api/client";
+import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
 import type { SenderIdentity } from "../../contracts";
 import { openMailboxDetailsDialog } from "./MailboxDetailsDialog";
 import MailSidebar from "./MailSidebar";
@@ -66,6 +67,8 @@ window.mountMailboxDetails = (options) => {
       <LocaleProvider locale={options.locale}>
         <AppWorkspace mobileSurface="flush" class="mail-workspace">
           <MailSidebar
+            currentUserEmail={null}
+            contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
             mailboxId={mailbox.id}
             mailboxName={mailbox.name}
             syncEnabled

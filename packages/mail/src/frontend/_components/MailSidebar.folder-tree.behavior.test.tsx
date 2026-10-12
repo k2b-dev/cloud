@@ -2,6 +2,7 @@ import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
 import type { MailFolderView } from "../../service/messages";
 import type { MailboxPageData } from "../../service/workspace";
 
@@ -124,6 +125,8 @@ if (!isServer) {
       const dispose = render(
         () => (
           <MailSidebar
+            currentUserEmail={null}
+            contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
             mailboxId="Box001"
             mailboxName="Support"
             syncEnabled={true}

@@ -5,6 +5,7 @@ import { dates } from "@k2b/stdlib";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { selectHtml } from "../../../../../tests/fixtures/select-html";
 import type { PublicSection, PublicStatus, ShiftAssignment, ShiftTemplate, UpcomingSlot, Venue, VenueDashboard } from "../../contracts";
 import { venueMessages } from "../../messages";
 import "../ssr-test-plugin";
@@ -132,7 +133,11 @@ const mobileNavigation = (html: string) => {
   return (JSON.parse(json) as { items: { id: string; label: string; href?: string; action?: string }[] }).items;
 };
 /** The desktop sidebar, expanded and collapsed, without the IDs a render generates. */
-const sidebar = (html: string) => html.slice(html.indexOf("<aside"), html.indexOf("</aside>")).replace(/ id="[^"]*"/g, "");
+const sidebar = (html: string) =>
+  html
+    .slice(html.indexOf("<aside"), html.indexOf("</aside>"))
+    .replace(/ id="[^"]*"/g, "")
+    .replace(/k2b-sidebar-switcher-[\w-]+/g, "switcher");
 const manySections = Array.from({ length: 12 }, (_, index) => ({
   ...section,
   id: `Sect${String(index).padStart(2, "0")}`,
@@ -141,12 +146,35 @@ const manySections = Array.from({ length: 12 }, (_, index) => ({
 }));
 
 describe("Venue workspace navigation by role", () => {
+  test.each([
+    ["en", "Switch venue"],
+    ["de", "Standort wechseln"],
+  ])("names the container and puts its overview only in switcher actions (%s)", async (locale, purpose) => {
+    const html = render("read", [], { locale });
+    const trigger = await selectHtml(html, ".k2b-sidebar-switcher__trigger");
+    expect(trigger).toHaveLength(1);
+    expect(trigger[0]?.attributes["aria-label"]).toBe("Corner Café");
+    expect((await selectHtml(html, ".k2b-sidebar-switcher .k2b-sr-only"))[0]?.text).toContain(purpose);
+    const snapshot = (await selectHtml(html, "script[data-cloud-workspace-navigation]"))[0]?.text;
+    expect(snapshot).toContain('"switchLabel":"' + purpose + '"');
+    expect(snapshot).not.toContain('"id":"all"');
+    expect(
+      await selectHtml(
+        html,
+        '.k2b-app-workspace__sidebar-item[href="/app/venue"], .k2b-app-workspace__sidebar-icon-action[href="/app/venue"]',
+      ),
+    ).toHaveLength(0);
+    expect((await selectHtml(html, '.k2b-sidebar-switcher__actions a[href="/app/venue"]'))[0]?.text).toContain(
+      locale === "en" ? "All venues" : "Alle Standorte",
+    );
+  });
+
   const roles: { permission: "read" | "write" | "admin"; mobile: string[]; desktopItems: number; settings: boolean }[] = [
-    { permission: "read", mobile: ["all", "shifts", "my-shifts", "public"], desktopItems: 3, settings: false },
-    { permission: "write", mobile: ["signup", "all", "shifts", "my-shifts", "feedback", "public"], desktopItems: 4, settings: false },
+    { permission: "read", mobile: ["shifts", "my-shifts", "public"], desktopItems: 3, settings: false },
+    { permission: "write", mobile: ["signup", "shifts", "my-shifts", "feedback", "public"], desktopItems: 4, settings: false },
     {
       permission: "admin",
-      mobile: ["signup", "all", "shifts", "my-shifts", "feedback", "public", "settings"],
+      mobile: ["signup", "shifts", "my-shifts", "feedback", "public", "settings"],
       desktopItems: 5,
       settings: true,
     },

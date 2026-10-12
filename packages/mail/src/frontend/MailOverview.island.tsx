@@ -27,6 +27,7 @@ import {
 } from "../contracts";
 import type { MailConversationDetailData } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
+import { createMailboxCreation } from "./_components/create-mailbox-dialog";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { mailboxOverviewSubtitle } from "./_components/mail-health-presentation";
@@ -68,7 +69,6 @@ const avatarTone = (summary: string): string =>
   String([...primaryParticipant(summary, "")].reduce((total, character) => total + character.codePointAt(0)!, 0) % 5);
 
 /** Follow-up dialogs load with the action that opens them, not with the overview. */
-type SettingsDialog = typeof import("./_components/MailboxSettingsDialog");
 type HealthDialog = typeof import("./_components/MailboxHealthDialog");
 
 function MailOverviewView(props: {
@@ -391,50 +391,7 @@ function MailOverviewView(props: {
     return [...merged.values()];
   });
 
-  const createMailbox = mutations.create<{ mailbox: Mailbox; settings?: SettingsDialog } | null, void>({
-    mutation: async (_input, { abortSignal }) => {
-      const values = await prompts.form({
-        title: messages().newMailbox,
-        icon: "ti ti-mail-plus",
-        fields: {
-          name: { type: "text", label: messages().name, description: messages().nameDescription, required: true },
-          description: {
-            type: "text",
-            label: messages().description,
-            description: messages().descriptionDescription,
-            multiline: true,
-            lines: 3,
-          },
-        },
-        confirmText: messages().createMailbox,
-      });
-      if (!values || abortSignal.aborted) return null;
-      // The follow-up dialog loads during the request, behind the same pending state. Without its code, for example
-      // in a tab opened before a release, the new mailbox still opens and its settings stay one click away.
-      const settings = import("./_components/MailboxSettingsDialog").catch(() => undefined);
-      const response = await apiClient.mailboxes.$post(
-        { json: { name: values.name, description: values.description || null } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, messages().failedCreateMailbox));
-      return { mailbox: await response.json(), settings: await settings };
-    },
-    onSuccess: (created) => {
-      if (!created) return;
-      const { mailbox, settings } = created;
-      toast.success(messages().mailboxCreated);
-      if (!settings) return navigateTo(`/app/mail/${mailbox.id}`);
-      void settings
-        .openMailboxSettingsDialog({
-          mailboxId: mailbox.id,
-          currentUserEmail: props.currentUserEmail,
-          contactDirectory: props.contactDirectory,
-          initialTab: "delivery",
-        })
-        .then((result) => navigateTo(result.deleted ? "/app/mail" : `/app/mail/${mailbox.id}`));
-    },
-    onError: (error) => prompts.error(error.message),
-  });
+  const createMailbox = createMailboxCreation(props, messages);
 
   const restoreMailbox = mutations.create<{ mailbox: Mailbox; health?: HealthDialog } | null, string>({
     mutation: async (mailboxId, { abortSignal }) => {
@@ -478,7 +435,6 @@ function MailOverviewView(props: {
     });
   });
   onCleanup(() => {
-    createMailbox.abort();
     restoreMailbox.abort();
   });
 

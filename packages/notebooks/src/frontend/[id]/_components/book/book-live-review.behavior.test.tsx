@@ -61,6 +61,7 @@ describe("independent Book live metadata regression", () => {
         createComponent(Navigator, {
           notebookId: "book01",
           notebookName: "Handbook",
+          notebookIcon: null,
           selectedNoteId: "note03",
           tree: [{ id: "note03", title: "Deleted", children: [] }],
           tags: [{ tag: "obsolete", count: 1 }],

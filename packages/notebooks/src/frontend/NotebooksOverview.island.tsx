@@ -22,6 +22,7 @@ import {
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { setPinnedNotebookIds as writePinnedNotebookIds } from "./[id]/_components/settings/NotebookSettingsStore";
+import { createNotebookCreation } from "./create-notebook-dialog";
 import { notebooksPageMessages } from "./messages";
 import { createNoteCommands } from "./note-commands";
 
@@ -198,15 +199,7 @@ export default function NotebooksOverview(props: Props) {
 
   const openNotebook = (notebook: CreatedNotebook) => navigateTo(`/app/notebooks/${notebook.id}`);
 
-  const createNotebookMutation = mutations.create<CreatedNotebook, { name: string; description?: string }>({
-    mutation: async (input) => {
-      const response = await apiClient.index.$post({ json: { name: input.name, description: input.description || undefined } });
-      if (!response.ok) throw new Error(await errorMessage(response, t().createFailed));
-      return response.json();
-    },
-    onSuccess: openNotebook,
-    onError: (error) => prompts.error(error.message),
-  });
+  const notebookCreation = createNotebookCreation(t);
 
   const createFromTemplateMutation = mutations.create<CreatedNotebook, { templateId: string; name?: string }>({
     mutation: async (input) => {
@@ -221,22 +214,7 @@ export default function NotebooksOverview(props: Props) {
     onError: (error) => prompts.error(error.message),
   });
 
-  const createBlank = async () => {
-    const result = await prompts.form({
-      title: t().newNotebook,
-      icon: "ti ti-notebook",
-      fields: {
-        name: { type: "text", label: t().name, required: true, placeholder: t().notebookName },
-        description: { type: "text", label: t().description, multiline: true, placeholder: t().optionalDescription },
-      },
-      confirmText: t().create,
-    });
-    if (!result) return;
-    createNotebookMutation.mutate({
-      name: String(result.name).trim(),
-      description: String(result.description ?? "").trim(),
-    });
-  };
+  const createBlank = notebookCreation.createBlank;
 
   const createFromTemplate = async (template: TemplateSummary) => {
     const result = await prompts.form({
@@ -360,7 +338,6 @@ export default function NotebooksOverview(props: Props) {
   const openSearch = () => openGlobalSearch({ scope: { appId: "notebooks", label: t().notebooks, icon: "ti ti-notebook" } });
 
   onCleanup(() => {
-    createNotebookMutation.abort();
     createFromTemplateMutation.abort();
   });
 
@@ -441,7 +418,7 @@ export default function NotebooksOverview(props: Props) {
                   width="min(38rem, calc(100vw - 1rem))"
                   label={t().newNotebook}
                 >
-                  <Dropdown.Trigger variant="primary" disabled={createNotebookMutation.loading() || createFromTemplateMutation.loading()}>
+                  <Dropdown.Trigger variant="primary" disabled={notebookCreation.loading() || createFromTemplateMutation.loading()}>
                     <i class="ti ti-plus" aria-hidden="true" /> {t().newNotebook}
                     <i class="ti ti-chevron-down" aria-hidden="true" />
                   </Dropdown.Trigger>

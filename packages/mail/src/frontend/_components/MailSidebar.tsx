@@ -25,9 +25,11 @@ import type { LocalTag } from "../../service/local-tags";
 import type { ConversationViewCounts, MailFolderView } from "../../service/messages";
 import type { SavedConversationView } from "../../service/saved-views";
 import { readApiError } from "./api-response";
+import type { MailboxCreationContext } from "./create-mailbox-dialog";
 import { registerMailtoHandler } from "./mail-compose-route";
 import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree, setsOnlyInFolder } from "./mail-folder-tree";
 import { mailSidebarMessages } from "./mail-sidebar-messages";
+import { createMailboxSwitcher } from "./mailbox-switcher";
 
 type MailViewItem = {
   id: ConversationView;
@@ -58,43 +60,47 @@ const folderIcon = (role: string): string =>
               ? "ti ti-archive"
               : "ti ti-folder";
 
-export default function MailSidebar(props: {
-  mailboxId: string;
-  mailboxName: string;
-  syncEnabled: boolean;
-  needsConnection: boolean;
-  folders: MailFolderView[];
-  localTags: LocalTag[];
-  savedViews: SavedConversationView[];
-  scheduledMode: boolean;
-  scheduledCount: number;
-  activeFolderId: string | null;
-  activeView: ConversationView | null;
-  activeSavedViewId: string | null;
-  activeTagId: string | null;
-  searchActive: boolean;
-  viewCounts: ConversationViewCounts;
-  canWrite: boolean;
-  canAdmin: boolean;
-  /**
-   * The person may see only the conversations assigned to them: no composing, mailbox details, tools,
-   * settings, or Unassigned view, which all need mailbox-wide access.
-   */
-  assignedOnly: boolean;
-  managementOpening: "health" | "links" | "remote-content" | "subscriptions" | null;
-  settingsOpening: boolean;
-  /** The mailbox details are loading; the details button keeps its place and shows progress. */
-  detailsOpening: boolean;
-  onOpenDetails: () => void;
-  onOpenHealth: () => void;
-  onOpenSharedLinks: () => void;
-  onOpenRemoteContent: () => void;
-  onOpenSubscriptions: () => void;
-  onOpenSettings: () => void;
-  /** Moves the conversation of the dragged list row, identified by the row's item ID. */
-  onMoveConversation: (input: { itemId: string; destinationFolderId: string }) => void | Promise<void>;
-  onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
-}) {
+export default function MailSidebar(
+  props: MailboxCreationContext & {
+    canCreate?: boolean;
+    mailboxId: string;
+    mailboxName: string;
+    mailboxAddress?: string;
+    syncEnabled: boolean;
+    needsConnection: boolean;
+    folders: MailFolderView[];
+    localTags: LocalTag[];
+    savedViews: SavedConversationView[];
+    scheduledMode: boolean;
+    scheduledCount: number;
+    activeFolderId: string | null;
+    activeView: ConversationView | null;
+    activeSavedViewId: string | null;
+    activeTagId: string | null;
+    searchActive: boolean;
+    viewCounts: ConversationViewCounts;
+    canWrite: boolean;
+    canAdmin: boolean;
+    /**
+     * The person may see only the conversations assigned to them: no composing, mailbox details, tools,
+     * settings, or Unassigned view, which all need mailbox-wide access.
+     */
+    assignedOnly: boolean;
+    managementOpening: "health" | "links" | "remote-content" | "subscriptions" | null;
+    settingsOpening: boolean;
+    /** The mailbox details are loading; the details button keeps its place and shows progress. */
+    detailsOpening: boolean;
+    onOpenDetails: () => void;
+    onOpenHealth: () => void;
+    onOpenSharedLinks: () => void;
+    onOpenRemoteContent: () => void;
+    onOpenSubscriptions: () => void;
+    onOpenSettings: () => void;
+    /** Moves the conversation of the dragged list row, identified by the row's item ID. */
+    onMoveConversation: (input: { itemId: string; destinationFolderId: string }) => void | Promise<void>;
+    onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
+  },
+) {
   const locale = useLocale();
   const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
   createEffect(() => {
@@ -527,7 +533,13 @@ export default function MailSidebar(props: {
     action: "details",
     disabled: props.detailsOpening,
   });
+  const switcher = createMailboxSwitcher(
+    () => ({ id: props.mailboxId, name: props.mailboxName, address: props.mailboxAddress }),
+    Boolean(props.canCreate),
+    props,
+  );
   const navigation = createNavigation({
+    switcher,
     items: () => [
       // Like the desktop sidebar, the details sit beside Compose; readers, who cannot compose, get them as their own row,
       // named like the button that takes Compose's place on desktop.
@@ -544,7 +556,6 @@ export default function MailSidebar(props: {
                 }
               : details(messages().aboutMailbox),
           ]),
-      { id: "mailboxes", label: messages().allMailboxes, icon: "ti ti-switch-horizontal", href: "/app/mail" },
       { id: "follow-up", label: messages().followUp, children: views(followUpViewItems()) },
       { id: "assignment", label: messages().assignment, children: views(assignmentViewItems()) },
       {
@@ -657,6 +668,7 @@ export default function MailSidebar(props: {
       <WorkspaceNavigationProvider navigation={navigation} label={props.mailboxName} />
       <AppWorkspace.Sidebar class="mail-workspace-navigation">
         <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarSwitcher {...switcher()} />
           <div class="mail-sidebar-actions mx-2 mt-2 flex items-center gap-2">
             {/* SSR knows the permission, so this slot never changes shape after hydration. While the details load, only
                 the icon changes: the button keeps its size and focus. */}
@@ -725,9 +737,6 @@ export default function MailSidebar(props: {
             )}
           </AppWorkspace.SidebarBody>
           <AppWorkspace.SidebarFooter class="flex flex-col gap-1">
-            <AppWorkspace.SidebarItem href="/app/mail" icon="ti ti-switch-horizontal" navigation="document">
-              {messages().allMailboxes}
-            </AppWorkspace.SidebarItem>
             <Show when={!props.assignedOnly}>
               {mailboxTools()}
               <AppWorkspace.SidebarItem

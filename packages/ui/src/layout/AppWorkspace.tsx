@@ -44,6 +44,7 @@ import {
 import { PageTitle, usePageTrail } from "./PageTitle";
 import type { ScrollAreaProps } from "./ScrollArea";
 import { SidebarItemPreview } from "./SidebarItemPreview";
+import { AppWorkspaceSidebarSwitcher, type AppWorkspaceSidebarSwitcherProps } from "./SidebarSwitcher";
 import { createScrollFade } from "./scroll-fade";
 import { assertStableUiId, assertUniqueStableUiIds } from "./stable-id";
 import { useWorkspaceMessages } from "./workspace-messages";
@@ -1693,6 +1694,7 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
   BottomDrawer: (props: AppWorkspaceBottomDrawerProps) => JSX.Element;
   Sidebar: (props: AppWorkspaceSidebarProps) => JSX.Element;
   SidebarDesktop: (props: { children: JSX.Element }) => JSX.Element;
+  SidebarSwitcher: (props: AppWorkspaceSidebarSwitcherProps) => JSX.Element;
   SidebarSection: (props: AppWorkspaceSidebarSectionProps) => JSX.Element;
   SidebarBody: (props: AppWorkspaceSidebarBodyProps) => JSX.Element;
   SidebarFooter: (props: AppWorkspaceSidebarContentProps) => JSX.Element;
@@ -1806,6 +1808,7 @@ AppWorkspace.Detail = AppWorkspaceDetail;
 AppWorkspace.BottomDrawer = AppWorkspaceBottomDrawer;
 AppWorkspace.Sidebar = AppWorkspaceSidebar;
 AppWorkspace.SidebarDesktop = AppWorkspaceSidebarDesktop;
+AppWorkspace.SidebarSwitcher = AppWorkspaceSidebarSwitcher;
 AppWorkspace.SidebarSection = AppWorkspaceSidebarSection;
 AppWorkspace.SidebarBody = AppWorkspaceSidebarBody;
 AppWorkspace.SidebarFooter = AppWorkspaceSidebarFooter;

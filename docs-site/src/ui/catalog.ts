@@ -426,6 +426,7 @@ export const documentedOnlyUiCatalogExports = {
   APP_WORKSPACE_SIDEBAR_DEFAULT: "Documented AppWorkspace sidebar sizing constant.",
   APP_WORKSPACE_SIDEBAR_MAX: "Documented AppWorkspace sidebar sizing constant.",
   APP_WORKSPACE_SIDEBAR_MIN: "Documented AppWorkspace sidebar sizing constant.",
+  APP_WORKSPACE_SWITCHER_SEARCH_FROM: "Documented AppWorkspace switcher search threshold.",
   DEFAULT_ICON_GROUPS: "Documented default group set used by the IconInput demo.",
   DEFAULT_ICON_OPTIONS: "Documented default option set used by the IconInput demo.",
   DialogHeader: "Documented prompt composition helper.",

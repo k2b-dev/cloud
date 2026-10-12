@@ -585,6 +585,26 @@ the page's islands mount and support open-in-new-tab.
 Use enhanced navigation only inside an island that also updates its own state.
 See [URL state and navigation](/en/docs/frontend/url-state-and-navigation).
 
+## Show the container an app works in
+
+Use `AppWorkspace.SidebarSwitcher` when the app works inside one container
+chosen from several: a notebook, space, mailbox, base, or venue. Put it first
+in `SidebarDesktop`, above the navigation for that container. It replaces
+app-made **All …** sidebar rows with one head and a panel of containers and
+actions. Offer **New …** only to people who may create, and **All …** as a
+link to the overview.
+
+Filters, projects, and lists that are ordinary sidebar destinations remain
+rows. Apps without a current container need no switcher.
+
+Load options on demand through `onLoad`, leaving `options` undefined while
+waiting; ignore repeated calls during a request and pass `error` when it fails.
+Pass the same props to `createNavigation({ items, switcher: () => switcher })`
+and register that navigation with `WorkspaceNavigationProvider` so phones get
+the same head in the host menu. See the
+[Switcher example and API](/en/ui/layout/workspace#switcher) for placement,
+search, and keyboard behavior.
+
 ## Mobile workspace menu
 
 Below 768 px, the header launcher hosts the current application's navigation
