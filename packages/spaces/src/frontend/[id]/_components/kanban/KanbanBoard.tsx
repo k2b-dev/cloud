@@ -9,7 +9,7 @@ import {
   query,
 } from "@k2b/stdlib/solid";
 import { announce, Dropdown, IconButton, Tooltip, toast, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { apiClient } from "@/api/client";
 import {
   INACTIVE_ITEM_DAYS,
@@ -394,10 +394,12 @@ export default function KanbanBoard(props: Props) {
       }
     }
 
-    const resolved = resolveMoveTargets({
-      itemId: ctx.active.meta.itemId,
-      bucketKey: ctx.over.meta.bucketKey,
-    });
+    return columnDropIntent(ctx.active.meta.itemId, ctx.over.meta.bucketKey, rawIndex);
+  };
+
+  /** A card dropped into the gap at `rawIndex` of a column, by the same rules for the pointer and the keyboard. */
+  const columnDropIntent = (itemId: string, bucketKey: string, rawIndex: number): DropIntent | null => {
+    const resolved = resolveMoveTargets({ itemId, bucketKey });
     if (!resolved) return null;
 
     if (!resolveTargetColumnId(resolved.targetBucket)) {
@@ -459,6 +461,7 @@ export default function KanbanBoard(props: Props) {
     buildIntent: buildDropIntent,
     onDragStart: () => {
       cardIntent = null;
+      cancelKeyboardMove();
     },
     onDragOver: ({ active, over, intent }) => {
       cardIntent = intent;
@@ -762,6 +765,113 @@ export default function KanbanBoard(props: Props) {
     await transferMutation.mutate({ itemId, wormholeId, claim });
   };
 
+  // ---- Keyboard move: Space or Enter on a grip picks the card up, the arrow keys move its slot, and the drop goes
+  // through the pointer's rules. The board owns it, because the dnd keyboard mode steps through every card on the board.
+  /** A card picked up from its grip, and the slot it would take: `position` is its index there once it has moved. */
+  type KeyboardMove = { itemId: string; title: string; bucketKey: string; position: number };
+  const [keyboardMove, setKeyboardMove] = createSignal<KeyboardMove | null>(null);
+  /** A keyboard drop draws the card again in its new place; its new grip takes over the focus the old one lost. */
+  let gripFocusItemId: string | null = null;
+  /** The slots a column offers the card: one more than its cards, unless the card already counts among them. */
+  const slotCount = (move: KeyboardMove, bucket: KanbanBucketInitial) =>
+    bucket.items.length + (bucket.items.some((item) => item.id === move.itemId) ? 0 : 1);
+  /** A folded column shows no cards to land between, so it takes the card at the top. */
+  const lastPosition = (move: KeyboardMove, bucket: KanbanBucketInitial) =>
+    props.folded.has(bucket.key) ? 0 : slotCount(move, bucket) - 1;
+  const keyboardIntent = (move: KeyboardMove) => {
+    const source = findItemLocation(move.itemId);
+    if (!source) return null;
+    // The column still shows the card in its old place, so a slot below that place is one gap further down.
+    const rawIndex = source.bucket.key === move.bucketKey && move.position > source.index ? move.position + 1 : move.position;
+    return columnDropIntent(move.itemId, move.bucketKey, rawIndex);
+  };
+  /** Where a pointer or keyboard drag would drop the card now; the drop line and the target column show it. */
+  const cardDropIntent = () => {
+    const move = keyboardMove();
+    if (move) return keyboardIntent(move);
+    return boardDnd.isDragging() ? boardDnd.intent() : null;
+  };
+  const showKeyboardMove = (move: KeyboardMove) => {
+    setKeyboardMove(move);
+    const bucket = getBucketByKey(move.bucketKey);
+    if (bucket) announce(t.dragPosition({ column: bucket.label, position: move.position + 1, count: slotCount(move, bucket) }));
+    requestAnimationFrame(() =>
+      (
+        boardScrollContainer?.querySelector("[data-spaces-kanban-drop-indicator]") ??
+        boardScrollContainer?.querySelector(`[data-spaces-kanban-column="${CSS.escape(move.bucketKey)}"]`)
+      )?.scrollIntoView({ block: "nearest", inline: "nearest" }),
+    );
+  };
+  const cancelKeyboardMove = () => {
+    const move = keyboardMove();
+    if (!move) return;
+    setKeyboardMove(null);
+    announce(t.dragCancelled({ item: move.title }));
+  };
+  // Changed columns, from a refresh or a card that left the board, take the slot's meaning away.
+  createEffect(on(buckets, () => untrack(cancelKeyboardMove), { defer: true }));
+  const dropKeyboardMove = (move: KeyboardMove) => {
+    setKeyboardMove(null);
+    const intent = keyboardIntent(move);
+    const bucket = getBucketByKey(move.bucketKey);
+    if (!intent || !bucket || isNoOpMove(move.itemId, intent)) {
+      announce(t.dragNotMoved({ item: move.title }));
+      return;
+    }
+    announce(t.dragDropped({ item: move.title, target: t.columnTarget({ column: bucket.label }) }));
+    gripFocusItemId = move.itemId;
+    void dropCard(move.itemId, intent);
+  };
+  const handleGripKeyDown = (event: KeyboardEvent, itemId: string) => {
+    if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+    const move = keyboardMove();
+    const grab = event.key === " " || event.key === "Enter";
+    if (!move) {
+      if (!grab || event.repeat || movingItemId() || moveMutation.loading() || transferMutation.loading()) return;
+      const source = findItemLocation(itemId);
+      if (!source) return;
+      event.preventDefault();
+      event.stopPropagation();
+      gripFocusItemId = null;
+      announce(t.dragPickedUp({ item: source.item.title }));
+      showKeyboardMove({ itemId, title: source.item.title, bucketKey: source.bucket.key, position: source.index });
+      return;
+    }
+    if (event.key === "Escape" || grab) {
+      // Handled here, so the workspace does not close the detail panel and the grip is not clicked.
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === "Escape") cancelKeyboardMove();
+      else if (!event.repeat) dropKeyboardMove(move);
+      return;
+    }
+    const vertical = event.key === "ArrowUp" || event.key === "ArrowDown";
+    if (!vertical && event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    event.stopPropagation();
+    const list = buckets();
+    const current = list.find((bucket) => bucket.key === move.bucketKey);
+    if (!current) return;
+    if (vertical) {
+      // An automatic column orders its cards itself.
+      if (current.kind !== "column") return;
+      const position = clamp(move.position + (event.key === "ArrowUp" ? -1 : 1), 0, lastPosition(move, current));
+      showKeyboardMove({ ...move, position });
+      return;
+    }
+    // Automatic columns take no card from elsewhere, so the slot passes them.
+    const offset = event.key === "ArrowLeft" ? -1 : 1;
+    let index = list.indexOf(current) + offset;
+    while (list[index] && list[index]!.kind !== "column") index += offset;
+    const target = list[index];
+    if (!target) {
+      showKeyboardMove(move);
+      return;
+    }
+    const next = { ...move, bucketKey: target.key };
+    showKeyboardMove({ ...next, position: clamp(move.position, 0, lastPosition(next, target)) });
+  };
+
   type Transfer = { itemId: string; wormholeId: string; claim: ClaimFields };
   const transferMutation = mutations.create<WormholeTransferResult, Transfer, TransferContext>({
     onBefore: ({ itemId }) => {
@@ -987,8 +1097,8 @@ export default function KanbanBoard(props: Props) {
 
   const bucketQuery = (bucketKey: string) => bucketQueries.find(({ initialBucket }) => initialBucket.key === bucketKey)?.pages;
   const isDropIndicatorVisible = (bucketKey: string, index: number) => {
-    const intent = boardDnd.intent();
-    return boardDnd.isDragging() && intent?.kind === "column" && intent.bucketKey === bucketKey && intent.indicatorIndex === index;
+    const intent = cardDropIntent();
+    return intent?.kind === "column" && intent.bucketKey === bucketKey && intent.indicatorIndex === index;
   };
   /** Accent line in the gap where the card lands; `-my-1` cancels the extra `gap-2`, so cards never shift under the pointer. */
   const DropLine = (lineProps: { bucketKey: string; index: number }) => (
@@ -999,8 +1109,8 @@ export default function KanbanBoard(props: Props) {
     </Show>
   );
   const isColumnTargetActive = (bucketKey: string) => {
-    const intent = boardDnd.intent();
-    return boardDnd.isDragging() && intent?.kind === "column" && intent.bucketKey === bucketKey;
+    const intent = cardDropIntent();
+    return intent?.kind === "column" && intent.bucketKey === bucketKey;
   };
   const isWormholeTargetActive = (wormholeId: string) => {
     const intent = boardDnd.intent();
@@ -1036,6 +1146,11 @@ export default function KanbanBoard(props: Props) {
       <p id={`spaces-kanban-shortcuts-${props.spaceId}`} class="sr-only">
         {props.canWrite ? t.kanbanKeyboardHelp : t.kanbanKeyboardHelpReadOnly}
       </p>
+      <Show when={props.canWrite}>
+        <p id={`spaces-kanban-grip-help-${props.spaceId}`} class="sr-only">
+          {t.kanbanGripHelp}
+        </p>
+      </Show>
       <p class="sr-only" aria-live="polite" data-spaces-kanban-column-status>
         {columnAnnouncement()}
       </p>
@@ -1046,7 +1161,11 @@ export default function KanbanBoard(props: Props) {
         aria-label={t.kanban}
         aria-describedby={`spaces-kanban-shortcuts-${props.spaceId}`}
         onKeyDown={handleBoardKeyDown}
-        onFocusIn={(event) => setFocusedItemId(event.target.closest<HTMLElement>("[data-spaces-kanban-card]")?.dataset.itemId)}
+        onFocusIn={(event) => {
+          setFocusedItemId(event.target.closest<HTMLElement>("[data-spaces-kanban-card]")?.dataset.itemId);
+          if (event.target.closest<HTMLElement>("[data-spaces-kanban-grip]")?.dataset.spacesKanbanGrip !== gripFocusItemId)
+            gripFocusItemId = null;
+        }}
         onFocusOut={() => {
           // Opening the palette transfers focus into a dialog; keep its explicit card actions.
           queueMicrotask(() => {
@@ -1290,6 +1409,8 @@ export default function KanbanBoard(props: Props) {
                               const dragId = `drag:item:${item.id}`;
                               const dropId = `drop:item:${bucket.key}:${item.id}`;
                               const isDraggingThis = () => boardDnd.activeId() === dragId;
+                              // A card picked up from its grip keeps full opacity, so the focus ring on the grip stays clear.
+                              const isPickedUpThis = () => keyboardMove()?.itemId === item.id;
                               const isMovingThis = () =>
                                 (moveMutation.loading() || transferMutation.loading()) && movingItemId() === item.id;
 
@@ -1320,9 +1441,11 @@ export default function KanbanBoard(props: Props) {
                                     // On touch screens the grip's 44 px area ends 39 px below the card's top and the claim button's
                                     // starts 43 px above its bottom. A card with both is 82 px tall at least, so neither takes the other's taps.
                                     class={`k2b-progressive-row relative rounded-[var(--ui-radius-control)] border p-2.5 shadow-none transition-[background-color,border-color] any-pointer-coarse:has-[[data-spaces-claim-action]]:min-h-[5.125rem] ${
-                                      isSelected()
-                                        ? "border-[var(--ui-border-strong)] bg-[var(--ui-selected)]"
-                                        : "border-[var(--ui-border)] bg-[var(--ui-surface)] hover:bg-[var(--ui-hover)]"
+                                      isPickedUpThis()
+                                        ? "border-[var(--ui-app-accent-border)] bg-[var(--ui-surface)]"
+                                        : isSelected()
+                                          ? "border-[var(--ui-border-strong)] bg-[var(--ui-selected)]"
+                                          : "border-[var(--ui-border)] bg-[var(--ui-surface)] hover:bg-[var(--ui-hover)]"
                                     } ${isDraggingThis() ? "opacity-40" : ""}`}
                                   >
                                     <Show when={props.canWrite}>
@@ -1333,14 +1456,30 @@ export default function KanbanBoard(props: Props) {
                                           // handle must not scroll the board: the browser would cancel the drag.
                                           <div class="k2b-progressive-action absolute right-1.5 top-1.5 flex">
                                             <IconButton
+                                              ref={(grip) => {
+                                                if (gripFocusItemId !== item.id) return;
+                                                queueMicrotask(() => {
+                                                  // Only while focus fell to the page because the dropped card was drawn again.
+                                                  const focusLost = !document.activeElement || document.activeElement === document.body;
+                                                  if (gripFocusItemId !== item.id || !grip.isConnected || !focusLost) return;
+                                                  grip.focus({ preventScroll: true });
+                                                  grip.scrollIntoView({ block: "nearest", inline: "nearest" });
+                                                });
+                                              }}
                                               data-dnd-card-handle
+                                              data-spaces-kanban-grip={item.id}
                                               label={t.dragItem({ title: item.title })}
                                               tooltip={t.drag}
+                                              aria-describedby={`spaces-kanban-grip-help-${props.spaceId}`}
                                               size="xs"
                                               class="!h-5 !min-h-5 !w-5 !cursor-grab touch-none !text-dimmed hover:!text-primary active:!cursor-grabbing"
                                               onClick={(event) => {
                                                 event.preventDefault();
                                                 event.stopPropagation();
+                                              }}
+                                              onKeyDown={(event) => handleGripKeyDown(event, item.id)}
+                                              onBlur={() => {
+                                                if (keyboardMove()?.itemId === item.id) cancelKeyboardMove();
                                               }}
                                             >
                                               <i class="ti ti-grip-vertical text-[13px]" aria-hidden="true" />

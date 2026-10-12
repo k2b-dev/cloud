@@ -90,6 +90,7 @@ You can edit or delete your own comment for 10 minutes after you post it. Commen
 - Press **Cmd/Ctrl+Alt+N** to create a task, or an event in the calendar view.
 - Press **Cmd/Ctrl+Shift+K** to search the current Space.
 - In Kanban, focus the board and use the arrow keys to move between cards. The keyboard button above the board lists these shortcuts.
+- To move a card, focus its grip, press **Space**, use the arrow keys, and press **Space** to drop it or **Escape** to cancel.
 - Press **Enter** to open the focused card, **M** to assign it to yourself, or **D** to complete it.
 
 These single-key shortcuts stay inactive while you type in a field or editor. Cloud search and the layout help also show the available actions and their shortcuts.

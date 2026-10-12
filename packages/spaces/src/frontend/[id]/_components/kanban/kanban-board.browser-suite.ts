@@ -352,6 +352,20 @@ const columnTitles = (page: Page) =>
     .evaluateAll((titles) => titles.map((title) => title.firstChild?.textContent ?? ""));
 /** What the drag-and-drop live regions last told screen readers. */
 const dragAnnouncements = (page: Page) => page.locator('body > [role="status"][aria-live="polite"]').allTextContents();
+const announcements = (page: Page) => page.locator('[data-k2b-live] [data-politeness="polite"] > div').allTextContents();
+const waitForAnnouncement = async (page: Page, text: string) => {
+  await page.waitForFunction(
+    (text) =>
+      Array.from(document.querySelectorAll('[data-k2b-live] [data-politeness="polite"] > div')).some((line) => line.textContent === text),
+    text,
+  );
+  expect(await announcements(page)).toContain(text);
+};
+const focusedGrip = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute("data-spaces-kanban-grip"));
+const waitForGripFocus = async (page: Page, itemId: string) => {
+  await page.waitForFunction((id) => document.activeElement?.getAttribute("data-spaces-kanban-grip") === id, itemId);
+  expect(await focusedGrip(page)).toBe(itemId);
+};
 /** The toast rail; the live region repeats each toast's text for screen readers. */
 const notifications = (page: Page, locale: "en" | "de" = "en") =>
   page.getByRole("region", { name: locale === "de" ? "Benachrichtigungen" : "Notifications" });
@@ -657,6 +671,240 @@ describe("Spaces Kanban board in a browser", () => {
     }
   }, 30_000);
 
+  test("keyboard: Space, ArrowDown, Space on a grip moves a card one slot down, says where, and keeps focus on its grip", async () => {
+    const page = await open(desktop, { locale: "en" });
+    try {
+      moves.splice(0);
+      filterRequests.splice(0);
+      await page.locator('[data-item-id="Item01"]').focus();
+      // The claim button sits between the card link and its grip in the tab order.
+      await page.keyboard.press("Shift+Tab");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("data-spaces-claim-action"))).toBe("claim");
+      await page.keyboard.press("Shift+Tab");
+      expect(await focusedGrip(page)).toBe("Item01");
+      await page.keyboard.press("Space");
+      await waitForAnnouncement(page, "Picked up Order banners for the spring fair");
+      await page.keyboard.press("ArrowDown");
+      expect(await page.locator('[data-spaces-kanban-column="column:Col001"] [data-spaces-kanban-drop-indicator]').count()).toBe(1);
+      await waitForAnnouncement(page, "To do, position 2 of 3");
+      const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item01/move"));
+      const refreshed = page.waitForResponse((response) => response.url().endsWith("/items/filter"));
+      await page.keyboard.press("Space");
+      await moved;
+      expect(moves).toEqual([{ columnId: "Col001", afterItemId: "Item02" }]);
+      expect(await cardsIn(page, "column:Col001")).toEqual(["Item02", "Item01", "Item03"]);
+      await refreshed;
+      await waitForAnnouncement(page, "Dropped Order banners for the spring fair in Column To do");
+      expect(filterRequests.length).toBeGreaterThan(0);
+      expect(await cardsIn(page, "column:Col001")).toEqual(["Item02", "Item01", "Item03"]);
+      await waitForGripFocus(page, "Item01");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("keyboard: ArrowRight then ArrowDown places a card at slot 2 of the next column with its status", async () => {
+    const page = await open(desktop, { locale: "en" });
+    try {
+      moves.splice(0);
+      await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
+      await page.keyboard.press("Space");
+      await page.keyboard.press("ArrowRight");
+      await waitForAnnouncement(page, "In progress, position 1 of 3");
+      await page.keyboard.press("ArrowDown");
+      await waitForAnnouncement(page, "In progress, position 2 of 3");
+      const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item01/move"));
+      await page.keyboard.press("Enter");
+      await moved;
+      expect(moves).toEqual([{ columnId: "Col002", afterItemId: "Item04" }]);
+      await waitForGripFocus(page, "Item01");
+      expect(await cardsIn(page, "column:Col002")).toEqual(["Item04", "Item01", "Item05"]);
+      expect(await cardsIn(page, "column:Col001")).toEqual(["Item02", "Item03"]);
+      expect(await page.getByRole("dialog").count()).toBe(0);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("keyboard: Escape cancels a move: nothing is sent, the line goes, the workspace does not see Escape, and focus stays", async () => {
+    const page = await open(desktop, { locale: "en" });
+    try {
+      moves.splice(0);
+      // As the workspace controller: an Escape that reaches the window unprevented closes the detail panel.
+      await page.evaluate(() => {
+        const escapes: string[] = [];
+        Object.assign(window, { __workspaceEscapes: escapes });
+        window.addEventListener("keydown", (event) => {
+          if (event.key === "Escape" && !event.defaultPrevented) escapes.push(event.key);
+        });
+      });
+      const workspaceEscapes = () => page.evaluate<unknown>(() => Reflect.get(window, "__workspaceEscapes"));
+      await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
+      await page.keyboard.press("Space");
+      await page.keyboard.press("ArrowDown");
+      expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(1);
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(200);
+      expect(moves).toEqual([]);
+      expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(0);
+      expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item02", "Item03"]);
+      await waitForAnnouncement(page, "Cancelled drag for Order banners for the spring fair");
+      expect(await workspaceEscapes()).toEqual([]);
+      expect(await focusedGrip(page)).toBe("Item01");
+      // Without a move in progress, Escape is the workspace's again.
+      await page.keyboard.press("Escape");
+      expect(await workspaceEscapes()).toEqual(["Escape"]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("keyboard: ArrowRight skips an automatic column", async () => {
+    const page = await open(desktop, { locale: "en", buckets: withAutomaticColumns() });
+    try {
+      moves.splice(0);
+      await page.locator('[data-spaces-kanban-grip="Item02"]').focus();
+      await page.keyboard.press("Space");
+      await page.keyboard.press("ArrowRight");
+      await waitForAnnouncement(page, "In progress, position 2 of 3");
+      expect(await page.locator('[data-spaces-kanban-column="column:Col002"] [data-spaces-kanban-drop-indicator]').count()).toBe(1);
+      expect(await page.locator('[data-spaces-kanban-column="virtual:blocked"] [data-spaces-kanban-drop-indicator]').count()).toBe(0);
+      expect((await announcements(page)).some((text) => text.startsWith("Blocked, position"))).toBe(false);
+      await page.keyboard.press("ArrowLeft");
+      // Pickup already announced this position; returning must announce it again.
+      await page.waitForFunction(
+        () =>
+          Array.from(document.querySelectorAll('[data-k2b-live] [data-politeness="polite"] > div')).filter(
+            (line) => line.textContent === "To do, position 2 of 3",
+          ).length === 2,
+      );
+      expect(await page.locator('[data-spaces-kanban-column="column:Col002"] [data-spaces-kanban-drop-indicator]').count()).toBe(0);
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowRight");
+      await waitForAnnouncement(page, "Done, position 2 of 2");
+      expect(await page.locator('[data-spaces-kanban-column="virtual:overdue"] [data-spaces-kanban-drop-indicator]').count()).toBe(0);
+      await page.keyboard.press("Escape");
+      expect(moves).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("keyboard: dropping into Done a task someone else claimed asks the take-over question once", async () => {
+    const page = await open(desktop, { locale: "en" });
+    try {
+      moves.splice(0);
+      await page.locator('[data-spaces-kanban-grip="Item04"]').focus();
+      await page.keyboard.press("Space");
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("Space");
+      const question = page.getByRole("dialog", { name: "Take over task" });
+      await question.waitFor();
+      expect(await question.count()).toBe(1);
+      expect(await page.getByRole("dialog").count()).toBe(1);
+      expect(moves).toEqual([]);
+      const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item04/move"));
+      await question.getByRole("button", { name: "Take over and complete" }).click();
+      await moved;
+      expect(moves).toHaveLength(1);
+      expect(moves[0]).toMatchObject({ columnId: "Col004", completed: true, claimId: "44444444-4444-4444-8444-444444444444", force: true });
+      await question.waitFor({ state: "detached" });
+      await waitForGripFocus(page, "Item04");
+      expect(await cardsIn(page, "column:Col004")).toContain("Item04");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("keyboard: a picked-up card says where it is in German", async () => {
+    const page = await open(desktop, { locale: "de" });
+    try {
+      moves.splice(0);
+      await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
+      await page.keyboard.press("Space");
+      await waitForAnnouncement(page, "Order banners for the spring fair aufgenommen");
+      await waitForAnnouncement(page, "To do, Position 1 von 3");
+      await page.keyboard.press("ArrowRight");
+      await waitForAnnouncement(page, "In progress, Position 1 von 3");
+      await page.keyboard.press("Escape");
+      await waitForAnnouncement(page, "Verschieben von Order banners for the spring fair abgebrochen");
+      expect(moves).toEqual([]);
+      await page.keyboard.press("Space");
+      await page.keyboard.press("ArrowDown");
+      const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item01/move"));
+      await page.keyboard.press("Space");
+      await moved;
+      await waitForAnnouncement(page, "Order banners for the spring fair in Status To do abgelegt");
+      expect(moves).toEqual([{ columnId: "Col001", afterItemId: "Item02" }]);
+      expect(await cardsIn(page, "column:Col001")).toEqual(["Item02", "Item01", "Item03"]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("keyboard: dropping without moving says the card was not moved in English and sends nothing", async () => {
+    const page = await open(desktop, { locale: "en" });
+    try {
+      moves.splice(0);
+      await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
+      await page.keyboard.press("Space");
+      await page.keyboard.press("Space");
+      await waitForAnnouncement(page, "Order banners for the spring fair not moved");
+      expect(moves).toEqual([]);
+      expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item02", "Item03"]);
+      expect(await focusedGrip(page)).toBe("Item01");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  for (const cancellation of ["Tab", "refresh"] as const) {
+    test(`keyboard: ${cancellation} while picked up cancels the move`, async () => {
+      const page = await open(desktop, { locale: "en" });
+      try {
+        moves.splice(0);
+        await page.locator('[data-spaces-kanban-grip="Item01"]').focus();
+        await page.keyboard.press("Space");
+        await page.keyboard.press("ArrowDown");
+        expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(1);
+        if (cancellation === "Tab") await page.keyboard.press("Tab");
+        else {
+          const refreshed = page.waitForResponse((response) => response.url().endsWith("/items/filter"));
+          await page.evaluate(() =>
+            window.dispatchEvent(
+              new CustomEvent("spaces-data-invalidated", {
+                detail: { domains: ["view"], cursor: null, itemId: null, cover: () => undefined },
+              }),
+            ),
+          );
+          await refreshed;
+        }
+        await waitForAnnouncement(page, "Cancelled drag for Order banners for the spring fair");
+        expect(moves).toEqual([]);
+        expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(0);
+        expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item02", "Item03"]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+
+  test("keyboard: the grip has an accessible description of how to move a card", async () => {
+    const page = await open(desktop, { locale: "en" });
+    try {
+      const helpId = "spaces-kanban-grip-help-Space1";
+      expect(await page.locator(`#${helpId}`).count()).toBe(1);
+      expect(await page.locator(`#${helpId}`).textContent()).toBe(
+        "Space picks the card up, the arrow keys move it, Space drops it, Escape cancels.",
+      );
+      expect((await page.locator('[data-spaces-kanban-grip="Item01"]').getAttribute("aria-describedby"))?.split(/\s+/)).toContain(helpId);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("arrow keys skip a folded column", async () => {
     const page = await open(desktop, { locale: "en", folded: ["column:Col002"] });
     try {
@@ -827,6 +1075,10 @@ describe("Spaces Kanban board in a browser", () => {
         await dialog.waitFor();
         expect(await dialog.textContent()).toContain("Open the card");
         expect((await dialog.textContent())?.includes("Assign it to you")).toBe(canWrite);
+        expect((await dialog.textContent())?.includes("On its grip: pick up, move, and drop or cancel")).toBe(canWrite);
+        expect(await dialog.locator("kbd").allTextContents()).toEqual(
+          canWrite ? ["←", "↑", "→", "↓", "Enter", "M", "D", "Space", "←", "↑", "→", "↓", "Esc"] : ["←", "↑", "→", "↓", "Enter"],
+        );
         // The board's own description for screen readers names the same shortcuts.
         expect((await page.locator("#spaces-kanban-shortcuts-Space1").textContent())?.includes("M assigns")).toBe(canWrite);
       } finally {
