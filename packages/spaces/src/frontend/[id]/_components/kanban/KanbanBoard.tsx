@@ -784,6 +784,7 @@ export default function KanbanBoard(props: Props) {
   // grip, because dnd captures the pointer at the press, and a click on the card would then no longer open it.
   const cardDragDisabled = () => !props.canWrite || moveMutation.loading() || transferMutation.loading();
   const [heldItemId, setHeldItemId] = createSignal<string | null>(null);
+  let endCardPress: ((card: HTMLElement) => void) | undefined;
   onMount(() => {
     const board = boardScrollContainer;
     if (!board) return;
@@ -806,6 +807,9 @@ export default function KanbanBoard(props: Props) {
       window.removeEventListener("pointermove", movePress, true);
       window.removeEventListener("pointerup", releasePress, true);
       window.removeEventListener("pointercancel", releasePress, true);
+    };
+    endCardPress = (card) => {
+      if (press && card.contains(press.link)) endPress();
     };
     const movePress = (event: PointerEvent) => {
       if (!press || event.pointerId !== press.pointerId || press.held) return;
@@ -854,6 +858,7 @@ export default function KanbanBoard(props: Props) {
     board.addEventListener("contextmenu", preventTouchMenu, true);
     onCleanup(() => {
       endPress();
+      endCardPress = undefined;
       board.removeEventListener("pointerdown", startPress, true);
       board.removeEventListener("touchmove", preventHeldScroll);
       board.removeEventListener("click", suppressHeldClick, true);
@@ -1560,6 +1565,8 @@ export default function KanbanBoard(props: Props) {
                                   <DropLine bucketKey={bucket.key} index={itemIndex()} />
                                   <article
                                     ref={(element) => {
+                                      // A refresh replaces the row, so its pending or held press must end with it.
+                                      onCleanup(() => endCardPress?.(element));
                                       boardDnd.droppable(element, () => ({
                                         id: dropId,
                                         disabled: cardDropDisabled(),

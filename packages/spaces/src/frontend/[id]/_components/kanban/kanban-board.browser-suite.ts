@@ -424,6 +424,21 @@ const liftedCards = async (page: Page) => {
   );
 };
 
+/** Waits, without a fixed sleep, until exactly these cards show the lift border and its transition has finished. */
+const waitForLiftedCards = (page: Page, ids: string[]) =>
+  page.waitForFunction((expected) => {
+    const lifted = Array.from(document.querySelectorAll('[role="region"] article')).flatMap((card) => {
+      const probe = document.createElement("span");
+      probe.hidden = true;
+      probe.style.color = "var(--ui-app-accent-border)";
+      card.append(probe);
+      const accent = getComputedStyle(card).borderTopColor === getComputedStyle(probe).color;
+      probe.remove();
+      return accent ? [card.querySelector("[data-spaces-kanban-card]")?.getAttribute("data-item-id")] : [];
+    });
+    return lifted.join() === expected.join();
+  }, ids);
+
 const waitForCards = (page: Page, key: string, ids: string[]) =>
   page.waitForFunction(
     ([column, expected]) =>
@@ -636,7 +651,7 @@ describe("Spaces Kanban board in a browser", () => {
           const before = await layout(page);
           const cdp = await page.context().newCDPSession(page);
           await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
-          await page.waitForTimeout(400);
+          await waitForLiftedCards(page, ["Item02"]);
           expect(await liftedCards(page)).toEqual(["Item02"]);
           expect(await layout(page)).toEqual(before);
           for (let step = 1; step <= 20; step++) {
@@ -674,11 +689,19 @@ describe("Spaces Kanban board in a browser", () => {
           element.scrollLeft = 100;
         });
         const from = await center(page.locator('[data-item-id="Item04"] p').first());
+        await page.evaluate(() => {
+          window.addEventListener("pointerdown", (event) => {
+            const link = event.target instanceof Element ? event.target.closest("[data-spaces-kanban-card]") : null;
+            document.body.dataset.touchPressAccepted = String(link?.hasAttribute("data-spaces-kanban-touch-press"));
+          });
+        });
         const cdp = await page.context().newCDPSession(page);
-        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
+        const started = cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
+        const swiped = cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: from.x - 24, y: from.y }] });
+        await Promise.all([started, swiped]);
         // The card body is accepted only for this finger press, before it becomes a swipe.
-        expect(await page.locator('[data-item-id="Item04"]').getAttribute("data-spaces-kanban-touch-press")).toBe("");
-        for (let step = 1; step <= 15; step++) {
+        expect(await page.locator("body").getAttribute("data-touch-press-accepted")).toBe("true");
+        for (let step = 2; step <= 15; step++) {
           await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: from.x - 24 * step, y: from.y }] });
           await page.waitForTimeout(16);
         }
@@ -715,7 +738,7 @@ describe("Spaces Kanban board in a browser", () => {
         const from = await center(page.locator('[data-item-id="Item02"] p').first());
         const cdp = await page.context().newCDPSession(page);
         await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
-        await page.waitForTimeout(700);
+        await waitForLiftedCards(page, ["Item02"]);
         expect(await liftedCards(page)).toEqual(["Item02"]);
         await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
         await page.waitForTimeout(300);
@@ -740,7 +763,7 @@ describe("Spaces Kanban board in a browser", () => {
       const from = await center(title);
       const to = await center(page.locator('[data-spaces-kanban-column="column:Col002"] article').first());
       await touchPointer(title, "pointerdown", 7, from);
-      await page.waitForTimeout(400);
+      await waitForLiftedCards(page, ["Item02"]);
       expect(await liftedCards(page)).toEqual(["Item02"]);
       expect(await touchMovePrevented(title)).toBe(true);
       // An engine that opens no menu for this gesture still shows that the board cancels one.
@@ -764,13 +787,26 @@ describe("Spaces Kanban board in a browser", () => {
       await page.waitForSelector('[data-spaces-kanban-column="column:Col002"] [data-item-id="Item02"]');
       expect(await liftedCards(page)).toEqual([]);
 
-      // A finger that moves 20 px within 50 ms is a swipe: the browser scrolls, and the card is never picked up.
+      // Both events run together so a protocol delay cannot turn the swipe into a hold.
       moves.splice(0);
       const next = page.locator('[data-item-id="Item01"] p').first();
       const start = await center(next);
-      await touchPointer(next, "pointerdown", 8, start);
-      await page.waitForTimeout(50);
-      await touchPointer(next, "pointermove", 8, { x: start.x + 20, y: start.y });
+      await next.evaluate((element, start) => {
+        for (const type of ["pointerdown", "pointermove"]) {
+          element.dispatchEvent(
+            new PointerEvent(type, {
+              pointerType: "touch",
+              pointerId: 8,
+              isPrimary: true,
+              button: type === "pointermove" ? -1 : 0,
+              bubbles: true,
+              cancelable: true,
+              clientX: start.x + (type === "pointermove" ? 20 : 0),
+              clientY: start.y,
+            }),
+          );
+        }
+      }, start);
       expect(await touchMovePrevented(next)).toBe(false);
       await page.waitForTimeout(400);
       expect(await liftedCards(page)).toEqual([]);
@@ -784,12 +820,46 @@ describe("Spaces Kanban board in a browser", () => {
     }
   }, 30_000);
 
+  test("iPad landscape: refreshing a held card ends its press and lets the replacement scroll", async () => {
+    const page = await open(iPadLandscape, { locale: "en" });
+    try {
+      moves.splice(0);
+      const card = page.locator('[data-item-id="Item02"]');
+      const oldCard = await card.elementHandle();
+      const title = card.locator("p").first();
+      const from = await center(title);
+      await touchPointer(title, "pointerdown", 9, from);
+      await waitForLiftedCards(page, ["Item02"]);
+      const refreshed = page.waitForResponse((response) => response.url().endsWith("/items/filter"));
+      await page.evaluate(() =>
+        window.dispatchEvent(
+          new CustomEvent("spaces-data-invalidated", { detail: { domains: ["view"], cursor: null, itemId: null, cover: () => undefined } }),
+        ),
+      );
+      await refreshed;
+      await page.waitForFunction((oldCard) => oldCard !== null && !oldCard.isConnected, oldCard);
+      expect(await card.count()).toBe(1);
+      expect(await liftedCards(page)).toEqual([]);
+      expect(await touchMovePrevented(title)).toBe(false);
+      await touchPointer(title, "pointerup", 9, from);
+      expect(moves).toEqual([]);
+      expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item02", "Item03"]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("iPad landscape: writers' cards select no text and open no callout, while readers' cards and the toolbar still select", async () => {
     // Only iOS WebKit knows the callout property, so the stylesheet shows that the card asks for it.
-    expect(css).toMatch(/-webkit-touch-callout:\s*none/);
+    expect(css).toMatch(/\.\\\[-webkit-touch-callout\\:none\\\]\s*\{[^}]*-webkit-touch-callout:\s*none\s*;[^}]*\}/);
     for (const canWrite of [true, false]) {
       const page = await open(iPadLandscape, { locale: "en", canWrite });
       try {
+        expect(
+          await page
+            .locator('article:has([data-item-id="Item02"])')
+            .evaluate((card) => card.classList.contains("[-webkit-touch-callout:none]")),
+        ).toBe(canWrite);
         const selection = (selector: string) =>
           page
             .locator(selector)
