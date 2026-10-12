@@ -197,14 +197,124 @@
   }
 }
 
-.notebook-book-content {
-  width: 100%;
-  max-width: 80ch;
+/* The reading column: text in Write, read-only and Book stands at most this
+   wide, centered in the free space. The editor theme reads it too. */
+:root {
+  --notebook-measure: 44rem;
+}
+/* The note's server preview (`NotePreview.tsx`) stands where the editor will
+   put its lines: these rules repeat the editor theme (`theme.ts`) and
+   CodeMirror's base theme for the scroller, column, lines and type. The
+   preview's browser test fails when the two drift apart. Font families are
+   set per element, as in the editor theme, because Cloud's global stylesheet
+   gives every element the Sans family. */
+.notebook-note-preview__scroller {
+  padding: 1rem;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--color-zinc-950);
+}
+.dark .notebook-note-preview__scroller {
+  color: var(--color-zinc-100);
+}
+.notebook-note-preview__content {
+  max-width: min(100%, var(--notebook-measure));
   margin-inline: auto;
-  padding: clamp(1rem, 4vw, 3rem);
+  padding-block: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+}
+/* As in the editor, a heading's style reaches its text and inline code without
+   a box of its own. */
+[class^="notebook-note-preview__heading-"] {
+  display: contents;
+  font-size: 1em;
+  font-weight: 650;
+}
+.notebook-note-preview__heading-1 {
+  font-size: 1.875em;
+  line-height: 1.25;
+}
+.notebook-note-preview__heading-2 {
+  font-size: 1.5em;
+  line-height: 1.3;
+}
+.notebook-note-preview__heading-3 {
+  font-size: 1.25em;
+  line-height: 1.4;
+}
+.notebook-note-preview__heading-4 {
+  font-size: 1.125em;
+}
+.notebook-note-preview__strong {
+  font-weight: 700;
+}
+/* The editor's heading weight wins over bold inside a heading. */
+[class^="notebook-note-preview__heading-"] .notebook-note-preview__strong {
+  font-weight: 650;
+}
+.notebook-note-preview__emphasis {
+  font-style: italic;
+}
+.notebook-note-preview__strike {
+  text-decoration: line-through;
+}
+.notebook-note-preview__meta {
+  color: var(--color-gray-400);
+}
+.dark .notebook-note-preview__meta {
+  color: var(--color-gray-500);
+}
+.notebook-note-preview__code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+.notebook-note-preview__code.notebook-note-preview__code-block {
+  font-size: 0.85em;
+}
+/* Source mode: Mono, CodeMirror's line height and the line numbers, which
+   center with the column. The grid keeps a number beside its wrapped line. */
+[data-mode="source"] .notebook-note-preview__scroller {
+  font-size: 14px;
+  line-height: 1.4;
+}
+[data-mode="source"] .notebook-note-preview__content {
+  display: grid;
+  grid-template-columns: auto minmax(0, var(--notebook-measure));
+  column-gap: 12px;
+  justify-content: center;
+  max-width: none;
+  white-space: break-spaces;
+}
+[data-mode="source"] .notebook-note-preview__line {
+  font-family: var(--font-mono);
+}
+.notebook-note-preview__number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  padding: 0 3px 0 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-gray-500);
+  white-space: nowrap;
+}
+.notebook-note-preview__spacer {
+  height: 0;
+  visibility: hidden;
+}
+.notebook-book-content {
+  --notebook-book-inset: clamp(1rem, 4vw, 3rem);
+  width: 100%;
+  max-width: calc(var(--notebook-measure) + 2 * var(--notebook-book-inset));
+  margin-inline: auto;
+  padding: var(--notebook-book-inset);
   padding-bottom: 6rem;
   font-size: 1rem;
-  line-height: 1.75;
+  line-height: 1.6;
   overflow-wrap: anywhere;
 }
 .cm-query-block-preview.notebook-book-content {
@@ -214,21 +324,27 @@
   font-size: inherit;
   line-height: inherit;
 }
-.notebook-book-content :is(h1, h2, h3, h4, h5, h6) {
+/* The editor's heading scale (`headingStyles` in the editor theme). */
+.notebook-book-content :where(h1, h2, h3, h4, h5, h6) {
+  font-size: 1em;
   font-weight: 650;
-  line-height: 1.25;
+  line-height: 1.4;
   margin-block: 1.6em 0.6em;
   scroll-margin-top: 1.5rem;
 }
 .notebook-book-content h1 {
-  font-size: clamp(1.8rem, 3vw, 2.5rem);
-  letter-spacing: -0.025em;
+  font-size: 1.875em;
+  line-height: 1.25;
 }
 .notebook-book-content h2 {
-  font-size: 1.6rem;
+  font-size: 1.5em;
+  line-height: 1.3;
 }
 .notebook-book-content h3 {
-  font-size: 1.25rem;
+  font-size: 1.25em;
+}
+.notebook-book-content h4 {
+  font-size: 1.125em;
 }
 .notebook-book-content :is(p, ul, ol, pre, blockquote, table, .md-table-wrap, .md-data-block, .notebook-book-query, .notebook-book-toc) {
   margin-block: 1rem;
@@ -320,7 +436,8 @@
 .notebook-book-content table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.9em;
+  font-size: 0.875em;
+  line-height: 1.5;
 }
 .notebook-book-content .md-table-cell:not(.md-formula-ok):not(.md-formula-error):not(.md-table-progress) {
   display: block;

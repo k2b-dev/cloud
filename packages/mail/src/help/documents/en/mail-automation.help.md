@@ -101,6 +101,19 @@ For automation through `cld`, use `mail automation catalog` to find valid IDs. `
 
 Mail uses the platform workflow model automatically and offers no separate model choice. Use advanced **Workflows** only when the guided building blocks do not cover the task.
 
+## Clean up existing mail by sender {icon="mail"}
+
+To move mail that is already in the mailbox, use the terminal. Check how much matches first, then move it. Moving needs **Edit** or **Manage** access to the whole mailbox; **Edit assigned only** is not enough.
+
+```bash
+cld mail sender preview --match domain --value example.com
+cld mail sender move --match domain --value example.com --destination archive --yes
+```
+
+Use `--match sender` for one address, and `--destination trash` or `--folder <name-or-id>` for another target. Like incoming automations, Mail matches the first From address and never the mailbox's own sender addresses.
+
+Mail leaves messages in Sent, Drafts, Trash, and Junk where they are and does not move kept conversations to Trash. On Gmail, each message moves once from the Inbox: Archive removes only the Inbox label, and another folder replaces it with that folder's label. Only Trash and Junk also take archived messages; for other targets, archived messages stay where they are. The preview can count more messages than Mail moves. Each run moves at most 500 messages. If Mail says that more remain, run it again after these moves are done.
+
 ## Configure an automatic reply {icon="send"}
 
 :::steps

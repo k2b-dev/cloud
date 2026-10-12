@@ -1,10 +1,11 @@
 import { afterEach, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { sql } from "bun";
-import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { requireConversation } from "../service/access";
 import { ChangesPageSchema, MemberPageSchema, MessagePageSchema, MessageViewSchema } from "../service/contracts";
+import { chatLiveUpdates } from "../service/live-updates";
 import { appendMessage, type MessageRow, projectMessage } from "../service/message-store";
+import { messagePreview } from "../system-messages";
 import { messageFixtures, type Person } from "./messages.test-fixture";
 
 setDefaultTimeout(120_000);
@@ -298,6 +299,7 @@ suite("chat messages", () => {
           k: `l:${chat.shortId}`,
           d: {
             type: "summary",
+            createdAt: message.createdAt,
             conversationId: chat.shortId,
             id: message.id,
             seq: 1,
@@ -351,32 +353,64 @@ suite("chat messages", () => {
     expect(rows.every((row) => row.ordered !== false)).toBeTrue();
   });
 
-  test("membership changes publish access rows on both keys", async () => {
+  test("every membership mutation writes exact access, data and personal rows in order", async () => {
     const owner = await f.person();
     const member = await f.person();
     const newcomer = await f.person();
-    const chat = await f.fixture(owner, [{ person: member, permission: "write" }]);
+    const people = [owner, member, newcomer];
+    const keys = people.map((p) => `p:${p.id}`);
+    const read = (id: string) => sql<{ ordering_key: string; payload: unknown }[]>`
+      SELECT ordering_key, payload FROM events.outbox WHERE app_id = 'chat'
+      AND (ordering_key IN (${"c:" + id}, ${"l:" + id}) OR ordering_key IN ${sql(keys)}) ORDER BY seq
+    `;
+    const exact = async (chat: { id: string; shortId: string }, affected: string[]) => {
+      const [last] = await sql<
+        MessageRow[]
+      >`SELECT * FROM chat.messages WHERE conversation_id = ${chat.id}::uuid ORDER BY seq DESC LIMIT 1`;
+      if (!last) throw new Error("Missing mutation message");
+      const message = projectMessage(last, chat.shortId);
+      const expected = chatLiveUpdates(
+        chat.shortId,
+        message,
+        message.body === null ? null : messagePreview(message.body),
+        affected,
+      ).flatMap((row) => [
+        ...(row.access ? [{ ordering_key: row.key, payload: { v: 1, k: row.key, a: true } }] : []),
+        { ordering_key: row.key, payload: { v: 1, k: row.key, d: row.data } },
+      ]);
+      expect(await read(chat.shortId)).toEqual(expected);
+    };
+    const chat = await f.create(owner, [member]);
+    await exact(chat, [owner.id, member.id]);
     const path = `/${chat.shortId}`;
+    const memberAccess = async (person: Person) =>
+      MemberPageSchema.parse(await (await f.request(owner.headers, `${path}/members`)).json()).items.find(
+        (row) => row.principal.userId === person.id,
+      )!.accessId;
     const operations = [
-      () => f.request(owner.headers, `${path}/members`, "POST", { members: [newcomer.id] }),
-      () => f.request(owner.headers, `${path}/members/${chat.entries.get(member.id)}`, "PATCH", { permission: "admin" }),
-      async () => {
-        const entries = MemberPageSchema.parse(await (await f.request(owner.headers, `${path}/members`)).json()).items;
-        return f.request(owner.headers, `${path}/members/${entries.find((m) => m.principal.userId === newcomer.id)!.accessId}`, "DELETE");
+      { run: () => f.request(owner.headers, `${path}/members`, "POST", { members: [newcomer.id] }), affected: [newcomer.id] },
+      {
+        run: async () => f.request(owner.headers, `${path}/members/${await memberAccess(member)}`, "PATCH", { permission: "read" }),
+        affected: [member.id],
       },
-      () => f.request(owner.headers, `${path}/leave`, "POST", {}),
+      { run: async () => f.request(owner.headers, `${path}/members/${await memberAccess(newcomer)}`, "DELETE"), affected: [newcomer.id] },
+      { run: () => f.request(owner.headers, path, "PATCH", { name: "Live title" }), affected: [] },
+      { run: () => send(owner, chat.shortId, "outbox-text"), affected: [] },
+      {
+        run: async () => f.request(owner.headers, `${path}/leave`, "POST", { successor: await memberAccess(member) }),
+        affected: [owner.id, member.id],
+      },
     ];
     for (const operation of operations) {
-      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key IN (${"c:" + chat.shortId}, ${"l:" + chat.shortId})`;
-      expect((await operation()).status).toBe(200);
-      const rows = await outbox(chat.shortId);
-      expect(rows).toHaveLength(4);
-      expect(rows.map((r) => z.object({ k: z.string(), a: z.boolean().optional() }).parse(r.payload)).filter((p) => p.a)).toEqual([
-        { k: `c:${chat.shortId}`, a: true },
-        { k: `l:${chat.shortId}`, a: true },
-      ]);
-      expect(z.object({ d: z.object({ preview: z.null() }) }).parse(rows[3]!.payload).d.preview).toBeNull();
+      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND (ordering_key IN (${"c:" + chat.shortId}, ${"l:" + chat.shortId}) OR ordering_key IN ${sql(keys)})`;
+      expect((await operation.run()).ok).toBeTrue();
+      await exact(chat, operation.affected);
     }
+    // Leaving while another manager remains hints only the leaving person.
+    const second = await f.fixture(member, [{ person: newcomer, permission: "write" }]);
+    await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key IN ${sql(keys)}`;
+    expect((await f.request(newcomer.headers, `/${second.shortId}/leave`, "POST", {})).status).toBe(200);
+    await exact(second, [newcomer.id]);
   });
 
   for (const delegated of [false, true])

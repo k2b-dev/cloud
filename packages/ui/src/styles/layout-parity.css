@@ -800,6 +800,14 @@
   initial-value: 0px;
 }
 
+/* Typed so that it resolves where the tablet drawer sets it: in container
+   units of its own workspace, not of a container inside `Main`. */
+@property --k2b-detail-space {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 .k2b-ui .k2b-app-workspace {
   --k2b-workspace-resize-hit-size: 1.25rem;
   /* The detail panel's distance from the workspace's edges, and its gap to a
@@ -1305,10 +1313,11 @@
 /* A touch tablet in portrait: a panel the person can close is a drawer from
    the right over `Main`, which keeps its width. A board or table under it
    gets the drawer's width and both gaps as space at its end, so its last
-   column scrolls out from under the drawer. A panel is closable with
-   `onClose` or with its own close control marked
-   `data-workspace-detail-close`, which a server-rendered panel carries from
-   the first paint. */
+   column scrolls out from under the drawer. The space has the drawer's own
+   cap, measured against the workspace, and only `Main` gets it, not the
+   panel. A panel is closable with `onClose` or with its own close control
+   marked `data-workspace-detail-close`, which a server-rendered panel
+   carries from the first paint. */
 @media (min-width: 48rem) and (max-width: 63.999rem) and (pointer: coarse) {
   .k2b-ui
     .k2b-app-workspace:has(
@@ -1321,9 +1330,24 @@
     ) {
     --k2b-workspace-detail-track: 0px;
     --k2b-workspace-main-keep: 0px;
+    container-type: inline-size;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden]),
+      > .k2b-app-workspace__detail:not([hidden]) [data-workspace-detail-close],
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden]) [data-workspace-detail-close]
+    ) {
     --k2b-detail-space: calc(
-      max(var(--k2b-detail-min), min(var(--k2b-detail-size), var(--k2b-detail-max))) + 2 * var(--k2b-workspace-detail-inset)
+      max(var(--k2b-detail-min), min(var(--k2b-detail-size), var(--k2b-detail-max), 100cqi - 21rem)) + 2 *
+        var(--k2b-workspace-detail-inset)
     );
+  }
+
+  .k2b-ui .k2b-app-workspace__detail {
+    --k2b-detail-space: 0px;
   }
 
   .k2b-ui .k2b-app-workspace__detail:is([data-workspace-detail-closable], :has([data-workspace-detail-close])) {

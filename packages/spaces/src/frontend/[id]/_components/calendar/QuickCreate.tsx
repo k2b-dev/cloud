@@ -33,21 +33,35 @@ export const timedEventDefaults = (days: CalendarDays, dateConfig?: DateContext)
 /** A task is due at the end of the last day's working hours, as the deadline presets are. */
 export const taskDeadline = (days: CalendarDays, dateConfig?: DateContext) => instantFromLocalDateTime(days.last, "17:00", dateConfig);
 
-/** The item the quick create would make of the days, before its title. */
-export const quickCreateDefaults = (kind: QuickCreateKind, days: CalendarDays, dateConfig?: DateContext): QuickCreateDefaults => {
-  if (kind === "task") return { type: "task", deadline: taskDeadline(days, dateConfig) };
+/** A time slot of the day or week view, as ISO instants. */
+export type CalendarSlot = { start: string; end: string };
+
+/**
+ * The item the quick create would make of the days, before its title. A time slot of the day or week view gives an
+ * event its times and a task its deadline.
+ */
+export const quickCreateDefaults = (
+  kind: QuickCreateKind,
+  days: CalendarDays,
+  dateConfig?: DateContext,
+  time?: CalendarSlot,
+): QuickCreateDefaults => {
+  if (kind === "task") return { type: "task", deadline: time?.start ?? taskDeadline(days, dateConfig) };
   if (kind === "allday")
     return { type: "event", allDay: true, startsAt: allDayStart(days.first, dateConfig), endsAt: allDayEnd(days.last, dateConfig) };
+  if (time) return { type: "event", allDay: false, startsAt: time.start, endsAt: time.end };
   return { type: "event", allDay: false, ...timedEventDefaults(days, dateConfig) };
 };
 
 /**
- * The quick create at the selected days of the month view: a title, Event, All day, or Task, and a line that says
- * when. Enter creates at once; With details carries everything into the full dialog, where times and the rest change.
+ * The quick create at the selected days of the month view, or at a time slot of the day and week views: a title,
+ * Event, All day, or Task, and a line that says when. Enter creates at once; With details carries everything into the full dialog, where times and the rest change.
  */
 export default function QuickCreate(props: {
   spaceId: string;
   days: CalendarDays;
+  /** A time slot of the day or week view; without it an event starts at nine. */
+  time?: CalendarSlot;
   kind: QuickCreateKind;
   dateConfig?: DateContext;
   /** Status and tags a new item takes from the calendar's filter. */
@@ -84,7 +98,7 @@ export default function QuickCreate(props: {
   const time = (value: string) => dates.formatTime(new Date(value), context());
   /** When the item would be, as one short line. */
   const when = () => {
-    const values = quickCreateDefaults(kind(), props.days, props.dateConfig);
+    const values = quickCreateDefaults(kind(), props.days, props.dateConfig, props.time);
     if (kind() === "task") return t.quickCreateDue({ date: `${day(props.days.last)}, ${time(values.deadline ?? "")}` });
     const range = props.days.first === props.days.last ? day(props.days.first) : `${day(props.days.first)} – ${day(props.days.last)}`;
     if (kind() === "allday") return t.quickCreateAllDay({ range });
@@ -94,7 +108,7 @@ export default function QuickCreate(props: {
 
   const formDefaults = (): QuickCreateDefaults => ({
     ...props.defaults,
-    ...quickCreateDefaults(kind(), props.days, props.dateConfig),
+    ...quickCreateDefaults(kind(), props.days, props.dateConfig, props.time),
     title: title().trim() || undefined,
   });
 

@@ -19,9 +19,7 @@ import type { EditorState, Extension, Range, Transaction } from "@codemirror/sta
 import { RangeSet, StateField } from "@codemirror/state";
 import type { DecorationSet } from "@codemirror/view";
 import { Decoration, EditorView } from "@codemirror/view";
-
-const SUB_REGEX = /(?<!~)~(?!~)([^~\s]+)~(?!~)/g;
-const SUP_REGEX = /\^([^\^\s]+)\^/g;
+import { SUB_REGEX, SUP_REGEX } from "./_lib/inline-syntax";
 
 const subDecoration = Decoration.mark({ class: "cm-subscript" });
 const supDecoration = Decoration.mark({ class: "cm-superscript" });

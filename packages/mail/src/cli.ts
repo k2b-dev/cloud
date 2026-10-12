@@ -45,6 +45,7 @@ import {
   type ConversationDraftSummary,
   type CreatedAttachmentLink,
   type CreateIncomingAutomation,
+  commandStateSchema,
   composeTemplateVariables,
   createAutomaticReplyConfigurationSchema,
   createIncomingAutomationSchema,
@@ -7180,6 +7181,39 @@ const specialistCommands = {
         );
       },
     }),
+    command("sender move", {
+      summary: "Move matching inbound mail to Archive, Trash, or a folder",
+      flags: {
+        ...mailboxFlag,
+        match: flag.enum(["sender", "domain"] as const, { required: true, description: "Match one sender address or domain" }),
+        value: flag.string({ required: true, description: "Sender email address or complete domain" }),
+        destination: flag.enum(["archive", "trash"] as const, { description: "Destination role; choose this or --folder" }),
+        folder: flag.string({ description: "Destination folder name or ID; choose this or --destination" }),
+        yes: confirmFlag("Confirm moving matching mail"),
+      },
+      run: async ({ ctx, flags }) => {
+        if (!flags.yes) throw new Error("Pass --yes to move matching messages.");
+        if ((flags.destination !== undefined) === (flags.folder !== undefined))
+          throw new Error("Choose exactly one of --destination or --folder.");
+        if (!flags.match || !flags.value) throw new Error("Missing required sender match flags.");
+        const t: Translate = (text) => localizeCloudCliText(ctx.options.locale, text);
+        const scope = flags.folder ? await resolveFolderArg(ctx, flags.folder, flags.mailbox, t) : null;
+        const mailbox = scope?.mailbox ?? (await resolveMailbox(ctx, flags.mailbox));
+        const result = await readApi<MailingListDispositionResult>(
+          ctx,
+          `/mailboxes/${mailbox.id}/senders/disposition`,
+          jsonRequest("POST", {
+            match: flags.match,
+            value: flags.value,
+            ...(scope ? { folderId: scope.folder.id } : { destination: flags.destination }),
+            idempotencyKey: crypto.randomUUID(),
+          }),
+        );
+        if (printStructured(ctx, result)) return;
+        ctx.print(`Queued ${result.commandCount} move command(s) for ${flags.value}.`);
+        if (result.truncated) ctx.print("More than 500 placements matched. Run the command again after these commands complete.");
+      },
+    }),
     command("automation create", {
       summary: "Create a guided Mail, AI, or Spaces incoming automation from JSON or YAML",
       flags: {
@@ -7639,11 +7673,19 @@ const specialistCommands = {
       summary: "List recent durable commands",
       flags: {
         ...mailboxFlag,
+        state: flag.enum(commandStateSchema.options, {
+          description: "Only commands in this state",
+        }),
+        before: flag.string({ description: "Page before this command UUID" }),
         limit: flag.int({ min: 1, max: 100, default: 100 }),
       },
       run: async ({ ctx, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const commands = await readApi<MailCommand[]>(ctx, `/mailboxes/${mailbox.id}/commands?limit=${flags.limit ?? 100}`);
+        const limit = flags.limit ?? 100;
+        const query = new URLSearchParams({ limit: String(limit) });
+        if (flags.state) query.set("state", flags.state);
+        if (flags.before) query.set("before", flags.before);
+        const commands = await readApi<MailCommand[]>(ctx, `/mailboxes/${mailbox.id}/commands?${query}`);
         printTable(
           ctx,
           commands,
@@ -7653,6 +7695,7 @@ const specialistCommands = {
             state: item.state,
             attempt: item.attempt,
             id: item.id,
+            error: text.truncate((item.lastError ?? "").replace(/\s+/g, " ").trim(), 80),
           })),
           [
             { key: "created", label: "CREATED" },
@@ -7660,8 +7703,12 @@ const specialistCommands = {
             { key: "state", label: "STATE" },
             { key: "attempt", label: "ATTEMPT" },
             { key: "id", label: "COMMAND ID" },
+            { key: "error", label: "ERROR" },
           ],
         );
+        const last = commands.at(-1);
+        if (ctx.options.output === "text" && commands.length === limit && last)
+          ctx.print(`Next page: --before ${last.id}${flags.state ? ` --state ${flags.state}` : ""}`);
       },
     }),
     command("command get", {

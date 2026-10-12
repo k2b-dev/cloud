@@ -571,6 +571,8 @@ cld --json mail subscription dispose news.example.org \
   --yes
 ```
 
+It selects copies like `sender move` (see the automation reference): it skips the destination, Sent, Drafts, Trash, and Junk, does not move kept conversations to Trash, and moves each Gmail message once.
+
 If `truncated` is true, wait for the queued commands to finish and repeat the command. Unsubscribing does not delete existing mail, and moving existing messages does not unsubscribe.
 
 ## Collaborate on conversations

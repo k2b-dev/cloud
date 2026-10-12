@@ -39,6 +39,8 @@ import {
   UpdateConversationSchema,
   UpdateMemberSchema,
 } from "../service/contracts";
+import { chatLive } from "../service/live";
+import { chatLiveChannels } from "../service/live-channels";
 
 const context = (c: Context<AuthContext>) => ({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) });
 const invalidInput = (c: Context) => ({ code: "BAD_INPUT", message: chatMessages.resolve([getLocale(c)]).t.invalidInput });
@@ -62,6 +64,7 @@ const app = new Hono<AuthContext>()
     }),
     async (c) => respond(c, ok(await chatService.health())),
   )
+  .route("/live", chatLive.routes(chatLiveChannels))
   .use("/conversations", auth.requireRole("authenticated"))
   .use("/conversations/*", auth.requireRole("authenticated"))
   .post(

@@ -118,6 +118,7 @@ export const messageFixtures = () => {
       await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
     }
     for (const id of users) {
+      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ${"p:" + id}`;
       await sql`DELETE FROM audit.events WHERE actor_user_id = ${id}::uuid OR target_id = ${id}`;
       await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
     }

@@ -37,6 +37,7 @@ import {
   reassignConversationMessageInputSchema,
   restoreWorkflowVersionInputSchema,
   scheduledSendPageSchema,
+  senderDispositionInputSchema,
   splitConversationInputSchema,
   startIncomingAutomationBackfillInputSchema,
   updateAutomaticReplyConfigurationSchema,
@@ -932,5 +933,33 @@ describe("compose formatting contracts", () => {
       expect(serialized).toContain("ignored_mailbox_css");
       expect(JSON.parse(serialized)).toBeDefined();
     }
+  });
+});
+
+describe("sender disposition contracts", () => {
+  const input = { match: "domain", value: " example.com ", idempotencyKey: crypto.randomUUID() };
+
+  test("sender disposition accepts exactly one role or public folder destination and trims values", () => {
+    expect(senderDispositionInputSchema.parse({ ...input, destination: "archive" }).value).toBe("example.com");
+    expect(senderDispositionInputSchema.safeParse({ ...input, folderId: "Foldr1" }).success).toBe(true);
+    for (const destination of [{}, { destination: "trash", folderId: "Foldr1" }]) {
+      const result = senderDispositionInputSchema.safeParse({ ...input, ...destination });
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.issues[0]?.message).toContain("exactly one");
+    }
+  });
+
+  test("sender disposition is strict, bounds values, and requires a UUID command key", () => {
+    const valid = { ...input, destination: "trash" };
+    for (const changes of [
+      { extra: true },
+      { idempotencyKey: "arbitrary-key" },
+      { value: " " },
+      { value: "a".repeat(321) },
+      { match: "list" },
+      { destination: "junk" },
+      { destination: undefined, folderId: crypto.randomUUID() },
+    ])
+      expect(senderDispositionInputSchema.safeParse({ ...valid, ...changes }).success).toBe(false);
   });
 });

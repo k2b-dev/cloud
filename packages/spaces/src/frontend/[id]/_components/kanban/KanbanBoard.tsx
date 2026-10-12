@@ -36,7 +36,12 @@ import { type ClaimFields, claimTask, releaseTask, resolveCompletionClaim, resol
 import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { isInactiveTask } from "../shared/item-activity";
 import CreateItemButton from "../sidebar/CreateItemButton";
-import { invalidateSpacesData, requestSpacesRouteNavigation, subscribeToSpacesDataInvalidation } from "../workspace/workspace-events";
+import {
+  invalidateSpacesData,
+  requestSpacesRouteNavigation,
+  subscribeToSpacesDataInvalidation,
+  subscribeToSpacesDetailStep,
+} from "../workspace/workspace-events";
 import { canTransferThroughWormhole, showWormholeTransferToast, transferThroughWormhole } from "../wormhole-transfer";
 import { boardVirtualKinds, kanbanBucketFilter } from "./bucket-filter";
 import { shouldReloadKanbanColumn } from "./live-scope";
@@ -492,6 +497,7 @@ export default function KanbanBoard(props: Props) {
   });
 
   onMount(() => {
+    onCleanup(subscribeToSpacesDetailStep(kanbanCards, (card) => setSelectedItemId(card.dataset.itemId ?? null)));
     requestAnimationFrame(() => restoreBoardScroll());
     boardScrollContainer?.addEventListener("scroll", rememberBoardScroll, { passive: true });
     setSelectedItemId(getDetailItemFromUrl());

@@ -189,7 +189,8 @@ const api = new Hono<AuthContext>().route("/live", inventoryLive.routes(inventor
   instead of one by one: `getEffectivePermissions()` from `@k2b/cloud/server`
   decides every viewer's `accessSubject` with one query, by the same rules as
   `getEffectivePermission()`. Apply the same role and credential rules as the
-  API.
+  API. Pass an array of access IDs or a Bun `SQLQuery` selecting one uuid
+  column to keep large grant sets in the database.
 - `collection: true` marks a channel whose key set can change without an
   update, such as "every book I can read". Cloud runs `keys()` again every
   minute and after an access update. A collection may start with no keys.
@@ -339,6 +340,33 @@ at most 256 KiB.
 
 The application's topic, `cloud:live:<application ID>`, retains updates for
 24 hours or 64 MiB. Its configuration is fixed for every installation.
+
+## Test channels
+
+`@k2b/cloud/events/testing` runs an application's channels on the real engine
+without NATS. `createMemoryLiveTopic()` stands in for the topic: `publish()`
+appends an update, and `trim(count)` drops the oldest ones, so a cursor falls
+outside the window and receives `resync`.
+
+```ts
+import { createLiveEngine, createMemoryLiveTopic } from "@k2b/cloud/events/testing";
+
+const topic = createMemoryLiveTopic();
+const engine = createLiveEngine({ appId: "inventory", topic: () => topic, channels: inventoryChannels });
+const frames: string[] = [];
+const socket = { send: (frame: string) => frames.push(frame), close: () => {}, getBufferedAmount: () => 0 };
+const connection = engine.open(socket, viewer, async () => viewer);
+connection.message(JSON.stringify({ t: "sub", id: "one", channel: "warehouse", scope: { warehouse: "one" }, after: await topic.head() }));
+topic.publish({ v: 1, k: "one", d: { type: "item.changed", itemId: "item" } });
+// … assert on `frames`, then
+engine.stop();
+```
+
+A test may shorten the intervals and bounds in `LIVE_LIMITS`, such as the
+window size, and must restore them afterwards. An integration test that
+publishes through the real outbox and topic starts the dispatcher with
+`startLiveOutbox(appId)`, which `app.start()` otherwise does, and calls the
+returned stop function in its teardown.
 
 ## Deploy
 

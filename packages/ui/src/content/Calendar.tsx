@@ -8,10 +8,27 @@ import { GestureMenu } from "../actions/GestureMenu";
 import SegmentedControl from "../actions/SegmentedControl";
 import { useDateConfigLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { CalendarDayView } from "./CalendarDayView";
+import { CalendarWeekView } from "./CalendarWeekView";
+import { openCalendarGoTo, openCalendarShortcuts } from "./calendar-dialogs";
 import { layoutCalendarIntervals } from "./calendar-event-layout";
 import { useCalendarMessages } from "./calendar-messages";
 import { fitMonthWeek, layoutMonthWeek, monthLaneCapacity } from "./calendar-month-layout";
 import { calendarDayIndexAtPoint, calendarMinuteAtPoint, startCalendarPointerSession } from "./calendar-pointer";
+import {
+  type CalendarOwner,
+  EventChip,
+  eventHref,
+  followCalendarHref,
+  formatTime,
+  type NormalizedEvent,
+  ownerDateConfig,
+  parseDate,
+  placeCalendarPopover,
+  textWidth,
+  validDate,
+} from "./calendar-shared";
+import { compactGermanDate, type TimeViewHandle, type TodayDirection } from "./calendar-time-view";
 
 export type CalendarView = "day" | "week" | "month" | "year" | "mobile-month";
 
@@ -39,6 +56,11 @@ export type CalendarEvent = {
    * a priority flag in custom `renderEvent` content.
    */
   accessibleDetail?: string;
+  /**
+   * Day and week views with `dayHours`: the state of the entry's checkbox, such as a to-do's. Leave it out for entries
+   * without one. With `onEventCheck` the reader can change it.
+   */
+  checked?: boolean;
   location?: string;
   calendarName?: string;
   attendees?: CalendarAttendee[];
@@ -84,6 +106,60 @@ export type CalendarEventRenderContext = {
   timeLabel: string;
   /** Month view: the start time to show before the title of a one-day timed entry; absent on bars and elsewhere. */
   leadingTime?: string;
+  /** Day and week views: what is left of the event that is running now, such as "27 min left". */
+  remaining?: string;
+  /** Day and week views: the calendar draws the event's checkbox beside this content, so leave yours out. */
+  checkbox?: boolean;
+  /**
+   * Day and week views with `dayHours`: the event is a band, a deadline, or an all-day entry of a timeline. Render the
+   * title in `k2b-calendar-event__title` and the time in `k2b-calendar-event__meta` there, so the views size them.
+   */
+  timeline?: boolean;
+};
+
+/** The days a host loaded events for, from the first day `from` up to `to`, both `YYYY-MM-DD` or dates. */
+export type CalendarRange = { from: Date | string; to: Date | string };
+
+/**
+ * An action the calendar offers for keyboard shortcuts, the command palette, and its shortcuts dialog. The calendar
+ * publishes its own through `onCommandsChange`; the host registers them with its shortcut dispatcher.
+ */
+export type CalendarCommand = {
+  /** Unique on the page, such as `calendar.today`. */
+  id: string;
+  label: string;
+  /** One key combination: a key such as `h`, or modifiers and a key such as `shift+n`. */
+  shortcut?: string;
+  /** One sentence for the command palette and the help, such as "Show today in the calendar". */
+  description?: string;
+  icon?: string;
+  run: () => void;
+};
+
+/** An entry dragged into the day or week view from outside the calendar, such as a task from a list below it. */
+export type CalendarExternalDrag = {
+  title: string;
+  color?: CalendarEventColor;
+  colorHex?: string;
+  /** The length it gets in the calendar. */
+  minutes: number;
+};
+
+/** Actions of the calendar that the host starts from its own controls. */
+export type CalendarController = {
+  /**
+   * Opens the quick create at the selection, or where a new entry fits: today at the next full hour while today is
+   * shown, else at 09:00 of the first shown day. `create` reaches `renderQuickCreate` as in the month view's menu.
+   */
+  quickCreate: (create?: string) => void;
+  /** The time a new entry takes, by the rule of `quickCreate`; all-day for days selected in the month view. */
+  createTarget: () => CalendarEventTimeChange;
+  /**
+   * Day and week views with `dayHours`: follows a pointer that pressed an entry outside the calendar, shows where it
+   * would go and whether it fits the free time there, and calls `onDrop` with the time where it is released. Escape
+   * or a release outside the days cancels.
+   */
+  dragIn: (event: PointerEvent, item: CalendarExternalDrag, onDrop: (slot: CalendarEventTimeChange) => void) => void;
 };
 
 /** A view the application adds to the switcher; the calendar shows its header and toolbar, the application the body. */
@@ -110,6 +186,24 @@ export type CalendarProps<V extends string = never> = {
   withWeekNumbers?: boolean;
   startHour?: number;
   endHour?: number;
+  /**
+   * Waking hours `[start, end]` of the day and week views, such as `[6, 22]`. With them, a day runs from `start` to
+   * `start` of the next day, so the night after `end` belongs to the day before. The day view becomes one stream of
+   * days down the page and the week view a strip of days to scroll sideways; nights fold unless an entry lies in them.
+   * `startHour`, `endHour`, and the visible hours do not apply then.
+   */
+  dayHours?: readonly [start: number, end: number];
+  /** Day and week views with `dayHours`: the days of `events`. Without it they cover the day or week of `date`. */
+  range?: CalendarRange;
+  /** Called once when the reader nears the first loaded day, again once `range.from` moved. */
+  onLoadEarlier?: () => unknown;
+  /** Called once when the reader nears the last loaded day, again once `range.to` moved. */
+  onLoadLater?: () => unknown;
+  /**
+   * Day and week views with `dayHours`: the first and the last day the reader sees, once the view opened and whenever
+   * scrolling changed them, such as for the URL or a count of what is in view.
+   */
+  onVisibleDateChange?: (date: Date, last: Date) => void;
   visibleStartHour?: number;
   visibleEndHour?: number;
   allDayMaxHeightRem?: number;
@@ -138,6 +232,11 @@ export type CalendarProps<V extends string = never> = {
   onEventDrop?: (event: CalendarEvent, next: CalendarEventTimeChange) => void;
   onEventResize?: (event: CalendarEvent, next: CalendarEventTimeChange) => void;
   onSlotActivate?: (slot: CalendarEventTimeChange) => void;
+  /**
+   * Changes the checkbox of an entry with `checked`; leave it out when the reader may not change it. The box shows the
+   * change at once; a returned promise that rejects puts it back.
+   */
+  onEventCheck?: (event: CalendarEvent, checked: boolean) => void | Promise<unknown>;
   /** Pointer gesture used for empty slots. Keyboard activation is always immediate. */
   slotActivation?: "single" | "double";
   /**
@@ -161,6 +260,16 @@ export type CalendarProps<V extends string = never> = {
   toolbarActions?: JSX.Element;
   /** Application controls, such as filters, right after the period title. */
   toolbarContent?: JSX.Element;
+  /** The application's own commands, such as New event, listed after the calendar's in its shortcuts dialog. */
+  commands?: readonly CalendarCommand[];
+  /**
+   * Receives the calendar's commands and `commands` whenever they change, to register them with the host's shortcut
+   * dispatcher: Today (H), Next (J) and Previous (K), the views (1 to 4), and Go to (G). The calendar then also offers
+   * its shortcuts dialog. Without a dispatcher the commands have no keys.
+   */
+  onCommandsChange?: (commands: readonly CalendarCommand[]) => void;
+  /** Receives the calendar's controller once it mounts. */
+  controller?: (controller: CalendarController) => void;
   class?: string;
 };
 
@@ -187,14 +296,6 @@ export type CalendarDayBadge = {
   label: string;
 };
 
-type NormalizedEvent = CalendarEvent & {
-  startDate: Date;
-  endDate: Date;
-  dayKey: string;
-  sourceStartDate: Date;
-  sourceEndDate: Date;
-};
-
 type CalendarPreview = CalendarEventTimeChange & {
   id: string;
   title?: string;
@@ -216,29 +317,6 @@ type TimedOverflowLayout = {
   groupEndDate: Date;
 };
 
-/** What the built-in views read from the props: they only ever link to built-in views. */
-type CalendarOwner = Omit<CalendarProps, "view" | "customViews" | "children">;
-
-const ownerDateConfig = (owner: CalendarOwner): DateContext => ({
-  ...owner.dateConfig,
-  timeZone: owner.timeZone ?? owner.dateConfig?.timeZone,
-  firstDayOfWeek: owner.firstDayOfWeek ?? owner.dateConfig?.firstDayOfWeek ?? owner.dateConfig?.weekStartsOn ?? 1,
-});
-
-const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
-
-const parseDate = (value: Date | string, context?: DateContext): Date => {
-  if (value instanceof Date) return new Date(value);
-  if (dateOnlyPattern.test(value)) return calendar.parseCalendarDate(value, context);
-  const normalized = value.includes("T") ? value : value.replace(" ", "T");
-  const parsed = new Date(normalized);
-  if (!Number.isNaN(parsed.getTime())) return parsed;
-  const [year, month = "1", day = "1"] = value.split("-");
-  return new Date(Number(year), Number(month) - 1, Number(day), 12);
-};
-
-const validDate = (value: Date): boolean => !Number.isNaN(value.getTime());
-
 const weekNumber = (date: Date): number => {
   const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const day = target.getUTCDay() || 7;
@@ -252,7 +330,6 @@ const zonedWeekNumber = (date: Date, context?: DateContext): number => {
   return weekNumber(new Date(Date.UTC(Number(year), Number(month) - 1, Number(day))));
 };
 
-const formatTime = (date: Date, context?: DateContext): string => calendar.formatTime(date, context);
 const formatDay = (date: Date, context?: DateContext): string =>
   date.toLocaleDateString(context?.locale ?? "en", { weekday: "short", day: "numeric", timeZone: context?.timeZone });
 const formatMonth = (date: Date, context?: DateContext): string => calendar.formatMonthYear(date, context);
@@ -329,8 +406,6 @@ const normalizeEvents = (events: CalendarEvent[], context?: DateContext): Normal
     return days;
   });
 
-const eventHref = (props: CalendarOwner, event: CalendarEvent): string | undefined => props.getEventHref?.(event) ?? event.href;
-
 const moveEventTo = (event: NormalizedEvent, target: Date, allDay = false, context?: DateContext): CalendarEventTimeChange => {
   const duration = Math.max(30 * 60 * 1000, event.sourceEndDate.getTime() - event.sourceStartDate.getTime());
   const start = allDay ? startOfDay(target, context) : new Date(target);
@@ -382,208 +457,6 @@ const timedEventLayouts = (events: NormalizedEvent[]): TimedEventLayout[] => {
   }));
 };
 
-const EventChip = (props: {
-  event: NormalizedEvent;
-  owner: CalendarOwner;
-  href?: string;
-  compact?: boolean;
-  fill?: boolean;
-  moving?: boolean;
-  /** Replaces the title and time at the start of the accessible name, for example with the dates a long event spans. */
-  label?: string;
-  /** A bar of a long event that goes on before or after the week row it sits in. */
-  continuesBefore?: boolean;
-  continuesAfter?: boolean;
-  /** Month view: an all-day or multi-day entry drawn as a bar. */
-  bar?: boolean;
-  /** Short dates at the torn ends of a bar, where it continues in another week row. */
-  hintStart?: string;
-  hintEnd?: string;
-  /** Month view: the start time before the title. */
-  leadingTime?: string;
-  onMovePointerDown?: (event: PointerEvent, onActivate: () => void) => void;
-}): JSX.Element => {
-  const calendarMessages = useCalendarMessages();
-  const dateConfig = createMemo(() => ownerDateConfig(props.owner));
-  const color = () => props.event.color ?? "blue";
-  const selected = () => Boolean(props.owner.selectedEventId) && props.owner.selectedEventId === props.event.id;
-  const style = () => (props.event.colorHex ? { "--k2b-calendar-accent": props.event.colorHex } : undefined);
-  const isInteractive = () => Boolean(props.owner.onEventActivate);
-  const durationHours = () => (props.event.endDate.getTime() - props.event.startDate.getTime()) / 3_600_000;
-  const short = () => Boolean(props.fill && !props.event.allDay && durationHours() < 0.75);
-  const showTime = () => !props.event.allDay && !props.compact && durationHours() >= 0.75;
-  const showLocation = () => Boolean(props.event.location && !props.compact && durationHours() >= 1.25);
-  const showDescription = () =>
-    Boolean(props.event.description?.trim() && props.fill && !props.event.allDay && !props.compact && durationHours() >= 1.5);
-  const timeLabel = () => `${formatTime(props.event.startDate, dateConfig())} - ${formatTime(props.event.endDate, dateConfig())}`;
-  const ariaLabel = () => {
-    const label = props.label
-      ? props.label
-      : props.event.allDay
-        ? props.event.title
-        : calendarMessages().calendarEventTime({
-            title: props.event.title,
-            start: formatTime(props.event.startDate, dateConfig()),
-            end: formatTime(props.event.endDate, dateConfig()),
-          });
-    return props.event.accessibleDetail ? `${label}, ${props.event.accessibleDetail}` : label;
-  };
-  const renderedEvent = () =>
-    props.owner.renderEvent?.(props.event, {
-      compact: props.compact ?? false,
-      fill: props.fill ?? false,
-      start: props.event.startDate,
-      end: props.event.endDate,
-      allDay: props.event.allDay ?? false,
-      durationHours: durationHours(),
-      timeLabel: timeLabel(),
-      leadingTime: props.leadingTime,
-    });
-  const defaultContent = (
-    <>
-      <Show when={props.leadingTime}>
-        <span class="k2b-calendar-event__time">{props.leadingTime}</span>
-      </Show>
-      <span class="k2b-calendar-event__title">
-        <Show when={props.event.display === "marker"}>
-          <span class="k2b-calendar-event__marker" aria-hidden="true" />
-        </Show>
-        {props.event.title}
-      </span>
-      <Show when={showTime()}>
-        <span class="k2b-calendar-event__meta">{timeLabel()}</span>
-      </Show>
-      <Show when={showLocation()}>
-        <span class="k2b-calendar-event__meta">{props.event.location}</span>
-      </Show>
-      <Show when={showDescription()}>
-        <span class="k2b-calendar-event__description">{props.event.description}</span>
-      </Show>
-    </>
-  );
-  const content = () => (
-    <>
-      <Show when={props.hintStart}>
-        <span class="k2b-calendar-event__hint" data-edge="start" aria-hidden="true">
-          {props.hintStart}
-        </span>
-      </Show>
-      {renderedEvent() ?? defaultContent}
-      <Show when={props.hintEnd}>
-        <span class="k2b-calendar-event__hint" data-edge="end" aria-hidden="true">
-          {props.hintEnd}
-        </span>
-      </Show>
-    </>
-  );
-  const isActionable = () => isInteractive() || Boolean(props.onMovePointerDown);
-  let suppressClickUntil = 0;
-  const onClick = (event: MouseEvent) => {
-    if (performance.now() < suppressClickUntil) {
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-    if (!props.owner.onEventActivate || props.owner.eventActivation === "double") return;
-    event.preventDefault();
-    event.stopPropagation();
-    props.owner.onEventActivate(props.event);
-  };
-  const onDoubleClick = (event: MouseEvent) => {
-    if (!props.owner.onEventActivate || props.owner.eventActivation !== "double") return;
-    event.preventDefault();
-    event.stopPropagation();
-    props.owner.onEventActivate(props.event);
-  };
-  const onButtonKeyDown = (event: KeyboardEvent) => {
-    if (!isInteractive() || (event.key !== "Enter" && event.key !== " ")) return;
-    event.preventDefault();
-    props.owner.onEventActivate?.(props.event);
-  };
-  const onPointerDown = (event: PointerEvent) => {
-    if (event.pointerType === "touch") return;
-    if (props.onMovePointerDown) event.stopPropagation();
-    props.onMovePointerDown?.(event, () => {
-      suppressClickUntil = performance.now() + 400;
-    });
-  };
-
-  return props.href ? (
-    <a
-      href={props.href}
-      class="k2b-calendar-event"
-      data-calendar-event=""
-      data-color={props.event.colorHex ? undefined : color()}
-      data-selected={selected() ? "true" : undefined}
-      data-compact={props.compact ? "true" : undefined}
-      data-fill={props.fill ? "true" : undefined}
-      data-short={short() ? "true" : undefined}
-      data-moving={props.moving ? "true" : undefined}
-      data-continues-before={props.continuesBefore ? "true" : undefined}
-      data-continues-after={props.continuesAfter ? "true" : undefined}
-      data-bar={props.bar ? "true" : undefined}
-      data-interactive={isInteractive() ? "true" : undefined}
-      data-display={props.event.display}
-      data-space-item-id={props.event.dataSpaceItemId}
-      style={style()}
-      draggable={props.onMovePointerDown ? false : undefined}
-      onClick={onClick}
-      onDblClick={onDoubleClick}
-      onDragStart={props.onMovePointerDown ? (event) => event.preventDefault() : undefined}
-      onPointerDown={onPointerDown}
-      aria-label={ariaLabel()}
-    >
-      {content()}
-    </a>
-  ) : isActionable() ? (
-    <button
-      type="button"
-      class="k2b-calendar-event"
-      data-calendar-event=""
-      data-color={props.event.colorHex ? undefined : color()}
-      data-selected={selected() ? "true" : undefined}
-      data-compact={props.compact ? "true" : undefined}
-      data-fill={props.fill ? "true" : undefined}
-      data-short={short() ? "true" : undefined}
-      data-moving={props.moving ? "true" : undefined}
-      data-continues-before={props.continuesBefore ? "true" : undefined}
-      data-continues-after={props.continuesAfter ? "true" : undefined}
-      data-bar={props.bar ? "true" : undefined}
-      data-interactive="true"
-      data-display={props.event.display}
-      style={style()}
-      onClick={onClick}
-      onDblClick={onDoubleClick}
-      onPointerDown={onPointerDown}
-      onKeyDown={onButtonKeyDown}
-      aria-label={ariaLabel()}
-    >
-      {content()}
-    </button>
-  ) : (
-    <div
-      class="k2b-calendar-event"
-      role="group"
-      data-calendar-event=""
-      data-color={props.event.colorHex ? undefined : color()}
-      data-selected={selected() ? "true" : undefined}
-      data-compact={props.compact ? "true" : undefined}
-      data-fill={props.fill ? "true" : undefined}
-      data-short={short() ? "true" : undefined}
-      data-moving={props.moving ? "true" : undefined}
-      data-continues-before={props.continuesBefore ? "true" : undefined}
-      data-continues-after={props.continuesAfter ? "true" : undefined}
-      data-bar={props.bar ? "true" : undefined}
-      data-interactive={undefined}
-      data-display={props.event.display}
-      style={style()}
-      aria-label={ariaLabel()}
-    >
-      {content()}
-    </div>
-  );
-};
-
 const slotInteractionProps = (
   owner: CalendarOwner,
   slot: () => CalendarEventTimeChange,
@@ -623,7 +496,10 @@ const slotInteractionProps = (
 type CalendarNavigationLinkProps = ParentProps<{
   owner: CalendarOwner;
   href: string;
+  /** Handles a plain click in place, such as gliding to a loaded day; `true` keeps the link from navigating. */
+  intercept?: () => boolean;
   anchorProps?: Omit<JSX.AnchorHTMLAttributes<HTMLAnchorElement>, "children" | "href" | "onClick"> & {
+    "data-direction"?: string;
     "data-divider"?: string;
     "data-outside"?: string;
     "data-size"?: string;
@@ -632,18 +508,22 @@ type CalendarNavigationLinkProps = ParentProps<{
   };
 }>;
 
+const plainClick = (event: MouseEvent) =>
+  !event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+
 /** A real anchor is the baseline; the optional handler only enhances it after hydration. */
 const CalendarNavigationLink = (props: CalendarNavigationLinkProps): JSX.Element => {
   const preload = () => props.owner.onPrefetch?.(props.href);
+  const intercepted = (event: MouseEvent) => {
+    if (!props.intercept || !plainClick(event) || !props.intercept()) return false;
+    event.preventDefault();
+    return true;
+  };
   const navigateHref: JSX.EventHandler<HTMLAnchorElement, MouseEvent> = (event) => {
+    if (intercepted(event)) return;
     const anchor = event.currentTarget;
     if (
-      event.defaultPrevented ||
-      event.button !== 0 ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.altKey ||
+      !plainClick(event) ||
       (anchor.target && anchor.target !== "_self") ||
       anchor.hasAttribute("download") ||
       new URL(anchor.href).origin !== window.location.origin
@@ -663,13 +543,14 @@ const CalendarNavigationLink = (props: CalendarNavigationLinkProps): JSX.Element
       href={props.href}
       scroll="preserve"
       onNavigate={props.owner.onNavigate}
+      onClick={(event) => void intercepted(event)}
       onPointerEnter={preload}
       onFocus={preload}
     >
       {props.children}
     </Link>
   ) : (
-    <a {...props.anchorProps} href={props.href} onPointerEnter={preload} onFocus={preload}>
+    <a {...props.anchorProps} href={props.href} onClick={(event) => void intercepted(event)} onPointerEnter={preload} onFocus={preload}>
       {props.children}
     </a>
   );
@@ -773,18 +654,70 @@ const openViewAt = <V extends string>(
   owner.onDateChange?.(date, view);
 };
 
+/** What the header reads from the active view beyond the props: the days a day or week view shows, and its moves. */
+type CalendarHeaderNav = {
+  /** The day or week view with `dayHours`, which scrolls through its days by itself. */
+  timeView: () => TimeViewHandle | null;
+  /** The commands of the shortcuts dialog; without them the header shows no shortcuts button. */
+  commands: () => readonly CalendarCommand[];
+  openShortcuts: () => void;
+};
+
+const dayTitleOptions: Intl.DateTimeFormatOptions = { weekday: "short", day: "numeric", month: "short", year: "numeric" };
+const weekTitleOptions: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" };
+
+/** Where today lies from the shown day or week before its view measured: the arrow of the Today button, or nothing. */
+const todayDirectionOf = (view: string, date: Date, context: DateContext): TodayDirection => {
+  const today = calendar.formatDateKey(new Date(), context);
+  if (view === "week") {
+    const start = calendar.formatDateKey(calendar.startOfWeek(date, context), context);
+    const end = calendar.formatDateKey(calendar.addDays(calendar.startOfWeek(date, context), 6, context), context);
+    return today < start ? "left" : today > end ? "right" : "";
+  }
+  const shown = calendar.formatDateKey(date, context);
+  return today < shown ? "up" : today > shown ? "down" : "";
+};
+
 const CalendarHeader = <V extends string>(props: {
   date: Date;
   view: CalendarView | V;
   labels: Required<CalendarLabels>;
   owner: CalendarProps<V>;
   focusDay?: Date | null;
+  nav: CalendarHeaderNav;
 }): JSX.Element => {
   const calendarMessages = useCalendarMessages();
   const dateConfig = () => ownerDateConfig(props.owner);
-  const previous = () => adjacentCalendarDate(props.date, props.view, -1, dateConfig());
-  const next = () => adjacentCalendarDate(props.date, props.view, 1, dateConfig());
+  const timeView = () => props.nav.timeView();
+  const parseKey = (key: string) => calendar.parseCalendarDate(key, dateConfig());
+  /** The date the header pages from: the first day a day or week view shows, else the date. */
+  const base = () => {
+    const shown = timeView()?.visibleKeys().first;
+    return shown ? parseKey(shown) : props.date;
+  };
+  const previous = () => adjacentCalendarDate(base(), props.view, -1, dateConfig());
+  const next = () => adjacentCalendarDate(base(), props.view, 1, dateConfig());
+  /** The day view's title, such as "Fri, Oct 9, 2026" or "Fr, 9. Okt 2026". */
+  const formatDayTitle = (date: Date) =>
+    compactGermanDate(
+      new Intl.DateTimeFormat(dateConfig().locale ?? "en", { ...dayTitleOptions, timeZone: dateConfig().timeZone }).format(date),
+      dateConfig().locale,
+      true,
+    );
+  const formatRange = (from: Date, to: Date) =>
+    compactGermanDate(
+      new Intl.DateTimeFormat(dateConfig().locale ?? "en", { ...weekTitleOptions, timeZone: dateConfig().timeZone }).formatRange(from, to),
+      dateConfig().locale,
+    );
+  /** The day and week views with `dayHours` name the days they show, also on the server before they measured. */
+  const timeMode = () => Boolean(props.owner.dayHours) && (props.view === "day" || props.view === "week");
   const title = () => {
+    const shown = timeView()?.visibleKeys();
+    if (timeMode() && props.view === "day") return formatDayTitle(shown ? parseKey(shown.first) : props.date);
+    if (timeMode()) {
+      const start = shown ? parseKey(shown.first) : calendar.startOfWeek(props.date, dateConfig());
+      return formatRange(start, shown ? parseKey(shown.last) : calendar.addDays(start, 6, dateConfig()));
+    }
     if (props.view === "year")
       return new Intl.DateTimeFormat(dateConfig().locale ?? "en", { year: "numeric", timeZone: dateConfig().timeZone }).format(props.date);
     if (props.view !== "week" && props.view !== "month" && props.view !== "mobile-month")
@@ -800,8 +733,8 @@ const CalendarHeader = <V extends string>(props: {
     return formatMonth(props.date, dateConfig());
   };
   /**
-   * The titles this view can show around the current date: the months of the year, the weeks of the month, or a day
-   * of each weekday in every month. Their widest one sets the title's width.
+   * The titles this view can show around the current date: the months of the year, the weeks of the month and across
+   * each month boundary, or a day of each weekday in every month. Their widest one sets the title's width.
    */
   const titleWidths = createMemo(() => {
     const context = dateConfig();
@@ -811,21 +744,34 @@ const CalendarHeader = <V extends string>(props: {
       return Array.from({ length: 12 }, (_, month) => formatMonth(zonedMonthDate(year, month, context), context));
     if (props.view === "week") {
       const first = calendar.startOfWeek(calendar.startOfMonth(props.date, context), context);
-      return Array.from({ length: 6 }, (_, week) => {
+      const weeks = Array.from({ length: 6 }, (_, week) => {
         const start = calendar.addDays(first, week * 7, context);
+        if (timeMode()) return formatRange(start, calendar.addDays(start, 6, context));
         return `${formatDay(start, context)} - ${formatDay(calendar.addDays(start, 6, context), context)}`;
       });
+      if (timeMode()) {
+        return [
+          ...weeks,
+          ...Array.from({ length: 12 }, (_, month) => {
+            const day28 = calendar.addDays(zonedMonthDate(year, month, context), 27, context);
+            return formatRange(day28, calendar.addDays(day28, 6, context));
+          }),
+        ];
+      }
+      return weeks;
     }
     return Array.from({ length: 12 }, (_, month) => month).flatMap((month) => {
       const first = zonedMonthDate(year, month, context);
       return Array.from({ length: 7 }, (_, offset) =>
-        calendar.addDays(first, 21 + offset, context).toLocaleDateString(context.locale ?? "en", {
-          weekday: "long",
-          month: "long",
-          day: "numeric",
-          year: "numeric",
-          timeZone: context.timeZone,
-        }),
+        timeMode()
+          ? formatDayTitle(calendar.addDays(first, 21 + offset, context))
+          : calendar.addDays(first, 21 + offset, context).toLocaleDateString(context.locale ?? "en", {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+              timeZone: context.timeZone,
+            }),
       );
     });
   });
@@ -844,51 +790,111 @@ const CalendarHeader = <V extends string>(props: {
     const href = props.owner.getViewHref?.(view);
     if (href) window.location.href = href;
   };
-  const navButton = (date: Date, icon: string, label: string) => {
+  const navButton = (date: Date, icon: string, label: string, direction: -1 | 1) => {
     const href = props.owner.getDateHref?.(date, props.view);
+    const step = () => timeView()?.step(direction) ?? false;
+    const title = props.nav.commands().length > 0 ? `${label} (${direction > 0 ? "J" : "K"})` : label;
     return (props.owner.onNavigateHref || props.owner.onNavigate) && href ? (
       <CalendarNavigationLink
         owner={props.owner}
         href={href}
-        anchorProps={{ "aria-label": label, title: label, class: "k2b-calendar-header__nav-button" }}
+        intercept={step}
+        anchorProps={{ "aria-label": label, title, class: "k2b-calendar-header__nav-button" }}
       >
         <i class={`ti ${icon}`} />
       </CalendarNavigationLink>
     ) : props.owner.onDateChange ? (
-      <button type="button" aria-label={label} class="k2b-calendar-header__nav-button" onClick={() => goDate(date)}>
+      <button
+        type="button"
+        aria-label={label}
+        title={title}
+        class="k2b-calendar-header__nav-button"
+        onClick={() => {
+          if (!step()) goDate(date);
+        }}
+      >
         <i class={`ti ${icon}`} />
       </button>
     ) : (
       <CalendarNavigationLink
         owner={props.owner}
         href={href ?? "#"}
-        anchorProps={{ "aria-label": label, title: label, class: "k2b-calendar-header__nav-button" }}
+        intercept={step}
+        anchorProps={{ "aria-label": label, title, class: "k2b-calendar-header__nav-button" }}
       >
         <i class={`ti ${icon}`} />
       </CalendarNavigationLink>
     );
   };
+  /**
+   * In the day and week views that scroll through their days, Today points where today lies, or shows a calm dot while
+   * it is on screen; the icon keeps its place either way. The other views name their period in the title.
+   */
+  const direction = () =>
+    timeMode() ? (timeView()?.todayDirection() ?? todayDirectionOf(String(props.view), props.date, dateConfig())) || "here" : undefined;
+  /** One arrow that the stylesheet turns toward today, or the dot while today shows. */
+  const todayIcon = () => (
+    <Show when={direction()}>
+      {(current) => (
+        <Show when={current() !== "here"} fallback={<i class="ti ti-point k2b-calendar-header__today-direction" aria-hidden="true" />}>
+          <i class="ti ti-arrow-narrow-right k2b-calendar-header__today-direction" aria-hidden="true" />
+        </Show>
+      )}
+    </Show>
+  );
   const todayButton = () => {
     const today = calendar.today(dateConfig());
     const href = props.owner.getDateHref?.(today, props.view);
-    const label = <span class="k2b-button__label">{props.labels.today}</span>;
+    const intercept = () => timeView()?.today() ?? false;
+    const title = () => (props.nav.commands().length > 0 ? `${props.labels.today} (H)` : undefined);
+    const label = (
+      <>
+        {todayIcon()}
+        <span class="k2b-button__label">{props.labels.today}</span>
+      </>
+    );
     return (props.owner.onNavigateHref || props.owner.onNavigate) && href ? (
       <CalendarNavigationLink
         owner={props.owner}
         href={href}
-        anchorProps={{ class: "k2b-button k2b-calendar-header__today", "data-size": "sm", "data-variant": "input" }}
+        intercept={intercept}
+        anchorProps={{
+          class: "k2b-button k2b-calendar-header__today",
+          "data-size": "sm",
+          "data-variant": "input",
+          "data-direction": direction(),
+          title: title(),
+        }}
       >
         {label}
       </CalendarNavigationLink>
     ) : props.owner.onDateChange ? (
-      <Button type="button" variant="input" size="sm" class="k2b-calendar-header__today" onClick={() => goDate(today)}>
+      <Button
+        type="button"
+        variant="input"
+        size="sm"
+        class="k2b-calendar-header__today"
+        data-direction={direction()}
+        title={title()}
+        onClick={() => {
+          if (!intercept()) goDate(today);
+        }}
+      >
+        {todayIcon()}
         {props.labels.today}
       </Button>
     ) : (
       <CalendarNavigationLink
         owner={props.owner}
         href={href ?? "#"}
-        anchorProps={{ class: "k2b-button k2b-calendar-header__today", "data-size": "sm", "data-variant": "input" }}
+        intercept={intercept}
+        anchorProps={{
+          class: "k2b-button k2b-calendar-header__today",
+          "data-size": "sm",
+          "data-variant": "input",
+          "data-direction": direction(),
+          title: title(),
+        }}
       >
         {label}
       </CalendarNavigationLink>
@@ -911,8 +917,8 @@ const CalendarHeader = <V extends string>(props: {
   return (
     <header class="k2b-calendar-header">
       <div class="k2b-calendar-header__navigation">
-        {navButton(previous(), "ti-chevron-left", props.labels.previous)}
-        {navButton(next(), "ti-chevron-right", props.labels.next)}
+        {navButton(previous(), "ti-chevron-left", props.labels.previous, -1)}
+        {navButton(next(), "ti-chevron-right", props.labels.next, 1)}
         <div class="k2b-calendar-header__title">
           <span>{title()}</span>
           {/* The widest title of the view reserves its width, so paging never moves what follows the title. */}
@@ -934,6 +940,7 @@ const CalendarHeader = <V extends string>(props: {
           when={!props.owner.onViewChange && props.owner.getViewHref}
           fallback={
             <SegmentedControl
+              class="k2b-calendar-view-switcher"
               value={() => (props.view === "mobile-month" ? "month" : props.view)}
               onValueChange={goView}
               ariaLabel={calendarMessages().calendarView}
@@ -944,6 +951,17 @@ const CalendarHeader = <V extends string>(props: {
           <CalendarViewLinks owner={props.owner} view={props.view} options={viewOptions()} focusDay={props.focusDay} />
         </Show>
         {props.owner.toolbarActions}
+        <Show when={props.nav.commands().length > 0}>
+          <button
+            type="button"
+            class="k2b-calendar-header__shortcuts"
+            aria-label={calendarMessages().calendarShortcuts}
+            title={calendarMessages().calendarShortcuts}
+            onClick={() => props.nav.openShortcuts()}
+          >
+            <i class="ti ti-keyboard" aria-hidden="true" />
+          </button>
+        </Show>
       </div>
       <Show when={props.owner.navigationPending}>
         <span class="k2b-calendar-header__progress" aria-hidden="true" />
@@ -1200,6 +1218,12 @@ type MonthItem = {
 
 type MonthSelection = { first: string; last: string };
 
+/** What the calendar's controller asks of the month view. */
+type MonthCreateHandle = Pick<CalendarController, "quickCreate" | "createTarget"> & {
+  /** The quiet quick create waits for the person to type its title. */
+  typing: () => boolean;
+};
+
 type MonthPopover =
   | { kind: "day"; dayKey: string; anchor: HTMLElement }
   | { kind: "create"; range: MonthSelection; anchor: HTMLElement; create?: string };
@@ -1251,36 +1275,6 @@ const monthItems = (events: NormalizedEvent[]): MonthItem[] => {
   );
 };
 
-/** Places a calendar popover below its anchor when there is room and above it otherwise, inside the viewport. */
-const placeCalendarPopover = (anchor: HTMLElement, popover: HTMLElement): void => {
-  const margin = 8;
-  const gap = 4;
-  const rect = anchor.getBoundingClientRect();
-  const width = Math.min(popover.offsetWidth || 288, window.innerWidth - margin * 2);
-  const height = popover.offsetHeight;
-  const left = Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin));
-  const roomBelow = window.innerHeight - rect.bottom - gap - margin;
-  const above = height > roomBelow && rect.top - gap - margin > roomBelow;
-  const top = above ? Math.max(margin, rect.top - height - gap) : Math.min(rect.bottom + gap, window.innerHeight - height - margin);
-  popover.style.left = `${left}px`;
-  popover.style.top = `${Math.max(margin, top)}px`;
-};
-
-let measureContext: CanvasRenderingContext2D | null | undefined;
-/** The width of a text in a font, from a canvas, so a bar can tell whether its title leaves room for a date hint. */
-const textWidth = (text: string, font: string): number => {
-  measureContext ??= typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
-  if (!measureContext) return Number.POSITIVE_INFINITY;
-  measureContext.font = font;
-  return measureContext.measureText(text).width;
-};
-
-/** Follows a calendar link the way the calendar's own links do: through the host's navigation when it has one. */
-const followCalendarHref = (owner: CalendarOwner, href: string): void => {
-  if (owner.onNavigateHref) owner.onNavigateHref(href);
-  else window.location.assign(href);
-};
-
 const PRINTABLE_KEY = /^.$/u;
 
 /**
@@ -1297,6 +1291,8 @@ const MonthView = (props: {
   labels: Required<CalendarLabels>;
   /** The first selected day, for the view switcher; `null` without a selection. */
   onFocusDay?: (date: Date | null) => void;
+  /** Receives what the calendar's controller asks of the month view. */
+  register?: (handle: MonthCreateHandle | null) => void;
 }): JSX.Element => {
   const calendarMessages = useCalendarMessages();
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
@@ -1518,6 +1514,18 @@ const MonthView = (props: {
     if (openCreate(range, { active: true })) return;
     if (props.owner.onSlotActivate) props.owner.onSlotActivate(rangeOf(range));
   };
+  onMount(() =>
+    props.register?.({
+      quickCreate: (create) => {
+        const range = selection() ?? { first: rovingKey(), last: rovingKey() };
+        select(range.first, range.last);
+        if (!openCreate(range, { active: true, create })) props.owner.onSlotActivate?.(rangeOf(range));
+      },
+      createTarget: () => rangeOf(selection() ?? { first: rovingKey(), last: rovingKey() }),
+      typing: () => popover()?.kind === "create" && !createActive(),
+    }),
+  );
+  onCleanup(() => props.register?.(null));
   const openDayList = (key: string) => {
     const anchor = cells.get(key);
     if (!anchor) return;
@@ -2355,10 +2363,12 @@ const TimeGridView = (props: {
     }
     return [...groups.values()];
   };
+  // 12 rem per lane. The 40 rem grid is wider than one or two lanes, so only
+  // three or more make the day scroll, and one lane fits beside a tablet drawer.
   const dayColumnMinWidth = (layouts: TimedEventLayout[]) => {
     if (!isDayView()) return undefined;
     const lanes = Math.max(1, ...layouts.map((layout) => layout.lanes));
-    return `${Math.max(32, lanes * 12)}rem`;
+    return `${lanes * 12}rem`;
   };
   const laneStyle = (layoutItem: TimedEventLayout) => {
     if (isDayView()) {
@@ -2392,7 +2402,7 @@ const TimeGridView = (props: {
     });
   });
   return (
-    <div class="k2b-calendar-time-grid">
+    <div class="k2b-calendar-time-grid k2b-detail-trail" data-view={isDayView() ? "day" : "week"}>
       <div class="k2b-calendar-time-grid__days" style={{ "grid-template-columns": `4rem repeat(${props.days.length}, minmax(0, 1fr))` }}>
         <div />
         <For each={props.days}>
@@ -2847,9 +2857,193 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
     });
   });
 
+  // The day and week views with `dayHours` scroll through their days; the header and the commands ask them first.
+  const [timeView, setTimeView] = createSignal<TimeViewHandle | null>(null);
+  const [monthCreate, setMonthCreate] = createSignal<MonthCreateHandle | null>(null);
+  const timeMode = () => Boolean(props.dayHours) && (view() === "day" || view() === "week");
+  const parseKey = (key: string) => calendar.parseCalendarDate(key, dateConfig());
+  /** The first shown day of a day or week view, or the selected day of the month view, for the other views. */
+  const shownDay = () => {
+    const first = timeView()?.visibleKeys().first;
+    if (first) return parseKey(first);
+    return view() === "month" ? focusDay() : null;
+  };
+  const go = (target: Date, nextView: CalendarView | V) => {
+    const href = props.getDateHref?.(target, nextView);
+    if (href) followCalendarHref(owner, href);
+    else openViewAt(props, target, nextView);
+  };
+  const step = (direction: -1 | 1) => {
+    if (timeView()?.step(direction)) return;
+    go(adjacentCalendarDate(shownDay() ?? date(), view(), direction, dateConfig()), view());
+  };
+  const goToday = () => {
+    if (timeView()?.today()) return;
+    go(calendar.today(dateConfig()), view());
+  };
+  const goView = (nextView: CalendarView) => {
+    const day = shownDay();
+    if (day) {
+      go(day, nextView);
+      return;
+    }
+    const href = props.getViewHref?.(nextView);
+    if (href) followCalendarHref(owner, href);
+    else props.onViewChange?.(nextView);
+  };
+  const goToKey = (key: string) => {
+    if (timeView()?.goTo(key)) return;
+    go(parseKey(key), view());
+  };
+  const openGoTo = () =>
+    void openCalendarGoTo({
+      messages: calendarMessages(),
+      today: calendar.formatDateKey(new Date(), dateConfig()),
+      describe: (key) =>
+        parseKey(key).toLocaleDateString(dateConfig().locale ?? "en", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+          timeZone: dateConfig().timeZone,
+        }),
+      onGo: goToKey,
+    });
+  const ownCommands = createMemo((): CalendarCommand[] => {
+    const text = calendarMessages();
+    const available = (["day", "week", "month", "year"] as const).filter((option) => !props.views || props.views.includes(option));
+    const viewLabels = { day: mergedLabels().day, week: mergedLabels().week, month: mergedLabels().month, year: mergedLabels().year };
+    return [
+      {
+        id: "calendar.today",
+        label: text.calendarCommandToday,
+        description: text.calendarCommandTodayDescription,
+        shortcut: "h",
+        icon: "ti ti-calendar-event",
+        run: goToday,
+      },
+      {
+        id: "calendar.next",
+        label: text.calendarCommandNext,
+        description: text.calendarCommandNextDescription,
+        shortcut: "j",
+        icon: "ti ti-chevron-right",
+        run: () => step(1),
+      },
+      {
+        id: "calendar.previous",
+        label: text.calendarCommandPrevious,
+        description: text.calendarCommandPreviousDescription,
+        shortcut: "k",
+        icon: "ti ti-chevron-left",
+        run: () => step(-1),
+      },
+      ...available.map((option, index) => ({
+        id: `calendar.view.${option}`,
+        label: text.calendarCommandView({ view: viewLabels[option] }),
+        description: text.calendarCommandViewDescription({ view: viewLabels[option] }),
+        shortcut: String(index + 1),
+        icon: "ti ti-layout-columns",
+        run: () => goView(option),
+      })),
+      {
+        id: "calendar.goto",
+        label: text.calendarCommandGoTo,
+        description: text.calendarCommandGoToDescription,
+        shortcut: "g",
+        icon: "ti ti-calendar-search",
+        run: openGoTo,
+      },
+    ];
+  });
+  const allCommands = createMemo(() => [...ownCommands(), ...(props.commands ?? [])]);
+  /** While the month's quiet quick create waits for typing, a single key is the first letter of a title. */
+  const typing = () => view() === "month" && (monthCreate()?.typing() ?? false);
+  createEffect(() => {
+    const commands = typing()
+      ? allCommands().map((command) => (command.shortcut && singleKey(command.shortcut) ? { ...command, shortcut: undefined } : command))
+      : allCommands();
+    untrack(() => props.onCommandsChange?.(commands));
+  });
+  // The arrow keys page like J and K while the keyboard is in the calendar or nowhere, unless something there uses
+  // them, such as the grid of the week or the month.
+  let root: HTMLElement | undefined;
+  onMount(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (!props.onCommandsChange || custom() || document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]')) return;
+      const target = event.target;
+      const inCalendar = target instanceof Element && Boolean(root?.contains(target));
+      if (!inCalendar && target !== document.body && target !== document.documentElement) return;
+      if (
+        target instanceof Element &&
+        target.closest("input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=textbox], [popover], [role=dialog]")
+      )
+        return;
+      event.preventDefault();
+      step(event.key === "ArrowRight" ? 1 : -1);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    onCleanup(() => window.removeEventListener("keydown", onKeyDown));
+  });
+  const headerNav: CalendarHeaderNav = {
+    timeView,
+    commands: () => (props.onCommandsChange ? allCommands() : []),
+    // The arrow keys page like J and K, so the list names them beside those keys.
+    openShortcuts: () =>
+      void openCalendarShortcuts(
+        allCommands(),
+        calendarMessages(),
+        custom() ? {} : { "calendar.next": "arrowright", "calendar.previous": "arrowleft" },
+      ),
+  };
+  const controller: CalendarController = {
+    quickCreate: (create) => {
+      const active = timeView();
+      if (active) active.controller.quickCreate(create);
+      else monthCreate()?.quickCreate(create);
+    },
+    createTarget: () => {
+      const active = timeView()?.controller.createTarget() ?? monthCreate()?.createTarget();
+      if (active) return active;
+      const start = calendar.today(dateConfig());
+      return { start, end: calendar.addDays(start, 1, dateConfig()), allDay: true };
+    },
+    dragIn: (event, item, onDrop) => timeView()?.controller.dragIn(event, item, onDrop),
+  };
+  onMount(() => props.controller?.(controller));
+  const timeProps = (timeViewName: "day" | "week") => ({
+    owner,
+    view: timeViewName,
+    get date() {
+      return date();
+    },
+    get now() {
+      return now();
+    },
+    get events() {
+      return props.events;
+    },
+    get labels() {
+      return mergedLabels();
+    },
+    get hours() {
+      return props.dayHours ?? ([0, 24] as const);
+    },
+    register: setTimeView,
+  });
+
   return (
-    <section class={`k2b-content-calendar ${props.class ?? ""}`} aria-busy={props.navigationPending ? "true" : undefined}>
-      <CalendarHeader date={date()} view={view()} labels={mergedLabels()} owner={owner} focusDay={view() === "month" ? focusDay() : null} />
+    <section ref={root} class={`k2b-content-calendar ${props.class ?? ""}`} aria-busy={props.navigationPending ? "true" : undefined}>
+      <CalendarHeader
+        date={date()}
+        view={view()}
+        labels={mergedLabels()}
+        owner={owner}
+        focusDay={view() === "month" ? focusDay() : timeView() ? shownDay() : null}
+        nav={headerNav}
+      />
       <Show when={!custom()} fallback={<CalendarBody>{props.children}</CalendarBody>}>
         <Show
           when={view() !== "month"}
@@ -2862,6 +3056,7 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
                 events={normalizedEvents()}
                 labels={mergedLabels()}
                 onFocusDay={setFocusDay}
+                register={setMonthCreate}
               />
             </CalendarBody>
           }
@@ -2889,7 +3084,16 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
                 </CalendarBody>
               }
             >
-              <TimeGridView owner={owner} date={date()} now={now()} events={normalizedEvents()} labels={mergedLabels()} days={days()} />
+              <Show
+                when={timeMode()}
+                fallback={
+                  <TimeGridView owner={owner} date={date()} now={now()} events={normalizedEvents()} labels={mergedLabels()} days={days()} />
+                }
+              >
+                <Show when={view() === "day"} fallback={<CalendarWeekView {...timeProps("week")} />}>
+                  <CalendarDayView {...timeProps("day")} />
+                </Show>
+              </Show>
             </Show>
           </Show>
         </Show>
@@ -2897,6 +3101,9 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
     </section>
   );
 };
+
+/** A shortcut without Ctrl, Meta, or Mod, which typing would set off. */
+const singleKey = (shortcut: string) => !/(^|\+)(ctrl|meta|mod)\+/i.test(shortcut);
 
 /** JSX infers the values of `customViews`; inference from the last signature, as in `createComponent`, sees plain props. */
 function Calendar<V extends string = never>(props: CalendarProps<V>): JSX.Element;

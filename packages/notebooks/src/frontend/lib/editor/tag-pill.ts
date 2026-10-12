@@ -15,12 +15,8 @@ import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { notebookWorkspaceMessages } from "../../[id]/messages";
 import { type CursorZoneState, cursorZoneStateField, selectionIntersectsRange } from "./_lib/cursor-zone-field";
+import { TAG_REGEX } from "./_lib/inline-syntax";
 import { makeOpener } from "./_lib/link-opener";
-
-/** Match `(start-of-line OR whitespace) #tag` — with `#tag` allowing nested
- *  `parent/child` and at least one letter as the first char to exclude
- *  `##` heading markers and `#42` numerals from matching. */
-const TAG_REGEX = /(^|\s)#([a-zA-Z][\w-]*(?:\/[\w-]+)*)/g;
 
 class TagWidget extends WidgetType {
   constructor(

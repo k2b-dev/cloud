@@ -88,6 +88,7 @@ import {
   WormholeTransferResultSchema,
 } from "@/contracts";
 import { SpaceApiKeySchema, SpaceSettingsContextSchema } from "@/settings-context";
+import { CALENDAR_MAX_DAYS } from "../frontend/[id]/_components/calendar/range";
 import { loadSpaceSettingsContext } from "../frontend/[id]/_components/edit/settings-state";
 import { parseSpaceSettings } from "../frontend/[id]/_components/settings/SpaceSettingsStore";
 import { loadSpaceItemDetail, loadSpacesViewSnapshot } from "../frontend/[id]/_components/workspace/workspace-state";
@@ -182,9 +183,28 @@ const OverviewActivityQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
-const WorkspaceViewQuerySchema = z.object({
-  href: z.string().min(1).max(3000),
-});
+const WorkspaceViewQuerySchema = z
+  .object({
+    href: z.string().min(1).max(3000),
+    from: z.string().datetime().optional().describe("Day and week views only: start of the days to load (ISO)"),
+    to: z.string().datetime().optional().describe("Day and week views only: end of the days to load, exclusive (ISO)"),
+    includeTray: z
+      .enum(["true", "false"])
+      .default("true")
+      .describe("Day view only: `false` leaves out the tray, such as for a week loaded while the reader scrolls"),
+  })
+  .refine((query) => (query.from === undefined) === (query.to === undefined), {
+    message: "Pass both from and to, or neither",
+    path: ["to"],
+  })
+  .refine((query) => !query.from || !query.to || Date.parse(query.to) > Date.parse(query.from), {
+    message: "End time must be after start time",
+    path: ["to"],
+  })
+  .refine((query) => !query.from || !query.to || Date.parse(query.to) - Date.parse(query.from) <= CALENDAR_MAX_DAYS * 86_400_000, {
+    message: `A range spans at most ${CALENDAR_MAX_DAYS} days`,
+    path: ["to"],
+  });
 const OverviewSearchQuerySchema = z.object({
   q: z.string().trim().min(1).max(300),
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -763,7 +783,7 @@ const app = new Hono<AuthContext>()
       tags: ["Spaces"],
       summary: "Refresh the active workspace view",
       description:
-        "Load only the permission-checked list, table, kanban, or calendar snapshot selected by a Spaces URL. A day view snapshot also carries its tray: the first overdue tasks of the Space and the first undated tasks assigned to the reader, with their totals.",
+        "Load only the permission-checked list, table, kanban, or calendar snapshot selected by a Spaces URL. A calendar snapshot names the `range` of days it loaded. The day and week views may pass `from` and `to` to load other days, at most 366 of them, such as the next week while the reader scrolls. A day view snapshot also carries its tray: the first overdue tasks of the Space and the first undated tasks assigned to the reader, with their totals. Pass `includeTray=false` to load only the items of a range.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpacesViewSnapshotSchema, "Active workspace view snapshot"),
@@ -776,9 +796,12 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const userResult = requireUserBackedActor(c);
       if (!userResult.ok) return respond(c, userResult);
-      const { href } = c.req.valid("query");
+      const { href, from, to, includeTray } = c.req.valid("query");
       const target = parseSpacesWorkspaceHref(href);
       if (!target) return respond(c, fail(err.badInput("Unsupported workspace view route")));
+      // Only the day and week views load a chosen range; other views ignore it, so an old timeline link opens its month.
+      const calendarView = new URL(href, "http://spaces.local").searchParams.get("cv");
+      const scrolling = calendarView === "day" || calendarView === "week";
       const spaceId = await resolvePublicId("spaces", target.spaceId);
       if (!spaceId) return respond(c, fail(err.notFound("Space")));
       const snapshot = await loadSpacesViewSnapshot({
@@ -789,6 +812,8 @@ const app = new Hono<AuthContext>()
         cookieHeader: c.req.header("Cookie"),
         authorizationHeader: c.req.header("Authorization"),
         dateConfig: getDateConfig(c),
+        calendarRange: scrolling && from && to ? { from, to } : undefined,
+        includeTray: includeTray === "true",
       });
       if (snapshot.kind === "accessDenied") return respond(c, fail(err.forbidden(snapshot.message)));
       if (snapshot.kind === "notFound") return respond(c, fail(err.notFound("Space")));
