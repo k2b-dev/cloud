@@ -1,4 +1,5 @@
 import { createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
+import { isServer } from "solid-js/web";
 import { dropdownPosition } from "../actions/Dropdown";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useUiMessages } from "../intl/messages";
@@ -111,7 +112,8 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
     window[method]("resize", reposition);
     window[method]("scroll", reposition, true);
   };
-  onCleanup(() => listen(false));
+  // Server rendering cleans up too, where no window exists.
+  onCleanup(() => isServer || listen(false));
 
   const rows = () => (panel ? Array.from(panel.querySelectorAll<HTMLElement>("[data-switcher-row]:not([aria-disabled='true'])")) : []);
   const focusRow = (index: number) => {

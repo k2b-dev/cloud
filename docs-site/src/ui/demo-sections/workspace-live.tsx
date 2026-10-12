@@ -1,5 +1,7 @@
 import {
   AppWorkspace,
+  type AppWorkspaceSidebarSwitcherProps,
+  type AppWorkspaceSwitcherOption,
   BottomSheet,
   Button,
   bottomSheetOptions,
@@ -18,6 +20,36 @@ export function LiveWorkspaceDemo() {
   const [automatic, setAutomatic] = createSignal(false);
   const [done, setDone] = createSignal<string[]>([]);
   const [selected, setSelected] = createSignal("import");
+  const [containers, setContainers] = createSignal<readonly AppWorkspaceSwitcherOption[]>();
+  let loadTimer: ReturnType<typeof setTimeout> | undefined;
+  const switcher: AppWorkspaceSidebarSwitcherProps = {
+    currentId: "work",
+    label: "Work overview",
+    description: "3 active tasks",
+    icon: "ti ti-briefcase",
+    switchLabel: "Switch workspace",
+    get options() {
+      return containers();
+    },
+    onLoad: () => {
+      if (loadTimer !== undefined) return;
+      loadTimer = setTimeout(() => {
+        setContainers(
+          ["Work overview", "Personal", "Operations", "Finance", "Website", "Research", "Events", "Support", "Design", "Archive"].map(
+            (label, index) => ({
+              id: index === 0 ? "work" : `workspace-${index}`,
+              label,
+              description: index === 2 ? "Supplier inventory" : undefined,
+              href: "#workspace-live",
+            }),
+          ),
+        );
+        loadTimer = undefined;
+      }, 350);
+    },
+    actions: [{ id: "all", label: "All workspaces", icon: "ti ti-layout-grid", href: "#workspace-live" }],
+  };
+  onCleanup(() => clearTimeout(loadTimer));
   const entries = [
     {
       id: "import",
@@ -160,6 +192,7 @@ export function LiveWorkspaceDemo() {
     </>
   );
   const menu = createNavigation({
+    switcher: () => switcher,
     items: () =>
       entries.map((entry) => ({
         id: entry.id,
@@ -200,8 +233,8 @@ export function LiveWorkspaceDemo() {
     <DemoCard
       id="workspace-live"
       chip={{ kind: "component", name: "Live workspace navigation", from: "@k2b/ui" }}
-      description="Context cards for active work and simple rows for completed work, with live state, interactive previews and a Done section. Updates preserve an open preview. Hover a row or use its details button; Escape dismisses it."
-      code={`<AppWorkspace.SidebarItem\n  variant="card"\n  context="Operations"\n  contextMeta="12m"\n  description={<StatusBadge label={status()} tone="running" variant="dot" />}\n  preview={{ label: "Item details", content: <Details /> }}\n>\n  <AppWorkspace.SidebarItemLabel>{title()}</AppWorkspace.SidebarItemLabel>\n</AppWorkspace.SidebarItem>\n<AppWorkspace.SidebarSection title="Done" count={done().length} collapsible defaultOpen={false}>\n  {/* Completed items remain application-owned. */}\n</AppWorkspace.SidebarSection>`}
+      description="The workspace switcher loads ten containers on demand and offers search. Context cards for active work and simple rows for completed work, with live state, interactive previews and a Done section. Updates preserve an open preview. Hover a row or use its details button; Escape dismisses it."
+      code={`<AppWorkspace.SidebarDesktop>\n  <AppWorkspace.SidebarSwitcher {...switcher} />\n  {/* Sidebar bodies follow the head. */}\n</AppWorkspace.SidebarDesktop>\nconst menu = createNavigation({ items, switcher: () => switcher });\n\n<AppWorkspace.SidebarItem\n  variant="card"\n  context="Operations"\n  contextMeta="12m"\n  description={<StatusBadge label={status()} tone="running" variant="dot" />}\n  preview={{ label: "Item details", content: <Details /> }}\n>\n  <AppWorkspace.SidebarItemLabel>{title()}</AppWorkspace.SidebarItemLabel>\n</AppWorkspace.SidebarItem>\n<AppWorkspace.SidebarSection title="Done" count={done().length} collapsible defaultOpen={false}>\n  {/* Completed items remain application-owned. */}\n</AppWorkspace.SidebarSection>`}
     >
       <div class="flex flex-wrap gap-2 mb-3">
         <Button size="sm" class="lg:hidden" onClick={() => void openMenu()}>
@@ -230,7 +263,10 @@ export function LiveWorkspaceDemo() {
       >
         <AppWorkspace layoutState={() => ({ version: 2, sidebarWidth: 300 })}>
           <AppWorkspace.Sidebar>
-            <AppWorkspace.SidebarDesktop>{navigation()}</AppWorkspace.SidebarDesktop>
+            <AppWorkspace.SidebarDesktop>
+              <AppWorkspace.SidebarSwitcher {...switcher} />
+              {navigation()}
+            </AppWorkspace.SidebarDesktop>
           </AppWorkspace.Sidebar>
           <AppWorkspace.Content>
             <AppWorkspace.Main>
