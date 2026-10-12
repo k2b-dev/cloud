@@ -2217,6 +2217,8 @@ const TimeGridView = (props: {
   let scrollContainer: HTMLDivElement | undefined;
   let timeGrid: HTMLDivElement | undefined;
   let timeGutter: HTMLDivElement | undefined;
+  let daysRow: HTMLDivElement | undefined;
+  let allDayRow: HTMLDivElement | undefined;
   let defaultHourMarker: HTMLDivElement | undefined;
   let cancelInteraction: (() => void) | undefined;
   let suppressSlotClickUntil = 0;
@@ -2244,7 +2246,10 @@ const TimeGridView = (props: {
     if (!timeGrid || !timeGutter) return null;
     const gridRect = timeGrid.getBoundingClientRect();
     const gutterRect = timeGutter.getBoundingClientRect();
-    const dayIndex = calendarDayIndexAtPoint(clientX, gutterRect.right, gridRect.right - gutterRect.right, props.days.length);
+    // The gutter stays in view while the days scroll sideways under it, so the days start one gutter after the grid.
+    if (clientX < gutterRect.right) return null;
+    const daysLeft = gridRect.left + gutterRect.width;
+    const dayIndex = calendarDayIndexAtPoint(clientX, daysLeft, gridRect.right - daysLeft, props.days.length);
     if (dayIndex === null) return null;
     const minute = Math.min(
       gridEndHour() * 60 + 45,
@@ -2363,12 +2368,22 @@ const TimeGridView = (props: {
     }
     return [...groups.values()];
   };
-  // 12 rem per lane. The 40 rem grid is wider than one or two lanes, so only
-  // three or more make the day scroll, and one lane fits beside a tablet drawer.
-  const dayColumnMinWidth = (layouts: TimedEventLayout[]) => {
-    if (!isDayView()) return undefined;
-    const lanes = Math.max(1, ...layouts.map((layout) => layout.lanes));
-    return `${lanes * 12}rem`;
+  // A week shares 36 rem between its days; a single day takes 12 rem per overlapping lane. The 40 rem grid is wider
+  // than one or two lanes, so only three or more make the day scroll, and one lane fits beside a tablet drawer.
+  const columnTemplate = createMemo(() => {
+    let dayMin = "var(--k2b-calendar-day-min)";
+    if (isDayView()) {
+      const day = props.days[0]!;
+      const layouts = timedEventLayouts(eventsByDay().get(calendar.formatDateKey(day, dateConfig()))?.timed ?? []);
+      dayMin = `${Math.max(1, ...layouts.map((layout) => layout.lanes)) * 12}rem`;
+    }
+    return `4rem repeat(${props.days.length}, minmax(${dayMin}, 1fr))`;
+  });
+  // The hours scroll sideways themselves; the day and all-day rows follow, also when focus scrolls one of them.
+  const followColumns = (source: HTMLElement) => {
+    for (const row of [scrollContainer, daysRow, allDayRow]) {
+      if (row && row !== source && row.scrollLeft !== source.scrollLeft) row.scrollLeft = source.scrollLeft;
+    }
   };
   const laneStyle = (layoutItem: TimedEventLayout) => {
     if (isDayView()) {
@@ -2402,9 +2417,14 @@ const TimeGridView = (props: {
     });
   });
   return (
-    <div class="k2b-calendar-time-grid k2b-detail-trail" data-view={isDayView() ? "day" : "week"}>
-      <div class="k2b-calendar-time-grid__days" style={{ "grid-template-columns": `4rem repeat(${props.days.length}, minmax(0, 1fr))` }}>
-        <div />
+    <div class="k2b-calendar-time-grid" data-view={isDayView() ? "day" : "week"}>
+      <div
+        ref={daysRow}
+        class="k2b-calendar-time-grid__days"
+        style={{ "grid-template-columns": columnTemplate() }}
+        onScroll={(event) => followColumns(event.currentTarget)}
+      >
+        <div class="k2b-calendar-time-grid__corner" />
         <For each={props.days}>
           {(day) => {
             const dayBadge = props.owner.dayBadges?.[calendar.formatDateKey(day, dateConfig())];
@@ -2433,9 +2453,11 @@ const TimeGridView = (props: {
       </div>
       <Show when={!props.owner.hideAllDay}>
         <div
+          ref={allDayRow}
           class="k2b-calendar-time-grid__all-day"
+          onScroll={(event) => followColumns(event.currentTarget)}
           style={{
-            "grid-template-columns": `4rem repeat(${props.days.length}, minmax(0, 1fr))`,
+            "grid-template-columns": columnTemplate(),
             "max-height": `${props.owner.allDayMaxHeightRem ?? 7}rem`,
           }}
         >
@@ -2487,12 +2509,12 @@ const TimeGridView = (props: {
           </For>
         </div>
       </Show>
-      <div ref={scrollContainer} class="k2b-calendar-time-grid__scroll">
-        <div
-          ref={timeGrid}
-          class="k2b-calendar-time-grid__grid"
-          style={{ "grid-template-columns": `4rem repeat(${props.days.length}, minmax(0, 1fr))` }}
-        >
+      <div
+        ref={scrollContainer}
+        class="k2b-calendar-time-grid__scroll k2b-detail-trail"
+        onScroll={(event) => followColumns(event.currentTarget)}
+      >
+        <div ref={timeGrid} class="k2b-calendar-time-grid__grid" style={{ "grid-template-columns": columnTemplate() }}>
           <div
             ref={timeGutter}
             class="k2b-calendar-time-grid__gutter"
@@ -2520,7 +2542,6 @@ const TimeGridView = (props: {
                 <div
                   class="k2b-calendar-time-grid__column"
                   style={{
-                    "min-width": dayColumnMinWidth(layouts()),
                     "grid-template-rows": `repeat(${hours().length}, minmax(4rem, 1fr))`,
                   }}
                 >

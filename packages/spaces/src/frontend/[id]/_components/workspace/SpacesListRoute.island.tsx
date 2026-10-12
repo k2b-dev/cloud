@@ -72,6 +72,81 @@ export default function SpacesListRoute(props: Props) {
     view.resetSearch();
   };
 
+  const empty = () => itemsResult().items.length === 0 && leaving.held().size === 0;
+
+  const content = () => (
+    <>
+      {empty() ? (
+        !hasActiveFilters(view.filter()) ? (
+          <Placeholder
+            icon="ti ti-checkbox"
+            variant="panel"
+            title={t.noItemsYet}
+            description={props.canWrite ? t.noItemsWritableDescription : t.noItemsReadonlyDescription}
+            action={
+              props.canWrite ? (
+                <CreateItemButton
+                  spaceId={props.spaceId}
+                  columns={props.columns}
+                  tags={props.tags}
+                  templates={props.templates}
+                  dateConfig={props.dateConfig}
+                  variant="chip"
+                  defaultType="task"
+                />
+              ) : undefined
+            }
+          />
+        ) : (
+          <Placeholder
+            icon="ti ti-filter-off"
+            variant="panel"
+            title={t.noMatchingItems}
+            description={t.noMatchingItemsDescription}
+            action={
+              <Button type="button" variant="secondary" size="sm" onClick={clearFilters}>
+                <i class="ti ti-filter-off" /> {t.clearFiltersButton}
+              </Button>
+            }
+          />
+        )
+      ) : props.currentView === "table" ? (
+        <ItemsTable
+          items={itemsResult().items}
+          spaceId={props.spaceId}
+          columns={props.columns}
+          tags={props.tags}
+          selectedItemId={selectedItemId()}
+          baseUrl={baseUrl()}
+          scrollPreserveKey={`spaces-table-${props.spaceId}`}
+          dateConfig={props.dateConfig}
+        />
+      ) : (
+        <ItemsList
+          items={itemsResult().items}
+          groupCounts={itemsResult().groupCounts}
+          columns={props.columns}
+          tags={props.tags}
+          spaceId={props.spaceId}
+          selectedItemId={selectedItemId()}
+          groupBy={view.filter().groupBy}
+          showCompleted={view.filter().status !== "active"}
+          baseUrl={baseUrl()}
+          dateConfig={props.dateConfig}
+          canWrite={props.canWrite}
+          currentUserId={props.currentUserId}
+          leaving={leaving}
+        />
+      )}
+
+      {itemsResult().totalPages > 1 && (
+        <div class="py-2">
+          <Pagination currentPage={itemsResult().page} totalPages={itemsResult().totalPages} baseUrl={paginationBaseUrl()} />
+        </div>
+      )}
+    </>
+  );
+
   return (
     <>
       <FilterBar
@@ -101,76 +176,17 @@ export default function SpacesListRoute(props: Props) {
       </Show>
       <div class="h-2" />
 
-      <ScrollArea ref={scrollArea} class="flex-1" scrollPreserveKey={`spaces-main-${props.spaceId}`}>
-        {itemsResult().items.length === 0 && leaving.held().size === 0 ? (
-          !hasActiveFilters(view.filter()) ? (
-            <Placeholder
-              icon="ti ti-checkbox"
-              variant="panel"
-              title={t.noItemsYet}
-              description={props.canWrite ? t.noItemsWritableDescription : t.noItemsReadonlyDescription}
-              action={
-                props.canWrite ? (
-                  <CreateItemButton
-                    spaceId={props.spaceId}
-                    columns={props.columns}
-                    tags={props.tags}
-                    templates={props.templates}
-                    dateConfig={props.dateConfig}
-                    variant="chip"
-                    defaultType="task"
-                  />
-                ) : undefined
-              }
-            />
-          ) : (
-            <Placeholder
-              icon="ti ti-filter-off"
-              variant="panel"
-              title={t.noMatchingItems}
-              description={t.noMatchingItemsDescription}
-              action={
-                <Button type="button" variant="secondary" size="sm" onClick={clearFilters}>
-                  <i class="ti ti-filter-off" /> {t.clearFiltersButton}
-                </Button>
-              }
-            />
-          )
-        ) : props.currentView === "table" ? (
-          <ItemsTable
-            items={itemsResult().items}
-            spaceId={props.spaceId}
-            columns={props.columns}
-            tags={props.tags}
-            selectedItemId={selectedItemId()}
-            baseUrl={baseUrl()}
-            scrollPreserveKey={`spaces-table-${props.spaceId}`}
-            dateConfig={props.dateConfig}
-          />
-        ) : (
-          <ItemsList
-            items={itemsResult().items}
-            groupCounts={itemsResult().groupCounts}
-            columns={props.columns}
-            tags={props.tags}
-            spaceId={props.spaceId}
-            selectedItemId={selectedItemId()}
-            groupBy={view.filter().groupBy}
-            showCompleted={view.filter().status !== "active"}
-            baseUrl={baseUrl()}
-            dateConfig={props.dateConfig}
-            canWrite={props.canWrite}
-            currentUserId={props.currentUserId}
-            leaving={leaving}
-          />
-        )}
-
-        {itemsResult().totalPages > 1 && (
-          <div class="py-2">
-            <Pagination currentPage={itemsResult().page} totalPages={itemsResult().totalPages} baseUrl={paginationBaseUrl()} />
-          </div>
-        )}
-      </ScrollArea>
+      {props.currentView === "table" && !empty() ? (
+        // The table scrolls both ways itself and ends in Main's content box, as a board does.
+        // Empty states keep the ScrollArea below, so their actions stay reachable on short screens.
+        <div ref={scrollArea} class="flex min-h-0 flex-1 flex-col">
+          {content()}
+        </div>
+      ) : (
+        <ScrollArea ref={scrollArea} class="flex-1" scrollPreserveKey={`spaces-main-${props.spaceId}`}>
+          {content()}
+        </ScrollArea>
+      )}
     </>
   );
 }

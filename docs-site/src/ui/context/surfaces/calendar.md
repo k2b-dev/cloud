@@ -85,6 +85,13 @@ off. Put state that the line shows only as an icon into `accessibleDetail`.
   Its weeks are compact rows at least 44 px (2.75rem) tall instead of the
   month view's full height, so the agenda follows close below the grid.
 
+A week needs 40 rem: 36 rem shared by its days plus the hour gutter. A day
+view's single day needs 12 rem per overlapping lane.
+A narrower calendar, such as one beside the detail panel or on a phone,
+scrolls the hours sideways inside its rounded frame. The day and all-day rows
+follow, the hour gutter stays in view, and the vertical scrollbar stays at the
+frame's edge.
+
 Limit the switcher with `views`. `getDateHref`, `getViewHref`, and
 `getEventHref` keep navigation functional in the server response.
 `onNavigate` progressively enhances those links after hydration.
@@ -352,8 +359,10 @@ Day and week views accept `startHour`, `endHour`, `visibleStartHour`, and
 lane. `selectedDate`, `selectedEventId`, and `dayBadges` add host-owned
 selection and compact status context.
 
-Day and week views carry `k2b-detail-trail` themselves, so applications add
-nothing beside an [AppWorkspace detail panel](/en/ui/layout/workspace#floating-detail).
+Without `dayHours`, the day and week views mark their hour scroller,
+`k2b-calendar-time-grid__scroll`, with `k2b-detail-trail` themselves, so
+applications add nothing beside an
+[AppWorkspace detail panel](/en/ui/layout/workspace#floating-detail).
 Under the touch-tablet drawer, the week keeps its width and scrolls
 sideways, with its day header and all-day row. Selecting an event scrolls
 its day out beside the drawer. The day view narrows into the space beside

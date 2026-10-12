@@ -7033,6 +7033,11 @@
   @apply max-w-[260px];
 }
 
+/* Keep dates, amounts, and codes intact while headers can still wrap. */
+.k2b-ui .k2b-data-table td[data-nowrap="true"] {
+  white-space: nowrap;
+}
+
 .k2b-ui .k2b-data-table :is(th, td)[data-align="center"] {
   @apply text-center;
 }

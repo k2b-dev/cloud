@@ -1367,12 +1367,23 @@
   }
 }
 
-/* A horizontal scroller in `Main` marked `k2b-detail-trail`. Under the
-   tablet drawer it gets the drawer's space at its end, and scrolling an item
-   into view stops beside the drawer. */
+/* A horizontal scroller in `Main` marked `k2b-detail-trail`. It is the
+   viewport that clips the surface where the panel's column begins, so it
+   carries the surface's radius: a column or table cut beside the panel ends
+   in the same rounded corner as the surface's other edges. It sits in
+   `Main`'s content box, so the gap before the panel is `Main`'s own inset.
+   Under the tablet drawer it gets the drawer's space at its end, and
+   scrolling an item into view stops beside the drawer. */
 .k2b-ui .k2b-detail-trail {
+  border-radius: var(--k2b-radius-surface);
   padding-inline-end: var(--k2b-detail-space, 0px);
   scroll-padding-inline-end: var(--k2b-detail-space, 0px);
+}
+
+/* Inside a Paper frame the viewport sits one border inside the frame's edge,
+   so its corner follows the frame's inner curve. */
+.k2b-ui .k2b-paper .k2b-detail-trail {
+  border-radius: calc(var(--k2b-radius-surface) - 1px);
 }
 
 /* A data table keeps the width it has without the panel: its columns stay

@@ -66,9 +66,9 @@ export default function ItemsTable(props: Props) {
       id: "kind",
       header: t.kind,
       value: (item) => (Boolean(item.startsAt && item.endsAt) ? t.event : t.task),
-      cellClass: "whitespace-nowrap",
+      nowrap: true,
     },
-    { id: "priority", header: t.priority, value: (item) => item.priority, cellClass: "whitespace-nowrap" },
+    { id: "priority", header: t.priority, value: (item) => item.priority, nowrap: true },
     { id: "schedule", header: t.schedule, value: (item) => formatSchedule(item, props.dateConfig), cellClass: "max-w-[18rem]" },
     {
       id: "assignees",
@@ -82,20 +82,20 @@ export default function ItemsTable(props: Props) {
       value: (item) => item.tags?.map((tag) => tag.name).join(", "),
       cellClass: "max-w-[12rem]",
     },
-    { id: "updated", header: t.updated, value: (item) => item.updatedAt, cellClass: "whitespace-nowrap" },
-    { id: "activity", header: t.activityState, value: itemLastActivityAt, cellClass: "whitespace-nowrap" },
-    { id: "created", header: t.created, value: (item) => item.createdAt, cellClass: "whitespace-nowrap" },
+    { id: "updated", header: t.updated, value: (item) => item.updatedAt, nowrap: true },
+    { id: "activity", header: t.activityState, value: itemLastActivityAt, nowrap: true },
+    { id: "created", header: t.created, value: (item) => item.createdAt, nowrap: true },
   ];
 
   return (
-    <DataTable.Panel class="overflow-hidden [view-transition-name:spaces-items-table]">
+    <DataTable.Panel class="flex min-h-0 flex-col overflow-hidden [view-transition-name:spaces-items-table]">
       <DataTable
         rows={props.items}
         columns={tableColumns}
         getRowId={(item) => item.id}
         selectedRowId={props.selectedItemId}
         hoverRows
-        class="overflow-x-auto"
+        class="min-h-0 overflow-x-auto"
         scrollClass="k2b-detail-trail"
         tableClass="min-w-[72rem] w-full text-xs"
         scrollPreserveKey={props.scrollPreserveKey}

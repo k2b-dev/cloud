@@ -1099,24 +1099,68 @@
   line-height: 1.15;
 }
 
-/* The grid is the `k2b-detail-trail` scroller of the week and day views.
- * Under a tablet detail drawer, the week keeps its width and scrolls, so the
- * selected day comes out beside the drawer; the day narrows into the space
- * beside it, so its hours stay in view. */
+/* A week shares 36 rem between its days, 40 rem with the hour gutter; a day
+   view gives its single day 12 rem per overlapping lane. A narrower calendar,
+   such as one beside the detail panel, scrolls the hours sideways inside its
+   own frame: the day and all-day rows follow, the hour gutter stays in view,
+   and the vertical scrollbar stays at the frame's edge. Every row reserves the
+   same scrollbar gutter, so the columns line up. The grid isolates its event
+   layers, so the gutter can cover days scrolled under it. */
 .k2b-ui .k2b-calendar-time-grid {
+  --k2b-calendar-day-min: calc(36rem / 7);
   display: flex;
-  min-width: 40rem;
+  min-width: 0;
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  overflow-x: auto;
-  overflow-y: hidden;
+  isolation: isolate;
 }
 
-.k2b-ui
-  .k2b-calendar-time-grid[data-view="week"]
-  > :is(.k2b-calendar-time-grid__days, .k2b-calendar-time-grid__all-day, .k2b-calendar-time-grid__scroll) {
+.k2b-ui :is(.k2b-calendar-time-grid__days, .k2b-calendar-time-grid__all-day, .k2b-calendar-time-grid__scroll) {
+  scrollbar-gutter: stable;
+}
+
+/* The hours are the `k2b-detail-trail` scroller. The day and all-day rows end
+   in the same space under a tablet drawer, so all three scroll equally far. */
+.k2b-ui :is(.k2b-calendar-time-grid__days, .k2b-calendar-time-grid__all-day) {
+  overflow-x: hidden;
+  padding-inline-end: var(--k2b-detail-space, 0px);
+  scroll-padding-inline-end: var(--k2b-detail-space, 0px);
+}
+
+/* Under the drawer, the week keeps the width of its days and scrolls, so the
+   selected day comes out beside the drawer; a day narrows into the space
+   beside it, so its hours stay in view. The hour grid widens by the drawer's
+   space; the day and all-day rows are their own scrollers, so their days
+   take at least the width they have without the drawer. */
+.k2b-ui .k2b-calendar-time-grid[data-view="week"] > :is(.k2b-calendar-time-grid__days, .k2b-calendar-time-grid__all-day) {
+  --k2b-calendar-day-min: max(36rem / 7, (100% + var(--k2b-detail-space, 0px) - 4rem) / 7);
+}
+
+.k2b-ui .k2b-calendar-time-grid[data-view="week"] .k2b-calendar-time-grid__grid {
   width: calc(100% + var(--k2b-detail-space, 0px));
+}
+
+/* The hours sit below the header, so only their lower corners follow the
+   surface's radius. */
+.k2b-ui .k2b-calendar-time-grid > .k2b-calendar-time-grid__scroll {
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+}
+
+.k2b-ui :is(.k2b-calendar-time-grid__corner, .k2b-calendar-time-grid__all-day-label, .k2b-calendar-time-grid__gutter) {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
+.k2b-ui .k2b-calendar-time-grid__corner {
+  background: inherit;
+}
+
+.k2b-ui .k2b-calendar-time-grid__gutter {
+  z-index: 80;
+  background: var(--k2b-surface);
 }
 
 .k2b-ui .k2b-calendar-time-grid__days,
@@ -1199,6 +1243,12 @@
 .k2b-ui .k2b-calendar-time-grid__grid,
 .k2b-ui .k2b-calendar-time-grid__column {
   min-height: 100%;
+}
+
+/* The hour grid spans all its days, also those scrolled out of view, so a
+   pointer position maps to the right day. */
+.k2b-ui .k2b-calendar-time-grid__grid {
+  min-width: min-content;
 }
 
 .k2b-ui .k2b-calendar-time-grid__gutter,

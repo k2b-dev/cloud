@@ -70,6 +70,14 @@ const load = async (width: number, height: number, view: View, options: BrowserC
   // animation to wait for. A frame requested now runs after that reveal, so every measurement sees its result.
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
   await page.waitForFunction(() => document.querySelector(".k2b-app-workspace__detail")!.getAnimations().length === 0);
+  // The reveal's scroll event must reach the header and all-day row before measuring their alignment.
+  await page.waitForFunction(() => {
+    const hoursScroll = document.querySelector(".k2b-calendar-time-grid__scroll")!.scrollLeft;
+    return (
+      document.querySelector(".k2b-calendar-time-grid__days")!.scrollLeft === hoursScroll &&
+      document.querySelector(".k2b-calendar-time-grid__all-day")!.scrollLeft === hoursScroll
+    );
+  });
   return { page, closed };
 };
 /** The width of every day column and how far its header cell is off it. */
@@ -98,10 +106,12 @@ const placement = (page: Page) =>
       scrollerLeft: scroller.left,
       gutterLeft: grid.querySelector(".k2b-calendar-time-grid__gutter")!.getBoundingClientRect().left,
       gridLeft: grid.getBoundingClientRect().left,
-      gridScroll: grid.scrollLeft,
-      dayScroll: scroll.scrollLeft,
+      hoursScroll: scroll.scrollLeft,
+      daysScroll: grid.querySelector(".k2b-calendar-time-grid__days")!.scrollLeft,
+      allDayScroll: grid.querySelector(".k2b-calendar-time-grid__all-day")!.scrollLeft,
+      frameScroll: grid.scrollLeft,
       dayOverflow: scroll.scrollWidth - scroll.clientWidth,
-      contentRight: scroller.left + scroll.clientWidth,
+      contentRight: grid.querySelector(".k2b-calendar-time-grid__grid")!.getBoundingClientRect().right,
       panel: detail.getBoundingClientRect().left,
       panelSpace: getComputedStyle(detail).getPropertyValue("--k2b-detail-space").trim(),
       hit: hit?.closest("[data-calendar-event]") === event,
@@ -128,7 +138,10 @@ describe("calendar beside the workspace detail", () => {
           expect(column.width).toBeCloseTo(closed[index]!.width, 0);
           expect(column.headerOffset).toBeLessThan(0.5);
         }
-        expect(shape.gridScroll).toBeGreaterThan(0);
+        expect(shape.hoursScroll).toBeGreaterThan(0);
+        expect(shape.daysScroll).toBe(shape.hoursScroll);
+        expect(shape.allDayScroll).toBe(shape.hoursScroll);
+        expect(shape.frameScroll).toBe(0);
         // The whole event ends one gap before the drawer, not further left.
         expect(shape.right).toBeLessThanOrEqual(shape.panel);
         expect(shape.right).toBeGreaterThan(shape.panel - 32);
@@ -143,8 +156,8 @@ describe("calendar beside the workspace detail", () => {
       try {
         const shape = await placement(page);
         expect(shape.dayOverflow).toBe(0);
-        expect(shape.dayScroll).toBe(0);
-        expect(shape.gridScroll).toBe(0);
+        expect(shape.hoursScroll).toBe(0);
+        expect(shape.frameScroll).toBe(0);
         expect(shape.gutterLeft).toBeCloseTo(shape.gridLeft, 0);
         for (const column of await columns(page)) expect(column.headerOffset).toBeLessThan(0.5);
         // The day ends one gap before the drawer, and the whole event is beside it.
@@ -169,14 +182,19 @@ describe("calendar beside the workspace detail", () => {
           const shape = await placement(page);
           expect(shape.right).toBeLessThanOrEqual(shape.panel + 0.5);
           expect(shape.hit).toBe(true);
-          expect(shape.gridScroll).toBe(0);
+          expect(shape.frameScroll).toBe(0);
           const surface = await page.locator(".k2b-content-calendar").evaluate((element) => {
             const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
             return {
-              right: element.getBoundingClientRect().right,
+              right: rect.right,
+              innerLeft: rect.left + element.clientLeft,
+              innerRight: rect.left + element.clientLeft + element.clientWidth,
               radii: [style.borderTopRightRadius, style.borderBottomRightRadius].map(Number.parseFloat),
             };
           });
+          expect(shape.right).toBeLessThanOrEqual(surface.innerRight + 0.5);
+          expect(shape.gridLeft).toBeCloseTo(surface.innerLeft, 0);
           expect(surface.right).toBeCloseTo(shape.panel - 8, 0);
           for (const radius of surface.radii) expect(radius).toBeGreaterThan(0);
         } finally {

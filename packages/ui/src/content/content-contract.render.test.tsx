@@ -36,11 +36,14 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(checkCalendarMessages()).toEqual([]);
   });
 
-  test("marks only the calendar's week and day grids for workspace detail", () => {
+  test("marks only the calendar's week and day hour scrollers for workspace detail", () => {
     const render = (view: CalendarView) =>
       renderToString(() => createComponent(Calendar, { date: "2026-07-19", events: [], view, timeZone: "UTC" }));
     for (const view of ["week", "day"] as const) {
-      expect(render(view)).toContain(`class="k2b-calendar-time-grid k2b-detail-trail" data-view="${view}"`);
+      const html = render(view);
+      expect(html).toContain(`class="k2b-calendar-time-grid" data-view="${view}"`);
+      expect(html).toContain('class="k2b-calendar-time-grid__scroll k2b-detail-trail"');
+      expect(html).not.toContain('class="k2b-calendar-time-grid k2b-detail-trail"');
     }
     expect(render("month")).not.toContain("k2b-detail-trail");
   });
@@ -743,6 +746,38 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html).toContain("k2b-data-table__cell-text");
     expect(html).toContain('scope="col"');
     expect(html.indexOf("<tbody")).toBeLessThan(html.indexOf("<tfoot"));
+  });
+
+  test("keeps numeric and date values intact with explicit wrapping overrides, including footers", () => {
+    const html = renderToString(() =>
+      DataTable({
+        rows: [
+          { amount: null, date: null, code: null, count: null },
+          { amount: 12400, date: new Date("2026-11-14T12:00:00Z"), code: "ABC-123", count: 3n },
+        ],
+        columns: [
+          { id: "amount", header: "Amount", value: "amount" },
+          { id: "date", header: "Date", value: "date", align: "center" },
+          { id: "text", header: "Text", value: "code" },
+          { id: "code", header: "Code", value: "code", nowrap: true },
+          { id: "wrapped", header: "Wrapped", value: "amount", nowrap: false },
+          { id: "count", header: "Count", value: "count" },
+        ],
+        footer: { values: { amount: 12400, code: "ABC-123" } },
+      }),
+    );
+    const cells = (section: string) => [
+      ...html
+        .split(`<${section}`)[1]!
+        .split(`</${section}>`)[0]!
+        .matchAll(/<td\b[^>]*>/g),
+    ];
+    const expected = [true, true, false, true, false, true];
+    cells("tbody").forEach((cell, index) => expect(cell[0].includes('data-nowrap="true"')).toBe(expected[index % expected.length]!));
+    cells("tfoot").forEach((cell, index) => expect(cell[0].includes('data-nowrap="true"')).toBe(expected[index]!));
+    expect(cells("tbody")).toHaveLength(12);
+    expect(cells("tfoot")).toHaveLength(6);
+    expect(html.match(/<th\b[^>]*data-nowrap/g)).toBeNull();
   });
 
   test("infers each DataTable column alignment once per row set", () => {

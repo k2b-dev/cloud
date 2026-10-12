@@ -35,6 +35,15 @@ export type DataTableColumn<T> = {
   /** Defaults to right for numeric values and left for everything else. */
   align?: "left" | "center" | "right";
   /**
+   * Keeps each value on one line, so the column is at least as wide as its
+   * longest value. For dates, times, numbers, amounts, and short codes.
+   * Defaults to true when the column's first value is a number or date. The
+   * default cell wrapper already keeps every value on one line; this option
+   * decides wrapping for content under a custom `cellContentClass`, and a
+   * `white-space` that class sets itself wins.
+   */
+  nowrap?: boolean;
+  /**
    * Marks the column sortable. Pass a string when the server's sort key
    * differs from the column id — they often do, because one column can show a
    * rate while another sorts by the absolute count behind it.
@@ -321,30 +330,32 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     return undefined;
   };
 
-  const columnAlignments = createMemo(() => {
-    const alignments = new Map<string, NonNullable<DataTableColumn<T>["align"]>>();
+  const columnPresentation = createMemo(() => {
+    const presentation = new Map<string, { align: NonNullable<DataTableColumn<T>["align"]>; nowrap: boolean }>();
     for (const col of props.columns) {
-      if (col.align) {
-        alignments.set(col.id, col.align);
-        continue;
+      let numeric = false;
+      let date = false;
+      if (col.align === undefined || col.nowrap === undefined) {
+        for (const row of props.rows) {
+          const value = valueOf(row, col);
+          if (value === null || value === undefined || value === "") continue;
+          numeric = typeof value === "number" || typeof value === "bigint";
+          date = value instanceof Date;
+          break;
+        }
       }
-      let align: NonNullable<DataTableColumn<T>["align"]> = "left";
-      for (const row of props.rows) {
-        const value = valueOf(row, col);
-        if (value === null || value === undefined || value === "") continue;
-        align = typeof value === "number" || typeof value === "bigint" ? "right" : "left";
-        break;
-      }
-      alignments.set(col.id, align);
+      presentation.set(col.id, { align: col.align ?? (numeric ? "right" : "left"), nowrap: col.nowrap ?? (numeric || date) });
     }
-    return alignments;
+    return presentation;
   });
 
   /** `data-align` mirrors Cloud's `text-left/center/right` on the same cell. */
   const alignAttr = (col: DataTableColumn<T>) => {
-    const align = columnAlignments().get(col.id) ?? "left";
+    const align = columnPresentation().get(col.id)?.align ?? "left";
     return align === "left" ? undefined : align;
   };
+
+  const nowrapAttr = (col: DataTableColumn<T>) => (columnPresentation().get(col.id)?.nowrap ? "true" : undefined);
 
   const sortKeyOf = (col: DataTableColumn<T>): string | null =>
     col.sortable === true ? col.id : typeof col.sortable === "string" ? col.sortable : null;
@@ -579,6 +590,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                             return (
                               <td
                                 class={`${col.cellClass ?? ""} ${col.class ?? ""}`}
+                                data-nowrap={nowrapAttr(col)}
                                 data-align={alignAttr(col)}
                                 data-valign={props.verticalAlign && props.verticalAlign !== "middle" ? props.verticalAlign : undefined}
                                 data-highlighted={columnHighlighted(index())}
@@ -619,6 +631,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
                         return (
                           <td
                             class="k2b-data-table__footer-cell"
+                            data-nowrap={nowrapAttr(col)}
                             data-align={alignAttr(col)}
                             data-highlighted={columnHighlighted(index())}
                             onMouseEnter={() => setHoveredColumnIfEnabled(index())}
