@@ -223,7 +223,8 @@ suite("chat messages", () => {
     const chat = await f.create(owner, [other]);
     const path = `/${chat.shortId}`;
     const members = async () => MemberPageSchema.parse(await (await f.request(owner.headers, `${path}/members`)).json()).items;
-    const entry = async (person: Person) => (await members()).find((m) => m.principal.userId === person.id)!.accessId;
+    const entry = async (person: Person) =>
+      (await members()).find((m) => m.principal.type === "user" && m.principal.userId === person.id)!.accessId;
     const head = async () => {
       const [row] = await sql<
         { seq_head: string; rev: string; changed_rev: string; last_activity_at: Date }[]
@@ -238,13 +239,17 @@ suite("chat messages", () => {
     expect(Number(renamed.changed_rev)).toBe(2);
     expect((await f.request(owner.headers, path, "PATCH", { name: "Work" })).status).toBe(200);
     expect(await head()).toEqual(renamed);
-    expect((await f.request(owner.headers, `${path}/members`, "POST", { members: [newcomer.id] })).status).toBe(200);
+    expect((await f.request(owner.headers, `${path}/members`, "POST", { members: [{ type: "user", userId: newcomer.id }] })).status).toBe(
+      200,
+    );
     const [part] = await sql<
       { joined_seq: string }[]
     >`SELECT joined_seq FROM chat.participants WHERE conversation_id = ${chat.id}::uuid AND principal_id = ${newcomer.id}::uuid`;
     expect(Number(part!.joined_seq)).toBe(2);
     const added = await head();
-    expect((await f.request(owner.headers, `${path}/members`, "POST", { members: [newcomer.id] })).status).toBe(200);
+    expect((await f.request(owner.headers, `${path}/members`, "POST", { members: [{ type: "user", userId: newcomer.id }] })).status).toBe(
+      200,
+    );
     expect(await head()).toEqual(added);
     const newcomerAccess = await entry(newcomer);
     expect((await f.request(owner.headers, `${path}/members/${newcomerAccess}`, "PATCH", { permission: "write" })).status).toBe(200);
@@ -385,10 +390,13 @@ suite("chat messages", () => {
     const path = `/${chat.shortId}`;
     const memberAccess = async (person: Person) =>
       MemberPageSchema.parse(await (await f.request(owner.headers, `${path}/members`)).json()).items.find(
-        (row) => row.principal.userId === person.id,
+        (row) => row.principal.type === "user" && row.principal.userId === person.id,
       )!.accessId;
     const operations = [
-      { run: () => f.request(owner.headers, `${path}/members`, "POST", { members: [newcomer.id] }), affected: [newcomer.id] },
+      {
+        run: () => f.request(owner.headers, `${path}/members`, "POST", { members: [{ type: "user", userId: newcomer.id }] }),
+        affected: [newcomer.id],
+      },
       {
         run: async () => f.request(owner.headers, `${path}/members/${await memberAccess(member)}`, "PATCH", { permission: "read" }),
         affected: [member.id],

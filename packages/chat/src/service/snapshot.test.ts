@@ -41,6 +41,8 @@ const conversation = ConversationSchema.parse({
   icon: null,
   purpose: null,
   memberCount: 1,
+  withGuests: false,
+  peerDeactivated: false,
   rev: 0,
   permission: "admin",
   lastMessage: null,

@@ -47,7 +47,7 @@ suite("chat HTTP state machine against the trimmed V5 oracle", () => {
           case "details":
             return f.request(actor.headers, path, "PATCH", op.details);
           case "add":
-            return f.request(actor.headers, `${path}/members`, "POST", { members: op.members });
+            return f.request(actor.headers, `${path}/members`, "POST", { members: op.members.map((userId) => ({ type: "user", userId })) });
           case "permission":
             return f.request(actor.headers, `${path}/members/${accessId(op.member)}`, "PATCH", { permission: op.permission });
           case "remove":

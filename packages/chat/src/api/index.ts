@@ -35,6 +35,8 @@ import {
   MessageParamSchema,
   MessageQuerySchema,
   MessageViewSchema,
+  PeoplePageSchema,
+  PeopleQuerySchema,
   SendMessageSchema,
   SnapshotQuerySchema,
   SuccessSchema,
@@ -67,6 +69,19 @@ const app = new Hono<AuthContext>()
     async (c) => respond(c, ok(await chatService.health())),
   )
   .route("/live", chatLive.routes(chatLiveChannels))
+  .get(
+    "/people",
+    auth.requireRole("authenticated"),
+    description("Find people you share a chat with", PeoplePageSchema),
+    validator("query", PeopleQuerySchema, invalidInput),
+    async (c) => {
+      const { search, cursor } = c.req.valid("query");
+      return respond(
+        c,
+        chatService.conversations.people({ ...context(c), query: { search, ...(cursor ? { cursor: JSON.stringify(cursor) } : {}) } }),
+      );
+    },
+  )
   .use("/conversations", auth.requireRole("authenticated"))
   .use("/conversations/*", auth.requireRole("authenticated"))
   .post(
@@ -227,7 +242,7 @@ const app = new Hono<AuthContext>()
   )
   .get(
     "/conversations/:conversation/members",
-    description("Read direct chat members", MemberPageSchema),
+    description("Read people and group chat members", MemberPageSchema),
     validator("param", ConversationParamSchema, invalidInput),
     validator("query", MemberQuerySchema, invalidInput),
     async (c) =>
@@ -242,7 +257,7 @@ const app = new Hono<AuthContext>()
   )
   .post(
     "/conversations/:conversation/members",
-    description("Add people to a chat", ChangeSchema),
+    description("Add people and groups to a chat", ChangeSchema),
     validator("param", ConversationParamSchema, invalidInput),
     validator("json", AddMembersSchema, invalidInput),
     async (c) =>
@@ -273,7 +288,7 @@ const app = new Hono<AuthContext>()
   )
   .delete(
     "/conversations/:conversation/members/:accessId",
-    description("Remove a direct member", SuccessSchema),
+    description("Remove a person or group member", SuccessSchema),
     validator("param", MemberParamSchema, invalidInput),
     async (c) =>
       respond(

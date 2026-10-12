@@ -18,7 +18,7 @@ import {
 } from "./contracts";
 import { conversations } from "./conversations";
 import { chatLive } from "./live";
-import { appendMessage, type MessageRow, messageView } from "./message-store";
+import { appendMessage, type MessageRow, messageViews } from "./message-store";
 
 const conversationLimit = ratelimit({
   id: "chat.message.send.conversation",
@@ -46,7 +46,7 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
   if (!allowed.ok) return allowed;
   const data = parsed.data;
   const found = await existing(sql, allowed.data.id, input, data.clientId);
-  if (found) return ok({ message: messageView(found, input.conversationId, input.locale), created: false });
+  if (found) return ok({ message: (await messageViews(sql, [found], input.conversationId, input.locale))[0]!, created: false });
   const author = subjectPrincipal(input.accessSubject);
   const identifier = `${author.type}:${author.id}`;
   // Limits run before the lock: a sender at its limit must not hold up the chat's other writers.
@@ -71,9 +71,9 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
     if (!current.ok) return current;
     // A concurrent retry of the same clientId may have committed while this one waited for the lock.
     const retry = await existing(db, current.data.id, input, data.clientId);
-    if (retry) return ok({ message: messageView(retry, input.conversationId, input.locale), created: false });
+    if (retry) return ok({ message: (await messageViews(db, [retry], input.conversationId, input.locale))[0]!, created: false });
     const row = await appendMessage(db, current.data, input, { kind: "text", ...data });
-    return ok({ message: messageView(row, input.conversationId, input.locale), created: true });
+    return ok({ message: (await messageViews(db, [row], input.conversationId, input.locale))[0]!, created: true });
   });
   if (result.ok && result.data.created) chatLive.wake();
   return result;
@@ -90,7 +90,7 @@ const list = async (input: Input & { query?: unknown }) => {
       ORDER BY seq ${query.after !== undefined ? db`ASC` : db`DESC`} LIMIT ${MESSAGE_PAGE_SIZE}`;
     if (query.after === undefined) rows.reverse();
     return ok({
-      items: rows.map((row) => messageView(row, input.conversationId, input.locale)),
+      items: await messageViews(db, rows, input.conversationId, input.locale),
       seqHead: Number(allowed.data.seq_head),
       rev: Number(allowed.data.rev),
     });
@@ -114,7 +114,7 @@ const snapshot = async (input: Input & { messageId?: string }): Promise<Result<O
     return ok({
       conversation: conversation.data,
       page: {
-        items: rows.map((row) => messageView(row, input.conversationId, input.locale)),
+        items: await messageViews(db, rows, input.conversationId, input.locale),
         seqHead: Number(allowed.data.seq_head),
         rev: Number(allowed.data.rev),
       },
@@ -130,7 +130,7 @@ const get = async (input: Input & { messageId: string }) => {
     MessageRow[]
   >`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid AND short_id = ${parsed.data}`;
   return row
-    ? ok(messageView(row, input.conversationId, input.locale))
+    ? ok((await messageViews(sql, [row], input.conversationId, input.locale))[0]!)
     : fail({ code: "NOT_FOUND", message: catalog(input).messageNotFound, status: 404 });
 };
 const changes = async (input: Input & { query: unknown }) => {
@@ -151,7 +151,7 @@ const changes = async (input: Input & { query: unknown }) => {
       rev: more ? Number(rows.at(-1)!.rev) : head,
       more,
       conversation: conversation?.data ?? null,
-      messages: rows.map((row) => messageView(row, input.conversationId, input.locale)),
+      messages: await messageViews(db, rows, input.conversationId, input.locale),
     });
   });
 };

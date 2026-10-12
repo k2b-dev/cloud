@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const MEMBER_PAGE_SIZE = 100;
 export const CONVERSATION_PAGE_SIZE = 50;
+export const MAX_GROUP_MEMBERS = 500;
+export const PEOPLE_PAGE_SIZE = 20;
 export const MAX_PARTICIPANTS = 5_000;
 export const MAX_EXISTING_MATCHES = 10;
 export const CREATE_LIMIT = 30;
@@ -31,10 +33,23 @@ const IconSchema = z
   .nullable()
   .optional();
 const metadata = { name: clearedText(80), icon: IconSchema, purpose: clearedText(300) };
+export const MemberPrincipalSchema = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("user"), userId: z.uuid().transform((id) => id.toLowerCase()) }),
+  z.strictObject({ type: z.literal("group"), groupId: z.uuid().transform((id) => id.toLowerCase()) }),
+]);
+export type MemberPrincipal = z.infer<typeof MemberPrincipalSchema>;
 const members = z
-  .array(z.uuid())
+  .array(MemberPrincipalSchema)
   .max(MEMBER_PAGE_SIZE)
-  .transform((ids) => [...new Set(ids.map((id) => id.toLowerCase()))]);
+  .transform((principals) => {
+    const seen = new Set<string>();
+    return principals.filter((principal) => {
+      const key = principal.type + ":" + (principal.type === "user" ? principal.userId : principal.groupId);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  });
 export const CreateConversationSchema = z.strictObject({
   ...metadata,
   members: members.default([]),
@@ -69,6 +84,26 @@ export const ConversationQuerySchema = z.object({
     })
     .optional(),
 });
+export const PeopleCursorSchema = z.strictObject({ name: z.string(), id: z.uuid() });
+export const PeopleQuerySchema = z.strictObject({
+  search: z.string().trim().max(100).optional(),
+  cursor: z
+    .string()
+    .max(2_000)
+    .transform((value, ctx) => {
+      try {
+        const result = PeopleCursorSchema.safeParse(JSON.parse(value));
+        if (result.success) return result.data;
+      } catch {}
+      ctx.addIssue({ code: "custom", message: "Invalid cursor" });
+      return z.NEVER;
+    })
+    .optional(),
+});
+export const PeoplePageSchema = z.object({
+  items: z.array(z.object({ id: z.uuid(), displayName: z.string() })),
+  nextCursor: z.string().nullable(),
+});
 export const MemberQuerySchema = z.object({ cursor: z.uuid().optional() });
 export const MessageIdSchema = z.string().regex(/^[0-9A-Za-z]{10}$/);
 const AuthorSchema = z.object({ type: z.enum(["user", "service_account"]), id: z.uuid(), name: z.string() });
@@ -79,6 +114,8 @@ export const ConversationSchema = z.object({
   purpose: z.string().nullable(),
   title: z.string(),
   memberCount: z.number().int(),
+  withGuests: z.boolean(),
+  peerDeactivated: z.boolean(),
   rev: z.number().int().nonnegative(),
   permission: PermissionSchema,
   createdAt: z.string(),
@@ -95,7 +132,7 @@ export const CreateOutcomeSchema = z.discriminatedUnion("outcome", [
 export const ConversationPageSchema = z.object({ items: z.array(ConversationSchema), nextCursor: z.string().nullable() });
 export const MemberSchema = z.object({
   accessId: z.uuid(),
-  principal: z.object({ type: z.literal("user"), userId: z.uuid() }),
+  principal: MemberPrincipalSchema,
   displayName: z.string(),
   permission: PermissionSchema,
   addedAt: z.string(),
@@ -116,6 +153,9 @@ export const SystemMessageSchema = z.discriminatedUnion("code", [
     }),
   }),
   z.object({ code: z.literal("members_added"), params: z.object({ members: z.array(personSnapshot).min(1).max(100) }) }),
+  z.object({ code: z.literal("groups_added"), params: z.object({ groups: z.array(personSnapshot).min(1).max(MEMBER_PAGE_SIZE) }) }),
+  z.object({ code: z.literal("group_removed"), params: z.object({ group: personSnapshot }) }),
+  z.object({ code: z.literal("manager_assigned"), params: z.object({ member: personSnapshot }) }),
   z.object({ code: z.literal("member_removed"), params: z.object({ member: personSnapshot }) }),
   z.object({ code: z.literal("member_left"), params: z.object({ successor: personSnapshot.optional() }) }),
   z.object({ code: z.literal("permission_changed"), params: z.object({ member: personSnapshot, permission: PermissionSchema }) }),

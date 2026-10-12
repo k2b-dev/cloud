@@ -192,6 +192,8 @@ class World {
         "en",
       ),
       memberCount: m.members.size,
+      withGuests: false,
+      peerDeactivated: false,
       lastMessage: (() => {
         const latest = m.msgs.findLast((message) => message.kind === "text");
         if (!latest) return null;
@@ -413,6 +415,8 @@ const check = (store: ReturnType<typeof createChatStore>, person: string) => {
       purpose: row.purpose,
       title: row.title,
       memberCount: row.memberCount,
+      withGuests: false,
+      peerDeactivated: false,
       permission: row.permission,
     });
     expect(open.messages).toEqual(

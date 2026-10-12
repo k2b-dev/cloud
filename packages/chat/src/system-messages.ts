@@ -15,14 +15,22 @@ export const renderSystemMessage = (system: SystemMessage, authorName: string, l
       if (name === null) return details ? t.systemNameRemovedWithDetails({ actor }) : t.systemNameRemoved({ actor });
       return details ? t.systemRenamedWithDetails({ actor, name }) : t.systemRenamed({ actor, name });
     }
-    case "members_added": {
-      const members = system.params.members;
+    case "members_added":
+    case "groups_added": {
+      const members = system.code === "members_added" ? system.params.members : system.params.groups;
       // A fourth name reads better than "and 1 others", so only five or more members are counted.
       const shown = members.length > 4 ? 3 : members.length;
       const names = members.slice(0, shown).map((member) => member.name);
       if (members.length > shown) names.push(t.systemOthers({ count: members.length - shown }));
-      return t.systemAdded({ actor, names: new Intl.ListFormat(resolved.locale, { style: "long", type: "conjunction" }).format(names) });
+      const formatted = new Intl.ListFormat(resolved.locale, { style: "long", type: "conjunction" }).format(names);
+      return system.code === "members_added"
+        ? t.systemAdded({ actor, names: formatted })
+        : t.systemGroupsAdded({ actor, names: formatted, count: members.length });
     }
+    case "group_removed":
+      return t.systemGroupRemoved({ actor, name: system.params.group.name });
+    case "manager_assigned":
+      return t.systemManagerAssigned({ name: system.params.member.name });
     case "member_removed":
       return t.systemRemoved({ actor, name: system.params.member.name });
     case "member_left":

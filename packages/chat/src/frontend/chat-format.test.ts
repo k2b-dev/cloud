@@ -56,6 +56,8 @@ for (const locale of ["en", "de"]) {
       purpose: null,
       title: "Chat",
       memberCount: 2,
+      withGuests: false,
+      peerDeactivated: false,
       rev: 1,
       permission: "write",
       createdAt: now.toISOString(),

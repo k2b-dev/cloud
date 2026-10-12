@@ -9,7 +9,7 @@ import {
   type RequestActor,
   type Result,
 } from "@k2b/cloud/server";
-import { sql } from "bun";
+import { type SQLQuery, sql } from "bun";
 import { chatMessages } from "../messages";
 
 export type ChatContext = { actor: RequestActor; accessSubject: AccessSubject; locale?: string; requestId?: string };
@@ -97,4 +97,52 @@ export const requireConversation = async (
   if (!row || permission === "none") return fail({ code: "NOT_FOUND", message: t.notFound, status: 404 });
   if (!hasPermission(permission, input.required)) return fail(err.forbidden(t.forbidden));
   return ok({ ...row, permission });
+};
+
+export const memberUsers = (conversationId: string | SQLQuery, db: typeof sql = sql) => db`
+  WITH RECURSIVE member_groups(id, provider) AS (
+    SELECT g.id, g.provider FROM chat.conversation_access ca
+    JOIN auth.access a ON a.id = ca.access_id JOIN auth.groups g ON g.id = a.group_id
+    WHERE ca.conversation_id = ${conversationId}::uuid AND ca.role = 'member' AND a.permission IN ('read', 'write', 'admin')
+    UNION
+    SELECT child.id, child.provider FROM member_groups parent
+    JOIN auth.group_groups_v2 gg ON gg.parent_group_id = parent.id
+    JOIN auth.groups child ON child.id = gg.child_group_id AND child.provider = parent.provider
+  )
+  SELECT u.id FROM auth.users u WHERE u.id IN (
+    SELECT a.user_id FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+    WHERE ca.conversation_id = ${conversationId}::uuid AND ca.role = 'member' AND a.permission IN ('read', 'write', 'admin')
+    UNION
+    SELECT ug.user_id FROM member_groups g JOIN auth.user_groups_v2 ug ON ug.group_id = g.id
+  )
+`;
+export const groupUsers = (groupId: string, db: typeof sql = sql) => db`
+  WITH RECURSIVE member_groups(id, provider) AS (
+    SELECT id, provider FROM auth.groups WHERE id = ${groupId}::uuid
+    UNION
+    SELECT child.id, child.provider FROM member_groups parent
+    JOIN auth.group_groups_v2 gg ON gg.parent_group_id = parent.id
+    JOIN auth.groups child ON child.id = gg.child_group_id AND child.provider = parent.provider
+  )
+  SELECT DISTINCT ug.user_id AS id FROM member_groups g
+  JOIN auth.user_groups_v2 ug ON ug.group_id = g.id JOIN auth.users u ON u.id = ug.user_id
+`;
+
+/** People with a direct member entry in a chat the subject belongs to; groups are never expanded for this list. */
+export const coMemberIds = (subject: AccessSubject, db: typeof sql = sql) => db`
+  SELECT person_a.user_id FROM chat.conversations c
+  JOIN chat.conversation_access ca ON ca.conversation_id = c.id JOIN auth.access a ON a.id = ca.access_id
+  JOIN chat.conversation_access person_ca ON person_ca.conversation_id = c.id AND person_ca.role = 'member'
+  JOIN auth.access person_a ON person_a.id = person_ca.access_id
+  WHERE ${readableMemberCondition(subject, null, db)}
+    AND person_a.user_id IS NOT NULL AND person_a.permission IN ('read', 'write', 'admin')
+`;
+
+export const repairMemberCount = async (conversationId: string, db: typeof sql) => {
+  const [row] = await db<{ member_count: number }[]>`
+    UPDATE chat.conversations SET member_count = (SELECT COUNT(*)::int FROM (${memberUsers(conversationId, db)}) members)
+    WHERE id = ${conversationId}::uuid RETURNING member_count
+  `;
+  if (!row) throw new Error("Chat member count has no conversation");
+  return row.member_count;
 };

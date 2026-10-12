@@ -17,6 +17,7 @@ export const messageFixtures = () => {
   const users: string[] = [];
   const accountIds: string[] = [];
   const chats: string[] = [];
+  const groups: string[] = [];
   const accessIds: string[] = [];
   const request = (headers: Record<string, string>, path: string, method = "GET", body?: unknown) =>
     server.request(`https://cloud.example.test/api/chat/conversations${path}`, {
@@ -81,7 +82,7 @@ export const messageFixtures = () => {
     return { id: row.id, shortId, entries };
   };
   const create = async (owner: Person, members: Person[]) => {
-    const response = await request(owner.headers, "", "POST", { members: members.map((p) => p.id) });
+    const response = await request(owner.headers, "", "POST", { members: members.map((p) => ({ type: "user", userId: p.id })) });
     expect(response.status).toBe(201);
     const result = CreateOutcomeSchema.parse(await response.json());
     if (result.outcome !== "created") throw new Error("Expected creation");
@@ -90,6 +91,17 @@ export const messageFixtures = () => {
     if (!row) throw new Error("Missing created chat");
     return { id: row.id, shortId: result.conversation.id };
   };
+  const group = async (members: Person[]) => {
+    const [row] = await sql<{ id: string }[]>`INSERT INTO auth.groups (cn, provider, name)
+      VALUES (${`chat-test-${crypto.randomUUID()}`}, 'local', ${`Team ${crypto.randomUUID()}`}) RETURNING id`;
+    if (!row) throw new Error("Missing fixture group");
+    groups.push(row.id);
+    if (members.length)
+      await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id)
+      SELECT id, ${row.id}::uuid FROM auth.users WHERE id = ANY(${toPgUuidArray(members.map((member) => member.id))}::uuid[])`;
+    return row.id;
+  };
+  const trackChat = (shortId: string) => chats.push(shortId);
   const resetSendLimits = async (people: Person[], shortId: string) => {
     const keys = people.flatMap((p) =>
       [
@@ -113,6 +125,7 @@ export const messageFixtures = () => {
       await sql`DELETE FROM chat.conversations WHERE short_id = ${shortId}`;
     }
     if (accessIds.length) await sql`DELETE FROM auth.access WHERE id = ANY(${toPgUuidArray([...new Set(accessIds)])}::uuid[])`;
+    if (groups.length) await sql`DELETE FROM auth.groups WHERE id = ANY(${toPgUuidArray(groups)}::uuid[])`;
     for (const id of accountIds) {
       await sql`DELETE FROM audit.events WHERE target_id = ${id} OR actor_uid = ${id} OR metadata->>'serviceAccountId' = ${id}`;
       await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
@@ -123,5 +136,5 @@ export const messageFixtures = () => {
       await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
     }
   });
-  return { person, credential, fixture, create, request, resetSendLimits };
+  return { person, credential, fixture, create, request, resetSendLimits, group, trackChat };
 };

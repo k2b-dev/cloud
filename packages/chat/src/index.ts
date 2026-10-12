@@ -7,6 +7,7 @@ import pageRoutes, { adminPages } from "./frontend";
 import { chatHelp } from "./help";
 import { migrate } from "./migrate";
 import { chatService } from "./service";
+import { maintenanceLifecycle } from "./service/maintenance";
 
 const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
@@ -23,6 +24,7 @@ const result = await app.start({
   help: chatHelp,
   openapi: apiRoutes,
   lifecycle: {
+    ...maintenanceLifecycle,
     setup: async () => {
       await migrate();
     },

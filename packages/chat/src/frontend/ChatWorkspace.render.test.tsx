@@ -24,6 +24,8 @@ const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
   icon: null,
   purpose: null,
   memberCount: 3,
+  withGuests: false,
+  peerDeactivated: false,
   permission: "write",
   rev: 1,
   createdAt: now,
@@ -76,6 +78,8 @@ describe("ChatWorkspace server render", () => {
           id: "Chat02",
           title: "Two people",
           memberCount: 2,
+          withGuests: false,
+          peerDeactivated: false,
           lastMessage: {
             id: "Chat020001",
             author: { type: "user", id: "22222222-2222-4222-8222-222222222222", name: "Nora Weber" },

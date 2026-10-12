@@ -7,6 +7,7 @@ import {
   ConversationSchema,
   CreateConversationSchema,
   LeaveSchema,
+  PeopleQuerySchema,
   UpdateConversationSchema,
   UpdateMemberSchema,
 } from "./contracts";
@@ -16,7 +17,14 @@ const lea = "12345678-1234-4234-8234-123456789012";
 describe("conversation inputs", () => {
   test("defaults to an only-you chat and requires explicit duplicate creation", () => {
     expect(CreateConversationSchema.parse({})).toEqual({ members: [], allowDuplicate: false });
-    expect(CreateConversationSchema.parse({ members: [lea, lea] }).members).toEqual([lea]);
+    expect(
+      CreateConversationSchema.parse({
+        members: [
+          { type: "user", userId: lea },
+          { type: "user", userId: lea },
+        ],
+      }).members,
+    ).toEqual([{ type: "user", userId: lea }]);
   });
   test("trims metadata and clears empty strings", () => {
     expect(UpdateConversationSchema.parse({ name: "  ", purpose: " hello ", icon: " " })).toEqual({
@@ -31,14 +39,14 @@ describe("conversation inputs", () => {
       { name: "a".repeat(81) },
       { purpose: "a".repeat(301) },
       { icon: "<script>" },
-      { members: Array(101).fill(lea) },
+      { members: Array(101).fill({ type: "user", userId: lea }) },
       { members: ["not-an-id"] },
     ]) {
       expect(CreateConversationSchema.safeParse(input).success).toBeFalse();
     }
     expect(CreateConversationSchema.safeParse({ icon: "ti ti-messages" }).success).toBeTrue();
     expect(AddMembersSchema.safeParse({ members: [] }).success).toBeFalse();
-    expect(AddMembersSchema.safeParse({ members: Array(101).fill(lea) }).success).toBeFalse();
+    expect(AddMembersSchema.safeParse({ members: Array(101).fill({ type: "user", userId: lea }) }).success).toBeFalse();
     expect(UpdateConversationSchema.safeParse({}).success).toBeFalse();
     expect(UpdateConversationSchema.safeParse({ member_count: 99 }).success).toBeFalse();
     expect(UpdateMemberSchema.safeParse({ permission: "none" }).success).toBeFalse();
@@ -100,4 +108,44 @@ test("conversation revisions, summary timestamps and membership hints are part o
   expect(ChatLiveEventSchema.safeParse(summary).success).toBeFalse();
   expect(ChatLiveEventSchema.safeParse({ ...summary, createdAt: "not a date" }).success).toBeFalse();
   expect(ChatLiveEventSchema.safeParse({ ...summary, createdAt: "2026-10-12T00:00:00.000Z" }).success).toBeTrue();
+});
+
+test("principal normalization is idempotent and deduplicates per type", () => {
+  const id = "ABCDEF12-1234-4234-8234-123456789012";
+  const parsed = CreateConversationSchema.parse({
+    members: [
+      { type: "user", userId: id },
+      { type: "user", userId: id.toLowerCase() },
+      { type: "group", groupId: id },
+      { type: "group", groupId: id.toLowerCase() },
+    ],
+  });
+  expect(parsed.members).toEqual([
+    { type: "user", userId: id.toLowerCase() },
+    { type: "group", groupId: id.toLowerCase() },
+  ]);
+  expect(CreateConversationSchema.parse(parsed)).toEqual(parsed);
+  const add = AddMembersSchema.parse({ members: parsed.members });
+  expect(AddMembersSchema.parse(add)).toEqual(add);
+  expect(AddMembersSchema.safeParse({ members: [{ type: "user", userId: id, groupId: id }] }).success).toBeFalse();
+  expect(AddMembersSchema.safeParse({ members: Array(101).fill({ type: "group", groupId: id }) }).success).toBeFalse();
+});
+test("people query trims search and strictly validates bounded JSON cursors", () => {
+  expect(PeopleQuerySchema.parse({ search: " Lea " })).toEqual({ search: "Lea" });
+  const cursor = { name: "lea", id: lea };
+  expect(PeopleQuerySchema.parse({ cursor: JSON.stringify(cursor) }).cursor).toEqual(cursor);
+  for (const query of [
+    { search: "a".repeat(101) },
+    { cursor: "bad" },
+    { cursor: JSON.stringify({ ...cursor, extra: true }) },
+    { cursor: JSON.stringify({ name: "lea" }) },
+  ]) {
+    expect(PeopleQuerySchema.safeParse(query).success).toBeFalse();
+  }
+});
+test("former entries preserve the whole localized label within a derived title", () => {
+  const former = { displayName: "Old name", givenName: "Old", former: true };
+  expect(deriveTitle(null, [former], "en")).toBe("Former account");
+  expect(deriveTitle(null, [former], "de")).toBe("Ehemaliges Konto");
+  expect(deriveTitle(null, [{ displayName: "Lea Example", givenName: "Lea" }, former], "en")).toBe("Lea, Former account");
 });

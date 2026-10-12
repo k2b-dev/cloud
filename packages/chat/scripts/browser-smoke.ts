@@ -149,7 +149,8 @@ const createFixture = async () => {
 
   chatId = z
     .object({ outcome: z.literal("created"), conversation: z.object({ id: z.string().regex(/^[0-9A-Za-z]{6}$/) }) })
-    .parse(await api("POST", "/api/chat/conversations", { members: [personId] }, adminToken, 201)).conversation.id;
+    .parse(await api("POST", "/api/chat/conversations", { members: [{ type: "user", userId: personId }] }, adminToken, 201))
+    .conversation.id;
   ok(`chat ${chatId} created`);
   return { adminToken, personToken, chatId };
 };
