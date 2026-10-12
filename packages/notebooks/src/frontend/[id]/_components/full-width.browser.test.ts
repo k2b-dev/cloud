@@ -206,3 +206,46 @@ test("toggling leaves every panel child, panel and switch track in place", async
     await page.close();
   }
 }, 30_000);
+
+// The help says: when the navigation and the detail panel leave less room than
+// the column, the lines get longer only once the panel closes.
+for (const mode of ["write", "book"]) {
+  for (const width of [1024, 1280]) {
+    test(`${mode} at ${width}px: beside the open panel the lines keep their length until the panel closes`, async () => {
+      const page = await open(mode, width);
+      try {
+        const lineWidth = async () => {
+          await settle(page);
+          return (await measure(page)).width;
+        };
+        const surfaceWidth = () => page.locator(".notebook-document-surface").evaluate((surface) => surface.getBoundingClientRect().width);
+        // The workspace hands the panel's track back after the panel's exit motion.
+        const setPanelOpen = async (open: boolean) => {
+          const before = await surfaceWidth();
+          await page.evaluate((open) => window.harness.setPanelOpen(open), open);
+          await page.waitForFunction(
+            ([open, before]) => {
+              const now = document.querySelector(".notebook-document-surface")!.getBoundingClientRect().width;
+              return open ? now < before : now > before;
+            },
+            [open, before] as const,
+          );
+        };
+        const narrowOpen = await lineWidth();
+        expect(narrowOpen).toBeLessThan(704);
+        await toggle(page).click();
+        closeTo(await lineWidth(), narrowOpen);
+        await setPanelOpen(false);
+        const wideClosed = await lineWidth();
+        await setPanelOpen(true);
+        await toggle(page).click();
+        await setPanelOpen(false);
+        const narrowClosed = await lineWidth();
+        closeTo(narrowClosed, 704);
+        expect(wideClosed).toBeGreaterThan(narrowClosed);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+  }
+}

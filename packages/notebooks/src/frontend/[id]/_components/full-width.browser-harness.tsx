@@ -4,7 +4,7 @@ import { EditorView } from "@codemirror/view";
 import { runContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { collectContextAwareCommands } from "@k2b/cloud/browser/testing";
 import { AppWorkspace, DetailPanel, LocaleProvider, ScrollArea, useLocale } from "@k2b/ui";
-import { onCleanup, onMount } from "solid-js";
+import { createSignal, onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
 import { editor } from "../../lib/editor";
 import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../lib/editor/fade-scroll-margins";
@@ -26,6 +26,7 @@ let host: HTMLDivElement | undefined;
 let view: EditorView | undefined;
 let anchorFrom = 0;
 let anchorBlock: Element | undefined;
+const [panelOpen, setPanelOpen] = createSignal(true);
 
 function Harness() {
   const locale = useLocale();
@@ -77,7 +78,7 @@ function Harness() {
   });
   return (
     <AppWorkspace mobileSurface="flush" class="h-full" resizable={false}>
-      <AppWorkspace.Sidebar defaultSize={288} label="Notizbuch">
+      <AppWorkspace.Sidebar defaultSize={256} label="Notizbuch">
         Notizbuch
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
@@ -88,7 +89,7 @@ function Harness() {
             </ScrollArea>
           </div>
         </AppWorkspace.Main>
-        <AppWorkspace.Detail id="full-width-test" open width="sm">
+        <AppWorkspace.Detail id="full-width-test" open={panelOpen()}>
           <DetailPanel>
             <DetailPanel.Body>
               <nav>Ansichten</nav>
@@ -189,6 +190,7 @@ const harness = {
     await runContextAwareCommand(command);
   },
   stored: readFullWidth,
+  setPanelOpen: (open: boolean) => setPanelOpen(open),
 };
 export type FullWidthHarness = typeof harness;
 Object.assign(window, { harness });

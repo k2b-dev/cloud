@@ -31,9 +31,12 @@ export const keepReadingPosition = (view: EditorView, scroller: HTMLElement): ((
   // Nothing above the port's top edge can move while the note starts below it.
   const moves = view.documentTop < portTop;
   // The share of the line above the edge, or the distance of a line that
-  // starts just below it.
-  const within = Math.max(0, (portTop - before.top) / before.height);
-  const offset = Math.max(0, before.top - portTop);
+  // starts just below it. In whole pixels, like the correction: a sub-pixel
+  // rest of the scroll offset is no reading position, and the share would
+  // scale it with the line's new height on every switch.
+  const above = Math.round(portTop - before.top);
+  const within = Math.max(0, above / before.height);
+  const offset = Math.max(0, -above);
   return () => {
     // The editor takes in the new width now instead of a frame late. A
     // focused one, also one that just got focus from the navigation, scrolls
