@@ -31,6 +31,8 @@ export const fields = [
   field({ id: "contact", name: "Ansprechpartner", type: "text", position: 8 }),
   field({ id: "lead", name: "Projektleitung", type: "text", position: 9 }),
   field({ id: "notes", name: "Notizen", type: "longtext", position: 10 }),
+  // A formula formatted as a date stays on one line like a date field.
+  field({ id: "next", name: "Nächster Termin", type: "formula", position: 11, config: { format: { kind: "date", format: "iso" } } }),
 ];
 
 export const records: PublicGridRecord[] = Array.from({ length: 10 }, (_, index) => ({
@@ -48,6 +50,7 @@ export const records: PublicGridRecord[] = Array.from({ length: 10 }, (_, index)
     contact: "Maria Sonnenkorn",
     lead: "Alex Beispiel",
     notes: "Abstimmung mit Bäckerei Sonnenkorn läuft. Entwürfe gehen diese Woche raus.",
+    next: "2026-12-01",
   },
   version: 1,
   createdBy: null,

@@ -36,8 +36,11 @@ export type DataTableColumn<T> = {
   align?: "left" | "center" | "right";
   /**
    * Keeps each value on one line, so the column is at least as wide as its
-   * longest value. For dates, times, numbers, amounts, and short codes; free
-   * text wraps. Defaults to true when the column's values are numbers or dates.
+   * longest value. For dates, times, numbers, amounts, and short codes.
+   * Defaults to true when the column's first value is a number or date. The
+   * default cell wrapper already keeps every value on one line; this option
+   * decides wrapping for content under a custom `cellContentClass`, and a
+   * `white-space` that class sets itself wins.
    */
   nowrap?: boolean;
   /**

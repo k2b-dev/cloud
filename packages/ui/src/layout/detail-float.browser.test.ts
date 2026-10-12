@@ -39,6 +39,8 @@ const mainContent = () => {
         {id:"amount",header:"Amount",value:"amount",nowrap:true},
         ...Array.from({length:5}, (_, index) => ({id:String(index + 3),header:"Description " + index,value:() => "Free text that can wrap"})),
       ] : Array.from({length:8}, (_, index) => ({id:String(index), header:"Field " + index, value:row => "Cell " + row.index + "." + index})),
+      // The default wrapper truncates every value; a plain wrapper shows what the column's nowrap decides.
+      cellContentClass:params.has("values") ? "fixture-cell" : undefined,
       renderCell:({row,col,value}) => col.id === "0" ? button(row.index) : col.id === "date" ? row.date.toISOString().slice(0,10) : value,
     })];
   }
@@ -209,7 +211,10 @@ describe("floating workspace detail", () => {
               viewport.scrollLeft = 130;
               const rect = viewport.getBoundingClientRect();
               // A table's viewport sits inside its Paper frame's border; the frame is the surface's outer edge.
-              const frame = (viewport.closest(".k2b-paper") ?? viewport).getBoundingClientRect();
+              const paper = viewport.closest(".k2b-paper");
+              const frame = (paper ?? viewport).getBoundingClientRect();
+              // Inside a Paper the viewport's corner follows the frame's inner curve, one border smaller.
+              const border = paper ? Number.parseFloat(getComputedStyle(paper).borderRightWidth) : 0;
               const style = getComputedStyle(viewport);
               const candidates = viewport.querySelectorAll("tbody tr:first-child td, #board button");
               const cut = [...candidates].find((cell) => {
@@ -218,7 +223,7 @@ describe("floating workspace detail", () => {
               });
               return {
                 inset,
-                radius,
+                radius: radius - border,
                 right: rect.right,
                 frameRight: frame.right,
                 panelLeft: document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect().left,
@@ -253,7 +258,7 @@ describe("floating workspace detail", () => {
       await settlePanel(page);
       for (const column of [2, 3]) {
         const value = await page.locator(`tbody tr:first-child td:nth-child(${column})`).evaluate((cell) => {
-          const content = cell.querySelector<HTMLElement>(".k2b-data-table__cell-text")!;
+          const content = cell.querySelector<HTMLElement>(".fixture-cell")!;
           const text = content.firstChild!;
           const range = document.createRange();
           range.selectNodeContents(text);

@@ -1356,6 +1356,12 @@
   scroll-padding-inline-end: var(--k2b-detail-space, 0px);
 }
 
+/* Inside a Paper frame the viewport sits one border inside the frame's edge,
+   so its corner follows the frame's inner curve. */
+.k2b-ui .k2b-paper .k2b-detail-trail {
+  border-radius: calc(var(--k2b-radius-surface) - 1px);
+}
+
 /* A data table keeps the width it has without the panel: its columns stay
    where they are, and it scrolls instead. Beside the panel it adds the
    nominal track: where `Main` is already at its 20 rem minimum and the grid

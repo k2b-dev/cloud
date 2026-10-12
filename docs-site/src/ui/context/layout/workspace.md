@@ -100,7 +100,9 @@ under the drawer.
 
 The trail is the scroll viewport that clips the surface beside the panel, and
 it carries `--k2b-radius-surface`: a column or table cut at the panel ends in
-the same rounded corner as the surface's other edges. Put the trail directly
+the same rounded corner as the surface's other edges. Inside a Paper frame,
+its radius is one border smaller, so the corner follows the frame's inner
+curve. Put the trail directly
 in Main's content box, with `scroll={false}` on Main and no vertical scroller
 around it. A reserved scrollbar gutter would widen the gap before the panel.
 

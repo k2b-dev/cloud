@@ -63,9 +63,11 @@ export default function SpacesListRoute(props: Props) {
     view.resetSearch();
   };
 
+  const empty = () => itemsResult().items.length === 0 && leaving.held().size === 0;
+
   const content = () => (
     <>
-      {itemsResult().items.length === 0 && leaving.held().size === 0 ? (
+      {empty() ? (
         !hasActiveFilters(view.filter()) ? (
           <Placeholder
             icon="ti ti-checkbox"
@@ -165,8 +167,9 @@ export default function SpacesListRoute(props: Props) {
       </Show>
       <div class="h-2" />
 
-      {props.currentView === "table" ? (
+      {props.currentView === "table" && !empty() ? (
         // The table scrolls both ways itself and ends in Main's content box, as a board does.
+        // Empty states keep the ScrollArea below, so their actions stay reachable on short screens.
         <div class="flex min-h-0 flex-1 flex-col">{content()}</div>
       ) : (
         <ScrollArea class="flex-1" scrollPreserveKey={`spaces-main-${props.spaceId}`}>

@@ -1082,21 +1082,44 @@
   line-height: 1.15;
 }
 
-/* Days keep 40 rem between them. A narrower calendar, such as one beside the
-   detail panel, scrolls the day row, the all-day row, and the hours sideways
-   together inside its own rounded frame instead of cutting off the last days. */
+/* A week shares 36 rem between its days, 40 rem with the hour gutter; a day
+   view widens its single day with its lanes. A narrower calendar, such as one
+   beside the detail panel, scrolls the hours sideways inside its own frame:
+   the day and all-day rows follow, the hour gutter stays in view, and the
+   vertical scrollbar stays at the frame's edge. Every row reserves the same
+   scrollbar gutter, so the columns line up. The grid isolates its event
+   layers, so the gutter can cover days scrolled under it. */
 .k2b-ui .k2b-calendar-time-grid {
+  --k2b-calendar-day-min: calc(36rem / 7);
   display: flex;
   min-width: 0;
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  overflow-x: auto;
-  overflow-y: hidden;
+  isolation: isolate;
 }
 
-.k2b-ui .k2b-calendar-time-grid > * {
-  min-width: 40rem;
+.k2b-ui :is(.k2b-calendar-time-grid__days, .k2b-calendar-time-grid__all-day, .k2b-calendar-time-grid__scroll) {
+  scrollbar-gutter: stable;
+}
+
+.k2b-ui :is(.k2b-calendar-time-grid__days, .k2b-calendar-time-grid__all-day) {
+  overflow-x: hidden;
+}
+
+.k2b-ui :is(.k2b-calendar-time-grid__corner, .k2b-calendar-time-grid__all-day-label, .k2b-calendar-time-grid__gutter) {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
+.k2b-ui .k2b-calendar-time-grid__corner {
+  background: inherit;
+}
+
+.k2b-ui .k2b-calendar-time-grid__gutter {
+  z-index: 80;
+  background: var(--k2b-surface);
 }
 
 .k2b-ui .k2b-calendar-time-grid__days,
@@ -1179,6 +1202,12 @@
 .k2b-ui .k2b-calendar-time-grid__grid,
 .k2b-ui .k2b-calendar-time-grid__column {
   min-height: 100%;
+}
+
+/* The hour grid spans all its days, also those scrolled out of view, so a
+   pointer position maps to the right day. */
+.k2b-ui .k2b-calendar-time-grid__grid {
+  min-width: min-content;
 }
 
 .k2b-ui .k2b-calendar-time-grid__gutter,

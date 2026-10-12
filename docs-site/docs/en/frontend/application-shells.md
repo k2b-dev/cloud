@@ -118,7 +118,7 @@ reduced motion makes opening and closing instant.
 For DataTable, pass `scrollClass="k2b-detail-trail"` to keep column widths
 while the scroller narrows beside the panel. Closing returns the full width
 without extra space. The trail is the clipping scroll viewport and carries
-`--k2b-radius-surface`. Put it directly in Main's content box with
+`--k2b-radius-surface`, one border less inside a Paper frame. Put it directly in Main's content box with
 `scroll={false}` on Main and no vertical scroller around it; a reserved
 scrollbar gutter would widen the gap before the panel beyond
 `--k2b-workspace-detail-inset`. Mark a board's horizontal scroller with

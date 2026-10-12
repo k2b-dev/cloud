@@ -37,11 +37,14 @@ import {
 
 Each column has a stable `id`, a `header`, and usually a `value` key or function. Numeric values align right by default. `renderCell` and `renderHeader` customize presentation without changing the underlying row model.
 
-Set a column's `nowrap: true` for dates, times, numbers, amounts, or short
-codes. Body and footer values stay on one line and set the column's minimum
-width; headers may wrap. The default uses the first non-empty value: numbers,
-including bigint, and `Date` values stay on one line; strings wrap. An explicit
-`nowrap: false` allows wrapping even for numeric or date values.
+The default cell wrapper keeps every value on one line and truncates it.
+With `cellContentClass`, values can wrap, and a column's `nowrap` decides:
+set `nowrap: true` for dates, times, numbers, amounts, or short codes. Body
+and footer values then stay on one line and set the column's minimum width;
+headers may wrap. Without `nowrap`, the first non-empty value decides:
+numbers, including bigint, and `Date` values stay on one line; strings wrap.
+`nowrap: false` allows wrapping for numeric or date values too. A
+`white-space` set by `cellContentClass` itself wins over `nowrap`.
 
 Pass `getRowId` when selection or stable row identity matters. Use `selectedRowId` for a selected record, not the row index.
 

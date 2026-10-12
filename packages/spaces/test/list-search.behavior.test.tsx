@@ -277,4 +277,46 @@ describe("Spaces list search", () => {
       else Reflect.deleteProperty(globalThis, "CSS");
     }
   });
+
+  test("table view keeps its empty state in a scroller, so the action stays reachable on short screens", async () => {
+    const dom = createDomTestHarness();
+    const previousCss = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+    Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
+    const base = "/app/spaces/Space1?view=table&q=nothing";
+    dom.window.history.replaceState(null, "", base);
+    mock.module("../src/frontend/[id]/_components/workspace/view-query", () => ({
+      SpacesViewUnavailableError: class extends Error {},
+      loadSpacesViewSnapshot: () => new Promise(() => {}),
+    }));
+    const { default: SpacesListRoute } = await import("../src/frontend/[id]/_components/workspace/SpacesListRoute.island");
+    const { parseFilterFromUrl } = await import("../src/frontend/[id]/_components/filter/types");
+    const dispose = render(
+      () =>
+        createComponent(SpacesListRoute, {
+          spaceId: "Space1",
+          currentView: "table",
+          columns: [],
+          tags: [],
+          filter: parseFilterFromUrl(new URL(base, "http://localhost")),
+          initialItemsResult: result(0).itemsResult,
+          initialSelectedItemId: "",
+          itemLinkBaseUrl: base,
+          paginationBaseUrl: "unused",
+          canWrite: false,
+          currentUserId: "33333333-3333-4333-8333-333333333333",
+        }),
+      dom.root,
+    );
+    try {
+      await flush();
+      const clear = Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.includes("Clear filters"));
+      expect(clear).toBeDefined();
+      expect(clear!.closest(".k2b-scroll-area")).not.toBeNull();
+    } finally {
+      dispose();
+      dom.cleanup();
+      if (previousCss) Object.defineProperty(globalThis, "CSS", previousCss);
+      else Reflect.deleteProperty(globalThis, "CSS");
+    }
+  });
 });

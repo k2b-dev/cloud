@@ -64,7 +64,7 @@ describe("Grids table beside Detail", () => {
     [1366, 900],
     [1920, 1080],
   ] as const) {
-    test(`${width}×${height}: rounded viewport, one inset, and intact dates and amounts`, async () => {
+    test(`${width}×${height}: rounded viewport, one inset, and intact dates, amounts, and formula dates`, async () => {
       const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce" });
       try {
         await page.goto(`${server.url}app/grids/base`);
@@ -80,11 +80,13 @@ describe("Grids table beside Detail", () => {
             return pixels;
           };
           const style = getComputedStyle(viewport);
+          const paper = viewport.closest(".k2b-paper");
           return {
             inset: token("--k2b-workspace-detail-inset"),
-            radius: token("--k2b-radius-surface"),
+            // Inside the Paper frame the viewport's corner follows the frame's inner curve, one border smaller.
+            radius: token("--k2b-radius-surface") - (paper ? Number.parseFloat(getComputedStyle(paper).borderRightWidth) : 0),
             // The viewport sits inside the table's Paper frame; the frame is the surface's outer edge.
-            right: (viewport.closest(".k2b-paper") ?? viewport).getBoundingClientRect().right,
+            right: (paper ?? viewport).getBoundingClientRect().right,
             panelLeft: document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect().left,
             radii: [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomLeftRadius, style.borderBottomRightRadius].map(
               Number.parseFloat,
@@ -99,6 +101,7 @@ describe("Grids table beside Detail", () => {
         for (const [column, expected] of [
           [4, "12400,00 EUR"],
           [5, "2026-11-14"],
+          [12, "2026-12-01"],
         ] as const) {
           const value = await page.locator(`tbody tr:first-child td:nth-child(${column})`).evaluate((cell) => {
             const content = cell.firstElementChild;

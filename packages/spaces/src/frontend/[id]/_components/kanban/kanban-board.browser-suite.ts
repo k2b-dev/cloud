@@ -1153,11 +1153,13 @@ describe("wide Spaces surfaces beside Detail", () => {
             const inset = token("--k2b-workspace-detail-inset");
             const radius = token("--k2b-radius-surface");
             const style = getComputedStyle(viewport);
+            const paper = viewport.closest(".k2b-paper");
             return {
               inset,
-              radius,
+              // Inside a Paper frame the viewport's corner follows the frame's inner curve, one border smaller.
+              radius: radius - (paper ? Number.parseFloat(getComputedStyle(paper).borderRightWidth) : 0),
               // The table's viewport sits inside its Paper frame's border; the frame is the surface's outer edge.
-              right: (viewport.closest(".k2b-paper") ?? viewport).getBoundingClientRect().right,
+              right: (paper ?? viewport).getBoundingClientRect().right,
               panelLeft: document.querySelector(".k2b-app-workspace__detail")!.getBoundingClientRect().left,
               radii: [
                 style.borderTopLeftRadius,
