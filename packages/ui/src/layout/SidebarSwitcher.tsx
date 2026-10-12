@@ -1,3 +1,4 @@
+import { documentNavigate } from "@k2b/ssr/nav";
 import { createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { dropdownPosition } from "../actions/Dropdown";
@@ -48,6 +49,11 @@ export type AppWorkspaceSidebarSwitcherProps = {
    */
   onLoad?: () => void;
   actions?: readonly AppWorkspaceSwitcherAction[];
+  /**
+   * A host menu around the switcher, such as the phone menu, finishes dismissing itself before a chosen container
+   * opens or an action runs; `false` cancels the choice. Navigation passes its own.
+   */
+  beforeSelect?: () => boolean | void | Promise<boolean | void>;
   /** Sizes the switcher in its place, such as `flex-1` beside a button in one row. */
   class?: string;
 };
@@ -107,13 +113,34 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
     panel.style.top = `${position.top}px`;
   };
   const reposition = () => open() && place();
+  // Arriving options, an error, or the search field grow the panel after it opened, so its size places it too.
+  let resizing: ResizeObserver | undefined;
   const listen = (on: boolean) => {
     const method = on ? "addEventListener" : "removeEventListener";
     window[method]("resize", reposition);
     window[method]("scroll", reposition, true);
+    if (on && panel) {
+      resizing ??= new ResizeObserver(reposition);
+      resizing.observe(panel);
+    } else resizing?.disconnect();
   };
   // Server rendering cleans up too, where no window exists.
   onCleanup(() => isServer || listen(false));
+  /** Lets the host dismiss its menu first, then opens the link or runs the action unless the host cancels. */
+  const choose = (run: () => void) => {
+    hide(false);
+    if (!props.beforeSelect) return run();
+    void Promise.resolve(props.beforeSelect()).then((allowed) => {
+      if (allowed !== false) run();
+    });
+  };
+  const follow = (event: MouseEvent & { currentTarget: HTMLAnchorElement }) => {
+    if (!plainClick(event)) return;
+    if (!props.beforeSelect) return hide(false);
+    event.preventDefault();
+    const href = event.currentTarget.href;
+    choose(() => documentNavigate(href));
+  };
 
   const rows = () => (panel ? Array.from(panel.querySelectorAll<HTMLElement>("[data-switcher-row]:not([aria-disabled='true'])")) : []);
   const focusRow = (index: number) => {
@@ -299,7 +326,7 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
                         if (current() && plainClick(event)) {
                           event.preventDefault();
                           hide(true);
-                        } else if (plainClick(event)) hide(false);
+                        } else follow(event);
                       }}
                     >
                       <span class="k2b-sidebar-switcher__option-icon" style={tint(option.color ?? props.color)} aria-hidden="true">
@@ -331,10 +358,7 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
                         data-switcher-row
                         disabled={item.disabled}
                         aria-disabled={item.disabled ? "true" : undefined}
-                        onClick={() => {
-                          hide(false);
-                          item.action?.();
-                        }}
+                        onClick={() => choose(() => item.action?.())}
                       >
                         <i class={iconClass(item.icon)} aria-hidden="true" />
                         <span class="k2b-dropdown__copy">
@@ -349,7 +373,7 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
                         class="k2b-dropdown__item"
                         data-switcher-row
                         aria-disabled={item.disabled ? "true" : undefined}
-                        onClick={(event) => plainClick(event) && hide(false)}
+                        onClick={(event) => item.disabled || follow(event)}
                       >
                         <i class={iconClass(item.icon)} aria-hidden="true" />
                         <span class="k2b-dropdown__copy">

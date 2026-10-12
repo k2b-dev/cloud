@@ -353,8 +353,12 @@ In the sidebar column and compact overlay the panel opens below the trigger.
 In a collapsed rail from 64 rem, the trigger shows only its icon and the panel
 opens to the side. On phones, pass the same props through
 `createNavigation({ items, switcher: () => switcher })` so the host menu shows
-the same head. The panel is at least as wide as the trigger and 16 rem where
-space allows, and stays within the viewport with an 8 px inset.
+the same head. `Navigation` hands its `beforeSelect` to the switcher: a plain
+click on a container or an action first lets the host menu finish closing, and
+`false` cancels the choice. Modified clicks, such as opening a new tab, stay
+native links. The panel is at least as wide as the trigger and 16 rem where
+space allows, and stays within the viewport with an 8 px inset, also when
+options, an error, or search arrive after it opened.
 
 Leave `options` undefined until they load. `onLoad` asks for them on pointer
 entry, focus, and opening; ignore repeated calls while a request runs. The
@@ -625,7 +629,8 @@ type AppWorkspaceBottomDrawerProps = {
 type AppWorkspaceSidebarSwitcherProps = {
   currentId: string; label: string; description?: string; icon: string; color?: string;
   switchLabel: string; options?: readonly AppWorkspaceSwitcherOption[];
-  error?: string; onLoad?: () => void; actions?: readonly AppWorkspaceSwitcherAction[]; class?: string;
+  error?: string; onLoad?: () => void; actions?: readonly AppWorkspaceSwitcherAction[];
+  beforeSelect?: () => boolean | void | Promise<boolean | void>; class?: string;
 };
 
 type AppWorkspaceSwitcherOption = {

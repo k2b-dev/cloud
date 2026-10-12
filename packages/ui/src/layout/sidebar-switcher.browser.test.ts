@@ -70,8 +70,16 @@ const workspace = () => createComponent(AppWorkspace, {
     }),
   ]; },
 });
+// Stands in for a host menu that finishes dismissing itself first, as the phone menu does, and may cancel the choice.
+const beforeSelect = params.has("guard")
+  ? () => new Promise((done) => setTimeout(() => {
+      document.body.dataset.beforeSelect = String(Number(document.body.dataset.beforeSelect ?? 0) + 1);
+      done(params.get("guard") !== "deny");
+    }, 50))
+  : undefined;
+if (params.has("low")) document.getElementById("app").style.paddingTop = "560px";
 render(() => params.has("navigation")
-  ? createComponent(Navigation, { navigation: createNavigation({ switcher: () => switcher, items }), label: "Notes" })
+  ? createComponent(Navigation, { navigation: createNavigation({ switcher: () => switcher, items }), label: "Notes", beforeSelect })
   : workspace(), document.getElementById("app"));
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
@@ -358,6 +366,63 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
         const button = await page.locator(trigger).boundingBox();
         const bounds = await page.locator(panel).boundingBox();
         expect(bounds!.x).toBeGreaterThanOrEqual(button!.x + button!.width);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "the phone navigation lets its host finish dismissing before a container opens or an action runs, and may cancel",
+    async () => {
+      const allowed = await load(390, "navigation=1&guard=allow", true);
+      try {
+        await allowed.locator(trigger).tap();
+        await allowed.locator(option("archive")).tap();
+        await closed(allowed);
+        await allowed.waitForFunction(() => location.hash === "#archive");
+        expect(await allowed.locator("body").getAttribute("data-before-select")).toBe("1");
+        await allowed.locator(trigger).tap();
+        await allowed.getByRole("button", { name: "New notebook", exact: true }).tap();
+        await allowed.waitForFunction(() => document.body.dataset.created === "true");
+        expect(await allowed.locator("body").getAttribute("data-before-select")).toBe("2");
+      } finally {
+        await allowed.close();
+      }
+      const denied = await load(390, "navigation=1&guard=deny", true);
+      try {
+        await denied.locator(trigger).tap();
+        await denied.locator(option("archive")).tap();
+        await denied.locator(trigger).tap();
+        await denied.locator('[href="#all"]').tap();
+        await denied.locator(trigger).tap();
+        await denied.getByRole("button", { name: "New notebook", exact: true }).tap();
+        await denied.waitForFunction(() => document.body.dataset.beforeSelect === "3");
+        expect(await denied.evaluate(() => location.hash)).toBe("");
+        expect(await denied.locator("body").getAttribute("data-created")).toBeNull();
+      } finally {
+        await denied.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "a panel that grows after opening is placed again within the viewport",
+    async () => {
+      const page = await load(390, "navigation=1&many=1&low=1&delay=300", true);
+      try {
+        await page.locator(trigger).tap();
+        await page.locator(panel).waitFor({ state: "visible" });
+        expect(await page.getByRole("status").textContent()).toBe("Loading...");
+        await loaded(page);
+        await page.locator(search).waitFor({ state: "visible" });
+        await page.waitForFunction((selector) => {
+          const rect = document.querySelector(selector)!.getBoundingClientRect();
+          return rect.top >= 8 && rect.bottom <= innerHeight - 8;
+        }, panel);
+        expect(await page.locator('[href="#all"]').isVisible()).toBe(true);
       } finally {
         await page.close();
       }

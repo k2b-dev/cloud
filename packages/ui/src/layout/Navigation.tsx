@@ -197,7 +197,9 @@ export default function Navigation(props: NavigationProps) {
   );
   return (
     <nav class="k2b-navigation" aria-label={props.label}>
-      <Show when={props.navigation.switcher?.()}>{(switcher) => <AppWorkspaceSidebarSwitcher {...switcher()} />}</Show>
+      <Show when={props.navigation.switcher?.()}>
+        {(switcher) => <AppWorkspaceSidebarSwitcher {...switcher()} beforeSelect={props.beforeSelect} />}
+      </Show>
       <Rows items={props.navigation.items()} />
     </nav>
   );
