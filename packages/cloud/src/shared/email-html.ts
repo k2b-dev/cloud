@@ -2,6 +2,7 @@ import sanitizeHtml from "sanitize-html";
 
 export const EMAIL_HTML_TAGS = [
   "a",
+  "blockquote",
   "br",
   "code",
   "div",
@@ -12,6 +13,7 @@ export const EMAIL_HTML_TAGS = [
   "li",
   "ol",
   "p",
+  "pre",
   "span",
   "strong",
   "table",
@@ -26,6 +28,7 @@ export const EMAIL_HTML_TAGS = [
 
 export const EMAIL_HTML_ALLOWED_ATTRIBUTES: Record<string, string[]> = {
   a: ["href", "target", "style"],
+  blockquote: ["style"],
   div: ["style"],
   h1: ["style"],
   h2: ["style"],
@@ -33,6 +36,7 @@ export const EMAIL_HTML_ALLOWED_ATTRIBUTES: Record<string, string[]> = {
   li: ["style"],
   ol: ["style"],
   p: ["style"],
+  pre: ["style"],
   span: ["style"],
   table: ["style", "cellpadding", "cellspacing", "width", "align", "border"],
   tbody: ["style"],

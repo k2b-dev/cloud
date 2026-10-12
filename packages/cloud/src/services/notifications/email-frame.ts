@@ -1,5 +1,5 @@
 import sanitizeHtml from "sanitize-html";
-import { sanitizeEmailHtml } from "../../shared/email-html";
+import { EMAIL_HTML_SANITIZE_OPTIONS } from "../../shared/email-html";
 import * as settings from "../settings";
 import { coreSettings } from "../settings/api";
 
@@ -8,16 +8,29 @@ const sanitizeContent = (content: string): string => sanitizeHtml(content, { all
 // sanitize-html decodes entities before escaping &, < and > again. Decode only
 // those escapes once, so literal entity text is not recursively interpreted.
 const htmlText = (html: string): string =>
-  sanitizeContent(html.replace(/<br\b[^>]*>|<\/(?:p|div|h[1-6]|li|tr|td|th|ul|ol|table)>/gi, " "))
+  sanitizeContent(html.replace(/<br\b[^>]*>|<\/(?:p|pre|blockquote|div|h[1-6]|li|tr|td|th|ul|ol|table)>/gi, " "))
     .replace(/&(amp|lt|gt);/g, (entity) => (entity === "&amp;" ? "&" : entity === "&lt;" ? "<" : ">"))
     .replace(/\s+/g, " ")
     .trim();
+
+// The frame has no stylesheet, so a `pre` would keep the client default `white-space: pre` and push long
+// lines past the frame. The sender's own style comes last and still wins.
+const frameHtmlOptions = {
+  ...EMAIL_HTML_SANITIZE_OPTIONS,
+  transformTags: {
+    ...EMAIL_HTML_SANITIZE_OPTIONS.transformTags,
+    pre: (tagName, attribs) => ({
+      tagName,
+      attribs: { ...attribs, style: `white-space:pre-wrap;overflow-wrap:break-word;${attribs.style ?? ""}` },
+    }),
+  },
+} satisfies sanitizeHtml.IOptions;
 
 export const prepareNotificationEmail = async (opts: { content?: string; rawHtml?: string }): Promise<{ html: string; text: string }> => {
   const rawAppUrl = await settings.get<string>("app.url");
   const appUrl = rawAppUrl.startsWith("http") ? rawAppUrl : `https://${rawAppUrl}`;
   const appName = await settings.get<string>("app.name");
-  const body = opts.rawHtml ? sanitizeEmailHtml(opts.rawHtml) : opts.content ? `<p>${sanitizeContent(opts.content)}</p>` : "";
+  const body = opts.rawHtml ? sanitizeHtml(opts.rawHtml, frameHtmlOptions) : opts.content ? `<p>${sanitizeContent(opts.content)}</p>` : "";
   return { html: await buildHtml(appUrl, appName, body), text: opts.content ? sanitizeContent(opts.content) : htmlText(body) };
 };
 
