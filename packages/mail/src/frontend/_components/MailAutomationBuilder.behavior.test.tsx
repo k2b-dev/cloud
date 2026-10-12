@@ -551,6 +551,89 @@ describe("Mail automation builder interactions", () => {
     });
   }
 
+  for (const preset of ["AI classify", "AI classify many"] as const) {
+    test(`keeps the nested ${preset} fallback before a later parent move`, async () => {
+      const dom = createDomTestHarness();
+      const classifierId = crypto.randomUUID();
+      const userId = "00000000-0000-4000-8000-000000000160";
+      // Status, assignment and Mark as read are used, there is no free tag, and a move follows the branch:
+      // the only fallback left would be a second placement on the same path.
+      const fallbackCatalog: MailWorkflowCatalogSnapshot = {
+        folders: [{ id: "Fold01", name: "Archive" }],
+        assignableUsers: [{ id: userId, name: "Alice" }],
+        localTags: [],
+      };
+      const automation: IncomingAutomation = {
+        id: "Auto11",
+        mailboxId,
+        workflowId: crypto.randomUUID(),
+        workflowVersionId: crypto.randomUUID(),
+        name: "Nested classifier",
+        enabled: false,
+        scope: { mode: "all" },
+        steps: [
+          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "set_status", status: "done" } },
+          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "assign_user", userId } },
+          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } },
+          {
+            id: classifierId,
+            kind: "ai_classify",
+            instructions: "Classify mail.",
+            choices: [
+              { name: "Important", description: "Needs attention" },
+              { name: "Routine", description: "Routine mail" },
+            ],
+          },
+          {
+            id: crypto.randomUUID(),
+            kind: "if",
+            condition: { sourceStepId: classifierId, operator: "equals", value: "Important" },
+            then: [{ id: crypto.randomUUID(), kind: "add_comment", body: { kind: "custom", value: "Check this." } }],
+            else: [],
+          },
+          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "move_to_folder", folderId: "Fold01" } },
+        ],
+        latestBackfillOperationId: null,
+        workflowSource: "steps: []",
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const { dialogCore } = await import("@k2b/ui");
+      const { openIncomingAutomationEditor } = await import("./MailIncomingAutomationSettings");
+      const result = openIncomingAutomationEditor({ mailboxId, catalog: fallbackCatalog, automation, onSaved: () => {} });
+      try {
+        await settle();
+        dom.document.querySelector<HTMLButtonElement>('button[aria-label^="Expand If step 5"]')!.click();
+        await settle();
+        const add = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find(
+          (button) => button.textContent?.trim() === "Add step",
+        )!;
+        add.click();
+        await settle();
+        const menu = dom.document.getElementById(add.getAttribute("aria-controls")!)!;
+        Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+          .find((item) => item.textContent?.trim() === preset)!
+          .click();
+        await settle();
+        const moves = Array.from(dom.document.querySelectorAll("strong + span")).filter(
+          (element) => element.textContent === "Move to folder",
+        );
+        expect(moves).toHaveLength(1);
+        // The editor validates with createIncomingAutomationSchema and only then enables saving.
+        expect(dom.document.body.textContent).not.toContain("Put Mark as read and keyword changes before moving the message");
+        const save = Array.from(dom.document.querySelectorAll<HTMLButtonElement>("button")).find((button) =>
+          button.textContent?.includes("Save changes"),
+        );
+        expect(save?.disabled).toBe(false);
+      } finally {
+        dialogCore.close();
+        await result;
+        dom.cleanup();
+      }
+    });
+  }
+
   test("blocks additions in branches after the global step limit is reached", async () => {
     const dom = createDomTestHarness();
     const comments = (start: number, length: number): IncomingAutomation["steps"] =>

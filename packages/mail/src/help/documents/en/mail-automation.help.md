@@ -69,7 +69,7 @@ The guided editor and the CLI use the same strict definition. Mail rejects unkno
 
 Mail generates canonical workflow YAML from the flow and shows it read-only in the editor. Steps run from top to bottom through the shared workflow runtime.
 
-- **Several matching automations:** The oldest automation decides where the message goes. A later automation skips its move, trash, or junk step instead of failing. Its other steps, including **Mark as read** before its move, still run.
+- **Several matching automations:** The oldest automation decides where the message goes. A later automation skips its move, trash, or junk step instead of failing. Its other steps still run. When two automations change the same message on the provider, for example one marks it read and the other moves it, one of them can still fail. Put these changes in one automation.
 - **Failed step:** If a later step fails, the effects of earlier completed steps stay.
 - **Versions:** Editing the flow publishes a new unchangeable workflow version. Changing only the name or the active state does not duplicate identical source.
 - **Protected targets:** Destructive actions cannot target an identity of the mailbox, a configured internal domain, its subdomains, or an unsafe parent domain.

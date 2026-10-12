@@ -69,7 +69,7 @@ Der geführte Editor und die CLI nutzen dieselbe strikte Definition. Mail lehnt 
 
 Mail erzeugt aus dem Ablauf kanonisches Workflow-YAML und zeigt es im Editor schreibgeschützt. Die Schritte laufen von oben nach unten in der gemeinsamen Workflow-Laufzeit.
 
-- **Mehrere passende Automatisierungen:** Die älteste Automatisierung entscheidet, wohin die Nachricht kommt. Eine spätere Automatisierung überspringt ihren Schritt zum Verschieben, Löschen oder Verschieben in Spam, statt zu scheitern. Ihre übrigen Schritte, einschließlich **Als gelesen markieren** vor dem Verschieben, laufen weiter.
+- **Mehrere passende Automatisierungen:** Die älteste Automatisierung entscheidet, wohin die Nachricht kommt. Eine spätere Automatisierung überspringt ihren Schritt zum Verschieben, Löschen oder Verschieben in Spam, statt zu scheitern. Ihre übrigen Schritte laufen weiter. Ändern zwei Automatisierungen dieselbe Nachricht beim Anbieter, etwa indem eine sie als gelesen markiert und die andere sie verschiebt, kann eine davon trotzdem scheitern. Fasse diese Änderungen in einer Automatisierung zusammen.
 - **Fehlgeschlagener Schritt:** Schlägt ein späterer Schritt fehl, bleiben die Effekte früherer abgeschlossener Schritte.
 - **Versionen:** Eine Änderung am Ablauf veröffentlicht eine neue unveränderliche Workflow-Version. Änderst du nur den Namen oder den Aktivstatus, entsteht keine doppelte identische Quelle.
 - **Geschützte Ziele:** Zerstörende Aktionen dürfen keine Absenderidentität des Postfachs, keine eingerichtete interne Domain, keine ihrer Subdomains und keine unsichere übergeordnete Domain treffen.

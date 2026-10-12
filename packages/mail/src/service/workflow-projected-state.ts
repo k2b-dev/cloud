@@ -1,5 +1,5 @@
 import type { WorkflowBoundPlan, WorkflowJsonValue, WorkflowStepOutcome } from "@k2b/cloud/workflows";
-import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
+import type { WorkflowActionStep, WorkflowExecuteActionContext, WorkflowExecuteActionHandler } from "@k2b/cloud/workflows/runtime";
 import type { FrozenMailWorkflowSource } from "./workflow-data";
 
 export type MailWorkflowMessageStateTransition = {
@@ -25,31 +25,27 @@ const recordMessageStateTransition = (message: MailWorkflowProjectedObject, tran
 export const isMailWorkflowProjectedObject = (value: WorkflowJsonValue | undefined): value is MailWorkflowProjectedObject =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
-/** Journaled variable outputs may be copies; provider actions share one projection for the frozen target. */
-export const mailWorkflowProjectedMessage = (
-  context: Record<string, WorkflowJsonValue> | undefined,
-  message: MailWorkflowProjectedObject,
-): MailWorkflowProjectedObject => {
-  const source = context?.source;
-  const canonical = isMailWorkflowProjectedObject(source) ? source.message : undefined;
-  return isMailWorkflowProjectedObject(canonical) && typeof message.id === "string" && canonical.id === message.id ? canonical : message;
-};
-
-/**
- * Applies a confirmed message transition to the canonical projection, which carries the run's provider
- * history, and to the step's own reference when that is a separate copy, so later conditions on an alias
- * see the same state after a live run and after a resume.
- */
-export const applyProjectedMailMessageTransition = (
-  context: Record<string, WorkflowJsonValue> | undefined,
-  message: MailWorkflowProjectedObject,
-  action: Parameters<typeof applyMailMessageTransition>[1],
-  value: WorkflowJsonValue,
-): void => {
-  const canonical = mailWorkflowProjectedMessage(context, message);
-  applyMailMessageTransition(canonical, action, value);
-  if (canonical !== message) applyMailMessageTransition(message, action, value);
-};
+/** Restore journaled aliases as canonical projections so later actions and conditions share state and provider history. */
+export const rebindMailWorkflowRestoredOutput = (handler: WorkflowExecuteActionHandler): WorkflowExecuteActionHandler => ({
+  ...handler,
+  restoreCompleted: (ctx, step, outcome) => {
+    const source = ctx.invocation.context?.source;
+    const message = isMailWorkflowProjectedObject(source) ? source.message : undefined;
+    const conversation = isMailWorkflowProjectedObject(source) ? source.conversation : undefined;
+    const rebind = (value: WorkflowJsonValue): WorkflowJsonValue => {
+      if (Array.isArray(value)) return value.map(rebind);
+      if (!isMailWorkflowProjectedObject(value) || Object.getPrototypeOf(value) !== Object.prototype) return value;
+      if (isMailWorkflowProjectedObject(message) && typeof message.id === "string" && value.id === message.id) return message;
+      if (isMailWorkflowProjectedObject(conversation) && typeof conversation.id === "string" && value.id === conversation.id)
+        return conversation;
+      return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, rebind(nested)]));
+    };
+    return handler.restoreCompleted?.(ctx, step, {
+      ...outcome,
+      ...(outcome.output !== undefined ? { output: rebind(outcome.output) } : {}),
+    });
+  },
+});
 
 export const createMailWorkflowProjectedState = (
   plan: WorkflowBoundPlan,
@@ -192,12 +188,7 @@ export const restoreMailWorkflowProjectedState = async (
   ) {
     const message = await restoredObject(ctx, step, config, "message");
     if (message && output.value !== undefined) {
-      applyProjectedMailMessageTransition(
-        ctx.invocation?.context,
-        message,
-        output.action as Parameters<typeof applyMailMessageTransition>[1],
-        output.value,
-      );
+      applyMailMessageTransition(message, output.action as Parameters<typeof applyMailMessageTransition>[1], output.value);
     }
     return;
   }

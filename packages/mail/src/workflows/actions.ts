@@ -42,11 +42,10 @@ import { mailWorkflowDependencyDeadline } from "../service/workflow-dependencies
 import { mailWorkflowMessagePrecondition, projectMailWorkflowMessagePrecondition } from "../service/workflow-message-preconditions";
 import {
   applyMailConversationTransition,
-  applyProjectedMailMessageTransition,
+  applyMailMessageTransition,
   mailConversationTransitionChanges,
   mailMessageTransitionChanges,
   mailWorkflowMessageStateTransitions,
-  mailWorkflowProjectedMessage,
 } from "../service/workflow-projected-state";
 import {
   type MailWorkflowAuthorizationSnapshot,
@@ -328,8 +327,7 @@ const messageAction = (
         const values = rawValues as unknown as Record<string, WorkflowJsonValue>;
         const tx = (ctx.tx as SqlClient | undefined) ?? sql;
         const scope = await loadScope(ctx, tx);
-        const reference = await resolveObject(ctx, values.message, "message");
-        const message = mailWorkflowProjectedMessage(ctx.invocation.context, reference);
+        const message = await resolveObject(ctx, values.message, "message");
         const publicMessageId = asText(message.id, "message.id");
         const messageId = await internalResourceId(tx, "messages", scope.mailboxId, publicMessageId, "Message");
         const publicFolderId = asText(message.folderId, "message.folderId");
@@ -342,7 +340,7 @@ const messageAction = (
               : asText(ctx.binding("folder") ?? values.folder ?? publicFolderId, "folder");
         const applied = (outcome: ActionResult): ActionResult => {
           if (outcome.state !== "succeeded") return outcome;
-          applyProjectedMailMessageTransition(ctx.invocation.context, reference, kind, value);
+          applyMailMessageTransition(message, kind, value);
           return { ...outcome, output: { ...(isObject(outcome.output) ? outcome.output : {}), action: kind, applied: true, value } };
         };
         // A step that runs again, on a recheck or once its command finished,

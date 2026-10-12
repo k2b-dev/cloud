@@ -5,7 +5,7 @@ import { mailWorkflowMessagePrecondition, projectMailWorkflowMessagePrecondition
 import {
   applyMailMessageTransition,
   mailWorkflowMessageStateTransitions,
-  mailWorkflowProjectedMessage,
+  rebindMailWorkflowRestoredOutput,
   restoreMailWorkflowProjectedState,
 } from "./workflow-projected-state";
 
@@ -98,13 +98,22 @@ test("replayed completed actions restore provider expectations before the next a
 
 test("restored message aliases use the canonical target projection across actions", async () => {
   const canonical: { id: string; flags: string[]; keywords: string[] } = { id: "message", flags: [], keywords: [] };
-  const alias = structuredClone(canonical);
+  let alias = structuredClone(canonical);
   const context = { source: { message: canonical } };
   const ctx = {
     invocation: { context },
     evaluate: async (value: unknown) => value,
     resolveReference: async () => alias,
   } as unknown as WorkflowExecuteActionContext;
+  await rebindMailWorkflowRestoredOutput({
+    execute: async () => ({ state: "completed" }),
+    restoreCompleted: (_ctx, _step, outcome) => {
+      if (outcome.output === canonical) alias = canonical;
+    },
+  }).restoreCompleted?.(ctx, { kind: "action", action: "setVariable", config: {}, sourcePath: ["steps", 0] } as WorkflowActionStep, {
+    state: "completed",
+    output: alias,
+  });
   await restoreMailWorkflowProjectedState(
     ctx,
     {
@@ -115,7 +124,7 @@ test("restored message aliases use the canonical target projection across action
     } as WorkflowActionStep,
     { state: "completed", output: { action: "addFlag", applied: true, value: "seen" } },
   );
-  expect(mailWorkflowProjectedMessage(context, alias)).toBe(canonical);
+  expect(alias).toBe(canonical);
   // A later condition on the alias sees the same state as one on the input.
   expect(alias.flags).toEqual(["seen"]);
   expect(canonical.flags).toEqual(["seen"]);
@@ -126,6 +135,4 @@ test("restored message aliases use the canonical target projection across action
     flags: ["seen"],
     keywords: [],
   });
-  const other = { ...alias, id: "other" };
-  expect(mailWorkflowProjectedMessage(context, other)).toBe(other);
 });

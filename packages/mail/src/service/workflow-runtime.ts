@@ -18,7 +18,11 @@ import { mailWorkflows } from "../workflows/module";
 import { renderMailLiquidTemplate } from "./template-rendering";
 import { publishMailWorkflowCollaborationEventFromOutput } from "./workflow-collaboration-events";
 import type { FrozenMailWorkflowSource } from "./workflow-data";
-import { createMailWorkflowProjectedState, restoreMailWorkflowProjectedState } from "./workflow-projected-state";
+import {
+  createMailWorkflowProjectedState,
+  rebindMailWorkflowRestoredOutput,
+  restoreMailWorkflowProjectedState,
+} from "./workflow-projected-state";
 import { createMailWorkflowValueResolver } from "./workflow-runtime-values";
 import { startMailWorkflowScheduleRuntime, stopMailWorkflowScheduleRuntime } from "./workflow-schedule-runtime";
 
@@ -66,7 +70,10 @@ const builtins = createWorkflowBuiltinActionPorts({
 const actions: WorkflowExecuteActionPort = {
   get: (name) => {
     const declared = declaredActions.get(name);
-    if (!declared) return builtins.execute.get(name);
+    if (!declared) {
+      const builtin = builtins.execute.get(name);
+      return builtin ? rebindMailWorkflowRestoredOutput(builtin) : undefined;
+    }
     return {
       execute: async (ctx, step) => {
         const outcome = await declared.execute(ctx, step);

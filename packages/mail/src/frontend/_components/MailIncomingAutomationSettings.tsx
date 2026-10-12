@@ -95,8 +95,9 @@ const nextMailAction = (
   actions: MailAutomationAction[],
   catalog: MailWorkflowCatalogSnapshot,
   preferred: readonly AutomationActionKind[],
+  later: MailAutomationAction[] = [],
 ): MailAutomationAction | null => {
-  const available = mailAutomationActionKindsFor({ actions, catalog });
+  const available = mailAutomationActionKindsFor({ actions, catalog, later });
   const kind = preferred.find((candidate) => available.includes(candidate));
   return kind ? createMailAutomationAction({ kind, actions, catalog }) : null;
 };
@@ -218,11 +219,12 @@ const classificationSteps = (
   many: boolean,
   catalog: MailWorkflowCatalogSnapshot,
   actions: MailAutomationAction[] = [],
+  later: MailAutomationAction[] = [],
   locale = browserLocale(),
 ): MailAutomationStep[] => {
   const messages = mailRemainingMessages.resolve([locale]).t;
-  const available = mailAutomationActionKindsFor({ actions, catalog });
-  const fallbackAction = nextMailAction(actions, catalog, branchActionOrder);
+  const available = mailAutomationActionKindsFor({ actions, catalog, later });
+  const fallbackAction = nextMailAction(actions, catalog, branchActionOrder, later);
   const choices = [choice(messages.important, messages.importantDescription), choice(messages.routine, messages.routineDescription)];
   const classifier: MailAutomationStep = many
     ? {
@@ -288,7 +290,7 @@ const presetSteps = (
   locale = browserLocale(),
 ): MailAutomationStep[] => {
   const messages = mailRemainingMessages.resolve([locale]).t;
-  if (preset === "ai-route") return classificationSteps(false, catalog, [], locale);
+  if (preset === "ai-route") return classificationSteps(false, catalog, [], [], locale);
   if (preset === "ai-tag") {
     const tags = (catalog.localTags ?? []).slice(0, 4);
     if (tags.length >= 2) {
@@ -741,8 +743,10 @@ function AutomationStepsEditor(props: {
     const latestOutput = outputs.at(-1);
     const replyDraft = replyDraftStep(props.catalog);
     const remaining = (props.maxSteps ?? 20) - props.steps.length;
-    const classification = classificationSteps(false, props.catalog, actions, locale());
-    const multiClassification = classificationSteps(true, props.catalog, actions, locale());
+    // Classifier branches are appended here, so the provider actions after enclosing conditions follow them.
+    const later = actionsFrom(props.steps.length);
+    const classification = classificationSteps(false, props.catalog, actions, later, locale());
+    const multiClassification = classificationSteps(true, props.catalog, actions, later, locale());
     return [
       ...directActionOrder
         .filter((kind) =>

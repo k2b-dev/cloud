@@ -3,7 +3,13 @@ import { createWorkflowBuiltinActionPorts } from "@k2b/cloud/workflows";
 import { compileWorkflow, hashWorkflowJson } from "@k2b/cloud/workflows/language";
 import { executeWorkflowPlan } from "@k2b/cloud/workflows/runtime";
 import { projectMailWorkflowMessagePrecondition } from "../service/workflow-message-preconditions";
-import { mailWorkflowMessageStateTransitions, restoreMailWorkflowProjectedState } from "../service/workflow-projected-state";
+import {
+  applyMailMessageTransition,
+  isMailWorkflowProjectedObject,
+  mailWorkflowMessageStateTransitions,
+  rebindMailWorkflowRestoredOutput,
+  restoreMailWorkflowProjectedState,
+} from "../service/workflow-projected-state";
 import { bindMailWorkflow, validateMailWorkflowTemplateReferences } from "./binder";
 import { buildMailWorkflowCatalog, type MailWorkflowCatalog, snapshotMailWorkflowCatalog } from "./catalog";
 import { mailWorkflows } from "./module";
@@ -937,77 +943,120 @@ steps:
   expect(result.ok).toBe(true);
 });
 
-test("resumes a journaled message alias before evaluating its flags in a branch", async () => {
-  const bound = await bindMailWorkflow(
-    await compile(`inputs:
+for (const scenario of [
+  { name: "input changed, alias read", aliases: ["selected"], changed: "inputs.message", read: "selected", negated: false, placements: 1 },
+  {
+    name: "first alias changed, second read",
+    aliases: ["first", "second"],
+    changed: "first",
+    read: "second",
+    negated: false,
+    placements: 1,
+  },
+  { name: "negated alias condition", aliases: ["selected"], changed: "inputs.message", read: "selected", negated: true, placements: 0 },
+  { name: "same alias changed and read", aliases: ["selected"], changed: "selected", read: "selected", negated: false, placements: 1 },
+]) {
+  test(`live and resumed message branches agree: ${scenario.name}`, async () => {
+    const aliases = scenario.aliases
+      .map(
+        (name, index) => `  - setVariable: { name: ${name}, value: "\${{ ${index ? scenario.aliases[index - 1] : "inputs.message"} }}" }`,
+      )
+      .join("\n");
+    const includes = `{ includes: ["\${{ ${scenario.read}.flags }}", seen] }`;
+    const placement = scenario.negated ? "trashMessage" : "moveMessage";
+    const bound = await bindMailWorkflow(
+      await compile(`inputs:
   message: { type: mailMessage }
 steps:
-  - setVariable: { name: selected, value: "\${{ inputs.message }}" }
-  - addFlag: { message: selected, flag: seen }
-  - if: { includes: ["\${{ selected.flags }}", seen] }
+${aliases}
+  - addFlag: { message: ${scenario.changed}, flag: seen }
+  - if: ${scenario.negated ? `{ not: ${includes} }` : includes}
     then:
-      - moveMessage: { message: selected, folder: Archive }
+      - ${placement}: { message: ${scenario.read}${scenario.negated ? "" : ", folder: Archive"} }
 `),
-    buildMailWorkflowCatalog({ folders: [{ id: ids.invoices, name: "Archive" }], assignableUsers: [] }),
-  );
-  if (!bound.ok) throw new Error(bound.diagnostics.map((diagnostic) => diagnostic.message).join("\n"));
-  const message = { id: "Msg001", folderId: "Inbox1", flags: [], keywords: [] };
-  const builtin = createWorkflowBuiltinActionPorts({ authorize: async () => undefined });
-  let moves = 0;
-  const result = await executeWorkflowPlan({
-    plan: bound.plan,
-    runId: "resumed-alias",
-    executionGeneration: 2,
-    clock: { now: () => "2026-10-12T12:00:00.000Z" },
-    invocation: {
-      workflowId: "alias-workflow",
-      mode: "execute",
-      channel: "test",
-      actor: { userId: "user" },
-      inputs: { message },
-      context: { source: { message } },
-      idempotencyKey: "resumed-alias",
-      occurredAt: "2026-10-12T12:00:00.000Z",
-    },
-    repository: {
-      heartbeat: async () => ({ state: "active" }),
-      startStep: async () => {},
-      finishStep: async () => {},
-      parkStep: async () => {},
-      restoreStepOutcome: async (step) => {
-        if (step.key === "steps.0") return { mode: "execute", outcome: { state: "completed", output: structuredClone(message) } };
-        if (step.key === "steps.1")
-          return { mode: "execute", outcome: { state: "completed", output: { action: "addFlag", applied: true, value: "seen" } } };
-        return null;
-      },
-    },
-    actions: {
-      get: (action) => {
-        if (action === "addFlag")
-          return {
-            execute: async () => {
-              throw new Error("Completed addFlag must not execute again");
-            },
-            restoreCompleted: restoreMailWorkflowProjectedState,
-          };
-        if (action === "moveMessage")
-          return {
-            execute: async () => {
-              moves += 1;
-              expect(
-                projectMailWorkflowMessagePrecondition(
-                  { modseq: "42", flags: [], keywords: [] },
-                  mailWorkflowMessageStateTransitions(message),
-                ),
-              ).toEqual({ modseq: undefined, flags: ["seen"], keywords: [] });
-              return { state: "completed", output: { action: "moveMessage", applied: true } };
-            },
-          };
-        return builtin.execute.get(action);
-      },
-    },
+      buildMailWorkflowCatalog({
+        folders: [
+          { id: ids.invoices, name: "Archive" },
+          { id: ids.inbox, name: "Trash", role: "trash" },
+        ],
+        assignableUsers: [],
+      }),
+    );
+    if (!bound.ok) throw new Error(bound.diagnostics.map((diagnostic) => diagnostic.message).join("\n"));
+    const counts: number[] = [];
+    for (const resumed of [false, true]) {
+      const message = { id: "Msg001", folderId: "Inbox1", flags: [], keywords: [] };
+      const builtin = createWorkflowBuiltinActionPorts({ authorize: async () => undefined });
+      let placements = 0;
+      const result = await executeWorkflowPlan({
+        plan: bound.plan,
+        runId: "alias-run",
+        executionGeneration: resumed ? 2 : 1,
+        clock: { now: () => "2026-10-12T12:00:00.000Z" },
+        invocation: {
+          workflowId: "alias-workflow",
+          mode: "execute",
+          channel: "test",
+          actor: { userId: "user" },
+          inputs: { message },
+          context: { source: { message } },
+          idempotencyKey: "alias-run",
+          occurredAt: "2026-10-12T12:00:00.000Z",
+        },
+        repository: {
+          heartbeat: async () => ({ state: "active" }),
+          startStep: async () => {},
+          finishStep: async () => {},
+          parkStep: async () => {},
+          restoreStepOutcome: async (step) => {
+            if (!resumed) return null;
+            if (scenario.aliases.some((_, index) => step.key === `steps.${index}`))
+              return { mode: "execute", outcome: { state: "completed", output: structuredClone(message) } };
+            if (step.key === `steps.${scenario.aliases.length}`)
+              return {
+                mode: "execute",
+                outcome: structuredClone({ state: "completed", output: { action: "addFlag", applied: true, value: "seen" } }),
+              };
+            return null;
+          },
+        },
+        actions: {
+          get: (action) => {
+            if (action === "addFlag")
+              return {
+                execute: async (ctx, step) => {
+                  if (resumed) throw new Error("Completed addFlag must not execute again");
+                  const config = await ctx.evaluate(step.config, ["config"]);
+                  if (!isMailWorkflowProjectedObject(config)) throw new Error("Expected action config");
+                  const resolved =
+                    typeof config.message === "string"
+                      ? await ctx.resolveReference(config.message, [...step.sourcePath, action, "message"])
+                      : config.message;
+                  if (!isMailWorkflowProjectedObject(resolved)) throw new Error("Expected message");
+                  applyMailMessageTransition(resolved, "addFlag", "seen");
+                  return { state: "completed", output: { action: "addFlag", applied: true, value: "seen" } };
+                },
+                restoreCompleted: restoreMailWorkflowProjectedState,
+              };
+            if (action === placement)
+              return {
+                execute: async () => {
+                  placements += 1;
+                  return { state: "completed", output: { action: placement, applied: true } };
+                },
+              };
+            const handler = builtin.execute.get(action);
+            return handler ? rebindMailWorkflowRestoredOutput(handler) : undefined;
+          },
+        },
+      });
+      expect(result.state).toBe("succeeded");
+      counts.push(placements);
+      expect(placements).toBe(scenario.placements);
+      expect(
+        projectMailWorkflowMessagePrecondition({ modseq: "42", flags: [], keywords: [] }, mailWorkflowMessageStateTransitions(message)),
+      ).toEqual({ modseq: undefined, flags: ["seen"], keywords: [] });
+    }
+    expect(counts[0]).toBe(counts[1]);
   });
-  expect(result.state).toBe("succeeded");
-  expect(moves).toBe(1);
-  expect(mailWorkflowMessageStateTransitions(message)).toEqual([{ field: "flags", add: true, value: "seen" }]);
-});
+}
