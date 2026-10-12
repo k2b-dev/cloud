@@ -1317,7 +1317,9 @@ export default function KanbanBoard(props: Props) {
                                       }));
                                     }}
                                     data-card-index={itemIndex()}
-                                    class={`group/card relative rounded-[var(--ui-radius-control)] border p-2.5 shadow-none transition-[background-color,border-color] ${
+                                    // On touch screens the grip's 44 px area ends 39 px below the card's top and the claim button's
+                                    // starts 43 px above its bottom. A card with both is 82 px tall at least, so neither takes the other's taps.
+                                    class={`k2b-progressive-row relative rounded-[var(--ui-radius-control)] border p-2.5 shadow-none transition-[background-color,border-color] any-pointer-coarse:has-[[data-spaces-claim-action]]:min-h-[5.125rem] ${
                                       isSelected()
                                         ? "border-[var(--ui-border-strong)] bg-[var(--ui-selected)]"
                                         : "border-[var(--ui-border)] bg-[var(--ui-surface)] hover:bg-[var(--ui-hover)]"
@@ -1327,19 +1329,23 @@ export default function KanbanBoard(props: Props) {
                                       <Show
                                         when={isMovingThis()}
                                         fallback={
-                                          <button
-                                            type="button"
-                                            data-dnd-card-handle
-                                            aria-label={t.dragItem({ title: item.title })}
-                                            title={t.drag}
-                                            class="focus-ui absolute right-1.5 top-1.5 inline-flex h-5 w-5 cursor-grab items-center justify-center rounded-[var(--ui-radius-control)] text-dimmed opacity-0 transition-[color,background-color,opacity] hover:bg-[var(--ui-hover)] hover:text-primary group-hover/card:opacity-100 group-focus-within/card:opacity-100 active:cursor-grabbing"
-                                            onClick={(event) => {
-                                              event.preventDefault();
-                                              event.stopPropagation();
-                                            }}
-                                          >
-                                            <i class="ti ti-grip-vertical text-[13px]" />
-                                          </button>
+                                          // The card link is not positioned, so the handle's touch area paints over it. A finger on the
+                                          // handle must not scroll the board: the browser would cancel the drag.
+                                          <div class="k2b-progressive-action absolute right-1.5 top-1.5 flex">
+                                            <IconButton
+                                              data-dnd-card-handle
+                                              label={t.dragItem({ title: item.title })}
+                                              tooltip={t.drag}
+                                              size="xs"
+                                              class="!h-5 !min-h-5 !w-5 !cursor-grab touch-none !text-dimmed hover:!text-primary active:!cursor-grabbing"
+                                              onClick={(event) => {
+                                                event.preventDefault();
+                                                event.stopPropagation();
+                                              }}
+                                            >
+                                              <i class="ti ti-grip-vertical text-[13px]" aria-hidden="true" />
+                                            </IconButton>
+                                          </div>
                                         }
                                       >
                                         <div class="pointer-events-none absolute right-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center text-dimmed">
@@ -1349,7 +1355,7 @@ export default function KanbanBoard(props: Props) {
                                     </Show>
                                     <Show when={props.canWrite && !item.completedAt && !item.startsAt && !item.endsAt}>
                                       {/* The wrapper places the button: on touch screens buttons are positioned relative for their larger hit area. */}
-                                      <div class="absolute bottom-1.5 right-1.5 flex">
+                                      <div class={`absolute bottom-1.5 right-1.5 flex ${item.claim ? "" : "k2b-progressive-action"}`}>
                                         <ClaimButton
                                           claim={item.claim}
                                           currentUserId={props.currentUserId}
@@ -1357,9 +1363,7 @@ export default function KanbanBoard(props: Props) {
                                           compact
                                           loading={claimingItemId() === item.id}
                                           disabled={claimCardMutation.loading() || (!item.claim && item.activeBlockerCount > 0)}
-                                          class={`h-6 w-6 ${
-                                            item.claim ? "" : "opacity-0 group-hover/card:opacity-100 group-focus-within/card:opacity-100"
-                                          }`}
+                                          class="h-6 w-6"
                                           onClaim={() => void claimCardMutation.mutate(item)}
                                           onRelease={() => void claimCardMutation.mutate(item)}
                                           onTakeOver={() => undefined}
@@ -1379,7 +1383,8 @@ export default function KanbanBoard(props: Props) {
                                         setSelectedItemId(item.id);
                                         requestSpacesRouteNavigation(href, { scroll: "preserve" });
                                       }}
-                                      class={`focus-ui block rounded-[var(--ui-radius-control)] ${props.canWrite ? "pr-5" : ""}`}
+                                      // On touch screens the grip's area reaches 12 px past its box; the text ends before it, so a tap on it opens the item.
+                                      class={`focus-ui block rounded-[var(--ui-radius-control)] ${props.canWrite ? "pr-5 any-pointer-coarse:pr-8" : ""}`}
                                     >
                                       <div class="flex items-start gap-2">
                                         <Show when={priority}>
