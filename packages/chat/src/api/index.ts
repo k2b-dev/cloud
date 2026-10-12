@@ -36,8 +36,8 @@ import {
   MessageQuerySchema,
   MessageViewSchema,
   SendMessageSchema,
-  SuccessSchema,
   SnapshotQuerySchema,
+  SuccessSchema,
   UpdateConversationSchema,
   UpdateMemberSchema,
 } from "../service/contracts";

@@ -45,11 +45,14 @@
 /* A phone shows the chat as its own screen over the visible part of the page, so the keyboard never hides the composer. */
 @media (max-width: 47.999rem) {
   .chat-conversation {
+    /* follow-viewport.ts replaces both with the visual viewport's once the chat runs in the browser. */
+    --chat-viewport-top: 0px;
+    --chat-viewport-height: 100dvh;
     position: fixed;
     z-index: 25;
     inset-inline: 0;
-    top: var(--chat-viewport-top, 0px);
-    height: var(--chat-viewport-height, 100dvh);
+    top: var(--chat-viewport-top);
+    height: var(--chat-viewport-height);
     padding-top: env(safe-area-inset-top);
     padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
   }

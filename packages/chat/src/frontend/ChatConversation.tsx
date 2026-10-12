@@ -1,3 +1,4 @@
+import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import {
   Chat,
@@ -13,7 +14,6 @@ import {
   VirtualFeed,
   type VirtualFeedController,
 } from "@k2b/ui";
-import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { createEffect, createSignal, type JSX, onCleanup, onMount } from "solid-js";
 import { chatMessages } from "../messages";
 import { dayLabel, messageTime, sameDay } from "./chat-format";

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
-import { isServer, renderToString } from "solid-js/web";
+import { renderToString } from "solid-js/web";
 import { chatMessages } from "../messages";
 import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 
@@ -50,10 +50,6 @@ const render = (locale: string, data: ChatWorkspaceProps) =>
   );
 
 describe("ChatWorkspace server render", () => {
-  if (!isServer) {
-    test.skip("runs with server conditions", () => {});
-    return;
-  }
   for (const locale of ["en", "de-DE"]) {
     const t = chatMessages.resolve([locale]).t;
     test(`empty sidebar and work area in ${locale}`, () => {

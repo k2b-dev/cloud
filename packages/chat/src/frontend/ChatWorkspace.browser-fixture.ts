@@ -2,7 +2,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ServerWebSocket } from "bun";
 import type { z } from "zod";
-import { SendMessageSchema, type ConversationSchema, type MessageViewSchema } from "../service/contracts";
+import { type ConversationSchema, type MessageViewSchema, SendMessageSchema } from "../service/contracts";
 import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 
 type Conversation = z.infer<typeof ConversationSchema>;
