@@ -5,7 +5,7 @@ import * as namedBlocks from "../../../../lib/named-blocks";
 import * as queryBlocks from "../../../../lib/query-blocks";
 import { listStateField } from "../lists";
 import { markdownExtension } from "../markdown";
-import { excludedSpans, listItemAtLine, listStructure, orderedLabel } from "./list-structure";
+import { excludedSpans, listItemAtLine, listStructure, markerChanges, orderedLabel, renumberChanges, siblingIndex } from "./list-structure";
 import { type ItemTuple, listStructureCases } from "./list-structure.fixture";
 
 const stateFor = (doc: string) => EditorState.create({ doc, extensions: [markdownExtension()] });
@@ -194,5 +194,100 @@ describe("cached notebook block exclusions", () => {
     check(state);
     state = state.update({ changes: { from: state.doc.length, insert: "\n:::\n\n- after" } }).state;
     check(state);
+  });
+});
+
+describe("source list marker repair", () => {
+  const structureFor = (state: EditorState) => listStructure(state, () => excludedSpans(state));
+
+  test("marker width shifts a continuation and the entire child subtree, leaving blank lines blank", () => {
+    const state = stateFor("9. root\n   continuation\n\n   - child\n     - grandchild");
+    const structure = structureFor(state);
+    const changes = markerChanges(state, structure, new Map([[0, "10."]]));
+    expect(changes.apply(state.doc).toString()).toBe("10. root\n    continuation\n\n    - child\n      - grandchild");
+    const after = stateFor(changes.apply(state.doc).toString());
+    expect(structureFor(after).items.map(({ depth, parent }) => [depth, parent])).toEqual(
+      structure.items.map(({ depth, parent }) => [depth, parent]),
+    );
+  });
+
+  test("nested marker deltas add up once per line without overlapping edits", () => {
+    const state = stateFor("9. root\n   9) child\n      continuation\n      - grandchild");
+    const structure = structureFor(state);
+    const changed = markerChanges(
+      state,
+      structure,
+      new Map([
+        [0, "10."],
+        [1, "10)"],
+      ]),
+    );
+    expect(changed.apply(state.doc).toString()).toBe("10. root\n    10) child\n        continuation\n        - grandchild");
+    const after = stateFor(changed.apply(state.doc).toString());
+    const reversed = markerChanges(
+      after,
+      structureFor(after),
+      new Map([
+        [0, "9."],
+        [1, "9)"],
+      ]),
+    );
+    expect(reversed.apply(after.doc).toString()).toBe(state.doc.toString());
+  });
+
+  test("adoption keeps both task checkbox states and removes only existing indentation", () => {
+    const state = stateFor("- [ ] open\n  - [x] done\n    continuation");
+    expect(
+      markerChanges(
+        state,
+        structureFor(state),
+        new Map([
+          [0, "10)"],
+          [1, "11."],
+        ]),
+      )
+        .apply(state.doc)
+        .toString(),
+    ).toBe("10) [ ] open\n    11. [x] done\n        continuation");
+    const malformed = stateFor("100. root\n continuation");
+    expect(
+      markerChanges(malformed, structureFor(malformed), new Map([[0, "-"]]))
+        .apply(malformed.doc)
+        .toString(),
+    ).toBe("- root\ncontinuation");
+  });
+
+  test("renumber preserves start, delimiter and tasks, and is idempotent", () => {
+    const state = stateFor("8) [ ] one\n1) [x] two\n2) three\n   continuation\n   - child");
+    const changes = renumberChanges(state, structureFor(state));
+    expect(changes.apply(state.doc).toString()).toBe("8) [ ] one\n9) [x] two\n10) three\n    continuation\n    - child");
+    const after = stateFor(changes.apply(state.doc).toString());
+    expect(renumberChanges(after, structureFor(after)).empty).toBe(true);
+  });
+
+  test("repair ignores data, query, code and quote lists", () => {
+    const doc =
+      "1. real\n1. real\n\n:::data\n1. data\n1. data\n:::\n\n:::query\n1. query\n1. query\n:::\n\n```md\n1. code\n1. code\n```\n\n> 1. quote\n> 1. quote";
+    const state = stateFor(doc);
+    expect(renumberChanges(state, structureFor(state)).apply(state.doc).toString()).toBe(
+      doc.replace("1. real\n1. real", "1. real\n2. real"),
+    );
+  });
+
+  test("range scans retain depth and ordinals and siblings never cross list boundaries", () => {
+    const doc = "- before\n\nparagraph\n\n3. root\n   - child\n4. sibling\n\n* separate\n* next";
+    const state = stateFor(doc);
+    const range = { from: doc.indexOf("3."), to: doc.indexOf("\n\n* separate") };
+    const structure = listStructure(state, () => excludedSpans(state), range);
+    expect(structure.items.map(({ depth, ordinal, parent }) => [depth, ordinal, parent])).toEqual([
+      [0, 3, -1],
+      [1, null, 0],
+      [0, 4, -1],
+    ]);
+    expect(siblingIndex(structure, 0, 1)).toBe(2);
+    expect(siblingIndex(structure, 2, -1)).toBe(0);
+    expect(siblingIndex(structure, 1, 1)).toBe(-1);
+    const full = structureFor(state);
+    expect(siblingIndex(full, 3, 1)).toBe(-1);
   });
 });

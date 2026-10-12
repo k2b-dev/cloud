@@ -20,6 +20,7 @@ import type { Backlink } from "../../../../service/links";
 import { editor } from "../../../lib/editor";
 import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
 import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
+import { listCommandsExtension, listIndentAvailability } from "../../../lib/editor/list-commands";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
 import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
 import { remoteCursors } from "../../../lib/editor/remote-cursors";
@@ -438,6 +439,21 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
   addExtension(() => (props.readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []));
   // Tab indents unless the person prefers focus movement; Esc, then Tab always leaves the editor.
   addExtension(tabKeys.extension);
+  // List keys work whatever the Tab preference; the toolbar's Indent and Outdent follow the caret.
+  const [listIndent, setListIndent] = createSignal(
+    { indent: false, outdent: false },
+    { equals: (a, b) => a.indent === b.indent && a.outdent === b.outdent },
+  );
+  addExtension(() =>
+    props.readOnly
+      ? []
+      : [
+          listCommandsExtension(),
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged || update.selectionSet) setListIndent(listIndentAvailability(update.state));
+          }),
+        ],
+  );
 
   addExtension(() => {
     if (richMode()) return isDark() ? editor.customDarkInit() : editor.customLightInit();
@@ -909,6 +925,7 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
           notebookId={props.notebookId}
           noteId={props.noteId}
           initialPanelOpen={props.initialPanelOpen}
+          listIndent={listIndent()}
         />
       </Show>
     </div>

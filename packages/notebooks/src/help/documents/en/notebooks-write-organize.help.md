@@ -53,13 +53,16 @@ Use short paragraphs. Keep one idea per section.
 - Keep one evening open
 ```
 
-## Indent with Tab {icon="keyboard"}
+## Indent and move list items {icon="keyboard"}
 
 **Tab** indents in the note editor. You can nest lists and line up code without the mouse. The note stores plain spaces.
 
 :::reference
 - **Text and code:** **Tab** inserts two spaces at the cursor or indents the selected lines. **Shift+Tab** removes up to two spaces of indentation.
-- **Lists:** **Tab** nests the current item under the item above it. Its sub-items move with it. **Shift+Tab** moves it back out one level.
+- **Lists:** **Tab** or **Ctrl/⌘+]** nests the current item under the previous item in its list. Its sub-items move with it. **Shift+Tab** or **Ctrl/⌘+[** moves it back out one level. The first item cannot nest.
+- **Without Tab:** **Ctrl/⌘+]** and **Ctrl/⌘+[** work even when Tab moves focus. On a phone, use **Indent** and **Outdent** in the editor toolbar.
+- **Move list items:** **Alt+Up/Down** or **Ctrl/⌘+Shift+Up/Down** moves an item with its sub-items past the previous or next item in the same list. It stops at the list edge.
+- **Numbered lists:** Numbers in the Markdown repair themselves when you add, remove, indent or move items. One undo restores the change and its previous numbers.
 - **Tables:** **Tab** selects the next cell, **Shift+Tab** the previous cell.
 - **Suggestions:** If a suggestion list is open, **Tab** accepts the highlighted suggestion.
 - **Leave the editor:** Press **Esc**, then **Tab** to move to the next control. Press **Esc**, then **Shift+Tab** to move back.

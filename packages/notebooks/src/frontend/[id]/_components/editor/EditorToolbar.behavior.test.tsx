@@ -21,7 +21,14 @@ describe("editor toolbar keyboard focus", () => {
     const dispose = render(
       () => (
         <LocaleProvider locale="de">
-          <EditorToolbar connected editorView={undefined} notebookId="notebook-1" noteId="note-1" initialPanelOpen={false} />
+          <EditorToolbar
+            connected
+            editorView={undefined}
+            notebookId="notebook-1"
+            noteId="note-1"
+            initialPanelOpen={false}
+            listIndent={{ indent: false, outdent: false }}
+          />
         </LocaleProvider>
       ),
       dom.root,
@@ -63,7 +70,14 @@ describe("editor toolbar navigation toggle", () => {
     const dispose = render(
       () => (
         <LocaleProvider locale="de">
-          <EditorToolbar connected editorView={undefined} notebookId="notebook-1" noteId="note-1" initialPanelOpen={false} />
+          <EditorToolbar
+            connected
+            editorView={undefined}
+            notebookId="notebook-1"
+            noteId="note-1"
+            initialPanelOpen={false}
+            listIndent={{ indent: false, outdent: false }}
+          />
         </LocaleProvider>
       ),
       dom.root,
