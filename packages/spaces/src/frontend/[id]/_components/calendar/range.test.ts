@@ -4,11 +4,11 @@ import {
   CALENDAR_MAX_DAYS,
   calendarBlock,
   calendarBlockDays,
-  isBlockLoadingCalendarView,
-  isScrollingCalendarView,
   calendarItemsEnd,
   calendarWindow,
   countCalendarDays,
+  isBlockLoadingCalendarView,
+  isScrollingCalendarView,
   mergeCalendarItems,
 } from "./range";
 
