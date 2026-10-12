@@ -61,6 +61,7 @@ import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOv
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
 import { createLinkedHeadingJump, type LinkedHeading } from "./linked-heading";
 import { createNoteNavigationCoordinator, headingFromHash, resolveSameNotebookNoteTarget } from "./note-navigation";
+import { NOTE_PREVIEW_ID } from "./note-preview";
 import { keepReadingPosition } from "./reading-position";
 import { slashCommandsExtension } from "./slash-commands";
 import { createTabKeyPreference } from "./tab-key-preference";
@@ -241,6 +242,8 @@ export default function NoteEditor(props: Props) {
   };
 
   onMount(() => {
+    // Solid creates the editor and removes the preview in the same flush, before the next frame.
+    document.getElementById(NOTE_PREVIEW_ID)?.remove();
     const onClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const anchor = (event.target as Element | null)?.closest("a[href]");
