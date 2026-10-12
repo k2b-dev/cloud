@@ -9,7 +9,7 @@ export const composeFormattingMessages = i18n.define({
         `This design contains values that email no longer accepts: ${properties}. Messages still send without them. Remove or replace them and save the design.`,
       ignoredMailboxCssProperty: ({ property }: { property: string }) =>
         `The mailbox email design sets ${property} to a value email no longer accepts. Mail ignores it.`,
-      ignoredMailboxCssDesign: "Email no longer accepts the mailbox email design, so Mail uses the built-in design.",
+      ignoredMailboxCssDesign: "Mail uses the built-in design because the mailbox email design cannot be applied.",
       title: "Email leaves out some formatting of this message.",
       unsupportedElement: ({ element }: { element: string }) => `<${element}> is not supported and was removed. Its text stays.`,
       inlineStyle: ({ element }: { element: string }) =>
@@ -23,7 +23,7 @@ export const composeFormattingMessages = i18n.define({
         `Dieses Design enthält Werte, die E-Mails nicht mehr zulassen: ${properties}. Nachrichten werden ohne sie gesendet. Entferne oder ersetze sie und speichere das Design.`,
       ignoredMailboxCssProperty: ({ property }) =>
         `Das E-Mail-Design des Postfachs setzt ${property} auf einen Wert, den E-Mails nicht mehr zulassen. Mail ignoriert ihn.`,
-      ignoredMailboxCssDesign: "E-Mails lassen das E-Mail-Design des Postfachs nicht mehr zu, darum verwendet Mail das integrierte Design.",
+      ignoredMailboxCssDesign: "Mail verwendet das integrierte Design, weil sich das E-Mail-Design des Postfachs nicht anwenden lässt.",
       title: "Ein Teil der Formatierung dieser Nachricht wird in der E-Mail weggelassen.",
       unsupportedElement: ({ element }) => `<${element}> wird nicht unterstützt und wurde entfernt. Der Text bleibt erhalten.`,
       inlineStyle: ({ element }) =>

@@ -689,6 +689,55 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     expect(fixed).toMatchObject({ ok: true, data: { formattingWarnings: [] } });
   });
 
+  test("previews and sends long messages with the built-in design when a valid stored design is too heavy", async () => {
+    const customCss = Array.from(
+      { length: 40 },
+      (_, i) => `${i % 2 ? "p" : ".mail-content"} { color: #991abc; font-family: "Mailbox991${i}${"a".repeat(480)}"; }`,
+    ).join("\n");
+    const style = await getMailboxComposeStyle(owner, mailboxId);
+    if (!style.ok) throw new Error(style.error.message);
+    try {
+      const saved = await updateMailboxComposeStyle({
+        context: owner,
+        mailboxId,
+        input: { expectedRevision: style.data.revision, customCss },
+      });
+      expect(saved).toMatchObject({ ok: true, data: { formattingWarnings: [] } });
+      if (!saved.ok) throw new Error(saved.error.message);
+      const draft: DraftEditableContentInput = {
+        senderIdentityId,
+        to: [{ name: null, address: "reader@example.test" }],
+        cc: [],
+        bcc: [],
+        subject: "Long message",
+        body: `${Array.from({ length: 900 }, (_, i) => `Paragraph ${i}`).join("\n\n")}\n\n<small>Fine print</small>`,
+        format: "markdown",
+      };
+      const preview = await previewComposeDraft({ context: owner, mailboxId, input: { draft, conversationId: null } });
+      expect(preview).toMatchObject({ ok: true });
+      if (!preview.ok) return;
+      expect(preview.data.formattingWarnings).toEqual([{ code: "ignored_mailbox_css" }, { code: "unsupported_element", element: "small" }]);
+      expect(preview.data.html).toContain("font-family:Arial");
+      for (const value of ["#991abc", "Mailbox991"]) expect(preview.data.html).not.toContain(value);
+      for (const renderLiquid of [true, false]) {
+        const rendered = await renderComposeDraft({ mailboxId, draft, actor: actorRefFromRequest(owner), renderLiquid });
+        expect(rendered).toEqual({
+          ok: true,
+          data: { html: preview.data.html, text: preview.data.text, formattingWarnings: [{ code: "ignored_mailbox_css" }] },
+        });
+      }
+    } finally {
+      const current = await getMailboxComposeStyle(owner, mailboxId);
+      if (!current.ok) throw new Error(current.error.message);
+      const restored = await updateMailboxComposeStyle({
+        context: owner,
+        mailboxId,
+        input: { expectedRevision: current.data.revision, customCss: style.data.customCss },
+      });
+      if (!restored.ok) throw new Error(restored.error.message);
+    }
+  });
+
   const newContent = () => ({ senderIdentityId, to: [], cc: [], bcc: [], subject: "", body: "" });
 
   const content = (draft: MailDraft): DraftEditableContent => ({
