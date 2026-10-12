@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   parseDetailPanelOpen,
   parseFullWidth,
+  parseLastNotebookId,
   parseNavigationHidden,
   parsePinnedNotebookIds,
   parseSettings,
@@ -49,6 +50,53 @@ afterEach(() => {
 });
 
 describe("NotebookSettingsStore", () => {
+  test("omits top-level defaults on write and reads them back unchanged", () => {
+    // Older cookies explicitly stored defaults; they must still read the same way.
+    cookie = `${COOKIE_NAME}=${encodeURIComponent(
+      JSON.stringify({
+        lastNotebookId: null,
+        pinnedNotebookIds: [],
+        detailPanelOpen: false,
+        navigationHidden: false,
+        tabMovesFocus: false,
+        fullWidth: false,
+        notebooks: {},
+      }),
+    )}`;
+    const expectDefaults = () => {
+      expect(parseLastNotebookId(cookieHeader())).toBeNull();
+      expect(readPinnedNotebookIds()).toEqual([]);
+      expect(parsePinnedNotebookIds(cookieHeader())).toEqual([]);
+      expect(parseDetailPanelOpen(cookieHeader())).toBe(false);
+      expect(readNavigationHidden()).toBe(false);
+      expect(parseNavigationHidden(cookieHeader())).toBe(false);
+      expect(readTabMovesFocus()).toBe(false);
+      expect(readFullWidth()).toBe(false);
+      expect(parseFullWidth(cookieHeader())).toBe(false);
+      expect(readSettings("first")).toEqual({ lastNoteId: null, richMode: "rich", treeSort: "title" });
+      expect(parseSettings(cookieHeader(), "first")).toEqual(readSettings("first"));
+    };
+    expectDefaults();
+    setFullWidth(false);
+    expect(JSON.parse(decodeURIComponent(cookie.slice(COOKIE_NAME.length + 1)))).toEqual({});
+    expectDefaults();
+
+    setDetailPanelOpen(true);
+    writeNavigationHidden(true);
+    setTabMovesFocus(true);
+    setFullWidth(true);
+    setPinnedNotebookIds(["Book01"]);
+    writeSettings("first", { richMode: "source" });
+    setDetailPanelOpen(false);
+    writeNavigationHidden(false);
+    setTabMovesFocus(false);
+    setFullWidth(false);
+    setPinnedNotebookIds([]);
+    writeSettings("first", { richMode: "rich" });
+    expect(JSON.parse(decodeURIComponent(cookie.slice(COOKIE_NAME.length + 1)))).toEqual({});
+    expectDefaults();
+  });
+
   test("full width defaults off without a cookie or with an older cookie", () => {
     expect(readFullWidth()).toBe(false);
     expect(parseFullWidth(undefined)).toBe(false);

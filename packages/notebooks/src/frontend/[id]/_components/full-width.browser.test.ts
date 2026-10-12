@@ -172,10 +172,17 @@ test("resizing removes and restores the command without losing the preference", 
     await page.setViewportSize({ width: 1023, height: 1440 });
     await page.waitForFunction(() => window.harness.command() === null);
     expect(await page.locator('input[role="switch"]').isVisible()).toBe(false);
+    // Nothing here can switch it off, so the text keeps the reading column.
+    const measureValue = () =>
+      page
+        .locator(".notebook-document-surface")
+        .evaluate((surface) => getComputedStyle(surface).getPropertyValue("--notebook-measure").trim());
+    expect(await measureValue()).toBe("44rem");
     await page.setViewportSize({ width: 1024, height: 1440 });
     await page.waitForFunction(() => window.harness.command() !== null);
     expect(await toggle(page).isChecked()).toBe(true);
     expect((await page.evaluate(() => window.harness.command()))?.title).toBe("Volle Breite ausschalten");
+    expect(await measureValue()).toBe("100%");
   } finally {
     await page.close();
   }

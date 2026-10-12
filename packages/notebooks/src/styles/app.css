@@ -307,9 +307,13 @@
   visibility: hidden;
 }
 /* The personal "Full width" lifts the column: the text fills the reading
-   surface. The server renders the attribute from the settings cookie. */
-.notebook-document-surface[data-full-width] {
-  --notebook-measure: 100%;
+   surface. The server renders the attribute from the settings cookie. It
+   applies only from `lg`, where its switches and command exist, so a narrow
+   window never shows wide text that nothing there can switch back. */
+@media (min-width: 64rem) {
+  .notebook-document-surface[data-full-width] {
+    --notebook-measure: 100%;
+  }
 }
 /* Below `lg` the note is about as narrow as the column, so "Full width" would
    change nothing; its switches do not show there. CSS decides, so the detail

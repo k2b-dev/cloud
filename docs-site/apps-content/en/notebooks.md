@@ -88,9 +88,10 @@ On wide screens, **Full width** lets text use the available space instead of
 the centered reading column in Write, Read-only, and Book. Toggle it in a
 note's detail panel under **View**, in **Settings → Notebook → View & behavior →
 Only for you**, or through **Turn on full width** / **Turn off full width** in
-Cloud search. The choice applies to every notebook in this browser and survives
-reloads. Smaller screens hide these controls because the text already fills
-the note.
+Cloud search. The choice applies to every notebook and open tab in this browser and
+survives reloads. Full width works only on large screens, where these controls
+show. When the navigation and the detail panel leave less room than the
+reading column, the lines get longer only after you close the panel.
 
 In the editor, Tab indents: it nests list items together with their sub-items,
 moves between table cells, accepts an open suggestion, and otherwise inserts two

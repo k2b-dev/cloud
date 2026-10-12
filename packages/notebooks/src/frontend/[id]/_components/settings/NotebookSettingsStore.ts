@@ -49,7 +49,17 @@ const DEFAULT_ALL: AllNotebookSettings = {
 
 // --- Cookie helpers ---
 
-const writeCookie = (data: AllNotebookSettings) => cookies.writeJsonCookie(COOKIE_NAME, data);
+const writeCookie = (data: AllNotebookSettings) => {
+  const compact: Partial<AllNotebookSettings> = {};
+  if (data.lastNotebookId !== DEFAULT_ALL.lastNotebookId) compact.lastNotebookId = data.lastNotebookId;
+  if (data.pinnedNotebookIds.length > 0) compact.pinnedNotebookIds = data.pinnedNotebookIds;
+  if (data.detailPanelOpen !== DEFAULT_ALL.detailPanelOpen) compact.detailPanelOpen = data.detailPanelOpen;
+  if (data.navigationHidden !== DEFAULT_ALL.navigationHidden) compact.navigationHidden = data.navigationHidden;
+  if (data.tabMovesFocus !== DEFAULT_ALL.tabMovesFocus) compact.tabMovesFocus = data.tabMovesFocus;
+  if (data.fullWidth !== DEFAULT_ALL.fullWidth) compact.fullWidth = data.fullWidth;
+  if (Object.keys(data.notebooks).length > 0) compact.notebooks = data.notebooks;
+  cookies.writeJsonCookie(COOKIE_NAME, compact);
+};
 
 const isTreeSort = (value: unknown): value is NotebookSettings["treeSort"] =>
   value === "updated" || value === "created" || value === "title";

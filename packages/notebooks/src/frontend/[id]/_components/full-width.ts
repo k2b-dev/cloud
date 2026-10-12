@@ -21,22 +21,32 @@ export const changeFullWidth = (fullWidth: boolean) => {
   window.dispatchEvent(new Event(FULL_WIDTH_PREFERENCE_EVENT));
 };
 
-/** The preference for a switch: the server's value first, then every change in this page. */
+/** Starts with the server value, then follows the cookie at mount, on page changes and when this tab returns. */
 export const createFullWidth = (initial: boolean): Accessor<boolean> => {
   const [fullWidth, setValue] = createSignal(initial);
   onMount(() => {
-    const changed = () => setValue(readFullWidth());
-    window.addEventListener(FULL_WIDTH_PREFERENCE_EVENT, changed);
-    onCleanup(() => window.removeEventListener(FULL_WIDTH_PREFERENCE_EVENT, changed));
+    const apply = () => setValue(readFullWidth());
+    const follow = () => {
+      if (document.visibilityState === "visible") apply();
+    };
+    apply();
+    window.addEventListener(FULL_WIDTH_PREFERENCE_EVENT, apply);
+    window.addEventListener("focus", follow);
+    document.addEventListener("visibilitychange", follow);
+    onCleanup(() => {
+      window.removeEventListener(FULL_WIDTH_PREFERENCE_EVENT, apply);
+      window.removeEventListener("focus", follow);
+      document.removeEventListener("visibilitychange", follow);
+    });
   });
   return fullWidth;
 };
 
 /**
  * Keeps a reading surface (Write, Read-only or Book) in step with the
- * preference and offers the command that switches it. Call in `onMount`. The
- * server already rendered `data-full-width` on the surface; a change flips it
- * between `keepPosition` and the function it returns, before the next paint,
+ * cookie at mount, on page changes and when this tab returns. Offers the
+ * command that switches it. Call in `onMount`. When the surface differs,
+ * flips `data-full-width` between `keepPosition` and its restore function,
  * so the text at the top of `scroller` stays in place while the note rewraps.
  */
 export const followFullWidth = (scroller: HTMLElement, keepPosition: () => (() => void) | null, t: Accessor<ViewMessages>) => {
@@ -44,20 +54,28 @@ export const followFullWidth = (scroller: HTMLElement, keepPosition: () => (() =
   const query = window.matchMedia(WIDE_SCREEN_QUERY);
   const [wide, setWide] = createSignal(query.matches);
   const resized = () => setWide(query.matches);
-  const changed = () => {
+  const apply = () => {
     const on = readFullWidth();
+    setValue(on);
     const surface = scroller.closest<HTMLElement>(".notebook-document-surface");
     if (!surface || surface.hasAttribute("data-full-width") === on) return;
     const restore = keepPosition();
     surface.toggleAttribute("data-full-width", on);
     restore?.();
-    setValue(on);
   };
+  const follow = () => {
+    if (document.visibilityState === "visible") apply();
+  };
+  apply();
   query.addEventListener("change", resized);
-  window.addEventListener(FULL_WIDTH_PREFERENCE_EVENT, changed);
+  window.addEventListener(FULL_WIDTH_PREFERENCE_EVENT, apply);
+  window.addEventListener("focus", follow);
+  document.addEventListener("visibilitychange", follow);
   onCleanup(() => {
     query.removeEventListener("change", resized);
-    window.removeEventListener(FULL_WIDTH_PREFERENCE_EVENT, changed);
+    window.removeEventListener(FULL_WIDTH_PREFERENCE_EVENT, apply);
+    window.removeEventListener("focus", follow);
+    document.removeEventListener("visibilitychange", follow);
   });
   createEffect(() => {
     if (!wide()) return;
