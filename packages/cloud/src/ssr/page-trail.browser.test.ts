@@ -474,6 +474,8 @@ describe("going up returns to the page as this tab left it", () => {
         await settle(other);
         await other.locator(".k2b-page-title__up:visible").click();
         await other.waitForURL(/\/app\/accounts\/users$/);
+        // The runtime marks the row in a later animation frame, once the list has rendered.
+        await other.waitForFunction(() => document.querySelector("[data-page-trail-recent]"));
         expect(await other.locator("[data-page-trail-recent]").count()).toBe(1);
       } finally {
         await context.close();
