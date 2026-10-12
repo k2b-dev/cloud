@@ -18,7 +18,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { default: RailApps } = await import("./RailApps.island");
+const { default: RailApps } = await import("./RailApps");
 const { AppLaunchpadPanel } = await import("./AppLaunchpadPanel");
 
 const apps: RailApp[] = ["Chat", "Files", "Mail", "Notebooks"].map((label) => ({

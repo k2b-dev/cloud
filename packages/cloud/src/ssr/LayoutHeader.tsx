@@ -1,30 +1,13 @@
-import { ButtonLink, IconButtonLink } from "@k2b/ui";
-import type { NavigationSearchItem } from "../browser/navigation-search";
-import type { CloudTheme } from "../shared/theme";
-import AppLaunchpad, { type AppLaunchpadApp } from "./AppLaunchpad.island";
-import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
-import GlobalSearchTrigger from "./GlobalSearchTrigger.island";
-import LayoutBreadcrumbs from "./LayoutBreadcrumbs.island";
-import LayoutHelpTrigger from "./LayoutHelpTrigger.island";
-import LayoutPreferences from "./LayoutPreferences.island";
+import { ButtonLink, IconButtonLink, useLocale } from "@k2b/ui";
+import CloudShell from "./CloudShell.island";
 import type { LayoutBreadcrumb } from "./layout-runtime";
+import { platformMessages } from "./platform-messages";
 
 type LayoutHeaderProps = {
-  accent?: string;
-  /** Set while the installation offers the mobile app. */
-  appHref?: string;
-  appLabel?: string;
   authenticated: boolean;
-  breadcrumbs: LayoutBreadcrumb[];
-  homeLabel: string;
-  launchpadApps: AppLaunchpadApp[];
-  legalLinks: Array<{ label: string; href: string; icon?: string }>;
-  openAppsLabel: string;
-  profileName: string;
-  searchHelpApps: GlobalSearchHelpApp[];
-  searchLinks?: NavigationSearchItem[];
-  signInLabel: string;
-  theme: CloudTheme;
+  title?: string;
+  launchpad: boolean;
+  breadcrumbs?: LayoutBreadcrumb[];
 };
 
 /**
@@ -33,68 +16,39 @@ type LayoutHeaderProps = {
  * and their profile through the rail, so the app area starts at the top edge.
  * Anonymous pages have no rail: up to `lg` their header keeps the app name,
  * help, search, and the app grid, and from `lg` it shows the breadcrumbs.
+ * Home and Sign in stay server markup, so focus on them survives the shell's
+ * mount; the shell renders the title and the controls between them.
  */
 export default function LayoutHeader(props: LayoutHeaderProps) {
+  const locale = useLocale();
+  const t = () => platformMessages.resolve([locale()]).t;
   return (
     <header
-      class={`layout-header paper flex min-h-[2.875rem] shrink-0 items-center justify-between px-2 py-1.5 md:px-3 md:py-2 ${props.authenticated ? "md:hidden" : ""}`}
+      class={`layout-header paper flex min-h-[2.875rem] shrink-0 items-center px-2 py-1.5 md:px-3 md:py-2 ${props.authenticated ? "md:hidden" : ""}`}
       style="box-shadow: var(--ui-shadow-surface)"
     >
-      <div class="flex min-w-0 items-center gap-2">
-        {/* A long title must not squeeze the button; `shrink-0` sits on a wrapper because the button's own
-            styles would win over a utility on the link. */}
-        <div class="flex shrink-0">
-          <IconButtonLink href="/" label={props.homeLabel}>
-            <img src="/branding/logo" alt="" class={props.authenticated ? "h-4 w-4" : "h-6 w-6"} />
-          </IconButtonLink>
-        </div>
-        {!props.authenticated && (
-          <div class="hidden min-w-0 items-center lg:flex">
-            <LayoutBreadcrumbs breadcrumbs={props.breadcrumbs} />
-          </div>
-        )}
-        <div class="flex min-w-0 items-center lg:hidden">
-          <span class="truncate font-semibold">{props.appLabel ?? props.breadcrumbs.at(-1)?.title}</span>
-        </div>
+      {/* A long title must not squeeze the button; `shrink-0` sits on a wrapper because the button's own
+          styles would win over a utility on the link. */}
+      <div class="flex shrink-0">
+        <IconButtonLink href="/" label={t().home}>
+          <img src="/branding/logo" alt="" class={props.authenticated ? "h-4 w-4" : "h-6 w-6"} />
+        </IconButtonLink>
       </div>
-      <div class="flex shrink-0 items-center gap-1">
-        <div class="flex items-center gap-1 lg:hidden">
-          <LayoutHelpTrigger
-            variant="header"
-            registerCommand={!props.authenticated}
-            searchHelpApps={props.searchHelpApps}
-            accent={props.accent}
-          />
-          <GlobalSearchTrigger
-            variant={props.authenticated ? "header" : "host"}
-            registerCommand
-            searchLinks={props.searchLinks}
-            searchResources={props.authenticated}
-          />
-          {(props.authenticated || props.appLabel) && (
-            <AppLaunchpad
-              profile={
-                props.authenticated
-                  ? { name: props.profileName, theme: props.theme, ...(props.appHref ? { appHref: props.appHref } : {}) }
-                  : undefined
-              }
-              apps={props.launchpadApps}
-              legalLinks={props.legalLinks}
-              variant="header"
-              label={props.openAppsLabel}
-            />
-          )}
+      <CloudShell
+        slot="header"
+        authenticated={props.authenticated}
+        title={props.title}
+        launchpad={props.launchpad}
+        breadcrumbs={props.breadcrumbs}
+      />
+      {!props.authenticated && (
+        <div class="ml-1 flex shrink-0">
+          <ButtonLink href="/auth/login" size="sm" variant="primary">
+            <i class="ti ti-login" aria-hidden="true" />
+            {t().signIn}
+          </ButtonLink>
         </div>
-        {!props.authenticated && (
-          <>
-            <LayoutPreferences initialTheme={props.theme} position="bottom-left" />
-            <ButtonLink href="/auth/login" size="sm" variant="primary">
-              <i class="ti ti-login" aria-hidden="true" />
-              {props.signInLabel}
-            </ButtonLink>
-          </>
-        )}
-      </div>
+      )}
     </header>
   );
 }
