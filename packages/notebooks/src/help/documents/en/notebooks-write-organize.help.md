@@ -100,7 +100,7 @@ The sidebar shows the notebook's notes as a tree, with the homepage first. Filte
 
 ## Hide the navigation {icon="layout-sidebar-left-collapse"}
 
-Hide the navigation to write with the full width. Hide it also when others can see your screen and must not see your notes and folders.
+Hide the navigation to focus on the note: only the text stays on the screen. Hide it also when others can see your screen and must not see your notes and folders.
 
 :::reference
 - **Hide:** Choose **Hide navigation** at the far left of the editor toolbar. You can also press **Cmd/Ctrl+Alt+S**, or type `>` in the Cloud search and run **Hide notebook navigation**. You can also drag the edge of the navigation almost all the way to the left.
@@ -108,6 +108,7 @@ Hide the navigation to write with the full width. Hide it also when others can s
 - **Show:** Choose **Show navigation** in the same place, or press **Cmd/Ctrl+Alt+S** again. You can also type `>` in the Cloud search and run **Show notebook navigation**.
 - **No toolbar:** Some places show no editor toolbar: Book view, an empty notebook, **Read-only**, the graph, and the attachments. There, the button is in the bottom-left corner.
 - **Stays hidden:** This browser stores the choice. It applies to every notebook, even after a reload and in other open tabs. A notebook with hidden navigation opens without it, so its note titles do not appear while the page loads.
+- **Reading width:** On a large screen, the text stays in a column as wide as in Book view, also in the editor and in **Read-only**. When you hide the navigation, the column moves to the middle. The lines do not get longer.
 - **Your place in the note:** When you hide or show the navigation, the cursor stays where it is. The text at the top of the editor or of Book view stays in place.
 - **Phones and tablets:** On small screens, the navigation stays in the menu. On a tablet, the button at the top left opens the navigation over the note. When the navigation is hidden, the button in the bottom-left corner shows it again. On larger screens, the navigation is next to the note.
 :::

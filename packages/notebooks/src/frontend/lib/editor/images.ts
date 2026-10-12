@@ -60,7 +60,7 @@ class ImageWidget extends WidgetType {
     container.setAttribute("tabindex", "0");
 
     const figure = document.createElement("figure");
-    figure.className = "flex flex-col items-center justify-center max-w-full";
+    figure.className = "flex flex-col items-start max-w-full";
 
     const img = document.createElement("img");
     // Drop the `max-h-[400px]` cap when an explicit size is requested so

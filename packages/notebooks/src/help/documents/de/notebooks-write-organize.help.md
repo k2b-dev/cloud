@@ -100,7 +100,7 @@ Die Seitenleiste zeigt die Notizen des Notizbuchs als Baum, mit der Startseite z
 
 ## Navigation ausblenden {icon="layout-sidebar-left-collapse"}
 
-Blende die Navigation aus, um mit der ganzen Breite zu schreiben. Blende sie auch aus, wenn andere deinen Bildschirm sehen und deine Notizen und Ordner nicht sehen dürfen.
+Blende die Navigation aus, um dich auf die Notiz zu konzentrieren: Nur der Text bleibt auf dem Bildschirm. Blende sie auch aus, wenn andere deinen Bildschirm sehen und deine Notizen und Ordner nicht sehen dürfen.
 
 :::reference
 - **Ausblenden:** Wähle ganz links in der Werkzeugleiste des Editors **Navigation ausblenden**. Du kannst auch **Cmd/Strg+Alt+S** drücken oder in der Cloud-Suche `>` tippen und **Notizbuch-Navigation ausblenden** ausführen. Oder ziehe den Rand der Navigation fast ganz nach links.
@@ -108,6 +108,7 @@ Blende die Navigation aus, um mit der ganzen Breite zu schreiben. Blende sie auc
 - **Einblenden:** Wähle an derselben Stelle **Navigation einblenden** oder drücke erneut **Cmd/Strg+Alt+S**. Du kannst auch in der Cloud-Suche `>` tippen und **Notizbuch-Navigation einblenden** ausführen.
 - **Ohne Werkzeugleiste:** Manche Stellen zeigen keine Werkzeugleiste des Editors: die Buchansicht, ein leeres Notizbuch, **Schreibgeschützt**, der Graph und die Anhänge. Dort steht die Schaltfläche unten links.
 - **Bleibt ausgeblendet:** Dieser Browser speichert die Wahl. Sie gilt für alle Notizbücher, auch nach dem Neuladen und in anderen offenen Tabs. Ein Notizbuch mit ausgeblendeter Navigation öffnet ohne sie, Notiztitel erscheinen also auch beim Laden nicht.
+- **Lesebreite:** Auf einem großen Bildschirm bleibt der Text in einer Spalte, so breit wie in der Buchansicht, auch im Editor und in **Schreibgeschützt**. Blendest du die Navigation aus, rückt die Spalte in die Mitte. Die Zeilen werden nicht länger.
 - **Deine Stelle in der Notiz:** Beim Aus- und Einblenden bleibt der Cursor, wo er ist. Der Text oben im Editor oder in der Buchansicht bleibt an seiner Stelle.
 - **Smartphones und Tablets:** Auf kleinen Bildschirmen bleibt die Navigation im Menü. Auf einem Tablet öffnet die Schaltfläche oben links die Navigation über der Notiz. Ist sie ausgeblendet, zeigt die Schaltfläche unten links sie wieder an. Auf größeren Bildschirmen steht die Navigation neben der Notiz.
 :::

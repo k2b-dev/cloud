@@ -26,8 +26,8 @@
  *     widget destroy+recreate on every vertical-nav keystroke,
  *     which was thrashing layout heights mid-move.
  *
- *  3. Over-estimated `TableWidget.estimatedHeight` (48px/row + 24px
- *     padding). Under-estimating causes upward layout shift after
+ *  3. CSS-derived `TableWidget.estimatedHeight` (37px/row + dividers
+ *     + 8px padding). Under-estimating causes upward layout shift after
  *     DOM measurement, which CM's vertical-nav sees as a moving
  *     target.
  *
@@ -300,19 +300,19 @@ class TableWidget extends WidgetType {
   override get estimatedHeight() {
     // Per-cell rendered metrics (from `utilities-markdown-table.css`):
     //   - padding: 0.5rem on every side (16px vertical)
-    //   - font-size: 12px, line-height: 16px
-    //   → 32px per single-line row plus its hairline divider.
+    //   - font-size: 14px, line-height: 1.5 (21px), min-height: 2rem
+    //   → 37px per single-line row plus its hairline divider.
     // Plus 8px outer padding below `.cm-table-widget` (see the theme
     //   rule for why this is padding not margin: margin would collapse
     //   and confuse CM's height measurement, padding stays inside the
     //   border-box).
     //
-    // Formula: (N+1) rows × 33px + 8px container + 2px frame
-    //        ≈ (N+1) × 33 + 10
+    // Formula: (N+1) rows × 37px + max(1, N) dividers + 8px container
+    // The header divider stays even in a table with no body rows.
     //
     // ACCURATE estimate matters MORE than buffer — see history at
     // file top for the click-drift bug this matches.
-    return (this.data.rows.length + 1) * 33 + 10;
+    return (this.data.rows.length + 1) * 37 + Math.max(1, this.data.rows.length) + 8;
   }
 }
 
@@ -524,9 +524,18 @@ export const tablesExtension = (notebookId: string): Extension => {
     },
     // Neutralise the shared read-mode wrap margins inside the CM
     // widget — see the .cm-table-widget rule above for the rationale.
+    // A table wider than the reading column scrolls in its wrap, bleed
+    // included, as in the Book; the editor never scrolls sideways.
     ".cm-table-widget .md-table-wrap": {
       marginTop: "0 !important",
       marginBottom: "0 !important",
+      overflowX: "auto",
+    },
+    // The Book's table type: a step below the text.
+    ".cm-table-widget .md-table": {
+      wordBreak: "normal",
+      fontSize: "0.875em",
+      lineHeight: "1.5",
     },
   });
 

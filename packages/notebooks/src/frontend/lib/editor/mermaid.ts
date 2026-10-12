@@ -173,7 +173,8 @@ class MermaidWidget extends WidgetType {
   }
 
   override get estimatedHeight() {
-    return 260;
+    // The frame is min(30vh, 400px), with a 200px minimum; it includes its border.
+    return Math.max(200, Math.min(window.innerHeight * 0.3, 400));
   }
 }
 

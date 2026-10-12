@@ -133,7 +133,10 @@ class QueryBlockWidget extends WidgetType {
     return true;
   }
   override get estimatedHeight() {
-    return 120;
+    // Query tables have 14px / 21px text, 16px cell padding and row dividers;
+    // controls, widget padding/border and table spacing add 65px.
+    const rows = this.snapshot.failed ? 0 : (this.html?.match(/<tr(?:\s|>)/g)?.length ?? 0);
+    return rows ? rows * 38 + 65 : 120;
   }
 }
 

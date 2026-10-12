@@ -4,8 +4,8 @@ import { type CreateThemeOptions, createTheme } from "@uiw/codemirror-themes";
 
 /**
  * Layout / chrome styles — shared between rich and raw modes. Deliberately
- * font-family-free so each mode can pick its own type system (rich = sans
- * with code-mark mono override, raw = full mono).
+ * font-free so each mode can pick its own type system (rich = 16px sans
+ * with code-mark mono override, raw = 14px mono).
  */
 const baseEditorCSS = EditorView.theme({
   "&": {
@@ -13,7 +13,6 @@ const baseEditorCSS = EditorView.theme({
     flex: "1",
     minHeight: "0",
     height: "100%",
-    fontSize: "14px",
   },
   ".cm-line": {
     cursor: "text",
@@ -32,8 +31,10 @@ const baseEditorCSS = EditorView.theme({
     maxWidth: "100%",
     margin: "0 auto",
   },
+  // The reading column of the app's stylesheet (`--notebook-measure`), the
+  // same width as the Book's text. Each mode centers it in the free space.
   ".cm-content": {
-    maxWidth: "100%",
+    maxWidth: "min(100%, var(--notebook-measure))",
   },
   ".cm-gutters": {
     backgroundColor: "transparent",
@@ -63,25 +64,62 @@ const baseEditorCSS = EditorView.theme({
 });
 
 /**
- * Rich-mode font: prose in Sans, code in Mono.
+ * The note page's arrangement: CodeMirror grows inside the page's scroll area
+ * and insets the text by 1rem, also on a phone. The reading column centers in
+ * the rest.
+ */
+export const noteScrollerTheme = EditorView.theme({
+  ".cm-editor": { minHeight: "100%" },
+  ".cm-scroller": { width: "100%", minHeight: "100%", padding: "1rem" },
+});
+
+/**
+ * Rich-mode type: prose in Sans at the Book's size and line height, so a
+ * paragraph breaks into the same lines while writing and reading; code in Mono.
  *
  * `.cm-md-code` is applied per-range by `codeFontExtension` against the
  * markdown syntax tree (FencedCode / InlineCode / CodeBlock nodes).
  */
 const richFontCSS = EditorView.theme({
-  "&": { fontFamily: "var(--font-sans)" },
+  "&": { fontFamily: "var(--font-sans)", fontSize: "16px" },
+  ".cm-scroller": { lineHeight: "1.6" },
   ".cm-line": { fontFamily: "var(--font-sans)" },
   ".cm-md-code": { fontFamily: "var(--font-mono)" },
+  ".cm-content": { marginInline: "auto" },
+  // CodeMirror wraps with `break-spaces`, where a space at the end of a line
+  // takes room and pushes the last word down. The Book lets it hang, so the
+  // editor does too and both break a paragraph at the same words.
+  "&.cm-editor .cm-lineWrapping": { whiteSpace: "pre-wrap" },
 });
 
 /**
- * Raw-mode font: full mono — raw mode is a literal source view, sans
- * would obscure the markdown structure.
+ * Raw-mode type: full mono — raw mode is a literal source view, sans
+ * would obscure the markdown structure. The line numbers travel with the
+ * column, so numbers and text center together.
  */
 const rawFontCSS = EditorView.theme({
-  "&": { fontFamily: "var(--font-mono)" },
+  "&": { fontFamily: "var(--font-mono)", fontSize: "14px" },
   ".cm-line": { fontFamily: "var(--font-mono)" },
+  ".cm-gutters": { marginLeft: "auto" },
+  ".cm-content": { marginRight: "auto" },
 });
+
+/** The Book's text colors (`.notebook-book-shell`), so writing and reading look alike. */
+const lightText = "var(--color-zinc-950)";
+const darkText = "var(--color-zinc-100)";
+
+/**
+ * The heading scale of the Book (`.notebook-book-content` in the app's
+ * stylesheet). Headings, bold and italic keep the text color in both themes;
+ * only code is highlighted.
+ */
+const headingStyles: CreateThemeOptions["styles"] = [
+  { tag: t.heading1, fontSize: "1.875em", fontWeight: "650", lineHeight: "1.25" },
+  { tag: t.heading2, fontSize: "1.5em", fontWeight: "650", lineHeight: "1.3" },
+  { tag: t.heading3, fontSize: "1.25em", fontWeight: "650", lineHeight: "1.4" },
+  { tag: t.heading4, fontSize: "1.125em", fontWeight: "650" },
+  { tag: [t.heading5, t.heading6], fontSize: "1em", fontWeight: "650" },
+];
 
 const customLightStyle: CreateThemeOptions["styles"] = [
   { tag: [t.standard(t.tagName), t.tagName], color: "#116329" },
@@ -97,19 +135,14 @@ const customLightStyle: CreateThemeOptions["styles"] = [
   },
   { tag: [t.string, t.regexp], color: "#032f62" },
   { tag: [t.name, t.quote], color: "#22863a" },
-  { tag: [t.strong], color: "#24292e", fontWeight: "700" },
-  { tag: [t.emphasis], color: "#24292e", fontStyle: "italic" },
+  { tag: [t.strong], fontWeight: "700" },
+  { tag: [t.emphasis], fontStyle: "italic" },
   { tag: [t.deleted], color: "#b31d28", backgroundColor: "#ffeef0" },
   { tag: [t.atom, t.bool, t.special(t.variableName)], color: "#e36209" },
   { tag: [t.url, t.escape, t.link], color: "#032f62" },
   { tag: t.strikethrough, textDecoration: "line-through" },
   { tag: t.invalid, color: "#cb2431" },
-  { tag: t.heading1, color: "#24292e", fontSize: "2em", fontWeight: "800" },
-  { tag: t.heading2, color: "#24292e", fontSize: "1.75em", fontWeight: "700" },
-  { tag: t.heading3, color: "#24292e", fontSize: "1.5em", fontWeight: "700" },
-  { tag: t.heading4, color: "#24292e", fontSize: "1.25em", fontWeight: "700" },
-  { tag: t.heading5, color: "#24292e", fontSize: "1.15em", fontWeight: "700" },
-  { tag: t.heading6, color: "#24292e", fontSize: "1.05em", fontWeight: "700" },
+  ...headingStyles,
   { tag: t.meta, color: "var(--color-gray-400)" },
 ];
 
@@ -127,19 +160,14 @@ const customDarkStyle: CreateThemeOptions["styles"] = [
   },
   { tag: [t.string, t.regexp], color: "#a5d6ff" },
   { tag: [t.name, t.quote], color: "#7ee787" },
-  { tag: [t.heading, t.strong], color: "#d2a8ff", fontWeight: "bold" },
-  { tag: [t.emphasis], color: "#d2a8ff", fontStyle: "italic" },
+  { tag: [t.strong], fontWeight: "700" },
+  { tag: [t.emphasis], fontStyle: "italic" },
   { tag: [t.deleted], color: "#ffdcd7", backgroundColor: "#ffeef0" },
   { tag: [t.atom, t.bool, t.special(t.variableName)], color: "#ffab70" },
   { tag: t.link, textDecoration: "underline" },
   { tag: t.strikethrough, textDecoration: "line-through" },
   { tag: t.invalid, color: "#f97583" },
-  { tag: t.heading1, color: "#d2a8ff", fontSize: "2em", fontWeight: "800" },
-  { tag: t.heading2, color: "#d2a8ff", fontSize: "1.75em", fontWeight: "700" },
-  { tag: t.heading3, color: "#d2a8ff", fontSize: "1.5em", fontWeight: "700" },
-  { tag: t.heading4, color: "#d2a8ff", fontSize: "1.25em", fontWeight: "700" },
-  { tag: t.heading5, color: "#d2a8ff", fontSize: "1.15em", fontWeight: "700" },
-  { tag: t.heading6, color: "#d2a8ff", fontSize: "1.1em", fontWeight: "700" },
+  ...headingStyles,
   { tag: t.meta, color: "var(--color-gray-500)" },
 ];
 
@@ -150,7 +178,7 @@ export const customLightInit = (options?: Partial<CreateThemeOptions>) => {
       theme,
       settings: {
         background: "transparent",
-        foreground: "#24292e",
+        foreground: lightText,
         selection: "#BBDFFF",
         selectionMatch: "#e4e4e7",
         gutterBackground: "transparent",
@@ -171,8 +199,8 @@ export const customDarkInit = (options?: Partial<CreateThemeOptions>) => {
       theme,
       settings: {
         background: "transparent",
-        foreground: "#c9d1d9",
-        caret: "#c9d1d9",
+        foreground: darkText,
+        caret: darkText,
         selection: "#003d73",
         selectionMatch: "#3f3f46",
         gutterBackground: "transparent",
@@ -191,7 +219,7 @@ export const rawLightInit = () => [
     theme: "light",
     settings: {
       background: "transparent",
-      foreground: "#24292e",
+      foreground: lightText,
       selection: "#BBDFFF",
       selectionMatch: "#e4e4e7",
       gutterBackground: "transparent",
@@ -208,8 +236,8 @@ export const rawDarkInit = () => [
     theme: "dark",
     settings: {
       background: "transparent",
-      foreground: "#c9d1d9",
-      caret: "#c9d1d9",
+      foreground: darkText,
+      caret: darkText,
       selection: "#003d73",
       selectionMatch: "#3f3f46",
       gutterBackground: "transparent",
