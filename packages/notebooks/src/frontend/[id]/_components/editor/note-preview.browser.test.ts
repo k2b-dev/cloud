@@ -41,8 +41,14 @@ const snapshot = (text: string) => {
   doc.destroy();
   return result;
 };
+// Long enough to scroll at every viewport; each line wraps on a phone.
+const longMarkdown = Array.from(
+  { length: 120 },
+  (_, index) => `Zeile ${index + 1}: Wir sammeln **wichtige** Gedanken für das Team und halten sie für alle fest.`,
+).join("\n");
 const initialSnapshot = snapshot(markdown);
 const headingSnapshot = snapshot(headingMarkdown);
+const longSnapshot = snapshot(longMarkdown);
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 
@@ -93,7 +99,7 @@ beforeAll(async () => {
       if (url.pathname === "/editor.js") return new Response(bundle, { headers: { "content-type": "text/javascript" } });
       if (url.pathname === "/api/notebooks/ws" && server.upgrade(request, { data: undefined })) return;
       if (url.pathname.endsWith("/block-preview")) return Response.json({ markdown, blocks: [], diagnostics: [], headings: [] });
-      const note = url.searchParams.has("headings") ? headingMarkdown : markdown;
+      const note = url.searchParams.has("long") ? longMarkdown : url.searchParams.has("headings") ? headingMarkdown : markdown;
       const mode = url.searchParams.get("mode") === "source" ? "source" : "rich";
       const readOnly = url.searchParams.has("readonly");
       const historyIncomplete = url.searchParams.has("historyIncomplete");
@@ -108,7 +114,7 @@ beforeAll(async () => {
         appUrl: url.origin,
         userId: "writer",
         displayName: "Writer",
-        initialSnapshot: url.searchParams.has("headings") ? headingSnapshot : initialSnapshot,
+        initialSnapshot: url.searchParams.has("long") ? longSnapshot : url.searchParams.has("headings") ? headingSnapshot : initialSnapshot,
         initialContent: null,
         initialPanelOpen: false,
         initialRichMode: mode,
@@ -135,7 +141,7 @@ beforeAll(async () => {
       return new Response(
         `<!doctype html><html lang="en"${url.searchParams.has("dark") ? ' class="dark"' : ""}><head>
         <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style>
-        <style>#layout{display:flex;height:100dvh}#navigation{width:288px;flex:none}#main{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column}@media(max-width:600px){#navigation{display:none}}</style>
+        <style>solid-client,solid-island{display:contents}#layout{display:flex;height:100dvh}#navigation{width:288px;flex:none}#main{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column}@media(max-width:600px){#navigation{display:none}}</style>
         </head><body class="k2b-ui" style="margin:0"><div id="layout"><nav id="navigation">Notizbuch</nav><main id="main">
         <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col"><solid-client data-id="note-editor" data-props="${serialized}"></solid-client>${preview}</div>
         </main></div><script type="module" src="/editor.js"></script></body></html>`,
@@ -258,6 +264,86 @@ for (const fixture of [
         await page.locator(".cm-content").focus();
         await page.keyboard.type("Hello");
         expect(await page.locator(".cm-content").textContent()).toContain("Hello");
+      }
+    } finally {
+      release?.();
+      await page.close();
+    }
+  }, 30_000);
+}
+
+/** The first line row at the scroll port's top edge, with its text and where it starts relative to that edge. */
+const topLine = (page: Page, line: string) =>
+  page.evaluate((line) => {
+    const rows = Array.from(document.querySelectorAll<HTMLElement>(line));
+    const port = rows[0]?.closest(".k2b-scroll-area");
+    if (!port) throw new Error(`No scroll port around ${line}`);
+    const edge = port.getBoundingClientRect().top;
+    const row = rows.find((row) => row.getBoundingClientRect().bottom > edge);
+    if (!row) throw new Error(`No ${line} at the top edge`);
+    return { text: row.textContent, offset: row.getBoundingClientRect().top - edge, scrolled: port.scrollTop };
+  }, line);
+
+for (const fixture of [
+  { mode: "rich", width: 1280, height: 800, readOnly: false },
+  { mode: "rich", width: 390, height: 844, readOnly: false },
+  { mode: "rich", width: 390, height: 844, readOnly: true },
+  { mode: "source", width: 1280, height: 800, readOnly: false },
+] as const) {
+  test(`the editor opens where the reader scrolled the preview: ${fixture.mode}, ${fixture.width}px, ${fixture.readOnly ? "read-only" : "write"}`, async () => {
+    const page = await browser.newPage({
+      viewport: { width: fixture.width, height: fixture.height },
+      isMobile: fixture.width === 390,
+      hasTouch: fixture.width === 390,
+    });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    let release: (() => void) | undefined;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/editor.js", async (route) => {
+      await blocked;
+      await route.continue();
+    });
+    try {
+      await page.goto(`${server.url}?long&mode=${fixture.mode}${fixture.readOnly ? "&readonly" : ""}`, { waitUntil: "commit" });
+      const preview = page.locator(`#${NOTE_PREVIEW_ID}`);
+      await preview.waitFor({ state: "visible" });
+      await settle(page);
+      // Halfway into a wrapped line, so the restore has to keep an offset and not only a line.
+      await preview.locator(".k2b-scroll-area").evaluate((port) => {
+        port.scrollTop = 1210;
+      });
+      await settle(page);
+      const before = await topLine(page, ".notebook-note-preview__line");
+      expect(before.scrolled).toBeGreaterThan(1000);
+      expect(before.text).not.toStartWith("Zeile 1:");
+      // The line at the top edge in every frame, so not even one frame shows the note's start.
+      const frames: string[] = [];
+      await page.exposeFunction("recordTopLine", (text: string) => frames.push(text));
+      await page.evaluate(() => {
+        const record: unknown = Reflect.get(window, "recordTopLine");
+        const frame = () => {
+          const rows = Array.from(document.querySelectorAll<HTMLElement>(".notebook-note-preview__line, .cm-line"));
+          const edge = rows[0]?.closest(".k2b-scroll-area")?.getBoundingClientRect().top ?? 0;
+          if (typeof record === "function") record(rows.find((row) => row.getBoundingClientRect().bottom > edge)?.textContent ?? "");
+          requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      });
+      release?.();
+      await page.waitForSelector(".cm-content");
+      await preview.waitFor({ state: "detached" });
+      await settle(page);
+      const after = await topLine(page, ".cm-line");
+      expect(errors).toEqual([]);
+      expect(frames.length).toBeGreaterThan(0);
+      expect(new Set(frames)).toEqual(new Set([before.text]));
+      expect(after.text).toBe(before.text);
+      closeTo(after.offset, before.offset, "Offset of the line at the top edge");
+      if (!fixture.readOnly) {
+        expect(await page.evaluate(() => document.activeElement?.classList.contains("cm-content"))).toBe(true);
       }
     } finally {
       release?.();

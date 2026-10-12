@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
-import { LIGATURES } from "../../../../lib/ligatures";
+import { resolve } from "node:path";
+import { frontMatterLength, LIGATURES } from "../../../../lib/ligatures";
 import { type NotePreviewPart, notePreviewLines } from "./note-preview";
+
+const repositoryRoot = resolve(import.meta.dir, "../../../../../../..");
 
 const text = (parts: NotePreviewPart[]): string => parts.map((part) => (typeof part === "string" ? part : text(part.children))).join("");
 const lines = (markdown: string, mode: "rich" | "source" = "rich") => notePreviewLines(markdown, mode).map((line) => text(line.parts));
@@ -106,4 +109,93 @@ test("parses the whole long note without truncating", () => {
 
 test.each([...LIGATURES])("cuts before display ligature $source", ({ source }) => {
   expect(lines(`Safe prose\n\na ${source} b\nHidden tail`)).toEqual(["Safe prose", ""]);
+});
+
+const equivalenceFixtures = [
+  "# First\n\n## Second\n###  Third ###",
+  ...["**", "__", "*", "_", "~~"].map((marker) => `${marker}first${marker}\n\nText ${marker}later${marker}`),
+  "Text **bold** *soft* ~~gone~~",
+  "Use `#tag ->`\n\n```js\n#tag -> **literal**\n```\n\n    literal",
+  "# Title `code` **bold**",
+  "Title\n=====\n\nSubtitle\n--------",
+  "# Title\n**bold** #tag\n- [x] task\n<script>alert(1)</script>\n",
+  "",
+  "one\r\ntwo\rthree",
+  ...cuts.map(([, trigger]) => `Safe prose\n\n${trigger}\n\nHidden tail`),
+  "---\ntitle: Plan\n---\nProse",
+  ...["==mark==", "~sub~", "^sup^"].map((syntax) => `Safe\n\n\`literal ${syntax}\``),
+  Array.from({ length: 2000 }, (_, index) => `Paragraph ${index}`).join("\n\n"),
+  ...LIGATURES.map(({ source }) => `Safe prose\n\na ${source} b\nHidden tail`),
+  "Text **bold\non two lines**\n\nTail",
+  "Safe\n\nTitle\n=====\n\nTail",
+  "Safe\n\n| A | B |\n| --- | --- |\n| 1 | 2 |",
+  "Safe\n\n```js\n#tag\n\n->\n\n```\n\nTail",
+  "Safe\n\n$$\n\na\n\n$$\n\nTail",
+  "$$\n\na\n\n$$",
+  "==mark\n\nacross==",
+  "Safe\n\n<!-- comment\n\nmore comment\n-->\n\nTail",
+  "Safe\n\n- item\n\n  continued\n\nTail",
+  "Safe\n \t\nText ***nested*** and **outer *inner* outer**\n\nTail",
+  "# Title ***nested*** `code` ~~gone~~",
+  "Safe\n\n[foo]\n\n[foo]: /target",
+  "Prose " + "**bold** ".repeat(3),
+  // A line of other white space is no blank line: the setext heading spans it.
+  "Line A\nTitle #tag\n\u00a0\n===\n\nTail",
+  // Block math in code that a window cuts short.
+  "```\n$$\n\na\n\n$$\n```\n\nTail",
+];
+
+const expectEquivalent = (markdown: string) => {
+  const full = notePreviewLines(markdown, "rich", Number.POSITIVE_INFINITY);
+  for (const window of [1, 64, 1024]) expect(notePreviewLines(markdown, "rich", window)).toEqual(full);
+  expect(notePreviewLines(markdown, "rich")).toEqual(full);
+};
+
+test("equivalence of tiny and full parse windows for fixtures and block boundaries", () => {
+  for (const markdown of equivalenceFixtures) expectEquivalent(markdown);
+});
+
+test("equivalence of tiny and full parse windows for every docs Markdown file and long prefixes", async () => {
+  const paths = Array.from(new Bun.Glob("docs-site/docs/en/**/*.md").scanSync({ cwd: repositoryRoot })).sort();
+  expect(paths.length).toBeGreaterThan(0);
+  let longest = "";
+  for (const path of paths) {
+    const markdown = await Bun.file(resolve(repositoryRoot, path)).text();
+    expectEquivalent(markdown);
+    const body = markdown.slice(frontMatterLength(markdown));
+    expectEquivalent(body);
+    if (body.length > longest.length) longest = body;
+  }
+  expect(longest.length).toBeGreaterThan(16 * 1024);
+  for (const end of [1, 100, 1024, 16 * 1024 - 1, 16 * 1024, 16 * 1024 + 1, Math.floor(longest.length / 2), longest.length - 1]) {
+    expectEquivalent(longest.slice(0, end));
+  }
+});
+
+test("many styled spans stay within the SSR render budget and keep their parts", () => {
+  expect(notePreviewLines("Prose " + "**bold** ".repeat(3), "rich")).toEqual([
+    {
+      parts: [
+        "Prose ",
+        { className: "notebook-note-preview__strong", children: ["bold"] },
+        " ",
+        { className: "notebook-note-preview__strong", children: ["bold"] },
+        " ",
+        { className: "notebook-note-preview__strong", children: ["bold"] },
+        " ",
+      ],
+    },
+  ]);
+  const markdown = "Prose " + "**bold** ".repeat(16000);
+  const start = performance.now();
+  const result = notePreviewLines(markdown, "rich");
+  const elapsed = performance.now() - start;
+  expect(elapsed).toBeLessThan(1000);
+  expect(result).toHaveLength(1);
+  expect(text(result[0]!.parts)).toBe("Prose " + "bold ".repeat(16000));
+});
+
+test("a long note that starts with front matter has no preview", () => {
+  const prose = "Ordinary prose.\n\n";
+  expect(notePreviewLines(`---\ntitle: Plan\n---\n${prose.repeat(40_000)}`, "rich")).toEqual([]);
 });

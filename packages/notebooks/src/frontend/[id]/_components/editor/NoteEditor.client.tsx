@@ -62,7 +62,7 @@ import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
 import { createLinkedHeadingJump, type LinkedHeading } from "./linked-heading";
 import { createNoteNavigationCoordinator, headingFromHash, resolveSameNotebookNoteTarget } from "./note-navigation";
 import { NOTE_PREVIEW_ID } from "./note-preview";
-import { keepReadingPosition } from "./reading-position";
+import { keepReadingPosition, previewReadingPosition, type ReadingPosition, scrollToReadingPosition } from "./reading-position";
 import { slashCommandsExtension } from "./slash-commands";
 import { createTabKeyPreference } from "./tab-key-preference";
 
@@ -125,6 +125,9 @@ export default function NoteEditor(props: Props) {
     ...initialEditorProps,
     onWorkspaceCursorChange: setLastWorkspaceCursor,
   });
+  // Read before anything mounts: the first editor opens where the reader scrolled the server preview.
+  const preview = document.getElementById(NOTE_PREVIEW_ID);
+  let previewPosition = preview ? previewReadingPosition(preview) : null;
   const [routeSource, setRouteSource] = createSignal(initialHref);
   const [failedSource, setFailedSource] = createSignal<string | null>(null);
   const initialHeading = headingFromHash(window.location.hash);
@@ -303,7 +306,11 @@ export default function NoteEditor(props: Props) {
   return (
     <div class="relative flex-1 min-w-0 flex flex-col overflow-hidden">
       <Show when={current()} keyed>
-        {(note) => <EditorInstance {...note} linkedHeading={linkedHeading} />}
+        {(note) => {
+          const startPosition = previewPosition;
+          previewPosition = null;
+          return <EditorInstance {...note} linkedHeading={linkedHeading} startPosition={startPosition} />;
+        }}
       </Show>
       <Show when={showRouteLoading()}>
         <div class="pointer-events-none absolute inset-0 z-30 flex items-start justify-center pt-4" aria-live="polite" aria-busy="true">
@@ -317,7 +324,9 @@ export default function NoteEditor(props: Props) {
   );
 }
 
-function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<LinkedHeading | null> }) {
+function EditorInstance(
+  props: EditorInstanceProps & { linkedHeading: Accessor<LinkedHeading | null>; startPosition: ReadingPosition | null },
+) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const [connected, setConnected] = createSignal(false);
@@ -693,14 +702,14 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
     view.focus();
   };
 
-  const focusEditor = (attempts = 0, target: "start" | "end" = "start"): boolean => {
+  const focusEditor = (attempts = 0, target: "start" | "end" = "start", scroll = true): boolean => {
     if (disposed) return false;
     const view = editorView();
     if (!view) {
       if (attempts < 8) {
         const frame = requestAnimationFrame(() => {
           pendingFocusFrames.delete(frame);
-          focusEditor(attempts + 1, target);
+          focusEditor(attempts + 1, target, scroll);
         });
         pendingFocusFrames.add(frame);
       }
@@ -710,7 +719,7 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
     const at = target === "end" ? view.state.doc.length : 0;
     view.dispatch({
       selection: { anchor: at },
-      scrollIntoView: true,
+      scrollIntoView: scroll,
     });
     view.focus();
     return true;
@@ -790,9 +799,18 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
     writeSettings(props.notebookId, { lastNoteId: props.noteId });
     provider?.connect();
     const opensHeading = linkedHeadingJump.open();
+    const startPosition = props.startPosition;
+    if (startPosition) {
+      // The editor view arrives later in this flush; the microtask still runs before the next paint.
+      queueMicrotask(() => {
+        const view = editorView();
+        if (view && scrollPort) scrollToReadingPosition(view, scrollPort, startPosition);
+      });
+    }
     if (!props.readOnly) {
       if (consumeInitialTitleSelection(props.noteId)) selectInitialTitle();
-      else if (!opensHeading) focusEditor();
+      // A reader who scrolled the preview keeps reading there; the caret still starts the note.
+      else if (!opensHeading) focusEditor(0, "start", !startPosition);
       scheduleCursorIdleHide();
     }
     // First emit so the panel reflects the current doc immediately on mount,

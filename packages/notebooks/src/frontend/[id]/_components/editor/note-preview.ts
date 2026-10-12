@@ -59,18 +59,51 @@ const inside = (ranges: Range[], from: number, to: number) => {
  * tags, ligatures, blocks and other widgets): those lines arrive with the
  * editor, below the preview, so no text moves. Source mode returns every line.
  */
-export const notePreviewLines = (markdown: string, mode: "rich" | "source"): NotePreviewLine[] => {
+export const notePreviewLines = (
+  markdown: string,
+  mode: "rich" | "source",
+  // The note's start parsed first; tests pass other sizes.
+  firstWindow = 16 * 1024,
+): NotePreviewLine[] => {
   // EditorState normalizes every supported line separator to LF.
   const text = markdown.replace(/\r\n?/g, "\n");
   const lines = text.split("\n");
   if (mode === "source") return lines.map((line) => ({ parts: line ? [line] : [] }));
 
-  const tree = markdownLanguage.parser.parse(text);
+  let cut = frontMatterLength(text) ? 0 : text.length + 1;
+  // These extensions currently scan code too; keep their existing behavior.
+  for (const pattern of [MARK_REGEX, SUB_REGEX, SUP_REGEX]) {
+    for (const match of text.matchAll(pattern)) cut = Math.min(cut, match.index);
+  }
+  let lineFrom = 0;
+  for (const line of lines) {
+    if (line.search(SPECIAL_CHAR_REGEX) >= 0) {
+      cut = Math.min(cut, lineFrom);
+      break;
+    }
+    lineFrom += line.length + 1;
+  }
+
+  if (cut === 0) return [];
+  // Most previews end early, so parse the note's start first and all of it only when the preview runs past that.
+  // The window ends at a blank line, where block lookahead (setext, tables and paragraph inlines) stops.
+  // Code may extend past it; lists, quotes and HTML already cut at their start.
+  // Markdown counts only spaces and tabs as blank: a line of other white space continues a paragraph.
+  const blank = /\n[ \t]*\n/g;
+  blank.lastIndex = firstWindow;
+  const windowEnd = blank.exec(text)?.index ?? text.length;
+  const preview = richPreviewWindow(text, lines, windowEnd, cut);
+  if (preview.cut < preview.decided || windowEnd === text.length) return preview.result;
+  return richPreviewWindow(text, lines, text.length, cut).result;
+};
+
+const richPreviewWindow = (text: string, lines: string[], windowEnd: number, initialCut: number) => {
+  const tree = markdownLanguage.parser.parse(text.slice(0, windowEnd));
   const code: Range[] = [];
   const headerMarks: Range[] = [];
   const hidden: Range[] = [];
   const styled: StyledRange[] = [];
-  let cut = frontMatterLength(text) ? 0 : text.length + 1;
+  let cut = initialCut;
   tree.iterate({
     enter(node) {
       const { name, from, to } = node;
@@ -103,14 +136,15 @@ export const notePreviewLines = (markdown: string, mode: "rich" | "source"): Not
     const to = match.index + match[0].length;
     if (!inside(code, from, to) && !inside(headerMarks, from, to)) cut = Math.min(cut, from);
   }
+  // The window decides the lines before its end, and before block math that runs on past the end of code it cut short.
+  let decided = windowEnd;
   for (const pattern of [blockMathPattern(), inlineMathPattern()]) {
     for (const match of text.matchAll(pattern)) {
-      if (!inside(code, match.index, match.index + match[0].length)) cut = Math.min(cut, match.index);
+      const end = match.index + match[0].length;
+      if (inside(code, match.index, end)) continue;
+      if (end > windowEnd && inside(code, match.index, windowEnd)) decided = Math.min(decided, match.index);
+      else cut = Math.min(cut, match.index);
     }
-  }
-  // These extensions currently scan code too; keep their existing behavior.
-  for (const pattern of [MARK_REGEX, SUB_REGEX, SUP_REGEX]) {
-    for (const match of text.matchAll(pattern)) cut = Math.min(cut, match.index);
   }
   for (const match of findLigatures(text)) {
     if (!inside(code, match.from, match.to)) cut = Math.min(cut, match.from);
@@ -127,9 +161,8 @@ export const notePreviewLines = (markdown: string, mode: "rich" | "source"): Not
   let from = 0;
   for (const line of lines) {
     const to = from + line.length;
-    if (line.search(SPECIAL_CHAR_REGEX) >= 0) cut = Math.min(cut, from);
     if (!inside(code, from, to) && (NOTEBOOK_DIRECTIVE_START.test(line) || isNamedBlockHandle(line))) cut = Math.min(cut, from);
-    if (cut <= to) break;
+    if (cut <= to || (to >= windowEnd && windowEnd < text.length)) break;
     styledOnLine = styledOnLine.filter((range) => range.to > from);
     for (; nextStyled < styled.length && styled[nextStyled]!.from < to; nextStyled++) styledOnLine.push(styled[nextStyled]!);
     hiddenOnLine = hiddenOnLine.filter((range) => range.to > from);
@@ -137,7 +170,7 @@ export const notePreviewLines = (markdown: string, mode: "rich" | "source"): Not
     result.push({ parts: lineParts(text, from, to, styledOnLine, hiddenOnLine) });
     from = to + 1;
   }
-  return result;
+  return { result, cut, decided };
 };
 
 const lineParts = (text: string, from: number, to: number, styled: StyledRange[], hidden: Range[]): NotePreviewPart[] => {
@@ -147,16 +180,38 @@ const lineParts = (text: string, from: number, to: number, styled: StyledRange[]
     ...new Set([from, to, ...[...ranges, ...removed].flatMap((range) => [Math.max(from, range.from), Math.min(to, range.to)])]),
   ].sort((a, b) => a - b);
   const parts: NotePreviewPart[] = [];
+  const starts = ranges.map((range, rank) => ({ range, rank })).sort((a, b) => a.range.from - b.range.from);
+  const ends = [...starts].sort((a, b) => a.range.to - b.range.to);
+  // At most one heading, one code range and one highlight overlap.
+  const active: typeof starts = [];
+  let nextStart = 0;
+  let nextEnd = 0;
+  let nextRemoved = 0;
   let stack: { range: StyledRange; children: NotePreviewPart[] }[] = [];
   for (let index = 0; index < edges.length - 1; index++) {
     const start = edges[index]!;
     const end = edges[index + 1]!;
-    if (inside(removed, start, end)) continue;
-    const active = ranges.filter((range) => range.from <= start && range.to >= end);
+    for (; nextStart < starts.length && starts[nextStart]!.range.from <= start; nextStart++) {
+      const entry = starts[nextStart]!;
+      let low = 0;
+      let high = active.length;
+      while (low < high) {
+        const middle = (low + high) >> 1;
+        if (active[middle]!.rank < entry.rank) low = middle + 1;
+        else high = middle;
+      }
+      active.splice(low, 0, entry);
+    }
+    for (; nextEnd < ends.length && ends[nextEnd]!.range.to <= start; nextEnd++) {
+      active.splice(active.indexOf(ends[nextEnd]!), 1);
+    }
+    // Hidden marks can overlap: keep the last start, just like inside().
+    while (nextRemoved < removed.length && removed[nextRemoved]!.from <= start) nextRemoved++;
+    if (nextRemoved > 0 && removed[nextRemoved - 1]!.to >= end) continue;
     let shared = 0;
-    while (shared < stack.length && stack[shared]?.range === active[shared]) shared++;
+    while (shared < stack.length && stack[shared]?.range === active[shared]?.range) shared++;
     stack = stack.slice(0, shared);
-    for (const range of active.slice(shared)) {
+    for (const { range } of active.slice(shared)) {
       const children: NotePreviewPart[] = [];
       (stack.at(-1)?.children ?? parts).push({ className: range.className, children });
       stack.push({ range, children });
