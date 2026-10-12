@@ -13,6 +13,10 @@ describe("markdown code blocks", () => {
     expect(renderMarkdownSync("```ts\nconst a = 1;\n```", { links: "plain" })).toBe("<pre>const a = 1;</pre>\n");
   });
 
+  test("plain output renders an indented code block as a bare pre too", () => {
+    expect(renderMarkdownSync("para\n\n    indented\n    code", { links: "plain" })).toBe("<p>para</p>\n<pre>indented\ncode</pre>\n");
+  });
+
   test("plain output keeps Mermaid source without a diagram container", () => {
     expect(renderMarkdownSync("```mermaid\ngraph TD\nA-->B\n```", { links: "plain" })).toBe("<pre>graph TD\nA--&gt;B</pre>\n");
   });

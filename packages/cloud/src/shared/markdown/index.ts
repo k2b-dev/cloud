@@ -67,7 +67,7 @@ const markedFor = (profile: MarkdownProfile, links: LinkStyle = "widget", locale
 const marked = markedFor("content");
 
 export type MarkdownRenderOptions = {
-  /** `"plain"` renders each link as an ordinary anchor around its text, for HTML read outside Cloud such as email. It also renders a fenced code block, including a Mermaid fence, as its source in a `pre` without the language label. The default renders references to Cloud content as calm pills and web links as quiet text links. */
+  /** `"plain"` renders each link as an ordinary anchor around its text, for HTML read outside Cloud such as email. It also renders a code block, fenced or indented and including a Mermaid fence, as its source in a `pre` without the language label. The default renders references to Cloud content as calm pills and web links as quiet text links. */
   links?: LinkStyle;
   /** Request locale for the screen-reader names of untitled info blocks. Defaults to English on the server and the page language in the browser. */
   locale?: string;
