@@ -71,6 +71,8 @@ export const useSpacesCalendarQuery = (params: {
    * URL, and the days they loaded hold it. Opening an item or going back there needs no other calendar data.
    */
   let followed = new Set<string>();
+  /** The last day on screen, so Back can change the detail without moving the reader. */
+  let lastFollowHref: string | null = null;
   const answersCommitted = (source: string) => source === committedSource || followed.has(source);
   let nextNavigationId = 0;
   let disposed = false;
@@ -153,6 +155,7 @@ export const useSpacesCalendarQuery = (params: {
       }
       committedSource = request.source;
       followed = new Set();
+      lastFollowHref = null;
       committedHref = pathWithQuery(target);
       setColorBy(colorByOf(committedHref));
       setPreview(loaded.snapshot);
@@ -183,6 +186,18 @@ export const useSpacesCalendarQuery = (params: {
       if (pending()) {
         setPending(null);
         setSource(committedSource);
+      }
+      // Back or Forward that only opens or closes an item keeps the day the reader scrolled to meanwhile, and the URL
+      // names that day, so a reload opens what the reader sees.
+      if (history === "popstate" && lastFollowHref && calendarViewSource(lastFollowHref) !== nextSource) {
+        const target = new URL(href, window.location.origin);
+        const shownDay = new URL(lastFollowHref, window.location.origin).searchParams.get("cd");
+        if (shownDay) target.searchParams.set("cd", shownDay);
+        committedHref = pathWithQuery(target);
+        navigate(committedHref, { replace: true, scroll: "preserve", viewTransition: false });
+        reconcileSpacesDetailRoute(committedHref);
+        setColorBy(colorByOf(committedHref));
+        return;
       }
       committedHref = href;
       setColorBy(colorByOf(href));
@@ -237,6 +252,7 @@ export const useSpacesCalendarQuery = (params: {
       const href = normalize(rawHref);
       if (!href || pending()) return;
       followed.add(calendarViewSource(href));
+      lastFollowHref = href;
       committedHref = href;
       navigate(href, { replace: true, scroll: "manual", viewTransition: false });
       reconcileSpacesDetailRoute(href);

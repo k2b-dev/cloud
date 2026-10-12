@@ -573,21 +573,31 @@ describe(`Spaces day and week views in ${browserName}`, () => {
     }
   }, 60_000);
 
-  test("keeps the URL on the day the reader scrolled to, and a filter keeps that day", async () => {
+  test("keeps the URL on the day the reader scrolled to, and a filter keeps that day, the loaded days, and the place", async () => {
     const page = await open(desktop);
+    // The reader rests in the middle of Monday, away from the day starts the view settles onto.
     await page.locator(DAYS).evaluate((element) => {
       const monday = element.querySelector<HTMLElement>('[data-calendar-keys="2026-10-12"]')!;
-      element.scrollTop = monday.offsetTop;
+      element.scrollTop = monday.offsetTop + 300;
     });
     await page.waitForURL(/cd=2026-10-12/);
     expect(await page.locator(".k2b-calendar-header__title > span").first().textContent()).toBe("Mo, 12. Okt 2026");
+    await rested(page);
+    const monday = '.k2b-calendar-days__day[data-calendar-keys="2026-10-12"]';
+    const before = await box(page, monday);
     viewRequests.splice(0);
     await page.getByRole("button", { name: "Priorität" }).click();
     await page.getByRole("menuitemcheckbox", { name: "Hoch" }).click();
     await page.keyboard.press("Escape");
-    expect(await eventually(() => viewRequests.find((request) => request.href.includes("cpriority=high"))?.href)).toContain(
-      "cd=2026-10-12",
-    );
+    expect(await eventually(() => viewRequests.find((request) => request.href.includes("cpriority=high")))).toMatchObject({
+      href: expect.stringContaining("cd=2026-10-12"),
+      from: at("10-02", "00:00"),
+      to: at("10-31", "00:00"),
+    });
+    await page.waitForSelector(".k2b-calendar-header__progress", { state: "detached" });
+    await rested(page);
+    // The filtered days arrived around the same day, so Monday stays where the reader had it.
+    expect((await box(page, monday)).y).toBe(before.y);
     await page.context().close();
   }, 60_000);
 
@@ -709,6 +719,38 @@ describe(`Spaces day and week views in ${browserName}`, () => {
       await tray.context().close();
     }
   }, 90_000);
+
+  test("Back closes an item on the day the reader scrolled to while it was open", async () => {
+    const page = await open(desktop);
+    try {
+      await watchDetail(page);
+      await page.locator(DAYS).evaluate((element) => {
+        element.scrollTop = element.querySelector<HTMLElement>('[data-calendar-keys="2026-10-12"]')!.offsetTop;
+      });
+      await page.waitForURL(/cd=2026-10-12/);
+      viewRequests.splice(0);
+      await page.locator(`${band("Invt12")} .k2b-calendar-event`).click();
+      const first = await opened(page);
+      expect(first.href).toContain("cd=2026-10-12");
+      expect(first.href).toContain("item=Invt12");
+      // This fixture has no detail island, so the test commits the history entry it would push.
+      await page.evaluate((href) => window.history.pushState(null, "", href), first.href);
+      await page.locator(DAYS).evaluate((element) => {
+        element.scrollTop = element.querySelector<HTMLElement>('[data-calendar-keys="2026-10-13"]')!.offsetTop;
+      });
+      await page.waitForURL((url) => url.searchParams.get("cd") === "2026-10-13" && url.searchParams.get("item") === "Invt12");
+      await page.evaluate(() => window.history.back());
+      await page.waitForURL((url) => url.searchParams.get("cd") === "2026-10-13" && !url.searchParams.has("item"));
+      await rested(page);
+      expect(viewRequests.filter((request) => !request.from)).toEqual([]);
+      const heading = await box(page, '[data-calendar-keys="2026-10-13"] > .k2b-calendar-days__head');
+      const view = await box(page, DAYS);
+      expect(heading.y).toBe(view.y);
+      expect(await page.evaluate(() => (window as unknown as { sameDocument?: boolean }).sameDocument)).toBe(true);
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
 
   test("moves a deadline within the hours, where it stays a deadline at its new time", async () => {
     const page = await open(desktop);

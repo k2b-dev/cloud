@@ -69,13 +69,16 @@ export default function SpacesCalendarRoute(props: Props) {
     initialSource: props.baseUrl,
     initialSnapshot: { kind: "calendar", ...props.initialState },
     dateConfig: props.dateConfig,
-    // A refresh or another filter covers every day the view already shows, so nothing it shows goes missing.
+    // A refresh or another filter from any loaded day covers every day the view already shows.
     rangeFor: (source) => {
       snapshotsStarted += 1;
       const current = stream();
       if (!current) return undefined;
       const route = parseCalendarRoute(new URL(source, "http://spaces.local"), props.dateConfig);
-      return route.view === current.view && route.date === current.anchor ? { from: current.from, to: current.to } : undefined;
+      const date = Date.parse(route.date);
+      return route.view === current.view && Date.parse(current.from) <= date && date < Date.parse(current.to)
+        ? { from: current.from, to: current.to }
+        : undefined;
     },
   });
   const state = navigation.current;
@@ -150,12 +153,16 @@ export default function SpacesCalendarRoute(props: Props) {
     }
   };
 
-  /** The days the calendar shows: the loaded weeks of a day or week view, else the snapshot. */
+  /** A preview inside the loaded days keeps their range while its items load; other views use the snapshot. */
   const shown = () => {
     const current = stream();
     const snapshot = state();
-    return current && current.view === snapshot.view && current.anchor === snapshot.date
-      ? { range: { from: current.from, to: current.to }, items: current.items }
+    if (current && current.view === snapshot.view && current.anchor === snapshot.date) {
+      return { range: { from: current.from, to: current.to }, items: current.items };
+    }
+    const date = Date.parse(snapshot.date);
+    return current && current.view === snapshot.view && Date.parse(current.from) <= date && date < Date.parse(current.to)
+      ? { range: { from: current.from, to: current.to }, items: snapshot.items }
       : { range: snapshot.range, items: snapshot.items };
   };
 
