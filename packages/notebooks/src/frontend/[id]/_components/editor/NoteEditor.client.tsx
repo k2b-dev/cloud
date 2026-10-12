@@ -49,6 +49,7 @@ import {
 } from "../detail/events";
 import { extractTaskProgress } from "../detail/tasks";
 import { extractTocFromMarkdown } from "../detail/toc";
+import { followFullWidth } from "../full-width";
 import { writeSettings } from "../settings/NotebookSettingsStore";
 import {
   NAVIGATION_FOCUS_EVENT,
@@ -844,6 +845,17 @@ function EditorInstance(
       window.removeEventListener(NAVIGATION_VISIBILITY_EVENT, onNavigationChanged);
       window.removeEventListener(NAVIGATION_FOCUS_EVENT, onNavigationFocusLost);
     });
+
+    if (scrollPort) {
+      followFullWidth(
+        scrollPort,
+        () => {
+          const view = editorView();
+          return view && scrollPort ? keepReadingPosition(view, scrollPort) : null;
+        },
+        t,
+      );
+    }
 
     window.addEventListener(TOC_SCROLL_EVENT, onScrollToHeading);
     window.addEventListener(NAMED_BLOCK_SCROLL_EVENT, onScrollToNamedBlock);

@@ -9,6 +9,7 @@ import FloatingEditButton from "./FloatingEditButton.island";
 import { bookMessages } from "./messages";
 
 export type BookSurfaceProps = BookNavigatorProps & {
+  fullWidth: boolean;
   html: string | null;
   noteTitle: string | null;
   currentHref: string;
@@ -45,7 +46,7 @@ export default function BookSurface(props: BookSurfaceProps) {
                 {props.notebookName}
               </span>
             </header>
-            <div class="notebook-document-surface notebook-book-document">
+            <div class="notebook-document-surface notebook-book-document" data-full-width={props.fullWidth ? "" : undefined}>
               <AppWorkspace.Main class="notebook-book-main">
                 <BookController
                   notebookId={props.notebookId}

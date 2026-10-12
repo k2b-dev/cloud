@@ -64,6 +64,7 @@ describe("notebook sidebar", () => {
     userId: "user01",
     settings: { lastNoteId: null, richMode: "rich", treeSort: "title" },
     navigationHidden: false,
+    fullWidth: false,
     permission: "read",
     attachmentCount: 0,
     favoriteNoteIds: [],

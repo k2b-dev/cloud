@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   parseDetailPanelOpen,
+  parseFullWidth,
   parseNavigationHidden,
   parsePinnedNotebookIds,
   parseSettings,
+  readFullWidth,
   readNavigationHidden,
   readPinnedNotebookIds,
   readSettings,
   readTabMovesFocus,
   setDetailPanelOpen,
+  setFullWidth,
   setLastNotebookId,
   setPinnedNotebookIds,
   setTabMovesFocus,
@@ -46,6 +49,58 @@ afterEach(() => {
 });
 
 describe("NotebookSettingsStore", () => {
+  test("full width defaults off without a cookie or with an older cookie", () => {
+    expect(readFullWidth()).toBe(false);
+    expect(parseFullWidth(undefined)).toBe(false);
+    cookie = `${COOKIE_NAME}=${encodeURIComponent(JSON.stringify({ navigationHidden: true }))}`;
+    expect(readFullWidth()).toBe(false);
+    expect(parseFullWidth(cookieHeader())).toBe(false);
+  });
+
+  test("reads full width on the server and in the browser", () => {
+    cookie = `${COOKIE_NAME}=${encodeURIComponent(JSON.stringify({ fullWidth: true }))}`;
+    expect(parseFullWidth(cookieHeader())).toBe(true);
+    expect(readFullWidth()).toBe(true);
+  });
+
+  for (const value of ["true", 1, null, {}]) {
+    test(`full width ignores ${JSON.stringify(value)}`, () => {
+      cookie = `${COOKIE_NAME}=${encodeURIComponent(JSON.stringify({ fullWidth: value }))}`;
+      expect(parseFullWidth(cookieHeader())).toBe(false);
+      expect(readFullWidth()).toBe(false);
+    });
+  }
+
+  test("full width ignores a malformed cookie", () => {
+    cookie = `${COOKIE_NAME}=%7Bbroken`;
+    expect(parseFullWidth(cookieHeader())).toBe(false);
+    expect(readFullWidth()).toBe(false);
+  });
+
+  test("full width and other preference writers preserve one another", () => {
+    writeNavigationHidden(true);
+    setTabMovesFocus(true);
+    writeSettings("first", { lastNoteId: "note01", richMode: "source" });
+    setFullWidth(true);
+    expect(readNavigationHidden()).toBe(true);
+    expect(readTabMovesFocus()).toBe(true);
+    expect(readSettings("first")).toEqual({ lastNoteId: "note01", richMode: "source", treeSort: "title" });
+    expect(parseFullWidth(cookieHeader())).toBe(true);
+
+    setTabMovesFocus(false);
+    writeSettings("second", { treeSort: "created" });
+    writeNavigationHidden(false);
+    setDetailPanelOpen(true);
+    setPinnedNotebookIds(["Book01"]);
+    setLastNotebookId("second");
+    expect(readFullWidth()).toBe(true);
+    expect(parseFullWidth(cookieHeader())).toBe(true);
+
+    setFullWidth(false);
+    expect(readFullWidth()).toBe(false);
+    expect(readSettings("first").richMode).toBe("source");
+    expect(readSettings("second").treeSort).toBe("created");
+  });
   test("clears a persisted source-mode override when switching back to rich mode", () => {
     writeSettings("first", { richMode: "source" });
     expect(readSettings("first").richMode).toBe("source");
@@ -133,6 +188,7 @@ describe("NotebookSettingsStore", () => {
         detailPanelOpen: true,
         navigationHidden: true,
         tabMovesFocus: true,
+        fullWidth: true,
         notebooks: {
           Book01: { lastNoteId: "note01", richMode: "source", navigatorSort: "title", treeSort: "created" },
           Book02: { navigatorSort: "created" },
@@ -151,16 +207,21 @@ describe("NotebookSettingsStore", () => {
       detailPanelOpen: true,
       navigationHidden: true,
       tabMovesFocus: true,
+      fullWidth: true,
       notebooks: { Book01: { lastNoteId: "note01", richMode: "source", treeSort: "created" } },
     });
   });
 
-  test("bounds notebook-specific preferences", () => {
+  test("bounds notebook-specific preferences without losing full width", () => {
+    setFullWidth(true);
     for (let index = 0; index < 30; index++) {
       writeSettings(`notebook-${index}`, { lastNoteId: `note-${index}` });
     }
 
     expect(parseSettings(cookieHeader(), "notebook-0").lastNoteId).toBeNull();
     expect(parseSettings(cookieHeader(), "notebook-29").lastNoteId).toBe("note-29");
+    expect(parseFullWidth(cookieHeader())).toBe(true);
+    writeSettings("notebook-29", { lastNoteId: null });
+    expect(readFullWidth()).toBe(true);
   });
 });

@@ -306,6 +306,19 @@
   height: 0;
   visibility: hidden;
 }
+/* The personal "Full width" lifts the column: the text fills the reading
+   surface. The server renders the attribute from the settings cookie. */
+.notebook-document-surface[data-full-width] {
+  --notebook-measure: 100%;
+}
+/* Below `lg` the note is about as narrow as the column, so "Full width" would
+   change nothing; its switches do not show there. CSS decides, so the detail
+   panel arrives in its final layout. */
+@media (max-width: 63.999rem) {
+  .k2b-ui :is(.k2b-detail-panel__section, .k2b-switch-field).notebooks-full-width-option {
+    display: none;
+  }
+}
 .notebook-book-content {
   --notebook-book-inset: clamp(1rem, 4vw, 3rem);
   width: 100%;

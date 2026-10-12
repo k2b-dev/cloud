@@ -24,7 +24,7 @@ import { buildNoteUrl, buildTagPageUrl } from "../../../params";
 import BookSurface from "../../_components/book/BookSurface";
 import BookTagContent from "../../_components/book/BookTagContent";
 import RememberNotebook from "../../_components/RememberNotebook.island";
-import { parseNavigationHidden, parseSettings } from "../../_components/settings/NotebookSettingsStore";
+import { parseFullWidth, parseNavigationHidden, parseSettings } from "../../_components/settings/NotebookSettingsStore";
 import NotebookSidebar from "../../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../../_components/sidebar/types";
 import WorkspaceEventBridge from "../../_components/sidebar/WorkspaceEventBridge.island";
@@ -109,6 +109,7 @@ export default ssr<AuthContext>(async (c) => {
     userId: user.id,
     settings,
     navigationHidden: parseNavigationHidden(cookieHeader),
+    fullWidth: parseFullWidth(cookieHeader),
     permission,
     attachmentCount,
     favoriteNoteIds: favoriteRows.map((row) => row.noteId),
@@ -152,6 +153,7 @@ export default ssr<AuthContext>(async (c) => {
           appUrl={appUrl}
           cursor={workspaceCursor}
           navigationHidden={ctx.navigationHidden}
+          fullWidth={ctx.fullWidth}
         />
       </Layout>
     );

@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-10-08
+updated: 2026-10-12
 ---
 
 # Notebooks
@@ -83,6 +83,14 @@ a draft does not save it or change the notes returned by the query.
 Rich mode indents list items by their Markdown nesting. Numbered lists count
 from their starting number. Nested numbered lists show a., b., then i., ii.,
 then decimal numbers again in the editor, Book view, and PDF.
+
+On wide screens, **Full width** lets text use the available space instead of
+the centered reading column in Write, Read-only, and Book. Toggle it in a
+note's detail panel under **View**, in **Settings → Notebook → View & behavior →
+Only for you**, or through **Turn on full width** / **Turn off full width** in
+Cloud search. The choice applies to every notebook in this browser and survives
+reloads. Smaller screens hide these controls because the text already fills
+the note.
 
 In the editor, Tab indents: it nests list items together with their sub-items,
 moves between table cells, accepts an open suggestion, and otherwise inserts two
