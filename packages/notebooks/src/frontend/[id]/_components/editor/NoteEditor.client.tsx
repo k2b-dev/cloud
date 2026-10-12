@@ -27,6 +27,7 @@ import { remoteCursors } from "../../../lib/editor/remote-cursors";
 import { pressMissedEditor } from "../../../lib/editor/surface-press";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
 import { getNotebookPresenceColor, yjs } from "../../../lib/yjs";
+import { isolateYjsHistory } from "../../../lib/yjs/history";
 import { notebookWorkspaceMessages } from "../../messages";
 import {
   ATTACHMENTS_UPDATE_EVENT,
@@ -373,6 +374,7 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
   const undoManager = props.readOnly ? null : new Y.UndoManager(ytext);
   if (!props.readOnly && undoManager) {
     addExtension(() => yCollab(ytext, null, { undoManager }));
+    addExtension(() => isolateYjsHistory(undoManager));
     addExtension(() => remoteCursors(ytext, awareness));
     addExtension(() => keymap.of(yUndoManagerKeymap));
   }

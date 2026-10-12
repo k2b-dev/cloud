@@ -53,18 +53,32 @@ Schreibe kurze Absätze. Behandle in jedem Abschnitt nur ein Thema.
 - Einen Abend freihalten
 ```
 
-## Listeneinträge einrücken und verschieben {icon="keyboard"}
+## Listen {icon="keyboard"}
 
-**Tab** rückt im Notizeditor ein. So verschachtelst du Listen und richtest Code aus, ohne zur Maus zu greifen. Die Notiz speichert normale Leerzeichen.
+Listen im Notizeditor folgen ihrer Struktur. Die Tasten wirken gleich für Aufzählungen, nummerierte Listen und Checklisten.
+
+| Taste | Was passiert |
+| --- | --- |
+| **Enter** | Fügt den nächsten Eintrag an. Am Anfang des Textes fügt es einen leeren Eintrag darüber ein. Bei einem Eintrag mit Untereinträgen wird der neue Eintrag sein erster Untereintrag. |
+| **Enter** auf einem leeren Eintrag | Rückt den Eintrag eine Ebene aus. Auf oberster Ebene endet die Liste, und du schreibst normalen Text. Ein Eintrag der obersten Ebene mit Untereinträgen bleibt. |
+| **Rücktaste** am Anfang eines Eintrags | Rückt den Eintrag eine Ebene aus. Auf oberster Ebene wird der Eintrag zu normalem Text. Ein Eintrag der obersten Ebene mit Untereinträgen bleibt. |
+| **Tab** oder **Strg/⌘+]** | Ordnet den Eintrag dem Eintrag darüber unter. Seine Untereinträge wandern mit. |
+| **Umschalt+Tab** oder **Strg/⌘+[** | Rückt den Eintrag eine Ebene aus. |
+| **Alt+Pfeil nach oben/unten** | Verschiebt den Eintrag samt Untereinträgen am Eintrag darüber oder darunter vorbei. Am Listenrand bleibt er stehen. |
+| **Strg/⌘+Umschalt+7**, **8**, **9** | Macht aus den markierten Zeilen eine nummerierte Liste, eine Aufzählung oder eine Checkliste. Die Tiefe bleibt. Noch einmal auf einem Eintrag der obersten Ebene ergibt normalen Text. Gemeint sind die Zifferntasten 7, 8 und 9, auf jedem Tastaturlayout. |
+| **Strg/⌘+Enter** | Hakt die Aufgabe am Cursor ab oder entfernt den Haken, auch aus einer weiteren Zeile der Aufgabe. |
+| `- `, `1. ` oder `[] ` am Zeilenanfang | Beginnt eine Aufzählung, eine nummerierte Liste oder eine Checkliste. |
+
+**Umschalt+Enter** beginnt eine neue Zeile im selben Eintrag. **Rücktaste** direkt nach `# ` macht aus einer Überschrift normalen Text.
 
 :::reference
-- **Text und Code:** **Tab** fügt an der Cursorposition zwei Leerzeichen ein oder rückt die markierten Zeilen ein. **Umschalt+Tab** entfernt bis zu zwei Leerzeichen Einzug.
-- **Listen:** **Tab** oder **Strg/⌘+]** ordnet den aktuellen Eintrag seinem Vorgänger in der Liste unter. Seine Untereinträge wandern mit. **Umschalt+Tab** oder **Strg/⌘+[** holt ihn eine Ebene zurück. Der erste Eintrag lässt sich nicht einrücken.
+- **Text und Code:** **Tab** fügt an der Cursorposition zwei Leerzeichen ein oder rückt die markierten Zeilen ein. **Umschalt+Tab** entfernt bis zu zwei Leerzeichen Einzug. Die Notiz speichert normale Leerzeichen.
 - **Ohne Tab:** **Strg/⌘+]** und **Strg/⌘+[** funktionieren auch, wenn Tab den Fokus bewegt. Nutze am Smartphone **Einrücken** und **Ausrücken** in der Werkzeugleiste des Editors.
-- **Listeneinträge verschieben:** **Alt+Pfeil nach oben/unten** (am Mac **Wahltaste+Pfeil nach oben/unten**) verschiebt einen Eintrag samt Untereinträgen an seinem Vorgänger oder Nachfolger in derselben Liste vorbei. Am Listenrand bleibt er stehen. Unter Windows und Linux geht das auch mit **Strg+Umschalt+Pfeil nach oben/unten**. Am Mac markiert **⌘+Umschalt+Pfeil nach oben/unten** weiterhin bis zum Anfang oder Ende der Notiz. Reicht deine Auswahl über mehr als einen Eintrag, werden die markierten Zeilen verschoben.
+- **Listeneinträge verschieben:** Am Mac nutzt du **Wahltaste+Pfeil nach oben/unten**. Unter Windows und Linux geht das auch mit **Strg+Umschalt+Pfeil nach oben/unten**. Am Mac markiert **⌘+Umschalt+Pfeil nach oben/unten** weiterhin bis zum Anfang oder Ende der Notiz. Reicht deine Auswahl über mehr als einen Eintrag, werden die markierten Zeilen verschoben.
 - **Nummerierte Listen:** Wenn du Einträge hinzufügst, entfernst, einrückst oder verschiebst, wird die geänderte Liste im Markdown neu nummeriert. Sie behält ihre erste Nummer, auch wenn du den ersten Eintrag entfernst. Andere Listen behalten ihre Nummern. Einmal Rückgängig stellt die Änderung samt vorherigen Nummern wieder her.
+- **Werkzeugleiste:** Das Einfügen-Menü bietet dieselben drei Listenarten. Nutze es am Smartphone.
 - **Tabellen:** **Tab** markiert die nächste Zelle, **Umschalt+Tab** die vorherige.
-- **Vorschläge:** Ist eine Vorschlagsliste offen, setzt **Tab** den markierten Vorschlag ein.
+- **Vorschläge:** Ist eine Vorschlagsliste offen, setzen **Tab** und **Enter** den markierten Vorschlag ein.
 - **Editor verlassen:** Drücke **Esc** und dann **Tab**, um zum nächsten Bedienelement zu wechseln. Drücke **Esc** und dann **Umschalt+Tab**, um zurückzugehen.
 - **Tab für den Fokus behalten:** Öffne **Einstellungen → Notizbuch → Ansicht und Verhalten** und schalte **Tab-Taste bewegt den Fokus statt einzurücken** ein. Dieser Browser speichert die Wahl, und sie gilt sofort.
 :::

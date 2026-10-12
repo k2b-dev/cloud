@@ -1,8 +1,12 @@
-/** List indentation, subtree moves and local structural number repair, shared by keys and the toolbar. */
+/** List typing, kinds, indentation, subtree moves and local number repair, shared by keys and the toolbar. */
+import { completionStatus } from "@codemirror/autocomplete";
+import { isolateHistory } from "@codemirror/commands";
 import { ensureSyntaxTree, language, syntaxTreeAvailable } from "@codemirror/language";
 import {
+  Annotation,
   ChangeSet,
   type ChangeSpec,
+  EditorSelection,
   EditorState,
   type Extension,
   type Line,
@@ -11,14 +15,21 @@ import {
   type Text,
   Transaction,
 } from "@codemirror/state";
-import { type Command, keymap } from "@codemirror/view";
+import { type Command, EditorView, keymap } from "@codemirror/view";
 import type { Tree } from "@lezer/common";
 import { ySyncAnnotation } from "y-codemirror.next";
-import { LIST_ITEM, type ListItemLine, leadingWhitespace, listItemLine } from "./_lib/list-item-line";
+import { inCode, LIST_ITEM, type ListItemLine, leadingWhitespace, listItemLine } from "./_lib/list-item-line";
 import { type ExcludedSpan, excludedSpans, listStructure, markerChanges, renumberChanges, siblingIndex } from "./_lib/list-structure";
 import { listStateField } from "./lists";
 
 type Direction = 1 | -1;
+const mac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
+
+/**
+ * Marks a command that already restarted the numbers after an ordered item that left its list. The renumber filter
+ * skips it: while the new paragraph line is still empty, Markdown reads both parts as one list and would count on.
+ */
+const orderedSuffixRestart = Annotation.define<boolean>();
 
 const rawExcludedSpans = new WeakMap<Text, readonly ExcludedSpan[]>();
 const excludedLines = (state: EditorState): (() => readonly ExcludedSpan[]) => {
@@ -265,6 +276,409 @@ export const listIndentAvailability = (state: EditorState): { indent: boolean; o
   };
 };
 
+const taskBox = (line: Line, item: ListItemLine) => /^[ \t]*\[[ xX]\](?:[ \t]+|$)/.exec(line.text.slice(item.content));
+const textStart = (line: Line, item: ListItemLine) => {
+  let start = Math.min(line.text.length, item.content + (taskBox(line, item)?.[0].length ?? 0));
+  while (start < line.text.length && /[ \t]/.test(line.text[start]!)) start++;
+  return line.from + start;
+};
+const itemKind = (line: Line, item: ListItemLine) => (taskBox(line, item) ? "task" : /^\d/.test(item.marker) ? "ordered" : "bullet");
+const emptyPrefix = (line: Line, item: ListItemLine) =>
+  `${line.text.slice(0, item.indent)}${item.marker} ${taskBox(line, item) ? "[ ] " : ""}`;
+
+const firstChild = (state: EditorState, line: Line, item: ListItemLine, tree: Tree, excluded: () => readonly ExcludedSpan[]) => {
+  const end = nestedEnd(state, line, item.indent);
+  for (let number = line.number + 1; number <= end; number++) {
+    const child = state.doc.line(number);
+    const parsed = listItemLine(tree, child, excluded);
+    if (parsed && parsed.indent > item.indent) return { line: child, item: parsed };
+  }
+  return null;
+};
+
+/** Restart the old ordered suffix before conversion can make its markers lazy paragraph text. */
+const followingOrderedMarkers = (state: EditorState, removed: readonly Line[], tree: Tree, excluded: () => readonly ExcludedSpan[]) => {
+  const converted = new Set(removed.map((line) => line.number));
+  const markers: Array<{ line: number; to: number; markerFrom: number; markerTo: number; marker: string }> = [];
+  for (const line of removed) {
+    const item = listItemLine(tree, line, excluded);
+    if (!item || !/^\d/.test(item.marker)) continue;
+    let ordinal = 1;
+    for (let number = nestedEnd(state, line, item.indent) + 1; number <= state.doc.lines; ) {
+      const next = state.doc.line(number);
+      if (!next.text.trim()) {
+        number++;
+        continue;
+      }
+      // Another converted sibling owns the restart after itself.
+      if (converted.has(number)) break;
+      const end = nestedEnd(state, next, item.indent);
+      const parsed = ensureSyntaxTree(state, state.doc.line(end).to, 50);
+      if (!parsed) break;
+      tree = parsed;
+      const sibling = listItemLine(tree, next, excluded);
+      if (!sibling || sibling.indent !== item.indent || !/^\d/.test(sibling.marker) || !sameKind(sibling.marker, item.marker)) break;
+      markers.push({
+        line: number,
+        to: state.doc.line(end).to,
+        markerFrom: next.from + sibling.indent,
+        markerTo: next.from + sibling.indent + sibling.marker.length,
+        marker: `${ordinal++}${sibling.marker.at(-1)}`,
+      });
+      number = end + 1;
+    }
+  }
+  return markers;
+};
+
+/** Neighbours retain their old structure, except lines converted to paragraphs in this command. */
+const separateLines = (state: EditorState, changes: ChangeSet, paragraphs: readonly number[], emptyItems: readonly number[] = []) => {
+  if (!paragraphs.length && !emptyItems.length) return changes;
+  const last = Math.max(
+    ...paragraphs.map((from) => {
+      const line = state.doc.lineAt(from);
+      return nestedEnd(state, line, leadingWhitespace(line.text));
+    }),
+    ...emptyItems.map((from) => state.doc.lineAt(from).number),
+  );
+  const tree = ensureSyntaxTree(state, state.doc.line(Math.min(state.doc.lines, last + 1)).to, 50);
+  if (!tree) return changes;
+  const excluded = excludedLines(state);
+  const converted = new Set(paragraphs.map((from) => state.doc.lineAt(from).number));
+  const blanks = new Set<number>();
+  const listContent = (line: Line) => {
+    if (converted.has(line.number)) return false;
+    if (listItemLine(tree, line, excluded)) return true;
+    const pos = line.from + leadingWhitespace(line.text);
+    if (excluded().some((span) => pos >= span.from && pos < span.to)) return false;
+    let inside = false;
+    for (let node = tree.resolveInner(pos, 1); node; ) {
+      if (node.name === "Blockquote") return false;
+      if (node.name === "ListItem") inside = true;
+      if (!node.parent) break;
+      node = node.parent;
+    }
+    return inside;
+  };
+  for (const number of converted) {
+    const line = state.doc.line(number);
+    const above = number > 1 ? state.doc.line(number - 1) : null;
+    const end = nestedEnd(state, line, leadingWhitespace(line.text));
+    const below = end < state.doc.lines ? state.doc.line(end + 1) : null;
+    if (above?.text.trim() && !converted.has(above.number) && listContent(above)) blanks.add(line.from);
+    if (below && !converted.has(below.number) && listItemLine(tree, below, excluded)) blanks.add(below.from);
+  }
+  for (const from of emptyItems) {
+    const line = state.doc.lineAt(from);
+    const above = line.number > 1 ? state.doc.line(line.number - 1) : null;
+    if (above?.text.trim() && !listContent(above)) blanks.add(line.from);
+  }
+  return changes.compose(
+    ChangeSet.of(
+      [...blanks].sort((a, b) => a - b).map((from) => ({ from: changes.mapPos(from, -1), insert: "\n" })),
+      changes.newLength,
+    ),
+  );
+};
+
+const liftAtCaret = (view: EditorView, line: Line, item: ListItemLine, event: string) => {
+  const changes = shiftChanges(view.state, -1)!;
+  if (!changes.empty) {
+    view.dispatch({ changes, selection: { anchor: changes.mapPos(textStart(line, item), 1) }, scrollIntoView: true, userEvent: event });
+  }
+  return true;
+};
+
+const paragraphAtCaret = (
+  view: EditorView,
+  line: Line,
+  item: ListItemLine,
+  event: string,
+  tree: Tree,
+  excluded: () => readonly ExcludedSpan[],
+) => {
+  const { state } = view;
+  const from = textStart(line, item);
+  const following = followingOrderedMarkers(state, [line], tree, excluded);
+  const rewritten = markerChanges(state, { items: following }, new Map(following.map((item, index) => [index, item.marker])));
+  const specs: ChangeSpec[] = [{ from: rewritten.mapPos(line.from), to: rewritten.mapPos(from) }];
+  const end = nestedEnd(state, line, item.indent);
+  for (let number = line.number + 1; number <= end; number++) {
+    const continuation = state.doc.line(number);
+    if (!continuation.text.trim()) continue;
+    specs.push({
+      from: rewritten.mapPos(continuation.from),
+      to: rewritten.mapPos(continuation.from + Math.min(leadingWhitespace(continuation.text), item.content)),
+    });
+  }
+  const paragraph = ChangeSet.of(specs, rewritten.newLength);
+  const changes = separateLines(state, rewritten.compose(paragraph), [line.from]);
+  view.dispatch({
+    changes,
+    selection: { anchor: changes.mapPos(from, 1) },
+    scrollIntoView: true,
+    userEvent: event,
+    annotations: orderedSuffixRestart.of(following.length > 0),
+  });
+  return true;
+};
+
+const singleCaret = (state: EditorState) => state.selection.ranges.length === 1 && state.selection.main.empty;
+
+const enterListItem: Command = (view) => {
+  const { state } = view;
+  if (state.readOnly || !singleCaret(state) || completionStatus(state) === "active") return false;
+  const head = state.selection.main.head;
+  const line = state.doc.lineAt(head);
+  const tree = ensureSyntaxTree(state, state.doc.line(nestedEnd(state, line, leadingWhitespace(line.text))).to, 50);
+  if (!tree) return false;
+  const excluded = excludedLines(state);
+  const item = listItemLine(tree, line, excluded);
+  if (!item) return false;
+  const start = textStart(line, item);
+  const child = firstChild(state, line, item, tree, excluded);
+  if (!line.text.slice(start - line.from).trim()) {
+    if (item.indent) return liftAtCaret(view, line, item, "input");
+    return child ? true : paragraphAtCaret(view, line, item, "input", tree, excluded);
+  }
+  if (head <= start) {
+    const prefix = emptyPrefix(line, item);
+    const inserted = state.changes({ from: line.from, insert: prefix + "\n" });
+    const separated = separateLines(state, inserted, [], [line.from]);
+    view.dispatch({ changes: separated, selection: { anchor: separated.mapPos(start, 1) }, scrollIntoView: true, userEvent: "input" });
+    return true;
+  }
+  if (!child) return false;
+  let from = head;
+  while (from > start && /\s/.test(state.sliceDoc(from - 1, from))) from--;
+  const prefix = emptyPrefix(child.line, child.item);
+  view.dispatch({
+    changes: { from, to: head, insert: "\n" + prefix },
+    selection: { anchor: from + 1 + prefix.length },
+    scrollIntoView: true,
+    userEvent: "input",
+  });
+  return true;
+};
+
+const backspaceListItem: Command = (view) => {
+  const { state } = view;
+  if (state.readOnly || !singleCaret(state)) return false;
+  const head = state.selection.main.head;
+  const line = state.doc.lineAt(head);
+  const tree = ensureSyntaxTree(state, state.doc.line(nestedEnd(state, line, leadingWhitespace(line.text))).to, 50);
+  if (!tree) return false;
+  const excluded = excludedLines(state);
+  const item = listItemLine(tree, line, excluded);
+  if (item && head <= textStart(line, item)) {
+    if (item.indent) return liftAtCaret(view, line, item, "delete.dedent");
+    return firstChild(state, line, item, tree, excluded) ? true : paragraphAtCaret(view, line, item, "delete", tree, excluded);
+  }
+  if (excluded().some((span) => head >= span.from && head < span.to)) return false;
+  for (let node = tree.resolveInner(head, -1); node; ) {
+    if (/^ATXHeading[1-6]$/.test(node.name) && /^(Document|Blockquote|ListItem)$/.test(node.parent?.name ?? "")) {
+      const mark = node.getChild("HeaderMark");
+      if (!mark) return false;
+      let start = mark.to;
+      while (start < line.to && /[ \t]/.test(state.sliceDoc(start, start + 1))) start++;
+      if (head !== start) return false;
+      const from = node.parent?.name === "Document" ? line.from : mark.from;
+      view.dispatch({
+        changes: { from, to: start },
+        selection: { anchor: from },
+        scrollIntoView: true,
+        userEvent: "delete",
+      });
+      return true;
+    }
+    if (!node.parent) break;
+    node = node.parent;
+  }
+  return false;
+};
+
+export const setListKind =
+  (kind: "bullet" | "ordered" | "task", count = 1): Command =>
+  (view) => {
+    const { state } = view;
+    if (state.readOnly) return false;
+    const lines = count > 1 ? [state.doc.lineAt(state.selection.main.head)] : selectedLines(state);
+    const last = lines.at(-1);
+    if (!last) return true;
+    const tree = ensureSyntaxTree(state, state.doc.line(nestedEnd(state, last, leadingWhitespace(last.text))).to, 50);
+    if (!tree) return false;
+    const excluded = excludedLines(state);
+    const parsed = lines.map((line) => ({ line, item: listItemLine(tree, line, excluded) }));
+    const toggle = count === 1 && parsed.every(({ line, item }) => item && itemKind(line, item) === kind);
+    const specs: ChangeSpec[] = [];
+    const markers = new Map<number, string>();
+    const markerItems: Array<{ line: number; to: number; markerFrom: number; markerTo: number }> = [];
+    const paragraphs: number[] = [];
+    const emptyItems: number[] = [];
+    const removed: Line[] = [];
+    for (const { line, item } of parsed) {
+      if (toggle) {
+        if (item && !item.indent && !firstChild(state, line, item, tree, excluded)) {
+          specs.push({ from: line.from, to: textStart(line, item) });
+          const end = nestedEnd(state, line, item.indent);
+          for (let number = line.number + 1; number <= end; number++) {
+            const continuation = state.doc.line(number);
+            if (!continuation.text.trim()) continue;
+            specs.push({
+              from: continuation.from,
+              to: continuation.from + Math.min(leadingWhitespace(continuation.text), item.content),
+            });
+          }
+          paragraphs.push(line.from);
+          removed.push(line);
+        }
+        continue;
+      }
+      if (item && itemKind(line, item) === kind) continue;
+      if (!item) {
+        if (
+          (!line.text.trim() && count === 1 && !singleCaret(state)) ||
+          inCode(tree, line.from + leadingWhitespace(line.text)) ||
+          excluded().some((span) => line.from >= span.from && line.from < span.to)
+        )
+          continue;
+        const from = line.from + leadingWhitespace(line.text);
+        specs.push({ from, insert: kind === "ordered" ? "1. " : kind === "task" ? "- [ ] " : "- " });
+        if (!line.text.trim()) emptyItems.push(line.from);
+        continue;
+      }
+      let marker = "-";
+      if (kind === "ordered") {
+        const above = itemAbove(state, line, item, "previous", excluded, tree);
+        const below = state.doc.line(Math.min(state.doc.lines, nestedEnd(state, line, item.indent) + 1));
+        const adjacent = [above, below]
+          .map((candidate) => candidate && listItemLine(tree, candidate, excluded))
+          .find((candidate) => candidate?.indent === item.indent && /^\d/.test(candidate.marker));
+        marker = `1${adjacent?.marker.at(-1) ?? "."}`;
+      }
+      if (/^\d/.test(item.marker) && !/^\d/.test(marker)) removed.push(line);
+      markers.set(markerItems.length, marker);
+      markerItems.push({
+        line: line.number,
+        to: state.doc.line(nestedEnd(state, line, item.indent)).to,
+        markerFrom: line.from + item.indent,
+        markerTo: line.from + item.indent + item.marker.length,
+      });
+      const box = taskBox(line, item);
+      if (box) specs.push({ from: line.from + item.content, to: textStart(line, item) });
+      if (kind === "task")
+        specs.push({
+          from: line.from + Math.min(item.content, line.text.length),
+          insert: line.text.length < item.content ? " [ ] " : "[ ] ",
+        });
+    }
+    const following = followingOrderedMarkers(state, removed, tree, excluded);
+    for (const item of following) {
+      markers.set(markerItems.length, item.marker);
+      markerItems.push(item);
+    }
+    const rewritten = markerChanges(state, { items: markerItems }, markers);
+    const contentChanges: ChangeSpec[] = [];
+    state
+      .changes(specs)
+      .iterChanges((from, to, _fromB, _toB, insert) =>
+        contentChanges.push({ from: rewritten.mapPos(from, 1), to: rewritten.mapPos(to, 1), insert }),
+      );
+    let changes = rewritten.compose(ChangeSet.of(contentChanges, rewritten.newLength));
+    changes = separateLines(state, changes, paragraphs, emptyItems);
+    let firstHead: number | null = null;
+    if (count > 1) {
+      const { line, item } = parsed[0]!;
+      if (!item && !specs.length) return false;
+      const indent = item?.indent ?? leadingWhitespace(line.text);
+      const marker = markers.get(0) ?? item?.marker ?? (kind === "ordered" ? "1." : "-");
+      const siblingMarker = /^\d/.test(marker) ? `1${marker.at(-1)}` : marker;
+      const prefix = `${line.text.slice(0, indent)}${siblingMarker} ${kind === "task" ? "[ ] " : ""}`;
+      const end = state.doc.line(nestedEnd(state, line, indent)).to;
+      const siblings = ChangeSet.of({ from: changes.mapPos(end, 1), insert: ("\n" + prefix).repeat(count - 1) }, changes.newLength);
+      firstHead = siblings.mapPos(changes.mapPos(item ? textStart(line, item) : line.from + indent, 1), -1);
+      changes = changes.compose(siblings);
+    }
+    if (!changes.empty) {
+      const selection = firstHead === null ? state.selection.map(changes, 1) : EditorSelection.single(firstHead);
+      view.dispatch({
+        changes,
+        selection,
+        scrollIntoView: true,
+        userEvent: "input",
+        annotations: orderedSuffixRestart.of(following.length > 0),
+      });
+    }
+    return true;
+  };
+
+export const toggleTaskAtCaret: Command = (view) => {
+  const { state } = view;
+  if (state.readOnly) return false;
+  const head = state.selection.main.head;
+  let line = state.doc.lineAt(head);
+  const tree = ensureSyntaxTree(state, line.to, 50);
+  if (!tree) return false;
+  const excluded = excludedLines(state);
+  let item = listItemLine(tree, line, excluded);
+  if (!item) {
+    for (let node = tree.resolveInner(head, -1); node; ) {
+      if (node.name === "ListItem") {
+        line = state.doc.lineAt(node.from);
+        item = listItemLine(tree, line, excluded);
+        break;
+      }
+      if (!node.parent) break;
+      node = node.parent;
+    }
+  }
+  const box = item && taskBox(line, item);
+  if (!item || !box) return false;
+  const from = line.from + item.content + box[0].indexOf("[") + 1;
+  view.dispatch({ changes: { from, to: from + 1, insert: state.sliceDoc(from, from + 1) === " " ? "x" : " " }, userEvent: "input" });
+  return true;
+};
+
+const android = typeof navigator === "object" && /Android\b/.test(navigator.userAgent);
+const typedTask = EditorView.inputHandler.of((view, from, to, text, insert) => {
+  const { state } = view;
+  if (
+    (android ? view.composing : view.compositionStarted) ||
+    state.readOnly ||
+    text !== " " ||
+    from !== to ||
+    !singleCaret(state) ||
+    from !== state.selection.main.head
+  )
+    return false;
+  const line = state.doc.lineAt(from);
+  const prefix = /^( *)(?:(?:[-*+]|\d{1,9}[.)]) +)?\[(?: )?\]$/.exec(state.sliceDoc(line.from, from));
+  const marker = prefix && LIST_ITEM.exec(prefix[0]);
+  // `- [ ] ` is already a task; converting it again would only add an empty undo step.
+  if (!prefix || (marker && prefix[0].endsWith("[ ]"))) return false;
+  const tree = ensureSyntaxTree(state, line.to, 50);
+  if (!tree || inCode(tree, line.from + prefix[1]!.length) || excludedLines(state)().some((span) => from >= span.from && from < span.to))
+    return false;
+  // The typed space is ordinary input; undoing the separate conversion keeps it.
+  view.dispatch(insert());
+  const replacement = marker ? `${marker[0]}[ ] ` : `${prefix[1]}- [ ] `;
+  const empty = !line.text.slice(from - line.from).trim();
+  const changes = separateLines(
+    view.state,
+    view.state.changes({ from: line.from, to: from + 1, insert: replacement }),
+    [],
+    empty ? [line.from] : [],
+  );
+  view.dispatch({
+    changes,
+    selection: { anchor: changes.mapPos(from + 1, 1) },
+    scrollIntoView: true,
+    userEvent: "input",
+    annotations: isolateHistory.of("before"),
+  });
+  return true;
+});
+
 /** Top-level list blocks intersecting a source window, without descending into quotes or individual items. */
 const listBlocks = (tree: Tree, range: ExcludedSpan): ExcludedSpan[] => {
   const blocks: ExcludedSpan[] = [];
@@ -376,6 +790,66 @@ const prefixTouched = (state: EditorState, from: number, to: number, deadline: n
   return false;
 };
 
+/** Empty ordered children can still parse as continuation text until someone types. Repair their source list too. */
+const unparsedNumbers = (
+  state: EditorState,
+  blocks: readonly ExcludedSpan[],
+  ranges: readonly ExcludedSpan[],
+  tree: Tree,
+  deadline: number,
+): ChangeSet => {
+  const excluded = excludedLines(state);
+  const items: Array<{ line: number; to: number; markerFrom: number; markerTo: number }> = [];
+  const markers = new Map<number, string>();
+  for (const block of blocks) {
+    const parsedLines = new Set(listStructure(state, excluded, block, tree).items.map((item) => item.line));
+    const emptySourceOnly = (line: Line, item: ListItemLine) =>
+      !parsedLines.has(line.number) && !line.text.slice(textStart(line, item) - line.from).trim();
+    const source = [];
+    for (let number = state.doc.lineAt(block.from).number; number <= state.doc.lineAt(block.to).number; number++) {
+      const line = state.doc.line(number);
+      const item = listItemLine(tree, line, excluded);
+      if (item && /^\d/.test(item.marker)) source.push({ line, item });
+    }
+    if (!source.some(({ line, item }) => emptySourceOnly(line, item))) continue;
+    for (const { line, item } of source) {
+      if (performance.now() >= deadline) return state.changes([]);
+      const number = line.number;
+      let first = line;
+      let empty = emptySourceOnly(line, item);
+      for (
+        let above = itemAbove(state, first, item, "sibling", excluded, tree);
+        above;
+        above = itemAbove(state, first, item, "sibling", excluded, tree)
+      ) {
+        first = above;
+        if (emptySourceOnly(first, listItemLine(tree, first, excluded)!)) empty = true;
+      }
+      let end = nestedEnd(state, line, item.indent);
+      for (let next = end + 1; next <= state.doc.lines; ) {
+        const sibling = state.doc.line(next);
+        const parsed = listItemLine(tree, sibling, excluded);
+        if (!parsed || parsed.indent !== item.indent || !sameKind(parsed.marker, item.marker)) break;
+        if (emptySourceOnly(sibling, parsed)) empty = true;
+        end = nestedEnd(state, sibling, parsed.indent);
+        next = end + 1;
+      }
+      if (!empty) continue;
+      if (!ranges.some((range) => first.from <= range.to && state.doc.line(end).to >= range.from)) continue;
+      const marker = `${ordinalAt(state, line, excluded, tree)}${item.marker.at(-1)}`;
+      if (marker === item.marker) continue;
+      markers.set(items.length, marker);
+      items.push({
+        line: number,
+        to: state.doc.line(nestedEnd(state, line, item.indent)).to,
+        markerFrom: line.from + item.indent,
+        markerTo: line.from + item.indent + item.marker.length,
+      });
+    }
+  }
+  return markerChanges(state, { items }, markers);
+};
+
 /** lang-markdown's Enter already increments sibling numbers, but leaves their children at the old width. */
 const continuedListColumns = (tr: Transaction, deadline: number): ChangeSet => {
   const empty = tr.state.changes([]);
@@ -415,6 +889,7 @@ const continuedListColumns = (tr: Transaction, deadline: number): ChangeSet => {
 const renumber = EditorState.transactionFilter.of((tr: Transaction) => {
   if (
     !tr.docChanged ||
+    tr.annotation(orderedSuffixRestart) ||
     tr.state.readOnly ||
     tr.annotation(ySyncAnnotation) !== undefined ||
     tr.isUserEvent("undo") ||
@@ -429,11 +904,21 @@ const renumber = EditorState.transactionFilter.of((tr: Transaction) => {
   tr.changes.iterChangedRanges((fromA, toA, fromB, toB) => {
     oldRanges.push({ from: fromA, to: toA });
     changedRanges.push({ from: fromB, to: toB });
+    const oldSlice = tr.startState.sliceDoc(fromA, toA);
+    const newSlice = tr.state.sliceDoc(fromB, toB);
+    const withinBlankLines =
+      !oldSlice.trim() &&
+      !newSlice.trim() &&
+      !tr.startState.doc.lineAt(fromA).text.trim() &&
+      !tr.startState.doc.lineAt(toA).text.trim() &&
+      !tr.newDoc.lineAt(fromB).text.trim() &&
+      !tr.newDoc.lineAt(toB).text.trim();
     if (
-      tr.startState.sliceDoc(fromA, toA).includes("\n") ||
-      tr.state.sliceDoc(fromB, toB).includes("\n") ||
-      prefixTouched(tr.startState, fromA, toA, deadline) ||
-      prefixTouched(tr.state, fromB, toB, deadline)
+      !withinBlankLines &&
+      (oldSlice.includes("\n") ||
+        newSlice.includes("\n") ||
+        prefixTouched(tr.startState, fromA, toA, deadline) ||
+        prefixTouched(tr.state, fromB, toB, deadline))
     )
       structural = true;
     const first = Math.max(1, tr.newDoc.lineAt(fromB).number - 1);
@@ -481,16 +966,27 @@ const renumber = EditorState.transactionFilter.of((tr: Transaction) => {
     { items: restorable },
     new Map(restorable.map((item, index) => [index, `${item.start}${restoring.sliceDoc(item.markerTo - 1, item.markerTo)}`])),
   );
-  const prepared = columns.compose(restored);
-  const state = prepared.empty
+  let prepared = columns.compose(restored);
+  let state = prepared.empty
     ? tr.state
     : EditorState.create({ doc: prepared.apply(tr.newDoc), extensions: tr.state.facet(language)?.extension ?? [] });
   for (const range of [...changedRanges, ...windows]) {
     range.from = prepared.mapPos(range.from);
     range.to = prepared.mapPos(Math.min(range.to, tr.newDoc.length), 1);
   }
-  const parsed = parsedListBlocks(state, windows, deadline);
+  let parsed = parsedListBlocks(state, windows, deadline);
   if (!parsed) return tr;
+  const sourceRepair = unparsedNumbers(state, parsed.blocks, changedRanges, parsed.tree, deadline);
+  if (!sourceRepair.empty) {
+    prepared = prepared.compose(sourceRepair);
+    state = EditorState.create({ doc: sourceRepair.apply(state.doc), extensions: state.facet(language)?.extension ?? [] });
+    for (const range of [...changedRanges, ...windows]) {
+      range.from = sourceRepair.mapPos(range.from);
+      range.to = sourceRepair.mapPos(Math.min(range.to, sourceRepair.length), 1);
+    }
+    parsed = parsedListBlocks(state, windows, deadline);
+    if (!parsed) return [tr, { changes: prepared, sequential: true }];
+  }
   const excluded = excludedLines(state);
   const changes: ChangeSpec[] = [];
   for (const block of parsed.blocks) {
@@ -513,6 +1009,31 @@ const renumber = EditorState.transactionFilter.of((tr: Transaction) => {
 });
 
 export const listCommandsExtension = (): Extension => [
+  Prec.highest(
+    EditorView.domEventHandlers({
+      keydown(event, view) {
+        if (
+          !event.shiftKey ||
+          event.altKey ||
+          event.isComposing ||
+          !(mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)
+        )
+          return false;
+        const kind = event.code === "Digit7" ? "ordered" : event.code === "Digit8" ? "bullet" : event.code === "Digit9" ? "task" : null;
+        if (!kind || !setListKind(kind)(view)) return false;
+        event.preventDefault();
+        return true;
+      },
+    }),
+  ),
+  Prec.highest(
+    keymap.of([
+      { key: "Enter", run: enterListItem },
+      { key: "Backspace", run: backspaceListItem },
+      { key: "Mod-Enter", run: toggleTaskAtCaret },
+    ]),
+  ),
+  typedTask,
   Prec.high(
     keymap.of([
       { key: "Mod-]", run: indentListItems },

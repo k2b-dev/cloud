@@ -98,27 +98,6 @@ export const setHeading = (view: EditorView, level: number): void => {
   view.focus();
 };
 
-// ==========================
-// Line prefixes (lists, quotes)
-// ==========================
-
-/**
- * Insert a per-line prefix (`- `, `1. `, `- [ ] `, `> `) at the current
- * line start. Existing line content is preserved; cursor stays where it was
- * (CodeMirror remaps it through the change).
- *
- * Toolbar-oriented: the user clicked while editing mid-line and wants the
- * caret to remain on the same word. For empty-line cases (slash commands)
- * use `insertAtCursor` instead, which explicitly advances the caret past
- * the inserted text.
- */
-export const insertLinePrefix = (view: EditorView, prefix: string): void => {
-  const { from } = view.state.selection.main;
-  const line = view.state.doc.lineAt(from);
-  view.dispatch({ changes: { from: line.from, to: line.from, insert: prefix } });
-  view.focus();
-};
-
 /**
  * Insert plain text AT the current caret and place the caret right after
  * the inserted text. Use this from slash commands where the line is empty

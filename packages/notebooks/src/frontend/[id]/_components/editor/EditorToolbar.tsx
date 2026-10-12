@@ -3,7 +3,7 @@ import type { EditorView } from "@codemirror/view";
 import { keymap } from "@codemirror/view";
 import { Dropdown, IconButton, IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
-import { indentListItems, outdentListItems } from "../../../lib/editor/list-commands";
+import { indentListItems, outdentListItems, setListKind } from "../../../lib/editor/list-commands";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { bookMessages } from "../book/messages";
@@ -11,7 +11,7 @@ import { DETAIL_PANEL_STATE_EVENT, DETAIL_PANEL_TOGGLE_EVENT } from "../detail/e
 import { readNavigationHidden } from "../settings/NotebookSettingsStore";
 import { createNavigationHidden, NOTEBOOK_NAVIGATION_ID, setNavigationHidden } from "../sidebar/navigation-visibility";
 import { openAttachmentPicker } from "./AttachmentPicker";
-import { cycleHeading, insertCallout, insertLinePrefix, insertLink, insertNoteLink, insertTable, wrapSelection } from "./editor-actions";
+import { cycleHeading, insertCallout, insertLink, insertNoteLink, insertTable, wrapSelection } from "./editor-actions";
 
 type Props = {
   connected: boolean;
@@ -100,9 +100,18 @@ export default function EditorToolbar(props: Props) {
   const heading = withView(cycleHeading);
   const link = withView((v) => insertLink(v, locale()));
   const linkToNote = withView((v) => void insertNoteLink(v, props.notebookId, locale()));
-  const bulletList = withView((v) => insertLinePrefix(v, "- "));
-  const numberedList = withView((v) => insertLinePrefix(v, "1. "));
-  const checkbox = withView((v) => insertLinePrefix(v, "- [ ] "));
+  const bulletList = withView((v) => {
+    setListKind("bullet")(v);
+    v.focus();
+  });
+  const numberedList = withView((v) => {
+    setListKind("ordered")(v);
+    v.focus();
+  });
+  const checkbox = withView((v) => {
+    setListKind("task")(v);
+    v.focus();
+  });
   const callout = (type: string) => withView((v) => insertCallout(v, type));
   const table = withView((v) => void insertTable(v, undefined, locale()));
   const indent = withView(indentListItems);
@@ -207,9 +216,9 @@ export default function EditorToolbar(props: Props) {
             {
               sectionLabel: t().lists,
               items: [
-                { icon: "ti ti-list", label: t().bulletList, action: bulletList },
-                { icon: "ti ti-list-numbers", label: t().numberedList, action: numberedList },
-                { icon: "ti ti-checkbox", label: t().checkbox, action: checkbox },
+                { icon: "ti ti-list", label: t().bulletList, description: t().bulletListShortcut, action: bulletList },
+                { icon: "ti ti-list-numbers", label: t().numberedList, description: t().numberedListShortcut, action: numberedList },
+                { icon: "ti ti-checkbox", label: t().checkbox, description: t().checkboxShortcut, action: checkbox },
               ],
             },
             {
