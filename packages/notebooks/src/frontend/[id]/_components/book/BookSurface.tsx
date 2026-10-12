@@ -31,6 +31,7 @@ export default function BookSurface(props: BookSurfaceProps) {
         <BookNavigator
           notebookId={props.notebookId}
           notebookName={props.notebookName}
+          notebookIcon={props.notebookIcon}
           selectedNoteId={props.selectedNoteId}
           tree={props.tree}
           tags={props.tags}

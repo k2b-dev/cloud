@@ -11,6 +11,7 @@ import {
   NOTEBOOK_NAVIGATION_ID,
   setNavigationHidden,
 } from "../sidebar/navigation-visibility";
+import { createNotebookSwitcher } from "../sidebar/notebook-switcher";
 import { BOOK_SNAPSHOT_EVENT, type BookMetadata, requestBookNavigation } from "./book-state";
 import { bookMessages } from "./messages";
 
@@ -18,6 +19,7 @@ export type BookTreeNode = { id: string; title: string; children: BookTreeNode[]
 export type BookNavigatorProps = {
   notebookId: string;
   notebookName: string;
+  notebookIcon: string | null;
   selectedNoteId: string | null;
   tree: BookTreeNode[];
   tags: { tag: string; count: number }[];
@@ -75,9 +77,6 @@ export default function BookNavigator(props: BookNavigatorProps) {
     ));
   const navigation = () => (
     <>
-      <AppWorkspace.SidebarItem href="/app/notebooks" icon="ti ti-library">
-        {t().allNotebooks}
-      </AppWorkspace.SidebarItem>
       {state().canWrite && (!state().selectedNoteId || state().locked) && (
         <AppWorkspace.SidebarItem
           href={withPresentationMode(
@@ -138,9 +137,10 @@ export default function BookNavigator(props: BookNavigatorProps) {
     expanded: expanded().includes(node.id),
     children: node.children.map(noteEntry),
   });
+  const switcher = createNotebookSwitcher(() => ({ id: props.notebookId, name: state().notebookName, icon: props.notebookIcon }));
   const mobileNavigation = createNavigation({
+    switcher,
     items: () => [
-      { id: "all", label: t().allNotebooks, href: "/app/notebooks", icon: "ti ti-library" },
       ...(state().canWrite && (!state().selectedNoteId || state().locked)
         ? [
             {
@@ -189,6 +189,7 @@ export default function BookNavigator(props: BookNavigatorProps) {
         onHiddenChange={setNavigationHidden}
       >
         <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarSwitcher {...switcher()} />
           <AppWorkspace.SidebarBody>{navigation()}</AppWorkspace.SidebarBody>
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>

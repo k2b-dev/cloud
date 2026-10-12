@@ -140,6 +140,7 @@ export default ssr<AuthContext>(async (c) => {
         <BookSurface
           notebookId={notebook.shortId}
           notebookName={notebook.name}
+          notebookIcon={notebook.icon}
           selectedNoteId={null}
           tree={orderBookTree(publicTree, { id: (node) => node.id, homeId: publicNotebook.homepageNoteId, locale })}
           tags={tags}

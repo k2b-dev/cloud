@@ -59,6 +59,7 @@ describe("Book navigation tree", () => {
         createComponent(BookNavigator, {
           notebookId: "book01",
           notebookName: "Handbook",
+          notebookIcon: null,
           selectedNoteId,
           tree,
           tags: [],
@@ -361,6 +362,7 @@ describe("Book view with the notebook navigation hidden", () => {
         createComponent(BookNavigator, {
           notebookId: "book01",
           notebookName: "Handbook",
+          notebookIcon: null,
           selectedNoteId: "note02",
           tree,
           tags: [],
@@ -393,7 +395,8 @@ describe("Book view with the notebook navigation hidden", () => {
       expect(sidebar.hidden).toBe(false);
       expect(sidebar.querySelector('[role="tree"]')?.textContent).toContain("Setup");
       expect(showControl()).toBeNull();
-      expect(dom.document.activeElement).toBe(sidebar.querySelector('a[href="/app/notebooks"]'));
+      // The notebook switcher heads the sidebar, so it is the first stop.
+      expect(dom.document.activeElement).toBe(sidebar.querySelector(".k2b-sidebar-switcher__trigger"));
       expect(toggle().title).toBe("Hide notebook navigation");
     } finally {
       writeNavigationHidden(false);

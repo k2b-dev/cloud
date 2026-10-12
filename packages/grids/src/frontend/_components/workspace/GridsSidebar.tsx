@@ -4,6 +4,7 @@ import BaseSettingsButton from "../sidebar/BaseSettingsButton.island";
 import FormSidebarEntry from "../sidebar/FormSidebarEntry.island";
 import NewResourceButton from "../sidebar/NewResourceButton.island";
 import SidebarTableMeta from "../sidebar/SidebarTableMeta";
+import BaseSwitcher from "./BaseSwitcher.island";
 import GridsNavigation from "./GridsNavigation.island";
 import GroupedNavigation from "./GroupedNavigation.island";
 import { workspaceMessages } from "./messages";
@@ -227,11 +228,8 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
       <GridsNavigation state={state} />
       <AppWorkspace.Sidebar>
         <AppWorkspace.SidebarDesktop>
+          <BaseSwitcher base={{ id: state.base.id, name: state.base.name }} />
           <AppWorkspace.SidebarSection>
-            <SidebarLink href="/app/grids">
-              <AppWorkspace.SidebarItemIcon icon="ti ti-layout-grid" />
-              <AppWorkspace.SidebarItemLabel>{t.allGrids}</AppWorkspace.SidebarItemLabel>
-            </SidebarLink>
             {renderQueryItem()}
             {overviewLink()}
             {createButton()}

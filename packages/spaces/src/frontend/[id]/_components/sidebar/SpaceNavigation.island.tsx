@@ -10,6 +10,7 @@ import { createSpaceSearch } from "../search/SearchButton";
 import { createIcalCopy } from "./CopyICalButton";
 import { createItemController } from "./CreateItemButton";
 import { createSpaceSettings } from "./SpaceSettingsButton";
+import { createSpaceSwitcher } from "./space-switcher";
 import type { SpaceContext } from "./types";
 import { createSpaceViews } from "./ViewLinks";
 
@@ -86,13 +87,14 @@ export default function SpaceNavigation(props: { ctx: SpaceContext; baseUrl: str
       return props.ctx.currentView;
     },
   });
+  const switcher = createSpaceSwitcher(() => props.ctx.space);
   const navigation = createNavigation({
+    switcher,
     items: () => [
       ...(props.ctx.canWrite
         ? [{ id: "create", label: create.label(), icon: "ti ti-plus", action: "create", disabled: create.pending() }]
         : []),
       { id: "search", label: t.searchItems, icon: "ti ti-search", action: "search" },
-      { id: "all", label: t.allSpaces, icon: "ti ti-layout-grid", href: "/app/spaces" },
       ...views.views.map((view) => ({
         id: view.id,
         label: view.label,

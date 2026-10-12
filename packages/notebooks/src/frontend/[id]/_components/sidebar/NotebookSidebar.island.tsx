@@ -31,10 +31,10 @@ import NotebookSettingsButton from "../settings/NotebookSettingsButton";
 import { openNotebookSettingsDialog } from "../settings/NotebookSettingsPanel";
 import { writeSettings } from "../settings/NotebookSettingsStore";
 import NavigationVisibilityControls from "./NavigationVisibilityControls";
-import NotebookSwitcher from "./NotebookSwitcher";
 import NoteTree, { findNoteInLevel, noteActionItems, noteIcon, placementForMove, useNoteActions } from "./NoteTree";
 import { createNavigationHidden, followStoredNavigationHidden, NOTEBOOK_NAVIGATION_ID, setNavigationHidden } from "./navigation-visibility";
 import { NoteRowLabel, NoteRowMenu, NoteRowsContextMenu } from "./note-rows";
+import { createNotebookSwitcher } from "./notebook-switcher";
 import { filterNotes, homepageFirst, type NoteTreeSort, sortNoteTree } from "./tree-utils";
 import type { NotebookContext, NoteTreeNode } from "./types";
 import { useFavoriteNotes } from "./useFavoriteNotes";
@@ -264,7 +264,9 @@ export default function NotebookSidebar(props: Props) {
         ]
       : []),
   ];
+  const switcher = createNotebookSwitcher(notebook);
   const mobileNavigation = createNavigation({
+    switcher,
     items: () => [
       ...(canWrite ? [{ id: "new", label: t().newNote, icon: "ti ti-pencil-plus", action: "new", disabled: actions.loading() }] : []),
       { id: "search", label: t().searchNotes, icon: "ti ti-search", action: "search" },
@@ -312,7 +314,6 @@ export default function NotebookSidebar(props: Props) {
               ...sortedTree().map((node) => noteEntry(node, sortedTree())),
             ],
           },
-      { id: "all", label: t().allNotebooks, icon: "ti ti-library", href: "/app/notebooks" },
       { id: "attachments", label: t().attachments, icon: "ti ti-paperclip", href: attachmentsHref(), badge: attachmentCount() },
       { id: "settings", label: t().settings, icon: "ti ti-settings", action: "settings" },
     ],
@@ -389,7 +390,7 @@ export default function NotebookSidebar(props: Props) {
       >
         <AppWorkspace.SidebarDesktop>
           <div class="notebook-sidebar-head">
-            <NotebookSwitcher notebook={notebook()} />
+            <AppWorkspace.SidebarSwitcher {...switcher()} />
             <Show when={canWrite}>
               <IconButton
                 label={t().newNote}

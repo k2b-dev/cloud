@@ -6,6 +6,7 @@ import { createBaseSettings } from "../sidebar/base-settings";
 import { sidebarMessages } from "../sidebar/messages";
 import { createNewResource } from "../sidebar/new-resource";
 import { openSidebarForm } from "../sidebar/open-sidebar-form";
+import { createBaseSwitcher } from "./base-switcher";
 import { workspaceMessages } from "./messages";
 import { activeNavigationKey, type NavigationResource, navigationResources } from "./navigation-catalog";
 import type { PublicOkWorkspaceState } from "./workspace-public-state-model";
@@ -59,9 +60,10 @@ export default function GridsNavigation(props: { state: PublicOkWorkspaceState }
     workflow: t().workflows,
     customApp: t().apps,
   });
+  const switcher = createBaseSwitcher(() => state.base);
   const navigation = createNavigation({
+    switcher,
     items: () => [
-      { id: "all", href: "/app/grids", label: t().allGrids, icon: "ti ti-layout-grid" },
       { id: "overview", href: href(), label: navText().overview, icon: "ti ti-layout-dashboard", active: state.route.kind === "overview" },
       ...(state.canUseQueryWorkspace
         ? [

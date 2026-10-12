@@ -1631,6 +1631,7 @@ function MailWorkspaceView(props: {
       <MailSidebar
         mailboxId={data.mailbox.id}
         mailboxName={data.mailbox.name}
+        mailboxAddress={data.identities.find((identity) => identity.isDefault)?.fromAddress}
         syncEnabled={data.mailbox.syncEnabled}
         needsConnection={mailboxNeedsConnection(data.mailbox.health)}
         folders={data.folders}

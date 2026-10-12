@@ -27,6 +27,7 @@ const render = (navigationHidden: boolean, html = welcome) =>
         return createComponent(BookSurface, {
           notebookId: "book01",
           notebookName: "Company handbook",
+          notebookIcon: null,
           selectedNoteId: "note02",
           currentHref: "/app/notebooks/book01/notes/note02?mode=book",
           canWrite: false,

@@ -513,9 +513,26 @@ describe("One notebook sidebar with quick filters", () => {
       await page.keyboard.press("Escape");
 
       await page.getByRole("button", { name: "Social media" }).click();
-      await page.getByRole("menuitem", { name: "Recipes" }).waitFor();
-      await expect(page.getByRole("menuitem", { name: "Recipes" }).getAttribute("href")).resolves.toBe("/app/notebooks/Book02");
-      await expect(page.getByRole("menuitem", { name: "All notebooks" }).getAttribute("href")).resolves.toBe("/app/notebooks");
+      await page.getByRole("link", { name: "Recipes", exact: true }).waitFor();
+      await expect(page.getByRole("link", { name: "Recipes", exact: true }).getAttribute("href")).resolves.toBe("/app/notebooks/Book02");
+      await expect(page.locator('[data-switcher-option][aria-current="true"]').getAttribute("href")).resolves.toBe("/app/notebooks/Book01");
+      await expect(page.getByRole("link", { name: "All notebooks", exact: true }).getAttribute("href")).resolves.toBe("/app/notebooks");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("the phone menu uses the same notebook head and overview action", async () => {
+    const page = await open(phone, filtered(), "de");
+    try {
+      await page.evaluate(() => window.mountPhoneMenu("de", true));
+      const menu = page.locator("#phone-menu");
+      await expect(menu.locator(".k2b-sidebar-switcher__trigger").getAttribute("aria-label")).resolves.toBe("Social media");
+      await expect(menu.locator(".k2b-sidebar-switcher .k2b-sr-only").textContent()).resolves.toContain("Notizbuch wechseln");
+      await expect(menu.locator('a.k2b-navigation__control[href="/app/notebooks"]').count()).resolves.toBe(0);
+      await menu.getByRole("button", { name: "Social media", exact: true }).click();
+      await menu.getByRole("link", { name: "Recipes", exact: true }).waitFor();
+      await expect(menu.getByRole("link", { name: "Alle Notizbücher", exact: true }).getAttribute("href")).resolves.toBe("/app/notebooks");
     } finally {
       await page.context().close();
     }

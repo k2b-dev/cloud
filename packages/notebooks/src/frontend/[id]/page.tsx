@@ -37,6 +37,7 @@ export default ssr<AuthContext>(async (c) => {
         <BookSurface
           notebookId={data.notebook.id}
           notebookName={data.notebook.name}
+          notebookIcon={data.notebook.icon}
           selectedNoteId={data.selectedNote?.id ?? null}
           tree={data.bookTree}
           tags={data.ctx.tags}
