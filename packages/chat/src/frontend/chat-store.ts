@@ -179,13 +179,20 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     if (conversation === null) return noAccess(chat);
     // Retain arrivals during this read, unless its lower revision proves a restore.
     const arrivals = page.rev >= watermark ? [...chat.messages.values()].filter((message) => message.rev > page.rev) : [];
+    const currentConversation = chat.view.conversation;
+    const keepMetadata = page.rev >= watermark && currentConversation !== null && currentConversation.rev > conversation.rev;
     // A restored chat can move back in revisions, so the replacement wins over the guard.
     chat.messages = new Map(page.items.map((message) => [message.id, MessageSchema.parse(message)]));
     chat.window++;
     chat.from = page.items[0]?.seq ?? null;
     chat.to = page.items.at(-1)?.seq ?? null;
-    chat.view = { ...chat.view, conversation, watermark: page.rev, seqHead: page.seqHead };
-    chat.metadataRev = conversation.rev;
+    chat.view = {
+      ...chat.view,
+      conversation: keepMetadata ? currentConversation : conversation,
+      watermark: page.rev,
+      seqHead: page.seqHead,
+    };
+    chat.metadataRev = keepMetadata ? Math.max(chat.metadataRev, currentConversation.rev, conversation.rev) : conversation.rev;
     for (const message of arrivals) applyMessage(chat, message);
     publishMessages(chat);
   };

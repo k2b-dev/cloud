@@ -733,3 +733,32 @@ test("loadLatest retains live arrivals newer than its in-flight page", async () 
   expect(store.openConversation).toMatchObject({ seqHead: 11, watermark: 11, hasNewer: false });
   store.dispose();
 });
+
+test("loadLatest retains newer metadata applied while its conversation read is in flight", async () => {
+  const latest = deferred<typeof conversation>();
+  const reading = deferred<void>();
+  let reads = 0;
+  const { store, connection } = fixture({
+    messages: async () => page(2),
+    conversation: async () => {
+      if (++reads === 1) {
+        reading.resolve();
+        return latest.promise;
+      }
+      return { ...conversation, rev: 3, name: "Renamed", title: "Renamed" };
+    },
+  });
+  store.open({ cursor: "middle", conversation, page: windowPage(1, 1, 2) });
+  const loading = store.loadLatest();
+  await reading.promise;
+  await connection.get("conversation").apply({
+    type: "message",
+    message: { ...message(3), kind: "system", body: null, system: { code: "details_changed", params: { name: "Renamed" } } },
+  });
+  expect(store.openConversation?.conversation?.title).toBe("Renamed");
+  latest.resolve({ ...conversation, rev: 2 });
+  await loading;
+  expect(store.openConversation?.conversation).toMatchObject({ rev: 3, title: "Renamed" });
+  expect(store.openConversation?.messages.map((row) => row.seq)).toEqual([2, 3]);
+  store.dispose();
+});
