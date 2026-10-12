@@ -51,14 +51,16 @@ First decide which kind it is:
 A small tool in one pass:
 
 1. Load `code_create`, `code_write`, `code_check` and `code_open` with one
-   `load_tools` call if they are not loaded yet. Read no references and run no
-   exploratory code.
+   `load_tools` call if they are not loaded yet. Read no references, write no
+   plan and run no exploratory code.
 2. Call `code_create({title, icon, html, steps})` once with the complete app:
    one `index.html` with its script in `<script type="module">` and its CSS in
    `<style>`, plus its `steps.json`.
 3. Call `code_check({id})` once, then `view_image` with the report's
-   `review.prompt` for every path in `review.paths`, all in one turn. Fix
-   only errors and real visual defects with one `code_write`, then check again.
+   `review.prompt` for every path in `review.paths`, all in one turn. Fix only
+   errors and defects that break use, such as a wrong result or a clipped
+   control, not matters of taste, with one `code_write`, then check again.
+   Make at most this one correction: open the app once a check passes.
 4. Call `code_open({id})`; use `code_present({id})` instead when the person
    asks to see the app in the chat. Then say in one or two sentences what the
    app does.
