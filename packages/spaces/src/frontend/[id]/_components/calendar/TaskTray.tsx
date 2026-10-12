@@ -133,12 +133,25 @@ export default function TaskTray(props: Props) {
       (next?.querySelector<HTMLElement>(control) ?? next?.querySelector<HTMLElement>("input, a") ?? container).focus();
     });
   };
-  const Row = (row: { item?: string; class: string; onClick?: JSX.EventHandler<HTMLLIElement, MouseEvent>; children: JSX.Element }) => {
+  const Row = (row: {
+    item?: string;
+    class: string;
+    /** The row lifts while its task is dragged into the day, and a long press on it is no link preview. */
+    dragSource?: boolean;
+    onClick?: JSX.EventHandler<HTMLLIElement, MouseEvent>;
+    children: JSX.Element;
+  }) => {
     let element: HTMLLIElement | undefined;
     onCleanup(() => element && handOffFocus(element));
     return (
       // biome-ignore lint/a11y/useKeyWithClickEvents: it only watches the clicks of the checkbox inside, which Space fires too.
-      <li ref={element} class={row.class} data-spaces-tray-item={row.item} onClick={row.onClick}>
+      <li
+        ref={element}
+        class={row.class}
+        data-spaces-tray-item={row.item}
+        data-calendar-drag-source={row.dragSource ? "" : undefined}
+        onClick={row.onClick}
+      >
         {row.children}
       </li>
     );
@@ -188,6 +201,7 @@ export default function TaskTray(props: Props) {
                     // jumping. The chip's padding sits inside a wrapper without any, so the column can reach zero.
                     <Row
                       item={item.id}
+                      dragSource={Boolean(props.onSchedulePointerDown)}
                       class={`grid shrink-0 transition-[grid-template-columns,margin,opacity] duration-200 ease-out motion-reduce:transition-none ${
                         collapsing() ? "-mr-2 grid-cols-[0fr] opacity-0" : "grid-cols-[1fr]"
                       }`}
