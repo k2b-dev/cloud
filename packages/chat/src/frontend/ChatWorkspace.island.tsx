@@ -9,7 +9,7 @@ import type { ConversationPageSchema, ConversationSchema, MessagePageSchema } fr
 import { renderSystemMessage } from "../system-messages";
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import ChatList from "./ChatList";
-import { type ChatSend, createChatSends, createChatSendsApi } from "./chat-sends";
+import { createChatSends, createChatSendsApi } from "./chat-sends";
 import { createChatStore, type OpenChat } from "./chat-store";
 
 type Conversation = z.infer<typeof ConversationSchema>;
@@ -64,7 +64,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [chat, setChat] = createSignal<OpenChat | null>(props.open ? initialChat(props.open) : null);
   const [liveStopped, setLiveStopped] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
-  const [sends, setSends] = createSignal<readonly ChatSend[]>([]);
+  // The outbox changes its entries in place; this counts its changes so the history reads them again.
+  const [sendsVersion, setSendsVersion] = createSignal(0);
   // The list keeps its order while messages arrive elsewhere; it sorts again on the reader's own actions.
   const [order, setOrder] = createSignal<readonly string[]>(props.sidebar.items.map((row) => row.id));
   const [now, setNow] = createSignal(new Date(props.now));
@@ -103,7 +104,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const current = openChat();
     if (!current) return [];
     const cache = new Map(previous?.map((item) => [item.key, item]));
-    const own = sends().filter((send) => send.conversationId === current.id);
+    sendsVersion();
+    const own = outbox?.sends(current.id) ?? [];
     for (const send of own) if (send.message) sendKeys.set(send.message.id, send.clientId);
     const stored = new Set(current.messages.map((message) => message.id));
     const reuse = (item: ChatFeedItem) => {
@@ -159,33 +161,34 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     sortRows();
     publishTrail();
   };
-  /** Loads the chat's snapshot before the address changes. Returns false when the address should stay. */
-  const open = async (next: Route): Promise<boolean> => {
-    if (!store) return false;
+  /** Loads the chat's snapshot before the address changes; only an applied open may change it. */
+  const open = async (next: Route): Promise<"applied" | "superseded" | "failed"> => {
+    if (!store) return "failed";
     if (!next.chatId) {
       const live = store;
       batch(() => {
         live.closeConversation();
         applyRoute(next);
       });
-      return true;
+      return "applied";
     }
     setBusy(true);
     try {
       const result = await store.openChat(next.chatId, next.messageId ?? undefined);
-      if (result.status === "superseded") return false;
+      if (result.status === "superseded") return "superseded";
       applyRoute({ chatId: next.chatId, messageId: result.status === "opened" ? next.messageId : null });
-      return true;
+      return "applied";
     } catch {
       toast.error(t().openFailed);
-      return false;
+      return "failed";
     } finally {
       setBusy(false);
     }
   };
   const openFromList = async (id: string, navigation: LinkNavigateEvent) => {
     const fromList = route().chatId === null;
-    if (await open({ chatId: id, messageId: null })) navigation.push(undefined, { scroll: "preserve", state: { chatFromList: fromList } });
+    if ((await open({ chatId: id, messageId: null })) === "applied")
+      navigation.push(undefined, { scroll: "preserve", state: { chatFromList: fromList } });
   };
 
   const send = async (text: string): Promise<boolean> => {
@@ -205,7 +208,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     });
     store = live;
     const sync = () => {
+      // The reader's own message moves its chat to the top: that is the reader's action, not a move under the pointer.
+      const top = live.sidebar[0];
+      const ownTop = top?.lastMessage?.author.id === props.viewerId && top.id === live.openConversation?.id && order()[0] !== top.id;
       setRows(live.sidebar);
+      if (ownTop) sortRows();
       setHasMore(live.hasMoreSidebar);
       setChat(live.openConversation);
       setLiveStopped(live.liveStatus === "stopped");
@@ -219,14 +226,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     onCleanup(
       box.subscribe(() => {
         const current = route().chatId;
-        const list = current ? box.sends(current) : [];
-        for (const entry of list) {
+        for (const entry of current ? box.sends(current) : []) {
           if (entry.status === "failed" && !failed.has(entry.clientId)) announce(t().messageNotSent);
           if (entry.status === "failed") failed.add(entry.clientId);
           else failed.delete(entry.clientId);
-          if (entry.status === "sent") sortRows();
         }
-        setSends(list);
+        setSendsVersion((version) => version + 1);
       }),
     );
 
@@ -235,8 +240,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         const next = parseRoute(url);
         if (!next) return;
         // The browser already shows the new address; when its chat cannot load in place, the server renders it.
-        void open(next).then((applied) => {
-          if (!applied) refreshCurrentPath();
+        void open(next).then((result) => {
+          if (result === "failed") refreshCurrentPath();
         });
       }),
     );

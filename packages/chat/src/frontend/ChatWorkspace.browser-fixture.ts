@@ -2,7 +2,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ServerWebSocket } from "bun";
 import type { z } from "zod";
-import type { ConversationSchema, MessageViewSchema } from "../service/contracts";
+import { SendMessageSchema, type ConversationSchema, type MessageViewSchema } from "../service/contracts";
 import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 
 type Conversation = z.infer<typeof ConversationSchema>;
@@ -85,7 +85,7 @@ export const startChatHarness = async () => {
   const subscriptions: Subscription[] = [];
   let cursor = 0;
   let failing = 0;
-  const posted: { chat: string; clientId: string }[] = [];
+  const posted: { chat: string; clientId: string; body: string }[] = [];
 
   const deliver = (channel: string, chat: string, data: unknown) => {
     cursor += 1;
@@ -236,8 +236,8 @@ export const startChatHarness = async () => {
         if (part === "changes") return Response.json({ rev: chat.conversation.rev, more: false, conversation: null, messages: [] });
         if (part === "messages" && request.method === "GET") return Response.json(page(chat, url.searchParams));
         if (part === "messages" && request.method === "POST") {
-          const input = (await request.json()) as { clientId: string; body: string };
-          posted.push({ chat: id!, clientId: input.clientId });
+          const input = SendMessageSchema.parse(await request.json());
+          posted.push({ chat: id!, ...input });
           if (failing > 0) {
             failing -= 1;
             return Response.json({ message: "Unavailable" }, { status: 503 });
@@ -254,6 +254,9 @@ export const startChatHarness = async () => {
           '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">' +
           '<link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" style="margin:0">' +
           '<div id="root" style="position:fixed;inset:0;display:flex;flex-direction:column"></div>' +
+          // Every weight and the icon font load with the page, so a font swap never moves rows during a test.
+          '<div aria-hidden="true" style="position:absolute;visibility:hidden"><b>a</b><b style="font-weight:600">a</b><span style="font-weight:500">a</span><em>a</em>' +
+          '<span>a</span><i class="ti ti-check"></i></div>' +
           '<script src="/harness.js"></script></body></html>',
         { headers: { "Content-Type": "text/html" } },
       );
