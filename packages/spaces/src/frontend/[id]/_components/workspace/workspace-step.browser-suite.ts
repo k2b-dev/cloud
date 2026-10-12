@@ -9,6 +9,7 @@ import { renderToString } from "solid-js/web";
 import type { ItemListResult, SpaceColumn, SpaceItem } from "@/contracts";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
 import { defaultCalendarFilter } from "../calendar/filter";
+import { calendarWindow } from "../calendar/range";
 import type { KanbanBucketInitial } from "../kanban/types";
 import type { SpaceItemDetail, SpacesViewSnapshot } from "./workspace-types";
 
@@ -121,6 +122,7 @@ const snapshot = (view: View): SpacesViewSnapshot => {
     kind: "calendar",
     view: "month",
     date: "2026-10-12T00:00:00.000Z",
+    range: calendarWindow("day", new Date("2026-10-12T00:00:00.000Z")),
     filter: defaultCalendarFilter,
     items: [],
     weather: {},

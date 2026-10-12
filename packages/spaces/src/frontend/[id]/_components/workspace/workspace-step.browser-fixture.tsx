@@ -2,6 +2,7 @@ import { AppWorkspace, LocaleProvider } from "@k2b/ui";
 import { Match, Switch } from "solid-js";
 import type { ItemListResult, SpaceColumn } from "@/contracts";
 import { defaultCalendarFilter } from "../calendar/filter";
+import { calendarWindow } from "../calendar/range";
 import ItemDetailRoute from "../detail/ItemDetailRoute.island";
 import { defaultFilter } from "../filter/types";
 import type { KanbanBucketInitial } from "../kanban/types";
@@ -71,6 +72,7 @@ export default function WorkspaceStepFixture(props: Props) {
                   initialState={{
                     view: "month",
                     date: "2026-10-12T00:00:00.000Z",
+                    range: calendarWindow("day", new Date("2026-10-12T00:00:00.000Z")),
                     filter: defaultCalendarFilter,
                     items: [],
                     weather: {},
