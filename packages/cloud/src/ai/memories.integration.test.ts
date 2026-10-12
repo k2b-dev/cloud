@@ -128,6 +128,91 @@ databaseSuite()("aiMemories (integration)", () => {
     }
   });
 
+  test("a keyword at the end of a long message still selects its memory", async () => {
+    const userId = await insertUser();
+    try {
+      const relevant = await aiMemories.create({ userId, kind: "fact", content: "The preferred deployment color is cobalt." });
+      for (let index = 0; index < 25; index += 1) {
+        await aiMemories.create({ userId, kind: "fact", content: `The user mentioned the park and the river walk ${index}.` });
+      }
+      await sql`UPDATE ai.memories SET updated_at = now() - interval '30 days' WHERE user_id = ${userId}::uuid`;
+      await insertRecentMemories(userId);
+
+      const message = `Yesterday I visited the park beside the river for a pleasant walk with friends after breakfast.
+        We watched birds gather near the pond while children played beneath tall trees and families shared lunches.
+        Later we discussed possible weekend trips through quiet villages, nearby forests, coastal paths, mountain trails,
+        historic gardens, busy markets, small museums, comfortable cafes, local libraries, and outdoor concerts.
+        Everyone suggested different activities, including cycling, swimming, painting, photography, cooking, reading,
+        gardening, climbing, dancing, sailing, hiking, fishing, knitting, drawing, and learning unfamiliar musical instruments.
+        We agreed to leave plenty of room for rest before returning home. Which cobalt shade did I pick?`;
+      const hot = await aiMemories.selectHot(userId, message);
+      expect(hot.memories[0]?.id).toBe(relevant.id);
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("very long messages consider both ends and ignore the middle", async () => {
+    const userId = await insertUser();
+    try {
+      const first = await aiMemories.create({ userId, kind: "fact", content: "Cobalt." });
+      const middle = await aiMemories.create({ userId, kind: "fact", content: "Amber." });
+      const last = await aiMemories.create({ userId, kind: "fact", content: "Saffron." });
+      await sql`UPDATE ai.memories SET updated_at = now() - interval '30 days' WHERE user_id = ${userId}::uuid`;
+      await insertRecentMemories(userId);
+
+      const message = `cobalt ${" ".repeat(5_993)}amber${" ".repeat(6_000)} saffron`;
+      const hot = await aiMemories.selectHot(userId, message);
+      expect(hot.memories.slice(0, 2).map((memory) => memory.id)).toEqual(expect.arrayContaining([first.id, last.id]));
+      expect(hot.memories.some((memory) => memory.id === middle.id)).toBe(false);
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("a repeated word does not outrank two distinct matching words", async () => {
+    const userId = await insertUser();
+    try {
+      const repeated = await aiMemories.create({ userId, kind: "fact", content: "Cobalt cobalt cobalt." });
+      const distinct = await aiMemories.create({ userId, kind: "fact", content: "Cobalt saffron." });
+      await sql`UPDATE ai.memories SET updated_at = now() - interval '30 days' WHERE user_id = ${userId}::uuid`;
+      await insertRecentMemories(userId);
+
+      const hot = await aiMemories.selectHot(userId, "Compare cobalt and saffron");
+      expect(hot.memories.slice(0, 2).map((memory) => memory.id)).toEqual([distinct.id, repeated.id]);
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  for (const { content, message } of [
+    { content: "My manager is anna@example.com.", message: "Write to anna@example.com" },
+    { content: "The NAS is at 10.0.0.5.", message: "ping 10.0.0.5" },
+    { content: "Settings live in config.ts.", message: "open config.ts" },
+    { content: "Production runs v2.3.", message: "upgrade to v2.3" },
+    { content: "मुझे हिन्दी पसंद है", message: "पसंद" },
+  ]) {
+    test(`addresses, versions, and file names match as whole tokens: ${message}`, async () => {
+      const userId = await insertUser();
+      try {
+        const relevant = await aiMemories.create({ userId, kind: "fact", content });
+        const emailLookalike = message.includes("anna@example.com")
+          ? await aiMemories.create({ userId, kind: "fact", content: "Anna likes example code." })
+          : null;
+        await sql`UPDATE ai.memories SET updated_at = now() - interval '30 days' WHERE user_id = ${userId}::uuid`;
+        await insertRecentMemories(userId);
+
+        const hot = await aiMemories.selectHot(userId, message);
+        expect(hot.memories[0]?.id).toBe(relevant.id);
+        if (emailLookalike) {
+          expect(hot.memories.some((memory) => memory.id === emailLookalike.id)).toBe(false);
+        }
+      } finally {
+        await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+      }
+    });
+  }
+
   test("more matching terms rank first after pinned memories", async () => {
     const userId = await insertUser();
     try {

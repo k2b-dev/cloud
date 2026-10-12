@@ -7,8 +7,9 @@ export const AI_MEMORY_CONTENT_MAX_CHARS = 500;
 export const AI_MEMORY_HOT_MAX_ITEMS = 20;
 export const AI_MEMORY_HOT_MAX_CHARS = 6_000;
 
-const AI_MEMORY_RELEVANCE_MAX_CANDIDATES = 256;
-const AI_MEMORY_RELEVANCE_MAX_TERMS = 32;
+// PostgreSQL stores at most 16,383 word positions per tsvector; a parsed token takes at least
+// one character. 12,000 characters keep every position distinct for the stop-word pairing below.
+const AI_MEMORY_RELEVANCE_MAX_CHARS = 12_000;
 
 export type AiMemoryKind = "fact" | "preference" | "workflow";
 export type AiMemoryPriority = "normal" | "pinned";
@@ -134,38 +135,44 @@ const listActive = async (userId: string, limit: number): Promise<AiMemory[]> =>
   return rows.map(toMemory);
 };
 
-const relevanceTerms = (text: string): string[] => {
-  // Letters and digits only: no tsquery operator, quote, or backslash can reach PostgreSQL.
-  const normalized = text.normalize("NFC").toLowerCase();
-  const terms = normalized.match(/[\p{L}\p{Nd}]+/gu) ?? [];
-  return [...new Set(terms.filter((term) => term.length >= 2))].slice(0, AI_MEMORY_RELEVANCE_MAX_CANDIDATES);
-};
-
-const selectRelevant = async (input: { userId: string; text: string; limit: number }): Promise<AiMemory[]> => {
-  const terms = relevanceTerms(input.text);
-  if (terms.length === 0) return [];
+const selectRelevant = async (input: { userId: string; text: string; total: number; limit: number }): Promise<AiMemory[]> => {
+  const text = (
+    input.text.length > AI_MEMORY_RELEVANCE_MAX_CHARS
+      ? `${input.text.slice(0, AI_MEMORY_RELEVANCE_MAX_CHARS / 2)}\n${input.text.slice(-AI_MEMORY_RELEVANCE_MAX_CHARS / 2)}`
+      : input.text
+  ).trim();
+  if (!text) return [];
 
   const rows = await sql<MemoryRow[]>`
-    WITH terms AS (
-      SELECT input.ord, ts_lexize('english_stem', input.term) AS english, ts_lexize('german_stem', input.term) AS german
-      FROM unnest(${sql.array(terms, "text")}) WITH ORDINALITY AS input(term, ord)
-    ), meaningful AS (
-      -- An empty array means the word is a stop word in that language.
-      SELECT english, german FROM terms
-      WHERE cardinality(english) > 0 AND cardinality(german) > 0
-      ORDER BY ord
-      LIMIT ${AI_MEMORY_RELEVANCE_MAX_TERMS}
-    ), relevance AS (
-      SELECT to_tsquery('simple', string_agg(DISTINCT lexeme, ' | ')) AS query
-      FROM meaningful, unnest(english || german) AS lexeme
+    WITH english AS (
+      SELECT position, token.lexeme
+      FROM unnest(to_tsvector('english', ${text}::text)) AS token, unnest(token.positions) AS position
+    ), german AS (
+      SELECT position, token.lexeme
+      FROM unnest(to_tsvector('german', ${text}::text)) AS token, unnest(token.positions) AS position
+    ), words AS (
+      -- Both configurations parse the same tokens, so a position missing in one holds that language's stop word.
+      SELECT row_number() OVER () AS word, english, german
+      FROM (SELECT DISTINCT english.lexeme AS english, german.lexeme AS german FROM english JOIN german USING (position)) AS pairs
+    ), lexemes AS (
+      SELECT DISTINCT words.word, lexeme FROM words, unnest(ARRAY[words.english, words.german]) AS lexeme
+    ), matches AS (
+      SELECT DISTINCT memory.id, lexemes.word
+      FROM ai.memories AS memory
+      CROSS JOIN LATERAL unnest(tsvector_to_array(memory.stem_document)) AS document(lexeme)
+      JOIN lexemes ON lexemes.lexeme = document.lexeme
+      WHERE memory.user_id = ${input.userId}::uuid AND memory.deleted_at IS NULL AND memory.superseded_by_id IS NULL
+    ), scores AS (
+      -- A word found in fewer of the user's memories says more about relevance.
+      SELECT id, sum(ln((${input.total} + 1)::float8 / matching)) AS score
+      FROM (SELECT id, count(*) OVER (PARTITION BY word) AS matching FROM matches) AS weighted
+      GROUP BY id
     )
-    SELECT id, short_id, user_id, kind, content, priority, source, source_conversation_id, source_message_id,
-           resource_type, resource_id, created_at, updated_at
-    FROM ai.memories, relevance
-    WHERE relevance.query IS NOT NULL
-      AND user_id = ${input.userId}::uuid AND deleted_at IS NULL AND superseded_by_id IS NULL
-      AND stem_document @@ relevance.query
-    ORDER BY ts_rank_cd(stem_document, relevance.query) DESC, updated_at DESC, id ASC
+    SELECT memory.id, memory.short_id, memory.user_id, memory.kind, memory.content, memory.priority, memory.source,
+           memory.source_conversation_id, memory.source_message_id, memory.resource_type, memory.resource_id,
+           memory.created_at, memory.updated_at
+    FROM ai.memories AS memory JOIN scores ON scores.id = memory.id
+    ORDER BY scores.score DESC, memory.updated_at DESC, memory.id ASC
     LIMIT ${input.limit}
   `;
   return rows.map(toMemory);
@@ -649,7 +656,7 @@ export const aiMemories = {
 
     const [pinned, relevant, recent] = await Promise.all([
       listActive(userId, 50).then((items) => items.filter((item) => item.priority === "pinned")),
-      selectRelevant({ userId, text: query, limit: 40 }),
+      selectRelevant({ userId, text: query, total: count, limit: 40 }),
       listActive(userId, 40),
     ]);
     const seen = new Set<string>();
