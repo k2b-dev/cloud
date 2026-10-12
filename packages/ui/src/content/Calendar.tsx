@@ -2392,7 +2392,8 @@ const TimeGridView = (props: {
     });
   });
   return (
-    <div class="k2b-calendar-time-grid">
+    // The week and day grid squeezes its days left of a tablet detail drawer; outside a drawer the trail adds nothing.
+    <div class="k2b-calendar-time-grid k2b-detail-trail">
       <div class="k2b-calendar-time-grid__days" style={{ "grid-template-columns": `4rem repeat(${props.days.length}, minmax(0, 1fr))` }}>
         <div />
         <For each={props.days}>

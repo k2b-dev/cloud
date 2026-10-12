@@ -97,6 +97,7 @@ narrow with Main and keep their own scroll content. Mark a board's horizontal
 scroller with `k2b-detail-trail` too: under the tablet drawer, which leaves
 Main its width, a marked scroller gets the drawer's width as space at its end,
 so its last column scrolls out from under the drawer.
+The week and day views of `Calendar` mark themselves.
 
 Escape closes a closable panel. J and K step a steppable panel. F6 switches
 focus between Main’s remembered item and the panel title, with or without

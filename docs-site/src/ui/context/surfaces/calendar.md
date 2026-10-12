@@ -218,6 +218,13 @@ Day and week views accept `startHour`, `endHour`, `visibleStartHour`, and
 lane. `selectedDate`, `selectedEventId`, and `dayBadges` add host-owned
 selection and compact status context.
 
+Day and week views carry `k2b-detail-trail` themselves, so applications add
+nothing beside an [AppWorkspace detail panel](/en/ui/layout/workspace#floating-detail).
+Under the touch-tablet drawer, the days narrow into the space beside the
+drawer, and the selected event stays visible there. A day column keeps its
+minimum width and scrolls. The month view keeps its full width under the
+drawer.
+
 ## Interaction
 
 The following callbacks enable matching hydrated interactions:

@@ -36,6 +36,15 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(checkCalendarMessages()).toEqual([]);
   });
 
+  test("marks only the calendar's week and day grids for workspace detail", () => {
+    const render = (view: CalendarView) =>
+      renderToString(() => createComponent(Calendar, { date: "2026-07-19", events: [], view, timeZone: "UTC" }));
+    for (const view of ["week", "day"] as const) {
+      expect(render(view)).toContain('class="k2b-calendar-time-grid k2b-detail-trail"');
+    }
+    expect(render("month")).not.toContain("k2b-detail-trail");
+  });
+
   test("keeps the complete calendar event and view contract on the server", () => {
     const events: CalendarEvent[] = [
       {
