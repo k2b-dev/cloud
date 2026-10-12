@@ -1065,7 +1065,11 @@ const WeekColumn = (props: {
               {(entry, index) => {
                 const checked = () => view.checkedOf(entry.event);
                 return (
-                  <li data-checked={checked() ? "true" : undefined}>
+                  <li
+                    data-checkbox={checked() !== undefined ? "true" : undefined}
+                    data-checked={checked() ? "true" : undefined}
+                    style={{ "--k2b-calendar-accent": eventAccent(entry.event) }}
+                  >
                     <Show when={checked() !== undefined}>
                       <TimeCheck view={view} event={entry.event} tabIndex={-1} />
                     </Show>
