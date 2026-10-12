@@ -65,8 +65,8 @@ Lists in the note editor follow their structure. The keys work the same for bull
 | **Tab** or **Ctrl/⌘+]** | Nests the item under the item above. Its sub-items move with it. |
 | **Shift+Tab** or **Ctrl/⌘+[** | Moves the item one level out. |
 | **Alt+Up/Down** | Moves the item with its sub-items past the item above or below. It stops at the list edge. |
-| **Ctrl/⌘+Shift+7**, **8**, **9** | Changes the selected lines to a numbered list, a bullet list or a checklist. The depth stays. Press it again on a top-level item to get normal text. |
-| **Ctrl/⌘+Enter** | Checks or unchecks the task at the cursor. |
+| **Ctrl/⌘+Shift+7**, **8**, **9** | Changes the selected lines to a numbered list, a bullet list or a checklist. The depth stays. Press it again on a top-level item to get normal text. The keys are the number keys 7, 8 and 9 on every keyboard layout. |
+| **Ctrl/⌘+Enter** | Checks or unchecks the task at the cursor, also from a later line of the task. |
 | `- `, `1. ` or `[] ` at the start of a line | Starts a bullet list, a numbered list or a checklist. |
 
 **Shift+Enter** starts a new line in the same item. **Backspace** directly after `# ` turns a heading into normal text.

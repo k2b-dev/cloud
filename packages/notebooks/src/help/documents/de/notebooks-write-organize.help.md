@@ -65,8 +65,8 @@ Listen im Notizeditor folgen ihrer Struktur. Die Tasten wirken gleich für Aufz�
 | **Tab** oder **Strg/⌘+]** | Ordnet den Eintrag dem Eintrag darüber unter. Seine Untereinträge wandern mit. |
 | **Umschalt+Tab** oder **Strg/⌘+[** | Rückt den Eintrag eine Ebene aus. |
 | **Alt+Pfeil nach oben/unten** | Verschiebt den Eintrag samt Untereinträgen am Eintrag darüber oder darunter vorbei. Am Listenrand bleibt er stehen. |
-| **Strg/⌘+Umschalt+7**, **8**, **9** | Macht aus den markierten Zeilen eine nummerierte Liste, eine Aufzählung oder eine Checkliste. Die Tiefe bleibt. Noch einmal auf einem Eintrag der obersten Ebene ergibt normalen Text. |
-| **Strg/⌘+Enter** | Hakt die Aufgabe am Cursor ab oder entfernt den Haken. |
+| **Strg/⌘+Umschalt+7**, **8**, **9** | Macht aus den markierten Zeilen eine nummerierte Liste, eine Aufzählung oder eine Checkliste. Die Tiefe bleibt. Noch einmal auf einem Eintrag der obersten Ebene ergibt normalen Text. Gemeint sind die Zifferntasten 7, 8 und 9, auf jedem Tastaturlayout. |
+| **Strg/⌘+Enter** | Hakt die Aufgabe am Cursor ab oder entfernt den Haken, auch aus einer weiteren Zeile der Aufgabe. |
 | `- `, `1. ` oder `[] ` am Zeilenanfang | Beginnt eine Aufzählung, eine nummerierte Liste oder eine Checkliste. |
 
 **Umschalt+Enter** beginnt eine neue Zeile im selben Eintrag. **Rücktaste** direkt nach `# ` macht aus einer Überschrift normalen Text.

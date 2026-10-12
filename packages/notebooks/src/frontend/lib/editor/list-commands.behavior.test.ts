@@ -34,10 +34,12 @@ const mount = (doc: string, head = doc.length, tab = true, extensions: Extension
   });
   if (parse) forceParsing(view, doc.length, 5000);
   const press = (
-    key: "Tab" | "Enter" | "Backspace" | "ArrowUp" | "ArrowDown" | "]" | "[" | "&" | "*" | "(",
-    modifiers: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean } = {},
+    key: "Tab" | "Enter" | "Backspace" | "ArrowUp" | "ArrowDown" | "]" | "[" | "&" | "*" | "(" | "/",
+    modifiers: { shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; code?: string } = {},
   ) => {
-    const keyCode = { Tab: 9, Enter: 13, Backspace: 8, ArrowUp: 38, ArrowDown: 40, "]": 221, "[": 219, "&": 55, "*": 56, "(": 57 }[key];
+    const keyCode = { Tab: 9, Enter: 13, Backspace: 8, ArrowUp: 38, ArrowDown: 40, "]": 221, "[": 219, "&": 55, "*": 56, "(": 57, "/": 55 }[
+      key
+    ];
     const event = new KeyboardEvent("keydown", { key, keyCode, ...modifiers, bubbles: true, cancelable: true });
     view.contentDOM.dispatchEvent(event);
     return event.defaultPrevented;
@@ -701,6 +703,88 @@ describe("notebook structural list commands", () => {
 });
 
 describe("notebook list typing and kinds", () => {
+  test("the physical Digit7 shortcut takes precedence over toggleComment", () => {
+    using editor = mount("- a");
+    expect(editor.press("/", { ctrlKey: true, shiftKey: true, code: "Digit7" })).toBe(true);
+    expect(editor.text()).toBe("1. a");
+  });
+
+  test.each([undefined, "KeyA"])("a shifted key without a physical digit code does not convert: %s", (code) => {
+    using editor = mount("- a");
+    expect(editor.press("&", { ctrlKey: true, shiftKey: true, code })).toBe(false);
+    expect(editor.text()).toBe("- a");
+  });
+
+  test("Mod-Enter toggles the task from a continuation line", () => {
+    using editor = mount("- [ ] buy\n  milk and eggs");
+    expect(editor.press("Enter", mod)).toBe(true);
+    expect(editor.text()).toBe("- [x] buy\n  milk and eggs");
+  });
+
+  test("a non-task child does not toggle its task parent", () => {
+    using editor = mount("- [ ] p\n  - child");
+    expect(toggleTaskAtCaret(editor.view)).toBe(false);
+    expect(editor.text()).toBe("- [ ] p\n  - child");
+  });
+
+  test.each([
+    ["-", 1, "- [ ] "],
+    ["1.", 2, "- [ ] "],
+    ["-\n- b", 1, "- [ ] \n- b"],
+  ] as const)("a bare marker becomes a task without touching the next line: %s", (doc, head, expected) => {
+    using editor = mount(doc, head);
+    expect(setListKind("task")(editor.view)).toBe(true);
+    expect(editor.text()).toBe(expected);
+  });
+
+  test.each([
+    ["1. a\n2. b\n3. [ ] c\n4. d", "kind", "1. a\n- b\n1. [ ] c\n2. d"],
+    ["1. a\n2. b\n3. [ ] c\n4. d", "Backspace", "1. a\n\nb\n\n1. [ ] c\n2. d"],
+    ["1. a\n2. \n3. [ ] c\n4. d", "Enter", "1. a\n\n\n\n1. [ ] c\n2. d"],
+  ] as const)("leaving an ordered item restarts ordered task siblings: %s (%s)", (doc, command, expected) => {
+    using editor = mount(doc, 8);
+    expect(command === "kind" ? setListKind("bullet")(editor.view) : editor.press(command)).toBe(true);
+    expect(editor.text()).toBe(expected);
+  });
+
+  test.each(["Backspace", "kind"] as const)("converting a wide marker to prose removes continuation indentation: %s", (command) => {
+    using editor = mount("10. a\n\n    continuation", 4);
+    expect(command === "kind" ? setListKind("ordered")(editor.view) : editor.press(command)).toBe(true);
+    expect(editor.text()).toBe("a\n\ncontinuation");
+  });
+
+  test("a converted item separates its continuation block from the following list", () => {
+    using editor = mount("- a\n- b\n  more\n- c", 6);
+    expect(editor.press("Backspace")).toBe(true);
+    expect(editor.text()).toBe("- a\n\nb\nmore\n\n- c");
+  });
+
+  test("Enter again after ending a list keeps the restarted suffix when typing prose", () => {
+    using editor = mount("1. a\n2. \n3. c", 8, true, [history()]);
+    expect(editor.press("Enter")).toBe(true);
+    expect(editor.text()).toBe("1. a\n\n\n\n1. c");
+    expect(editor.press("Enter")).toBe(true);
+    expect(editor.text()).toBe("1. a\n\n\n\n\n1. c");
+    editor.type("x");
+    expect(editor.text()).toBe("1. a\n\n\nx\n\n1. c");
+  });
+
+  test("inserting a blank line inside blank lines keeps the ordered suffix start", () => {
+    using editor = mount("1. a\n\n\n1. c", 6);
+    editor.type("\n");
+    expect(editor.text()).toBe("1. a\n\n\n\n1. c");
+  });
+
+  test.each([
+    ["> # Titel", "> Titel"],
+    ["- # Titel", "- Titel"],
+  ])("Backspace removes a heading mark inside its container: %s", (doc, expected) => {
+    using editor = mount(doc, 4);
+    expect(editor.press("Backspace")).toBe(true);
+    expect(editor.text()).toBe(expected);
+    expect(editor.view.state.selection.main.head).toBe(2);
+  });
+
   test.each([
     ["1. a\n2. b\n3. c", "task", 8, 8, "1. a\n- [ ] b\n1. c", 11, 11],
     ["1. a\n2. b\n3. c", "bullet", 8, 8, "1. a\n- b\n1. c", 7, 7],
@@ -826,19 +910,19 @@ describe("notebook list typing and kinds", () => {
   });
 
   test.each([
-    ["&", "1. a"],
-    ["*", "a"],
-    ["(", "- [ ] a"],
-  ] as const)("shifted digit %s uses keyCode", (key, expected) => {
+    ["&", "Digit7", "1. a"],
+    ["*", "Digit8", "a"],
+    ["(", "Digit9", "- [ ] a"],
+  ] as const)("shifted key %s uses the physical key %s", (key, code, expected) => {
     using editor = mount("- a");
-    expect(editor.press(key, { ctrlKey: true, shiftKey: true })).toBe(true);
+    expect(editor.press(key, { ctrlKey: true, shiftKey: true, code })).toBe(true);
     expect(editor.text()).toBe(expected);
   });
 
   test("kind conversion preserves three selected depths and selection text", () => {
     using editor = mount("- a\n  - b\n    - c", 2);
     editor.view.dispatch({ selection: { anchor: 2, head: editor.text().length } });
-    expect(editor.press("&", { ctrlKey: true, shiftKey: true })).toBe(true);
+    expect(editor.press("&", { ctrlKey: true, shiftKey: true, code: "Digit7" })).toBe(true);
     expect(editor.text()).toBe("1. a\n   1. b\n      1. c");
     expect(editor.view.state.sliceDoc(editor.view.state.selection.main.anchor, editor.view.state.selection.main.anchor + 1)).toBe("a");
     expect(editor.view.state.selection.main.head).toBe(editor.text().length);

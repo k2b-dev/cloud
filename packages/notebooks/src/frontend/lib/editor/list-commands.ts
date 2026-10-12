@@ -23,6 +23,7 @@ import { type ExcludedSpan, excludedSpans, listStructure, markerChanges, renumbe
 import { listStateField } from "./lists";
 
 type Direction = 1 | -1;
+const mac = typeof navigator !== "undefined" && /Mac/.test(navigator.platform);
 
 /**
  * Marks a command that already restarted the numbers after an ordered item that left its list. The renumber filter
@@ -316,8 +317,7 @@ const followingOrderedMarkers = (state: EditorState, removed: readonly Line[], t
       if (!parsed) break;
       tree = parsed;
       const sibling = listItemLine(tree, next, excluded);
-      if (!sibling || sibling.indent !== item.indent || itemKind(next, sibling) !== "ordered" || !sameKind(sibling.marker, item.marker))
-        break;
+      if (!sibling || sibling.indent !== item.indent || !/^\d/.test(sibling.marker) || !sameKind(sibling.marker, item.marker)) break;
       markers.push({
         line: number,
         to: state.doc.line(end).to,
@@ -334,7 +334,13 @@ const followingOrderedMarkers = (state: EditorState, removed: readonly Line[], t
 /** Neighbours retain their old structure, except lines converted to paragraphs in this command. */
 const separateLines = (state: EditorState, changes: ChangeSet, paragraphs: readonly number[], emptyItems: readonly number[] = []) => {
   if (!paragraphs.length && !emptyItems.length) return changes;
-  const last = Math.max(...[...paragraphs, ...emptyItems].map((from) => state.doc.lineAt(from).number));
+  const last = Math.max(
+    ...paragraphs.map((from) => {
+      const line = state.doc.lineAt(from);
+      return nestedEnd(state, line, leadingWhitespace(line.text));
+    }),
+    ...emptyItems.map((from) => state.doc.lineAt(from).number),
+  );
   const tree = ensureSyntaxTree(state, state.doc.line(Math.min(state.doc.lines, last + 1)).to, 50);
   if (!tree) return changes;
   const excluded = excludedLines(state);
@@ -357,7 +363,8 @@ const separateLines = (state: EditorState, changes: ChangeSet, paragraphs: reado
   for (const number of converted) {
     const line = state.doc.line(number);
     const above = number > 1 ? state.doc.line(number - 1) : null;
-    const below = number < state.doc.lines ? state.doc.line(number + 1) : null;
+    const end = nestedEnd(state, line, leadingWhitespace(line.text));
+    const below = end < state.doc.lines ? state.doc.line(end + 1) : null;
     if (above?.text.trim() && !converted.has(above.number) && listContent(above)) blanks.add(line.from);
     if (below && !converted.has(below.number) && listItemLine(tree, below, excluded)) blanks.add(below.from);
   }
@@ -394,7 +401,17 @@ const paragraphAtCaret = (
   const from = textStart(line, item);
   const following = followingOrderedMarkers(state, [line], tree, excluded);
   const rewritten = markerChanges(state, { items: following }, new Map(following.map((item, index) => [index, item.marker])));
-  const paragraph = ChangeSet.of({ from: rewritten.mapPos(line.from), to: rewritten.mapPos(from) }, rewritten.newLength);
+  const specs: ChangeSpec[] = [{ from: rewritten.mapPos(line.from), to: rewritten.mapPos(from) }];
+  const end = nestedEnd(state, line, item.indent);
+  for (let number = line.number + 1; number <= end; number++) {
+    const continuation = state.doc.line(number);
+    if (!continuation.text.trim()) continue;
+    specs.push({
+      from: rewritten.mapPos(continuation.from),
+      to: rewritten.mapPos(continuation.from + Math.min(leadingWhitespace(continuation.text), item.content)),
+    });
+  }
+  const paragraph = ChangeSet.of(specs, rewritten.newLength);
   const changes = separateLines(state, rewritten.compose(paragraph), [line.from]);
   view.dispatch({
     changes,
@@ -459,15 +476,16 @@ const backspaceListItem: Command = (view) => {
   }
   if (excluded().some((span) => head >= span.from && head < span.to)) return false;
   for (let node = tree.resolveInner(head, -1); node; ) {
-    if (/^ATXHeading[1-6]$/.test(node.name) && node.parent?.name === "Document") {
+    if (/^ATXHeading[1-6]$/.test(node.name) && /^(Document|Blockquote|ListItem)$/.test(node.parent?.name ?? "")) {
       const mark = node.getChild("HeaderMark");
       if (!mark) return false;
       let start = mark.to;
       while (start < line.to && /[ \t]/.test(state.sliceDoc(start, start + 1))) start++;
       if (head !== start) return false;
+      const from = node.parent?.name === "Document" ? line.from : mark.from;
       view.dispatch({
-        changes: { from: line.from, to: start },
-        selection: { anchor: line.from },
+        changes: { from, to: start },
+        selection: { anchor: from },
         scrollIntoView: true,
         userEvent: "delete",
       });
@@ -502,6 +520,15 @@ export const setListKind =
       if (toggle) {
         if (item && !item.indent && !firstChild(state, line, item, tree, excluded)) {
           specs.push({ from: line.from, to: textStart(line, item) });
+          const end = nestedEnd(state, line, item.indent);
+          for (let number = line.number + 1; number <= end; number++) {
+            const continuation = state.doc.line(number);
+            if (!continuation.text.trim()) continue;
+            specs.push({
+              from: continuation.from,
+              to: continuation.from + Math.min(leadingWhitespace(continuation.text), item.content),
+            });
+          }
           paragraphs.push(line.from);
           removed.push(line);
         }
@@ -539,7 +566,11 @@ export const setListKind =
       });
       const box = taskBox(line, item);
       if (box) specs.push({ from: line.from + item.content, to: textStart(line, item) });
-      if (kind === "task") specs.push({ from: line.from + item.content, insert: "[ ] " });
+      if (kind === "task")
+        specs.push({
+          from: line.from + Math.min(item.content, line.text.length),
+          insert: line.text.length < item.content ? " [ ] " : "[ ] ",
+        });
     }
     const following = followingOrderedMarkers(state, removed, tree, excluded);
     for (const item of following) {
@@ -584,9 +615,23 @@ export const setListKind =
 export const toggleTaskAtCaret: Command = (view) => {
   const { state } = view;
   if (state.readOnly) return false;
-  const line = state.doc.lineAt(state.selection.main.head);
+  const head = state.selection.main.head;
+  let line = state.doc.lineAt(head);
   const tree = ensureSyntaxTree(state, line.to, 50);
-  const item = tree && listItemLine(tree, line, excludedLines(state));
+  if (!tree) return false;
+  const excluded = excludedLines(state);
+  let item = listItemLine(tree, line, excluded);
+  if (!item) {
+    for (let node = tree.resolveInner(head, -1); node; ) {
+      if (node.name === "ListItem") {
+        line = state.doc.lineAt(node.from);
+        item = listItemLine(tree, line, excluded);
+        break;
+      }
+      if (!node.parent) break;
+      node = node.parent;
+    }
+  }
   const box = item && taskBox(line, item);
   if (!item || !box) return false;
   const from = line.from + item.content + box[0].indexOf("[") + 1;
@@ -859,11 +904,21 @@ const renumber = EditorState.transactionFilter.of((tr: Transaction) => {
   tr.changes.iterChangedRanges((fromA, toA, fromB, toB) => {
     oldRanges.push({ from: fromA, to: toA });
     changedRanges.push({ from: fromB, to: toB });
+    const oldSlice = tr.startState.sliceDoc(fromA, toA);
+    const newSlice = tr.state.sliceDoc(fromB, toB);
+    const withinBlankLines =
+      !oldSlice.trim() &&
+      !newSlice.trim() &&
+      !tr.startState.doc.lineAt(fromA).text.trim() &&
+      !tr.startState.doc.lineAt(toA).text.trim() &&
+      !tr.newDoc.lineAt(fromB).text.trim() &&
+      !tr.newDoc.lineAt(toB).text.trim();
     if (
-      tr.startState.sliceDoc(fromA, toA).includes("\n") ||
-      tr.state.sliceDoc(fromB, toB).includes("\n") ||
-      prefixTouched(tr.startState, fromA, toA, deadline) ||
-      prefixTouched(tr.state, fromB, toB, deadline)
+      !withinBlankLines &&
+      (oldSlice.includes("\n") ||
+        newSlice.includes("\n") ||
+        prefixTouched(tr.startState, fromA, toA, deadline) ||
+        prefixTouched(tr.state, fromB, toB, deadline))
     )
       structural = true;
     const first = Math.max(1, tr.newDoc.lineAt(fromB).number - 1);
@@ -955,13 +1010,27 @@ const renumber = EditorState.transactionFilter.of((tr: Transaction) => {
 
 export const listCommandsExtension = (): Extension => [
   Prec.highest(
+    EditorView.domEventHandlers({
+      keydown(event, view) {
+        if (
+          !event.shiftKey ||
+          event.altKey ||
+          event.isComposing ||
+          !(mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)
+        )
+          return false;
+        const kind = event.code === "Digit7" ? "ordered" : event.code === "Digit8" ? "bullet" : event.code === "Digit9" ? "task" : null;
+        if (!kind || !setListKind(kind)(view)) return false;
+        event.preventDefault();
+        return true;
+      },
+    }),
+  ),
+  Prec.highest(
     keymap.of([
       { key: "Enter", run: enterListItem },
       { key: "Backspace", run: backspaceListItem },
       { key: "Mod-Enter", run: toggleTaskAtCaret },
-      { key: "Mod-Shift-7", run: setListKind("ordered") },
-      { key: "Mod-Shift-8", run: setListKind("bullet") },
-      { key: "Mod-Shift-9", run: setListKind("task") },
     ]),
   ),
   typedTask,
