@@ -85,12 +85,13 @@ off. Put state that the line shows only as an icon into `accessibleDetail`.
   Its weeks are compact rows at least 44 px (2.75rem) tall instead of the
   month view's full height, so the agenda follows close below the grid.
 
-A week needs 40 rem: 36 rem shared by its days plus the hour gutter. A day
-view's single day needs 12 rem per overlapping lane.
+Without `dayHours`, a week needs 40 rem: 36 rem shared by its days plus the
+hour gutter. A day view's single day needs 12 rem per overlapping lane.
 A narrower calendar, such as one beside the detail panel or on a phone,
 scrolls the hours sideways inside its rounded frame. The day and all-day rows
 follow, the hour gutter stays in view, and the vertical scrollbar stays at the
-frame's edge.
+frame's edge. An event or day that is selected or focused at the start edge
+stops beside the hour gutter, not under it.
 
 Limit the switcher with `views`. `getDateHref`, `getViewHref`, and
 `getEventHref` keep navigation functional in the server response.

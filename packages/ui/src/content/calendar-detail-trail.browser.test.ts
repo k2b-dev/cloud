@@ -18,7 +18,11 @@ render(() => createComponent(PageTrailProvider, { trail:{title:"Calendar",ancest
     createComponent(AppWorkspace.Content, { get children() { return [
       createComponent(AppWorkspace.Main, { class:"fixture-main", scroll:false, get children() { return createComponent(Calendar, {
         class:"fixture-calendar", view:document.body.dataset.view, date:"2026-07-19", timeZone:"UTC", startHour:8,
-        events:[{id:"sunday",title:"Sunday meeting",start:"2026-07-19T10:00:00Z",end:"2026-07-19T11:00:00Z"}],
+        events:[
+          {id:"sunday",title:"Sunday meeting",start:"2026-07-19T10:00:00Z",end:"2026-07-19T11:00:00Z"},
+          {id:"monday",title:"Monday review",start:"2026-07-13T10:00:00Z",end:"2026-07-13T11:00:00Z"},
+          ...[1, 2, 3, 4, 5].map((n) => ({id:"tuesday-" + n,title:"Tuesday call " + n,start:"2026-07-14T10:00:00Z",end:"2026-07-14T11:00:00Z"})),
+        ],
         onEventActivate:() => setOpen(true),
       }); } }),
       createComponent(AppWorkspace.Detail, { id:"event", width:document.body.dataset.width, get open() { return open(); }, onClose:() => setOpen(false),
@@ -118,6 +122,44 @@ const placement = (page: Page) =>
     };
   });
 
+/** Resolves once the hours have not scrolled for ten frames and the day and all-day rows match them. */
+const settled = async (page: Page) => {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const scroll = document.querySelector<HTMLElement>(".k2b-calendar-time-grid__scroll")!;
+        let last = scroll.scrollLeft;
+        let still = 0;
+        const tick = () => {
+          still = scroll.scrollLeft === last ? still + 1 : 0;
+          last = scroll.scrollLeft;
+          if (still >= 10) resolve();
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+  );
+  await page.waitForFunction(() => {
+    const hoursScroll = document.querySelector(".k2b-calendar-time-grid__scroll")!.scrollLeft;
+    return (
+      document.querySelector(".k2b-calendar-time-grid__days")!.scrollLeft === hoursScroll &&
+      document.querySelector(".k2b-calendar-time-grid__all-day")!.scrollLeft === hoursScroll
+    );
+  });
+};
+/** The Monday event and day header against the right edge of the sticky hour gutter and corner they scroll under. */
+const mondayEdges = (page: Page) =>
+  page.evaluate(() => {
+    const grid = document.querySelector(".k2b-calendar-time-grid")!;
+    const event = [...grid.querySelectorAll("[data-calendar-event]")].find((element) => element.textContent?.includes("Monday review"))!;
+    return {
+      event: event.getBoundingClientRect().left,
+      gutter: grid.querySelector(".k2b-calendar-time-grid__gutter")!.getBoundingClientRect().right,
+      header: grid.querySelector(".k2b-calendar-time-grid__day")!.getBoundingClientRect().left,
+      corner: grid.querySelector(".k2b-calendar-time-grid__corner")!.getBoundingClientRect().right,
+    };
+  });
+
 describe("calendar beside the workspace detail", () => {
   for (const [width, height, panel] of [
     [820, 1180, "md"],
@@ -194,7 +236,8 @@ describe("calendar beside the workspace detail", () => {
             };
           });
           expect(shape.right).toBeLessThanOrEqual(surface.innerRight + 0.5);
-          expect(shape.gridLeft).toBeCloseTo(surface.innerLeft, 0);
+          // The gutter sits inside the hour scroller, so it moves if anything around the hours scrolls (#1031).
+          expect(shape.gutterLeft).toBeCloseTo(surface.innerLeft, 0);
           expect(surface.right).toBeCloseTo(shape.panel - 8, 0);
           for (const radius of surface.radii) expect(radius).toBeGreaterThan(0);
         } finally {
@@ -214,6 +257,91 @@ describe("calendar beside the workspace detail", () => {
       const sheet = await page.locator(".k2b-app-workspace__detail").boundingBox();
       expect(sheet!.y + sheet!.height).toBeCloseTo(844, 1);
       expect(sheet!.height).toBeCloseTo(844 * 0.55, 1);
+    } finally {
+      await page.close();
+    }
+  });
+  test("820×1180 touch tablet with motion: the smooth reveal scrolls Sunday out beside the drawer", async () => {
+    const { page } = await load(820, 1180, "week", { ...touch, reducedMotion: "no-preference" });
+    try {
+      await settled(page);
+      const shape = await placement(page);
+      expect(shape.hoursScroll).toBeGreaterThan(0);
+      expect(shape.daysScroll).toBe(shape.hoursScroll);
+      expect(shape.allDayScroll).toBe(shape.hoursScroll);
+      expect(shape.right).toBeLessThanOrEqual(shape.panel);
+      expect(shape.right).toBeGreaterThan(shape.panel - 32);
+      expect(shape.hit).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+  test("820×1180 touch tablet: Monday's event and header scroll back into view beside the hour gutter", async () => {
+    const { page } = await load(820, 1180, "week", touch);
+    try {
+      expect((await placement(page)).hoursScroll).toBeGreaterThan(64);
+      await page.evaluate(() =>
+        [...document.querySelectorAll("[data-calendar-event]")]
+          .find((element) => element.textContent?.includes("Monday review"))!
+          .scrollIntoView({ block: "nearest", inline: "nearest" }),
+      );
+      await settled(page);
+      const event = await mondayEdges(page);
+      expect(event.event).toBeGreaterThanOrEqual(event.gutter - 0.5);
+      await page.evaluate(() => {
+        document.querySelector<HTMLElement>(".k2b-calendar-time-grid__scroll")!.scrollLeft = 10_000;
+      });
+      await settled(page);
+      await page.evaluate(() =>
+        document.querySelector(".k2b-calendar-time-grid__day")!.scrollIntoView({ block: "nearest", inline: "nearest" }),
+      );
+      await settled(page);
+      const header = await mondayEdges(page);
+      expect(header.header).toBeGreaterThanOrEqual(header.corner - 0.5);
+    } finally {
+      await page.close();
+    }
+  });
+  test("820×1180: Tuesday's overflow menu stays above the hour gutter it opens over", async () => {
+    const { page } = await load(820, 1180, "week", touch);
+    try {
+      await page.evaluate(() => {
+        document.querySelector<HTMLElement>(".k2b-calendar-time-grid__scroll")!.scrollLeft = 0;
+      });
+      await settled(page);
+      await page.evaluate(() => document.querySelector<HTMLElement>(".k2b-calendar-time-grid__overflow")!.click());
+      const covered = await page.locator(".k2b-calendar-time-grid__overflow-menu").evaluate((menu) => {
+        const box = menu.getBoundingClientRect();
+        const gutter = menu.closest(".k2b-calendar-time-grid")!.querySelector(".k2b-calendar-time-grid__gutter")!.getBoundingClientRect();
+        const y = box.top + box.height / 2;
+        const xs = [box.left + 2, (Math.max(box.left, gutter.left) + gutter.right) / 2, gutter.right - 2];
+        return { overlaps: box.left < gutter.right, hits: xs.map((x) => menu.contains(document.elementFromPoint(x, y))) };
+      });
+      expect(covered.overlaps).toBe(true);
+      expect(covered.hits).toEqual([true, true, true]);
+    } finally {
+      await page.close();
+    }
+  });
+  test("390×844 touch phone: the week reveals a Monday event beside the hour gutter, not under it", async () => {
+    const { page } = await load(390, 844, "week", { hasTouch: true });
+    try {
+      await page.keyboard.press("Escape");
+      await page.locator(".k2b-app-workspace__detail").waitFor({ state: "hidden" });
+      await page.evaluate(() => {
+        document.querySelector<HTMLElement>(".k2b-calendar-time-grid__scroll")!.scrollLeft = 10_000;
+        [...document.querySelectorAll<HTMLElement>("[data-calendar-event]")]
+          .find((element) => element.textContent?.includes("Monday review"))!
+          .focus({ preventScroll: true });
+      });
+      await settled(page);
+      expect((await mondayEdges(page)).event).toBeLessThan((await mondayEdges(page)).gutter);
+      await page.keyboard.press("Enter");
+      await page.locator(".k2b-app-workspace__detail").waitFor();
+      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      await settled(page);
+      const edges = await mondayEdges(page);
+      expect(edges.event).toBeGreaterThanOrEqual(edges.gutter - 0.5);
     } finally {
       await page.close();
     }
