@@ -85,6 +85,7 @@ class InfoBlockWidget extends WidgetType {
 
   override get estimatedHeight() {
     // At 16px / 26px, count each title and unwrapped body line, plus 32px padding, 2px border and a 4px title gap.
+    // A wrapped line measures taller; CodeMirror corrects the height once the notice renders.
     const lines = this.blockData.content.split("\n").length + (this.blockData.title ? 1 : 0);
     return lines * 26 + 34 + (this.blockData.title ? 4 : 0);
   }

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../../ui/test/browser";
+import { browserName, launchBrowser } from "../../../../../ui/test/browser";
 import { renderNotebookBook } from "../../../lib/book-renderer";
 import type { ReadingColumnHarness } from "./reading-column.browser-harness";
 
@@ -32,6 +32,12 @@ const markdown = [
   prose,
   "",
   "Wir sammeln **wichtige Gedanken** und *leise Fragen* für unser Team.",
+  "",
+  "Der Befehl `cld notes list` zeigt alle Notizen.",
+  "",
+  "```js",
+  "const team = await notes.list();",
+  "```",
   "",
   ":::info",
   "Wir halten die nächsten Schritte gemeinsam fest.",
@@ -110,6 +116,7 @@ beforeAll(async () => {
       if (url.pathname === "/wide.png") return new Response(png, { headers: { "content-type": "image/png" } });
       const book = url.searchParams.get("mode") === "book";
       const rows = Number(url.searchParams.get("queryRows") ?? 0);
+      const truncated = url.searchParams.has("queryTruncated");
       const note = url.searchParams.has("queryRows") ? queryDocument : url.searchParams.has("lineBreaks") ? lineBreakDocument : markdown;
       const result = renderNotebookBook({
         markdown: note,
@@ -126,9 +133,9 @@ beforeAll(async () => {
                 href: `/app/notebooks/book01/notes/DEF45${index}`,
                 values: { $title: `Notiz ${index}` },
               })),
-              total: rows,
-              limit: 50,
-              truncated: false,
+              total: truncated ? rows + 1 : rows,
+              limit: truncated ? rows : 50,
+              truncated,
               diagnostics: [],
             },
           ],
@@ -160,11 +167,12 @@ const open = async (
   mode: "write" | "book" | "source",
   width: number,
   dark = false,
-  fixture: { queryRows?: number; lineBreaks?: boolean } = {},
+  fixture: { queryRows?: number; queryTruncated?: boolean; lineBreaks?: boolean } = {},
+  engine = browser,
 ) => {
-  const page = await browser.newPage({ viewport: { width, height: 800 }, isMobile: width === 390, hasTouch: width === 390 });
+  const page = await engine.newPage({ viewport: { width, height: 800 }, isMobile: width === 390, hasTouch: width === 390 });
   await page.goto(
-    `${server.url}?mode=${mode}${dark ? "&dark" : ""}${fixture.queryRows === undefined ? "" : `&queryRows=${fixture.queryRows}`}${fixture.lineBreaks ? "&lineBreaks" : ""}`,
+    `${server.url}?mode=${mode}${dark ? "&dark" : ""}${fixture.queryRows === undefined ? "" : `&queryRows=${fixture.queryRows}`}${fixture.queryTruncated ? "&queryTruncated" : ""}${fixture.lineBreaks ? "&lineBreaks" : ""}`,
   );
   await page.waitForFunction(() => "harness" in window);
   await settle(page);
@@ -272,6 +280,39 @@ for (const mode of ["write", "book"] as const) {
       }
     });
   }
+  // Playwright hides scrollbars by default; Windows and Linux desktops draw classic ones that take presses.
+  test.skipIf(mode === "book" || browserName !== "chromium")(
+    `${mode}: dragging a wide table's classic scrollbar scrolls it and keeps the preview`,
+    async () => {
+      const engine = await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+      try {
+        const page = await open(mode, 1280, false, {}, engine);
+        const wrap = page.locator(".cm-table-widget .md-table-wrap");
+        await wrap.scrollIntoViewIfNeeded();
+        await settle(page);
+        const anchor = await page.evaluate(() => (window as unknown as { harness: ReadingColumnHarness }).harness.anchor());
+        const bar = await wrap.evaluate((element) => {
+          if (!(element instanceof HTMLElement)) throw new Error("Not a table wrap.");
+          const rect = element.getBoundingClientRect();
+          return {
+            track: element.offsetHeight - element.clientHeight,
+            x: rect.left + element.clientLeft + 20,
+            y: rect.top + element.clientTop + element.clientHeight + (element.offsetHeight - element.clientHeight) / 2,
+          };
+        });
+        expect(bar.track).toBeGreaterThan(0);
+        await page.mouse.move(bar.x, bar.y);
+        await page.mouse.down();
+        await page.mouse.move(bar.x + 100, bar.y, { steps: 10 });
+        await page.mouse.up();
+        expect(await page.locator(".cm-table-widget").count()).toBe(1);
+        expect(await wrap.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+        expect(await page.evaluate(() => (window as unknown as { harness: ReadingColumnHarness }).harness.anchor())).toBe(anchor);
+      } finally {
+        await engine.close();
+      }
+    },
+  );
   for (const dark of [false, true]) {
     test(`${mode}: headings, bold and italic inherit body color (${dark ? "dark" : "light"})`, async () => {
       const page = await open(mode, 2560, dark);
@@ -299,7 +340,7 @@ for (const mode of ["write", "book"] as const) {
       }
     });
   }
-  test(`${mode}: body, headings, notices and tables use the shared type scale`, async () => {
+  test(`${mode}: body, headings, code, notices and tables use the shared type scale`, async () => {
     const page = await open(mode, 2560);
     try {
       const body = await measure(page);
@@ -315,6 +356,12 @@ for (const mode of ["write", "book"] as const) {
         return {
           headings: headings.map((element) => getComputedStyle(element).fontSize),
           notice: getComputedStyle(document.querySelector(".k2b-notice-card__body")!).fontSize,
+          code: (mode === "book"
+            ? [document.querySelector("article p code")!, document.querySelector("article pre")!]
+            : ["cld notes list", "const team"].map(
+                (text) => Array.from(document.querySelectorAll(".cm-line .cm-md-code")).find((span) => span.textContent?.includes(text))!,
+              )
+          ).map((element) => getComputedStyle(element).fontSize),
           cells: Array.from(
             document.querySelectorAll(mode === "book" ? "article td" : ".cm-table-widget .md-table-cell"),
             (element) => getComputedStyle(element).fontSize,
@@ -323,6 +370,8 @@ for (const mode of ["write", "book"] as const) {
       }, mode);
       expect(sizes.headings).toEqual(["30px", "24px", "20px"]);
       expect(sizes.notice).toBe("16px");
+      // Inline code at 0.9em and code blocks at 0.85em, as in the Book.
+      expect(sizes.code).toEqual(["14.4px", "13.6px"]);
       expect(sizes.cells.length).toBeGreaterThan(0);
       expect(sizes.cells).toEqual(sizes.cells.map(() => "14px"));
     } finally {
@@ -477,12 +526,34 @@ for (const direction of ["down", "up"]) {
   });
 }
 
-for (const rows of [1, 2]) {
-  test(`query tables with ${rows} result rows estimate their 14px table type and controls`, async () => {
-    const page = await open("write", 1280, false, { queryRows: rows });
+for (const { rows, truncated } of [
+  { rows: 1, truncated: false },
+  { rows: 2, truncated: false },
+  { rows: 2, truncated: true },
+]) {
+  test(`query tables with ${rows} result rows${truncated ? " (truncated)" : ""} estimate their 14px table type and controls`, async () => {
+    const page = await open("write", 1280, false, { queryRows: rows, queryTruncated: truncated });
     try {
       await page.waitForSelector(".cm-query-block-widget .md-table");
       await settle(page);
+      expect(await page.locator(".cm-query-block-preview .notebook-book-empty").count()).toBe(truncated ? 1 : 0);
+      if (truncated) {
+        const count = await page.locator(".cm-query-block-preview .notebook-book-empty").evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            height: element.getBoundingClientRect().height,
+            fontSize: style.fontSize,
+            lineHeight: style.lineHeight,
+            marginTop: style.marginTop,
+            marginBottom: style.marginBottom,
+          };
+        });
+        expect(count.fontSize).toBe("16px");
+        expect(count.lineHeight).toBe("25.6px");
+        expect(count.marginTop).toBe("16px");
+        expect(count.marginBottom).toBe("16px");
+        closeTo(count.height, 25.6);
+      }
       const result = await page.evaluate(() => {
         const harness = (window as unknown as { harness: ReadingColumnHarness }).harness;
         return {
@@ -492,6 +563,24 @@ for (const rows of [1, 2]) {
       });
       expect(result.estimate).toBeGreaterThanOrEqual(result.actual);
       expect(result.estimate - result.actual).toBeLessThanOrEqual(1);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+for (const width of [390, 1280]) {
+  test(`spaces typed where a line wraps never scroll the text sideways at ${width}px`, async () => {
+    const page = await open("write", width);
+    try {
+      const before = await page.evaluate(() => (window as unknown as { harness: ReadingColumnHarness }).harness.sideways());
+      await page.evaluate(() => (window as unknown as { harness: ReadingColumnHarness }).harness.caretAtWrap("Unser Team"));
+      // Book and Write let trailing spaces hang past the column; the caret may follow them, the text stays put.
+      await page.keyboard.type(" ".repeat(40));
+      await settle(page);
+      const after = await page.evaluate(() => (window as unknown as { harness: ReadingColumnHarness }).harness.sideways());
+      expect(after.offsets).toEqual(after.offsets.map(() => 0));
+      closeTo(after.left, before.left);
     } finally {
       await page.close();
     }

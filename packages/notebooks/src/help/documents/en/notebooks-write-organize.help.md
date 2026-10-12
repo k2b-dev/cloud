@@ -100,7 +100,7 @@ The sidebar shows the notebook's notes as a tree, with the homepage first. Filte
 
 ## Hide the navigation {icon="layout-sidebar-left-collapse"}
 
-Hide the navigation to focus on the note: only the text stays on the screen. Hide it also when others can see your screen and must not see your notes and folders.
+Hide the navigation to focus on the note. Hide it also when others can see your screen and must not see your notes and folders.
 
 :::reference
 - **Hide:** Choose **Hide navigation** at the far left of the editor toolbar. You can also press **Cmd/Ctrl+Alt+S**, or type `>` in the Cloud search and run **Hide notebook navigation**. You can also drag the edge of the navigation almost all the way to the left.

@@ -1,5 +1,5 @@
 import { forceParsing } from "@codemirror/language";
-import { EditorState } from "@codemirror/state";
+import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView, lineNumbers, WidgetType } from "@codemirror/view";
 import { ScrollArea } from "@k2b/ui";
 import { createRoot, createSignal } from "solid-js";
@@ -43,7 +43,7 @@ if (mode !== "book")
           locale: () => "de",
           load: async () => ({
             markdown: doc,
-            blocks: [{ line: 3, html: await (await fetch(`/query-html?queryRows=${params.get("queryRows")}`)).text() }],
+            blocks: [{ line: 3, html: await (await fetch(`/query-html?${params}`)).text() }],
             diagnostics: [],
             headings: [],
           }),
@@ -165,6 +165,22 @@ const harness = {
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc }, selection: { anchor: doc.length } });
     forceParsing(view, doc.length, 5000);
     port!.scrollTop = 0;
+  },
+  anchor: () => view!.state.selection.main.anchor,
+  /** Puts the caret at the end of the paragraph's first visual line. */
+  caretAtWrap: (prefix: string) => {
+    const from = view!.state.doc.toString().indexOf(prefix);
+    if (from < 0) throw new Error(`No paragraph: ${prefix}`);
+    const end = view!.moveToLineBoundary(EditorSelection.cursor(from), true, true);
+    const head = view!.state.sliceDoc(end.head - 1, end.head) === " " ? end.head - 1 : end.head;
+    view!.dispatch({ selection: EditorSelection.cursor(head, -1) });
+    view!.focus();
+  },
+  /** The text's left edge and every scroll offset sideways, from the editor up to the page. */
+  sideways: () => {
+    const offsets: number[] = [];
+    for (let element: Element | null = view!.contentDOM; element; element = element.parentElement) offsets.push(element.scrollLeft);
+    return { left: view!.contentDOM.getBoundingClientRect().left, offsets };
   },
   scrollTo: (text: string) => {
     if (!view) throw new Error("No editor on the Book page.");

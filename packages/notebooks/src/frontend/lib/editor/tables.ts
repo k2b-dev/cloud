@@ -262,6 +262,20 @@ class TableWidget extends WidgetType {
     container.innerHTML = renderTable(this.data, this.notebookId);
     applyLigatures(container);
     container.onmousedown = (event) => {
+      const wrap = event.target;
+      if (wrap instanceof HTMLElement && wrap.matches(".md-table-wrap")) {
+        const rect = wrap.getBoundingClientRect();
+        const left = rect.left + wrap.clientLeft;
+        const top = rect.top + wrap.clientTop;
+        // Leave presses on classic scrollbars to the browser so their thumbs can be dragged.
+        if (
+          event.clientX < left ||
+          event.clientX >= left + wrap.clientWidth ||
+          event.clientY < top ||
+          event.clientY >= top + wrap.clientHeight
+        )
+          return;
+      }
       event.preventDefault();
       event.stopPropagation();
       view.dispatch({ selection: { anchor: this.fromPos } });
@@ -311,7 +325,10 @@ class TableWidget extends WidgetType {
     // The header divider stays even in a table with no body rows.
     //
     // ACCURATE estimate matters MORE than buffer — see history at
-    // file top for the click-drift bug this matches.
+    // file top for the click-drift bug this matches. It is exact only for
+    // single-line cells: wrapped cells and a classic horizontal scrollbar
+    // measure taller, and CodeMirror corrects the height once the table
+    // renders, before it paints.
     return (this.data.rows.length + 1) * 37 + Math.max(1, this.data.rows.length) + 8;
   }
 }

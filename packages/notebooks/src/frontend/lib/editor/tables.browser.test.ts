@@ -72,6 +72,27 @@ afterAll(async () => {
   server?.stop(true);
 });
 
+test("clicking a table cell opens its source at the table start", async () => {
+  const page = await browser.newPage({ viewport: { width: 720, height: 900 } });
+  try {
+    await page.goto(server.url.href);
+    await page.locator("#rich .cm-table-widget td").first().click();
+    expect(await page.locator("#rich .cm-table-widget").count()).toBe(0);
+    const result = await page.evaluate(() => {
+      const view = (window as unknown as { rich: import("@codemirror/view").EditorView }).rich;
+      return {
+        anchor: view.state.selection.main.anchor,
+        tableStart: view.state.doc.toString().indexOf("| Format"),
+        focused: view.hasFocus,
+      };
+    });
+    expect(result.anchor).toBe(result.tableStart);
+    expect(result.focused).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
+
 test("the editor table widget bleeds like the Book: flush text, one width for lines and bands, nothing clipped", async () => {
   const page = await browser.newPage({ viewport: { width: 720, height: 900 } });
   try {

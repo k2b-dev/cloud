@@ -100,7 +100,7 @@ Die Seitenleiste zeigt die Notizen des Notizbuchs als Baum, mit der Startseite z
 
 ## Navigation ausblenden {icon="layout-sidebar-left-collapse"}
 
-Blende die Navigation aus, um dich auf die Notiz zu konzentrieren: Nur der Text bleibt auf dem Bildschirm. Blende sie auch aus, wenn andere deinen Bildschirm sehen und deine Notizen und Ordner nicht sehen dürfen.
+Blende die Navigation aus, um dich auf die Notiz zu konzentrieren. Blende sie auch aus, wenn andere deinen Bildschirm sehen und deine Notizen und Ordner nicht sehen dürfen.
 
 :::reference
 - **Ausblenden:** Wähle ganz links in der Werkzeugleiste des Editors **Navigation ausblenden**. Du kannst auch **Cmd/Strg+Alt+S** drücken oder in der Cloud-Suche `>` tippen und **Notizbuch-Navigation ausblenden** ausführen. Oder ziehe den Rand der Navigation fast ganz nach links.

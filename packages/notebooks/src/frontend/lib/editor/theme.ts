@@ -71,6 +71,10 @@ const baseEditorCSS = EditorView.theme({
 export const noteScrollerTheme = EditorView.theme({
   ".cm-editor": { minHeight: "100%" },
   ".cm-scroller": { width: "100%", minHeight: "100%", padding: "1rem" },
+  // The page scrolls, not CodeMirror. Clipping sideways makes the scroller no
+  // scroll container, so CodeMirror cannot shift the text sideways to follow
+  // a caret behind spaces that hang past the column (see `richFontCSS`).
+  "&.cm-editor .cm-scroller": { overflowX: "clip", overflowY: "visible" },
 });
 
 /**
@@ -84,11 +88,15 @@ const richFontCSS = EditorView.theme({
   "&": { fontFamily: "var(--font-sans)", fontSize: "16px" },
   ".cm-scroller": { lineHeight: "1.6" },
   ".cm-line": { fontFamily: "var(--font-sans)" },
-  ".cm-md-code": { fontFamily: "var(--font-mono)" },
+  // The Book's code sizes (`.notebook-book-content pre` and inline `code`).
+  ".cm-md-code": { fontFamily: "var(--font-mono)", fontSize: "0.9em" },
+  ".cm-md-code.cm-md-code-block": { fontSize: "0.85em" },
   ".cm-content": { marginInline: "auto" },
   // CodeMirror wraps with `break-spaces`, where a space at the end of a line
   // takes room and pushes the last word down. The Book lets it hang, so the
-  // editor does too and both break a paragraph at the same words.
+  // editor does too and both break a paragraph at the same words. A run of
+  // spaces typed at a wrap point hangs past the column with the caret until
+  // the next word wraps; the text itself stays in place.
   "&.cm-editor .cm-lineWrapping": { whiteSpace: "pre-wrap" },
 });
 
