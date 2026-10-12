@@ -601,6 +601,52 @@ describe(`Spaces day and week views in ${browserName}`, () => {
     await page.context().close();
   }, 60_000);
 
+  test("loads the earlier week again with a new filter after the reader scrolled to another loaded day", async () => {
+    const page = await open(desktop);
+    const earlier = Promise.withResolvers<void>();
+    const first = at("10-02", "00:00");
+    hold = async (from) => {
+      if (from && Date.parse(from) < Date.parse(first)) await earlier.promise;
+    };
+    try {
+      await page.locator(DAYS).evaluate((element) => {
+        element.scrollTop = element.querySelector<HTMLElement>('[data-calendar-keys="2026-10-12"]')!.offsetTop;
+      });
+      await page.waitForURL(/cd=2026-10-12/);
+      viewRequests.splice(0);
+      await page.locator(DAYS).evaluate((element) => {
+        element.scrollTop = 0;
+      });
+      const pending = await eventually(() => viewRequests.find((request) => request.from && Date.parse(request.from) < Date.parse(first)));
+      expect(pending.includeTray).toBe("false");
+      await page.getByRole("button", { name: "Priorität" }).click();
+      await page.getByRole("menuitemcheckbox", { name: "Hoch" }).click();
+      await page.keyboard.press("Escape");
+      expect(
+        await eventually(() => viewRequests.find((request) => request.href.includes("cpriority=high") && request.from === first)),
+      ).toMatchObject({
+        from: first,
+        to: at("10-31", "00:00"),
+      });
+      // The filter's URL commits only after its snapshot arrived; the earlier week is still held back.
+      await page.waitForFunction(() => new URL(window.location.href).searchParams.get("cpriority") === "high");
+      earlier.resolve();
+      const retried = await eventually(() =>
+        viewRequests.find(
+          (request) => request.href.includes("cpriority=high") && request.from && Date.parse(request.from) < Date.parse(first),
+        ),
+      );
+      expect(retried).toMatchObject({ from: pending.from, to: first, includeTray: "false" });
+      // The earlier block is September 25 through October 1; empty days may share one heading.
+      await page.waitForSelector('[data-calendar-keys*="2026-09-28"]', { state: "attached" });
+      expect(await page.locator('[data-calendar-keys*="2026-09-28"]').count()).toBe(1);
+    } finally {
+      hold = async () => {};
+      earlier.resolve();
+      await page.context().close();
+    }
+  }, 60_000);
+
   test("shows the week as a strip of days that scrolls sideways, settles on a day, and pages by weeks", async () => {
     const page = await open(desktop, { href: hrefOf(TODAY, "week") });
     const title = () => page.locator(".k2b-calendar-header__title > span").first().textContent();

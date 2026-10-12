@@ -115,12 +115,24 @@ export default function SpacesCalendarRoute(props: Props) {
     for (const load of loads) load.abort();
   });
   /**
+   * The stream still shows the same days: the same view, and its date lies in the days loaded before, which `rangeFor`
+   * keeps for it.
+   */
+  const sameDays = (previous: StreamState, next: StreamState) => {
+    const anchor = Date.parse(next.anchor);
+    return (
+      next.view === previous.view &&
+      (next.anchor === previous.anchor || (Date.parse(previous.from) <= anchor && anchor < Date.parse(previous.to)))
+    );
+  };
+  /**
    * Loads the week before or after the loaded days. A snapshot that started meanwhile, such as a refresh after a change
    * or another filter, may bring something the week predates; such a week never joins. It loads again once that
-   * snapshot is in, against the days it brings, so the reader still gets the week they scrolled to.
+   * snapshot is in, against the days it brings, so the reader still gets the week they scrolled to. Another anchor
+   * inside the same view's loaded days keeps the load; an anchor outside them or another view ends it.
    */
   const loadBlock = async (edge: "earlier" | "later"): Promise<void> => {
-    const anchor = stream()?.anchor;
+    let previous = stream();
     const load = new AbortController();
     loads.add(load);
     setLoadingBlocks((count) => count + 1);
@@ -128,15 +140,17 @@ export default function SpacesCalendarRoute(props: Props) {
       for (;;) {
         await settled();
         const current = stream();
-        // Another date opens new days, which ask for their own weeks.
-        if (load.signal.aborted || !current || current.anchor !== anchor) return;
+        // Another view or a date outside the loaded days asks for its own weeks.
+        if (load.signal.aborted || !previous || !current || !sameDays(previous, current)) return;
+        previous = current;
         const block = calendarBlock(current, edge, props.dateConfig);
         if (!block) return;
         const started = snapshotsStarted;
         // The tray stays with the snapshot of the days, so a week loads without it.
         const snapshot = await loadSpacesViewSnapshot(current.source, load.signal, locale(), { ...block, includeTray: "false" });
         const latest = stream();
-        if (snapshot.kind !== "calendar" || !latest || latest.anchor !== anchor) return;
+        if (snapshot.kind !== "calendar" || !latest || !sameDays(previous, latest)) return;
+        previous = latest;
         const moved = edge === "earlier" ? latest.from !== block.to : latest.to !== block.from;
         if (snapshotsStarted !== started || latest.source !== current.source || moved) continue;
         const merged = mergeCalendarItems(latest, { ...block, items: snapshot.items }, props.dateConfig);
