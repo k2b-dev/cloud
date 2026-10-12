@@ -91,11 +91,14 @@ describe("renderAiPlatformPrompt", () => {
     expect(withMemory).toContain("call memory before replying");
     expect(withMemory).toContain("durable and likely useful in future conversations");
     expect(withMemory).toContain("only after the corresponding memory call succeeded");
+    expect(withMemory).toContain("These limits apply to explicit requests too");
+    expect(withMemory).toContain("offer Contacts or the Project instead");
 
     const readOnlyMemory = renderAiPlatformPrompt({ user, memoryEnabled: true, memoryToolEnabled: false });
     expect(readOnlyMemory).toContain("# Personalization rules");
     expect(readOnlyMemory).not.toContain("memory add");
     expect(readOnlyMemory).not.toContain("call memory before replying");
+    expect(readOnlyMemory).not.toContain("These limits apply to explicit requests too");
 
     for (const prompt of [withMemory, readOnlyMemory]) {
       expect(prompt).toContain("only when one changes the answer");

@@ -120,6 +120,7 @@ export const WORKFLOW_PATTERN_PROMPT = [
   "Decide whether three successful uses of the same Cloud capability and resource reveal one reusable workflow default.",
   "Return a workflow only when the user requests share a clear recurring category and defaulting to this resource would avoid a future search or clarification.",
   "Do not generalize from unrelated requests, resource contents, or the Assistant wording. Uncertainty returns null.",
+  "Name the recurring category neutrally: never put details about other people or health, religion or beliefs, political opinions, sexual orientation or sex life, racial or ethnic origin, trade union membership, or genetic or biometric data in the rule. When examples come from Project chats, return a workflow only if it clearly applies beyond that Project; otherwise return null.",
   "If an existing mutable workflow is corrected, return its id. Return multiple ids only when one new workflow genuinely consolidates them. Protected memories cannot be changed.",
 ].join("\n");
 
@@ -395,7 +396,7 @@ const workflowPatternInput = async (
   const examples = evidence
     .map(
       (source, index) =>
-        `EXAMPLE ${index + 1}\nUser: ${boundedText(source.userText, WORKFLOW_EXAMPLE_MAX_CHARS)}\nFinal Assistant context: ${
+        `EXAMPLE ${index + 1}\nChat: ${source.candidate.projectChat ? "Project chat" : "chat outside Projects"}\nUser: ${boundedText(source.userText, WORKFLOW_EXAMPLE_MAX_CHARS)}\nFinal Assistant context: ${
           boundedText(source.finalAssistantText, 500) || "(none)"
         }`,
     )

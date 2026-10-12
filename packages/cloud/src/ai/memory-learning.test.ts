@@ -6,6 +6,7 @@ import {
   buildMemoryLearningTranscript,
   learnAiMemoriesFromPrivateChats,
   MEMORY_LEARNING_PROMPT,
+  WORKFLOW_PATTERN_PROMPT,
 } from "./memory-learning";
 import type { AiStoredMessage } from "./types";
 
@@ -61,6 +62,15 @@ describe("AI memory learning", () => {
   test("allows a named person inside the user's stated working rule", () => {
     expect(MEMORY_LEARNING_PROMPT).toContain("A named person may appear only inside a working rule the user stated");
     expect(MEMORY_LEARNING_PROMPT).toContain("'Send invoices to Anna' adds a preference");
+  });
+
+  test("keeps workflow patterns neutral and Project defaults in the Project", () => {
+    expect(WORKFLOW_PATTERN_PROMPT).toContain("Name the recurring category neutrally");
+    expect(WORKFLOW_PATTERN_PROMPT).toContain("never put details about other people");
+    expect(WORKFLOW_PATTERN_PROMPT).toContain("health, religion or beliefs, political opinions");
+    expect(WORKFLOW_PATTERN_PROMPT).toContain(
+      "When examples come from Project chats, return a workflow only if it clearly applies beyond that Project",
+    );
   });
 
   test("accepts bounded create and replacement candidates", () => {

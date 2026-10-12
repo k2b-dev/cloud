@@ -357,9 +357,10 @@ databaseSuite()("AI memory learning (integration)", () => {
         listWorkflowPatterns: async () => [pattern!],
         monthlyTokenBudget: 1_000_000,
         readMonthlyAccountedTokens: async () => 0,
-        structured: async (request: { task: string }) => {
+        structured: async (request: { task: string; input: unknown }) => {
           modelCalls += 1;
           expect(request.task).toBe("memory-learn-workflow");
+          expect(String(request.input).match(/^Chat: chat outside Projects$/gm)).toHaveLength(3);
           return {
             output: { workflow: { content: "Use Accounting for invoice mail searches.", memoryIds: [] } },
             modelProfileId: "test-model",
