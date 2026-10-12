@@ -317,8 +317,10 @@
 }
 /* Below `lg` the note is about as narrow as the column, so "Full width" would
    change nothing; its switches do not show there. CSS decides, so the detail
-   panel arrives in its final layout. */
-@media (max-width: 63.999rem) {
+   panel arrives in its final layout. The query is the exact opposite of the
+   one above, so a zoomed window with a fractional width never shows a switch
+   that changes nothing. */
+@media not all and (min-width: 64rem) {
   .k2b-ui :is(.k2b-detail-panel__section, .k2b-switch-field).notebooks-full-width-option {
     display: none;
   }

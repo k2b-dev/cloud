@@ -50,14 +50,17 @@ const DEFAULT_ALL: AllNotebookSettings = {
 // --- Cookie helpers ---
 
 const writeCookie = (data: AllNotebookSettings) => {
-  const compact: Partial<AllNotebookSettings> = {};
-  if (data.lastNotebookId !== DEFAULT_ALL.lastNotebookId) compact.lastNotebookId = data.lastNotebookId;
-  if (data.pinnedNotebookIds.length > 0) compact.pinnedNotebookIds = data.pinnedNotebookIds;
-  if (data.detailPanelOpen !== DEFAULT_ALL.detailPanelOpen) compact.detailPanelOpen = data.detailPanelOpen;
-  if (data.navigationHidden !== DEFAULT_ALL.navigationHidden) compact.navigationHidden = data.navigationHidden;
-  if (data.tabMovesFocus !== DEFAULT_ALL.tabMovesFocus) compact.tabMovesFocus = data.tabMovesFocus;
-  if (data.fullWidth !== DEFAULT_ALL.fullWidth) compact.fullWidth = data.fullWidth;
-  if (Object.keys(data.notebooks).length > 0) compact.notebooks = data.notebooks;
+  // Every setting needs an entry here, so a new one cannot be dropped on the next write by
+  // mistake. A default is `undefined`, which JSON leaves out of the cookie.
+  const compact: { [Key in keyof AllNotebookSettings]: AllNotebookSettings[Key] | undefined } = {
+    lastNotebookId: data.lastNotebookId ?? undefined,
+    pinnedNotebookIds: data.pinnedNotebookIds.length > 0 ? data.pinnedNotebookIds : undefined,
+    detailPanelOpen: data.detailPanelOpen || undefined,
+    navigationHidden: data.navigationHidden || undefined,
+    tabMovesFocus: data.tabMovesFocus || undefined,
+    fullWidth: data.fullWidth || undefined,
+    notebooks: Object.keys(data.notebooks).length > 0 ? data.notebooks : undefined,
+  };
   cookies.writeJsonCookie(COOKIE_NAME, compact);
 };
 

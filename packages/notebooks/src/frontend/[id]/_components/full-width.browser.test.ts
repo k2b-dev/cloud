@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../../ui/test/browser";
+import { browserName, launchBrowser } from "../../../../../ui/test/browser";
 import { renderNotebookBook } from "../../../lib/book-renderer";
 import type { FullWidthHarness } from "./full-width.browser-harness";
 
@@ -118,6 +118,40 @@ for (const mode of ["write", "book"]) {
   }, 30_000);
 }
 
+// Line boxes sit between whole pixels, and WebKit keeps only whole pixels of
+// a scroll offset. A rest of a pixel that is carried from switch to switch
+// moves the text a little further each time, so one switch on and off
+// cannot show it. Starts at a line and a few pixels into it. In Chromium,
+// CodeMirror's estimated heights move the lines by fractions of a pixel on
+// every switch; the share of the line then scales that by the change in line
+// height, so there the text can settle a few pixels away.
+for (const shift of [0, 3, 7]) {
+  test.skipIf(browserName !== "webkit")(
+    `write: switching on and off again and again keeps the text still (${shift}px into the line)`,
+    async () => {
+      const page = await open();
+      try {
+        await page.evaluate(() => window.harness.scrollMiddle());
+        await page.locator(".k2b-scroll-area").evaluate((element, shift) => {
+          element.scrollTop += shift;
+        }, shift);
+        await settle(page);
+        const start = await page.evaluate(() => window.harness.anchor());
+        for (let cycle = 0; cycle < 3; cycle++) {
+          await toggle(page).click();
+          await settle(page);
+          await toggle(page).click();
+          await settle(page);
+          closeTo(await page.evaluate(() => window.harness.anchor()), start, 0.5);
+        }
+      } finally {
+        await page.close();
+      }
+    },
+    30_000,
+  );
+}
+
 test("a reload starts wide with the saved cookie and checked switch", async () => {
   const page = await open();
   try {
@@ -164,6 +198,34 @@ for (const width of [390, 1023, 1024]) {
     }
   }, 30_000);
 }
+
+// Whole-pixel viewports cannot show it: at a zoomed, fractional width between
+// two queries a switch would show that changes nothing.
+test("the switches hide by the exact opposite of the query that lifts the column", async () => {
+  const page = await open();
+  try {
+    const queries = await page.evaluate(() => {
+      const found = { lift: [] as string[], hide: [] as string[] };
+      const walk = (rules: CSSRuleList, media: string | null) => {
+        for (const rule of Array.from(rules)) {
+          if (rule instanceof CSSMediaRule) walk(rule.cssRules, rule.media.mediaText);
+          else if (rule instanceof CSSGroupingRule) walk(rule.cssRules, media);
+          else if (rule instanceof CSSStyleRule && media !== null) {
+            if (rule.selectorText.includes(".notebook-document-surface[data-full-width]")) found.lift.push(media);
+            if (rule.selectorText.includes("notebooks-full-width-option")) found.hide.push(media);
+          }
+        }
+      };
+      for (const sheet of Array.from(document.styleSheets)) walk(sheet.cssRules, null);
+      // The build may split one rule into several.
+      return { lift: [...new Set(found.lift)], hide: [...new Set(found.hide)] };
+    });
+    expect(queries.lift).toEqual(["(min-width: 64rem)"]);
+    expect(queries.hide).toEqual(["not all and (min-width: 64rem)"]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
 
 test("resizing removes and restores the command without losing the preference", async () => {
   const page = await open();
