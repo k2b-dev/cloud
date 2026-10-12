@@ -323,6 +323,7 @@ export const mailRemainingMessages = i18n.define({
       messageBody: "Message body",
       hasAttachments: "Has attachments",
       hasNoAttachments: "Has no attachments",
+      notSender: ({ value }: { value: string }) => `Not from ${value}`,
       conditionLabel: ({ index }: { index: number }) => `Condition ${index}`,
       operator: "Operator",
       value: "Value",
@@ -339,9 +340,11 @@ export const mailRemainingMessages = i18n.define({
       textOperator: ({ operator }: { operator: string }) =>
         ({
           is: "is",
+          is_not: "is not",
           words: "contains all words",
           phrase: "contains phrase",
           contains: "contains",
+          not_contains: "does not contain",
           exact: "matches exactly",
           starts_with: "starts with",
           ends_with: "ends with",
@@ -1142,6 +1145,7 @@ export const mailRemainingMessages = i18n.define({
       messageBody: "Nachrichteninhalt",
       hasAttachments: "Mit Anhängen",
       hasNoAttachments: "Ohne Anhänge",
+      notSender: ({ value }) => `Nicht von ${value}`,
       conditionLabel: ({ index }) => `Bedingung ${index}`,
       operator: "Operator",
       value: "Wert",
@@ -1158,9 +1162,11 @@ export const mailRemainingMessages = i18n.define({
       textOperator: ({ operator }) =>
         ({
           is: "ist",
+          is_not: "ist nicht",
           words: "enthält alle Wörter",
           phrase: "enthält Wortgruppe",
           contains: "enthält",
+          not_contains: "enthält nicht",
           exact: "stimmt exakt überein mit",
           starts_with: "beginnt mit",
           ends_with: "endet mit",

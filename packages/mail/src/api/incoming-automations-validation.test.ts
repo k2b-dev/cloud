@@ -48,3 +48,24 @@ describe("Mail incoming automation validation errors", () => {
     });
   });
 });
+
+test("localizes placement ordering errors and points to the offending action", async () => {
+  for (const [locale, message] of [
+    ["en", "Put Mark as read and keyword changes before moving the message; one reachable path can move only once"],
+    [
+      "de",
+      "Setze Als gelesen markieren und Schlüsselwortänderungen vor das Verschieben der Nachricht; ein Pfad kann nur einmal verschieben.",
+    ],
+  ]) {
+    const response = await create(
+      {
+        name: "Read after trash",
+        scope: { mode: "all" },
+        steps: [step, { id: "22222222-2222-4222-8222-222222222222", kind: "mail_action", action: { kind: "mark_read" } }],
+      },
+      locale,
+    );
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { issues: unknown[] }).issues).toEqual([{ field: "steps.1.action", code: "custom", message }]);
+  }
+});

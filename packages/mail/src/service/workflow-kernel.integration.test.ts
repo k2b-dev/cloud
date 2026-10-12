@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { encryptSecret } from "@k2b/cloud/services";
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
 import {
   createWorkflowRun,
@@ -18,6 +19,8 @@ import {
   prepareAutomaticReplyInTransaction,
 } from "./automatic-reply";
 import { listActivity } from "./collaboration";
+import { executeMutationCommand } from "./command-runtime";
+import { imapSmtpConnector } from "./connectors";
 import { getDraft, listConversationDrafts } from "./drafts";
 import { createMailbox } from "./mailboxes";
 import { EMPTY_MESSAGE_PROTOCOL_FACTS } from "./message-protocol";
@@ -175,6 +178,7 @@ suite("Mail shared workflow kernel", () => {
     if (!inboxFolderId || !copyFolderId) throw new Error("Failed to create Mail workflow folders");
     // Sending needs a provider to send through: an automatic reply becomes a
     // real command and outbox submission, not only a draft.
+    const fixtureSecret = await encryptSecret({ kind: "password", password: "fixture-secret" });
     const [connection] = await sql<{ id: string }[]>`
       INSERT INTO mail.provider_connections (
         owner_mailbox_id, name, email, username,
@@ -185,7 +189,7 @@ suite("Mail shared workflow kernel", () => {
         ${mailboxId}::uuid, 'Workflow kernel fixture', 'support@example.test', 'support@example.test',
         'imap.example.test', 993, 'implicit',
         'smtp.example.test', 465, 'implicit',
-        'password', 'fixture-secret', 'active'
+        'password', ${fixtureSecret}, 'active'
       )
       RETURNING id
     `;
@@ -278,6 +282,122 @@ suite("Mail shared workflow kernel", () => {
     if (deniedUserId) await sql`DELETE FROM auth.users WHERE id = ${deniedUserId}::uuid`;
     if (userId) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
   });
+
+  test("resumes mark-read then move through real commands with projected provider preconditions", async () => {
+    const incoming = envelope({ uid: 7098, providerMessageId: `workflow-read-move-${suffix}` });
+    await ingestEnvelope({
+      db: sql,
+      mailboxId,
+      remoteResourceId,
+      folderId: inboxFolderId,
+      message: incoming,
+      captureWorkflowTriggers: false,
+    });
+    const [ref] = await sql<{ id: string }[]>`
+      SELECT ref.id FROM mail.remote_message_refs ref JOIN mail.message_contents message ON message.id = ref.message_id
+      WHERE message.mailbox_id = ${mailboxId}::uuid AND message.message_id = ${incoming.messageId}
+    `;
+    const snapshot = await getWorkflowSnapshot({ mailboxId, remoteMessageRefId: ref!.id });
+    if (!snapshot) throw new Error("Missing read-move snapshot");
+    await sql`UPDATE mail.binding_folder_refs SET effective_rights = ARRAY['read','insert','move','write_flags']::text[] WHERE folder_id = ${inboxFolderId}::uuid`;
+    await sql`UPDATE mail.provider_bindings SET capabilities = capabilities || '{"move":true}'::jsonb WHERE remote_resource_id = ${remoteResourceId}::uuid`;
+    const created = await createWorkflow({
+      context,
+      mailboxId,
+      input: {
+        name: "Read then move",
+        priority: 100,
+        source: `inputs:
+  message: { type: mailMessage, required: true }
+triggers:
+  messageReceived:
+    with: { message: "\${{ trigger.message }}" }
+steps:
+  - setVariable: { name: selected, value: "\${{ inputs.message }}" }
+  - addFlag: { message: selected, flag: seen }
+  - moveMessage: { message: inputs.message, folder: Archive }
+`,
+        effectBudget: { ...noEffectBudget, maxTargets: 2, maxFlagChanges: 1, maxMoves: 1 },
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    const activated = await activateWorkflow({
+      context,
+      mailboxId,
+      workflowId: created.data.id,
+      input: { expectedVersionId: created.data.currentVersion.id },
+    });
+    if (!activated.ok) throw new Error(activated.error.message);
+    const emission = await emitWorkflowEvent(
+      {
+        appId: "mail",
+        scopeId: mailboxId,
+        type: "mail.messageReceived",
+        targetWorkflowId: created.data.id,
+        data: { message: snapshot.source.message },
+        context: mailWorkflowEventContext(snapshot),
+        dedupeKey: `read-move-${suffix}`,
+        occurredAt: new Date(),
+      },
+      { dispatch: "now" },
+    );
+    const runId = emission.runIds[0]!;
+    let flags: string[] = [];
+    let moved = false;
+    const state = () => ({ exists: !moved, flags, keywords: [], messageId: incoming.messageId, modseq: flags.length ? "7099" : "7098" });
+    const getState = spyOn(imapSmtpConnector, "getMessageState").mockImplementation(async () => state());
+    const getStates = spyOn(imapSmtpConnector, "getMessageStates").mockImplementation(
+      async (_config, messages) => new Map(moved ? [] : messages.uids.map((uid) => [uid, state()] as const)),
+    );
+    const change = spyOn(imapSmtpConnector, "changeMessageState").mockImplementation(async (_config, _target, requested) => {
+      flags = requested.addFlags;
+      return state();
+    });
+    const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue({
+      uidValidity: "1",
+      uidNext: 9001,
+      highestModseq: null,
+      messages: 0,
+    });
+    const move = spyOn(imapSmtpConnector, "moveMessages").mockImplementation(async (_config, messages) => {
+      expect(flags).toEqual(["\\Seen"]);
+      moved = true;
+      return { completed: true, destinationUidValidity: "1", destinationUids: new Map(messages.uids.map((uid) => [uid, 9001])) };
+    });
+    try {
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished", result: { state: "waiting" } });
+      const [first] = await sql<
+        { id: string; target: { expectedRemoteState: unknown } }[]
+      >`SELECT id, target FROM mail.commands WHERE correlation_id = ${runId} AND kind = 'change_message_state'`;
+      expect(first!.target.expectedRemoteState).toEqual({ modseq: "7098", flags: [], keywords: [] });
+      expect(await executeMutationCommand(first!.id)).toBe("confirmed");
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished", result: { state: "waiting" } });
+      const [second] = await sql<
+        { id: string; target: { expectedRemoteState: unknown } }[]
+      >`SELECT id, target FROM mail.commands WHERE correlation_id = ${runId} AND kind = 'move'`;
+      expect(second!.target.expectedRemoteState).toEqual({ flags: ["seen"], keywords: [] });
+      expect(await executeMutationCommand(second!.id)).toBe("confirmed");
+      expect((await runMailWorkflow(runId)).state).toBe("finished");
+      const [run] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id = ${runId}::uuid`;
+      expect(run!.state).toBe("succeeded");
+      expect(change).toHaveBeenCalledTimes(1);
+      expect(move).toHaveBeenCalledTimes(1);
+    } finally {
+      move.mockRestore();
+      status.mockRestore();
+      change.mockRestore();
+      getStates.mockRestore();
+      getState.mockRestore();
+      await sql`UPDATE mail.provider_bindings SET capabilities = capabilities - 'move' WHERE remote_resource_id = ${remoteResourceId}::uuid`;
+      const disabled = await deactivateWorkflow({
+        context,
+        mailboxId,
+        workflowId: created.data.id,
+        input: { expectedVersionId: created.data.currentVersion.id },
+      });
+      if (!disabled.ok) throw new Error(disabled.error.message);
+    }
+  }, 15_000);
 
   test("keeps definition changes optimistic, immutable, authorized, and fully audited", async () => {
     const originalSource = `# exact historical source

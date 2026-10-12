@@ -39,12 +39,14 @@ import { renderMailWorkflowTemplate } from "../service/template-rendering";
 import { mailWorkflowActionFailure } from "../service/workflow-action-errors";
 import { withMailWorkflowCollaborationEvent } from "../service/workflow-collaboration-events";
 import { mailWorkflowDependencyDeadline } from "../service/workflow-dependencies";
-import { mailWorkflowMessagePrecondition } from "../service/workflow-message-preconditions";
+import { mailWorkflowMessagePrecondition, projectMailWorkflowMessagePrecondition } from "../service/workflow-message-preconditions";
 import {
   applyMailConversationTransition,
-  applyMailMessageTransition,
+  applyProjectedMailMessageTransition,
   mailConversationTransitionChanges,
   mailMessageTransitionChanges,
+  mailWorkflowMessageStateTransitions,
+  mailWorkflowProjectedMessage,
 } from "../service/workflow-projected-state";
 import {
   type MailWorkflowAuthorizationSnapshot,
@@ -326,7 +328,8 @@ const messageAction = (
         const values = rawValues as unknown as Record<string, WorkflowJsonValue>;
         const tx = (ctx.tx as SqlClient | undefined) ?? sql;
         const scope = await loadScope(ctx, tx);
-        const message = await resolveObject(ctx, values.message, "message");
+        const reference = await resolveObject(ctx, values.message, "message");
+        const message = mailWorkflowProjectedMessage(ctx.invocation.context, reference);
         const publicMessageId = asText(message.id, "message.id");
         const messageId = await internalResourceId(tx, "messages", scope.mailboxId, publicMessageId, "Message");
         const publicFolderId = asText(message.folderId, "message.folderId");
@@ -339,7 +342,7 @@ const messageAction = (
               : asText(ctx.binding("folder") ?? values.folder ?? publicFolderId, "folder");
         const applied = (outcome: ActionResult): ActionResult => {
           if (outcome.state !== "succeeded") return outcome;
-          applyMailMessageTransition(message, kind, value);
+          applyProjectedMailMessageTransition(ctx.invocation.context, reference, kind, value);
           return { ...outcome, output: { ...(isObject(outcome.output) ? outcome.output : {}), action: kind, applied: true, value } };
         };
         // A step that runs again, on a recheck or once its command finished,
@@ -380,7 +383,10 @@ const messageAction = (
         `;
         if (!target) throw Object.assign(new Error("Message provider target is no longer available"), { code: "NOT_FOUND" });
         const remoteMessageRefId = target.remote_message_ref_id;
-        const expectedRemoteState = mailWorkflowMessagePrecondition(ctx.invocation.context, { messageId, remoteMessageRefId, folderId });
+        const expectedRemoteState = projectMailWorkflowMessagePrecondition(
+          mailWorkflowMessagePrecondition(ctx.invocation.context, { messageId, remoteMessageRefId, folderId }),
+          mailWorkflowMessageStateTransitions(message),
+        );
         if (!mailMessageTransitionChanges(message, kind, value)) {
           return { state: "succeeded", output: { action: kind, applied: false } };
         }

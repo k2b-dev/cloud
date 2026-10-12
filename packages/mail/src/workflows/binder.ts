@@ -420,7 +420,7 @@ const bindCondition = (
 const bindAction = (
   step: Extract<WorkflowIrStep, { kind: "action" }>,
   scope: Map<string, ValueInfo>,
-  providerTargets: Set<string>,
+  providerTargets: Map<string, "changed" | "placed">,
   context: BindingContext,
 ): void => {
   const path = [...step.sourcePath, step.action];
@@ -430,10 +430,17 @@ const bindAction = (
   const bindProviderTarget = (field = "message"): ValueInfo | null => {
     const message = expectReference(config[field], "mail.message", field, [...path, field], scope, context);
     if (message?.providerTarget) {
-      if (providerTargets.has(message.providerTarget)) {
-        addDiagnostic(context, "action.sequence", "Multiple provider mutations of the same message are not supported", path);
+      if (providerTargets.get(message.providerTarget) === "placed") {
+        addDiagnostic(
+          context,
+          "action.sequence",
+          "Change flags and keywords before moving or copying the message; placement must be the last provider action",
+          path,
+        );
       }
-      providerTargets.add(message.providerTarget);
+      const changed = ["addFlag", "removeFlag", "addKeyword", "removeKeyword"].includes(step.action);
+      if (!changed || !providerTargets.has(message.providerTarget))
+        providerTargets.set(message.providerTarget, changed ? "changed" : "placed");
     }
     return message;
   };
@@ -531,28 +538,41 @@ const bindAction = (
   if (step.action !== "setVariable" && output) defineValue(config.saveAs, output, [...path, "saveAs"], scope, context);
 };
 
-const bindSteps = (steps: WorkflowIrStep[], scope: Map<string, ValueInfo>, providerTargets: Set<string>, context: BindingContext): void => {
+const mergeProviderTargets = (target: Map<string, "changed" | "placed">, branches: Map<string, "changed" | "placed">[]): void => {
+  for (const branch of branches) {
+    for (const [key, state] of branch) {
+      if (state === "placed" || !target.has(key)) target.set(key, state);
+    }
+  }
+};
+
+const bindSteps = (
+  steps: WorkflowIrStep[],
+  scope: Map<string, ValueInfo>,
+  providerTargets: Map<string, "changed" | "placed">,
+  context: BindingContext,
+): void => {
   for (const step of steps) {
     if (step.kind === "action") bindAction(step, scope, providerTargets, context);
     else if (step.kind === "if") {
       bindCondition(step.condition, [...step.sourcePath, "if"], scope, context);
-      const thenTargets = new Set(providerTargets);
-      const elseTargets = new Set(providerTargets);
+      const thenTargets = new Map(providerTargets);
+      const elseTargets = new Map(providerTargets);
       bindSteps(step.then, new Map(scope), thenTargets, context);
       bindSteps(step.else, new Map(scope), elseTargets, context);
-      for (const target of [...thenTargets, ...elseTargets]) providerTargets.add(target);
+      mergeProviderTargets(providerTargets, [thenTargets, elseTargets]);
     } else if (step.kind === "switch") {
       bindValue(step.value, [...step.sourcePath, "switch"], scope, context);
-      const branchTargets: Set<string>[] = [];
+      const branchTargets: Map<string, "changed" | "placed">[] = [];
       step.cases.forEach((item, index) => {
         bindValue(item.when, [...step.sourcePath, "cases", index, "when"], scope, context);
-        const caseTargets = new Set(providerTargets);
+        const caseTargets = new Map(providerTargets);
         bindSteps(item.steps, new Map(scope), caseTargets, context);
         branchTargets.push(caseTargets);
       });
-      const defaultTargets = new Set(providerTargets);
+      const defaultTargets = new Map(providerTargets);
       bindSteps(step.default, new Map(scope), defaultTargets, context);
-      for (const target of [...defaultTargets, ...branchTargets.flatMap((targets) => [...targets])]) providerTargets.add(target);
+      mergeProviderTargets(providerTargets, [defaultTargets, ...branchTargets]);
     } else {
       addDiagnostic(context, "step.unsupported", "forEach is not supported by the Mail workflow vocabulary", [
         ...step.sourcePath,
@@ -651,7 +671,7 @@ export const bindMailWorkflow = async (ir: WorkflowIr, catalog: MailWorkflowCata
   const context: BindingContext = { ir, catalog, inputs: new Map(), bindings: {}, diagnostics: [] };
   bindInputs(context);
   bindTriggers(context);
-  bindSteps(ir.steps, new Map(), new Set(), context);
+  bindSteps(ir.steps, new Map(), new Map(), context);
   if (context.diagnostics.length > 0) return { ok: false, diagnostics: context.diagnostics };
 
   const plan = await bindWorkflow(ir, mailWorkflows, () => ({

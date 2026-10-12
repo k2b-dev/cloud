@@ -45,6 +45,8 @@ import {
   type AutomationActionKind,
   createMailAutomationAction,
   initialMailAutomationAction,
+  isMailAutomationMessageStateChange,
+  isMailAutomationPlacement,
   mailAutomationActionKindsFor,
 } from "./mail-automation-actions";
 import { waitForMailPageTransition } from "./mail-page-transition";
@@ -179,6 +181,25 @@ const outputReferencesResolve = (steps: readonly MailAutomationStep[], inherited
   }
   return true;
 };
+
+/** Flag and keyword changes must reach the provider before a move takes the message out of its folder. */
+const providerOrderValid = (steps: readonly MailAutomationStep[], placedBefore: boolean): boolean => {
+  let placed = placedBefore;
+  for (const step of steps) {
+    if (step.kind === "mail_action") {
+      const placement = isMailAutomationPlacement(step.action.kind);
+      if (placed && (placement || isMailAutomationMessageStateChange(step.action.kind))) return false;
+      placed ||= placement;
+    }
+    if (step.kind === "if") {
+      if (!providerOrderValid(step.then, placed) || !providerOrderValid(step.else, placed)) return false;
+      placed ||= containsPlacement([...step.then, ...step.else]);
+    }
+  }
+  return true;
+};
+const containsPlacement = (steps: readonly MailAutomationStep[]): boolean =>
+  flattenSteps(steps).some((step) => step.kind === "mail_action" && isMailAutomationPlacement(step.action.kind));
 
 const ifStep = (
   output: AutomationOutput,
@@ -466,6 +487,7 @@ function AutomationStepsEditor(props: {
   steps: MailAutomationStep[];
   workflowSteps?: MailAutomationStep[];
   availableActions: MailAutomationAction[];
+  laterActions?: MailAutomationAction[];
   availableOutputs?: AutomationOutput[];
   catalog: MailWorkflowCatalogSnapshot;
   allowEmpty?: boolean;
@@ -479,6 +501,11 @@ function AutomationStepsEditor(props: {
   const actionsBefore = (index: number): MailAutomationAction[] => [
     ...props.availableActions,
     ...flattenSteps(props.steps.slice(0, index)).flatMap((step) => (step.kind === "mail_action" ? [step.action] : [])),
+  ];
+  // Actions that run after this list position on the same path, including steps after enclosing conditions.
+  const actionsFrom = (index: number): MailAutomationAction[] => [
+    ...flattenSteps(props.steps.slice(index)).flatMap((step) => (step.kind === "mail_action" ? [step.action] : [])),
+    ...(props.laterActions ?? []),
   ];
   const outputsBefore = (index: number): AutomationOutput[] => [
     ...(props.availableOutputs ?? []),
@@ -508,7 +535,13 @@ function AutomationStepsEditor(props: {
     if (destination < 0 || destination >= props.steps.length) return false;
     const next = [...props.steps];
     [next[index], next[destination]] = [next[destination]!, next[index]!];
-    return outputReferencesResolve(next, new Set((props.availableOutputs ?? []).map((output) => output.id)));
+    return (
+      outputReferencesResolve(next, new Set((props.availableOutputs ?? []).map((output) => output.id))) &&
+      providerOrderValid(
+        next,
+        props.availableActions.some((action) => isMailAutomationPlacement(action.kind)),
+      )
+    );
   };
   const move = (index: number, offset: -1 | 1) => {
     const destination = index + offset;
@@ -544,14 +577,21 @@ function AutomationStepsEditor(props: {
       branchDepth: shape.branchDepth ?? 0,
     }) === null;
   const append = (step: MailAutomationStep) => appendMany([step]);
-  const appendMany = (steps: MailAutomationStep[]) => {
+  const appendMany = (steps: MailAutomationStep[]) => insertAt(props.steps.length, steps);
+  const insertAt = (index: number, steps: MailAutomationStep[]) => {
     const issue = capacityIssue(steps);
     if (issue) {
       void prompts.error(issue);
       return;
     }
     steps.forEach((step) => expand(step.id));
-    props.onChange([...props.steps, ...steps]);
+    props.onChange([...props.steps.slice(0, index), ...steps, ...props.steps.slice(index)]);
+  };
+  // A flag change added after a move in this list goes in front of the step that moves the message.
+  const mailActionInsertIndex = (kind: AutomationActionKind): number => {
+    if (!isMailAutomationMessageStateChange(kind)) return props.steps.length;
+    const placementIndex = props.steps.findIndex((step) => containsPlacement([step]));
+    return placementIndex >= 0 ? placementIndex : props.steps.length;
   };
   const insertAfterOutput = (index: number, sourceStepId: string, step: MailAutomationStep) => {
     const issue = capacityIssue([step]);
@@ -699,21 +739,27 @@ function AutomationStepsEditor(props: {
     const actions = actionsBefore(props.steps.length);
     const outputs = outputsBefore(props.steps.length);
     const latestOutput = outputs.at(-1);
-    const availableMailActions = mailAutomationActionKindsFor({ actions, catalog: props.catalog });
     const replyDraft = replyDraftStep(props.catalog);
     const remaining = (props.maxSteps ?? 20) - props.steps.length;
     const classification = classificationSteps(false, props.catalog, actions, locale());
     const multiClassification = classificationSteps(true, props.catalog, actions, locale());
     return [
       ...directActionOrder
-        .filter((kind) => availableMailActions.includes(kind))
+        .filter((kind) =>
+          mailAutomationActionKindsFor({
+            actions: actionsBefore(mailActionInsertIndex(kind)),
+            catalog: props.catalog,
+            later: actionsFrom(mailActionInsertIndex(kind)),
+          }).includes(kind),
+        )
         .filter(() => canInsertShape({ localSteps: 1 }))
         .map((kind) => {
-          const action = createMailAutomationAction({ kind, actions, catalog: props.catalog });
+          const index = mailActionInsertIndex(kind);
+          const action = createMailAutomationAction({ kind, actions: actionsBefore(index), catalog: props.catalog });
           return {
             label: `${messages().mailAction} · ${messages().automationAction({ kind })}`,
             icon: "ti ti-mail-forward",
-            action: () => action && append(mailActionStep(action)),
+            action: () => action && insertAt(index, [mailActionStep(action)]),
           };
         }),
       ...(canInsertShape({ localSteps: 1 })
@@ -869,6 +915,7 @@ function AutomationStepsEditor(props: {
                     <MailAutomationActionEditor
                       action={(step as Extract<MailAutomationStep, { kind: "mail_action" }>).action}
                       otherActions={actions()}
+                      laterActions={actionsFrom(index() + 1)}
                       catalog={props.catalog}
                       onChange={(action) => replace(index(), { ...step, kind: "mail_action", action })}
                     />
@@ -1253,6 +1300,7 @@ function AutomationStepsEditor(props: {
                               steps={conditionStep.then}
                               workflowSteps={props.workflowSteps ?? props.steps}
                               availableActions={actions()}
+                              laterActions={actionsFrom(index() + 1)}
                               availableOutputs={outputs()}
                               catalog={props.catalog}
                               labelContext={`${context}, ${messages().then}`}
@@ -1269,6 +1317,7 @@ function AutomationStepsEditor(props: {
                               steps={conditionStep.else}
                               workflowSteps={props.workflowSteps ?? props.steps}
                               availableActions={actions()}
+                              laterActions={actionsFrom(index() + 1)}
                               availableOutputs={outputs()}
                               catalog={props.catalog}
                               labelContext={`${context}, ${messages().else}`}

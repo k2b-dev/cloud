@@ -2,10 +2,54 @@ import type { WorkflowBoundPlan, WorkflowJsonValue, WorkflowStepOutcome } from "
 import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
 import type { FrozenMailWorkflowSource } from "./workflow-data";
 
-export type MailWorkflowProjectedObject = Record<string, WorkflowJsonValue>;
+export type MailWorkflowMessageStateTransition = {
+  field: "flags" | "keywords";
+  add: boolean;
+  value: string;
+};
+
+// Run-local history also records writes that later return to the frozen state.
+// Symbol metadata is not a workflow input or a persisted provider field.
+const messageStateTransitions = Symbol("mail.messageStateTransitions");
+export type MailWorkflowProjectedObject = Record<string, WorkflowJsonValue> & {
+  [messageStateTransitions]?: MailWorkflowMessageStateTransition[];
+};
+export const mailWorkflowMessageStateTransitions = (message: MailWorkflowProjectedObject): readonly MailWorkflowMessageStateTransition[] =>
+  message[messageStateTransitions] ?? [];
+
+const recordMessageStateTransition = (message: MailWorkflowProjectedObject, transition: MailWorkflowMessageStateTransition): void => {
+  message[messageStateTransitions] ??= [];
+  message[messageStateTransitions].push(transition);
+};
 
 export const isMailWorkflowProjectedObject = (value: WorkflowJsonValue | undefined): value is MailWorkflowProjectedObject =>
   value !== null && typeof value === "object" && !Array.isArray(value);
+
+/** Journaled variable outputs may be copies; provider actions share one projection for the frozen target. */
+export const mailWorkflowProjectedMessage = (
+  context: Record<string, WorkflowJsonValue> | undefined,
+  message: MailWorkflowProjectedObject,
+): MailWorkflowProjectedObject => {
+  const source = context?.source;
+  const canonical = isMailWorkflowProjectedObject(source) ? source.message : undefined;
+  return isMailWorkflowProjectedObject(canonical) && typeof message.id === "string" && canonical.id === message.id ? canonical : message;
+};
+
+/**
+ * Applies a confirmed message transition to the canonical projection, which carries the run's provider
+ * history, and to the step's own reference when that is a separate copy, so later conditions on an alias
+ * see the same state after a live run and after a resume.
+ */
+export const applyProjectedMailMessageTransition = (
+  context: Record<string, WorkflowJsonValue> | undefined,
+  message: MailWorkflowProjectedObject,
+  action: Parameters<typeof applyMailMessageTransition>[1],
+  value: WorkflowJsonValue,
+): void => {
+  const canonical = mailWorkflowProjectedMessage(context, message);
+  applyMailMessageTransition(canonical, action, value);
+  if (canonical !== message) applyMailMessageTransition(message, action, value);
+};
 
 export const createMailWorkflowProjectedState = (
   plan: WorkflowBoundPlan,
@@ -49,10 +93,12 @@ export const applyMailMessageTransition = (
   const index = current.findIndex((item) => item.toLocaleLowerCase("und") === value.toLocaleLowerCase("und"));
   if ((action === "addKeyword" || action === "addFlag") && index < 0) {
     message[field] = [...current, value].sort((left, right) => left.localeCompare(right, "und"));
+    recordMessageStateTransition(message, { field, add: true, value });
     return true;
   }
   if ((action === "removeKeyword" || action === "removeFlag") && index >= 0) {
     message[field] = current.filter((_, itemIndex) => itemIndex !== index);
+    recordMessageStateTransition(message, { field, add: false, value });
     return true;
   }
   return false;
@@ -146,7 +192,12 @@ export const restoreMailWorkflowProjectedState = async (
   ) {
     const message = await restoredObject(ctx, step, config, "message");
     if (message && output.value !== undefined) {
-      applyMailMessageTransition(message, output.action as Parameters<typeof applyMailMessageTransition>[1], output.value);
+      applyProjectedMailMessageTransition(
+        ctx.invocation?.context,
+        message,
+        output.action as Parameters<typeof applyMailMessageTransition>[1],
+        output.value,
+      );
     }
     return;
   }

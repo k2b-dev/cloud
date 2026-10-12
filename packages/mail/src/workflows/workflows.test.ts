@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { createWorkflowBuiltinActionPorts } from "@k2b/cloud/workflows";
 import { compileWorkflow, hashWorkflowJson } from "@k2b/cloud/workflows/language";
+import { executeWorkflowPlan } from "@k2b/cloud/workflows/runtime";
+import { projectMailWorkflowMessagePrecondition } from "../service/workflow-message-preconditions";
+import { mailWorkflowMessageStateTransitions, restoreMailWorkflowProjectedState } from "../service/workflow-projected-state";
 import { bindMailWorkflow, validateMailWorkflowTemplateReferences } from "./binder";
 import { buildMailWorkflowCatalog, type MailWorkflowCatalog, snapshotMailWorkflowCatalog } from "./catalog";
 import { mailWorkflows } from "./module";
@@ -807,7 +811,7 @@ steps:
     }
   });
 
-  test("rejects repeated same-message provider mutations on reachable paths only", async () => {
+  test("allows state changes before placement on reachable paths", async () => {
     const repeated = await bindMailWorkflow(
       await compile(`inputs:
   message:
@@ -819,10 +823,7 @@ steps:
 `),
       catalog(),
     );
-    expect(repeated.ok).toBe(false);
-    if (!repeated.ok) {
-      expect(repeated.diagnostics).toContainEqual(expect.objectContaining({ code: "action.sequence", path: ["steps", 2, "moveMessage"] }));
-    }
+    expect(repeated.ok).toBe(true);
 
     const exclusiveIf = await bindMailWorkflow(
       await compile(`inputs:
@@ -863,7 +864,7 @@ steps:
 steps:
   - if: { equals: [one, one] }
     then:
-      - addKeyword: { message: inputs.message, keyword: branch }
+      - moveMessage: { message: inputs.message, folder: Inbox }
   - moveMessage: { message: inputs.message, folder: Inbox }
 `),
       catalog(),
@@ -875,4 +876,138 @@ steps:
       );
     }
   });
+});
+
+test("makes every placement terminal, including branches, defaults and aliases", async () => {
+  for (const placement of ["moveMessage", "copyMessage", "archiveMessage", "trashMessage", "junkMessage"]) {
+    for (const next of [
+      "addFlag: { message: selected, flag: seen }",
+      "removeKeyword: { message: selected, keyword: review }",
+      "moveMessage: { message: selected, folder: Inbox }",
+    ]) {
+      const result = await bindMailWorkflow(
+        await compile(`inputs:
+  message: { type: mailMessage }
+steps:
+  - setVariable: { name: selected, value: "\${{ inputs.message }}" }
+  - ${placement}: { message: inputs.message${["moveMessage", "copyMessage"].includes(placement) ? ", folder: Inbox" : ""} }
+  - ${next}
+`),
+        catalog(),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.diagnostics.some((item) => item.code === "action.sequence")).toBe(true);
+    }
+  }
+  for (const branch of [
+    "if: { equals: [one, one] }\n    then:\n      - addFlag: { message: inputs.message, flag: seen }\n    else:\n      - moveMessage: { message: inputs.message, folder: Inbox }",
+    "switch: one\n    cases:\n      - when: one\n        do:\n          - moveMessage: { message: inputs.message, folder: Inbox }\n    default:\n      - addFlag: { message: inputs.message, flag: seen }",
+    "switch: one\n    cases:\n      - when: one\n        do:\n          - addFlag: { message: inputs.message, flag: seen }\n    default:\n      - copyMessage: { message: inputs.message, folder: Inbox }",
+  ]) {
+    const result = await bindMailWorkflow(
+      await compile(`inputs:
+  message: { type: mailMessage }
+steps:
+  - ${branch}
+  - addKeyword: { message: inputs.message, keyword: review }
+`),
+      catalog(),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.diagnostics.some((item) => item.code === "action.sequence")).toBe(true);
+  }
+});
+
+test("allows several flag and keyword changes followed by placement after changed branches", async () => {
+  const result = await bindMailWorkflow(
+    await compile(`inputs:
+  message: { type: mailMessage }
+steps:
+  - addFlag: { message: inputs.message, flag: seen }
+  - removeFlag: { message: inputs.message, flag: answered }
+  - addKeyword: { message: inputs.message, keyword: review }
+  - removeKeyword: { message: inputs.message, keyword: old }
+  - if: { equals: [one, one] }
+    then:
+      - addFlag: { message: inputs.message, flag: flagged }
+  - moveMessage: { message: inputs.message, folder: Inbox }
+`),
+    catalog(),
+  );
+  expect(result.ok).toBe(true);
+});
+
+test("resumes a journaled message alias before evaluating its flags in a branch", async () => {
+  const bound = await bindMailWorkflow(
+    await compile(`inputs:
+  message: { type: mailMessage }
+steps:
+  - setVariable: { name: selected, value: "\${{ inputs.message }}" }
+  - addFlag: { message: selected, flag: seen }
+  - if: { includes: ["\${{ selected.flags }}", seen] }
+    then:
+      - moveMessage: { message: selected, folder: Archive }
+`),
+    buildMailWorkflowCatalog({ folders: [{ id: ids.invoices, name: "Archive" }], assignableUsers: [] }),
+  );
+  if (!bound.ok) throw new Error(bound.diagnostics.map((diagnostic) => diagnostic.message).join("\n"));
+  const message = { id: "Msg001", folderId: "Inbox1", flags: [], keywords: [] };
+  const builtin = createWorkflowBuiltinActionPorts({ authorize: async () => undefined });
+  let moves = 0;
+  const result = await executeWorkflowPlan({
+    plan: bound.plan,
+    runId: "resumed-alias",
+    executionGeneration: 2,
+    clock: { now: () => "2026-10-12T12:00:00.000Z" },
+    invocation: {
+      workflowId: "alias-workflow",
+      mode: "execute",
+      channel: "test",
+      actor: { userId: "user" },
+      inputs: { message },
+      context: { source: { message } },
+      idempotencyKey: "resumed-alias",
+      occurredAt: "2026-10-12T12:00:00.000Z",
+    },
+    repository: {
+      heartbeat: async () => ({ state: "active" }),
+      startStep: async () => {},
+      finishStep: async () => {},
+      parkStep: async () => {},
+      restoreStepOutcome: async (step) => {
+        if (step.key === "steps.0") return { mode: "execute", outcome: { state: "completed", output: structuredClone(message) } };
+        if (step.key === "steps.1")
+          return { mode: "execute", outcome: { state: "completed", output: { action: "addFlag", applied: true, value: "seen" } } };
+        return null;
+      },
+    },
+    actions: {
+      get: (action) => {
+        if (action === "addFlag")
+          return {
+            execute: async () => {
+              throw new Error("Completed addFlag must not execute again");
+            },
+            restoreCompleted: restoreMailWorkflowProjectedState,
+          };
+        if (action === "moveMessage")
+          return {
+            execute: async () => {
+              moves += 1;
+              expect(
+                projectMailWorkflowMessagePrecondition(
+                  { modseq: "42", flags: [], keywords: [] },
+                  mailWorkflowMessageStateTransitions(message),
+                ),
+              ).toEqual({ modseq: undefined, flags: ["seen"], keywords: [] });
+              return { state: "completed", output: { action: "moveMessage", applied: true } };
+            },
+          };
+        return builtin.execute.get(action);
+      },
+    },
+  });
+  expect(result.state).toBe("succeeded");
+  expect(moves).toBe(1);
+  expect(mailWorkflowMessageStateTransitions(message)).toEqual([{ field: "flags", add: true, value: "seen" }]);
 });
