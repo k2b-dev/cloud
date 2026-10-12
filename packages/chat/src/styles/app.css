@@ -20,6 +20,20 @@
   min-height: 2.875rem;
   padding: 0.25rem 0.75rem;
 }
+/* The list is its own page below 64 rem; from 64 rem the sidebar beside the chat holds it. */
+.chat-conversation__back {
+  display: flex;
+  flex: none;
+  margin-inline-end: 0.25rem;
+}
+.chat-conversation__back i {
+  font-size: 1.25rem;
+}
+@media (min-width: 64rem) {
+  .chat-conversation__back {
+    display: none;
+  }
+}
 .chat-conversation__feed {
   flex: 1;
   min-height: 0;

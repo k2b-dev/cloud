@@ -112,6 +112,15 @@ describe("ChatWorkspace browser full view", () => {
           expect(composer).not.toBeNull();
           expect(composer!.y).toBeGreaterThanOrEqual(0);
           expect(composer!.y + composer!.height).toBeLessThanOrEqual(844);
+          // The back button returns to the list in place, through the entry the list left in the history.
+          await page.evaluate(() => {
+            window.chatNavigationMarker = "survives";
+          });
+          await page.getByRole("link", { name: "Back to chats", exact: true }).click();
+          await page.waitForURL("**/app/chat");
+          await page.locator(`.chat-list-page a[href="/app/chat/c/${chat}"]`).waitFor();
+          expect(await page.locator(".chat-conversation").count()).toBe(0);
+          expect(await page.evaluate(() => window.chatNavigationMarker)).toBe("survives");
         } else {
           expect(await page.locator(".k2b-app-workspace__sidebar").isVisible()).toBe(true);
           expect(await page.getByText("Choose a chat", { exact: true }).isVisible()).toBe(true);

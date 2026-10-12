@@ -191,6 +191,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       navigation.push(undefined, { scroll: "preserve", state: { chatFromList: fromList } });
   };
 
+  // A list opened before the chat is the previous history entry, so going back to it does not stack entries.
+  const openedFromList = () => {
+    const state: unknown = history.state;
+    return Boolean(state && typeof state === "object" && "chatFromList" in state && state.chatFromList === true);
+  };
+  const backToList = async (navigation: LinkNavigateEvent) => {
+    if (openedFromList()) history.back();
+    else if ((await open({ chatId: null, messageId: null })) === "applied") navigation.push(undefined, { scroll: "preserve" });
+  };
+
   const send = async (text: string): Promise<boolean> => {
     const current = openChat();
     if (!current || !outbox || !text.trim()) return false;
@@ -249,9 +259,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     onCleanup(
       layout.handleUp((href) => {
         if (new URL(href, location.href).pathname !== "/app/chat" || !route().chatId) return false;
-        const state: unknown = history.state;
-        if (state && typeof state === "object" && "chatFromList" in state && state.chatFromList === true) history.back();
-        else void open({ chatId: null, messageId: null }).then(() => navigate("/app/chat"));
+        if (openedFromList()) history.back();
+        else void open({ chatId: null, messageId: null }).then((result) => result === "applied" && navigate("/app/chat"));
         return true;
       }),
     );
@@ -311,6 +320,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       draft={draft()}
                       onDraftChange={setDraft}
                       onSend={send}
+                      onBack={backToList}
                       busy={busy()}
                       dateConfig={props.dateConfig}
                       now={now}

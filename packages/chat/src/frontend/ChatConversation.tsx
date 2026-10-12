@@ -2,17 +2,18 @@ import type { DateContext } from "@k2b/stdlib";
 import {
   Chat,
   EmojiPicker,
+  IconButtonLink,
   MessageRow,
   type MessageRowStatus,
   MessageSystemRow,
   PageTitle,
   rememberEmoji,
   startsMessageGroup,
-  usePageTrail,
   useLocale,
   VirtualFeed,
   type VirtualFeedController,
 } from "@k2b/ui";
+import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { createEffect, createSignal, type JSX, onCleanup, onMount } from "solid-js";
 import { chatMessages } from "../messages";
 import { dayLabel, messageTime, sameDay } from "./chat-format";
@@ -54,6 +55,8 @@ export type ChatConversationProps = {
   busy: boolean;
   dateConfig: DateContext;
   now: () => Date;
+  /** Below 64 rem the chat is a page of its own; its back button returns to the list. */
+  onBack: (navigation: LinkNavigateEvent) => void | Promise<void>;
   /** Receives the history's controller, for example to follow the end after a send. */
   controller?: (controller: VirtualFeedController) => void;
 };
@@ -65,8 +68,6 @@ const SYSTEM_ESTIMATE = 36;
 export default function ChatConversation(props: ChatConversationProps): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
-  const hostTrail = usePageTrail();
-  const trail = () => ({ title: props.title, ancestors: hostTrail()?.ancestors ?? [] });
   const config = () => ({ ...props.dateConfig, locale: locale() });
   const [emojiTarget, setEmojiTarget] = createSignal<{ anchor: HTMLElement; insert: (text: string) => void }>();
   const [recent, setRecent] = createSignal<readonly string[]>([]);
@@ -96,7 +97,12 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   return (
     <section ref={frame} class="chat-conversation" aria-label={props.title}>
       <header class="chat-conversation__header">
-        <PageTitle trail={trail()} subtitle={t().members({ count: props.memberCount })} />
+        <span class="chat-conversation__back">
+          <IconButtonLink href="/app/chat" navigation="enhanced" onNavigate={props.onBack} label={t().backToChats} tooltip={false}>
+            <i class="ti ti-chevron-left" aria-hidden="true" />
+          </IconButtonLink>
+        </span>
+        <PageTitle trail={{ title: props.title, ancestors: [] }} subtitle={t().members({ count: props.memberCount })} />
       </header>
       <VirtualFeed
         class="chat-conversation__feed"

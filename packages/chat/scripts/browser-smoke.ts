@@ -11,6 +11,7 @@ import { parseArgs } from "node:util";
 import { sql } from "bun";
 import { type BrowserContext, chromium, type Page, webkit } from "playwright";
 import { z } from "zod";
+import { SEND_CONVERSATION_WINDOW_SECONDS } from "../src/service/contracts";
 
 const { values: options } = parseArgs({
   args: Bun.argv.slice(2),
@@ -44,6 +45,28 @@ Options:
 const BASE_URL = options["base-url"];
 const APP_ORIGIN = new URL(options["app-url"] ?? BASE_URL).origin;
 const TIMEOUT = Number(options["timeout-ms"]);
+/**
+ * Session sockets must come from the public origin. Nightly reaches its stack on another address, and Chromium sends
+ * no Origin header that a test sets on a socket, so there the smoke relays the live socket itself with the public
+ * origin. Everything the page sends and receives still passes unchanged.
+ */
+const relayLiveSocket = async (context: BrowserContext, sessionToken: string) => {
+  if (APP_ORIGIN === new URL(BASE_URL).origin) return;
+  await context.routeWebSocket(/\/api\/chat\/live$/, (route) => {
+    const upstream = new WebSocket(route.url(), { headers: { Origin: APP_ORIGIN, Cookie: `session_token=${sessionToken}` } });
+    const waiting: string[] = [];
+    upstream.onopen = () => {
+      for (const message of waiting.splice(0)) upstream.send(message);
+    };
+    upstream.onmessage = (event) => route.send(String(event.data));
+    upstream.onclose = (event) => route.close({ code: event.code, reason: event.reason });
+    route.onMessage((message) => {
+      if (upstream.readyState === WebSocket.OPEN) upstream.send(String(message));
+      else waiting.push(String(message));
+    });
+    route.onClose((code, reason) => upstream.close(code, reason));
+  });
+};
 const ok = (message: string) => console.log(`✓ ${message}`);
 function fail(message: string): never {
   throw new Error(message);
@@ -125,8 +148,8 @@ const createFixture = async () => {
   ok("disposable person signed in and accepted the legal documents");
 
   chatId = z
-    .object({ id: z.string().regex(/^[0-9A-Za-z]{6}$/) })
-    .parse(await api("POST", "/api/chat/conversations", { members: [personId] }, adminToken, 201)).id;
+    .object({ outcome: z.literal("created"), conversation: z.object({ id: z.string().regex(/^[0-9A-Za-z]{6}$/) }) })
+    .parse(await api("POST", "/api/chat/conversations", { members: [personId] }, adminToken, 201)).conversation.id;
   ok(`chat ${chatId} created`);
   return { adminToken, personToken, chatId };
 };
@@ -163,8 +186,16 @@ const observeShifts = (page: Page) =>
     if (supported) observer.observe({ type: "layout-shift" });
   });
 
-const composer = (page: Page) => page.locator(".chat-conversation__composer textarea");
-const seeMessage = (page: Page, text: string) => page.locator(".chat-conversation__feed").getByText(text, { exact: true }).waitFor();
+const composer = (page: Page) => page.locator('.chat-conversation__composer textarea:not([aria-hidden="true"])');
+// A line break renders as <br>, which text matching reads as any whitespace.
+const textPattern = (text: string) =>
+  new RegExp(
+    `^${text
+      .split("\n")
+      .map((line) => line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("\\s*")}$`,
+  );
+const seeMessage = (page: Page, text: string) => page.locator(".chat-conversation__feed").getByText(textPattern(text)).waitFor();
 const sendMessage = async (page: Page, text: string, touch = false) => {
   const field = composer(page);
   if (touch) await field.tap();
@@ -182,7 +213,9 @@ const sendMessage = async (page: Page, text: string, touch = false) => {
   if (touch) await page.getByRole("button", { name: "Send message", exact: true }).tap();
   else await field.press("Enter");
   if ((await sent).status() !== 201) fail("composer send did not return 201");
-  await page.waitForFunction(() => document.querySelector<HTMLTextAreaElement>(".chat-conversation__composer textarea")?.value === "");
+  await page.waitForFunction(
+    () => document.querySelector<HTMLTextAreaElement>('.chat-conversation__composer textarea:not([aria-hidden="true"])')?.value === "",
+  );
   await seeMessage(page, text);
 };
 
@@ -221,6 +254,8 @@ const runSmoke = async (fixture: Awaited<ReturnType<typeof createFixture>>) => {
       : await webkit.launch({ headless: !options.headed, timeout: TIMEOUT });
     try {
       for (const theme of ["light", "dark"]) {
+        // Each round sends seven messages into the same chat; the next one waits out the chat's send window.
+        if (theme !== "light") await Bun.sleep(SEND_CONVERSATION_WINDOW_SECONDS * 1000);
         const admin = await desktop.newContext({
           baseURL: BASE_URL,
           viewport: { width: 1440, height: 900 },
@@ -239,6 +274,8 @@ const runSmoke = async (fixture: Awaited<ReturnType<typeof createFixture>>) => {
           try {
             await addCookies(admin, fixture.adminToken, theme);
             await addCookies(person, fixture.personToken, theme);
+            await relayLiveSocket(admin, fixture.adminToken);
+            await relayLiveSocket(person, fixture.personToken);
             const adminPage = await admin.newPage();
             const personPage = await person.newPage();
             const errors: string[] = [];
