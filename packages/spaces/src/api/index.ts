@@ -186,8 +186,8 @@ const OverviewActivityQuerySchema = z.object({
 const WorkspaceViewQuerySchema = z
   .object({
     href: z.string().min(1).max(3000),
-    from: z.string().datetime().optional().describe("Day and week views only: start of the days to load (ISO)"),
-    to: z.string().datetime().optional().describe("Day and week views only: end of the days to load, exclusive (ISO)"),
+    from: z.string().datetime().optional().describe("Day, week, and month views: start of the days to load (ISO)"),
+    to: z.string().datetime().optional().describe("Day, week, and month views: end of the days to load, exclusive (ISO)"),
     includeTray: z
       .enum(["true", "false"])
       .default("true")
@@ -783,7 +783,7 @@ const app = new Hono<AuthContext>()
       tags: ["Spaces"],
       summary: "Refresh the active workspace view",
       description:
-        "Load only the permission-checked list, table, kanban, or calendar snapshot selected by a Spaces URL. A calendar snapshot names the `range` of days it loaded. The day and week views may pass `from` and `to` to load other days, at most 366 of them, such as the next week while the reader scrolls. A day view snapshot also carries its tray: the first overdue tasks of the Space and the first undated tasks assigned to the reader, with their totals. Pass `includeTray=false` to load only the items of a range.",
+        "Load only the permission-checked list, table, kanban, or calendar snapshot selected by a Spaces URL. A calendar snapshot names the `range` of days it loaded. The day, week, and month views may pass `from` and `to` to load other days, at most 366 of them, such as the next block while the reader scrolls. A day view snapshot also carries its tray: the first overdue tasks of the Space and the first undated tasks assigned to the reader, with their totals. Pass `includeTray=false` to load only the items of a range.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpacesViewSnapshotSchema, "Active workspace view snapshot"),
@@ -799,9 +799,10 @@ const app = new Hono<AuthContext>()
       const { href, from, to, includeTray } = c.req.valid("query");
       const target = parseSpacesWorkspaceHref(href);
       if (!target) return respond(c, fail(err.badInput("Unsupported workspace view route")));
-      // Only the day and week views load a chosen range; other views ignore it, so an old timeline link opens its month.
-      const calendarView = new URL(href, "http://spaces.local").searchParams.get("cv");
-      const scrolling = calendarView === "day" || calendarView === "week";
+      // The day, week, and month views load a chosen range, also the month that a URL without a view opens. The year
+      // ignores it, and so does an old timeline link, so it opens its month as a whole.
+      const calendarView = new URL(href, "http://spaces.local").searchParams.get("cv") ?? "month";
+      const scrolling = calendarView === "day" || calendarView === "week" || calendarView === "month";
       const spaceId = await resolvePublicId("spaces", target.spaceId);
       if (!spaceId) return respond(c, fail(err.notFound("Space")));
       const snapshot = await loadSpacesViewSnapshot({

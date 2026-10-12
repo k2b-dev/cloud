@@ -7,7 +7,14 @@ import { createRetryToasts } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
 import Calendar from "../calendar";
 import { type CalendarFilter, parseCalendarRoute } from "../calendar/filter";
-import { CALENDAR_MAX_DAYS, type CalendarRange, calendarBlock, isScrollingCalendarView, mergeCalendarItems } from "../calendar/range";
+import {
+  CALENDAR_MAX_DAYS,
+  type CalendarRange,
+  calendarBlock,
+  calendarBlockDays,
+  isBlockLoadingCalendarView,
+  mergeCalendarItems,
+} from "../calendar/range";
 import type { CalendarView, DayWeather } from "../calendar/types";
 import { calendarViewSource, useSpacesCalendarQuery } from "./calendar-query";
 import { loadSpacesViewSnapshot } from "./view-query";
@@ -26,13 +33,13 @@ type CalendarState = {
 };
 
 /**
- * The days a day or week view holds: the first window of its snapshot plus every week loaded since while the reader
+ * The days a day, week, or month view holds: the first window of its snapshot plus every block loaded since while the reader
  * scrolled. The tray and the weather come with each snapshot, so a refresh or another filter renews them; the weeks
  * loaded while scrolling leave them as they are.
  */
 type StreamState = CalendarRange & {
   source: string;
-  view: "day" | "week";
+  view: "day" | "week" | "month";
   anchor: string;
   filter: CalendarFilter;
   items: CalendarItem[];
@@ -57,7 +64,7 @@ export default function SpacesCalendarRoute(props: Props) {
   const retryToast = createRetryToasts();
   const [selectedItemId, setSelectedItemId] = createSignal(props.selectedItemId);
   const streamOf = (source: string, snapshot: CalendarState): StreamState | null =>
-    isScrollingCalendarView(snapshot.view)
+    isBlockLoadingCalendarView(snapshot.view)
       ? { source, view: snapshot.view, anchor: snapshot.date, filter: snapshot.filter, ...snapshot.range, items: snapshot.items }
       : null;
   const [stream, setStream] = createSignal(streamOf(calendarViewSource(props.baseUrl), props.initialState));
@@ -143,7 +150,7 @@ export default function SpacesCalendarRoute(props: Props) {
         // Another view or a date outside the loaded days asks for its own weeks.
         if (load.signal.aborted || !previous || !current || !sameDays(previous, current)) return;
         previous = current;
-        const block = calendarBlock(current, edge, props.dateConfig);
+        const block = calendarBlock(current, edge, calendarBlockDays(current.view), props.dateConfig);
         if (!block) return;
         const started = snapshotsStarted;
         // The tray stays with the snapshot of the days, so a week loads without it.
@@ -176,7 +183,7 @@ export default function SpacesCalendarRoute(props: Props) {
     }
     const date = Date.parse(snapshot.date);
     return current && current.view === snapshot.view && Date.parse(current.from) <= date && date < Date.parse(current.to)
-      ? { range: { from: current.from, to: current.to }, items: snapshot.items }
+      ? { range: { from: current.from, to: current.to }, items: current.items }
       : { range: snapshot.range, items: snapshot.items };
   };
 

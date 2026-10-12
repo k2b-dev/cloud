@@ -20,6 +20,38 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: Calendar } = await import("./index");
 
 describe("Spaces calendar toolbar", () => {
+  for (const [locale, title, first] of [
+    ["en", "October 2026", "Nov 1"],
+    ["de", "Oktober 2026", "1. Nov"],
+  ] as const) {
+    test(`month renders the continuous first week and month boundaries in ${locale}`, () => {
+      const html = renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(Calendar, {
+              spaceId: "Space1",
+              view: "month",
+              date: new Date("2026-10-09T12:00:00Z"),
+              range: { from: "2026-08-30T22:00:00Z", to: "2026-12-20T23:00:00Z" },
+              items: [],
+              columns: [],
+              tags: [],
+              filter: defaultCalendarFilter,
+              baseUrl: "/app/spaces/Space1",
+              dateConfig: { locale, timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+              canWrite: true,
+            });
+          },
+        }),
+      );
+      expect(html).toContain(title);
+      expect(html).toContain('data-continuous="true"');
+      expect(html.match(/data-week-key="([^"]+)"/)?.[1]).toBe("2026-09-28");
+      expect(html).toContain(`>${first}</span>`);
+    });
+  }
+
   test("uses an input button for New event", () => {
     const html = renderToString(() =>
       createComponent(Calendar, {

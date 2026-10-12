@@ -6,7 +6,7 @@ import type { CalendarView } from "./types";
 export const CALENDAR_DAY_HOURS = [6, 22] as const;
 /** Days the day and week views load at once when the reader nears either end. */
 export const CALENDAR_BLOCK_DAYS = 7;
-/** The widest range the day and week views hold, as one year view does; past it they stop loading. */
+/** The widest range the scrolling views hold, as one year view does; past it they stop loading. */
 export const CALENDAR_MAX_DAYS = 366;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -16,25 +16,41 @@ export type CalendarRange = { from: string; to: string };
 /** The day and week views scroll through their days and load them in blocks. */
 export const isScrollingCalendarView = (view: CalendarView): view is "day" | "week" => view === "day" || view === "week";
 
+/** Views that load calendar days in blocks as the reader scrolls. Timed-day policy remains day/week only. */
+export const isBlockLoadingCalendarView = (view: CalendarView): view is "day" | "week" | "month" =>
+  isScrollingCalendarView(view) || view === "month";
+
+/** Month loads eight weeks at once; timed views load one. */
+export const calendarBlockDays = (view: "day" | "week" | "month") => (view === "month" ? 56 : CALENDAR_BLOCK_DAYS);
+
 const midnight = (date: Date, days: number, dateConfig?: DateContext) =>
   dates.addDays(dates.startOfDay(date, dateConfig), days, dateConfig).toISOString();
 
 /**
  * The days the first snapshot of a day or week view loads around its date: a week before and three after the day, or
- * the week before and the two after the week, so the reader can scroll either way at once.
+ * the week before and the two after the week. Month loads five weeks before the first's week and eleven after it.
  */
-export const calendarWindow = (view: "day" | "week", date: Date, dateConfig?: DateContext): CalendarRange => {
+export const calendarWindow = (view: "day" | "week" | "month", date: Date, dateConfig?: DateContext): CalendarRange => {
   if (view === "day") return { from: midnight(date, -7, dateConfig), to: midnight(date, 22, dateConfig) };
+  if (view === "month") {
+    const start = dates.startOfWeek(dates.startOfMonth(date, dateConfig), dateConfig);
+    return { from: midnight(start, -35, dateConfig), to: midnight(start, 77, dateConfig) };
+  }
   const start = dates.startOfWeek(date, dateConfig);
   return { from: midnight(start, -7, dateConfig), to: midnight(start, 14, dateConfig) };
 };
 
-/** The week before or after the loaded days, or null where the range would grow past {@link CALENDAR_MAX_DAYS}. */
-export const calendarBlock = (range: CalendarRange, edge: "earlier" | "later", dateConfig?: DateContext): CalendarRange | null => {
+/** The block before or after the loaded days, or null past {@link CALENDAR_MAX_DAYS}. */
+export const calendarBlock = (
+  range: CalendarRange,
+  edge: "earlier" | "later",
+  days: number,
+  dateConfig?: DateContext,
+): CalendarRange | null => {
   const block =
     edge === "earlier"
-      ? { from: midnight(new Date(range.from), -CALENDAR_BLOCK_DAYS, dateConfig), to: range.from }
-      : { from: range.to, to: midnight(new Date(range.to), CALENDAR_BLOCK_DAYS, dateConfig) };
+      ? { from: midnight(new Date(range.from), -days, dateConfig), to: range.from }
+      : { from: range.to, to: midnight(new Date(range.to), days, dateConfig) };
   const from = edge === "earlier" ? block.from : range.from;
   const to = edge === "earlier" ? range.to : block.to;
   return Date.parse(to) - Date.parse(from) > CALENDAR_MAX_DAYS * DAY_MS ? null : block;

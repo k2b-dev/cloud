@@ -1,7 +1,7 @@
 import { Link, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import type { JSX, ParentProps } from "solid-js";
-import { createEffect, createMemo, createSignal, For, mergeProps, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createComputed, createEffect, createMemo, createSignal, For, mergeProps, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Button } from "../actions/Button";
 import type { DropdownAction, DropdownChoice, DropdownItem, DropdownSection } from "../actions/Dropdown";
 import { GestureMenu } from "../actions/GestureMenu";
@@ -10,10 +10,23 @@ import { useDateConfigLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { CalendarDayView } from "./CalendarDayView";
 import { CalendarWeekView } from "./CalendarWeekView";
+import { addDayKeys } from "./calendar-days";
 import { openCalendarGoTo, openCalendarShortcuts } from "./calendar-dialogs";
 import { layoutCalendarIntervals } from "./calendar-event-layout";
 import { useCalendarMessages } from "./calendar-messages";
 import { fitMonthWeek, layoutMonthWeek, monthLaneCapacity } from "./calendar-month-layout";
+import {
+  MONTH_ROW_BLOCK,
+  MONTH_ROWS_IN_VIEW,
+  monthFocusRow,
+  monthOfWeek,
+  monthRenderWindow,
+  monthRevealTop,
+  monthRowOf,
+  monthTodayDirection,
+  monthVisibleRows,
+  monthWeekKeys,
+} from "./calendar-month-scroll";
 import { calendarDayIndexAtPoint, calendarMinuteAtPoint, startCalendarPointerSession } from "./calendar-pointer";
 import {
   type CalendarOwner,
@@ -28,7 +41,7 @@ import {
   textWidth,
   validDate,
 } from "./calendar-shared";
-import { compactGermanDate, type TimeViewHandle, type TodayDirection } from "./calendar-time-view";
+import { compactGermanDate, reducedMotion, type TimeViewHandle, type TodayDirection } from "./calendar-time-view";
 
 export type CalendarView = "day" | "week" | "month" | "year" | "mobile-month";
 
@@ -193,17 +206,18 @@ export type CalendarProps<V extends string = never> = {
    * `startHour`, `endHour`, and the visible hours do not apply then.
    */
   dayHours?: readonly [start: number, end: number];
-  /** Day and week views with `dayHours`: the days of `events`. Without it they cover the day or week of `date`. */
+  /** Loaded days of the continuous month view and the day/week views with `dayHours`, with an exclusive end. */
   range?: CalendarRange;
   /** Called once when the reader nears the first loaded day, again once `range.from` moved. */
   onLoadEarlier?: () => unknown;
   /** Called once when the reader nears the last loaded day, again once `range.to` moved. */
   onLoadLater?: () => unknown;
   /**
-   * Day and week views with `dayHours`: the first and the last day the reader sees, once the view opened and whenever
-   * scrolling changed them, such as for the URL or a count of what is in view.
+   * Scrolling views: the first and last visible day, and the focus date, after positioning and when they change.
+   * Day/week views use their first day as focus. Continuous month uses the first selected day inside its focus month,
+   * else today when in that month, else its first. Month rows count as visible when more than half is on screen.
    */
-  onVisibleDateChange?: (date: Date, last: Date) => void;
+  onVisibleDateChange?: (date: Date, last: Date, focus: Date) => void;
   visibleStartHour?: number;
   visibleEndHour?: number;
   allDayMaxHeightRem?: number;
@@ -661,6 +675,7 @@ const openViewAt = <V extends string>(
 type CalendarHeaderNav = {
   /** The day or week view with `dayHours`, which scrolls through its days by itself. */
   timeView: () => TimeViewHandle | null;
+  monthView: () => MonthHandle | null;
   /** The commands of the shortcuts dialog; without them the header shows no shortcuts button. */
   commands: () => readonly CalendarCommand[];
   openShortcuts: () => void;
@@ -692,11 +707,13 @@ const CalendarHeader = <V extends string>(props: {
   const calendarMessages = useCalendarMessages();
   const dateConfig = () => ownerDateConfig(props.owner);
   const timeView = () => props.nav.timeView();
+  const monthView = () => props.nav.monthView();
+  const scrollingView = () => timeView() ?? monthView();
   const parseKey = (key: string) => calendar.parseCalendarDate(key, dateConfig());
   /** The date the header pages from: the first day a day or week view shows, else the date. */
   const base = () => {
     const shown = timeView()?.visibleKeys().first;
-    return shown ? parseKey(shown) : props.date;
+    return shown ? parseKey(shown) : (monthView()?.focusMonth() ?? props.date);
   };
   const previous = () => adjacentCalendarDate(base(), props.view, -1, dateConfig());
   const next = () => adjacentCalendarDate(base(), props.view, 1, dateConfig());
@@ -733,7 +750,7 @@ const CalendarHeader = <V extends string>(props: {
       });
     if (props.view === "week")
       return `${formatDay(calendar.startOfWeek(props.date, dateConfig()), dateConfig())} - ${formatDay(calendar.addDays(calendar.startOfWeek(props.date, dateConfig()), 6, dateConfig()), dateConfig())}`;
-    return formatMonth(props.date, dateConfig());
+    return formatMonth(monthView()?.focusMonth() ?? props.date, dateConfig());
   };
   /**
    * The titles this view can show around the current date: the months of the year, the weeks of the month and across
@@ -795,7 +812,7 @@ const CalendarHeader = <V extends string>(props: {
   };
   const navButton = (date: Date, icon: string, label: string, direction: -1 | 1) => {
     const href = props.owner.getDateHref?.(date, props.view);
-    const step = () => timeView()?.step(direction) ?? false;
+    const step = () => scrollingView()?.step(direction) ?? false;
     const title = props.nav.commands().length > 0 ? `${label} (${direction > 0 ? "J" : "K"})` : label;
     return (props.owner.onNavigateHref || props.owner.onNavigate) && href ? (
       <CalendarNavigationLink
@@ -834,7 +851,9 @@ const CalendarHeader = <V extends string>(props: {
    * it is on screen; the icon keeps its place either way. The other views name their period in the title.
    */
   const direction = () =>
-    timeMode() ? (timeView()?.todayDirection() ?? todayDirectionOf(String(props.view), props.date, dateConfig())) || "here" : undefined;
+    timeMode() || monthView()
+      ? (scrollingView()?.todayDirection() ?? todayDirectionOf(String(props.view), props.date, dateConfig())) || "here"
+      : undefined;
   /** One arrow that the stylesheet turns toward today, or the dot while today shows. */
   const todayIcon = () => (
     <Show when={direction()}>
@@ -848,7 +867,7 @@ const CalendarHeader = <V extends string>(props: {
   const todayButton = () => {
     const today = calendar.today(dateConfig());
     const href = props.owner.getDateHref?.(today, props.view);
-    const intercept = () => timeView()?.today() ?? false;
+    const intercept = () => scrollingView()?.today() ?? false;
     const title = () => (props.nav.commands().length > 0 ? `${props.labels.today} (H)` : undefined);
     const label = (
       <>
@@ -1222,9 +1241,17 @@ type MonthItem = {
 type MonthSelection = { first: string; last: string };
 
 /** What the calendar's controller asks of the month view. */
-type MonthCreateHandle = Pick<CalendarController, "quickCreate" | "createTarget"> & {
+type MonthHandle = Pick<CalendarController, "quickCreate" | "createTarget"> & {
   /** The quiet quick create waits for the person to type its title. */
   typing: () => boolean;
+  continuous: () => boolean;
+  focusMonth: () => Date;
+  focusDay: () => Date;
+  visibleKeys: () => { first: string; last: string };
+  step: (direction: -1 | 1) => boolean;
+  goTo: (key: string) => boolean;
+  today: () => boolean;
+  todayDirection: () => TodayDirection;
 };
 
 type MonthPopover =
@@ -1295,15 +1322,23 @@ const MonthView = (props: {
   /** The first selected day, for the view switcher; `null` without a selection. */
   onFocusDay?: (date: Date | null) => void;
   /** Receives what the calendar's controller asks of the month view. */
-  register?: (handle: MonthCreateHandle | null) => void;
+  register?: (handle: MonthHandle | null) => void;
 }): JSX.Element => {
   const calendarMessages = useCalendarMessages();
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
+  const continuous = createMemo(() => Boolean(props.owner.range));
+  const [mounted, setMounted] = createSignal(false);
+  const hostMonthKey = () => calendar.formatDateKey(calendar.startOfMonth(props.date, dateConfig()), dateConfig());
+  const [focusMonthKey, setFocusMonthKey] = createSignal(untrack(hostMonthKey));
   // The shown month and its grid change only with the month, so a refresh of the same month keeps every cell and its
   // focus.
-  const month = createMemo(() => zonedYearMonth(props.date, dateConfig()), undefined, {
-    equals: (previous, next) => previous.year === next.year && previous.month === next.month,
-  });
+  const month = createMemo(
+    () => zonedYearMonth(continuous() ? calendar.parseCalendarDate(focusMonthKey(), dateConfig()) : props.date, dateConfig()),
+    undefined,
+    {
+      equals: (previous, next) => previous.year === next.year && previous.month === next.month,
+    },
+  );
   const weeks = createMemo(
     () =>
       calendar
@@ -1315,19 +1350,12 @@ const MonthView = (props: {
   const weekdays = createMemo(() => calendar.weekdays(dateConfig()));
   const todayKey = createMemo(() => calendar.formatDateKey(props.now, dateConfig()));
   const items = createMemo(() => monthItems(props.events));
-  const weekLayouts = createMemo(() =>
-    weeks().map((week) =>
-      layoutMonthWeek(
-        week.map((entry) => entry.key),
-        items().map((item) => ({ item, firstKey: item.firstKey, lastKey: item.lastKey, bar: item.bar })),
-      ),
-    ),
-  );
   const [capacities, setCapacities] = createSignal<number[]>([]);
   const [cellWidth, setCellWidth] = createSignal(0);
   const [barFont, setBarFont] = createSignal("");
   const [anchorKey, setAnchorKey] = createSignal<string | null>(null);
   const [focusKey, setFocusKey] = createSignal<string | null>(null);
+  const [focusedCellKey, setFocusedCellKey] = createSignal<string | null>(null);
   const [popover, setPopover] = createSignal<MonthPopover | null>(null);
   /** Whether the quick create holds the focus; until then the grid keeps it. */
   const [createActive, setCreateActive] = createSignal(false);
@@ -1354,12 +1382,413 @@ const MonthView = (props: {
     end: calendar.addDays(parseKey(range.last), 1, dateConfig()),
     allDay: true,
   });
-  const visibleKeys = createMemo(() => weeks().flatMap((week) => week.map((entry) => entry.key)));
+  const hostKey = () => calendar.formatDateKey(props.date, dateConfig());
+  const loadedRange = createMemo(() => {
+    const range = props.owner.range;
+    const keyOf = (value: Date | string) => calendar.formatDateKey(parseDate(value, dateConfig()), dateConfig());
+    return range ? { first: keyOf(range.from), to: keyOf(range.to) } : { first: hostMonthKey(), to: hostMonthKey() };
+  });
+  const loadedWeeks = createMemo(() => monthWeekKeys(loadedRange().first, loadedRange().to, dateConfig().firstDayOfWeek ?? 1));
+  const loaded = (key: string) => key >= loadedRange().first && key < loadedRange().to;
+  // The first paint starts at the month's first week. Mount adds the earlier weeks and positions synchronously.
+  const trackWeeks = createMemo(() => {
+    const all = loadedWeeks();
+    const anchor = monthRowOf(all, hostMonthKey());
+    return mounted() || anchor === undefined ? all : all.slice(anchor);
+  });
+  const [scrollTop, setScrollTop] = createSignal(0);
+  const [rowHeight, setRowHeight] = createSignal(80);
+  const [viewHeight, setViewHeight] = createSignal(400);
+  const [labelShown, setLabelShown] = createSignal(false);
+  const [pulseKey, setPulseKey] = createSignal("");
+  let scroller: HTMLDivElement | undefined;
+  let weekdayElement: HTMLDivElement | undefined;
+  let ready = false;
+  let positioned = false;
+  let silentTop: number | null = null;
+  let frame = 0;
+  let labelTimer = 0;
+  let reportTimer = 0;
+  let queueTimer = 0;
+  let glideTimer = 0;
+  let arrivalTimer = 0;
+  let pulseTimer = 0;
+  let queuedMonth: string | null = null;
+  let pendingTarget: string | null = null;
+  let glideTarget: { week: string; offset: number; expires: number } | null = null;
+  let pulseOnArrival = false;
+  let reported = "";
+  let reportedFocus = "";
+  let askedEarlier = "";
+  let askedLater = "";
+
+  const scrollFocusDay = createMemo(() => {
+    const first = focusMonthKey();
+    const range = selection();
+    const selected = range && range.last >= first ? (range.first > first ? range.first : first) : null;
+    if (selected?.slice(0, 7) === first.slice(0, 7)) return selected;
+    return todayKey().slice(0, 7) === first.slice(0, 7) ? todayKey() : first;
+  });
+  const visibleRange = createMemo(() => {
+    const weeks = trackWeeks();
+    const rows = monthVisibleRows(scrollTop(), viewHeight(), rowHeight(), weeks.length);
+    const first = weeks[rows.first] ?? focusMonthKey();
+    return { first, last: addDayKeys(weeks[Math.max(rows.first, rows.end - 1)] ?? first, 6) };
+  });
+  const renderWindow = createMemo(
+    () =>
+      mounted()
+        ? monthRenderWindow(scrollTop(), viewHeight(), rowHeight(), trackWeeks().length)
+        : { first: 0, end: Math.min(trackWeeks().length, MONTH_ROW_BLOCK * 2) },
+    undefined,
+    { equals: (left, right) => left.first === right.first && left.end === right.end },
+  );
+  /** The window's weeks, and those of the focused day, the selection's moving end, and an open popover's day. */
+  const renderedWeeks = createMemo(() => {
+    const weeks = trackWeeks();
+    const window = renderWindow();
+    const keys = new Set(weeks.slice(window.first, window.end));
+    for (const key of [focusKey(), focusedCellKey(), popover()?.anchor.dataset.calendarDayKey]) {
+      const row = key ? monthRowOf(weeks, key) : undefined;
+      if (row !== undefined) keys.add(weeks[row]!);
+    }
+    return [...keys].sort();
+  });
+  // Rows keep their elements, but the list moves a kept row when the window passes it, and a browser drops the focus
+  // from an element that moves. The focused element takes it back once the rows are in place.
+  let refocus: Element | null = null;
+  createComputed(
+    on(
+      renderedWeeks,
+      () => {
+        const active = typeof document === "undefined" ? null : document.activeElement;
+        refocus = active && scroller?.contains(active) ? active : null;
+      },
+      { defer: true },
+    ),
+  );
+  createEffect(
+    on(
+      renderedWeeks,
+      () => {
+        const element = refocus;
+        refocus = null;
+        if (element instanceof HTMLElement && element.isConnected && document.activeElement !== element)
+          element.focus({ preventScroll: true });
+      },
+      { defer: true },
+    ),
+  );
+  const placeOfToday = (): TodayDirection => {
+    const weeks = trackWeeks();
+    const row = monthRowOf(weeks, todayKey());
+    return row === undefined
+      ? todayKey() < (weeks[0] ?? focusMonthKey())
+        ? "up"
+        : "down"
+      : monthTodayDirection(row, scrollTop(), viewHeight(), rowHeight());
+  };
+  const measureScroll = () => {
+    if (!scroller) return;
+    const row = scroller.querySelector<HTMLElement>(".k2b-calendar-month__week");
+    const height = row?.getBoundingClientRect().height;
+    if (height && height > 0) setRowHeight(height);
+    setViewHeight(Math.max(0, scroller.clientHeight - (weekdayElement?.getBoundingClientRect().height ?? 0)));
+  };
+  const loadMore = (edge: "earlier" | "later") => {
+    if (!ready || (edge === "earlier" && glideTarget)) return;
+    const range = loadedRange();
+    if (edge === "earlier" && props.owner.onLoadEarlier && askedEarlier !== range.first) {
+      askedEarlier = range.first;
+      void props.owner.onLoadEarlier();
+    }
+    if (edge === "later" && props.owner.onLoadLater && askedLater !== range.to) {
+      askedLater = range.to;
+      void props.owner.onLoadLater();
+    }
+  };
+  const reportVisible = () => {
+    if (!ready) return;
+    const { first, last } = untrack(visibleRange);
+    const focus = untrack(scrollFocusDay);
+    const value = `${first}/${last}/${focus}`;
+    if (reported === value) return;
+    reported = value;
+    window.clearTimeout(reportTimer);
+    reportTimer = window.setTimeout(() => {
+      reportedFocus = focus;
+      props.owner.onVisibleDateChange?.(parseKey(first), parseKey(last), parseKey(focus));
+    }, 250);
+  };
+  const keepLabel = () => {
+    window.clearTimeout(labelTimer);
+    labelTimer = window.setTimeout(() => setLabelShown(false), 650);
+  };
+  const readScroll = (showLabel = true) => {
+    if (!scroller) return;
+    const top = scroller.scrollTop;
+    setScrollTop(top);
+    const weeks = trackWeeks();
+    const week = weeks[monthFocusRow(top, viewHeight(), rowHeight(), weeks.length)];
+    if (week) {
+      const next = monthOfWeek(week);
+      if (next !== untrack(focusMonthKey)) {
+        setFocusMonthKey(next);
+        if (showLabel && ready) {
+          setLabelShown(true);
+          keepLabel();
+        }
+      }
+    }
+    reportVisible();
+  };
+  const pulseToday = () => {
+    if (reducedMotion()) return;
+    setPulseKey(todayKey());
+    window.clearTimeout(pulseTimer);
+    pulseTimer = window.setTimeout(() => setPulseKey(""), 1000);
+  };
+  const finishGlide = () => {
+    if (!scroller) return;
+    const target = glideTarget;
+    const row = target ? monthRowOf(trackWeeks(), target.week) : undefined;
+    // A clamped glide may still be waiting for more weeks below; scrollend is not arrival then.
+    if (target && row !== undefined && Math.abs(scroller.scrollTop - (row * rowHeight() + target.offset)) > 1) return;
+    glideTarget = null;
+    queuedMonth = null;
+    window.clearTimeout(queueTimer);
+    window.clearTimeout(glideTimer);
+    window.clearTimeout(arrivalTimer);
+    readScroll();
+    if (pulseOnArrival) {
+      pulseOnArrival = false;
+      pulseToday();
+    }
+  };
+  const cancelGlide = () => {
+    if (!glideTarget || !scroller) return;
+    // A reader's wheel or touch takes over from navigation, including any target waiting for more weeks.
+    glideTarget = null;
+    pulseOnArrival = false;
+    queuedMonth = null;
+    for (const timer of [queueTimer, glideTimer, arrivalTimer]) window.clearTimeout(timer);
+    scroller.scrollTo({ top: scroller.scrollTop, behavior: "instant" });
+  };
+  const issueGlide = (top: number, smooth: boolean) => {
+    if (!scroller) return;
+    const maximum = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    const target = Math.max(0, Math.min(top, maximum));
+    if (smooth && !reducedMotion() && Math.abs(target - scroller.scrollTop) > viewHeight() * 3) {
+      scroller.scrollTop = target - Math.sign(target - scroller.scrollTop) * viewHeight();
+      readScroll();
+    }
+    scroller.scrollTo({ top: target, behavior: smooth && !reducedMotion() ? "smooth" : "instant" });
+    if (top > maximum + 1) loadMore("later");
+    if (!smooth || reducedMotion()) {
+      readScroll();
+      finishGlide();
+    }
+  };
+  const glide = (top: number, smooth = true) => {
+    if (!scroller) return;
+    const row = Math.max(0, Math.min(trackWeeks().length - 1, Math.floor(top / rowHeight())));
+    const week = trackWeeks()[row];
+    if (!week) return;
+    glideTarget = { week, offset: top - row * rowHeight(), expires: performance.now() + 1600 };
+    window.clearTimeout(glideTimer);
+    window.clearTimeout(arrivalTimer);
+    glideTimer = window.setTimeout(() => {
+      glideTarget = null;
+      pulseOnArrival = false;
+    }, 1600);
+    arrivalTimer = window.setTimeout(finishGlide, 900);
+    issueGlide(top, smooth);
+  };
+  const positionMonth = (key: string, smooth = true, reveal = false) => {
+    if (!continuous() || !loaded(key) || !scroller) return false;
+    const weeks = trackWeeks();
+    const first = monthRowOf(weeks, `${key.slice(0, 7)}-01`);
+    const row = monthRowOf(weeks, key);
+    if (first === undefined || row === undefined) return false;
+    const top = first * rowHeight();
+    glide(reveal ? (monthRevealTop(row, top, viewHeight(), rowHeight()) ?? top) : top, smooth);
+    return true;
+  };
+  const goToMonth = (key: string) => positionMonth(key, true, true);
+  const stepMonth = (direction: -1 | 1) => {
+    if (!continuous() || !scroller) return false;
+    const target = calendar.formatDateKey(
+      calendar.addMonths(parseKey(queuedMonth ?? focusMonthKey()), direction, dateConfig()),
+      dateConfig(),
+    );
+    if (!positionMonth(target)) return false;
+    // Instant positioning may finish during positionMonth; queue afterwards so rapid clicks still accumulate.
+    queuedMonth = target;
+    window.clearTimeout(queueTimer);
+    queueTimer = window.setTimeout(() => {
+      queuedMonth = null;
+    }, 1200);
+    return true;
+  };
+  const goToday = () => {
+    if (!continuous() || !loaded(todayKey()) || !scroller) return false;
+    pulseOnArrival = !reducedMotion();
+    if (positionMonth(todayKey())) return true;
+    pulseOnArrival = false;
+    return false;
+  };
+  const revealDay = (key: string) => {
+    const row = monthRowOf(trackWeeks(), key);
+    if (row === undefined || !scroller) return;
+    const top = monthRevealTop(row, scroller.scrollTop, viewHeight(), rowHeight());
+    if (top !== undefined) glide(top);
+  };
+  const onScroll = () => {
+    if (!ready || !scroller) return;
+    // Initial positioning and range rebasing are not the reader asking for more weeks.
+    if (silentTop !== null && Math.abs(scroller.scrollTop - silentTop) < 1) return;
+    silentTop = null;
+    if (untrack(labelShown)) keepLabel();
+    if (!frame)
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        readScroll();
+        if (!scroller) return;
+        if (scroller.scrollTop < MONTH_ROWS_IN_VIEW * rowHeight()) loadMore("earlier");
+        if (scroller.scrollTop + viewHeight() > (trackWeeks().length - MONTH_ROWS_IN_VIEW * 2) * rowHeight()) loadMore("later");
+      });
+  };
+  // Capture the old track before render effects change its height, then restore the same week and pixel below.
+  let previousWeeks: string[] = [];
+  let savedAnchor: { week: string; delta: number } | null = null;
+  createComputed(
+    on(
+      loadedWeeks,
+      (weeks) => {
+        if (!untrack(mounted) || !scroller) return;
+        const top = scroller.scrollTop;
+        const row = Math.floor(top / untrack(rowHeight));
+        const week = previousWeeks[row];
+        savedAnchor = week ? { week, delta: top - row * untrack(rowHeight) } : null;
+        const next = week ? monthRowOf(weeks, week) : undefined;
+        // Move the render window before DOM updates, so even a larger rebase retains the visible rows' elements.
+        if (next !== undefined && savedAnchor) setScrollTop(next * untrack(rowHeight) + savedAnchor.delta);
+      },
+      { defer: true },
+    ),
+  );
+  createEffect(
+    on(
+      loadedWeeks,
+      () => {
+        if (!untrack(mounted) || !scroller) return;
+        measureScroll();
+        previousWeeks = untrack(trackWeeks);
+        if (pendingTarget && loaded(pendingTarget)) {
+          const key = pendingTarget;
+          pendingTarget = null;
+          positioned = positionMonth(key, positioned) || positioned;
+          if (pendingKey === key) {
+            pendingKey = null;
+            select(key);
+            queueMicrotask(() => focusCell(key));
+          }
+        } else {
+          const row = savedAnchor ? monthRowOf(previousWeeks, savedAnchor.week) : undefined;
+          if (row !== undefined && savedAnchor) scroller.scrollTop = row * untrack(rowHeight) + savedAnchor.delta;
+          if (glideTarget && performance.now() < glideTarget.expires) {
+            const target = monthRowOf(previousWeeks, glideTarget.week);
+            if (target !== undefined) issueGlide(target * untrack(rowHeight) + glideTarget.offset, true);
+          }
+        }
+        savedAnchor = null;
+        silentTop = scroller.scrollTop;
+        readScroll(false);
+      },
+      { defer: true },
+    ),
+  );
+  createEffect(
+    on(
+      hostKey,
+      (key) => {
+        if (!continuous() || !untrack(mounted) || !scroller || key === reportedFocus) return;
+        pendingTarget = loaded(key) ? null : key;
+        if (pendingTarget) return;
+        const visible = untrack(visibleRange);
+        if (key.slice(0, 7) !== untrack(focusMonthKey).slice(0, 7) || key < visible.first || key > visible.last) positionMonth(key);
+        if (pendingKey === key) {
+          pendingKey = null;
+          select(key);
+          queueMicrotask(() => focusCell(key));
+        }
+      },
+      { defer: true },
+    ),
+  );
+  createEffect(
+    on(
+      scrollFocusDay,
+      () => {
+        if (continuous()) reportVisible();
+      },
+      { defer: true },
+    ),
+  );
+  onMount(() => {
+    if (!continuous() || !scroller) return;
+    setMounted(true);
+    measureScroll();
+    previousWeeks = trackWeeks();
+    const row = monthRowOf(previousWeeks, hostMonthKey());
+    if (row !== undefined && loaded(hostKey())) scroller.scrollTop = row * rowHeight();
+    // Too few weeks below the month, such as the days of another view while the month's own load, cannot put its
+    // first week on top yet; the month goes there once its weeks arrive.
+    positioned = row !== undefined && Math.abs(scroller.scrollTop - row * rowHeight()) < 1;
+    if (!positioned) pendingTarget = hostKey();
+    readScroll(false);
+    silentTop = scroller.scrollTop;
+    ready = true;
+    reportVisible();
+    scroller.addEventListener("scrollend", finishGlide);
+    const resize =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(() => {
+            if (!scroller) return;
+            const height = untrack(rowHeight);
+            const position = scroller.scrollTop / height;
+            measureScroll();
+            if (height !== untrack(rowHeight)) {
+              scroller.scrollTop = position * untrack(rowHeight);
+              if (glideTarget) {
+                const target = monthRowOf(untrack(trackWeeks), glideTarget.week);
+                if (target !== undefined) issueGlide(target * untrack(rowHeight) + glideTarget.offset, true);
+              }
+              silentTop = scroller.scrollTop;
+            }
+            readScroll(false);
+          });
+    resize?.observe(scroller);
+    onCleanup(() => {
+      resize?.disconnect();
+      scroller?.removeEventListener("scrollend", finishGlide);
+      for (const timer of [labelTimer, reportTimer, queueTimer, glideTimer, arrivalTimer, pulseTimer]) window.clearTimeout(timer);
+      if (frame) cancelAnimationFrame(frame);
+    });
+  });
+
+  const visibleKeys = createMemo(() =>
+    continuous()
+      ? renderedWeeks().flatMap((key) => Array.from({ length: 7 }, (_, day) => addDayKeys(key, day)))
+      : weeks().flatMap((week) => week.map((entry) => entry.key)),
+  );
   const rovingKey = createMemo(() => {
     const keys = visibleKeys();
-    const focus = focusKey();
+    const focus = focusKey() ?? (continuous() ? focusedCellKey() : null);
     if (focus && keys.includes(focus)) return focus;
-    if (keys.includes(todayKey())) return todayKey();
+    if (keys.includes(todayKey()) && (!continuous() || (todayKey() >= visibleRange().first && todayKey() <= visibleRange().last)))
+      return todayKey();
     return calendar.formatDateKey(zonedMonthDate(month().year, month().month, dateConfig()), dateConfig());
   });
   const dropRange = createMemo((): MonthSelection | null => {
@@ -1383,8 +1812,7 @@ const MonthView = (props: {
     setAnchorKey(anchor);
     setFocusKey(focus);
   };
-  // The host learns every change of the selected days, and a new month starts without a selection. The selection
-  // goes with the view, so switching to another view reports that nothing is selected.
+  // Selection survives scrolling; only paging starts a month without it. Switching views clears the host's selection.
   createEffect(on(selection, (range) => props.owner.onSelectionChange?.(range ? rangeOf(range) : null), { defer: true }));
   onCleanup(() => {
     if (untrack(selection)) props.owner.onSelectionChange?.(null);
@@ -1394,6 +1822,7 @@ const MonthView = (props: {
     on(
       month,
       () => {
+        if (continuous()) return;
         setPopover(null);
         const key = pendingKey;
         pendingKey = null;
@@ -1528,6 +1957,14 @@ const MonthView = (props: {
       },
       createTarget: () => rangeOf(selection() ?? { first: rovingKey(), last: rovingKey() }),
       typing: () => popover()?.kind === "create" && !createActive(),
+      continuous,
+      focusMonth: () => parseKey(focusMonthKey()),
+      focusDay: () => parseKey(scrollFocusDay()),
+      visibleKeys: visibleRange,
+      step: stepMonth,
+      goTo: goToMonth,
+      today: goToday,
+      todayDirection: placeOfToday,
     }),
   );
   onCleanup(() => props.register?.(null));
@@ -1559,13 +1996,16 @@ const MonthView = (props: {
     }
   };
   const moveFocus = (key: string, extend: boolean) => {
-    if (!visibleKeys().includes(key)) {
+    if (continuous() ? !loaded(key) : !visibleKeys().includes(key)) {
       pageTo(key);
       return;
     }
     if (extend) select(anchorKey() ?? focusKey() ?? key, key);
     else select(key);
-    focusCell(key);
+    if (continuous()) {
+      revealDay(key);
+      queueMicrotask(() => focusCell(key));
+    } else focusCell(key);
     followSelection();
   };
   const onCellKeyDown = (event: KeyboardEvent, key: string) => {
@@ -1607,7 +2047,11 @@ const MonthView = (props: {
     }
     if (event.key === "PageUp" || event.key === "PageDown") {
       event.preventDefault();
-      pageTo(calendar.formatDateKey(addMonthsClamped(day, event.key === "PageUp" ? -1 : 1, dateConfig()), dateConfig()));
+      const target = calendar.formatDateKey(addMonthsClamped(day, event.key === "PageUp" ? -1 : 1, dateConfig()), dateConfig());
+      if (continuous() && loaded(target)) {
+        moveFocus(target, event.shiftKey);
+        positionMonth(target);
+      } else pageTo(target);
       return;
     }
     if (event.key === "Enter" || ((event.key === "n" || event.key === "N") && !event.shiftKey)) {
@@ -1676,6 +2120,9 @@ const MonthView = (props: {
     cancelInteraction?.();
     cancelInteraction = startCalendarPointerSession({
       event,
+      scrollContainer: continuous() ? scroller : undefined,
+      // A drag along the last row on screen selects its days; the view scrolls once the pointer came from inside.
+      armAutoScroll: true,
       resolve: (clientX, clientY) => dayKeyAtPoint(clientX, clientY),
       onActivate: () => {
         suppressClickUntil = performance.now() + 400;
@@ -1684,6 +2131,8 @@ const MonthView = (props: {
       },
       onPreview: (current) => select(key, current),
       onCommit: (current) => {
+        // The click that ends a long drag, such as one that scrolled the view, must not select the pressed day again.
+        suppressClickUntil = performance.now() + 400;
         select(key, current);
         focusCell(current);
         const range = orderedSelection(key, current);
@@ -1741,6 +2190,8 @@ const MonthView = (props: {
     cancelInteraction?.();
     cancelInteraction = startCalendarPointerSession({
       event: pointerEvent,
+      scrollContainer: continuous() ? scroller : undefined,
+      armAutoScroll: true,
       resolve: (clientX, clientY) => {
         const key = dayKeyAtPoint(clientX, clientY);
         if (!key) return null;
@@ -1756,6 +2207,9 @@ const MonthView = (props: {
       },
       onPreview: setMovePreview,
       onCommit: (next) => {
+        // The click that ends a long move, such as one that scrolled the view, must not open the entry.
+        markDragged();
+        suppressClickUntil = performance.now() + 400;
         clearMove();
         if (eventTimeChanged(event, next)) props.owner.onEventDrop?.(event, next);
       },
@@ -1846,6 +2300,247 @@ const MonthView = (props: {
     },
   });
 
+  const weekRow = (week: () => { day: Date; key: string }[], weekIndex: () => number) => {
+    const layout = createMemo(() =>
+      layoutMonthWeek(
+        week().map((entry) => entry.key),
+        items().map((item) => ({ item, firstKey: item.firstKey, lastKey: item.lastKey, bar: item.bar })),
+      ),
+    );
+    // The continuous rows are all as high as the first, so they share its measured capacity.
+    const capacity = () => capacities()[continuous() ? 0 : weekIndex()] ?? MONTH_DEFAULT_LANES;
+    const fit = createMemo(() => fitMonthWeek(layout(), capacity()));
+    const weekHref = () => viewHref(week()[0]!.key, "week");
+    const weekNumber = () => zonedWeekNumber(week()[0]!.day, dateConfig());
+    return (
+      <div
+        class="k2b-calendar-month__week"
+        role="row"
+        data-week-key={continuous() ? week()[0]?.key : undefined}
+        // Only some weeks render, and not in their order, so each continuous row names its place below the weekdays.
+        aria-rowindex={continuous() ? weekIndex() + 2 : undefined}
+        style={continuous() ? { "--k2b-calendar-week-index": String(weekIndex()) } : undefined}
+        data-week-numbers={props.owner.withWeekNumbers ? "true" : undefined}
+      >
+        <Show when={props.owner.withWeekNumbers}>
+          <div class="k2b-calendar-month__week-number" role="rowheader">
+            <Show
+              when={weekHref()}
+              fallback={
+                <Show when={canOpenView("week")} fallback={weekNumber()}>
+                  <button
+                    type="button"
+                    class="k2b-calendar-month__week-link"
+                    tabIndex={-1}
+                    title={calendarMessages().calendarOpenWeekNumber({ week: weekNumber() })}
+                    aria-label={calendarMessages().calendarOpenWeekNumber({ week: weekNumber() })}
+                    onClick={() => openView(week()[0]!.key, "week")}
+                  >
+                    {weekNumber()}
+                  </button>
+                </Show>
+              }
+            >
+              {(href) => (
+                <CalendarNavigationLink
+                  owner={props.owner}
+                  href={href()}
+                  anchorProps={{
+                    class: "k2b-calendar-month__week-link",
+                    tabIndex: -1,
+                    title: calendarMessages().calendarOpenWeekNumber({ week: weekNumber() }),
+                    "aria-label": calendarMessages().calendarOpenWeekNumber({ week: weekNumber() }),
+                  }}
+                >
+                  {weekNumber()}
+                </CalendarNavigationLink>
+              )}
+            </Show>
+          </div>
+        </Show>
+        <For each={week()}>
+          {({ day, key }, column) => {
+            const dayBadge = props.owner.dayBadges?.[key];
+            const sameMonth = () => calendar.isSameMonth(day, continuous() ? parseKey(focusMonthKey()) : props.date, dateConfig());
+            const label = dayLabel(day);
+            const bars = createMemo(() => fit().bars.filter((bar) => bar.startColumn === column()));
+            const cell = () => fit().cells[column()] ?? { top: 0, shown: [], hidden: 0 };
+            return (
+              <div
+                ref={(element) => {
+                  cells.set(key, element);
+                  onCleanup(() => {
+                    if (cells.get(key) === element) cells.delete(key);
+                  });
+                }}
+                class="k2b-calendar-month__day"
+                role="gridcell"
+                tabIndex={rovingKey() === key ? 0 : -1}
+                aria-label={label}
+                aria-selected={within(selection(), key) ? "true" : "false"}
+                aria-current={key === todayKey() ? "date" : undefined}
+                data-calendar-day-key={key}
+                data-outside={!sameMonth() ? "true" : undefined}
+                data-month-first={continuous() && key.endsWith("-01") ? "true" : undefined}
+                data-month-top={continuous() && Number(key.slice(8)) <= 7 ? "true" : undefined}
+                data-weekend={column() > 4 ? "true" : undefined}
+                data-past={key < todayKey() ? "true" : undefined}
+                data-selected={selectionPart(key)}
+                data-drop-preview={within(dropRange(), key) ? "true" : undefined}
+                onClick={(event) => onCellClick(event, key)}
+                onDblClick={(event) => onCellDoubleClick(event, key)}
+                onPointerDown={(event) => onCellPointerDown(event, key)}
+                onContextMenu={(event) => {
+                  // The pressed day takes the focus, so closing the menu with Escape returns there.
+                  menuKey = pressedKey(event, key);
+                  if (hasMenu()) focusCell(menuKey);
+                }}
+                onKeyDown={(event) => onCellKeyDown(event, key)}
+              >
+                <div class="k2b-calendar-month__day-header">
+                  <span
+                    class="k2b-calendar-month__day-number"
+                    data-pulse={continuous() && pulseKey() === key ? "true" : undefined}
+                    data-today={key === todayKey() ? "true" : undefined}
+                    data-outside={!sameMonth() ? "true" : undefined}
+                  >
+                    {continuous() && key.endsWith("-01")
+                      ? shortDayLabel(key).replace(/\.$/, "")
+                      : calendar.formatDayNumber(day, dateConfig())}
+                  </span>
+                  <Show when={dayBadge}>
+                    {(badge) => (
+                      <span class="k2b-calendar-month__badge">
+                        <Show when={badge().icon}>{(icon) => <i class={`k2b-calendar-month__badge-icon ti ti-${icon()}`} />}</Show>
+                        {badge().label}
+                      </span>
+                    )}
+                  </Show>
+                </div>
+                <div
+                  class="k2b-calendar-month__lanes"
+                  ref={(element) => {
+                    if (column() === 0) observeLanes(element, continuous() ? 0 : weekIndex());
+                  }}
+                >
+                  <For each={bars()}>
+                    {(bar) => {
+                      const span = bar.endColumn - bar.startColumn + 1;
+                      const startHint = () => {
+                        if (!bar.continuesBefore) return undefined;
+                        const hint = calendarMessages().calendarContinuesFrom(hintDate(bar.item.firstKey));
+                        return hintFits(bar.item.event.title, hint, span) ? hint : undefined;
+                      };
+                      const endHint = () => {
+                        if (!bar.continuesAfter) return undefined;
+                        const hint = calendarMessages().calendarContinuesUntil(hintDate(bar.item.lastKey));
+                        return hintFits(`${bar.item.event.title}${startHint() ?? ""}`, hint, span) ? hint : undefined;
+                      };
+                      return (
+                        <div
+                          class="k2b-calendar-month__segment"
+                          style={{ "--k2b-calendar-span": String(span), "--k2b-calendar-row": String(bar.lane) }}
+                          data-bar="true"
+                          data-linked={linkedItem() === bar.item.key && bar.item.firstKey !== bar.item.lastKey ? "true" : undefined}
+                          data-continues-before={bar.continuesBefore ? "true" : undefined}
+                          data-continues-after={bar.continuesAfter ? "true" : undefined}
+                          {...linkProps(bar.item)}
+                        >
+                          <EventChip
+                            event={bar.item.event}
+                            owner={props.owner}
+                            href={eventHref(props.owner, bar.item.event)}
+                            label={itemLabel(bar.item)}
+                            compact
+                            bar
+                            continuesBefore={bar.continuesBefore}
+                            continuesAfter={bar.continuesAfter}
+                            hintStart={startHint()}
+                            hintEnd={endHint()}
+                            moving={movingEventId() === bar.item.event.id}
+                            onMovePointerDown={
+                              props.owner.onEventDrop
+                                ? (pointerEvent, markDragged) => startMove(pointerEvent, bar.item, markDragged)
+                                : undefined
+                            }
+                          />
+                        </div>
+                      );
+                    }}
+                  </For>
+                  <For each={cell().shown}>
+                    {(item, index) => (
+                      <div
+                        class="k2b-calendar-month__segment"
+                        style={{ "--k2b-calendar-span": "1", "--k2b-calendar-row": String(cell().top + index()) }}
+                      >
+                        <EventChip
+                          event={item.event}
+                          owner={props.owner}
+                          href={eventHref(props.owner, item.event)}
+                          compact
+                          leadingTime={leadingTime(item)}
+                          moving={movingEventId() === item.event.id}
+                          onMovePointerDown={
+                            props.owner.onEventDrop ? (pointerEvent, markDragged) => startMove(pointerEvent, item, markDragged) : undefined
+                          }
+                        />
+                      </div>
+                    )}
+                  </For>
+                  <Show when={cell().hidden > 0}>
+                    <button
+                      type="button"
+                      class="k2b-calendar-month__more"
+                      tabIndex={-1}
+                      style={{ "--k2b-calendar-row": String(cell().top + cell().shown.length) }}
+                      aria-label={calendarMessages().calendarMoreEventsOn({ count: cell().hidden, label })}
+                      aria-haspopup="dialog"
+                      aria-expanded={(() => {
+                        const current = popover();
+                        return current?.kind === "day" && current.dayKey === key;
+                      })()}
+                      onClick={() => {
+                        const current = popover();
+                        if (current?.kind === "day" && current.dayKey === key) closePopover(false);
+                        else openDayList(key);
+                      }}
+                    >
+                      <span class="k2b-calendar-month__more-long">{calendarMessages().calendarMoreEvents({ count: cell().hidden })}</span>
+                      <span class="k2b-calendar-month__more-short">+{cell().hidden}</span>
+                    </button>
+                  </Show>
+                </div>
+              </div>
+            );
+          }}
+        </For>
+      </div>
+    );
+  };
+
+  const weekdayRow = () => (
+    <div
+      ref={weekdayElement}
+      class="k2b-calendar-month__weekdays"
+      role="row"
+      data-week-numbers={props.owner.withWeekNumbers ? "true" : undefined}
+    >
+      <Show when={props.owner.withWeekNumbers}>
+        <div class="k2b-calendar-month__weekday" role="columnheader">
+          {calendarMessages().weekShort}
+        </div>
+      </Show>
+      <For each={weekdays()}>
+        {(day, index) => (
+          <div class="k2b-calendar-month__weekday" role="columnheader" data-weekend={index() > 4 ? "true" : undefined}>
+            {day}
+          </div>
+        )}
+      </For>
+    </div>
+  );
+
   const grid = () => (
     <div
       class="k2b-calendar-month"
@@ -1859,220 +2554,50 @@ const MonthView = (props: {
         "--k2b-calendar-lane-gap": `${MONTH_LANE_GAP_REM}rem`,
       }}
     >
-      <div class="k2b-calendar-month__weekdays" role="row" data-week-numbers={props.owner.withWeekNumbers ? "true" : undefined}>
-        <Show when={props.owner.withWeekNumbers}>
-          <div class="k2b-calendar-month__weekday" role="columnheader">
-            {calendarMessages().weekShort}
-          </div>
-        </Show>
-        <For each={weekdays()}>
-          {(day, index) => (
-            <div class="k2b-calendar-month__weekday" role="columnheader" data-weekend={index() > 4 ? "true" : undefined}>
-              {day}
-            </div>
-          )}
-        </For>
-      </div>
-      <For each={weeks()}>
-        {(week, weekIndex) => {
-          const fit = createMemo(() =>
-            fitMonthWeek(weekLayouts()[weekIndex()] ?? { bars: [], singles: [] }, capacities()[weekIndex()] ?? MONTH_DEFAULT_LANES),
-          );
-          const weekHref = () => viewHref(week[0]!.key, "week");
-          const weekNumber = () => zonedWeekNumber(week[0]!.day, dateConfig());
-          return (
-            <div class="k2b-calendar-month__week" role="row" data-week-numbers={props.owner.withWeekNumbers ? "true" : undefined}>
-              <Show when={props.owner.withWeekNumbers}>
-                <div class="k2b-calendar-month__week-number" role="rowheader">
-                  <Show
-                    when={weekHref()}
-                    fallback={
-                      <Show when={canOpenView("week")} fallback={weekNumber()}>
-                        <button
-                          type="button"
-                          class="k2b-calendar-month__week-link"
-                          tabIndex={-1}
-                          title={calendarMessages().calendarOpenWeekNumber({ week: weekNumber() })}
-                          aria-label={calendarMessages().calendarOpenWeekNumber({ week: weekNumber() })}
-                          onClick={() => openView(week[0]!.key, "week")}
-                        >
-                          {weekNumber()}
-                        </button>
-                      </Show>
-                    }
-                  >
-                    {(href) => (
-                      <CalendarNavigationLink
-                        owner={props.owner}
-                        href={href()}
-                        anchorProps={{
-                          class: "k2b-calendar-month__week-link",
-                          tabIndex: -1,
-                          title: calendarMessages().calendarOpenWeekNumber({ week: weekNumber() }),
-                          "aria-label": calendarMessages().calendarOpenWeekNumber({ week: weekNumber() }),
-                        }}
-                      >
-                        {weekNumber()}
-                      </CalendarNavigationLink>
-                    )}
-                  </Show>
-                </div>
-              </Show>
-              <For each={week}>
-                {({ day, key }, column) => {
-                  const dayBadge = props.owner.dayBadges?.[key];
-                  const sameMonth = calendar.isSameMonth(day, props.date, dateConfig());
-                  const label = dayLabel(day);
-                  const bars = createMemo(() => fit().bars.filter((bar) => bar.startColumn === column()));
-                  const cell = () => fit().cells[column()] ?? { top: 0, shown: [], hidden: 0 };
-                  return (
-                    <div
-                      ref={(element) => cells.set(key, element)}
-                      class="k2b-calendar-month__day"
-                      role="gridcell"
-                      tabIndex={rovingKey() === key ? 0 : -1}
-                      aria-label={label}
-                      aria-selected={within(selection(), key) ? "true" : "false"}
-                      aria-current={key === todayKey() ? "date" : undefined}
-                      data-calendar-day-key={key}
-                      data-outside={!sameMonth ? "true" : undefined}
-                      data-weekend={column() > 4 ? "true" : undefined}
-                      data-past={key < todayKey() ? "true" : undefined}
-                      data-selected={selectionPart(key)}
-                      data-drop-preview={within(dropRange(), key) ? "true" : undefined}
-                      onClick={(event) => onCellClick(event, key)}
-                      onDblClick={(event) => onCellDoubleClick(event, key)}
-                      onPointerDown={(event) => onCellPointerDown(event, key)}
-                      onContextMenu={(event) => {
-                        // The pressed day takes the focus, so closing the menu with Escape returns there.
-                        menuKey = pressedKey(event, key);
-                        if (hasMenu()) focusCell(menuKey);
-                      }}
-                      onKeyDown={(event) => onCellKeyDown(event, key)}
-                    >
-                      <div class="k2b-calendar-month__day-header">
-                        <span
-                          class="k2b-calendar-month__day-number"
-                          data-today={key === todayKey() ? "true" : undefined}
-                          data-outside={!sameMonth ? "true" : undefined}
-                        >
-                          {calendar.formatDayNumber(day, dateConfig())}
-                        </span>
-                        <Show when={dayBadge}>
-                          {(badge) => (
-                            <span class="k2b-calendar-month__badge">
-                              <Show when={badge().icon}>{(icon) => <i class={`k2b-calendar-month__badge-icon ti ti-${icon()}`} />}</Show>
-                              {badge().label}
-                            </span>
-                          )}
-                        </Show>
-                      </div>
-                      <div
-                        class="k2b-calendar-month__lanes"
-                        ref={(element) => {
-                          if (column() === 0) observeLanes(element, weekIndex());
-                        }}
-                      >
-                        <For each={bars()}>
-                          {(bar) => {
-                            const span = bar.endColumn - bar.startColumn + 1;
-                            const startHint = () => {
-                              if (!bar.continuesBefore) return undefined;
-                              const hint = calendarMessages().calendarContinuesFrom(hintDate(bar.item.firstKey));
-                              return hintFits(bar.item.event.title, hint, span) ? hint : undefined;
-                            };
-                            const endHint = () => {
-                              if (!bar.continuesAfter) return undefined;
-                              const hint = calendarMessages().calendarContinuesUntil(hintDate(bar.item.lastKey));
-                              return hintFits(`${bar.item.event.title}${startHint() ?? ""}`, hint, span) ? hint : undefined;
-                            };
-                            return (
-                              <div
-                                class="k2b-calendar-month__segment"
-                                style={{ "--k2b-calendar-span": String(span), "--k2b-calendar-row": String(bar.lane) }}
-                                data-bar="true"
-                                data-linked={linkedItem() === bar.item.key && bar.item.firstKey !== bar.item.lastKey ? "true" : undefined}
-                                data-continues-before={bar.continuesBefore ? "true" : undefined}
-                                data-continues-after={bar.continuesAfter ? "true" : undefined}
-                                {...linkProps(bar.item)}
-                              >
-                                <EventChip
-                                  event={bar.item.event}
-                                  owner={props.owner}
-                                  href={eventHref(props.owner, bar.item.event)}
-                                  label={itemLabel(bar.item)}
-                                  compact
-                                  bar
-                                  continuesBefore={bar.continuesBefore}
-                                  continuesAfter={bar.continuesAfter}
-                                  hintStart={startHint()}
-                                  hintEnd={endHint()}
-                                  moving={movingEventId() === bar.item.event.id}
-                                  onMovePointerDown={
-                                    props.owner.onEventDrop
-                                      ? (pointerEvent, markDragged) => startMove(pointerEvent, bar.item, markDragged)
-                                      : undefined
-                                  }
-                                />
-                              </div>
-                            );
-                          }}
-                        </For>
-                        <For each={cell().shown}>
-                          {(item, index) => (
-                            <div
-                              class="k2b-calendar-month__segment"
-                              style={{ "--k2b-calendar-span": "1", "--k2b-calendar-row": String(cell().top + index()) }}
-                            >
-                              <EventChip
-                                event={item.event}
-                                owner={props.owner}
-                                href={eventHref(props.owner, item.event)}
-                                compact
-                                leadingTime={leadingTime(item)}
-                                moving={movingEventId() === item.event.id}
-                                onMovePointerDown={
-                                  props.owner.onEventDrop
-                                    ? (pointerEvent, markDragged) => startMove(pointerEvent, item, markDragged)
-                                    : undefined
-                                }
-                              />
-                            </div>
-                          )}
-                        </For>
-                        <Show when={cell().hidden > 0}>
-                          <button
-                            type="button"
-                            class="k2b-calendar-month__more"
-                            tabIndex={-1}
-                            style={{ "--k2b-calendar-row": String(cell().top + cell().shown.length) }}
-                            aria-label={calendarMessages().calendarMoreEventsOn({ count: cell().hidden, label })}
-                            aria-haspopup="dialog"
-                            aria-expanded={(() => {
-                              const current = popover();
-                              return current?.kind === "day" && current.dayKey === key;
-                            })()}
-                            onClick={() => {
-                              const current = popover();
-                              if (current?.kind === "day" && current.dayKey === key) closePopover(false);
-                              else openDayList(key);
-                            }}
-                          >
-                            <span class="k2b-calendar-month__more-long">
-                              {calendarMessages().calendarMoreEvents({ count: cell().hidden })}
-                            </span>
-                            <span class="k2b-calendar-month__more-short">+{cell().hidden}</span>
-                          </button>
-                        </Show>
-                      </div>
-                    </div>
-                  );
-                }}
-              </For>
-            </div>
-          );
+      {weekdayRow()}
+      <For each={weeks()}>{(week, index) => weekRow(() => week, index)}</For>
+    </div>
+  );
+
+  const continuousRow = (key: string) => {
+    const days = createMemo(() =>
+      Array.from({ length: 7 }, (_, offset) => {
+        const dayKey = addDayKeys(key, offset);
+        return { day: parseKey(dayKey), key: dayKey };
+      }),
+    );
+    return weekRow(days, () => monthRowOf(trackWeeks(), key) ?? 0);
+  };
+  const continuousGrid = () => (
+    <div class="k2b-calendar-month-viewport">
+      <div
+        ref={scroller}
+        class="k2b-calendar-month"
+        role="grid"
+        aria-label={formatMonth(parseKey(focusMonthKey()), dateConfig())}
+        aria-multiselectable="true"
+        data-lanes="true"
+        data-continuous="true"
+        aria-rowcount={trackWeeks().length + 1}
+        onScroll={onScroll}
+        onWheel={cancelGlide}
+        onPointerDown={cancelGlide}
+        onFocusIn={(event) => {
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          const key = target.closest("[data-calendar-day-key]")?.getAttribute("data-calendar-day-key");
+          if (key) setFocusedCellKey(key);
         }}
-      </For>
+        style={{ "--k2b-calendar-lane": `${MONTH_LANE_REM}rem`, "--k2b-calendar-lane-gap": `${MONTH_LANE_GAP_REM}rem` }}
+      >
+        {weekdayRow()}
+        <div class="k2b-calendar-month__track" role="rowgroup" style={{ "--k2b-calendar-weeks": String(trackWeeks().length) }}>
+          <For each={renderedWeeks()}>{continuousRow}</For>
+        </div>
+      </div>
+      <div class="k2b-calendar-month__scroll-label" aria-hidden="true" data-show={labelShown() ? "true" : "false"}>
+        {formatMonth(parseKey(focusMonthKey()), dateConfig())}
+      </div>
     </div>
   );
 
@@ -2148,9 +2673,10 @@ const MonthView = (props: {
     );
   };
 
+  const viewGrid = () => (continuous() ? continuousGrid() : grid());
   return (
     <>
-      <Show when={hasMenu()} fallback={grid()}>
+      <Show when={hasMenu()} fallback={viewGrid()}>
         <GestureMenu
           items={menuItems()}
           label={calendarMessages().calendarSelectionActions}
@@ -2158,7 +2684,7 @@ const MonthView = (props: {
           onOpen={onMenuOpen}
           class="k2b-calendar-month-menu"
         >
-          {grid()}
+          {viewGrid()}
         </GestureMenu>
       </Show>
       <div
@@ -2890,14 +3416,16 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
 
   // The day and week views with `dayHours` scroll through their days; the header and the commands ask them first.
   const [timeView, setTimeView] = createSignal<TimeViewHandle | null>(null);
-  const [monthCreate, setMonthCreate] = createSignal<MonthCreateHandle | null>(null);
+  const [monthCreate, setMonthCreate] = createSignal<MonthHandle | null>(null);
+  const monthView = () => (monthCreate()?.continuous() ? monthCreate() : null);
+  const scrollingView = () => timeView() ?? monthView();
   const timeMode = () => Boolean(props.dayHours) && (view() === "day" || view() === "week");
   const parseKey = (key: string) => calendar.parseCalendarDate(key, dateConfig());
   /** The first shown day of a day or week view, or the selected day of the month view, for the other views. */
   const shownDay = () => {
     const first = timeView()?.visibleKeys().first;
     if (first) return parseKey(first);
-    return view() === "month" ? focusDay() : null;
+    return view() === "month" ? (focusDay() ?? monthView()?.focusDay() ?? null) : null;
   };
   const go = (target: Date, nextView: CalendarView | V) => {
     const href = props.getDateHref?.(target, nextView);
@@ -2905,11 +3433,11 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
     else openViewAt(props, target, nextView);
   };
   const step = (direction: -1 | 1) => {
-    if (timeView()?.step(direction)) return;
-    go(adjacentCalendarDate(shownDay() ?? date(), view(), direction, dateConfig()), view());
+    if (scrollingView()?.step(direction)) return;
+    go(adjacentCalendarDate(monthView()?.focusMonth() ?? shownDay() ?? date(), view(), direction, dateConfig()), view());
   };
   const goToday = () => {
-    if (timeView()?.today()) return;
+    if (scrollingView()?.today()) return;
     go(calendar.today(dateConfig()), view());
   };
   const goView = (nextView: CalendarView) => {
@@ -2923,7 +3451,7 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
     else props.onViewChange?.(nextView);
   };
   const goToKey = (key: string) => {
-    if (timeView()?.goTo(key)) return;
+    if (scrollingView()?.goTo(key)) return;
     go(parseKey(key), view());
   };
   const openGoTo = () =>
@@ -3020,6 +3548,7 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
   });
   const headerNav: CalendarHeaderNav = {
     timeView,
+    monthView,
     commands: () => (props.onCommandsChange ? allCommands() : []),
     // The arrow keys page like J and K, so the list names them beside those keys.
     openShortcuts: () =>
@@ -3072,7 +3601,7 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
         view={view()}
         labels={mergedLabels()}
         owner={owner}
-        focusDay={view() === "month" ? focusDay() : timeView() ? shownDay() : null}
+        focusDay={view() === "month" || timeView() ? shownDay() : null}
         nav={headerNav}
       />
       <Show when={!custom()} fallback={<CalendarBody>{props.children}</CalendarBody>}>

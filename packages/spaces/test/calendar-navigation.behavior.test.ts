@@ -303,6 +303,35 @@ describe("Spaces enhanced calendar navigation", () => {
     dom.cleanup();
   });
 
+  test("a followed month focus inside loaded days answers item navigation without another snapshot", async () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", BASE);
+    const requests: string[] = [];
+    mock.module("../src/frontend/[id]/_components/workspace/view-query", () => ({
+      SpacesViewUnavailableError: class extends Error {},
+      loadSpacesViewSnapshot: (href: string) => {
+        requests.push(href);
+        return new Promise(() => {});
+      },
+    }));
+    const { useSpacesCalendarQuery } = await import("../src/frontend/[id]/_components/workspace/calendar-query");
+    const loaded = { ...snapshot("2026-08-01"), range: { from: "2026-07-01T00:00:00Z", to: "2026-11-01T00:00:00Z" }, tray: null };
+    let navigation!: ReturnType<typeof useSpacesCalendarQuery>;
+    const dispose = render(() => {
+      navigation = useSpacesCalendarQuery({ spaceId: SPACE_ID, initialSource: BASE, initialSnapshot: loaded });
+      return dom.document.createTextNode("");
+    }, dom.root);
+    const focus = `/app/spaces/${SPACE_ID}?view=calendar&cv=month&cd=2026-09-01`;
+    navigation.follow(focus);
+    navigation.open(`${focus}&item=Event1`);
+    await flush();
+    expect(requests).toEqual([]);
+    expect(navigation.pending()).toBe(false);
+    expect(dom.window.location.search).toContain("cd=2026-09-01");
+    dispose();
+    dom.cleanup();
+  });
+
   test("treats equivalent calendar hrefs as one source, so the first color change after a page load loads nothing", async () => {
     const dom = createDomTestHarness();
     const requests: string[] = [];

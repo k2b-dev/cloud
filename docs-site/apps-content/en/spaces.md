@@ -151,6 +151,15 @@ without a deadline assigned to you, each with **Show all** for the list view
 with the same query. Spaces no longer has a timeline view; an old link with
 `cv=timeline` opens the month view of its day.
 
+The month scrolls up and down through week rows, with the weekday names
+kept on top. The title follows the month in the center; other months' days
+are dimmed, and each first day names its month. The arrows and **Page Up** or
+**Page Down** move by a month with the first day's week on top. **Today**
+returns to today's month. More weeks load as you scroll without clearing
+entries or selection, and the count follows the visible days. The URL names
+a selected day in the focus month, otherwise today in that month, otherwise
+its first day.
+
 In the day and week views a day runs from 06:00 to 06:00, so the night after
 22:00 belongs to the day before. Nights fold unless an entry lies in them. The
 day view runs down through the days with runs of empty days folded into one

@@ -1,6 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import type { CalendarItem } from "@/contracts";
-import { CALENDAR_MAX_DAYS, calendarBlock, calendarItemsEnd, calendarWindow, countCalendarDays, mergeCalendarItems } from "./range";
+import {
+  CALENDAR_MAX_DAYS,
+  calendarBlock,
+  calendarBlockDays,
+  isBlockLoadingCalendarView,
+  isScrollingCalendarView,
+  calendarItemsEnd,
+  calendarWindow,
+  countCalendarDays,
+  mergeCalendarItems,
+} from "./range";
 
 const berlin = { timeZone: "Europe/Berlin", locale: "de", firstDayOfWeek: 1 as const };
 
@@ -45,16 +55,16 @@ describe("Spaces calendar day and week ranges", () => {
 
   test("loads whole weeks from midnight to midnight across a clock change", () => {
     const range = { from: "2026-10-18T22:00:00.000Z", to: "2026-10-25T23:00:00.000Z" };
-    expect(calendarBlock(range, "later", berlin)).toEqual({ from: range.to, to: "2026-11-01T23:00:00.000Z" });
-    expect(calendarBlock(range, "earlier", berlin)).toEqual({ from: "2026-10-11T22:00:00.000Z", to: range.from });
+    expect(calendarBlock(range, "later", 7, berlin)).toEqual({ from: range.to, to: "2026-11-01T23:00:00.000Z" });
+    expect(calendarBlock(range, "earlier", 7, berlin)).toEqual({ from: "2026-10-11T22:00:00.000Z", to: range.from });
   });
 
   test("stops growing at the widest range", () => {
     const range = { from: "2025-12-31T23:00:00.000Z", to: "2026-12-26T23:00:00.000Z" };
-    expect(calendarBlock(range, "later", berlin)).toBeNull();
-    expect(calendarBlock(range, "earlier", berlin)).toBeNull();
+    expect(calendarBlock(range, "later", 7, berlin)).toBeNull();
+    expect(calendarBlock(range, "earlier", 7, berlin)).toBeNull();
     const narrower = { ...range, to: "2026-12-20T23:00:00.000Z" };
-    const later = calendarBlock(narrower, "later", berlin);
+    const later = calendarBlock(narrower, "later", 7, berlin);
     expect(later?.to).toBe("2026-12-27T23:00:00.000Z");
     expect((Date.parse(later!.to) - Date.parse(range.from)) / 86_400_000).toBeLessThanOrEqual(CALENDAR_MAX_DAYS);
   });
@@ -116,5 +126,32 @@ describe("Spaces calendar day and week ranges", () => {
     expect(countCalendarDays(items, "2026-10-09", "2026-10-09", berlin)).toBe(3);
     expect(countCalendarDays(items, "2026-10-10", "2026-10-10", berlin)).toBe(3);
     expect(countCalendarDays(items, "2026-10-05", "2026-10-11", berlin)).toBe(5);
+  });
+});
+
+describe("Spaces month blocks", () => {
+  test("month loads sixteen whole weeks around the first, across the Berlin clock change", () => {
+    expect(calendarWindow("month", new Date("2026-10-08T22:00:00Z"), berlin)).toEqual({
+      from: "2026-08-23T22:00:00.000Z",
+      to: "2026-12-13T23:00:00.000Z",
+    });
+    expect(calendarWindow("month", new Date("2026-10-09T12:00:00Z"), { ...berlin, firstDayOfWeek: 0 })).toEqual({
+      from: "2026-08-22T22:00:00.000Z",
+      to: "2026-12-12T23:00:00.000Z",
+    });
+  });
+  test("loads eight weeks instead of the timed views' one, and keeps the maximum range", () => {
+    expect(calendarBlockDays("month")).toBe(56);
+    expect(calendarBlockDays("day")).toBe(7);
+    expect(calendarBlockDays("week")).toBe(7);
+    const range = calendarWindow("month", new Date("2026-10-09T12:00:00Z"), berlin);
+    expect(calendarBlock(range, "earlier", 56, berlin)).toEqual({ from: "2026-06-28T22:00:00.000Z", to: range.from });
+    expect(calendarBlock(range, "later", 56, berlin)).toEqual({ from: range.to, to: "2027-02-07T23:00:00.000Z" });
+    expect(calendarBlock({ from: "2026-01-01T00:00:00Z", to: "2026-12-01T00:00:00Z" }, "later", 56, berlin)).toBeNull();
+  });
+  test("month uses block loading without acquiring timed-day deadline or count policy", () => {
+    expect(isBlockLoadingCalendarView("month")).toBe(true);
+    expect(isScrollingCalendarView("month")).toBe(false);
+    expect(isBlockLoadingCalendarView("year")).toBe(false);
   });
 });

@@ -636,6 +636,161 @@
   font-weight: 600;
 }
 
+/* With a range the month scrolls through its weeks: five rows share the
+   height below the weekday row, which stays in place. Rows sit at their week's
+   place in the track, so rows that render or load later move nothing. */
+.k2b-ui .k2b-calendar-month-viewport {
+  --k2b-calendar-weekday-row: 2rem;
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  container-type: size;
+}
+
+.k2b-ui .k2b-calendar-month[data-continuous] {
+  /* Whole pixels, as the week view's columns: a scroll position lands exactly on a row, and the last of the five rows
+     shows whole, so focusing it scrolls nothing. */
+  --k2b-calendar-month-row: max(5rem, round(down, calc((100cqb - var(--k2b-calendar-weekday-row)) / 5), 1px));
+  --k2b-calendar-month-edge: color-mix(in srgb, var(--k2b-text) 16%, transparent);
+  display: block;
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overflow-anchor: none;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__weekdays {
+  position: sticky;
+  /* Above everything a day draws, such as its focus ring, which lies in the page's stacking order after the row. */
+  z-index: 4;
+  top: 0;
+  box-sizing: border-box;
+  height: var(--k2b-calendar-weekday-row);
+  align-items: center;
+  background: var(--k2b-surface);
+}
+
+.k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__weekday {
+  padding-block: 0;
+}
+
+.k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__track {
+  position: relative;
+  height: calc(var(--k2b-calendar-weeks) * var(--k2b-calendar-month-row));
+}
+
+.k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__week {
+  position: absolute;
+  top: calc(var(--k2b-calendar-week-index) * var(--k2b-calendar-month-row));
+  height: var(--k2b-calendar-month-row);
+  inset-inline: 0;
+}
+
+/* The month in the middle is in focus; the days of the others fade, also
+   while the focus passes from one month to the next. */
+.k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__day-number {
+  transition:
+    color 180ms ease,
+    background-color 180ms ease;
+}
+
+/* Each 1st names its month ("Nov 1"), and a fine step traces where the month
+   begins: above its first seven days and left of the 1st. */
+.k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__day[data-month-first="true"] .k2b-calendar-month__day-number:not([data-today="true"]) {
+  color: var(--k2b-action);
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__day[data-month-first="true"] .k2b-calendar-month__day-number {
+  white-space: nowrap;
+}
+
+/* A phone's day is a few characters wide; the month's name still fits beside the 1st. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__day[data-month-first="true"] .k2b-calendar-month__day-number {
+    padding-inline: 0.125rem;
+    font-size: 0.6875rem;
+  }
+}
+
+.k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__day[data-month-top="true"] {
+  box-shadow:
+    inset 1px 0 0 var(--k2b-calendar-line),
+    inset 0 1px 0 var(--k2b-calendar-month-edge);
+}
+
+.k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__day[data-month-first="true"] {
+  box-shadow:
+    inset 1px 0 0 var(--k2b-calendar-month-edge),
+    inset 0 1px 0 var(--k2b-calendar-month-edge);
+}
+
+/* Today and H: today's number rings out once where the view arrives. */
+.k2b-ui .k2b-calendar-month__day-number[data-pulse="true"] {
+  animation: k2b-calendar-month-pulse 900ms ease-out;
+}
+
+@keyframes k2b-calendar-month-pulse {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--k2b-action) 55%, transparent);
+  }
+
+  to {
+    box-shadow: 0 0 0 0.625rem transparent;
+  }
+}
+
+/* While the weeks glide by, a quiet label names the month in the middle; it
+   leaves once the view rests. It floats over the grid and takes no room. */
+.k2b-ui .k2b-calendar-month-viewport .k2b-calendar-month__scroll-label {
+  position: absolute;
+  z-index: 4;
+  top: calc(var(--k2b-calendar-weekday-row) + 0.75rem);
+  left: 50%;
+  padding: 0.3125rem 0.75rem;
+  border-radius: 999px;
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -0.25rem);
+  transition:
+    opacity 200ms ease,
+    transform 200ms ease;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-calendar-month-viewport .k2b-calendar-month__scroll-label[data-show="true"] {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* A phone has the title right above its weeks and no room to spare. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-calendar-month-viewport .k2b-calendar-month__scroll-label {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__day-number,
+  .k2b-ui .k2b-calendar-month-viewport .k2b-calendar-month__scroll-label {
+    transition: none;
+  }
+
+  .k2b-ui .k2b-calendar-month__day-number[data-pulse="true"] {
+    animation: none;
+  }
+}
+
 .k2b-ui .k2b-calendar-month__lanes {
   position: absolute;
   z-index: 1;
