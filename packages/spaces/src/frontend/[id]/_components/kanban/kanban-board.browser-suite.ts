@@ -299,6 +299,7 @@ let caseCounter = 0;
 type View = { width: number; height: number; touch: boolean };
 const phone: View = { width: 390, height: 844, touch: true };
 const tablet: View = { width: 820, height: 1180, touch: true };
+const iPadLandscape: View = { width: 1180, height: 820, touch: true };
 const desktop: View = { width: 1280, height: 800, touch: false };
 
 const open = async (
@@ -363,6 +364,36 @@ const drag = async (page: Page, from: { x: number; y: number; width: number; hei
     );
   }
 };
+/** A finger's pointer event, dispatched in the page: Playwright drives WebKit's touch input only as a whole tap. */
+const touchPointer = (
+  locator: ReturnType<Page["locator"]>,
+  type: "pointerdown" | "pointermove" | "pointerup",
+  pointerId: number,
+  point: { x: number; y: number },
+) =>
+  locator.evaluate(
+    (element, { type, pointerId, point }) =>
+      element.dispatchEvent(
+        new PointerEvent(type, {
+          pointerType: "touch",
+          pointerId,
+          isPrimary: true,
+          button: type === "pointermove" ? -1 : 0,
+          bubbles: true,
+          cancelable: true,
+          clientX: point.x,
+          clientY: point.y,
+        }),
+      ),
+    { type, pointerId, point },
+  );
+/** Whether the board kept a finger's move from scrolling it; the board reads no touch data, so a plain event will do. */
+const touchMovePrevented = (locator: ReturnType<Page["locator"]>) =>
+  locator.evaluate((element) => {
+    const event = new Event("touchmove", { bubbles: true, cancelable: true });
+    element.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
 const center = async (locator: ReturnType<Page["locator"]>) => {
   const box = (await locator.boundingBox())!;
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -399,6 +430,40 @@ const cardsIn = (page: Page, key: string) =>
   page
     .locator(`[data-spaces-kanban-column="${key}"] [data-spaces-kanban-card]`)
     .evaluateAll((cards) => cards.map((card) => (card as HTMLElement).dataset.itemId));
+
+/** Cards with the same accent border as a keyboard pick-up, resolved by the browser in the current theme. */
+const liftedCards = async (page: Page) => {
+  // Let the existing border-color transition finish before comparing resolved colors.
+  await page
+    .locator('[role="region"] article')
+    .evaluateAll((cards) => Promise.all(cards.flatMap((card) => card.getAnimations().map((animation) => animation.finished))));
+  return page.locator('[role="region"] article').evaluateAll((cards) =>
+    cards.flatMap((card) => {
+      const probe = document.createElement("span");
+      probe.hidden = true;
+      probe.style.color = "var(--ui-app-accent-border)";
+      card.append(probe);
+      const lifted = getComputedStyle(card).borderTopColor === getComputedStyle(probe).color;
+      probe.remove();
+      return lifted ? [card.querySelector("[data-spaces-kanban-card]")?.getAttribute("data-item-id")] : [];
+    }),
+  );
+};
+
+/** Waits, without a fixed sleep, until exactly these cards show the lift border and its transition has finished. */
+const waitForLiftedCards = (page: Page, ids: string[]) =>
+  page.waitForFunction((expected) => {
+    const lifted = Array.from(document.querySelectorAll('[role="region"] article')).flatMap((card) => {
+      const probe = document.createElement("span");
+      probe.hidden = true;
+      probe.style.color = "var(--ui-app-accent-border)";
+      card.append(probe);
+      const accent = getComputedStyle(card).borderTopColor === getComputedStyle(probe).color;
+      probe.remove();
+      return accent ? [card.querySelector("[data-spaces-kanban-card]")?.getAttribute("data-item-id")] : [];
+    });
+    return lifted.join() === expected.join();
+  }, ids);
 
 const waitForCards = (page: Page, key: string, ids: string[]) =>
   page.waitForFunction(
@@ -588,6 +653,254 @@ describe("Spaces Kanban board in a browser", () => {
       expectHitArea(focused.claim);
     } finally {
       await page.context().close();
+    }
+  }, 30_000);
+
+  for (const [name, view] of [
+    ["iPad portrait", tablet],
+    ["iPad landscape", iPadLandscape],
+  ] as const) {
+    test.skipIf(browserName === "webkit")(
+      `${name}: holding a card's title lifts it and dragging moves it to In progress without selecting text`,
+      async () => {
+        const page = await open(view, { locale: "en" });
+        try {
+          moves.splice(0);
+          await page.evaluate(() => {
+            document.body.dataset.contextMenus = "";
+            window.addEventListener("contextmenu", (event) => {
+              document.body.dataset.contextMenus += event.defaultPrevented ? "1" : "0";
+            });
+          });
+          const from = await center(page.locator('[data-item-id="Item02"] p').first());
+          const to = await center(page.locator('[data-spaces-kanban-column="column:Col002"] article').first());
+          const before = await layout(page);
+          const cdp = await page.context().newCDPSession(page);
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
+          await waitForLiftedCards(page, ["Item02"]);
+          expect(await liftedCards(page)).toEqual(["Item02"]);
+          expect(await layout(page)).toEqual(before);
+          for (let step = 1; step <= 20; step++) {
+            await cdp.send("Input.dispatchTouchEvent", {
+              type: "touchMove",
+              touchPoints: [{ x: from.x + ((to.x - from.x) * step) / 20, y: from.y + ((to.y - from.y) * step) / 20 }],
+            });
+            await page.waitForTimeout(16);
+          }
+          const saved = page.waitForResponse((response) => response.url().endsWith("/items/Item02/move"));
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+          await saved;
+          expect(moves).toContainEqual(expect.objectContaining({ columnId: "Col002" }));
+          await page.waitForSelector('[data-spaces-kanban-column="column:Col002"] [data-item-id="Item02"]');
+          expect(await cardsIn(page, "column:Col002")).toContain("Item02");
+          expect(await liftedCards(page)).toEqual([]);
+          expect(await page.evaluate(() => document.getSelection()?.toString())).toBe("");
+          expect(await page.locator("body").getAttribute("data-context-menus")).not.toContain("0");
+        } finally {
+          await page.context().close();
+        }
+      },
+      30_000,
+    );
+  }
+
+  test.skipIf(browserName === "webkit")(
+    "iPad portrait: a quick swipe on a card body scrolls the board without lifting or moving a card",
+    async () => {
+      const page = await open(tablet, { locale: "en" });
+      try {
+        moves.splice(0);
+        const board = page.locator('[role="region"]');
+        await board.evaluate((element) => {
+          element.scrollLeft = 100;
+        });
+        const from = await center(page.locator('[data-item-id="Item04"] p').first());
+        await page.evaluate(() => {
+          window.addEventListener("pointerdown", (event) => {
+            const link = event.target instanceof Element ? event.target.closest("[data-spaces-kanban-card]") : null;
+            document.body.dataset.touchPressAccepted = String(link?.hasAttribute("data-spaces-kanban-touch-press"));
+          });
+        });
+        const cdp = await page.context().newCDPSession(page);
+        const started = cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
+        const swiped = cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: from.x - 24, y: from.y }] });
+        await Promise.all([started, swiped]);
+        // The card body is accepted only for this finger press, before it becomes a swipe.
+        expect(await page.locator("body").getAttribute("data-touch-press-accepted")).toBe("true");
+        for (let step = 2; step <= 15; step++) {
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: from.x - 24 * step, y: from.y }] });
+          await page.waitForTimeout(16);
+        }
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await page.waitForTimeout(400);
+        expect(await board.evaluate((element) => element.scrollLeft)).toBeGreaterThan(100);
+        expect(moves).toEqual([]);
+        expect(await liftedCards(page)).toEqual([]);
+        expect(await page.evaluate(() => document.getSelection()?.toString())).toBe("");
+      } finally {
+        await page.context().close();
+      }
+    },
+    30_000,
+  );
+
+  test.skipIf(browserName === "webkit")(
+    "iPad portrait: releasing a held card without moving opens nothing and prevents the touch context menu",
+    async () => {
+      const page = await open(tablet, { locale: "en" });
+      try {
+        moves.splice(0);
+        await page.evaluate(() => {
+          history.replaceState(null, "", window.location.pathname);
+          document.body.dataset.openedCard = "false";
+          document.body.dataset.contextMenus = "";
+          window.addEventListener("spaces-detail-navigation", () => {
+            document.body.dataset.openedCard = "true";
+          });
+          window.addEventListener("contextmenu", (event) => {
+            document.body.dataset.contextMenus += event.defaultPrevented ? "1" : "0";
+          });
+        });
+        const from = await center(page.locator('[data-item-id="Item02"] p').first());
+        const cdp = await page.context().newCDPSession(page);
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [from] });
+        await waitForLiftedCards(page, ["Item02"]);
+        expect(await liftedCards(page)).toEqual(["Item02"]);
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await page.waitForTimeout(300);
+        expect(moves).toEqual([]);
+        expect(await page.locator("body").getAttribute("data-opened-card")).toBe("false");
+        expect(await liftedCards(page)).toEqual([]);
+        expect(await page.evaluate(() => document.getSelection()?.toString())).toBe("");
+        expect(await page.locator("body").getAttribute("data-context-menus")).not.toContain("0");
+      } finally {
+        await page.context().close();
+      }
+    },
+    30_000,
+  );
+
+  // WebKit takes no finger moves from Playwright, so this drives the board's pointer logic with events dispatched in the page.
+  test("iPad landscape: a held card keeps the finger from scrolling and moves, while an early swipe stays a scroll", async () => {
+    const page = await open(iPadLandscape, { locale: "en" });
+    try {
+      moves.splice(0);
+      // Both events run together so a protocol delay cannot turn the swipe into a hold.
+      const next = page.locator('[data-item-id="Item01"] p').first();
+      const start = await center(next);
+      await next.evaluate((element, start) => {
+        for (const type of ["pointerdown", "pointermove"]) {
+          element.dispatchEvent(
+            new PointerEvent(type, {
+              pointerType: "touch",
+              pointerId: 8,
+              isPrimary: true,
+              button: type === "pointermove" ? -1 : 0,
+              bubbles: true,
+              cancelable: true,
+              clientX: start.x + (type === "pointermove" ? 20 : 0),
+              clientY: start.y,
+            }),
+          );
+        }
+      }, start);
+      expect(await touchMovePrevented(next)).toBe(false);
+      await page.waitForTimeout(400);
+      expect(await liftedCards(page)).toEqual([]);
+      await touchPointer(next, "pointermove", 8, { x: start.x + 200, y: start.y });
+      await touchPointer(next, "pointerup", 8, { x: start.x + 200, y: start.y });
+      await page.waitForTimeout(100);
+      expect(moves).toEqual([]);
+      expect(await page.evaluate(() => document.getSelection()?.toString())).toBe("");
+
+      // The swipe runs first: the drop refreshes every column, and the refresh replaces the rows a later step would read.
+      const title = page.locator('[data-item-id="Item02"] p').first();
+      const from = await center(title);
+      const to = await center(page.locator('[data-spaces-kanban-column="column:Col002"] article').first());
+      await touchPointer(title, "pointerdown", 7, from);
+      await waitForLiftedCards(page, ["Item02"]);
+      expect(await liftedCards(page)).toEqual(["Item02"]);
+      expect(await touchMovePrevented(title)).toBe(true);
+      // An engine that opens no menu for this gesture still shows that the board cancels one.
+      expect(
+        await title.evaluate((element) => {
+          const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+          element.dispatchEvent(event);
+          return event.defaultPrevented;
+        }),
+      ).toBe(true);
+      for (let step = 1; step <= 20; step++) {
+        await touchPointer(title, "pointermove", 7, {
+          x: from.x + ((to.x - from.x) * step) / 20,
+          y: from.y + ((to.y - from.y) * step) / 20,
+        });
+      }
+      const saved = page.waitForResponse((response) => response.url().endsWith("/items/Item02/move"));
+      await touchPointer(title, "pointerup", 7, to);
+      await saved;
+      expect(moves).toContainEqual(expect.objectContaining({ columnId: "Col002" }));
+      await page.waitForSelector('[data-spaces-kanban-column="column:Col002"] [data-item-id="Item02"]');
+      expect(await liftedCards(page)).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("iPad landscape: refreshing a held card ends its press and lets the replacement scroll", async () => {
+    const page = await open(iPadLandscape, { locale: "en" });
+    try {
+      moves.splice(0);
+      const card = page.locator('[data-item-id="Item02"]');
+      const oldCard = await card.elementHandle();
+      const title = card.locator("p").first();
+      const from = await center(title);
+      await touchPointer(title, "pointerdown", 9, from);
+      await waitForLiftedCards(page, ["Item02"]);
+      const refreshed = page.waitForResponse((response) => response.url().endsWith("/items/filter"));
+      await page.evaluate(() =>
+        window.dispatchEvent(
+          new CustomEvent("spaces-data-invalidated", { detail: { domains: ["view"], cursor: null, itemId: null, cover: () => undefined } }),
+        ),
+      );
+      await refreshed;
+      await page.waitForFunction((oldCard) => oldCard !== null && !oldCard.isConnected, oldCard);
+      expect(await card.count()).toBe(1);
+      expect(await liftedCards(page)).toEqual([]);
+      expect(await touchMovePrevented(title)).toBe(false);
+      await touchPointer(title, "pointerup", 9, from);
+      expect(moves).toEqual([]);
+      expect(await cardsIn(page, "column:Col001")).toEqual(["Item01", "Item02", "Item03"]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("iPad landscape: writers' cards select no text and open no callout, while readers' cards and the toolbar still select", async () => {
+    // Only iOS WebKit knows the callout property, so the stylesheet shows that the card asks for it.
+    expect(css).toMatch(/\.\\\[-webkit-touch-callout\\:none\\\]\s*\{[^}]*-webkit-touch-callout:\s*none\s*;[^}]*\}/);
+    for (const canWrite of [true, false]) {
+      const page = await open(iPadLandscape, { locale: "en", canWrite });
+      try {
+        expect(
+          await page
+            .locator('article:has([data-item-id="Item02"])')
+            .evaluate((card) => card.classList.contains("[-webkit-touch-callout:none]")),
+        ).toBe(canWrite);
+        const selection = (selector: string) =>
+          page
+            .locator(selector)
+            .first()
+            .evaluate((element) => {
+              const style = getComputedStyle(element);
+              return [style.userSelect, style.getPropertyValue("-webkit-user-select") || style.userSelect];
+            });
+        expect(await selection('article:has([data-item-id="Item02"])')).toEqual(
+          canWrite ? ["none", "none"] : expect.not.arrayContaining(["none"]),
+        );
+        expect(await selection("[data-spaces-board-toolbar]")).toEqual(expect.not.arrayContaining(["none"]));
+      } finally {
+        await page.context().close();
+      }
     }
   }, 30_000);
 

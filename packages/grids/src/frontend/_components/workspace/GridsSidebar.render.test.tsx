@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import "../ssr-test-plugin";
@@ -269,5 +270,32 @@ describe("GridsSidebar tables", () => {
     expect(others).toEqual([]);
     expect(placeholder?.text).toBe("No table access.");
     expect(html).toContain("Loan request");
+  });
+});
+
+describe("Grids container head", () => {
+  test.each([
+    ["en", "Switch base"],
+    ["de", "Base wechseln"],
+  ])("names the container and puts its overview only in switcher actions (%s)", async (locale, purpose) => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(GridsSidebar, { state: workflowState() });
+        },
+      }),
+    );
+    const trigger = await selectHtml(html, ".k2b-sidebar-switcher__trigger");
+    expect(trigger).toHaveLength(1);
+    expect(trigger[0]?.attributes["aria-label"]).toBe("Inventory");
+    expect((await selectHtml(html, ".k2b-sidebar-switcher .k2b-sr-only"))[0]?.text).toContain(purpose);
+    const snapshot = (await selectHtml(html, "script[data-cloud-workspace-navigation]"))[0]?.text;
+    expect(snapshot).toContain('"switchLabel":"' + purpose + '"');
+    expect(snapshot).not.toContain('"id":"all"');
+    expect(await selectHtml(html, '.k2b-app-workspace__sidebar-item[href="/app/grids"]')).toHaveLength(0);
+    expect((await selectHtml(html, '.k2b-sidebar-switcher__actions a[href="/app/grids"]'))[0]?.text).toContain(
+      locale === "en" ? "All grids" : "Alle Bases",
+    );
   });
 });

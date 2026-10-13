@@ -213,7 +213,6 @@ describe("notebook sidebar", () => {
         "filter:recents",
         "filter:tags",
         "notes",
-        "all",
         "attachments",
         "settings",
       ]);

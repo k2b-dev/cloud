@@ -115,6 +115,11 @@ type KanbanPage = ItemListResult & { unfilteredTotal?: number };
 
 const boardScrollMemory = new Map<string, { left: number; top: number }>();
 
+/** A finger held this long on a card picks it up. */
+const CARD_HOLD_MS = 300;
+/** Movement that starts a drag; before the hold it makes the press a swipe that scrolls. */
+const CARD_DRAG_DISTANCE = 6;
+
 const virtualColumnIcon = { blocked: "ti-lock", overdue: "ti-alert-triangle" } as const;
 
 const priorityMeta: Record<string, { icon: string; color: string }> = {
@@ -463,6 +468,7 @@ export default function KanbanBoard(props: Props) {
   // The controller clears its intent before it announces a drop, so the board keeps the last one.
   let cardIntent: DropIntent | null = null;
   const boardDnd = dnd.create<DragMeta, DropMeta, DropIntent>({
+    activationDistance: CARD_DRAG_DISTANCE,
     buildIntent: buildDropIntent,
     onDragStart: () => {
       cardIntent = null;
@@ -771,6 +777,94 @@ export default function KanbanBoard(props: Props) {
     if (!claim || movingItemId() || moveMutation.loading() || transferMutation.loading()) return;
     await transferMutation.mutate({ itemId, wormholeId, claim });
   };
+
+  // ---- Touch pick-up: a finger held on a card's body lifts it, as on iPadOS; one that moves first scrolls the board.
+  // The board owns the hold: dnd's touch delay is one for the whole controller, so the grip would wait as long, and dnd
+  // starts a drag only on movement, which the browser would already take for a scroll. A mouse or pen keeps to the
+  // grip, because dnd captures the pointer at the press, and a click on the card would then no longer open it.
+  const cardDragDisabled = () => !props.canWrite || moveMutation.loading() || transferMutation.loading();
+  const [heldItemId, setHeldItemId] = createSignal<string | null>(null);
+  let endCardPress: ((card: HTMLElement) => void) | undefined;
+  onMount(() => {
+    const board = boardScrollContainer;
+    if (!board) return;
+    let press: {
+      pointerId: number;
+      itemId: string;
+      link: HTMLAnchorElement;
+      startX: number;
+      startY: number;
+      held: boolean;
+    } | null = null;
+    let holdTimer: ReturnType<typeof setTimeout> | undefined;
+    let suppressNextClick = false;
+    const endPress = () => {
+      if (press?.held) suppressNextClick = true;
+      clearTimeout(holdTimer);
+      press?.link.removeAttribute("data-spaces-kanban-touch-press");
+      press = null;
+      setHeldItemId(null);
+      window.removeEventListener("pointermove", movePress, true);
+      window.removeEventListener("pointerup", releasePress, true);
+      window.removeEventListener("pointercancel", releasePress, true);
+    };
+    endCardPress = (card) => {
+      if (press && card.contains(press.link)) endPress();
+    };
+    const movePress = (event: PointerEvent) => {
+      if (!press || event.pointerId !== press.pointerId || press.held) return;
+      if (Math.hypot(event.clientX - press.startX, event.clientY - press.startY) < CARD_DRAG_DISTANCE) return;
+      endPress();
+      // Clear stdlib's pending press before its shorter touch delay can turn a swipe into a drag.
+      if (!boardDnd.isDragging()) boardDnd.cancel();
+    };
+    const releasePress = (event: PointerEvent) => {
+      if (event.pointerId === press?.pointerId) endPress();
+    };
+    const startPress = (event: PointerEvent) => {
+      suppressNextClick = false;
+      if (event.pointerType !== "touch" || !event.isPrimary || event.button !== 0 || cardDragDisabled() || boardDnd.isDragging()) return;
+      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("[data-spaces-kanban-card]") : null;
+      const itemId = link?.dataset.itemId;
+      if (!link || !board.contains(link) || !itemId) return;
+      endPress();
+      link.setAttribute("data-spaces-kanban-touch-press", "");
+      press = { pointerId: event.pointerId, itemId, link, startX: event.clientX, startY: event.clientY, held: false };
+      holdTimer = setTimeout(() => {
+        if (!press) return;
+        press.held = true;
+        setHeldItemId(press.itemId);
+      }, CARD_HOLD_MS);
+      window.addEventListener("pointermove", movePress, true);
+      window.addEventListener("pointerup", releasePress, true);
+      window.addEventListener("pointercancel", releasePress, true);
+    };
+    const preventHeldScroll = (event: TouchEvent) => {
+      if (press?.held) event.preventDefault();
+    };
+    const suppressHeldClick = (event: MouseEvent) => {
+      if (!suppressNextClick || event.detail === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      suppressNextClick = false;
+    };
+    const preventTouchMenu = (event: MouseEvent) => {
+      if (press) event.preventDefault();
+    };
+    board.addEventListener("pointerdown", startPress, true);
+    // This must exist before the press, when the browser decides whether the gesture may scroll.
+    board.addEventListener("touchmove", preventHeldScroll, { passive: false });
+    board.addEventListener("click", suppressHeldClick, true);
+    board.addEventListener("contextmenu", preventTouchMenu, true);
+    onCleanup(() => {
+      endPress();
+      endCardPress = undefined;
+      board.removeEventListener("pointerdown", startPress, true);
+      board.removeEventListener("touchmove", preventHeldScroll);
+      board.removeEventListener("click", suppressHeldClick, true);
+      board.removeEventListener("contextmenu", preventTouchMenu, true);
+    });
+  });
 
   // ---- Keyboard move: Space or Enter on a grip picks the card up, the arrow keys move its slot, and the drop goes
   // through the pointer's rules. The board owns it, because the dnd keyboard mode steps through every card on the board.
@@ -1461,7 +1555,7 @@ export default function KanbanBoard(props: Props) {
                               const dragId = `drag:item:${item.id}`;
                               const dropId = `drop:item:${bucket.key}:${item.id}`;
                               const isDraggingThis = () => boardDnd.activeId() === dragId;
-                              // A card picked up from its grip keeps full opacity, so the focus ring on the grip stays clear.
+                              // A keyboard pick-up keeps full opacity, so the focus ring on the grip stays clear.
                               const isPickedUpThis = () => keyboardMove()?.itemId === item.id;
                               const isMovingThis = () =>
                                 (moveMutation.loading() || transferMutation.loading()) && movingItemId() === item.id;
@@ -1471,6 +1565,8 @@ export default function KanbanBoard(props: Props) {
                                   <DropLine bucketKey={bucket.key} index={itemIndex()} />
                                   <article
                                     ref={(element) => {
+                                      // A refresh replaces the row, so its pending or held press must end with it.
+                                      onCleanup(() => endCardPress?.(element));
                                       boardDnd.droppable(element, () => ({
                                         id: dropId,
                                         disabled: cardDropDisabled(),
@@ -1482,10 +1578,10 @@ export default function KanbanBoard(props: Props) {
                                       }));
                                       boardDnd.draggable(element, () => ({
                                         id: dragId,
-                                        disabled: !props.canWrite || moveMutation.loading() || transferMutation.loading(),
+                                        disabled: cardDragDisabled(),
                                         focusable: false,
                                         keyboard: false,
-                                        handleSelector: "[data-dnd-card-handle]",
+                                        handleSelector: "[data-dnd-card-handle], [data-spaces-kanban-touch-press]",
                                         meta: { itemId: item.id },
                                       }));
                                     }}
@@ -1493,12 +1589,12 @@ export default function KanbanBoard(props: Props) {
                                     // On touch screens the grip's 44 px area ends 39 px below the card's top and the claim button's
                                     // starts 43 px above its bottom. A card with both is 82 px tall at least, so neither takes the other's taps.
                                     class={`k2b-progressive-row relative rounded-[var(--ui-radius-control)] border p-2.5 shadow-none transition-[background-color,border-color] any-pointer-coarse:has-[[data-spaces-claim-action]]:min-h-[5.125rem] ${
-                                      isPickedUpThis()
+                                      isPickedUpThis() || heldItemId() === item.id
                                         ? "border-[var(--ui-app-accent-border)] bg-[var(--ui-surface)]"
                                         : isSelected()
                                           ? "border-[var(--ui-border-strong)] bg-[var(--ui-selected)]"
                                           : "border-[var(--ui-border)] bg-[var(--ui-surface)] hover:bg-[var(--ui-hover)]"
-                                    } ${isDraggingThis() ? "opacity-40" : ""}`}
+                                    } ${isDraggingThis() ? "opacity-40" : ""} ${props.canWrite ? "select-none [-webkit-touch-callout:none]" : ""}`}
                                   >
                                     <Show when={props.canWrite}>
                                       <Show

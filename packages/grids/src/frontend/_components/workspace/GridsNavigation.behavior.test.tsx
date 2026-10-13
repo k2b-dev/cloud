@@ -70,7 +70,7 @@ describe("Grids phone navigation", () => {
     const dom = createDomTestHarness();
     delegateEvents(["click"], dom.document);
     const { Navigation, readWorkspaceNavigation, GridsNavigation } = modules!;
-    const disposeProvider = render(() => createComponent(GridsNavigation, { state: state(canManageBase) }), dom.root);
+    const disposeProvider = render(() => createComponent(GridsNavigation, { canCreate: false, state: state(canManageBase) }), dom.root);
     await Bun.sleep(0);
     const provided = readWorkspaceNavigation();
     if (!provided) throw new Error("GridsNavigation did not provide the workspace navigation.");

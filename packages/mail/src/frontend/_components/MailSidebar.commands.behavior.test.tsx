@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
 
 if (!isServer) {
   test("mailbox commands follow write access and dispose with the sidebar", async () => {
@@ -12,6 +13,8 @@ if (!isServer) {
     const dispose = render(
       () => (
         <MailSidebar
+          currentUserEmail={null}
+          contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
           mailboxId="Box001"
           mailboxName="Support"
           syncEnabled={true}
@@ -84,6 +87,8 @@ if (!isServer) {
     const dispose = render(
       () => (
         <MailSidebar
+          currentUserEmail={null}
+          contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
           mailboxId="Box001"
           mailboxName="Support"
           syncEnabled={true}

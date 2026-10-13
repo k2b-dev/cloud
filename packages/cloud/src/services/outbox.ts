@@ -14,9 +14,10 @@ import { logger } from "./logging";
  * the dispatcher publishes keys concurrently and the rows of one key in order,
  * then completes the batch in one statement. A batch starts no publish after
  * its claim has ended, because the next claim takes its rows. A row that never
- * failed is due at once. Claims stay proportional to the batch with an index on
- * the `where` columns and `sequence`, and one on the `where` columns and
- * `orderBy` limited to `claimed_until IS NOT NULL OR attempts > 0`.
+ * failed is due at once. Claims stay proportional to the batch, whatever the
+ * table's statistics say, with an index on the `where` columns and `sequence`,
+ * and one on the `where` columns and `orderBy` limited to
+ * `claimed_until IS NOT NULL OR attempts > 0`.
  *
  * Required columns: `id uuid`, `attempts int`, `next_attempt_at timestamptz`,
  * `claimed_until timestamptz`, `last_error text`, and the `orderBy` and
@@ -97,13 +98,20 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
       const cap = Math.min(Math.max(limit, 1), batchSize);
       // Claims take turns: a concurrent claim would skip this one's locked rows and take later rows of the same keys.
       // A claim that outlives its claim period is worthless, so neither a slow statement nor a vanished client holds the turn longer.
+      // Without sequential and bitmap scans, statistics of an empty or claimed outbox cannot make a claim scan and sort
+      // the whole backlog instead of walking the sequence index up to the batch. A disabled scan still counts as very
+      // expensive, which would compile every claim (JIT, ~0.4 s), so JIT stays off.
       await tx`
         SELECT set_config('statement_timeout', ${String(claimMs)}, true),
                set_config('idle_in_transaction_session_timeout', ${String(claimMs)}, true),
+               set_config('enable_seqscan', 'off', true),
+               set_config('enable_bitmapscan', 'off', true),
+               set_config('jit', 'off', true),
                pg_advisory_xact_lock(hashtextextended(${claimLock}, 0))
       `;
       // The busy probe runs per candidate (OFFSET 0 keeps the planner from turning it into a join, which
-      // stale statistics can make quadratic), against an index of claimed and retried rows per key.
+      // stale statistics can make quadratic), against an index of claimed and retried rows per key. The update looks
+      // its rows up by id for the same reason: as a join, it scanned the whole table per claim.
       return tx<Row[]>`
         WITH candidates AS MATERIALIZED (
           SELECT current.id
@@ -125,8 +133,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
         ), claimed AS (
           UPDATE ${table} outbox
           SET claimed_until = now() + (${claimMs} * interval '1 millisecond')
-          FROM candidates
-          WHERE outbox.id = candidates.id
+          WHERE outbox.id = ANY(ARRAY(SELECT id FROM candidates))
           RETURNING outbox.*
         )
         SELECT * FROM claimed ORDER BY ${sequence}

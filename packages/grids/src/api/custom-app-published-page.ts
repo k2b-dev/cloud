@@ -43,7 +43,7 @@ import type { PublicDocument } from "../frontend/_components/documents/public-do
 import type { FormEditState } from "../frontend/_components/forms/form-submit-payload";
 import type { WorkflowScannerState } from "../frontend/_components/workflows/WorkflowScannerSurface";
 import type { CustomAppRenderedAction } from "../frontend/custom-app/Actions.island";
-import type { CustomAppRecordsSuccess, CustomAppRenderedRowAction } from "../frontend/custom-app/RecordsTable.island";
+import type { CustomAppRecordsSuccess, CustomAppRenderedRowAction } from "../frontend/custom-app/RecordsTable";
 import { customAppRuntimeMessages } from "../frontend/custom-app/runtime-messages";
 import type { CustomAppRenderedSidebarAction } from "../frontend/custom-app/SidebarActions.island";
 import { gridsService } from "../service";

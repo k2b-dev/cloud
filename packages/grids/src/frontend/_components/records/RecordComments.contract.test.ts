@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 describe("App record comments", () => {
   test("uses a DetailPanel section without creating a nested scroll owner", async () => {
-    const source = await Bun.file(new URL("./RecordComments.island.tsx", import.meta.url)).text();
+    const source = await Bun.file(new URL("./RecordComments.tsx", import.meta.url)).text();
 
     expect(source).toContain("<DetailPanel.Group label={t().recordComments}>");
     expect(source).toContain("<DetailPanel.Section");

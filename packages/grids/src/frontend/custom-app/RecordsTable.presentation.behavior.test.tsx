@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
-import type { CustomAppRecordsSuccess } from "./RecordsTable.island";
+import type { CustomAppRecordsSuccess } from "./RecordsTable";
 
 const domTest = isServer ? test.skip : test;
 

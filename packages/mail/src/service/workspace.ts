@@ -139,6 +139,7 @@ const optionalUuidSearchParam = (url: URL, name: string): string | null => {
 };
 
 export type MailboxPageData = {
+  receivingAddress: string | null;
   mailbox: Mailbox;
   permission: "read" | "write" | "admin";
   access: { scope: "mailbox" | "assigned"; permission: "read" | "write" | "admin" };
@@ -650,25 +651,34 @@ export const loadMailboxPageData = async (params: {
     });
   }
 
-  const [mailboxResult, folderResult, identityResult, viewCountsResult, savedViewResult, localTagResult, scheduledCountResult] =
-    await Promise.all([
-      mailboxes.getMailbox(params.context, params.mailboxId),
-      messages.listFolders(params.context, params.mailboxId),
-      senderIdentities.listSenderIdentities(params.context, params.mailboxId),
-      messages.getConversationViewCounts({
-        context: params.context,
-        mailboxId: params.mailboxId,
-      }),
-      savedViews.listSavedConversationViews({
-        context: params.context,
-        mailboxId: params.mailboxId,
-      }),
-      localTags.listLocalTags(params.context, params.mailboxId),
-      scheduledSends.countScheduledSends({
-        context: params.context,
-        mailboxId: params.mailboxId,
-      }),
-    ]);
+  const [
+    mailboxResult,
+    folderResult,
+    identityResult,
+    viewCountsResult,
+    savedViewResult,
+    localTagResult,
+    scheduledCountResult,
+    receivingAddress,
+  ] = await Promise.all([
+    mailboxes.getMailbox(params.context, params.mailboxId),
+    messages.listFolders(params.context, params.mailboxId),
+    senderIdentities.listSenderIdentities(params.context, params.mailboxId),
+    messages.getConversationViewCounts({
+      context: params.context,
+      mailboxId: params.mailboxId,
+    }),
+    savedViews.listSavedConversationViews({
+      context: params.context,
+      mailboxId: params.mailboxId,
+    }),
+    localTags.listLocalTags(params.context, params.mailboxId),
+    scheduledSends.countScheduledSends({
+      context: params.context,
+      mailboxId: params.mailboxId,
+    }),
+    mailboxes.getMailboxReceivingAddress(params.mailboxId),
+  ]);
   if (!mailboxResult.ok) return fail(mailboxResult.error);
 
   const parsedView = conversationViewSchema.safeParse(params.requestUrl.searchParams.get("view") ?? undefined);
@@ -751,6 +761,7 @@ export const loadMailboxPageData = async (params: {
 
   return ok({
     mailbox: mailboxResult.data,
+    receivingAddress,
     permission: permission.data.permission,
     access: { scope: permission.data.scope, permission: permission.data.permission },
     initialLiveCursor,

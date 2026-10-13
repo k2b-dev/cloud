@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { selectHtml } from "../../../../../tests/fixtures/select-html";
+import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
 import type { MailFolderView } from "../../service/messages";
 
 const root = mkdtempSync(join(tmpdir(), "mail-sidebar-render-tests-"));
@@ -16,6 +18,8 @@ const [{ default: MailSidebar }, { LocaleProvider }] = await Promise.all([import
 
 const sidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {}) =>
   createComponent(MailSidebar, {
+    currentUserEmail: null,
+    contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
     mailboxId: "Box001",
     mailboxName: "Support",
     syncEnabled: true,
@@ -60,6 +64,31 @@ const sidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {}) =>
 const renderSidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {}) => renderToString(() => sidebar(overrides));
 
 describe("Mail sidebar", () => {
+  test.each([
+    ["en", "Switch mailbox"],
+    ["de", "Postfach wechseln"],
+  ])("names the container and puts its overview only in switcher actions (%s)", async (locale, purpose) => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return sidebar({ mailboxAddress: "help@example.test" });
+        },
+      }),
+    );
+    const trigger = await selectHtml(html, ".k2b-sidebar-switcher__trigger");
+    expect(trigger).toHaveLength(1);
+    expect(trigger[0]?.attributes["aria-label"]).toBe("Support");
+    expect((await selectHtml(html, ".k2b-sidebar-switcher .k2b-sr-only"))[0]?.text).toContain(purpose);
+    const snapshot = (await selectHtml(html, "script[data-cloud-workspace-navigation]"))[0]?.text;
+    expect(snapshot).toContain('"switchLabel":"' + purpose + '"');
+    expect(snapshot).not.toContain('"id":"mailboxes"');
+    expect(await selectHtml(html, '.k2b-app-workspace__sidebar-item[href="/app/mail"]')).toHaveLength(0);
+    expect((await selectHtml(html, '.k2b-sidebar-switcher__actions a[href="/app/mail"]'))[0]?.text).toContain(
+      locale === "en" ? "All mailboxes" : "Alle Postfächer",
+    );
+  });
+
   test("separates follow-up and assignment and links stable tag IDs", () => {
     const html = renderSidebar({
       localTags: [

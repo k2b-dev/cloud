@@ -29,8 +29,10 @@ export default function BookSurface(props: BookSurfaceProps) {
       <link rel="stylesheet" href={katexStylesHref} />
       <AppWorkspace mobileSurface="flush" class="notebook-book-workspace">
         <BookNavigator
+          userId={props.userId}
           notebookId={props.notebookId}
           notebookName={props.notebookName}
+          notebookIcon={props.notebookIcon}
           selectedNoteId={props.selectedNoteId}
           tree={props.tree}
           tags={props.tags}

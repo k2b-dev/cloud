@@ -1,12 +1,12 @@
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace } from "@k2b/ui";
 import { Show } from "solid-js";
-import { useSpaceMessages } from "../../messages";
 import SearchButton from "../search/SearchButton.island";
 import CopyICalButton from "./CopyICalButton.island";
 import CreateItemButton from "./CreateItemButton.island";
 import SpaceNavigation from "./SpaceNavigation.island";
 import SpaceSettingsButton from "./SpaceSettingsButton.island";
+import SpaceSwitcher from "./SpaceSwitcher.island";
 import type { SpaceContext } from "./types";
 import ViewLinks from "./ViewLinks.island";
 
@@ -17,7 +17,6 @@ type Props = {
 };
 
 export default function SpaceSidebar(props: Props) {
-  const t = useSpaceMessages();
   const vt = (key: string) => `space-sidebar-${props.ctx.space.id}-${key}`;
 
   return (
@@ -25,9 +24,20 @@ export default function SpaceSidebar(props: Props) {
       <SpaceNavigation ctx={props.ctx} baseUrl={props.baseUrl} dateConfig={props.dateConfig} />
       <AppWorkspace.Sidebar collapsible>
         <AppWorkspace.SidebarDesktop>
+          <SpaceSwitcher
+            canCreate={Boolean(props.ctx.userId)}
+            space={{ id: props.ctx.space.id, name: props.ctx.space.name, color: props.ctx.space.color }}
+          />
           <div class="flex flex-col gap-3">
-            <AppWorkspace.SidebarIconGrid columns={props.ctx.canWrite ? 3 : 2} sidebarMode="expanded">
-              <Show when={props.ctx.canWrite}>
+            <Show
+              when={props.ctx.canWrite}
+              fallback={
+                <div data-sidebar-mode="expanded">
+                  <SearchButton spaceId={props.ctx.space.id} spaceName={props.ctx.space.name} variant="sidebar" registerCommand />
+                </div>
+              }
+            >
+              <AppWorkspace.SidebarIconGrid columns={2} sidebarMode="expanded">
                 <div style={`view-transition-name:${vt("create-desktop")}`}>
                   <CreateItemButton
                     spaceId={props.ctx.space.id}
@@ -39,21 +49,13 @@ export default function SpaceSidebar(props: Props) {
                     defaultType={props.ctx.currentView === "calendar" ? "event" : "task"}
                   />
                 </div>
-              </Show>
-              <div style={`view-transition-name:${vt("search-desktop")}`}>
-                <SearchButton spaceId={props.ctx.space.id} spaceName={props.ctx.space.name} variant="icon" registerCommand />
-              </div>
-              <AppWorkspace.SidebarIconAction
-                href="/app/spaces"
-                navigation="document"
-                icon="ti ti-layout-grid"
-                label={t.allSpaces}
-                viewTransitionName={vt("all-spaces-desktop")}
-              />
-            </AppWorkspace.SidebarIconGrid>
+                <div style={`view-transition-name:${vt("search-desktop")}`}>
+                  <SearchButton spaceId={props.ctx.space.id} spaceName={props.ctx.space.name} variant="icon" registerCommand />
+                </div>
+              </AppWorkspace.SidebarIconGrid>
+            </Show>
 
-            {/* The space's name heads its views: beside a sidebar that marks the view, the page shows no title row. */}
-            <AppWorkspace.SidebarSection sidebarMode="expanded" title={props.ctx.space.name}>
+            <AppWorkspace.SidebarSection sidebarMode="expanded">
               <ViewLinks spaceId={props.ctx.space.id} query={props.ctx.query} currentView={props.ctx.currentView} variant="desktop" />
             </AppWorkspace.SidebarSection>
           </div>
@@ -71,7 +73,6 @@ export default function SpaceSidebar(props: Props) {
               />
             </Show>
             <SearchButton spaceId={props.ctx.space.id} spaceName={props.ctx.space.name} variant="icon" />
-            <AppWorkspace.SidebarIconAction href="/app/spaces" navigation="document" icon="ti ti-layout-grid" label={t.allSpaces} />
             <ViewLinks spaceId={props.ctx.space.id} query={props.ctx.query} currentView={props.ctx.currentView} variant="collapsed" />
           </AppWorkspace.SidebarIconGrid>
 

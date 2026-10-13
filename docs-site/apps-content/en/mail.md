@@ -14,6 +14,11 @@ Mail connects email accounts and turns their messages into a shared workspace.
 It keeps portable mail state synchronized with the provider while adding team
 context such as assignments, comments, local tags, reminders, and follow-up state.
 
+Open the mailbox name in the sidebar or phone menu to switch mailboxes. The
+current mailbox and the list show the receiving address. Signed-in users can
+choose **New mailbox**; after creation, its delivery settings open before you
+enter the mailbox. If settings cannot load, the mailbox opens directly.
+
 ## Use Mail
 
 - Read complete conversations and search synchronized message and attachment

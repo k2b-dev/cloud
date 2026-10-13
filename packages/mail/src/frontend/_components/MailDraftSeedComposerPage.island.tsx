@@ -4,7 +4,7 @@ import { ButtonLink, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, onMount, Show } from "solid-js";
 import type { MailContactDirectory } from "../../contact-directory-settings";
 import type { MailDraftSeed, SenderIdentity } from "../../contracts";
-import MailComposerPage from "./MailComposerPage.island";
+import MailComposerPage from "./MailComposerPage";
 import { mailComposerMessages } from "./mail-composer-messages";
 import type { MailComposerSignatures } from "./mail-composer-signature";
 import { readMailDraftSeed } from "./mail-draft-seed-store";

@@ -1223,10 +1223,15 @@ export const TimeQuickCreate = (props: { view: TimeView }) => {
       element.querySelector<HTMLElement>("input,textarea,select,button,a[href],[tabindex]:not([tabindex='-1'])")?.focus();
     });
   });
+  /** Whether the focus is in the popover, or fell to the page as it hid: only then does a close return it. */
+  const focusInPopover = () => element?.contains(document.activeElement) || document.activeElement === document.body;
   const close = (restore: boolean) => {
-    if (!view.quick()) return;
+    const current = view.quick();
+    if (!current) return;
+    const selection = view.selection();
     view.setQuick(null);
-    view.setSelection(null);
+    // A late close must leave a newer selection in place.
+    if (selection?.key === current.key && selection.start === current.start && selection.end === current.end) view.setSelection(null);
     if (restore && returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
   };
   return (
@@ -1239,7 +1244,7 @@ export const TimeQuickCreate = (props: { view: TimeView }) => {
       data-kind="create"
       onToggle={(event) => {
         if (event.newState !== "closed" || !view.quick() || event.currentTarget.matches(":popover-open")) return;
-        close(event.currentTarget.contains(document.activeElement) || document.activeElement === document.body);
+        close(focusInPopover());
       }}
     >
       <Show when={view.quick()} keyed>
@@ -1247,7 +1252,7 @@ export const TimeQuickCreate = (props: { view: TimeView }) => {
           view.props.owner.renderQuickCreate?.(value.range, {
             create: value.create,
             close: () => {
-              if (view.quick() === value) close(true);
+              if (view.quick() === value) close(focusInPopover());
             },
           })
         }

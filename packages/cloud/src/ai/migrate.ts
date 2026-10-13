@@ -1112,6 +1112,14 @@ export const migrateCloudAi = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_ai_memories_search_document
     ON ai.memories USING GIN(search_document)
   `.simple();
+  // Prompt relevance matches word stems. A memory's language is unknown, so it holds English and German
+  // stems (Cloud's UI languages, as in help search); search_document stays for explicit memory search.
+  // No GIN index: relevance is ranked within one user's memories, which idx_ai_memories_user_active
+  // bounds, while a global index would scan every user's matches for common words.
+  await sql`
+    ALTER TABLE ai.memories ADD COLUMN IF NOT EXISTS stem_document TSVECTOR
+    GENERATED ALWAYS AS (to_tsvector('english', content) || to_tsvector('german', content)) STORED
+  `.simple();
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_memories_user_content_active
     ON ai.memories(user_id, lower(content))

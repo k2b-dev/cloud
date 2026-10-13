@@ -127,3 +127,124 @@ test("live snapshots update and old owner cleanup cannot remove a newer workspac
   other.remove();
   dom.cleanup();
 });
+
+test("the snapshot keeps only the switcher's presentation before its owner takes over", async () => {
+  const dom = createDomTestHarness();
+  const { createNavigation, Navigation } = await import("@k2b/ui");
+  const { default: WorkspaceNavigationProvider } = await import("./WorkspaceNavigationProvider");
+  const { readWorkspaceNavigation } = await import("./workspace-navigation");
+  const presentation = {
+    currentId: "team",
+    label: "Team </script> notebook",
+    description: "Shared notes",
+    icon: "ti ti-notebook",
+    color: "#123456",
+    switchLabel: "Switch notebook",
+  };
+  const owned = createNavigation({
+    items: () => [{ id: "notes", label: "Notes", href: "/notes" }],
+    switcher: () => ({
+      ...presentation,
+      options: [{ id: "team", label: presentation.label, href: "/team" }],
+      actions: [{ id: "new", label: "New notebook", icon: "ti-plus", action: () => {} }],
+      onLoad: () => {},
+      error: "An old error",
+      class: "flex-1",
+    }),
+  });
+  const dispose = render(() => <WorkspaceNavigationProvider navigation={owned} label="Notes" />, dom.root);
+  let disposeMenu = () => {};
+  try {
+    const script = dom.root.querySelector("script")!;
+    expect(script.textContent).not.toContain("</script>");
+    expect(JSON.parse(script.textContent ?? "")).toEqual({ label: "Notes", items: owned.items(), switcher: presentation });
+    delete window.__cloudWorkspaceNavigation;
+    const snapshot = readWorkspaceNavigation()!;
+    expect(snapshot.navigation.switcher?.()).toEqual(presentation);
+    expect(snapshot.navigation.switcher?.().options).toBeUndefined();
+    expect(snapshot.navigation.switcher?.().actions).toBeUndefined();
+    expect(snapshot.navigation.switcher?.().onLoad).toBeUndefined();
+    const [navigation, setNavigation] = createSignal(snapshot.navigation);
+    const host = dom.document.createElement("div");
+    dom.root.append(host);
+    disposeMenu = render(() => <Navigation navigation={navigation()} label="Notes" />, host);
+    const before = host.querySelector(".k2b-sidebar-switcher__trigger")!;
+    const head = before.outerHTML;
+    expect(host.querySelector('[role="status"]')?.textContent).toBe("Loading...");
+    expect(host.querySelector("nav")?.firstElementChild?.classList.contains("k2b-sidebar-switcher")).toBe(true);
+    setNavigation(owned);
+    expect(host.querySelectorAll(".k2b-sidebar-switcher__trigger")).toHaveLength(1);
+    const after = host.querySelector(".k2b-sidebar-switcher__trigger")!;
+    expect(after.getAttribute("aria-label")).toBe(before.getAttribute("aria-label"));
+    // Each render owns its IDs; the visible head keeps the same content.
+    expect(after.outerHTML.replace(/k2b-sidebar-switcher-[\w-]+/g, "switcher-id")).toBe(
+      head.replace(/k2b-sidebar-switcher-[\w-]+/g, "switcher-id"),
+    );
+    expect(host.textContent).not.toContain("Loading...");
+  } finally {
+    disposeMenu();
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test("a snapshot without a switcher adds no head", async () => {
+  const dom = createDomTestHarness();
+  const { createNavigation, Navigation } = await import("@k2b/ui");
+  const { default: WorkspaceNavigationProvider } = await import("./WorkspaceNavigationProvider");
+  const { readWorkspaceNavigation } = await import("./workspace-navigation");
+  const navigation = createNavigation({ items: () => [{ id: "notes", label: "Notes", href: "/notes" }] });
+  const dispose = render(() => <WorkspaceNavigationProvider navigation={navigation} label="Notes" />, dom.root);
+  let disposeMenu = () => {};
+  try {
+    expect(JSON.parse(dom.root.querySelector("script")?.textContent ?? "")).toEqual({ label: "Notes", items: navigation.items() });
+    delete window.__cloudWorkspaceNavigation;
+    const snapshot = readWorkspaceNavigation()!;
+    expect(snapshot.navigation.switcher).toBeUndefined();
+    const host = dom.document.createElement("div");
+    dom.root.append(host);
+    disposeMenu = render(() => <Navigation navigation={snapshot.navigation} label="Notes" />, host);
+    expect(host.querySelector(".k2b-sidebar-switcher")).toBeNull();
+    expect(host.querySelector("a")?.getAttribute("href")).toBe("/notes");
+  } finally {
+    disposeMenu();
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test("invalid switcher fields are ignored without dropping the navigation", async () => {
+  const dom = createDomTestHarness();
+  const { readWorkspaceNavigation } = await import("./workspace-navigation");
+  const valid = { currentId: "team", label: "Team", icon: "ti-notebook", switchLabel: "Switch notebook" };
+  try {
+    const invalid = [
+      null,
+      [],
+      "Team",
+      {},
+      ...Object.keys(valid).map((key) => ({ ...valid, [key]: 42 })),
+      { ...valid, description: false },
+      { ...valid, color: {} },
+      { ...valid, description: null },
+    ];
+    for (const switcher of invalid) {
+      dom.root.innerHTML = `<script data-cloud-workspace-navigation type="application/json">${JSON.stringify({
+        label: "Notes",
+        items: [{ id: "notes", label: "Notes", href: "/notes" }],
+        switcher,
+      })}</script>`;
+      const snapshot = readWorkspaceNavigation()!;
+      expect(snapshot.label).toBe("Notes");
+      expect(snapshot.navigation.items()).toHaveLength(1);
+      expect(snapshot.navigation.switcher).toBeUndefined();
+    }
+    dom.root.innerHTML = `<script data-cloud-workspace-navigation type="application/json">${JSON.stringify({
+      items: [],
+      switcher: { ...valid, options: [{ id: "hidden", label: "Hidden", href: "/hidden" }], actions: [], onLoad: "load" },
+    })}</script>`;
+    expect(readWorkspaceNavigation()?.navigation.switcher?.()).toEqual(valid);
+  } finally {
+    dom.cleanup();
+  }
+});

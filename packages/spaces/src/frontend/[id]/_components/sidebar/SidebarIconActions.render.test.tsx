@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { selectHtml } from "../../../../../../../tests/fixtures/select-html";
 
 const root = mkdtempSync(join(tmpdir(), "spaces-sidebar-icon-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -68,7 +69,10 @@ describe("Spaces sidebar icon actions", () => {
     expect(html).not.toContain("k2b-icon-button");
   });
 
-  test("names the space above its views, as the page shows no title row beside a sidebar that marks the view", () => {
+  test.each([
+    ["en", "Switch Space", "All Spaces"],
+    ["de", "Space wechseln", "Alle Spaces"],
+  ])("names the space in the switcher above its views and moves All spaces into actions (%s)", async (locale, purpose, allLabel) => {
     const space = {
       id: "Space1",
       name: "Launch plan",
@@ -83,24 +87,36 @@ describe("Spaces sidebar icon actions", () => {
       templates: [],
     };
     const html = renderToString(() =>
-      createComponent(SpaceSidebar, {
-        ctx: {
-          space,
-          columns: [],
-          tags: [],
-          currentView: "list",
-          hasOverride: false,
-          settings: { view: "list", hideSettings: false },
-          query: "view=list",
-          canWrite: false,
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(SpaceSidebar, {
+            ctx: {
+              space,
+              columns: [],
+              tags: [],
+              currentView: "list",
+              hasOverride: false,
+              settings: { view: "list", hideSettings: false },
+              query: "view=list",
+              canWrite: false,
+            },
+            baseUrl: "/app/spaces/Space1",
+          });
         },
-        baseUrl: "/app/spaces/Space1",
       }),
     );
     const section = html
       .match(/<section\b[^>]*k2b-app-workspace__sidebar-section[\s\S]*?<\/section>/g)
       ?.find((part) => part.includes("view=list"));
-    expect(section?.replace(/<!--[^>]*-->/g, "")).toContain("<h2>Launch plan</h2>");
+    expect(section).not.toContain("<h2>Launch plan</h2>");
+    expect((await selectHtml(html, ".k2b-sidebar-switcher__trigger"))[0]?.attributes["aria-label"]).toBe("Launch plan");
+    expect((await selectHtml(html, ".k2b-sidebar-switcher .k2b-sr-only"))[0]?.text).toContain(purpose);
+    const snapshot = (await selectHtml(html, "script[data-cloud-workspace-navigation]"))[0]?.text;
+    expect(snapshot).toContain('"switchLabel":"' + purpose + '"');
+    expect(snapshot).not.toContain('"id":"all"');
+    expect(await selectHtml(html, '.k2b-app-workspace__sidebar-icon-action[href="/app/spaces"]')).toHaveLength(0);
+    expect((await selectHtml(html, '.k2b-sidebar-switcher__actions a[href="/app/spaces"]'))[0]?.text).toContain(allLabel);
     expect(section).toMatch(/<a\b[^>]*aria-current="page"[^>]*>/);
   });
 });

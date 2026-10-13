@@ -122,7 +122,3 @@ export function LegacySettingsSection() {
     </SettingsSection>
   );
 }
-
-export default function LegacySettingsPanel() {
-  return <LegacySettingsSection />;
-}
