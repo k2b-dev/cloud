@@ -221,13 +221,15 @@ describe("editor toolbar above the phone keyboard", () => {
     }
   }, 30_000);
 
-  test("panning a zoomed viewport above the keyboard never moves the toolbar or the note", async () => {
+  test("zooming with the keyboard open returns to flow; panning never moves the toolbar or the note", async () => {
     const page = await open(devices.phone!, { keyboard: true });
     try {
       await load(page, Array.from({ length: 60 }, (_, index) => `Line ${index + 1}`).join("\n"));
       await caret(page, "Line 30");
       await page.evaluate(() => window.keyboard.show(0, 844 - 336));
       await expectLifted(page);
+      await page.evaluate(() => window.keyboard.set({ scale: 2, height: 254, offsetTop: 0 }));
+      await expectInFlow(page);
       const before = await keyboardLayout(page);
       for (const offsetTop of [0, 200, 80]) {
         await page.evaluate((offsetTop) => window.keyboard.set({ scale: 2, height: 254, offsetTop }), offsetTop);
@@ -236,6 +238,7 @@ describe("editor toolbar above the phone keyboard", () => {
         expect(bounds.bottom).toBe(before.bottom);
         expect(bounds.scrollHeight).toBe(before.scrollHeight);
         expect(bounds.scrollerScrollTop).toBe(before.scrollerScrollTop);
+        await expectInFlow(page);
       }
     } finally {
       await page.context().close();

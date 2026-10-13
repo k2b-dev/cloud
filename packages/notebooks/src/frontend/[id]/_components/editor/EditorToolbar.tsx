@@ -127,8 +127,7 @@ export default function EditorToolbar(props: Props) {
   // A phone keyboard covers the bottom of the page and shrinks only the visual viewport. While the note has focus, a
   // bottom margin lifts the toolbar to the keyboard's top edge and shortens the note above it, so the caret line stays
   // visible as well. Fine pointers never lift. Coarse pointers lift only after losing at least 15% of the page height,
-  // so pinch zoom without a keyboard and the shortcuts bar of a hardware keyboard do not lift it. While zoomed, keep
-  // the last lift.
+  // so the shortcuts bar of a hardware keyboard does not lift it. While zoomed, keep the toolbar in flow.
   let toolbar!: HTMLDivElement;
   const [lift, setLift] = createSignal(0);
   onMount(() => {
@@ -142,12 +141,13 @@ export default function EditorToolbar(props: Props) {
       const focused = !!view && (view.hasFocus || toolbar.contains(document.activeElement));
       // The bottom the toolbar has without the lift; the note above it gives up the same height.
       const inFlowBottom = toolbar.getBoundingClientRect().bottom + lift();
-      // CodeMirror's 0.85 rule detects an open on-screen keyboard independently of pinch zoom. Small insets such as
-      // the shortcuts bar of a hardware keyboard on an iPad do not lift the toolbar.
-      const keyboardOpen = (viewport.height * viewport.scale) / document.documentElement.clientHeight < 0.85;
+      // CodeMirror's 0.85 viewport ratio requires a keyboard taller than 15% of the page. There is no shared UI
+      // constant; use the same minimum to exclude the small iPad hardware-keyboard shortcuts bar.
+      const pageHeight = document.documentElement.clientHeight;
+      const minimumKeyboardHeight = pageHeight * 0.15;
+      // A zoomed viewport pans over the page; it must not lift the toolbar or resize the note on each pan.
+      const keyboardOpen = viewport.scale === 1 && pageHeight - viewport.height > minimumKeyboardHeight;
       const lifted = coarse.matches && focused && keyboardOpen;
-      // A zoomed viewport pans over the page; keep the last lift so zooming and panning never move the toolbar or note.
-      if (lifted && viewport.scale > 1.01) return;
       const next = lifted ? Math.max(0, inFlowBottom - viewport.offsetTop - viewport.height) : 0;
       const previous = lift();
       if (Math.abs(next - previous) < 0.5) return;
