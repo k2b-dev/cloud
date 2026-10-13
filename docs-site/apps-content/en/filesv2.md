@@ -52,7 +52,9 @@ The sidebar is a folder tree per storage location; its footer offers **Search**
 **Shares**. After every navigation exactly the current path is
 expanded; the tree holds only storage locations and folders. The list is a flat striped list;
 folders open on click (the opened folder's icon becomes a spinner, a leading
-`..` row goes up), files open the details panel, and every row ends with an
+**Parent folder** row names the folder above and goes up; the header shows
+the current folder's name alone, with no back link at any depth, and Backspace
+in the list or Alt+↑ go up too), files open the details panel, and every row ends with an
 info button. The root folder of each storage location ends with a **Trash** row
 that opens its trash. **List**, **Grid**, and **Tree** views and the grid tile size are remembered
 per storage location in a cookie. Tree shows the storage from its root with the current
@@ -69,13 +71,13 @@ URL. The **Sort and filter** icon button beside search groups **Sort by**,
 filter all entries, files, or folders. The default is name ascending, with folders
 before files. **Group folders** is on by default; turn it off to sort files
 and folders together. Grouping and sorting are remembered per storage location;
-reset restores name ascending, all types, and grouping. The `..` row stays above
-the entries regardless of grouping, sorting, or type filter. Sorting and filtering
+reset restores name ascending, all types, and grouping. The **Parent folder** row stays above
+the entries regardless of grouping, sorting, or type filter and cannot be selected. Sorting and filtering
 apply before pagination. With grouping on, all folder pages come before file
 pages; each group uses the selected order. These options stay in the URL.
 An expired or invalidated cursor restarts at the first page with a notice.
 Entries can be dragged onto folders or the
-`..` row to move them (resting on a folder opens or expands it), and marked as
+**Parent folder** row to move them (resting on a folder opens or expands it), and marked as
 favorites. **Recent** and **Favorites** open compact sidebar menus on desktop
 and dialogs from mobile navigation. Recent shows the latest entries with relative
 times; favorites are alphabetical. Entries are checked against current access
