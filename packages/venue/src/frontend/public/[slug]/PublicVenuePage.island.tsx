@@ -7,7 +7,7 @@ import { apiClient } from "../../../api/client";
 import { type PublicStatus, PublicStatusSchema } from "../../../contracts";
 import { venueMessages } from "../../../messages";
 import { FitBlock } from "../../_components/fit-list";
-import PublicFeedbackForm from "../../_components/PublicFeedbackForm.island";
+import PublicFeedbackForm from "../../_components/PublicFeedbackForm";
 import {
   ExceptionRow,
   groupedOpeningHours,

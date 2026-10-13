@@ -18,14 +18,14 @@ import type {
 } from "../workspace/workspace-public-state-model";
 import { recordMessages } from "./messages";
 import { openRecordAuditDialog } from "./RecordAuditDialog";
-import RecordComments from "./RecordComments.island";
+import RecordComments from "./RecordComments";
 import RecordDocumentsSection from "./RecordDocumentsSection";
 import RecordFileField from "./RecordFileField";
 import RecordHistorySection from "./RecordHistorySection";
 import RecordReadView from "./RecordReadView";
-import RecordReferencedBy from "./RecordReferencedBy.island";
+import RecordReferencedBy from "./RecordReferencedBy";
 import { openRecordUpsertDialog, RecordSaveConflictError } from "./RecordUpsertDialog";
-import RecordVersions from "./RecordVersions.island";
+import RecordVersions from "./RecordVersions";
 import { CorrectionDraftInvocationError, createCorrectionDraft } from "./record-correction";
 import { recordDisplayTitle } from "./record-display";
 

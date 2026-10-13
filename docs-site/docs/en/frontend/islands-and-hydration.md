@@ -5,7 +5,7 @@ section: Frontend
 order: 840
 description: Add browser interactivity to server-rendered pages without turning the whole page into a client application.
 tags: [islands, hydration, solidjs]
-updated: 2026-10-11
+updated: 2026-10-12
 ---
 
 # Islands
@@ -165,10 +165,37 @@ Do not make the entire page one island to avoid designing the boundary.
 Large islands increase bundle size and make server and browser ownership
 unclear.
 
-Do not nest an island import inside another island or client component.
-
 See [Browser clients and mutations](/en/docs/frontend/browser-clients-and-mutations)
 for typed calls and writes from an island.
+
+## Do not nest islands
+
+An island or client module must never import another island or client module.
+This includes direct imports, imports through plain modules, named imports,
+and dynamic `import()` with a literal path. An island must also not import
+itself back through plain modules. Type-only imports are fine. The build fails
+in dev and production and names both files. The build cannot see an
+`import()` whose path is computed at runtime, so do not use one for an island.
+
+Each island file is its own browser entry with its own mount and error
+boundary; imported into another island, it would render as a plain component.
+A lazy import also loses its own mount, prop serialization, and error boundary,
+so lazy-load a plain component module instead.
+
+Move the shared component into a plain `.tsx` module and import it from both
+files. Keep the island file as a thin default re-export:
+
+```tsx
+// InventoryFilter.tsx
+export default function InventoryFilter(props: { initialQuery: string }) {
+  return <input name="query" value={props.initialQuery} />;
+}
+```
+
+```tsx
+// InventoryFilter.island.tsx
+export { default } from "./InventoryFilter";
+```
 
 ## Load media only in the browser
 

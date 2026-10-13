@@ -21,7 +21,7 @@ describe("App Records columns", () => {
   test("filters saved-view output to the explicitly selected fields", async () => {
     expect(customAppRecordsResultColumns(columns, ["FIELD1"]).map((column) => column.key)).toEqual(["name"]);
     expect(customAppRecordsResultColumns(columns, ["FIELD2"])).toEqual([]);
-    const source = await Bun.file(new URL("./RecordsTable.island.tsx", import.meta.url)).text();
+    const source = await Bun.file(new URL("./RecordsTable.tsx", import.meta.url)).text();
     expect(source).toContain("<Placeholder");
     expect(source).toContain('state="error"');
     expect(source).not.toContain("rounded-xl border");

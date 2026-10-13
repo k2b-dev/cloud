@@ -8,7 +8,7 @@ import RecordReferencedBy, {
   type ReferencedByItem,
   referencedByActionTitle,
   referencedByEndpoint,
-} from "./RecordReferencedBy.island";
+} from "./RecordReferencedBy";
 
 const item = (recordId: string, overrides: Partial<ReferencedByItem> = {}): ReferencedByItem => ({
   sourceTableId: "TABLE1",

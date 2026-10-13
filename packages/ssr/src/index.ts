@@ -182,7 +182,7 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
   };
 
   // Build islands once per run
-  let islandsBuilt = false;
+  let islandsBuild: Promise<void> | undefined;
 
   // Bun plugin for build/dev
   const plugin: PluginFn = () => {
@@ -194,9 +194,7 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
         const islandsOutdir = prodOutdir ? join(prodOutdir, "_ssr") : join(rootDir, "_ssr");
 
         const ensureIslands = async () => {
-          if (islandsBuilt) return;
-          islandsBuilt = true;
-          await buildIslands({
+          islandsBuild ??= buildIslands({
             pattern: COMPONENT_PATTERN,
             outdir: islandsOutdir,
             cwd: rootDir,
@@ -206,7 +204,11 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
             devSourcemap,
             external,
             errorFallback: errorFallback ? resolve(rootDir, errorFallback) : undefined,
+          }).catch((error) => {
+            islandsBuild = undefined;
+            throw error;
           });
+          await islandsBuild;
         };
 
         // Build islands on start (works for Bun.build)

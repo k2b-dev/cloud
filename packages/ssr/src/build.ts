@@ -22,6 +22,69 @@ const getSelector = (type: ComponentType, id: string) =>
 const fmt = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`);
 const GENERATED_ASSET = /^(?:[a-f0-9]{12}|chunk-[a-z0-9]+)\.js(?:\.map)?$/i;
 
+/** Rejects nested island/client imports in the browser module graph. */
+const rejectNestedComponentImports = (
+  metafile: Bun.BuildMetafile | undefined,
+  components: readonly { path: string }[],
+  cwd: string,
+): void => {
+  if (!metafile) throw new Error("[ssr] Bun.build() returned no metafile, so nested island imports cannot be checked.");
+  const canonicalCwd = canonicalFilePath(cwd);
+  const inputKeys = new Map(Object.keys(metafile.inputs).map((key) => [resolve(process.cwd(), key), key]));
+  const violations: { importer: string; nested: string; via: string[] }[] = [];
+
+  for (const component of components) {
+    const root = inputKeys.get(component.path);
+    if (!root) {
+      throw new Error(
+        `[ssr] Bun.build() metafile has no input for ${relative(canonicalCwd, component.path)}, so nested island imports cannot be checked.`,
+      );
+    }
+    const parents = new Map<string, string | null>([[root, null]]);
+    const queue = [root];
+    const nestedFiles = new Set<string>();
+
+    // for...of also visits entries pushed while iterating, so this walks the queue breadth-first.
+    for (const current of queue) {
+      for (const edge of metafile.inputs[current]?.imports ?? []) {
+        const target = edge.external ? (edge.kind === "dynamic-import" ? metafile.outputs[edge.path]?.entryPoint : undefined) : edge.path;
+        if (!target || !metafile.inputs[target]) continue;
+        const file = resolve(process.cwd(), target);
+        if (/\.(?:island|client)\.tsx$/.test(file)) {
+          if (nestedFiles.has(file)) continue;
+          nestedFiles.add(file);
+          const via: string[] = [];
+          let parent: string | null | undefined = current;
+          while (parent && parent !== root) {
+            via.push(resolve(process.cwd(), parent));
+            parent = parents.get(parent);
+          }
+          violations.push({ importer: component.path, nested: file, via: via.reverse() });
+          continue;
+        }
+        if (parents.has(target)) continue;
+        parents.set(target, current);
+        queue.push(target);
+      }
+    }
+  }
+
+  if (violations.length > 0) {
+    const details = violations
+      .map(
+        ({ importer, nested, via }) =>
+          `  ${relative(canonicalCwd, importer)} imports ${relative(canonicalCwd, nested)}${via.length ? ` via ${via.map((file) => relative(canonicalCwd, file)).join(" -> ")}` : ""}`,
+      )
+      .sort()
+      .join("\n");
+    throw new Error(
+      "[ssr] Island and client modules must not import other island or client modules. Each .island.tsx and .client.tsx file is its own browser entry.\n" +
+        details +
+        '\nMove the shared component into a plain .tsx module and import that module from both files. Keep the .island.tsx or .client.tsx file as a thin default export, for example `export { default } from "./Inner";`.',
+    );
+  }
+};
+
 const removeStaleBuildAssets = async (outdir: string, outputs: readonly Bun.BuildArtifact[]): Promise<number> => {
   const current = new Set(outputs.map((output) => resolve(output.path)));
   let removed = 0;
@@ -154,7 +217,7 @@ export const buildIslands = async (options: {
   if (collisions.length > 0) {
     const details = collisions
       .map(([id, items]) => {
-        const list = items.map((item) => `    - ${item.key} (${relative(resolvedCwd, item.path)})`).join("\n");
+        const list = items.map((item) => `    - ${item.key} (${relative(canonicalFilePath(resolvedCwd), item.path)})`).join("\n");
         return `  ID ${id}:\n${list}`;
       })
       .join("\n");
@@ -174,6 +237,7 @@ export const buildIslands = async (options: {
     external,
     minify: !dev,
     splitting: true,
+    metafile: true,
     sourcemap: dev ? devSourcemap : "none",
     plugins: [
       {
@@ -228,6 +292,7 @@ export const buildIslands = async (options: {
   });
 
   if (result.success) {
+    rejectNestedComponentImports(result.metafile, components, resolvedCwd);
     const removed = await removeStaleBuildAssets(outdir, result.outputs);
     if (verbose && removed > 0) console.log(`Removed ${removed} stale build asset(s).`);
 
