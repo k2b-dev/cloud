@@ -1,8 +1,188 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 
 const read = (path: string) => Bun.file(new URL(path, import.meta.url)).text();
+
+describe("editor toolbar phone viewport and menus", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+
+  const mount = async (coarse = true, height = 508) => {
+    const dom = createDomTestHarness();
+    const viewport = Object.assign(new dom.window.EventTarget(), { height, offsetTop: 0, scale: 1 });
+    Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
+    Object.defineProperty(dom.document.documentElement, "clientHeight", { configurable: true, value: 844 });
+    const media = window.matchMedia("(pointer: coarse)");
+    Object.defineProperty(media, "matches", { value: coarse });
+    const matchMedia = spyOn(window, "matchMedia").mockReturnValue(media);
+    let flowBottom = 844;
+    const originalRect = HTMLElement.prototype.getBoundingClientRect;
+    const rectangles = spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (!this.classList.contains("notebooks-editor-toolbar")) return originalRect.call(this);
+      return new dom.window.DOMRect(0, flowBottom - Number.parseFloat(this.style.marginBottom || "0") - 44, 390, 44);
+    });
+    const { EditorState } = await import("@codemirror/state");
+    const { EditorView } = await import("@codemirror/view");
+    const { markdownExtension } = await import("../../../lib/editor/markdown");
+    const { caretFormat } = await import("./editor-actions");
+    const { default: EditorToolbar } = await import("./EditorToolbar");
+    const { LocaleProvider } = await import("@k2b/ui");
+    const editorHost = dom.document.createElement("div");
+    dom.root.append(editorHost);
+    const view = new EditorView({
+      parent: editorHost,
+      state: EditorState.create({ doc: "word here", selection: { anchor: 1, head: 4 }, extensions: [markdownExtension()] }),
+    });
+    // Focus and keyboard precede the toolbar's listeners, as when switching notes while typing.
+    view.focus();
+    const dispose = render(
+      () => (
+        <LocaleProvider locale="en">
+          <EditorToolbar
+            connected
+            editorView={view}
+            notebookId="Book01"
+            noteId="Note01"
+            initialPanelOpen={false}
+            format={caretFormat(view.state)}
+            onUndo={() => {}}
+            onRedo={() => {}}
+          />
+        </LocaleProvider>
+      ),
+      dom.root,
+    );
+    const toolbar = dom.root.querySelector<HTMLDivElement>(".notebooks-editor-toolbar");
+    if (!toolbar) throw new Error("Missing toolbar");
+    // Happy DOM has no native popovers. Keep the shim on these menu elements only.
+    for (const menu of toolbar.querySelectorAll<HTMLElement>("[popover]")) {
+      let open = false;
+      const matches = menu.matches.bind(menu);
+      Object.defineProperty(menu, "matches", {
+        configurable: true,
+        value: (selector: string) => (selector === ":popover-open" ? open : matches(selector)),
+      });
+      menu.showPopover = () => {
+        open = true;
+      };
+      menu.hidePopover = () => {
+        open = false;
+      };
+    }
+    return {
+      dom,
+      view,
+      toolbar,
+      viewport(values: { height?: number; offsetTop?: number; scale?: number }, event = "resize") {
+        Object.assign(viewport, values);
+        viewport.dispatchEvent(new dom.window.Event(event));
+      },
+      windowEvent(event: string, bottom: number) {
+        flowBottom = bottom;
+        window.dispatchEvent(new Event(event));
+      },
+      cleanup() {
+        dispose();
+        view.destroy();
+        rectangles.mockRestore();
+        matchMedia.mockRestore();
+        dom.cleanup();
+      },
+    };
+  };
+
+  test("mounting with editor focus and an open keyboard lifts immediately", async () => {
+    const app = await mount();
+    try {
+      expect(app.view.hasFocus).toBe(true);
+      expect(app.toolbar.style.marginBottom).toBe("336px");
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  test("zooming returns to flow and panning never lifts or scrolls the caret", async () => {
+    const app = await mount();
+    const dispatch = spyOn(app.view, "dispatch");
+    try {
+      expect(app.toolbar.style.marginBottom).toBe("336px");
+      for (const scale of [2, 0.8]) {
+        for (const height of [422, 254]) {
+          for (const offsetTop of [0, 300, 80]) {
+            app.viewport({ scale, height, offsetTop }, "scroll");
+            expect(app.toolbar.style.marginBottom).toBe("");
+          }
+        }
+      }
+      expect(dispatch).not.toHaveBeenCalled();
+    } finally {
+      dispatch.mockRestore();
+      app.cleanup();
+    }
+  });
+
+  test("the hardware-keyboard shortcuts bar and fine pointers stay in flow", async () => {
+    for (const [coarse, height] of [
+      [true, 789],
+      [false, 508],
+    ] as const) {
+      const app = await mount(coarse, height);
+      try {
+        expect(app.toolbar.style.marginBottom).toBe("");
+      } finally {
+        app.cleanup();
+      }
+    }
+  });
+
+  test("window resize and document scroll refresh the lift", async () => {
+    const app = await mount();
+    try {
+      app.windowEvent("resize", 800);
+      expect(app.toolbar.style.marginBottom).toBe("292px");
+      app.windowEvent("scroll", 760);
+      expect(app.toolbar.style.marginBottom).toBe("252px");
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  test.each([true, false])("menu taps preserve editor focus only on coarse pointers (%s)", async (coarse) => {
+    const app = await mount(coarse);
+    try {
+      for (const [label, itemLabel, expectedDoc] of [
+        ["Text style: Normal", "Heading 2", "## word here"],
+        ["More", "Info", "## word here\n\n:::info\n\n:::\n"],
+      ] as const) {
+        const trigger = app.toolbar.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+        if (!trigger) throw new Error(`Missing ${label}`);
+        trigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+        trigger.click();
+        await Promise.resolve();
+        const menu = app.dom.document.getElementById(trigger.getAttribute("aria-controls") || "");
+        const item = Array.from(menu?.querySelectorAll<HTMLButtonElement>("button") ?? []).find((button) =>
+          button.textContent?.includes(itemLabel),
+        );
+        if (!item) throw new Error(`Missing ${itemLabel}`);
+        expect(app.view.hasFocus).toBe(coarse);
+        expect(app.view.state.selection.main.anchor).toBe(label === "More" ? 4 : 1);
+        expect(app.view.state.selection.main.head).toBe(label === "More" ? 7 : 4);
+        if (!coarse) expect(menu?.contains(app.dom.document.activeElement)).toBe(true);
+        item.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+        item.click();
+        await Promise.resolve();
+        expect(app.view.hasFocus).toBe(true);
+        expect(app.view.state.doc.toString()).toBe(expectedDoc);
+        expect(app.toolbar.style.marginBottom).toBe(coarse ? "336px" : "");
+      }
+    } finally {
+      app.cleanup();
+    }
+  });
+});
 
 describe("editor toolbar pointer and keyboard focus", () => {
   if (isServer) {
