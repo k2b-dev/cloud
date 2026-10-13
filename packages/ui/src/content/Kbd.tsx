@@ -1,7 +1,7 @@
-import { createMemo, createSignal, For, type JSX, onMount, sharedConfig, Show } from "solid-js";
+import { createMemo, createSignal, For, type JSX, onMount, Show, sharedConfig } from "solid-js";
 import { isServer } from "solid-js/web";
 import { useLocale } from "../intl/locale";
-import { formatShortcut, keyboardPlatform, type KeyboardPlatform } from "../intl/shortcut";
+import { formatShortcut, type KeyboardPlatform, keyboardPlatform } from "../intl/shortcut";
 
 export type KbdProps = {
   /** Shortcut such as "mod+k", "shift+/", "enter". */

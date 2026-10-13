@@ -1,5 +1,5 @@
-import { Kbd } from "../content/Kbd";
 import type { JSX } from "solid-js";
+import { Kbd } from "../content/Kbd";
 import type { PromptSearchInput, PromptSearchItem, PromptSearchOptions } from "../feedback/prompts";
 import { prompts } from "../feedback/prompts";
 import { resolveUiMessages, useUiMessages } from "../intl/messages";

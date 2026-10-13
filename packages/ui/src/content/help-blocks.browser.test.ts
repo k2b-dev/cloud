@@ -1,34 +1,72 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solid from "babel-preset-solid";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { createComponent } from "solid-js";
-import { generateHydrationScript, renderToString } from "solid-js/web";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../test/browser";
 
-// The unit harness compiles without hydration keys. Compile real SSR markup
-// with hydration keys here and hydrate it with the shipped browser component.
-Bun.plugin({
-  name: "help-hydration-ssr",
-  setup(builder) {
-    builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
-      const result = await transformAsync(await Bun.file(path).text(), {
-        filename: path,
-        babelrc: false,
-        configFile: false,
-        presets: [typescript, [solid, { generate: "ssr", hydratable: true }]],
-      });
-      if (!result?.code) throw new Error(`Could not compile ${path}`);
-      return { contents: result.code, loader: "js" };
-    });
+// The unit harness compiles without hydration keys. This bundle compiles the
+// components for the server with hydration keys, in a build of its own: a
+// process-wide loader plugin would also compile every other test's components.
+const serverEntry = resolve(import.meta.dir, "help-blocks.server-fixture.ts");
+const serverBuild = await Bun.build({
+  entrypoints: [serverEntry],
+  files: {
+    [serverEntry]: `
+import { createComponent } from "solid-js";
+import { generateHydrationScript, renderToString } from "solid-js/web";
+import { Kbd } from "./Kbd";
+import { LabelChip } from "./LabelChip";
+import { Steps } from "./Steps";
+const html = (component, props) => renderToString(() => createComponent(component, props));
+export const serverCaps = { other: html(Kbd, { keys: "mod+k" }), apple: html(Kbd, { keys: "mod+k", platform: "apple" }) };
+export const hydrationScript = generateHydrationScript();
+export const chip = html(LabelChip, { children: "Share" });
+export const iconChip = html(LabelChip, { icon: "ti ti-share", children: "Share" });
+export const steps = html(Steps, { start: 3, children: "Instructions" });
+`,
   },
+  target: "node",
+  conditions: ["node"],
+  plugins: [
+    {
+      name: "help-hydration-ssr",
+      setup(builder) {
+        builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+          const result = await transformAsync(await Bun.file(path).text(), {
+            filename: path,
+            babelrc: false,
+            configFile: false,
+            presets: [typescript, [solid, { generate: "ssr", hydratable: true }]],
+          });
+          if (!result?.code) throw new Error(`Could not compile ${path}`);
+          return { contents: result.code, loader: "js" };
+        });
+      },
+    },
+  ],
 });
-const { Kbd } = await import("./Kbd");
-const { LabelChip } = await import("./LabelChip");
-const { Steps } = await import("./Steps");
+if (!serverBuild.success) throw new AggregateError(serverBuild.logs, "Could not bundle the server fixture");
+const serverDir = mkdtempSync(resolve(tmpdir(), "k2b-ui-help-blocks-"));
+process.once("exit", () => rmSync(serverDir, { recursive: true, force: true }));
+const serverModule = resolve(serverDir, "server.mjs");
+writeFileSync(serverModule, await serverBuild.outputs[0]!.text());
+const {
+  serverCaps,
+  hydrationScript,
+  chip,
+  iconChip,
+  steps,
+}: {
+  serverCaps: { other: string; apple: string };
+  hydrationScript: string;
+  chip: string;
+  iconChip: string;
+  steps: string;
+} = await import(serverModule);
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 const icons = readFileSync(resolve(import.meta.dir, "../../dist/tabler.css"), "utf8").replace(
   /url\(\.\/([^)?]+)(?:\?[^)]*)?\)/g,
@@ -68,10 +106,6 @@ if (!build.success) throw new AggregateError(build.logs, "Could not bundle Kbd h
 const script = await build.outputs[0]!.text();
 let browser: Browser;
 let page: Page;
-const serverCaps = {
-  other: renderToString(() => createComponent(Kbd, { keys: "mod+k" })),
-  apple: renderToString(() => createComponent(Kbd, { keys: "mod+k", platform: "apple" })),
-};
 beforeAll(async () => {
   browser = await launchBrowser();
   page = await browser.newPage();
@@ -88,7 +122,7 @@ for (const mode of ["other", "apple"] as const)
     page.on("pageerror", onError);
     try {
       await page.setContent(
-        `<html lang="en"><body class="k2b-ui" data-mode="${mode}"><div id="app">${serverCaps[mode]}</div>${generateHydrationScript()}</body></html>`,
+        `<html lang="en"><body class="k2b-ui" data-mode="${mode}"><div id="app">${serverCaps[mode]}</div>${hydrationScript}</body></html>`,
       );
       await page.addScriptTag({ content: script });
       await page.waitForSelector('body[data-ready="true"]');
@@ -110,11 +144,8 @@ test("a client render detects Apple on its first render", async () => {
 test("inline chips and caps do not grow paragraphs", async () => {
   for (const fontSize of [16, 14])
     for (const lineHeight of [1.6, 1.5, 1.25]) {
-      const chip = renderToString(() => createComponent(LabelChip, { children: "Share" }));
-      const icon = renderToString(() => createComponent(LabelChip, { icon: "ti ti-share", children: "Share" }));
-      const cap = renderToString(() => createComponent(Kbd, { keys: "mod+k", platform: "apple" }));
       await page.setContent(
-        `<style>${css}${icons}</style><div class="k2b-ui" style="font-size:${fontSize}px;line-height:${lineHeight}"><p id="plain">Select Share now.</p>${[chip, icon, cap].map((html, index) => `<p id="p${index}">Select ${html} now.</p>`).join("")}</div>`,
+        `<style>${css}${icons}</style><div class="k2b-ui" style="font-size:${fontSize}px;line-height:${lineHeight}"><p id="plain">Select Share now.</p>${[chip, iconChip, serverCaps.apple].map((html, index) => `<p id="p${index}">Select ${html} now.</p>`).join("")}</div>`,
       );
       // The icon is measured with its real glyph, so the icon font's metrics count.
       const glyph = await page.evaluate(async () => {
@@ -142,7 +173,7 @@ test("inline chips and caps do not grow paragraphs", async () => {
 });
 
 test("Steps numbers use the host accent or action token on a transparent list", async () => {
-  const html = renderToString(() => createComponent(Steps, { start: 3, children: "Instructions" }));
+  const html = steps;
   // The render test owns li markup; these real li elements expose their pseudo-element styles.
   await page.setContent(
     `<style>${css}</style><div class="k2b-ui" style="--k2b-action:rgb(0, 0, 255);--k2b-text:rgb(0, 0, 0)"><div id="fallback">${html.replace("Instructions", "<li>Copy the link.</li>")}</div><div id="accent" style="--app-accent:rgb(255, 0, 0)">${html.replace("Instructions", "<li>Copy the link.</li>")}</div></div>`,

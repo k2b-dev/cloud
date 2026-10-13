@@ -1,5 +1,5 @@
-import { renderMarkdownInfoBlock } from "@k2b/ui";
 import { describe, expect, test } from "bun:test";
+import { renderMarkdownInfoBlock } from "@k2b/ui";
 import type { GotenbergConfig } from "./gotenberg";
 import {
   buildMarkdownPdfHtml,

@@ -41,10 +41,10 @@ import {
   SettingsSection,
   StatusBadge,
   Switch,
+  TableOfContents,
   Tag,
   TextInput,
   Toolbar,
-  TableOfContents,
 } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";

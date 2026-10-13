@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { renderSafeMarkdown } from "@k2b/ui";
 import type { Browser, Locator, Page } from "playwright";
 import { launchBrowser } from "../../test/browser";
-import { renderSafeMarkdown } from "@k2b/ui";
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 const types = ["note", "info", "success", "warning", "danger"] as const;

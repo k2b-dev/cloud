@@ -1,10 +1,10 @@
 import { createSignal, For, Show } from "solid-js";
 import { dialogCore } from "../feedback/dialog-core";
 import { DialogHeader } from "../feedback/prompts";
-import { Kbd } from "./Kbd";
 import type { CalendarCommand } from "./Calendar";
 import { addDayKeys } from "./calendar-days";
 import type { CalendarMessages } from "./calendar-messages";
+import { Kbd } from "./Kbd";
 
 /**
  * The calendar's shortcuts: the same list the host registers for its dispatcher and its help. `alternatives` names
