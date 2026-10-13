@@ -10,12 +10,14 @@ import {
   resolveWidgetSizes,
   WIDGET_DESCRIPTION_MAX_LENGTH,
   WIDGET_TITLE_MAX_LENGTH,
+  type WidgetSettingsDeclaration,
 } from "../contracts/widgets";
 import { resolveAppPresentations } from "../shared/app-presentation";
 import { compileCapabilityPresentation, parseCapabilityManifest } from "./capabilities";
 import { lazySync } from "./process-sync";
 import { validateAppRegistryEntry } from "./registry-validation";
 import { watchRegistryChanges } from "./registry-watch";
+import { WidgetSettingsDeclarationSchema } from "./widget-settings";
 
 /**
  * Shared app registry: two @k2b/sync ephemerals on the process Sync
@@ -356,6 +358,8 @@ export type DashboardWidget = {
   description: string;
   sizes: DashboardWidgetSize[];
   defaultSize: DashboardWidgetSize;
+  /** Validated setting presentation in the requested locale, absent when none is valid. */
+  settings?: WidgetSettingsDeclaration;
   suggest: boolean;
   /** Visibility only, like `nav.requiresRoles`; empty means everyone. */
   requiresRoles: Role[];
@@ -381,9 +385,13 @@ const declaredText = (value: unknown, max: number): string | undefined =>
 /** The widgets `apps` declare, resolved as `listWidgets()` returns them. */
 export const dashboardWidgetsOf = (apps: readonly AppRegistryEntry[], locale?: string): DashboardWidget[] => {
   const out: DashboardWidget[] = [];
-  for (const app of locale ? resolveAppPresentations(apps, locale) : apps) {
+  for (const [index, app] of (locale ? resolveAppPresentations(apps, locale) : apps).entries()) {
     for (const w of app.widgets ?? []) {
       const { sizes, defaultSize } = resolveWidgetSizes(w);
+      const translated = WidgetSettingsDeclarationSchema.safeParse(w.settings);
+      const original = translated.success
+        ? translated
+        : WidgetSettingsDeclarationSchema.safeParse(apps[index]?.widgets?.find((widget) => widget.id === w.id)?.settings);
       out.push({
         appId: app.id,
         appName: app.name,
@@ -394,6 +402,7 @@ export const dashboardWidgetsOf = (apps: readonly AppRegistryEntry[], locale?: s
         description: declaredText(w.description, WIDGET_DESCRIPTION_MAX_LENGTH) ?? app.description,
         sizes,
         defaultSize,
+        ...(original.success ? { settings: original.data } : {}),
         suggest: w.suggest === true,
         requiresRoles: Array.isArray(w.requiresRoles) ? w.requiresRoles.filter((role) => RoleSchema.safeParse(role).success) : [],
         presentation: legacyPresentation(w.presentation),

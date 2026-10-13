@@ -5,21 +5,34 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-11
+updated: 2026-10-13
 ---
 
 # Deprecations and migrations
 
-## Spaces day and week views load days in weeks
+## @k2b/ui Calendar month reads range
 
-The Spaces day and week views scroll through their days and load them a week
-at a time, so the internal `GET /api/spaces/workspace/view` endpoint reads
-`from`, `to`, and `includeTray` again, now for `cv=day` and `cv=week` only,
-for at most 366 days. Every calendar snapshot carries `range`, the days it
-loaded from midnight to midnight; a day or week view snapshot holds what lies
-there until 06:00 after the last day, because the night belongs to the day
-before. Other views ignore `from` and `to`, so an old timeline link still
-opens the month of its day. No setting, data, or migration is involved. See [Spaces](/en/apps/spaces).
+The `Calendar` month view now reads `range`. With `range`, the month scrolls
+through the weeks of that range, names the month in the middle, and calls
+`onLoadEarlier` and `onLoadLater` near its ends. Before, only the day and week
+views with `dayHours` read `range`, and the month always paged. A host that
+passes `range` in every view gets the scrolling month after the upgrade. To
+keep the paged month, pass `range` only in the day and week views, for example
+`range={view === "day" || view === "week" ? range : undefined}`. See
+[Calendar](/en/ui/surfaces/calendar).
+
+## Spaces scrolling calendars load days in blocks
+
+The Spaces day and week views load days a week at a time. Month now scrolls
+through continuous week rows and loads eight weeks at a time. The internal
+`GET /api/spaces/workspace/view` endpoint accepts `from`, `to`, and
+`includeTray` for `cv=day`, `cv=week`, and `cv=month`, for at most 366 days.
+Every calendar snapshot carries `range`, the days it loaded from midnight
+to midnight. Queries for these views include entries until 06:00 after the
+last day, so timed views can keep the night with the day before. The year
+view ignores `from` and `to`; an old timeline link opens the scrolling month
+of its day. No setting, data migration, or operator action is required.
+See [Spaces](/en/apps/spaces).
 
 ## Mail drafts keep the signature outside the body
 

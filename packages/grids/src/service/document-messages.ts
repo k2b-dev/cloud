@@ -175,11 +175,11 @@ export const documentServiceMessages = i18n.define({
       zipColumnNotRelation: ({ column }: { column: string }) => `Column "${column}" is not a relation column.`,
       zipRelationMissing: ({ column, row }: { column: string; row: number }) =>
         `Row ${row} has no "${column}" record. Set required: false to skip rows without one.`,
-      zipRecordUnavailable: ({ record }: { record: string }) => `Record ${record} is no longer available in this Base.`,
+      zipRecordUnavailable: ({ record }: { record: string }) => `Record ${record} is no longer available in this base.`,
       zipRecordFilesMissing: ({ record }: { record: string }) =>
         `Record ${record} has no matching document file. Set required: false to skip records without one.`,
-      zipTemplateUnknown: ({ template }: { template: string }) => `Document template ${template} is not available in this Base.`,
-      zipIncludeUnavailable: ({ document }: { document: string }) => `Included document ${document} is no longer available in this Base.`,
+      zipTemplateUnknown: ({ template }: { template: string }) => `Document template ${template} is not available in this base.`,
+      zipIncludeUnavailable: ({ document }: { document: string }) => `Included document ${document} is no longer available in this base.`,
       zipTooManyFiles: ({ limit }: { limit: number }) =>
         `The ZIP selection exceeds the ${limit} file limit. Narrow the selection; no partial archive was created.`,
       zipTooLarge: ({ limit }: { limit: number }) =>

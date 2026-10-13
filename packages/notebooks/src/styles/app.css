@@ -1259,3 +1259,36 @@
   outline: 2px solid currentColor;
   outline-offset: 3px;
 }
+
+/* On touch screens the last button's enlarged hit area reaches past the screen edge, which would let the page scroll
+   sideways on a phone. The edge cuts it off; menus and tooltips are popovers and stay visible. */
+.k2b-ui .notebooks-editor-toolbar {
+  overflow-x: clip;
+}
+/* Touch screens have no undo keys, so Undo and Redo lead the toolbar there and stay out of it elsewhere. */
+.k2b-ui .notebooks-editor-toolbar .notebooks-editor-toolbar__history,
+.k2b-ui .notebooks-editor-toolbar .notebooks-editor-toolbar__history-separator {
+  display: none;
+}
+@media (pointer: coarse) {
+  .k2b-ui .notebooks-editor-toolbar .notebooks-editor-toolbar__history {
+    display: inline-flex;
+  }
+  .k2b-ui .notebooks-editor-toolbar .notebooks-editor-toolbar__history-separator {
+    display: block;
+  }
+}
+/* The text style menu shows the current style. All labels share one grid cell and only the current one is visible,
+   so the widest label sets the width and moving the caret never moves a button. */
+.k2b-ui .notebooks-editor-toolbar__style {
+  display: inline-grid;
+  justify-items: start;
+  font-variant-numeric: tabular-nums;
+}
+.k2b-ui .notebooks-editor-toolbar__style > span {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+.k2b-ui .notebooks-editor-toolbar__style > span[data-current] {
+  visibility: visible;
+}

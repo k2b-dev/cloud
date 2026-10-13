@@ -106,6 +106,8 @@ Rules:
 ## Island Prop Boundary
 
 Island and client component props cross a server-to-browser serialization boundary.
+Props travel as JSON data and are never evaluated, so island props do not need
+`'unsafe-eval'` in a Content Security Policy.
 
 Do not pass functions, callbacks, event handlers, Solid signals/stores, DOM nodes, or class instances as props to `*.island.tsx` or `*.client.tsx` components. Props are serialized with `seroval`, so these values will fail at render time.
 

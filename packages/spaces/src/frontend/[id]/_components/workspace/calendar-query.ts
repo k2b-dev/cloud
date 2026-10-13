@@ -49,7 +49,7 @@ export const useSpacesCalendarQuery = (params: {
   initialSnapshot: CalendarSnapshot;
   dateConfig?: Parameters<typeof parseCalendarRoute>[1];
   /**
-   * The days a day or week view already shows for a source, so a refresh or another filter covers all of them. Called
+   * The days a day, week, or month view already shows for a source, so a refresh or another filter covers all of them. Called
    * once as each snapshot starts to load.
    */
   rangeFor?: (source: string) => CalendarRange | undefined;
@@ -67,7 +67,7 @@ export const useSpacesCalendarQuery = (params: {
   let committedSource = initialSource;
   let committedHref = params.initialSource;
   /**
-   * Sources the committed snapshot also answers: the day and week views name the day the reader scrolled to in the
+   * Sources the committed snapshot also answers: the day, week, and month views name the focus day the reader scrolled to in the
    * URL, and the days they loaded hold it. Opening an item or going back there needs no other calendar data.
    */
   let followed = new Set<string>();
@@ -244,7 +244,7 @@ export const useSpacesCalendarQuery = (params: {
     navigateHref: (href: string) => start(href, "push"),
     open: (href: string, options: { replace?: boolean } = {}) => start(href, options.replace ? "replace" : "push"),
     /**
-     * The day or week view scrolled to another day of the days it loaded: the URL names that day from now on, so a
+     * The day, week, or month view scrolled to another day of the days it loaded: the URL names that day from now on, so a
      * reload or a shared link opens there, and the open item's detail keeps it. A navigation that loads meanwhile
      * names its own day.
      */

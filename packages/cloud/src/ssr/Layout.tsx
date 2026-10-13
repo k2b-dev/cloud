@@ -11,9 +11,8 @@ import { getDateConfig } from "../server/time";
 import { dates } from "../shared";
 import { readThemePreferenceFromCookieHeader } from "../shared/theme";
 import AnnouncementBanners from "./AnnouncementBanners";
-import { appAppearanceStyle } from "./app-appearance";
+import { appAppearanceStyle, resolveCurrentApp } from "./app-appearance";
 import { resolveRuntimeRoute, visibleNavigationApps } from "./app-navigation";
-import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import { getLayoutHelp } from "./help";
 import LayoutFooter from "./LayoutFooter";
 import LayoutHeader from "./LayoutHeader";
@@ -151,7 +150,7 @@ export default function Layout(props: LayoutProps) {
   const user = c.get("user");
   const pathname = new URL(c.req.raw.url).pathname;
   const currentRoute = resolveRuntimeRoute(runtime.apps, pathname);
-  const currentApp = currentRoute?.app;
+  const currentApp = resolveCurrentApp(runtime.apps, pathname);
   const registeredHelp = getLayoutHelp(c);
   const runtimeHelp = registeredHelp ? { documents: registeredHelp.documents, pageBase: registeredHelp.pageBase } : undefined;
   const workspaceLayout = resolveAppWorkspaceLayoutForSidebar(
@@ -164,17 +163,6 @@ export default function Layout(props: LayoutProps) {
   const searchLinks = Object.fromEntries(
     runtime.apps.flatMap((app) => (visibleAppIds.has(app.id) && app.searchLinks?.length ? [[app.id, app.searchLinks] as const] : [])),
   );
-  const searchHelpApps: GlobalSearchHelpApp[] = runtime.apps
-    .filter((app) => (app.searchTags?.length ?? 0) > 0)
-    .map((app) => ({
-      appId: app.id,
-      appName: app.name,
-      appIcon: app.icon,
-      help: app.searchHelp,
-      tags: [...new Set((app.searchTags ?? []).map((tag) => tag.toLowerCase()))],
-      tagHelp: [...(app.searchTagHelp ?? [])],
-    }))
-    .sort((a, b) => a.appName.localeCompare(b.appName));
   const settings = c.get("settings");
   const announcements = c.get("announcements");
   const appName = settings?.app?.name || "Cloud";
@@ -223,7 +211,7 @@ export default function Layout(props: LayoutProps) {
     theme,
     accent: currentApp?.appearance?.accent,
     searchLinks,
-    searchHelpApps,
+    appId: currentApp?.id,
   };
   if (focusMode) {
     return (

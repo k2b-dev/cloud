@@ -63,7 +63,7 @@ else {
       pending.resolve();
       await Promise.all([first, second]);
       expect(open).toHaveBeenCalledTimes(1);
-      expect(open).toHaveBeenCalledWith([], undefined);
+      expect(open).toHaveBeenCalledWith();
     } finally {
       pending.resolve();
       await Promise.all([first, second]);

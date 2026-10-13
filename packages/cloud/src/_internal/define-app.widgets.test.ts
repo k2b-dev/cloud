@@ -87,7 +87,7 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
     spyOn(settingsService, "loadCache").mockResolvedValue(),
     spyOn(settingsSnapshot, "loadSnapshot").mockResolvedValue({ app: { locale: "en" } }),
     spyOn(invocationToken, "verifyInvocationToken").mockImplementation(async (_token, expected) => {
-      expect(expected).toEqual({ targetAppId: "widget-context", operation: "widget.read:context", schemaHash: null });
+      expect(expected).toEqual({ targetAppId: "widget-context", operation: activeClaims.op, schemaHash: null });
       return activeClaims;
     }),
     spyOn(invocationActor, "resolveInvocationAuthority").mockImplementation(async () => ({
@@ -115,6 +115,7 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
         userId: c.get("user").id,
         locale: getLocale(c),
         size: getWidgetRequest(c).size,
+        widgetSettings: getWidgetRequest(c).settings,
       });
     };
     const publicRoutes = new Hono<AuthContext>()
@@ -127,9 +128,22 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
       description: "Context regression test",
       baseUrl: "http://widget-context:3000",
       routes: ["/api/widget-context"],
-      widgets: [{ id: "context", path: "/api/widget-context/widget", sizes: ["small", "medium"], defaultSize: "small" }],
+      widgets: [
+        {
+          id: "context",
+          path: "/api/widget-context/widget",
+          sizes: ["small", "medium"],
+          defaultSize: "small",
+          settings: {
+            choice: { kind: "choice", label: "Choice", options: [{ label: "One", value: "one" }], default: "one" },
+            text: { kind: "text", label: "Text", maxLength: 5 },
+            space: { kind: "resource", label: "Space", type: "spaces.space" },
+          },
+        },
+        { id: "none", path: "/api/widget-context/none" },
+      ],
     });
-    const server = await app.start({ fetch: publicRoutes.fetch, widgets: { context: handler } });
+    const server = await app.start({ fetch: publicRoutes.fetch, widgets: { context: handler, none: handler } });
     const headers = { authorization: `Bearer ${invocationCandidate}`, "x-cloud-locale": "de-CH" };
     const internal = await server.fetch(new Request("http://widget-context/api/_internal/widgets/v1/context", { headers }));
     expect(getProcessApplicationId()).toBe("widget-context");
@@ -139,8 +153,8 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
     const body = await internal.json();
     const context = { runtimeApps: [], settings: { app: { locale: "en" } }, actorKind: "user", userId: user.id, locale: "de-CH" };
     // The internal route fits the requested size to the declaration; the public route knows no declaration.
-    expect(body).toEqual({ ...context, size: "small" });
-    expect(await direct.json()).toEqual({ ...context, size: "large" });
+    expect(body).toEqual({ ...context, size: "small", widgetSettings: { choice: "one" } });
+    expect(await direct.json()).toEqual({ ...context, size: "large", widgetSettings: {} });
     for (const [requested, size] of [
       ["medium", "medium"],
       ["large", "small"],
@@ -151,6 +165,22 @@ test("internal invocation widgets receive runtime, settings, actor and locale li
       );
       expect((await sized.json()).size).toBe(size);
     }
+    const values = encodeURIComponent(
+      JSON.stringify({ choice: "invalid", text: " ok ", space: { type: "spaces.space", id: "abc123" }, unknown: true }),
+    );
+    const validated = await server.fetch(
+      new Request(`http://widget-context/api/_internal/widgets/v1/context?settings=${values}`, { headers }),
+    );
+    expect((await validated.json()).widgetSettings).toEqual({ choice: "one", text: "ok", space: { type: "spaces.space", id: "abc123" } });
+    const invalid = encodeURIComponent(JSON.stringify({ choice: false, text: "123456", space: { type: "files.file", id: "abc123" } }));
+    const dropped = await server.fetch(
+      new Request(`http://widget-context/api/_internal/widgets/v1/context?settings=${invalid}`, { headers }),
+    );
+    expect((await dropped.json()).widgetSettings).toEqual({ choice: "one" });
+    activeClaims = { ...claims, op: "widget.read:none" };
+    const none = await server.fetch(new Request(`http://widget-context/api/_internal/widgets/v1/none?settings=${values}`, { headers }));
+    expect(none.status).toBe(200);
+    expect((await none.json()).widgetSettings).toEqual({});
     for (const scopes of [[], ["openid", "profile"], ["write"], ["read"], ["admin"]]) {
       activeClaims = { ...claims, credential_kind: "oauth", scopes };
       const previousCalls = handlerCalls;

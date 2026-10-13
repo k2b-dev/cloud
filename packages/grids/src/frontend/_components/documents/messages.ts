@@ -166,7 +166,7 @@ export const documentMessages = i18n.define({
       createLink: "Create link",
       couldNotCreateDocumentLink: "Could not create document link",
       allDocuments: "All documents",
-      allDocumentsDescription: "Every completed Document from this Base, across records, templates and workflows.",
+      allDocumentsDescription: "Every completed Document from this base, across records, templates and workflows.",
       filterWorkflow: "Workflow",
       filterTemplate: "Template",
       filterTable: "Record table",

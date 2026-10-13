@@ -217,6 +217,13 @@ describe("Mail sidebar", () => {
     const newsletter = desktop.slice(desktop.indexOf('title="Newsletter'), desktop.indexOf('title="Shared'));
     expect(newsletter).toContain('<span class="sr-only">Only in the folder</span>');
     expect(newsletter).toContain("12");
+    // Unread counts use the shared status, present from the first paint also at zero,
+    // so a long folder name keeps one line and the first new mail never moves the rows below.
+    expect(newsletter).toContain('data-unread="count"');
+    expect(newsletter).toContain(", 12 unread");
+    const shared = desktop.slice(desktop.indexOf('title="Shared'), desktop.indexOf('title="Projects'));
+    expect(shared).toContain('class="k2b-app-workspace__sidebar-status"');
+    expect(shared).not.toContain("data-unread");
 
     // The phone navigation names it too, below the folder's name.
     type Entry = { id: string; description?: string; children?: Entry[] };

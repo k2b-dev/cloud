@@ -841,7 +841,7 @@ const changeDate = (next: Date) => {
   events={events()}
   // A day starts at 06:00 and its night folds; the day and week views scroll through the loaded month.
   dayHours={[6, 22]}
-  range={calendarDemoRange(date())}
+  range={view() === "day" || view() === "week" ? calendarDemoRange(date()) : undefined}
   selectedEventId={selectedEventId()}
   onDateChange={changeDate}
   onViewChange={setView}
@@ -881,7 +881,7 @@ const changeDate = (next: Date) => {
         dateConfig={{ timeZone: "UTC", locale: "en" }}
         events={events()}
         dayHours={[6, 22]}
-        range={calendarDemoRange(date())}
+        range={view() === "day" || view() === "week" ? calendarDemoRange(date()) : undefined}
         selectedEventId={selectedEventId()}
         onDateChange={changeDate}
         onViewChange={setView}

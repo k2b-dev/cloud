@@ -364,7 +364,7 @@ export default function MailMessageBody(props: {
           title={messages().messageContent}
           class="block w-full overflow-hidden rounded-[var(--ui-radius-surface)] border-0 bg-white"
           style={{ height: `${height()}px` }}
-          sandbox="allow-scripts allow-popups"
+          sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
           referrerpolicy="no-referrer"
           srcdoc={documentSource()}
           onLoad={handleFrameLoad}

@@ -6,12 +6,12 @@ import type { WorkspaceSnapshot } from "./workspace-state";
 type TrailBase = { id: string; label: string };
 
 /**
- * The title array Files gives the shell, so the page trail shows the folder
- * path: the app root (which the shell's rule drops), the folders above, and
- * the current folder. The storage itself is no level, because the sidebar
- * names it, so a top-level folder shows its title alone. A document's way up
- * is its folder, with the document's row selected, or the storage when it
- * lies at the top.
+ * The title array Files gives the shell: the app root (which the shell's rule
+ * drops) and the current page. A folder is one level at every depth: the
+ * parent row in its listing is the way up, and the sidebar tree shows where it
+ * lies, so the shell draws no back link, path, or back arrow for it. A
+ * document has no listing; its way up is its folder, with the document's row
+ * selected, or the storage when it lies at the top.
  */
 export const filesTitle = (
   appName: string,
@@ -30,8 +30,7 @@ export const filesTitle = (
     const above = folders.length ? folders : [{ title: base.label, href: filesUrl(base.id, "", null, document.path) }];
     return [root, ...above, { title: document.name }];
   }
-  const folders = crumbs.slice(0, -1).map((crumb) => ({ title: crumb.name, href: filesUrl(base.id, crumb.path) }));
-  return [root, ...folders, { title: crumbs.at(-1)?.name ?? base.label }];
+  return [root, { title: crumbs.at(-1)?.name ?? base.label }];
 };
 
 /** The title array for what the workspace shows: a folder, a document in the editor, or one of the app's own views. */

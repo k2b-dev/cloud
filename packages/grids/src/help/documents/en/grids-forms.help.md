@@ -56,7 +56,7 @@ In a custom form, you can:
 - redirect after a successful submission;
 - pause submissions without deleting the form, with the **Active** switch.
 
-A signed-in person with **Edit** access to the Base can submit a form. A narrower signed-in audience can submit only through a Grids App that explicitly includes the form. The public token stays the separate path for anonymous submissions.
+A signed-in person with **Edit** access to the base can submit a form. A narrower signed-in audience can submit only through a Grids App that explicitly includes the form. The public token stays the separate path for anonymous submissions.
 
 Turn on **Public** only when you want anonymous submissions. The unique URL of a public form accepts only the configured fields of the form and always applies its hidden values.
 
@@ -78,7 +78,7 @@ A Grids App can show an existing active form as one block. The form keeps its in
 
 Showing and submitting the form check the published capability and `availableWhen`. Inactive or undeclared forms stay unavailable.
 
-Choose **Edit this page's record** for a form on a matching record page. People can then revise an existing draft together with its configured related inputs. Creating stays the default. Public links and global sidebar forms always create. Editing existing related records requires exclusive links to that parent in the same Base. Removing a related row detaches it and does not delete it. Finalized records stay read-only.
+Choose **Edit this page's record** for a form on a matching record page. People can then revise an existing draft together with its configured related inputs. Creating stays the default. Public links and global sidebar forms always create. Editing existing related records requires exclusive links to that parent in the same base. Removing a related row detaches it and does not delete it. Finalized records stay read-only.
 
 Saving checks versions and commits the related edits together. After a connection failure, retry in the open dialog. After a version conflict, reload and review before you save. The [API reference](/app/grids/help/grids-custom-app-api) describes CLI and API versions, idempotency keys, payloads, and limits.
 
@@ -104,9 +104,9 @@ A rule is `{leftFieldId, operator, rightFieldId, message, errorFieldId?}`. The o
 
 For a relation input, `relationFilter` accepts the existing record filter tree, limited to fields of its target table. For example, combine `{fieldId:"PUBLIC",op:"=",value:true}` and `{fieldId:"STATUS",op:"is",value:"available"}` under `{op:"AND",filters:[...]}`. Replace these example IDs with the public IDs of the target fields.
 
-Configure selection filters through the API or a template. The form editor keeps them but has no filter editor. A filtered input requires a stored target table in the same Base and cannot enable `inlineCreate`. Its picker returns only eligible labels. On submission, Grids checks every selected record again under a lock. A selection that is deleted, excluded by the filter, or no longer available rejects the whole submission. A selection does not reserve an item. Use a workflow for a reservation or a handover.
+Configure selection filters through the API or a template. The form editor keeps them but has no filter editor. A filtered input requires a stored target table in the same base and cannot enable `inlineCreate`. Its picker returns only eligible labels. On submission, Grids checks every selected record again under a lock. A selection that is deleted, excluded by the filter, or no longer available rejects the whole submission. A selection does not reserve an item. Use a workflow for a reservation or a handover.
 
-The filter applies in a published Grids App, in the signed-in Base form, and in the form with an active public token. A public token therefore shows the presentable labels of the matching records.
+The filter applies in a published Grids App, in the signed-in base form, and in the form with an active public token. A public token therefore shows the presentable labels of the matching records.
 
 :::warning A public token shows matching labels
 Enable public access only when everyone with the link can see these labels.
@@ -114,7 +114,7 @@ Enable public access only when everyone with the link can see these labels.
 
 The existing access to the form is enough. Grids adds no access to the target table. When you change the filter or the configuration of a field that it references, you must publish an affected Grids App again. A preview without an authorized lookup disables filtered selection.
 
-Filtered pickers use `GET /api/grids/forms/:formId/relations/:fieldId/lookup` with **Edit** access to the Base, or `/api/grids/forms/public/:token/relations/:fieldId/lookup` with an active share token. The query options are `_search` (up to 200 characters), `_limit` (1–50, default 10), and `_exclude` (comma-separated public record IDs, at most 1,000). The response is `{items:[{id,label}]}`. Grids Apps use their existing published form endpoint.
+Filtered pickers use `GET /api/grids/forms/:formId/relations/:fieldId/lookup` with **Edit** access to the base, or `/api/grids/forms/public/:token/relations/:fieldId/lookup` with an active share token. The query options are `_search` (up to 200 characters), `_limit` (1–50, default 10), and `_exclude` (comma-separated public record IDs, at most 1,000). The response is `{items:[{id,label}]}`. Grids Apps use their existing published form endpoint.
 
 ### Create related records inline
 

@@ -2,14 +2,14 @@
 id: grids-core-model
 title: Understand the core model
 icon: ti ti-stack-2
-description: Learn how Bases, tables, records, fields, and resources fit together.
+description: Learn how bases, tables, records, fields, and resources fit together.
 order: 105
 ---
 Grids separates saved facts from the ways people enter, inspect, present, and act on them. This separation prevents duplicate data and makes access easier to follow.
 
-## Follow the model from a Base to a value {icon="point"}
+## Follow the model from a base to a value {icon="point"}
 
-A **Base** is the boundary around one area of work. It contains tables and the resources built on them. Use separate Bases when subjects have different owners, different access, or different operating rules.
+A **base** is the boundary around one area of work. It contains tables and the resources built on them. Use separate bases when subjects have different owners, different access, or different operating rules.
 
 A **table** stores one kind of thing. Customers and invoices belong in different tables because they have different fields and lifecycles. A table is not a page layout: several views and Grids Apps can show the same table.
 
@@ -33,7 +33,7 @@ The navigation around tables contains resources that use the saved data:
 - A **document template** defines a family of generated PDFs for the records of one table.
 - A **workflow** defines repeatable actions and how inputs move through them.
 
-Access to a Base opens the complete raw workspace. A published Grids App is a separate, finer boundary. It shows only its compiled data and actions and gives no access to the raw Base.
+Access to a base opens the complete raw workspace. A published Grids App is a separate, finer boundary. It shows only its compiled data and actions and gives no access to the raw base.
 
 ## Decide where something belongs {icon="route"}
 

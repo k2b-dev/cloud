@@ -18,6 +18,7 @@ import {
 import { type Command, EditorView, keymap } from "@codemirror/view";
 import type { Tree } from "@lezer/common";
 import { ySyncAnnotation } from "y-codemirror.next";
+import { asUndoStep } from "../yjs/history";
 import { inCode, LIST_ITEM, type ListItemLine, leadingWhitespace, listItemLine } from "./_lib/list-item-line";
 import { type ExcludedSpan, excludedSpans, listStructure, markerChanges, renumberChanges, siblingIndex } from "./_lib/list-structure";
 import { listStateField } from "./lists";
@@ -283,6 +284,22 @@ const textStart = (line: Line, item: ListItemLine) => {
   return line.from + start;
 };
 const itemKind = (line: Line, item: ListItemLine) => (taskBox(line, item) ? "task" : /^\d/.test(item.marker) ? "ordered" : "bullet");
+/** The kind shared by every selected line; its toggle only turns top-level items without children back into text. */
+export const listKindAt = (state: EditorState) => {
+  const lines = selectedLines(state);
+  const last = lines.at(-1);
+  if (!last) return null;
+  const tree = ensureSyntaxTree(state, last.to, 50);
+  if (!tree) return null;
+  const excluded = excludedLines(state);
+  const kinds = lines.map((line) => {
+    const item = listItemLine(tree, line, excluded);
+    return item ? itemKind(line, item) : null;
+  });
+  const kind = kinds[0];
+  return kind && kinds.every((value) => value === kind) ? kind : null;
+};
+
 const emptyPrefix = (line: Line, item: ListItemLine) =>
   `${line.text.slice(0, item.indent)}${item.marker} ${taskBox(line, item) ? "[ ] " : ""}`;
 
@@ -381,10 +398,16 @@ const separateLines = (state: EditorState, changes: ChangeSet, paragraphs: reado
   );
 };
 
-const liftAtCaret = (view: EditorView, line: Line, item: ListItemLine, event: string) => {
+const liftAtCaret = (view: EditorView, line: Line, item: ListItemLine, event: string, annotation?: Annotation<unknown>) => {
   const changes = shiftChanges(view.state, -1)!;
   if (!changes.empty) {
-    view.dispatch({ changes, selection: { anchor: changes.mapPos(textStart(line, item), 1) }, scrollIntoView: true, userEvent: event });
+    view.dispatch({
+      changes,
+      selection: { anchor: changes.mapPos(textStart(line, item), 1) },
+      scrollIntoView: true,
+      userEvent: event,
+      annotations: annotation,
+    });
   }
   return true;
 };
@@ -396,6 +419,7 @@ const paragraphAtCaret = (
   event: string,
   tree: Tree,
   excluded: () => readonly ExcludedSpan[],
+  annotation?: Annotation<unknown>,
 ) => {
   const { state } = view;
   const from = textStart(line, item);
@@ -418,7 +442,7 @@ const paragraphAtCaret = (
     selection: { anchor: changes.mapPos(from, 1) },
     scrollIntoView: true,
     userEvent: event,
-    annotations: orderedSuffixRestart.of(following.length > 0),
+    annotations: [orderedSuffixRestart.of(following.length > 0), ...(annotation ? [annotation] : [])],
   });
   return true;
 };
@@ -438,14 +462,20 @@ const enterListItem: Command = (view) => {
   const start = textStart(line, item);
   const child = firstChild(state, line, item, tree, excluded);
   if (!line.text.slice(start - line.from).trim()) {
-    if (item.indent) return liftAtCaret(view, line, item, "input");
-    return child ? true : paragraphAtCaret(view, line, item, "input", tree, excluded);
+    if (item.indent) return liftAtCaret(view, line, item, "input", isolateHistory.of("full"));
+    return child ? true : paragraphAtCaret(view, line, item, "input", tree, excluded, isolateHistory.of("full"));
   }
   if (head <= start) {
     const prefix = emptyPrefix(line, item);
     const inserted = state.changes({ from: line.from, insert: prefix + "\n" });
     const separated = separateLines(state, inserted, [], [line.from]);
-    view.dispatch({ changes: separated, selection: { anchor: separated.mapPos(start, 1) }, scrollIntoView: true, userEvent: "input" });
+    view.dispatch({
+      changes: separated,
+      selection: { anchor: separated.mapPos(start, 1) },
+      scrollIntoView: true,
+      userEvent: "input",
+      annotations: isolateHistory.of("full"),
+    });
     return true;
   }
   if (!child) return false;
@@ -457,6 +487,7 @@ const enterListItem: Command = (view) => {
     selection: { anchor: from + 1 + prefix.length },
     scrollIntoView: true,
     userEvent: "input",
+    annotations: isolateHistory.of("full"),
   });
   return true;
 };
@@ -1008,6 +1039,16 @@ const renumber = EditorState.transactionFilter.of((tr: Transaction) => {
   return repair.empty ? tr : [tr, { changes: repair, sequential: true }];
 });
 
+const isolatedCommand =
+  (command: Command): Command =>
+  (view) => {
+    let handled = false;
+    void asUndoStep(view, () => {
+      handled = command(view);
+    });
+    return handled;
+  };
+
 export const listCommandsExtension = (): Extension => [
   Prec.highest(
     EditorView.domEventHandlers({
@@ -1020,7 +1061,7 @@ export const listCommandsExtension = (): Extension => [
         )
           return false;
         const kind = event.code === "Digit7" ? "ordered" : event.code === "Digit8" ? "bullet" : event.code === "Digit9" ? "task" : null;
-        if (!kind || !setListKind(kind)(view)) return false;
+        if (!kind || !isolatedCommand(setListKind(kind))(view)) return false;
         event.preventDefault();
         return true;
       },
@@ -1036,8 +1077,8 @@ export const listCommandsExtension = (): Extension => [
   typedTask,
   Prec.high(
     keymap.of([
-      { key: "Mod-]", run: indentListItems },
-      { key: "Mod-[", run: outdentListItems },
+      { key: "Mod-]", run: isolatedCommand(indentListItems) },
+      { key: "Mod-[", run: isolatedCommand(outdentListItems) },
       { key: "Alt-ArrowUp", run: moveListItem(-1) },
       { key: "Alt-ArrowDown", run: moveListItem(1) },
       { win: "Ctrl-Shift-ArrowUp", linux: "Ctrl-Shift-ArrowUp", run: moveListItem(-1) },

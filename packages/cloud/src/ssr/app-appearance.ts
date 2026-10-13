@@ -1,5 +1,6 @@
 import type { AppAppearance } from "../contracts/app";
 import { resolveRuntimeRoute } from "./app-navigation";
+import { helpPageAppId } from "./layout-help-url";
 import type { RuntimeContext } from "./runtime";
 
 const isHexColor = (value: string | undefined): value is `#${string}` => /^#[0-9a-f]{6}$/i.test(value ?? "");
@@ -20,4 +21,8 @@ export const appAppearanceStyle = (appearance: AppAppearance | undefined): strin
 export const appAccentStyle = (accent: string | undefined): string | undefined =>
   isHexColor(accent) ? `--app-accent:${accent}` : undefined;
 
-export const resolveCurrentApp = (apps: RuntimeContext["apps"], pathname: string) => resolveRuntimeRoute(apps, pathname)?.app;
+/** Core's full-page Help of an app belongs to that app. */
+export const resolveCurrentApp = (apps: RuntimeContext["apps"], pathname: string) => {
+  const helpAppId = helpPageAppId(pathname);
+  return apps.find((app) => app.id === helpAppId) ?? resolveRuntimeRoute(apps, pathname)?.app;
+};

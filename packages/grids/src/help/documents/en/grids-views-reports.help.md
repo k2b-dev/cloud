@@ -51,7 +51,7 @@ A grouped query or an aggregate-only query returns summary rows, not editable re
 6. Share it only with the people who are allowed to see its result.
 :::
 
-People with **View** access to the Base can see a shared view. A personal view belongs to its owner. To publish a saved result without opening the Base, add it to the capability snapshot of a Grids App.
+People with **View** access to the base can see a shared view. A personal view belongs to its owner. To publish a saved result without opening the base, add it to the capability snapshot of a Grids App.
 
 ## Build reports and page through results {icon="point"}
 
@@ -63,7 +63,7 @@ You can page through the complete matching result of a view without an explicit 
 
 ## Decide whether to save a view {icon="route"}
 
-Save a view when people with access to the Base return to it, or when several Grids Apps reuse it. If only one Grids App block uses a query, store the GQL directly in that block. This keeps one-use views out of the navigation.
+Save a view when people with access to the base return to it, or when several Grids Apps reuse it. If only one Grids App block uses a query, store the GQL directly in that block. This keeps one-use views out of the navigation.
 
 :::note Use GQL for advanced queries
 Use GQL for joins, precise grouping, `having`, deleted records, scoped search, or any query that is clearer as text than in several controls.

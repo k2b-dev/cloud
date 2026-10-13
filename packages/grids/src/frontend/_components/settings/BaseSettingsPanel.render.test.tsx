@@ -53,7 +53,7 @@ describe("Grids Base settings composition", () => {
     ])
       expect(html).toContain(tab);
     expect(html).toContain("Identity shown across Grids.");
-    expect(html).toContain("Describe this Base wherever it appears in Grids.");
+    expect(html).toContain("Describe this base wherever it appears in Grids.");
     expect(html.match(/<footer class="k2b-settings__footer">/g)).toHaveLength(1);
     expect(html).toContain('aria-describedby="k2b-settings-field-');
   });
@@ -90,7 +90,7 @@ describe("Grids Base settings composition", () => {
     expect(source).toContain("messages().holdsGuidance");
     expect(messages).toContain('preservationHolds: "Preservation holds"');
     expect(messages).toContain('activeHoldsDescription: "Every active hold must be released separately."');
-    expect(messages).toContain("A Table hold also prevents deleting its parent Base");
+    expect(messages).toContain("A Table hold also prevents deleting its parent base");
     expect(source).toContain('class="mt-5"');
     expect(source).toContain('class="ti ti-lock"');
     expect(source).toContain('"ti ti-database" : "ti ti-table"');
@@ -127,9 +127,9 @@ describe("Grids Base settings composition", () => {
         setDismissHandler: () => undefined,
       }),
     );
-    expect(html).toContain("Entire Base");
+    expect(html).toContain("Entire base");
     expect(html).toContain("One Table");
-    expect(html).toContain("parent Base cannot be destroyed");
+    expect(html).toContain("parent base cannot be destroyed");
     expect(html).toMatch(/type="submit"[^>]*disabled/);
   });
 

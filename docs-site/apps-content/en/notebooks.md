@@ -97,6 +97,23 @@ survives reloads. Full width works only on large screens, where these controls
 show. When the navigation and the detail panel leave less room than the
 reading column, the lines get longer only after you close the panel.
 
+The editor toolbar shows the current text style in its style menu and marks active
+bold, italic, strikethrough, highlight, and list formats as pressed. Bullet,
+numbered, and checklist buttons are directly available, beside Outdent and
+Indent. Link, note link, and attachment controls sit beside **More**, which
+inserts callouts, tables, code blocks, and inline code. Touch devices show
+**Undo** and **Redo** at the start of the toolbar.
+
+**Ctrl/⌘+Shift+1/2/3** toggles H1/H2/H3, matching the shared Markdown editor;
+pressing the same heading shortcut again restores normal text. These shortcuts
+match physical digit keys on every keyboard layout; macOS keeps ⌘+Shift+3 for
+screenshots, so Mac users pick H3 in the style menu. **Ctrl/⌘+Shift+H** now
+toggles highlight (`==text==`); it previously cycled heading levels.
+
+Every toolbar action and formatting shortcut is a separate undo step, as is
+every Enter. Typing before and after these actions stays in separate steps;
+undoing your edit preserves other people's concurrent text.
+
 In the editor, Tab indents: it nests list items together with their sub-items,
 moves between table cells, accepts an open suggestion, and otherwise inserts two
 spaces. Press Esc, then Tab to move focus out of the editor. Each person can

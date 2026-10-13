@@ -3112,7 +3112,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                             <Show when={selectedSourceBlock()?.type === "records" && selectedSourceBlock()?.source.kind === "view"}>
                               <Select
                                 label={text("Saved view")}
-                                description={text("Only views you can use in this Base are listed.")}
+                                description={text("Only views you can use in this base are listed.")}
                                 placeholder={text("Choose a saved view")}
                                 searchable
                                 value={() => {
@@ -3404,7 +3404,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
                       >
                         <Select
                           label={text("Form")}
-                          description={text("Only active forms you can use in this Base are listed.")}
+                          description={text("Only active forms you can use in this base are listed.")}
                           placeholder={text("Choose an active form")}
                           searchable
                           value={() => {

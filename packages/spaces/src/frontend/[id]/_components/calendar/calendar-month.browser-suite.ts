@@ -152,7 +152,13 @@ const serverBody = (locale: "en" | "de", href: string, items: CalendarItem[]) =>
         baseUrl: href,
         columns,
         tags,
-        initialState: { ...route, range: calendarWindow("day", new Date(route.date), dateConfig), items, weather: {}, tray: null },
+        initialState: {
+          ...route,
+          range: calendarWindow(route.view === "year" ? "month" : route.view, new Date(route.date), dateConfig),
+          items,
+          weather: {},
+          tray: null,
+        },
         selectedItemId: "",
         dateConfig,
         canWrite: true,
@@ -170,6 +176,8 @@ let browser: Browser;
 type Case = { locale: "en" | "de"; items: CalendarItem[] };
 const cases = new Map<string, Case>();
 const viewRequests: string[] = [];
+const blockRequests: URL[] = [];
+let blockGate: (() => Promise<void>) | null = null;
 const created: Record<string, unknown>[] = [];
 
 beforeAll(async () => {
@@ -192,9 +200,17 @@ beforeAll(async () => {
       if (url.pathname === "/api/spaces/workspace/view") {
         const href = url.searchParams.get("href") ?? "";
         viewRequests.push(href);
+        if (url.searchParams.has("from")) {
+          blockRequests.push(url);
+          await blockGate?.();
+        }
         const route = parseCalendarRoute(new URL(href, "http://spaces.local"), dateConfigFor(data.locale));
-        const range = calendarWindow(route.view === "week" ? "week" : "day", new Date(route.date), dateConfigFor(data.locale));
-        return Response.json({ kind: "calendar", ...route, range, items: data.items, weather: {}, tray: null });
+        const range = calendarWindow(route.view === "year" ? "month" : route.view, new Date(route.date), dateConfigFor(data.locale));
+        const requested =
+          url.searchParams.get("from") && url.searchParams.get("to")
+            ? { from: url.searchParams.get("from")!, to: url.searchParams.get("to")! }
+            : range;
+        return Response.json({ kind: "calendar", ...route, range: requested, items: data.items, weather: {}, tray: null });
       }
       if (url.pathname === "/api/spaces/Space1/items" && request.method === "POST") {
         const body = (await request.json()) as Record<string, unknown>;
@@ -255,6 +271,10 @@ const open = async (
     undefined,
     { timeout: 15_000 },
   );
+  await page.waitForFunction(() => {
+    const grid = document.querySelector(".k2b-calendar-month[data-continuous]");
+    return !grid || grid.scrollTop > 0;
+  });
   return page;
 };
 const settle = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => setTimeout(done, 50))));
@@ -348,6 +368,29 @@ const waitFor = async (check: () => boolean, what: string) => {
   throw new Error(`Timed out waiting for ${what}`);
 };
 
+/** The week containing a month's first is flush below the sticky weekday header. */
+const alignedFirst = (page: Page, first: string) =>
+  page.waitForFunction((key) => {
+    const grid = document.querySelector(".k2b-calendar-month[data-continuous]");
+    const cell = grid?.querySelector<HTMLElement>(`[data-calendar-day-key="${key}"]`);
+    const row = cell?.closest<HTMLElement>("[data-week-key]");
+    return (
+      grid &&
+      row &&
+      Math.abs(grid.scrollTop - Number(row.style.getPropertyValue("--k2b-calendar-week-index")) * row.getBoundingClientRect().height) <= 1
+    );
+  }, first);
+const scrollWeek = async (page: Page, week: string) => {
+  await page.locator(".k2b-calendar-month[data-continuous]").evaluate((grid, target) => {
+    const reference = grid.querySelector<HTMLElement>("[data-week-key]")!;
+    const number = (key: string) => Date.parse(`${key}T00:00:00Z`) / 86400000;
+    const index =
+      Number(reference.style.getPropertyValue("--k2b-calendar-week-index")) + (number(target) - number(reference.dataset.weekKey!)) / 7;
+    grid.scrollTop = index * reference.getBoundingClientRect().height;
+  }, week);
+  await settle(page);
+};
+
 const focusedDay = (page: Page) =>
   page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.calendarDayKey ?? document.activeElement?.tagName ?? null);
 const popoverState = (page: Page) =>
@@ -378,7 +421,95 @@ const hints = (page: Page, itemId: string) =>
     );
 
 describe(`Spaces month view in ${browserName}`, () => {
-  test("desktop: the filters and the count sit right after the title in the one toolbar row, and paging moves nothing", async () => {
+  test("scrolling loads eight-week blocks over HTTP and retains the shown entries during the pending request", async () => {
+    const page = await open(desktop);
+    let release: () => void = () => {};
+    try {
+      blockRequests.length = 0;
+      const gate = new Promise<void>((done) => {
+        release = done;
+      });
+      blockGate = () => gate;
+      await scrollWeek(page, "2026-10-26");
+      await waitFor(() => blockRequests.length > 0, "the next eight-week block");
+      const request = blockRequests[0]!;
+      expect(request.pathname).toBe("/api/spaces/workspace/view");
+      expect(request.searchParams.get("href")).toContain("cv=month");
+      expect(request.searchParams.get("includeTray")).toBe("false");
+      const from = dates.formatDateKey(new Date(request.searchParams.get("from")!), dateConfigFor("en"));
+      const to = dates.formatDateKey(new Date(request.searchParams.get("to")!), dateConfigFor("en"));
+      expect((Date.parse(to) - Date.parse(from)) / 86400000).toBe(56);
+      // Whenever the page changes, the autumn break is still in its row: no change empties the shown weeks.
+      const entries = page.locator('[data-week-key="2026-10-26"] [data-space-item-id="Break1"]');
+      expect(await entries.count()).toBe(1);
+      await page.evaluate(() => {
+        const track = document.querySelector(".k2b-calendar-month__track")!;
+        new MutationObserver(() => {
+          if (!track.querySelector('[data-week-key="2026-10-26"] [data-space-item-id="Break1"]'))
+            track.setAttribute("data-emptied", "true");
+        }).observe(track, { childList: true, subtree: true });
+      });
+      await settle(page);
+      release();
+      await page.waitForFunction(() => document.querySelector(".k2b-calendar-month__track")?.getAttribute("style")?.includes("24"));
+      await settle(page);
+      expect(await page.locator(".k2b-calendar-month__track").getAttribute("data-emptied")).toBeNull();
+      expect(await entries.count()).toBe(1);
+    } finally {
+      blockGate = null;
+      release();
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("count follows visible week days, URL follows month focus, and selection survives scrolling away and back", async () => {
+    const page = await open(desktop);
+    try {
+      await clickDay(page, "2026-10-16");
+      await page.waitForURL(/cd=2026-10-16/);
+      await page.keyboard.press("Escape");
+      await scrollWeek(page, "2026-10-19");
+      // Oct 19 through Nov 22 paint the trip, recap, and autumn break from the fixture.
+      await page.locator(".k2b-calendar-header__content").getByText("3 shown", { exact: true }).waitFor();
+      await page.waitForURL(/cd=2026-11-01/);
+      await shoot(page, "month-midscroll-en");
+      expect(await page.locator(day("2026-10-16")).getAttribute("aria-selected")).toBe("true");
+      await scrollWeek(page, "2026-11-02");
+      // Nov 2 through Dec 6 contain only the last two days of the autumn break.
+      await page.locator(".k2b-calendar-header__content").getByText("1 shown", { exact: true }).waitFor();
+      await clickDay(page, "2026-11-03");
+      await page.waitForURL(/cd=2026-11-03/);
+      await page.keyboard.press("Escape");
+      await scrollWeek(page, "2026-09-28");
+      await page.waitForURL(/cd=2026-10-09/);
+      await scrollWeek(page, "2026-11-02");
+      await page.waitForURL(/cd=2026-11-03/);
+      expect(await page.locator(day("2026-11-03")).getAttribute("aria-selected")).toBe("true");
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("phone at 390px scrolls uniform weeks, follows the title, and selects by tapping", async () => {
+    const page = await open(phone);
+    try {
+      await scrollWeek(page, "2026-11-02");
+      await page.waitForURL(/cd=2026-11-01/);
+      expect(await page.locator(".k2b-calendar-header__title > span").first().textContent()).toBe("November 2026");
+      await shoot(page, "phone-390-en-november");
+      const point = await emptyPoint(page, "2026-11-09");
+      await page.touchscreen.tap(point.x, point.y);
+      await page.waitForURL(/cd=2026-11-09/);
+      expect(await page.locator(day("2026-11-09")).getAttribute("aria-selected")).toBe("true");
+      const row = await box(page, '[data-week-key="2026-11-09"]');
+      const viewport = await box(page, ".k2b-calendar-month");
+      expect(Math.abs(row.height * 5 + 32 - viewport.height)).toBeLessThanOrEqual(5);
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("desktop: the filters and the count sit right after the title in the one toolbar row, and month navigation leaves the filters in place", async () => {
     const page = await open(desktop);
     try {
       // The calendar is its toolbar and its body: no row between them.
@@ -410,7 +541,7 @@ describe(`Spaces month view in ${browserName}`, () => {
       expect(Math.abs((await middle(".k2b-calendar-header__today")) - title)).toBeLessThanOrEqual(2);
       expect((await box(page, ".k2b-calendar-header")).height).toBeLessThanOrEqual(56);
 
-      // Paging to a month with a shorter and one with a longer name moves no filter.
+      // Scrolling to months with different title widths moves no filter.
       for (const [label, month] of [
         ["Next", "2026-11"],
         ["Next", "2026-12"],
@@ -419,7 +550,7 @@ describe(`Spaces month view in ${browserName}`, () => {
         viewRequests.length = 0;
         await page.locator(`.k2b-calendar-header__nav-button[aria-label="${label}"]`).click();
         await page.waitForURL(new RegExp(`cd=${month}`));
-        await waitFor(() => viewRequests.length > 0, "the view request");
+        await alignedFirst(page, `${month}-01`);
         await settle(page);
         expect(await chips()).toEqual(before);
       }
@@ -493,7 +624,7 @@ describe(`Spaces month view in ${browserName}`, () => {
       expect(await selectedDays(page)).toEqual(["2026-10-24", "2026-10-25", "2026-10-26"]);
       await settle(page);
       expect(viewRequests).toEqual([]);
-      expect(page.url()).toBe(url);
+      await page.waitForURL(/cd=2026-10-24/);
 
       // Escape closes the quick create first, then clears the selection.
       await page.keyboard.press("Escape");
@@ -553,6 +684,7 @@ describe(`Spaces month view in ${browserName}`, () => {
         await page.waitForURL(new RegExp(`cd=${date}`));
       }
       await page.locator(".k2b-calendar-view-switcher").getByRole("radio", { name: "Month" }).click();
+      // The month keeps the day the week showed first, so New event creates there instead of on the 1st.
       await page.waitForURL(/cv=month&cd=2026-11-02/);
       await page.locator(day("2026-11-02")).waitFor();
       expect(await selectedDays(page)).toEqual([]);
@@ -763,15 +895,19 @@ describe(`Spaces month view in ${browserName}`, () => {
     }
   }, 60_000);
 
-  test("desktop: the views open at the selected day, the week number opens its week, and Page Down pages with the keys", async () => {
+  test("desktop: the views open at the selected day, the week number opens its week, and Page Down aligns the next month with the keys", async () => {
     const page = await open(desktop);
     try {
       await clickDay(page, "2026-10-16");
       const viewHref = (name: string) => page.locator(".k2b-calendar-view-switcher").getByRole("radio", { name }).getAttribute("href");
       expect(await viewHref("Day")).toContain("cv=day&cd=2026-10-16");
       expect(await viewHref("Week")).toContain("cv=week&cd=2026-10-16");
-      expect(await page.locator(".k2b-calendar-month__week-link").first().getAttribute("aria-label")).toBe("Week 40, open week");
-      expect(await page.locator(".k2b-calendar-month__week-link").nth(2).getAttribute("href")).toContain("cv=week&cd=2026-10-12");
+      expect(await page.locator('[data-week-key="2026-09-28"] .k2b-calendar-month__week-link').getAttribute("aria-label")).toBe(
+        "Week 40, open week",
+      );
+      expect(await page.locator('[data-week-key="2026-10-12"] .k2b-calendar-month__week-link').getAttribute("href")).toContain(
+        "cv=week&cd=2026-10-12",
+      );
 
       await page.keyboard.press("Escape");
       await page.keyboard.press("PageDown");
@@ -780,6 +916,7 @@ describe(`Spaces month view in ${browserName}`, () => {
         () => document.querySelector("[aria-selected='true']")?.getAttribute("data-calendar-day-key") === "2026-11-16",
       );
       expect(await focusedDay(page)).toBe("2026-11-16");
+      await alignedFirst(page, "2026-11-01");
       // The arrows leave the shown month the same way.
       await page.keyboard.press("Home");
       await page.keyboard.press("ArrowUp");
@@ -823,11 +960,14 @@ describe(`Spaces month view in ${browserName}`, () => {
       expect(trip[0]!.label).toMatch(/^Trip to Hamburg, October 20.*09:00.* to October 22.*05:00/);
       expect(await hints(page, "Trip01")).toEqual([[]]);
 
-      // Over the month's end: the last row cuts the break, and November carries it on.
+      // Across the month's end the bar tears only at the week wrap, with both rows already loaded.
       const autumn = await bars(page, "Break1");
-      expect(autumn.map(({ before, after }) => ({ before, after }))).toEqual([{ before: false, after: true }]);
+      expect(autumn.map(({ before, after }) => ({ before, after }))).toEqual([
+        { before: false, after: true },
+        { before: true, after: false },
+      ]);
       expect(autumn[0]!.label).toBe("Autumn break, October 29 to November 3");
-      expect(await hints(page, "Break1")).toEqual([["end:until Nov 3"]]);
+      expect(await hints(page, "Break1")).toEqual([["end:until Nov 3"], ["start:from 29"]]);
 
       // Narrow days drop a hint that leaves the title no room; the accessible name keeps the range.
       await page.setViewportSize({ width: 400, height: 900 });

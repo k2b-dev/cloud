@@ -2,7 +2,6 @@ import { IconButton, Tooltip, useLocale } from "@k2b/ui";
 import { importOnDemand } from "../browser/reload";
 import { createBusyAction } from "./busy-action";
 import { platformMessages } from "./platform-messages";
-import { useShellData } from "./shell-data";
 
 type LayoutHelpTriggerProps = {
   variant: "header" | "rail";
@@ -13,12 +12,11 @@ type LayoutHelpTriggerProps = {
 export default function LayoutHelpTrigger(props: LayoutHelpTriggerProps) {
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
-  const data = useShellData();
   const action = createBusyAction();
   const openHelp = () =>
     action.run(
       () => importOnDemand(() => import("./LayoutHelp")),
-      (help) => help.openLayoutHelpDialog(data?.searchHelpApps ?? [], data?.accent),
+      (help) => help.openLayoutHelpDialog(),
     );
 
   if (props.variant === "rail")

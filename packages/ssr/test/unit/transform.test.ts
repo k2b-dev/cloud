@@ -2,8 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { fromJSON } from "seroval";
+import { renderToString } from "solid-js/web";
 import { islandIdFromFile } from "../../src/island-id";
 import { transform } from "../../src/transform";
+import { makeTempRoot as makeResolvableTempRoot } from "../temp-root";
 
 const tempRoots: string[] = [];
 
@@ -67,11 +70,11 @@ describe("transform() - Island wrapping in SSR mode", () => {
 
     const result = await transform(input, "/test/Page.tsx", "ssr");
 
-    expect(result).toContain('import { serialize } from "seroval"');
-    expect(result).toContain("const __seroval_serialize = serialize");
+    expect(result).toContain('import { toJSON as __seroval_toJSON } from "seroval"');
+    expect(result).not.toContain("const __seroval_toJSON");
   });
 
-  test("should use __seroval_serialize for data-props", async () => {
+  test("should use __seroval_toJSON for data-props", async () => {
     const input = `
       import Counter from "./Counter.island";
       export default () => <Counter count={5} name="test" />;
@@ -79,7 +82,7 @@ describe("transform() - Island wrapping in SSR mode", () => {
 
     const result = await transform(input, "/test/Page.tsx", "ssr");
 
-    expect(result).toContain("__seroval_serialize");
+    expect(result).toContain("JSON.stringify(__seroval_toJSON(");
     // Should serialize the props object
     expect(result).toContain("count");
   });
@@ -132,7 +135,7 @@ describe("transform() - Island wrapping in SSR mode", () => {
     const result = await transform(input, "/test/Page.tsx", "ssr");
 
     expect(result).toContain("solid-island");
-    expect(result).toContain("__seroval_serialize");
+    expect(result).toContain("JSON.stringify(__seroval_toJSON(");
   });
 
   test("should handle islands without props", async () => {
@@ -170,7 +173,7 @@ describe("transform() - Client mode behavior", () => {
     const result = await transform(input, "/test/Component.tsx", "dom");
 
     expect(result).not.toContain('from "seroval"');
-    expect(result).not.toContain("__seroval_serialize");
+    expect(result).not.toContain("__seroval_toJSON");
   });
 
   test("should NOT wrap components in DOM mode", async () => {
@@ -319,4 +322,48 @@ describe("transform() - Edge cases", () => {
     // Should not contain solid-island since Counter is not rendered
     expect(result).not.toContain("solid-island");
   });
+});
+
+test("SSR alias does not collide with application toJSON or serialize imports", async () => {
+  const result = await transform(
+    `
+    import { toJSON, serialize } from "seroval";
+    import Probe from "./Probe.island";
+    export const own = [toJSON({}), serialize({})];
+    export default () => <Probe />;
+  `,
+    "/test/Page.tsx",
+    "ssr",
+  );
+  expect(result).toContain('import { toJSON as __seroval_toJSON } from "seroval"');
+  expect(result).toContain('import { toJSON, serialize } from "seroval"');
+  expect(result).toContain("JSON.stringify(__seroval_toJSON(");
+});
+
+test("a transformed server page renders rich props as escaped JSON data", async () => {
+  const root = makeResolvableTempRoot(".ssr-transform-props-");
+  tempRoots.push(root);
+  writeFileSync(join(root, "Probe.island.tsx"), "export default () => null;");
+  const filename = join(root, "Page.tsx");
+  const result = await transform(
+    `
+    import Probe from "./Probe.island";
+    export default () => <Probe at={new Date("2026-10-01T12:34:56Z")} map={new Map([["k", "v"]])} text={'</script>"&'} />;
+  `,
+    filename,
+    "ssr",
+    false,
+    root,
+  );
+  const output = join(root, "Page.js");
+  writeFileSync(output, result);
+  const { default: Page } = await import(output);
+  const html = renderToString(() => Page());
+  const attribute = html.match(/data-props="([^"]*)"/)?.[1];
+  expect(attribute).toBeDefined();
+  const decoded = attribute!.replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+  const props = fromJSON<{ at: Date; map: Map<string, string>; text: string }>(JSON.parse(decoded));
+  expect(props.at.getTime()).toBe(new Date("2026-10-01T12:34:56Z").getTime());
+  expect([...props.map]).toEqual([["k", "v"]]);
+  expect(props.text).toBe('</script>"&');
 });

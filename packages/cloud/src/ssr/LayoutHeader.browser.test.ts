@@ -40,7 +40,6 @@ const header = (authenticated: boolean) =>
         profile: authenticated ? { name: "Demo User" } : undefined,
         theme: "light",
         searchLinks: {},
-        searchHelpApps: [],
       },
       get children() {
         return createComponent(LayoutHeader, {

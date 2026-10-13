@@ -800,7 +800,7 @@ describe("grids CLI", () => {
     expect(show.jsonValues).toEqual([preview]);
 
     const wrong = createContext(["bases", "destruction", "run", baseId], { confirm: "Wrong" }, [jsonResponse(resolved())]);
-    await expect(gridsCli.run(wrong.ctx)).rejects.toThrow("--confirm must exactly match the Base name: Bookshop");
+    await expect(gridsCli.run(wrong.ctx)).rejects.toThrow("--confirm must exactly match the base name: Bookshop");
     expect(wrong.calls).toHaveLength(1);
 
     const start = createContext(

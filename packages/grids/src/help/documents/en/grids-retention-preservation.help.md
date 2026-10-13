@@ -2,21 +2,21 @@
 id: grids-retention-preservation
 title: Retention and preservation
 icon: ti ti-archive
-description: Set a technical retention floor, preserve a Base or table, or destroy eligible unreferenced file bytes.
+description: Set a technical retention floor, preserve a base or table, or destroy eligible unreferenced file bytes.
 order: 148
 ---
-A retention floor is an optional technical minimum for trashed records and newly unreferenced files in a Base.
+A retention floor is an optional technical minimum for trashed records and newly unreferenced files in a base.
 
 :::warning A floor is not a legal decision
 A retention floor does not delete anything and does not schedule a cleanup. It does not decide whether destruction is appropriate, and it does not establish legal compliance.
 :::
 
-You need **Manage** access to the Base. Grids Apps, workflows, API clients, and the CLI cannot bypass this access check.
+You need **Manage** access to the base. Grids Apps, workflows, API clients, and the CLI cannot bypass this access check.
 
 ## Set the floor {icon="calendar-time"}
 
 :::steps
-1. Open **Base settings → Retention**.
+1. Open **base settings → Retention**.
 2. Enter **Minimum retention days**, from 1 to 36,500.
 3. Review the live **Retention preview**.
 4. Choose **Review Records** to inspect the complete list, page by page.
@@ -28,9 +28,9 @@ The **Retention preview** separates three groups: records and unreferenced files
 
 In **Review Records**, **Open in Trash** opens the existing Trash view of the table for restoring or other record actions. In **Review Files**, you can preview supported formats or download the exact stored bytes.
 
-Existing Bases have no retention floor by default, so their behavior does not change. The clock starts when someone moves a record to the trash. If someone restores the record and moves it to the trash again, a new clock starts from the new trash time.
+Existing bases have no retention floor by default, so their behavior does not change. The clock starts when someone moves a record to the trash. If someone restores the record and moves it to the trash again, a new clock starts from the new trash time.
 
-You can inspect and change the same Base setting from the Cloud CLI. Use the 6-character Base ID or the exact Base name:
+You can inspect and change the same base setting from the Cloud CLI. Use the 6-character base ID or the exact base name:
 
 ```bash
 cld grids bases retention 8yMtTb --json
@@ -47,7 +47,7 @@ cld grids bases retention set 8yMtTb --days 14 --yes --json
 cld grids bases retention remove 8yMtTb --yes --json
 ```
 
-The CLI calls the same API as Base settings, which requires **Manage** access. A script, workflow, Grids App, or direct API client cannot bypass the floor or its access check.
+The CLI calls the same API as base settings, which requires **Manage** access. A script, workflow, Grids App, or direct API client cannot bypass the floor or its access check.
 
 The preview uses one stated observation time and returns bounded examples. **Floor reached** means only that the configured number of days has passed. It does not mean that Grids deleted the record or file, and it does not mean that deletion is allowed.
 
@@ -78,9 +78,9 @@ Durable History revisions, finalized records, immutable documents, number alloca
 
 ## Destroy eligible unreferenced files {icon="trash-x"}
 
-Controlled file destruction permanently removes the stored bytes of newly unreferenced files after the retention floor of the Base is reached. It never includes records, trashed records, documents, evidence exports, Durable History, or indirect references that another owner protects.
+Controlled file destruction permanently removes the stored bytes of newly unreferenced files after the retention floor of the base is reached. It never includes records, trashed records, documents, evidence exports, Durable History, or indirect references that another owner protects.
 
-You need **Manage** access and an active retention floor. Open **Base settings → Controlled destruction**. The preview shows the current eligible total. It separates files that are still retained, blocked by a preservation hold, or not safe to destroy. One run contains at most 100 exact file candidates.
+You need **Manage** access and an active retention floor. Open **base settings → Controlled destruction**. The preview shows the current eligible total. It separates files that are still retained, blocked by a preservation hold, or not safe to destroy. One run contains at most 100 exact file candidates.
 
 :::danger You cannot undo destruction
 Destroyed file bytes cannot be recovered.
@@ -89,7 +89,7 @@ Destroyed file bytes cannot be recovered.
 :::steps
 1. Choose **Destroy eligible Files**.
 2. Read the irreversible consequence.
-3. Type the exact Base name.
+3. Type the exact base name.
 4. Choose **Start destruction**.
 :::
 
@@ -106,21 +106,21 @@ cld grids bases destruction status 8yMtTb RUN001 --json
 cld grids bases destruction cancel 8yMtTb RUN001 --yes --json
 ```
 
-`run` always fetches a fresh preview and selects only that bounded set. The command refuses an empty batch and a `--confirm` value that does not match the Base name exactly. You can cancel a queued run immediately. A run that has already started stops its remaining work at the next safe boundary.
+`run` always fetches a fresh preview and selects only that bounded set. The command refuses an empty batch and a `--confirm` value that does not match the base name exactly. You can cancel a queued run immediately. A run that has already started stops its remaining work at the next safe boundary.
 
-## Preserve a Base or one table {icon="lock"}
+## Preserve a base or one table {icon="lock"}
 
-A preservation hold blocks future controlled destruction in its scope. A Base hold covers every table. A table hold covers only the selected table. It also blocks the destruction of its parent Base, so nobody can bypass the table hold.
+A preservation hold blocks future controlled destruction in its scope. A base hold covers every table. A table hold covers only the selected table. It also blocks the destruction of its parent base, so nobody can bypass the table hold.
 
-A hold does not lock records, stop normal edits, give access, change finalization, or expire automatically. It does not decide that the Base meets a legal requirement.
+A hold does not lock records, stop normal edits, give access, change finalization, or expire automatically. It does not decide that the base meets a legal requirement.
 
 You need **Manage** access.
 
 :::steps
-1. Open **Base settings → Preservation holds**.
+1. Open **base settings → Preservation holds**.
 2. Choose **Create hold**.
-3. Choose **Entire Base** or **One Table**.
-4. For one table, search for it. The server-side search lists the active tables in this Base.
+3. Choose **Entire base** or **One Table**.
+4. For one table, search for it. The server-side search lists the active tables in this base.
 5. Enter a reason that tells other people with **Manage** access why the hold exists.
 6. Create the hold.
 :::

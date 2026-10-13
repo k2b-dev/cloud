@@ -104,7 +104,7 @@ const load = async (width = 1366, params = "", touch = false, height = 800) => {
   await page.setContent(
     `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style>` +
       `<style>*,*::before,*::after{transition:none!important;animation:none!important}</style></head>` +
-      `<body class="k2b-ui" data-fixture-params="${params}" style="margin:0"><div id="app" style="height:40rem"></div>` +
+      `<body class="k2b-ui" data-fixture-params="${params}" data-theme="light" style="margin:0;${params.includes("accent=1") ? "--app-accent:#16a34a;--k2b-app-workspace-active:var(--app-accent)" : ""}"><div id="app" style="height:40rem"></div>` +
       '<button id="outside">Outside</button></body></html>',
   );
   await page.addScriptTag({ content: script });
@@ -137,6 +137,61 @@ const TEST_TIMEOUT = 20_000;
 
 // Focus, native popover dismissal and placement need the shipped CSS and a real browser.
 describe("AppWorkspace.SidebarSwitcher in the browser", () => {
+  test(
+    "accent scopes keep a neutral hover and open fill, stable geometry and an accented check",
+    async () => {
+      const page = await load(1366, "accent=1");
+      try {
+        const head = page.locator(trigger);
+        const rest = await head.boundingBox();
+        const colors = () =>
+          head.evaluate((element) => {
+            const style = getComputedStyle(element);
+            const probe = document.createElement("span");
+            element.append(probe);
+            const read = (color: string) => {
+              probe.style.backgroundColor = color;
+              const computed = getComputedStyle(probe).backgroundColor;
+              const canvas = document.createElement("canvas");
+              canvas.width = canvas.height = 1;
+              const context = canvas.getContext("2d")!;
+              // Painted over white, so the translucent fill reads as the colour people see.
+              context.fillStyle = "#fff";
+              context.fillRect(0, 0, 1, 1);
+              context.fillStyle = computed;
+              context.fillRect(0, 0, 1, 1);
+              return Array.from(context.getImageData(0, 0, 1, 1).data);
+            };
+            const background = read(style.backgroundColor);
+            const platformHover = read("var(--k2b-hover)");
+            probe.remove();
+            return { background, platformHover };
+          });
+        const neutral = async () => {
+          const { background, platformHover } = await colors();
+          expect(Math.max(...background.slice(0, 3)) - Math.min(...background.slice(0, 3))).toBeLessThanOrEqual(2);
+          expect(background[0]).toBeLessThan(255);
+          expect(background).not.toEqual(platformHover);
+          expect(await head.boundingBox()).toEqual(rest);
+        };
+        await head.hover();
+        await neutral();
+        await head.click();
+        await loaded(page);
+        expect(await head.getAttribute("aria-expanded")).toBe("true");
+        await page.mouse.move(1100, 700);
+        await neutral();
+        expect(await page.locator(`${option("work")} .k2b-dropdown__check`).evaluate((element) => getComputedStyle(element).color)).toBe(
+          "rgb(22, 163, 74)",
+        );
+        await page.screenshot({ path: "/tmp/k2b-ui-sidebar-switcher-open.png", clip: { x: 0, y: 0, width: 300, height: 320 } });
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "keyboard opens at the current row, wraps, returns focus and closes on Tab out",
     async () => {

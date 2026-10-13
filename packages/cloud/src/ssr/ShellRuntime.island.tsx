@@ -128,11 +128,7 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
           icon: "ti ti-help-circle",
           shortcut: "shift+/",
           // Returning the load keeps the Command busy until the dialog is open; a second press opens no second dialog.
-          action: () =>
-            importOnDemand(() => import("./LayoutHelp")).then((help) => {
-              const data = readShellData();
-              help?.openLayoutHelpDialog(data?.searchHelpApps ?? [], data?.accent);
-            }),
+          action: () => importOnDemand(() => import("./LayoutHelp")).then((help) => help?.openLayoutHelpDialog()),
         }),
       ),
     );

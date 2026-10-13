@@ -362,7 +362,8 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
       });
 
       expect(snapshot).toMatchObject({ kind: "calendar", view: "month", date: "2026-10-07T22:00:00.000Z", tray: null });
-      expect(listedCalendarRanges).toEqual([{ from: "2026-09-27T22:00:00.000Z", to: "2026-11-01T22:59:59.999Z" }]);
+      // The month loads five weeks before the week of its 1st and eleven after it, with the night after the last day.
+      expect(listedCalendarRanges).toEqual([{ from: "2026-08-23T22:00:00.000Z", to: "2026-12-14T05:00:00.000Z" }]);
       expect(listedFilters).toEqual([]);
     });
 

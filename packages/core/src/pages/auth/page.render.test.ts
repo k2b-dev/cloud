@@ -7,6 +7,7 @@ import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@k2b/cloud/contracts";
 import * as services from "@k2b/cloud/services";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { fromJSON } from "seroval";
 import { FREEIPA_APP_SIGN_IN_COOKIE } from "../app-approval/availability";
 
 const root = mkdtempSync(join(tmpdir(), "core-login-page-tests-"));
@@ -39,11 +40,15 @@ const page = async (query = "", cookie = "") => {
   const app = new Hono().get("/auth/login", ...handler);
   const response = await app.request(`https://cloud.example.test/auth/login${query}`, { headers: { Cookie: cookie } });
   expect(response.status).toBe(200);
-  const html = (await response.text()).replaceAll("&quot;", '"').replaceAll("&amp;", "&");
+  const raw = await response.text();
+  const decode = (text: string) => text.replaceAll("&quot;", '"').replaceAll("&amp;", "&");
+  const html = decode(raw);
+  const form = /data-props="([^"]*)" data-file="(\w*LoginForm)\.island\.tsx"/.exec(raw);
+  const props: unknown = form ? fromJSON(JSON.parse(decode(form[1]!))) : undefined;
   return {
     html,
-    form: /data-file="(\w*LoginForm)\.island\.tsx"/.exec(html)?.[1],
-    category: /category:"(\w+)"/.exec(html)?.[1],
+    form: form?.[2],
+    category: props && typeof props === "object" && "category" in props ? props.category : undefined,
     /** The plain link to the other credential: [target, label]. */
     alternative: /<a href="([^"]+)" class="k2b-button auth-login-alternative[^>]*><span[^>]*>([^<]+)</.exec(html)?.slice(1),
   };

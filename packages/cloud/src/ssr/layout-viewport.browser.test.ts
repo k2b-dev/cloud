@@ -18,7 +18,6 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { defineApp } = await import("../_internal/define-app");
 const { default: Layout } = await import("./Layout");
-const { LayoutHelpPage } = await import("./LayoutHelp");
 
 const CONTENT = "layout-viewport-probe-content";
 const contents = {
@@ -34,7 +33,7 @@ const app = defineApp({
   icon: "ti ti-layout",
   description: "Renders the shell in each layout mode",
   baseUrl: "http://layout-viewport-probe:3000",
-  routes: ["/layout", "/help"],
+  routes: ["/layout"],
 });
 const server = new Hono()
   .use("*", async (c, next) => {
@@ -54,9 +53,7 @@ const server = new Hono()
           children: CONTENT,
         });
     }),
-  )
-  // Core's registered Help route renders the Help page on its own, without the shell.
-  .get("/help", ...app.ssr(() => () => createComponent(LayoutHelpPage, { documents: [], pageBase: "/help/apps/layout-viewport-probe" })));
+  );
 
 let browser: Browser;
 let css: string;
@@ -175,14 +172,5 @@ describe("the Cloud shell fits the window when the large viewport is taller than
         }
       }, 30_000);
     }
-
-    test(`the standalone Help page on ${name}`, async () => {
-      const page = await open("/help", viewport);
-      try {
-        expect((await measure(page)).documentHeight).toBe(viewport.height);
-      } finally {
-        await page.close();
-      }
-    }, 30_000);
   }
 });

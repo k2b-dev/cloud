@@ -396,10 +396,10 @@ describe("buildIslands()", () => {
         runner,
         `
         import ${JSON.stringify(join(import.meta.dir, "../browser/setup.ts"))};
-        import { serialize } from "seroval";
+        import { toJSON } from "seroval";
         const element = document.createElement("solid-island");
         element.dataset.id = ${JSON.stringify(id)};
-        element.dataset.props = JSON.stringify(serialize({}));
+        element.dataset.props = JSON.stringify(toJSON({}));
         document.body.append(element);
         await import(${JSON.stringify(join(outdir, id + ".js"))});
         const button = document.querySelector("button");

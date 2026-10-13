@@ -240,9 +240,12 @@ export const app = defineApp({
 });
 ```
 
-Dashboard widget entries contain an `id`, an absolute endpoint `path`, and an
-optional `presentation`. The endpoint decides whether the current caller may
-see its result.
+Dashboard widget entries contain an `id`, an absolute endpoint `path`, and
+optional `title`, `description`, `sizes`, `defaultSize`, `suggest`,
+`requiresRoles`, and `settings`. `presentation` carries the deprecated zone
+and span recommendations for saved boards. See
+[Dashboard widgets](/en/docs/platform/dashboard-widgets) for the declaration
+limits. The endpoint authorizes every request and every selected resource.
 
 Legal link entries contain a `label`, `href`, and optional `icon`.
 

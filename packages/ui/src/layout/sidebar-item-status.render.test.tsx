@@ -35,9 +35,13 @@ const render = (status: AppWorkspaceSidebarItemStatusProps, locale = "en") =>
 const text = (html: string, className: string) => html.match(new RegExp(`class="${className}"[^>]*>([^<]*)<`))?.[1]?.trim();
 
 describe("AppWorkspace.SidebarItemStatus", () => {
-  test("renders nothing without unread items, a mention, or muting", () => {
+  test("renders an empty status without unread items, a mention, or muting", () => {
+    // The empty element keeps the row's label on one line before the first count arrives.
     for (const status of [{}, { unread: 0 }, { unread: false }, { unread: -2 }, { unread: Number.NaN }]) {
-      expect(render(status)).not.toContain("k2b-app-workspace__sidebar-item-meta");
+      const html = render(status);
+      expect(html).toMatch(/<span class="k2b-app-workspace__sidebar-status"[^>]*>(?:<!--[^>]*-->)*<\/span>/);
+      expect(html).not.toContain("data-unread");
+      expect(html).not.toContain("k2b-sr-only");
     }
   });
 

@@ -363,7 +363,11 @@ export type AppWorkspaceSidebarIconActionProps = {
   sidebarMode?: AppWorkspaceSidebarVisibility;
 };
 export type AppWorkspaceSidebarItemIconProps = { icon?: string; children?: JSX.Element };
-export type AppWorkspaceSidebarItemLabelProps = { children: JSX.Element; marquee?: boolean };
+export type AppWorkspaceSidebarItemLabelProps = {
+  children: JSX.Element;
+  /** False keeps one line with an ellipsis; rows wrap long labels onto a second line by default. */
+  marquee?: boolean;
+};
 export type AppWorkspaceSidebarItemMetaProps = {
   children: JSX.Element;
   visibility?: AppWorkspaceSidebarAccessoryVisibility;
@@ -944,13 +948,16 @@ const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps
       .join(", ");
   // The unread slot stays reserved at the end, and the marks that change most
   // often sit outermost, so new activity or a mention never moves another mark.
+  // The element itself stays when there is nothing to show: empty, it takes no
+  // space, and it still keeps the row's label on one line, so the first count
+  // never re-wraps the label and moves the rows below.
   return (
-    <Show when={description()}>
-      <span
-        class="k2b-app-workspace__sidebar-status"
-        data-unread={waiting() !== null ? undefined : count() ? "count" : dot() ? "dot" : undefined}
-        data-waiting={waiting() === null ? undefined : waiting() ? "count" : "zero"}
-      >
+    <span
+      class="k2b-app-workspace__sidebar-status"
+      data-unread={waiting() !== null ? undefined : count() ? "count" : dot() ? "dot" : undefined}
+      data-waiting={waiting() === null ? undefined : waiting() ? "count" : "zero"}
+    >
+      <Show when={description()}>
         <Show when={props.mention}>
           <span class="k2b-app-workspace__sidebar-status-mention" aria-hidden="true">
             @
@@ -976,8 +983,8 @@ const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps
           </Show>
         </span>
         <span class="k2b-sr-only">, {description()}</span>
-      </span>
-    </Show>
+      </Show>
+    </span>
   );
 };
 
@@ -1102,10 +1109,11 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
   );
   const legacy = createMemo(() => values().filter((value) => !sidebarItemSlot(value)));
   const label = () => labelSlot()?.children ?? (legacy().length === 1 ? legacy()[0] : legacy());
+  const oneLine = () => !(labelSlot()?.marquee ?? (props.variant ?? "row") === "row");
   const icon = () => iconSlot()?.icon ?? props.icon;
   const iconContent = () => iconSlot()?.children;
-  // Resolved first, so a component that renders nothing, such as a status with
-  // nothing to show, leaves no empty slot in the browser either.
+  // Resolved first, so metadata that renders nothing leaves no empty slot. An
+  // empty status still renders its element; the stylesheet hides that slot.
   const meta = children(() => metaSlot()?.children ?? props.meta);
   const hasMeta = () => meta.toArray().some(Boolean);
   const metaId = createUniqueId();
@@ -1120,8 +1128,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
           {iconContent() ?? <i class={iconClass(icon())} />}
         </span>
       </Show>
-      {/* The inner text span is what the marquee translates; the controller
-          measures its `scrollWidth` against the clipping outer span. */}
+      {/* Plain labels reserve the selected text weight so selection keeps their line count. */}
       <span class="k2b-app-workspace__sidebar-item-copy">
         <Show when={props.context || props.contextMeta}>
           <span class="k2b-app-workspace__sidebar-item-context">
@@ -1133,7 +1140,8 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
         </Show>
         <span
           class="k2b-app-workspace__sidebar-item-label"
-          data-marquee={(labelSlot()?.marquee ?? (props.variant ?? "row") === "row") ? "true" : "false"}
+          data-lines={oneLine() ? "1" : undefined}
+          data-label={!oneLine() && typeof label() === "string" ? label() : undefined}
         >
           <span class="k2b-app-workspace__sidebar-item-label-text">{label() as JSX.Element}</span>
         </span>
@@ -1466,13 +1474,13 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
             <Show
               when={item.description !== undefined}
               fallback={
-                <span class="k2b-app-workspace__sidebar-item-label">
+                <span class="k2b-app-workspace__sidebar-item-label" data-label={typeof item.label === "string" ? item.label : undefined}>
                   <span class="k2b-app-workspace__sidebar-item-label-text">{item.label}</span>
                 </span>
               }
             >
               <span class="k2b-app-workspace__sidebar-item-copy">
-                <span class="k2b-app-workspace__sidebar-item-label">
+                <span class="k2b-app-workspace__sidebar-item-label" data-label={typeof item.label === "string" ? item.label : undefined}>
                   <span class="k2b-app-workspace__sidebar-item-label-text">{item.label}</span>
                 </span>
                 <span class="k2b-app-workspace__sidebar-item-description">{item.description}</span>

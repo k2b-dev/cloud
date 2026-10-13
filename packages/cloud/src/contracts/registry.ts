@@ -2,7 +2,7 @@ import type { AppAdminNavigationGroup, AppAppearance, AppAppearanceColor, AppPre
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "./capabilities";
 import type { PlatformPermission } from "./outgoing-mail";
 import type { Role } from "./shared";
-import type { DashboardWidgetPresentation, DashboardWidgetSize } from "./widgets";
+import type { DashboardWidgetPresentation, DashboardWidgetSize, WidgetSettingsDeclaration } from "./widgets";
 
 /**
  * App-registry entry type. Populated internally by `defineApp()` + the
@@ -54,6 +54,8 @@ export type AppRegistryLegalLink = {
 
 /** A widget declaration as the registry carries it; see `WidgetEndpoint`. Older apps send only `id` and `path`. */
 export type AppRegistryWidget = {
+  /** Per-entry setting declaration, validated again when listed. */
+  settings?: WidgetSettingsDeclaration;
   id: string;
   /** Absolute path on the app's HTTP service, e.g. "/api/quotes/widget/random". */
   path: string;

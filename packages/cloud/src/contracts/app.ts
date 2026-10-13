@@ -2,7 +2,7 @@ import type { Sync } from "@k2b/sync";
 import type { PlatformPermission } from "./outgoing-mail";
 import type { AppRegistryHelpSummary } from "./registry";
 import type { Role } from "./shared";
-import type { DashboardWidgetPresentation, DashboardWidgetSize } from "./widgets";
+import type { DashboardWidgetPresentation, DashboardWidgetSize, WidgetSettingsDeclaration } from "./widgets";
 
 /**
  * One link entry contributed by an app to the global legal/info footer
@@ -73,9 +73,12 @@ export type AppPresentationTranslation = {
   widgets?: Readonly<Record<string, AppWidgetTranslation>>;
 };
 
+/** Translated widget presentation, keyed by stable widget, setting, and option identifiers. */
 export type AppWidgetTranslation = {
   title?: string;
   description?: string;
+  /** Setting presentation keyed by setting name, with option labels keyed by option value. */
+  settings?: Readonly<Record<string, { label?: string; placeholder?: string; options?: Readonly<Record<string, string>> }>>;
 };
 
 export type AppPresentationCatalog = {
@@ -163,6 +166,7 @@ export type AppMeta = {
  */
 export type AppNavBadge = { count: number };
 
+/** A widget endpoint and its board presentation; the handler owns resource authorization. */
 export type WidgetEndpoint = {
   /** Unique-within-the-app id, e.g. "open-requests". */
   id: string;
@@ -179,6 +183,8 @@ export type WidgetEndpoint = {
   sizes?: readonly DashboardWidgetSize[];
   /** Size the widget starts in, one of `sizes`. Defaults to the largest offered size. */
   defaultSize?: DashboardWidgetSize;
+  /** Optional per-entry settings; handlers must work without them and authorize selected resources. */
+  settings?: WidgetSettingsDeclaration;
   /**
    * Put the widget on the default board of everyone who may see it and list it under "Suggested for you" in the
    * gallery. Suggest only widgets that are useful without any setup.

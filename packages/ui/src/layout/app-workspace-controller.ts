@@ -68,8 +68,6 @@ const FOCUSABLE_SELECTOR = [
 /** Text entry, menus, dialogs, and open popups keep their own keys. */
 const KEY_OWNER_SELECTOR =
   "input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox'], [role='combobox'], [role='searchbox'], [role='spinbutton'], [role='menu'], [role='listbox'], [role='dialog'], dialog, [aria-haspopup]:not([aria-haspopup='false'])[aria-expanded='true']";
-const LABEL_SELECTOR = ".k2b-app-workspace__sidebar-item-label[data-marquee='true']";
-const LABEL_TEXT_SELECTOR = ".k2b-app-workspace__sidebar-item-label-text";
 const ITEM_SELECTOR = ".k2b-app-workspace__sidebar-item";
 const clamp = (value: number, min: number, max: number) => Math.round(Math.min(max, Math.max(min, value)));
 const eventElement = (event: Event) => (event.target instanceof Element ? event.target : null);
@@ -279,26 +277,6 @@ const reconcilePanes = (root: HTMLElement, layoutState: AppWorkspaceLayoutState,
     root.style.setProperty(appWorkspacePanelVariable("pane", panelId(fit.handle)), `${sizes[index]}px`);
   });
   fits.forEach((fit, index) => updateHandleValue(root, fit.handle, "pane", sizes[index]!));
-};
-
-/**
- * Marquee support for a truncated sidebar label.
- *
- * The animation needs to know how far to travel, and that is only knowable
- * once the label has been laid out — so it is measured lazily, on the same
- * hover/focus that triggers it, and published as a custom property. Labels
- * that fit get no `data-overflow`, so they never animate. A revealed row action
- * pads the label's fading end, so the text is measured against the content box.
- */
-const measureLabel = (label: HTMLElement) => {
-  const text = label.querySelector<HTMLElement>(LABEL_TEXT_SELECTOR);
-  if (!text) return;
-  const style = getComputedStyle(label);
-  const width = label.clientWidth - (Number.parseFloat(style.paddingLeft) || 0) - (Number.parseFloat(style.paddingRight) || 0);
-  const overflow = Math.max(0, text.scrollWidth - width);
-  label.style.setProperty("--k2b-sidebar-label-overflow", `${overflow}px`);
-  if (overflow > 2) label.dataset.overflow = "true";
-  else delete label.dataset.overflow;
 };
 
 type OverlaySidebar = { root: HTMLElement; sidebar: HTMLElement; toggle: HTMLElement };
@@ -1283,47 +1261,27 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (handle && kind && root && controlsResizableRegion(root, handle, kind)) {
       updateHandleValue(root, handle, kind, currentSize(root, handle, kind));
     }
-    const label = eventElement(event)?.closest<HTMLElement>(ITEM_SELECTOR)?.querySelector<HTMLElement>(LABEL_SELECTOR);
-    if (label) requestAnimationFrame(() => measureLabel(label));
-  };
-
-  // Measured on entry rather than on every render: `scrollWidth` forces layout,
-  // and a sidebar can hold hundreds of rows.
-  const onPointerOver = (event: PointerEvent) => {
-    const label = eventElement(event)?.closest<HTMLElement>(LABEL_SELECTOR);
-    if (!label || (event.relatedTarget instanceof Node && label.contains(event.relatedTarget))) return;
-    requestAnimationFrame(() => measureLabel(label));
-  };
-
-  // A resize changes every label's available width, so the cached measurement
-  // is dropped and taken again on the next hover or focus.
-  const clearMeasuredLabels = () => {
-    eventRoot.querySelectorAll<HTMLElement>(LABEL_SELECTOR).forEach((label) => {
-      delete label.dataset.overflow;
-      label.style.removeProperty("--k2b-sidebar-label-overflow");
-    });
   };
 
   // Geometry can change without a window resize: a parent can resize the
   // workspace, or a detail/pane can open. All sources share one frame so a
   // transition performs at most one layout reconciliation.
   let reconcileFrame: number | null = null;
-  const scheduleReconcile = (clearLabels = false) => {
-    if (clearLabels) clearMeasuredLabels();
+  const scheduleReconcile = () => {
     if (reconcileFrame !== null) return;
     reconcileFrame = requestAnimationFrame(() => {
       reconcileFrame = null;
       reconcile();
     });
   };
-  const onResize = () => scheduleReconcile(true);
+  const onResize = () => scheduleReconcile();
 
   const observedRoots = new Set<HTMLElement>();
   const resizeObserver =
     typeof ResizeObserver === "undefined"
       ? null
       : new ResizeObserver(() => {
-          scheduleReconcile(true);
+          scheduleReconcile();
         });
   const syncObservedRoots = () => {
     for (const elements of [touchedDetails, titleTabIndices, motionRoots]) {
@@ -1429,7 +1387,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   compact?.addEventListener("change", onCompactChange);
   eventRoot.addEventListener("keydown", onKeyDown as EventListener);
   eventRoot.addEventListener("focusin", onFocusIn as EventListener);
-  eventRoot.addEventListener("pointerover", onPointerOver as EventListener);
   window.addEventListener("resize", onResize);
   syncObservedRoots();
   mutationObserver?.observe(eventRoot, {
@@ -1488,7 +1445,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     compact?.removeEventListener("change", onCompactChange);
     eventRoot.removeEventListener("keydown", onKeyDown as EventListener);
     eventRoot.removeEventListener("focusin", onFocusIn as EventListener);
-    eventRoot.removeEventListener("pointerover", onPointerOver as EventListener);
     window.removeEventListener("resize", onResize);
   };
 };

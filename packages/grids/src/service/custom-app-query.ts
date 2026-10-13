@@ -56,7 +56,7 @@ export const compileCustomAppQuery = async (params: {
   const resolved = await gqlPreparation.resolve(bound.ast, context);
   if (!resolved.ok) return { ok: false, error: diagnosticMessage(resolved.diagnostics, "invalid GQL source") };
   if (containsDocumentMetadata(resolved.plan))
-    return { ok: false, error: "Document metadata requires Base access and is not available in Custom App queries" };
+    return { ok: false, error: "Document metadata requires base access and is not available in Custom App queries" };
   const canonicalResolved = await gqlPreparation.resolve(canonicalBound.ast, context);
   if (!canonicalResolved.ok) return { ok: false, error: diagnosticMessage(canonicalResolved.diagnostics, "invalid GQL source") };
 

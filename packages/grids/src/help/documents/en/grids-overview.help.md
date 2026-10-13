@@ -7,9 +7,9 @@ order: 100
 ---
 Grids helps a team keep structured information and the work around it in one place. You can track inventory, invoices, projects, requests, customers, contracts, or any process where every item has the same shape.
 
-You do not need database experience to start. A **Base** is the workspace for one subject. Inside it, a **table** lists one kind of item. A **record** is one item in that list. A **field** stores one fact about the item.
+You do not need database experience to start. A **base** is the workspace for one subject. Inside it, a **table** lists one kind of item. A **record** is one item in that list. A **field** stores one fact about the item.
 
-For example, an inventory Base can contain separate tables for Items, Locations, Loans, and People. One record in Items can contain a name, an asset number, a status, a location, and a relation to the current loan.
+For example, an inventory base can contain separate tables for Items, Locations, Loans, and People. One record in Items can contain a name, an asset number, a status, a location, and a relation to the current loan.
 
 ## See what you can build {icon="square-plus"}
 
@@ -17,10 +17,10 @@ When the records are useful, the same saved data supports different jobs:
 
 - **Views** show the records that people need for a task, such as available items or overdue loans.
 - **Forms** let people add records without opening the full table.
-- **Grids Apps** combine numbers, charts, record lists, forms, instructions, links, and workflow actions on pages that the server protects. They serve signed-in or public audiences and do not open the raw Base workspace.
+- **Grids Apps** combine numbers, charts, record lists, forms, instructions, links, and workflow actions on pages that the server protects. They serve signed-in or public audiences and do not open the raw base workspace.
 - **Documents** keep generated PDF, CSV, JSON, XML, SEPA, and DATEV files together with their captured source data.
 - **Workflows** run repeatable steps: manually, from a scanner or a selection, on a schedule, or after a record changes.
-- **Combined tables** publish one governed, read-only dataset from tables in several Bases.
+- **Combined tables** publish one governed, read-only dataset from tables in several bases.
 
 These features do not create separate copies of the business data. The tables stay the source of truth.
 
@@ -40,14 +40,14 @@ This order keeps mistakes cheap. A clear table and a few representative records 
 
 ## All topics {icon="list"}
 
-- [Bases, tables, records, and relations](/app/grids/help/grids-core-model)
-- [Build a Base and configure its settings](/app/grids/help/grids-build-base)
+- [bases, tables, records, and relations](/app/grids/help/grids-core-model)
+- [Build a base and configure its settings](/app/grids/help/grids-build-base)
 - [Templates and real workflows: Billing, expenses, inventory](/app/grids/help/grids-build-business-app)
 - [Table options, indexing, history, finalization, and Four-eyes](/app/grids/help/grids-tables-fields)
 - [Every field type, ID strategy, option, and default](/app/grids/help/grids-field-configuration)
 - [Imports, external identities, and CSV/JSON exports](/app/grids/help/grids-data-exchange)
 - [Views, charts, cards, calendars, and reports](/app/grids/help/grids-views-reports)
-- [Read-only datasets shared across Bases](/app/grids/help/grids-combined-tables)
+- [Read-only datasets shared across bases](/app/grids/help/grids-combined-tables)
 - [GQL syntax, joins, summary joins, and document metadata](/app/grids/help/grids-gql)
 - [Formula functions, types, exact decimals, and diagnostics](/app/grids/help/grids-formulas)
 - [Forms, compact layout, defaults, inline creation, and summaries](/app/grids/help/grids-forms)
@@ -60,24 +60,24 @@ This order keeps mistakes cheap. A clear table and a few representative records 
 - [Templates, PDFs and E-Invoices, generated files, and source records](/app/grids/help/grids-documents-pdfs)
 - [Actions, triggers, launchers, file outputs, approvals, and retries](/app/grids/help/grids-workflows)
 - [Financial format inputs, limits, and validation](/app/grids/help/grids-financial-formats)
-- [Base access, app audiences, and anonymous forms](/app/grids/help/grids-permissions)
+- [base access, app audiences, and anonymous forms](/app/grids/help/grids-permissions)
 - [Retention, holds, trash, and destruction](/app/grids/help/grids-retention-preservation)
 - [Evidence exports and integrity verification](/app/grids/help/grids-evidence-exports)
 - [Recover from errors, conflicts, and interrupted runs](/app/grids/help/grids-operations-troubleshooting)
 
-## Find your work in a Base {icon="layout-dashboard"}
+## Find your work in a base {icon="layout-dashboard"}
 
-When you open Grids from the navigation, Grids returns to the Base page that you looked at last in this browser, even in another tab. If you can no longer open that Base, the overview opens instead.
+When you open Grids from the navigation, Grids returns to the base page that you looked at last in this browser, even in another tab. If you can no longer open that base, the overview opens instead.
 
 Use **New** in **Edit mode** to create a table, view, form, document template, workflow, or app. The menu offers only actions that you can use. For a resource that is based on a table, select a table. Grids preselects the current table when it fits. **View** opens the query editor, where you configure and save the view.
 
-You can always expand **Documents**. Open **All documents**, or select a template to see its generated documents. Workflow email templates are in **Settings → Email templates**. Viewing, creating, editing, and deleting them require **Manage** access to the Base.
+You can always expand **Documents**. Open **All documents**, or select a template to see its generated documents. Workflow email templates are in **Settings → Email templates**. Viewing, creating, editing, and deleting them require **Manage** access to the base.
 
-In **Overview**, switch between **Groups** for shared shortcuts and **All resources** to search by name or type. The selected tab is part of the URL, so links, reloads, and browser history keep it. By default, a Base with groups opens on **Groups**, and a Base without groups opens on **All resources**. Opening a form still opens its form dialog.
+In **Overview**, switch between **Groups** for shared shortcuts and **All resources** to search by name or type. The selected tab is part of the URL, so links, reloads, and browser history keep it. By default, a base with groups opens on **Groups**, and a base without groups opens on **All resources**. Opening a form still opens its form dialog.
 
 ## Organize the navigation into groups {icon="layout-dashboard"}
 
-You need **Manage** access to the Base.
+You need **Manage** access to the base.
 
 :::steps
 1. Open **Settings → Navigation**.
@@ -95,11 +95,11 @@ If another person saved first, Grids rejects your save and does not overwrite th
 
 ## Continue with the next topic {icon="arrow-right"}
 
-- Read [Understand the core model](/app/grids/help/grids-core-model) if Bases, tables, records, and relations are new to you.
-- Follow [Build a Base](/app/grids/help/grids-build-base) for a practical first build.
+- Read [Understand the core model](/app/grids/help/grids-core-model) if bases, tables, records, and relations are new to you.
+- Follow [Build a base](/app/grids/help/grids-build-base) for a practical first build.
 - Use [Tables & fields](/app/grids/help/grids-tables-fields) when you choose how to store a value.
 - Open the topic for a feature when you are ready to add it.
 
 :::note Use Edit mode to change structure
-Normal mode is for using a Base. Turn on **Edit mode** when you need to change its structure, resources, or settings. What you can see and change still depends on your access.
+Normal mode is for using a base. Turn on **Edit mode** when you need to change its structure, resources, or settings. What you can see and change still depends on your access.
 :::

@@ -434,6 +434,9 @@ export const GRIDS_WORKFLOW_ACTION_METADATA = {
             {
               kind: "object",
               properties: {
+                // This and the snapshots description below keep "Base": they enter the workflow manifest, whose hash
+                // (validateCurrentModule in @k2b/cloud) would stop every published workflow with WORKFLOW_MODULE_MISMATCH
+                // until it is published again. Reword them only together with a deliberate module change.
                 documents: { kind: "value", description: "Ordered unique public IDs of issued Documents in this Base (1–10,000)." },
                 columns: snapshotColumns,
               },

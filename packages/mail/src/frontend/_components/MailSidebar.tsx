@@ -321,12 +321,23 @@ export default function MailSidebar(
     setCollapsedFolders(new Set(customFolderBranchIds().filter((id) => !expanded.has(id))));
   };
 
-  const folderNode = (node: MailFolderTreeNode<MailFolderView>, suffix: string, count: number | null = node.folder.unread) => {
+  // `count` is the folder's unread count; Drafts pass their total and Sent nothing.
+  const folderNode = (
+    node: MailFolderTreeNode<MailFolderView>,
+    suffix: string,
+    count: { unread: number } | { total: number } | null = { unread: node.folder.unread },
+  ) => {
     const folder = node.folder;
     const hasChildren = node.children.length > 0;
     // Marks where "Only in the folder" is set, not each subfolder that inherits it, like the folder settings.
     const onlyInFolder = setsOnlyInFolder(folder);
-    const unread = count !== null && count > 0;
+    const total = count && "total" in count && count.total > 0 ? count.total : null;
+    const pin = (
+      <Show when={onlyInFolder}>
+        <i class="ti ti-folder-pin me-1" data-mail-folder-only aria-hidden="true" />
+        <span class="sr-only">{messages().onlyInFolder}</span>
+      </Show>
+    );
     return (
       <AppWorkspace.NavTree.Item
         id={folder.id}
@@ -334,14 +345,18 @@ export default function MailSidebar(
         href={folder.selectable ? `/app/mail/${props.mailboxId}?folder=${folder.id}` : undefined}
         icon={hasChildren ? "ti ti-folder-plus" : folderIcon(folder.role)}
         expandedIcon={hasChildren ? "ti ti-folder-open" : undefined}
+        // Unread counts change while the folder is on screen, so they use the shared
+        // status from the first paint, which keeps a long folder name on one line.
         meta={
-          onlyInFolder || unread ? (
-            <span class="inline-flex items-center gap-1 tabular-nums">
-              <Show when={onlyInFolder}>
-                <i class="ti ti-folder-pin" data-mail-folder-only aria-hidden="true" />
-                <span class="sr-only">{messages().onlyInFolder}</span>
-              </Show>
-              <Show when={unread}>{count}</Show>
+          count && "unread" in count ? (
+            <>
+              {pin}
+              <AppWorkspace.SidebarItemStatus unread={count.unread} />
+            </>
+          ) : onlyInFolder || total !== null ? (
+            <span class="inline-flex items-center tabular-nums">
+              {pin}
+              <Show when={total !== null}>{total}</Show>
             </span>
           ) : undefined
         }
@@ -399,7 +414,11 @@ export default function MailSidebar(
     >
       <For each={primaryFolders().filter((folder) => folder.role === role)}>
         {(folder) =>
-          folderNode({ folder, children: [] }, suffix, role === "drafts" ? folder.total : role === "sent" ? null : folder.unread)
+          folderNode(
+            { folder, children: [] },
+            suffix,
+            role === "drafts" ? { total: folder.total } : role === "sent" ? null : { unread: folder.unread },
+          )
         }
       </For>
     </AppWorkspace.NavTree>

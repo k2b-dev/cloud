@@ -90,7 +90,7 @@ describe("Grids Apps documentation contract", () => {
     expect(builder).toContain("**App settings → Lifecycle**");
     expect(builder).toContain("**General**, **Access**, and **Lifecycle**");
     expect(builder).toContain("Choose an existing entry under **Actions**");
-    expect(builder).toContain("does not delete Base tables or records");
+    expect(builder).toContain("does not delete base tables or records");
     expect(pages).toContain("there are no Liquid conditions or loops");
     expect(pages).toContain("the raw GQL console deliberately does not offer Grids App `@…` context");
   });
@@ -104,7 +104,7 @@ describe("Grids Apps documentation contract", () => {
     expect(overview).not.toContain("**Bulk actions**");
     expect(yaml).toContain("canonical public resource IDs");
     expect(pages).toContain("Fields outside the block's editable subset remain read-only");
-    expect(pages).toContain("without **Edit** access to the Base or the record");
+    expect(pages).toContain("without **Edit** access to the base or the record");
     expect(yaml).toContain("{ source: ROW, path: relation, fieldId:");
     expect(cli).toContain("Referenced records, Metrics, Chart, Record, Rendered HTML, Form, Comments, Actions, and Scanner blocks");
     expect(cli).toContain("row id or one selected single relation");

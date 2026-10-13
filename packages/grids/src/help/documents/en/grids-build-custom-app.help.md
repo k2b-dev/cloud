@@ -5,13 +5,13 @@ icon: ti ti-certificate
 description: Build a request app with progress, comments, and a generated certificate.
 order: 133
 ---
-This guide builds a certificate-request app. A requester can submit a request, see their requests, open one request, discuss it, follow its status, and download the generated certificate. A responsible group processes every request in the same Base.
+This guide builds a certificate-request app. A requester can submit a request, see their requests, open one request, discuss it, follow its status, and download the generated certificate. A responsible group processes every request in the same base.
 
 The app uses one table and three pages. Existing forms, views, workflows, and document templates keep their own behavior.
 
 ## Prepare the resources {icon="list-check"}
 
-You need **Manage** access to the Base. Prepare these resources in the same Base:
+You need **Manage** access to the base. Prepare these resources in the same base:
 
 | Resource | Required configuration |
 | --- | --- |
@@ -30,19 +30,19 @@ Choose the boundaries of each audience before you build pages:
 | Audience | Boundary | Result |
 | --- | --- | --- |
 | Requesters | **Open** access to the Grids App | Use only the published pages, the personal GQL result, the included form, comments, and documents. |
-| Responsible group | **Edit** access to the Base, or a separate staff Grids App | Process all requests without widening the requester app. |
+| Responsible group | **Edit** access to the base, or a separate staff Grids App | Process all requests without widening the requester app. |
 
-Access to a Grids App gives no raw access to the Base. The immutable publication lists the exact data and operations that requesters can use. Before you publish, try the requester app and the staff surface with separate real test accounts.
+Access to a Grids App gives no raw access to the base. The immutable publication lists the exact data and operations that requesters can use. Before you publish, try the requester app and the staff surface with separate real test accounts.
 
 **Checkpoint:** A requester can submit the form, and the Records query of the app returns only `record.createdBy = @auth.id`. The responsible group can process all requests through its separate boundary. If this fails, correct the query or split the audience before you build more pages.
 
 ## Open the builder {icon="apps"}
 
-You need **Manage** access to the Base to see these controls.
+You need **Manage** access to the base to see these controls.
 
 :::steps
 1. Turn on **Edit mode**.
-2. Open the Base.
+2. Open the base.
 3. Under **Apps**, choose **New app**.
 :::
 
@@ -180,7 +180,7 @@ After you confirm **Delete app**, the builder cannot restore the app.
 Open **App settings → Lifecycle**:
 
 - **Unpublish app** removes the live snapshot immediately. It keeps the draft and the access entries, so you can edit and publish the app again later.
-- **Delete app** removes the app and its live URL. It does not delete Base tables or records.
+- **Delete app** removes the app and its live URL. It does not delete base tables or records.
 
 Both actions ask for a confirmation before anything changes.
 

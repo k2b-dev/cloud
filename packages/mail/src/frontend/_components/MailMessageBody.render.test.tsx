@@ -102,3 +102,27 @@ describe("blocked remote images", () => {
     expect(body).toStartWith('<span class="min-w-48 flex-1">Remote images are blocked to protect your privacy.</span>');
   });
 });
+
+describe("HTML mail message frame", () => {
+  test("lets links open as normal tabs while the message itself stays sandboxed", () => {
+    const html = renderToString(() =>
+      createComponent(MailMessageBody, {
+        mailboxId: "Box001",
+        messageId: "Msg001",
+        format: "html",
+        html: '<p><a href="https://example.com/login" target="_blank" rel="noopener noreferrer nofollow">Sign in</a></p>',
+        plainText: null,
+        attachments: [],
+        remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.com", domain: "example.com" },
+        onSelectionChange: () => {},
+      }),
+    );
+
+    const sandbox = /<iframe[^>]*\ssandbox="([^"]*)"/.exec(html)?.[1]?.split(" ") ?? [];
+    // A tab opened from the frame would inherit its sandbox, and Safari then blocks sites that send
+    // Cross-Origin-Opener-Policy. Escaping applies only to the new tab, not to the message.
+    expect(sandbox).toContain("allow-popups-to-escape-sandbox");
+    expect(sandbox).not.toContain("allow-same-origin");
+    expect(sandbox).not.toContain("allow-top-navigation");
+  });
+});

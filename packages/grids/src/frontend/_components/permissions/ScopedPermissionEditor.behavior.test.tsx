@@ -53,7 +53,7 @@ domTest("the base access editor turns read-only once a change costs the person M
       requests.push(`${method} ${new URL(url, "http://cloud.test").pathname}`);
       // Lowering their own entry left the person with Edit, and only managers may list the entries.
       if (method === "PATCH") return new Response(null, { status: 204 });
-      return Response.json({ message: "You no longer have administrator access to this Base." }, { status: 403 });
+      return Response.json({ message: "You no longer have administrator access to this base." }, { status: 403 });
     },
     { preconnect: originalFetch.preconnect },
   );
