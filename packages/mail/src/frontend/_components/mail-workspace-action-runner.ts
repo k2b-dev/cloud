@@ -1,6 +1,14 @@
-import type { MailActionCommand, MailActionQueuedCommand } from "./mail-action-outcomes";
+import { MAX_CONVERSATION_ACTION_MESSAGES } from "../../command-outcomes";
+import type { ConversationTriageUndoOutcome } from "../../contracts";
+import {
+  MAIL_ACTION_OUTCOME_TTL_MS,
+  type MailActionCommand,
+  type MailActionQueuedCommand,
+  type MailActionSettlement,
+} from "./mail-action-outcomes";
+import type { MailActionQueue } from "./mail-action-queue";
 import type { MailActionId } from "./mail-actions";
-import { executeMailBulkAction, type MailBulkTarget } from "./mail-bulk-actions";
+import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./mail-bulk-actions";
 import type { MailListOptimisticField } from "./mail-list-optimistic";
 
 export type MailWorkspaceActionOptions = {
@@ -39,12 +47,21 @@ type ActionFailure = {
 };
 
 export type MailWorkspaceActionRunnerHost = {
+  queue: MailActionQueue;
   resolveTargets: (actionId: MailActionId) => MailBulkTarget[];
   chooseDestinationFolder: () => Promise<string | null>;
-  /** The folder Archive, Spam, Not spam, or Delete moves to, when the workspace can tell. */
   roleDestinationFolderId: (actionId: MailActionId) => string | null;
-  applyOptimistic: (actionId: MailActionId, targets: readonly MailBulkTarget[]) => void;
-  clearOptimistic: (targets: readonly MailBulkTarget[], fields: readonly MailListOptimisticField[]) => void;
+  applyOptimistic: (actionId: MailActionId, targets: readonly MailBulkTarget[], destinationFolderId: string | null) => void;
+  restore: (target: MailBulkTarget) => void;
+  hold: (target: MailBulkTarget) => void;
+  release: (target: MailBulkTarget) => void;
+  offerUndo: (params: {
+    actionId: MailActionId;
+    targets: readonly MailBulkTarget[];
+    destinationFolderId: string | null;
+    undo: () => Promise<void>;
+  }) => void;
+  announce: (actionId: MailActionId | "undo", targets: readonly MailBulkTarget[]) => void;
   submit: (params: {
     actionId: MailActionId;
     target: MailBulkTarget;
@@ -52,28 +69,24 @@ export type MailWorkspaceActionRunnerHost = {
     destinationFolderId?: string;
     correlationId: string;
     idempotencyKey: string;
-    signal: AbortSignal;
   }) => Promise<readonly MailActionCommand[]>;
-  /** Follows the queued commands until they finish, so a later failure still reaches the user. */
+  submitUndo: (params: { target: MailBulkTarget; commandIds: string[] }) => Promise<readonly ConversationTriageUndoOutcome[]>;
+  /** Returns a stop handle for Undo. Inverse failures use Undo's own error notice. */
   followOutcomes: (params: {
     actionId: MailActionId;
     destinationFolderId: string | null;
-    conversations: {
-      conversationId: string;
-      label: string;
-      messageIds?: readonly string[];
-      commands: MailActionQueuedCommand[];
-    }[];
-  }) => void;
-  pruneSelection: (succeededConversationIds: ReadonlySet<string>) => void;
-  removesActiveConversation: (actionId: MailActionId, succeededTargets: readonly MailBulkTarget[]) => boolean;
-  refreshAfterSuccess: (params: { removesActiveConversation: boolean; succeededConversationIds: ReadonlySet<string> }) => Promise<void>;
+    target: MailBulkTarget;
+    commands: readonly MailActionQueuedCommand[];
+    reportFailures: boolean;
+    onSettled: (settlement: MailActionSettlement) => void;
+    onFailure: () => void;
+  }) => () => void;
   reconcile: () => Promise<void>;
   showMissingTarget: () => Promise<void>;
   showNothingToMove: () => void;
-  showSuccess: (actionId: MailActionId, targetCount: number, successCount: number) => void;
-  showFailures: (failures: readonly ActionFailure[], targetCount: number) => Promise<void>;
-  showError: (error: unknown) => Promise<void>;
+  showFailures: (failures: readonly ActionFailure[], params: { targetCount: number; retry: () => Promise<void> }) => void;
+  showUndoFailed: (targets: readonly MailBulkTarget[], destinationFolderId: string | null) => void;
+  showError: (error: unknown) => void;
 };
 
 export const mailOptimisticFields = (actionId: MailActionId): MailListOptimisticField[] =>
@@ -113,26 +126,31 @@ export const removeDestinationPlacements = (targets: readonly MailBulkTarget[], 
     return sourceFolderIds.length > 0 || target.sourceFolderIds.length === 0 ? [{ ...target, sourceFolderIds }] : [];
   });
 
+const waitForUndo = (ms: number, signal: AbortSignal): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+  });
+
 export const runMailWorkspaceAction = async (
   actionId: MailActionId,
   options: MailWorkspaceActionOptions,
   host: MailWorkspaceActionRunnerHost,
   signal: AbortSignal,
-  execution: MailWorkspaceActionExecution = {
-    correlationId: crypto.randomUUID(),
-    idempotencyKeys: new Map(),
-  },
+  execution: MailWorkspaceActionExecution = { correlationId: crypto.randomUUID(), idempotencyKeys: new Map() },
 ): Promise<void> => {
-  const optimisticFields = mailOptimisticFields(actionId);
-  let targets: MailBulkTarget[] = [];
-  let optimisticApplied = false;
-
   try {
     execution.targets ??= mergeConversationTargets(options.targets ?? host.resolveTargets(actionId));
-    targets = execution.targets;
+    let targets = options.targets ? mergeConversationTargets(options.targets) : execution.targets;
     if (targets.length === 0) {
-      // Rows the caller named that are gone by now, such as a dragged row a live update removed,
-      // leave nothing to do; only an action without a conversation asks the user to pick one.
       if (!options.silent && !options.targets) await host.showMissingTarget();
       return;
     }
@@ -140,92 +158,222 @@ export const runMailWorkspaceAction = async (
       execution.destinationFolderId = options.destinationFolderId ?? (await host.chooseDestinationFolder());
       execution.destinationResolved = true;
     }
-    const destinationFolderId = actionId === "move" ? execution.destinationFolderId : undefined;
-    if (signal.aborted || (actionId === "move" && !destinationFolderId)) return;
-    // A conversation already in the destination folder has nothing to move out of it.
-    const knownDestinationFolderId = destinationFolderId ?? host.roleDestinationFolderId(actionId);
-    if (knownDestinationFolderId) {
-      targets = removeDestinationPlacements(targets, knownDestinationFolderId);
-      if (targets.length === 0) {
-        if (!options.silent) host.showNothingToMove();
-        return;
-      }
+    const destination = actionId === "move" ? execution.destinationFolderId : undefined;
+    if (signal.aborted || (actionId === "move" && !destination)) return;
+    const knownDestination = destination ?? host.roleDestinationFolderId(actionId);
+    if (knownDestination) targets = removeDestinationPlacements(targets, knownDestination);
+    if (targets.length === 0) {
+      if (!options.silent) host.showNothingToMove();
+      return;
     }
-
-    host.applyOptimistic(actionId, targets);
-    optimisticApplied = true;
-    const queued = new Map<string, MailActionQueuedCommand[]>();
-    const result = await executeMailBulkAction({
-      actionId,
-      targets,
-      submit: async (target, sourceFolderId) => {
-        const key = `${actionId}:${target.conversationId}:${sourceFolderId}:${destinationFolderId ?? ""}`;
-        let idempotencyKey = execution.idempotencyKeys.get(key);
-        if (!idempotencyKey) {
-          idempotencyKey = crypto.randomUUID();
-          execution.idempotencyKeys.set(key, idempotencyKey);
+    const removing = mailOptimisticFields(actionId).length === 0;
+    host.applyOptimistic(actionId, targets, knownDestination ?? null);
+    let undone = false;
+    const failures: ActionFailure[] = [];
+    const jobs: {
+      target: MailBulkTarget;
+      cancel: () => boolean;
+      result: Promise<{ commands: MailActionQueuedCommand[]; failed: boolean }>;
+      stop?: () => void;
+    }[] = [];
+    const undo = async () => {
+      if (undone || signal.aborted) return;
+      undone = true;
+      if (!options.silent) host.announce("undo", targets);
+      const undoFailures: MailBulkTarget[] = [];
+      const pending = jobs.map((job) => {
+        if (job.cancel()) {
+          host.restore(job.target);
+          return Promise.resolve();
         }
-        const commands = await host.submit({
-          actionId,
-          target,
-          sourceFolderId,
-          destinationFolderId: destinationFolderId ?? undefined,
-          correlationId: execution.correlationId,
-          idempotencyKey,
-          signal,
-        });
-        queued.set(target.conversationId, [
-          ...(queued.get(target.conversationId) ?? []),
-          ...commands.map((command) => ({ ...command, sourceFolderId })),
-        ]);
-      },
-    });
-    if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-
-    const failed = new Set(result.failures.map((failure) => failure.conversationId));
-    host.clearOptimistic(
-      targets.filter((target) => failed.has(target.conversationId)),
-      optimisticFields,
-    );
-    const succeeded = new Set(result.succeededConversationIds);
-    host.pruneSelection(succeeded);
-    // A silent action was not the user's choice, so its later outcome is not announced either. A
-    // conversation that failed for one folder still follows the commands queued for the others.
-    if (!options.silent)
-      host.followOutcomes({
-        actionId,
-        destinationFolderId: destinationFolderId ?? null,
-        conversations: targets.flatMap((target) => {
-          const commands = queued.get(target.conversationId);
-          return commands ? [{ conversationId: target.conversationId, label: target.label, messageIds: target.messageIds, commands }] : [];
-        }),
+        host.hold(job.target);
+        job.stop?.();
+        return host.queue.enqueue(job.target.conversationId, async () => {
+          const submitted = await job.result;
+          if (submitted.failed || submitted.commands.length === 0) {
+            host.release(job.target);
+            return;
+          }
+          const byId = new Map<string, ConversationTriageUndoOutcome>();
+          let ids = [...new Set(submitted.commands.map((command) => command.id))];
+          const startedAt = Date.now();
+          let attempt = 0;
+          try {
+            while (ids.length > 0) {
+              // Placements across several folders can exceed one Undo request's command-ID budget.
+              const outcomes: ConversationTriageUndoOutcome[] = [];
+              for (let offset = 0; offset < ids.length; offset += MAX_CONVERSATION_ACTION_MESSAGES) {
+                outcomes.push(
+                  ...(await host.submitUndo({
+                    target: job.target,
+                    commandIds: ids.slice(offset, offset + MAX_CONVERSATION_ACTION_MESSAGES),
+                  })),
+                );
+                if (signal.aborted) return;
+              }
+              for (const id of ids) {
+                const outcome = outcomes.find((outcome) => outcome.id === id);
+                if (outcome) byId.set(id, outcome);
+                else byId.set(id, { id, outcome: "unavailable", inverse: null });
+              }
+              ids = ids.filter((id) => byId.get(id)?.outcome === "pending");
+              if (ids.length === 0) break;
+              const remaining = MAIL_ACTION_OUTCOME_TTL_MS - (Date.now() - startedAt);
+              if (remaining <= 0) break;
+              await waitForUndo(Math.min(1_000 * 2 ** attempt++, 30_000, remaining), signal);
+            }
+            let failed = ids.length > 0 || [...byId.values()].some((outcome) => outcome.outcome === "unavailable");
+            const inverse = [...byId.values()].flatMap((outcome) => {
+              if (outcome.outcome !== "reversed") return [];
+              if (!outcome.inverse) {
+                failed = true;
+                return [];
+              }
+              return [{ ...outcome.inverse, sourceFolderId: knownDestination ?? "" }];
+            });
+            if (inverse.length > 0) {
+              const settlement = await new Promise<MailActionSettlement>((resolve) => {
+                let finished = false;
+                let stop = () => {};
+                const finish = (settlement: MailActionSettlement) => {
+                  finished = true;
+                  signal.removeEventListener("abort", abort);
+                  resolve(settlement);
+                };
+                const abort = () => {
+                  stop();
+                  finish({ conversationId: job.target.conversationId, ok: false, expired: true });
+                };
+                stop = host.followOutcomes({
+                  actionId,
+                  destinationFolderId: null,
+                  target: job.target,
+                  commands: inverse,
+                  reportFailures: false,
+                  onSettled: finish,
+                  onFailure: () => finish({ conversationId: job.target.conversationId, ok: false, expired: false }),
+                });
+                if (signal.aborted) abort();
+                else if (!finished) signal.addEventListener("abort", abort, { once: true });
+              });
+              failed ||= !settlement.ok;
+              await host.reconcile();
+            }
+            if (failed) undoFailures.push(job.target);
+          } catch (error) {
+            if (!signal.aborted) undoFailures.push(job.target);
+          } finally {
+            host.release(job.target);
+          }
+        }).result;
       });
-
-    if (succeeded.size > 0) {
-      await host.refreshAfterSuccess({
-        removesActiveConversation: host.removesActiveConversation(
-          actionId,
-          targets.filter((target) => succeeded.has(target.conversationId)),
-        ),
-        succeededConversationIds: succeeded,
-      });
-      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-      if (!options.silent) host.showSuccess(actionId, targets.length, succeeded.size);
-    } else if (optimisticFields.length > 0) {
+      await Promise.all(pending);
+      if (signal.aborted) return;
       await host.reconcile();
-      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      if (undoFailures.length > 0) host.showUndoFailed(undoFailures, knownDestination ?? null);
+    };
+    if (removing && !options.silent) host.offerUndo({ actionId, targets, destinationFolderId: knownDestination ?? null, undo });
+    else if (!options.silent) host.announce(actionId, targets);
+
+    for (const target of targets) {
+      const commands: MailActionQueuedCommand[] = [];
+      let submittedPlacements = 0;
+      const queued = host.queue.enqueue(target.conversationId, async () => {
+        try {
+          if (target.sourceFolderIds.length === 0) throw new Error(MAIL_BULK_NO_PROVIDER_PLACEMENT);
+          for (const sourceFolderId of target.sourceFolderIds) {
+            const key = `${actionId}:${target.conversationId}:${sourceFolderId}:${destination ?? ""}`;
+            let idempotencyKey = execution.idempotencyKeys.get(key);
+            if (!idempotencyKey) {
+              idempotencyKey = crypto.randomUUID();
+              execution.idempotencyKeys.set(key, idempotencyKey);
+            }
+            const next = await host.submit({
+              actionId,
+              target,
+              sourceFolderId,
+              destinationFolderId: destination ?? undefined,
+              correlationId: execution.correlationId,
+              idempotencyKey,
+            });
+            commands.push(...next.map((command) => ({ ...command, sourceFolderId })));
+            submittedPlacements += 1;
+          }
+          return { commands, failed: false };
+        } catch (error) {
+          host.restore(target);
+          failures.push({
+            conversationId: target.conversationId,
+            label: target.label,
+            message: error instanceof Error ? error.message : MAIL_BULK_QUEUE_FAILED,
+            submittedPlacements,
+          });
+          return { commands, failed: true };
+        }
+      });
+      const job: (typeof jobs)[number] = {
+        target,
+        cancel: queued.cancel,
+        result: queued.result.then((result) => (result.ran ? result.value : { commands: [], failed: false })),
+        stop: undefined,
+      };
+      jobs.push(job);
+      void job.result.then((result) => {
+        if (undone || signal.aborted || result.commands.length === 0) {
+          if (!undone && !result.failed) {
+            if (removing)
+              void host.reconcile().then(() => {
+                if (!undone && !signal.aborted) host.release(target);
+              });
+            else host.release(target);
+          }
+          return;
+        }
+        if (options.silent) return;
+        job.stop = host.followOutcomes({
+          actionId,
+          destinationFolderId: destination ?? null,
+          target,
+          commands: result.commands,
+          reportFailures: true,
+          onFailure: () => {
+            if (!undone && !signal.aborted) host.restore(target);
+          },
+          onSettled: (settlement) => {
+            if (undone || signal.aborted) return;
+            if (!settlement.ok && !settlement.expired) return;
+            void host.reconcile().then(() => {
+              if (!undone && !signal.aborted) host.release(target);
+            });
+          },
+        });
+      });
     }
-    if (result.failures.length > 0) await host.showFailures(result.failures, targets.length);
+    await Promise.all(jobs.map((job) => job.result));
+    if (signal.aborted) return;
+    if (!removing) await host.reconcile();
+    if (options.silent) for (const target of targets) host.release(target);
+    failures.sort(
+      (left, right) =>
+        targets.findIndex((target) => target.conversationId === left.conversationId) -
+        targets.findIndex((target) => target.conversationId === right.conversationId),
+    );
+    if (failures.length > 0 && !options.silent)
+      host.showFailures(failures, {
+        targetCount: targets.length,
+        retry: () =>
+          runMailWorkspaceAction(
+            actionId,
+            {
+              ...options,
+              targets: targets.filter((target) => failures.some((failure) => failure.conversationId === target.conversationId)),
+            },
+            host,
+            signal,
+            execution,
+          ),
+      });
   } catch (error) {
-    if (optimisticApplied) {
-      host.clearOptimistic(targets, optimisticFields);
-      try {
-        await host.reconcile();
-      } catch {
-        // Preserve the action failure as the primary error.
-      }
-    }
-    if (!signal.aborted && !(error instanceof Error && error.name === "AbortError") && !options.silent) await host.showError(error);
-    throw error;
+    if (!signal.aborted && !options.silent) host.showError(error);
   }
 };

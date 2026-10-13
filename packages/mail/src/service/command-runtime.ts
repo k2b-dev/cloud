@@ -264,6 +264,52 @@ const remoteTarget = (message: DbRemoteMessage): RemoteMutationTarget => ({
   uid: Number(message.uid),
 });
 
+type CommandStateTarget = {
+  id: string;
+  mailbox_id: string;
+  actor_kind: string;
+  actor_id: string | null;
+  transport_metadata: JsonRecord | string;
+};
+
+export const recordCommandState = async (
+  tx: typeof sql,
+  command: CommandStateTarget,
+  state: CommandState,
+  code: string | null,
+): Promise<void> => {
+  if (state === "failed" || state === "cancelled") {
+    const projection = localStateProjectionSchema.safeParse(parseJsonRecord(command.transport_metadata).localStateProjection);
+    if (projection.success) await rollbackLocalStateProjection(tx, { id: command.id, projection: projection.data });
+  }
+  await tx`
+    INSERT INTO mail.activity_events (
+      mailbox_id, command_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata
+    )
+    VALUES (
+      ${command.mailbox_id}::uuid,
+      ${command.id}::uuid,
+      ${command.actor_kind},
+      ${command.actor_id}::uuid,
+      'command.execute',
+      ${state === "confirmed" || state === "reconciled" ? "confirmed" : state === "ambiguous" ? "requested" : "failed"},
+      'command',
+      ${command.id}::uuid,
+      ${{ state, code }}::jsonb
+    )
+  `;
+};
+
+export const notifyCommandState = async (command: Pick<CommandStateTarget, "id" | "mailbox_id">, state: CommandState): Promise<void> => {
+  mailLive.wake();
+  if (["confirmed", "failed", "cancelled", "reconciled", "needs_attention"].includes(state)) {
+    await publishMailWorkflowDependency({
+      mailboxId: command.mailbox_id,
+      dependency: { kind: "mail.command", key: command.id },
+    });
+  }
+};
+
 const commandState = async (
   command: Pick<DbCommandExecution, "id" | "attempt">,
   state: CommandState,
@@ -294,36 +340,11 @@ const commandState = async (
       RETURNING mailbox_id, actor_kind, actor_id, transport_metadata
     `;
     if (!updated) return null;
-    if (state === "failed" || state === "cancelled") {
-      const projection = localStateProjectionSchema.safeParse(parseJsonRecord(updated.transport_metadata).localStateProjection);
-      if (projection.success) await rollbackLocalStateProjection(tx, { id: command.id, projection: projection.data });
-    }
-    await tx`
-      INSERT INTO mail.activity_events (
-        mailbox_id, command_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata
-      )
-      VALUES (
-        ${updated.mailbox_id}::uuid,
-        ${command.id}::uuid,
-        ${updated.actor_kind},
-        ${updated.actor_id}::uuid,
-        'command.execute',
-        ${state === "confirmed" || state === "reconciled" ? "confirmed" : state === "ambiguous" ? "requested" : "failed"},
-        'command',
-        ${command.id}::uuid,
-        ${{ state, code }}::jsonb
-      )
-    `;
+    await recordCommandState(tx, { id: command.id, ...updated }, state, code);
     return updated;
   });
   if (!updated) return false;
-  mailLive.wake();
-  if (["confirmed", "failed", "cancelled", "reconciled", "needs_attention"].includes(state)) {
-    await publishMailWorkflowDependency({
-      mailboxId: updated.mailbox_id,
-      dependency: { kind: "mail.command", key: command.id },
-    });
-  }
+  await notifyCommandState({ id: command.id, ...updated }, state);
   return true;
 };
 

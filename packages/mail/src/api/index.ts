@@ -35,6 +35,8 @@ import {
   conversationPresenceHeartbeatSchema,
   conversationPresenceLeaveSchema,
   conversationTriageInputSchema,
+  conversationTriageUndoInputSchema,
+  conversationTriageUndoResultSchema,
   conversationViewSchema,
   createAttachmentLinkInputSchema,
   createComposeTemplateInputSchema,
@@ -2174,6 +2176,29 @@ const mailOperationsApi = new Hono<MailApiContext>()
           input: await internalInput(c, c.req.valid("json")),
         }),
       );
+    },
+  )
+  .post(
+    "/mailboxes/:mailboxId/conversations/:conversationId/actions/undo",
+    describeRoute({
+      tags: ["Mail:Commands"],
+      summary: "Undo the provider commands of a conversation action",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(conversationTriageUndoResultSchema, "The outcome of undoing each requested command"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid command IDs"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Conversation or mail command not found"),
+      },
+    }),
+    v("param", mailboxAndIdParamSchema("conversationId")),
+    v("json", conversationTriageUndoInputSchema),
+    async (c) => {
+      const params = internalParams(c, c.req.valid("param")) as {
+        mailboxId: string;
+        conversationId: string;
+      };
+      return respondPublic(c, triage.undoConversationTriageCommands({ context: requestContext(c), ...params, input: c.req.valid("json") }));
     },
   )
   .get("/mailboxes/:mailboxId/messages/:messageId", v("param", mailboxAndIdParamSchema("messageId")), async (c) => {

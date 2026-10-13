@@ -212,7 +212,7 @@ const actorDatabaseId = (actor: ActorRef): string | null => {
   return null;
 };
 
-const commandActorMatches = (command: DbCommand, actor: ActorRef): boolean =>
+export const commandActorMatches = (command: Pick<DbCommand, "actor_kind" | "actor_id">, actor: ActorRef): boolean =>
   command.actor_kind === actor.kind && command.actor_id === actorDatabaseId(actor);
 
 /**

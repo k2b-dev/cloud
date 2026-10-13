@@ -43,3 +43,48 @@ const AGGREGATED_VIEWS: readonly ConversationView[] = ["needs_action", "unassign
 /** Whether a listing mixes folders: no folder is open and the view is All mail or one of the work views above. */
 export const isAggregatedListing = (folderId: string | null, view: ConversationView | null): boolean =>
   folderId === null && (view === null || AGGREGATED_VIEWS.includes(view));
+
+/** Open or postponed work leaves out conversations filed only in Trash or Junk. */
+export const FOLLOW_UP_VIEWS: readonly ConversationView[] = ["needs_action", "mine", "unassigned", "waiting", "snoozed"];
+
+export type MailListingScope = {
+  viewFolderId: string | null;
+  activeView: ConversationView | null;
+  hasSearch: boolean;
+  hasSavedView: boolean;
+  scheduledMode: boolean;
+};
+
+/** The same Trash/Junk exclusion for the workspace query and its optimistic projection. */
+export const mailListingExcludesTrashAndJunk = (scope: MailListingScope): boolean =>
+  (!scope.scheduledMode && !scope.hasSearch && !scope.viewFolderId && !scope.activeView && !scope.hasSavedView) ||
+  (!scope.hasSearch && scope.activeView !== null && FOLLOW_UP_VIEWS.includes(scope.activeView));
+
+/** Whether the known placements after a move still belong in this listing. Unknown folders keep the row. */
+export const mailRowLeavesListing = (
+  params: MailListingScope & {
+    item: { activeFolderIds: readonly string[] };
+    sourceFolderIds: readonly string[];
+    destinationFolderId: string | null;
+    folders: readonly { id: string; role: string; effectiveDisplay: FolderDisplay; displayNeutral: boolean }[];
+  },
+): boolean => {
+  if (params.viewFolderId) return params.sourceFolderIds.includes(params.viewFolderId);
+  if (!params.destinationFolderId) return false;
+  const sources = new Set(params.sourceFolderIds);
+  const ids = new Set([...params.item.activeFolderIds.filter((id) => !sources.has(id)), params.destinationFolderId]);
+  const byId = new Map(params.folders.map((folder) => [folder.id, folder]));
+  const folders = [...ids].map((id) => byId.get(id));
+  if (folders.some((folder) => !folder)) return false;
+  const visible = folders.filter(
+    (folder) => folder !== undefined && !(mailListingExcludesTrashAndJunk(params) && (folder.role === "trash" || folder.role === "junk")),
+  );
+  if (visible.length === 0) return true;
+  if (params.hasSearch || params.hasSavedView || params.scheduledMode || !isAggregatedListing(null, params.activeView)) return false;
+  // Sent and provider collections neither isolate mail nor bring isolated mail into an aggregated view.
+  const deciding = visible.flatMap((folder) => (folder && !folder.displayNeutral ? [folder] : []));
+  return (
+    deciding.some((folder) => folder.effectiveDisplay !== "everywhere") &&
+    deciding.every((folder) => folder.effectiveDisplay !== "everywhere")
+  );
+};

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { MailActionId } from "./mail-actions";
+import { createMailActionQueue } from "./mail-action-queue";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, type MailBulkTarget } from "./mail-bulk-actions";
 import {
   decideMailAutoReadIntent,
@@ -14,25 +15,54 @@ const target = (conversationId: string, sourceFolderIds = ["inbox"]): MailBulkTa
   label: conversationId,
   sourceFolderIds,
 });
-
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((yes) => {
+    resolve = yes;
+  });
+  return { promise, resolve };
+};
+const signal = () => new AbortController().signal;
 const host = (overrides: Partial<MailWorkspaceActionRunnerHost> = {}) => {
   const events: string[] = [];
+  const offered: Parameters<MailWorkspaceActionRunnerHost["offerUndo"]>[0][] = [];
+  const followed: Parameters<MailWorkspaceActionRunnerHost["followOutcomes"]>[0][] = [];
+  const failures: Parameters<MailWorkspaceActionRunnerHost["showFailures"]>[] = [];
   const value: MailWorkspaceActionRunnerHost = {
+    queue: createMailActionQueue(),
     resolveTargets: () => [target("one"), target("two")],
     chooseDestinationFolder: async () => "archive",
     roleDestinationFolderId: () => null,
-    applyOptimistic: () => events.push("optimistic"),
-    clearOptimistic: (targets) => events.push(`clear:${targets.map((item) => item.conversationId).join(",")}`),
+    applyOptimistic: () => {
+      events.push("optimistic");
+    },
+    restore: (target) => {
+      events.push(`restore:${target.conversationId}`);
+    },
+    hold: (target) => {
+      events.push(`hold:${target.conversationId}`);
+    },
+    release: (target) => {
+      events.push(`release:${target.conversationId}`);
+    },
+    offerUndo: (params) => {
+      offered.push(params);
+      events.push("undo-toast");
+    },
+    announce: (actionId) => {
+      events.push(`announce:${actionId}`);
+    },
     submit: async ({ target: item, sourceFolderId }) => {
       events.push(`submit:${item.conversationId}`);
       return [{ id: `${item.conversationId}:${sourceFolderId}`, state: "queued" }];
     },
-    followOutcomes: ({ conversations }) =>
-      events.push(`follow:${conversations.map((conversation) => conversation.commands.map((command) => command.id).join("+")).join(",")}`),
-    pruneSelection: (ids) => events.push(`prune:${[...ids].join(",")}`),
-    removesActiveConversation: () => false,
-    refreshAfterSuccess: async () => {
-      events.push("refresh");
+    submitUndo: async ({ commandIds }) => commandIds.map((id) => ({ id, outcome: "cancelled", inverse: null })),
+    followOutcomes: (params) => {
+      followed.push(params);
+      events.push(`follow:${params.target.conversationId}`);
+      return () => {
+        events.push(`stop:${params.target.conversationId}`);
+      };
     },
     reconcile: async () => {
       events.push("reconcile");
@@ -40,285 +70,292 @@ const host = (overrides: Partial<MailWorkspaceActionRunnerHost> = {}) => {
     showMissingTarget: async () => {
       events.push("missing");
     },
-    showNothingToMove: () => events.push("nothing"),
-    showSuccess: (_action, _targets, succeeded) => events.push(`success:${succeeded}`),
-    showFailures: async (failures) => {
-      events.push(`failures:${failures.length}`);
+    showNothingToMove: () => {
+      events.push("nothing");
     },
-    showError: async () => {
+    showFailures: (...params) => {
+      failures.push(params);
+      events.push(`failures:${params[0].length}`);
+    },
+    showUndoFailed: (targets) => {
+      events.push(`undo-failed:${targets.map((target) => target.conversationId).join(",")}`);
+    },
+    showError: () => {
       events.push("error");
     },
     ...overrides,
   };
-  return { host: value, events };
+  return { host: value, events, offered, followed, failures };
 };
 
 describe("Mail workspace action runner", () => {
-  const signal = () => new AbortController().signal;
-
-  test("consumes each open intent once instead of reacting to later unread snapshots", () => {
+  test("auto-read consumes an intent once and waits only for structure work", () => {
     expect(decideMailAutoReadIntent({ intent: 0, consumedIntent: -1, busy: false, unread: false, canSubmit: true })).toBe("consume");
     expect(decideMailAutoReadIntent({ intent: 0, consumedIntent: 0, busy: false, unread: true, canSubmit: true })).toBe("ignore");
     expect(decideMailAutoReadIntent({ intent: 1, consumedIntent: 0, busy: false, unread: true, canSubmit: true })).toBe("read");
-  });
-
-  test("waits to consume a new open intent while another action is pending", () => {
     expect(decideMailAutoReadIntent({ intent: 1, consumedIntent: 0, busy: true, unread: true, canSubmit: true })).toBe("wait");
   });
-
-  test("owns the successful optimistic action sequence", async () => {
-    const fixture = host();
-    await runMailWorkspaceAction("mark_read", {}, fixture.host, signal());
-    expect(fixture.events).toEqual([
-      "optimistic",
-      "submit:one",
-      "submit:two",
-      "clear:",
-      "prune:one,two",
-      "follow:one:inbox,two:inbox",
-      "refresh",
-      "success:2",
-    ]);
-  });
-
-  test("keeps partial failures explicit and reconciles successful targets", async () => {
+  test("projection and one bulk Undo toast precede the first await and submit", async () => {
+    const hold = deferred<void>();
     const fixture = host({
-      submit: async ({ target: item }) => {
-        if (item.conversationId === "two") throw new Error("provider rejected");
-        return [{ id: "archive-one", state: "queued" }];
+      submit: async () => {
+        await hold.promise;
+        return [];
       },
     });
-    await runMailWorkspaceAction("archive", {}, fixture.host, signal());
-    expect(fixture.events).toContain("clear:two");
-    expect(fixture.events).toContain("prune:one");
-    // The rejected conversation was already reported; only the queued one is followed.
-    expect(fixture.events).toContain("follow:archive-one");
-    expect(fixture.events).toContain("failures:1");
+    const action = runMailWorkspaceAction("trash", {}, fixture.host, signal());
+    expect(fixture.events).toEqual(["optimistic", "undo-toast"]);
+    expect(fixture.offered).toHaveLength(1);
+    expect(fixture.offered[0]?.targets).toHaveLength(2);
+    hold.resolve();
+    await action;
   });
-
-  test("reuses correlation and idempotency identities for the same invocation", async () => {
-    const submissions: Array<{ correlationId: string; idempotencyKey: string }> = [];
+  test("overlapping invocations serialize one conversation in click order and allow another in parallel", async () => {
+    const hold = deferred<void>();
+    const calls: string[] = [];
+    const fixture = host({
+      submit: async ({ actionId, target }) => {
+        calls.push(`${target.conversationId}:${actionId}`);
+        if (actionId === "flag") await hold.promise;
+        return [];
+      },
+    });
+    const first = runMailWorkspaceAction("flag", { targets: [target("one")] }, fixture.host, signal());
+    const second = runMailWorkspaceAction("trash", { targets: [target("one")] }, fixture.host, signal());
+    const third = runMailWorkspaceAction("trash", { targets: [target("two")] }, fixture.host, signal());
+    expect(calls).toEqual(["one:flag", "two:trash"]);
+    hold.resolve();
+    await Promise.all([first, second, third]);
+    expect(calls).toEqual(["one:flag", "two:trash", "one:trash"]);
+  });
+  test("a submit failure restores only its target and Retry reuses correlation and idempotency keys", async () => {
+    const submissions: { conversationId: string; correlationId: string; idempotencyKey: string }[] = [];
+    let failing = true;
+    const fixture = host({
+      submit: async ({ target, correlationId, idempotencyKey }) => {
+        submissions.push({ conversationId: target.conversationId, correlationId, idempotencyKey });
+        if (target.conversationId === "two" && failing) throw new Error("provider rejected");
+        return [{ id: target.conversationId, state: "queued" }];
+      },
+    });
+    await runMailWorkspaceAction("trash", {}, fixture.host, signal());
+    expect(fixture.events).toContain("restore:two");
+    expect(fixture.events).not.toContain("restore:one");
+    expect(fixture.failures[0]?.[0][0]?.message).toBe("provider rejected");
+    failing = false;
+    await fixture.failures[0]![1].retry();
+    expect(submissions.filter((submission) => submission.conversationId === "two")[0]).toEqual(submissions.at(-1));
+    expect(submissions.filter((submission) => submission.conversationId === "one")).toHaveLength(1);
+  });
+  test("Undo before send restores immediately, cancels every bulk target and sends no move", async () => {
+    const hold = deferred<void>();
+    const fixture = host({ queue: createMailActionQueue(1) });
+    const earlier = fixture.host.queue.enqueue("one", () => hold.promise);
+    const action = runMailWorkspaceAction("trash", {}, fixture.host, signal());
+    const undo = fixture.offered[0]!.undo();
+    expect(fixture.events).toContain("restore:one");
+    expect(fixture.events).toContain("restore:two");
+    await action;
+    await undo;
+    hold.resolve();
+    await earlier.result;
+    expect(fixture.events.some((event) => event.startsWith("submit:"))).toBe(false);
+    expect(fixture.events.filter((event) => event === "announce:undo")).toHaveLength(1);
+    await fixture.offered[0]!.undo();
+    expect(fixture.events.filter((event) => event === "announce:undo")).toHaveLength(1);
+  });
+  test("Undo after send waits behind earlier choices, uses returned IDs, polls pending and releases cancelled", async () => {
+    const hold = deferred<void>();
+    const requests: string[][] = [];
     const fixture = host({
       resolveTargets: () => [target("one")],
-      submit: async ({ correlationId, idempotencyKey }) => {
-        submissions.push({ correlationId, idempotencyKey });
-        return [];
+      submit: async () => {
+        await hold.promise;
+        return [{ id: "move", state: "queued" }];
+      },
+      submitUndo: async ({ commandIds }) => {
+        requests.push(commandIds);
+        return [{ id: "move", outcome: requests.length === 1 ? "pending" : "cancelled", inverse: null }];
       },
     });
-    const execution = { correlationId: "correlation-1", idempotencyKeys: new Map<string, string>() };
-
-    await runMailWorkspaceAction("mark_read", {}, fixture.host, signal(), execution);
-    await runMailWorkspaceAction("mark_read", {}, fixture.host, signal(), execution);
-
-    expect(submissions).toHaveLength(2);
-    expect(submissions[0]).toEqual(submissions[1]);
-    expect(submissions[0]?.correlationId).toBe("correlation-1");
+    const action = runMailWorkspaceAction("trash", {}, fixture.host, signal());
+    const undo = fixture.offered[0]!.undo();
+    expect(fixture.events).toContain("hold:one");
+    expect(requests).toEqual([]);
+    hold.resolve();
+    await action;
+    await undo;
+    expect(requests).toEqual([["move"], ["move"]]);
+    expect(fixture.events).toContain("release:one");
+    expect(fixture.followed).toEqual([]);
   });
-
-  test("clears optimistic state and rethrows fatal runner failures", async () => {
+  test("a reversed Undo follows inverse commands, reconciles before release and stops the original", async () => {
     const fixture = host({
-      resolveTargets: () => {
-        throw new Error("target resolution failed");
-      },
+      resolveTargets: () => [target("one")],
+      submitUndo: async () => [{ id: "one:inbox", outcome: "reversed", inverse: { id: "inverse", state: "queued", code: null } }],
     });
-    await expect(runMailWorkspaceAction("mark_read", {}, fixture.host, signal())).rejects.toThrow("target resolution failed");
-
-    const submitted = host({
-      refreshAfterSuccess: async () => {
-        throw new Error("refresh failed");
-      },
-    });
-    await expect(runMailWorkspaceAction("mark_read", {}, submitted.host, signal())).rejects.toThrow("refresh failed");
-    expect(submitted.events).toContain("clear:one,two");
-    expect(submitted.events).toContain("reconcile");
-    expect(submitted.events).toContain("error");
+    await runMailWorkspaceAction("trash", {}, fixture.host, signal());
+    const undo = fixture.offered[0]!.undo();
+    await Bun.sleep(0);
+    expect(fixture.events).toContain("stop:one");
+    const inverse = fixture.followed.at(-1)!;
+    expect(inverse.commands[0]?.id).toBe("inverse");
+    expect(inverse.reportFailures).toBe(false);
+    expect(fixture.events).not.toContain("release:one");
+    inverse.onSettled({ conversationId: "one", ok: true, expired: false });
+    await undo;
+    expect(fixture.events.indexOf("reconcile")).toBeLessThan(fixture.events.indexOf("release:one"));
   });
-
-  test("normalizes move targets and optimistic fields", () => {
-    expect(
-      removeDestinationPlacements([target("one", ["inbox", "archive"]), target("two", ["archive"]), target("three", [])], "archive"),
-    ).toEqual([target("one", ["inbox"]), target("three", [])]);
-    expect(mailOptimisticFields("flag" satisfies MailActionId)).toEqual(["flagged"]);
-    expect(mailOptimisticFields("archive")).toEqual([]);
+  test("unavailable and failed inverse outcomes release, reconcile and report Undo failure", async () => {
+    for (const reversed of [false, true]) {
+      const fixture = host({
+        resolveTargets: () => [target("one")],
+        submitUndo: async () => [
+          {
+            id: "one:inbox",
+            outcome: reversed ? "reversed" : "unavailable",
+            inverse: reversed ? { id: "inverse", state: "queued", code: null } : null,
+          },
+        ],
+      });
+      await runMailWorkspaceAction("trash", {}, fixture.host, signal());
+      const undo = fixture.offered[0]!.undo();
+      await Bun.sleep(0);
+      if (reversed) fixture.followed.at(-1)!.onSettled({ conversationId: "one", ok: false, expired: true });
+      await undo;
+      expect(fixture.events).toContain("release:one");
+      expect(fixture.events).toContain("reconcile");
+      expect(fixture.events).toContain("undo-failed:one");
+    }
   });
-
-  test("reports a row in no folder instead of calling it already moved", async () => {
-    // A failed send that never reached a folder is listed under Send problems with no folder to act on.
-    const messages: string[] = [];
-    const fixture = host({
-      resolveTargets: () => [target("unsent", [])],
-      roleDestinationFolderId: () => "archive",
-      showFailures: async (failures) => {
-        messages.push(...failures.map((failure) => failure.message));
-      },
-    });
-
-    await runMailWorkspaceAction("archive", {}, fixture.host, signal());
-    expect(fixture.events).not.toContain("nothing");
-    expect(fixture.events.some((event) => event.startsWith("submit:"))).toBe(false);
-    expect(messages).toEqual([MAIL_BULK_NO_PROVIDER_PLACEMENT]);
-  });
-
-  test("honors cancellation while the destination picker is open", async () => {
-    let releasePicker!: (value: string | null) => void;
-    const controller = new AbortController();
-    const fixture = host({
-      chooseDestinationFolder: () =>
-        new Promise<string | null>((resolve) => {
-          releasePicker = resolve;
-        }),
-    });
-
-    const pending = runMailWorkspaceAction("move", {}, fixture.host, controller.signal);
-    controller.abort();
-    releasePicker("archive");
-    await pending;
-    expect(fixture.events).toEqual([]);
-  });
-
-  test("reconciles a partially submitted multi-placement read", async () => {
-    let submittedPlacements = 0;
-    const fixture = host({
-      resolveTargets: () => [target("one", ["primary", "shared"])],
-      submit: async ({ sourceFolderId }) => {
-        if (sourceFolderId === "shared") throw new Error("provider rejected");
-        return [];
-      },
-      showFailures: async (failures) => {
-        submittedPlacements = failures[0]?.submittedPlacements ?? 0;
-        fixture.events.push(`failures:${failures.length}`);
-      },
-    });
-
-    await runMailWorkspaceAction("mark_read", { silent: true }, fixture.host, signal());
-    expect(fixture.events).toContain("clear:one");
-    expect(fixture.events).toContain("reconcile");
-    expect(fixture.events).toContain("failures:1");
-    expect(submittedPlacements).toBe(1);
-  });
-
-  test("acts once per conversation when several selected rows belong to it", async () => {
-    const submitted: string[] = [];
-    const followed: string[] = [];
-    const fixture = host({
-      resolveTargets: () => [target("one", ["inbox"]), target("one", ["inbox", "projects"]), target("two", ["inbox"])],
-      submit: async ({ target: item, sourceFolderId }) => {
-        submitted.push(`${item.conversationId}:${sourceFolderId}`);
-        return [{ id: `${item.conversationId}:${sourceFolderId}`, state: "queued" }];
-      },
-      followOutcomes: ({ conversations }) => {
-        for (const conversation of conversations)
-          followed.push(`${conversation.conversationId}=${conversation.commands.map((command) => command.sourceFolderId).join("+")}`);
-      },
-    });
-
-    await runMailWorkspaceAction("archive", {}, fixture.host, signal());
-    expect(submitted.sort()).toEqual(["one:inbox", "one:projects", "two:inbox"]);
-    expect(followed.map((entry) => entry.split("=")[0])).toEqual(["one", "two"]);
-    expect(followed[0]?.split("=")[1]?.split("+").sort()).toEqual(["inbox", "projects"]);
-    expect(fixture.events).toContain("success:2");
-  });
-
-  test("follows the commands a partly submitted conversation already queued, with their folder", async () => {
-    const followed: string[] = [];
-    const fixture = host({
-      resolveTargets: () => [target("one", ["inbox", "projects"])],
-      submit: async ({ sourceFolderId }) => {
-        if (sourceFolderId === "projects") throw new Error("provider rejected");
-        return [{ id: "archive-inbox", state: "queued" }];
-      },
-      followOutcomes: ({ conversations }) => {
-        for (const conversation of conversations)
-          for (const command of conversation.commands) followed.push(`${command.id}@${command.sourceFolderId}`);
-      },
-    });
-
-    await runMailWorkspaceAction("archive", {}, fixture.host, signal());
-    expect(fixture.events).toContain("failures:1");
-    // The Inbox commands can still fail later; Try again would then repeat the Inbox only, never the
-    // Projects request whose outcome is unknown.
-    expect(followed).toEqual(["archive-inbox@inbox"]);
-  });
-
-  test("keeps the folders the action started from while the list updates them", async () => {
-    const listFolders = ["inbox"];
-    const submitted: string[] = [];
-    const fixture = host({
-      resolveTargets: () => [{ conversationId: "one", label: "one", sourceFolderIds: listFolders }],
-      submit: async ({ sourceFolderId }) => {
-        submitted.push(sourceFolderId);
-        // The list store reconciles the same row after a navigation, in place.
-        listFolders.splice(0, listFolders.length, "sent", "inbox");
-        return [];
-      },
-    });
-
-    await runMailWorkspaceAction("archive", {}, fixture.host, signal());
-    expect(submitted).toEqual(["inbox"]);
-  });
-
-  test("leaves conversations alone that already sit in the folder Archive moves to", async () => {
-    const submitted: string[] = [];
-    const fixture = host({
-      resolveTargets: () => [target("one", ["inbox", "archive"]), target("two", ["archive"])],
-      roleDestinationFolderId: (actionId) => (actionId === "archive" ? "archive" : null),
-      submit: async ({ target: item, sourceFolderId }) => {
-        submitted.push(`${item.conversationId}:${sourceFolderId}`);
-        return [];
-      },
-    });
-
-    await runMailWorkspaceAction("archive", {}, fixture.host, signal());
-    expect(submitted).toEqual(["one:inbox"]);
-
-    const nothing = host({ resolveTargets: () => [target("two", ["archive"])], roleDestinationFolderId: () => "archive" });
-    await runMailWorkspaceAction("archive", {}, nothing.host, signal());
-    expect(nothing.events).toEqual(["nothing"]);
-  });
-
-  test("does nothing, without asking for a folder, when the rows it was given are gone", async () => {
-    // A dragged row that a live update removed before the drop resolves to no target.
+  test("later failed outcomes restore at once; confirmation reconciles then releases per target", async () => {
     const fixture = host();
-    await runMailWorkspaceAction("move", { targets: [], destinationFolderId: "projects" }, fixture.host, signal());
-    expect(fixture.events).toEqual([]);
-
-    const unresolved = host({ resolveTargets: () => [] });
-    await runMailWorkspaceAction("archive", {}, unresolved.host, signal());
-    expect(unresolved.events).toEqual(["missing"]);
+    await runMailWorkspaceAction("archive", {}, fixture.host, signal());
+    fixture.followed[0]!.onFailure();
+    fixture.followed[0]!.onSettled({ conversationId: "one", ok: false, expired: false });
+    expect(fixture.events).toContain("restore:one");
+    fixture.followed[1]!.onSettled({ conversationId: "two", ok: true, expired: false });
+    await Bun.sleep(0);
+    expect(fixture.events).toContain("release:two");
+    expect(fixture.events).not.toContain("release:one");
   });
-
-  test("follows the commands a user action queued, but not those of a silent read on open", async () => {
-    const chosen = host();
-    await runMailWorkspaceAction("archive", {}, chosen.host, signal());
-    expect(chosen.events).toContain("follow:one:inbox,two:inbox");
-
+  test("bulk Undo after sending covers every conversation with one notice", async () => {
+    const undone: string[] = [];
+    const fixture = host({
+      submitUndo: async ({ target, commandIds }) => {
+        undone.push(target.conversationId);
+        return commandIds.map((id) => ({ id, outcome: "not_applied", inverse: null }));
+      },
+    });
+    await runMailWorkspaceAction("trash", {}, fixture.host, signal());
+    expect(fixture.offered).toHaveLength(1);
+    await fixture.offered[0]!.undo();
+    expect(undone).toEqual(["one", "two"]);
+  });
+  test("toggles reconcile once per invocation, announce and offer no toast; silent read announces nothing", async () => {
+    const fixture = host();
+    await runMailWorkspaceAction("mark_read", {}, fixture.host, signal());
+    expect(fixture.events.filter((event) => event === "reconcile")).toHaveLength(1);
+    expect(fixture.events).toContain("announce:mark_read");
+    expect(fixture.offered).toHaveLength(0);
     const silent = host();
     await runMailWorkspaceAction("mark_read", { silent: true }, silent.host, signal());
-    expect(silent.events.some((event) => event.startsWith("follow:"))).toBe(false);
+    expect(silent.offered).toHaveLength(0);
+    expect(silent.followed).toHaveLength(0);
+    expect(silent.events.some((event) => event.startsWith("announce:"))).toBe(false);
   });
-
-  test("sends the messages of message-list rows, and the whole conversation once a row stands for it", async () => {
-    const submitted: string[] = [];
-    const followed: string[] = [];
+  test("reports no placement and preserves partial submission counts and followed folder identities", async () => {
     const fixture = host({
-      resolveTargets: () => [
-        { ...target("one", ["inbox"]), messageIds: ["a"] },
-        { ...target("one", ["projects"]), messageIds: ["b"] },
-        { ...target("two", ["inbox"]), messageIds: ["c"] },
-        target("two", ["inbox"]),
-      ],
-      submit: async ({ target: item, sourceFolderId }) => {
-        submitted.push(`${item.conversationId}:${sourceFolderId}:${item.messageIds?.join("+") ?? "all"}`);
-        return [{ id: `${item.conversationId}:${sourceFolderId}`, state: "queued" }];
-      },
-      followOutcomes: ({ conversations }) => {
-        for (const conversation of conversations)
-          followed.push(`${conversation.conversationId}:${conversation.messageIds?.join("+") ?? "all"}`);
+      resolveTargets: () => [target("one", ["inbox", "projects"]), target("two", [])],
+      submit: async ({ sourceFolderId }) => {
+        if (sourceFolderId === "projects") throw new Error("rejected");
+        return [{ id: "inbox-command", state: "queued" }];
       },
     });
-
+    await runMailWorkspaceAction("archive", {}, fixture.host, signal());
+    expect(fixture.failures[0]?.[0]).toEqual([
+      { conversationId: "one", label: "one", message: "rejected", submittedPlacements: 1 },
+      { conversationId: "two", label: "two", message: MAIL_BULK_NO_PROVIDER_PLACEMENT, submittedPlacements: 0 },
+    ]);
+    expect(fixture.followed[0]?.commands[0]?.sourceFolderId).toBe("inbox");
+  });
+  test("merges conversation/message targets and snapshots source folders before submission", async () => {
+    const listFolders = ["inbox"];
+    const calls: string[] = [];
+    const fixture = host({
+      resolveTargets: () => [
+        { ...target("one", listFolders), messageIds: ["a"] },
+        { ...target("one", ["projects"]), messageIds: ["b"] },
+        { ...target("two"), messageIds: ["c"] },
+        target("two"),
+      ],
+      submit: async ({ target, sourceFolderId }) => {
+        calls.push(`${target.conversationId}:${sourceFolderId}:${target.messageIds?.join("+") ?? "all"}`);
+        listFolders.push("sent");
+        return [];
+      },
+    });
     await runMailWorkspaceAction("trash", {}, fixture.host, signal());
-    expect(submitted.sort()).toEqual(["one:inbox:a+b", "one:projects:a+b", "two:inbox:all"]);
-    expect(followed).toEqual(["one:a+b", "two:all"]);
+    expect(calls.sort()).toEqual(["one:inbox:a+b", "one:projects:a+b", "two:inbox:all"]);
+  });
+  test("Undo respects the public command-ID batch bound for a multi-placement action", async () => {
+    const batches: number[] = [];
+    const fixture = host({
+      resolveTargets: () => [target("one", ["inbox", "projects"])],
+      submit: async ({ sourceFolderId }) =>
+        Array.from({ length: sourceFolderId === "inbox" ? 500 : 1 }, (_, index) => ({
+          id: `${sourceFolderId}-${index}`,
+          state: "queued" as const,
+        })),
+      submitUndo: async ({ commandIds }) => {
+        batches.push(commandIds.length);
+        return commandIds.map((id) => ({ id, outcome: "cancelled", inverse: null }));
+      },
+    });
+    await runMailWorkspaceAction("trash", {}, fixture.host, signal());
+    await fixture.offered[0]!.undo();
+    expect(batches).toEqual([500, 1]);
+  });
+  test("cleanup stops UI following but submissions already queued survive", async () => {
+    const hold = deferred<void>();
+    const controller = new AbortController();
+    const calls: string[] = [];
+    const fixture = host({
+      submit: async ({ actionId }) => {
+        calls.push(actionId);
+        if (actionId === "flag") await hold.promise;
+        return [{ id: actionId, state: "queued" }];
+      },
+    });
+    const first = runMailWorkspaceAction("flag", { targets: [target("one")] }, fixture.host, controller.signal);
+    const second = runMailWorkspaceAction("trash", { targets: [target("one")] }, fixture.host, controller.signal);
+    controller.abort();
+    hold.resolve();
+    await Promise.all([first, second]);
+    expect(calls).toEqual(["flag", "trash"]);
+    expect(fixture.followed).toEqual([]);
+  });
+  test("destination-normalized moves and missing targets retain their messages; picker cancellation does nothing", async () => {
+    expect(
+      removeDestinationPlacements([target("one", ["inbox", "archive"]), target("two", ["archive"]), target("three", [])], "archive"),
+    ).toEqual([target("one"), target("three", [])]);
+    expect(mailOptimisticFields("flag" satisfies MailActionId)).toEqual(["flagged"]);
+    expect(mailOptimisticFields("archive")).toEqual([]);
+    const fixture = host({ resolveTargets: () => [target("one", ["archive"])], roleDestinationFolderId: () => "archive" });
+    await runMailWorkspaceAction("archive", {}, fixture.host, signal());
+    expect(fixture.events).toEqual(["nothing"]);
+    const missing = host({ resolveTargets: () => [] });
+    await runMailWorkspaceAction("move", { targets: [] }, missing.host, signal());
+    expect(missing.events).toEqual([]);
+    await runMailWorkspaceAction("archive", {}, missing.host, signal());
+    expect(missing.events).toEqual(["missing"]);
+    const picker = deferred<string | null>();
+    const controller = new AbortController();
+    const cancelled = host({ chooseDestinationFolder: () => picker.promise });
+    const action = runMailWorkspaceAction("move", {}, cancelled.host, controller.signal);
+    controller.abort();
+    picker.resolve("archive");
+    await action;
+    expect(cancelled.events).toEqual([]);
   });
 });

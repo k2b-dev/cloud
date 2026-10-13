@@ -447,6 +447,24 @@ cld mail rm <conversation-id> --yes
 `--replace` replaces them, `--remove maria` removes one, and `--to none`
 removes everyone. `cld mail conversation users` lists who can be assigned.
 
+API clients can undo the move commands returned by a conversation action with
+`POST /api/mail/mailboxes/{mailboxId}/conversations/{conversationId}/actions/undo`
+and `{ "commandIds": ["<command-uuid>"] }`. The request requires write access
+and a visible conversation, and accepts at most 500 command IDs, the bound for
+one conversation action. Every command must be a move by the requesting actor
+for a message of that conversation in that mailbox; otherwise the whole
+request is refused. Resource IDs are public short IDs; command IDs remain UUIDs.
+
+Results follow the requested order. `cancelled` means the queued move was
+stopped before it ran; `reversed` includes an inverse command's `id`, `state`,
+and `code` to follow through command outcomes. Repeating a reversal returns
+the same inverse command. `pending` means the original move is still unsettled
+or its destination copy is not visible yet; ask again later. `not_applied`
+means the original move failed or was cancelled. `unavailable` means Mail
+cannot safely reverse it, for example because it needs attention or current
+folder rights or keep rules refuse the inverse. Each inverse is queued
+independently, so one refusal does not prevent the others.
+
 `reply` and `forward` create a draft from a conversation's latest message, and
 `send` sends a draft:
 
