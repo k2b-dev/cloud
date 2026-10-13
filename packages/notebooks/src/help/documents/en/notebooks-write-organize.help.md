@@ -99,7 +99,7 @@ The sidebar shows the notebook's notes as a tree, with the homepage first. Filte
 
 :::reference
 - **Notebook name:** Choose the name at the top to switch to another notebook or to open **All notebooks**.
-- **Search and new notes:** Choose **Search notes**, or press **Cmd/Ctrl+Shift+K**. With **Edit** or **Manage** access, choose the pencil next to the name, or press **Cmd/Ctrl+Alt+N**, to create a note.
+- **Search and new notes:** Choose **Search notes**, or press **Cmd/Ctrl+Shift+K**. With **Edit** or **Manage** access, choose the pencil next to the name, or press **Cmd/Ctrl+Alt+N**, to create a note. The last word you type also matches the start of a word: *meet* finds *meetings*. Notes whose title is or starts with what you typed come first.
 - **Favorites, Recent, and Tags:** These filters show a list instead of the tree, with the most recently changed note first. **Recent** shows the 12 most recently changed notes. Each note shows when it changed and its first two tags. Choose the filter again, or **×** above the list, to see the tree again.
 - **The list stays in place:** While the list is open, changes from you or others do not move its notes. A note that starts to match the filter comes at the end. To sort the list again, choose the filter two times.
 - **Your favorites:** In the menu of a note, choose **Add favorite**. Only you see your favorites.

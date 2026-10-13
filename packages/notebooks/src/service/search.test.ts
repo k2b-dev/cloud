@@ -1,6 +1,47 @@
 import { expect, spyOn, test } from "bun:test";
 import { serviceAccounts } from "@k2b/cloud/services";
-import { isBm25CapabilityError, searchAcross } from "./search";
+import { isBm25CapabilityError, searchAcross, splitPrefixQuery } from "./search";
+
+test.each([
+  ["", { rest: "", prefix: null }],
+  ["Bespr", { rest: "", prefix: "Bespr:*" }],
+  ["Über", { rest: "", prefix: "Über:*" }],
+  ["U\u0308ber", { rest: "", prefix: "Über:*" }],
+  ["team Bespr", { rest: "team", prefix: "Bespr:*" }],
+  ["team\t\nBespr", { rest: "team", prefix: "Bespr:*" }],
+  ["a", { rest: "a", prefix: null }],
+  ["a:*", { rest: "a:*", prefix: null }],
+  ["al:*", { rest: "", prefix: "al:*" }],
+  ["Bespr,", { rest: "", prefix: "Bespr:*" }],
+  ["(Bespr)", { rest: "", prefix: "Bespr:*" }],
+  ["(", { rest: "(", prefix: null }],
+  ["!", { rest: "!", prefix: null }],
+  ["&|", { rest: "&|", prefix: null }],
+  ['"', { rest: '"', prefix: null }],
+  ['""', { rest: '""', prefix: null }],
+  ["-draft", { rest: "-draft", prefix: null }],
+  ['"rollback plan"', { rest: '"rollback plan"', prefix: null }],
+  ['"rollback plan', { rest: '"rollback plan', prefix: null }],
+  ['"rollback plan" draft', { rest: '"rollback plan"', prefix: "draft:*" }],
+  ["e-mail", { rest: "e-mail", prefix: null }],
+  ["O'Brien", { rest: "O'Brien", prefix: null }],
+  ["report.pdf", { rest: "report.pdf", prefix: null }],
+  ["3.14", { rest: "3.14", prefix: null }],
+  ["foo@bar.com", { rest: "foo@bar.com", prefix: null }],
+  ["snake_case", { rest: "snake_case", prefix: null }],
+  ["2026-10-13", { rest: "2026-10-13", prefix: null }],
+  ["हिन्दी", { rest: "", prefix: "हिन्दी:*" }],
+  ["שָׁלוֹם", { rest: "", prefix: "שָׁלוֹם:*" }],
+  ["alpha - beta", { rest: "alpha - beta", prefix: null }],
+  ["alpha -- beta", { rest: "alpha -- beta", prefix: null }],
+  ["alpha or beta gamma", { rest: "alpha or beta gamma", prefix: null }],
+  ["deployment OR rollback plan", { rest: "deployment OR rollback plan", prefix: null }],
+  ["deployment or Bespr", { rest: "deployment or Bespr", prefix: null }],
+  ["deployment OR Bespr", { rest: "deployment OR Bespr", prefix: null }],
+  ["Woche 41", { rest: "Woche", prefix: "41:*" }],
+])("splits the last prefix token in %j", (query, expected) => {
+  expect(splitPrefixQuery(query)).toEqual(expected);
+});
 
 test("BM25 fallback accepts only capability errors", () => {
   expect(isBm25CapabilityError({ code: "42883" })).toBe(true);
