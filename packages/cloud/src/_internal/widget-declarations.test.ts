@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { WidgetEndpoint } from "../contracts/app";
+import { WIDGET_ID_MAX_LENGTH } from "../contracts/widgets";
 import { compileWidgetDeclarations } from "./widget-declarations";
 
 const widget = (overrides: Partial<WidgetEndpoint> = {}): WidgetEndpoint => ({
@@ -9,6 +10,15 @@ const widget = (overrides: Partial<WidgetEndpoint> = {}): WidgetEndpoint => ({
 });
 
 describe("compileWidgetDeclarations", () => {
+  test("accepts the longest invokable id and rejects ids Core cannot invoke", () => {
+    const id = "a0:._-".repeat(32).slice(0, WIDGET_ID_MAX_LENGTH);
+    expect(compileWidgetDeclarations("inventory", [widget({ id })])?.[0]?.id).toBe(id);
+    for (const id of ["stock/summary", "Stock", "a".repeat(WIDGET_ID_MAX_LENGTH + 1)]) {
+      expect(() => compileWidgetDeclarations("inventory", [widget({ id })])).toThrow(
+        'id must use 1 to 188 lowercase letters, digits, ".", "_", "-", or ":" because Core invokes it as widget.read:<id>',
+      );
+    }
+  });
   test("keeps a valid declaration, trims its texts, and orders its sizes from small to large", () => {
     expect(
       compileWidgetDeclarations("inventory", [
@@ -52,6 +62,13 @@ describe("compileWidgetDeclarations", () => {
 });
 
 describe("widget settings declarations", () => {
+  test("rejects Object.prototype setting names at startup", () => {
+    for (const name of ["toString", "constructor", "valueOf", "hasOwnProperty"]) {
+      expect(() => compileWidgetDeclarations("inventory", [widget({ settings: { [name]: { kind: "text", label: "Text" } } })])).toThrow(
+        "Setting names must not be Object.prototype members",
+      );
+    }
+  });
   test("compiles four kinds, trims presentation and copies choice options", () => {
     const declaration: WidgetEndpoint = widget({
       settings: {

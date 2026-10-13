@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CloudResourceRef } from "./capabilities";
+import { CAPABILITY_QUALIFIED_ID_MAX_LENGTH, CLOUD_RESOURCE_ID_MAX_LENGTH, type CloudResourceRef } from "./capabilities";
 
 /**
  * Widget JSON contract — what an app's widget endpoint must return when the
@@ -65,9 +65,18 @@ export type DashboardWidgetSize = (typeof DASHBOARD_WIDGET_SIZES)[number];
 export const WIDGET_TITLE_MAX_LENGTH = 80;
 /** Longest declared widget description, in characters: one sentence in the widget gallery. */
 export const WIDGET_DESCRIPTION_MAX_LENGTH = 200;
+/**
+ * Core signs `widget.read:<widgetId>`; the invocation token's OperationSchema limits operations to 200 characters
+ * matching /^[a-z][a-z0-9:._-]*$/ (services/identity/invocation-token.ts). Longer IDs or other characters cannot be invoked.
+ */
+export const WIDGET_ID_MAX_LENGTH = 188;
+/** `<appId>/<widgetId>`; the invocation token's audience rule limits app IDs to 80 characters. */
+export const WIDGET_KEY_MAX_LENGTH = 80 + 1 + WIDGET_ID_MAX_LENGTH;
 
 /** Maximum settings a widget can declare. */
 export const WIDGET_SETTINGS_MAX_FIELDS = 4;
+/** Maximum setting name length, matching /^[a-z][a-zA-Z0-9]{0,31}$/. */
+export const WIDGET_SETTING_NAME_MAX_LENGTH = 32;
 /** Maximum options in a choice setting; at least one is required. */
 export const WIDGET_SETTING_MAX_OPTIONS = 6;
 /** Maximum text setting length, also used when no maxLength is declared. */
@@ -76,8 +85,26 @@ export const WIDGET_SETTING_TEXT_MAX_LENGTH = 200;
 export const WIDGET_REQUEST_MAX_ENTRIES = 100;
 /** Maximum board entry identifier length, in characters. */
 export const WIDGET_REQUEST_MAX_ID_LENGTH = 120;
-/** Request body budget in bytes, covering 100 entries of realistic size. */
-export const WIDGET_REQUEST_MAX_BYTES = 64 * 1024;
+const jsonCodeUnitMaxBytes = "\\u001f".length;
+const resourceRefMaxBytes =
+  '{"type":"","id":""}'.length + CAPABILITY_QUALIFIED_ID_MAX_LENGTH + CLOUD_RESOURCE_ID_MAX_LENGTH * jsonCodeUnitMaxBytes;
+const settingMemberMaxBytes = '"":'.length + WIDGET_SETTING_NAME_MAX_LENGTH + resourceRefMaxBytes;
+const settingsMaxBytes = "{}".length + WIDGET_SETTINGS_MAX_FIELDS * settingMemberMaxBytes + (WIDGET_SETTINGS_MAX_FIELDS - 1) * ",".length;
+const sizeNameMaxBytes = Math.max(...DASHBOARD_WIDGET_SIZES.map((size) => size.length));
+const requestEntryMaxBytes =
+  '{"id":"","key":"","size":"","settings":}'.length +
+  WIDGET_REQUEST_MAX_ID_LENGTH * jsonCodeUnitMaxBytes +
+  WIDGET_KEY_MAX_LENGTH +
+  sizeNameMaxBytes +
+  settingsMaxBytes;
+/**
+ * Largest compact JSON POST body in UTF-8: 100 entries with maximum IDs, keys, size names and four settings.
+ * Free-form entry and resource IDs need up to six bytes per UTF-16 code unit (e.g. `\u001f`); keys, size names,
+ * setting names and resource types are ASCII. A resource reference is larger than 200 text characters at six bytes
+ * each. Include every object's punctuation and the commas between entries and settings.
+ */
+export const WIDGET_REQUEST_MAX_BYTES =
+  '{"widgets":['.length + WIDGET_REQUEST_MAX_ENTRIES * requestEntryMaxBytes + (WIDGET_REQUEST_MAX_ENTRIES - 1) * ",".length + "]}".length;
 
 /** A widget's editable setting; resource values carry identity, never authorization. */
 export type WidgetSettingField =

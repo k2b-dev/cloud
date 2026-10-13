@@ -2,6 +2,7 @@ import { z } from "zod";
 import { CapabilityQualifiedIdSchema, CloudResourceRefSchema } from "../contracts/capabilities";
 import {
   WIDGET_SETTING_MAX_OPTIONS,
+  WIDGET_SETTING_NAME_MAX_LENGTH,
   WIDGET_SETTING_TEXT_MAX_LENGTH,
   WIDGET_SETTINGS_MAX_FIELDS,
   WIDGET_TITLE_MAX_LENGTH,
@@ -15,7 +16,7 @@ const settingLabel = z.string().trim().min(1).max(WIDGET_TITLE_MAX_LENGTH);
 /** The single declaration schema used at startup and for tolerant registry reads. */
 export const WidgetSettingsDeclarationSchema = z
   .record(
-    z.string().regex(/^[a-z][a-zA-Z0-9]{0,31}$/),
+    z.string().regex(new RegExp(`^[a-z][a-zA-Z0-9]{0,${WIDGET_SETTING_NAME_MAX_LENGTH - 1}}$`)),
     z.discriminatedUnion("kind", [
       z
         .object({
@@ -52,6 +53,12 @@ export const WidgetSettingsDeclarationSchema = z
       }),
     ]),
   )
+  .superRefine((fields, ctx) => {
+    for (const name of Object.keys(fields)) {
+      if (name in Object.prototype)
+        ctx.addIssue({ code: "custom", path: [name], message: "Setting names must not be Object.prototype members" });
+    }
+  })
   .refine((fields) => Object.keys(fields).length <= WIDGET_SETTINGS_MAX_FIELDS, `Declare at most ${WIDGET_SETTINGS_MAX_FIELDS} settings`);
 
 /** Drop invalid or undeclared values and fill choice and toggle defaults without reporting input errors. */

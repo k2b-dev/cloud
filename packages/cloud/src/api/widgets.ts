@@ -8,6 +8,7 @@ import {
   type DashboardWidgetSize,
   fitWidgetSize,
   isDashboardWidgetSize,
+  WIDGET_KEY_MAX_LENGTH,
   WIDGET_MAX_RESPONSE_BYTES,
   WIDGET_REQUEST_MAX_BYTES,
   WIDGET_REQUEST_MAX_ENTRIES,
@@ -19,7 +20,7 @@ import {
   widgetKey,
 } from "../contracts/widgets";
 import { type AuthContext, auth, preferredLocale, rejectReservedWorkloadCredential } from "../server";
-import { WIDGET_SETTINGS_PARAM, WIDGET_SIZE_PARAM } from "../server/widget-request";
+import { WIDGET_SETTINGS_PARAM, WIDGET_SETTINGS_PARAM_MAX_LENGTH, WIDGET_SIZE_PARAM } from "../server/widget-request";
 import { CLOUD_INVOCATION_TOKEN_TTL_SECONDS } from "../services/identity/constants";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { widgetInvocationOperation } from "../services/identity/invocation-operations";
@@ -56,6 +57,7 @@ type WidgetRejectionReason =
   | "upstream_timeout"
   | "upstream_status"
   | "too_large"
+  | "settings_too_large"
   | "invalid_json"
   | "invalid_schema"
   | "deadline_exceeded"
@@ -113,8 +115,12 @@ const callProvider = async (options: {
 
     const targetUrl = new URL(`/api/_internal/widgets/v1/${encodeURIComponent(widget.widgetId)}`, widget.url);
     targetUrl.searchParams.set(WIDGET_SIZE_PARAM, fitWidgetSize(options.size, widget));
-    if (widget.settings)
-      targetUrl.searchParams.set(WIDGET_SETTINGS_PARAM, JSON.stringify(parseWidgetSettings(widget.settings, options.settings)));
+    if (widget.settings) {
+      const json = JSON.stringify(parseWidgetSettings(widget.settings, options.settings));
+      const encodedLength = new URLSearchParams([[WIDGET_SETTINGS_PARAM, json]]).toString().length - WIDGET_SETTINGS_PARAM.length - 1;
+      if (encodedLength > WIDGET_SETTINGS_PARAM_MAX_LENGTH) return { status: "error", phase: "provider", reason: "settings_too_large" };
+      targetUrl.searchParams.set(WIDGET_SETTINGS_PARAM, json);
+    }
     signal.throwIfAborted();
     const response = await options.fetch(targetUrl, { headers, signal });
     if (response.status === 204 || response.status === 403) {
@@ -160,11 +166,7 @@ const WidgetEntriesSchema = z
         z
           .object({
             id: z.string().min(1).max(WIDGET_REQUEST_MAX_ID_LENGTH),
-            key: z
-              .string()
-              .min(1)
-              .max(200)
-              .regex(/^[^/]+\/[^/]+$/),
+            key: z.string().min(1).max(WIDGET_KEY_MAX_LENGTH),
             size: z.string().optional(),
             settings: z
               .record(z.string(), z.unknown())

@@ -49,7 +49,9 @@ export const app = defineApp({
 });
 ```
 
-The ID must be unique inside the application and must not contain `@`, which
+The ID must be unique inside the application and contain 1–188 lowercase
+letters, digits, `.`, `_`, `-`, or `:`. Core invokes a widget as
+`widget.read:<id>`, which an invocation allows up to 200 characters, and `@`
 separates a widget from the size the dashboard asks for. The path must be an
 absolute route served by that application.
 
@@ -65,9 +67,9 @@ absolute route served by that application.
 
 Translate `title` and `description` under
 `presentation.translations.<locale>.widgets.<id>`. `defineApp()` rejects a
-duplicated ID or one with `@`, an empty or overlong text, an unknown size or
-role, a `defaultSize` the widget does not offer, and a `suggest` that is not
-`true` or `false`.
+duplicated, overlong, or otherwise invalid ID, an empty or overlong text, an
+unknown size or role, a `defaultSize` the widget does not offer, and a
+`suggest` that is not `true` or `false`.
 
 `requiresRoles` only decides what the gallery and the default board offer. It
 is not authorization: the handler still checks every request and answers
@@ -117,7 +119,8 @@ settings: {
 | `toggle` | `label`, optional boolean `default` | A boolean. |
 | `text` | `label`, optional `placeholder` and `maxLength` | A trimmed string. |
 
-Names are camelCase identifiers matching `/^[a-z][a-zA-Z0-9]{0,31}$/`.
+Names are camelCase identifiers matching `/^[a-z][a-zA-Z0-9]{0,31}$/` and
+must not name a built-in object member such as `toString` or `constructor`.
 Labels, option labels, and placeholders are trimmed and must contain 1–80
 characters. Option values must be distinct within a field, contain 1–100
 characters, and contain no control characters. A choice default must be one
@@ -146,7 +149,11 @@ forwarding, and the application validates them again against its declaration.
 Unknown names and invalid values are silently dropped, never reported as a
 settings error. Missing or dropped choice and toggle values use their declared
 defaults. Empty, overlong, or control-containing text and resource references
-of another type are dropped.
+of another type are dropped. Core sends the values in the request URL and
+never sends more than 8 KiB of them, URL-encoded, which keeps the request
+within an application's 16 KiB header limit. A board entry whose values encode
+longer, which only happens with very long resource IDs, ends as `error`
+instead of reaching the widget without its settings.
 
 A widget must work without settings. Values can be missing, dropped, or stale.
 A valid resource reference grants no access: resolve its app-owned ID and
@@ -311,8 +318,9 @@ wait for slower ones.
 - **Stream deadline:** one stream ends after 30 seconds, when the invocations
   Core signed for it expire. Every widget that has not answered by then
   reports `timeout`, including one still waiting for a free place that was
-  never asked; **Try again** asks it in a new stream. Only a dashboard with
-  many slow widgets reaches this deadline.
+  never asked; **Try again** asks it in a new stream. Only a board with many
+  slow widgets reaches this deadline: at eight at a time, 100 entries that
+  each take three seconds need about 39 seconds.
 - **Failure:** a widget that times out, answers with an unexpected status, or
   returns invalid JSON shows a short message and **Try again** in its own
   frame. Retrying asks only that widget again. The rest of the board is never
@@ -377,17 +385,19 @@ widget keys with different settings. Send JSON with
 }
 ```
 
-The strict body accepts 1–100 entries and at most 64 KiB. Each entry needs a
-unique `id` of 1–120 characters and a `<appId>/<widgetId>` key of 1–200
-characters. `size` is an optional string, fitted to the widget's offered
-sizes. `settings` is an optional object with at most four values. Invalid
-JSON, a schema failure, duplicate IDs, or an oversized body returns `400`
-with `{ "message": "..." }`.
+The strict body accepts 1–100 entries. Each entry needs a unique `id` of 1–120
+characters and a `<appId>/<widgetId>` key of 1–269 characters, the longest key
+Core can invoke. The byte limit is the largest valid body: 100 entries with
+every value at its maximum, in compact JSON, with each character of a free-form
+string at its longest escape, which is 1,426,513 bytes. `size` is an optional
+string, fitted to the widget's offered sizes. `settings` is an optional object
+with at most four values. Invalid JSON, a schema failure, duplicate IDs, or an
+oversized body returns `400` with `{ "message": "..." }`.
 
-Unknown widget keys are left out. `start.widgets` lists the requested entry
-IDs in request order. Every `widget` line includes that entry's `id` and its
-`key`; lines arrive as entries finish. GET keeps its existing lines without
-`id` and names keys in `start.widgets`.
+Unknown or malformed widget keys are left out. `start.widgets` lists the
+requested entry IDs in request order. Every `widget` line includes that entry's
+`id` and its `key`; lines arrive as entries finish. GET keeps its existing
+lines without `id` and names keys in `start.widgets`.
 
 Pass `requests: [{ id, key, size?, settings? }]` to `streamWidgets()` to use
 POST. This ignores `keys` and `sizes`. Both transports forward the locale and

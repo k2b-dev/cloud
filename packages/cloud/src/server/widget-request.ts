@@ -13,8 +13,10 @@ export const WIDGET_SIZE_PARAM = "size";
 /** The query parameter Core uses to send one entry's validated settings. */
 export const WIDGET_SETTINGS_PARAM = "settings";
 /**
- * Longest settings parameter a handler reads, in characters. Core sends only validated values of at most four
- * settings, which stay far below it; anything longer is not from Core and counts as no values.
+ * Bun's default maximum request head is 16 KiB (a 17,000-character query was verified to return 431). The invocation
+ * JWT uses up to 4 KiB (IDENTITY_MAX_COMPACT_TOKEN_BYTES), and the path and other forwarded headers use about 1–2 KiB,
+ * leaving headroom for 8 KiB of URL-encoded settings. Core measures that encoding and never forwards more. A decoded
+ * value is never longer than its encoding, so the app never drops settings Core sends; longer input counts as missing.
  */
 export const WIDGET_SETTINGS_PARAM_MAX_LENGTH = 8 * 1024;
 

@@ -108,7 +108,8 @@ See [Server APIs](/en/docs/server) for the request path.
 The widget setting types `WidgetSettingField`, `WidgetSettingsDeclaration`,
 `WidgetSettingValue`, and `WidgetSettings`, and the limits
 `WIDGET_SETTINGS_MAX_FIELDS`, `WIDGET_SETTING_MAX_OPTIONS`,
-`WIDGET_SETTING_TEXT_MAX_LENGTH`, `WIDGET_REQUEST_MAX_ENTRIES`,
+`WIDGET_SETTING_TEXT_MAX_LENGTH`, `WIDGET_SETTING_NAME_MAX_LENGTH`,
+`WIDGET_ID_MAX_LENGTH`, `WIDGET_KEY_MAX_LENGTH`, `WIDGET_REQUEST_MAX_ENTRIES`,
 `WIDGET_REQUEST_MAX_ID_LENGTH`, and `WIDGET_REQUEST_MAX_BYTES` come from
 `@k2b/cloud/contracts`; `@k2b/cloud/browser/widgets` re-exports the types. See
 [Declare settings](/en/docs/platform/dashboard-widgets#declare-settings).

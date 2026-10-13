@@ -3,8 +3,20 @@ import { sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
 import type { DashboardWidget } from "../_internal/registry";
-import { WIDGET_REQUEST_MAX_BYTES, type WidgetStreamLine } from "../contracts/widgets";
+import { CAPABILITY_QUALIFIED_ID_MAX_LENGTH, CLOUD_RESOURCE_ID_MAX_LENGTH } from "../contracts/capabilities";
+import {
+  WIDGET_ID_MAX_LENGTH,
+  WIDGET_KEY_MAX_LENGTH,
+  WIDGET_REQUEST_MAX_BYTES,
+  WIDGET_REQUEST_MAX_ENTRIES,
+  WIDGET_REQUEST_MAX_ID_LENGTH,
+  WIDGET_SETTING_NAME_MAX_LENGTH,
+  WIDGET_SETTINGS_MAX_FIELDS,
+  type WidgetStreamLine,
+  widgetKey,
+} from "../contracts/widgets";
 import type { AuthContext } from "../server";
+import { WIDGET_SETTINGS_PARAM, WIDGET_SETTINGS_PARAM_MAX_LENGTH } from "../server/widget-request";
 import { type signInvocationToken, signInvocationToken as signRealInvocation } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { createWidgetRoutes as buildWidgetRoutes, WIDGET_CONCURRENCY } from "./widgets";
@@ -639,6 +651,145 @@ describe("Core widget stream", () => {
 });
 
 describe("widget entry stream", () => {
+  test("accepts the exact maximal compact body and rejects one extra byte", async () => {
+    const type = `a.${"b".repeat(CAPABILITY_QUALIFIED_ID_MAX_LENGTH - 2)}`;
+    const names = Array.from({ length: WIDGET_SETTINGS_MAX_FIELDS }, (_, i) => `s${"a".repeat(WIDGET_SETTING_NAME_MAX_LENGTH - 2)}${i}`);
+    const declared: DashboardWidget = {
+      ...widget,
+      appId: "a".repeat(80),
+      widgetId: "b".repeat(WIDGET_ID_MAX_LENGTH),
+      settings: Object.fromEntries(names.map((name) => [name, { kind: "resource", label: "Resource", type }])),
+    };
+    const key = widgetKey(declared.appId, declared.widgetId);
+    expect(key.length).toBe(WIDGET_KEY_MAX_LENGTH);
+    const body = JSON.stringify({
+      widgets: Array.from({ length: WIDGET_REQUEST_MAX_ENTRIES }, (_, i) => ({
+        // These controls all require six JSON bytes, including the two that make each entry unique.
+        id: "\u001f".repeat(WIDGET_REQUEST_MAX_ID_LENGTH - 2) + String.fromCharCode(16 + Math.floor(i / 16), 16 + (i % 16)),
+        key,
+        size: "medium",
+        settings: Object.fromEntries(names.map((name) => [name, { type, id: "\u001f".repeat(CLOUD_RESOURCE_ID_MAX_LENGTH) }])),
+      })),
+    });
+    expect(new TextEncoder().encode(body).byteLength).toBe(WIDGET_REQUEST_MAX_BYTES);
+    let calls = 0;
+    const routes = createWidgetRoutes({
+      authenticate,
+      listWidgets: async () => [declared],
+      fetch: async () => {
+        calls += 1;
+        return Response.json({ title: "Resource", blocks: [] });
+      },
+    });
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const response = await routes.request("/widgets/v1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      });
+      expect(response.status).toBe(200);
+      const lines = await readLines(response);
+      expect(lines.filter((line) => line.type === "widget")).toHaveLength(WIDGET_REQUEST_MAX_ENTRIES);
+      expect(calls).toBe(0);
+      // Trailing JSON whitespace adds one byte without changing the parsed body.
+      const oversized = await routes.request("/widgets/v1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: `${body} `,
+      });
+      expect(oversized.status).toBe(400);
+      expect(await oversized.json()).toEqual({ message: "Widget request is too large" });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test("skips malformed undeclared keys while streaming valid entries", async () => {
+    let calls = 0;
+    const routes = createWidgetRoutes({
+      authenticate,
+      listWidgets: async () => [widget],
+      fetch: async () => {
+        calls += 1;
+        return Response.json({ title: "Weather", blocks: [] });
+      },
+    });
+    const response = await routes.request("/widgets/v1", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        widgets: [
+          { id: "slashes", key: "a/b/c" },
+          { id: "no-slash", key: "nokey" },
+          { id: "valid", key: "weather/current" },
+        ],
+      }),
+    });
+    expect(response.status).toBe(200);
+    const lines = await readLines(response);
+    expect(lines[0]).toEqual({ type: "start", widgets: ["valid"] });
+    expect(lines.filter((line) => line.type === "widget")).toEqual([
+      {
+        type: "widget",
+        id: "valid",
+        key: "weather/current",
+        status: "ok",
+        widget: { title: "Weather", blocks: [] },
+        ms: expect.any(Number),
+      },
+    ]);
+    expect(calls).toBe(1);
+  });
+
+  test("rejects oversized encoded settings per entry and forwards plain resource ids intact", async () => {
+    const names = ["one", "two", "three", "four"];
+    const type = "spaces.space";
+    const declared: DashboardWidget = {
+      ...widget,
+      settings: Object.fromEntries(names.map((name) => [name, { kind: "resource", label: "Space", type }])),
+    };
+    const settings = (id: string) => Object.fromEntries(names.map((name) => [name, { type, id }]));
+    const plain = settings("a".repeat(CLOUD_RESOURCE_ID_MAX_LENGTH));
+    const escaped = settings('"\\'.repeat(CLOUD_RESOURCE_ID_MAX_LENGTH / 2));
+    const encodedLength = (values: unknown) =>
+      new URLSearchParams([[WIDGET_SETTINGS_PARAM, JSON.stringify(values)]]).toString().length - WIDGET_SETTINGS_PARAM.length - 1;
+    expect(encodedLength(escaped)).toBeGreaterThan(WIDGET_SETTINGS_PARAM_MAX_LENGTH);
+    let calls = 0;
+    const routes = createWidgetRoutes({
+      authenticate,
+      listWidgets: async () => [declared],
+      fetch: async (input) => {
+        calls += 1;
+        const url = new URL(input instanceof Request ? input.url : input);
+        expect(url.searchParams.get(WIDGET_SETTINGS_PARAM)).toBe(JSON.stringify(plain));
+        expect(encodedLength(plain)).toBeLessThanOrEqual(WIDGET_SETTINGS_PARAM_MAX_LENGTH);
+        return Response.json({ title: "Space", blocks: [] });
+      },
+    });
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const response = await routes.request("/widgets/v1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          widgets: [
+            { id: "escaped", key: "weather/current", settings: escaped },
+            { id: "plain", key: "weather/current", settings: plain },
+          ],
+        }),
+      });
+      const lines = await readLines(response);
+      expect(lines.find((line) => line.type === "widget" && line.id === "escaped")).toMatchObject({ status: "error" });
+      expect(lines.find((line) => line.type === "widget" && line.id === "plain")).toMatchObject({ status: "ok" });
+      expect(calls).toBe(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[2]).toMatchObject({ phase: "provider", reason: "settings_too_large" });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test("asks the same widget per entry with validated settings and distinct invocations", async () => {
     const seen: { settings: unknown; token: string | null; size: string | null }[] = [];
     let signed = 0;
@@ -763,11 +914,10 @@ describe("widget entry stream", () => {
       JSON.stringify({ widgets: [{ ...entry, settings: { one: true, two: true, three: true, four: true, five: true } }] }),
       JSON.stringify({ widgets: [{ ...entry, settings: { text: "x".repeat(WIDGET_REQUEST_MAX_BYTES) } }] }),
       JSON.stringify({ widgets: [{ ...entry, id: "x".repeat(121) }] }),
-      JSON.stringify({ widgets: [{ ...entry, key: "x".repeat(201) }] }),
+      JSON.stringify({ widgets: [{ ...entry, key: "x".repeat(WIDGET_KEY_MAX_LENGTH + 1) }] }),
       JSON.stringify({ widgets: [{ ...entry, settings: [] }] }),
       JSON.stringify({ widgets: [{ ...entry, unknown: true }] }),
       JSON.stringify({ widgets: [entry], unknown: true }),
-      JSON.stringify({ widgets: [{ ...entry, key: "invalid" }] }),
     ]) {
       const response = await routes.request("/widgets/v1", { method: "POST", headers: { "content-type": "application/json" }, body });
       expect(response.status).toBe(400);

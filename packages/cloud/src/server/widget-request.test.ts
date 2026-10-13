@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { parseWidgetSettings } from "../_internal/widget-settings";
+import { CLOUD_RESOURCE_ID_MAX_LENGTH } from "../contracts/capabilities";
 import type { WidgetSettingsDeclaration } from "../contracts/widgets";
-import { getWidgetRequest, setWidgetRequest, WIDGET_SETTINGS_PARAM_MAX_LENGTH } from "./widget-request";
+import { getWidgetRequest, setWidgetRequest, WIDGET_SETTINGS_PARAM, WIDGET_SETTINGS_PARAM_MAX_LENGTH } from "./widget-request";
 
 const declaration: WidgetSettingsDeclaration = {
   choice: {
@@ -63,6 +64,21 @@ describe("parseWidgetSettings", () => {
 });
 
 describe("widget request context", () => {
+  test("fully parses Core settings at the exact URL-encoded parameter budget", async () => {
+    const names = ["one", "two", "three", "four"];
+    const fields: WidgetSettingsDeclaration = Object.fromEntries(
+      names.map((name) => [name, { kind: "resource", label: "Space", type: "spaces.space" }]),
+    );
+    // JSON and URL encoding give a quote six bytes, versus one for plain ASCII. Pad all four IDs to 512 characters.
+    const ids = [512, 512, 146, 0].map((quotes) => '"'.repeat(quotes) + "a".repeat(CLOUD_RESOURCE_ID_MAX_LENGTH - quotes));
+    const values = Object.fromEntries(names.map((name, i) => [name, { type: "spaces.space", id: ids[i] }]));
+    const json = JSON.stringify(parseWidgetSettings(fields, values));
+    const param = new URLSearchParams([[WIDGET_SETTINGS_PARAM, json]]).toString();
+    expect(param.length - WIDGET_SETTINGS_PARAM.length - 1).toBe(WIDGET_SETTINGS_PARAM_MAX_LENGTH);
+    const routes = new Hono().get("/resource", (c) => c.json(setWidgetRequest(c, { settings: fields })));
+    expect(await (await routes.request(`/resource?${param}`)).json()).toEqual({ size: "large", settings: values });
+  });
+
   const routes = new Hono()
     .get("/public", (c) => c.json(getWidgetRequest(c)))
     .get("/declared", (c) => {

@@ -346,6 +346,7 @@ test("registry settings resolve labels and options, falling back or dropping inv
     { field: null },
     { field: { kind: "unknown", label: "Field" } },
     { field: { kind: "resource", label: "Space" } },
+    { toString: { kind: "text", label: "Text" } },
   ]) {
     const broken = {
       ...app,

@@ -751,6 +751,11 @@ that declares settings needs a Core that forwards them; with an older Core,
 it answers with its no-settings behavior. Deploy Core before a Dashboard that
 uses settings.
 
+`defineApp()` now rejects a widget ID that Core could never invoke: longer
+than 188 characters, or with characters other than lowercase letters, digits,
+`.`, `_`, `-`, and `:`. Such a widget only ever showed an error, so an
+application that declares one now fails at startup instead.
+
 ### Upgrade the dashboard to one board
 
 This release turns the dashboard into one board of widgets in three sizes; see
