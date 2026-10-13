@@ -49,6 +49,8 @@ build, mount runtime, or adapters reaches every application: also run the
 - Props must be `seroval`-serializable: broader than JSON, but no functions,
   callbacks, event handlers, Solid signals or stores, DOM nodes, or arbitrary
   class instances.
+- Props are data and are never evaluated: no `eval`, `new Function`, or
+  fallback to the old expression format.
 - `html()` and `ssr()` keep JSX creation inside synchronous render functions
   so Solid SSR context exists for primitives like `createUniqueId()`.
 - `_ssr/` is the filesystem artifact boundary; the public HTTP path is
@@ -93,18 +95,20 @@ default; `devSourcemap` opts into `"inline"` or `"none"`.
   imports, wraps their JSX usages in `<solid-island>` or `<solid-client>`,
   injects `data-id`, `data-props`, and dev-only `data-file`, keeps SSR
   children for islands, emits empty wrappers for clients, and imports
-  `serialize` from `seroval`;
+  `toJSON` from `seroval` as `__seroval_toJSON` and writes
+  `JSON.stringify(__seroval_toJSON(props))`;
 - `@babel/preset-typescript` strips types and `babel-preset-solid` compiles
   with `generate: "ssr"` or `"dom"` and `hydratable: false`, so islands
   re-render in the browser instead of hydrating.
 
 Test `transform()` directly in both modes when changing it, including the
-`__seroval_serialize` alias and the wrapper attributes.
+`__seroval_toJSON` alias and the wrapper attributes.
 
 ## Mount runtime
 
 `mount()` in `src/mount.ts` gives each wrapper element its own `render()` root
-with a root `ErrorBoundary`; props are deserialized inside the boundary. One
+with a root `ErrorBoundary`; `JSON.parse` and Seroval `fromJSON` parse props
+inside the boundary. Missing or malformed `data-props` throws there. One
 failing element never stops the loop. The default fallback is plain DOM
 (`role="alert"`, `data-ssr-error`, a **Try again** button calling `reset()`).
 Each caught error dispatches a bubbling, cancelable `ssr:island-error` event

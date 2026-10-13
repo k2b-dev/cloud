@@ -1,5 +1,5 @@
 import { suppressTextSelection } from "@k2b/ui";
-import { deserialize as deserializeProps, serialize as serializeProps } from "seroval";
+import { fromJSON, toJSON } from "seroval";
 import type { Component, JSX, ParentProps } from "solid-js";
 import { children, createContext, createMemo, createSignal, For, onCleanup, onMount, Show, useContext } from "solid-js";
 import { Dynamic, Portal } from "solid-js/web";
@@ -48,7 +48,7 @@ export const defineDesktopWindows = <Definitions extends Record<string, DesktopW
       ({
         kind: desktopWindowDescriptorKind,
         name,
-        props: serializeProps(props ?? {}),
+        props: JSON.stringify(toJSON(props ?? {})),
       }) satisfies DesktopWindowDescriptor as unknown as JSX.Element;
   }
 
@@ -73,8 +73,7 @@ export function DesktopWindowHost<Definitions extends Record<string, DesktopWind
   });
   const windowProps = createMemo(() => {
     const current = descriptor();
-    if (!current) return {};
-    return deserializeProps<Record<string, unknown>>(current.props);
+    return current && component() ? fromJSON<Record<string, unknown>>(JSON.parse(current.props)) : {};
   });
 
   return createMemo(() => {
