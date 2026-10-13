@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser } from "../../../../ui/test/browser";
 import type { ComposeFormattingWarning } from "../../contracts";
-import type { MailComposerEditorHarnessOptions } from "./MailComposerEditor.browser-harness";
+import type { MailComposerEditorHarnessOptions, MailComposerHarnessOptions } from "./MailComposerEditor.browser-harness";
 
 // Whether the hint about removed HTML leaves the previewed message in place and stays on screen on a phone is a
 // layout question, which only a real engine answers.
@@ -47,9 +47,14 @@ const buildCss = async (entry: string): Promise<string> => {
 };
 
 const harness = await buildHarness();
+// As a Cloud page loads them: the layer order first, then the app's utilities, then the shared styles, whose
+// responsive variants win over the app's plain utilities.
 const css =
-  (await buildCss(resolve(import.meta.dir, "../../../../../styles.css"))) +
-  (await buildCss(resolve(import.meta.dir, "../../styles/app.css")));
+  "@layer properties, theme, base, components, utilities;" +
+  (await buildCss(resolve(import.meta.dir, "../../styles/app.css"))) +
+  (await buildCss(resolve(import.meta.dir, "../../../../../styles.css")));
+// The icon font gives icon-only buttons their real width.
+const uiDist = new URL("../../../../ui/dist/", import.meta.url).pathname;
 const server = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
@@ -57,9 +62,10 @@ const server = Bun.serve({
     const url = new URL(request.url);
     if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
     if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
+    if (url.pathname === "/tabler.css" || url.pathname.endsWith(".woff2")) return new Response(Bun.file(uiDist + url.pathname.slice(1)));
     return new Response(
       '<!doctype html><html class="light" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-        '<link rel="stylesheet" href="/styles.css"><style>#root{position:fixed;inset:0;display:flex}</style></head>' +
+        '<link rel="stylesheet" href="/tabler.css"><link rel="stylesheet" href="/styles.css"><style>#root{position:fixed;inset:0;display:flex}</style></head>' +
         '<body class="k2b-ui" style="margin:0"><div id="root"></div><script src="/harness.js"></script></body></html>',
       { headers: { "Content-Type": "text/html" } },
     );
@@ -91,6 +97,22 @@ const load = async (options: { context: BrowserContextOptions; theme: "light" | 
   return Object.assign(page, { errors });
 };
 
+const loadComposer = async (context: BrowserContextOptions, locale: "en" | "de") => {
+  const page = await (await browser.newContext(context)).newPage();
+  page.setDefaultTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(server.url.href);
+  await page.evaluate((options: MailComposerHarnessOptions) => window.mountComposer(options), {
+    locale,
+    intent: "reply_all",
+    signatureTemplateId: "Sign02",
+  } satisfies MailComposerHarnessOptions);
+  await page.waitForSelector("button.mail-composer-signature:not(:disabled)");
+  await page.evaluate(() => document.fonts.ready);
+  return Object.assign(page, { errors });
+};
+
 const box = async (page: Page, selector: string) => {
   const rect = await page.locator(selector).first().boundingBox();
   if (!rect) throw new Error(`${selector} is not visible`);
@@ -114,37 +136,6 @@ const manyWarnings: ComposeFormattingWarning[] = Array.from({ length: 20 }, (_, 
 }));
 
 describe("Mail composer preview", () => {
-  for (const [label, context] of [
-    ["desktop", desktop],
-    ["phone", { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }],
-  ] as const) {
-    test(`shows the signature row below the editor without horizontal overflow on ${label}`, async () => {
-      const page = await load({ context, theme: "light", locale: "en" });
-      try {
-        await page.waitForSelector(".mail-composer-signature");
-        const row = await box(page, ".mail-composer-signature");
-        const editor = await box(page, ".k2b-panes");
-        expect(row.y).toBeGreaterThanOrEqual(editor.y + editor.height - 0.5);
-        expect(row.x).toBeGreaterThanOrEqual(0);
-        expect(row.x + row.width).toBeLessThanOrEqual(context.viewport!.width + 0.5);
-        expect(row.y + row.height).toBeLessThanOrEqual(context.viewport!.height + 0.5);
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-        await page.getByRole("button", { name: "Signature: Support signature", exact: true }).click();
-        const none = page.getByRole("menuitemradio", { name: "No signature", exact: true });
-        await none.waitFor({ state: "visible" });
-        const menu = await none.boundingBox();
-        expect(menu).not.toBeNull();
-        expect(menu!.x).toBeGreaterThanOrEqual(0);
-        expect(menu!.x + menu!.width).toBeLessThanOrEqual(context.viewport!.width + 0.5);
-        await none.click();
-        expect(await page.getByRole("button", { name: "Signature: No signature", exact: true }).count()).toBe(1);
-        expect(page.errors).toEqual([]);
-      } finally {
-        await page.context().close();
-      }
-    }, 30_000);
-  }
-
   for (const [label, context] of [
     ["desktop", desktop],
     ["phone", phone],
@@ -188,6 +179,94 @@ describe("Mail composer preview", () => {
           await page.evaluate(() => window.setFormattingWarnings([]));
           await hint.waitFor({ state: "detached" });
           expect(await box(page, 'iframe[sandbox=""]')).toEqual(frame);
+          expect(page.errors).toEqual([]);
+        } finally {
+          await page.context().close();
+        }
+      }, 30_000);
+    }
+  }
+});
+
+describe("Mail composer action bar", () => {
+  for (const [device, context] of [
+    ["desktop", { viewport: { width: 1366, height: 900 } }],
+    // The narrowest width at which the neighbors show their labels.
+    ["tablet", { viewport: { width: 640, height: 900 }, isMobile: true, hasTouch: true }],
+    ["phone", { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }],
+  ] as const) {
+    for (const locale of ["en", "de"] as const) {
+      test(`keeps the signature choice in one action row on ${device} in ${locale}`, async () => {
+        const page = await loadComposer(context, locale);
+        try {
+          const prefix = locale === "de" ? "Signatur" : "Signature";
+          const trigger = page.getByRole("button", { name: `${prefix}: Personal signature`, exact: true });
+          expect(await trigger.count()).toBe(1);
+          const footer = page.locator("footer");
+          const measure = () =>
+            footer.evaluate((element) => ({
+              width: element.clientWidth,
+              scrollWidth: element.scrollWidth,
+              height: element.getBoundingClientRect().height,
+              children: Array.from(element.children)
+                .filter((child) => child.getBoundingClientRect().width > 0 && child.getBoundingClientRect().height > 0)
+                .map((child) => {
+                  const rect = child.getBoundingClientRect();
+                  return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+                }),
+            }));
+          const before = await measure();
+          // One row: controls of different heights share a vertical center.
+          const centers = before.children.map((child) => child.y + child.height / 2);
+          expect(Math.max(...centers) - Math.min(...centers)).toBeLessThanOrEqual(1);
+          expect(before.height).toBeLessThan(64);
+          expect(before.scrollWidth).toBeLessThanOrEqual(before.width);
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+          const ai = footer.getByRole("button", { name: locale === "de" ? "Mit KI schreiben" : "Write with AI", exact: true });
+          const options = footer.getByRole("button", { name: locale === "de" ? "Nachrichtenoptionen" : "Message options", exact: true });
+          const aiBox = await ai.boundingBox();
+          const signatureBox = await box(page, "button.mail-composer-signature");
+          const optionsBox = await options.boundingBox();
+          expect(aiBox!.x).toBeLessThan(signatureBox.x);
+          expect(signatureBox.x).toBeLessThan(optionsBox!.x);
+          expect(await trigger.locator(".k2b-button__label > span").isVisible()).toBe(device === "desktop");
+          expect(await trigger.locator(".k2b-button__label > span").textContent()).toBe("Personal signature");
+          expect(await trigger.locator(".ti-chevron-down").isVisible()).toBe(device === "desktop");
+          if (device !== "desktop") expect(signatureBox.width).toBeLessThanOrEqual(44);
+          expect(await page.locator(".mail-composer-signature").count()).toBe(1);
+          expect(await footer.locator(".mail-composer-signature").count()).toBe(1);
+          const editor = await box(page, ".k2b-panes");
+          const footerBox = await box(page, "footer");
+          expect(editor.y + editor.height).toBeLessThanOrEqual(footerBox.y + 0.5);
+
+          await trigger.focus();
+          await page.keyboard.press("Enter");
+          const items = page.getByRole("menuitemradio");
+          await items.first().waitFor({ state: "visible" });
+          expect(await items.count()).toBe(4);
+          for (const item of await items.all()) {
+            expect(await item.isVisible()).toBe(true);
+            const rect = await item.boundingBox();
+            expect(rect!.x).toBeGreaterThanOrEqual(0);
+            expect(rect!.y).toBeGreaterThanOrEqual(0);
+            expect(rect!.x + rect!.width).toBeLessThanOrEqual(context.viewport.width + 0.5);
+            expect(rect!.y + rect!.height).toBeLessThanOrEqual(context.viewport.height + 0.5);
+            expect(await item.getAttribute("aria-checked")).toBe(String((await item.textContent())?.includes("Personal signature")));
+          }
+          const menu = await box(page, '[role="menu"]:visible');
+          expect(menu.y + menu.height).toBeLessThanOrEqual(signatureBox.y);
+          await page.keyboard.press("Home");
+          const none = page.getByRole("menuitemradio", { name: locale === "de" ? "Keine Signatur" : "No signature", exact: true });
+          expect(await none.evaluate((element) => document.activeElement === element)).toBe(true);
+          await page.keyboard.press("Enter");
+          const cleared = page.getByRole("button", { name: `${prefix}: ${locale === "de" ? "Keine" : "None"}`, exact: true });
+          await cleared.waitFor({ state: "visible" });
+          expect(await cleared.evaluate((element) => document.activeElement === element)).toBe(true);
+          if (device !== "desktop") {
+            const after = await measure();
+            expect(after.children.map((child) => child.x)).toEqual(before.children.map((child) => child.x));
+            expect((await box(page, "button.mail-composer-signature")).width).toBe(signatureBox.width);
+          }
           expect(page.errors).toEqual([]);
         } finally {
           await page.context().close();

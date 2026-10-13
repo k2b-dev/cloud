@@ -39,7 +39,7 @@ See [Spaces](/en/apps/spaces).
 Mail drafts now store a signature choice separately from the editable body.
 Preview and delivery place it after the text; when the text sits above a quoted
 reply or a forwarded message, the signature goes before that history. The
-composer offers **Signature** below the text, including **No signature**;
+composer offers **Signature** in its action bar, including **No signature**;
 switching the sender selects that sender's default. Draft copies in the
 provider's Drafts folder contain only the body, without the signature.
 
