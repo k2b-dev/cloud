@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import type { WidgetResponse, WidgetStreamLine } from "@k2b/cloud/contracts";
 import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser } from "../../../ui/test/browser";
-import type { DashboardCatalogWidget } from "../shared";
+import type { DashboardBoardEntry, DashboardCatalogWidget, DashboardSettings } from "../shared";
 import type { DashboardHomeProps } from "./dashboard-home";
 
 // Whether a widget that answers late, fails, is resized, dragged or added moves another one is a layout result of
@@ -32,19 +32,40 @@ const widget = (
   suggest,
 });
 const catalog: DashboardCatalogWidget[] = [
-  widget("spaces/today", "Today", ["medium", "large"], "large", true),
+  {
+    ...widget("spaces/today", "Today", ["medium", "large"], "large", true),
+    settings: {
+      space: { kind: "resource", label: "Space", type: "spaces.space" },
+      done: { kind: "toggle", label: "Show done" },
+      note: { kind: "text", label: "Note", maxLength: 40 },
+    },
+  },
   widget("notebooks/recent", "Recent notes", ["medium", "large"], "medium", true),
-  widget("weather/current", "Weather", ["small", "medium", "large"], "small", true),
+  {
+    ...widget("weather/current", "Weather", ["small", "medium", "large"], "small", true),
+    settings: {
+      place: {
+        kind: "choice",
+        label: "Place",
+        options: [
+          { label: "Hamburg", value: "hamburg" },
+          { label: "Berlin", value: "berlin" },
+        ],
+        default: "hamburg",
+      },
+    },
+  },
   widget("gateway/health", "Platform health", ["small", "medium"], "small", true),
   widget("quotes/quote", "Quote of the hour", ["small", "medium"], "medium", false),
   widget("venue/today", "Venue today", ["small", "medium", "large"], "medium", true),
 ];
+
 const board = [
-  { key: "spaces/today", size: "large" },
-  { key: "notebooks/recent", size: "medium" },
-  { key: "weather/current", size: "small" },
-  { key: "gateway/health", size: "small" },
-  { key: "quotes/quote", size: "medium" },
+  { id: "spaces/today", key: "spaces/today", size: "large" },
+  { id: "notebooks/recent", key: "notebooks/recent", size: "medium" },
+  { id: "weather/current", key: "weather/current", size: "small" },
+  { id: "gateway/health", key: "gateway/health", size: "small" },
+  { id: "quotes/quote", key: "quotes/quote", size: "medium" },
 ] as const;
 const baseProps: DashboardHomeProps = {
   greeting: "Hi, Mara",
@@ -55,7 +76,7 @@ const baseProps: DashboardHomeProps = {
   catalog,
   board: [...board],
   // Third on the saved board, between the recent notes and the weather.
-  kept: [{ key: "stopped/app", size: "small", index: 2 }],
+  kept: [{ id: "stopped/app", key: "stopped/app", size: "small", index: 2 }],
   followsDefault: false,
 };
 
@@ -70,7 +91,14 @@ const responses: Record<string, WidgetResponse> = {
   "quotes/quote": { title: "Quote of the hour", blocks: [{ kind: "hero", title: "Stay curious.", subtitle: "Ada" }] },
   "venue/today": { title: "Front desk", blocks: [{ kind: "status", tone: "info", title: "Closed now" }] },
 };
-const ok = (key: string): WidgetStreamLine => ({ type: "widget", key, status: "ok", ms: 5, widget: responses[key]! });
+const ok = (entry: Asked): WidgetStreamLine => ({
+  type: "widget",
+  id: entry.id,
+  key: entry.key,
+  status: "ok",
+  ms: 5,
+  widget: { ...responses[entry.key]!, ...(entry.settings?.place ? { title: `Weather ${entry.settings.place}` } : {}) },
+});
 
 const gate = () => {
   let open!: () => void;
@@ -80,18 +108,21 @@ const gate = () => {
   return { open, opened };
 };
 
-type Asked = { key: string; size: string | undefined };
+type Asked = DashboardBoardEntry;
 type Answer = (asked: Asked[], write: (line: WidgetStreamLine) => void) => Promise<void>;
 const answerAll: Answer = async (asked, write) => {
-  for (const { key } of asked) write(responses[key] ? ok(key) : { type: "widget", key, status: "error", ms: 5 });
+  for (const entry of asked)
+    write(responses[entry.key] ? ok(entry) : { type: "widget", id: entry.id, key: entry.key, status: "error", ms: 5 });
 };
 let answer: Answer = answerAll;
 let props = baseProps;
 const requests: Asked[][] = [];
-const saved: unknown[] = [];
+const saved: DashboardSettings[] = [];
+const scripts: string[] = [];
 /** Holds the answer to a save until the test opens it. */
 let saveGate: Promise<void> | undefined;
 
+let settingsChunkPath: string;
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 beforeAll(async () => {
@@ -101,7 +132,8 @@ beforeAll(async () => {
   const build = await Bun.build({
     entrypoints: [entry],
     target: "browser",
-    format: "iife",
+    format: "esm",
+    splitting: true,
     conditions: ["browser"],
     plugins: [
       {
@@ -121,7 +153,13 @@ beforeAll(async () => {
     ],
   });
   if (!build.success) throw new AggregateError(build.logs, "Could not bundle the dashboard harness.");
-  const script = await build.outputs[0]!.text();
+  const assets = new Map(
+    await Promise.all(
+      build.outputs.map(async (output) => [new URL(output.path, "http://harness.test/").pathname, await output.text()] as const),
+    ),
+  );
+  settingsChunkPath = [...assets].find(([path, text]) => path.endsWith(".js") && text.includes("dashboard-widget-settings__reset"))![0];
+  const entryPath = new URL(build.outputs.find((output) => output.kind === "entry-point")!.path, "http://harness.test/").pathname;
   const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(import.meta.dir, "../../../cloud")))).default;
   const stylesheets = [resolve(import.meta.dir, "../../../../styles.css"), resolve(import.meta.dir, "../styles/app.css")];
   const outputs = await Promise.all(
@@ -137,13 +175,17 @@ beforeAll(async () => {
     hostname: "127.0.0.1",
     fetch: async (request) => {
       const url = new URL(request.url);
-      if (url.pathname === "/harness.js") return new Response(script, { headers: { "content-type": "text/javascript" } });
+      const script = assets.get(url.pathname);
+      if (script !== undefined) {
+        scripts.push(url.pathname);
+        return new Response(script, { headers: { "content-type": "text/javascript" } });
+      }
       if (url.pathname === "/") {
         const lang = url.searchParams.get("lang") ?? "en";
         return new Response(
           `<!doctype html><html lang="${lang}" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
             `<style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="root"></div>` +
-            `<script>window.dashboardProps = ${JSON.stringify(props)}</script><script src="/harness.js"></script></body></html>`,
+            `<script>window.dashboardProps = ${JSON.stringify(props)}</script><script type="module" src="${entryPath}"></script></body></html>`,
           { headers: { "content-type": "text/html; charset=utf-8" } },
         );
       }
@@ -152,17 +194,14 @@ beforeAll(async () => {
         await saveGate;
         return Response.json({ ok: true });
       }
-      if (url.pathname !== "/api/widgets/v1") return new Response(null, { status: 404 });
-      const asked = url.searchParams.getAll("widget").map((value) => {
-        const [key, size] = value.split("@");
-        return { key: key!, size };
-      });
+      if (url.pathname !== "/api/widgets/v1" || request.method !== "POST") return new Response(null, { status: 404 });
+      const asked = ((await request.json()) as { widgets: Asked[] }).widgets;
       requests.push(asked);
       const encoder = new TextEncoder();
       const body = new ReadableStream<Uint8Array>({
         async start(controller) {
           const write = (line: WidgetStreamLine) => controller.enqueue(encoder.encode(`${JSON.stringify(line)}\n`));
-          write({ type: "start", widgets: asked.map(({ key }) => key) });
+          write({ type: "start", widgets: asked.map(({ id }) => id) });
           await answer(asked, write);
           write({ type: "done", status: "partial" });
           controller.close();
@@ -205,29 +244,29 @@ const layout = (page: Page) =>
       boxes: tiles.map((tile) => {
         const rect = tile.getBoundingClientRect();
         return [
-          tile.dataset.key,
+          tile.dataset.id,
           Math.round(rect.left),
           Math.round(rect.top + window.scrollY),
           Math.round(rect.width),
           Math.round(rect.height),
         ];
       }),
-      states: Object.fromEntries(tiles.map((tile) => [tile.dataset.key, tile.dataset.state])),
-      order: tiles.map((tile) => `${tile.dataset.key}:${tile.dataset.size}`),
+      states: Object.fromEntries(tiles.map((tile) => [tile.dataset.id, tile.dataset.state])),
+      order: tiles.map((tile) => `${tile.dataset.id}:${tile.dataset.size}`),
       overflow: document.documentElement.scrollWidth - window.innerWidth,
     };
   });
-const waitForState = (page: Page, key: string, state: string) =>
-  page.locator(`.dashboard-tile[data-key="${key}"][data-state="${state}"]`).waitFor();
+const waitForState = (page: Page, id: string, state: string) =>
+  page.locator(`.dashboard-tile[data-id="${id}"][data-state="${state}"]`).waitFor();
 const allLoaded = async (page: Page) => {
-  for (const { key } of board) await waitForState(page, key, "ok");
+  for (const { id } of board) await waitForState(page, id, "ok");
 };
 /** Waits until the live region has said `text`. */
 const announced = (page: Page, text: string) =>
   page.waitForFunction((expected) => document.querySelector("[data-k2b-live]")?.textContent?.includes(expected), text);
-const tile = (page: Page, key: string) => page.locator(`.dashboard-tile[data-key="${key}"]`);
-const center = async (page: Page, key: string) => {
-  const box = (await tile(page, key).boundingBox())!;
+const tile = (page: Page, id: string) => page.locator(`.dashboard-tile[data-id="${id}"]`);
+const center = async (page: Page, id: string) => {
+  const box = (await tile(page, id).boundingBox())!;
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 };
 
@@ -240,28 +279,34 @@ describe("the dashboard board in a browser", () => {
       answer = async (asked, write) => {
         if (asked.length === 1 && asked[0]!.key === "notebooks/recent") {
           await retried.opened;
-          write(ok("notebooks/recent"));
+          write(ok(asked.find((entry) => entry.key === "notebooks/recent")!));
           return;
         }
         await first.opened;
-        for (const key of ["weather/current", "spaces/today", "gateway/health"]) write(ok(key));
-        write({ type: "widget", key: "notebooks/recent", status: "error", ms: 12 });
+        for (const key of ["weather/current", "spaces/today", "gateway/health"]) write(ok(asked.find((entry) => entry.key === key)!));
+        write({
+          type: "widget",
+          id: asked.find((entry) => entry.key === "notebooks/recent")!.id,
+          key: "notebooks/recent",
+          status: "error",
+          ms: 12,
+        });
         await slow.opened;
-        write(ok("quotes/quote"));
+        write(ok(asked.find((entry) => entry.key === "quotes/quote")!));
       };
       const { page, close } = await open(view);
       try {
         const loading = await layout(page);
         expect(Object.values(loading.states)).toEqual(Array(5).fill("loading"));
         // Each widget is asked in the size the board shows it in.
-        expect(requests.at(-1)).toEqual(board.map(({ key, size }) => ({ key, size })));
+        expect(requests.at(-1)).toEqual(board.map(({ id, key, size }) => ({ id, key, size })));
 
         first.open();
         await waitForState(page, "notebooks/recent", "error");
         await waitForState(page, "spaces/today", "ok");
         expect(await tile(page, "notebooks/recent").textContent()).toContain("Notebooks could not load this widget.");
         // After three seconds the slow app says so inside its own frame.
-        await page.locator('.dashboard-tile[data-key="quotes/quote"] .dashboard-widget-slow[data-shown]').waitFor({ timeout: 4_000 });
+        await page.locator('.dashboard-tile[data-id="quotes/quote"] .dashboard-widget-slow[data-shown]').waitFor({ timeout: 4_000 });
         expect(await tile(page, "quotes/quote").textContent()).toContain("Quotes is taking longer than usual.");
         expect({ width: view.width, boxes: (await layout(page)).boxes }).toEqual({ width: view.width, boxes: loading.boxes });
 
@@ -274,7 +319,7 @@ describe("the dashboard board in a browser", () => {
         expect((await layout(page)).states["notebooks/recent"]).toBe("loading");
         retried.open();
         await waitForState(page, "notebooks/recent", "ok");
-        expect(requests.slice(before)).toEqual([[{ key: "notebooks/recent", size: "medium" }]]);
+        expect(requests.slice(before)).toEqual([[{ id: "notebooks/recent", key: "notebooks/recent", size: "medium" }]]);
         const done = await layout(page);
         expect(done.boxes).toEqual(loading.boxes);
         expect(done.overflow).toBeLessThanOrEqual(0);
@@ -345,7 +390,7 @@ describe("the dashboard board in a browser", () => {
         await tile(page, "spaces/today").focus();
         await page.keyboard.press("ArrowRight");
         expect((await layout(page)).order.slice(0, 2)).toEqual(["notebooks/recent:medium", "spaces/today:large"]);
-        expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.key)).toBe("spaces/today");
+        expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.id)).toBe("spaces/today");
         await announced(page, "Today at position 2 of 5");
         await page.keyboard.press("ArrowLeft");
         expect((await layout(page)).order[0]).toBe("spaces/today:large");
@@ -357,8 +402,8 @@ describe("the dashboard board in a browser", () => {
 
         const asked = requests.length;
         await tile(page, "weather/current").getByRole("radio", { name: "Medium" }).click();
-        await page.locator('.dashboard-tile[data-key="weather/current"][data-size="medium"]').waitFor();
-        expect(requests.slice(asked)).toEqual([[{ key: "weather/current", size: "medium" }]]);
+        await page.locator('.dashboard-tile[data-id="weather/current"][data-size="medium"]').waitFor();
+        expect(requests.slice(asked)).toEqual([[{ id: "weather/current", key: "weather/current", size: "medium" }]]);
         // The old content stays while the widget answers in its new size.
         expect((await layout(page)).states["weather/current"]).toBe("ok");
 
@@ -367,12 +412,12 @@ describe("the dashboard board in a browser", () => {
         expect(saved.at(-1)).toEqual({
           shortcuts: baseProps.shortcuts,
           board: [
-            { key: "spaces/today", size: "large" },
-            { key: "notebooks/recent", size: "medium" },
+            { id: "spaces/today", key: "spaces/today", size: "large" },
+            { id: "notebooks/recent", key: "notebooks/recent", size: "medium" },
             // A widget the page could not show keeps its place on the saved board.
-            { key: "stopped/app", size: "small" },
-            { key: "weather/current", size: "medium" },
-            { key: "gateway/health", size: "small" },
+            { id: "stopped/app", key: "stopped/app", size: "small" },
+            { id: "weather/current", key: "weather/current", size: "medium" },
+            { id: "gateway/health", key: "gateway/health", size: "small" },
           ],
         });
         // Done went away with the edit mode and handed the focus back to Edit.
@@ -437,11 +482,11 @@ describe("the dashboard board in a browser", () => {
       expect(saved.at(-1)).toEqual({
         shortcuts: baseProps.shortcuts,
         board: [
-          { key: "notebooks/recent", size: "medium" },
-          { key: "spaces/today", size: "large" },
-          { key: "venue/today", size: "medium" },
-          { key: "weather/current", size: "small" },
-          { key: "gateway/health", size: "small" },
+          { id: "notebooks/recent", key: "notebooks/recent", size: "medium" },
+          { id: "spaces/today", key: "spaces/today", size: "large" },
+          { id: "venue/today", key: "venue/today", size: "medium" },
+          { id: "weather/current", key: "weather/current", size: "small" },
+          { id: "gateway/health", key: "gateway/health", size: "small" },
         ],
       });
     } finally {
@@ -514,12 +559,12 @@ describe("the dashboard board in a browser", () => {
         await page.waitForTimeout(700);
         await page.locator(".dashboard-tile__remove").first().waitFor();
         await touch("touchEnd");
-        expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.key)).toBe("weather/current");
+        expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.id)).toBe("weather/current");
 
-        // Hold briefly, then drag the weather widget in front of the recent notes. The widget is held above its size
-        // choice, which takes a press of its own.
+        // Hold briefly, then drag the weather widget in front of the recent notes. The widget is held by its head, above
+        // its move buttons and its size choice, which take presses of their own.
         const box = (await tile(page, "weather/current").boundingBox())!;
-        point = { x: box.x + box.width / 2, y: box.y + box.height / 3 };
+        point = { x: box.x + box.width / 2, y: box.y + box.height / 6 };
         const target = await center(page, "notebooks/recent");
         await touch("touchStart", point.x, point.y);
         await page.waitForTimeout(350);
@@ -570,7 +615,7 @@ describe("the dashboard board in a browser", () => {
             .evaluateAll((options) => options.map((option) => Math.round(option.getBoundingClientRect().height)));
           expect(heights).toEqual([44, 44, 44]);
         }
-        expect(requests.flat()).toContainEqual({ key: "weather/current", size: "small" });
+        expect(requests.flat().some((entry) => entry.key === "weather/current" && entry.size === "small")).toBeTrue();
         await card.getByRole("radio", { name: "Medium" }).click();
         for (
           let tries = 0;
@@ -578,7 +623,7 @@ describe("the dashboard board in a browser", () => {
           tries += 1
         )
           await Bun.sleep(20);
-        expect(requests.flat()).toContainEqual({ key: "weather/current", size: "medium" });
+        expect(requests.flat().some((entry) => entry.key === "weather/current" && entry.size === "medium")).toBeTrue();
 
         await card.getByRole("button", { name: "Add Weather" }).click();
         await dialog.waitFor({ state: "detached" });
@@ -586,7 +631,7 @@ describe("the dashboard board in a browser", () => {
         await added.waitFor();
         expect((await layout(page)).order.at(-1)).toBe("weather/current:medium");
         expect(await added.getAttribute("data-fresh")).toBe("true");
-        expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.key)).toBe("weather/current");
+        expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.id)).toBe("weather/current");
         await announced(page, "Weather added, position 5 of 5");
       } finally {
         await close();
@@ -634,9 +679,9 @@ describe("the dashboard board in a browser", () => {
         props: {
           ...baseProps,
           board: [
-            { key: "weather/current", size: "small" },
-            { key: "venue/today", size: "small" },
-            { key: "spaces/today", size: "large" },
+            { id: "weather/current", key: "weather/current", size: "small" },
+            { id: "venue/today", key: "venue/today", size: "small" },
+            { id: "spaces/today", key: "spaces/today", size: "large" },
           ],
           kept: [],
         },
@@ -652,7 +697,7 @@ describe("the dashboard board in a browser", () => {
           const control = tile.querySelector(".dashboard-tile__sizes .k2b-segmented-control")!.getBoundingClientRect();
           const options = Array.from(tile.querySelectorAll<HTMLElement>(".dashboard-tile__sizes .k2b-segmented-control__option"));
           return {
-            key: tile.dataset.key,
+            key: tile.dataset.id,
             inside: control.left >= box.left && control.right <= box.right,
             heights: options.map((option) => Math.round(option.getBoundingClientRect().height)),
             cut: options.filter((option) => option.querySelector("span")!.scrollWidth > option.querySelector("span")!.clientWidth).length,
@@ -686,9 +731,9 @@ describe("the dashboard board in a browser", () => {
           icon: "ti ti-link",
         })),
         catalog: [...catalog, ...many],
-        board: many.map(({ key }) => ({ key, size: "small" as const })),
+        board: many.map(({ key }) => ({ id: key, key, size: "small" as const })),
         // 99 shown and one the page cannot show make a full board.
-        kept: [{ key: "stopped/app", size: "small", index: 0 }],
+        kept: [{ id: "stopped/app", key: "stopped/app", size: "small", index: 0 }],
       },
     });
     try {
@@ -707,6 +752,327 @@ describe("the dashboard board in a browser", () => {
     }
   }, 30_000);
 
+  test("Customize loads on demand, reloads quietly, saves values for a reload, and Cancel restores them", async () => {
+    const first = gate();
+    const entered = gate();
+    const scriptStart = scripts.length;
+    answer = async (asked, write) => {
+      if (asked.some((entry) => entry.settings?.place === "berlin")) {
+        entered.open();
+        await first.opened;
+      }
+      await answerAll(asked, write);
+    };
+    const { page, close } = await open(desktop);
+    try {
+      await allLoaded(page);
+      const initialScripts = scripts.slice(scriptStart);
+      expect(initialScripts).not.toContain(settingsChunkPath);
+      await page.getByRole("button", { name: "Edit dashboard" }).click();
+      const weather = tile(page, "weather/current");
+      expect(await tile(page, "gateway/health").locator(".dashboard-tile__customize").count()).toBe(0);
+      const before = (await layout(page)).boxes;
+      await weather.getByRole("button", { name: "Customize Weather" }).click();
+      const dialog = page.getByRole("dialog", { name: "Customize Weather" });
+      await dialog.getByRole("radio", { name: "Hamburg" }).waitFor();
+      expect(scripts.slice(scriptStart)).toContain(settingsChunkPath);
+      await dialog.getByRole("radio", { name: "Berlin" }).click();
+      await dialog.getByRole("button", { name: "Apply", exact: true }).click();
+      await dialog.waitFor({ state: "detached" });
+      await entered.opened;
+      expect(requests.at(-1)).toEqual([{ id: "weather/current", key: "weather/current", size: "small", settings: { place: "berlin" } }]);
+      expect(await weather.getAttribute("data-state")).toBe("ok");
+      expect(await weather.textContent()).toContain("14°C");
+      expect(await weather.textContent()).not.toContain("Weather berlin");
+      expect(await weather.locator(".dashboard-tile__customize").evaluate((el) => el === document.activeElement)).toBeTrue();
+      expect((await layout(page)).boxes).toEqual(before);
+      first.open();
+      await weather.getByText("Weather berlin", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Done", exact: true }).click();
+      await page.getByRole("button", { name: "Edit dashboard" }).waitFor();
+      const savedBoard = saved.at(-1)!.board!;
+      expect(savedBoard.find((entry) => entry.id === "weather/current")?.settings).toEqual({ place: "berlin" });
+      // The server's next page snapshot carries the saved entry settings.
+      props = { ...baseProps, board: savedBoard.filter((entry) => entry.key !== "stopped/app") };
+      await page.reload();
+      await tile(page, "weather/current").getByText("Weather berlin", { exact: true }).waitFor();
+      expect(requests.at(-1)?.find((entry) => entry.id === "weather/current")?.settings).toEqual({ place: "berlin" });
+      await page.getByRole("button", { name: "Edit dashboard" }).click();
+      await weather.getByRole("button", { name: "Customize Weather" }).click();
+      await dialog.getByRole("radio", { name: "Hamburg" }).click();
+      await dialog.getByRole("button", { name: "Apply", exact: true }).click();
+      await weather.getByText("Weather hamburg", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      await weather.getByText("Weather berlin", { exact: true }).waitFor();
+      expect(requests.at(-1)).toEqual([{ id: "weather/current", key: "weather/current", size: "small", settings: { place: "berlin" } }]);
+      await page.getByRole("button", { name: "Edit dashboard" }).click();
+      const after = (await layout(page)).boxes;
+      await weather.getByRole("button", { name: "Customize Weather" }).click();
+      await dialog.waitFor();
+      await page.keyboard.press("Escape");
+      await dialog.waitFor({ state: "detached" });
+      expect(await weather.locator(".dashboard-tile__customize").evaluate((el) => el === document.activeElement)).toBeTrue();
+      expect((await layout(page)).boxes).toEqual(after);
+    } finally {
+      first.open();
+      answer = answerAll;
+      await close();
+    }
+  }, 30_000);
+
+  test("instances of one widget answer, move, resize, and remove independently", async () => {
+    const entries: DashboardBoardEntry[] = [
+      { id: "weather/current", key: "weather/current", size: "small", settings: { place: "hamburg" } },
+      { id: "w2", key: "weather/current", size: "small", settings: { place: "berlin" } },
+    ];
+    const { page, close } = await open(desktop, { props: { ...baseProps, board: entries, kept: [] } });
+    try {
+      await tile(page, "weather/current").getByText("Weather hamburg", { exact: true }).waitFor();
+      await tile(page, "w2").getByText("Weather berlin", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Edit dashboard" }).click();
+      await tile(page, "w2").getByRole("button", { name: "Move Weather forward" }).click();
+      expect((await layout(page)).order).toEqual(["w2:small", "weather/current:small"]);
+      await tile(page, "w2").getByRole("radio", { name: "Medium" }).click();
+      await page.waitForFunction(() => document.querySelector('[data-id="w2"]')?.getAttribute("data-size") === "medium");
+      expect(requests.at(-1)).toEqual([{ ...entries[1]!, size: "medium" }]);
+      expect(await tile(page, "weather/current").getAttribute("data-size")).toBe("small");
+      await tile(page, "w2").getByRole("button", { name: "Remove Weather" }).click();
+      expect((await layout(page)).order).toEqual(["weather/current:small"]);
+      expect(await tile(page, "weather/current").textContent()).toContain("Weather hamburg");
+    } finally {
+      await close();
+    }
+  }, 30_000);
+
+  test("move buttons announce, retain focus, and reserve the same boxes at the edges", async () => {
+    const { page, close } = await open(desktop, {
+      props: {
+        ...baseProps,
+        board: [
+          { id: "weather/current", key: "weather/current", size: "small" },
+          { id: "gateway/health", key: "gateway/health", size: "small" },
+          { id: "quotes/quote", key: "quotes/quote", size: "small" },
+        ],
+        kept: [],
+      },
+    });
+    try {
+      await waitForState(page, "weather/current", "ok");
+      await page.getByRole("button", { name: "Edit dashboard" }).click();
+      const weather = tile(page, "weather/current");
+      const forward = weather.getByRole("button", { name: "Move Weather forward" });
+      const back = weather.getByRole("button", { name: "Move Weather back" });
+      expect(await forward.getAttribute("aria-disabled")).toBe("true");
+      expect(
+        await tile(page, "quotes/quote").getByRole("button", { name: "Move Quote of the hour back" }).getAttribute("aria-disabled"),
+      ).toBe("true");
+      const relativeTools = () =>
+        weather.evaluate((tile) => {
+          const box = tile.getBoundingClientRect();
+          const tools = tile.querySelector(".dashboard-tile__tools")!.getBoundingClientRect();
+          return [tools.x - box.x, tools.y - box.y, tools.width, tools.height];
+        });
+      const tools = await relativeTools();
+      const before = (await layout(page)).boxes.map((box) => box.slice(1));
+      // Playwright does not press a control that says it is disabled; a person still can, and nothing happens.
+      await forward.click({ force: true });
+      expect((await layout(page)).order[0]).toBe("weather/current:small");
+      await back.click();
+      expect((await layout(page)).order).toEqual(["gateway/health:small", "weather/current:small", "quotes/quote:small"]);
+      await announced(page, "Weather at position 2 of 3");
+      expect(await back.evaluate((el) => el === document.activeElement)).toBeTrue();
+      expect(await relativeTools()).toEqual(tools);
+      expect((await layout(page)).boxes.map((box) => box.slice(1))).toEqual(before);
+      expect(await forward.getAttribute("aria-disabled")).toBeNull();
+    } finally {
+      await close();
+    }
+  }, 30_000);
+
+  test("phone settings use a sheet and edit controls have 44px targets", async () => {
+    const { page, close } = await open(phone);
+    try {
+      await allLoaded(page);
+      await page.getByRole("button", { name: "Edit dashboard" }).click();
+      const controls = await page.locator(".dashboard-tile").evaluateAll((tiles) =>
+        tiles.flatMap((tile) => {
+          const buttons = Array.from(tile.querySelectorAll<HTMLElement>(".dashboard-tile__tools button, .dashboard-tile__sizes button"));
+          const sizes = buttons.map((el) => {
+            const box = el.getBoundingClientRect();
+            return { label: el.getAttribute("aria-label") ?? el.textContent, width: box.width, height: box.height };
+          });
+          const remove = tile.querySelector(".dashboard-tile__remove")!;
+          const area = getComputedStyle(remove, "::after");
+          const box = remove.getBoundingClientRect();
+          sizes.push({
+            label: remove.getAttribute("aria-label") ?? "",
+            width: box.width - parseFloat(area.left) - parseFloat(area.right),
+            height: box.height - parseFloat(area.top) - parseFloat(area.bottom),
+          });
+          return sizes;
+        }),
+      );
+      expect(controls.filter((box) => box.width < 44 || box.height < 44)).toEqual([]);
+      await tile(page, "weather/current").getByRole("button", { name: "Customize Weather" }).click();
+      await page.getByRole("dialog", { name: "Customize Weather" }).waitFor();
+      expect(await page.locator(".k2b-bottom-sheet-frame").count()).toBe(1);
+    } finally {
+      await close();
+    }
+  }, 30_000);
+
+  test("at 320px tools and sizes stay inside every small tile", async () => {
+    const { page, close } = await open(
+      { width: 320, height: 640, touch: true },
+      {
+        props: {
+          ...baseProps,
+          board: [
+            { id: "weather/current", key: "weather/current", size: "small" },
+            { id: "gateway/health", key: "gateway/health", size: "small" },
+          ],
+          kept: [],
+        },
+      },
+    );
+    try {
+      await waitForState(page, "weather/current", "ok");
+      await page.getByRole("button", { name: "Edit dashboard" }).click();
+      const outside = await page.locator(".dashboard-tile").evaluateAll((tiles) =>
+        tiles.flatMap((tile) => {
+          const box = tile.getBoundingClientRect();
+          return Array.from(
+            tile.querySelectorAll<HTMLElement>(
+              ".dashboard-tile__tools, .dashboard-tile__tools button, .dashboard-tile__sizes, .dashboard-tile__sizes button",
+            ),
+          ).flatMap((el) => {
+            const control = el.getBoundingClientRect();
+            return control.left < box.left || control.right > box.right || control.top < box.top || control.bottom > box.bottom
+              ? [
+                  {
+                    id: tile.getAttribute("data-id"),
+                    control: el.className,
+                    left: control.left - box.left,
+                    right: control.right - box.right,
+                  },
+                ]
+              : [];
+          });
+        }),
+      );
+      expect(outside).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 30_000);
+
+  test("the gallery allows another configurable instance and keeps plain widgets once only", async () => {
+    const { page, close } = await open(desktop);
+    try {
+      await allLoaded(page);
+      await page.getByRole("button", { name: "Edit dashboard" }).click();
+      for (let index = 0; index < 2; index += 1) {
+        await page.getByRole("button", { name: "Add widget" }).first().click();
+        const dialog = page.getByRole("dialog");
+        await dialog.locator('[data-key="gateway/health"]').getByRole("button", { name: "On the board" }).waitFor();
+        await dialog.locator('[data-key="weather/current"]').getByRole("button", { name: "Add Weather" }).click();
+        await dialog.waitFor({ state: "detached" });
+      }
+      const weatherIds = await page
+        .locator('.dashboard-tile[data-key="weather/current"]')
+        .evaluateAll((tiles) => tiles.map((el) => el.getAttribute("data-id")));
+      expect(weatherIds).toHaveLength(3);
+      expect(new Set(weatherIds).size).toBe(3);
+      expect(weatherIds[0]).toBe("weather/current");
+      await page.getByRole("button", { name: "Done", exact: true }).click();
+      await page.getByRole("button", { name: "Edit dashboard" }).waitFor();
+      const entries = saved.at(-1)!.board!.filter((entry) => entry.key === "weather/current");
+      expect(entries).toHaveLength(3);
+      for (const entry of entries) expect(entry).not.toHaveProperty("settings");
+    } finally {
+      await close();
+    }
+  }, 30_000);
+
+  test("timeout retains Retry and asks exactly that entry with its settings", async () => {
+    const configured: DashboardBoardEntry = { id: "w2", key: "weather/current", size: "small", settings: { place: "berlin" } };
+    answer = async (asked, write) => {
+      for (const entry of asked)
+        write(entry.id === "w2" ? { type: "widget", id: entry.id, key: entry.key, status: "timeout", ms: 30_000 } : ok(entry));
+    };
+    const { page, close } = await open(desktop, { props: { ...baseProps, board: [board[2], configured], kept: [] } });
+    try {
+      await waitForState(page, "w2", "timeout");
+      const retry = tile(page, "w2").getByRole("button", { name: "Try again" });
+      await retry.waitFor();
+      answer = answerAll;
+      await retry.click();
+      await tile(page, "w2").getByText("Weather berlin", { exact: true }).waitFor();
+      expect(requests.at(-1)).toEqual([configured]);
+    } finally {
+      answer = answerAll;
+      await close();
+    }
+  }, 30_000);
+
+  test("settings keep defaults unset, trim text on Enter, reset fields, and display resource snapshots", async () => {
+    const { page, close } = await open(desktop, {
+      props: {
+        ...baseProps,
+        board: [
+          {
+            id: "spaces/today",
+            key: "spaces/today",
+            size: "large",
+            settings: { space: { type: "spaces.space", id: "home", title: "Home" }, done: true, note: "old", unknown: "drop" },
+          },
+          board[2],
+        ],
+        kept: [],
+      },
+    });
+    try {
+      await waitForState(page, "spaces/today", "ok");
+      await page.getByRole("button", { name: "Edit dashboard" }).click();
+      await tile(page, "weather/current").getByRole("button", { name: "Customize Weather" }).click();
+      let dialog = page.getByRole("dialog", { name: "Customize Weather" });
+      expect(await dialog.getByRole("radio", { name: "Hamburg" }).getAttribute("aria-checked")).toBe("true");
+      const count = requests.length;
+      await dialog.getByRole("button", { name: "Apply", exact: true }).click();
+      await dialog.waitFor({ state: "detached" });
+      expect(requests.length).toBe(count);
+      await tile(page, "spaces/today").getByRole("button", { name: "Customize Today" }).click();
+      dialog = page.getByRole("dialog", { name: "Customize Today" });
+      // The stored title is shown, and only the reference is sent to the widget.
+      expect(await dialog.getByRole("textbox", { name: "Space" }).inputValue()).toBe("Home");
+      await dialog.getByRole("button", { name: "Clear Space" }).waitFor();
+      expect(await dialog.getByRole("textbox", { name: "Note" }).getAttribute("maxlength")).toBe("40");
+      await dialog.getByRole("textbox", { name: "Note" }).fill("  trimmed  ");
+      await dialog.getByRole("textbox", { name: "Note" }).press("Enter");
+      await dialog.waitFor({ state: "detached" });
+      expect(requests.at(-1)).toEqual([
+        {
+          id: "spaces/today",
+          key: "spaces/today",
+          size: "large",
+          settings: { space: { type: "spaces.space", id: "home" }, done: true, note: "trimmed" },
+        },
+      ]);
+      await tile(page, "spaces/today").getByRole("button", { name: "Customize Today" }).click();
+      await dialog.getByRole("button", { name: "Reset", exact: true }).click();
+      expect(await dialog.getByRole("textbox", { name: "Space" }).inputValue()).toBe("");
+      expect(await dialog.getByRole("textbox", { name: "Space" }).getAttribute("placeholder")).toBe("Nothing chosen");
+      expect(await dialog.getByRole("switch", { name: "Show done" }).isChecked()).toBeFalse();
+      expect(await dialog.getByRole("textbox", { name: "Note" }).inputValue()).toBe("");
+      expect(await dialog.getByRole("button", { name: "Clear Space" }).count()).toBe(0);
+      await dialog.getByRole("button", { name: "Apply", exact: true }).click();
+      await dialog.waitFor({ state: "detached" });
+      expect(requests.at(-1)).toEqual([{ id: "spaces/today", key: "spaces/today", size: "large" }]);
+    } finally {
+      await close();
+    }
+  }, 30_000);
+
   test("speaks German", async () => {
     const { page, close } = await open(phone, { lang: "de" });
     try {
@@ -715,6 +1081,14 @@ describe("the dashboard board in a browser", () => {
       await page.getByRole("button", { name: "Fertig" }).waitFor();
       expect(await page.locator(".dashboard-edit-hint").textContent()).toContain("Halten und ziehen verschiebt");
       await tile(page, "weather/current").getByRole("radio", { name: "Mittel" }).waitFor();
+      await tile(page, "weather/current").getByRole("button", { name: "Weather anpassen" }).waitFor();
+      expect(await tile(page, "weather/current").locator(".dashboard-tile__customize").textContent()).toContain("Anpassen");
+      await tile(page, "weather/current").getByRole("button", { name: "Weather nach vorne" }).waitFor();
+      await tile(page, "weather/current").getByRole("button", { name: "Weather nach hinten" }).waitFor();
+      await tile(page, "weather/current").locator('[data-move="forward"]').hover();
+      await page.getByRole("tooltip").getByText("Nach vorne", { exact: true }).waitFor();
+      await tile(page, "weather/current").locator('[data-move="back"]').hover();
+      await page.getByRole("tooltip").getByText("Nach hinten", { exact: true }).waitFor();
       await page.getByRole("button", { name: "Abbrechen" }).click();
     } finally {
       await close();

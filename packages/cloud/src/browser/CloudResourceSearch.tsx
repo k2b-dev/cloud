@@ -39,6 +39,7 @@ export type CloudResourceSearchProps = {
   navigationError?: string;
   placeholder?: string;
   requireReader?: boolean;
+  resourceType?: string;
   navigationItems?: readonly NavigationSearchItem[];
   searchResources?: boolean;
   excludeRefs?: readonly CloudResourceRef[];

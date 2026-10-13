@@ -1,4 +1,6 @@
-import { type DashboardWidgetSize, streamWidgets, type WidgetResponse, type WidgetStreamLine } from "@k2b/cloud/browser/widgets";
+import { streamWidgets, type WidgetResponse, type WidgetStreamLine } from "@k2b/cloud/browser/widgets";
+
+import { type DashboardBoardEntry, widgetRequestSettings } from "../shared";
 
 /**
  * What one widget frame shows. A frame starts as `loading` and settles when its widget answers; a failed widget can be
@@ -20,27 +22,29 @@ export const tileFromLine = (line: Extract<WidgetStreamLine, { type: "widget" }>
  * `error` when the request fails or the stream breaks off before it answered. Nothing is reported once `signal` aborts.
  */
 export const loadDashboardWidgets = async (options: {
-  widgets: readonly { key: string; size: DashboardWidgetSize }[];
+  widgets: readonly DashboardBoardEntry[];
   signal: AbortSignal;
   locale: string;
-  onTile: (key: string, state: DashboardTileState) => void;
+  onTile: (id: string, state: DashboardTileState) => void;
 }): Promise<void> => {
   if (options.widgets.length === 0) return;
-  const owed = new Set(options.widgets.map((widget) => widget.key));
+  const owed = new Set(options.widgets.map((widget) => widget.id));
   try {
     await streamWidgets({
-      keys: [...owed],
-      sizes: Object.fromEntries(options.widgets.map((widget) => [widget.key, widget.size])),
+      requests: options.widgets.map((entry) => {
+        const settings = widgetRequestSettings(entry.settings);
+        return { id: entry.id, key: entry.key, size: entry.size, ...(settings ? { settings } : {}) };
+      }),
       signal: options.signal,
       locale: options.locale,
       onLine: (line) => {
-        if (line.type !== "widget" || !owed.delete(line.key) || options.signal.aborted) return;
-        options.onTile(line.key, tileFromLine(line));
+        if (line.type !== "widget" || line.id === undefined || !owed.delete(line.id) || options.signal.aborted) return;
+        options.onTile(line.id, tileFromLine(line));
       },
     });
   } catch {
     // The widgets still owed fail on their own below, each with its own retry.
   }
   if (options.signal.aborted) return;
-  for (const key of owed) options.onTile(key, { status: "error" });
+  for (const id of owed) options.onTile(id, { status: "error" });
 };

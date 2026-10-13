@@ -93,6 +93,7 @@ export default ssr<AuthContext>(async (c) => {
       sizes: widget.sizes,
       defaultSize: widget.defaultSize,
       suggest: widget.suggest,
+      ...(widget.settings ? { settings: widget.settings } : {}),
     }));
   const visible = new Set(catalog.map((widget) => widget.key));
 

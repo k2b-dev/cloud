@@ -12,7 +12,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
-import type { DashboardCatalogWidget } from "../shared";
+import { type DashboardCatalogWidget, hasWidgetSettings } from "../shared";
 import { DashboardWidgetFrame } from "./dashboard-tile";
 import { dashboardMessages } from "./messages";
 import { type DashboardTileState, loadDashboardWidgets } from "./widget-board";
@@ -41,24 +41,19 @@ const createPreviewQueue = (locale: () => string, onTile: (id: string, state: Da
   const asked = new Set<string>();
   const queue: DashboardGalleryChoice[] = [];
   let running = 0;
+  let counter = 0;
   const pump = () => {
     while (running < DASHBOARD_GALLERY_PREVIEW_CONCURRENCY && queue.length > 0 && !controller.signal.aborted) {
-      // One stream asks a widget once, so a batch holds each key at most once.
-      const batch: DashboardGalleryChoice[] = [];
-      for (let index = 0; index < queue.length && running + batch.length < DASHBOARD_GALLERY_PREVIEW_CONCURRENCY; ) {
-        const next = queue[index]!;
-        if (batch.some((entry) => entry.key === next.key)) index += 1;
-        else batch.push(...queue.splice(index, 1));
-      }
+      const batch = queue.splice(0, DASHBOARD_GALLERY_PREVIEW_CONCURRENCY - running).map((entry) => ({ ...entry, id: `p${counter++}` }));
       running += batch.length;
       void loadDashboardWidgets({
         widgets: batch,
         signal: controller.signal,
         locale: locale(),
-        onTile: (key, state) => {
+        onTile: (id, state) => {
           running -= 1;
-          const size = batch.find((entry) => entry.key === key)!.size;
-          onTile(previewId(key, size), state);
+          const entry = batch.find((entry) => entry.id === id)!;
+          onTile(previewId(entry.key, entry.size), state);
           pump();
         },
       });
@@ -159,7 +154,7 @@ const GalleryCard = (props: {
           />
         </Show>
         <Show
-          when={!props.onBoard}
+          when={!props.onBoard || hasWidgetSettings(props.widget)}
           fallback={
             <Button size="sm" variant="secondary" disabled>
               <i class="ti ti-check" aria-hidden="true" />

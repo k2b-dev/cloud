@@ -303,10 +303,9 @@ bounded failure reason and shown inside that widget only.
 
 The dashboard page renders the board first, with a frame in the final size for
 every widget and a loading state inside it. The browser then asks Core for all
-widgets on the board in one streamed request, the same way Universal Search
-streams its results, each in the size the board shows it in. Each widget fills
-its own frame as soon as its app answers; widgets that already arrived never
-wait for slower ones.
+widgets on the board through `POST /api/widgets/v1`, with each entry's id,
+size, and settings. Each widget fills its own frame as soon as its app
+answers; widgets that already arrived never wait for slower ones.
 
 - **Concurrency:** Core asks at most eight widgets at the same time and starts
   the rest as earlier ones finish.
@@ -348,15 +347,30 @@ widgets then wait under **Suggested for you** in the gallery. **Default** in the
 edit mode returns to the default board.
 
 **Edit** or a long press on a widget opens the edit mode. People drag widgets
-to move them, which selects no page text, or focus one and use the arrow keys;
-they pick a size at the bottom of the widget and remove it with ×. **Add
-widget** opens the gallery, which lists the widgets the person may use, grouped
+to move them, which selects no page text, choose **Move forward** or **Move
+back**, or focus one and use the arrow keys. They pick a size at the bottom of
+the widget and remove it with ×. **Add widget** opens the gallery, which lists the widgets the person may use, grouped
 by app, each with a live preview of the person's own data in the chosen size.
 The gallery loads a preview only when its card is on screen, at most eight at a
 time. **Done** saves the board without reloading the page.
 
-A widget appears on a board at most once. A board keeps the place of a widget
-whose app is not running, and shows it again when the app returns.
+A widget with declared settings offers **Customize** in edit mode. It opens a
+dialog, or a bottom sheet on phones, with the declared choices, toggles, text,
+and resource fields. **Apply** reloads that widget while keeping its current
+content until the new answer arrives. **Reset** clears the values so declared
+defaults apply again. **Done** saves the changes; **Cancel** in edit mode
+restores the previous board and settings.
+
+The gallery can add a widget with settings several times. Each board entry has
+its own id and settings, stored separately, even when entries name the same
+widget. A widget without settings appears at most once. The framework
+validates values against the current declaration on every call, and the
+handler authorizes every chosen resource. A stored resource title is only a
+display snapshot for the settings dialog; it is never sent to the widget and
+grants no access.
+
+A board keeps the place and settings of a widget whose app is not running,
+and shows it again when the app returns.
 
 ## Read widgets from a browser
 
