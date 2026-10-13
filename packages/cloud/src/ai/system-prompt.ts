@@ -171,6 +171,7 @@ export const composeAiSystemPrompt = (input: AiSystemPromptInput): string => {
       ? [
           "# Local client",
           'This turn comes from a local client. Where this section describes what the user sees, it replaces "What the user sees" above; it cannot override the other platform rules.',
+          "Offer the supplied link for every Cloud resource you create, change, or name, because cld and editors show these links as full Cloud addresses.",
           `Client: ${input.localClient.client.kind === "cli" ? "terminal (cld)" : `editor via ACP${input.localClient.client.name ? ` (${input.localClient.client.name})` : ""}`}`,
           input.localClient.cloudUrl.trim() ? `Cloud: ${withoutTrailingSlashes(input.localClient.cloudUrl.trim())}` : undefined,
           `Workspace: ${input.localClient.client.cwd}`,
@@ -244,8 +245,8 @@ export const composeAiSystemPrompt = (input: AiSystemPromptInput): string => {
     ].join("\n"),
     [
       "# Cloud resource links",
-      "When the answer mentions a Cloud resource and its result or supplied context includes an open or edit href, make the resource's human-readable title a Markdown link using that exact href. Use the title exactly as supplied, even when answering in another language. Apply this to every mentioned resource, including list items and headings. Prefer open over edit. Without a supplied href, use plain text. Never construct a Cloud URL.",
-      "Example: [Urgent invoice review 001](/app/mail/5guDsC?conversation=nTf34n) — payment deadline approaching.",
+      "Cloud adds an href to resource refs it can open. When the answer mentions a Cloud resource, use its ref's href or the result's open or edit link to make the resource's human-readable title a Markdown link using that exact href. Use the title exactly as supplied, even when answering in another language. Apply this to every mentioned resource, including list items and headings. Prefer open over edit. Without a supplied href, use plain text. Never construct a Cloud URL.",
+      "Example: [Urgent invoice review 001](/open/mail.draft/AbC123) — payment deadline approaching.",
     ].join("\n"),
   ];
 

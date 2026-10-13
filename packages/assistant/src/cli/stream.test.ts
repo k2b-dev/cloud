@@ -90,6 +90,7 @@ const run = async (
   locale?: string,
   viewFile?: Response,
   clientTools?: AssistantClientTools,
+  server = "http://example.test",
 ) => {
   const chunks: string[] = [],
     errors: string[] = [],
@@ -101,7 +102,7 @@ const run = async (
   const ctx: CloudCliContext = {
     args: [],
     flags: {},
-    options: { profile: "test", server: "http://example.test", token: "test", output, locale },
+    options: { profile: "test", server, token: "test", output, locale },
     getDefault: async () => undefined,
     setDefault: async () => {},
     createApiClient: () => {
@@ -1038,4 +1039,19 @@ test("a presented explorer prints only its last-step rows with table formatting"
   expect(output.printed).toContain("Snapshot");
   expect(output.tables).toHaveLength(1);
   expect(output.tables[0]?.rows).toEqual([{ product: "New", item: "New item (spaces.item:new)", year: "2026", price: "2,00 €" }]);
+});
+
+test("renders supplied resource permalinks as full Cloud addresses in terminal output", async () => {
+  const text = "[Draft](/open/mail.draft/AbC123)";
+  const reply = await run(
+    [[delta("draft", "[Draft](/open/"), delta("draft", "mail.draft/AbC123)"), finished([text])]],
+    "text",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    "https://cloud.test",
+  );
+  expect(reply.text).toBe("[Draft](https://cloud.test/open/mail.draft/AbC123)\n");
 });

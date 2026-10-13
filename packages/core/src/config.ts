@@ -52,6 +52,7 @@ export const app = defineApp({
     "/auth",
     "/cli",
     "/me",
+    "/open",
     "/admin",
     "/legal/privacy",
     "/legal/terms",

@@ -74,14 +74,26 @@ describe("capabilities CLI", () => {
       if (path.startsWith("/api/capabilities/v1/catalog")) {
         return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: true, nextCursor: "before-contacts" } });
       }
-      return Response.json({ data: { id: "contact-1" } });
+      return Response.json({
+        data: { id: "contact-1" },
+        refs: [
+          { type: "contacts.contact", id: "contact-1" },
+          { type: "foreign.item", id: "one" },
+        ],
+      });
     });
     await capabilitiesCliModule.run(ctx);
     expect(requests.at(-1)).toEqual({
       path: "/api/capabilities/v1/queries/contacts/contact.read",
       body: { input: { id: "contact-1" } },
     });
-    expect(lines).toEqual(['{"data":{"id":"contact-1"}}']);
+    expect(JSON.parse(lines[0] ?? "")).toEqual({
+      data: { id: "contact-1" },
+      refs: [
+        { type: "contacts.contact", id: "contact-1", url: "http://cloud.test/open/contacts.contact/contact-1" },
+        { type: "foreign.item", id: "one" },
+      ],
+    });
   });
 
   test("fails closed for missing apps, Types without readers, and repeated catalog cursors", async () => {

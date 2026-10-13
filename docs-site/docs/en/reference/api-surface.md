@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-12
+updated: 2026-10-13
 ---
 
 # API surface
@@ -141,7 +141,7 @@ Use the capability guide to choose the narrow API:
 - [Outgoing mail](/en/docs/platform/outgoing-mail): `mail.profiles()`, `mail.send()`, `mail.enqueue()`, `mail.list()`, and `mail.readableApps()` from `@k2b/cloud/services`, with mail contracts and `PlatformPermission` from `@k2b/cloud/contracts`.
 - [Notifications](/en/docs/platform/notifications)
 - [Logging](/en/docs/platform/logging): `logger()` and `redactSensitivePath()` for safe request-path logging.
-- [App capabilities](/en/docs/platform/capabilities)
+- [App capabilities](/en/docs/platform/capabilities): `cloudResourceHref(ref)` from `@k2b/cloud/contracts` and `cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` supply [resource permalinks](/en/docs/platform/capabilities#resource-links).
 - [Universal search](/en/docs/platform/search)
 - [Document extraction](/en/docs/platform/document-extraction)
 - [Secrets and persistent state](/en/docs/data/secrets-and-persistent-state#call-a-public-https-address): `requestPublicHttps()` for server-side requests to a URL that a person, an administrator, or remote content chooses.

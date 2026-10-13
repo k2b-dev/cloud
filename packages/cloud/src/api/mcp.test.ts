@@ -943,7 +943,10 @@ describe("capability MCP projection", () => {
     expect(response.status).toBe(200);
     const result = ((await response.json()) as { result: Record<string, any> }).result;
     expect(result.isError).toBeUndefined();
-    expect(result.structuredContent).toMatchObject({ data: { id: "created" } });
+    expect(result.structuredContent).toMatchObject({
+      data: { id: "created" },
+      refs: [{ type: "demo.item", id: "created", href: "https://cloud.example/open/demo.item/created" }],
+    });
     expect(result.content).toContainEqual(
       expect.objectContaining({
         type: "resource_link",
@@ -989,9 +992,39 @@ describe("capability MCP projection", () => {
       params: { name: "cloud__resource__read", arguments: { type: "demo.item", id: "one" } },
     });
 
-    expect(await response.json()).toMatchObject({ result: { structuredContent: { data: { id: "one" } } } });
+    expect(await response.json()).toMatchObject({
+      result: {
+        structuredContent: {
+          data: { id: "one" },
+          refs: [{ type: "demo.item", id: "one", href: "https://cloud.example/open/demo.item/one" }],
+        },
+      },
+    });
     expect(requestedUrl).toContain("/queries/get");
     expect(requestedBody).toEqual({ input: { id: "one" } });
+  });
+
+  test("preserves successful capability results when the registry goes offline during link enrichment", async () => {
+    let listings = 0;
+    const routes = createMcpRoutes({
+      getCapability: async () => app,
+      listApps: async () => {
+        if (++listings > 1) throw new Error("Registry went offline");
+        return [summary(app)];
+      },
+      authenticate: authenticated,
+      fetch: async () => Response.json({ data: { id: "one" }, refs: [{ type: "demo.item", id: "one" }] }),
+    });
+    const response = await rpc(routes, {
+      jsonrpc: "2.0",
+      id: 72,
+      method: "tools/call",
+      params: { name: "demo__query__get", arguments: { id: "one" } },
+    });
+    expect(await response.json()).toMatchObject({
+      result: { structuredContent: { data: { id: "one" }, refs: [{ type: "demo.item", id: "one" }] } },
+    });
+    expect(listings).toBe(2);
   });
 
   test("returns actionable resource-ref validation and reader errors", async () => {

@@ -6,6 +6,7 @@ import {
   CAPABILITY_MAX_RESULT_BYTES,
   CapabilityCatalogSchema,
   CapabilityErrorSchema,
+  type CapabilityManifest,
   CapabilityStreamSchema,
   CloudResourceRefSchema,
   capabilityResultSchema,
@@ -14,6 +15,7 @@ import {
 } from "../contracts/capabilities";
 import { saveCapabilityStream } from "./capability-streams";
 import { arg, type CliInputFlagValue, type CloudCliContext, command, defineCliCommands, flag, readCliInput } from "./index";
+import { cloudResourceUrl } from "./resource-links";
 
 const parseInput = async (input: CliInputFlagValue): Promise<unknown> => {
   const raw = await readCliInput(input, {
@@ -72,6 +74,7 @@ const invoke = async (config: {
   capabilityId: string;
   input?: CliInputFlagValue;
   inputValue?: unknown;
+  manifest?: CapabilityManifest;
   idempotencyKey?: string;
 }) => {
   const headers = new Headers({ "content-type": "application/json" });
@@ -113,7 +116,18 @@ const invoke = async (config: {
     }
     throw error;
   }
-  printGenericResult(config.ctx, capabilityResultSchema(z.unknown()).parse(body));
+  const result = capabilityResultSchema(z.unknown()).parse(body);
+  const manifest = config.manifest;
+  printGenericResult(config.ctx, {
+    ...result,
+    ...(manifest && result.refs
+      ? {
+          refs: result.refs.map((ref) =>
+            resolveCapabilityResourceReader(manifest, ref) ? { ...ref, url: cloudResourceUrl(config.ctx, ref) } : ref,
+          ),
+        }
+      : {}),
+  });
 };
 
 export default defineCliCommands({
@@ -248,7 +262,7 @@ export default defineCliCommands({
         if (!app) throw new Error(`Capability app ${appId} is unavailable.`);
         const reader = resolveCapabilityResourceReader(app.manifest, ref);
         if (!reader) throw new Error(`Cloud resource type ${ref.type} is unknown or has no reader.`);
-        await invoke({ ctx, kind: "queries", appId, capabilityId: reader.localId, inputValue: { id: ref.id } });
+        await invoke({ ctx, kind: "queries", appId, capabilityId: reader.localId, inputValue: { id: ref.id }, manifest: app.manifest });
       },
     }),
     command("action", {

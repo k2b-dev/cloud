@@ -29,6 +29,7 @@ import { recordRejectedAiCapability } from "./capability-execution";
 import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
 import { createCodeSourceTool } from "./code-source-tools";
 import { CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES } from "./default-tools";
+import { addCloudResourceHrefs } from "./resource-refs";
 import { type AiToolPreparationContext, defineAiTool, type PreparedAiTools, prepareAiTools } from "./tools";
 import type { AiConversationService, AiRuntimeTool, AiToolPresentation } from "./types";
 
@@ -638,6 +639,7 @@ export const createAiToolMetaTools = (input: {
 };
 
 export const createLoadedAiCapabilityTools = (input: {
+  apps: readonly CapabilityRegistryEntry[];
   catalog: readonly AiCapabilityCatalogEntry[];
   loadedNames: readonly string[];
   actor: RequestActor;
@@ -686,7 +688,7 @@ export const createLoadedAiCapabilityTools = (input: {
             throw new Error("Capability Action was rejected by the user.");
           }
         }
-        return input.execute(entry, args, context);
+        return addCloudResourceHrefs(await input.execute(entry, args, context), input.apps);
       }),
     ];
   });
@@ -708,7 +710,7 @@ export const createAiResourceReaderTool = (input: {
     if (ref.type === "assistant.artifact") {
       const tool = createCodeSourceTool("code_read");
       if (tool.location !== "server") throw new Error("Code reader must execute on the server.");
-      return tool.run(CODE_SOURCE_TOOLS.code_read.input.parse({ id: ref.id }), context);
+      return addCloudResourceHrefs(await tool.run(CODE_SOURCE_TOOLS.code_read.input.parse({ id: ref.id }), context), input.apps);
     }
     const appId = cloudResourceRefAppId(ref);
     const app = input.apps.find((candidate) => candidate.appId === appId);
@@ -718,7 +720,7 @@ export const createAiResourceReaderTool = (input: {
       (candidate) => candidate.appId === appId && candidate.kind === "query" && candidate.operation.localId === reader.localId,
     );
     if (!entry) throw new Error(`Cloud resource reader ${appId}.${reader.localId} is unavailable.`);
-    return input.execute(entry, { id: ref.id }, context);
+    return addCloudResourceHrefs(await input.execute(entry, { id: ref.id }, context), input.apps);
   });
 
 /** Nessi resolver: one registry/load-state snapshot drives discovery, loading, schemas, and execution per model turn. */
@@ -860,6 +862,7 @@ export const createAiToolResolver =
       ...activeBuiltIns,
       ...(input.execute
         ? createLoadedAiCapabilityTools({
+            apps: registry,
             catalog: capabilityCatalog,
             loadedNames,
             actor: input.actor,

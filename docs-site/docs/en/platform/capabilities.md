@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-11
+updated: 2026-10-13
 ---
 
 # App capabilities
@@ -464,12 +464,37 @@ types: {
 consumer that a `CloudResourceRef` of this Type can be read programmatically.
 The referenced Query is the only read implementation; do not publish a second
 `item.get` or a Project-specific reader for the same operation. Omit `reader`
-when the resource has no useful bounded machine representation.
+only when the resource has neither a page nor a useful bounded machine
+representation.
 
 When an application lets a user copy or paste this identity, use Cloud's
 versioned resource clipboard format instead of embedding an ID in app-specific
 JSON or inferring it from text. See
 [Copy and paste Cloud resources](/en/docs/platform/resource-references).
+
+### Resource links
+
+Cloud supplies one permanent link per resource ref: `/open/<type>/<id>`, with
+`id` URL-encoded. Core resolves it through the Type's current reader as the
+signed-in user, then redirects to the first top-level `open` link. Signed-out
+users return to the permalink after signing in. Unavailable or inaccessible
+resources, and readers without an `open` link, show the same 404 page.
+
+Every Type with a page declares a reader. The reader returns the resource's
+`open` link in top-level `links`; for a resource without its own page, return
+the page that shows it, such as a comment's conversation. Cloud still accepts
+reader results without links so existing applications can keep reading.
+
+Use `cloudResourceHref(ref)` from `@k2b/cloud/contracts` to link a resource;
+never build another application's URL. Application CLIs use
+`cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` for an absolute URL on the
+profile's server. For example, `{ type: "mail.draft", id: "AbC123" }` produces
+`/open/mail.draft/AbC123`.
+
+Assistant adds `href` to top-level refs whose Type has a live reader. MCP adds
+an absolute `href` using the installation's `app.url` setting. These are
+consumer fields; providers keep returning the existing ref shape. Other result
+links remain optional navigation hints.
 
 ### Queries read data
 
@@ -1129,9 +1154,10 @@ it when the operation title and structured data already say everything useful.
 Provider-owned `refs` use qualified declared Types. Foreign qualified refs are
 opaque cross-app identities and need not be redeclared by the provider. An app
 may enrich a foreign ref only when it has an authoritative user-facing label;
-otherwise it returns the bare identity. Links are root-relative same-origin
-Cloud paths. They are hints: a caller may open one, but an operation does not
-require UI merely because it returns a link.
+otherwise it returns the bare identity. Provider links are root-relative
+same-origin Cloud paths. Readers return the resource's top-level `open` link
+for [Resource links](#resource-links); links on other results remain optional
+hints and do not require UI.
 When `hasMore` is true, `nextCursor` is required; on the final page it must be
 absent. Treat cursors as opaque values.
 

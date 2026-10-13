@@ -17,6 +17,7 @@ import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { HELP_SEARCH_MAX_LIMIT, helpResourceUri, parseHelpResourceUri, readHelpArticle } from "../_internal/help-catalog";
 import { getCapability, listApps } from "../_internal/registry";
+import { addCloudResourceHrefs } from "../ai/resource-refs";
 import { capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
@@ -28,6 +29,7 @@ import {
   CapabilitySemanticLinkSchema,
   CloudResourceRefSchema,
   capabilityResultJsonSchema,
+  capabilityResultSchema,
   cloudResourceRefAppId,
   resolveCapabilityResourceReader,
 } from "../contracts/capabilities";
@@ -646,11 +648,28 @@ const createMcpServer = (
       authority,
       dependencies,
     });
-    const body = await parseResponse(response);
-    const result = boundedToolResult(body, !response.ok);
-    if (response.ok) {
-      result.content.push(...semanticResourceLinks(body, publicCloudOrigin(await (dependencies.getAppUrl ?? defaultAppUrl)())));
+    let body = await parseResponse(response);
+    const origin = response.ok ? publicCloudOrigin(await (dependencies.getAppUrl ?? defaultAppUrl)()) : undefined;
+    if (origin) {
+      const parsed = capabilityResultSchema(z.unknown()).safeParse(body);
+      const appIds = new Set(parsed.success ? parsed.data.refs?.map(cloudResourceRefAppId) : []);
+      const apps = appIds.size ? await registry().catch(() => []) : [];
+      const capabilities = await Promise.all(
+        apps
+          .filter((app) => appIds.has(app.id) && app.capabilities?.protocolVersion === CAPABILITY_PROTOCOL_VERSION)
+          .map(async (app) => {
+            const entry = await capabilityLookup(app.id).catch(() => null);
+            return entry?.appId === app.id && entry.manifest.manifestHash === app.capabilities?.manifestHash ? entry : null;
+          }),
+      );
+      body = addCloudResourceHrefs(
+        body,
+        capabilities.filter((entry) => entry !== null),
+        origin,
+      );
     }
+    const result = boundedToolResult(body, !response.ok);
+    if (origin) result.content.push(...semanticResourceLinks(body, origin));
     return ensureBoundedToolResult(result);
   });
 

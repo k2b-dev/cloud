@@ -198,7 +198,7 @@ describe("AI capability catalog", () => {
           catalog,
           execute: async (entry, args) => {
             invocation = { localId: entry.operation.localId, args };
-            return { data: { id: "contact-1" } };
+            return { data: { id: "contact-1" }, refs: [{ type: "contacts.contact", id: "contact-1", title: "Ada" }] };
           },
         }),
       ],
@@ -207,10 +207,38 @@ describe("AI capability catalog", () => {
     });
     const tool = prepared.tools[0];
     if (!tool || tool.kind !== "server") throw new Error("resource reader missing");
-    await tool.execute(
+    const result = await tool.execute(
       { type: "contacts.contact", id: "contact-1" },
       { signal: AbortSignal.timeout(1_000), requestApproval: async () => true, requestClientTool: async <T>() => undefined as T },
     );
+    expect(result).toEqual({
+      data: { id: "contact-1" },
+      refs: [{ type: "contacts.contact", id: "contact-1", title: "Ada", href: "/open/contacts.contact/contact-1" }],
+    });
+    const loaded = prepareAiTools({
+      tools: createLoadedAiCapabilityTools({
+        apps: [app],
+        catalog,
+        loadedNames: ["contacts.contact.read"],
+        actor,
+        execute: async () => ({ data: {}, refs: [{ type: "contacts.contact", id: "contact-2" }] }),
+      }),
+      actor,
+      conversationId: "conversation-1",
+    }).tools[0];
+    if (!loaded || loaded.kind !== "server") throw new Error("loaded reader missing");
+    expect(
+      await loaded.execute(
+        { id: "contact-2" },
+        {
+          signal: AbortSignal.timeout(1_000),
+          requestApproval: async () => true,
+          requestClientTool: async () => {
+            throw new Error("Unused");
+          },
+        },
+      ),
+    ).toEqual({ data: {}, refs: [{ type: "contacts.contact", id: "contact-2", href: "/open/contacts.contact/contact-2" }] });
     expect(invocation).toEqual({ localId: "contact.read", args: { id: "contact-1" } });
   });
 
@@ -722,6 +750,7 @@ describe("AI capability catalog", () => {
 
     let called = "";
     const loaded = createLoadedAiCapabilityTools({
+      apps: [],
       catalog,
       actor,
       loadedNames: ["contacts.list", "removed.list"],
@@ -751,6 +780,7 @@ describe("AI capability catalog", () => {
     let actionExecutions = 0;
     const actionPrepared = prepareAiTools({
       tools: createLoadedAiCapabilityTools({
+        apps: [],
         catalog,
         actor,
         loadedNames: ["contacts.create"],
@@ -827,6 +857,7 @@ describe("AI capability catalog", () => {
     const calls: string[] = [];
     const prepared = prepareAiTools({
       tools: createLoadedAiCapabilityTools({
+        apps: [],
         catalog,
         actor,
         loadedNames: ["contacts.create", "contacts.list"],
@@ -886,6 +917,7 @@ describe("AI capability catalog", () => {
     let calls = 0;
     const prepared = prepareAiTools({
       tools: createLoadedAiCapabilityTools({
+        apps: [],
         catalog,
         actor,
         loadedNames: ["contacts.create"],

@@ -121,3 +121,5 @@ export {
   createMcpRoutes,
   publicCloudOrigin,
 } from "./mcp";
+
+export { resolveCloudResourceHref } from "./resource-links";

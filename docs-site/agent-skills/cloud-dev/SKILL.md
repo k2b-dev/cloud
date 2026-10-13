@@ -152,7 +152,9 @@ Cloud validates them at start and updates them by content hash; it offers them o
 
 For capability design or changes, read **App capabilities** in the Docs collection (`/en/docs/platform/capabilities`),
 especially its machine-composition and design-review guidance. Trace real task paths and consumers before choosing
-result fields or changing contracts; keep detailed API rules in that guide. Cloud records one execution row for every
+result fields or changing contracts; keep detailed API rules in that guide.
+Every Type with a page declares a reader that returns the resource's top-level `open` link; use `cloudResourceHref`
+for resource links, never hand-build another app's URL. Cloud records one execution row for every
 capability call on every surface; an application writes `context.requestId` into its own audit rows so the two trails
 join without sharing payloads. Actions may word themselves with optional, translated `presentation.sentences`
 (`approval`, `done`, `rejected`, `notRun`; `{input.path}`, `{data.path}` in `done`); consumers never special-case an app.

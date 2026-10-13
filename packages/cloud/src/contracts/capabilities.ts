@@ -89,6 +89,8 @@ export const CloudResourceRefSchema = z
 
 export type CloudResourceRef = z.infer<typeof CloudResourceRefSchema>;
 
+export const cloudResourceHref = (ref: CloudResourceRef): string => `/open/${ref.type}/${encodeURIComponent(ref.id)}`;
+
 export const CloudResourceReferenceSchema = CloudResourceRefSchema.extend({
   title: z.string().min(1).max(500).optional().describe("Optional current user-facing resource label."),
   preview: z.string().max(2000).optional().describe("Optional short plain-text context for the resource."),

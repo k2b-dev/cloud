@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-11
+updated: 2026-10-13
 ---
 
 # Deployment requirements
@@ -809,6 +809,19 @@ browser, send it a test notification, and check that its history shows the
 browser delivery held back by do not disturb and no fallback email. Resume,
 send again, and confirm that the push arrives. An older release ignores the
 table, so a rollback turns quiet time off and keeps the saved settings.
+
+### Enable resource permalinks
+
+Deploy updated Core to serve `/open/<type>/<id>` and register its `/open`
+prefix with the gateway. Assistant and MCP supply these links for refs with
+live readers. Deploy Core before exposing the new links; older Core images
+return 404 for them. No configuration or database migration is needed.
+
+Verify a permalink while signed out and signed in: sign-in preserves the
+return URL, and an authorized reader with a top-level `open` link redirects to
+the resource's page. Missing access, offline apps, and missing reader links
+all show Core's 404 page. Existing readers without links keep working through
+capability calls. See [Resource links](/en/docs/platform/capabilities#resource-links).
 
 ## Coordinate an existing installation's identity upgrade
 
