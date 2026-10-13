@@ -684,12 +684,13 @@ describe(`Spaces month view in ${browserName}`, () => {
         await page.waitForURL(new RegExp(`cd=${date}`));
       }
       await page.locator(".k2b-calendar-view-switcher").getByRole("radio", { name: "Month" }).click();
-      await page.waitForURL(/cv=month&cd=2026-11/);
+      // The month keeps the day the week showed first, so New event creates there instead of on the 1st.
+      await page.waitForURL(/cv=month&cd=2026-11-02/);
       await page.locator(day("2026-11-02")).waitFor();
       expect(await selectedDays(page)).toEqual([]);
       await page.getByRole("button", { name: "New event" }).click();
       await dialog.waitFor();
-      expect(await dialog.textContent()).toContain("Nov 1");
+      expect(await dialog.textContent()).toContain("Nov 2");
       expect(await dialog.textContent()).not.toContain("Oct 21");
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => !document.querySelector("dialog[open]"));
