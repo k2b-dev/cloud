@@ -24,9 +24,13 @@ import {
   type ChatContext,
   type ConversationRow,
   capPermission,
+  coMemberIds,
+  groupUsers,
+  memberUsers,
   messages,
   permissionFromRank,
   readableMemberCondition,
+  repairMemberCount,
   requireConversation,
   subjectPrincipal,
 } from "./access";
@@ -41,14 +45,18 @@ import {
   type CreateOutcomeSchema,
   LeaveSchema,
   MAX_EXISTING_MATCHES,
+  MAX_GROUP_MEMBERS,
   MAX_PARTICIPANTS,
   MEMBER_PAGE_SIZE,
+  type MemberPrincipal,
   MemberQuerySchema,
+  PEOPLE_PAGE_SIZE,
+  PeopleQuerySchema,
   UpdateConversationSchema,
   UpdateMemberSchema,
 } from "./contracts";
 import { chatLive } from "./live";
-import { appendMessage, personSnapshots } from "./message-store";
+import { appendMessage, deletedPeople, personSnapshots } from "./message-store";
 import { deriveTitle, TITLE_NAME_LIMIT } from "./titles";
 
 const creationLimit = ratelimit({ id: "chat.conversation.create", limit: CREATE_LIMIT, windowSecs: CREATE_WINDOW_SECONDS });
@@ -114,26 +122,42 @@ const authorizeManagement = async (
 };
 
 /** Validate only requested IDs, without returning directory details to the caller. */
-const validateMembers = async (ids: string[], context: ChatContext, db: typeof sql): Promise<Result<void>> => {
-  if (ids.length === 0) return ok();
+const validateMembers = async (principals: MemberPrincipal[], context: ChatContext, db: typeof sql): Promise<Result<void>> => {
+  if (!principals.length) return ok();
   const t = messages(context);
-  const rows = await db<{ id: string; profile: string; active: boolean }[]>`
-    SELECT id, profile, (account_expires IS NULL OR account_expires > now()) AS active
-    FROM auth.users WHERE id = ANY(${toPgUuidArray(ids)}::uuid[]) FOR SHARE
+  const [caller] =
+    context.accessSubject.type === "user"
+      ? await db<{ profile: string }[]>`
+    SELECT profile FROM auth.users WHERE id = ${context.accessSubject.userId}::uuid FOR SHARE`
+      : [];
+  const groups = principals.filter((principal) => principal.type === "group");
+  if (caller?.profile === "guest" && groups.length) return fail(err.badInput(t.guestGroups));
+  const ids = principals.filter((principal) => principal.type === "user").map((principal) => principal.userId);
+  const rows = await db<{ id: string; active: boolean; co_member: boolean }[]>`
+    SELECT id, (account_expires IS NULL OR account_expires > now()) AS active,
+      ${caller?.profile === "guest" ? db`u.id IN (${coMemberIds(context.accessSubject, db)})` : db`true`} AS co_member
+    FROM auth.users u WHERE id = ANY(${toPgUuidArray(ids)}::uuid[]) FOR SHARE
   `;
   const missing = ids.filter((id) => !rows.some((row) => row.id === id));
   if (missing.length) {
-    const [kinds] = await db<{ service_account: boolean; directory_group: boolean }[]>`
-      SELECT EXISTS(SELECT 1 FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray(missing)}::uuid[])) AS service_account,
-        EXISTS(SELECT 1 FROM auth.groups WHERE id = ANY(${toPgUuidArray(missing)}::uuid[])) AS directory_group
-    `;
-    if (kinds?.service_account) return fail(err.badInput(t.peopleOnly));
-    if (kinds?.directory_group) return fail(err.badInput(t.groupsUnsupported));
-    return fail(err.badInput(t.memberUnavailable));
+    const [kinds] = await db<{ service_account: boolean }[]>`
+      SELECT EXISTS(SELECT 1 FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray(missing)}::uuid[])) AS service_account`;
+    return fail(err.badInput(kinds?.service_account ? t.peopleOnly : t.memberUnavailable));
   }
   if (rows.some((row) => !row.active)) return fail(err.badInput(t.memberUnavailable));
-  if (rows.some((row) => row.profile !== "user")) return fail(err.badInput(t.guestsUnsupported));
+  if (rows.some((row) => !row.co_member)) return fail(err.badInput(t.guestCoMembers));
+  for (const group of groups) {
+    const [found] = await db<{ id: string }[]>`SELECT id FROM auth.groups WHERE id = ${group.groupId}::uuid FOR SHARE`;
+    if (!found) return fail(err.badInput(t.groupUnavailable));
+    const users = await db<{ id: string }[]>`${groupUsers(group.groupId, db)} LIMIT ${MAX_GROUP_MEMBERS + 1}`;
+    if (users.length > MAX_GROUP_MEMBERS) return fail(err.badInput(t.groupTooLarge));
+  }
   return ok();
+};
+
+const checkParticipantLimit = async (db: typeof sql, id: string, context: ChatContext) => {
+  const rows = await db<{ id: string }[]>`${memberUsers(id, db)} LIMIT ${MAX_PARTICIPANTS + 1}`;
+  if (rows.length > MAX_PARTICIPANTS) throw new TransactionFailure(err.badInput(messages(context).participantLimit));
 };
 
 const addDirectMember = async (db: typeof sql, row: ConversationRow, userId: string, permission: PermissionLevel, context: ChatContext) => {
@@ -142,24 +166,86 @@ const addDirectMember = async (db: typeof sql, row: ConversationRow, userId: str
   await db`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
     VALUES (${row.id}::uuid, ${access.id}::uuid, 'member', ${author.type}, ${author.id}::uuid)`;
   await db`INSERT INTO chat.participants (principal_type, principal_id, conversation_id, origin, joined_seq)
-    SELECT 'user', ${userId}::uuid, id, 'direct', seq_head FROM chat.conversations WHERE id = ${row.id}::uuid`;
+    SELECT 'user', ${userId}::uuid, id, 'direct', seq_head FROM chat.conversations WHERE id = ${row.id}::uuid
+    ON CONFLICT (principal_type, principal_id, conversation_id) DO UPDATE SET origin = 'direct'`;
+};
+
+const addGroups = async (
+  db: typeof sql,
+  row: ConversationRow,
+  groups: Extract<MemberPrincipal, { type: "group" }>[],
+  context: ChatContext,
+) => {
+  const memberIds = new Set<string>();
+  const author = actingPrincipal(context.actor);
+  for (const group of groups) {
+    const access = value(await createAccess({ principal: group, permission: "write" }, db));
+    await db`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
+      VALUES (${row.id}::uuid, ${access.id}::uuid, 'member', ${author.type}, ${author.id}::uuid)`;
+    const resolved = await db<
+      { id: string }[]
+    >`SELECT id FROM (${groupUsers(group.groupId, db)}) members ORDER BY id LIMIT ${MAX_GROUP_MEMBERS}`;
+    for (const person of resolved) memberIds.add(person.id);
+  }
+  const ids = [...memberIds];
+  await db`INSERT INTO chat.participants (principal_type, principal_id, conversation_id, origin, joined_seq)
+    SELECT 'user', u.id, c.id, 'ondemand', c.seq_head FROM auth.users u CROSS JOIN chat.conversations c
+    WHERE c.id = ${row.id}::uuid AND u.id = ANY(${toPgUuidArray(ids)}::uuid[])
+    ON CONFLICT DO NOTHING`;
+  return ids;
+};
+const groupSnapshots = async (db: typeof sql, ids: string[]) => db<{ id: string; name: string }[]>`
+  SELECT id, COALESCE(NULLIF(name, ''), cn) AS name FROM auth.groups WHERE id = ANY(${toPgUuidArray(ids)}::uuid[]) ORDER BY id`;
+// Membership hints go out once, with the first message of the change.
+const appendAdded = async (
+  db: typeof sql,
+  row: ConversationRow,
+  context: ChatContext,
+  ids: string[],
+  groupIds: string[],
+  affected: string[],
+) => {
+  if (ids.length)
+    await appendMessage(
+      db,
+      row,
+      context,
+      { kind: "system", system: { code: "members_added", params: { members: await personSnapshots(db, ids) } } },
+      affected,
+    );
+  if (groupIds.length)
+    await appendMessage(
+      db,
+      row,
+      context,
+      { kind: "system", system: { code: "groups_added", params: { groups: await groupSnapshots(db, groupIds) } } },
+      ids.length ? [] : affected,
+    );
 };
 
 /** One bounded query for titles across the page, including the creation transaction's own grants. */
 const titles = async (rows: ConversationRow[], context: ChatContext, db: typeof sql) => {
   const self = subjectPrincipal(context.accessSubject);
   const others = rows.length
-    ? await db<{ conversation_id: string; display_name: string; given_name: string }[]>`
-    SELECT c.id AS conversation_id, names.display_name, names.given_name
-    FROM chat.conversations c
+    ? await db<{ conversation_id: string; display_name: string; given_name: string; former: boolean; group: boolean }[]>`
+    SELECT c.id AS conversation_id, names.* FROM chat.conversations c
     CROSS JOIN LATERAL (
-      SELECT COALESCE(NULLIF(u.display_name, ''), u.uid) AS display_name, COALESCE(u.given_name, '') AS given_name
-      FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id JOIN auth.users u ON u.id = a.user_id
-      WHERE ca.conversation_id = c.id AND ca.role = 'member'
-        AND NOT (${self.type} = 'user' AND a.user_id = ${self.id}::uuid)
-      ORDER BY ca.added_at, ca.access_id LIMIT ${TITLE_NAME_LIMIT + 1}
-    ) names
-    WHERE c.id = ANY(${toPgUuidArray(rows.map((row) => row.id))}::uuid[])
+      SELECT display_name, given_name, former, "group" FROM (
+        SELECT COALESCE(NULLIF(u.display_name, ''), u.uid) AS display_name, COALESCE(u.given_name, '') AS given_name,
+          false AS former, false AS "group", 0 AS section, ca.added_at AS added_at, 0::bigint AS joined_seq, ca.access_id AS order_id
+        FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id JOIN auth.users u ON u.id = a.user_id
+        WHERE ca.conversation_id = c.id AND ca.role = 'member' AND a.permission IN ('read', 'write', 'admin')
+          AND NOT (${self.type} = 'user' AND a.user_id = ${self.id}::uuid)
+        UNION ALL
+        SELECT '', '', true, false, 1, NULL::timestamptz, p.joined_seq, p.principal_id FROM chat.participants p
+        WHERE p.conversation_id = c.id AND p.principal_type = 'user' AND p.origin = 'direct'
+          AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = p.principal_id)
+        UNION ALL
+        SELECT COALESCE(NULLIF(g.name, ''), g.cn), '', false, true, 2, ca.added_at, 0::bigint, ca.access_id
+        FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id JOIN auth.groups g ON g.id = a.group_id
+        WHERE ca.conversation_id = c.id AND ca.role = 'member' AND a.group_id IS NOT NULL AND a.permission IN ('read', 'write', 'admin')
+      ) entries ORDER BY section, added_at, joined_seq, order_id LIMIT ${TITLE_NAME_LIMIT + 1}
+    ) names WHERE c.id = ANY(${toPgUuidArray(rows.map((row) => row.id))}::uuid[])
   `
     : [];
   return new Map(
@@ -169,13 +255,13 @@ const titles = async (rows: ConversationRow[], context: ChatContext, db: typeof 
         row.name,
         others
           .filter((other) => other.conversation_id === row.id)
-          .map((other) => ({ displayName: other.display_name, givenName: other.given_name })),
+          .map((other) => ({ displayName: other.display_name, givenName: other.given_name, former: other.former, group: other.group })),
         context.locale,
       ),
     ]),
   );
 };
-const lastMessages = async (rows: ConversationRow[], db: typeof sql) => {
+const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: typeof sql) => {
   const found = rows.length
     ? await db<
         {
@@ -196,29 +282,57 @@ const lastMessages = async (rows: ConversationRow[], db: typeof sql) => {
       ) m WHERE c.id = ANY(${toPgUuidArray(rows.map((row) => row.id))}::uuid[])
     `
     : [];
+  const deleted = await deletedPeople(
+    db,
+    found.filter((row) => row.author_type === "user").map((row) => row.author_id),
+  );
   return new Map(
     found.map((row) => [
       row.conversation_id,
       {
         id: row.short_id,
-        author: { type: row.author_type, id: row.author_id, name: row.author_name },
+        author: {
+          type: row.author_type,
+          id: row.author_id,
+          name: deleted.has(row.author_id) && row.author_type === "user" ? messages(context).formerAccount : row.author_name,
+        },
         preview: messagePreview(row.body),
         createdAt: row.created_at.toISOString(),
       },
     ]),
   );
 };
+const lifecycleFlags = async (rows: ConversationRow[], context: ChatContext, db: typeof sql) => {
+  const self = subjectPrincipal(context.accessSubject);
+  const found = rows.length
+    ? await db<{ id: string; with_guests: boolean; peer_deactivated: boolean }[]>`
+    SELECT c.id, EXISTS (SELECT 1 FROM (${memberUsers(db`c.id`, db)}) members JOIN auth.users u ON u.id = members.id WHERE u.profile = 'guest') AS with_guests,
+      (${self.type} = 'user'
+        AND (SELECT COUNT(*) FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+          WHERE ca.conversation_id = c.id AND ca.role = 'member' AND a.user_id IS NOT NULL) = 2
+        AND NOT EXISTS (SELECT 1 FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+          WHERE ca.conversation_id = c.id AND ca.role = 'member' AND a.group_id IS NOT NULL)
+        AND EXISTS (SELECT 1 FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+          WHERE ca.conversation_id = c.id AND ca.role = 'member' AND a.user_id = ${self.id}::uuid)
+        AND EXISTS (SELECT 1 FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id JOIN auth.users u ON u.id = a.user_id
+          WHERE ca.conversation_id = c.id AND ca.role = 'member' AND a.user_id <> ${self.id}::uuid AND u.account_expires <= now())) AS peer_deactivated
+    FROM chat.conversations c WHERE c.id = ANY(${toPgUuidArray(rows.map((row) => row.id))}::uuid[])`
+    : [];
+  return new Map(found.map((row) => [row.id, { withGuests: row.with_guests, peerDeactivated: row.peer_deactivated }]));
+};
 const project = (
   row: ConversationRow,
   permission: Exclude<PermissionLevel, "none">,
   title: string,
   lastMessage: z.infer<typeof ConversationSchema>["lastMessage"],
+  flags: { withGuests: boolean; peerDeactivated: boolean },
 ): z.infer<typeof ConversationSchema> => ({
   id: row.short_id,
   name: row.name,
   icon: row.icon,
   purpose: row.purpose,
   memberCount: row.member_count,
+  ...flags,
   rev: Number(row.rev),
   permission,
   title,
@@ -239,8 +353,10 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
   if (!parsed.ok) return parsed;
   const data = parsed.data;
   const callerId = input.accessSubject.userId;
-  const members = data.members.filter((id) => id !== callerId);
-  const allIds = [callerId, ...members];
+  const members = data.members.filter((principal) => principal.type !== "user" || principal.userId !== callerId);
+  const people = members.filter((principal) => principal.type === "user").map((principal) => principal.userId);
+  const groups = members.filter((principal) => principal.type === "group");
+  const allIds = [callerId, ...people];
   try {
     const result = await sql.begin(async (db): Promise<Result<CreateOutcome> | RateLimited> => {
       const [caller] = await db<
@@ -248,13 +364,12 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
       >`SELECT profile, (account_expires IS NULL OR account_expires > now()) AS active
       FROM auth.users WHERE id = ${callerId}::uuid FOR SHARE`;
       if (!caller?.active) return fail(err.badInput(t.memberUnavailable));
-      if (caller.profile === "guest" && members.length) return fail(err.badInput(t.guestCreate));
       const valid = await validateMembers(members, input, db);
       if (!valid.ok) return valid;
       // One lock per member set: a waiting create sees the committed chat, so only allowDuplicate adds another.
       // A hash collision only serializes two unrelated creations.
       await db`SELECT pg_advisory_xact_lock(hashtextextended(${"chat.conversation.create:" + [...new Set(allIds)].sort().join(",")}, 0))`;
-      if (!data.allowDuplicate) {
+      if (!data.allowDuplicate && !groups.length) {
         const matches = await db<(ConversationRow & { archived: boolean })[]>`
         SELECT c.*, EXISTS(SELECT 1 FROM chat.participants p WHERE p.conversation_id = c.id AND p.principal_type = 'user'
           AND p.principal_id = ${callerId}::uuid AND p.archived_at IS NOT NULL) AS archived
@@ -262,6 +377,8 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
         WHERE c.id IN (SELECT ca.conversation_id FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
             WHERE ca.role = 'member' AND a.user_id = ${callerId}::uuid AND a.permission IN ('read', 'write', 'admin'))
           AND NOT EXISTS(SELECT 1 FROM chat.conversation_access ca WHERE ca.conversation_id = c.id AND ca.role = 'discoverable')
+          AND NOT EXISTS (SELECT 1 FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+            WHERE ca.conversation_id = c.id AND ca.role = 'member' AND a.group_id IS NOT NULL)
           AND (SELECT COUNT(*) FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
             WHERE ca.conversation_id = c.id AND ca.role = 'member' AND (a.user_id IS NOT NULL OR a.service_account_id IS NOT NULL)) = ${allIds.length}
           AND (SELECT COUNT(DISTINCT a.user_id) FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
@@ -296,20 +413,38 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
       }
       if (!row) throw new TransactionFailure(err.internal(t.createFailed));
       for (const id of allIds) await addDirectMember(db, row, id, id === callerId ? "admin" : "write", input);
+      const groupPeople = await addGroups(db, row, groups, input);
+      await checkParticipantLimit(db, row.id, input);
+      row.member_count = await repairMemberCount(row.id, db);
       value(await requireConversation({ ...input, conversationId: row.short_id, required: "admin" }, db));
-      const createdMessage = await appendMessage(
-        db,
-        row,
-        input,
-        { kind: "system", system: { code: "conversation_created", params: {} } },
-        allIds,
-      );
-      await record(db, input, row.short_id, "chat.conversation.create", { memberCount: allIds.length });
+      let latestMessage = await appendMessage(db, row, input, { kind: "system", system: { code: "conversation_created", params: {} } }, [
+        ...new Set([...allIds, ...groupPeople]),
+      ]);
+      if (groups.length)
+        latestMessage = await appendMessage(db, row, input, {
+          kind: "system",
+          system: {
+            code: "groups_added",
+            params: {
+              groups: await groupSnapshots(
+                db,
+                groups.map((group) => group.groupId),
+              ),
+            },
+          },
+        });
+      await record(db, input, row.short_id, "chat.conversation.create", { memberCount: row.member_count });
       const names = await titles([row], input, db);
-      const latest = await lastMessages([row], db);
+      const latest = await lastMessages([row], input, db);
       return ok({
         outcome: "created",
-        conversation: project({ ...row, rev: createdMessage.rev }, "admin", names.get(row.id)!, latest.get(row.id) ?? null),
+        conversation: project(
+          { ...row, rev: latestMessage.rev },
+          "admin",
+          names.get(row.id)!,
+          latest.get(row.id) ?? null,
+          (await lifecycleFlags([row], input, db)).get(row.id)!,
+        ),
       });
     });
     if (result.ok) chatLive.wake();
@@ -325,8 +460,10 @@ const get = async (input: ChatContext & { conversationId: string }, db: typeof s
   if (!result.ok) return result;
   const row = result.data;
   const names = await titles([row], input, db);
-  const latest = await lastMessages([row], db);
-  return ok(project(row, row.permission, names.get(row.id)!, latest.get(row.id) ?? null));
+  const latest = await lastMessages([row], input, db);
+  return ok(
+    project(row, row.permission, names.get(row.id)!, latest.get(row.id) ?? null, (await lifecycleFlags([row], input, db)).get(row.id)!),
+  );
 };
 const list = async (input: ChatContext & { query?: unknown }) => {
   const parsed = parse(ConversationQuerySchema, input.query ?? {}, input);
@@ -345,13 +482,15 @@ const list = async (input: ChatContext & { query?: unknown }) => {
   `;
   const page = rows.slice(0, CONVERSATION_PAGE_SIZE);
   const names = await titles(page, input, sql);
-  const latest = await lastMessages(page, sql);
+  const latest = await lastMessages(page, input, sql);
+  const flags = await lifecycleFlags(page, input, sql);
   const items = page.map((row) =>
     project(
       row,
       z.enum(["read", "write", "admin"]).parse(capPermission(permissionFromRank(row.permission_rank), input.actor)),
       names.get(row.id)!,
       latest.get(row.id) ?? null,
+      flags.get(row.id)!,
     ),
   );
   const last = page.at(-1);
@@ -384,8 +523,16 @@ const update = async (input: ChatContext & { conversationId: string; input: unkn
     }
     await record(db, input, before.short_id, "chat.conversation.update", { fields: Object.keys(data) });
     const names = await titles([row], input, db);
-    const latest = await lastMessages([row], db);
-    return ok(project(row, before.permission, names.get(before.id)!, latest.get(row.id) ?? null));
+    const latest = await lastMessages([row], input, db);
+    return ok(
+      project(
+        row,
+        before.permission,
+        names.get(before.id)!,
+        latest.get(row.id) ?? null,
+        (await lifecycleFlags([row], input, db)).get(row.id)!,
+      ),
+    );
   });
 };
 
@@ -416,15 +563,17 @@ const listMembers = async (input: ChatContext & { conversationId: string; query?
   const parsed = parse(MemberQuerySchema, input.query ?? {}, input);
   if (!parsed.ok) return parsed;
   const cursor = parsed.data.cursor;
-  const rows = await sql<MemberRow[]>`SELECT ca.access_id, a.user_id, a.permission, ca.added_at
+  const rows = await sql<
+    { access_id: string; user_id: string | null; group_id: string | null; permission: Exclude<PermissionLevel, "none">; added_at: Date }[]
+  >`SELECT ca.access_id, a.user_id, a.group_id, a.permission, ca.added_at
     FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
-    WHERE ca.conversation_id = ${allowed.data.id}::uuid AND ca.role = 'member' AND a.user_id IS NOT NULL
+    WHERE ca.conversation_id = ${allowed.data.id}::uuid AND ca.role = 'member' AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL)
       AND ${cursor ? sql`ca.access_id > ${cursor}::uuid` : sql`true`} ORDER BY ca.access_id LIMIT ${MEMBER_PAGE_SIZE + 1}`;
   const page = rows.slice(0, MEMBER_PAGE_SIZE);
   const entries = await resolveDisplayNames(
     page.map((row) => ({
       accessId: row.access_id,
-      principal: { type: "user" as const, userId: row.user_id },
+      principal: row.user_id ? { type: "user" as const, userId: row.user_id } : { type: "group" as const, groupId: row.group_id! },
       permission: row.permission,
       addedAt: row.added_at.toISOString(),
     })),
@@ -438,40 +587,34 @@ const addMembers = async (input: ChatContext & { conversationId: string; input: 
     await lockConversation(db, input.conversationId);
     const allowed = await authorizeManagement(db, input, input.conversationId, "chat.member.add");
     if (!allowed.ok) return allowed;
-    const before = await directEntries(db, allowed.data.id);
-    const ids = parsed.data.members.filter((id) => !before.some((row) => row.user_id === id));
-    if (input.accessSubject.type === "user" && ids.length) {
-      const [caller] = await db<
-        { profile: string }[]
-      >`SELECT profile FROM auth.users WHERE id = ${input.accessSubject.userId}::uuid FOR SHARE`;
-      if (caller?.profile === "guest") return fail(err.badInput(messages(input).guestMembers));
-    }
-    const valid = await validateMembers(ids, input, db);
+    const requested = parsed.data.members.map((principal) => (principal.type === "user" ? principal.userId : principal.groupId));
+    const existing = await db<{ user_id: string | null; group_id: string | null }[]>`
+      SELECT a.user_id, a.group_id FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+      WHERE ca.conversation_id = ${allowed.data.id}::uuid AND ca.role = 'member'
+        AND (a.user_id = ANY(${toPgUuidArray(requested)}::uuid[]) OR a.group_id = ANY(${toPgUuidArray(requested)}::uuid[]))`;
+    // Existing entries are a no-op, so a group that has grown since it was added does not block the request.
+    const principals = parsed.data.members.filter(
+      (principal) =>
+        !existing.some((entry) => (principal.type === "user" ? entry.user_id === principal.userId : entry.group_id === principal.groupId)),
+    );
+    const valid = await validateMembers(principals, input, db);
     if (!valid.ok) return valid;
-    // Count participants too: the total limit also covers future on-demand participants.
-    const [count] = await db<
-      { count: number }[]
-    >`SELECT COUNT(*)::int AS count FROM chat.participants WHERE conversation_id = ${allowed.data.id}::uuid`;
-    if ((count?.count ?? 0) + ids.length > MAX_PARTICIPANTS) return fail(err.badInput(messages(input).participantLimit));
+    const ids = principals.filter((principal) => principal.type === "user").map((principal) => principal.userId);
+    const groups = principals.filter((principal) => principal.type === "group");
     for (const id of ids) await addDirectMember(db, allowed.data, id, "write", input);
-    if (ids.length) {
-      await db`UPDATE chat.conversations SET member_count = member_count + ${ids.length} WHERE id = ${allowed.data.id}::uuid`;
-      await appendMessage(
-        db,
-        allowed.data,
-        input,
-        {
-          kind: "system",
-          system: {
-            code: "members_added",
-            params: { members: await personSnapshots(db, ids) },
-          },
-        },
-        ids,
-      );
-    }
-    await record(db, input, allowed.data.short_id, "chat.member.add", { count: ids.length });
-    return ok({ added: ids.length });
+    const groupPeople = await addGroups(db, allowed.data, groups, input);
+    await checkParticipantLimit(db, allowed.data.id, input);
+    await repairMemberCount(allowed.data.id, db);
+    await appendAdded(
+      db,
+      allowed.data,
+      input,
+      ids,
+      groups.map((group) => group.groupId),
+      [...new Set([...ids, ...groupPeople])],
+    );
+    await record(db, input, allowed.data.short_id, "chat.member.add", { count: principals.length });
+    return ok({ added: principals.length });
   });
 };
 const updateMember = async (input: ChatContext & { conversationId: string; accessId: string; input: unknown }) => {
@@ -512,9 +655,13 @@ const updateMember = async (input: ChatContext & { conversationId: string; acces
   });
 };
 const deleteDirect = async (db: typeof sql, row: ConversationRow, member: MemberRow) => {
-  await db`DELETE FROM chat.participants WHERE conversation_id = ${row.id}::uuid AND principal_type = 'user' AND principal_id = ${member.user_id}::uuid`;
   value(await deleteAccess({ id: member.access_id }, db)); // FK cascade removes the junction.
-  await db`UPDATE chat.conversations SET member_count = member_count - 1 WHERE id = ${row.id}::uuid`;
+  const [remaining] = await db<{ id: string }[]>`SELECT id FROM (${memberUsers(row.id, db)}) members WHERE id = ${member.user_id}::uuid`;
+  if (remaining)
+    await db`UPDATE chat.participants SET origin = 'ondemand' WHERE conversation_id = ${row.id}::uuid AND principal_type = 'user' AND principal_id = ${member.user_id}::uuid`;
+  else
+    await db`DELETE FROM chat.participants WHERE conversation_id = ${row.id}::uuid AND principal_type = 'user' AND principal_id = ${member.user_id}::uuid`;
+  await repairMemberCount(row.id, db);
 };
 const removeMember = async (input: ChatContext & { conversationId: string; accessId: string }) => {
   if (!z.uuid().safeParse(input.accessId).success) return notMember(input);
@@ -522,6 +669,29 @@ const removeMember = async (input: ChatContext & { conversationId: string; acces
     await lockConversation(db, input.conversationId);
     const allowed = await authorizeManagement(db, input, input.conversationId, "chat.member.remove");
     if (!allowed.ok) return allowed;
+    const [group] = await db<
+      { group_id: string }[]
+    >`SELECT a.group_id FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+      WHERE ca.conversation_id = ${allowed.data.id}::uuid AND ca.role = 'member' AND ca.access_id = ${input.accessId}::uuid AND a.group_id IS NOT NULL`;
+    if (group) {
+      const resolved = await db<
+        { id: string }[]
+      >`SELECT id FROM (${groupUsers(group.group_id, db)}) members ORDER BY id LIMIT ${MAX_GROUP_MEMBERS}`;
+      const [snapshot] = await groupSnapshots(db, [group.group_id]);
+      value(await deleteAccess({ id: input.accessId }, db));
+      await db`DELETE FROM chat.participants p WHERE conversation_id = ${allowed.data.id}::uuid AND principal_type = 'user' AND origin = 'ondemand'
+        AND NOT EXISTS (SELECT 1 FROM (${memberUsers(allowed.data.id, db)}) members WHERE members.id = p.principal_id)`;
+      await repairMemberCount(allowed.data.id, db);
+      await appendMessage(
+        db,
+        allowed.data,
+        input,
+        { kind: "system", system: { code: "group_removed", params: { group: snapshot! } } },
+        resolved.map((person) => person.id),
+      );
+      await record(db, input, allowed.data.short_id, "chat.member.remove", { count: 1 });
+      return ok({ success: true as const });
+    }
     const before = await directEntries(db, allowed.data.id);
     const member = before.find((row) => row.access_id === input.accessId.toLowerCase());
     if (!member) return notMember(input);
@@ -551,7 +721,13 @@ const leave = async (input: ChatContext & { conversationId: string; input: unkno
     const self = subjectPrincipal(input.accessSubject);
     const own = self.type === "user" ? before.find((row) => row.user_id === self.id) : undefined;
     const t = messages(input);
-    if (!own) return conflict(t.noDirectEntry);
+    if (!own) {
+      const [member] =
+        self.type === "user"
+          ? await db<{ id: string }[]>`SELECT id FROM (${memberUsers(allowed.data.id, db)}) members WHERE id = ${self.id}::uuid`
+          : [];
+      return conflict(member ? t.groupMemberLeave : t.noDirectEntry);
+    }
     const others = before.filter((row) => row.access_id !== own.access_id);
     if (!others.length) return conflict(t.cannotLeaveAlone);
     const successor = parsed.data.successor;
@@ -584,8 +760,32 @@ const leave = async (input: ChatContext & { conversationId: string; input: unkno
   });
 };
 
+const people = async (input: ChatContext & { query?: unknown }) => {
+  const bound = boundConversation(input.actor, input.locale);
+  if (!bound.ok || bound.data !== null) return fail(err.forbidden(messages(input).forbidden));
+  const parsed = parse(PeopleQuerySchema, input.query ?? {}, input);
+  if (!parsed.ok) return parsed;
+  if (input.accessSubject.type !== "user") return ok({ items: [], nextCursor: null });
+  const { search, cursor } = parsed.data;
+  const pattern = search ? `%${search.replace(/[\\%_]/g, (character) => "\\" + character)}%` : null;
+  const rows = await sql<{ id: string; display_name: string; cursor_name: string }[]>`
+    SELECT u.id, COALESCE(NULLIF(u.display_name, ''), u.uid) AS display_name, lower(COALESCE(NULLIF(u.display_name, ''), u.uid)) AS cursor_name
+    FROM auth.users u WHERE u.id <> ${input.accessSubject.userId}::uuid AND (u.account_expires IS NULL OR u.account_expires > now())
+      AND u.id IN (${coMemberIds(input.accessSubject)})
+      AND ${pattern ? sql`(COALESCE(NULLIF(u.display_name, ''), u.uid) ILIKE ${pattern} OR u.uid ILIKE ${pattern})` : sql`true`}
+      AND ${cursor ? sql`(lower(COALESCE(NULLIF(u.display_name, ''), u.uid)), u.id) > (${cursor.name}, ${cursor.id}::uuid)` : sql`true`}
+    ORDER BY lower(COALESCE(NULLIF(u.display_name, ''), u.uid)), u.id LIMIT ${PEOPLE_PAGE_SIZE + 1}`;
+  const page = rows.slice(0, PEOPLE_PAGE_SIZE);
+  const last = page.at(-1);
+  return ok({
+    items: page.map((row) => ({ id: row.id, displayName: row.display_name })),
+    nextCursor: rows.length > PEOPLE_PAGE_SIZE && last ? JSON.stringify({ name: last.cursor_name, id: last.id }) : null,
+  });
+};
+
 export const conversations = {
   create,
+  people,
   list,
   get,
   update,

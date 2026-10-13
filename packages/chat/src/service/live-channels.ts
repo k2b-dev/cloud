@@ -34,6 +34,7 @@ export const chatLiveChannels = {
     keys: async (_scope: unknown, viewer: LiveViewer) => {
       const bound = boundConversation(viewer.actor);
       if (viewer.accessSubject.type !== "user" || !bound.ok || capPermission("read", viewer.actor) === "none") return [];
+      // Directory membership changes are visible on reads but do not publish Chat live hints.
       const rows = await sql<{ short_id: string }[]>`
         SELECT c.short_id FROM chat.conversations c
         JOIN chat.conversation_access ca ON ca.conversation_id = c.id JOIN auth.access a ON a.id = ca.access_id

@@ -16,6 +16,7 @@ test("publishes every conversation operation with typed request and response sch
   const app = new Hono<AuthContext>().route("/api/chat", chatApi);
   const spec = SpecSchema.parse(await generateSpecs(app));
   for (const [path, method] of [
+    ["/people", "get"],
     ["/conversations", "post"],
     ["/conversations", "get"],
     ["/conversations/{conversation}", "get"],

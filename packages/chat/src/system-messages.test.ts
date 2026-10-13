@@ -62,3 +62,30 @@ test("previews collapse whitespace and cut at 140 code points", () => {
   expect(messagePreview("  a\n\t b  ")).toBe("a b");
   expect(messagePreview("😀".repeat(141))).toBe("😀".repeat(140));
 });
+
+for (const [names, en, de] of [
+  [["Red"], "Alex added the group Red.", "Alex hat die Gruppe Red hinzugefügt."],
+  [["Red", "Blue"], "Alex added the groups Red and Blue.", "Alex hat die Gruppen Red und Blue hinzugefügt."],
+  [
+    ["Red", "Blue", "Green", "Gold", "Pink"],
+    "Alex added the groups Red, Blue, Green, and 2 others.",
+    "Alex hat die Gruppen Red, Blue, Green und 2 weitere hinzugefügt.",
+  ],
+] as const)
+  test(`groups_added with ${names.length} groups in EN and DE`, () => {
+    const system: SystemMessage = { code: "groups_added", params: { groups: names.map((name) => ({ ...member, name })) } };
+    expect(renderSystemMessage(system, "Alex", "en")).toBe(en);
+    expect(renderSystemMessage(system, "Alex", "de")).toBe(de);
+  });
+test("group removal and automatic succession render in EN and DE", () => {
+  const removed: SystemMessage = { code: "group_removed", params: { group: member } };
+  expect(renderSystemMessage(removed, "Alex", "en")).toBe("Alex removed the group Lea.");
+  expect(renderSystemMessage(removed, "Alex", "de")).toBe("Alex hat die Gruppe Lea entfernt.");
+  const assigned: SystemMessage = { code: "manager_assigned", params: { member } };
+  expect(renderSystemMessage(assigned, "Alex", "en")).toBe(
+    "Lea now manages this chat because the account of its last manager was deleted.",
+  );
+  expect(renderSystemMessage(assigned, "Alex", "de")).toBe(
+    "Lea verwaltet diesen Chat jetzt, weil das Konto der letzten verwaltenden Person gelöscht wurde.",
+  );
+});

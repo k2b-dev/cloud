@@ -56,6 +56,7 @@ export const migrate = async (): Promise<void> => {
     );
     CREATE INDEX IF NOT EXISTS idx_chat_access_id ON chat.conversation_access(access_id);
     CREATE INDEX IF NOT EXISTS idx_chat_access_role ON chat.conversation_access(conversation_id, role);
+    -- Rows may belong to deleted accounts; every reader (fan-out, read receipts, counts, notifications) must apply the access condition or join auth.users.
     CREATE TABLE IF NOT EXISTS chat.participants (
       principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
       principal_id uuid NOT NULL,

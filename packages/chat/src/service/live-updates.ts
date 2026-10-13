@@ -9,23 +9,26 @@ export const chatLiveUpdates = (
   message: z.infer<typeof MessageSchema>,
   preview: string | null,
   affected: readonly string[],
-): Update[] => [
-  { key: `c:${conversationId}`, data: { type: "message", message }, ...(affected.length ? { access: true } : {}) },
-  {
-    key: `l:${conversationId}`,
-    data: {
-      type: "summary",
-      conversationId,
-      id: message.id,
-      seq: message.seq,
-      rev: message.rev,
-      kind: message.kind,
-      author: message.author,
-      createdAt: message.createdAt,
-      preview,
-      mention: false,
+): Update[] => {
+  const access = affected.length > 0 || message.system?.code === "groups_added" || message.system?.code === "group_removed";
+  return [
+    { key: `c:${conversationId}`, data: { type: "message", message }, ...(access ? { access: true } : {}) },
+    {
+      key: `l:${conversationId}`,
+      data: {
+        type: "summary",
+        conversationId,
+        id: message.id,
+        seq: message.seq,
+        rev: message.rev,
+        kind: message.kind,
+        author: message.author,
+        createdAt: message.createdAt,
+        preview,
+        mention: false,
+      },
+      ...(access ? { access: true } : {}),
     },
-    ...(affected.length ? { access: true } : {}),
-  },
-  ...affected.map((id): Update => ({ key: `p:${id}`, data: { type: "membership", conversationId } })),
-];
+    ...affected.map((id): Update => ({ key: `p:${id}`, data: { type: "membership", conversationId } })),
+  ];
+};

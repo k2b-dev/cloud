@@ -77,12 +77,12 @@ test("admits a service account to the service and returns the localized people-o
   authenticate();
   const response = await post("/conversations", {}, "de-DE");
   expect(response.status).toBe(400);
-  expect(await response.json()).toEqual({ code: "BAD_INPUT", message: "Zurzeit können nur Personen Chat-Mitglieder sein." });
+  expect(await response.json()).toEqual({ code: "BAD_INPUT", message: "Nur Personen und Gruppen können Chat-Mitglieder sein." });
 });
 test("forwards the acting account, delegated subject, and request locale to member mutations", async () => {
   authenticate(true);
   const add = spyOn(chatService.conversations.members, "add").mockResolvedValue({ ok: true, data: { added: 1 } });
-  const response = await post("/conversations/abcdef/members", { members: [userId] }, "de");
+  const response = await post("/conversations/abcdef/members", { members: [{ type: "user", userId: userId }] }, "de");
   expect(response.status).toBe(200);
   expect(add).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -90,7 +90,7 @@ test("forwards the acting account, delegated subject, and request locale to memb
       locale: "de",
       actor: expect.objectContaining({ kind: "service_account", delegatedUser: person }),
       accessSubject: { type: "user", userId },
-      input: { members: [userId] },
+      input: { members: [{ type: "user", userId: userId }] },
     }),
   );
 });
@@ -110,6 +110,8 @@ test("maps creation and duplicate outcomes to 201 and 200", async () => {
         purpose: null,
         title: "You",
         memberCount: 1,
+        withGuests: false,
+        peerDeactivated: false,
         lastMessage: null,
         rev: 1,
         permission: "admin",
@@ -135,7 +137,7 @@ test("returns the service's rate-limit error as 429", async () => {
 test("localizes invalid inputs and rejects them before the service", async () => {
   authenticate(true);
   const create = spyOn(chatService.conversations, "create");
-  const response = await post("/conversations", { members: Array(101).fill(userId) }, "de");
+  const response = await post("/conversations", { members: Array(101).fill({ type: "user", userId }) }, "de");
   expect(response.status).toBe(400);
   expect((await response.json()).message).toBe("Prüfe die Chat-Angaben, Mitglieds-IDs und Anfragegrenzen.");
   expect(create).not.toHaveBeenCalled();
@@ -212,6 +214,8 @@ test("snapshot reads the cursor before history and tolerates invalid message lin
     icon: null,
     purpose: null,
     memberCount: 1,
+    withGuests: false,
+    peerDeactivated: false,
     lastMessage: null,
     rev: 1,
     permission: "admin",
@@ -250,4 +254,29 @@ test("snapshot maps inaccessible chats to the service's 404 body", async () => {
   const response = await chatApi.request("/conversations/abcdef/snapshot", { headers: { authorization: "Bearer test-key" } });
   expect(response.status).toBe(404);
   expect(await response.json()).toEqual({ code: "NOT_FOUND", message: "Chat not found." });
+});
+
+test("people admits only authenticated requests and rejects resource-bound credentials before directory reads", async () => {
+  expect((await chatApi.request("/people")).status).toBe(401);
+  spyOn(platform.serviceAccountCredentials, "authenticateApiToken").mockResolvedValue({
+    credential,
+    serviceAccount: { ...account, kind: "resource_bound", appId: "chat", resourceType: "conversation", resourceId: "abcdef" },
+    delegatedUser: null,
+  });
+  const response = await chatApi.request("/people", { headers: { authorization: "Bearer test-key" } });
+  expect(response.status).toBe(403);
+  expect((await response.json()).code).toBe("FORBIDDEN");
+});
+
+test("people forwards trimmed search and a re-encoded strict cursor to the service", async () => {
+  authenticate(true);
+  const people = spyOn(chatService.conversations, "people").mockResolvedValue({ ok: true, data: { items: [], nextCursor: null } });
+  const cursor = JSON.stringify({ name: "lea", id: userId });
+  const response = await chatApi.request(`/people?search=%20Lea%20&cursor=${encodeURIComponent(cursor)}`, {
+    headers: { authorization: "Bearer test-key" },
+  });
+  expect(response.status).toBe(200);
+  expect(people).toHaveBeenCalledWith(
+    expect.objectContaining({ accessSubject: { type: "user", userId }, query: { search: "Lea", cursor } }),
+  );
 });

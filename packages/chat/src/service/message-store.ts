@@ -3,7 +3,7 @@ import { crypto } from "@k2b/stdlib";
 import type { sql } from "bun";
 import type { z } from "zod";
 import { messagePreview, renderSystemMessage } from "../system-messages";
-import { type ChatContext, type ConversationRow, subjectPrincipal } from "./access";
+import { type ChatContext, type ConversationRow, messages, subjectPrincipal } from "./access";
 import { type MessageSchema, type SystemMessage, SystemMessageSchema } from "./contracts";
 import { chatLive } from "./live";
 import { chatLiveUpdates } from "./live-updates";
@@ -32,9 +32,43 @@ export const projectMessage = (row: MessageRow, conversationId: string): z.infer
   system: row.kind === "system" ? SystemMessageSchema.parse({ code: row.system_code, params: row.system_params }) : null,
   createdAt: row.created_at.toISOString(),
 });
-export const messageView = (row: MessageRow, conversationId: string, locale?: string) => {
-  const message = projectMessage(row, conversationId);
-  return { ...message, systemText: message.system ? renderSystemMessage(message.system, message.author.name, locale) : null };
+export const deletedPeople = async (db: typeof sql, ids: string[]) => {
+  const unique = [...new Set(ids)];
+  if (!unique.length) return new Set<string>();
+  const found = await db<{ id: string }[]>`SELECT id FROM auth.users WHERE id = ANY(${toPgUuidArray(unique)}::uuid[])`;
+  const existing = new Set(found.map((row) => row.id));
+  return new Set(unique.filter((id) => !existing.has(id)));
+};
+const systemPeople = (system: SystemMessage | null) => {
+  if (!system) return [];
+  switch (system.code) {
+    case "members_added":
+      return system.params.members;
+    case "member_removed":
+    case "permission_changed":
+    case "manager_assigned":
+      return [system.params.member];
+    case "member_left":
+      return system.params.successor ? [system.params.successor] : [];
+    default:
+      return [];
+  }
+};
+export const messageViews = async (db: typeof sql, rows: MessageRow[], conversationId: string, locale?: string) => {
+  const projected = rows.map((row) => projectMessage(row, conversationId));
+  const deleted = await deletedPeople(
+    db,
+    projected.flatMap((message) => [
+      ...(message.author.type === "user" ? [message.author.id] : []),
+      ...systemPeople(message.system).map((person) => person.id),
+    ]),
+  );
+  const former = messages({ locale }).formerAccount;
+  return projected.map((message) => {
+    if (message.author.type === "user" && deleted.has(message.author.id)) message.author.name = former;
+    for (const person of systemPeople(message.system)) if (deleted.has(person.id)) person.name = former;
+    return { ...message, systemText: message.system ? renderSystemMessage(message.system, message.author.name, locale) : null };
+  });
 };
 export const personSnapshots = async (db: typeof sql, ids: string[]) => {
   const rows = await db<{ id: string; name: string }[]>`SELECT id, COALESCE(NULLIF(display_name, ''), uid) AS name
@@ -51,7 +85,7 @@ type NewMessage = { kind: "text"; clientId: string; body: string } | { kind: "sy
 export const appendMessage = async (
   db: typeof sql,
   conversation: ConversationRow,
-  context: ChatContext,
+  context: Pick<ChatContext, "accessSubject">,
   message: NewMessage,
   affected: readonly string[] = [],
 ) => {

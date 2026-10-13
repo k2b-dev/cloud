@@ -163,6 +163,8 @@ export const startChatHarness = async () => {
         purpose: null,
         title,
         memberCount: options.members.length,
+        withGuests: false,
+        peerDeactivated: false,
         rev: 0,
         permission: options.permission ?? "write",
         createdAt: start.toISOString(),

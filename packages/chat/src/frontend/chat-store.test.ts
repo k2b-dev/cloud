@@ -11,6 +11,8 @@ const conversation = ConversationSchema.parse({
   icon: null,
   purpose: null,
   memberCount: 2,
+  withGuests: false,
+  peerDeactivated: false,
   lastMessage: null,
   permission: "write",
   rev: 1,

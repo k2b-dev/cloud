@@ -145,7 +145,7 @@ suite("Chat live delivery on two replicas", () => {
     await ready(a, ["chat", "list", "me"]);
     await ready(b, ["chat"]);
     const members = MemberPageSchema.parse(await (await f.request(ben.headers, `/${chat.shortId}/members`)).json());
-    const accessId = members.items.find((member) => member.principal.userId === ana.id)!.accessId;
+    const accessId = members.items.find((member) => member.principal.type === "user" && member.principal.userId === ana.id)!.accessId;
     const response = await fetch(`${pods[1]!.url}api/chat/conversations/${chat.shortId}/members/${accessId}`, {
       method: "DELETE",
       signal: AbortSignal.timeout(5_000),
