@@ -139,10 +139,10 @@ const HelpShell = (props: {
   const [resultsMinHeight, setResultsMinHeight] = createSignal<string>();
   let pendingArticleFocus = false;
   let pendingNavigation = false;
-  let pendingHash =
-    props.syncPageUrl && typeof location !== "undefined"
-      ? (helpLinkTarget(location.href, location.href, { appId, pageBase: props.pageBase })?.hash ?? "")
-      : "";
+  /** Where the page's own address points in this Help; a query string, such as a campaign tag, does not matter here. */
+  const currentHelpTarget = () =>
+    helpLinkTarget(`${location.pathname}${location.hash}`, location.href, { appId, pageBase: props.pageBase });
+  let pendingHash = props.syncPageUrl && typeof location !== "undefined" ? (currentHelpTarget()?.hash ?? "") : "";
   let requestVersion = 0;
   let searchVersion = 0;
   let copyAllController: AbortController | undefined;
@@ -343,7 +343,7 @@ const HelpShell = (props: {
     };
     document.addEventListener("scroll", onScroll, { capture: true, passive: true });
     const onPopState = () => {
-      const target = helpLinkTarget(location.href, location.href, { appId, pageBase: props.pageBase });
+      const target = currentHelpTarget();
       if (target?.kind !== "topic") return;
       if (target.topicId === null) showHub(false);
       else if (topics().some((topic) => topic.id === target.topicId)) openTopic(target.topicId, target.hash, false);
@@ -469,20 +469,23 @@ const HelpShell = (props: {
     }
   };
   const openTopic = (id: string, hash = "", push = true) => {
-    resetHelpArticleScroll(props.session, articleScroller() ?? undefined);
-    pendingArticleFocus = true;
-    pendingNavigation = true;
-    pendingHash = hash;
-    setActiveId(id);
-    setView("article");
     if (push) pushHelpUrl(id, hash);
     try {
       localStorage.setItem(LAST_TOPIC_KEY, id);
     } catch {
       /* Help does not depend on storage. */
     }
-    // Same-topic links do not reload a cached body.
-    if (payload()) requestAnimationFrame(collectArticleSections);
+    // The open article does not load again: go to its section, or to its top.
+    if (view() === "article" && activeId() === id && payload()) {
+      if (!hash || !scrollToHash(hash)) resetHelpArticleScroll(props.session, articleScroller() ?? undefined);
+      return;
+    }
+    resetHelpArticleScroll(props.session, articleScroller() ?? undefined);
+    pendingArticleFocus = true;
+    pendingNavigation = true;
+    pendingHash = hash;
+    setActiveId(id);
+    setView("article");
   };
   const showHub = (push = true) => {
     setQuery("");

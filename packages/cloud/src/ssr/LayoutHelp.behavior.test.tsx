@@ -29,8 +29,9 @@ else {
       disableChildPageNavigation: true,
       disableFallbackToSetURL: true,
     });
-    dom.window.happyDOM.setURL("http://localhost/help/apps/spaces/first");
-    history.replaceState(null, "", "/help/apps/spaces/first");
+    // A query string, such as a campaign tag from a mail, must not keep Back from showing this article again.
+    dom.window.happyDOM.setURL("http://localhost/help/apps/spaces/first?source=mail");
+    history.replaceState(null, "", "/help/apps/spaces/first?source=mail");
     const { LayoutHelpPage, openLayoutHelpDialog } = await import("./LayoutHelp");
     const { dialogCore } = await import("@k2b/ui");
     const { LayoutHelpDocuments } = await import("./layout-help-registry");
@@ -118,8 +119,13 @@ else {
           await until(() => reader.title() === "Article first");
           expect(location.pathname).toBe("/help/apps/spaces/first");
         }
+        const scrolled: string[] = [];
+        const scroll = spyOn(HTMLElement.prototype, "scrollIntoView").mockImplementation(function (this: HTMLElement) {
+          scrolled.push(this.id);
+        });
         expect(reader.clickLink("Third").defaultPrevented).toBe(true);
-        await until(() => reader.title() === "Article third" && !!reader.dom.document.querySelector("#steps"));
+        await until(() => reader.title() === "Article third" && scrolled.includes("steps"));
+        scroll.mockRestore();
         if (surface !== "page") expect(location.href).toBe(initialHref);
         else expect(location.hash).toBe("#steps");
         expect(reader.clickLink("Section").defaultPrevented).toBe(true);
