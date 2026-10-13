@@ -1,9 +1,9 @@
-import { SelectChip, useLocale } from "@k2b/ui";
+import { Dropdown, type DropdownItem, useLocale } from "@k2b/ui";
 import { createMemo } from "solid-js";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { type MailComposerSignatures, signatureOptions } from "./mail-composer-signature";
 
-/** The signature choice below the text: Mail adds the chosen signature after the body when it renders the message. */
+/** The signature choice in the compose action bar: Mail adds the chosen signature after the body when it renders the message. */
 export default function MailComposerSignature(props: {
   signatures: MailComposerSignatures;
   value: string | null;
@@ -13,27 +13,38 @@ export default function MailComposerSignature(props: {
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
-  const options = createMemo(() =>
+  const items = createMemo<DropdownItem[]>(() =>
     signatureOptions(props.signatures, props.value, props.senderDefaultId, {
       none: t().noSignature,
       default: t().defaultSignature,
       unavailable: t().unavailableSignature,
-    }),
+    }).map((option) => ({
+      label: option.label,
+      description: option.description,
+      choice: "radio",
+      checked: () => option.value === (props.value ?? ""),
+      action: () => props.onChange(option.value || null),
+    })),
   );
-  const selectedLabel = () => options().find((option) => option.value === (props.value ?? ""))?.label ?? t().noSignature;
+  const buttonLabel = () =>
+    props.value
+      ? (props.signatures.templates.find((template) => template.id === props.value)?.name ?? t().unavailableSignature)
+      : t().noSignatureShort;
   return (
-    <div class="mail-composer-signature flex min-w-0 shrink-0 items-center gap-2 pb-1 text-sm">
-      <span class="shrink-0 text-dimmed">{t().signature}</span>
-      <SelectChip
-        class="min-w-0"
-        value={() => props.value ?? ""}
-        options={options()}
-        icon="ti ti-signature"
-        aria-label={t().chooseSignature({ name: selectedLabel() })}
+    <Dropdown.Root position="top-right" items={items()} disabled={props.disabled}>
+      <Dropdown.Trigger
+        size="sm"
+        variant="secondary"
+        class="mail-composer-signature min-w-0"
+        label={t().chooseSignature({ name: buttonLabel() })}
+        tooltip={t().chooseSignature({ name: buttonLabel() })}
         disabled={props.disabled}
-        position="top-left"
-        onValueChange={(value) => props.onChange(value || null)}
-      />
-    </div>
+      >
+        <i class="ti ti-signature" aria-hidden="true" />
+        {/* The name needs more room than the labels of its neighbors, so it appears one breakpoint later. */}
+        <span class="hidden max-w-40 truncate md:inline">{buttonLabel()}</span>
+        <i class="ti ti-chevron-down hidden text-xs text-dimmed md:inline" aria-hidden="true" />
+      </Dropdown.Trigger>
+    </Dropdown.Root>
   );
 }
