@@ -18,21 +18,32 @@ testFor("nats")(
     try {
       const topic = createYjsTopic();
       await sync.ready();
+      const actor = { kind: "user" as const, id: crypto.randomUUID() };
       source.getText("codemirror").insert(0, "first");
       const first = await topic.publish({
         tenantId: noteId,
-        data: { kind: "sync", payload: toBase64(Y.encodeStateAsUpdate(source)), originNodeId: NODE_ID, originPeerId: null },
+        data: { kind: "sync", payload: toBase64(Y.encodeStateAsUpdate(source)), originNodeId: NODE_ID, originPeerId: null, actor },
       });
       const state = Y.encodeStateVector(source);
       source.getText("codemirror").insert(5, " second");
       const second = await topic.publish({
         tenantId: noteId,
-        data: { kind: "sync", payload: toBase64(Y.encodeStateAsUpdate(source, state)), originNodeId: NODE_ID, originPeerId: null },
+        data: { kind: "sync", payload: toBase64(Y.encodeStateAsUpdate(source, state)), originNodeId: NODE_ID, originPeerId: null, actor },
       });
       await replayYjsTopicToCursor({ noteId, after: null, targetCursor: first.cursor, doc: replayed });
       expect(replayed.getText("codemirror").toString()).toBe("first");
       await replayYjsTopicToCursor({ noteId, after: first.cursor, targetCursor: second.cursor, doc: replayed });
       expect(replayed.getText("codemirror").toString()).toBe("first second");
+      const credited = new Y.Doc();
+      try {
+        const contributors = await replayYjsTopicToCursor({ noteId, after: null, targetCursor: second.cursor, doc: credited });
+        expect(contributors).toEqual([{ ...actor, lastContributedAt: expect.any(Date) }]);
+        const events = await Array.fromAsync(topic.replay({ tenantId: noteId, after: topic.cursorAt(0), until: second.cursor }));
+        expect(contributors[0]?.lastContributedAt).toEqual(events.at(-1)?.publishedAt);
+        expect(await replayYjsTopicToCursor({ noteId, after: second.cursor, targetCursor: second.cursor, doc: credited })).toEqual([]);
+      } finally {
+        credited.destroy();
+      }
       expect(topic.cursorSequence(second.cursor)).toBe(second.streamSequence);
 
       // Evict the log's front (the first update) only in this test namespace: a
@@ -70,7 +81,7 @@ testFor("nats")(
         contentMd: null,
         historyIncomplete: false,
       });
-      const save = spyOn(notes, "save").mockResolvedValue({ ok: true, data: undefined });
+      const save = spyOn(notes, "save").mockResolvedValue({ ok: true, data: { versionId: null } });
       const adopt = spyOn(notes, "adoptSnapshotAtHead").mockResolvedValue({ cursor: second.cursor });
       try {
         await yjsSnapshotWorker.start();

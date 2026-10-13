@@ -65,7 +65,7 @@ Notebooks saves the change immediately.
 
 The setting covers only deleting and locking whole notes. People and agents with **Edit** access still edit notes as before, including removing text. The version history keeps earlier versions.
 
-For these people, **Delete** and **Lock note** in the note menu stay visible but are turned off. They explain that in this notebook, only people with **Manage** access can delete or lock notes. The API, `cld notebooks rm`, and `cld notebooks lock` refuse with the same reason. A locked note keeps its versions readable. You can no longer edit it or restore it from a version.
+For these people, **Delete** and **Lock note** in the note menu stay visible but are turned off. They explain that in this notebook, only people with **Manage** access can delete or lock notes. The API, `cld notebooks rm`, and `cld notebooks lock` refuse with the same reason. A locked note keeps its versions readable. You cannot edit it or restore a version in place. You can restore a version as a copy.
 
 ## Find the right settings tab {icon="settings"}
 

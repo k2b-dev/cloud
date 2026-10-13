@@ -25,6 +25,16 @@ Keep lasting handbook content in the note itself. Use comments to discuss that c
 
 **Edit with AI** opens Assistant with the page and its discussion. After a review, Assistant can also correct or delete your recent comments. The same author and ten-minute rules apply. Assistant can check query and contents drafts without saving them. This check does not cover every Markdown feature or table formula.
 
+## Restore a saved version {icon="history"}
+
+Open the note details and choose **Version history**. Pick a version to see its content or the changes.
+
+**Restore this version** makes it the current content for everyone working in the note. The note then opens in **Write**. The previous content stays in the history. Choose **Undo** in the confirmation to bring it back.
+
+**Restore as copy** creates a new note directly below the original, under the same parent. The original stays unchanged.
+
+You need **Edit** access to restore. A locked note can only be restored as a copy.
+
 **Markdown**
 
 ## Write a useful note {icon="pencil"}

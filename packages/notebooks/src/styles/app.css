@@ -1109,6 +1109,39 @@
   }
 }
 
+/* The preview switch sits inline beside the restore action instead of filling the header row. On phones the
+   actions take a row of their own, the switch at the start and the restore action at the end, and the switch drops
+   its icons so both fit one row in every language. */
+.notebooks-version-actions {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.k2b-ui .notebooks-version-preview-mode {
+  width: auto;
+}
+
+.k2b-ui .notebooks-version-preview-mode .k2b-segmented-control__option {
+  flex: none;
+  white-space: nowrap;
+}
+
+@media (max-width: 47.999rem) {
+  .k2b-ui .notebooks-version-preview-mode .k2b-segmented-control__option > i {
+    display: none;
+  }
+}
+
+@media (min-width: 48rem) {
+  .notebooks-version-actions {
+    width: auto;
+    justify-content: flex-end;
+  }
+}
+
 /* The attachment preview follows the Files preview in the workspace frame, which takes the whole screen without a
    border on phones. On wider screens, documents and text read in a 40rem column that is anchored where the workspace
    frame starts and grows only downward with its content, so loading never moves the header. */
