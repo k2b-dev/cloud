@@ -19,6 +19,7 @@ const outdir = mkdtempSync(join(tmpdir(), "cloud-island-props-csp-"));
 const { plugin } = createConfig({ rootDir: appRoot, componentRoots: [] });
 Bun.plugin(plugin());
 const { defineApp } = await import("../../src/_internal/define-app");
+const { person } = await import("../../src/_internal/define-app.test-fixture");
 const rail = await import("../../src/services/rail-snapshot");
 const settings = await import("../../src/server/middleware/settings");
 const help = await import("../../src/ssr/help");
@@ -67,6 +68,11 @@ beforeAll(async () => {
       c.header("Content-Security-Policy", policy);
       await next();
     })
+    .get("/eval-control", (c) =>
+      c.html(
+        `<!doctype html><html><head><script>try { (0, eval)("1"); document.documentElement.dataset.evalControl = "allowed"; } catch (error) { document.documentElement.dataset.evalControl = error.name; }</script></head></html>`,
+      ),
+    )
     .get("/_ssr/*", (c) => new Response(Bun.file(join(outdir, "_ssr", basename(c.req.path)))))
     .get("/public/global.css", (c) => c.body(globalCss, 200, { "content-type": "text/css" }))
     .get("/public/tabler-icons.css", () => new Response(Bun.file(join(ui, "tabler.css"))))
@@ -84,6 +90,8 @@ beforeAll(async () => {
           },
         ],
       });
+      // A signed-in page renders the full shell, including the banner ShellRuntime handles.
+      c.set("user", person);
       c.set("settings", { app: { name: "Cloud" } });
       c.set("announcements", {
         banners: [
@@ -121,7 +129,8 @@ afterAll(async () => {
 });
 
 test(`rich props and the Cloud shell mount under CSP in ${browserName}`, async () => {
-  const context = await browser.newContext({ timezoneId: "UTC" });
+  // Core serves the service worker the signed-in shell registers; this probe has none.
+  const context = await browser.newContext({ timezoneId: "UTC", serviceWorkers: "block" });
   await context.addInitScript(() => {
     const violations: { violatedDirective: string; blockedURI: string; sourceFile: string; lineNumber: number; sample: string }[] = [];
     Reflect.set(globalThis, "cspViolations", violations);
@@ -150,22 +159,16 @@ test(`rich props and the Cloud shell mount under CSP in ${browserName}`, async (
     expect(await text("undefined")).toBe("true");
     expect(await text("text")).toBe('</script>"&');
     // Dismissing the SSR banner proves ShellRuntime installed its browser handler.
+    await page.waitForLoadState("networkidle");
     await page.locator('[data-cloud-announcement-dismiss="4"]').click();
     await page.locator(".cloud-announcement").waitFor({ state: "detached" });
     expect(await page.locator("[data-ssr-error]").count()).toBe(0);
     expect(errors).toEqual([]);
     expect(await page.evaluate(() => Reflect.get(globalThis, "cspViolations"))).toEqual([]);
-    // Run last: this deliberately rejected eval may itself emit a CSP violation.
-    expect(
-      await page.evaluate(() => {
-        try {
-          (0, eval)("1");
-          return "allowed";
-        } catch (error) {
-          return error instanceof Error ? error.name : String(error);
-        }
-      }),
-    ).toBe("EvalError");
+    // The policy is live: a page's own script cannot eval. Scripts that
+    // Playwright adds bypass CSP, so the control is a page of this server.
+    await page.goto(new URL("/eval-control", server.url).href);
+    expect(await page.locator("html").getAttribute("data-eval-control")).toBe("EvalError");
   } catch (error) {
     console.error({ pageErrors: errors, cspViolations: await page.evaluate(() => Reflect.get(globalThis, "cspViolations")) });
     throw error;
