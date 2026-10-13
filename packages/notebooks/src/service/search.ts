@@ -48,6 +48,8 @@ type DbSearchHit = {
 type SearchBackend = "native" | "bm25";
 
 const BM25_INDEX = "notebooks.notes_search_bm25_idx";
+// Matches global Cloud search's two-character minimum, keeping one-letter keystrokes on exact lexemes instead of a near-full prefix scan.
+const MIN_PREFIX_LENGTH = 2;
 const HEADLINE_OPTIONS = "StartSel=\uE000, StopSel=\uE001, MaxWords=32, MinWords=12, MaxFragments=2, FragmentDelimiter= … ";
 const BM25_CAPABILITY_ERROR_CODES = new Set(["0A000", "42704", "42883", "55000"]);
 const log = logger("notebooks:search");
@@ -96,29 +98,32 @@ const normalizeFilters = (filters: SearchFilters) => ({
   updatedBefore: filters.updatedBefore ?? null,
 });
 
-/** Split the last word of a trimmed query for prefix matching, preserving phrases, negation, and `or`. */
+/** Only a plain last word of at least two letters/digits gets a prefix; anything else keeps websearch semantics. */
 export const splitPrefixQuery = (query: string): { rest: string; prefix: string | null } => {
   const tokens = query.split(/\s+/);
   const token = tokens.at(-1) ?? "";
+  const word = token.normalize("NFC").replace(/^[^\p{L}\p{M}\p{N}]+|[^\p{L}\p{M}\p{N}]+$/gu, "");
   if (
     !query ||
     (query.match(/"/g)?.length ?? 0) % 2 !== 0 ||
     token.includes('"') ||
     token.startsWith("-") ||
-    tokens.at(-2)?.toLowerCase() === "or"
+    /^-+$/.test(tokens.at(-2) ?? "") ||
+    tokens.some((part) => part.toLowerCase() === "or") ||
+    !/^[\p{L}\p{M}\p{N}]+$/u.test(word) ||
+    [...word].length < MIN_PREFIX_LENGTH
   ) {
     return { rest: query, prefix: null };
   }
-  const sanitized = token.normalize("NFC").replace(/[^\p{L}\p{N}]/gu, "");
-  if (!sanitized) return { rest: query, prefix: null };
-  return { rest: query.slice(0, -token.length).trim(), prefix: `${sanitized}:*` };
+  return { rest: query.slice(0, -token.length).trim(), prefix: `${word}:*` };
 };
 
 const buildTextQuery = (query: string) => {
   const { rest, prefix } = splitPrefixQuery(query);
+  // Union with the original websearch query so prefix matching keeps every old match.
   return prefix === null
     ? sql`websearch_to_tsquery('simple', ${query})`
-    : sql`(websearch_to_tsquery('simple', ${rest}) && to_tsquery('simple', ${prefix}))`;
+    : sql`(websearch_to_tsquery('simple', ${query}) || (websearch_to_tsquery('simple', ${rest}) && to_tsquery('simple', ${prefix})))`;
 };
 
 const mapHit = (row: DbSearchHit): SearchHit => ({
@@ -185,6 +190,7 @@ const searchInNotebookRows = async (params: {
         (${filters.query} <> '' AND starts_with(lower(n.title), lower(${filters.query}))) DESC,
         (COALESCE(n.title, '') || ' ' || COALESCE(n.title, '') || ' ' || COALESCE(n.content_md, ''))
           <@> to_bm25query(${filters.query}, ${BM25_INDEX}),
+        ts_rank_cd(n.search_document, ${textQuery}) DESC,
         n.updated_at DESC,
         n.id ASC
       LIMIT ${perPage} OFFSET ${offset}
@@ -345,6 +351,7 @@ export const searchAcross = async (params: {
           (${filters.query} <> '' AND starts_with(lower(n.title), lower(${filters.query}))) DESC,
           (COALESCE(n.title, '') || ' ' || COALESCE(n.title, '') || ' ' || COALESCE(n.content_md, ''))
             <@> to_bm25query(${filters.query}, ${BM25_INDEX}),
+          ts_rank_cd(n.search_document, ${textQuery}) DESC,
           n.updated_at DESC,
           n.id ASC
         LIMIT ${perPage} OFFSET ${offset}

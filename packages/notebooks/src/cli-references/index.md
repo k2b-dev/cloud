@@ -348,7 +348,7 @@ cld notebooks graph Docs
 
 Search covers every accessible notebook unless `--notebook` narrows it. `--tags` is comma-separated and all tags must match. Time filters are `--created-after`, `--created-before`, `--updated-after`, and `--updated-before` with ISO timestamps. Results include the notebook so the next command can use the note ID directly.
 
-The last word also matches word starts, so `Bespr` finds `Besprechungen`. Notes whose title equals the query come first, followed by titles that start with it; both comparisons ignore case.
+A plain last word of at least two letters or digits also matches word starts, so `meet` finds `meetings`; every note the query matched before still matches. Notes whose title equals the query come first, followed by titles that start with it; both comparisons ignore case.
 
 ## Named blocks
 

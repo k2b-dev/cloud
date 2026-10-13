@@ -8,7 +8,7 @@ const postgresTest = testFor("database");
 const shortId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 8);
 const notebookId = crypto.randomUUID();
 const accessId = crypto.randomUUID();
-const notes = [
+const notes: { title: string; content: string; updatedAt?: Date }[] = [
   { title: "Meetings", content: "Unsere Besprechungen finden am Montag statt." },
   { title: "Overview", content: "Ein Überblick über die Aufgaben." },
   { title: "Summary", content: "Der überblick bleibt aktuell." },
@@ -19,6 +19,16 @@ const notes = [
   { title: "Apart", content: "The deployment succeeded. Later we needed a rollback." },
   { title: "Single", content: "The deployment succeeded." },
   { title: "Alphabet", content: "Alpha begins here." },
+  { title: "Mail", content: "Bitte per e-mail antworten." },
+  { title: "Hindi", content: "हिन्दी पाठ" },
+  { title: "Negation kept", content: "zephyr only" },
+  { title: "Negation excluded", content: "zephyr quokka" },
+  { title: "Strong", content: "Protokoll Protokoll Protokoll Protokoll", updatedAt: new Date("2026-01-01T00:00:00Z") },
+  {
+    title: "Weak",
+    content: "Ein Protokoll zwischen vielen anderen Wörtern zu ganz anderen Dingen und noch mehr Text.",
+    updatedAt: new Date("2026-01-02T00:00:00Z"),
+  },
 ];
 
 const search = (query: string) => searchInNotebook({ notebookId, filters: { query }, pagination: { page: 1, perPage: 20, offset: 0 } });
@@ -34,8 +44,8 @@ beforeAll(async () => {
     await tx`INSERT INTO notebooks.notebook_access (notebook_id, access_id) VALUES (${notebookId}::uuid, ${accessId}::uuid)`;
     for (const note of notes) {
       await tx`
-        INSERT INTO notebooks.notes (short_id, notebook_id, title, content_md)
-        VALUES (${shortId()}, ${notebookId}::uuid, ${note.title}, ${note.content})
+        INSERT INTO notebooks.notes (short_id, notebook_id, title, content_md, updated_at)
+        VALUES (${shortId()}, ${notebookId}::uuid, ${note.title}, ${note.content}, COALESCE(${note.updatedAt ?? null}::timestamptz, now()))
       `;
     }
   });
@@ -81,12 +91,12 @@ describe("notebook word-start search and title ranking", () => {
     }
   });
 
-  for (const query of ["a:*", "(", "!", "&|", "", '""', '"']) {
+  for (const query of ["a:*", "al:*", "(", "!", "&|", "", '""', '"']) {
     postgresTest(`accepts punctuation or empty query ${JSON.stringify(query)}`, async () => {
       const result = await search(query);
       expect(typeof result.total).toBe("number");
       expect(result.total).toBe(result.hits.length);
-      if (query === "a:*") expect(result.hits.map((hit) => hit.note.title)).toContain("Alphabet");
+      if (query === "al:*") expect(result.hits.map((hit) => hit.note.title)).toContain("Alphabet");
       if (query === "") expect(result.total).toBe(notes.length);
     });
   }
@@ -100,6 +110,49 @@ describe("notebook word-start search and title ranking", () => {
     const titles = await across("Woche 41");
     expect(titles.hits.map((hit) => hit.note.title)).toEqual(["Woche 41", "Woche 41 Notizen", "Weekly archive"]);
     expect(titles.total).toBe(3);
+  });
+
+  postgresTest("preserves matches for words with inner punctuation", async () => {
+    const result = await search("e-mail");
+    expect(result.hits.map((hit) => hit.note.title)).toEqual(["Mail"]);
+    expect(result.total).toBe(1);
+  });
+
+  for (const query of ["हिन्दी", "हिन्"]) {
+    postgresTest(`preserves combining marks for ${query}`, async () => {
+      const result = await search(query);
+      expect(result.hits.map((hit) => hit.note.title)).toEqual(["Hindi"]);
+      expect(result.total).toBe(1);
+    });
+  }
+
+  postgresTest("preserves standalone minus negation", async () => {
+    const result = await search("zephyr - quokka");
+    expect(result.hits.map((hit) => hit.note.title)).toEqual(["Negation kept"]);
+    expect(result.total).toBe(1);
+  });
+
+  postgresTest("preserves OR precedence before a multi-word branch", async () => {
+    const result = await search("deployment or rollback plan");
+    expect(result.hits.map((hit) => hit.note.title)).toContain("Single");
+    expect(result.total).toBe(result.hits.length);
+  });
+
+  postgresTest("ranks prefix-only matches by relevance before recency", async () => {
+    const result = await search("Proto");
+    expect(result.hits.map((hit) => hit.note.title)).toEqual(["Strong", "Weak"]);
+    expect(result.total).toBe(2);
+  });
+
+  postgresTest("cross-notebook search ranks prefix-only matches by relevance before recency", async () => {
+    const result = await searchAcross({
+      userId: null,
+      notebookId,
+      filters: { query: "Proto" },
+      pagination: { page: 1, perPage: 20, offset: 0 },
+    });
+    expect(result.hits.map((hit) => hit.note.title)).toEqual(["Strong", "Weak"]);
+    expect(result.total).toBe(2);
   });
 
   postgresTest("preserves multi-word and phrase match sets", async () => {
