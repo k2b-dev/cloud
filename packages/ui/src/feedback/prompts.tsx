@@ -11,7 +11,7 @@ import { resolveSelectMessages } from "../inputs/select-messages";
 import { TagsInput } from "../inputs/TagsInput";
 import { TextInput } from "../inputs/TextInput";
 import { resolveUiMessages } from "../intl/messages";
-import { dialogCore, type OpenDialogOptions } from "./dialog-core";
+import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
 import { resolvePromptMessages } from "./prompt-messages";
 
 export interface DialogOptions {
@@ -819,18 +819,29 @@ export const prompts = {
       ariaLabel: config.ariaLabel ?? config.title ?? resolvePromptMessages().form,
     })) ?? null,
 
-  dialog: <T extends unknown = unknown>(
-    component: (close: (result?: T) => void) => JSX.Element,
-    options?: DialogOptions,
-  ): Promise<T | undefined> =>
+  /**
+   * Open custom content with a typed close callback and the dialog render context.
+   * Register a dismiss handler to guard Escape, backdrop clicks and the supplied header's close button,
+   * for example while saving. Explicit close(result) bypasses the guard. Without a handler, dismissal
+   * keeps its existing behavior, including a header close button independent of cancelBehavior.
+   */
+  dialog: <T extends unknown = unknown>(component: DialogRender<T>, options?: DialogOptions): Promise<T | undefined> =>
     dialogCore.open<T>(
-      (close) => {
-        const body = component(close);
+      (close, context) => {
+        // A dismiss handler the component sets guards the header's close button as well as Escape and the backdrop.
+        let dismiss = () => close(undefined);
+        const body = component(close, {
+          ...context,
+          setDismissHandler: (handler) => {
+            context.setDismissHandler(handler);
+            dismiss = () => void context.requestDismiss();
+          },
+        });
         if (options?.surface === "bare" && options.header === false) return body;
         return (
           <div class="k2b-dialog__panel k2b-dialog__stack">
             <Show when={options?.header !== false}>
-              <DialogHeader title={options?.title} icon={options?.icon} close={() => close(undefined)} />
+              <DialogHeader title={options?.title} icon={options?.icon} close={() => dismiss()} />
             </Show>
             <div class="k2b-dialog__content">{body}</div>
           </div>

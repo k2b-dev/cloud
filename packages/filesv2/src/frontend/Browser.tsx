@@ -654,9 +654,10 @@ export default function Browser(props: {
       onPartial: () => void refresh(),
     });
     if (!result || source !== locationKey()) return;
-    const names = result.results.flatMap((item) => (item.state === "created" && item.entry ? [item.entry.name] : []));
-    const [first] = names;
-    if (first) toast.success(names.length === 1 ? b().folderCreated(first) : b().foldersCreated(names.length));
+    const created = result.results.flatMap((item) => (item.state === "created" && item.entry ? [item.entry] : []));
+    const [first] = created;
+    if (first)
+      toast.success(created.length === 1 ? b().folderCreated(first.path) : b().foldersCreated({ count: created.length, name: first.path }));
     // The first path is the folder typed directly into this one; it holds everything else that was created.
     await refresh(result.results[0]?.path);
   };

@@ -19,6 +19,7 @@ import {
   type RootInfo,
 } from "@k2b/filegate";
 import { z } from "zod";
+import { filegateErrorCode } from "../api/filegate-error";
 import { readBoundedBody } from "../bounded-body";
 import type {
   AdminResult,
@@ -56,7 +57,7 @@ import { isMarkdown, MARKDOWN_LIMIT, markdownRevision, TEMPLATE_LIMIT } from "..
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
 import { isPdfName, pdfBody } from "../pdf-body";
 import { parseStableEntryRefId } from "../resource-ref";
-import { normalizeSelection, operationError, runFileBatch } from "./batches";
+import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
 import { readConfiguration, writeConfiguration } from "./configuration";
@@ -348,12 +349,25 @@ export function createFilesService(
     return identity ? { mode: "unix", identity } : { mode: "service" };
   }
   /** Parent folder of a new entry: authorized for reading, writable, and never inside trash. */
-  async function writableParent(actor: RequestActor, baseId: string, path: string) {
+  async function writableParent(
+    actor: RequestActor,
+    baseId: string,
+    path: string,
+    base?: Awaited<ReturnType<typeof authorizedBase>>,
+    writeDeniedCode?: "create_forbidden",
+  ) {
     const relative = userPath(path);
     if (!relative) throw new FilesError("invalid_path");
     const parts = relative.split("/");
-    const current = await authorized(actor, baseId, parts.slice(0, -1).join("/"), true);
-    if (current.inspection.candidate.area === "freeipa") await checkUnix(current.root, current.target, current.state.unix, 3);
+    const current = await authorizedPath(base ?? (await authorizedBase(actor, baseId)), parts.slice(0, -1).join("/"), true);
+    if (current.inspection.candidate.area === "freeipa") {
+      try {
+        await checkUnix(current.root, current.target, current.state.unix, 3);
+      } catch (error) {
+        if (writeDeniedCode && error instanceof FilesError && error.code === "forbidden") throw new FilesError(writeDeniedCode, 403);
+        throw error;
+      }
+    }
     return { ...current, relative, name: parts.at(-1)! };
   }
   const ownershipFor = (current: { inspection: Inspection; state: { unix: UnixIdentity | null }; node: Node }, directory: boolean) => {
@@ -1020,12 +1034,16 @@ export function createFilesService(
         ...new Set(
           input.paths.map((path) => {
             const value = userPath(path);
-            if (!value || value.length > 4096) throw new FilesError("invalid_path");
+            if (!value || value.length > 4096 || value.split("/").some((segment) => new TextEncoder().encode(segment).length > 255))
+              throw new FilesError("invalid_path");
             return value;
           }),
         ),
       ].sort((a, b) => a.split("/").length - b.split("/").length);
-      const base = (await authorizedBase(actor, input.baseId)).inspection.summary;
+      const resolvedBase = await authorizedBase(actor, input.baseId);
+      const base = resolvedBase.inspection.summary;
+      const errorCode = (error: unknown) =>
+        error instanceof FilesError ? error.code : error instanceof FilegateError ? filegateErrorCode(error) : "operation_unresolved";
       const results: FolderResult[] = [];
       let failed = false;
       for (const path of paths) {
@@ -1039,8 +1057,8 @@ export function createFilesService(
           continue;
         }
         try {
-          const existing = await authorized(actor, input.baseId, path).catch((error: unknown) => {
-            if (operationError(error) === "not_found") return null;
+          const existing = await authorizedPath(resolvedBase, path).catch((error: unknown) => {
+            if (errorCode(error) === "not_found") return null;
             throw error;
           });
           if (existing) {
@@ -1048,7 +1066,7 @@ export function createFilesService(
             results.push({ path, state: "existing", entry: fileEntry(base, path, existing.node) });
             continue;
           }
-          const current = await writableParent(actor, input.baseId, path);
+          const current = await writableParent(actor, input.baseId, path, resolvedBase, "create_forbidden");
           if (input.dryRun) {
             results.push({ path, state: "planned" });
             continue;
@@ -1057,13 +1075,13 @@ export function createFilesService(
             const node = await current.root.mkdir(joinPath(current.target, current.name), { ownership: ownershipFor(current, true) });
             results.push({ path, state: "created", entry: fileEntry(base, path, node) });
           } catch (error) {
-            if (operationError(error) !== "path_conflict") throw error;
-            const concurrent = await authorized(actor, input.baseId, path);
+            if (errorCode(error) !== "path_conflict") throw error;
+            const concurrent = await authorizedPath(resolvedBase, path);
             if (!concurrent.node.directory) throw error;
             results.push({ path, state: "existing", entry: fileEntry(base, path, concurrent.node) });
           }
         } catch (error) {
-          results.push({ path, state: "failed", error: operationError(error) });
+          results.push({ path, state: "failed", error: errorCode(error) });
           failed = true;
         }
       }

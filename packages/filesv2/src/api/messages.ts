@@ -168,6 +168,7 @@ const messages: Record<string, [string, string]> = {
   ],
   area_disabled: ["This storage area is disabled.", "Dieser Dateibereich ist deaktiviert."],
   forbidden: ["You do not have permission to read this path.", "Du hast keine Leseberechtigung für diesen Pfad."],
+  create_forbidden: ["You do not have permission to create folders here.", "Du darfst hier keine Ordner anlegen."],
   reserved_path: [
     "This reserved path is not available in the file browser.",
     "Dieser reservierte Pfad ist im Dateibrowser nicht zugänglich.",

@@ -519,14 +519,25 @@ await prompts.dialog((close) => <MySurface close={close} />, {
           variant="secondary"
           onClick={() =>
             void prompts.dialog(
-              (close) => (
-                <div class="ui-dialog-demo-body">
-                  <p>Custom Solid content uses the shared dialog surface.</p>
-                  <div class="ui-dialog-demo-actions">
-                    <Button onClick={() => close("done")}>Done</Button>
+              (close, context) => {
+                const [protectedState, setProtectedState] = createSignal(false);
+                context.setDismissHandler(() => {
+                  if (!protectedState()) close();
+                });
+                return (
+                  <div class="ui-dialog-demo-body">
+                    <p>Protect the dialog to block Escape, backdrop clicks and the header close button.</p>
+                    <div class="ui-dialog-demo-actions">
+                      <Button variant="secondary" onClick={() => setProtectedState((value) => !value)}>
+                        {protectedState() ? "Allow dismissal" : "Protect dialog"}
+                      </Button>
+                      <Button disabled={protectedState()} onClick={() => close("done")}>
+                        Done
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ),
+                );
+              },
               { title: "Custom dialog", icon: "ti ti-components" },
             )
           }

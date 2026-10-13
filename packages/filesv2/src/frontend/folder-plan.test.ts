@@ -56,6 +56,12 @@ test("names report the first applicable issue without hiding descendants", () =>
   expect(plan("../Child").folders).toMatchObject([{ issue: "dot" }, { issue: null }]);
   expect(plan(" ".repeat(256)).folders[0]?.issue).toBe("spaces");
   expect(plan(`${"a".repeat(256)}\x00`).folders[0]?.issue).toBe("name_length");
+  // The limit counts bytes: 128 two-byte characters are too long for storage, 127 still fit.
+  expect(plan(`A/${"é".repeat(128)}`).folders[1]?.issue).toBe("name_length");
+  expect(plan("é".repeat(127)).valid).toBe(true);
+  expect(plan(`${"é".repeat(127)}a`).valid).toBe(true);
+  expect(plan("😀".repeat(63)).valid).toBe(true);
+  expect(plan("😀".repeat(64)).folders[0]?.issue).toBe("name_length");
   expect(plan("A/.filegate").folders[1]?.issue).toBe("reserved");
   expect(plan("trash", "Documents").valid).toBe(true);
   expect(plan("A/trash").valid).toBe(true);

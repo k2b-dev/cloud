@@ -88,7 +88,17 @@ afterAll(async () => {
 
 const open = async (options: BrowserContextOptions, lang = "en", parent?: string) => {
   const requests: BatchRequest[] = [];
-  const model = { existing: new Set(paths("Reports")), failures: new Set<string>(), requests };
+  const model = {
+    existing: new Set(paths("Reports")),
+    failures: new Set<string>(),
+    /** Dry-run answers by path: a failure code the check reports instead of "planned". */
+    checks: new Map<string, string>(),
+    /** A submit waits for this before storage answers. */
+    hold: Promise.resolve(),
+    /** A dry run takes its snapshot before waiting, so it can answer with stale state. */
+    checkHold: Promise.resolve(),
+    requests,
+  };
   const context = await browser.newContext({ ...options, reducedMotion: "reduce" });
   const tab = await context.newPage();
   await tab.route("http://new-folder.test/**", async (route) => {
@@ -98,10 +108,13 @@ const open = async (options: BrowserContextOptions, lang = "en", parent?: string
     if (path === endpoint && request.method() === "POST") {
       const body: BatchRequest = request.postDataJSON();
       model.requests.push(body);
+      if (!body.dryRun) await model.hold;
       let stopped = false;
       const results = body.paths.map((path): FolderResult => {
         if (stopped) return { path, state: "skipped" };
         if (model.existing.has(path)) return { path, state: "existing" };
+        const check = body.dryRun ? model.checks.get(path) : undefined;
+        if (check) return { path, state: "failed", error: check, message: `Check: ${check}` };
         if (body.dryRun) return { path, state: "planned" };
         if (model.failures.has(path)) {
           stopped = true;
@@ -110,6 +123,7 @@ const open = async (options: BrowserContextOptions, lang = "en", parent?: string
         model.existing.add(path);
         return { path, state: "created" };
       });
+      if (body.dryRun) await model.checkHold;
       return route.fulfill({ status: 200, json: { base, results } satisfies FolderBatchResult });
     }
     const asset = assets[path] ?? (path.endsWith(".woff2") ? ["font/woff2", readFileSync(`${ui}dist${path}`)] : null);
@@ -363,6 +377,109 @@ describe("new folder dialog in a browser", () => {
       }
     });
   }
+
+  test("while folders are created, Escape, Cancel and the close button keep the dialog until the outcome is in", async () => {
+    const { tab, model } = await open(desktop);
+    try {
+      let release = () => {};
+      model.hold = new Promise((resolve) => {
+        release = resolve;
+      });
+      await fill(tab, "Reports/Q1", paths("Reports", "Reports/Q1"));
+      const submitted = tab.waitForRequest((request) => request.url().endsWith(endpoint) && !request.postDataJSON().dryRun);
+      await tab.keyboard.press("Enter");
+      await submitted;
+      await tab.waitForFunction(() =>
+        document.querySelector(".filesv2-new-folder__actions button[type='button']")?.hasAttribute("disabled"),
+      );
+      await tab.keyboard.press("Escape");
+      await tab.click(".k2b-dialog__close");
+      await tab.locator(cancel).click({ force: true });
+      await tab.mouse.click(1, 1);
+      await Bun.sleep(100);
+      expect(await tab.isVisible("dialog[open]")).toBeTrue();
+      expect(await tab.evaluate(() => window.newFolder.result)).toBeNull();
+      release();
+      await tab.waitForFunction(() => window.newFolder.result !== null);
+      const result = await tab.evaluate(() => window.newFolder.result);
+      if (!result || result === "cancelled") throw new Error("Missing folder batch result");
+      expect(result.results.map((item) => item.state)).toEqual(["existing", "created"]);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("Enter right after typing drops the pending check, so only the submit reaches storage", async () => {
+    const { tab, model } = await open(desktop);
+    try {
+      const expected = paths("Fresh", "Fresh/A", "Fresh/B");
+      await tab.locator(input).fill("Fresh/A,B");
+      await tab.keyboard.press("Enter");
+      await tab.waitForFunction(() => window.newFolder.result !== null);
+      await Bun.sleep(400);
+      expect(model.requests).toEqual([{ paths: expected }]);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("a conflict the check finds blocks with its reason, while a check storage could not finish blocks nothing", async () => {
+    const { tab, model } = await open(desktop);
+    try {
+      model.checks.set("Projects/2026/Report", "path_conflict");
+      model.checks.set("Projects/2026/Later", "unavailable");
+      await fill(tab, "Report", paths("Report"));
+      await text(tab, summary, "Not possible here, see the marked folders");
+      await text(tab, `${rows}:nth-child(1) ${folder}__note`, "Check: path_conflict");
+      expect(await tab.isDisabled(submit)).toBeTrue();
+      await fill(tab, "Report,Later", paths("Report", "Later"));
+      await text(tab, summary, "Not possible here, see the marked folders");
+      expect(await tab.isDisabled(submit)).toBeTrue();
+      expect(await tab.$$eval(`${folder}__note`, (elements) => elements.map((element) => element.textContent))).toEqual([
+        "Check: path_conflict",
+      ]);
+      await fill(tab, "Later", paths("Later"));
+      await text(tab, summary, "Creates 1 folder");
+      expect(await tab.$$eval(`${folder}__note`, (elements) => elements.length)).toBe(0);
+      expect(await tab.isDisabled(submit)).toBeFalse();
+      await tab.keyboard.press("Enter");
+      await tab.waitForFunction(() => window.newFolder.result !== null);
+      expect(model.requests.filter((request) => !request.dryRun)).toEqual([{ paths: paths("Later") }]);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("submitting aborts an in-flight check and its late snapshot cannot block retry or forget created folders", async () => {
+    const { tab, model } = await open(desktop);
+    let release = () => {};
+    try {
+      model.checkHold = new Promise((resolve) => {
+        release = resolve;
+      });
+      model.checks.set(paths("Fresh/B")[0]!, "create_forbidden");
+      model.failures.add(paths("Fresh/B")[0]!);
+      const request = tab.waitForRequest((request) => request.url().endsWith(endpoint) && request.postDataJSON().dryRun === true);
+      const aborted = tab.waitForEvent("requestfailed", { predicate: (request) => request.url().endsWith(endpoint) });
+      await tab.locator(input).fill("Fresh/A,B");
+      await request;
+      await tab.keyboard.press("Enter");
+      await aborted;
+      await tab.waitForFunction(() => window.newFolder.partials === 1);
+      release();
+      await Bun.sleep(100);
+      expect(await tab.isDisabled(submit)).toBeFalse();
+
+      // Edit before the next debounced check: the submit, not the old snapshot, says these folders exist.
+      await tab.locator(input).fill("Fresh/A,B,C");
+      await text(tab, summary, "Creates 2 folders");
+      expect(await tab.isDisabled(submit)).toBeFalse();
+      await tab.keyboard.press("Escape");
+    } finally {
+      release();
+      await tab.context().close();
+    }
+  });
 
   test("on a 390 px phone the dialog fits and the comma control keeps the preview in place", async () => {
     const { tab } = await open(phone);

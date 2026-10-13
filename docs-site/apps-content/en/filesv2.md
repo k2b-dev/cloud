@@ -133,10 +133,14 @@ folders and invalid names before creation. Existing folders are reused, and
 one submission includes at most 100 folders, counting every folder in between.
 That is the bound every Files batch (move, copy, trash) already uses; it also
 bounds the depth, together with the 4096-character path limit.
+Each name is limited to 255 UTF-8 bytes; accented letters and emoji use more
+than one byte. A conflict or denied permission blocks creation and is shown
+next to the affected folder. While creation runs, the dialog cannot be dismissed.
 
 `POST /api/filesv2/bases/:baseId/directories/batch` accepts
 `{paths: string[], dryRun: boolean}`; `dryRun` defaults to false. Paths are
 base-relative, at most 4096 characters each, and the list contains 1–100 paths.
+Each segment is limited to 255 UTF-8 bytes, including children of planned folders.
 All paths are validated before any creation. Duplicates are removed and
 parents are processed before children, preserving input order at equal depth.
 The endpoint creates exactly the supplied paths; it does not add ancestors.
@@ -152,6 +156,8 @@ checks independent paths even after a failure. Descendants of planned folders
 are planned; descendants of failed or skipped folders are skipped. Errors keep
 stable codes, with localized messages on failed items. A dry run reserves
 nothing; access or storage may change before creation.
+`create_forbidden` means the parent can be read but does not allow folder creation.
+Filegate failures use the same error codes as single-folder creation.
 
 `cld filesv2 mkdir [-p] <folder>...` accepts several folders in one area.
 With `-p`, one batch includes all ancestors and reuses existing folders;

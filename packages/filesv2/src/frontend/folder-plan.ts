@@ -18,7 +18,8 @@ export function planFolders(input: string, options: { parent: string; commas: Co
     if (!name) issue = "empty";
     else if (name === "." || name === "..") issue = "dot";
     else if (name.trim() !== name) issue = "spaces";
-    else if (name.length > 255) issue = "name_length";
+    // Storage limits a name to 255 bytes, which a name with umlauts or emoji reaches with fewer characters.
+    else if (new TextEncoder().encode(name).length > 255) issue = "name_length";
     else if (/[\\\x00-\x1f\x7f]/.test(name)) issue = "character";
     else if (name === ".filegate" || (name === "trash" && !options.parent && depth === 0)) issue = "reserved";
     else if (duplicate) issue = "duplicate";

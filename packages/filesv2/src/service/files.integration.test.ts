@@ -3,7 +3,7 @@ import { getProcessSync, type ProcessSync, startProcessSync } from "@k2b/cloud";
 import { UserSchema } from "@k2b/cloud/contracts";
 import { type Principal, type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities, secrets } from "@k2b/cloud/services";
-import { type ExecutionIdentity, Filegate, type Node, type WriteOptions } from "@k2b/filegate";
+import { type ExecutionIdentity, Filegate, FilegateError, type Node, type WriteOptions } from "@k2b/filegate";
 import { sql } from "bun";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
@@ -72,6 +72,9 @@ suite("Files service and durable bindings", () => {
   >();
   const privateSession = (id: string) => sessions.get(sessionKeys.get(id)!)!;
   let reconciliations = 0;
+  let identityLookups = 0;
+  let configurationLookups = 0;
+  let rootInfoLookups = 0;
   const scopedMetadata: Array<{ operation: string; path: string }> = [];
   let config = {
     url: "http://filegate:4000",
@@ -229,7 +232,8 @@ suite("Files service and durable bindings", () => {
           if (!allowed(node, 1)) return Response.json({ error: "forbidden" }, { status: 403 });
         }
       }
-      if (!operation)
+      if (!operation) {
+        rootInfoLookups++;
         return Response.json({
           name: root,
           managed: root === "cloud",
@@ -243,6 +247,7 @@ suite("Files service and durable bindings", () => {
           available: 1_000_000,
           capacity: 2_000_000,
         });
+      }
       if (operation === "content")
         return nodes.has(`${root}:${req.searchParams.get("path")}`)
           ? new Response(contents.get(`${root}:${req.searchParams.get("path")}`) ?? "")
@@ -632,6 +637,10 @@ suite("Files service and durable bindings", () => {
   const service = createFilesService({
     identities: {
       ...accountIdentities,
+      async self(...args: Parameters<typeof accountIdentities.self>) {
+        identityLookups++;
+        return accountIdentities.self(...args);
+      },
       async reconcile(...args: Parameters<typeof accountIdentities.reconcile>) {
         reconciliations++;
         return accountIdentities.reconcile(...args);
@@ -642,7 +651,10 @@ suite("Files service and durable bindings", () => {
       return resolveDisplayNames(entries);
     },
     bindings,
-    readConfiguration: async () => config,
+    readConfiguration: async () => {
+      configurationLookups++;
+      return config;
+    },
     writeConfiguration: async (input) => {
       config = { ...input, token: input.token || config.token, tokenConfigured: true };
     },
@@ -762,6 +774,9 @@ suite("Files service and durable bindings", () => {
     leases = 0;
     downloadRequests.length = 0;
     reconciliations = 0;
+    identityLookups = 0;
+    configurationLookups = 0;
+    rootInfoLookups = 0;
     displayNameLookups.length = 0;
     for (const root of ["cloud", "freeipa"]) {
       directory(root, ".", 0, 0, "0755");
@@ -901,6 +916,27 @@ suite("Files service and durable bindings", () => {
     expect(mkdirRequests).toEqual(["freeipa:users/alice/Created"]);
     expect(nodes.has("freeipa:users/alice/Later")).toBe(false);
   });
+  test("mkdirs authorizes the base once per request for multiple paths, including dry runs", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Existing");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    for (const dryRun of [true, false]) {
+      const before = identityLookups;
+      const configBefore = configurationLookups;
+      const infoBefore = rootInfoLookups;
+      const result = await service.mkdirs(actor, { baseId, paths: ["Existing", "New", "Sibling", "New/Child"], dryRun });
+      expect(result.results.map((item) => item.state)).toEqual([
+        "existing",
+        dryRun ? "planned" : "created",
+        dryRun ? "planned" : "created",
+        dryRun ? "planned" : "created",
+      ]);
+      expect(identityLookups - before).toBe(1);
+      expect(configurationLookups - configBefore).toBe(1);
+      expect(rootInfoLookups - infoBefore).toBe(1);
+    }
+  });
   test("mkdirs reuses folders in read-only parents, but cannot create new siblings there", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
@@ -910,9 +946,10 @@ suite("Files service and durable bindings", () => {
     const result = await service.mkdirs(actor, { baseId, paths: ["ReadOnly/Existing", "ReadOnly/New", "ReadOnly/Later"], dryRun: false });
     expect(result.results).toMatchObject([
       { state: "existing", entry: { path: "ReadOnly/Existing" } },
-      { state: "failed", error: "forbidden" },
+      { state: "failed", error: "create_forbidden" },
       { state: "skipped" },
     ]);
+    await expect(service.mkdir(actor, { baseId, path: "ReadOnly/New" })).rejects.toMatchObject({ code: "forbidden", status: 403 });
     expect(mkdirRequests).toEqual([]);
     expect(nodes.has("freeipa:users/alice/ReadOnly/New")).toBe(false);
   });
@@ -944,7 +981,7 @@ suite("Files service and durable bindings", () => {
       { path: "Existing", state: "existing" },
       { path: "File", state: "failed", error: "path_conflict" },
       { path: "New", state: "planned" },
-      { path: "ReadOnly/Denied", state: "failed", error: "forbidden" },
+      { path: "ReadOnly/Denied", state: "failed", error: "create_forbidden" },
       { path: "File/Child", state: "skipped" },
       { path: "New/Child", state: "planned" },
       { path: "Existing/Child", state: "planned" },
@@ -956,6 +993,37 @@ suite("Files service and durable bindings", () => {
     expect(mkdirRequests).toEqual([]);
     for (const path of ["New/Child", "File/Child", "ReadOnly/Denied/Child", "New/Child/Grandchild"])
       expect(scopedMetadata.some((item) => item.path === `users/alice/${path}`)).toBe(false);
+  });
+  test("mkdirs keeps read denial on a parent distinct from create denial", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Unreadable", 999, 2001, "0710");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    for (const dryRun of [true, false])
+      expect((await service.mkdirs(actor, { baseId, paths: ["Unreadable/New"], dryRun })).results).toMatchObject([
+        { path: "Unreadable/New", state: "failed", error: "forbidden" },
+      ]);
+    expect(mkdirRequests).toEqual([]);
+  });
+  test("mkdirs reports mapped Filegate errors and unresolved failures", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    for (const [error, code] of [
+      [new FilegateError(403, "permission_denied", "denied"), "forbidden"],
+      [new FilegateError(409, "conflict", "conflict"), "operation_conflict"],
+      [new Error("connection lost"), "operation_unresolved"],
+    ] as const) {
+      beforeMkdir = () => {
+        throw error;
+      };
+      expect((await service.mkdirs(actor, { baseId, paths: ["New", "Later"], dryRun: false })).results).toMatchObject([
+        { path: "New", state: "failed", error: code },
+        { path: "Later", state: "skipped" },
+      ]);
+      expect(nodes.has("freeipa:users/alice/New")).toBe(false);
+      expect(nodes.has("freeipa:users/alice/Later")).toBe(false);
+    }
   });
   test("mkdirs rejects invalid or reserved paths before any effect and never adds unrequested ancestors", async () => {
     const actor = await user("alice", "ipa");
@@ -974,6 +1042,22 @@ suite("Files service and durable bindings", () => {
       service.mkdirs(actor, { baseId, paths: Array.from({ length: 101 }, (_, i) => `F${i}`), dryRun: false }),
     ).rejects.toMatchObject({ code: "invalid_selection" });
   });
+  test("mkdirs validates each segment's UTF-8 byte length before any effect", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const baseId = (await service.bases(actor)).items[0]!.id;
+    for (const dryRun of [true, false]) {
+      for (const path of ["é".repeat(128), `Parent/${"é".repeat(128)}/Child`])
+        await expect(service.mkdirs(actor, { baseId, paths: ["Good", path], dryRun })).rejects.toMatchObject({ code: "invalid_path" });
+      expect(nodes.has("freeipa:users/alice/Good")).toBe(false);
+      expect(mkdirRequests).toEqual([]);
+    }
+    const path = "é".repeat(127);
+    expect((await service.mkdirs(actor, { baseId, paths: [path], dryRun: false })).results).toMatchObject([
+      { path, state: "created", entry: { path } },
+    ]);
+    expect(mkdirRequests).toEqual([`freeipa:users/alice/${path}`]);
+  });
   test("mkdirs rechecks a concurrent path conflict and reuses only a folder", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
@@ -981,9 +1065,11 @@ suite("Files service and durable bindings", () => {
     beforeMkdir = (root, path) => {
       directory(root, path);
     };
+    const before = identityLookups;
     expect((await service.mkdirs(actor, { baseId, paths: ["Concurrent"], dryRun: false })).results).toMatchObject([
       { state: "existing", entry: { path: "Concurrent" } },
     ]);
+    expect(identityLookups - before).toBe(1);
     beforeMkdir = (root, path) => {
       directory(root, path, 1001, 2001, "0600", false);
     };

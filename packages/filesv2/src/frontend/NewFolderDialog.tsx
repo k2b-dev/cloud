@@ -1,4 +1,4 @@
-import { Button, prompts, SegmentedControl, TextInput } from "@k2b/ui";
+import { Button, type DialogRender, prompts, SegmentedControl, TextInput } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import { BATCH_LIMIT, type FolderBatchResult, type FolderResult } from "../contracts";
@@ -21,14 +21,23 @@ type NewFolderOptions = {
 /**
  * Asks for one name or a small tree: `A/B` nests, a comma in the last part creates siblings. Resolves with the
  * outcome once everything exists; a partial outcome stays in the dialog until the name is fixed or the dialog closes.
+ * While folders are being created the dialog cannot be dismissed, so their outcome is always reported.
  */
 export const openNewFolderDialog = (options: NewFolderOptions) =>
-  prompts.dialog<FolderBatchResult>((close) => <NewFolderDialog {...options} close={close} />, {
-    title: options.title,
-    icon: "ti ti-folder-plus",
-  });
+  prompts.dialog<FolderBatchResult>(
+    (close, context) => <NewFolderDialog {...options} close={close} setDismissHandler={context.setDismissHandler} />,
+    { title: options.title, icon: "ti ti-folder-plus" },
+  );
 
-function NewFolderDialog(props: NewFolderOptions & { close: (result?: FolderBatchResult) => void }) {
+/** A check that failed for one of these reasons decides the submit; any other failure says nothing about the plan. */
+const DEFINITE_FAILURES = new Set(["path_conflict", "not_directory", "not_found", "forbidden", "create_forbidden"]);
+
+function NewFolderDialog(
+  props: NewFolderOptions & {
+    close: (result?: FolderBatchResult) => void;
+    setDismissHandler: Parameters<DialogRender<FolderBatchResult>>[1]["setDismissHandler"];
+  },
+) {
   const b = useBrowserMessages();
   const t = useFilesMessages();
   const [input, setInput] = createSignal("");
@@ -39,6 +48,9 @@ function NewFolderDialog(props: NewFolderOptions & { close: (result?: FolderBatc
   const [outcome, setOutcome] = createSignal<ReadonlyMap<string, FolderResult> | null>(null);
   const [failure, setFailure] = createSignal("");
   const [saving, setSaving] = createSignal(false);
+  props.setDismissHandler(() => {
+    if (!saving()) props.close();
+  });
   const stateOf = (path: string) => outcome()?.get(path) ?? checked().get(path);
   const remember = (results: readonly FolderResult[], submitted = false) =>
     setChecked((previous) => {
@@ -47,6 +59,8 @@ function NewFolderDialog(props: NewFolderOptions & { close: (result?: FolderBatc
         // A folder this dialog just created exists now; anything a submit did not settle is checked again.
         if (result.state === "created") next.set(result.path, { path: result.path, state: "existing" });
         else if (submitted && result.state !== "existing") next.delete(result.path);
+        // A transient check failure says nothing about this path; retain definite failures on other rows.
+        else if (result.state === "failed" && !DEFINITE_FAILURES.has(result.error ?? "")) next.delete(result.path);
         else next.set(result.path, result);
       }
       return next;
@@ -75,7 +89,8 @@ function NewFolderDialog(props: NewFolderOptions & { close: (result?: FolderBatc
           .then(async (response) => {
             if (!response.ok) return;
             const result = await response.json();
-            if (!request.signal.aborted) remember(result.results);
+            if (request.signal.aborted) return;
+            remember(result.results);
           })
           .catch(() => undefined);
       }, 200);
@@ -98,6 +113,9 @@ function NewFolderDialog(props: NewFolderOptions & { close: (result?: FolderBatc
   const submit = async () => {
     if (!canSubmit()) return;
     const paths = plan().folders.map((folder) => folder.path);
+    // A check still pending would only repeat what the submit answers and could overwrite its outcome.
+    clearTimeout(timer);
+    check?.abort();
     setSaving(true);
     setFailure("");
     try {
@@ -125,6 +143,7 @@ function NewFolderDialog(props: NewFolderOptions & { close: (result?: FolderBatc
     if (plan().tooMany) return { tone: "danger", text: b().folderPlanTooMany(BATCH_LIMIT) };
     if (!input()) return { tone: "hint", text: b().folderPlanEmpty };
     if (!plan().valid) return { tone: "danger", text: b().folderPlanInvalid };
+    if (blocked()) return { tone: "danger", text: b().folderPlanBlocked };
     return { tone: "count", text: b().folderPlanCount(toCreate()) };
   };
   const note = (folder: PlannedFolder) => {
@@ -235,7 +254,7 @@ function NewFolderDialog(props: NewFolderOptions & { close: (result?: FolderBatc
         </div>
       </section>
       <div class="filesv2-new-folder__actions">
-        <Button type="button" variant="secondary" onClick={() => props.close()}>
+        <Button type="button" variant="secondary" disabled={saving()} onClick={() => props.close()}>
           {b().cancel}
         </Button>
         <Button type="submit" loading={saving()} disabled={!canSubmit()}>
