@@ -7,7 +7,7 @@ export const gridsMessages = i18n.define({
       start: "Start",
       signInToOpenGrids: "Sign in to open Grids.",
       backToBase: "Back to Base",
-      allBases: "All Bases",
+      allBases: "All bases",
       askBaseAdminForAccess: "Ask a Base admin for access, or choose another Base.",
       baseUnavailable: "This Base may have been deleted or renamed.",
       workflowReference: "Workflow reference",

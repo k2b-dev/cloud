@@ -46,9 +46,9 @@ describe("AppWorkspace.SidebarSwitcher", () => {
   });
 
   test("the full title remains available for long names", () => {
-    const label = "A notebook with a very long name that does not fit in the sidebar column";
-    expect(render({ label })).toContain(`title="${label}"`);
-    expect(render({ label })).toContain(`aria-label="${label}"`);
+    const label = "Offene Fahrradwerkstatt der Nachbarschaftsinitiative Südviertel im Hinterhof";
+    const html = render({ label });
+    expect(html).toMatch(new RegExp(`<button(?=[^>]*title="${label}")(?=[^>]*aria-label="${label}")[^>]*>`));
   });
 
   test("actions contain only the supplied links and buttons", () => {

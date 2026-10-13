@@ -70,7 +70,7 @@ describe("Spaces sidebar icon actions", () => {
   });
 
   test.each([
-    ["en", "Switch Space", "All Spaces"],
+    ["en", "Switch space", "All spaces"],
     ["de", "Space wechseln", "Alle Spaces"],
   ])("names the space in the switcher above its views and moves All spaces into actions (%s)", async (locale, purpose, allLabel) => {
     const space = {

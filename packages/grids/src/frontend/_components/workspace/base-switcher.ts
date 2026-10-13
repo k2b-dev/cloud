@@ -61,7 +61,7 @@ export function createBaseSwitcher(
     onLoad: () => void load(),
     actions: [
       ...(canCreate ? [{ id: "new", label: t().newBase, icon: "ti ti-plus", action: () => void create(), disabled: creating() }] : []),
-      { id: "all", label: t().allGrids, icon: "ti ti-layout-grid", href: "/app/grids" },
+      { id: "all", label: t().allBases, icon: "ti ti-layout-grid", href: "/app/grids" },
     ],
   });
 }

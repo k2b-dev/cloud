@@ -2612,8 +2612,9 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 
 /* Sidebar switcher: the container an app works in, at the top of its sidebar.
    The head is one flat row like the sidebar's items: a tinted icon tile, the
-   name, an optional fact, and a chevron. It keeps one size in every state, so
-   loading, opening, and long names never move what follows. Its panel is the
+   name, an optional fact, and a chevron. It keeps one size for every name and
+   in every state, so switching containers, loading, hovering, and opening never
+   move what follows. Its panel is the
    shared menu surface; groups are set apart by spacing, not lines. */
 /* Without specificity, so a sizing class such as `flex-1` places it in a row. */
 :where(.k2b-ui .k2b-sidebar-switcher) {
@@ -2673,28 +2674,44 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   font-size: 1rem;
 }
 
+/* Two name lines are always reserved and the text sits centred in them, so a short and a long name give the head one
+   height from the server's first paint on. */
 .k2b-ui .k2b-sidebar-switcher__copy {
+  --k2b-sidebar-switcher-line: 1.125rem;
   display: grid;
   min-width: 0;
+  min-height: calc(2 * var(--k2b-sidebar-switcher-line));
   flex: 1 1 auto;
+  align-content: center;
 }
 
-.k2b-ui .k2b-sidebar-switcher__copy > :is(span, small) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* The name takes up to two balanced lines and ends with an ellipsis after them; beside a fact it takes one, so name
+   and fact share the reserved two lines. The full name stays in the button's title and accessible name. */
 .k2b-ui .k2b-sidebar-switcher__copy > span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   font-size: 0.8125rem;
   font-weight: 600;
-  line-height: 1.125rem;
+  line-height: var(--k2b-sidebar-switcher-line);
+  overflow-wrap: break-word;
+  text-wrap: balance;
+}
+
+.k2b-ui .k2b-sidebar-switcher[data-description] .k2b-sidebar-switcher__copy > span {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
 }
 
 .k2b-ui .k2b-sidebar-switcher__copy > small {
+  overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: 0.6875rem;
   line-height: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .k2b-ui .k2b-sidebar-switcher__chevron {
@@ -2710,7 +2727,8 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   display: none;
   width: max(var(--k2b-sidebar-switcher-width, 0px), min(16rem, 100vw - 1rem));
   max-width: calc(100vw - 1rem);
-  max-height: min(28rem, 80dvh);
+  /* The room beside the trigger, set while open, so the panel never covers its own trigger. */
+  max-height: min(28rem, 80dvh, var(--k2b-sidebar-switcher-room, 80dvh));
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.25rem;
@@ -2775,6 +2793,11 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   font-weight: 600;
 }
 
+/* The check marks the current container in the app's accent, like the sidebar's active row. */
+.k2b-ui .k2b-sidebar-switcher__option > .k2b-dropdown__check {
+  color: var(--k2b-app-workspace-active);
+}
+
 .k2b-ui .k2b-sidebar-switcher__actions .k2b-dropdown__item > i {
   width: 1.25rem;
   flex: none;
@@ -2803,9 +2826,12 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   padding: 0.5rem 0.75rem;
 }
 
+.k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__copy {
+  --k2b-sidebar-switcher-line: 1.375rem;
+}
+
 .k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__copy > span {
   font-size: 1rem;
-  line-height: 1.375rem;
 }
 
 .k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__copy > small {

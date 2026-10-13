@@ -15,7 +15,7 @@ export type ShellData = {
   /** Signed-in pages: the person, for the profile menu and the phone menu's profile actions. */
   profile?: { name: string; avatarSrc?: string; appHref?: string };
   theme: CloudThemePreference;
-  /** The current app's accent, for the Help dialog. */
+  /** The current app's accent, for the Help dialog and the phone menu, which open outside the app canvas. */
   accent?: string;
   /** The search destinations of each app in `apps`, by app id in registry order; the search host expands them into rows. */
   searchLinks: Record<string, readonly AppSearchLink[]>;
