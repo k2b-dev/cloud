@@ -1,5 +1,8 @@
+import { syntaxTree } from "@codemirror/language";
+import type { ChangeSpec } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { prompts } from "@k2b/ui";
+import type { SyntaxNode } from "@lezer/common";
 import { buildDataBlockTemplate, dataBlockRefSelection } from "../../../lib/editor/data-block-template";
 import { notebookWorkspaceMessages } from "../../messages";
 import { openNoteLinkPrompt } from "../search/openNoteSearchPrompt";
@@ -17,39 +20,89 @@ import { openNoteLinkPrompt } from "../search/openNoteSearchPrompt";
 // Inline marks
 // ==========================
 
-/**
- * Toggle a markdown wrap mark (e.g. `**`, `_`, `~~`, `` ` ``) around the
- * current selection. Detects an already-wrapped selection (inside or outside
- * the marks) and unwraps in that case.
- */
-export const wrapSelection = (view: EditorView, mark: string): void => {
-  const { from, to } = view.state.selection.main;
-  const selected = view.state.sliceDoc(from, to);
-  const markLen = mark.length;
+export type InlineMark = "bold" | "italic" | "strikethrough" | "code";
 
-  // Case 1: selected text itself starts and ends with the mark → unwrap inside
-  if (selected.startsWith(mark) && selected.endsWith(mark) && selected.length >= markLen * 2) {
-    view.dispatch({ changes: { from, to, insert: selected.slice(markLen, -markLen) } });
-    view.focus();
-    return;
+const inlineMarks = {
+  bold: { node: "StrongEmphasis", delimiter: "**" },
+  italic: { node: "Emphasis", delimiter: "*" },
+  strikethrough: { node: "Strikethrough", delimiter: "~~" },
+  code: { node: "InlineCode", delimiter: "`" },
+};
+
+/**
+ * Toggle an inline Markdown mark on the selection, or on the word at the
+ * caret. Whitespace at the selection edges stays outside the mark. Inside a
+ * span of the same kind (also `_x_` or `__x__`), the span's marks are removed.
+ * Otherwise the mark wraps the range and absorbs same-kind spans it overlaps,
+ * so the result stays valid Markdown. Only the marks change, in one
+ * transaction, so a peer's concurrent edit inside the text survives.
+ */
+export const toggleInlineMark = (view: EditorView, mark: InlineMark): void => {
+  const { state } = view;
+  const selection = state.selection.main;
+  let { from, to } = selection;
+  if (!selection.empty) {
+    const selected = state.sliceDoc(from, to);
+    const trimmed = selected.trim();
+    if (!trimmed) return;
+    from += selected.length - selected.trimStart().length;
+    to = from + trimmed.length;
   }
 
-  // Case 2: marks exist around the selection in the document → unwrap outside
-  const before = view.state.sliceDoc(Math.max(0, from - markLen), from);
-  const after = view.state.sliceDoc(to, to + markLen);
-  if (before === mark && after === mark) {
+  const { node: nodeType, delimiter } = inlineMarks[mark];
+  const spans = (from: number, to: number) => {
+    const nodes: SyntaxNode[] = [];
+    syntaxTree(state).iterate({
+      from,
+      to,
+      enter: (node) => {
+        if (node.name === nodeType) nodes.push(node.node);
+      },
+    });
+    return nodes;
+  };
+  const edits: ChangeSpec[] = [];
+  const removeMarks = (node: SyntaxNode) => {
+    const opening = node.firstChild;
+    const closing = node.lastChild;
+    if (opening && closing) edits.push({ from: opening.from, to: opening.to }, { from: closing.from, to: closing.to });
+  };
+
+  // Spans are visited outside in, so the last containing one is the innermost.
+  const containing = spans(from, to).findLast((node) => node.from <= from && node.to >= to);
+  if (containing) {
+    removeMarks(containing);
+    const changes = state.changes(edits);
     view.dispatch({
-      changes: { from: from - markLen, to: to + markLen, insert: selected },
-      selection: { anchor: from - markLen, head: to - markLen },
+      changes,
+      selection: { anchor: changes.mapPos(selection.anchor, 1), head: changes.mapPos(selection.head, 1) },
     });
     view.focus();
     return;
   }
 
-  // Default: wrap selection
+  if (selection.empty) {
+    const word = state.wordAt(selection.head);
+    if (!word) return;
+    ({ from, to } = word);
+  }
+  // Same-kind spans nest but never cross, so the spans overlapping the range are all there is to absorb.
+  for (const node of spans(from, to).filter((node) => node.from < to && node.to > from)) {
+    removeMarks(node);
+    from = Math.min(from, node.from);
+    to = Math.max(to, node.to);
+  }
+  const changes = state.changes([...edits, { from, insert: delimiter }, { from: to, insert: delimiter }]);
+  const start = changes.mapPos(from, -1) + delimiter.length;
+  const end = changes.mapPos(to, 1) - delimiter.length;
+  const caret = Math.max(start, Math.min(end, changes.mapPos(selection.head, 1)));
   view.dispatch({
-    changes: { from, to, insert: `${mark}${selected}${mark}` },
-    selection: { anchor: from + markLen, head: to + markLen },
+    changes,
+    selection: selection.empty
+      ? { anchor: caret }
+      : selection.anchor <= selection.head
+        ? { anchor: start, head: end }
+        : { anchor: end, head: start },
   });
   view.focus();
 };

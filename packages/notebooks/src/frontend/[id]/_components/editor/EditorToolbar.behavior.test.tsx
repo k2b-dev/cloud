@@ -4,13 +4,13 @@ import { createDomTestHarness } from "../../../../../../ui/test/dom";
 
 const read = (path: string) => Bun.file(new URL(path, import.meta.url)).text();
 
-describe("editor toolbar keyboard focus", () => {
+describe("editor toolbar pointer and keyboard focus", () => {
   if (isServer) {
     test.skip("runs with browser export conditions", () => {});
     return;
   }
 
-  test("keeps every focused toolbar button's focus signal inside the button", async () => {
+  test("keeps keyboard focus styling inside buttons and prevents pointer focus transfer", async () => {
     const dom = createDomTestHarness();
     const style = dom.document.createElement("style");
     style.textContent = `${await read("../../../../../../ui/src/styles/index.css")}\n${await read("../../../../styles/app.css")}`;
@@ -44,6 +44,12 @@ describe("editor toolbar keyboard focus", () => {
         expect(dom.document.activeElement).toBe(button);
         const focused = getComputedStyle(button);
         const label = button.getAttribute("aria-label");
+        if (button.tagName === "BUTTON") {
+          const press = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+          button.dispatchEvent(press);
+          expect({ label, prevented: press.defaultPrevented }).toEqual({ label, prevented: true });
+          expect(dom.document.activeElement).toBe(button);
+        }
         expect({ label, outline: focused.outlineStyle, shadow: focused.boxShadow }).toEqual({ label, outline: "none", shadow: "none" });
       }
     } finally {
