@@ -1,12 +1,13 @@
 ---
 name: assistant-code-mode
-description: Build apps and work with data in code. Use whenever the person asks for an app, calculator, converter, timer, form, tracker, dashboard or any other tool they will interact with (always a saved Studio App), and for data analysis, file transformation and generation, resource SQL queries, quick code experiments and combining discovered Cloud capabilities. For plain arithmetic or date offsets, use calculate. A few values that did not come from code use the chart tool; computed charts and tables use cloud.view.*.
+description: Build apps and work with data in code. Use whenever the person asks for an app, calculator, converter, timer, form, tracker or any other tool they will interact with (always a saved Studio App), and for data analysis, file transformation and generation, resource SQL queries, quick code experiments and combining discovered Cloud capabilities. For plain arithmetic or date offsets, use calculate. A few values that did not come from code use the chart tool; computed charts, tables and one-off dashboards use cloud.view.*; a dashboard to keep, reload or share is a Studio App.
 ---
 # Assistant code mode
 
 Choose the smallest useful result: a one-off answer, a view, an exported file,
-or a Studio App. Anything the person will interact with is a Studio App, even
-when it keeps no data; views only show a result. An App has an HTML interface,
+or a Studio App. A tool the person will use, such as a calculator or a form,
+is a Studio App, even when it keeps no data; views show a result, and an
+explorer view adds filters and comparison. An App has an HTML interface,
 agent actions, or both; persistence is optional. One-off scripts stay in their
 chat and cannot be shared. Reuse an existing Cloud feature when it fits. For a
 quick reading of an uploaded PDF or Office document, `read_file` can return
@@ -30,7 +31,8 @@ There are two kinds of code:
 An app, calculator, converter, timer, form, tracker or any other tool the
 person will use is a saved Studio App: it appears in their Studio Apps, and
 they can reopen, change and share it. Never answer such a request with a view
-or a one-off chat card.
+or a one-off chat card. A question for one value, such as a tip or a unit
+conversion, gets the answer instead of an app.
 
 First decide which kind it is:
 
@@ -65,7 +67,8 @@ A small tool in one pass:
 4. As soon as a check passes and its screenshots show no such defect, call
    `code_open({id})`; use `code_present({id})` instead when the person asks
    to see the app in the chat. Then say in one or two sentences what the app
-   does.
+   does. Where `code_open` is unavailable, such as in a background run, say
+   that the app is saved in Studio under its title.
 
 The single file follows these rules:
 
@@ -180,8 +183,8 @@ Choose by where the values came from:
    `cloud.capabilities.run`) → `cloud.view.chart`, `cloud.view.group`,
    `cloud.view.table`, `cloud.view.stats`, `cloud.view.details` or
    `cloud.view.explorer` in the run, then `present({path})` per view. Never retype run values into tool
-   arguments, `data.js` or Markdown; a chat app's `data.js` is the module the run
-   wrote, copied unchanged. If a view is missing, rerun with
+   arguments, app data or Markdown; an app's data module is the file the run
+   wrote, copied with `code_file_copy` or `code_import`. If a view is missing, rerun with
    `cloud.view.*`. Return only key figures the answer text mentions.
 3. 1..6 comparable key figures → `cloud.view.stats` above charts, instead of
    several cards or stat charts. One record with exact fields, such as a checked

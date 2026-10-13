@@ -133,9 +133,11 @@ repeat actions.
 ## Deliver and retain the result
 
 Present views or exported files; a successful run alone is not visible. A
-dashboard the person asked for is a Studio App, opened with `code_open` or
-shown with `code_present({id})` after checking numbers and rendering. The user
-can download its current view as PDF or static HTML. The answer carries findings, caveats and decisions, not values
+one-off overview of an upload, even when called a dashboard, is
+`cloud.view.stats` plus groups or an explorer. A dashboard the person wants to
+keep, reload, share or give to a team is a Studio App, opened with `code_open`
+or shown with `code_present({id})` after checking numbers and rendering. The
+user can download its current view as PDF or static HTML. The answer carries findings, caveats and decisions, not values
 already shown in views. Include the result link/path, data timestamp and material
 coverage limits; say whether it is a snapshot or reloads from sources.
 
