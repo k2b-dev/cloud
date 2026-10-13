@@ -119,7 +119,7 @@ cld grids document-templates update --base BASE_ID --table Invoices --template T
 ```
 
 Replace uppercase IDs with actual public IDs. Names resolve within the selected
-table/Base; explicit IDs avoid ambiguity. `list --full` requires admin access.
+table/base; explicit IDs avoid ambiguity. `list --full` requires admin access.
 Create/update accept `--body`, `--body-file`, or `--stdin`. Convenience flags are
 `--name`, `--description`, `--source`, `--html`, `--header-html`, `--footer-html`,
 `--page-css`, `--number-template`, `--filename-template`, `--enabled`, `--disabled`;
@@ -160,7 +160,7 @@ Important paths:
   `date.yyyyMMdd`. Calendar values follow the rendering date context.
 - `app.name`, `app.contactEmail`, `app.url`, `app.logoDataUri`, `app.timezone`:
   public platform branding, not private settings.
-- `business`: Base document defaults described below.
+- `business`: base document defaults described below.
 - `images` and nullable `primaryImage`: supported attached root-record images;
   each includes a usable `url`. Check availability before rendering an image.
 - `snapshot`: captured record graph for issued record-template Documents, null in
@@ -252,7 +252,7 @@ optional strings; limits in characters:
 | `phone`, `taxId`, `iban`, `bic` | 100 |
 | `registration` | 300 |
 
-Set them through Base update JSON (`documentDefaults`) or Base settings →
+Set them through base update JSON (`documentDefaults`) or base settings →
 Documents. They are reusable text defaults, not validated bank/accounting data.
 An E-invoice or SEPA profile still validates its separate structured inputs.
 
@@ -273,7 +273,7 @@ Profile preview also validates the selected profile. Unsaved previews use
 counterparts. Supplying a saved `--template` provides defaults for omitted parts.
 PDF preview requires `--out`.
 
-Generation requires Base Write, an enabled template, and an idempotency key of
+Generation requires base Write, an enabled template, and an idempotency key of
 1–200 characters. Optional tags: at most 20, each 1–40 characters. Optional
 filename: 1–255 characters. Reuse the same key and original input to recover the
 same attempt; changed input with the same key conflicts. A new key can issue a
@@ -300,7 +300,7 @@ MIME type. `download` returns the primary stored artifact, not always PDF. Read
 `artifacts[].key` before selecting `download-artifact`; `xml` is not universal.
 
 List pages use a cursor (default 50, maximum 100). `documents list` is the
-Base-wide catalog: `--q`/`--query`, `--workflow` (every Document of its runs),
+base-wide catalog: `--q`/`--query`, `--workflow` (every Document of its runs),
 `--template`, `--table` (name or ID; only Documents bound directly to one of its
 records, never source rows or ZIP contents), `--media-type` (primary file, such
 as `application/pdf` or `application/zip`) and `--sort newest|oldest|name`
@@ -333,9 +333,9 @@ batch membership use workflow `associatedData`; for freshness checks before a
 financial export use `sourceVersions`. They solve different problems; see the
 workflow section of [Grids](index.md).
 
-Base Read permits browsing/download. Base Admin manages templates; Base Write
+Base Read permits browsing/download. Base Admin manages templates; base Write
 generates and manages document links. A published Custom App exposes only its
-authorized record/template documents, not generic access to an entire batch/Base.
+authorized record/template documents, not generic access to an entire batch/base.
 
 ```bash
 cld grids documents links list DOCUMENT_ID --json
@@ -491,7 +491,7 @@ actual successful issuance before reporting a file created. Permissions and any
 `sourceVersions` guards are checked again. Closing the review leaves the run
 waiting; cancel explicitly to abandon it.
 
-Completed financial exports reserve business identities for the Base, destination,
+Completed financial exports reserve business identities for the base, destination,
 and accounting/payment purpose. Re-download the completed Document instead of
 creating another export of the same events. Failed attempts without issuance do
 not permanently claim events. Joins must not duplicate amounts: identities cannot

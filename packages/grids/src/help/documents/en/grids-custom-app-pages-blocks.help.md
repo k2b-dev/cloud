@@ -11,7 +11,7 @@ A Grids App arranges existing resources into pages. Its blocks decide which reso
 
 Use stable IDs, not labels, for links. A page URL is `/apps/<id>/<pageId>`. Declared Record parameters go in the query string. The [Custom App API reference](/app/grids/help/grids-custom-app-api) lists the ID rules, the layout limits, and every binding shape.
 
-This release supports required Record parameters only. Each parameter declares a table in the same Base; its URL and `@params.<name>` value are record public IDs.
+This release supports required Record parameters only. Each parameter declares a table in the same base; its URL and `@params.<name>` value are record public IDs.
 
 Under **Route parameters**, choose a parameter ID and its table. Adding a Record or Rendered HTML block binds that parameter automatically. A route-only page can also use the authorized parameter in GQL or in fixed form values without displaying the record. Pages with required parameters stay out of the navigation and cannot be the start page. Missing or inaccessible records show the standard unavailable state.
 
@@ -73,11 +73,11 @@ Metrics normally take the number formatting from the selected fields. For aggreg
 
 Bar and line charts show the optional x-axis and y-axis labels. Donut charts ignore them. Category names and axis labels that do not fit beside or below the chart are shortened. Hover over one to see it in full. With more than 12 groups, the chart shows at most 12 evenly spaced names.
 
-The published capability records the exact tables and fields behind the block. People who use the app need no access to the Base. The runtime cannot query sources outside that immutable capability. Publish again after you change the source of a saved view.
+The published capability records the exact tables and fields behind the block. People who use the app need no access to the base. The runtime cannot query sources outside that immutable capability. Publish again after you change the source of a saved view.
 
 ### Form
 
-The form owns the inputs, validation, defaults, and creation. People who use the app can select related records without access to the Base. The search exposes only IDs and the published presentable labels of the configured target. Changing those labels, or their formula dependencies, requires a new publication.
+The form owns the inputs, validation, defaults, and creation. People who use the app can select related records without access to the base. The search exposes only IDs and the published presentable labels of the configured target. Changing those labels, or their formula dependencies, requires a new publication.
 
 A form is embedded by default. Set `presentation.kind` to `dialog` and choose a button label to open it over the current page. The same defaults, fixed values, validation, and access rules apply. Readers must confirm before they discard unsaved input. They cannot close the dialog while it saves.
 
@@ -100,7 +100,7 @@ fixedValues:
     path: id
 ```
 
-Choose **Form action → Edit this page's record** to edit an existing draft. The page must bind a record from the table of the form. The server loads its inputs and configured inline rows before rendering. Saving checks the versions of the parent and of the edited rows together. Removing an inline row detaches it from the parent. It does not delete the underlying record. Shared rows and finalized records cannot be edited this way. Related tables must belong to the same Base. Existing form blocks keep creating new records until you change this action and publish the app again.
+Choose **Form action → Edit this page's record** to edit an existing draft. The page must bind a record from the table of the form. The server loads its inputs and configured inline rows before rendering. Saving checks the versions of the parent and of the edited rows together. Removing an inline row detaches it from the parent. It does not delete the underlying record. Shared rows and finalized records cannot be edited this way. Related tables must belong to the same base. Existing form blocks keep creating new records until you change this action and publish the app again.
 
 The block can supply trusted values to any user-input field:
 
@@ -144,7 +144,7 @@ Use `heading: { fieldId }` to identify a record with one of its displayed fields
 
 The Edit action appears only when the publication includes that writable field and the block is available. On submission, Grids checks these again: the access to the app, the immutable field allowlist, `availableWhen`, the live field type, the audit questions of the table, and the current record version. Fields outside the block's editable subset remain read-only.
 
-An editable file field uses the same audited lifecycle as the Base workspace: add, atomic replace, and **Remove from record**. Access to the app stays the outer gate, and the published editable-field capability narrows it further. Removing detaches the current attachment. Protected history or artifacts can keep the exact bytes. Grids can clean up unprotected files.
+An editable file field uses the same audited lifecycle as the base workspace: add, atomic replace, and **Remove from record**. Access to the app stays the outer gate, and the published editable-field capability narrows it further. Removing detaches the current attachment. Protected history or artifacts can keep the exact bytes. Grids can clean up unprotected files.
 
 `documents.templateIds` shows linked documents from templates that belong to the table of the page record. Downloads are protected. Issuing requires a workflow. Optional draft previews must be enabled explicitly: see the [Custom App API reference](/app/grids/help/grids-custom-app-api). This block creates no public links.
 
@@ -156,7 +156,7 @@ The output runs in a sandbox without scripts, forms, popups, access to the paren
 
 ### Comments
 
-Comments requires a page record and a signed-in person who uses the app. It loads a bounded first page only when the block renders. It then fetches older comments with keyset pagination. The published Comments block and the current access to the app allow creating comments without **Edit** access to the Base or the record. Authors can edit and delete their own comments. People with **Manage** access to the Base can moderate any comment. Deleted comments stay as a placeholder with a timestamp, so the order of the conversation stays understandable.
+Comments requires a page record and a signed-in person who uses the app. It loads a bounded first page only when the block renders. It then fetches older comments with keyset pagination. The published Comments block and the current access to the app allow creating comments without **Edit** access to the base or the record. Authors can edit and delete their own comments. People with **Manage** access to the base can moderate any comment. Deleted comments stay as a placeholder with a timestamp, so the order of the conversation stays understandable.
 
 Comments inherit the visibility of the record. They add no separate audience and no separate access store.
 
@@ -188,7 +188,7 @@ Scanner embeds one existing enabled Scanner run option. Signed-in people who use
 
 The app publishes the exact block, launcher, workflow revision, and the hash of the scanner configuration. Every invocation and every status read checks that snapshot and the access of the reader to the app again. Changing the run option or the workflow requires a new publication of the app. Scanner run results stay visible only to the reader who started them.
 
-Scanner blocks support scalar session and after-scan inputs. Record and record-list prompts stay available on the full workflow scanner. An embedded app scanner rejects them, because a person who uses the app can lack the Base access that a record picker needs. The scanned input itself can still resolve to a record through a generated scan code or a configured unique field.
+Scanner blocks support scalar session and after-scan inputs. Record and record-list prompts stay available on the full workflow scanner. An embedded app scanner rejects them, because a person who uses the app can lack the base access that a record picker needs. The scanned input itself can still resolve to a record through a generated scan code or a configured unique field.
 
 ## Keep navigation explicit {icon="arrow-right"}
 
@@ -223,7 +223,7 @@ The first release has none of these:
 - app-global variables or a general expression graph;
 - reusable block definitions;
 - arbitrary external fetch or action targets;
-- resources from other Bases;
+- resources from other bases;
 - raw queries outside GQL;
 - inline HTML, CSS, JavaScript, or Liquid control flow written in the app;
 - domain-specific blocks for requests, carts, batches, or loans.

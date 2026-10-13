@@ -102,7 +102,7 @@ const api = new Hono<AuthContext>()
     requirePublicIdParam("baseId", "base", "Base"),
     describeRoute({
       tags: ["Grids:EvidenceExport"],
-      summary: "List evidence exports for a Base",
+      summary: "List evidence exports for a base",
       responses: {
         200: jsonResponse(EvidenceExportListSchema, "Evidence exports"),
         403: jsonResponse(ErrorResponseSchema, "Base admin required"),

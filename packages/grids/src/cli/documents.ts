@@ -335,7 +335,7 @@ export const documentCommands = [
     },
   }),
   command("documents list", {
-    summary: "List, search, filter and sort all Documents of a Base",
+    summary: "List, search, filter and sort all Documents of a base",
     description:
       "Filters combine. --workflow matches every Document of its runs; --table matches only Documents bound directly to one of its records, not source records or ZIP contents. Keep --sort when passing a cursor.",
     examples: [

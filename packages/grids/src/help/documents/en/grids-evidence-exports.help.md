@@ -5,17 +5,17 @@ icon: ti ti-package-export
 description: Create and verify a bounded package of the evidence that Grids currently holds.
 order: 147
 ---
-An evidence export captures one Base or one table at a stated cut. It packages the selected current and historical sources with a manifest and SHA-256 hashes. Use it when another person or system needs a reviewable handoff, not an editable CSV or JSON dataset.
+An evidence export captures one base or one table at a stated cut. It packages the selected current and historical sources with a manifest and SHA-256 hashes. Use it when another person or system needs a reviewable handoff, not an editable CSV or JSON dataset.
 
 :::warning Not a compliance certificate
 An evidence package reports the evidence that Grids has and names missing history. It does not reconstruct events from before Durable History was enabled.
 :::
 
-You need **Manage** access to the Base. Grids Apps, workflows, API clients, and the CLI cannot bypass this requirement.
+You need **Manage** access to the base. Grids Apps, workflows, API clients, and the CLI cannot bypass this requirement.
 
 ## Check the available evidence {icon="chart-bar"}
 
-Open **Base settings → Evidence exports**. Grids calculates **Available evidence** from the Base when the page opens. It is not a saved score, and it does not enable or change anything.
+Open **base settings → Evidence exports**. Grids calculates **Available evidence** from the base when the page opens. It is not a saved score, and it does not enable or change anything.
 
 The summary counts current and deleted records, saved revisions and audit events, stored file and document bytes, number series, and durable number allocations. To inspect each table, choose **Review Table coverage**. The **History** column shows one of these states:
 
@@ -32,9 +32,9 @@ The **Finalized** column is separate, because enabling Durable History does not 
 ## Create a package {icon="package-export"}
 
 :::steps
-1. Open **Base settings → Evidence exports**.
+1. Open **base settings → Evidence exports**.
 2. Choose **New export**.
-3. Choose **Complete Base** or one table.
+3. Choose **Complete base** or one table.
 4. Optional: Set a **Period** for revisions, audit events, documents, and number allocations. Current records and live relations always come from the export cut.
 5. Keep all evidence selected, or clear the sections that the recipient does not need.
 6. Read the scope check. If the known scope exceeds a package budget, narrow the table, the period, or the sections.
@@ -59,11 +59,11 @@ The package expires after seven days. Expiry removes its stored bytes. If the re
 
 References to Grids resources use their six-character public IDs. A UUID-shaped value without a public ID in the selected Grids scope appears as a stable private reference. This keeps internal identifiers private. The same source value receives the same private reference within the package.
 
-Every document belongs to a Grids table and a record. With **Document artifacts** selected, a table-scoped package includes that table's Documents within the selected date range. A Base-scoped package covers the tables of the Base. Both include the exact stored artifacts and their metadata.
+Every document belongs to a Grids table and a record. With **Document artifacts** selected, a table-scoped package includes that table's Documents within the selected date range. A base-scoped package covers the tables of the base. Both include the exact stored artifacts and their metadata.
 
 ## Create a package from the CLI {icon="terminal-2"}
 
-The CLI offers `cld grids evidence preflight`, `create`, `list`, `get`, `retry`, `cancel`, and `download`. `preflight` and `create` accept `--base` and an optional `--body-file` with `tableId`, `from`, `to`, and `sections`. `create`, `retry`, and `cancel` require `--yes`. You need the same **Manage** access to the Base.
+The CLI offers `cld grids evidence preflight`, `create`, `list`, `get`, `retry`, `cancel`, and `download`. `preflight` and `create` accept `--base` and an optional `--body-file` with `tableId`, `from`, `to`, and `sections`. `create`, `retry`, and `cancel` require `--yes`. You need the same **Manage** access to the base.
 
 Check the returned status before you download. An accepted request does not mean that the package is complete.
 

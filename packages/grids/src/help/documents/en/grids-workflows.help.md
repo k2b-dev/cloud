@@ -291,7 +291,7 @@ steps:
       saveAs: reportDocument
 ```
 
-Do not combine `data`/`output` with `template`/`record`. File steps can share captured data; retries return the existing Document. Generation rechecks the direct access to the Base or the published workflow authorization of the app, not table visibility in the interface. Find files in **All documents** or in the run. Dry runs do not render.
+Do not combine `data`/`output` with `template`/`record`. File steps can share captured data; retries return the existing Document. Generation rechecks the direct access to the base or the published workflow authorization of the app, not table visibility in the interface. Find files in **All documents** or in the run. Dry runs do not render.
 
 - **CSV:** UTF-8, CRLF, ordered aliases as headers. `delimiter` accepts comma (default), semicolon, tab (`"\t"`) or pipe. Null becomes an empty cell; nested values require `nestedValues: json`. Default `textProtection: spreadsheet` prefixes risky text, including `+`/`-` phone numbers, with an apostrophe; the report counts changed cells. Use `raw` only when the recipient processes unmodified text safely.
 - **CSV column selection:** Optional `columns: [{ source: Amount, label: Total }, { source: Name }]` selects and orders exact GQL aliases. Omit `label` to keep the alias. Unknown or repeated sources, empty selections and duplicate headings fail. Use aliases, not internal column keys.
@@ -351,7 +351,7 @@ The starter labels the action **Correction** or **Cancellation**; its run option
 
 `finalizeRecord` uses the generic finalization contract of the table. It validates the complete record, assigns final IDs, stores the final durable history version, and locks the record permanently and atomically. Retrying the same workflow step is safe. `updateRecord` and `createRecord` field keys accept exact field names or public IDs. If a table requires change context, `updateRecord.audit` must answer the applicable questions by their question UUID. `generateDocument.template` and `sendEmail.template` accept an enabled template exact name or public ID. Ambiguous and inaccessible references are rejected during validation.
 
-The `generateDocument` result includes `business`, the stored company context of a record Document. For example, `${{ issued.business.legalName }}` reads the original issuer name; `${{ issued.business }}` can be copied to a JSON snapshot field for a correction. It never reads current Base settings. Query-generated Documents have `business: null`.
+The `generateDocument` result includes `business`, the stored company context of a record Document. For example, `${{ issued.business.legalName }}` reads the original issuer name; `${{ issued.business }}` can be copied to a JSON snapshot field for a correction. It never reads current base settings. Query-generated Documents have `business: null`.
 
 `deleteRecord` trashes one non-finalized Record, never destroys it. Access, mutation-policy, and required `audit` checks apply; `saveAs` returns its reference. Inside `atomicRecords.changes`, use `deleteRecord: {record, audit?}` to apply the same trash operation after locked checks; `saveAs` belongs to the standalone action.
 
@@ -361,7 +361,7 @@ The `generateDocument` result includes `business`, the stored company context of
 
 `atomicRecords` commits bounded Grids changes together. Email, HTTP, document generation, other workflows and control flow belong in separate steps.
 
-`validateDocuments: [{template, record}]` checks profile inputs after changes, before commit; failure rolls back finalization. HTML fails with `DOCUMENT_PROFILE_REQUIRED`. For finalized records with `oncePerFinalizedRecord`, it also reserves the document number and freezes the template, snapshot and render context (including `business`) in that transaction. A later `generateDocument` renders this reserved input; retries preserve it even after Base settings change. A committed reservation consumes its number even if generation never runs. The reservation fixes the filename and tags too; later generation options do not replace them. Other targets are validated without reservation. No PDF is rendered here. Dry run checks targets, not changed values.
+`validateDocuments: [{template, record}]` checks profile inputs after changes, before commit; failure rolls back finalization. HTML fails with `DOCUMENT_PROFILE_REQUIRED`. For finalized records with `oncePerFinalizedRecord`, it also reserves the document number and freezes the template, snapshot and render context (including `business`) in that transaction. A later `generateDocument` renders this reserved input; retries preserve it even after base settings change. A committed reservation consumes its number even if generation never runs. The reservation fixes the filename and tags too; later generation options do not replace them. Other targets are validated without reservation. No PDF is rendered here. Dry run checks targets, not changed values.
 
 :::reference
 - **locks:** Record or record-list references, such as `inputs.item` or `inputs.items`, acquired in stable order before checks. Duplicates count once; explicit locks, change targets and `validateDocuments` targets together can include at most 100 distinct records. Empty lists add no locks. Every competing workflow must lock the same coordination record for the same business decision.
@@ -376,7 +376,7 @@ An empty query locks no row. Competing reservations must lock the same stable it
 
 Formula/aggregate checks use `query: {source, parameters}`: typed GQL after locks, before changes (10,000 rows/5 MiB; no capture). Select violations with `where`/`having`, assert `empty`; a row containing `false`/`0` is not empty. Read changing amounts in GQL, not pre-resolved parameters; include proposed changes. Dry runs reserve nothing.
 
-The `table`/`where` variant supports stored-field predicates only. Relation values in `createRecord` and `updateRecord`, and values for relation filters, use public Record IDs such as `${{ inputs.item.recordId }}`. Do not pass internal UUIDs, labels, or a whole record-reference object as a Relation value. Record targets and locks use the reference itself, such as `inputs.item`. Related records must remain readable in the configured target table and Base; dry run checks that boundary too.
+The `table`/`where` variant supports stored-field predicates only. Relation values in `createRecord` and `updateRecord`, and values for relation filters, use public Record IDs such as `${{ inputs.item.recordId }}`. Do not pass internal UUIDs, labels, or a whole record-reference object as a Relation value. Record targets and locks use the reference itself, such as `inputs.item`. Related records must remain readable in the configured target table and base; dry run checks that boundary too.
 
 **Reserve one available item atomically**
 
@@ -675,11 +675,11 @@ Interrupted runs resume from recorded outcomes, not from the beginning:
 ## Understand access and limits {icon="shield-lock"}
 
 :::reference
-- **Run access:** Direct calls and standalone run options require **Edit** access to the Base. A published Grids App can invoke only its exact included launcher. Public visitors cannot run workflow actions.
+- **Run access:** Direct calls and standalone run options require **Edit** access to the base. A published Grids App can invoke only its exact included launcher. Public visitors cannot run workflow actions.
 - **Identity:** Direct calls (channel `api`), scanners and bulk use the caller; access through an app requires a signed-in user, not a service account. Schedules and events use the current groups of the owner. Events record the triggering user without inheriting that user's access.
-- **Action access:** Runs in the Base use the access to the Base. Before effects, Grids rechecks the access to the app, the publication, the inputs, the launcher, and `availableWhen`. `atomicRecords` checks once after acquiring locks; its own changes do not invalidate that step. Later effects check again. Enforce starting state with atomic checks. App workflows can use all tables in their Base, not only visible ones. People with **Manage** access to the Base are responsible for business restrictions and for what exports disclose.
+- **Action access:** Runs in the base use the access to the base. Before effects, Grids rechecks the access to the app, the publication, the inputs, the launcher, and `availableWhen`. `atomicRecords` checks once after acquiring locks; its own changes do not invalidate that step. Later effects check again. Enforce starting state with atomic checks. App workflows can use all tables in their base, not only visible ones. People with **Manage** access to the base are responsible for business restrictions and for what exports disclose.
 - **App result:** Actions poll their own run: `running`, `succeeded` or `failed`. `fail.message` and atomic `checks[].message` reach readers verbatim: write safe recovery instructions. Other errors get safe hints, never internal details or raw history.
-- **Email delivery:** Viewing, creating, editing, and deleting email templates require **Manage** access to the Base. Workflow runs can use enabled email templates without exposing template HTML in autocomplete.
+- **Email delivery:** Viewing, creating, editing, and deleting email templates require **Manage** access to the base. Workflow runs can use enabled email templates without exposing template HTML in autocomplete.
 - **Email-template dependencies:** Grids shows which workflows use an email template and refuses to delete a referenced template. Change those workflows first.
 - **HTTP guardrails:** Only public internet addresses are allowed. Private, local or reserved targets are rejected, including hostnames resolving to both public and private addresses. No setting or allowlist enables internal network calls.
 - **HTTP limits:** `httpRequest` limits request and response bodies to 64 KiB. It applies the configured timeout to the complete request, including target resolution. It rejects credentials embedded in the URL. Connection and transfer headers cannot be overridden.

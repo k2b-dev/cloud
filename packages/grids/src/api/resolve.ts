@@ -70,7 +70,7 @@ const resolveBase = async (c: Context<AuthContext>, ref: string): Promise<Step<B
     return ambiguous(
       c,
       ref,
-      { en: "bases", de: "Basen" },
+      { en: "bases", de: "Bases" },
       items.map((base) => ({ path: base.name, id: base.shortId })),
     );
   }

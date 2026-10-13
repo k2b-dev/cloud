@@ -48,13 +48,13 @@ Use the references as a map, then read only the relevant live contract:
 
 1. `cld grids <command> --help` owns accepted flags and positional arguments.
 2. A matching `reference --json`, `fields type`, or `records shape` owns its
-   configuration or value shape. For Forms, Tables, Views, and Base settings,
+   configuration or value shape. For Forms, Tables, Views, and base settings,
    discover the exact create/update operation with API Docs, then read its
    request schema. Use `api-docs spec grids` when a compact operation view omits
    schema detail. A GET response is not a create payload.
 3. Read the semantic rules in the linked guide: JSON Schema alone does not
    explain permissions, state transitions, retries, or business guarantees.
-4. Validate against the target Base and read back persisted configuration. If
+4. Validate against the target base and read back persisted configuration. If
    discovery and prose disagree, use the installed contract, report the
    discrepancy, and do not invent a flag or silently drop a property.
 
@@ -66,20 +66,20 @@ The installed server and CLI may have different versions. If a reference command
 
 ## Core model
 
-- A **base** is the complete raw data and access boundary. Base Read sees every record in the Base. `cld grids use <base>` stores a default base for later commands.
+- A **base** is the complete raw data and access boundary. Base Read sees every record in the base. `cld grids use <base>` stores a default base for later commands.
 - A **table** owns fields and records. A stored table owns writable records; a Combined table publishes a read-only canonical schema over
   explicitly mapped stored tables. Tables, fields, and other named resources expose one 6-character public `id` and a name.
 - A **field** defines storage, validation, and presentation for one record value. Record write payloads use field public IDs as keys.
 - A **record** is a versioned row. Relations store target record public IDs. Computed and system fields are read-only.
 - A **view** is a saved GQL query plus display settings. Views can be shared or personal.
 - A **form** writes records through a configured set of fields. A table also has a virtual default form.
-- A **Grids App** is an independently shared, Base-owned published capability surface. Its readers do not need raw Base access, and it may be public.
+- A **Grids App** is an independently shared, base-owned published capability surface. Its readers do not need raw base access, and it may be public.
 - A **document template** selects GQL data and one renderer: HTML/PDF or an installed structured renderer such as E-Invoice. Every generated document is immutable and keeps its source snapshot and exact artifacts.
 - A **workflow** is validated YAML with inputs, optional triggers, and steps. Launchers adapt workflows to scanner, bulk, Record, and Grids App
   interactions. Grids contributes the actions and the events; the runs themselves live in Cloud's shared workflow kernel, so
   `cld grids workflow-runs` reads one base while `cld admin workflows` reads every app.
 
-Permissions are enforced by the backend on every command. Raw Grids commands require the owning Base permission. Only Base and Grids Apps have Cloud access grants; listing or resolving either resource does not grant access to it.
+Permissions are enforced by the backend on every command. Raw Grids commands require the owning base permission. Only base and Grids Apps have Cloud access grants; listing or resolving either resource does not grant access to it.
 
 ## Shared base navigation
 
@@ -99,7 +99,7 @@ The in-app Assistant has a separate built-in `cloud-grids` Skill. It routes prod
 and administration questions through `search_help` / `read_help`, rather than
 duplicating this reference or all in-app Help. Query with AI opens a restricted
 chat that can discover schema, preview/execute GQL and save a View after approval
-and the existing Base-admin check. It cannot change records or schema. That
+and the existing base-admin check. It cannot change records or schema. That
 restriction does not limit a separately authorized CLI agent using this Skill.
 
 Capability results may include optional table presentation metadata referencing
@@ -258,7 +258,7 @@ records are included by default; pass `--empty` to keep the complete configurati
 
 Base commands are `use`, `current`, and `bases ls|show|add|set|rm|restore|trash|retention|preservation-holds|destruction`. Table commands are `tables ls|show|add|set|rm|restore|mutation-policy|mutation-policy impact|mutation-policy set|history|history enable|finalization|finalization enable|finalization disable|finalization policy`. `bases rm`, `tables rm`, and `records rm` require `--yes`.
 
-A Base Admin can configure a technical minimum age for trashed Records. Read and preview it before changing it:
+A base Admin can configure a technical minimum age for trashed Records. Read and preview it before changing it:
 
 ```bash
 cld grids bases retention Bookshop --json
@@ -269,9 +269,9 @@ cld grids bases retention files download Bookshop HeUB3M --out ./retained-file.b
 cld grids bases retention set Bookshop --days 30 --json
 ```
 
-The preview is bounded and uses one stated observation time. It reports both trashed Records and newly unreferenced Files, including retained byte totals and bounded examples. `bases retention records list` exposes the complete current Trash set through server-side search, floor-status filtering, and pagination; finalized Records are labelled as independently protected. Use the normal table Trash view for restore or other Record actions. `bases retention files list` exposes the complete current candidate set through the same bounded pattern; `download` accepts only a File public ID returned by that list. All routes require Base Admin permission. Current attachments and Files protected by Durable History or Documents are not unreferenced candidates. Reaching the floor does not delete a Record or File or state that destruction is appropriate. Shortening an existing floor requires `--yes`; removing it always requires `bases retention remove <base> --yes`. Existing Bases have no floor by default.
+The preview is bounded and uses one stated observation time. It reports both trashed Records and newly unreferenced Files, including retained byte totals and bounded examples. `bases retention records list` exposes the complete current Trash set through server-side search, floor-status filtering, and pagination; finalized Records are labelled as independently protected. Use the normal table Trash view for restore or other Record actions. `bases retention files list` exposes the complete current candidate set through the same bounded pattern; `download` accepts only a File public ID returned by that list. All routes require base Admin permission. Current attachments and Files protected by Durable History or Documents are not unreferenced candidates. Reaching the floor does not delete a Record or File or state that destruction is appropriate. Shortening an existing floor requires `--yes`; removing it always requires `bases retention remove <base> --yes`. Existing bases have no floor by default.
 
-A Base Admin can also block future controlled destruction for the complete Base or one active Table with one or more explicit preservation holds:
+A base Admin can also block future controlled destruction for the complete base or one active Table with one or more explicit preservation holds:
 
 ```bash
 cld grids bases preservation-holds list Bookshop --status active --json
@@ -282,9 +282,9 @@ cld grids bases preservation-holds list Bookshop --scope table --table Authors -
 cld grids bases preservation-holds release Bookshop HOLD01 --reason "Review completed" --yes --json
 ```
 
-Create defaults to `--scope base`; `--scope table` requires `--table` with a Table public ID or exact name. An exact name resolves an active Table; its six-character public ID can still filter hold history after the Table is no longer active. A Base hold covers every Table. A Table hold covers only that Table and blocks destruction of its parent Base so the hold cannot be bypassed. Creating and releasing require a non-empty reason. Releasing one hold leaves every other active hold in force. Holds do not lock Records, change access or Finalization, expire automatically, start cleanup, or establish legal compliance. `list` supports `active`, `released`, and `all` status filters, `base`, `table`, and `all` scope filters, optional exact Table filtering, and server-side pagination. Every command requires Base Admin permission and uses the same backend hold owner as future controlled destruction.
+Create defaults to `--scope base`; `--scope table` requires `--table` with a Table public ID or exact name. An exact name resolves an active Table; its six-character public ID can still filter hold history after the Table is no longer active. A base hold covers every Table. A Table hold covers only that Table and blocks destruction of its parent base so the hold cannot be bypassed. Creating and releasing require a non-empty reason. Releasing one hold leaves every other active hold in force. Holds do not lock Records, change access or Finalization, expire automatically, start cleanup, or establish legal compliance. `list` supports `active`, `released`, and `all` status filters, `base`, `table`, and `all` scope filters, optional exact Table filtering, and server-side pagination. Every command requires base Admin permission and uses the same backend hold owner as future controlled destruction.
 
-A Base Admin can irreversibly destroy one bounded batch of eligible unreferenced File bytes. Preview before starting the run:
+A base Admin can irreversibly destroy one bounded batch of eligible unreferenced File bytes. Preview before starting the run:
 
 ```bash
 cld grids bases destruction preview Bookshop --json
@@ -293,7 +293,7 @@ cld grids bases destruction status Bookshop RUN001 --json
 cld grids bases destruction cancel Bookshop RUN001 --yes --json
 ```
 
-`preview` returns at most 100 exact eligible File candidates and reports totals for Files that are eligible, still retained, held, or unknown/protected. `run` fetches a fresh preview, requires the exact Base name through `--confirm`, and queues only those public File IDs. It refuses an empty batch. Before deleting each File, the server rechecks the active retention floor, current and protected references, saved origin Table, and Base/Table preservation holds. A changed File is skipped, so a run can complete as `partial`. `cancel --yes` stops only remaining work; already destroyed bytes cannot be recovered. Records, trashed Records, Documents, evidence exports, and Durable History are never included. Every command requires Base Admin permission.
+`preview` returns at most 100 exact eligible File candidates and reports totals for Files that are eligible, still retained, held, or unknown/protected. `run` fetches a fresh preview, requires the exact base name through `--confirm`, and queues only those public File IDs. It refuses an empty batch. Before deleting each File, the server rechecks the active retention floor, current and protected references, saved origin Table, and base/Table preservation holds. A changed File is skipped, so a run can complete as `partial`. `cancel --yes` stops only remaining work; already destroyed bytes cannot be recovered. Records, trashed Records, Documents, evidence exports, and Durable History are never included. Every command requires base Admin permission.
 
 Stored tables allow every record change source by default. Before tightening that setting, preview the active Forms, Actions, and Workflows that would stop changing the table, then apply the same policy:
 
@@ -304,7 +304,7 @@ cld grids tables mutation-policy set Authors --allow direct,form --json
 
 The impact preview is bounded. If a table is used by more Workflows than it can inspect in one request, the result says that additional entry points may be affected.
 
-The source names are `direct`, `form`, and `workflow`; `direct` includes editing in the Base or a Grids App, Record Editor, API, CLI, and imports. Use `--allow all` for normal Grids behavior. `--allow none --yes` freezes creates, edits, trash, restore, Relations, and Files while leaving existing records readable. Permissions, field rules, audit requirements, history, and finalization still apply, and another client cannot bypass this server-side setting.
+The source names are `direct`, `form`, and `workflow`; `direct` includes editing in the base or a Grids App, Record Editor, API, CLI, and imports. Use `--allow all` for normal Grids behavior. `--allow none --yes` freezes creates, edits, trash, restore, Relations, and Files while leaving existing records readable. Permissions, field rules, audit requirements, history, and finalization still apply, and another client cannot bypass this server-side setting.
 
 Pass `--kind stored` for a normal table or `--kind federated` for a user-facing Combined table. Stored is the default.
 
@@ -536,7 +536,7 @@ cld grids records upsert-external-batch Authors \
 
 For resumable connector sync, save the opaque cursor returned by `records changes`. The feed reports committed public Record identities,
 event types, versions, and deletion times from the last 30 days; read each current Record separately for its field values. `--table` narrows
-the Base feed, while `--all --max-events` bounds catch-up work. A change appears once every earlier write transaction has ended, so a long
+the base feed, while `--all --max-events` bounds catch-up work. A change appears once every earlier write transaction has ended, so a long
 import delays the changes after it instead of being skipped. If a cursor has expired, perform a fresh full Record scan and start again from
 the new feed position.
 
@@ -593,7 +593,7 @@ Record commands are `records changes|shape|list|query|get|create|upsert-external
 
 ### Files and snapshots
 
-Use exact Table and Record public IDs for discussion and incoming relations. No default Base is needed; the server checks the owning Base permissions. List responses retain `nextCursor` and comment permissions, including in `--jsonl` (one complete page per line).
+Use exact Table and Record public IDs for discussion and incoming relations. No default base is needed; the server checks the owning base permissions. List responses retain `nextCursor` and comment permissions, including in `--jsonl` (one complete page per line).
 
 ```bash
 cld grids records comments list <table-id> <record-id> --limit 20 --json
@@ -603,7 +603,7 @@ cld grids records comments delete <table-id> <record-id> <comment-id> --yes
 cld grids records referenced-by <table-id> <record-id> --limit 5 --json
 ```
 
-Use `--cursor` to continue either list. `referenced-by --relation-field <field-id>` narrows the incoming relation field. Comment writes retain the server's Base Write, author, and moderation requirements.
+Use `--cursor` to continue either list. `referenced-by --relation-field <field-id>` narrows the incoming relation field. Comment writes retain the server's base Write, author, and moderation requirements.
 
 File fields use dedicated blob commands:
 
@@ -1042,7 +1042,7 @@ Targets must be same-table formula fields; their full dependency chain must end 
 
 Create accepts field values directly or `{data,inlineCreates?,idempotencyKey?}`. Prefer the envelope with a stable key for retryable operations. Each `inlineCreates` key is a relation Field ID and its value is `[{tempId,data}]`; include those temporary IDs in the root relation values. Only configured `inlineCreate.fields` are writable. Parent and children commit together.
 
-To edit an existing parent with its lines, use `forms submit BASE TABLE FORM --record REC001 --body-file edit.json --yes`. Read the parent and children with `records show` first. The body is `{data,version,idempotencyKey,inlineCreates?,inlineUpdates?}`. `inlineUpdates` is keyed by relation Field ID with `[{recordId,version,data}]`; retain edited child IDs in the root relation value. These are full Form values, not an arbitrary record patch: preserve required inputs and use explicit empty values to clear fields. Up to 20 creates/updates per relation and 50 total are accepted. Children must already belong to this parent, stay linked, belong to the same Base and not be shared with another parent. Removing a relation detaches rather than deletes its child. Finalization and mutation policy checks remain active.
+To edit an existing parent with its lines, use `forms submit BASE TABLE FORM --record REC001 --body-file edit.json --yes`. Read the parent and children with `records show` first. The body is `{data,version,idempotencyKey,inlineCreates?,inlineUpdates?}`. `inlineUpdates` is keyed by relation Field ID with `[{recordId,version,data}]`; retain edited child IDs in the root relation value. These are full Form values, not an arbitrary record patch: preserve required inputs and use explicit empty values to clear fields. Up to 20 creates/updates per relation and 50 total are accepted. Children must already belong to this parent, stay linked, belong to the same base and not be shared with another parent. Removing a relation detaches rather than deletes its child. Finalization and mutation policy checks remain active.
 
 Published App Forms opt into editing with `mode: edit` on a Record page for the same table. `apps runtime read` returns `blocks[].form.initialRecord` with `version`, `values`, and `inlineCreates` drafts carrying `existing:{id,version}`. Replace those draft temp IDs in `data` with `existing.id` and send existing edits in `inlineUpdates`, not `inlineCreates`. Submit through the same discovered page/block and parameters; the server derives the target from the page, not a body Record ID. Sidebar and standalone public Forms remain create-only.
 
@@ -1074,7 +1074,7 @@ Grids Apps are strict schema-v5 YAML definitions owned by one base. The current 
 columns plus Markdown, Records, Referenced records, Metrics, Chart, Record, Rendered HTML, Form, Comments, Actions, and Scanner blocks. Records and insight blocks can use a saved view
 or GQL. A Records block can navigate its row id or one selected single relation into one required
 record parameter on a detail page. Record and Comments blocks use that page record; Record renders only its explicit field allowlist.
-For signed-in readers, an editable displayed File field exposes App-scoped attachment controls without granting raw Base API access. File validation and limits remain owned by the field and file service. A published Comments block lets signed-in App readers comment without Base access; authors manage their own comments and Base administrators moderate. Form blocks submit existing Grids forms and may carry trusted typed `LITERAL`, `PARAMS`,
+For signed-in readers, an editable displayed File field exposes App-scoped attachment controls without granting raw base API access. File validation and limits remain owned by the field and file service. A published Comments block lets signed-in App readers comment without base access; authors manage their own comments and base administrators moderate. Form blocks submit existing Grids forms and may carry trusted typed `LITERAL`, `PARAMS`,
 page `RECORD`, or `AUTH.currentUser` values. Records blocks may declare up to six workflow `rowActions`; compatible record inputs can receive `ROW.id`, and
 the runtime rechecks the selected id against the exact published query result. Run the live reference before authoring a definition:
 
@@ -1112,7 +1112,7 @@ cld grids apps publish Bookshop "Request overview" --yes
 ```
 
 The standalone app is available to authenticated or public readers at `/apps/<id>`; named pages use `/apps/<id>/<pageId>` and record parameters
-stay in the query string. Readers need only the Grids App grant; the immutable publication capability supplies its declared data and operations without granting raw Base access. Applying a later draft does not affect the published snapshot until the next publish. Commands are
+stay in the query string. Readers need only the Grids App grant; the immutable publication capability supplies its declared data and operations without granting raw base access. Applying a later draft does not affect the published snapshot until the next publish. Commands are
 `apps reference|list|create|get|validate|plan|apply|export|publish|unpublish|restore|delete`; `export --out <path>` writes normalized deterministic YAML and `export --published` selects the live definition.
 `restore --yes` replaces the draft with the live definition. `unpublish --yes` removes only the live snapshot, while `delete --yes` removes the app and its route.
 
@@ -1168,7 +1168,7 @@ cld grids documents generate Invoices Invoice \
 cld grids documents by-record Invoices <record-id> --json
 ```
 
-Document commands are `documents renderers|list|list-by-template|browse|by-record|sources|contents|generate|get|download|download-artifact`. `documents list` is the Base-wide immutable catalog; `--workflow`, `--template`, `--table` (direct record binding only), `--media-type` and `--sort newest|oldest|name` combine. `documents contents` lists the files packaged in a ZIP Document. Every generation requires an explicit idempotency key; reuse it after an uncertain response to receive the same Document. An E-Invoice renderer owns its number and artifact filenames. `documents browse --mode folders --path 2026/07` traverses one template's generated Documents by year and month. Search matches filenames, numbers, or tags; tag filters are repeatable.
+Document commands are `documents renderers|list|list-by-template|browse|by-record|sources|contents|generate|get|download|download-artifact`. `documents list` is the base-wide immutable catalog; `--workflow`, `--template`, `--table` (direct record binding only), `--media-type` and `--sort newest|oldest|name` combine. `documents contents` lists the files packaged in a ZIP Document. Every generation requires an explicit idempotency key; reuse it after an uncertain response to receive the same Document. An E-Invoice renderer owns its number and artifact filenames. `documents browse --mode folders --path 2026/07` traverses one template's generated Documents by year and month. Search matches filenames, numbers, or tags; tag filters are repeatable.
 
 A record-template Document appears in its record detail, template workspace, and **All documents**. Workflow outputs use a frozen data source instead; their `tableId`, `recordId`, and `templateId` are null. `dataSnapshot` reports `rowCount` and `capturedAt` for these outputs and is null for record-template Documents. It never contains source rows. `documents get`, lists and `workflow-runs documents` return the same Document shape, including all stored artifacts, an authenticated `downloadUrl` for the primary file and one per `artifacts[]` entry. `primaryArtifactKey` identifies the main file in `artifacts`; use its `mimeType`, not the key or filename, to determine the format. Download that file with `documents download`, or choose an exact artifact:
 
@@ -1224,7 +1224,7 @@ selection for explicit `associatedData` in that case. Evidence exports contain
 only source `tableId`, `recordId`, and captured `version`, without live names or
 deletion state, and allow at most 10,000 document-source entries per package.
 
-GQL row queries support `documentCount(format?)` and `latestDocumentAt(format?)` in SELECT (with an alias) and WHERE. Formats are `pdf`, `csv`, `json`, `xml`, `sepa-xml`, `datev-csv`; omission includes all outputs. One Document with several artifacts counts once. No matches yields count zero and date null. These are live metadata, not stored Formula fields; they do not change finalized business values. Custom App queries cannot access these Base-level metadata.
+GQL row queries support `documentCount(format?)` and `latestDocumentAt(format?)` in SELECT (with an alias) and WHERE. Formats are `pdf`, `csv`, `json`, `xml`, `sepa-xml`, `datev-csv`; omission includes all outputs. One Document with several artifacts counts once. No matches yields count zero and date null. These are live metadata, not stored Formula fields; they do not change finalized business values. Custom App queries cannot access these base-level metadata.
 
 ```sql
 from table Auslagen
@@ -1259,7 +1259,7 @@ exports retain the existing confirmation, business-identity and freshness checks
 
 ## Verify evidence packages
 
-Base administrators can manage exports before downloading them. Preflight and create accept an optional `--body-file scope.json` containing `tableId`, `from`, `to`, and `sections`. Omitted scope selects the whole Base and all sections. Run preflight to inspect available history and limits first.
+Base administrators can manage exports before downloading them. Preflight and create accept an optional `--body-file scope.json` containing `tableId`, `from`, `to`, and `sections`. Omitted scope selects the whole base and all sections. Run preflight to inspect available history and limits first.
 
 ```bash
 cld grids evidence preflight --base Bookshop --body-file scope.json --json
@@ -1294,7 +1294,7 @@ history; it does not claim compliance, authorship, custody, or legal validity.
 
 ## Manage access
 
-Grids grants access to one complete raw Base or one published Grids App. Tables, Views, Forms, document templates, and Workflows have no separate Cloud grants.
+Grids grants access to one complete raw base or one published Grids App. Tables, Views, Forms, document templates, and Workflows have no separate Cloud grants.
 
 ```bash
 cld grids access reference
@@ -1309,10 +1309,10 @@ cld grids access grant app Bookshop "Public catalog" --public --permission read
 
 Supported resource references are:
 
-- `base <base>`: `read`, `write`, `admin`, or `none`; applies to the complete raw Base and every record.
+- `base <base>`: `read`, `write`, `admin`, or `none`; applies to the complete raw base and every record.
 - `app <base> <app>`: `read` or `none`; supports users, groups, authenticated, and public principals. Delegated credentials act as their user.
 
-Choose exactly one principal with `--user`, `--group`, `--service-account`, `--authenticated`, or `--public`. `--service-account` is accepted only for a Base; `--public` is accepted only for a Grids App. The `access list` table shows standalone and agent service-account grants, with type `agent` for agents; grants of resource-bound service accounts, such as legacy Grids App entries, appear only with `--include-service-accounts`, with type `resource-bound`. Existing Grids App service-account entries can be removed with `access revoke --access-id <id> --yes`, but they do not authorize app runtime. `access grant` creates a direct grant. `access set` updates or creates it. `access revoke` requires `--yes` and either a principal or `--access-id`.
+Choose exactly one principal with `--user`, `--group`, `--service-account`, `--authenticated`, or `--public`. `--service-account` is accepted only for a base; `--public` is accepted only for a Grids App. The `access list` table shows standalone and agent service-account grants, with type `agent` for agents; grants of resource-bound service accounts, such as legacy Grids App entries, appear only with `--include-service-accounts`, with type `resource-bound`. Existing Grids App service-account entries can be removed with `access revoke --access-id <id> --yes`, but they do not authorize app runtime. `access grant` creates a direct grant. `access set` updates or creates it. `access revoke` requires `--yes` and either a principal or `--access-id`.
 
 ## Build and operate workflows
 
@@ -1448,7 +1448,7 @@ steps:
 ```
 
 Both steps use the same captured rows. Each creates one immutable Document; a retry of that step returns its existing Document.
-Generation rechecks execution authorization: direct runs require Base Write; published App Workflows use their authorized launcher within the same Base, without personal Base grants or a UI-table restriction. Dry-runs validate but do not render files.
+Generation rechecks execution authorization: direct runs require base Write; published App Workflows use their authorized launcher within the same base, without personal base grants or a UI-table restriction. Dry-runs validate but do not render files.
 The Document belongs to the workflow, not a dummy Record; find it under **All Documents** or the workflow run.
 Downloads and public download links use the stored primary artifact in any supported format.
 
@@ -1463,7 +1463,7 @@ This source has no implied Record identity or GQL provenance. Financial exports 
 
 For already issued Documents, select their saved data, not current Records:
 `data: { documents: [DOC001], columns: [{ key: number, type: text, path: [number] }] }`.
-`documents` is an ordered list of 1–10,000 unique public Document IDs from this Base, or a workflow expression producing that list.
+`documents` is an ordered list of 1–10,000 unique public Document IDs from this base, or a workflow expression producing that list.
 Each Document contributes exactly one row. Column `path` is a literal array of property names rooted at `id`, `number`,
 `createdAt`, `data` (stored render data), `profile` (stored profile input, nullable), or `output` (stored derived profile values, nullable).
 For example, `[profile, amount]` reads a saved profile's `amount` property only if that profile actually has it.
@@ -1487,7 +1487,7 @@ For manual Record snapshots, use `snapshots` instead of `documents`:
 Use public snapshot IDs returned by `snapshots list|create|get` and public Field IDs in `root.data` paths.
 The context is the public snapshot returned by `snapshots get`: `root` holds the historical Record,
 and `[graph, records]` selects the related-record map as a `json` cell. Paths do not expand arrays or map entries.
-Each selected snapshot contributes one row; IDs must be unique and belong to this Base. The same row and byte limits apply.
+Each selected snapshot contributes one row; IDs must be unique and belong to this base. The same row and byte limits apply.
 Current root access and existence are required. Related Records are redacted using the snapshot API's current access checks;
 lost access never falls back to live values. Issuance rechecks the captured source-table permissions.
 This is a manual Record snapshot, not an issued invoice: use `documents` when the issued Document is the authority.
@@ -1502,7 +1502,7 @@ Joins, including self-joins, are rejected. Only the selected root Records are pr
 are not recursively versioned, even if they refer to another Record in the same table. Guard those Records explicitly.
 A dry-run checks the workflow but cannot promise which versions the later query will capture; it states that limitation.
 The array can come from a workflow expression; provide 1–10,000 unique Record identities, public IDs,
-and positive integer versions. All must belong to this Base and remain readable and undeleted.
+and positive integer versions. All must belong to this base and remain readable and undeleted.
 Grids checks them when reserving the preview, reading/confirming it, and creating the file. The final check locks
 those Records through issuance. Any version change conflicts; start a new export and review its data.
 To protect approvals, first select only approved Records and pass the versions observed with that selection.
@@ -1578,7 +1578,7 @@ corrected inputs to change them. Local XML validation does not guarantee bank ac
 
 `businessId` identifies the business event across runs, not a generated export row. DATEV may have multiple postings per event,
 each with a unique `entryId`. SEPA requires one row per event and unique `endToEndId` values. Grids reserves event identities
-per Base, destination and accounting/payment purpose. A completed export prevents a new export of the same events to that target;
+per base, destination and accounting/payment purpose. A completed export prevents a new export of the same events to that target;
 download its stored Document again instead. A replay of the same step returns the same Document. Query joins and accounting
 correctness remain the workflow author's responsibility; identifiers do not prove that sums or approval rules are correct.
 
@@ -1603,7 +1603,7 @@ entry chooses `query: {source, parameters}` or a bound `table` with 1–20 `wher
 `field`, `op`, optional `value`, and optional `caseInsensitive`. Optional `message` controls the failed-check text. `changes` contains only
 `createRecord` entries (`table`, non-empty `values`), `updateRecord` entries (`record`, non-empty `set`, optional `ifVersion`, optional
 `audit`), or `finalizeRecord` entries (`record`, one record reference, never a list). All explicit locks, change targets and document-validation targets share the 100-record limit. Finalization requires enabled direct Finalization and does not bypass Four-eyes approval.
-Place finalization after updates; a later rejected change rolls it back too. Grids rechecks direct Base rights or published App Workflow authorization and commits the writes, relations, audit rows, event outbox, and step outcome
+Place finalization after updates; a later rejected change rolls it back too. Grids rechecks direct base rights or published App Workflow authorization and commits the writes, relations, audit rows, event outbox, and step outcome
 together. A failure rolls back all of them. Dry run validates and evaluates but neither locks nor writes.
 
 `deleteRecord` is a separate transactional action: it moves an editable record to Trash, preserves its history, and respects the table's workflow mutation policy. It cannot delete a finalized record or its issued documents. Retrying the same successful step does not delete twice. A Custom App can offer this action on its draft list so the user remains on an existing page after deletion.
@@ -1618,7 +1618,7 @@ Assertions test row existence, not cell truth: one row with `false` or `COUNT = 
 
 Optional `validateDocuments: [{template, record}]` (1–50 entries) validates profile-template inputs after all changes and before commit. HTML templates fail with `DOCUMENT_PROFILE_REQUIRED`. References use the same syntax as `generateDocument`; the template must be enabled and belong to the record's table. A schema/permission/input failure rolls back the whole action, including finalization. It does not issue a document, reserve a document number, or render a PDF. Building the input may create the record's idempotent scan code on the same transaction; rollback removes that change too. Use frozen record values in the profile mapping; issuance-only values such as the new document number are unavailable. Dry run checks the targets but cannot validate the post-change data. Generate the document in a later step; rendering failures can then be retried separately.
 
-Relation field values in `createRecord`/`updateRecord` and relation-filter values use public Record IDs (for example `${{ inputs.item.recordId }}`), not internal UUIDs, display labels, or whole record-reference objects. Record targets and locks still use references such as `inputs.item`. Relation targets must remain readable in the expected table and Base, including during dry run.
+Relation field values in `createRecord`/`updateRecord` and relation-filter values use public Record IDs (for example `${{ inputs.item.recordId }}`), not internal UUIDs, display labels, or whole record-reference objects. Record targets and locks still use references such as `inputs.item`. Relation targets must remain readable in the expected table and base, including during dry run.
 
 An empty query has no row to lock. Competing reservation workflows must therefore name the same stable coordination record in `locks`, then
 check for the absence of an active relation while that record is locked:
@@ -1893,7 +1893,7 @@ Do not invent a Grids command or use direct SQL to fill the gap.
   replay use `record-events failures|replay` and require platform administration.
 - Base-wide Document folder browsing and template restore/reorder: use the
   document API catalog; the dedicated `documents browse` is template-scoped.
-- Built-in Base templates (`templates list|instantiate`) are distinct from GUI
+- Built-in base templates (`templates list|instantiate`) are distinct from GUI
   Document layout and Workflow starters. Those starters are editable examples,
   not additional renderer types or hidden workflow actions.
 - Operator settings: `grids.workflow_concurrency` is the positive integer number
@@ -1912,7 +1912,7 @@ Do not invent a Grids command or use direct SQL to fill the gap.
 
 ## Runtime and operational access
 
-Platform administrators can inspect and replay retained event delivery failures. This is not a Base-admin privilege:
+Platform administrators can inspect and replay retained event delivery failures. This is not a base-admin privilege:
 
 ```bash
 cld grids record-events failures <base-id> --offset 0 --json
@@ -1921,11 +1921,11 @@ cld grids record-events replay <base-id> <failure-id> --yes --json
 
 Failure lists return 100 items and `nextOffset`, without retained payloads. Use the exact operational failure UUID from that list. Replay uses the original event and only accepts stopped entries; acceptance is not proof of successful processing.
 
-The app CLI covers terminal workflows; Cloud Capabilities remain a curated daily-task interface, not a mirror of administrative commands. App-only readers use `apps runtime`, not raw Base commands.
+The app CLI covers terminal workflows; Cloud Capabilities remain a curated daily-task interface, not a mirror of administrative commands. App-only readers use `apps runtime`, not raw base commands.
 
 ### Use a published App
 
-Start with the App's public ID from `/apps/<id>`. No Base grant or default Base is needed.
+Start with the App's public ID from `/apps/<id>`. No base grant or default base is needed.
 Publishing does not grant runtime access: assign an App read grant to the intended
 user or group with `access grant app` first. Base administration alone does not
 replace that grant. An unavailable or unauthorized private App can return 404.
@@ -1949,7 +1949,7 @@ Direct published-runtime HTTP reads use `_search`, `_cursor`, and `_limit` for l
 
 `update` takes `{values,audit?}`; only the published editable fields can change. `scan` takes `{operationId,expectedRevision,scannedText,inputs?}` using the discovered revision and prompt inputs. `submit` and `sidebar-submit` accept field values or `{data,inlineCreates?,idempotencyKey?}`. Do not supply fixed fields. Use an explicit stable `idempotencyKey` and the identical body on retries; unkeyed creates can duplicate. An edit Form additionally requires root `version` and may accept `inlineUpdates`; see the Form submission contract above. Commands that submit, update, scan or run actions require `--yes`.
 
-`comments create|update` takes `--body '{"body":"Markdown"}'`; update/delete also need `--comment <id>`. File commands take the discovered File field as the fourth argument: upload/replace use `--file <path>`, existing files use `--id <id>`, downloads use `--out <path>`. Delete and replace require `--yes`. `document` downloads the exact stored PDF with `--out`. All writes retain runtime authentication, availability and permission checks. App grants never grant raw Base access, but a published App Workflow may deliberately read/write other tables in the same Base absent from the UI. Grids checks the App grant, exact published Workflow/revision/inputs and Base boundary; UI tables and `recordQueries` do not restrict Workflow internals. Base admins own business restrictions and any data disclosed through exports. JSONL keeps the complete page envelope, including cursors.
+`comments create|update` takes `--body '{"body":"Markdown"}'`; update/delete also need `--comment <id>`. File commands take the discovered File field as the fourth argument: upload/replace use `--file <path>`, existing files use `--id <id>`, downloads use `--out <path>`. Delete and replace require `--yes`. `document` downloads the exact stored PDF with `--out`. All writes retain runtime authentication, availability and permission checks. App grants never grant raw base access, but a published App Workflow may deliberately read/write other tables in the same base absent from the UI. Grids checks the App grant, exact published Workflow/revision/inputs and base boundary; UI tables and `recordQueries` do not restrict Workflow internals. Base admins own business restrictions and any data disclosed through exports. JSONL keeps the complete page envelope, including cursors.
 
 ### Daily capabilities
 

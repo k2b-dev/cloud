@@ -8,7 +8,7 @@ For compact forms, set `width: "compact"` on each selected user-input or compute
 
 Published private App pages send signed-out visitors to login and return to the same path and query. Public Apps stay public; signed-in visitors without a grant still receive 404. This does not change API or download authentication.
 
-For draft PDF previews in a Custom App, opt in with `record.documents: {templateIds: [...], preview: true}`. This grants the template's queried data to app readers. Only saved, unfinalized records can be previewed; no document or number is issued. Source interpolation permits only `{{ record.id }}` and `{{ record.shortId }}`, without Liquid filters or tags. Republish after template or Base schema changes. See the installed Custom App API help for the complete contract.
+For draft PDF previews in a Custom App, opt in with `record.documents: {templateIds: [...], preview: true}`. This grants the template's queried data to app readers. Only saved, unfinalized records can be previewed; no document or number is issued. Source interpolation permits only `{{ record.id }}` and `{{ record.shortId }}`, without Liquid filters or tags. Republish after template or base schema changes. See the installed Custom App API help for the complete contract.
 
 Keep editing and issuance on separate pages: a workflow uses saved records, not unsaved form inputs. The billing template returns from its edit form to a read-only review page using `onSuccessNavigate`; preview and issuance live there.
 
@@ -22,7 +22,7 @@ Write a short acceptance checklist. For each transition, state who may invoke it
 | --- | --- | --- | --- |
 | Simple asset register | Items, Locations and optionally Categories; one unique generated asset code per physical item | A scan resolves the same item after its label changes; duplicate external codes are rejected | No loan ledger or workflow needed just to list equipment |
 | Equipment loans | Items, Loans, Loan positions; each position links one item and loan and records issue/return state and timestamps | Two concurrent issues of one item produce one handover; a returned position cannot return a later loan; damaged items are not made available | Kits describe requested bundles, not reservations. Future date-range booking is a separate rule. Do not mix serialised assets with quantities |
-| CRM | Organisations, Contacts, Opportunities, Activities; owner is a Principal and customer is a relation | Sales users see only the intended opportunities, including through copied detail URLs; stage actions retain history | Base Read sees the whole Base. Use separately shared Apps and server-side audience queries for narrower access, not personal Views as security |
+| CRM | Organisations, Contacts, Opportunities, Activities; owner is a Principal and customer is a relation | Sales users see only the intended opportunities, including through copied detail URLs; stage actions retain history | Base Read sees the whole base. Use separately shared Apps and server-side audience queries for narrower access, not personal Views as security |
 | Invoicing | Customers, Invoices, Invoice lines; stored quantity/unit price/tax facts, computed totals, document template, delivery state | Issue once under one operation key; source edits cannot change an issued Document; a second delivery request cannot race the first | An HTML Invoice starter is not an E-Invoice. Inspect installed renderers and their supported currency, tax and correction cases. Grids supplies no automatic tax, accounting or legal guarantee |
 | Expense reimbursement | Claims, Claim lines, receipt Files, claimant Principal, approval state and payment reference | A claimant cannot approve their own claim; later edits invalidate the exact reviewed version; retries cannot submit a second payment | Four-eyes Finalization supplies version-bound review when its model fits. Payment execution belongs to an explicitly integrated payment system, not a Paid checkbox |
 | Merchandise management | Products, Locations, stock movements, order headers/lines, receipt and shipment positions; optional serial/lot records when required | Concurrent picks cannot over-allocate; partial receipts, shipments and returns retain their order-line links; reversing a movement does not rewrite history | First define the bounded scope. Grids is not a prebuilt ERP: accounting, valuation, taxes, procurement optimisation, carrier and payment integrations require explicit owners and verified operations |
@@ -42,14 +42,14 @@ Finalization before an invoice number with `assignment: "finalization"`.
 Read [document profiles](documents.md) before choosing invoice or export
 formats; display settings and HTML layout do not implement financial validation.
 
-1. Run `cld apps list --json`, then `cld grids bases ls --json`. Confirm the intended Base or create a dedicated one with the user's authorization. Avoid changing a similarly named production Base by assumption.
-2. Inspect `cld grids templates list --json`. `templates instantiate inventory --empty --json` creates the complete configuration without sample records. Read the resulting tables, fields, Forms, Workflows and Apps; template updates do not rewrite previously created Bases.
+1. Run `cld apps list --json`, then `cld grids bases ls --json`. Confirm the intended base or create a dedicated one with the user's authorization. Avoid changing a similarly named production base by assumption.
+2. Inspect `cld grids templates list --json`. `templates instantiate inventory --empty --json` creates the complete configuration without sample records. Read the resulting tables, fields, Forms, Workflows and Apps; template updates do not rewrite previously created bases.
 3. Read `fields types`, `fields type <type>`, `records shape <table>`, `gql reference`, `workflows reference`, `apps reference`, and the document reference only as each becomes relevant. Keep the returned public IDs in a small local resource map; names are labels and can be ambiguous.
-4. Create all tables, then fields and relations, then lookups/formulas, then sample records. Create Views, Forms, document/email templates and Workflows before the launchers and App that use them. App YAML is not a whole-Base deployment bundle.
+4. Create all tables, then fields and relations, then lookups/formulas, then sample records. Create Views, Forms, document/email templates and Workflows before the launchers and App that use them. App YAML is not a whole-base deployment bundle.
 5. Validate GQL, formulas and workflow YAML with the installed compiler. Pass JSON/YAML through files. Read every created resource back. If a multi-command build stops, continue from the returned IDs; blindly replaying creates can duplicate resources. Form submission supports an explicit stable `idempotencyKey`; retry the exact body under that key. Unkeyed Form creation and record import can duplicate on retry.
 6. Configure access and build the App draft. Run `apps validate`, `apps plan`, and `apps apply` using the syntax returned by command help. Review the derived capabilities; publish only after the intended audience journey is checked.
 
-The CLI covers authoring; daily capabilities deliberately do not. Do not expect a schema-building or arbitrary workflow capability. App-only readers operate through `apps runtime`, without a raw Base grant.
+The CLI covers authoring; daily capabilities deliberately do not. Do not expect a schema-building or arbitrary workflow capability. App-only readers operate through `apps runtime`, without a raw base grant.
 
 ## Keep state changes atomic and effects recoverable
 
@@ -73,7 +73,7 @@ Configure Table Record changes to allow only the entry paths needed by the proce
 
 ## Build the audience journey, not just a dashboard
 
-Organize the Base overview with shared navigation groups once the resources exist. A group such as Loans or Invoices can link an App, View, Form, Workflow and Document template without changing their ownership or permissions. Views may join multiple tables; group them by the task, not their technical source table. Use `bases navigation get` and `bases navigation set` with the current revision and returned public IDs (see [shared base navigation](grids.md#shared-base-navigation)). Keep the complete resource lists available and avoid duplicating the same shortcut within a group. These groups organize the Base workspace, not the navigation inside a published App.
+Organize the base overview with shared navigation groups once the resources exist. A group such as Loans or Invoices can link an App, View, Form, Workflow and Document template without changing their ownership or permissions. Views may join multiple tables; group them by the task, not their technical source table. Use `bases navigation get` and `bases navigation set` with the current revision and returned public IDs (see [shared base navigation](grids.md#shared-base-navigation)). Keep the complete resource lists available and avoid duplicating the same shortcut within a group. These groups organize the base workspace, not the navigation inside a published App.
 
 Start with a task list, a hidden Record detail page, and a create Form. Add the fields, documents, comments and actions needed for that journey. Use stable local page/block IDs and returned public resource IDs. Record page parameters are required typed Record IDs; they are not arbitrary search or filter strings.
 
@@ -85,7 +85,7 @@ App workflow actions must bind every required input; `inputMode: "prompt"` does 
 
 Use Referenced records for an exact incoming relation, with bounded pagination and scoped row actions. Choose table versus cards for the work, give empty states a next action, and keep bulk work explicitly bounded. Embedded scanners support scalar session/after-scan prompts; record-picker prompts belong to the full scanner. Do not promise a stocktake or offline scanner without proving that workflow.
 
-Base admins build resources. Base Write grants broad operational access. Customer, requester and staff Apps can be ordinary separately shared Apps; do not invent table grants or an admin-app type. Four-eyes approval groups do not themselves grant Base access.
+Base admins build resources. Base Write grants broad operational access. Customer, requester and staff Apps can be ordinary separately shared Apps; do not invent table grants or an admin-app type. Four-eyes approval groups do not themselves grant base access.
 
 Four-eyes Finalization prevents the person requesting finalization from approving that request. It does not compare the approver with an arbitrary claimant field. If someone submits on a claimant's behalf, enforce that additional business exclusion explicitly. Review is bound to the target Record's version, not recursively to all related lines or files on other Records. An invoice or claim header cannot certify unchanged child Records by itself. Design the submitted evidence and edit restrictions accordingly; immutable generated Documents retain their captured data, but do not finalize the live graph.
 
@@ -93,7 +93,7 @@ Four-eyes Finalization prevents the person requesting finalization from approvin
 
 For each audience, check the published runtime using that audience's real authorized account. An admin-only successful preview does not prove customer isolation; do not grant broader access just to make a test pass. If no such account is available, report that verification gap.
 
-- Empty Base, one normal record, long text and a multipage result.
+- Empty base, one normal record, long text and a multipage result.
 - Reload and copied detail URL; malformed, missing, deleted and another user's Record ID.
 - Required/fixed fields, direct-edit restrictions and denied workflow actions.
 - Two independent competing business operations, not only the same idempotency key twice.
@@ -105,7 +105,7 @@ Use focused compiler/API/runtime checks first. Browser checks are needed for int
 
 ## What the built-in templates provide
 
-Every built-in template includes enabled Workflows, Document templates and at least one published Custom App. Each App exposes stored Documents on Record details through an exact template allowlist; generation remains an explicit workflow action or Base operation. Order and Transaction rows open their detail page, and their create Forms navigate there after submission. Template updates only affect newly created Bases.
+Every built-in template includes enabled Workflows, Document templates and at least one published Custom App. Each App exposes stored Documents on Record details through an exact template allowlist; generation remains an explicit workflow action or base operation. Order and Transaction rows open their detail page, and their create Forms navigate there after submission. Template updates only affect newly created bases.
 
 - **Inventory:** individually labelled items, kits, loan requests, planned loan positions, atomic issue/return and closing, agreement delivery, labels and defect reporting. On a requested loan's detail page, staff add individual Items before approval. After agreement delivery starts the loan, they issue each position and return its current allocation by scanning. Every planned position must be issued and returned before closing; there is no partial cancellation action. Kits and manual availability confirmation do not enforce future booking intervals.
 - **Bookshop:** itemised orders and an HTML invoice/dispatch example. Order details show lines, readiness, delivery state and generated invoices. Add lines from the overview, then review and release the order for invoicing. It is not stock control, payment collection or automatic E-Invoice issuance.

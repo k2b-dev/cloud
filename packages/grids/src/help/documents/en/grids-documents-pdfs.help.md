@@ -7,7 +7,7 @@ order: 135
 ---
 Document templates create PDFs from table records, for example invoices, contracts, and labels.
 
-Each template belongs to one table and defines one document family. A generated document belongs to one selected record. It receives a stable number and filename and keeps the exact source snapshot after the live records change. It appears in the Documents section of the record, in its template workspace, and in the **All documents** catalog of the Base.
+Each template belongs to one table and defines one document family. A generated document belongs to one selected record. It receives a stable number and filename and keeps the exact source snapshot after the live records change. It appears in the Documents section of the record, in its template workspace, and in the **All documents** catalog of the base.
 
 Use templates for formatted, shareable output. Use CSV or JSON exports for data exchange.
 
@@ -74,7 +74,7 @@ For an E-Invoice template, choose its renderer and map the preview data in **Ren
 
 ## Create your first template {icon="file-description"}
 
-You need **Manage** access to the Base to create and edit templates.
+You need **Manage** access to the base to create and edit templates.
 
 :::steps
 1. **Open templates:** Open the table in **Edit mode** and choose **Templates**. Templates belong to the table that they generate documents for.
@@ -83,7 +83,7 @@ You need **Manage** access to the Base to create and edit templates.
 4. **Inspect before you edit:** **Source** shows the GQL with inserted record values. **Data** shows the exact Liquid paths. **Preview** shows the PDF.
 5. **Change one layer at a time:** Adjust the GQL when the data is wrong. Adjust Body, Header, Footer, or Page CSS when the layout is wrong.
 6. **Preview representative data:** Test long text, missing values, many rows, and page breaks. The editor creates new templates disabled.
-7. **Enable and test:** Then people with **Edit** access to the Base can select a record and generate a saved document.
+7. **Enable and test:** Then people with **Edit** access to the base can select a record and generate a saved document.
 :::
 
 The selected preview record is only test context. When people generate a document later, they select the actual record. They can override the filename or add tags.
@@ -98,7 +98,7 @@ Source records and result rows are different counts. A join can repeat a record,
 
 A simple row query on a stored table captures its record identities automatically. For an aggregate or joined export, a workflow author can set `associatedData` to a previously captured row query. Grids does not run this selection again after generation. Source versions describe the captured state. Record links open the current record.
 
-Membership in a document never gives access to the whole batch. People with access to the Base can inspect these documents. Grids Apps still expose only the documents that the published app explicitly allows for a record. Creating a SEPA file does not mean that its transfers are paid.
+Membership in a document never gives access to the whole batch. People with access to the base can inspect these documents. Grids Apps still expose only the documents that the published app explicitly allows for a record. Creating a SEPA file does not mean that its transfers are paid.
 
 ## Start from a starter {icon="square-plus"}
 
@@ -119,7 +119,7 @@ Starters are editable templates, not fixed document types. Pick the closest stru
 
 ## Edit the parts of a template {icon="table"}
 
-A template has one data part and up to four layout parts. Grids renders the GQL source with Liquid first. The source can therefore use the selected `record`, the public `app` values, and the `business` values of the Base before Grids parses the query.
+A template has one data part and up to four layout parts. Grids renders the GQL source with Liquid first. The source can therefore use the selected `record`, the public `app` values, and the `business` values of the base before Grids parses the query.
 
 | Part | Language | Purpose | Common use |
 | --- | --- | --- | --- |
@@ -135,14 +135,14 @@ PDFs render offline. Scripts do not run, and remote images, stylesheets, and fon
 
 The **Data** tab is the source of truth for the current preview record. It shows the exact shape that Liquid receives after the GQL source has run. Copy paths from this tree. Do not guess object shapes.
 
-Think of the data in layers. `record` is the selected record. `rows` and `columns` are the GQL result. `document` describes a saved document. `template`, `document`, and `date` provide stable metadata for numbers and filenames. `app` contains public platform branding. `business` contains the shared document details of the Base. Rows also expose the GQL output labels, so readable aliases make templates easier to maintain.
+Think of the data in layers. `record` is the selected record. `rows` and `columns` are the GQL result. `document` describes a saved document. `template`, `document`, and `date` provide stable metadata for numbers and filenames. `app` contains public platform branding. `business` contains the shared document details of the base. Rows also expose the GQL output labels, so readable aliases make templates easier to maintain.
 
 :::reference
 - **record:** The current record: public `record.id` and `record.tableId`, `record.version`, `record.data`, and the created and updated timestamps.
 - **rows and columns:** The rows and columns that the GQL source returns. Use `column.key` to access a row and `column.label` for readable headers.
 - **template, document, date:** Stable metadata for patterns and document text: `{{ template.name }}`, `{{ template.id }}`, `{{ document.id }}`, `{{ date.iso }}`, and `{{ date.yyyyMMdd }}`. Draft previews use draft document values until a document exists.
 - **app:** Public platform values for document branding: `{{ app.name }}`, `{{ app.contactEmail }}`, `{{ app.url }}`, `{{ app.logoDataUri }}`, and `{{ app.timezone }}`.
-- **business:** Document details of the Base, configured in **Base settings → Documents**. `business.legalName` is the explicit issuer name. When it is not set, it stays empty and never inherits `app.name`. `business.address` contains the street and building lines, as entered. Use `business.postalCode`, `business.city`, and `business.countryCode` separately. The tax number and the VAT ID are separate (`business.taxId`, `business.vatId`). `business.accountName` is the account holder, together with `business.iban`, `business.bic`, and `business.bankName`. The sender line, payment terms, footer, and contact fields stay available.
+- **business:** Document details of the base, configured in **base settings → Documents**. `business.legalName` is the explicit issuer name. When it is not set, it stays empty and never inherits `app.name`. `business.address` contains the street and building lines, as entered. Use `business.postalCode`, `business.city`, and `business.countryCode` separately. The tax number and the VAT ID are separate (`business.taxId`, `business.vatId`). `business.accountName` is the account holder, together with `business.iban`, `business.bic`, and `business.bankName`. The sender line, payment terms, footer, and contact fields stay available.
 - **images:** Image files attached to file fields of the selected record. Use `{{ primaryImage.url }}` for the first supported image, or loop over `images`. Grids leaves out oversized and unsupported files.
 - **document:** Document metadata such as `{{ document.number }}` and `{{ document.createdAt }}`. Use it in filenames and in the body, header, or footer HTML after the number pattern has rendered. Draft previews can lack final values.
 - **snapshot:** The captured record graph of a generated document. It is null in live draft previews.
@@ -465,7 +465,7 @@ Additional BWIP symbol ids
 
 The document page of a template lists every document that the template generated. Use **Table** for a searchable list or **Folders** to browse by year and month. A search switches to the table result, so folders never hide matching documents.
 
-**All documents** lists every document of the Base in any file format, whether a template, a workflow, or both produced it. It opens in **Folders**, grouped by document template or workflow and then by year. Its search covers filenames, document numbers, and tags of the whole Base, regardless of the open folder. Both document pages include their first results when the page loads.
+**All documents** lists every document of the base in any file format, whether a template, a workflow, or both produced it. It opens in **Folders**, grouped by document template or workflow and then by year. Its search covers filenames, document numbers, and tags of the whole base, regardless of the open folder. Both document pages include their first results when the page loads.
 
 ### Filter and sort all documents
 
@@ -496,11 +496,11 @@ The main download keeps the stored file format. Share links serve the same prima
 
 ### Control access to documents
 
-- **View** access to the Base allows browsing and downloading generated documents again.
+- **View** access to the base allows browsing and downloading generated documents again.
 - **Edit** access also allows generation.
 - **Manage** access is required to create and change templates.
 
-A person who uses a Grids App can download only a document for the current page record. Its template must be in the published capability of that Record block. This app-scoped download gives no general access to the documents of the Base.
+A person who uses a Grids App can download only a document for the current page record. Its template must be in the published capability of that Record block. This app-scoped download gives no general access to the documents of the base.
 
 ### Share a document with a public link
 

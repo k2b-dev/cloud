@@ -187,7 +187,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
       requirePublicIdParam("baseId", "base", "Base"),
       describeRoute({
         tags: ["Grids:Base"],
-        summary: "Read the Base retention floor",
+        summary: "Read the base retention floor",
         responses: {
           200: jsonResponse(RetentionPolicyResponseSchema, "Retention policy"),
           403: jsonResponse(ErrorResponseSchema, "Forbidden"),
@@ -425,7 +425,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
       requirePublicIdParam("baseId", "base", "Base"),
       describeRoute({
         tags: ["Grids:Base"],
-        summary: "Preview a Base retention floor",
+        summary: "Preview a base retention floor",
         responses: {
           200: jsonResponse(RetentionPreviewSchema, "Bounded retention preview"),
           400: jsonResponse(ErrorResponseSchema, "Invalid retention floor"),
@@ -447,7 +447,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
       requirePublicIdParam("baseId", "base", "Base"),
       describeRoute({
         tags: ["Grids:Base"],
-        summary: "List trashed Records under a Base retention floor",
+        summary: "List trashed Records under a base retention floor",
         responses: {
           200: jsonResponse(RetentionRecordsResponseSchema, "Retained Records"),
           400: jsonResponse(ErrorResponseSchema, "Invalid query"),
@@ -483,7 +483,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
       requirePublicIdParam("baseId", "base", "Base"),
       describeRoute({
         tags: ["Grids:Base"],
-        summary: "List unreferenced Files under a Base retention floor",
+        summary: "List unreferenced Files under a base retention floor",
         responses: {
           200: jsonResponse(RetentionFilesResponseSchema, "Retained Files"),
           400: jsonResponse(ErrorResponseSchema, "Invalid query"),
@@ -547,7 +547,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
       requirePublicIdParam("baseId", "base", "Base"),
       describeRoute({
         tags: ["Grids:Base"],
-        summary: "Set the Base retention floor",
+        summary: "Set the base retention floor",
         responses: {
           200: jsonResponse(RetentionPolicyResponseSchema, "Retention policy updated"),
           400: jsonResponse(ErrorResponseSchema, "Invalid retention floor"),
@@ -570,7 +570,7 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
       requirePublicIdParam("baseId", "base", "Base"),
       describeRoute({
         tags: ["Grids:Base"],
-        summary: "Remove the Base retention floor",
+        summary: "Remove the base retention floor",
         responses: {
           204: { description: "Retention policy removed" },
           403: jsonResponse(ErrorResponseSchema, "Forbidden"),

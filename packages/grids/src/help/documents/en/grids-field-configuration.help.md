@@ -2,7 +2,7 @@
 id: grids-field-configuration
 title: Field configuration reference
 icon: ti ti-adjustments
-description: Look up field types, options, generated IDs, defaults, and object-list columns when you configure a Base.
+description: Look up field types, options, generated IDs, defaults, and object-list columns when you configure a base.
 order: 111
 ---
 Use this reference when you configure a field through the CLI or API. To choose a field, read [Tables & fields](/app/grids/help/grids-tables-fields). Run `cld grids fields types --json` for the live catalog and `cld grids fields type <type> --json` for one type. Do not infer the configuration from the display label of a field.

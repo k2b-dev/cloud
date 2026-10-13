@@ -37,7 +37,7 @@ describe("record parent invariants", () => {
       });
 
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.message).toBe("The parent Table or Base is in the trash. Restore the parent first.");
+      if (!result.ok) expect(result.error.message).toBe("The parent Table or base is in the trash. Restore the parent first.");
       const [{ count } = { count: 0 }] = await sql<Array<{ count: number }>>`
         SELECT count(*)::int AS count FROM grids.records WHERE table_id = ${fixture.tableId}::uuid
       `;
@@ -60,7 +60,7 @@ describe("record parent invariants", () => {
       const result = await restore(fixture.tableId, recordId, null, "direct");
 
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.message).toBe("The parent Table or Base is in the trash. Restore the parent first.");
+      if (!result.ok) expect(result.error.message).toBe("The parent Table or base is in the trash. Restore the parent first.");
       const [row] = await sql<Array<{ deleted: boolean }>>`
         SELECT deleted_at IS NOT NULL AS deleted FROM grids.records WHERE id = ${recordId}::uuid
       `;

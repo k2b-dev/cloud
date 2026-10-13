@@ -24,7 +24,7 @@ const formServiceMessages = i18n.define({
       insertFailed: "The Form could not be created.",
       updateFailed: "The Form could not be updated.",
       restoreFailed: "The Form could not be restored.",
-      tableUnavailable: "The parent table or Base is unavailable. Restore it first.",
+      tableUnavailable: "The parent table or base is unavailable. Restore it first.",
       storedTableRequired: "Forms can be created only for stored tables.",
       inlineFieldLimit: ({ count }: { count: number }) => `A relation may create at most ${count} records per submission.`,
       inlineSubmissionLimit: ({ count }: { count: number }) => `A Form may create at most ${count} related records per submission.`,
@@ -57,7 +57,7 @@ const formServiceMessages = i18n.define({
       inlineRequiresRelation: ({ field }: { field: string }) =>
         `Field “${field}” cannot create related records because it is not a relation.`,
       invalidConfig: "The Form configuration is invalid.",
-      relationFilterTarget: "Filtered relation inputs require a stored target table in the same Base and cannot use inline creation.",
+      relationFilterTarget: "Filtered relation inputs require a stored target table in the same base and cannot use inline creation.",
       relationFilterInvalid: ({ field }: { field: string }) => `The selection filter for “${field}” is invalid or has changed.`,
       relationSelectionUnavailable: ({ field }: { field: string }) =>
         `An entry selected in “${field}” is no longer available. Choose an available entry.`,

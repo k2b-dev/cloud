@@ -110,7 +110,7 @@ const messages = i18n.define({
       note: "Notes",
       amount: "Amount (EUR)",
       date: "Payment date",
-      startHelp: "Company and bank details are shared by all documents. A Base admin manages them under Base settings → Documents.",
+      startHelp: "Company and bank details are shared by all documents. A base admin manages them under base settings → Documents.",
       draft: "Save draft",
       saved: "Draft saved. Review it before issuing.",
       newInvoice: "New invoice",

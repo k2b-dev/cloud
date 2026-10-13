@@ -11,9 +11,9 @@ You do not need GQL for ordinary table work. Start with the **Search**, **Filter
 
 ## Query with AI {icon="sparkles"}
 
-Choose **Query with AI** in the editor to open an Assistant draft with this Base, source, and query. Add what you want to find, then send it. Assistant discovers relevant fields, checks queries, and shows actual results with the same access as the editor. This chat cannot change records or the schema.
+Choose **Query with AI** in the editor to open an Assistant draft with this base, source, and query. Add what you want to find, then send it. Assistant discovers relevant fields, checks queries, and shows actual results with the same access as the editor. This chat cannot change records or the schema.
 
-Assistant can save a query as a view after you confirm its name and its personal or shared visibility. Both require **Manage** access to the Base. Use the returned link to open the query in a new browser tab. The conversation stays open. If a query is too long for a link, copy it instead. Previews and paginated results are not complete exports.
+Assistant can save a query as a view after you confirm its name and its personal or shared visibility. Both require **Manage** access to the base. Use the returned link to open the query in a new browser tab. The conversation stays open. If a query is too long for a link, copy it instead. Previews and paginated results are not complete exports.
 
 The built-in **cloud-grids** Skill sends Assistant to the current Help for product and administration questions. When no tool supports an operation, Assistant explains the steps in the interface. The Skill gives no additional access.
 
@@ -241,7 +241,7 @@ Grids App queries receive a typed request context automatically. Grids binds the
 | `@params.<name>` | A declared and validated page parameter |
 | `@page.id`, `@page.title`, `@page.url` | Current page identity and canonical relative URL |
 | `@app.id`, `@app.name` | Published Grids App identity |
-| `@base.id`, `@base.name` | Owning Base identity |
+| `@base.id`, `@base.name` | Owning base identity |
 | `@time.now`, `@time.today`, `@time.timeZone` | One request timestamp, local date, and IANA timezone |
 
 Use `@auth.id != null` when a query requires a signed-in account. Match an anonymous app request explicitly with `@auth.id = null`. Unknown namespaces and undeclared parameters are publish errors.
@@ -349,9 +349,9 @@ For automated reads, the CLI can request one bounded page with `--page-size` or 
 
 ## Understand access and supported queries {icon="shield-lock"}
 
-Raw Grids queries require **View** access to the Base and can read the complete Base. Published Grids App queries run through the immutable capability snapshot of the app instead. They cannot escape to undeclared sources or fields.
+Raw Grids queries require **View** access to the base and can read the complete base. Published Grids App queries run through the immutable capability snapshot of the app instead. They cannot escape to undeclared sources or fields.
 
-Autocomplete follows the same boundary. The raw editor uses the current Base schema. A Grids App editor uses a schema-only catalog for that app definition. It does not run queries and does not reveal another Base.
+Autocomplete follows the same boundary. The raw editor uses the current base schema. A Grids App editor uses a schema-only catalog for that app definition. It does not run queries and does not reveal another base.
 
 GQL does not support arbitrary join conditions, subqueries, common table expressions, window functions, or unrestricted expressions, on purpose. An unsupported query fails with a diagnostic. Grids never guesses it or applies it partly.
 
@@ -359,11 +359,11 @@ GQL does not support arbitrary join conditions, subqueries, common table express
 
 Table and view results with rows can be displayed and paged like records. Grouped and aggregate-only results use a summary table and are not editable. You can save compatible query results as views. Grids Apps, documents, and exports can reuse them.
 
-Use a saved view when people return to the result in the raw Base workspace. Keep the GQL local to a Grids App block or document when the query exists only for that resource.
+Use a saved view when people return to the result in the raw base workspace. Keep the GQL local to a Grids App block or document when the query exists only for that resource.
 
 ## Find records with issued documents {icon="search"}
 
-In Base queries on stored tables, `documentCount()` returns the number of distinct associated documents. `latestDocumentAt()` returns their latest creation time, or null. An optional format selects `pdf`, `csv`, `json`, `xml`, `sepa-xml`, or `datev-csv`.
+In base queries on stored tables, `documentCount()` returns the number of distinct associated documents. `latestDocumentAt()` returns their latest creation time, or null. An optional format selects `pdf`, `csv`, `json`, `xml`, `sepa-xml`, or `datev-csv`.
 
 ```gql
 from table Expenses
@@ -382,7 +382,7 @@ Metadata filters inspect the associated documents for each candidate record. Nar
 ## Fix a query {icon="lifebuoy"}
 
 :::reference
-- **Unknown source or field:** Check the spelling, the quoting, the current Base, and your access.
+- **Unknown source or field:** Check the spelling, the quoting, the current base, and your access.
 - **Ambiguous name:** Add a source alias or use a scoped field such as `customer.Name`.
 - **Join must target an id:** Join the relation field to `.id` of the joined alias.
 - **Grouped sort is rejected:** Sort by a group or aggregate output that exists in the summary.
@@ -391,5 +391,5 @@ Metadata filters inspect the associated documents for each candidate record. Nar
 :::
 
 :::note GQL is not a second data model
-GQL shapes saved data. It does not copy records and does not bypass the access, field, or relation rules of the Base.
+GQL shapes saved data. It does not copy records and does not bypass the access, field, or relation rules of the base.
 :::

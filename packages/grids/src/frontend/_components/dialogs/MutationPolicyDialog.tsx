@@ -40,7 +40,7 @@ const SOURCE_OPTIONS: Array<{
   {
     id: "direct",
     label: "Direct editing and record API",
-    description: "Editing in the Base or a Grids App, Record Editor, API, CLI, and imports.",
+    description: "Editing in the base or a Grids App, Record Editor, API, CLI, and imports.",
     icon: "ti ti-edit",
   },
   {

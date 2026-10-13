@@ -215,7 +215,7 @@ export const baseCrudCommands = [
   }),
   command("bases retention files list", {
     summary: "List unreferenced Files under a retention floor",
-    description: "Requires Base admin access. Search, status filtering, and pagination run on the server.",
+    description: "Requires base admin access. Search, status filtering, and pagination run on the server.",
     args: baseArgs,
     flags: {
       ...baseFlag,
@@ -266,7 +266,7 @@ export const baseCrudCommands = [
   }),
   command("bases retention records list", {
     summary: "List trashed Records under a retention floor",
-    description: "Requires Base admin access. Search, status filtering, and pagination run on the server.",
+    description: "Requires base admin access. Search, status filtering, and pagination run on the server.",
     args: baseArgs,
     flags: {
       ...baseFlag,
@@ -316,7 +316,7 @@ export const baseCrudCommands = [
   }),
   command("bases retention files download", {
     summary: "Download one unreferenced retained File",
-    description: "Requires Base admin access and a File public id from `bases retention files list`.",
+    description: "Requires base admin access and a File public id from `bases retention files list`.",
     args: baseArgs,
     flags: { ...baseFlag, out: flag.string({ aliases: ["o"], required: true, description: "Output file path" }) },
     async run({ ctx, args, flags }) {
@@ -369,7 +369,7 @@ export const baseCrudCommands = [
   }),
   command("bases preservation-holds list", {
     summary: "List preservation holds",
-    description: "Requires Base admin access. Search, status, scope, table filtering, and pagination run on the server.",
+    description: "Requires base admin access. Search, status, scope, table filtering, and pagination run on the server.",
     args: baseArgs,
     flags: {
       ...baseFlag,
@@ -420,7 +420,7 @@ export const baseCrudCommands = [
   }),
   command("bases destruction preview", {
     summary: "Preview bounded controlled File destruction",
-    description: "Requires Base admin access. Preview never deletes data and returns at most 100 exact eligible File candidates.",
+    description: "Requires base admin access. Preview never deletes data and returns at most 100 exact eligible File candidates.",
     args: baseArgs,
     flags: { ...baseFlag },
     async run({ ctx, args }) {
@@ -447,12 +447,12 @@ export const baseCrudCommands = [
   }),
   command("bases destruction run", {
     summary: "Start the currently previewed controlled File destruction batch",
-    description: "Irreversible. Pass the exact Base name through --confirm. Eligibility and holds are rechecked before every File.",
+    description: "Irreversible. Pass the exact base name through --confirm. Eligibility and holds are rechecked before every File.",
     args: baseArgs,
-    flags: { ...baseFlag, confirm: flag.string({ required: true, description: "Exact Base name" }) },
+    flags: { ...baseFlag, confirm: flag.string({ required: true, description: "Exact base name" }) },
     async run({ ctx, args, flags }) {
       const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
-      if (flags.confirm !== base.name) throw new Error(`--confirm must exactly match the Base name: ${base.name}`);
+      if (flags.confirm !== base.name) throw new Error(`--confirm must exactly match the base name: ${base.name}`);
       const overview = await readApi<ControlledDestructionOverview>(ctx, `/bases/${encodeURIComponent(base.id)}/controlled-destruction`);
       if (overview.preview.items.length === 0)
         throw new Error("No eligible unreferenced Files are available in the current bounded preview.");
@@ -507,7 +507,7 @@ export const baseCrudCommands = [
   }),
   command("bases preservation-holds create", {
     summary: "Create a preservation hold",
-    description: "Requires Base admin access. The hold blocks future controlled destruction only in its selected scope.",
+    description: "Requires base admin access. The hold blocks future controlled destruction only in its selected scope.",
     args: baseArgs,
     flags: {
       ...baseFlag,

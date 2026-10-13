@@ -5,9 +5,9 @@ icon: ti ti-rocket
 description: Test access, review capabilities, and publish an app snapshot that fails closed.
 order: 135
 ---
-Publishing makes one reviewed snapshot of a Grids App available at its stable URL. Public access to an app makes only that compiled snapshot public. It never opens the raw Base.
+Publishing makes one reviewed snapshot of a Grids App available at its stable URL. Public access to an app makes only that compiled snapshot public. It never opens the raw base.
 
-You need **Manage** access to the Base to edit or publish a Grids App.
+You need **Manage** access to the base to edit or publish a Grids App.
 
 ## Understand the published boundary {icon="shield-lock"}
 
@@ -20,17 +20,17 @@ A caller can use a resource only when every boundary that applies allows it:
 | Availability | Does the server-run `availableWhen` query of this page, block, form, or action return at least one row? |
 | Authentication | Is the caller signed in when they run a workflow action? |
 
-Wider access at one boundary never overrides a denial or a narrower boundary elsewhere. People who use the app do not need access to the Base. Access to the Base does not replace access to the app.
+Wider access at one boundary never overrides a denial or a narrower boundary elsewhere. People who use the app do not need access to the base. Access to the base does not replace access to the app.
 
 You cannot give a service account direct access to a Grids App. Delegated credentials open the app through their user identity.
 
-The app exposes only the resources that its published blocks and actions name. It does not expose the Base workspace, the schema, sibling apps, or unrelated resources. Denied blocks and actions fail without revealing their labels, their configuration, or whether a referenced record exists.
+The app exposes only the resources that its published blocks and actions name. It does not expose the base workspace, the schema, sibling apps, or unrelated resources. Denied blocks and actions fail without revealing their labels, their configuration, or whether a referenced record exists.
 
 Grids derives the capability set of a publication from the app definition. The set lists exact resource IDs and operations, including form submission, editable record fields, document templates, and workflow launchers. The builder and `apps plan` show the derived set. Authors do not keep a second capability list by hand.
 
 ## Review GQL for each audience {icon="filter-lock"}
 
-Use the immutable published query to select the data of an audience. For example, a personal page for signed-in people can use `record.createdBy = @auth.id`. An anonymous page can test `@auth.id = null`. These filters are normal GQL compiled into the app capability. They are not hidden row access in the Base.
+Use the immutable published query to select the data of an audience. For example, a personal page for signed-in people can use `record.createdBy = @auth.id`. An anonymous page can test `@auth.id = null`. These filters are normal GQL compiled into the app capability. They are not hidden row access in the base.
 
 Use separate apps when public and signed-in audiences need different data or actions. Do not build access lists for each page. Do not rely on navigation visibility as authorization.
 
@@ -86,7 +86,7 @@ If the change breaks the draft, for example because someone deactivated a form, 
 After the publication:
 
 :::steps
-1. Open the stable URL as an ordinary account, not only with **Manage** access to the Base.
+1. Open the stable URL as an ordinary account, not only with **Manage** access to the base.
 2. Complete every primary journey, including a refresh and the browser's Back button.
 3. Confirm that copied detail URLs keep only declared parameters.
 4. Try an inaccessible record ID. Verify that the response reveals no record details.

@@ -5,11 +5,11 @@ icon: ti ti-bolt
 description: Diagnose common problems without guessing or losing work.
 order: 150
 ---
-## Reload after the Base structure changed {icon="refresh"}
+## Reload after the base structure changed {icon="refresh"}
 
 When someone else changes the structure of the area you work in, one **Reload** notice appears. The page never reloads on its own, and saving keeps working.
 
-Structure means the name and fields of a table, the source and table of a view, or the definition of an app. Column widths, display modes, view layouts, field order, and changes elsewhere in the Base show no notice. Your own edits in this tab never show the notice.
+Structure means the name and fields of a table, the source and table of a view, or the definition of an app. Column widths, display modes, view layouts, field order, and changes elsewhere in the base show no notice. Your own edits in this tab never show the notice.
 
 Open inputs stay intact until you confirm **Reload**. If a save no longer fits the current structure, for example a value for a deleted field, the server rejects it with a clear message. When you lose access, or an active resource is deleted, Grids hides the affected workspace immediately.
 
@@ -17,7 +17,7 @@ Open inputs stay intact until you confirm **Reload**. If a save no longer fits t
 
 Check that the resource is not in the trash and not disabled. Then find the boundary:
 
-- Raw tables, views, forms, documents, and workflows require access to the Base that owns them.
+- Raw tables, views, forms, documents, and workflows require access to the base that owns them.
 - A published Grids App requires its own **Open** access.
 - Being a Cloud administrator does not bypass Grids access on normal app pages.
 
@@ -46,7 +46,7 @@ Fields that you did not change take their current values. This prevents an older
 
 If the message asks for change context, answer the questions configured in **Table settings → Data integrity**. Protected updates, trash actions, and restores cannot continue without the required answers.
 
-The message can say that this source cannot change the table. Then a person with **Manage** access to the Base must allow the matching source in **Table settings → Data integrity → Record changes**. The Base interface, the API, the CLI, forms, workflows, and Grids App actions all follow this setting. A retry through another client does not bypass it.
+The message can say that this source cannot change the table. Then a person with **Manage** access to the base must allow the matching source in **Table settings → Data integrity → Record changes**. The base interface, the API, the CLI, forms, workflows, and Grids App actions all follow this setting. A retry through another client does not bypass it.
 
 ### Write safely from an integration
 
@@ -64,9 +64,9 @@ For up to 100 independent projections, `cld grids records upsert-external-batch`
 
 ### Follow changes from an integration
 
-For a resumable integration, keep the latest opaque cursor from `cld grids records changes`. The feed contains public Base, table, and record IDs and the committed event type and record version. It contains no snapshot of field values. Read each current record again before you project it.
+For a resumable integration, keep the latest opaque cursor from `cld grids records changes`. The feed contains public base, table, and record IDs and the committed event type and record version. It contains no snapshot of field values. Read each current record again before you project it.
 
-**View** access to the Base is checked on every page. `--table` only narrows the feed of that Base. A change appears once every earlier write has ended. A long import therefore delays the later changes. They are not skipped. If the feed stays empty while records change, ask the operator about a transaction left open on the database server.
+**View** access to the base is checked on every page. `--table` only narrows the feed of that base. A change appears once every earlier write has ended. A long import therefore delays the later changes. They are not skipped. If the feed stays empty while records change, ask the operator about a transaction left open on the database server.
 
 Cursors cover the last 30 days. If a cursor expires, scan all records again and start from the new feed position. Bound automated catch-up with `--all --max-events N`.
 
@@ -85,7 +85,7 @@ An empty result is different from a failed result. Query diagnostics explain syn
 
 Confirm that the form is active. Then check the path:
 
-- A person who works in the Base needs **Edit** access to the Base.
+- A person who works in the base needs **Edit** access to the base.
 - A submission through a Grids App must use a form block that the app includes and that is available.
 - A public form must still be enabled for token access and opened through its current public URL.
 
@@ -129,7 +129,7 @@ An automatic run exists only if the published revision of the workflow was liste
 3. **Trigger match:** Compare the record event, its optional table restriction, and its filter with your change. Compare the cron expression and timezone with the expected time.
 4. **Activation window:** Grids picks up a record change only if it happened after the trigger became active. Enabling the workflow, or publishing a changed record-event trigger, restarts that window. Grids does not replay earlier changes.
 5. **Missed schedule:** A slot that passes while Grids is unavailable is skipped and not caught up. The next slot runs normally.
-6. **Owner access:** Schedules and record events run as the workflow owner. Grids refuses the invocation before it creates a run if the owner lost **Edit** access to the Base. It also refuses it if the owner cannot read a record that the trigger binds to an input.
+6. **Owner access:** Schedules and record events run as the workflow owner. Grids refuses the invocation before it creates a run if the owner lost **Edit** access to the base. It also refuses it if the owner cannot read a record that the trigger binds to an input.
 :::
 
 If all six conditions hold and there is still no run, ask a Cloud administrator to check **Observability → Workflows**. It lists recorded occurrences that never became runs.
@@ -168,7 +168,7 @@ Record changes, generated documents, and sent email do not have this uncertain H
 
 Cloud administrators can inspect retained delivery failures with `cld grids record-events failures <base-id> --json`. Stopped workflow events stay in the list until 30 days after their change. Grids keeps the record state that they replay at least that long. Continue with the returned `nextOffset` through `--offset`.
 
-After you fix the cause, `cld grids record-events replay <base-id> <failure-id> --yes` replays one stopped event with its original retained data. Use the exact failure UUID from the list. Acceptance does not mean that processing completed. **Manage** access to the Base alone does not allow this operator action.
+After you fix the cause, `cld grids record-events replay <base-id> <failure-id> --yes` replays one stopped event with its original retained data. Use the exact failure UUID from the list. Acceptance does not mean that processing completed. **Manage** access to the base alone does not allow this operator action.
 
 ## Read an indeterminate dry run {icon="lifebuoy"}
 
@@ -197,7 +197,7 @@ A revoked source must be authorized again before you publish again.
 
 ## Work with files, exports, and large results {icon="paperclip"}
 
-Files follow the access of the Base that owns them, or the exact published capability of a Grids App. Store facts that people search or filter in normal fields, not only in a filename.
+Files follow the access of the base that owns them, or the exact published capability of a Grids App. Store facts that people search or filter in normal fields, not only in a filename.
 
 Exports and result pages load in pages. A query without `limit` can continue through all matching rows. A `limit` caps the complete result on purpose. Use bounded exports and the CLI options for `--max-rows` when an automated process must enforce its own maximum.
 
