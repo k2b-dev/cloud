@@ -8,7 +8,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         document: { title: "Grids-Dokument", description: "Ein gespeichertes unveränderliches Dokument mit Artefakt-Metadaten." },
         "workflow-run": { title: "Grids-Workflow-Lauf", description: "Status einer angenommenen Workflow-Ausführung." },
         base: {
-          title: "Grids Base",
+          title: "Grids-Base",
           description: "Ein Grids-Arbeitsbereich mit Berechtigungsbereich.",
         },
         record: {
@@ -16,11 +16,11 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description: "Ein stabiler Datensatz in einer Grids-Tabelle.",
         },
         table: {
-          title: "Grids Tisch",
+          title: "Grids-Tabelle",
           description: "Eine lesbare gespeicherte oder kombinierte Tabelle in einer Base.",
         },
         view: {
-          title: "Grids Ansicht",
+          title: "Grids-Ansicht",
           description: "Eine gespeicherte GQL-Datenansicht mit Berechtigungsbereich.",
         },
       },

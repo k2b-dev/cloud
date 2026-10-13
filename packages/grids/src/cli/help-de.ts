@@ -481,13 +481,13 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Requires base admin access. The hold blocks future controlled destruction only in its selected scope.":
     "Erfordert Admin-Zugriff auf die Base. Die Sperre blockiert künftige kontrollierte Vernichtung nur in ihrem gewählten Bereich.",
   "Requires admin access to the source base. The result includes the exact mapped field scope and revocation status.":
-    "Erfordert Admin-Zugriff auf die Quellbasis. Das Ergebnis enthält den exakten zugeordneten Feldumfang und den Widerrufsstatus.",
+    "Erfordert Admin-Zugriff auf die Quell-Base. Das Ergebnis enthält den exakten zugeordneten Feldumfang und den Widerrufsstatus.",
   "Requires base admin access. Parent tables contain their own deleted fields and forms, so nested items are not duplicated.":
     "Erfordert Admin-Zugriff auf die Base. Übergeordnete Tabellen enthalten ihre eigenen gelöschten Felder und Formulare, daher werden verschachtelte Elemente nicht doppelt aufgeführt.",
   "Requires base admin access. The floor preserves trashed Records and newly unreferenced Files without deleting data.":
     "Erfordert Admin-Zugriff auf die Base. Die Mindestaufbewahrung bewahrt Datensätze im Papierkorb und neu nicht referenzierte Dateien auf, ohne Daten zu löschen.",
   "Requires only admin access to the source base; target-table is the Combined table public id shown by the publications command.":
-    "Erfordert nur Admin-Zugriff auf die Quellbasis; target-table ist die öffentliche ID der kombinierten Tabelle, die der Befehl publications anzeigt.",
+    "Erfordert nur Admin-Zugriff auf die Quell-Base; target-table ist die öffentliche ID der kombinierten Tabelle, die der Befehl publications anzeigt.",
   "Requires the hash returned by preview-export and --yes. Never fetches a new preview hash implicitly. An explicit query limit is part of the confirmed selection.":
     "Erfordert den von preview-export gelieferten Hash und --yes. Holt nie implizit einen neuen Vorschau-Hash. Ein ausdrückliches Abfragelimit ist Teil der bestätigten Auswahl.",
   "Resource type followed by refs, e.g. base Bookshop or app Bookshop Catalog.":
@@ -551,7 +551,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Search filename, document number, or tags": "Dateiname, Dokumentnummer oder Tags durchsuchen",
   "Search generated document filename, number, or tags": "Dateiname, Nummer oder Tags erzeugter Dokumente durchsuchen",
   "Search reason, Table name, creator, or hold ID": "Grund, Tabellenname, Ersteller oder Sperren-ID durchsuchen",
-  "Search source bases and tables": "Quellbasen und -tabellen durchsuchen",
+  "Search source bases and tables": "Quell-Bases und -tabellen durchsuchen",
   "Search text; exact names are safest for grant/set commands.": "Suchtext; für die Befehle grant/set sind exakte Namen am sichersten.",
   "Search users, groups, and service accounts for grants": "Personen, Gruppen und Dienstkonten für Freigaben suchen",
   "Service account id or exact name": "Dienstkonto-ID oder exakter Name",

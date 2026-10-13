@@ -32,6 +32,8 @@ const violations = (text: string) =>
 
 describe("Grids base terminology", () => {
   test("English catalogs use base as a sentence-case common noun", () => {
+    // Deliberately exclude src/workflows/action-metadata.ts schema descriptions: wording changes alter the manifest hash
+    // and cause WORKFLOW_MODULE_MISMATCH for published versions until republished.
     const catalogs: Record<string, Record<string, unknown>> = {
       frontend: gridsMessages.resolve(["en"]).t,
       admin: gridsAdminMessages.resolve(["en"]).t,

@@ -95,7 +95,7 @@ const app: PublicCustomApp = {
   dependenciesChanged: false,
 };
 
-const brokenByResource = "The Form is missing, inactive, or belongs to another Base.";
+const brokenByResource = "The Form is missing, inactive, or belongs to another base.";
 
 domTest("restoring a live version that no longer compiles keeps Publish disabled and names the cause", async () => {
   const dom = createDomTestHarness();
