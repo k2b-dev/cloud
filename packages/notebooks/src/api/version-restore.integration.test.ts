@@ -150,6 +150,7 @@ if (process.env.NOTEBOOKS_VERSION_RESTORE_CHILD !== "1") {
         createVersion: true,
       });
       expect(snapshot.ok).toBe(true);
+      await sql`DELETE FROM notebooks.activity_events WHERE note_id = ${note.id}::uuid AND action = 'note.edited'`;
       const vector = Y.encodeStateVector(doc);
       const text = doc.getText("codemirror");
       text.insert(text.length, "unsnapshotted 😀\n");
@@ -165,14 +166,9 @@ if (process.env.NOTEBOOKS_VERSION_RESTORE_CHILD !== "1") {
       });
       const liveText = text.toString();
       expect((await notebooksService.note.get({ id: note.id }))?.contentMd).toBe(initialText);
-      await notebooksService.activity.record({
-        notebookId,
-        noteId: note.id,
-        actor: { kind: "user", id: reader.id },
-        action: "note.edited",
-      });
-      const activitiesBefore =
-        await sql`SELECT * FROM notebooks.activity_events WHERE note_id = ${note.id}::uuid AND action = 'note.edited' ORDER BY id`;
+      expect(await sql`SELECT id FROM notebooks.activity_events WHERE note_id = ${note.id}::uuid AND action = 'note.edited'`).toHaveLength(
+        0,
+      );
       const response = await post(`${versionPath(note.shortId, versionId)}/restore`);
       const restored = RestoreResponseSchema.parse(await response.json());
       expect({ status: response.status, body: restored }).toMatchObject({
@@ -209,8 +205,11 @@ if (process.env.NOTEBOOKS_VERSION_RESTORE_CHILD !== "1") {
         >`SELECT actor_kind, actor_id FROM notebooks.note_version_contributors WHERE version_id = ${restored.versionId}::uuid`,
       ).toEqual([{ actor_kind: "user", actor_id: writer.id }]);
       expect(
-        await sql`SELECT * FROM notebooks.activity_events WHERE note_id = ${note.id}::uuid AND action = 'note.edited' ORDER BY id`,
-      ).toEqual(activitiesBefore);
+        await sql<{ actor_kind: string; actor_id: string; note_version_id: string }[]>`
+          SELECT actor_kind, actor_id, note_version_id FROM notebooks.activity_events
+          WHERE note_id = ${note.id}::uuid AND action = 'note.edited'
+        `,
+      ).toEqual([{ actor_kind: "user", actor_id: reader.id, note_version_id: restored.previousVersionId }]);
       expect(
         await sql<
           { actor_kind: string; actor_id: string; note_version_id: string }[]
@@ -275,6 +274,149 @@ if (process.env.NOTEBOOKS_VERSION_RESTORE_CHILD !== "1") {
         >`SELECT data_properties FROM notebooks.notes WHERE id = ${note.id}::uuid`,
       ).toEqual([{ data_properties: { meta: { status: "restored" } } }]);
 
+      const editNote = await createNote("# Shared edit\n");
+      const editState = await notebooksService.note.getAnchoredYjsState({ noteId: editNote.id });
+      if (!editState?.yjsState) throw new Error("Missing shared edit state");
+      const editDoc = new Y.Doc();
+      try {
+        Y.applyUpdate(editDoc, editState.yjsState);
+        const beforeEdit = Y.encodeStateVector(editDoc);
+        const editText = editDoc.getText("codemirror");
+        editText.insert(editText.length, "reader's live edit\n");
+        await topic.publish({
+          tenantId: editNote.id,
+          data: {
+            kind: "sync",
+            payload: toBase64(Y.encodeStateAsUpdate(editDoc, beforeEdit)),
+            originNodeId: NODE_ID,
+            originPeerId: "browser",
+            actor: { kind: "user", id: reader.id },
+          },
+        });
+        const edited = await notebooksService.note.editContent({
+          noteId: editNote.id,
+          data: { operations: [{ kind: "append", content: "writer's service edit\n" }] },
+          createdBy: writer.id,
+          actor: { kind: "user", id: writer.id },
+        });
+        if (!edited.ok) throw new Error(edited.error);
+        expect(edited.data.note.contentMd).toBe("# Shared edit\nreader's live edit\nwriter's service edit\n");
+        const [{ id: editVersionId } = {}] = await sql<{ id: string }[]>`
+          SELECT id FROM notebooks.note_versions WHERE note_id = ${editNote.id}::uuid ORDER BY created_at DESC, id DESC LIMIT 1
+        `;
+        if (!editVersionId) throw new Error("Missing shared edit version");
+        expect(
+          await sql<{ actor_id: string }[]>`
+          SELECT actor_id FROM notebooks.note_version_contributors WHERE version_id = ${editVersionId}::uuid
+        `,
+        ).toEqual(expect.arrayContaining([{ actor_id: reader.id }, { actor_id: writer.id }]));
+        expect(
+          await sql<{ actor_id: string }[]>`
+          SELECT actor_id FROM notebooks.activity_events WHERE note_id = ${editNote.id}::uuid AND action = 'note.edited'
+        `,
+        ).toEqual(expect.arrayContaining([{ actor_id: reader.id }, { actor_id: writer.id }]));
+      } finally {
+        editDoc.destroy();
+      }
+
+      const concurrentNote = await createNote("# Before concurrent restore\n\nold content");
+      const concurrentText = "# Concurrent restore\n\ninsert this exactly once";
+      const concurrentVersion = await addVersion(concurrentNote.id, concurrentText);
+      const concurrentResponses = await Promise.all([
+        post(`${versionPath(concurrentNote.shortId, concurrentVersion)}/restore`),
+        post(`${versionPath(concurrentNote.shortId, concurrentVersion)}/restore`),
+      ]);
+      // The second restore waits for the first and then changes nothing; on a slow runner it may give up with 409 instead.
+      const concurrentResults = await Promise.all(
+        concurrentResponses.map(async (result) => ({ status: result.status, body: await result.json() })),
+      );
+      const concurrentChanges = concurrentResults
+        .map((result) => (result.status === 200 ? RestoreResponseSchema.parse(result.body).changed : result.status))
+        .sort();
+      expect([
+        [false, true],
+        [409, true],
+      ]).toContainEqual(concurrentChanges);
+      expect((await notebooksService.note.get({ id: concurrentNote.id }))?.contentMd).toBe(concurrentText);
+      const concurrentState = await notebooksService.note.getAnchoredYjsState({ noteId: concurrentNote.id });
+      if (!concurrentState?.yjsState) throw new Error("Missing concurrent restore state");
+      const concurrentDoc = new Y.Doc();
+      try {
+        Y.applyUpdate(concurrentDoc, concurrentState.yjsState);
+        expect(concurrentDoc.getText("codemirror").toString()).toBe(concurrentText);
+      } finally {
+        concurrentDoc.destroy();
+      }
+
+      // A worker saves the published restore before the restore's own save.
+      // The recent version suppresses the worker's ordinary version insert.
+      for (const cursorCoveredBy of ["same", "newer"]) {
+        const raceNote = await createNote("# Before worker race");
+        const recentVersion = await addVersion(raceNote.id, "# Before worker race");
+        await sql`UPDATE notebooks.note_versions SET created_at = now() WHERE id = ${recentVersion}::uuid`;
+        const raceText = "# Restored despite worker race";
+        const raceState = encode(raceText);
+        const published = await topic.publish({
+          tenantId: raceNote.id,
+          data: { kind: "sync", payload: toBase64(raceState), originNodeId: NODE_ID, originPeerId: null },
+        });
+        const workerCursor =
+          cursorCoveredBy === "same"
+            ? published.cursor
+            : (
+                await topic.publish({
+                  tenantId: raceNote.id,
+                  data: { kind: "sync", payload: toBase64(raceState), originNodeId: NODE_ID, originPeerId: null },
+                })
+              ).cursor;
+        const workerSave = await notebooksService.note.save({
+          noteId: raceNote.id,
+          yjsState: raceState,
+          contentMd: raceText,
+          createdBy: null,
+          createVersion: true,
+          streamCursor: workerCursor,
+        });
+        expect(workerSave).toEqual({ ok: true, data: { versionId: null } });
+        const restoreSave = await notebooksService.note.save({
+          noteId: raceNote.id,
+          yjsState: raceState,
+          contentMd: raceText,
+          createdBy: writer.id,
+          createVersion: true,
+          streamCursor: published.cursor,
+          restoredBy: { kind: "user", id: writer.id },
+        });
+        if (!restoreSave.ok) throw new Error(restoreSave.error);
+        expect(restoreSave.data.versionId).toEqual(expect.any(String));
+        if (!restoreSave.data.versionId) throw new Error("Missing restore race version");
+        expect(
+          await sql<{ content_md: string }[]>`
+          SELECT content_md FROM notebooks.note_versions WHERE id = ${restoreSave.data.versionId}::uuid
+        `,
+        ).toEqual([{ content_md: raceText }]);
+        expect(
+          await sql<{ actor_id: string; note_version_id: string }[]>`
+          SELECT actor_id, note_version_id FROM notebooks.activity_events
+          WHERE note_id = ${raceNote.id}::uuid AND action = 'note.restored'
+        `,
+        ).toEqual([{ actor_id: writer.id, note_version_id: restoreSave.data.versionId }]);
+        // Identical latest content may skip a version but still records the restore.
+        const identicalSave = await notebooksService.note.save({
+          noteId: raceNote.id,
+          yjsState: raceState,
+          contentMd: raceText,
+          createdBy: writer.id,
+          createVersion: true,
+          streamCursor: published.cursor,
+          restoredBy: { kind: "user", id: writer.id },
+        });
+        expect(identicalSave).toEqual({ ok: true, data: { versionId: null } });
+        expect(
+          await sql`SELECT id FROM notebooks.activity_events WHERE note_id = ${raceNote.id}::uuid AND action = 'note.restored'`,
+        ).toHaveLength(2);
+      }
+
       const parent = await createNote("# Parent");
       const first = await createNote("# First", parent.id, 0);
       const original = await createNote("# Original\n\nkeep this\n", parent.id, 1);
@@ -313,8 +455,11 @@ if (process.env.NOTEBOOKS_VERSION_RESTORE_CHILD !== "1") {
         expect(wrongNote.status).toBe(404);
         expect(await wrongNote.json()).toMatchObject({ message: "Version nicht gefunden" });
         expect((await post(`${versionPath(first.shortId, crypto.randomUUID())}/${action}`)).status).toBe(404);
+        expect((await post(`${versionPath(first.shortId, "not-a-uuid")}/${action}`)).status).toBe(404);
         expect((await post(`${versionPath("absent", copyVersionId)}/${action}`)).status).toBe(404);
       }
+      expect((await app.request(`${versionPath(first.shortId, "not-a-uuid")}/content`, { headers })).status).toBe(404);
+      expect(await notebooksService.note.versions.getSnapshot({ noteId: first.id, versionId: "not-a-uuid" })).toBeNull();
     } finally {
       live.abort();
       doc.destroy();

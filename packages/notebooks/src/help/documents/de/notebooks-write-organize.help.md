@@ -29,7 +29,7 @@ Dauerhaftes Handbuchwissen gehört in die Notiz selbst. Nutze Kommentare, um die
 
 Öffne die Notizdetails und wähle **Versionsverlauf**. Wähle eine Version, um ihren Inhalt oder die Änderungen anzusehen.
 
-**Diese Version wiederherstellen** macht sie zum aktuellen Inhalt für alle, die in der Notiz arbeiten. Der vorherige Inhalt bleibt im Verlauf. Wähle **Rückgängig** in der Bestätigung, um ihn zurückzuholen.
+**Diese Version wiederherstellen** macht sie zum aktuellen Inhalt für alle, die in der Notiz arbeiten. Danach öffnet sich die Notiz in der Ansicht **Bearbeiten**. Der vorherige Inhalt bleibt im Verlauf. Wähle **Rückgängig** in der Bestätigung, um ihn zurückzuholen.
 
 **Als Kopie wiederherstellen** erstellt eine neue Notiz direkt unter dem Original auf derselben Ebene. Das Original bleibt unverändert.
 

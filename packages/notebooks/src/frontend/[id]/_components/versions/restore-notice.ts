@@ -47,5 +47,19 @@ export const showRestoredVersionNotice = (params: { notebookId: string; noteId: 
       toast.error(error instanceof Error ? error.message : t.restoreFailed);
     }
   };
-  toast.success(t.versionRestored, { action: undoVersionId ? { label: t.undo, onClick: () => void undo(undoVersionId) } : null });
+  // Undo runs once: the notice closes on the first click, so a second click cannot restore the version again.
+  let undoing = false;
+  const notice = toast.success(t.versionRestored, {
+    action: undoVersionId
+      ? {
+          label: t.undo,
+          onClick: () => {
+            if (undoing) return;
+            undoing = true;
+            notice.dismiss();
+            void undo(undoVersionId);
+          },
+        }
+      : null,
+  });
 };

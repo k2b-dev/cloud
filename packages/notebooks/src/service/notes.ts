@@ -1,6 +1,7 @@
 import type { MutationResult, PaginationParams, PermissionLevel } from "@k2b/cloud/contracts";
 import { logger, get as settingsGet, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
 import { type DateContext, dates, err, fail, fromBase64Strict, ok, type Result } from "@k2b/stdlib";
+import { lazySync } from "@k2b/cloud";
 import { RetentionGapError } from "@k2b/sync";
 import { sql, type TransactionSQL } from "bun";
 import * as Y from "yjs";
@@ -1308,6 +1309,28 @@ export const save = async (params: SaveNoteParams): Promise<MutationResult<{ ver
         return { ok: false, error: "Note snapshot changed during replay; retry from its current state", status: 409 };
       }
     }
+    if (params.restoredBy) {
+      const restoredVersionId = await sql.begin(async (tx) => {
+        await tx`SELECT id FROM notebooks.notes WHERE id = ${noteId}::uuid FOR UPDATE`;
+        return insertNoteVersion(tx, {
+          noteId,
+          yjsState,
+          contentMd,
+          createdBy,
+          contributors,
+          force: true,
+          includeActivityContributors: false,
+        });
+      });
+      await activity.record({
+        notebookId: existing.notebookId,
+        noteId,
+        noteVersionId: restoredVersionId,
+        actor: params.restoredBy,
+        action: "note.restored",
+      });
+      return { ok: true, data: { versionId: restoredVersionId } };
+    }
     return { ok: true, data: { versionId: null } };
   }
 
@@ -1349,7 +1372,12 @@ export const save = async (params: SaveNoteParams): Promise<MutationResult<{ ver
   return { ok: true, data: { versionId } };
 };
 
-type LiveNoteDocument = { doc: Y.Doc; initialState: YjsState; requestedAt: number };
+type LiveNoteDocument = {
+  doc: Y.Doc;
+  initialState: YjsState;
+  requestedAt: number;
+  contributors: NoteVersionContributorInput[];
+};
 
 const openLiveNoteDocument = async (existing: NoteWithContent): Promise<MutationResult<LiveNoteDocument>> => {
   const requestedAt = Date.now();
@@ -1360,9 +1388,10 @@ const openLiveNoteDocument = async (existing: NoteWithContent): Promise<Mutation
   const targetCursor = await noteTopic.latestCursor({ tenantId: existing.id });
 
   const doc = createDocFromState(initialState.yjsState, existing.contentMd);
+  let contributors: NoteVersionContributorInput[] = [];
   try {
     if (targetCursor)
-      await replayYjsTopicToCursor({
+      contributors = await replayYjsTopicToCursor({
         noteId: existing.id,
         after: initialState.streamCursor,
         targetCursor,
@@ -1377,7 +1406,7 @@ const openLiveNoteDocument = async (existing: NoteWithContent): Promise<Mutation
     };
   }
 
-  return { ok: true, data: { doc, initialState, requestedAt } };
+  return { ok: true, data: { doc, initialState, requestedAt, contributors } };
 };
 
 const applyLiveNoteContent = async (params: {
@@ -1423,6 +1452,11 @@ const applyLiveNoteContent = async (params: {
       doc: persistedDoc,
     });
     persistedContent = persistedDoc.getText(NOTE_TEXT_NAME).toString();
+    const contributors = new Map<string, NoteVersionContributorInput>(
+      (params.restoredBy ? [] : params.live.contributors).map((contributor) => [`${contributor.kind}:${contributor.id}`, contributor]),
+    );
+    const actor = params.actor ?? (params.createdBy ? { kind: "user" as const, id: params.createdBy } : null);
+    if (actor) contributors.set(`${actor.kind}:${actor.id}`, { ...actor, lastContributedAt: new Date(requestedAt) });
     const saveResult = await save({
       noteId: existing.id,
       yjsState: Y.encodeStateAsUpdate(persistedDoc),
@@ -1432,11 +1466,7 @@ const applyLiveNoteContent = async (params: {
       streamCursor: published.cursor,
       restoreRevision: initialState.restoreRevision,
       requestedAt,
-      contributors: params.actor
-        ? [{ ...params.actor, lastContributedAt: new Date(requestedAt) }]
-        : params.createdBy === null
-          ? []
-          : [{ kind: "user", id: params.createdBy, lastContributedAt: new Date(requestedAt) }],
+      contributors: [...contributors.values()],
       restoredBy: params.restoredBy,
     });
     if (!saveResult.ok) return saveResult;
@@ -1816,11 +1846,14 @@ export const listVersions = async (params: {
   };
 };
 
+const VERSION_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Get a specific version's snapshot. Scoped by `noteId` so a versionId leaked
  * from another note can't be fetched through any caller-readable note.
  */
 export const getVersionSnapshot = async (params: { noteId: string; versionId: string }): Promise<Uint8Array | null> => {
+  if (!VERSION_ID_REGEX.test(params.versionId)) return null;
   const [row] = await sql<{ yjs_snapshot: Buffer }[]>`
     SELECT yjs_snapshot FROM notebooks.note_versions
     WHERE id = ${params.versionId}::uuid AND note_id = ${params.noteId}::uuid
@@ -1964,6 +1997,7 @@ export const getVersionWithContent = async (params: {
   noteId: string;
   versionId: string;
 }): Promise<{ yjsSnapshot: Uint8Array; contentMd: string | null } | null> => {
+  if (!VERSION_ID_REGEX.test(params.versionId)) return null;
   const [row] = await sql<{ yjs_snapshot: Buffer; content_md: string | null }[]>`
     SELECT yjs_snapshot, content_md FROM notebooks.note_versions
     WHERE id = ${params.versionId}::uuid AND note_id = ${params.noteId}::uuid
@@ -1987,7 +2021,7 @@ const versionMarkdown = (version: { contentMd: string | null; yjsSnapshot: Uint8
   }
 };
 
-export const restoreInPlace = async (params: {
+const restoreInPlaceLocked = async (params: {
   noteId: string;
   versionId: string;
   createdBy: string | null;
@@ -2010,26 +2044,43 @@ export const restoreInPlace = async (params: {
         ? { ok: true, data: { note, changed: false, previousVersionId: null, versionId: null } }
         : { ok: false, error: "Note not found", status: 404 };
     }
-    const previousVersionId = await sql.begin(async (tx) => {
+    const previousVersion = await sql.begin(async (tx) => {
       await tx`SELECT id FROM notebooks.notes WHERE id = ${params.noteId}::uuid FOR UPDATE`;
       const [latest] = await tx<{ id: string; content_md: string | null }[]>`
         SELECT id, content_md FROM notebooks.note_versions
         WHERE note_id = ${params.noteId}::uuid
         ORDER BY created_at DESC, id DESC LIMIT 1
       `;
-      if (latest?.content_md === liveText) return latest.id;
-      return insertNoteVersion(tx, {
+      if (latest?.content_md === liveText) return { id: latest.id, inserted: false };
+      const id = await insertNoteVersion(tx, {
         noteId: params.noteId,
         yjsState: Y.encodeStateAsUpdate(live.doc),
         contentMd: liveText,
         createdBy: null,
-        contributors: [],
+        contributors: live.contributors,
         force: true,
       });
+      return { id, inserted: id !== null };
     });
+    const previousVersionId = previousVersion.id;
     if (!previousVersionId) {
       if (!(await get({ id: params.noteId }))) return { ok: false, error: "Note not found", status: 404 };
       return { ok: false, error: "Note version changed during restore; retry from its current state", status: 409 };
+    }
+    if (previousVersion.inserted) {
+      for (const contributor of live.contributors) {
+        const bucketStartedAt = new Date(contributor.lastContributedAt);
+        bucketStartedAt.setUTCMinutes(0, 0, 0);
+        await activity.record({
+          notebookId: existing.notebookId,
+          noteId: params.noteId,
+          noteVersionId: previousVersionId,
+          actor: { kind: contributor.kind, id: contributor.id },
+          action: "note.edited",
+          bucketStartedAt,
+          occurredAt: contributor.lastContributedAt,
+        });
+      }
     }
     const applied = await applyLiveNoteContent({
       ...params,
@@ -2043,6 +2094,23 @@ export const restoreInPlace = async (params: {
   } finally {
     live.doc.destroy();
   }
+};
+
+/**
+ * Restores run one at a time per note: two restores replayed from the same state would publish the same insert twice,
+ * and Yjs keeps both. A later restore sees the earlier one's published state and becomes a no-op or a correct diff.
+ * The lock lives in Sync, not in Postgres, so a waiting restore holds no database connection.
+ */
+const noteRestoreLocks = lazySync((sync) => sync.mutex({ id: "notebooks:note-restore", ttlMs: 60_000 }));
+
+export const restoreInPlace = async (params: {
+  noteId: string;
+  versionId: string;
+  createdBy: string | null;
+  actor?: { kind: "user" | "service_account"; id: string };
+}): Promise<MutationResult<{ note: Note; changed: boolean; previousVersionId: string | null; versionId: string | null }>> => {
+  const restored = await noteRestoreLocks().withLock({ resource: params.noteId }, () => restoreInPlaceLocked(params));
+  return restored ?? { ok: false, error: "Another restore of this note is still running; retry from its current state", status: 409 };
 };
 
 export const restoreAsCopy = async (params: {

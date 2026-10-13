@@ -221,7 +221,8 @@ export default function VersionHistory(props: Props) {
       restoreVersionInPlace({ notebookId: props.notebookId, noteId: props.noteId, versionId, failed: t().restoreFailed }),
     onSuccess: ({ previousVersionId }) => {
       rememberRestoredVersion(props.noteId, previousVersionId);
-      navigateTo(backUrl);
+      // Write mode shows the restore live and lets Undo arrive the same way; Book and Read-only would show neither.
+      navigateTo(buildNoteUrl(props.notebookId, props.noteId, "write"));
     },
     onError: (error) => toast.error(error.message),
   });

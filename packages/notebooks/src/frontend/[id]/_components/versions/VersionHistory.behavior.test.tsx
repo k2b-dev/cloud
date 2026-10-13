@@ -201,7 +201,7 @@ describe("version history restore", () => {
     release(Response.json({ note: { id: "Note01" }, changed: true, previousVersionId: "Previous01", versionId: "Version01" }));
     await waitFor(() => navigateTo.mock.calls.length === 1);
     expect(sessionStorage.getItem("notebooks.restoredVersion")).toBe("Note01 Previous01");
-    expect(navigateTo).toHaveBeenCalledWith(buildNoteUrl("Book01", "Note01"));
+    expect(navigateTo).toHaveBeenCalledWith(buildNoteUrl("Book01", "Note01", "write"));
   });
 
   test("a denied restore shows the server error and enables the action again without navigating", async () => {
@@ -271,6 +271,8 @@ describe("version history restore", () => {
     );
     expect(undo).toBeDefined();
     undo!.click();
+    undo!.click();
+    expect(hasToast("Version restored", "success")).toBe(false);
     await waitFor(() => hasToast("Restore undone", "success"));
     expect(posts().map((request) => ({ path: new URL(request.url).pathname, method: request.method }))).toEqual([
       { path: "/api/notebooks/Book01/notes/Note01/versions/Previous01/restore", method: "POST" },

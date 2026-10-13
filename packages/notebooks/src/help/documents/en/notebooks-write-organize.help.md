@@ -29,7 +29,7 @@ Keep lasting handbook content in the note itself. Use comments to discuss that c
 
 Open the note details and choose **Version history**. Pick a version to see its content or the changes.
 
-**Restore this version** makes it the current content for everyone working in the note. The previous content stays in the history. Choose **Undo** in the confirmation to bring it back.
+**Restore this version** makes it the current content for everyone working in the note. The note then opens in **Write**. The previous content stays in the history. Choose **Undo** in the confirmation to bring it back.
 
 **Restore as copy** creates a new note directly below the original, under the same parent. The original stays unchanged.
 

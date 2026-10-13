@@ -2442,7 +2442,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "Restore note from snapshot",
-      description: "Restore snapshot data into an empty target note (used by Restore as New Note).",
+      description:
+        "Restore snapshot data into an empty target note, as used by the CLI’s `versions restore --into`. To restore a saved version in place or as a new note, use the `versions/:versionId/restore` or `versions/:versionId/copy` route.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(NoteSchema, "Restored note"),
@@ -2489,7 +2490,7 @@ const app = new Hono<AuthContext>()
         ),
         403: jsonResponse(ErrorResponseSchema, "No write access or note is locked"),
         404: jsonResponse(ErrorResponseSchema, "Note or version not found"),
-        409: jsonResponse(ErrorResponseSchema, "Note stream conflict"),
+        409: jsonResponse(ErrorResponseSchema, "Note stream conflict, or another restore of this note is still running"),
       },
     }),
     async (c) => {
