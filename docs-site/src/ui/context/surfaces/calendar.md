@@ -162,7 +162,9 @@ Creating works on the selection:
   elsewhere closes it and keeps the selection. The application owns the
   form, calls `close` after saving, and receives in `create` what a menu
   entry asked for; a `close` that comes after another quick create took its
-  place, such as at the end of a slow save, does nothing. It never shifts
+  place, such as at the end of a slow save, does nothing. A `close` returns
+  the focus to the day only while it is still in the quick create; when the
+  person moved on, the focus stays where they went. It never shifts
   the layout of the grid.
 - `selectionMenu(range, { quickCreate })` returns the application's entries
   of the menu that a right-click, a long press, the Context Menu key, or
