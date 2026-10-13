@@ -53,9 +53,7 @@ const TIMEOUT = Number(options["timeout-ms"]);
 const relayLiveSocket = async (context: BrowserContext, sessionToken: string) => {
   if (APP_ORIGIN === new URL(BASE_URL).origin) return;
   await context.routeWebSocket(/\/api\/chat\/live$/, (route) => {
-    const socketOptions = { headers: { Origin: APP_ORIGIN, Cookie: `session_token=${sessionToken}` } } satisfies Bun.WebSocketOptions;
-    // @ts-expect-error Bun supports headers; lib.dom omits its constructor overload.
-    const upstream = new WebSocket(route.url(), socketOptions);
+    const upstream = new WebSocket(route.url(), { headers: { Origin: APP_ORIGIN, Cookie: `session_token=${sessionToken}` } });
     const waiting: string[] = [];
     upstream.onopen = () => {
       for (const message of waiting.splice(0)) upstream.send(message);
