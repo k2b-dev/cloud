@@ -13,6 +13,8 @@ const WINDOW_STEP = 2_000_000;
 const OVERSCAN = 600;
 /** Distance from the end, in px, that still counts as being at the end. */
 const END_TOLERANCE = 2;
+/** Part of an item, in px, that may be cut off while it still counts as fully in view: rounding, not a hidden line. */
+const VISIBLE_TOLERANCE = 1;
 /**
  * Rows mounted during one correction reach the ResizeObserver a frame late; measure up to this many passes at once.
  * A last pass places the rows; the observer measures what that pass mounted.
@@ -298,7 +300,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
         const from = offsetOf(index);
         const to = offsetOf(index + 1);
         // Rounded scroll positions may cut a fully shown item by a fraction of a pixel.
-        if ((from >= top - END_TOLERANCE && to <= bottom + END_TOLERANCE) || (from <= top && to >= bottom)) {
+        if ((from > top - VISIBLE_TOLERANCE && to < bottom + VISIBLE_TOLERANCE) || (from <= top && to >= bottom)) {
           if (first < 0) first = index;
           last = index;
         }

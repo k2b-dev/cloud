@@ -1881,7 +1881,8 @@ const visibleGeometry = (page: Page) =>
     const visible = [...viewport.querySelectorAll<HTMLElement>(".k2b-virtual-feed__item")].filter((node) => {
       const item = node.getBoundingClientRect();
       return (
-        (item.top >= top && item.bottom <= bottom) || (item.height > viewport.clientHeight && item.top <= top && item.bottom >= bottom)
+        (item.top > top - 1 && item.bottom < bottom + 1) ||
+        (item.height > viewport.clientHeight && item.top <= top && item.bottom >= bottom)
       );
     });
     const first = visible[0]?.dataset.key;
