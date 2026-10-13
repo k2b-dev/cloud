@@ -486,28 +486,40 @@ or "Farben" and "Farbe" count as the same word. A common word in either English
 or German is ignored in both, for example German "war" or "man". Only the first
 and last 6,000 characters of a very long message are considered.
 
+Assistant applies a memory only when it changes the answer. It does not mention
+or recite memories unless you ask or one is directly relevant. The current
+message wins over a conflicting memory.
+
 The `memory` tool can list, search, add, correct, pin, and forget entries without
 an approval pause. Memory mutations are personal context maintenance, not domain
 Actions. They remain visible and reversible in Assistant settings. The tool
-must not store secrets, credentials, raw chat logs, temporary task details, or
+instructions limit entries to information about the user: no facts, opinions, or
+health, relationship, or behavior details about other people, even on an
+explicit request. A named person may appear only inside a working rule the user
+stated, such as "Send invoices to Anna". When the user asks to remember
+something about another person, Assistant says what it did not save and offers
+Contacts or the Project instead. Special categories (health, religion or
+beliefs, political opinions, sexual orientation or sex life, racial or ethnic
+origin, trade union membership, and genetic or biometric data) are stored only
+on an explicit request to remember exactly that information. The tool must not
+store secrets, credentials, raw chat logs, temporary task details, or
 instructions from retrieved content.
 
-Automatic learning from private chats is on for everyone who has not chosen,
-and each person can turn it off or on again in **Assistant settings >
-Personalization** or with `cld assistant personalization configure --learning
-off`. Cloud stores a choice only when the person saves that switch; changing
+Automatic learning is on for everyone who has not chosen, and each person can
+turn it off or on again in **Assistant settings > Personalization** or with
+`cld assistant personalization configure --learning off`. Cloud stores a choice only when the person saves that switch; changing
 **Use personalization** alone records nothing for learning, and a stored choice
 always wins over the default. After an upgrade, every "off" that an earlier
 release stored stays off, because those releases also stored "off" for people
 who never chose; see
 [Deprecations](/en/docs/reference/deprecations-and-migrations#assistant-learns-from-private-chats-by-default).
 
-Learning considers only private-chat turns that finish while it is on, each
-once. A turn that finishes while learning is off is never learned from, also
-not after learning is turned on again, and workflow receipts are recorded only
-while it is on. Turning learning off stops it right away: the background run
-reads the setting again just before it sends a turn or workflow pattern to the
-model and before it saves any change. Learning still needs a working
+Learning considers turns from the user's own chats, Project chats included,
+that finish while it is on, each once. A turn that finishes while learning is
+off is never learned from, also not after learning is turned on again, and
+workflow receipts are recorded only while it is on. Turning learning off stops
+it right away: the background run reads the setting again just before it sends
+a turn or workflow pattern to the model and before it saves any change. Learning still needs a working
 background model and stays within the budgets below.
 
 Archived and deleted chats are never used for learning. Archiving stops pending
@@ -524,6 +536,20 @@ only, and a small relevant memory set. Attachments, quoted Cloud resources, raw
 tool output, agent messages, scheduled messages, and the rest of the Assistant
 loop are excluded. Facts and preferences require explicit evidence in the user
 text; model-written text can never establish one by itself.
+
+The learning instructions apply the same limits: they keep only information
+about the user, never facts, opinions, or health, relationship, or behavior
+details about other people; a named person may appear only inside a working
+rule the user stated. They skip the special categories listed above unless the
+user explicitly asks to remember exactly that information. The learning input
+states whether the turn comes from a Project chat. In a Project chat, the
+Project keeps its facts, decisions, and people, and learning keeps only what
+the user states about themselves beyond it. The workflow-pattern instructions
+name the recurring category without details about other people or special
+categories, and return a workflow from Project-chat examples only when it
+clearly applies beyond that Project. These limits are instructions to
+the background model, not a content filter; review learned entries in
+**Assistant settings > Personalization**.
 
 A single explicit lasting instruction can establish a workflow when the same
 turn also contains the matching successful typed resource receipt. Otherwise,

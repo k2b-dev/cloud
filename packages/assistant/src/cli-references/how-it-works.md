@@ -374,7 +374,8 @@ Commands:
   They belong to the signed-in user, so add them only for that user. Unless the
   user turned learning off (`personalization configure`), the Assistant also
   learns memories from completed turns in their own chats, Project chats
-  included.
+  included. It learns only about the user, not about other people or sensitive
+  categories, and leaves Project facts in the Project.
 - Knowledge: `cld assistant projects knowledge add "<project>" "<title>" --content-file text.md`.
 
 ## Files

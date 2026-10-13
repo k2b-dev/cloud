@@ -72,7 +72,15 @@ const insertLearningTurn = async (userId: string, existingConversationId?: strin
   const [completed] = await sql<{ completed_as_of: string }[]>`
     SELECT completed_at::text AS completed_as_of FROM ai.turns WHERE id = ${turn!.id}::uuid
   `;
-  return { userId, conversationId, turnId: turn!.id, completedAsOf: completed!.completed_as_of, failCount: 0, locale: "en" };
+  return {
+    userId,
+    conversationId,
+    turnId: turn!.id,
+    projectChat: false,
+    completedAsOf: completed!.completed_as_of,
+    failCount: 0,
+    locale: "en",
+  };
 };
 
 const proposeLearning =
@@ -105,6 +113,80 @@ databaseSuite()("AI memory learning (integration)", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+
+  test("marks Project chats for learning and keeps a working rule naming a person", async () => {
+    const userId = await insertLearningUser();
+    let projectId: string | undefined;
+    try {
+      await aiUserPrefs.update(userId, { memoryLearningEnabled: true });
+      const outsideProject = await insertLearningTurn(userId);
+      const [project] = await sql<{ id: string }[]>`
+        INSERT INTO ai.projects (short_id, name)
+        VALUES (${createAiShortId()}, 'Memory learning Project') RETURNING id
+      `;
+      projectId = project!.id;
+      const [conversation] = await sql<{ id: string }[]>`
+        INSERT INTO ai.conversations (short_id, created_by_user_id, title, project_id)
+        VALUES (${createAiShortId()}, ${userId}::uuid, 'Project memory learning test', ${projectId}::uuid) RETURNING id
+      `;
+      const [turn] = await sql<{ id: string }[]>`
+        INSERT INTO ai.turns (short_id, conversation_id, status, run_config, completed_at)
+        VALUES (${createAiShortId()}, ${conversation!.id}::uuid, 'completed', ${JSON.stringify({ kind: "chat", input: [] })}::jsonb, now())
+        RETURNING id
+      `;
+      const userText =
+        "Anna ist bis März in Elternzeit. Tom ist schwierig. Ich bin katholisch. Our launch is on 3 March. Send invoices to Anna.";
+      await sql`
+        INSERT INTO ai.messages (short_id, conversation_id, seq, role, message, loop_id)
+        VALUES (${createAiShortId()}, ${conversation!.id}::uuid, 1, 'user',
+          ${JSON.stringify({ role: "user", content: [{ type: "text", text: userText }] })}::jsonb, ${turn!.id}::uuid)
+      `;
+
+      const candidates = (await listAiMemoryLearningCandidates(100, 1_000_000)).filter((candidate) => candidate.userId === userId);
+      const candidate = candidates.find((item) => item.turnId === turn!.id);
+      expect(candidate).toMatchObject({ projectChat: true });
+      expect(candidates.find((item) => item.turnId === outsideProject.turnId)).toMatchObject({ projectChat: false });
+      if (!candidate) throw new Error("Project turn must be a learning candidate");
+
+      let systemPrompt = "";
+      let input = "";
+      const summary = await learnAiMemoriesFromPrivateChats({
+        deps: {
+          ...learningDeps(),
+          listCandidates: async () => [candidate],
+          structured: async (request) => {
+            systemPrompt = request.systemPrompt ?? "";
+            if (typeof request.input !== "string") throw new Error("Expected a text learning input");
+            input = request.input;
+            return {
+              output: request.output.parse({
+                changes: [{ action: "add", kind: "preference", content: "Send invoices to Anna.", memoryIds: [], resourceRef: null }],
+              }),
+              modelProfileId: "test-model",
+              structuredMeta: { mode: "native", repaired: false, attempts: 1, usedResponseFormat: true },
+            };
+          },
+        },
+      });
+
+      expect(summary).toMatchObject({ scanned: 1, learned: 1, failed: 0 });
+      expect(input.startsWith(`CHAT: Project chat\n\nNEW USER TEXT:\n${userText}\n\nSUCCESSFUL ACTIONS:`)).toBe(true);
+      expect(systemPrompt).toContain("Store information about the user only");
+      expect(systemPrompt).toContain("Never store facts, opinions, or health, relationship, or behavior details about other people");
+      expect(systemPrompt).toContain(
+        "Exclude health, religion or beliefs, political opinions, sexual orientation or sex life, racial or ethnic origin, trade union membership, and genetic or biometric data unless the user explicitly asks to remember that exact information",
+      );
+      expect(systemPrompt).toContain("In a Project chat, the Project owns its facts, decisions, and people");
+      expect(systemPrompt).toContain("Learn only what the user states about themselves beyond that Project");
+      expect(await aiMemories.list({ userId })).toMatchObject([{ kind: "preference", content: "Send invoices to Anna." }]);
+    } finally {
+      await sql`DELETE FROM ai.memory_learning_runs WHERE user_id = ${userId}::uuid`;
+      await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+      if (projectId) await sql`DELETE FROM ai.projects WHERE id = ${projectId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("stores bounded learned memories with conversation provenance", async () => {
     const suffix = crypto.randomUUID();
     const [user] = await sql<{ id: string }[]>`
@@ -149,6 +231,7 @@ databaseSuite()("AI memory learning (integration)", () => {
               turnId: turn!.id,
               userId: user!.id,
               completedAsOf: turn!.completed_as_of,
+              projectChat: false,
               failCount: 0,
             },
           ],
@@ -274,9 +357,10 @@ databaseSuite()("AI memory learning (integration)", () => {
         listWorkflowPatterns: async () => [pattern!],
         monthlyTokenBudget: 1_000_000,
         readMonthlyAccountedTokens: async () => 0,
-        structured: async (request: { task: string }) => {
+        structured: async (request: { task: string; input: unknown }) => {
           modelCalls += 1;
           expect(request.task).toBe("memory-learn-workflow");
+          expect(String(request.input).match(/^Chat: chat outside Projects$/gm)).toHaveLength(3);
           return {
             output: { workflow: { content: "Use Accounting for invoice mail searches.", memoryIds: [] } },
             modelProfileId: "test-model",
@@ -356,6 +440,7 @@ databaseSuite()("AI memory learning (integration)", () => {
               turnId: turn!.id,
               userId: user!.id,
               completedAsOf: turn!.completed_as_of,
+              projectChat: false,
               failCount: 0,
             },
           ],
@@ -436,7 +521,7 @@ databaseSuite()("AI memory learning (integration)", () => {
       const summary = await learnAiMemoriesFromPrivateChats({
         deps: {
           resolveModel: async () => ({ profile: { id: "test-model" } }) as AiResolvedModel,
-          listCandidates: async () => [{ ...chose, failCount: 0 }],
+          listCandidates: async () => [{ ...chose, projectChat: false, failCount: 0 }],
           listWorkflowPatterns: async () => [],
           monthlyTokenBudget: 1_000_000,
           readMonthlyAccountedTokens: async () => 0,
