@@ -10,11 +10,11 @@ import {
   MessageIdSchema,
   MessageQuerySchema,
   type MessageViewSchema,
+  readStart,
   SEND_CONVERSATION_LIMIT,
   SEND_CONVERSATION_WINDOW_SECONDS,
   SEND_LIMIT,
   SEND_WINDOW_SECONDS,
-  readStart,
   SendMessageSchema,
 } from "./contracts";
 import { conversations } from "./conversations";
