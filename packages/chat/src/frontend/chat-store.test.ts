@@ -856,6 +856,55 @@ test("unknown personal rows are ignored and a stale read refetch can remove acce
   store.dispose();
 });
 
+test("personal reads update an open chat outside the sidebar and stale reads refetch it", async () => {
+  let calls = 0;
+  const { store, connection } = storeAt(
+    3,
+    {
+      conversation: async () => {
+        calls++;
+        return { ...conversation, rev: 5, unread: 1, read: { lastReadSeq: 4, unreadFromSeq: null, joinedSeq: 0 } };
+      },
+    },
+    { items: [], nextCursor: "more" },
+  );
+  const read = { type: "read", conversationId: conversation.id, lastReadSeq: 3, unreadFromSeq: null, joinedSeq: 0, unread: 0, asOfRev: 3 };
+  await connection.get("me").apply(read);
+  expect(store.sidebar).toEqual([]);
+  expect(store.openConversation?.conversation).toMatchObject({ unread: 0, read: { lastReadSeq: 3 } });
+  expect(calls).toBe(0);
+  await connection.get("me").apply({ ...read, lastReadSeq: 4, asOfRev: 4 });
+  await connection.get("me").apply(read);
+  expect(calls).toBe(1);
+  expect(store.openConversation?.conversation).toMatchObject({ unread: 1, read: { lastReadSeq: 4 } });
+  store.dispose();
+});
+
+for (const channel of ["me", "list"])
+  test(`${channel} resync refreshes the open chat read state outside the sidebar`, async () => {
+    let calls = 0;
+    const { store, connection } = storeAt(
+      3,
+      {
+        conversation: async () => {
+          calls++;
+          return { ...conversation, rev: 3, unread: 0, read: { lastReadSeq: 3, unreadFromSeq: null, joinedSeq: 0 } };
+        },
+      },
+      { items: [], nextCursor: "more" },
+    );
+    await connection.get(channel).resync();
+    expect(calls).toBe(1);
+    expect(store.sidebar).toEqual([]);
+    expect(store.openConversation?.conversation?.read?.lastReadSeq).toBe(3);
+    await connection
+      .get("me")
+      .apply({ type: "read", conversationId: conversation.id, lastReadSeq: 2, unreadFromSeq: null, joinedSeq: 0, unread: 1, asOfRev: 2 });
+    expect(calls).toBe(2);
+    expect(store.openConversation?.conversation?.read?.lastReadSeq).toBe(3);
+    store.dispose();
+  });
+
 test("read actions return HTTP results without applying them ahead of the personal channel", async () => {
   const { store } = fixture();
   const before = store.sidebar[0];

@@ -1,4 +1,19 @@
 type Timer = ReturnType<typeof setTimeout> | number;
+export const seenRange = (
+  items: readonly { seq?: number; kind: "text" | "system"; own: boolean }[],
+  firstIndex: number,
+  lastIndex: number,
+) => {
+  if (firstIndex < 0 || lastIndex < firstIndex || lastIndex >= items.length) return null;
+  // System and own messages do not count as unread, even when the marker leaves them above the view.
+  while (firstIndex > 0) {
+    const previous = items[firstIndex - 1]!;
+    if (previous.seq !== undefined && previous.kind !== "system" && !previous.own) break;
+    firstIndex--;
+  }
+  const seqs = items.slice(firstIndex, lastIndex + 1).flatMap((item) => (item.seq === undefined ? [] : [item.seq]));
+  return seqs.length ? { first: seqs[0]!, last: seqs.at(-1)! } : null;
+};
 type Timers = {
   setTimeout(callback: () => void, delay: number): Timer;
   clearTimeout(timer: Timer): void;
@@ -19,6 +34,7 @@ export const createReadReporter = (options: { start: number; post(seq: number): 
   let timer: Timer | undefined;
   let disposed = false;
   let generation = 0;
+  const inFlight = new Set<Promise<void>>();
   const flush = () => {
     if (frontier <= posted || frontier <= sent) return;
     const seq = frontier;
@@ -26,7 +42,7 @@ export const createReadReporter = (options: { start: number; post(seq: number): 
     const epoch = generation;
     lastPost = timers.now();
     // In-flight responses from before a mark-unread cannot erase its new frontier.
-    void options
+    const post = options
       .post(seq)
       .then(() => {
         if (epoch === generation) posted = Math.max(posted, seq);
@@ -34,6 +50,8 @@ export const createReadReporter = (options: { start: number; post(seq: number): 
       .catch(() => {
         if (epoch === generation && sent === seq) sent = posted;
       });
+    inFlight.add(post);
+    void post.then(() => inFlight.delete(post));
   };
   const schedule = () => {
     if (disposed || frontier <= posted || timer !== undefined) return;
@@ -58,6 +76,9 @@ export const createReadReporter = (options: { start: number; post(seq: number): 
       activate();
     },
     activate,
+    async settled() {
+      await Promise.all(inFlight);
+    },
     setStart(next: number) {
       if (next < start) {
         frontier = posted = sent = next;

@@ -358,6 +358,19 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     nextCursor = page.nextCursor;
     complete = nextCursor === null;
     notify();
+    // The open chat may lie outside the first sidebar page, so its read state is refreshed on its own.
+    const chat = current;
+    if (chat && active(chat)) {
+      const row = await api.conversation(chat.view.id);
+      if (active(chat)) {
+        if (row === null) noAccess(chat);
+        else {
+          metadata(chat, row);
+          unreadRev.set(row.id, Math.max(unreadRev.get(row.id) ?? 0, row.rev));
+        }
+      }
+    }
+    notify();
   };
   // Server order is last activity, then ID, both descending. Only unknown rows past an incomplete prefix stay out.
   const place = (row: Conversation) => {
@@ -384,7 +397,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     notify();
   };
   const applyRead = async (data: z.infer<typeof ReadUpdateSchema>) => {
-    const known = rows.find((row) => row.id === data.conversationId);
+    const id = data.conversationId;
+    const known = rows.find((row) => row.id === id) ?? (current?.view.id === id ? current.view.conversation : null);
     if (!known) return;
     if (data.asOfRev < (unreadRev.get(known.id) ?? known.rev)) return refetchRow(known.id);
     const read = { lastReadSeq: data.lastReadSeq, unreadFromSeq: data.unreadFromSeq, joinedSeq: data.joinedSeq };

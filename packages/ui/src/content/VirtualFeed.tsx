@@ -324,7 +324,8 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     }
     renderRows(indices);
     setTabStop(focusIndex >= lo && focusIndex < hi ? focusIndex : hi > lo ? indexAt(top + height - 1) : -1);
-    if (!restoring) reportVisible();
+    // Newly mounted rows still have estimates; report only after their heights are measured.
+    if (!restoring && !fresh.some((node) => node.isConnected)) reportVisible();
   };
 
   const measure = (measured: ReadonlyArray<readonly [HTMLElement, number]>) => {
@@ -972,6 +973,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
           }
         }
         if (measure(measured) || resized) restore();
+        else reportVisible();
       } finally {
         observing = false;
       }

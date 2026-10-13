@@ -10,7 +10,7 @@ Unread messages are other people's messages after where you stopped reading. You
 
 ## Continue reading {icon="messages"}
 
-Chat marks messages read while you see them in a visible, focused window. Jumping to a linked message does not mark the messages in between read.
+Chat marks messages read while you see them in a visible, focused window. Jumping to a linked message does not mark the messages in between read. If unread messages come before the linked message, **New messages** does not appear there.
 
 :::reference
 - A chat opens around your first unread message. **New messages** marks where you left off and stays until you leave the chat.

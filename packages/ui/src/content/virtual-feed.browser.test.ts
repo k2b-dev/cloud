@@ -1910,6 +1910,26 @@ test("visible callback follows scrolling up and reports null when the feed becom
   await close(page);
 });
 
+test("visible callback waits for measurement after a scroll beyond overscan with small estimates", async () => {
+  const page = await open({ count: 1000, estimateScale: 0.25 });
+  await page.evaluate(() => feed.controller.scrollToKey("m50", { align: "start" }));
+  await frames(page, 6);
+  const before = await page.evaluate(() => {
+    const before = visibleChanges.length;
+    // Cross even the rows measured during the earlier jump, so this scroll must mount unmeasured rows.
+    person.by(8000);
+    return before;
+  });
+  await frames(page, 6);
+  const geometry = await visibleGeometry(page);
+  const changes = await page.evaluate((before) => visibleChanges.slice(before), before);
+  expect(geometry).not.toBeNull();
+  expect(changes.length).toBeGreaterThan(0);
+  for (const change of changes) if (change) expect(change.last).toBeLessThanOrEqual(geometry!.last);
+  expect(changes.at(-1)).toEqual(geometry);
+  await close(page);
+});
+
 test("an item taller than the view counts while it covers the view", async () => {
   const page = await open({ count: 100 });
   await page.evaluate(() => feed.controller.scrollToKey("m50", { align: "start" }));

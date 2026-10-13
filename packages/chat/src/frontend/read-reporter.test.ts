@@ -1,5 +1,50 @@
 import { expect, test } from "bun:test";
-import { createReadReporter } from "./read-reporter";
+import { createReadReporter, seenRange } from "./read-reporter";
+
+const counting = (seq: number) => ({ seq, kind: "text" as const, own: false });
+for (const kind of ["system", "own"] as const)
+  test(`seenRange extends over a preceding ${kind} run and stops at a counting message`, () => {
+    const skipped = (seq: number) => ({ seq, kind: kind === "system" ? ("system" as const) : ("text" as const), own: kind === "own" });
+    expect(seenRange([counting(10), skipped(11), skipped(12), counting(13), counting(14)], 3, 4)).toEqual({ first: 11, last: 14 });
+    expect(seenRange([skipped(11), skipped(12), counting(13)], 2, 2)).toEqual({ first: 11, last: 13 });
+  });
+test("seenRange ignores items without a sequence and empty or missing ranges", () => {
+  const pending = { kind: "text" as const, own: true };
+  expect(seenRange([{ ...counting(11), kind: "system" }, pending, counting(12), pending], 2, 3)).toEqual({ first: 11, last: 12 });
+  expect(seenRange([pending], 0, 0)).toBeNull();
+  expect(seenRange([], -1, -1)).toBeNull();
+  expect(seenRange([counting(1)], -1, 0)).toBeNull();
+});
+
+test("settled resolves immediately with no post in flight", async () => {
+  const reporter = createReadReporter({ start: 0, active: () => true, post: async () => {} });
+  await reporter.settled();
+  reporter.dispose();
+});
+for (const fails of [false, true])
+  test(`settled waits for an in-flight post and resolves after ${fails ? "failure" : "success"}`, async () => {
+    let finish = () => {};
+    const reporter = createReadReporter({
+      start: 0,
+      active: () => true,
+      post: () =>
+        new Promise<void>((resolve, reject) => {
+          finish = () => (fails ? reject(new Error("offline")) : resolve());
+        }),
+    });
+    reporter.seen(1, 2);
+    let done = false;
+    const waiting = reporter.settled().then(() => {
+      done = true;
+    });
+    await settle();
+    expect(done).toBe(false);
+    finish();
+    await waiting;
+    expect(done).toBe(true);
+    await reporter.settled();
+    reporter.dispose();
+  });
 
 const settle = async () => {
   for (let i = 0; i < 6; i++) await Promise.resolve();

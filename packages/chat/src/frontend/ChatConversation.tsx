@@ -68,7 +68,7 @@ export type ChatConversationProps = {
   /** The first and last item fully in view, for reporting what the reader has seen. */
   onVisibleChange: (visible: { first: ChatFeedItem; last: ChatFeedItem } | null) => void;
   onMarkUnreadFrom: (item: ChatFeedItem) => void;
-  /** Esc in the open chat, unless a field, menu, or dialog used it. */
+  /** Esc within the chat or with no focused control, unless a field, menu, dialog, tooltip, or light-dismiss popover uses it. */
   onEscape: () => void;
 };
 
@@ -121,7 +121,9 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
       const target = event.target instanceof Element ? event.target : null;
+      if (target !== document.body && target !== document.documentElement && (!target || !frame.contains(target))) return;
       if (target?.closest('dialog, [role="dialog"], [role="menu"], [role="listbox"]')) return;
+      if (document.querySelector(".k2b-tooltip:popover-open, :is([popover=''], [popover='auto' i]):popover-open")) return;
       props.onEscape();
     };
     document.addEventListener("keydown", escape);

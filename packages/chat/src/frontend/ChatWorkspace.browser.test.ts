@@ -282,6 +282,20 @@ const noReportsForBatch = async (page: Page, chat: string, before: number) => {
 
 describe("ChatWorkspace browser read state", () => {
   beforeEach(() => harness.reset());
+  test("Escape in the sidebar neither reports a read nor announces", async () => {
+    const chat = harness.addChat({ members: [viewer, nora], count: 150, unread: 98, end: new Date() });
+    const { page, errors } = await load(viewports[0]!.options, { chat, message: harness.messageId(chat, 120) });
+    try {
+      await until(() => harness.subscribed(chat));
+      await row(page, "desktop", chat).focus();
+      await page.keyboard.press("Escape");
+      await noReportsForBatch(page, chat, 0);
+      expect(await page.locator("[data-k2b-live]").getByText("Chat marked read", { exact: true }).count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
   for (const { name, options } of viewports) {
     test(`unread counts, accessible names, cap and open row on ${name}`, async () => {
       const three = harness.addChat({ members: [viewer, nora], name: "Three unread", count: 8, unread: 3, end: new Date() });
@@ -447,12 +461,43 @@ describe("ChatWorkspace browser read state", () => {
         await page.locator(`[data-key="${message}"][data-highlighted]`).waitFor();
         await inFeed(page, `[data-key="${message}"]`);
         await noReportsForBatch(page, chat, 0);
+        expect(await marker(page).count()).toBe(0);
+        expect(await page.getByRole("button", { name: "New messages", exact: true }).count()).toBe(0);
         // Read back through the gap in overlapping half-screen steps, including paged older history.
         for (let i = 0; i < 45 && chatReads(chat).length === 0; i++) await scrollFeed(page, -1);
         await until(() => chatReads(chat).length > 0);
         expect(chatReads(chat)[0]!.seq).toBeLessThan(120);
         for (let i = 0; i < 45 && (chatReads(chat).at(-1)?.seq ?? 0) < 120; i++) await scrollFeed(page, 1);
         await until(() => (chatReads(chat).at(-1)?.seq ?? 0) >= 120);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+
+    test(`a system message before the marker does not block reading to the head on ${name}`, async () => {
+      // Enough read history that the marker opens out of view, so the chat jumps to it and the system message right
+      // after the read position (41) stays above the view.
+      const chat = harness.addChat({ members: [viewer, nora], count: 40, end: new Date() });
+      harness.rename(chat, "System before unread");
+      for (let i = 0; i < 48; i++) harness.receive(chat, nora, `Incoming message ${i}`);
+      const { page, errors } = await load(options, { chat });
+      try {
+        await marker(page).waitFor();
+        expect(await marker(page).evaluate((element) => element.closest("[data-key]")!.getAttribute("data-key"))).toBe(
+          harness.messageId(chat, 42),
+        );
+        await inFeed(page, ".k2b-virtual-feed__marker");
+        expect(
+          await page.locator(`[data-key="${harness.messageId(chat, 41)}"]`).evaluate((element) => {
+            const viewport = element.closest(".k2b-virtual-feed__viewport")!.getBoundingClientRect();
+            return element.getBoundingClientRect().bottom <= viewport.top + 1;
+          }),
+        ).toBe(true);
+        await until(() => chatReads(chat).length > 0);
+        expect(chatReads(chat).at(-1)!.seq).toBeLessThan(89);
+        for (let step = 0; step < 40 && (chatReads(chat).at(-1)?.seq ?? 0) < 89; step++) await scrollFeed(page, 1);
+        await until(() => chatReads(chat).at(-1)?.seq === 89);
         expect(errors).toEqual([]);
       } finally {
         await page.context().close();

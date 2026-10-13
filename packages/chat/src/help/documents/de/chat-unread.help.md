@@ -10,7 +10,7 @@ Ungelesen sind Nachrichten anderer Personen nach der Stelle, an der du aufgehör
 
 ## Weiterlesen {icon="messages"}
 
-Chat markiert Nachrichten als gelesen, während du sie in einem sichtbaren, aktiven Fenster siehst. Ein Sprung zu einer verlinkten Nachricht markiert die Nachrichten dazwischen nicht als gelesen.
+Chat markiert Nachrichten als gelesen, während du sie in einem sichtbaren, aktiven Fenster siehst. Ein Sprung zu einer verlinkten Nachricht markiert die Nachrichten dazwischen nicht als gelesen. Liegen ungelesene Nachrichten vor der verlinkten Nachricht, erscheint dort kein **Neue Nachrichten**.
 
 :::reference
 - Ein Chat öffnet sich bei deiner ersten ungelesenen Nachricht. **Neue Nachrichten** zeigt, wo du aufgehört hast. Die Markierung bleibt, bis du den Chat verlässt.

@@ -21,7 +21,7 @@ import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import ChatList from "./ChatList";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 import { createChatStore, type OpenChat } from "./chat-store";
-import { createReadReporter } from "./read-reporter";
+import { createReadReporter, seenRange } from "./read-reporter";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 type Store = ReturnType<typeof createChatStore>;
@@ -202,7 +202,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       const current = openChat();
       const start = readStart(current?.conversation?.read ?? null);
       const first =
-        start === null
+        start === null || !current || (current.hasOlder && (current.messages[0]?.seq ?? Infinity) > start + 1)
           ? undefined
           : current?.messages.find((message) => message.seq > start && message.kind === "text" && message.author.id !== props.viewerId);
       setMarker(first?.id ?? null);
@@ -228,13 +228,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const reportVisible = (visible: { first: ChatFeedItem; last: ChatFeedItem } | null) => {
     if (!visible) return;
     const list = items();
-    const seqs = list
-      .slice(
-        list.findIndex((item) => item.key === visible.first.key),
-        list.findIndex((item) => item.key === visible.last.key) + 1,
-      )
-      .flatMap((item) => (item.seq === undefined ? [] : [item.seq]));
-    if (seqs.length) reporter?.reporter.seen(seqs[0]!, seqs.at(-1)!);
+    const range = seenRange(
+      list,
+      list.findIndex((item) => item.key === visible.first.key),
+      list.findIndex((item) => item.key === visible.last.key),
+    );
+    if (range) reporter?.reporter.seen(range.first, range.last);
   };
   const changeRead = async (work: () => Promise<unknown> | undefined) => {
     try {
@@ -250,6 +249,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const markUnread = async (id: string, from?: ChatFeedItem) => {
     const open = openChat()?.id === id;
     if (open) paused = true;
+    // Let earlier reads finish before the server applies the unread mark.
+    if (open && reporter?.chatId === id) await reporter.reporter.settled();
     if (from) setMarker(from.key);
     if (!(await changeRead(() => store?.markUnread(id, from?.messageId))) && open) paused = false;
   };

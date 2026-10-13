@@ -87,6 +87,8 @@ mounted:
 changes to the first and last item whose whole height is in view. An item
 taller than the view counts while it covers the view; the callback receives
 `null` when no item is in view. It runs only when the pair of item keys changes.
+Newly shown items count only after the feed has measured them, so a fast scroll
+never reports an item at its estimated height.
 Use this range to track reading progress, together with the application's
 window visibility and focus checks.
 
