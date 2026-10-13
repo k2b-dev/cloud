@@ -271,7 +271,9 @@ WHERE claimed_until IS NOT NULL OR attempts > 0;
   row to `publish`.
 - Claims stay proportional to the batch, not to the backlog, with an index on
   the sequence column, here the primary key, and the partial index on the
-  ordering column above. With `where`, put its columns first in both indexes.
+  ordering column above. This holds whatever the table's statistics say, for
+  example when a burst arrives after PostgreSQL analyzed the empty table. With
+  `where`, put its columns first in both indexes.
 
 Table and column names are lowercase SQL identifiers, and the table may name
 its schema. `createPgOutbox()` throws `Invalid outbox table` or `Invalid outbox

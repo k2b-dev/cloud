@@ -274,6 +274,11 @@ suiteFor("database", "nats")("live outbox", () => {
   test("10,000 waiting rows of one key drain in seconds, a prefix per claim", async () => {
     // Spike V2: with one row of the hot key per claim and 0.15-0.7 s per claim, 2,210 of these rows
     // took 8.5 minutes; claiming a prefix of each key drained all of them in ~8 s with real publishes.
+    // Autovacuum analyzes the drained outbox, then a burst arrives: on these statistics every claim scanned
+    // the whole backlog (25.6 s in CI). Autovacuum stays off so that it cannot replace them during the test.
+    expect(await pendingCount()).toBe(0);
+    await sql`ALTER TABLE events.outbox SET (autovacuum_enabled = false)`;
+    await sql`ANALYZE events.outbox`;
     await enqueueMany(10_000, 1, "hot");
     await enqueueMany(2_000, 1_000, "cold");
     const record = recorder();
@@ -283,7 +288,9 @@ suiteFor("database", "nats")("live outbox", () => {
 
     const started = performance.now();
     await outbox.reconcile();
-    expect(performance.now() - started).toBeLessThan(20_000);
+    // Claims that follow the sequence index drain this in 2-4 s, even on a loaded machine; claims that scan the
+    // backlog took 18-26 s and passed a 20 s bound on an idle machine.
+    expect(performance.now() - started).toBeLessThan(10_000);
     expect(record.count()).toBe(12_000);
     record.expectInOrder();
     expect(await pendingCount()).toBe(0);
@@ -301,7 +308,8 @@ suiteFor("database", "nats")("live outbox", () => {
              '{"v":1}'::jsonb, ${attempts}, now() + ${nextAttempt}::interval
       FROM generate_series(1, 200000) n
     `;
-    const firstRows = sql`seq IN (SELECT seq FROM events.outbox ORDER BY seq LIMIT 100000)`;
+    // A range, not `IN`: on statistics of an empty table, a semi-join would compare every row with every other.
+    const firstRows = sql`seq < (SELECT seq FROM events.outbox ORDER BY seq OFFSET 100000 LIMIT 1)`;
     // Rows 1-100,000 wait for a retry, so the claim skips the next 20,000 and takes rows from 120,001 on.
     const claimTakes = async (attempts: number) => {
       const started = performance.now();
@@ -314,6 +322,8 @@ suiteFor("database", "nats")("live outbox", () => {
       return milliseconds;
     };
     try {
+      // Autovacuum must not replace the statistics each case sets up.
+      await sql`ALTER TABLE events.outbox SET (autovacuum_enabled = false)`;
       // Statistics taken while every row waits; then the later half comes due.
       await insert(3, "1 hour");
       await sql`ANALYZE events.outbox`;
@@ -324,6 +334,13 @@ suiteFor("database", "nats")("live outbox", () => {
       await sql`DELETE FROM events.outbox`;
       await insert(0, "0 seconds");
       await sql`ANALYZE events.outbox`;
+      await sql`UPDATE events.outbox SET attempts = 3, next_attempt_at = now() + interval '1 hour' WHERE ${firstRows}`;
+      expect(await claimTakes(0)).toBeLessThan(5_000);
+
+      // Statistics taken while the outbox was empty, as autovacuum leaves them after a drain.
+      await sql`DELETE FROM events.outbox`;
+      await sql`ANALYZE events.outbox`;
+      await insert(0, "0 seconds");
       await sql`UPDATE events.outbox SET attempts = 3, next_attempt_at = now() + interval '1 hour' WHERE ${firstRows}`;
       expect(await claimTakes(0)).toBeLessThan(5_000);
     } finally {
