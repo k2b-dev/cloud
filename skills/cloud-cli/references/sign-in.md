@@ -11,7 +11,7 @@ cld login --server https://cloud.example
 cld login portal --server https://cloud.example
 ```
 
-The first form uses the current profile (or `default`); the second names the profile. On a desktop, `cld` offers to open the browser and receives the result on a loopback callback. The browser tab then shows a small page saying the Cloud CLI is connected and the tab can be closed, in the browser's language (English or German). If sign-in is denied or fails, the page says so and tells you to run `cld login` again in your terminal. Use `--no-open` to only print the URL.
+The first form uses the current profile (or `default`); the second names the profile. On a desktop, `cld` offers to open the browser and receives the result on a loopback callback. The browser tab then shows a small page in the browser's language (English or German): the Cloud CLI is connected and the tab can be closed, or access was denied or the Cloud rejected the request and you run `cld login` again. The page reports only what the browser sent back. `cld` then finishes the sign-in and stores the profile, so the terminal has the final result: trust its output and exit code, not the tab. Use `--no-open` to only print the URL.
 
 ## Sign in on a headless machine
 

@@ -1,7 +1,7 @@
 import { type CloudCliText, localizeCloudCliText } from "@k2b/cloud/cli";
 
 /** How one request to the loopback callback of `cld login` ended. */
-export type LoginPageOutcome = "success" | "denied" | "mismatch" | "expired" | "failed";
+export type LoginPageOutcome = "success" | "denied" | "mismatch" | "failed";
 
 type OutcomeView = {
   status: number;
@@ -17,8 +17,8 @@ const OUTCOMES: Record<LoginPageOutcome, OutcomeView> = {
     icon: '<path d="M9 12l2 2l4 -4"/>',
     title: { en: "Cloud CLI connected", de: "Cloud CLI verbunden" },
     body: {
-      en: "You can close this tab now and return to your terminal.",
-      de: "Du kannst diesen Tab jetzt schließen und zu deinem Terminal zurückkehren.",
+      en: "You can close this tab now. cld finishes the sign-in in your terminal.",
+      de: "Du kannst diesen Tab jetzt schließen. cld schließt die Anmeldung in deinem Terminal ab.",
     },
   },
   denied: {
@@ -37,15 +37,6 @@ const OUTCOMES: Record<LoginPageOutcome, OutcomeView> = {
     body: {
       en: "It does not belong to the sign-in that is waiting in your terminal. Open the login URL printed there again.",
       de: "Sie gehört nicht zu der Anmeldung, die in deinem Terminal wartet. Öffne die dort ausgegebene Anmelde-URL erneut.",
-    },
-  },
-  expired: {
-    status: 410,
-    icon: '<path d="M12 7v5l3 3"/>',
-    title: { en: "Request no longer valid", de: "Anfrage nicht mehr gültig" },
-    body: {
-      en: "This sign-in was already answered. Check your terminal, and run cld login again if you are not signed in.",
-      de: "Diese Anmeldung wurde bereits beantwortet. Sieh in deinem Terminal nach und führe cld login erneut aus, falls du nicht angemeldet bist.",
     },
   },
   failed: {
@@ -93,8 +84,11 @@ const escapeHtml = (value: string): string =>
 
 /**
  * The page `cld login` shows in the browser once the loopback callback has an
- * answer. `detail` is text the authorization server sent (an OAuth error); it
- * is the only caller-supplied value on the page and is always escaped.
+ * answer. The listener closes with that answer, so a reload or a later request
+ * gets no page. The page reports the callback only: the token exchange and the
+ * profile write follow in the terminal. `detail` is text the authorization
+ * server sent (an OAuth error); it is the only caller-supplied value on the
+ * page and is always escaped.
  */
 export const loginPageHtml = (outcome: LoginPageOutcome, options: { locale: string; detail?: string }): string => {
   const view = OUTCOMES[outcome];

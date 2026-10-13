@@ -2576,7 +2576,6 @@ const waitForOAuthCode = async (
 ): Promise<string> => {
   let resolveCode!: (code: string) => void;
   let rejectCode!: (error: Error) => void;
-  let settled = false;
   const codePromise = new Promise<string>((resolve, reject) => {
     resolveCode = resolve;
     rejectCode = reject;
@@ -2600,10 +2599,7 @@ const waitForOAuthCode = async (
         return loginPageResponse("mismatch", { locale: pageLocale });
       }
 
-      if (settled) return loginPageResponse("expired", { locale: pageLocale });
-
       if (url.searchParams.get("iss") !== expectedIssuer) {
-        settled = true;
         rejectCode(new CliError("OAuth callback did not match the expected issuer."));
         return loginPageResponse("failed", {
           locale: pageLocale,
@@ -2618,7 +2614,6 @@ const waitForOAuthCode = async (
       const error = url.searchParams.get("error");
       if (error) {
         const message = url.searchParams.get("error_description") ?? error;
-        settled = true;
         rejectCode(new CliError(message));
         return error === "access_denied"
           ? loginPageResponse("denied", { locale: pageLocale })
@@ -2627,7 +2622,6 @@ const waitForOAuthCode = async (
 
       const code = url.searchParams.get("code");
       if (!code) {
-        settled = true;
         rejectCode(new CliError("OAuth callback did not include an authorization code."));
         return loginPageResponse("failed", {
           locale: pageLocale,
@@ -2639,7 +2633,6 @@ const waitForOAuthCode = async (
         });
       }
 
-      settled = true;
       resolveCode(code);
       return loginPageResponse("success", { locale: pageLocale });
     },

@@ -5,7 +5,6 @@ const outcomes: ReadonlyArray<readonly [LoginPageOutcome, number]> = [
   ["success", 200],
   ["denied", 200],
   ["mismatch", 400],
-  ["expired", 410],
   ["failed", 400],
 ];
 

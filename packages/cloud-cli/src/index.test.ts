@@ -690,7 +690,12 @@ describe("cloud CLI OAuth session handling", () => {
       callbackUrl.searchParams.set("code", "test-code");
       callbackUrl.searchParams.set("state", stateParam!);
       callbackUrl.searchParams.set("iss", `http://127.0.0.1:${server.port}`);
-      const callbackResponse = await fetch(callbackUrl);
+      // A second valid callback racing the first (a double submit or reload)
+      // must not start a second token exchange. It either still gets a page or
+      // finds the listener already closed.
+      const callbacks = await Promise.allSettled([fetch(callbackUrl), fetch(callbackUrl)]);
+      const callbackResponse = callbacks.find((result) => result.status === "fulfilled")?.value;
+      if (!callbackResponse) throw new Error("No callback request got a response.");
       const callbackText = await callbackResponse.text();
 
       expect(callbackResponse.status).toBe(200);
@@ -702,6 +707,7 @@ describe("cloud CLI OAuth session handling", () => {
       expect(exitCode).toBe(0);
       expect(await stderrPromise).toBe("");
       expect(state.authorizationCodeCalls).toBe(1);
+      await expect(fetch(callbackUrl)).rejects.toThrow();
       expect(state.revokedTokens).toEqual(["old-refresh"]);
 
       const config = JSON.parse(await readFile(configPath, "utf8")) as {
