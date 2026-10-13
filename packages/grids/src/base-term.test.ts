@@ -1,7 +1,7 @@
-import { Glob } from "bun";
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { Glob } from "bun";
 import { gridsApiMessages } from "./api/messages";
 import { capabilityMessagesFor } from "./capability-messages";
 import { customAppBuilderMessages } from "./frontend/_components/custom-apps/builder-messages";
