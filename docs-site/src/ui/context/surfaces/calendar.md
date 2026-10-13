@@ -244,8 +244,10 @@ and the visible hours.
 - **The week view** is a strip of the loaded days, seven to a screen or three
   on a phone, with the hours in a column that stays on the left. A trackpad,
   Shift with the wheel, or a finger scroll it sideways; each gesture keeps the
-  axis it started on, and the strip settles on a day start once it rests. The
-  previous and next buttons move to the start of the week before or after,
+  axis it started on, and the strip settles on the nearest day start once it
+  rests. A scroll without a gesture, such as an event scrolled into view,
+  settles on the next day start in its own direction, so what it brought into
+  view stays there. The previous and next buttons move to the start of the week before or after,
   and Today returns to this week, on a phone to today within it. Nights open
   for the whole strip when an entry of the shown week lies in one. The all-day
   row is as high as the weeks in view need, so a week that loads off screen
@@ -362,16 +364,21 @@ Day and week views accept `startHour`, `endHour`, `visibleStartHour`, and
 lane. `selectedDate`, `selectedEventId`, and `dayBadges` add host-owned
 selection and compact status context.
 
-Without `dayHours`, the day and week views mark their hour scroller,
-`k2b-calendar-time-grid__scroll`, with `k2b-detail-trail` themselves, so
+The day and week views mark their own scroller with `k2b-detail-trail`, so
 applications add nothing beside an
 [AppWorkspace detail panel](/en/ui/layout/workspace#floating-detail).
-Under the touch-tablet drawer, the week keeps its width and scrolls
-sideways, with its day header and all-day row. Selecting an event scrolls
-its day out beside the drawer. The day view narrows into the space beside
-the drawer, so the hours stay in view. A day with three or more overlapping
-events scrolls at 12 rem per lane. The month view keeps its full width under
-the drawer.
+Without `dayHours`, that is the hour scroller,
+`k2b-calendar-time-grid__scroll`; with `dayHours`, it is the strip of days
+in the week and the stream of days in the day view.
+Under the touch-tablet drawer, the week keeps the width of its days and
+scrolls sideways, with its day header and all-day row. Selecting an event
+scrolls its day out beside the drawer. With `dayHours`, the strip then
+settles on the next day start or day end at the drawer in the direction it
+scrolled, never back over the event, so the event stays whole beside the
+drawer, also in a lane of overlapping events. The day view narrows into the space beside the drawer, so the hours
+stay in view. Without `dayHours`, a day with three or more overlapping events
+scrolls at 12 rem per lane. The month view keeps its full width under the
+drawer.
 
 ## Interaction
 
