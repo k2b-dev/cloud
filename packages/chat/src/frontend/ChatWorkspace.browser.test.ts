@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import type { Browser, BrowserContextOptions, Page } from "playwright";
+import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
 import { launchBrowser } from "../../../ui/test/browser";
+import { chatMessages } from "../messages";
 import { nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 declare global {
@@ -45,9 +46,10 @@ const settle = (page: Page) =>
   });
 const load = async (
   options: BrowserContextOptions,
-  address: { chat?: string; message?: string },
+  address: { chat?: string; message?: string; panel?: "info" },
   observe = false,
   prepare?: (page: Page) => Promise<void>,
+  presentation: { locale?: string; theme?: "light" | "dark"; guest?: boolean } = {},
 ) => {
   const context = await browser.newContext(options);
   try {
@@ -56,17 +58,30 @@ const load = async (
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     const path = address.chat ? `/app/chat/c/${address.chat}${address.message ? `/m/${address.message}` : ""}` : "/app/chat";
-    await page.goto(new URL(path, harness.url).href);
+    const url = new URL(path, harness.url);
+    if (presentation.theme) url.searchParams.set("theme", presentation.theme);
+    if (address.panel) url.searchParams.set("panel", address.panel);
+    await page.goto(url.href);
     await settle(page);
+    if (presentation.theme)
+      expect(await page.locator("html").evaluate((element, theme) => element.classList.contains(theme), presentation.theme)).toBe(true);
     if (observe) await observeShifts(page);
     await prepare?.(page);
-    await page.evaluate((props) => window.mountChat(props, "en"), harness.props(address, new Date()));
+    await page.evaluate(({ props, locale }) => window.mountChat(props, locale), {
+      props: harness.props(address, new Date(), { guest: presentation.guest }),
+      locale: presentation.locale ?? "en",
+    });
     await settle(page);
     return { page, errors };
   } catch (error) {
     await context.close();
     throw error;
   }
+};
+/** A closing dialog hands focus back after it has left; wait for that instead of sampling one frame. */
+const focused = async (entry: Locator) => {
+  const element = await entry.elementHandle();
+  await entry.page().waitForFunction((element) => document.activeElement === element, element);
 };
 const inFeed = async (page: Page, selector: string) => {
   const bounds = await page.locator(selector).evaluate((row) => {
@@ -729,5 +744,166 @@ describe("ChatWorkspace browser read state", () => {
         await page.context().close();
       }
     }, 30_000);
+  }
+});
+
+describe("ChatWorkspace start chats and members", () => {
+  beforeEach(() => harness.reset());
+  for (const { name, options } of viewports) {
+    for (const theme of ["light", "dark"] as const) {
+      for (const locale of ["en", "de"]) {
+        const t = chatMessages.resolve([locale]).t;
+        const presentation = { theme, locale };
+        const scenario = `${name}, ${theme}, ${locale}`;
+        test(`New chat and Add people dismiss and restore entry focus without shifts on ${scenario}`, async () => {
+          const chat = harness.addChat({ members: [viewer, nora], count: 4, end: new Date() });
+          harness.setPermission(chat, "admin");
+          const { page, errors } = await load(options, {}, false, undefined, presentation);
+          try {
+            const newChat = page.getByRole("button", { name: t.newChat, exact: true }).filter({ visible: true });
+            expect(await newChat.count()).toBe(1);
+            if (name === "phone") expect(await page.locator(".chat-list-page").isVisible()).toBe(true);
+            await observeShifts(page);
+            for (const dismissal of ["escape", "cancel"]) {
+              await newChat.click();
+              const dialog = page.getByRole("dialog", { name: t.newChat, exact: true });
+              await dialog.waitFor();
+              await page.waitForTimeout(600);
+              expect(await page.evaluate(() => window.chatShifts)).toBe(0);
+              if (dismissal === "escape") await page.keyboard.press("Escape");
+              else await dialog.getByRole("button", { name: t.cancel, exact: true }).click();
+              await dialog.waitFor({ state: "hidden" });
+              await focused(newChat);
+              await page.waitForTimeout(600);
+              expect(await page.evaluate(() => window.chatShifts)).toBe(0);
+            }
+            const list = page.locator(name === "phone" ? ".chat-list-page" : ".k2b-app-workspace__sidebar");
+            await list.locator(`a[href="/app/chat/c/${chat}"]`).click();
+            await page.waitForURL(`**/app/chat/c/${chat}`);
+            const header = page.locator(".chat-conversation__header");
+            const height = (await header.boundingBox())!.height;
+            const entries = [{ entry: header.getByRole("button", { name: t.addPeople, exact: true }), title: t.addPeople }];
+            if (name === "desktop") entries.push({ entry: newChat, title: t.newChat });
+            await observeShifts(page);
+            for (const { entry, title } of entries) {
+              for (const dismissal of ["escape", "cancel"]) {
+                await entry.click();
+                const dialog = page.getByRole("dialog", { name: title, exact: true });
+                await dialog.waitFor();
+                await page.waitForTimeout(600);
+                expect((await header.boundingBox())!.height).toBe(height);
+                expect(await page.evaluate(() => window.chatShifts)).toBe(0);
+                if (dismissal === "escape") await page.keyboard.press("Escape");
+                else await dialog.getByRole("button", { name: t.cancel, exact: true }).click();
+                await dialog.waitFor({ state: "hidden" });
+                await focused(entry);
+                await page.waitForTimeout(600);
+                expect((await header.boundingBox())!.height).toBe(height);
+                expect(await page.evaluate(() => window.chatShifts)).toBe(0);
+              }
+            }
+            expect(errors).toEqual([]);
+          } finally {
+            await page.context().close();
+          }
+        }, 30_000);
+
+        test(`Chat info keeps URL state across reload and its responsive geometry without shifts on ${scenario}`, async () => {
+          const chat = harness.addChat({ members: [viewer, nora], count: 4, end: new Date() });
+          harness.setPermission(chat, "admin");
+          harness.seedMembers(chat, 101);
+          const { page, errors } = await load(options, { chat }, false, undefined, presentation);
+          try {
+            const header = page.locator(".chat-conversation__header");
+            const height = (await header.boundingBox())!.height;
+            const panel = page.locator("#k2b-workspace-detail-chat-info");
+            const assertPanel = async () => {
+              await panel.waitFor({ state: "visible" });
+              await page.waitForTimeout(600);
+              const box = await panel.boundingBox();
+              expect(box).not.toBeNull();
+              if (name === "phone") expect(box).toEqual({ x: 0, y: 0, width: 390, height: 844 });
+              else expect(box!.x).toBeGreaterThan(1000);
+              expect((await header.boundingBox())!.height).toBe(height);
+              expect(await page.evaluate(() => window.chatShifts)).toBe(0);
+            };
+            const closePanel = async () => {
+              await panel.getByRole("button", { name: t.closeChatInfo, exact: true }).click();
+              await panel.waitFor({ state: "hidden" });
+              await page.waitForTimeout(600);
+              await page.waitForURL((url) => !url.searchParams.has("panel"));
+              expect((await header.boundingBox())!.height).toBe(height);
+              expect(await page.evaluate(() => window.chatShifts)).toBe(0);
+            };
+            await observeShifts(page);
+            await header.getByRole("link", { name: t.chatInfo, exact: true }).click();
+            await page.waitForURL((url) => url.searchParams.get("panel") === "info");
+            await assertPanel();
+            await panel.getByRole("button", { name: t.showMoreMembers, exact: true }).waitFor();
+            await closePanel();
+            await header.getByRole("link", { name: t.chatInfo, exact: true }).click();
+            await assertPanel();
+            // Reload the same route with the info prop SSR would supply. The fixture
+            // chooses theme from the URL, so put the current theme back before reload.
+            const address = new URL(page.url());
+            address.searchParams.set("theme", theme);
+            await page.evaluate((url) => history.replaceState(history.state, "", url), address.href);
+            await page.reload();
+            await settle(page);
+            await observeShifts(page);
+            await page.evaluate(({ props, locale }) => window.mountChat(props, locale), {
+              props: harness.props({ chat, panel: "info" }, new Date()),
+              locale,
+            });
+            await assertPanel();
+            expect(new URL(page.url()).searchParams.get("panel")).toBe("info");
+            await closePanel();
+            expect(errors).toEqual([]);
+          } finally {
+            await page.context().close();
+          }
+        }, 30_000);
+
+        test(`creating through New chat opens in place and appears in the list on ${scenario}`, async () => {
+          const person = { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "Casey New" };
+          harness.addPerson(person);
+          harness.addChat({ members: [viewer, nora], count: 4, end: new Date() });
+          const { page, errors } = await load(options, {}, false, undefined, presentation);
+          try {
+            await page.evaluate(() => {
+              window.chatNavigationMarker = "created-in-place";
+            });
+            await page.getByRole("button", { name: t.newChat, exact: true }).filter({ visible: true }).click();
+            const dialog = page.getByRole("dialog", { name: t.newChat, exact: true });
+            await dialog.getByRole("combobox").fill(person.name);
+            await page.getByRole("option", { name: person.name }).click();
+            await dialog.getByRole("textbox", { name: t.name, exact: true }).fill("Created through dialog");
+            const created = page.waitForResponse(
+              (response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/chat/conversations",
+            );
+            await dialog.getByRole("button", { name: t.startChat, exact: true }).click();
+            expect((await created).status()).toBe(201);
+            await page.waitForURL(/\/app\/chat\/c\/[0-9A-Za-z]{6}$/);
+            const id = new URL(page.url()).pathname.split("/").at(-1)!;
+            await page.locator(".chat-conversation__header").getByText("Created through dialog", { exact: true }).waitFor();
+            expect(await page.evaluate(() => window.chatNavigationMarker)).toBe("created-in-place");
+            expect(harness.members(id).some((member) => member.principal.type === "user" && member.principal.userId === person.id)).toBe(
+              true,
+            );
+            await dialog.waitFor({ state: "hidden" });
+            if (name === "phone") {
+              await page.getByRole("link", { name: t.backToChats, exact: true }).click();
+              await page.waitForURL((url) => url.pathname === "/app/chat");
+            }
+            const list = page.locator(name === "phone" ? ".chat-list-page" : ".k2b-app-workspace__sidebar");
+            await list.locator(`a[href="/app/chat/c/${id}"]`).getByText("Created through dialog", { exact: true }).waitFor();
+            expect(await page.evaluate(() => window.chatNavigationMarker)).toBe("created-in-place");
+            expect(errors).toEqual([]);
+          } finally {
+            await page.context().close();
+          }
+        }, 30_000);
+      }
+    }
   }
 });

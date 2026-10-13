@@ -7,6 +7,8 @@ import {
   ConversationSchema,
   CreateConversationSchema,
   LeaveSchema,
+  MemberPreviewSchema,
+  MemberQuerySchema,
   PeopleQuerySchema,
   UpdateConversationSchema,
   UpdateMemberSchema,
@@ -176,4 +178,29 @@ test("personal read contracts reject unsafe seqs, unknown input fields and unbou
   expect(ReadUpdateSchema.safeParse({ ...update, unread: 101 }).success).toBeFalse();
   expect(ReadUpdateSchema.safeParse({ ...update, asOfRev: undefined }).success).toBeFalse();
   expect(ReadAllOutcomeSchema.parse({ outcome: "done", marked: 50, more: true })).toMatchObject({ marked: 50 });
+});
+
+test("member query bounds search and strictly decodes opaque name and access-ID cursors", () => {
+  expect(MemberQuerySchema.parse({ q: " Lea " })).toEqual({ q: "Lea" });
+  expect(MemberQuerySchema.parse({ q: "  " })).toEqual({ q: "" });
+  const cursor = { name: "lea", id: lea };
+  expect(MemberQuerySchema.parse({ cursor: JSON.stringify(cursor) }).cursor).toEqual(cursor);
+  for (const query of [
+    { q: "a".repeat(101) },
+    { cursor: lea },
+    { cursor: "malformed" },
+    { cursor: "x".repeat(2001) },
+    { cursor: JSON.stringify({ ...cursor, extra: true }) },
+    { cursor: JSON.stringify({ name: "lea" }) },
+    { cursor: JSON.stringify({ name: "lea", id: "bad" }) },
+    { unknown: true },
+  ])
+    expect(MemberQuerySchema.safeParse(query).success).toBeFalse();
+  expect(MemberPreviewSchema.parse({ joining: 2, throughGroups: 1, memberCount: 3 })).toEqual({
+    joining: 2,
+    throughGroups: 1,
+    memberCount: 3,
+  });
+  expect(MemberPreviewSchema.safeParse({ joining: -1, throughGroups: 0, memberCount: 3 }).success).toBeFalse();
+  expect(MemberPreviewSchema.safeParse({ joining: 1.5, throughGroups: 0, memberCount: 3 }).success).toBeFalse();
 });

@@ -31,6 +31,7 @@ import {
   MarkUnreadSchema,
   MemberPageSchema,
   MemberParamSchema,
+  MemberPreviewSchema,
   MemberQuerySchema,
   MessagePageSchema,
   MessageParamSchema,
@@ -278,13 +279,30 @@ const app = new Hono<AuthContext>()
     description("Read people and group chat members", MemberPageSchema),
     validator("param", ConversationParamSchema, invalidInput),
     validator("query", MemberQuerySchema, invalidInput),
-    async (c) =>
-      respond(
+    async (c) => {
+      const { q, cursor } = c.req.valid("query");
+      return respond(
         c,
         chatService.conversations.members.list({
           ...context(c),
           conversationId: c.req.valid("param").conversation,
-          query: c.req.valid("query"),
+          query: { q, ...(cursor ? { cursor: JSON.stringify(cursor) } : {}) },
+        }),
+      );
+    },
+  )
+  .post(
+    "/conversations/:conversation/members/preview",
+    description("Preview people joining a chat through people and groups", MemberPreviewSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", AddMembersSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.conversations.members.preview({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          input: c.req.valid("json"),
         }),
       ),
   )

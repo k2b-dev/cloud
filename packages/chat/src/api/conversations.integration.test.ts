@@ -15,6 +15,7 @@ import {
   ConversationSchema,
   CreateOutcomeSchema,
   MemberPageSchema,
+  MemberPreviewSchema,
   MessagePageSchema,
   MessageViewSchema,
   PeoplePageSchema,
@@ -1033,6 +1034,209 @@ suite("chat conversations, people, and directory groups", () => {
           k: key,
           d: { type: "membership", conversationId: chat.shortId },
         });
+    }
+  });
+  test("250 direct members page in name order, including ties, and search pages without gaps", async () => {
+    const owner = await user();
+    const ids = await bulkUsers(249);
+    await sql`UPDATE auth.users SET display_name = 'Manager' WHERE id = ${owner}::uuid`;
+    await sql`UPDATE auth.users SET display_name = 'Person 0100' WHERE id = ${ids[100]}::uuid`;
+    const chat = await fixture(
+      owner,
+      ids.map((id) => ({ id, permission: "write" as const })),
+    );
+    const headers = await cookie(owner);
+    const expected = await sql<{ access_id: string; name: string }[]>`
+      SELECT ca.access_id, COALESCE(NULLIF(u.display_name, ''), u.uid) AS name FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+      JOIN auth.users u ON u.id = a.user_id WHERE ca.conversation_id = ${chat.id}::uuid
+      ORDER BY lower(COALESCE(NULLIF(u.display_name, ''), u.uid)), ca.access_id
+    `;
+    for (const q of ["", "pErSoN"]) {
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      const matching = expected.filter((row) => !q || row.name.toLowerCase().includes(q.toLowerCase()));
+      for (const size of [100, 100, matching.length - 200]) {
+        const query = new URLSearchParams({ q, ...(cursor ? { cursor } : {}) });
+        const response = await request(headers, `/${chat.shortId}/members?${query}`);
+        expect(response.status).toBe(200);
+        const page = MemberPageSchema.parse(await response.json());
+        expect(page.items).toHaveLength(size);
+        expect(page.managers).toBe(1);
+        seen.push(...page.items.map((row) => row.accessId));
+        cursor = page.nextCursor;
+      }
+      expect(cursor).toBeNull();
+      expect(new Set(seen).size).toBe(matching.length);
+      expect(seen).toEqual(matching.map((row) => row.access_id));
+    }
+    for (const query of [
+      new URLSearchParams({ q: "x".repeat(101) }),
+      new URLSearchParams({ cursor: "not-json" }),
+      new URLSearchParams({ cursor: "x".repeat(2001) }),
+      new URLSearchParams({ cursor: JSON.stringify({ name: "person", id: owner, extra: true }) }),
+      new URLSearchParams({ cursor: JSON.stringify({ name: "person", id: "not-a-uuid" }) }),
+    ]) {
+      const response = await request(headers, `/${chat.shortId}/members?${query}`);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "BAD_INPUT" });
+    }
+  });
+
+  test("member search escapes wildcards and includes group size, guest, expiry and active direct managers", async () => {
+    const owner = await user();
+    const guest = await user("guest");
+    const expired = await user("user", true);
+    const reader = await user();
+    const discoverer = await user();
+    const headers = await cookie(owner);
+    const chat = await fixture(owner, [
+      { id: guest, permission: "read" },
+      { id: expired, permission: "admin" },
+      { id: reader, permission: "write" },
+    ]);
+    await grant(chat.id, discoverer, "admin", owner, "discoverable");
+    const groupId = await group([owner, reader], "local", "Support_% Team");
+    await groupGrant(chat, groupId, owner, "admin");
+    const login = `Needle-${crypto.randomUUID()}`;
+    await sql`UPDATE auth.users SET uid = ${login}, display_name = 'Guest_% Name' WHERE id = ${guest}::uuid`;
+    const read = async (q = "") =>
+      MemberPageSchema.parse(await (await request(headers, `/${chat.shortId}/members?${new URLSearchParams({ q })}`)).json());
+    const page = await read();
+    expect(page.managers).toBe(1);
+    expect(page.items.find((entry) => entry.principal.type === "group")).toMatchObject({
+      displayName: "Support_% Team",
+      groupSize: 2,
+      guest: false,
+      deactivated: false,
+    });
+    const guestResponse = await request(await cookie(guest), `/${chat.shortId}/members`);
+    expect(guestResponse.status).toBe(200);
+    const guestPage = MemberPageSchema.parse(await guestResponse.json());
+    expect(guestPage.items.find((entry) => entry.principal.type === "group")).toMatchObject({
+      principal: { type: "group", groupId },
+      displayName: "Support_% Team",
+      groupSize: null,
+    });
+    expect(page.items.find((entry) => entry.principal.type === "user" && entry.principal.userId === guest)).toMatchObject({
+      guest: true,
+      deactivated: false,
+      groupSize: null,
+      avatarHash: null,
+    });
+    expect(page.items.find((entry) => entry.principal.type === "user" && entry.principal.userId === expired)).toMatchObject({
+      guest: false,
+      deactivated: true,
+      groupSize: null,
+    });
+    expect((await read("gUeSt_%")).items).toHaveLength(1);
+    expect((await read(login.toUpperCase())).items).toHaveLength(1);
+    expect((await read("sUpPoRt")).items).toHaveLength(1);
+    for (const q of ["%", "_"]) expect((await read(q)).items.map((entry) => entry.displayName)).toEqual(["Guest_% Name", "Support_% Team"]);
+    await sql`UPDATE auth.users SET display_name = 'Back\\slash' WHERE id = ${reader}::uuid`;
+    expect((await read("\\")).items.map((entry) => entry.displayName)).toEqual(["Back\\slash"]);
+    // Group names are unique per provider, so the cn search runs on a named group.
+    const [groupRow] = await sql<{ cn: string }[]>`SELECT cn FROM auth.groups WHERE id = ${groupId}::uuid`;
+    expect((await read(groupRow!.cn.toUpperCase())).items.map((entry) => entry.principal)).toEqual([{ type: "group", groupId }]);
+    const large = await group(await bulkUsers(501));
+    await groupGrant(chat, large, owner);
+    expect((await read()).items.find((entry) => entry.principal.type === "group" && entry.principal.groupId === large)?.groupSize).toBe(
+      501,
+    );
+  });
+
+  test("member preview authorizes admin, deduplicates joining people and leaves all chat state untouched", async () => {
+    const owner = await user();
+    const writer = await user();
+    const direct = await user();
+    const groupOnly = await user();
+    const inherited = await user();
+    const chat = await fixture(owner, [{ id: writer, permission: "write" }]);
+    const headers = await cookie(owner);
+    const existingGroup = await group([inherited]);
+    expect(
+      (await request(headers, `/${chat.shortId}/members`, "POST", { members: [{ type: "group", groupId: existingGroup }] })).status,
+    ).toBe(200);
+    const nested = await group([groupOnly]);
+    const groupId = await group([owner, writer, direct, inherited]);
+    await sql`INSERT INTO auth.group_groups_v2 (parent_group_id, child_group_id) VALUES (${groupId}::uuid, ${nested}::uuid)`;
+    const members = [
+      { type: "group", groupId },
+      { type: "user", userId: direct },
+      { type: "user", userId: owner },
+    ];
+    const state = async () => {
+      const [row] = await sql<
+        {
+          member_count: number;
+          seq_head: bigint | string;
+          rev: bigint | string;
+          entries: bigint | string;
+          participants: bigint | string;
+          messages: bigint | string;
+        }[]
+      >`
+        SELECT c.member_count, c.seq_head, c.rev,
+          (SELECT COUNT(*) FROM chat.conversation_access WHERE conversation_id = c.id) AS entries,
+          (SELECT COUNT(*) FROM chat.participants WHERE conversation_id = c.id) AS participants,
+          (SELECT COUNT(*) FROM chat.messages WHERE conversation_id = c.id) AS messages
+        FROM chat.conversations c WHERE c.id = ${chat.id}::uuid
+      `;
+      if (!row) throw new Error("Missing chat state");
+      return row;
+    };
+    const before = await state();
+    expect((await request(await cookie(writer), `/${chat.shortId}/members/preview`, "POST", { members })).status).toBe(403);
+    const response = await request(headers, `/${chat.shortId}/members/preview`, "POST", { members });
+    expect(response.status).toBe(200);
+    expect(MemberPreviewSchema.parse(await response.json())).toEqual({ joining: 2, throughGroups: 1, memberCount: 5 });
+    expect(await state()).toEqual(before);
+    expect((await request(headers, `/${chat.shortId}/members`, "POST", { members })).status).toBe(200);
+    expect((await state()).member_count).toBe(5);
+    const repeated = await request(headers, `/${chat.shortId}/members/preview`, "POST", { members });
+    expect(MemberPreviewSchema.parse(await repeated.json())).toEqual({ joining: 0, throughGroups: 0, memberCount: 5 });
+  });
+
+  test("member preview counts current people despite a stale cached count at the participant limit", async () => {
+    const owner = await user();
+    const peer = await user();
+    const newcomer = await user();
+    const headers = await cookie(owner);
+    const chat = await fixture(owner, [{ id: peer, permission: "write" }]);
+    for (const staleCount of [4999, 5000]) {
+      await sql`UPDATE chat.conversations SET member_count = ${staleCount} WHERE id = ${chat.id}::uuid`;
+      const response = await request(headers, `/${chat.shortId}/members/preview`, "POST", {
+        members: [{ type: "user", userId: newcomer }],
+      });
+      expect(response.status).toBe(200);
+      expect(MemberPreviewSchema.parse(await response.json())).toEqual({ joining: 1, throughGroups: 0, memberCount: 3 });
+    }
+  });
+
+  test("preview and add return identical member validation failures", async () => {
+    const owner = await user();
+    const headers = await cookie(owner);
+    const chat = await fixture(owner);
+    const large = await group(await bulkUsers(501));
+    const expired = await user("user", true);
+    for (const members of [
+      [{ type: "group", groupId: large }],
+      [{ type: "user", userId: crypto.randomUUID() }],
+      [{ type: "user", userId: expired }],
+    ]) {
+      const preview = await request(headers, `/${chat.shortId}/members/preview`, "POST", { members });
+      const add = await request(headers, `/${chat.shortId}/members`, "POST", { members });
+      expect(preview.status).toBe(400);
+      expect(add.status).toBe(400);
+      expect(await preview.json()).toEqual(await add.json());
+    }
+    const guest = await user("guest");
+    const guestChat = await fixture(guest);
+    const guestHeaders = await cookie(guest);
+    for (const members of [[{ type: "group", groupId: large }], [{ type: "user", userId: owner }]]) {
+      const preview = await request(guestHeaders, `/${guestChat.shortId}/members/preview`, "POST", { members });
+      const add = await request(guestHeaders, `/${guestChat.shortId}/members`, "POST", { members });
+      expect(preview.status).toBe(400);
+      expect(await preview.json()).toEqual(await add.json());
     }
   });
 });

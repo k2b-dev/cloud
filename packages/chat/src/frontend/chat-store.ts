@@ -4,19 +4,28 @@
  */
 import { createApiClient } from "@k2b/cloud/browser";
 import { type LiveConnection, type LiveSubscription, liveConnection } from "@k2b/cloud/browser/live";
-import type { z } from "zod";
+import { z } from "zod";
 import type { ApiType } from "../api";
+import { chatMessages } from "../messages";
 import {
+  ChangeSchema,
   ChangesPageSchema,
   ChatLiveEventSchema,
   ChatSnapshotSchema,
   ConversationPageSchema,
   ConversationSchema,
+  CreateOutcomeSchema,
+  MemberPageSchema,
+  MemberPreviewSchema,
+  type MemberPrincipal,
   MessagePageSchema,
   MessageSchema,
+  PeoplePageSchema,
+  type PermissionSchema,
   ReadAllOutcomeSchema,
   ReadUpdateSchema,
   readStart,
+  SuccessSchema,
   UNREAD_CAP,
 } from "../service/contracts";
 
@@ -27,6 +36,15 @@ type MessagePage = z.infer<typeof MessagePageSchema>;
 type ChangesPage = z.infer<typeof ChangesPageSchema>;
 type Summary = Extract<z.infer<typeof ChatLiveEventSchema>, { type: "summary" }>;
 export type ChatStoreApi = {
+  create(input: { members: MemberPrincipal[]; name?: string; allowDuplicate?: boolean }): Promise<z.infer<typeof CreateOutcomeSchema>>;
+  updateDetails(id: string, patch: { name?: string | null; icon?: string | null; purpose?: string | null }): Promise<Conversation>;
+  members(id: string, query: { q?: string; cursor?: string }): Promise<z.infer<typeof MemberPageSchema>>;
+  previewMembers(id: string, members: MemberPrincipal[]): Promise<z.infer<typeof MemberPreviewSchema>>;
+  addMembers(id: string, members: MemberPrincipal[]): Promise<z.infer<typeof ChangeSchema>>;
+  updateMember(id: string, accessId: string, permission: z.infer<typeof PermissionSchema>): Promise<z.infer<typeof SuccessSchema>>;
+  removeMember(id: string, accessId: string): Promise<z.infer<typeof SuccessSchema>>;
+  leave(id: string, successor?: string): Promise<z.infer<typeof SuccessSchema>>;
+  people(search: string, cursor?: string, signal?: AbortSignal): Promise<z.infer<typeof PeoplePageSchema>>;
   read(id: string, seq: number): Promise<z.infer<typeof ReadUpdateSchema>>;
   markUnread(id: string, message?: string): Promise<z.infer<typeof ReadUpdateSchema>>;
   readAll(confirmed: boolean): Promise<z.infer<typeof ReadAllOutcomeSchema>>;
@@ -54,19 +72,72 @@ export type OpenChat = {
   hasNewer: boolean;
 };
 
+export class ChatRequestError extends Error {
+  constructor(
+    message: string,
+    readonly code: string | undefined,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ChatRequestError";
+  }
+}
+const requestError = async (response: Pick<Response, "status" | "json">) => {
+  const body = z.object({ code: z.string().optional(), message: z.string() }).safeParse(await response.json().catch(() => null));
+  const generic = chatMessages.resolve(typeof document === "undefined" ? [] : [document.documentElement.lang]).t.requestFailed;
+  return new ChatRequestError(body.success ? body.data.message : generic, body.success ? body.data.code : undefined, response.status);
+};
 const parseResponse = async <T>(response: Pick<Response, "status" | "ok" | "json">, schema: z.ZodType<T>): Promise<T | null> => {
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`Chat request failed (${response.status})`);
+  if (!response.ok) throw await requestError(response);
   return schema.parse(await response.json());
 };
 export const createChatStoreApi = (): ChatStoreApi => {
   const client = createApiClient<ApiType>({ baseUrl: "/api/chat" });
   const requiredResponse = async <T>(response: Pick<Response, "status" | "ok" | "json">, schema: z.ZodType<T>) => {
-    const result = await parseResponse(response, schema);
-    if (result === null) throw new Error("Chat request failed (404)");
-    return result;
+    if (!response.ok) throw await requestError(response);
+    return schema.parse(await response.json());
   };
   return {
+    create: async (input) => requiredResponse(await client.conversations.$post({ json: input }), CreateOutcomeSchema),
+    updateDetails: async (id, patch) =>
+      requiredResponse(
+        await client.conversations[":conversation"].$patch({ param: { conversation: id }, json: patch }),
+        ConversationSchema,
+      ),
+    members: async (id, query) =>
+      requiredResponse(await client.conversations[":conversation"].members.$get({ param: { conversation: id }, query }), MemberPageSchema),
+    previewMembers: async (id, members) =>
+      requiredResponse(
+        await client.conversations[":conversation"].members.preview.$post({ param: { conversation: id }, json: { members } }),
+        MemberPreviewSchema,
+      ),
+    addMembers: async (id, members) =>
+      requiredResponse(
+        await client.conversations[":conversation"].members.$post({ param: { conversation: id }, json: { members } }),
+        ChangeSchema,
+      ),
+    updateMember: async (id, accessId, permission) =>
+      requiredResponse(
+        await client.conversations[":conversation"].members[":accessId"].$patch({
+          param: { conversation: id, accessId },
+          json: { permission },
+        }),
+        SuccessSchema,
+      ),
+    removeMember: async (id, accessId) =>
+      requiredResponse(
+        await client.conversations[":conversation"].members[":accessId"].$delete({ param: { conversation: id, accessId } }),
+        SuccessSchema,
+      ),
+    leave: async (id, successor) =>
+      requiredResponse(
+        await client.conversations[":conversation"].leave.$post({ param: { conversation: id }, json: { successor } }),
+        SuccessSchema,
+      ),
+    people: async (search, cursor, signal) =>
+      requiredResponse(await client.people.$get({ query: { search, cursor } }, { init: { signal } }), PeoplePageSchema),
+
     read: async (id, seq) =>
       requiredResponse(
         await client.conversations[":conversation"].read.$post({ param: { conversation: id }, json: { seq } }),
@@ -79,11 +150,7 @@ export const createChatStoreApi = (): ChatStoreApi => {
       ),
     readAll: async (confirmed) =>
       requiredResponse(await client.conversations["read-all"].$post({ json: { confirmed } }), ReadAllOutcomeSchema),
-    conversations: async (cursor) => {
-      const page = await parseResponse(await client.conversations.$get({ query: { cursor } }), ConversationPageSchema);
-      if (!page) throw new Error("Chat request failed (404)");
-      return page;
-    },
+    conversations: async (cursor) => requiredResponse(await client.conversations.$get({ query: { cursor } }), ConversationPageSchema),
     conversation: async (id) =>
       parseResponse(await client.conversations[":conversation"].$get({ param: { conversation: id } }), ConversationSchema),
     messages: async (id, query) =>
@@ -105,8 +172,13 @@ export const createChatStoreApi = (): ChatStoreApi => {
         query: { afterRev: String(afterRev) },
       });
       if (response.status === 409) {
-        const result = await response.json();
-        if (result.code === "RESYNC_REQUIRED") return "RESYNC_REQUIRED";
+        const result = z.object({ code: z.string().optional() }).safeParse(
+          await response
+            .clone()
+            .json()
+            .catch(() => null),
+        );
+        if (result.success && result.data.code === "RESYNC_REQUIRED") return "RESYNC_REQUIRED";
       }
       return parseResponse(response, ChangesPageSchema);
     },
@@ -475,6 +547,38 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   );
   if (snapshot.open) open({ ...snapshot.open, cursor: snapshot.cursor });
   return {
+    // A change the reader made shows at once: its chat's row is read again instead of waiting for the live event.
+    // A chat the reader left answers 404, which removes the row and ends an open view in "No access".
+    create: async (input: Parameters<ChatStoreApi["create"]>[0]) => {
+      const result = await api.create(input);
+      if (result.outcome === "created") await sidebar(() => refetchRow(result.conversation.id));
+      return result;
+    },
+    updateDetails: async (id: string, patch: Parameters<ChatStoreApi["updateDetails"]>[1]) => {
+      const result = await api.updateDetails(id, patch);
+      await sidebar(() => refetchRow(id));
+      return result;
+    },
+    members: (id: string, query: Parameters<ChatStoreApi["members"]>[1]) => api.members(id, query),
+    previewMembers: (id: string, members: MemberPrincipal[]) => api.previewMembers(id, members),
+    addMembers: async (id: string, members: MemberPrincipal[]) => {
+      const result = await api.addMembers(id, members);
+      await sidebar(() => refetchRow(id));
+      return result;
+    },
+    updateMember: (id: string, accessId: string, permission: z.infer<typeof PermissionSchema>) =>
+      api.updateMember(id, accessId, permission),
+    removeMember: async (id: string, accessId: string) => {
+      const result = await api.removeMember(id, accessId);
+      await sidebar(() => refetchRow(id));
+      return result;
+    },
+    leave: async (id: string, successor?: string) => {
+      const result = await api.leave(id, successor);
+      await sidebar(() => refetchRow(id));
+      return result;
+    },
+    people: (search: string, signal?: AbortSignal) => api.people(search, undefined, signal),
     // Only the FIFO personal live channel applies write results; HTTP responses never change local state.
     markRead: (id: string, seq: number) => api.read(id, seq),
     markUnread: (id: string, message?: string) => api.markUnread(id, message),

@@ -4,7 +4,10 @@ import type { DateContext } from "@k2b/stdlib";
 import {
   AppWorkspace,
   announce,
+  Button,
   Dropdown,
+  IconButton,
+  IconButtonLink,
   type MessageRowStatus,
   Placeholder,
   prompts,
@@ -17,11 +20,17 @@ import type { z } from "zod";
 import { chatMessages } from "../messages";
 import { type ConversationPageSchema, type ConversationSchema, type MessagePageSchema, readStart } from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
+import { openAddPeopleDialog } from "./AddPeopleDialog";
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
+import { openChatDetailsDialog } from "./ChatDetailsDialog";
+import ChatInfoPanel from "./ChatInfoPanel";
 import ChatList from "./ChatList";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 import { createChatStore, type OpenChat } from "./chat-store";
+import { openLeaveChatDialog } from "./LeaveChatDialog";
+import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
+import { panelHref, parseRoute, type Route } from "./route";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 type Store = ReturnType<typeof createChatStore>;
@@ -35,16 +44,11 @@ export type ChatWorkspaceProps = {
   /** The chat in the address, also when the reader may not see it. */
   chatId: string | null;
   viewerId: string;
+  guest: boolean;
+  panel: "info" | null;
   dateConfig: DateContext;
   /** The server's clock, so relative day labels render the same on the server and in the browser. */
   now: string;
-};
-
-type Route = { chatId: string | null; messageId: string | null };
-
-const parseRoute = (url: URL): Route | null => {
-  const match = /^\/app\/chat(?:\/c\/([^/]+)(?:\/m\/([^/]+))?)?\/?$/.exec(url.pathname);
-  return match ? { chatId: match[1] ?? null, messageId: match[2] ?? null } : null;
 };
 
 const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>): OpenChat => {
@@ -69,7 +73,8 @@ const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>): OpenChat =>
 export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
-  const [route, setRoute] = createSignal<Route>({ chatId: props.chatId, messageId: props.open?.focus ?? null });
+  const [route, setRoute] = createSignal<Route>({ chatId: props.chatId, messageId: props.open?.focus ?? null, panel: props.panel });
+  const [panel, setPanel] = createSignal<"info" | null>(props.panel);
   const [rows, setRows] = createSignal<readonly Conversation[]>(props.sidebar.items);
   const [hasMore, setHasMore] = createSignal(props.sidebar.nextCursor !== null);
   const [chat, setChat] = createSignal<OpenChat | null>(props.open ? initialChat(props.open) : null);
@@ -85,6 +90,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // A stored message keeps the key of the send it came from, so its row is not replaced when it arrives.
   const sendKeys = new Map<string, string>();
   let store: Store | undefined;
+  // The same store as `store`, for the info panel, which renders before the store exists and loads once it does.
+  const [liveStore, setLiveStore] = createSignal<Store>();
+  const [membersRevision, setMembersRevision] = createSignal(0);
   let outbox: Sends | undefined;
   let feed: VirtualFeedController | undefined;
 
@@ -291,6 +299,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const previous = route().chatId;
     if (previous) drafts.set(previous, draft());
     setRoute(next);
+    setPanel(next.panel);
     setDraft(next.chatId ? (drafts.get(next.chatId) ?? "") : "");
     setNow(new Date());
     sortRows();
@@ -298,6 +307,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   /** Loads the chat's snapshot before the address changes; only an applied open may change it. */
   const open = async (next: Route): Promise<"applied" | "superseded" | "failed"> => {
     if (!store) return "failed";
+    if (route().chatId === next.chatId && route().messageId === next.messageId && route().panel !== next.panel) {
+      setRoute(next);
+      setPanel(openChat() ? next.panel : null);
+      return "applied";
+    }
     if (!next.chatId) {
       const live = store;
       batch(() => {
@@ -310,7 +324,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     try {
       const result = await store.openChat(next.chatId, next.messageId ?? undefined);
       if (result.status === "superseded") return "superseded";
-      applyRoute({ chatId: next.chatId, messageId: result.status === "opened" ? next.messageId : null });
+      applyRoute({
+        chatId: next.chatId,
+        messageId: result.status === "opened" ? next.messageId : null,
+        panel: result.status === "opened" ? next.panel : null,
+      });
       return "applied";
     } catch {
       toast.error(t().openFailed);
@@ -321,7 +339,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   const openFromList = async (id: string, navigation: LinkNavigateEvent) => {
     const fromList = route().chatId === null;
-    if ((await open({ chatId: id, messageId: null })) === "applied")
+    if ((await open({ chatId: id, messageId: null, panel: null })) === "applied")
       navigation.push(undefined, { scroll: "preserve", state: { chatFromList: fromList } });
   };
 
@@ -332,7 +350,74 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   const backToList = async (navigation: LinkNavigateEvent) => {
     if (openedFromList()) history.back();
-    else if ((await open({ chatId: null, messageId: null })) === "applied") navigation.push(undefined, { scroll: "preserve" });
+    else if ((await open({ chatId: null, messageId: null, panel: null })) === "applied") navigation.push(undefined, { scroll: "preserve" });
+  };
+
+  const openInfo = (navigation?: LinkNavigateEvent) => {
+    const id = route().chatId;
+    if (!id || !openChat() || panel() === "info") return;
+    setPanel("info");
+    setRoute({ chatId: id, messageId: null, panel: "info" });
+    const options = { scroll: "preserve" as const, state: { chatFromList: openedFromList(), chatInfoFromChat: true } };
+    if (navigation) navigation.push(panelHref(id, "info"), options);
+    else navigate(panelHref(id, "info"), options);
+  };
+  const closeInfo = (navigation?: LinkNavigateEvent) => {
+    const id = route().chatId;
+    if (!id || panel() === null) return;
+    const state: unknown = history.state;
+    if (state && typeof state === "object" && "chatInfoFromChat" in state && state.chatInfoFromChat === true) {
+      history.back();
+      return;
+    }
+    setPanel(null);
+    setRoute({ chatId: id, messageId: null, panel: null });
+    if (navigation) navigation.push(panelHref(id, null), { scroll: "preserve" });
+    else navigate(panelHref(id, null), { scroll: "preserve" });
+  };
+
+  /** A chat the person just started, or chose among existing ones, opens in place like a chat from the list. */
+  const openChosen = async (id: string | undefined) => {
+    if (!id) return;
+    const fromList = route().chatId === null;
+    if ((await open({ chatId: id, messageId: null, panel: null })) === "applied")
+      navigate(panelHref(id, null), { scroll: "preserve", state: { chatFromList: fromList } });
+  };
+  const newChat = async () => {
+    if (!store) return;
+    await openChosen(
+      await openNewChatDialog({ store, guest: props.guest, viewerId: props.viewerId, dateConfig: props.dateConfig, locale: locale() }),
+    );
+  };
+  // The dialogs only offer what the viewer may do; the server decides every request again.
+  const addPeople = async () => {
+    const current = conversation();
+    if (!store || current?.permission !== "admin") return;
+    await openChosen(
+      await openAddPeopleDialog({
+        store,
+        conversation: current,
+        guest: props.guest,
+        viewerId: props.viewerId,
+        locale: locale(),
+        onAdded: () => setMembersRevision((revision) => revision + 1),
+      }),
+    );
+  };
+  const editDetails = () => {
+    const current = conversation();
+    if (store && current && current.permission !== "read") void openChatDetailsDialog({ store, conversation: current, locale: locale() });
+  };
+  const leaveChat = async () => {
+    const current = conversation();
+    if (!store || !current) return;
+    if (!(await openLeaveChatDialog({ store, conversation: current, viewerId: props.viewerId, locale: locale() }))) return;
+    // The chat now shows "No access"; its address drops the panel that went with it.
+    setPanel(null);
+    if (route().chatId === current.id) {
+      setRoute({ chatId: current.id, messageId: null, panel: null });
+      navigate(panelHref(current.id, null), { replace: true, scroll: "preserve" });
+    }
   };
 
   const send = async (text: string): Promise<boolean> => {
@@ -352,6 +437,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       ...(props.open ? { open: { conversation: props.open.conversation, page: props.open.page } } : {}),
     });
     store = live;
+    setLiveStore(live);
     const sync = () => {
       prune();
       // The reader's own message moves its chat to the top: that is the reader's action, not a move under the pointer.
@@ -361,6 +447,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       if (ownTop) sortRows();
       setHasMore(live.hasMoreSidebar);
       setChat(live.openConversation);
+      if (live.openConversation?.status === "no-access") setPanel(null);
       setLiveStopped(live.liveStatus === "stopped");
     };
     onCleanup(live.subscribe(sync));
@@ -405,7 +492,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       layout.handleUp((href) => {
         if (new URL(href, location.href).pathname !== "/app/chat" || !route().chatId) return false;
         if (openedFromList()) history.back();
-        else void open({ chatId: null, messageId: null }).then((result) => result === "applied" && navigate("/app/chat"));
+        else void open({ chatId: null, messageId: null, panel: null }).then((result) => result === "applied" && navigate("/app/chat"));
         return true;
       }),
     );
@@ -448,6 +535,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       <AppWorkspace.Sidebar label={t().chats}>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">
+            <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
+              {t().newChat}
+            </AppWorkspace.SidebarItem>
             <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
               <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().noneYet} />}>
                 {list()}
@@ -465,6 +555,25 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 <Show when={conversation()}>
                   {(current) => (
                     <ChatConversation
+                      actions={
+                        <>
+                          <Show when={current().permission === "admin"}>
+                            <IconButton label={t().addPeople} variant="ghost" onClick={() => void addPeople()}>
+                              <i class="ti ti-user-plus" aria-hidden="true" />
+                            </IconButton>
+                          </Show>
+                          <IconButtonLink
+                            label={panel() === "info" ? t().closeChatInfo : t().chatInfo}
+                            href={panelHref(current().id, panel() === "info" ? null : "info")}
+                            navigation="enhanced"
+                            onNavigate={(navigation) => (panel() === "info" ? closeInfo(navigation) : openInfo(navigation))}
+                            aria-expanded={panel() === "info"}
+                            aria-controls="k2b-workspace-detail-chat-info"
+                          >
+                            <i class="ti ti-info-circle" aria-hidden="true" />
+                          </IconButtonLink>
+                        </>
+                      }
                       chatId={current().id}
                       title={current().title}
                       memberCount={current().memberCount}
@@ -498,7 +607,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       markerKey={marker()}
                       onVisibleChange={reportVisible}
                       onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
-                      onEscape={markOpenRead}
+                      // With the info open, Esc closes it first; the workspace owns that.
+                      onEscape={() => panel() === null && markOpenRead()}
                     />
                   )}
                 </Show>
@@ -520,10 +630,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 icon="ti ti-messages"
                 title={t().noChatsTitle}
                 description={t().noChatsDescription}
+                action={<Button onClick={() => void newChat()}>{t().newChat}</Button>}
               />
             </Match>
             <Match when={true}>
               <nav class="chat-list-page" aria-label={t().chats}>
+                <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
+                  {t().newChat}
+                </AppWorkspace.SidebarItem>
                 <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
                   {list()}
                 </AppWorkspace.SidebarSection>
@@ -540,6 +654,32 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             </Match>
           </Switch>
         </AppWorkspace.Main>
+        <AppWorkspace.Detail
+          id="chat-info"
+          phone="page"
+          width="md"
+          open={panel() === "info" && conversation() !== null}
+          onClose={() => closeInfo()}
+        >
+          {/* One panel per chat, like its history: search and loaded members never carry over to the next chat. */}
+          <Show when={openChat()?.id} keyed>
+            <Show when={conversation()}>
+              {(current) => (
+                <ChatInfoPanel
+                  conversation={current()}
+                  viewerId={props.viewerId}
+                  active={panel() === "info"}
+                  revision={membersRevision()}
+                  store={liveStore()}
+                  onClose={() => closeInfo()}
+                  onAddPeople={() => void addPeople()}
+                  onEditDetails={editDetails}
+                  onLeave={() => void leaveChat()}
+                />
+              )}
+            </Show>
+          </Show>
+        </AppWorkspace.Detail>
       </AppWorkspace.Content>
     </AppWorkspace>
   );

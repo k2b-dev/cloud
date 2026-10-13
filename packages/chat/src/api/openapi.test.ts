@@ -26,6 +26,7 @@ test("publishes every conversation operation with typed request and response sch
     ["/conversations/{conversation}", "patch"],
     ["/conversations/{conversation}/members", "get"],
     ["/conversations/{conversation}/members", "post"],
+    ["/conversations/{conversation}/members/preview", "post"],
     ["/conversations/{conversation}/members/{accessId}", "patch"],
     ["/conversations/{conversation}/members/{accessId}", "delete"],
     ["/conversations/{conversation}/leave", "post"],
@@ -85,4 +86,13 @@ test("snapshot documents its canonical response and hidden-chat 404", async () =
     .object({ content: z.object({ "application/json": z.object({ schema: z.object({ required: z.array(z.string()) }) }) }) })
     .parse(operation?.responses["200"]);
   expect(response.content["application/json"].schema.required).toEqual(["cursor", "conversation", "page", "focus"]);
+});
+
+test("member list documents name search and opaque keyset cursors", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const parameters = z
+    .array(z.object({ name: z.string(), in: z.string() }))
+    .parse(spec.paths["/api/chat/conversations/{conversation}/members"]?.get?.parameters);
+  expect(parameters).toContainEqual({ name: "q", in: "query" });
+  expect(parameters).toContainEqual({ name: "cursor", in: "query" });
 });

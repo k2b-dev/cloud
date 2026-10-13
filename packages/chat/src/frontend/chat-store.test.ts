@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { LiveConnection, LiveSubscriptionHandlers } from "@k2b/cloud/browser/live";
 import { ConversationSchema, MessageSchema, readStart } from "../service/contracts";
 import { chatLiveUpdates } from "../service/live-updates";
-import { type ChatStoreApi, createChatStore, createChatStoreApi } from "./chat-store";
+import { ChatRequestError, type ChatStoreApi, createChatStore, createChatStoreApi } from "./chat-store";
 
 const conversation = ConversationSchema.parse({
   id: "abcdef",
@@ -68,9 +68,21 @@ class ManualConnection implements LiveConnection {
     return controls;
   }
 }
+const memberApi = {
+  create: async () => ({ outcome: "created" as const, conversation }),
+  updateDetails: async () => conversation,
+  members: async () => ({ items: [], nextCursor: null, managers: 1 }),
+  previewMembers: async () => ({ joining: 1, throughGroups: 0, memberCount: 3 }),
+  addMembers: async () => ({ added: 1 }),
+  updateMember: async () => ({ success: true as const }),
+  removeMember: async () => ({ success: true as const }),
+  leave: async () => ({ success: true as const }),
+  people: async () => ({ items: [], nextCursor: null }),
+};
 const fixture = (overrides: Partial<ChatStoreApi> = {}) => {
   const connection = new ManualConnection();
   const api: ChatStoreApi = {
+    ...memberApi,
     read: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: null, joinedSeq: 0, unread: 0, asOfRev: 1 }),
     markUnread: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: 1, joinedSeq: 0, unread: 0, asOfRev: 1 }),
     readAll: async () => ({ outcome: "done", marked: 0, more: false }),
@@ -318,6 +330,7 @@ test("a system event already in the SSR page still refreshes older SSR metadata"
     system: { code: "details_changed", params: { name: "Renamed" } },
   });
   const api: ChatStoreApi = {
+    ...memberApi,
     read: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: null, joinedSeq: 0, unread: 0, asOfRev: 1 }),
     markUnread: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: 1, joinedSeq: 0, unread: 0, asOfRev: 1 }),
     readAll: async () => ({ outcome: "done", marked: 0, more: false }),
@@ -353,6 +366,7 @@ const storeAt = (rev: number, api: Partial<ChatStoreApi>, sidebar = { items: [co
     },
     {
       api: {
+        ...memberApi,
         read: async () => {
           throw new Error("Unused write");
         },
@@ -920,4 +934,209 @@ test("readStart is shared by the store and UI, including absent rows and a perso
   expect(readStart({ joinedSeq: 10, lastReadSeq: null, unreadFromSeq: null })).toBe(10);
   expect(readStart({ joinedSeq: 10, lastReadSeq: 20, unreadFromSeq: null })).toBe(20);
   expect(readStart({ joinedSeq: 10, lastReadSeq: 20, unreadFromSeq: 5 })).toBe(4);
+});
+
+test("member methods forward arguments, and the reader's own changes refresh that chat's row and open view", async () => {
+  const calls: unknown[][] = [];
+  let reloads = 0,
+    details = 0;
+  const { store } = fixture({
+    create: async (input) => {
+      calls.push(["create", input]);
+      return { outcome: "created", conversation };
+    },
+    updateDetails: async (id, patch) => {
+      calls.push(["details", id, patch]);
+      return conversation;
+    },
+    members: async (id, query) => {
+      calls.push(["members", id, query]);
+      return { items: [], nextCursor: null, managers: 1 };
+    },
+    previewMembers: async (id, members) => {
+      calls.push(["preview", id, members]);
+      return { joining: 1, throughGroups: 0, memberCount: 3 };
+    },
+    addMembers: async (id, members) => {
+      calls.push(["add", id, members]);
+      return { added: 1 };
+    },
+    updateMember: async (id, accessId, permission) => {
+      calls.push(["update", id, accessId, permission]);
+      return { success: true };
+    },
+    removeMember: async (id, accessId) => {
+      calls.push(["remove", id, accessId]);
+      return { success: true };
+    },
+    leave: async (id, successor) => {
+      calls.push(["leave", id, successor]);
+      return { success: true };
+    },
+    people: async (search, cursor) => {
+      calls.push(["people", search, cursor]);
+      return { items: [], nextCursor: null };
+    },
+    conversations: async () => {
+      reloads++;
+      return { items: [{ ...conversation, title: "Refreshed" }], nextCursor: null };
+    },
+    conversation: async () => {
+      details++;
+      return { ...conversation, title: "Refreshed", rev: 2 };
+    },
+  });
+  const members = [{ type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" }];
+  const input = { members, name: "New", allowDuplicate: true };
+  const patch = { name: null, icon: "ti ti-home", purpose: "Welcome" };
+  const query = { q: "person", cursor: "cursor" };
+  expect(await store.create(input)).toEqual({ outcome: "created", conversation });
+  expect(store.sidebar[0]?.title).toBe("Refreshed");
+  expect(await store.updateDetails(conversation.id, patch)).toEqual(conversation);
+  expect(await store.members(conversation.id, query)).toEqual({ items: [], nextCursor: null, managers: 1 });
+  expect(await store.previewMembers(conversation.id, members)).toEqual({ joining: 1, throughGroups: 0, memberCount: 3 });
+  expect(await store.addMembers(conversation.id, members)).toEqual({ added: 1 });
+  await store.updateMember(conversation.id, "access", "admin");
+  await store.removeMember(conversation.id, "access");
+  await store.leave(conversation.id, "successor");
+  await store.people("search");
+  expect(calls).toEqual([
+    ["create", input],
+    ["details", conversation.id, patch],
+    ["members", conversation.id, query],
+    ["preview", conversation.id, members],
+    ["add", conversation.id, members],
+    ["update", conversation.id, "access", "admin"],
+    ["remove", conversation.id, "access"],
+    ["leave", conversation.id, "successor"],
+    ["people", "search", undefined],
+  ]);
+  // Each of the reader's own changes reads its chat's row again, not the whole list; another member's permission
+  // changes nothing the reader sees.
+  expect(reloads).toBe(0);
+  expect(details).toBe(5);
+  expect(store.openConversation?.conversation?.title).toBe("Refreshed");
+  store.dispose();
+});
+
+test("leaving the open chat reaches no-access on the refresh 404, without a live event", async () => {
+  let left = false;
+  const { store, connection } = fixture({
+    leave: async () => {
+      left = true;
+      return { success: true };
+    },
+    conversations: async () => ({ items: [], nextCursor: null }),
+    conversation: async () => (left ? null : conversation),
+  });
+  await store.leave(conversation.id);
+  expect(store.openConversation?.status).toBe("no-access");
+  expect(store.openConversation?.conversation).toBeNull();
+  expect(store.sidebar).toEqual([]);
+  expect(connection.get("conversation").closed).toBe(true);
+  store.dispose();
+});
+
+test("failed member calls preserve localized errors and never refresh", async () => {
+  const error = new ChatRequestError("Du darfst keine Mitglieder hinzufügen.", "FORBIDDEN", 403);
+  const { store } = fixture({
+    addMembers: async () => {
+      throw error;
+    },
+    conversation: async () => {
+      throw new Error("Must not refresh after failure");
+    },
+  });
+  await expect(store.addMembers(conversation.id, [])).rejects.toBe(error);
+  store.dispose();
+});
+
+test("typed member requests use their routes, payloads and schemas, including both create statuses", async () => {
+  const original = globalThis.fetch;
+  const calls: { path: string; method: string; body: unknown; query: string }[] = [];
+  let createStatus = 201;
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), "http://localhost");
+      const method = init?.method ?? "GET";
+      calls.push({ path: url.pathname, query: url.search, method, body: init?.body ? JSON.parse(String(init.body)) : null });
+      if (url.pathname === "/api/chat/conversations")
+        return Response.json(createStatus === 201 ? { outcome: "created", conversation } : { outcome: "existing", matches: [] }, {
+          status: createStatus,
+        });
+      if (url.pathname.endsWith("/preview")) return Response.json({ joining: 1, throughGroups: 0, memberCount: 3 });
+      if (url.pathname.endsWith("/members"))
+        return Response.json(method === "GET" ? { items: [], nextCursor: null, managers: 1 } : { added: 1 });
+      if (url.pathname.endsWith("/people")) return Response.json({ items: [], nextCursor: null });
+      if (url.pathname.endsWith(conversation.id)) return Response.json(conversation);
+      return Response.json({ success: true });
+    },
+    { preconnect: original.preconnect },
+  );
+  try {
+    const api = createChatStoreApi();
+    const members = [{ type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" }];
+    expect((await api.create({ members, name: "New", allowDuplicate: true })).outcome).toBe("created");
+    createStatus = 200;
+    expect(await api.create({ members })).toEqual({ outcome: "existing", matches: [] });
+    await api.updateDetails(conversation.id, { purpose: null });
+    await api.members(conversation.id, { q: "A_%", cursor: "opaque" });
+    await api.previewMembers(conversation.id, members);
+    await api.addMembers(conversation.id, members);
+    await api.updateMember(conversation.id, "access", "admin");
+    await api.removeMember(conversation.id, "access");
+    await api.leave(conversation.id, "successor");
+    await api.people("co member", "opaque");
+    expect(calls.map(({ path, method, body }) => ({ path, method, body }))).toEqual([
+      { path: "/api/chat/conversations", method: "POST", body: { members, name: "New", allowDuplicate: true } },
+      { path: "/api/chat/conversations", method: "POST", body: { members } },
+      { path: "/api/chat/conversations/abcdef", method: "PATCH", body: { purpose: null } },
+      { path: "/api/chat/conversations/abcdef/members", method: "GET", body: null },
+      { path: "/api/chat/conversations/abcdef/members/preview", method: "POST", body: { members } },
+      { path: "/api/chat/conversations/abcdef/members", method: "POST", body: { members } },
+      { path: "/api/chat/conversations/abcdef/members/access", method: "PATCH", body: { permission: "admin" } },
+      { path: "/api/chat/conversations/abcdef/members/access", method: "DELETE", body: null },
+      { path: "/api/chat/conversations/abcdef/leave", method: "POST", body: { successor: "successor" } },
+      { path: "/api/chat/people", method: "GET", body: null },
+    ]);
+    expect(new URLSearchParams(calls[3]!.query).get("q")).toBe("A_%");
+    expect(new URLSearchParams(calls[3]!.query).get("cursor")).toBe("opaque");
+    expect(new URLSearchParams(calls[9]!.query).get("search")).toBe("co member");
+    expect(new URLSearchParams(calls[9]!.query).get("cursor")).toBe("opaque");
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("HTTP errors retain server messages, optional rate-limit codes and required-call 404s", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const [status, body] of [
+      [403, { code: "FORBIDDEN", message: "Keine Berechtigung." }],
+      [429, { message: "Try again later." }],
+      [404, { code: "NOT_FOUND", message: "Chat nicht gefunden." }],
+    ] as const) {
+      globalThis.fetch = Object.assign(async () => Response.json(body, { status }), { preconnect: original.preconnect });
+      const error = await createChatStoreApi()
+        .addMembers(conversation.id, [])
+        .catch((error: unknown) => error);
+      expect(error).toBeInstanceOf(ChatRequestError);
+      if (!(error instanceof ChatRequestError)) throw new Error("Expected ChatRequestError");
+      expect(error.message).toBe(body.message);
+      expect(error.status).toBe(status);
+      expect(error.code).toBe("code" in body ? body.code : undefined);
+    }
+    globalThis.fetch = Object.assign(async () => Response.json({ code: "CONFLICT", message: "Changed." }, { status: 409 }), {
+      preconnect: original.preconnect,
+    });
+    await expect(createChatStoreApi().changes(conversation.id, 0)).rejects.toMatchObject({
+      code: "CONFLICT",
+      status: 409,
+      message: "Changed.",
+    });
+    globalThis.fetch = Object.assign(async () => new Response("unavailable", { status: 503 }), { preconnect: original.preconnect });
+    await expect(createChatStoreApi().previewMembers(conversation.id, [])).rejects.toBeInstanceOf(ChatRequestError);
+  } finally {
+    globalThis.fetch = original;
+  }
 });

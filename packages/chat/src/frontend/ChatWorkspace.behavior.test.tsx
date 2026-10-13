@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
+import { chatMessages } from "../messages";
 import { ChatSnapshotSchema, MessageViewSchema, SendMessageSchema } from "../service/contracts";
 import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 
@@ -100,6 +101,7 @@ describe("ChatWorkspace interactions", () => {
           const body = snapshots.get(snapshot[1]!);
           return body ? Response.json(ChatSnapshotSchema.parse(body)) : Response.json({}, { status: 404 });
         }
+        if (url.pathname === "/api/chat/conversations/Chat01/members") return Response.json({ items: [], managers: 1, nextCursor: null });
         if (url.pathname === "/api/chat/conversations/Chat01/messages" && init?.method === "POST") {
           posted.push(SendMessageSchema.parse(JSON.parse(String(init.body))));
           return new Promise<Response>((resolve) => {
@@ -124,14 +126,22 @@ describe("ChatWorkspace interactions", () => {
     else Reflect.deleteProperty(globalThis, "WebSocket");
     dom.cleanup();
   });
-  const mount = async (open: boolean, sidebar = [conversation]) => {
+  const mount = async (
+    open: boolean,
+    sidebar = [conversation],
+    panel: "info" | null = null,
+    locale = "en",
+    permission: typeof conversation.permission = "write",
+  ) => {
     const { ChatWorkspace, LocaleProvider } = modules!;
-    dom.window.history.replaceState(null, "", open ? "/app/chat/c/Chat01" : "/app/chat");
+    dom.window.history.replaceState(null, "", open ? `/app/chat/c/Chat01${panel ? "?panel=info" : ""}` : "/app/chat");
     const props: ChatWorkspaceProps = {
       cursor: "c.0",
       sidebar: { items: sidebar, nextCursor: null },
-      open: open ? { conversation, page: { items: [], seqHead: 0, rev: 0 }, focus: null } : null,
+      open: open ? { conversation: { ...conversation, permission }, page: { items: [], seqHead: 0, rev: 0 }, focus: null } : null,
       chatId: open ? conversation.id : null,
+      guest: false,
+      panel,
       viewerId,
       dateConfig: { timeZone: "UTC" },
       now,
@@ -139,7 +149,7 @@ describe("ChatWorkspace interactions", () => {
     dispose = render(
       () =>
         createComponent(LocaleProvider, {
-          locale: "en",
+          locale,
           get children() {
             return createComponent(ChatWorkspace, props);
           },
@@ -329,5 +339,38 @@ describe("ChatWorkspace interactions", () => {
     dom.window.dispatchEvent(sentLeave);
     expect(sentLeave.defaultPrevented).toBe(false);
   });
+  test("SSR info state survives mounting and popstate clears and restores it without reloading the chat", async () => {
+    await mount(true, [conversation], "info");
+    expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
+    expect(
+      dom.root.querySelector('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')?.getAttribute("aria-expanded"),
+    ).toBe("true");
+    dom.window.history.pushState(null, "", "/app/chat/c/Chat01");
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await settle();
+    expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(true);
+    dom.window.history.pushState(null, "", "/app/chat/c/Chat01?panel=info");
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await settle();
+    expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
+    expect(
+      dom.root.querySelector('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')?.getAttribute("aria-expanded"),
+    ).toBe("true");
+    expect(consoleErrors).toEqual([]);
+  });
+  for (const locale of ["en", "de"]) {
+    const t = chatMessages.resolve([locale]).t;
+    for (const permission of ["admin", "write", "read"] as const) {
+      test(`the open chat header offers Add people only to admin: ${permission} in ${locale}`, async () => {
+        await mount(true, [conversation], null, locale, permission);
+        const header = dom.root.querySelector(".chat-conversation__header");
+        expect(header).not.toBeNull();
+        expect(header?.querySelector(`button[aria-label="${t.addPeople}"]`) !== null).toBe(permission === "admin");
+        // The companion info action proves the feature header mounted for every permission.
+        expect(header?.querySelector(`a[aria-label="${t.chatInfo}"]`)).not.toBeNull();
+        expect(consoleErrors).toEqual([]);
+      });
+    }
+  }
   // happy-dom has no viewport layout; the 120-message deep link is verified in the browser suite.
 });

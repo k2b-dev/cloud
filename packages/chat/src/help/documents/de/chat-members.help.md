@@ -8,6 +8,49 @@ order: 300
 
 Mit dem Zugriff **Verwalten** auf einen Chat kannst du Personen, Gastkonten und Gruppen hinzufügen.
 
+## Personen hinzufügen {icon="user-plus"}
+
+Du brauchst Zugriff **Verwalten** auf den Chat.
+Der Dialog zeigt, wie viele Personen dazukommen. Sie können den ganzen bisherigen Verlauf lesen.
+
+:::steps
+1. Wähle **Personen hinzufügen** im Chat-Kopf oder in der **Chat-Info**.
+2. Wähle die Personen oder Gruppen aus.
+3. Prüfe, wer dazukommt und den bisherigen Verlauf lesen kann.
+4. Wähle **Hinzufügen**.
+:::
+
+Mit mehr als 20 Mitgliedern wird der Chat leise: Standardmäßig bekommen nur erwähnte Personen eine Benachrichtigung.
+Wenn 21 oder mehr Personen über Gruppen dazukommen, schlägt der Dialog **Auffindbar für** vor.
+Einen auffindbaren Chat finden Personen selbst und treten bei, wenn sie möchten.
+
+Wenn der Chat keinen Namen hat, kannst du ihm im Dialog einen geben.
+Du kannst stattdessen **Neuen Chat ohne bisherigen Verlauf starten** wählen. Der neue Chat hat die bisherigen und die neuen Mitglieder.
+Diese Auswahl gibt es für einen Chat mit bis zu 100 Mitgliedern.
+
+## Die Chat-Info nutzen {icon="info-circle"}
+
+Wähle **Chat-Info** im Chat-Kopf, um den Zweck und die Mitglieder zu sehen.
+Mitglieder erscheinen in Seiten von 100. Nutze **Mitglieder durchsuchen** für deine Suche oder **Weitere Mitglieder anzeigen** für die nächste Seite.
+
+Mit Zugriff **Schreiben** kannst du Namen, Symbol und Zweck ändern. Öffne das Aktionsmenü (**…**) und wähle **Angaben bearbeiten**.
+Eine Nachricht im Chat hält die Änderung fest.
+
+Mit Zugriff **Verwalten** kannst du den Zugriff einer Person ändern oder ein Mitglied entfernen.
+Die letzte Person mit Zugriff **Verwalten** behält diesen Zugriff und lässt sich nicht entfernen.
+
+## Einen Chat verlassen {icon="logout"}
+
+Wenn du den Chat verlässt, endet dein Zugriff auf den ganzen Verlauf. Deine Nachrichten bleiben im Chat.
+Wenn du über eine Gruppe dazugehörst, archiviere den Chat, statt ihn zu verlassen.
+
+:::steps
+1. Öffne **Chat-Info**.
+2. Öffne das Aktionsmenü (**…**) und wähle **Chat verlassen**.
+3. Wenn du als letzte Person Zugriff **Verwalten** hast, wähle ein direktes Mitglied als Nachfolge.
+4. Wähle **Chat verlassen**, um zu bestätigen.
+:::
+
 ## Eine Gruppe aufnehmen {icon="users"}
 
 :::reference
