@@ -62,6 +62,17 @@ describe("performance baseline contracts", () => {
     expect(info.propsShare).toBeCloseTo(info.propsBytes / Buffer.byteLength(html), 6);
   });
 
+  test("content-hashed SSR prefixes and modulepreload preserve the inspector module set", async () => {
+    const html = `<solid-island data-id="one" data-props="{}"></solid-island><script type="module">const p="/faq/_ssr/0123456789abcdef";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`;
+    const links = `<link rel="modulepreload" href="/faq/_ssr/0123456789abcdef/one.js"><link rel="modulepreload" href="/faq/_ssr/0123456789abcdef/chunk-abc.js">`;
+    const original = await inspectHtml(html, "http://127.0.0.1:4100/faq");
+    const preloaded = await inspectHtml(links + html, "http://127.0.0.1:4100/faq");
+    expect(preloaded.islandEntries).toEqual(original.islandEntries);
+    expect(preloaded.modules).toEqual(original.modules);
+    expect(original.islandEntries).toEqual(["/faq/_ssr/0123456789abcdef/one.js"]);
+    expect(assetPath("/app/mail/_ssr/0123456789abcdef/x.js", ["mail"])).toEqual({ app: "mail", file: "_ssr/x.js" });
+  });
+
   test("literal dynamic imports in other inline scripts remain lazy extras", async () => {
     const info = await inspectHtml(
       '<html><script type="module">import "/public/core/eager.js";const load=()=>import("/public/core/lazy.js");</script></html>',

@@ -21,10 +21,13 @@ import { createAssetResponse, createPingResponse, createReloadResponse, getAsset
 export const routes = (config: SsrConfig) => {
   const { dev, ssrPath } = config;
   const ssrDir = getSsrDir(config);
-  const assetPath = ssrPath + getAssetPrefix(dev);
+  const assetPath = dev ? ssrPath : `${ssrPath}/:version`;
 
   return new Elysia({ name: "ssr" })
     .get(`${ssrPath}/_reload`, ({ request }) => (dev ? createReloadResponse(request.signal) : notFound()))
     .get(`${ssrPath}/_ping`, () => (dev ? createPingResponse() : notFound()))
-    .get(`${assetPath}/*`, ({ request, params }) => createAssetResponse(request, ssrDir, params["*"], dev));
+    .get(`${assetPath}/*`, ({ request, params }) => {
+      if (!dev && (!("version" in params) || `/${params.version}` !== getAssetPrefix(config))) return notFound();
+      return createAssetResponse(request, ssrDir, params["*"], dev);
+    });
 };

@@ -3,7 +3,7 @@
  * SSE live reload, and security utilities.
  */
 
-import { statSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import type { SsrConfig } from "../index";
 
@@ -37,17 +37,57 @@ export const toSsrPath = (basePath: string): string => (basePath ? `${basePath}/
  */
 export const getSsrDir = (config: SsrConfig): string => join(config.dev ? (config.rootDir ?? process.cwd()) : dirname(Bun.main), "_ssr");
 
-// Keep one version for this server process, including when Bun.main has no mtime.
-const buildVersion = (() => {
-  try {
-    return String(Math.floor(statSync(Bun.main).mtimeMs));
-  } catch {
-    return String(Date.now());
-  }
-})();
+export type AssetManifest = { version: string; entries: Record<string, string[]> };
+export const ASSET_MANIFEST = "manifest.json";
 
-/** Relative imports inherit a versioned directory, unlike a query string. */
-export const getAssetPrefix = (dev: boolean): string => (dev ? "" : `/${buildVersion}`);
+const isAssetManifest = (value: unknown): value is AssetManifest =>
+  typeof value === "object" &&
+  value !== null &&
+  "version" in value &&
+  typeof value.version === "string" &&
+  /^[a-f0-9]{16}$/.test(value.version) &&
+  "entries" in value &&
+  typeof value.entries === "object" &&
+  value.entries !== null &&
+  !Array.isArray(value.entries) &&
+  Object.values(value.entries).every((files) => Array.isArray(files) && files.every((file) => typeof file === "string"));
+
+const assetManifests = new Map<string, AssetManifest>();
+const unbuiltAssetManifest: AssetManifest = { version: "0", entries: {} };
+
+/**
+ * Reads the production island manifest on first use, never at import time:
+ * build scripts load application modules before any island exists.
+ * A process without an _ssr directory (tests, build scripts) has no island
+ * output to serve and gets the fixed version 0; that answer is not memoized.
+ */
+export const readAssetManifest = (config: SsrConfig): AssetManifest => {
+  const directory = getSsrDir(config);
+  const cached = assetManifests.get(directory);
+  if (cached) return cached;
+  if (!existsSync(directory)) return unbuiltAssetManifest;
+
+  const path = join(directory, ASSET_MANIFEST);
+  if (!existsSync(path)) {
+    throw new Error(
+      `[ssr] Missing ${path}. buildIslands() writes it with the production island build; deploy the whole _ssr directory next to the server bundle.`,
+    );
+  }
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    // Reported below with the expected shape.
+  }
+  if (!isAssetManifest(manifest)) {
+    throw new Error(`[ssr] Invalid ${path}. Expected a 16-character hexadecimal version and an entries object of string arrays.`);
+  }
+  assetManifests.set(directory, manifest);
+  return manifest;
+};
+
+/** Relative imports inherit a content-hashed directory, unlike a query string. */
+export const getAssetPrefix = (config: SsrConfig): string => (config.dev ? "" : `/${readAssetManifest(config).version}`);
 
 const HASHED_CHUNK = /^chunk-[a-z0-9]+\.js$/i;
 const ASSET_FILE = /^[a-z0-9._-]+\.js(?:\.map)?$/i;

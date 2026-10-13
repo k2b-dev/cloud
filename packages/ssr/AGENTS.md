@@ -53,11 +53,15 @@ build, mount runtime, or adapters reaches every application: also run the
   fallback to the old expression format.
 - `html()` and `ssr()` keep JSX creation inside synchronous render functions
   so Solid SSR context exists for primitives like `createUniqueId()`.
+  Production `html()` adds modulepreload links for rendered islands' static
+  module closures to `scripts`.
 - `_ssr/` is the filesystem artifact boundary; the public HTTP path is
   derived separately through `config.ssrPath`.
-- Island IDs stay stable for the same source path. Production cache busting
-  uses one build timestamp directory shared by all modules, never entry-only
-  queries or content hashes.
+- Island IDs stay stable for the same source path. Production assets share one
+  version directory named by a content hash over emitted JavaScript from
+  `_ssr/manifest.json`, never entry-only queries or per-file URL hashes:
+  relative lazy imports must keep one URL per module. Read the version lazily,
+  never at import time.
 - The dev overlay depends on `data-file` in dev mode and on the wrapper tags
   staying in the SSR output.
 - `@k2b/ssr/nav` stays an opt-in progressive navigation helper, not a router
@@ -83,6 +87,8 @@ build, mount runtime, or adapters reaches every application: also run the
    build.
 6. In production only, runs `dedupeSharedChunkExports()`, a workaround for
    duplicate exports in Bun shared chunks.
+7. In production only, writes `_ssr/manifest.json` with the JavaScript content
+   version and each entry's static import closure after the export dedupe.
 
 Production builds emit no source maps. Development builds use linked maps by
 default; `devSourcemap` opts into `"inline"` or `"none"`.
@@ -126,8 +132,9 @@ Shared helpers live in `src/adapter/utils.ts` (`normalizeBasePath`,
 2. Bun and Elysia own absolute paths and must use `config.ssrPath`; Hono's
    `routes(config)` stays relative so the host app mounts it.
 3. Dev mode exposes reload and ping endpoints on the same SSR public path.
-4. Production serves only the current build version; production JavaScript
-   and maps are immutable. Stable development entries use `no-cache`, `ETag`,
+4. Production serves only the current version from the manifest, resolved per
+   request; `manifest.json` is never served. Production JavaScript and maps
+   are immutable. Stable development entries use `no-cache`, `ETag`,
    and `Last-Modified`, and conditional requests return `304` without reading
    the file.
 5. Keep dev reload SSE visibility-scoped and cross-tab coordinated: Web Locks
