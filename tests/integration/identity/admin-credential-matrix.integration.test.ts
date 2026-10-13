@@ -1,0 +1,275 @@
+// Pins today's reach of real admin routes for each credential kind.
+// Step-up for admin routes will deliberately change the session-less rows
+// when those routes require session-bound proof.
+import { suiteFor } from "../../../scripts/fixtures/test-infra";
+import "../../../scripts/fixtures/authorization-preload";
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { redis, sql } from "bun";
+import { decodeJwt } from "jose";
+import accountsRoutes from "../../../packages/accounts/src/api";
+import coreSettingsRoutes from "../../../packages/cloud/src/api/admin-core-settings";
+import identityRoutes from "../../../packages/cloud/src/api/admin-identity";
+import { signInvocationToken } from "../../../packages/cloud/src/services/identity/invocation-token";
+import { getIdentityRuntimeConfig } from "../../../packages/cloud/src/services/identity/runtime-config";
+import { toPgUuidArray } from "../../../packages/cloud/src/services/postgres";
+import { serviceAccountCredentials } from "../../../packages/cloud/src/services/service-account-credentials";
+import { createTestAppSession, createTestSession } from "../../../packages/cloud/src/services/session/session.test-fixture";
+import { loadCurrentUser } from "../../../packages/cloud/src/services/session/user";
+import * as settings from "../../../packages/cloud/src/services/settings";
+import oauthAdminRoutes from "../../../packages/oauth/src/api";
+import oauthRoutes from "../../../packages/oauth/src/oauth";
+import * as clients from "../../../packages/oauth/src/service/clients";
+import * as refreshTokens from "../../../packages/oauth/src/service/refresh-tokens";
+import { uniqueCallerAddress } from "../../../scripts/fixtures/caller-address";
+
+const suite = suiteFor("database", "valkey", "nats");
+// Each route module is called below the prefix it is mounted at in production.
+type Routes = (path: string, init: RequestInit) => Response | Promise<Response>;
+
+const expected = {
+  "web session of an admin": {
+    createServiceAccount: 201,
+    saveSecuritySetting: 204,
+    createLoginToken: 200,
+    regenerateClientSecret: 200,
+  },
+  "cld OAuth token of an admin": {
+    createServiceAccount: 201,
+    saveSecuritySetting: 204,
+    createLoginToken: 200,
+    regenerateClientSecret: 200,
+  },
+  "personal API key of an admin": {
+    createServiceAccount: 201,
+    saveSecuritySetting: 204,
+    createLoginToken: 200,
+    regenerateClientSecret: 200,
+  },
+  "mobile-app session of an admin": {
+    createServiceAccount: 403,
+    saveSecuritySetting: 403,
+    createLoginToken: 403,
+    regenerateClientSecret: 403,
+  },
+  "resource-bound API key": {
+    createServiceAccount: 403,
+    saveSecuritySetting: 403,
+    createLoginToken: 403,
+    regenerateClientSecret: 403,
+  },
+  "standalone service-account API key": {
+    createServiceAccount: 403,
+    saveSecuritySetting: 403,
+    createLoginToken: 403,
+    regenerateClientSecret: 403,
+  },
+  "models-only personal API key of an admin": {
+    createServiceAccount: 401,
+    saveSecuritySetting: 401,
+    createLoginToken: 401,
+    regenerateClientSecret: 401,
+  },
+  "invocation credential of an admin": {
+    createServiceAccount: 401,
+    saveSecuritySetting: 401,
+    createLoginToken: 401,
+    regenerateClientSecret: 401,
+  },
+  "no credential": {
+    createServiceAccount: 401,
+    saveSecuritySetting: 401,
+    createLoginToken: 401,
+    regenerateClientSecret: 401,
+  },
+  "web session of a non-admin": {
+    createServiceAccount: 403,
+    saveSecuritySetting: 403,
+    createLoginToken: 403,
+    regenerateClientSecret: 403,
+  },
+};
+
+suite("Admin credential matrix", () => {
+  const prefix = `admin-matrix-${crypto.randomUUID()}`;
+  const adminId = crypto.randomUUID();
+  const targetId = crypto.randomUUID();
+  const boundId = crypto.randomUUID();
+  const standaloneId = crypto.randomUUID();
+  const userIds = toPgUuidArray([adminId, targetId]);
+  const settingKey = "user.session.expiry_hours";
+  let settingExisted: boolean | undefined;
+  let settingValue: number;
+  let clientId: string;
+  const loginTokens: string[] = [];
+  const credentials = new Map<string, (appId: string) => Promise<Headers>>();
+
+  const bearer = (token: string) => async () => new Headers({ authorization: `Bearer ${token}` });
+  // Fetch metadata keeps pwa_session eligible outside /pwa/; a navigation would ignore it.
+  const cookie = (value: string, origin: string) => async () =>
+    new Headers({ cookie: value, origin, "sec-fetch-mode": "cors", "sec-fetch-site": "same-origin" });
+
+  beforeAll(async () => {
+    const [setting] = await sql<{ key: string }[]>`SELECT key FROM settings.entries WHERE key = ${settingKey}`;
+    settingExisted = setting !== undefined;
+    settingValue = await settings.get<number>(settingKey);
+
+    await sql`
+      INSERT INTO auth.users (id, uid, provider, profile, display_name, mail, given_name, sn, admin)
+      VALUES
+        (${adminId}::uuid, ${`${prefix}-admin`}, 'local', 'user', 'Matrix admin', ${`${prefix}-admin@example.test`}, 'Matrix', 'Admin', true),
+        (${targetId}::uuid, ${`${prefix}-target`}, 'local', 'user', 'Matrix target', ${`${prefix}-target@example.test`}, 'Matrix', 'Target', false)
+    `;
+    const { groupsAdmin, issuer } = await getIdentityRuntimeConfig();
+    const admin = await loadCurrentUser({ userId: adminId, groupsAdmin });
+    if (!admin) throw new Error("Admin fixture projection is missing");
+
+    credentials.set("web session of an admin", cookie(`session_token=${await createTestSession(adminId)}`, issuer));
+    credentials.set("web session of a non-admin", cookie(`session_token=${await createTestSession(targetId)}`, issuer));
+    const mobile = await createTestAppSession(adminId);
+    credentials.set("mobile-app session of an admin", cookie(`pwa_session=${mobile.token}`, issuer));
+
+    const cli = await clients.getByClientId({ clientId: "cloud-cli" });
+    if (!cli) throw new Error("Seeded cloud-cli client is missing");
+    const refresh = await refreshTokens.create({
+      userId: adminId,
+      client: cli,
+      scopes: ["openid", "profile", "email", "offline_access", "read", "write"],
+    });
+    const exchanged = await oauthRoutes.request("/oauth/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", "x-forwarded-for": uniqueCallerAddress() },
+      body: new URLSearchParams({ grant_type: "refresh_token", client_id: "cloud-cli", refresh_token: refresh.refreshToken }),
+    });
+    expect(exchanged.status).toBe(200);
+    const body: unknown = await exchanged.json();
+    if (!body || typeof body !== "object" || !("access_token" in body) || typeof body.access_token !== "string") {
+      throw new Error("CLI refresh did not return an access token");
+    }
+    const claims = decodeJwt(body.access_token);
+    expect(claims.client_id).toBe("cloud-cli");
+    expect(claims.sub).toBe(adminId);
+    credentials.set("cld OAuth token of an admin", bearer(body.access_token));
+
+    for (const access of ["full", "models"] as const) {
+      const created = await serviceAccountCredentials.createUserApiToken({ user: admin, access, name: `${prefix}-${access}` });
+      if (!created.ok) throw new Error(created.error.message);
+      credentials.set(
+        access === "full" ? "personal API key of an admin" : "models-only personal API key of an admin",
+        bearer(created.data.token),
+      );
+    }
+    await sql`
+      INSERT INTO auth.service_accounts (id, name, kind, app_id, resource_type, resource_id, created_by)
+      VALUES
+        (${boundId}::uuid, ${`${prefix}-bound`}, 'resource_bound', 'notebooks', 'notebook', ${crypto.randomUUID()}, ${adminId}::uuid),
+        (${standaloneId}::uuid, ${`${prefix}-standalone`}, 'standalone', NULL, NULL, NULL, ${adminId}::uuid)
+    `;
+    const bound = await serviceAccountCredentials.createResourceApiToken({
+      serviceAccountId: boundId,
+      actor: admin,
+      name: `${prefix}-bound`,
+    });
+    if (!bound.ok) throw new Error(bound.error.message);
+    credentials.set("resource-bound API key", bearer(bound.data.token));
+    const standalone = await serviceAccountCredentials.createStandaloneApiToken({
+      serviceAccountId: standaloneId,
+      actor: admin,
+      name: `${prefix}-standalone`,
+    });
+    if (!standalone.ok) throw new Error(standalone.error.message);
+    credentials.set("standalone service-account API key", bearer(standalone.data.token));
+    credentials.set("invocation credential of an admin", async (targetAppId) => {
+      const signed = await signInvocationToken({
+        targetAppId,
+        callingAppId: "core",
+        operation: "admin.matrix",
+        schemaHash: null,
+        authority: {
+          sub: adminId,
+          principal_type: "user",
+          access_subject_type: "user",
+          access_subject_id: adminId,
+          credential_kind: "session",
+          scopes: [],
+        },
+      });
+      return new Headers({ authorization: `Bearer ${signed.token}` });
+    });
+    credentials.set("no credential", async () => new Headers());
+
+    const confidential = await clients.create({
+      actor: admin,
+      data: {
+        name: `${prefix}-confidential`,
+        redirectUris: [],
+        scopes: ["openid"],
+        audiences: ["cloud"],
+        allowedProfiles: ["user"],
+        accessMode: "profiles",
+        allowedUserIds: [],
+        allowedGroupIds: [],
+        isPublic: false,
+      },
+    });
+    if (!confidential.ok) throw new Error(confidential.error);
+    clientId = confidential.data.id;
+  }, 30_000);
+
+  afterAll(async () => {
+    for (const token of loginTokens) await redis.del(`email-login:${token}`);
+    await sql.begin(async (tx) => {
+      const accounts = await tx<{ id: string }[]>`
+        SELECT id FROM auth.service_accounts
+        WHERE created_by = ${adminId}::uuid OR delegated_user_id = ${adminId}::uuid OR name LIKE ${`${prefix}%`}
+      `;
+      const accountIds = toPgUuidArray(accounts.map((account) => account.id));
+      await tx`DELETE FROM oauth.refresh_token_families WHERE user_id = ANY(${userIds}::uuid[])`;
+      await tx`DELETE FROM oauth.clients WHERE created_by = ${adminId}::uuid`;
+      await tx`DELETE FROM auth.service_account_credentials WHERE service_account_id = ANY(${accountIds}::uuid[])`;
+      await tx`DELETE FROM auth.access WHERE service_account_id = ANY(${accountIds}::uuid[]) OR user_id = ANY(${userIds}::uuid[])`;
+      await tx`DELETE FROM auth.service_accounts WHERE id = ANY(${accountIds}::uuid[])`;
+      await tx`DELETE FROM auth.session_families WHERE user_id = ANY(${userIds}::uuid[])`;
+      await tx`DELETE FROM auth.pwa_devices WHERE user_id = ANY(${userIds}::uuid[])`;
+      await tx`DELETE FROM auth.users WHERE id = ANY(${userIds}::uuid[])`;
+    });
+    if (settingExisted === false) await settings.remove(settingKey);
+  }, 30_000);
+
+  for (const [label, statuses] of Object.entries(expected)) {
+    test(label, async () => {
+      const headersFor = credentials.get(label);
+      if (!headersFor) throw new Error(`Missing credential fixture: ${label}`);
+      const request = async (owner: string, routes: Routes, path: string, method: string, body?: unknown) => {
+        const headers = await headersFor(owner);
+        headers.set("x-forwarded-for", uniqueCallerAddress());
+        if (body !== undefined) headers.set("content-type", "application/json");
+        return routes(path, { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      };
+      // POST /api/admin/identity/service-accounts
+      const created = await request("core", identityRoutes.request, "/service-accounts", "POST", {
+        name: `${prefix}-${crypto.randomUUID()}`,
+        kind: "standalone",
+      });
+      // PUT /api/admin/core/settings
+      const saved = await request("core", coreSettingsRoutes.request, "/", "PUT", { [settingKey]: settingValue });
+      // POST /api/accounts/users/:id/login-token
+      const login = await request("accounts", accountsRoutes.request, `/users/${targetId}/login-token`, "POST");
+      // Read only to remove the one-time credential from Valkey; never assert or print it.
+      if (login.status === 200) {
+        const body: unknown = await login.json();
+        if (!body || typeof body !== "object" || !("token" in body) || typeof body.token !== "string") {
+          throw new Error("Cannot track login token for cleanup");
+        }
+        loginTokens.push(body.token);
+      }
+      // POST /api/oauth/admin/clients/:id/regenerate-secret
+      const regenerated = await request("oauth", oauthAdminRoutes.request, `/${clientId}/regenerate-secret`, "POST");
+      expect({
+        createServiceAccount: created.status,
+        saveSecuritySetting: saved.status,
+        createLoginToken: login.status,
+        regenerateClientSecret: regenerated.status,
+      }).toEqual(statuses);
+    });
+  }
+});
