@@ -92,6 +92,11 @@ export default function EditorToolbar(props: Props) {
   const style = () => (props.format.heading ? `H${props.format.heading}` : t().normalText);
   const styleLabels = () => [t().normalText, "H1", "H2", "H3", "H4", "H5", "H6"];
   const [panelOpen, setPanelOpen] = createSignal(props.initialPanelOpen);
+  const [coarsePointer, setCoarsePointer] = createSignal(false);
+  // On touch screens, controlled menus open on a tap without taking focus, so the note keeps focus, the keyboard,
+  // and the lifted toolbar. Keys on the trigger still move focus into the menu.
+  const [styleOpen, setStyleOpen] = createSignal(false);
+  const [moreOpen, setMoreOpen] = createSignal(false);
   // The toolbar renders only in the browser, where the cookie holds the same state SSR used.
   const navigationHidden = createNavigationHidden(readNavigationHidden());
   const navigationLabel = () => (navigationHidden() ? t().showNavigation : t().hideNavigation);
@@ -121,36 +126,60 @@ export default function EditorToolbar(props: Props) {
 
   // A phone keyboard covers the bottom of the page and shrinks only the visual viewport. While the note has focus, a
   // bottom margin lifts the toolbar to the keyboard's top edge and shortens the note above it, so the caret line stays
-  // visible as well. Without an on-screen keyboard the visual viewport keeps its height, and a fine pointer never lifts
-  // the toolbar, so hardware keyboards and desktop pinch zoom change nothing.
+  // visible as well. Fine pointers never lift. Coarse pointers lift only after losing at least 15% of the page height,
+  // so pinch zoom without a keyboard and the shortcuts bar of a hardware keyboard do not lift it. While zoomed, keep
+  // the last lift.
   let toolbar!: HTMLDivElement;
   const [lift, setLift] = createSignal(0);
   onMount(() => {
-    const viewport = window.visualViewport;
-    if (!viewport) return;
     const coarse = window.matchMedia("(pointer: coarse)");
+    setCoarsePointer(coarse.matches);
+    const viewport = window.visualViewport;
+    let disposed = false;
     const measure = () => {
+      if (disposed || !viewport) return;
       const view = props.editorView;
       const focused = !!view && (view.hasFocus || toolbar.contains(document.activeElement));
       // The bottom the toolbar has without the lift; the note above it gives up the same height.
       const inFlowBottom = toolbar.getBoundingClientRect().bottom + lift();
-      const next = coarse.matches && focused ? Math.max(0, inFlowBottom - viewport.offsetTop - viewport.height) : 0;
+      // CodeMirror's 0.85 rule detects an open on-screen keyboard independently of pinch zoom. Small insets such as
+      // the shortcuts bar of a hardware keyboard on an iPad do not lift the toolbar.
+      const keyboardOpen = (viewport.height * viewport.scale) / document.documentElement.clientHeight < 0.85;
+      const lifted = coarse.matches && focused && keyboardOpen;
+      // A zoomed viewport pans over the page; keep the last lift so zooming and panning never move the toolbar or note.
+      if (lifted && viewport.scale > 1.01) return;
+      const next = lifted ? Math.max(0, inFlowBottom - viewport.offsetTop - viewport.height) : 0;
       const previous = lift();
       if (Math.abs(next - previous) < 0.5) return;
       setLift(next);
       // A shorter note may hide the caret line; CodeMirror brings it back after it measured the new height.
       if (view && next > previous) view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head) });
     };
-    viewport.addEventListener("resize", measure);
-    viewport.addEventListener("scroll", measure);
-    document.addEventListener("focusin", measure);
-    document.addEventListener("focusout", measure);
+    const pointerChanged = () => {
+      setCoarsePointer(coarse.matches);
+      measure();
+    };
+    // Picking an item returns focus to the trigger and then the note within one task. Measuring between drops the lift.
+    const afterFocus = () => queueMicrotask(measure);
+    coarse.addEventListener("change", pointerChanged);
+    viewport?.addEventListener("resize", measure);
+    viewport?.addEventListener("scroll", measure);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure);
+    document.addEventListener("focusin", afterFocus);
+    document.addEventListener("focusout", afterFocus);
     onCleanup(() => {
-      viewport.removeEventListener("resize", measure);
-      viewport.removeEventListener("scroll", measure);
-      document.removeEventListener("focusin", measure);
-      document.removeEventListener("focusout", measure);
+      disposed = true;
+      coarse.removeEventListener("change", pointerChanged);
+      viewport?.removeEventListener("resize", measure);
+      viewport?.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure);
+      document.removeEventListener("focusin", afterFocus);
+      document.removeEventListener("focusout", afterFocus);
     });
+    // A note switch through an in-note link can mount the toolbar with the keyboard already open; lift it at once.
+    measure();
   });
 
   const toggleDetailPanel = () => window.dispatchEvent(new CustomEvent(DETAIL_PANEL_TOGGLE_EVENT));
@@ -210,6 +239,8 @@ export default function EditorToolbar(props: Props) {
         <Toolbar.Separator class="notebooks-editor-toolbar__history-separator" />
         <Toolbar.Group label={t().textStyle} class="shrink-0">
           <Dropdown.Root
+            open={coarsePointer() ? styleOpen() : undefined}
+            onOpenChange={setStyleOpen}
             position="top-left"
             items={[
               {
@@ -324,6 +355,8 @@ export default function EditorToolbar(props: Props) {
           />
           <Btn icon="ti-paperclip" title={t().attachFile} onClick={withView(() => openAttachmentPicker(props.notebookId, locale()))} />
           <Dropdown.Root
+            open={coarsePointer() ? moreOpen() : undefined}
+            onOpenChange={setMoreOpen}
             position="top-right"
             width="13rem"
             items={[

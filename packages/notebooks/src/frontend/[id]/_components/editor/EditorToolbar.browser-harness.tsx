@@ -3,7 +3,7 @@ import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { LocaleProvider, ScrollArea } from "@k2b/ui";
-import { createSignal, onCleanup, onMount } from "solid-js";
+import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { basicExtensions } from "../../../lib/editor/basic";
 import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
@@ -18,6 +18,7 @@ function Harness() {
   let host!: HTMLDivElement;
   let scrollPort: HTMLDivElement | undefined;
   const [view, setView] = createSignal<EditorView>();
+  const [toolbarMounted, setToolbarMounted] = createSignal(true);
   // Match NoteEditor: formats follow document and selection transactions, suppressing equal values.
   const [format, setFormat] = createSignal(caretFormat(EditorState.create()), { equals: sameCaretFormat });
 
@@ -75,6 +76,12 @@ function Harness() {
       blur() {
         editor.contentDOM.blur();
       },
+      async remountToolbar() {
+        setToolbarMounted(false);
+        // Let the test open the keyboard while no toolbar is listening.
+        await Promise.resolve();
+        setToolbarMounted(true);
+      },
       async settle() {
         await document.fonts.ready;
         // Allow CodeMirror measurements and Solid's DOM updates to finish; never refocus after a toolbar press.
@@ -90,22 +97,24 @@ function Harness() {
         <ScrollArea ref={scrollPort} style={{ "scroll-padding-block": fadeScrollPadding }} class="flex-1 min-h-0">
           <div ref={host} />
         </ScrollArea>
-        <EditorToolbar
-          connected={true}
-          editorView={view()}
-          notebookId="Book01"
-          noteId="Note01"
-          initialPanelOpen={false}
-          format={format()}
-          onUndo={() => {
-            const editor = view();
-            if (editor) undo(editor);
-          }}
-          onRedo={() => {
-            const editor = view();
-            if (editor) redo(editor);
-          }}
-        />
+        <Show when={toolbarMounted()}>
+          <EditorToolbar
+            connected={true}
+            editorView={view()}
+            notebookId="Book01"
+            noteId="Note01"
+            initialPanelOpen={false}
+            format={format()}
+            onUndo={() => {
+              const editor = view();
+              if (editor) undo(editor);
+            }}
+            onRedo={() => {
+              const editor = view();
+              if (editor) redo(editor);
+            }}
+          />
+        </Show>
       </div>
     </LocaleProvider>
   );
@@ -118,13 +127,18 @@ export type ToolbarHarness = {
   read: () => { doc: string; anchor: number; head: number; hasFocus: boolean };
   caretRect: () => { top: number; bottom: number } | null;
   blur: () => void;
+  remountToolbar: () => Promise<void>;
   settle: () => Promise<void>;
 };
 
 declare global {
   interface Window {
     toolbarHarness: ToolbarHarness;
-    keyboard: { show: (top: number, height: number) => void; hide: () => void };
+    keyboard: {
+      set: (values: { offsetTop?: number; height?: number; scale?: number }) => void;
+      show: (top: number, height: number) => void;
+      hide: () => void;
+    };
   }
 }
 
