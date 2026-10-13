@@ -54,6 +54,14 @@ Das Plus neben dem Suchfeld bietet **Hochladen**, **Ordner hochladen**, **Neuer 
 
 Das Detailpanel eines Eintrags bietet **In neuem Tab öffnen**, **Umbenennen**, **Duplizieren**, **Verschieben nach**, **Kopieren nach**, **Öffentlich teilen** und **In den Papierkorb**. Bei einem PDF funktioniert **In neuem Tab öffnen** wie in der PDF-Vorschau. Ordner bieten zusätzlich **Als Upload-Eingang freigeben**. Der Kopieren-Button in der Kopfzeile legt eine Cloud-Referenz in die Zwischenablage, die andere Apps verstehen. Unterstützt deine Ablage stabile Datei-IDs, zeigt die Referenz auch nach Umbenennen oder Verschieben auf dieselbe Datei oder denselben Ordner. Im Papierkorb lässt sich der Eintrag darüber nicht öffnen, nach dem Wiederherstellen wieder. Sonst benennt die Referenz den Ort und funktioniert nach Umbenennen oder Verschieben nicht mehr.
 
+## Mehrere Ordner auf einmal anlegen {icon="folder-plus"}
+
+**Neuer Ordner** zeigt, wo der Ordner entsteht: Die Pfadzeile über dem Namen wächst beim Tippen mit. Mit `/` legst du Ordner ineinander an: `A/B/C` erstellt drei Ebenen und nutzt vorhandene Ordner auf dem Weg weiter. Kommas im letzten Teil legen Ordner nebeneinander an: `Testdaten/Test1, Test2, Test3` erstellt drei Ordner in Testdaten. Leerzeichen um ein Komma werden ignoriert. Sobald du ein Komma tippst, wählst du unter der Vorschau bei **Komma** zwischen **Als Trennzeichen** und **Als Teil des Namens**. Voreingestellt ist das Trennzeichen.
+
+Die Vorschau listet jeden Ordner vor dem Anlegen auf. Sie markiert Ordner, die es schon gibt, und zeigt ein Problem direkt am betroffenen Namen, zum Beispiel einen leeren Namen, einen doppelt angegebenen Namen oder eine Datei mit demselben Namen. Der Button nennt, wie viele Ordner er anlegt. Ein Schritt legt höchstens 100 Ordner an, die Ordner dazwischen zählen mit. Kann ein Ordner nicht angelegt werden, bleibt der Dialog offen und zeigt, welche Ordner angelegt wurden und welche nicht. Korrigiere den Namen und versuche es erneut; vorhandene Ordner werden weiterverwendet. Mit Enter legst du die Ordner an, mit Escape brichst du ab.
+
+Im Terminal akzeptiert auch `cld filesv2 mkdir -p` mehrere Ordner. Gib jeden Ordner als eigenes Argument an; Kommas bleiben Teil des Namens.
+
 ## Papierkorb {icon="trash"}
 
 Löschen entfernt nie etwas endgültig: Einträge wandern in den Papierkorb ihrer Ablage, der als **Papierkorb** am Ende ihres Wurzelordners erscheint. Öffne ihn, um Gelöschtes zu sehen; **Wiederherstellen** legt einen Eintrag an seinen ursprünglichen Ort zurück. Fehlt der ursprüngliche Speicherort, gib einen Zielpfad einschließlich des Namens an. Vorhandene Dateien werden niemals ersetzt. Noch nicht bestätigte Verschiebungen bleiben sichtbar. Weitere Einträge erreichst du über die nächste Seite. Nur die Administration kann den Papierkorb leeren.

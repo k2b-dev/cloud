@@ -108,7 +108,12 @@ export type UploadSession = {
 export type UploadLease = { url: string; expires: string };
 const PathSchema = z.string().min(1).max(4096);
 /** A selection never exceeds two listing pages. */
-const PathsSchema = z.array(PathSchema).min(1).max(100);
+export const BATCH_LIMIT = 100;
+const PathsSchema = z.array(PathSchema).min(1).max(BATCH_LIMIT);
+export const FolderBatchInputSchema = z.object({ paths: PathsSchema, dryRun: z.boolean().default(false) });
+export type FolderState = "existing" | "created" | "planned" | "failed" | "skipped";
+export type FolderResult = { path: string; state: FolderState; entry?: FileEntry; error?: string; message?: string };
+export type FolderBatchResult = { base: BaseSummary; results: FolderResult[] };
 export const RenameInputSchema = z.object({ path: PathSchema, name: z.string().min(1).max(255) });
 export const MoveInputSchema = z.object({ paths: PathsSchema, folder: z.string().max(4096) });
 export const CopyInputSchema = z.object({ paths: PathsSchema, targetBaseId: z.string().min(1), folder: z.string().max(4096) });
@@ -158,7 +163,7 @@ export type ArchiveDownload = { url: string; method: "POST"; expires: string; ma
 export const ShareValiditySchema = z.enum(["1d", "7d", "30d", "90d", "unlimited"]);
 export const CreateShareInputSchema = z.object({
   kind: z.enum(["download", "inbox"]),
-  paths: z.array(PathSchema).max(100).default([]),
+  paths: z.array(PathSchema).max(BATCH_LIMIT).default([]),
   folder: z.string().max(4096).default(""),
   title: z.string().trim().min(1).max(200),
   note: z.string().trim().max(500).optional(),

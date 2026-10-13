@@ -36,6 +36,8 @@ import type {
   EntryResult,
   FileEntry,
   FileVersion,
+  FolderBatchResult,
+  FolderResult,
   InventoryEntry,
   InventoryState,
   MarkedEntry,
@@ -43,6 +45,7 @@ import type {
   UploadLease,
   UploadSession,
 } from "../contracts";
+import { BATCH_LIMIT } from "../contracts";
 import { type Binding, bindings, type NewBinding } from "../data/bases";
 import { favorites, recent } from "../data/marks";
 import { operations, withRootLock, withUploadLock } from "../data/operations";
@@ -53,7 +56,7 @@ import { isMarkdown, MARKDOWN_LIMIT, markdownRevision, TEMPLATE_LIMIT } from "..
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
 import { isPdfName, pdfBody } from "../pdf-body";
 import { parseStableEntryRefId } from "../resource-ref";
-import { normalizeSelection, runFileBatch } from "./batches";
+import { normalizeSelection, operationError, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
 import { readConfiguration, writeConfiguration } from "./configuration";
@@ -1010,6 +1013,61 @@ export function createFilesService(
       const current = await writableParent(actor, input.baseId, input.path);
       const node = await current.root.mkdir(joinPath(current.target, current.name), { ownership: ownershipFor(current, true) });
       return { base: current.inspection.summary, entry: fileEntry(current.inspection.summary, current.relative, node) };
+    },
+    async mkdirs(actor: RequestActor, input: { baseId: string; paths: string[]; dryRun: boolean }): Promise<FolderBatchResult> {
+      if (!input.paths.length || input.paths.length > BATCH_LIMIT) throw new FilesError("invalid_selection");
+      const paths = [
+        ...new Set(
+          input.paths.map((path) => {
+            const value = userPath(path);
+            if (!value || value.length > 4096) throw new FilesError("invalid_path");
+            return value;
+          }),
+        ),
+      ].sort((a, b) => a.split("/").length - b.split("/").length);
+      const base = (await authorizedBase(actor, input.baseId)).inspection.summary;
+      const results: FolderResult[] = [];
+      let failed = false;
+      for (const path of paths) {
+        const parent = results.find((result) => result.path === path.split("/").slice(0, -1).join("/"));
+        if (input.dryRun && parent && ["planned", "failed", "skipped"].includes(parent.state)) {
+          results.push({ path, state: parent.state === "planned" ? "planned" : "skipped" });
+          continue;
+        }
+        if (!input.dryRun && failed) {
+          results.push({ path, state: "skipped" });
+          continue;
+        }
+        try {
+          const existing = await authorized(actor, input.baseId, path).catch((error: unknown) => {
+            if (operationError(error) === "not_found") return null;
+            throw error;
+          });
+          if (existing) {
+            if (!existing.node.directory) throw new FilesError("path_conflict", 409);
+            results.push({ path, state: "existing", entry: fileEntry(base, path, existing.node) });
+            continue;
+          }
+          const current = await writableParent(actor, input.baseId, path);
+          if (input.dryRun) {
+            results.push({ path, state: "planned" });
+            continue;
+          }
+          try {
+            const node = await current.root.mkdir(joinPath(current.target, current.name), { ownership: ownershipFor(current, true) });
+            results.push({ path, state: "created", entry: fileEntry(base, path, node) });
+          } catch (error) {
+            if (operationError(error) !== "path_conflict") throw error;
+            const concurrent = await authorized(actor, input.baseId, path);
+            if (!concurrent.node.directory) throw error;
+            results.push({ path, state: "existing", entry: fileEntry(base, path, concurrent.node) });
+          }
+        } catch (error) {
+          results.push({ path, state: "failed", error: operationError(error) });
+          failed = true;
+        }
+      }
+      return { base, results };
     },
     async upload(
       actor: RequestActor,

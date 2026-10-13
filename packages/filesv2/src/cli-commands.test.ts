@@ -6,7 +6,7 @@ import type { CloudCliContext, CloudCliFlags, CloudCliOutputMode } from "@k2b/cl
 import { sha256 } from "@k2b/filegate/utils";
 import { hc } from "hono/client";
 import filesCli from "./cli";
-import type { BaseSummary, FileEntry } from "./contracts";
+import { type BaseSummary, type FileEntry, FolderBatchInputSchema, type FolderResult } from "./contracts";
 import { entryRefId, parseEntryRefId } from "./resource-ref";
 
 /**
@@ -47,6 +47,7 @@ let shares: { id: string; kind: string; title: string; state: string; password?:
 let favorites: Set<string>;
 let sessions: Map<string, { base: string; path: string; size: number; segments: Map<number, Uint8Array<ArrayBuffer>> }>;
 let requests: string[];
+let folderBatches: string[][];
 let transferHeaders: Headers[];
 const directories: string[] = [];
 
@@ -136,6 +137,27 @@ async function cloud(request: Request): Promise<Response> {
         .filter(([item]) => (path === "" || item.startsWith(`${path}/`)) && item.split("/").at(-1)!.includes(q))
         .map(([item, node]) => entryOf(item, node));
       return Response.json({ base: baseOf(base), path, query: q, scope: query.get("scope"), items, next: null });
+    }
+    case "POST /directories/batch": {
+      const parsed = FolderBatchInputSchema.safeParse(body);
+      if (!parsed.success) return fail(400, "invalid_selection");
+      folderBatches.push(parsed.data.paths);
+      const results: FolderResult[] = [];
+      for (const path of parsed.data.paths) {
+        if (results.some((item) => item.state === "failed")) results.push({ path, state: "skipped" });
+        else if (exists(base, path))
+          results.push(
+            isFolder(base, path)
+              ? { path, state: "existing", entry: result(base, path).entry }
+              : { path, state: "failed", error: "path_conflict" },
+          );
+        else if (!isFolder(base, parentOf(path))) results.push({ path, state: "failed", error: "not_found" });
+        else {
+          tree(base).set(path, { directory: true, bytes: new Uint8Array() });
+          results.push({ path, state: "created", entry: result(base, path).entry });
+        }
+      }
+      return Response.json({ base: baseOf(base), results });
     }
     case "POST /directories":
       if (!isFolder(base, parentOf(path))) return fail(404, "not_found");
@@ -341,6 +363,7 @@ beforeEach(() => {
   favorites = new Set();
   sessions = new Map();
   requests = [];
+  folderBatches = [];
   transferHeaders = [];
   server = Bun.serve({
     hostname: "127.0.0.1",
@@ -361,14 +384,14 @@ async function directory() {
 }
 
 /** Runs one command in process, as `cld` would after parsing global options. */
-async function cli(args: string[], flags: CloudCliFlags = {}, output: CloudCliOutputMode = "json") {
+async function cli(args: string[], flags: CloudCliFlags = {}, output: CloudCliOutputMode = "json", locale = "en") {
   const out: string[] = [];
   const err: string[] = [];
   const values: unknown[] = [];
   const ctx: CloudCliContext = {
     args,
     flags,
-    options: { profile: "test", server: server.url.href, token: TOKEN, output, locale: "en" },
+    options: { profile: "test", server: server.url.href, token: TOKEN, output, locale },
     getDefault: async () => undefined,
     setDefault: async () => undefined,
     createApiClient: ((basePath: string) =>
@@ -397,9 +420,9 @@ async function cli(args: string[], flags: CloudCliFlags = {}, output: CloudCliOu
   return { code: code ?? 0, out: out.join("\n"), err: err.join("\n"), json, values };
 }
 
-const failure = async (args: string[], flags: CloudCliFlags = {}) => {
+const failure = async (args: string[], flags: CloudCliFlags = {}, locale = "en") => {
   try {
-    await cli(args, flags);
+    await cli(args, flags, "json", locale);
   } catch (error) {
     return (error as Error).message;
   }
@@ -473,6 +496,8 @@ test("put and get round-trip text and binary files, never overwrite, and keep Cl
   const nested = await cli(["put", local, "team:/2026/Q3/report.txt"], { parents: true });
   expect(nested.json.entry.path).toBe("2026/Q3/report.txt");
   expect(tree(team.id).get("2026")?.directory).toBe(true);
+  expect(folderBatches).toEqual([["2026", "2026/Q3"]]);
+  expect(requests.filter((request) => request.includes("/directories"))).toEqual([`POST /bases/${team.id}/directories/batch`]);
 
   const cwd = process.cwd();
   process.chdir(dir);
@@ -523,11 +548,74 @@ test("cat prints text, refuses binary content, and saves with --out", async () =
   expect(await failure(["cat", "me:/Documents"])).toStartWith("400 not_file");
 });
 
+test("mkdir accepts several literal folder arguments and preserves single-folder output", async () => {
+  const created = await cli(["mkdir", "me:/One", "me:/Two,Three"]);
+  expect(created.json).toMatchObject({
+    base: home,
+    results: [
+      { path: "One", state: "created", entry: { path: "One" } },
+      { path: "Two,Three", state: "created", entry: { path: "Two,Three" } },
+    ],
+  });
+  expect(requests.filter((request) => request.endsWith("/directories"))).toHaveLength(2);
+  expect(folderBatches).toEqual([]);
+  const printed = await cli(["mkdir", "me:/Four", "me:/Five"], {}, "text");
+  expect(printed.out.split("\n")).toEqual(["Created\tme:/Four", "Created\tme:/Five"]);
+  expect((await cli(["mkdir", "me:/Six"])).json).toMatchObject({ base: home, entry: { path: "Six" } });
+});
+
+test("mkdir -p sends one deduplicated parent-first batch and prints the requested folders", async () => {
+  const created = await cli(["mkdir", "me:/New/A/Child", "me:/New/B", "me:/New/A"], { p: true });
+  expect(folderBatches).toEqual([["New", "New/A", "New/B", "New/A/Child"]]);
+  expect(requests.filter((request) => request.includes("/directories"))).toEqual([`POST /bases/${home.id}/directories/batch`]);
+  expect(created.json.results.map((item: FolderResult) => item.path)).toEqual(["New", "New/A", "New/B", "New/A/Child"]);
+  const printed = await cli(["mkdir", "me:/New/A", "me:/New/C"], { parents: true }, "text");
+  expect(printed.out.split("\n")).toEqual(["Exists\tme:/New/A", "Created\tme:/New/C"]);
+  expect((await cli(["mkdir", "me:/New/A/Child"], { parents: true })).json).toMatchObject({ base: home, entry: { path: "New/A/Child" } });
+});
+
+test("mkdir rejects mixed areas before creating anything", async () => {
+  const modes: CloudCliFlags[] = [{}, { parents: true }];
+  for (const flags of modes)
+    expect(await failure(["mkdir", "me:/One", "team:/Two"], flags)).toBe("All addresses must be in the same area.");
+  expect(requests.filter((request) => request.includes("/directories"))).toEqual([]);
+});
+
+test("mkdir failures name created and unattempted folders in both modes", async () => {
+  tree(home.id).set("root.txt", { directory: false, bytes: text("file") });
+  for (const [flags, first, last] of [
+    [{}, "One", "Later"],
+    [{ parents: true }, "Two", "After"],
+  ] as const) {
+    const message = await failure(["mkdir", `me:/${first}`, "me:/root.txt", `me:/${last}`], flags);
+    expect(message).toContain("root.txt");
+    expect(message).toContain(`Created: ${first}`);
+    expect(message).toContain(`Not attempted: ${last}`);
+    expect(tree(home.id).has(first)).toBe(true);
+    expect(tree(home.id).has(last)).toBe(false);
+  }
+});
+
+test("mkdir localizes partial outcomes and area errors in German", async () => {
+  tree(home.id).set("root.txt", { directory: false, bytes: text("file") });
+  const message = await failure(["mkdir", "me:/Neu", "me:/root.txt", "me:/Später"], { parents: true }, "de");
+  expect(message).toContain("Angelegt: Neu");
+  expect(message).toContain("Nicht versucht: Später");
+  expect(await failure(["mkdir", "me:/Noch", "team:/Andere"], {}, "de")).toBe("Alle Adressen müssen im selben Bereich liegen.");
+});
+
+test("mkdir -p leaves batches above the shared limit to the server's 400", async () => {
+  expect(await failure(["mkdir", `me:/${Array.from({ length: 101 }, (_, i) => `F${i}`).join("/")}`], { parents: true })).toStartWith(
+    "400 ",
+  );
+  expect(tree(home.id).has("F0")).toBe(false);
+});
+
 test("mkdir, mv, cp and rm follow shell semantics inside the area contract", async () => {
   expect(await failure(["mkdir", "me:/Projects/2026"])).toStartWith("404 ");
   expect((await cli(["mkdir", "me:/Projects/2026"], { parents: true })).json.entry.path).toBe("Projects/2026");
   expect((await cli(["mkdir", "me:/Projects/2026"], { p: true })).json.entry.path).toBe("Projects/2026");
-  expect(await failure(["mkdir", "me:/Documents/notes.txt"], { parents: true })).toStartWith("409 ");
+  expect(await failure(["mkdir", "me:/Documents/notes.txt"], { parents: true })).toContain("path_conflict");
   expect(await failure(["mkdir", "me:/Projects"])).toStartWith("409 path_conflict");
 
   const renamed = await cli(["mv", "me:/Documents/notes.txt", "me:/Documents/todo.txt"]);

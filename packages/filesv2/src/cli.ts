@@ -20,6 +20,7 @@ import { templateCommands } from "./cli-templates";
 import { uploadFile } from "./cli-upload";
 import {
   type ArchiveDownload,
+  type BaseSummary,
   type BasesResult,
   CONTENT_STREAM_LIMIT,
   type DirectoryResult,
@@ -28,6 +29,8 @@ import {
   type EntryResult,
   type FileEntry,
   type FileVersion,
+  type FolderBatchResult,
+  type FolderResult,
   type MarkedEntry,
   type SearchResult,
   type SharePage,
@@ -120,19 +123,54 @@ function filesCommands(locale?: string) {
     });
   const mkdir = async (ctx: CloudCliContext, baseId: string, path: string) =>
     ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].directories.$post({ param: { baseId }, json: { path } }));
-  /** Creates every missing folder of `path`; an existing folder is fine, an existing file is not. */
-  const mkdirParents = async (ctx: CloudCliContext, baseId: string, path: string) => {
-    let result: EntryResult | undefined;
-    const segments = path.split("/").filter(Boolean);
-    for (let index = 1; index <= segments.length; index++) {
-      const current = segments.slice(0, index).join("/");
-      result = await mkdir(ctx, baseId, current).catch(async (error: unknown) => {
-        if (!isStatus(error, 409)) throw error;
-        const existing = await entry(ctx, { baseId, path: current, folder: true });
-        if (!existing.entry.directory) throw error;
-        return existing;
-      });
+  const folderFailure = (results: FolderResult[], reason: string) => {
+    const none = t({ en: "none", de: "keine" });
+    const created =
+      results
+        .filter((item) => item.state === "created")
+        .map((item) => item.path)
+        .join(", ") || none;
+    const remaining =
+      results
+        .filter((item) => item.state === "skipped")
+        .map((item) => item.path)
+        .join(", ") || none;
+    return new Error(
+      `${reason}. ${t({ en: "Created", de: "Angelegt" })}: ${created}. ${t({ en: "Not attempted", de: "Nicht versucht" })}: ${remaining}.`,
+    );
+  };
+  /** Creates each folder below an existing parent, in order; an existing name fails and stops the rest. */
+  const mkdirEach = async (ctx: CloudCliContext, baseId: string, paths: string[]): Promise<FolderBatchResult> => {
+    const results: FolderResult[] = [];
+    let base: BaseSummary | undefined;
+    for (const [index, path] of paths.entries()) {
+      try {
+        const created = await mkdir(ctx, baseId, path);
+        base = created.base;
+        results.push({ path, state: "created", entry: created.entry });
+      } catch (error) {
+        results.push({ path, state: "failed" }, ...paths.slice(index + 1).map((rest): FolderResult => ({ path: rest, state: "skipped" })));
+        throw folderFailure(results, `${error instanceof Error ? error.message : String(error)} (${path})`);
+      }
     }
+    // `sameArea` guarantees at least one folder, and every one was created.
+    return { base: base!, results };
+  };
+  /** Creates every missing folder of every path in one batch; an existing folder is fine, an existing file is not. */
+  const mkdirParents = async (ctx: CloudCliContext, baseId: string, folders: string[]) => {
+    const paths = [
+      ...new Set(
+        folders.flatMap((path) => {
+          const segments = path.split("/");
+          return segments.map((_, index) => segments.slice(0, index + 1).join("/"));
+        }),
+      ),
+    ].sort((a, b) => a.split("/").length - b.split("/").length);
+    const result = await ctx.readJson<FolderBatchResult>(
+      await api(ctx).bases[":baseId"].directories.batch.$post({ param: { baseId }, json: { paths } }),
+    );
+    const failed = result.results.find((item) => item.state === "failed");
+    if (failed) throw folderFailure(result.results, `${failed.path}: ${failed.message ?? failed.error}`);
     return result;
   };
   /** Local target for a download: the given path, a file inside a given local folder, or the remote name in the working directory. */
@@ -439,7 +477,7 @@ function filesCommands(locale?: string) {
         async run({ ctx, args, flags }) {
           const target = await fileResolver(ctx).file(args.remote);
           const path = target.folder ? joinPath(target.path, basename(args.local)) : target.path;
-          if (flags.parents && parentOf(path)) await mkdirParents(ctx, target.baseId, parentOf(path));
+          if (flags.parents && parentOf(path)) await mkdirParents(ctx, target.baseId, [parentOf(path)]);
           const baseParam = param(target);
           const result = await uploadFile(ctx, args.local, {
             scope: JSON.stringify([ctx.options.profile, target.baseId, path, flags.replace, flags.expectedRevision]),
@@ -478,13 +516,8 @@ function filesCommands(locale?: string) {
         },
       }),
       command("mkdir", {
-        summary: t({ en: "Create a folder", de: "Einen Ordner anlegen" }),
-        args: {
-          folder: arg.required({
-            valueLabel: "folder",
-            description: t({ en: "<area>:/path of the new folder", de: "<bereich>:/pfad des neuen Ordners" }),
-          }),
-        },
+        summary: t({ en: "Create folders", de: "Ordner anlegen" }),
+        args: { folders: fileArgs({ en: "New folders in one area", de: "Neue Ordner in einem Bereich" }) },
         flags: {
           parents: flag.boolean({
             aliases: ["p"],
@@ -496,11 +529,30 @@ function filesCommands(locale?: string) {
         },
         examples: ["cld filesv2 mkdir -p me:/Documents/2026/Q3"],
         async run({ ctx, args, flags }) {
-          const target = await fileResolver(ctx).file(args.folder);
-          const path = requireEntry(target);
-          const result = flags.parents ? (await mkdirParents(ctx, target.baseId, path))! : await mkdir(ctx, target.baseId, path);
-          if (!printStructured(ctx, result))
-            ctx.print(`${t({ en: "Created", de: "Angelegt" })}: ${addressOf(result.base, result.entry.path)}`);
+          const { baseId, targets } = await fileResolver(ctx).sameArea(args.folders);
+          const paths = targets.map(requireEntry);
+          const result = flags.parents ? await mkdirParents(ctx, baseId, paths) : await mkdirEach(ctx, baseId, paths);
+          if (paths.length === 1) {
+            const item = result.results.find((item) => item.path === paths[0]);
+            if (!item?.entry) throw new Error(t({ en: "The folder result is missing.", de: "Das Ordnerergebnis fehlt." }));
+            const single: EntryResult = { base: result.base, entry: item.entry };
+            if (!printStructured(ctx, single))
+              ctx.print(`${t({ en: "Created", de: "Angelegt" })}: ${addressOf(single.base, single.entry.path)}`);
+            return;
+          }
+          printRows(
+            ctx,
+            ctx.options.output === "jsonl" ? result.results : result,
+            result.results.filter((item) => paths.includes(item.path)),
+            [
+              {
+                key: "state",
+                label: t({ en: "State", de: "Status" }),
+                value: (item) => (item.state === "existing" ? t({ en: "Exists", de: "Existiert" }) : t({ en: "Created", de: "Angelegt" })),
+              },
+              { key: "path", label: t({ en: "Folder", de: "Ordner" }), value: (item) => addressOf(result.base, item.path) },
+            ],
+          );
         },
       }),
       command("mv", {

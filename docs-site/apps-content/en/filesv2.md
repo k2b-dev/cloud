@@ -124,6 +124,42 @@ result instead of publishing a second file. Filegate retains terminal receipts
 for seven days; after that, a missing receipt remains an uncertain outcome.
 Existing names ask before being replaced.
 
+## Create folders
+
+**New folder** accepts nested paths such as `A/B/C` and sibling names in the
+last segment, such as `Testdaten/Test1, Test2, Test3`. A typed comma offers the
+choice between separator and part of the name. The preview marks existing
+folders and invalid names before creation. Existing folders are reused, and
+one submission includes at most 100 folders, counting every folder in between.
+That is the bound every Files batch (move, copy, trash) already uses; it also
+bounds the depth, together with the 4096-character path limit.
+
+`POST /api/filesv2/bases/:baseId/directories/batch` accepts
+`{paths: string[], dryRun: boolean}`; `dryRun` defaults to false. Paths are
+base-relative, at most 4096 characters each, and the list contains 1–100 paths.
+All paths are validated before any creation. Duplicates are removed and
+parents are processed before children, preserving input order at equal depth.
+The endpoint creates exactly the supplied paths; it does not add ancestors.
+Existing folders require read access and are reused without write access to
+their parent. Creating a missing folder requires a readable, writable parent
+and uses the same ownership as single-folder creation.
+
+The response is `{base, results}` with one `{path, state, entry?, error?,
+message?}` per unique path. States are `existing`, `created`, `planned`,
+`failed`, or `skipped`. A real run stops after the first failure; earlier
+creations remain and later paths are skipped. A dry run creates nothing and
+checks independent paths even after a failure. Descendants of planned folders
+are planned; descendants of failed or skipped folders are skipped. Errors keep
+stable codes, with localized messages on failed items. A dry run reserves
+nothing; access or storage may change before creation.
+
+`cld filesv2 mkdir [-p] <folder>...` accepts several folders in one area.
+With `-p`, one batch includes all ancestors and reuses existing folders;
+`put --parents` uses the same endpoint. Without `-p`, folders are created
+individually in argument order and existing names fail. Both modes report
+created and unattempted folders on failure. Commas stay literal in CLI names;
+pass siblings as separate arguments or use shell expansion.
+
 ## Public shares
 
 Both download links and upload inboxes support an optional password of 8–256
