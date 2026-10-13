@@ -10,7 +10,7 @@ updated: 2026-10-13
 
 # Deprecations and migrations
 
-## `@k2b/ui` Calendar month reads `range`
+## @k2b/ui Calendar month reads range
 
 The `Calendar` month view now reads `range`. With `range`, the month scrolls
 through the weeks of that range, names the month in the middle, and calls
