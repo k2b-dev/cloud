@@ -16,7 +16,7 @@ afterEach(() => {
 });
 afterAll(() => dom.cleanup());
 
-test.each(["x", "unregistered"])("hostile desktop props are contained for %s", (name) => {
+test.each(["x", "unregistered", "constructor", "toString", "__proto__"])("hostile desktop props are contained for %s", (name) => {
   window.location.hash = `__cloudDesktopWindow=${name}&__cloudDesktopWindowProps=globalThis.pwned%3D1`;
   const registry = defineDesktopWindows({ x: () => <b>Window</b> });
   dispose = render(

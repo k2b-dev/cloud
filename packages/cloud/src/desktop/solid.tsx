@@ -69,7 +69,10 @@ export function DesktopWindowHost<Definitions extends Record<string, DesktopWind
   const descriptor = createMemo(() => nativeDescriptor());
   const component = createMemo(() => {
     const current = descriptor();
-    return current ? props.windows.__desktopWindowDefinitions[current.name] : null;
+    if (!current) return null;
+    // The name comes from the URL: only a registered window resolves, never an inherited member such as `constructor`.
+    const definitions = props.windows.__desktopWindowDefinitions;
+    return Object.hasOwn(definitions, current.name) ? definitions[current.name] : null;
   });
   const windowProps = createMemo(() => {
     const current = descriptor();
