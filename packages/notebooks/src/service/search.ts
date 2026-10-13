@@ -96,6 +96,31 @@ const normalizeFilters = (filters: SearchFilters) => ({
   updatedBefore: filters.updatedBefore ?? null,
 });
 
+/** Split the last word of a trimmed query for prefix matching, preserving phrases, negation, and `or`. */
+export const splitPrefixQuery = (query: string): { rest: string; prefix: string | null } => {
+  const tokens = query.split(/\s+/);
+  const token = tokens.at(-1) ?? "";
+  if (
+    !query ||
+    (query.match(/"/g)?.length ?? 0) % 2 !== 0 ||
+    token.includes('"') ||
+    token.startsWith("-") ||
+    tokens.at(-2)?.toLowerCase() === "or"
+  ) {
+    return { rest: query, prefix: null };
+  }
+  const sanitized = token.normalize("NFC").replace(/[^\p{L}\p{N}]/gu, "");
+  if (!sanitized) return { rest: query, prefix: null };
+  return { rest: query.slice(0, -token.length).trim(), prefix: `${sanitized}:*` };
+};
+
+const buildTextQuery = (query: string) => {
+  const { rest, prefix } = splitPrefixQuery(query);
+  return prefix === null
+    ? sql`websearch_to_tsquery('simple', ${query})`
+    : sql`(websearch_to_tsquery('simple', ${rest}) && to_tsquery('simple', ${prefix}))`;
+};
+
 const mapHit = (row: DbSearchHit): SearchHit => ({
   note: {
     id: row.id,
@@ -129,6 +154,7 @@ const searchInNotebookRows = async (params: {
   backend: SearchBackend;
 }): Promise<DbSearchHit[]> => {
   const filters = normalizeFilters(params.filters);
+  const textQuery = buildTextQuery(filters.query);
   const { offset, perPage } = params.pagination;
 
   if (params.backend === "bm25" && filters.query) {
@@ -138,11 +164,11 @@ const searchInNotebookRows = async (params: {
         n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
         EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = n.id) AS has_children,
         nb.short_id AS notebook_short_id, nb.name AS notebook_name, nb.icon AS notebook_icon,
-        LEFT(ts_headline('simple', COALESCE(n.content_md, ''), websearch_to_tsquery('simple', ${filters.query}), ${HEADLINE_OPTIONS}), 360) AS snippet
+        LEFT(ts_headline('simple', COALESCE(n.content_md, ''), ${textQuery}, ${HEADLINE_OPTIONS}), 360) AS snippet
       FROM notebooks.notes n
       JOIN notebooks.notebooks nb ON nb.id = n.notebook_id
       WHERE n.notebook_id = ${params.notebookId}::uuid
-        AND n.search_document @@ websearch_to_tsquery('simple', ${filters.query})
+        AND n.search_document @@ ${textQuery}
         AND (${filters.createdAfter}::timestamptz IS NULL OR n.created_at >= ${filters.createdAfter}::timestamptz)
         AND (${filters.createdBefore}::timestamptz IS NULL OR n.created_at <= ${filters.createdBefore}::timestamptz)
         AND (${filters.updatedAfter}::timestamptz IS NULL OR n.updated_at >= ${filters.updatedAfter}::timestamptz)
@@ -155,6 +181,8 @@ const searchInNotebookRows = async (params: {
           )
         )
       ORDER BY
+        (${filters.query} <> '' AND lower(n.title) = lower(${filters.query})) DESC,
+        (${filters.query} <> '' AND starts_with(lower(n.title), lower(${filters.query}))) DESC,
         (COALESCE(n.title, '') || ' ' || COALESCE(n.title, '') || ' ' || COALESCE(n.content_md, ''))
           <@> to_bm25query(${filters.query}, ${BM25_INDEX}),
         n.updated_at DESC,
@@ -171,12 +199,12 @@ const searchInNotebookRows = async (params: {
       nb.short_id AS notebook_short_id, nb.name AS notebook_name, nb.icon AS notebook_icon,
       CASE
         WHEN ${filters.query} = '' THEN NULL
-        ELSE LEFT(ts_headline('simple', COALESCE(n.content_md, ''), websearch_to_tsquery('simple', ${filters.query}), ${HEADLINE_OPTIONS}), 360)
+        ELSE LEFT(ts_headline('simple', COALESCE(n.content_md, ''), ${textQuery}, ${HEADLINE_OPTIONS}), 360)
       END AS snippet
     FROM notebooks.notes n
     JOIN notebooks.notebooks nb ON nb.id = n.notebook_id
     WHERE n.notebook_id = ${params.notebookId}::uuid
-      AND (${filters.query} = '' OR n.search_document @@ websearch_to_tsquery('simple', ${filters.query}))
+      AND (${filters.query} = '' OR n.search_document @@ ${textQuery})
       AND (${filters.createdAfter}::timestamptz IS NULL OR n.created_at >= ${filters.createdAfter}::timestamptz)
       AND (${filters.createdBefore}::timestamptz IS NULL OR n.created_at <= ${filters.createdBefore}::timestamptz)
       AND (${filters.updatedAfter}::timestamptz IS NULL OR n.updated_at >= ${filters.updatedAfter}::timestamptz)
@@ -189,7 +217,9 @@ const searchInNotebookRows = async (params: {
         )
       )
     ORDER BY
-      CASE WHEN ${filters.query} = '' THEN 0 ELSE ts_rank_cd(n.search_document, websearch_to_tsquery('simple', ${filters.query})) END DESC,
+      (${filters.query} <> '' AND lower(n.title) = lower(${filters.query})) DESC,
+      (${filters.query} <> '' AND starts_with(lower(n.title), lower(${filters.query}))) DESC,
+      CASE WHEN ${filters.query} = '' THEN 0 ELSE ts_rank_cd(n.search_document, ${textQuery}) END DESC,
       n.updated_at DESC,
       n.id ASC
     LIMIT ${perPage} OFFSET ${offset}
@@ -198,11 +228,12 @@ const searchInNotebookRows = async (params: {
 
 const countInNotebook = async (params: { notebookId: string; filters: SearchFilters }): Promise<number> => {
   const filters = normalizeFilters(params.filters);
+  const textQuery = buildTextQuery(filters.query);
   const [row] = await sql<{ count: number }[]>`
     SELECT COUNT(*)::int AS count
     FROM notebooks.notes n
     WHERE n.notebook_id = ${params.notebookId}::uuid
-      AND (${filters.query} = '' OR n.search_document @@ websearch_to_tsquery('simple', ${filters.query}))
+      AND (${filters.query} = '' OR n.search_document @@ ${textQuery})
       AND (${filters.createdAfter}::timestamptz IS NULL OR n.created_at >= ${filters.createdAfter}::timestamptz)
       AND (${filters.createdBefore}::timestamptz IS NULL OR n.created_at <= ${filters.createdBefore}::timestamptz)
       AND (${filters.updatedAfter}::timestamptz IS NULL OR n.updated_at >= ${filters.updatedAfter}::timestamptz)
@@ -249,6 +280,7 @@ export const searchAcross = async (params: {
     return { hits: [], total: 0 };
   }
   const filters = normalizeFilters(params.filters);
+  const textQuery = buildTextQuery(filters.query);
   const principalMatch = buildNotebookVisibleAccessCondition({
     userId: params.userId,
     serviceAccountId: params.serviceAccountId,
@@ -269,7 +301,7 @@ export const searchAcross = async (params: {
         WHERE na.notebook_id = nb.id
           AND ${principalMatch}
       )
-      AND (${filters.query} = '' OR n.search_document @@ websearch_to_tsquery('simple', ${filters.query}))
+      AND (${filters.query} = '' OR n.search_document @@ ${textQuery})
       AND (${filters.createdAfter}::timestamptz IS NULL OR n.created_at >= ${filters.createdAfter}::timestamptz)
       AND (${filters.createdBefore}::timestamptz IS NULL OR n.created_at <= ${filters.createdBefore}::timestamptz)
       AND (${filters.updatedAfter}::timestamptz IS NULL OR n.updated_at >= ${filters.updatedAfter}::timestamptz)
@@ -291,7 +323,7 @@ export const searchAcross = async (params: {
           n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
           EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = n.id) AS has_children,
           nb.short_id AS notebook_short_id, nb.name AS notebook_name, nb.icon AS notebook_icon,
-          LEFT(ts_headline('simple', COALESCE(n.content_md, ''), websearch_to_tsquery('simple', ${filters.query}), ${HEADLINE_OPTIONS}), 360) AS snippet
+          LEFT(ts_headline('simple', COALESCE(n.content_md, ''), ${textQuery}, ${HEADLINE_OPTIONS}), 360) AS snippet
         FROM notebooks.notes n
         JOIN notebooks.notebooks nb ON nb.id = n.notebook_id
         WHERE (${notebookId}::uuid IS NULL OR nb.id = ${notebookId}::uuid)
@@ -299,7 +331,7 @@ export const searchAcross = async (params: {
             SELECT 1 FROM notebooks.notebook_access na JOIN auth.access a ON a.id = na.access_id
             WHERE na.notebook_id = nb.id AND ${principalMatch}
           )
-          AND n.search_document @@ websearch_to_tsquery('simple', ${filters.query})
+          AND n.search_document @@ ${textQuery}
           AND (${filters.createdAfter}::timestamptz IS NULL OR n.created_at >= ${filters.createdAfter}::timestamptz)
           AND (${filters.createdBefore}::timestamptz IS NULL OR n.created_at <= ${filters.createdBefore}::timestamptz)
           AND (${filters.updatedAfter}::timestamptz IS NULL OR n.updated_at >= ${filters.updatedAfter}::timestamptz)
@@ -309,6 +341,8 @@ export const searchAcross = async (params: {
             WHERE NOT EXISTS (SELECT 1 FROM notebooks.note_tags nt WHERE nt.note_id = n.id AND nt.tag = wanted.tag)
           )
         ORDER BY
+          (${filters.query} <> '' AND lower(n.title) = lower(${filters.query})) DESC,
+          (${filters.query} <> '' AND starts_with(lower(n.title), lower(${filters.query}))) DESC,
           (COALESCE(n.title, '') || ' ' || COALESCE(n.title, '') || ' ' || COALESCE(n.content_md, ''))
             <@> to_bm25query(${filters.query}, ${BM25_INDEX}),
           n.updated_at DESC,
@@ -322,7 +356,7 @@ export const searchAcross = async (params: {
           EXISTS(SELECT 1 FROM notebooks.notes child WHERE child.parent_id = n.id) AS has_children,
           nb.short_id AS notebook_short_id, nb.name AS notebook_name, nb.icon AS notebook_icon,
           CASE WHEN ${filters.query} = '' THEN NULL
-            ELSE LEFT(ts_headline('simple', COALESCE(n.content_md, ''), websearch_to_tsquery('simple', ${filters.query}), ${HEADLINE_OPTIONS}), 360)
+            ELSE LEFT(ts_headline('simple', COALESCE(n.content_md, ''), ${textQuery}, ${HEADLINE_OPTIONS}), 360)
           END AS snippet
         FROM notebooks.notes n
         JOIN notebooks.notebooks nb ON nb.id = n.notebook_id
@@ -331,7 +365,7 @@ export const searchAcross = async (params: {
             SELECT 1 FROM notebooks.notebook_access na JOIN auth.access a ON a.id = na.access_id
             WHERE na.notebook_id = nb.id AND ${principalMatch}
           )
-          AND (${filters.query} = '' OR n.search_document @@ websearch_to_tsquery('simple', ${filters.query}))
+          AND (${filters.query} = '' OR n.search_document @@ ${textQuery})
           AND (${filters.createdAfter}::timestamptz IS NULL OR n.created_at >= ${filters.createdAfter}::timestamptz)
           AND (${filters.createdBefore}::timestamptz IS NULL OR n.created_at <= ${filters.createdBefore}::timestamptz)
           AND (${filters.updatedAfter}::timestamptz IS NULL OR n.updated_at >= ${filters.updatedAfter}::timestamptz)
@@ -341,7 +375,9 @@ export const searchAcross = async (params: {
             WHERE NOT EXISTS (SELECT 1 FROM notebooks.note_tags nt WHERE nt.note_id = n.id AND nt.tag = wanted.tag)
           )
         ORDER BY
-          CASE WHEN ${filters.query} = '' THEN 0 ELSE ts_rank_cd(n.search_document, websearch_to_tsquery('simple', ${filters.query})) END DESC,
+          (${filters.query} <> '' AND lower(n.title) = lower(${filters.query})) DESC,
+          (${filters.query} <> '' AND starts_with(lower(n.title), lower(${filters.query}))) DESC,
+          CASE WHEN ${filters.query} = '' THEN 0 ELSE ts_rank_cd(n.search_document, ${textQuery}) END DESC,
           n.updated_at DESC,
           n.id ASC
         LIMIT ${perPage} OFFSET ${offset}

@@ -99,7 +99,7 @@ Die Seitenleiste zeigt die Notizen des Notizbuchs als Baum, mit der Startseite z
 
 :::reference
 - **Name des Notizbuchs:** Wähle den Namen oben, um zu einem anderen Notizbuch zu wechseln oder **Alle Notizbücher** zu öffnen.
-- **Suche und neue Notizen:** Wähle **Notizen durchsuchen** oder drücke **Cmd/Strg+Umschalt+K**. Mit Zugriff **Bearbeiten** oder **Verwalten** erstellst du mit dem Stift neben dem Namen oder mit **Cmd/Strg+Alt+N** eine Notiz.
+- **Suche und neue Notizen:** Wähle **Notizen durchsuchen** oder drücke **Cmd/Strg+Umschalt+K**. Mit Zugriff **Bearbeiten** oder **Verwalten** erstellst du mit dem Stift neben dem Namen oder mit **Cmd/Strg+Alt+N** eine Notiz. Die Suche findet auch Wortanfänge: *Bespr* findet *Besprechungen*. Notizen, deren Titel deiner Eingabe entspricht oder damit beginnt, stehen oben.
 - **Favoriten, Zuletzt und Tags:** Diese Filter zeigen statt des Baums eine Liste, die zuletzt geänderte Notiz zuerst. **Zuletzt** zeigt die 12 zuletzt geänderten Notizen. Jede Notiz zeigt, wann sie sich geändert hat, und ihre ersten zwei Tags. Wähle den Filter erneut oder **×** über der Liste, um wieder den Baum zu sehen.
 - **Die Liste bleibt ruhig:** Solange die Liste offen ist, verschieben Änderungen von dir oder anderen ihre Notizen nicht. Eine Notiz, die neu zum Filter passt, kommt ans Ende. Um die Liste neu zu sortieren, wähle den Filter zweimal.
 - **Deine Favoriten:** Wähle im Menü einer Notiz **Zu Favoriten hinzufügen**. Nur du siehst deine Favoriten.

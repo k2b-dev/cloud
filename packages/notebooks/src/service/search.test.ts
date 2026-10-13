@@ -1,6 +1,31 @@
 import { expect, spyOn, test } from "bun:test";
 import { serviceAccounts } from "@k2b/cloud/services";
-import { isBm25CapabilityError, searchAcross } from "./search";
+import { isBm25CapabilityError, searchAcross, splitPrefixQuery } from "./search";
+
+test.each([
+  ["", { rest: "", prefix: null }],
+  ["Bespr", { rest: "", prefix: "Bespr:*" }],
+  ["Über", { rest: "", prefix: "Über:*" }],
+  ["U\u0308ber", { rest: "", prefix: "Über:*" }],
+  ["team Bespr", { rest: "team", prefix: "Bespr:*" }],
+  ["team\t\nBespr", { rest: "team", prefix: "Bespr:*" }],
+  ["a:*", { rest: "", prefix: "a:*" }],
+  ["(", { rest: "(", prefix: null }],
+  ["!", { rest: "!", prefix: null }],
+  ["&|", { rest: "&|", prefix: null }],
+  ['"', { rest: '"', prefix: null }],
+  ['""', { rest: '""', prefix: null }],
+  ["-draft", { rest: "-draft", prefix: null }],
+  ['"rollback plan"', { rest: '"rollback plan"', prefix: null }],
+  ['"rollback plan', { rest: '"rollback plan', prefix: null }],
+  ['"rollback plan" draft', { rest: '"rollback plan"', prefix: "draft:*" }],
+  ["e-mail", { rest: "", prefix: "email:*" }],
+  ["deployment or Bespr", { rest: "deployment or Bespr", prefix: null }],
+  ["deployment OR Bespr", { rest: "deployment OR Bespr", prefix: null }],
+  ["Woche 41", { rest: "Woche", prefix: "41:*" }],
+])("splits the last prefix token in %j", (query, expected) => {
+  expect(splitPrefixQuery(query)).toEqual(expected);
+});
 
 test("BM25 fallback accepts only capability errors", () => {
   expect(isBm25CapabilityError({ code: "42883" })).toBe(true);
