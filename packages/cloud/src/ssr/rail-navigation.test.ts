@@ -120,3 +120,18 @@ test("managed shortcuts lead personal pins without deleting them, including afte
     "deep",
   ]);
 });
+
+test("Core Help marks only its owning app, including third-party apps", () => {
+  for (const id of ["spaces", "timetrack"]) {
+    const owner = { ...app(id, id), appId: id };
+    for (const path of [`/help/apps/${id}`, `/help/apps/${id}/start/`]) {
+      expect(railLinkActive(owner, path)).toBe(true);
+      expect(railLinkActive({ ...app("core", "Core"), match: "/help", appId: "core" }, path)).toBe(false);
+      expect(railLinkActive({ ...app("mail", "Mail"), appId: "mail" }, path)).toBe(false);
+      expect(railLinkActive({ ...owner, appId: undefined, match: path, exact: true }, path)).toBe(true);
+    }
+  }
+  const spaces = { ...app("spaces", "Spaces"), appId: "spaces" };
+  for (const path of ["/help", "/help/apps", "/help/apps/spaces/a/b", "/helpx/apps/spaces", "/app/timetrack"])
+    expect(railLinkActive(spaces, path)).toBe(false);
+});

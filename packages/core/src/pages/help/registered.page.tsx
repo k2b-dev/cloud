@@ -1,5 +1,5 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { getLocalizedRuntimeContext } from "@k2b/cloud/ssr";
+import { getLocalizedRuntimeContext, Layout } from "@k2b/cloud/ssr";
 import { preloadLayoutHelp } from "@k2b/cloud/ssr/help";
 import { ssr } from "../../config";
 import CoreLayoutHelp from "../CoreLayoutHelp.island";
@@ -15,5 +15,9 @@ export default ssr<AuthContext>(async (c) => {
   const requested = c.req.param("topic");
   const initialTopic = help.documents.some((document) => document.id === requested) ? requested : undefined;
   c.get("page").title = t.helpTitle({ appName: app.name });
-  return () => <CoreLayoutHelp documents={help.documents} initialTopic={initialTopic} pageBase={help.pageBase} />;
+  return () => (
+    <Layout c={c} title={[{ title: app.name, href: app.nav?.href || app.adminHref }, { title: t.help }]}>
+      <CoreLayoutHelp documents={help.documents} initialTopic={initialTopic} pageBase={help.pageBase} />
+    </Layout>
+  );
 });

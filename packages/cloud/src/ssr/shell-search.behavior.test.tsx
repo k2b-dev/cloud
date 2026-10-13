@@ -30,7 +30,6 @@ test.skipIf(isServer)("the search host expands each destination the page carries
       notes: [{ label: "Shared notes", href: "/app/notes/shared", keywords: ["team"] }],
       mail: [{ label: "Drafts", description: "Unsent messages", href: "/app/mail/drafts", icon: "ti ti-file" }],
     },
-    searchHelpApps: [],
   });
   dom.document.body.append(script);
   const [{ default: ShellRuntime }, { openGlobalSearch }] = await Promise.all([

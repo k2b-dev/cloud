@@ -322,6 +322,19 @@ not repeat that path in their Help declaration. Core owns search and article
 transport and the shared reader; the derived application routes forward to
 that reader while the application remains the content owner.
 
+Full-page Help renders in the owning application's frame. The rail marks that
+app, its canvas and accent apply, and the title row leads back to the app.
+Third-party applications use the same frame.
+
+Links to another article or section of the same app's Help open inside the
+reader without reloading: `/app/<id>/help/<documentId>`,
+`/help/apps/<id>/<documentId>`, or `#section`. On the full page, the address
+updates and the browser's Back button returns to the previous article. Other
+links navigate normally.
+
+The reader adapts to its own width in a dialog, on the full page, or inside an
+application's embedded reader.
+
 SSR loads the current application's localized article metadata from Postgres.
 The browser receives this manifest and loads article bodies on demand. An
 agent uses bounded search and read operations; Cloud does not create one
