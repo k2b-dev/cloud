@@ -50,8 +50,19 @@ function Harness() {
         editor.dispatch({ selection: { anchor: from + offset }, scrollIntoView: true });
         editor.focus();
       },
+      select(text: string) {
+        const from = editor.state.doc.toString().indexOf(text);
+        if (from < 0) throw new Error(`Invalid selection target: ${text}`);
+        editor.dispatch({ selection: { anchor: from, head: from + text.length }, scrollIntoView: true });
+        editor.focus();
+      },
       read() {
-        return { doc: editor.state.doc.toString(), head: editor.state.selection.main.head, hasFocus: editor.hasFocus };
+        return {
+          doc: editor.state.doc.toString(),
+          anchor: editor.state.selection.main.anchor,
+          head: editor.state.selection.main.head,
+          hasFocus: editor.hasFocus,
+        };
       },
       async settle() {
         await document.fonts.ready;
@@ -84,7 +95,8 @@ function Harness() {
 export type ToolbarHarness = {
   loadDocument: (markdown: string) => void;
   placeCaret: (text: string, offset: number) => void;
-  read: () => { doc: string; head: number; hasFocus: boolean };
+  select: (text: string) => void;
+  read: () => { doc: string; anchor: number; head: number; hasFocus: boolean };
   settle: () => Promise<void>;
 };
 

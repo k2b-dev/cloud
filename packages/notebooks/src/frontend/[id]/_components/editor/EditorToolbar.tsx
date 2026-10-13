@@ -11,7 +11,7 @@ import { DETAIL_PANEL_STATE_EVENT, DETAIL_PANEL_TOGGLE_EVENT } from "../detail/e
 import { readNavigationHidden } from "../settings/NotebookSettingsStore";
 import { createNavigationHidden, NOTEBOOK_NAVIGATION_ID, setNavigationHidden } from "../sidebar/navigation-visibility";
 import { openAttachmentPicker } from "./AttachmentPicker";
-import { cycleHeading, insertCallout, insertLink, insertNoteLink, insertTable, wrapSelection } from "./editor-actions";
+import { cycleHeading, insertCallout, insertLink, insertNoteLink, insertTable, toggleInlineMark } from "./editor-actions";
 
 type Props = {
   connected: boolean;
@@ -34,28 +34,28 @@ export function formattingKeymap(opts: { notebookId: string }) {
       {
         key: "Mod-b",
         run: (view) => {
-          wrapSelection(view, "**");
+          toggleInlineMark(view, "bold");
           return true;
         },
       },
       {
         key: "Mod-i",
         run: (view) => {
-          wrapSelection(view, "_");
+          toggleInlineMark(view, "italic");
           return true;
         },
       },
       {
         key: "Mod-Shift-s",
         run: (view) => {
-          wrapSelection(view, "~~");
+          toggleInlineMark(view, "strikethrough");
           return true;
         },
       },
       {
         key: "Mod-e",
         run: (view) => {
-          wrapSelection(view, "`");
+          toggleInlineMark(view, "code");
           return true;
         },
       },
@@ -93,10 +93,10 @@ export default function EditorToolbar(props: Props) {
     if (props.editorView) action(props.editorView);
   };
 
-  const bold = withView((v) => wrapSelection(v, "**"));
-  const italic = withView((v) => wrapSelection(v, "_"));
-  const strikethrough = withView((v) => wrapSelection(v, "~~"));
-  const inlineCode = withView((v) => wrapSelection(v, "`"));
+  const bold = withView((v) => toggleInlineMark(v, "bold"));
+  const italic = withView((v) => toggleInlineMark(v, "italic"));
+  const strikethrough = withView((v) => toggleInlineMark(v, "strikethrough"));
+  const inlineCode = withView((v) => toggleInlineMark(v, "code"));
   const heading = withView(cycleHeading);
   const link = withView((v) => insertLink(v, locale()));
   const linkToNote = withView((v) => void insertNoteLink(v, props.notebookId, locale()));
@@ -147,16 +147,24 @@ export default function EditorToolbar(props: Props) {
 
   const toggleDetailPanel = () => window.dispatchEvent(new CustomEvent(DETAIL_PANEL_TOGGLE_EVENT));
 
+  // Pointer presses keep focus and selection in the note; keyboard activation stays unchanged.
   const Btn = (p: { icon: string; title: string; onClick: () => void }) => (
     <Tooltip.Anchor content={p.title}>
-      <IconButton label={p.title} tooltip={false} size="xs" onClick={p.onClick} class="text-dimmed">
+      <IconButton
+        label={p.title}
+        tooltip={false}
+        size="xs"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={p.onClick}
+        class="text-dimmed"
+      >
         <i class={`ti ${p.icon} text-sm`} />
       </IconButton>
     </Tooltip.Anchor>
   );
 
   /* Indent and Outdent keep their place outside lists, so nothing moves when the caret enters one. Disabled with
-     aria-disabled, they stay focusable and keep their tooltip; a press never takes focus or caret from the note. */
+     aria-disabled, they stay focusable and keep their tooltip. */
   const ListBtn = (p: { icon: string; title: string; enabled: boolean; onClick: () => void }) => (
     <Tooltip.Anchor content={p.title}>
       <IconButton
@@ -187,7 +195,6 @@ export default function EditorToolbar(props: Props) {
             class="text-dimmed"
             aria-expanded={!navigationHidden()}
             aria-controls={NOTEBOOK_NAVIGATION_ID}
-            // A pointer press keeps focus, caret and selection in the note.
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => setNavigationHidden(!navigationHidden())}
           >
@@ -240,7 +247,14 @@ export default function EditorToolbar(props: Props) {
             },
           ]}
         >
-          <Dropdown.Trigger iconOnly label={t().insertContent} size="xs" class="text-dimmed" tooltip={t().insertContent}>
+          <Dropdown.Trigger
+            onMouseDown={(event) => event.preventDefault()}
+            iconOnly
+            label={t().insertContent}
+            size="xs"
+            class="text-dimmed"
+            tooltip={t().insertContent}
+          >
             <i class="ti ti-layout-grid-add text-sm" />
           </Dropdown.Trigger>
         </Dropdown.Root>

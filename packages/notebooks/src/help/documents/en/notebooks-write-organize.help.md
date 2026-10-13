@@ -42,6 +42,7 @@ You need **Edit** access to restore. A locked note can only be restored as a cop
 :::reference
 - **Headings:** Use #, ##, and deeper headings to create sections. The first H1 is the note title in navigation and search. Without an H1, the first visible line is the title.
 - **Lists and tasks:** Use - for lists. Use - [ ] or - [x] for tasks. Use 1. for numbered lists. They count up from their first number. Nested numbered lists show a., b. and then i., ii. in the editor, Book view, and PDF.
+- **Format text:** Select text and press **Ctrl/⌘+B** for bold, **Ctrl/⌘+I** for italic, **Ctrl/⌘+Shift+S** for strikethrough or **Ctrl/⌘+E** for code. The toolbar has buttons for bold, italic and strikethrough. Without a selection, the format applies to the word at the cursor. Spaces at the edge of a selection stay outside the format. Press the same keys again to remove the format. If you select only part of formatted text, only that part loses the format. Formatting does not apply in code, in link addresses, in tags, or across paragraphs and list items.
 - **Slash menu:** Use the insert menu of the editor for common blocks such as notes, files, and tables. Type ::: for data, query, contents, and callout blocks.
 - **Markdown characters:** Rich mode shows characters such as `**` or `#` when your cursor is in them. When you select with the mouse, they appear after you release the button. The text stays still while you drag.
 :::

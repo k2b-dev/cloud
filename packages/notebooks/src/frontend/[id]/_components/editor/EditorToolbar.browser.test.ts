@@ -121,8 +121,21 @@ const read = (page: Page) =>
     return { ...harness.read(), activeInEditor: content !== null && content.contains(document.activeElement) };
   });
 
+const select = (page: Page, text: string) =>
+  page.evaluate(async (text) => {
+    const harness = (window as unknown as { harness: ToolbarHarness }).harness;
+    harness.select(text);
+    await harness.settle();
+  }, text);
+
 const expectEditor = async (page: Page, doc: string, text: string, offset = 3) => {
-  expect(await read(page)).toEqual({ doc, head: doc.indexOf(text) + offset, hasFocus: true, activeInEditor: true });
+  expect(await read(page)).toEqual({
+    doc,
+    anchor: doc.indexOf(text) + offset,
+    head: doc.indexOf(text) + offset,
+    hasFocus: true,
+    activeInEditor: true,
+  });
 };
 
 const layout = (page: Page) =>
@@ -283,6 +296,72 @@ describe.each(Object.entries(devices))("editor toolbar list kinds (%s)", (name, 
         expect(state.hasFocus).toBe(true);
         expect(state.head).toBe(doc.length);
       }
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+});
+
+describe.each(Object.entries(devices))("editor toolbar inline formatting and insertion (%s)", (name, device) => {
+  // A pointer press must not move focus: its mousedown default is prevented. Solid delegates the handler to the
+  // document, so a window listener sees the final result, also for the mousedown that follows a tap.
+  const pressKeepingFocus = async (page: Page, label: string) => {
+    const button = page.getByRole("button", { name: label, exact: true });
+    await page.evaluate(() => {
+      delete document.body.dataset.pointerPrevented;
+      window.addEventListener(
+        "mousedown",
+        (event) => {
+          document.body.dataset.pointerPrevented = String(event.defaultPrevented);
+        },
+        { once: true },
+      );
+    });
+    if (name === "phone") {
+      await button.tap();
+    } else {
+      const box = await button.boundingBox();
+      if (!box) throw new Error(`Missing toolbar button: ${label}`);
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      expect((await read(page)).activeInEditor).toBe(true);
+      await page.mouse.up();
+    }
+    expect(await page.evaluate(() => document.body.dataset.pointerPrevented)).toBe("true");
+  };
+
+  test("Bold preserves editor focus and the selected word on both presses", async () => {
+    const page = await open(device);
+    try {
+      await load(page, "Ein Wort hier");
+      await select(page, "Wort");
+      expect(await read(page)).toEqual({ doc: "Ein Wort hier", anchor: 4, head: 8, hasFocus: true, activeInEditor: true });
+      await pressKeepingFocus(page, "Bold");
+      expect(await read(page)).toEqual({ doc: "Ein **Wort** hier", anchor: 6, head: 10, hasFocus: true, activeInEditor: true });
+      await pressKeepingFocus(page, "Bold");
+      expect(await read(page)).toEqual({ doc: "Ein Wort hier", anchor: 4, head: 8, hasFocus: true, activeInEditor: true });
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("Insert content keeps focus on pointer down and inserts an Info callout at the caret line", async () => {
+    const page = await open(device);
+    try {
+      await load(page, "First line\nLast line");
+      await caret(page, "First", 2);
+      await pressKeepingFocus(page, "Insert content");
+      const item = page.getByRole("menuitem", { name: /^Info/ });
+      expect(await item.isVisible()).toBe(true);
+      await (name === "phone" ? item.tap() : item.click());
+      const doc = "First line\n\n:::info\n\n:::\n\nLast line";
+      expect(await read(page)).toEqual({
+        doc,
+        anchor: doc.indexOf(":::info") + 8,
+        head: doc.indexOf(":::info") + 8,
+        hasFocus: true,
+        activeInEditor: true,
+      });
     } finally {
       await page.context().close();
     }

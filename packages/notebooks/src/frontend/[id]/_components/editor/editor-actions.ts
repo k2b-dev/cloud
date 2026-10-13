@@ -1,5 +1,10 @@
+import { isolateHistory } from "@codemirror/commands";
+import { ensureSyntaxTree } from "@codemirror/language";
+import { type ChangeSet, type ChangeSpec, EditorSelection, type EditorState, type SelectionRange } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { prompts } from "@k2b/ui";
+import type { SyntaxNode } from "@lezer/common";
+import { TAG_REGEX } from "../../../lib/editor/_lib/inline-syntax";
 import { buildDataBlockTemplate, dataBlockRefSelection } from "../../../lib/editor/data-block-template";
 import { notebookWorkspaceMessages } from "../../messages";
 import { openNoteLinkPrompt } from "../search/openNoteSearchPrompt";
@@ -17,41 +22,173 @@ import { openNoteLinkPrompt } from "../search/openNoteSearchPrompt";
 // Inline marks
 // ==========================
 
+export type InlineMark = "bold" | "italic" | "strikethrough" | "code";
+
+const inlineMarks = {
+  bold: { node: "StrongEmphasis", delimiter: "**" },
+  italic: { node: "Emphasis", delimiter: "*" },
+  strikethrough: { node: "Strikethrough", delimiter: "~~" },
+  code: { node: "InlineCode", delimiter: "`" },
+};
+
+/** Same parse budget as the list commands; a range that cannot be parsed in time is left alone. */
+const PARSE_BUDGET_MS = 50;
+const parsedTree = (state: EditorState, pos: number) => ensureSyntaxTree(state, state.doc.lineAt(pos).to, PARSE_BUDGET_MS);
+const delimiterMarks = new Set(["EmphasisMark", "StrikethroughMark", "CodeMark"]);
+
+/** True when `pos` sits inside a `#tag` or right before its `#`, where a mark would break the tag. */
+const breaksTag = (state: EditorState, pos: number, opening: boolean) => {
+  const line = state.doc.lineAt(pos);
+  for (const match of line.text.matchAll(TAG_REGEX)) {
+    const start = line.from + match.index + match[1]!.length;
+    const end = start + 1 + match[2]!.length;
+    if ((opening ? start <= pos : start < pos) && pos < end) return true;
+  }
+  return false;
+};
+
 /**
- * Toggle a markdown wrap mark (e.g. `**`, `_`, `~~`, `` ` ``) around the
- * current selection. Detects an already-wrapped selection (inside or outside
- * the marks) and unwraps in that case.
+ * Toggle an inline Markdown mark on the selection, or on the word at the
+ * caret. Whitespace at the selection edges stays outside the mark.
+ *
+ * - Inside a span of the same kind (also `_x_` or `__x__`), the span's marks
+ *   are removed. A selection strictly inside the span's text is split out of
+ *   it instead, so only the selected part loses the mark. A caret on the
+ *   span's marks next to a word formats that word instead.
+ * - Otherwise the mark wraps the range and absorbs same-kind spans it
+ *   overlaps or touches.
+ *
+ * Every inserted mark must parse as Markdown markup; otherwise nothing
+ * changes. This covers code, link targets, ranges that cross blocks or other
+ * spans, and runs that CommonMark cannot close. The command also does
+ * nothing inside a `#tag` or before the syntax tree covers the range. Only
+ * the marks change, in one transaction that is its own undo step, so a
+ * peer's concurrent edit inside the text survives.
  */
-export const wrapSelection = (view: EditorView, mark: string): void => {
-  const { from, to } = view.state.selection.main;
-  const selected = view.state.sliceDoc(from, to);
-  const markLen = mark.length;
-
-  // Case 1: selected text itself starts and ends with the mark → unwrap inside
-  if (selected.startsWith(mark) && selected.endsWith(mark) && selected.length >= markLen * 2) {
-    view.dispatch({ changes: { from, to, insert: selected.slice(markLen, -markLen) } });
-    view.focus();
-    return;
+export const toggleInlineMark = (view: EditorView, mark: InlineMark): void => {
+  const { state } = view;
+  const selection = state.selection.main;
+  let { from, to } = selection;
+  if (!selection.empty) {
+    const selected = state.sliceDoc(from, to);
+    const trimmed = selected.trim();
+    if (!trimmed) return;
+    from += selected.length - selected.trimStart().length;
+    to = from + trimmed.length;
   }
+  const tree = parsedTree(state, to);
+  if (!tree) return;
 
-  // Case 2: marks exist around the selection in the document → unwrap outside
-  const before = view.state.sliceDoc(Math.max(0, from - markLen), from);
-  const after = view.state.sliceDoc(to, to + markLen);
-  if (before === mark && after === mark) {
-    view.dispatch({
-      changes: { from: from - markLen, to: to + markLen, insert: selected },
-      selection: { anchor: from - markLen, head: to - markLen },
+  const { node: nodeType, delimiter } = inlineMarks[mark];
+  // Spans that overlap or touch the range, with their opening and closing marks; visited outside in.
+  const spans = (from: number, to: number) => {
+    const found: { from: number; to: number; opening: SyntaxNode; closing: SyntaxNode }[] = [];
+    tree.iterate({
+      from,
+      to,
+      enter: ({ name, node }) => {
+        if (name === nodeType && node.firstChild && node.lastChild)
+          found.push({ from: node.from, to: node.to, opening: node.firstChild, closing: node.lastChild });
+      },
     });
+    return found;
+  };
+  const edits: ChangeSpec[] = [];
+  const inserts: { at: number; text: string }[] = [];
+  const removeMarks = ({ opening, closing }: { opening: SyntaxNode; closing: SyntaxNode }) => {
+    edits.push({ from: opening.from, to: opening.to }, { from: closing.from, to: closing.to });
+  };
+  const insert = (at: number, text: string) => {
+    edits.push({ from: at, insert: text });
+    inserts.push({ at, text });
+  };
+
+  /** Dispatch unless an inserted delimiter stays literal text, or a wrap does not produce a span. */
+  const apply = (selectionAfter: (changes: ChangeSet) => SelectionRange, wrapped?: { from: number; to: number }) => {
+    const changes = state.changes(edits);
+    if (inserts.length > 0) {
+      const next = state.update({ changes }).state;
+      const placed = inserts.map(({ at, text }) => ({ from: changes.mapPos(at, -1), to: changes.mapPos(at, -1) + text.length }));
+      const nextTree = parsedTree(next, Math.max(...placed.map((range) => range.to)));
+      if (!nextTree) return;
+      const marks: { from: number; to: number }[] = [];
+      const nodes: { from: number; to: number }[] = [];
+      nextTree.iterate({
+        from: Math.min(...placed.map((range) => range.from)),
+        to: Math.max(...placed.map((range) => range.to)),
+        enter: (node) => {
+          if (delimiterMarks.has(node.name)) marks.push({ from: node.from, to: node.to });
+          if (node.name === nodeType) nodes.push({ from: node.from, to: node.to });
+        },
+      });
+      const isMarkup = (pos: number) => marks.some((range) => range.from <= pos && pos < range.to);
+      for (const range of placed) {
+        for (let pos = range.from; pos < range.to; pos++) if (!isMarkup(pos)) return;
+      }
+      if (wrapped) {
+        const a = changes.mapPos(wrapped.from, -1);
+        const b = changes.mapPos(wrapped.to, 1);
+        const span = nodes.some(
+          (node) => a <= node.from && node.to <= b && node.from <= a + delimiter.length && node.to >= b - delimiter.length,
+        );
+        if (!span) return;
+      }
+    }
+    view.dispatch({ changes, selection: selectionAfter(changes), annotations: isolateHistory.of("full") });
     view.focus();
-    return;
+  };
+  const mapSelection = (changes: ChangeSet) =>
+    EditorSelection.range(changes.mapPos(selection.anchor, 1), changes.mapPos(selection.head, 1));
+
+  // Spans are visited outside in, so the last containing one is the innermost.
+  const containing = spans(from, to).findLast((node) => node.from <= from && node.to >= to);
+  const word = selection.empty ? state.wordAt(selection.head) : null;
+  if (containing) {
+    const { opening, closing } = containing;
+    if (!selection.empty && (from > opening.to || to < closing.from)) {
+      // Split the selected text out of the span; an empty side drops its mark.
+      const text = state.sliceDoc(opening.from, opening.to);
+      const before = state.sliceDoc(opening.to, Math.max(opening.to, from)).trimEnd();
+      const after = state.sliceDoc(Math.min(to, closing.from), closing.from);
+      if (before) insert(opening.to + before.length, text);
+      else edits.push({ from: opening.from, to: opening.to });
+      if (after.trim()) insert(closing.from - after.trimStart().length, text);
+      else edits.push({ from: closing.from, to: closing.to });
+      const forward = selection.anchor <= selection.head;
+      return apply((changes) => {
+        const start = changes.mapPos(from, 1);
+        const end = changes.mapPos(to, -1);
+        return forward ? EditorSelection.range(start, end) : EditorSelection.range(end, start);
+      });
+    }
+    const caretOnMarksNextToWord = word && (from < opening.to || to > closing.from);
+    if (!caretOnMarksNextToWord) {
+      removeMarks(containing);
+      return apply(mapSelection);
+    }
   }
 
-  // Default: wrap selection
-  view.dispatch({
-    changes: { from, to, insert: `${mark}${selected}${mark}` },
-    selection: { anchor: from + markLen, head: to + markLen },
-  });
-  view.focus();
+  if (selection.empty) {
+    if (!word) return;
+    ({ from, to } = word);
+  }
+  for (const node of spans(from, to)) {
+    removeMarks(node);
+    from = Math.min(from, node.from);
+    to = Math.max(to, node.to);
+  }
+  if (breaksTag(state, from, true) || breaksTag(state, to, false)) return;
+  insert(from, delimiter);
+  insert(to, delimiter);
+  apply(
+    (changes) => {
+      const start = changes.mapPos(from, -1) + delimiter.length;
+      const end = changes.mapPos(to, 1) - delimiter.length;
+      if (selection.empty) return EditorSelection.cursor(Math.max(start, Math.min(end, changes.mapPos(selection.head, 1))));
+      return selection.anchor <= selection.head ? EditorSelection.range(start, end) : EditorSelection.range(end, start);
+    },
+    { from, to },
+  );
 };
 
 // ==========================
