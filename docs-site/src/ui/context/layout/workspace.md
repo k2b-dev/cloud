@@ -324,9 +324,13 @@ Section titles are quiet sentence-case labels. Keep them short and let the
 navigation rows carry the stronger visual emphasis.
 
 Active rows use the workspace accent color and a stronger text weight without
-a persistent fill. Hover retains its quiet background, and keyboard focus keeps
-the shared focus ring. Standalone themes can override
-`--k2b-app-workspace-active`; Cloud maps it to the current application accent.
+a persistent fill. Hover uses one quiet neutral fill, `--k2b-app-workspace-hover`,
+on rows, cards, tree toggles, icon actions, and the switcher head, so no
+platform blue sits beside the accent; an active card keeps that fill with an
+accent-tinted border. Keyboard focus keeps the shared focus ring. Standalone
+themes can override `--k2b-app-workspace-active` and
+`--k2b-app-workspace-hover`; Cloud maps the active color to the current
+application accent.
 
 Mark the exact current page with `active`; on a page deeper than the sidebar
 lists, use `active="ancestor"` on the containing item to keep its highlight and
@@ -521,8 +525,9 @@ inherited locale. Above 99 the phrase says "more than 99 unread", like the
 badge, so an application can pass a capped count such as 100. A row whose
 preview opens from the whole row (`trigger: "row"`) is named by the preview
 label and keeps the phrase as its description. Without unread items, a
-mention, or muting, the component renders nothing, and a `SidebarItem` shows
-no meta slot. The collapsed rail shows only row icons, so the marks hide there
+mention, or muting, the status shows nothing and takes no space, but it keeps
+the row's label on one line. Render it from the row's first paint, also at
+zero, so the first count never changes the row's height. The collapsed rail shows only row icons, so the marks hide there
 with the label. The application decides which state applies, for example
 whether a muted conversation shows a count or only a dot.
 
@@ -1090,10 +1095,13 @@ usually enough; Assistant lists its chats as rows under day headings with one
 status icon in `meta`. `context` holds a project or category; `contextMeta` holds a short time
 or secondary value. Both accept reactive JSX. Keep commands in actions or the
 preview. Rows wrap a long label onto up to two balanced lines ending in an
-ellipsis. A selected or unread row with a plain text label keeps its line count.
-A row whose metadata holds a `SidebarItemStatus` keeps one line, because its
-marks change width while it is shown; render the status from the row's first
-paint.
+ellipsis. A selected row keeps its line count when its label is plain text; a
+label built from elements, such as `<strong>`, gets no such reservation.
+A row whose metadata holds a `SidebarItemStatus` keeps one line from its first
+paint, also while the status shows nothing, so a new count never re-wraps the
+label and moves the rows below. Any other metadata must keep its width while
+the row is shown: put unread counts in `SidebarItemStatus` and render it at
+zero too, and keep rows with other changing metadata on one line.
 `SidebarItemLabel marquee={false}` keeps one line with an ellipsis, as cards
 and object rows do by default.
 Completed work can retain `variant="row"` without context or description.

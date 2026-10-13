@@ -382,10 +382,24 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(activeItemRule).toContain("color: var(--k2b-app-workspace-active)");
     expect(activeItemRule).toContain("background: transparent");
     expect(activeItemRule).toContain("font-weight: 600");
-    expect(activeItemHoverRule).toContain("background: color-mix(in srgb, var(--k2b-text) 5%, transparent)");
+    expect(activeItemHoverRule).toContain("background: var(--k2b-app-workspace-hover)");
     expect(activeIconRule).toContain("color: var(--k2b-app-workspace-active)");
     expect(activeIconRule).toContain("background: transparent");
-    expect(activeIconHoverRule).toContain("background: var(--k2b-hover)");
+    expect(activeIconHoverRule).toContain("background: var(--k2b-app-workspace-hover)");
+    // Every hover in the sidebar uses the one neutral fill, so none sits in platform blue beside the app accent.
+    expect(css).toContain("--k2b-app-workspace-hover: color-mix(in srgb, var(--k2b-text) 5%, transparent)");
+    for (const selector of [
+      ".k2b-app-workspace__sidebar-item:hover",
+      '.k2b-app-workspace__sidebar-item[data-variant="card"]:hover',
+      ".k2b-app-workspace__nav-tree-toggle:hover",
+      ".k2b-app-workspace__sidebar-icon-action:hover",
+    ]) {
+      const rule = css.match(new RegExp(`\\.k2b-ui ${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`))?.[1];
+      expect({ selector, background: rule?.match(/background: ([^;]+);/)?.[1] }).toEqual({
+        selector,
+        background: "var(--k2b-app-workspace-hover)",
+      });
+    }
   });
 
   // FloatingWindow portals its frame, so SSR yields no markup to assert on.

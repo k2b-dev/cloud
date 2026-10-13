@@ -299,7 +299,7 @@ const measure = (page: Page) =>
         labelStart: rect(label)!.left,
         labelWidth: rect(label)!.width,
         labelWeight: getComputedStyle(own(".k2b-app-workspace__sidebar-item-label-text")!).fontWeight,
-        hasMeta: own(".k2b-app-workspace__sidebar-item-meta") !== null,
+        hasMeta: (own(".k2b-app-workspace__sidebar-item-meta")?.getClientRects().length ?? 0) > 0,
         unread: rect(own(".k2b-app-workspace__sidebar-status-unread")),
         count: rect(own(".k2b-app-workspace__sidebar-status-count")),
         dot: rect(own(".k2b-app-workspace__sidebar-status-dot")),
@@ -360,7 +360,7 @@ describe("@k2b/ui sidebar item status", () => {
         expect(flat("mutedDot").muted!.right).toBeCloseTo(flat("all").muted!.right, 1);
         expect(flat("mention").mention!.right).toBeCloseTo(flat("mentionOnly").mention!.right, 1);
 
-        // A status with nothing to show leaves no slot, as on the server.
+        // A status with nothing to show takes no space; it only keeps the label on one line.
         expect(flat("empty").hasMeta).toBe(false);
         expect(flat("empty").labelWidth).toBeCloseTo(flat("plain").labelWidth, 1);
 
