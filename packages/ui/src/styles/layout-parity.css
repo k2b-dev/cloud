@@ -2641,9 +2641,12 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   transition: background-color 150ms ease-out;
 }
 
+/* Hover and open stay neutral like the sidebar's rows, so no platform tint
+   sits beside the app's accent. The fill is translucent, so it shows on the
+   muted desktop sidebar and on the phone menu alike. */
 .k2b-ui .k2b-sidebar-switcher__trigger:hover,
 .k2b-ui .k2b-sidebar-switcher__trigger[aria-expanded="true"] {
-  background: var(--k2b-hover);
+  background: color-mix(in srgb, var(--k2b-text) 5%, transparent);
 }
 
 .k2b-ui .k2b-sidebar-switcher__trigger:focus-visible {

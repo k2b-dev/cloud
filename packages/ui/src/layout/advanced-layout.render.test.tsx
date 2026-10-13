@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { createComponent } from "solid-js";
+import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import {
   APP_WORKSPACE_MAIN_MIN,
@@ -188,7 +188,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(html).toContain("data-k2b-app-workspace");
     // A tree item's description is a second line under its label.
     expect(html).toMatch(
-      /k2b-app-workspace__sidebar-item-copy"><span class="k2b-app-workspace__sidebar-item-label"><span class="k2b-app-workspace__sidebar-item-label-text">Available<\/span><\/span><span class="k2b-app-workspace__sidebar-item-description">Updated today<\/span>/,
+      /k2b-app-workspace__sidebar-item-copy"><span class="k2b-app-workspace__sidebar-item-label" data-label="Available"><span class="k2b-app-workspace__sidebar-item-label-text">Available<\/span><\/span><span class="k2b-app-workspace__sidebar-item-description">Updated today<\/span>/,
     );
     expect(html).not.toContain("k2b-app-workspace__sidebar-mobile");
     expect(html).not.toContain('data-mobile="stacked"');
@@ -266,7 +266,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(html).toMatch(/<aside[^>]*aria-label="Mailboxes"[^>]*data-mobile="stacked"/);
     expect(html).toMatch(/class="k2b-app-workspace__main[^"]*"[^>]*data-width="content"/);
     expect(html).toMatch(/<a href="\/app\/mail\/support"[^>]*data-variant="object"/);
-    expect(html).toContain('class="k2b-app-workspace__sidebar-item-label" data-marquee="false"');
+    expect(html).toContain('class="k2b-app-workspace__sidebar-item-label" data-lines="1"');
     expect(html).toContain('<span class="k2b-app-workspace__sidebar-item-description">support@example.test</span>');
     expect(html).toContain('<span class="k2b-app-workspace__sidebar-item-meta">12</span>');
   });
@@ -328,7 +328,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(css).toContain(".k2b-app-workspace__sidebar-section-actions");
     expect(css).toContain(':has(.k2b-dropdown__trigger[aria-expanded="true"])');
     expect(css).toContain('.k2b-app-workspace__sidebar-item-action[data-visibility="hover"]');
-    expect(css).toContain('.k2b-app-workspace__sidebar-item-meta[data-visibility="hover"]');
+    expect(css).toMatch(/sidebar-item-meta\[data-visibility="hover"\] \{\s*visibility: hidden/);
     expect(css).toContain('.k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]');
     expect(css).toContain(':is(:hover, :focus-within, .is-active, :has(> [aria-current="page"]))');
     expect(css).toContain("gap: 0");
@@ -382,7 +382,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(activeItemRule).toContain("color: var(--k2b-app-workspace-active)");
     expect(activeItemRule).toContain("background: transparent");
     expect(activeItemRule).toContain("font-weight: 600");
-    expect(activeItemHoverRule).toContain("background: var(--k2b-hover)");
+    expect(activeItemHoverRule).toContain("background: color-mix(in srgb, var(--k2b-text) 5%, transparent)");
     expect(activeIconRule).toContain("color: var(--k2b-app-workspace-active)");
     expect(activeIconRule).toContain("background: transparent");
     expect(activeIconHoverRule).toContain("background: var(--k2b-hover)");
@@ -722,22 +722,25 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(renderToString(() => createComponent(AppWorkspace, { children: "body" }))).toContain("data-k2b-app-workspace");
   });
 
-  test("renders a measurable marquee label that honours marquee={false}", () => {
-    const item = (marquee?: boolean) =>
+  test("wraps plain row labels and honours marquee={false}", () => {
+    const item = (marquee?: boolean, label: JSX.Element = "A very long row label") =>
       renderToString(() =>
         createComponent(AppWorkspace.SidebarItem, {
           href: "/items",
           get children() {
-            return createComponent(AppWorkspace.SidebarItemLabel, { marquee, children: "A very long row label" });
+            return createComponent(AppWorkspace.SidebarItemLabel, { marquee, children: label });
           },
         }),
       );
 
-    // The controller measures this inner span against its clipping parent.
+    // Only wrapping plain strings reserve their selected weight.
     expect(item()).toContain('class="k2b-app-workspace__sidebar-item-label-text"');
-    expect(item()).toContain('data-marquee="true"');
-    expect(item(false)).toContain('data-marquee="false"');
-    expect(item(false)).toContain('class="k2b-app-workspace__sidebar-item-label-text"');
+    expect(item()).toContain('data-label="A very long row label"');
+    expect(item()).not.toContain("data-lines");
+    expect(item(false)).toContain('data-lines="1"');
+    expect(item(false)).not.toContain("data-label");
+    expect(item(undefined, <strong>Styled label</strong>)).not.toContain("data-label");
+    expect(item(undefined, 123)).not.toContain("data-label");
   });
 
   test("uses Cloud's default detail widths and drawer heights", () => {
@@ -1110,13 +1113,13 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-panes")).toContain("overflow:hidden");
     });
 
-    test("drives the sidebar marquee from a measured overflow", () => {
-      // The prop used to emit `data-marquee` with nothing behind it.
-      expect(css).toContain("@keyframes k2b-sidebar-label-marquee");
-      expect(css).toContain(".k2b-app-workspace__sidebar-item-label[data-overflow=true][data-marquee=true]");
-      expect(rule(".k2b-app-workspace__sidebar-item-label-text")).toContain("min-width:max-content");
-      // Reduced motion must win over the running animation.
-      expect(css).toContain("animation:none!important");
+    test("balances two label lines and reserves the selected weight", () => {
+      expect(rule(".k2b-app-workspace__sidebar-item-label")).toContain("display:grid");
+      expect(css).toContain("-webkit-line-clamp:2");
+      expect(css).toContain("text-wrap:balance");
+      expect(css).toMatch(/sidebar-item-label\[data-label\]:after\{[^}]*font-weight:600/);
+      // One-line labels, and labels beside a live status, keep the ellipsis.
+      expect(css).toMatch(/sidebar-item-label:is\(\[data-lines="1"\][^{]*sidebar-status[^{]*\{[^}]*text-overflow:ellipsis/);
     });
 
     test("mutes a pane separator that cannot be dragged", () => {

@@ -363,7 +363,11 @@ export type AppWorkspaceSidebarIconActionProps = {
   sidebarMode?: AppWorkspaceSidebarVisibility;
 };
 export type AppWorkspaceSidebarItemIconProps = { icon?: string; children?: JSX.Element };
-export type AppWorkspaceSidebarItemLabelProps = { children: JSX.Element; marquee?: boolean };
+export type AppWorkspaceSidebarItemLabelProps = {
+  children: JSX.Element;
+  /** False keeps one line with an ellipsis; rows wrap long labels onto a second line by default. */
+  marquee?: boolean;
+};
 export type AppWorkspaceSidebarItemMetaProps = {
   children: JSX.Element;
   visibility?: AppWorkspaceSidebarAccessoryVisibility;
@@ -1102,6 +1106,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
   );
   const legacy = createMemo(() => values().filter((value) => !sidebarItemSlot(value)));
   const label = () => labelSlot()?.children ?? (legacy().length === 1 ? legacy()[0] : legacy());
+  const oneLine = () => !(labelSlot()?.marquee ?? (props.variant ?? "row") === "row");
   const icon = () => iconSlot()?.icon ?? props.icon;
   const iconContent = () => iconSlot()?.children;
   // Resolved first, so a component that renders nothing, such as a status with
@@ -1120,8 +1125,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
           {iconContent() ?? <i class={iconClass(icon())} />}
         </span>
       </Show>
-      {/* The inner text span is what the marquee translates; the controller
-          measures its `scrollWidth` against the clipping outer span. */}
+      {/* Plain labels reserve the selected text weight so selection keeps their line count. */}
       <span class="k2b-app-workspace__sidebar-item-copy">
         <Show when={props.context || props.contextMeta}>
           <span class="k2b-app-workspace__sidebar-item-context">
@@ -1133,7 +1137,8 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
         </Show>
         <span
           class="k2b-app-workspace__sidebar-item-label"
-          data-marquee={(labelSlot()?.marquee ?? (props.variant ?? "row") === "row") ? "true" : "false"}
+          data-lines={oneLine() ? "1" : undefined}
+          data-label={!oneLine() && typeof label() === "string" ? label() : undefined}
         >
           <span class="k2b-app-workspace__sidebar-item-label-text">{label() as JSX.Element}</span>
         </span>
@@ -1466,13 +1471,13 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
             <Show
               when={item.description !== undefined}
               fallback={
-                <span class="k2b-app-workspace__sidebar-item-label">
+                <span class="k2b-app-workspace__sidebar-item-label" data-label={typeof item.label === "string" ? item.label : undefined}>
                   <span class="k2b-app-workspace__sidebar-item-label-text">{item.label}</span>
                 </span>
               }
             >
               <span class="k2b-app-workspace__sidebar-item-copy">
-                <span class="k2b-app-workspace__sidebar-item-label">
+                <span class="k2b-app-workspace__sidebar-item-label" data-label={typeof item.label === "string" ? item.label : undefined}>
                   <span class="k2b-app-workspace__sidebar-item-label-text">{item.label}</span>
                 </span>
                 <span class="k2b-app-workspace__sidebar-item-description">{item.description}</span>

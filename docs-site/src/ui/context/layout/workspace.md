@@ -389,7 +389,8 @@ on. Switching containers, hover, opening, loading, and arriving options keep the
 trigger and the rows below it in place. The name takes up to two balanced lines
 and ends with an ellipsis when it overflows; beside the optional fact it takes
 one line, and the fact takes the second. The check on the current container
-uses the app's workspace accent, like the sidebar's active row.
+uses the app's workspace accent, like the sidebar's active row. Hover and open
+use a neutral fill, and sidebar rows use the same neutral fill on hover.
 
 Enter, Space, or ArrowDown opens at the current option, or at search when
 present. On touch, search waits for a tap so the keyboard does not cover the
@@ -447,13 +448,12 @@ hovered, keyboard-focused, current, or has its menu open. Optional metadata
 appears on row hover or keyboard focus. In a `NavTree`, parent and child rows
 reveal theirs independently. A hover `SidebarItemAction` overlays the end of
 the row when it appears, so the label keeps its width and the text or metadata under the
-button fades out. A long label that scrolls on hover stops before the faded
-end. In a row that also shows an always-visible action or a
+button fades out. In a row that also shows an always-visible action or a
 `SidebarItemActions` group, the hover action keeps its own slot after them
 instead. A hover `SidebarItemActions` group that ends the row overlays its end
 the same way, before the chevron of a `NavTree` row, so revealing it moves
-nothing in the row; the fade covers one or two controls. Hidden metadata takes
-no space until revealed. Hidden actions are out of the tab order until their
+nothing in the row; the fade covers one or two controls. Hidden metadata keeps
+its space, so revealing it moves nothing. Hidden actions are out of the tab order until their
 row shows them. The current row always shows its actions, so they stay in
 the tab order, also in a `NavTree` while focus is on another item. Touch-only
 screens always show them. Actions also stay
@@ -715,7 +715,11 @@ type AppWorkspaceSidebarIconActionProps = {
 
 type AppWorkspaceSidebarItemIconProps = { icon?: string; children?: JSX.Element };
 
-type AppWorkspaceSidebarItemLabelProps = { children: JSX.Element; marquee?: boolean };
+type AppWorkspaceSidebarItemLabelProps = {
+  children: JSX.Element;
+  /** False keeps one line with an ellipsis; rows wrap long labels onto a second line by default. */
+  marquee?: boolean;
+};
 
 type AppWorkspaceSidebarItemMetaProps = {
   children: JSX.Element; visibility?: AppWorkspaceSidebarAccessoryVisibility;
@@ -1085,8 +1089,13 @@ needed to tell items apart. A plain row with a section heading is calmer and
 usually enough; Assistant lists its chats as rows under day headings with one
 status icon in `meta`. `context` holds a project or category; `contextMeta` holds a short time
 or secondary value. Both accept reactive JSX. Keep commands in actions or the
-preview. Cards truncate titles with an ellipsis by default. Set
-`SidebarItemLabel marquee={false}` for the same truncation in ordinary rows.
+preview. Rows wrap a long label onto up to two balanced lines ending in an
+ellipsis. A selected or unread row with a plain text label keeps its line count.
+A row whose metadata holds a `SidebarItemStatus` keeps one line, because its
+marks change width while it is shown; render the status from the row's first
+paint.
+`SidebarItemLabel marquee={false}` keeps one line with an ellipsis, as cards
+and object rows do by default.
 Completed work can retain `variant="row"` without context or description.
 
 Card context headers keep their width when trailing actions appear; only the title area yields space. Use `Format.RelativeTime` for relative timestamps. The desktop scroll track occupies the existing right inset and keeps its gutter when content fits, without adding space on the left. Keyboard focus on the main card action outlines the complete card.
@@ -1107,7 +1116,7 @@ trackpad, including a tablet with a mouse, instead of pushing it toward the
 title. It appears when the row is hovered, keyboard-focused, current, or has
 its menu open. Touch-only screens always show the actions. The counts stay in
 the accessibility tree while hidden. Omit the leading icon when every object would show the same
-one. Object rows truncate their title instead of scrolling it.
+one. Object rows keep their title on one line with an ellipsis.
 
 ```tsx
 <AppWorkspace.SidebarItem variant="object" href="/app/mail/support" description="support@example.test">

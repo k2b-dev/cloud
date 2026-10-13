@@ -4,8 +4,8 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../test/browser";
 
-// Whether a revealed row control covers another one, or a label scrolls into
-// its fade, depends on layout and paint, which happy-dom does not model, so a
+// Whether a revealed row control covers another one depends on layout and
+// paint, which happy-dom does not model, so a
 // real engine runs the shipped browser build.
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -157,15 +157,15 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const load = async (mode: Mode, options: { motion?: boolean; rtl?: boolean } = {}) => {
+const load = async (mode: Mode, options: { rtl?: boolean } = {}) => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  // Transitions only delay the settled state; the marquee moves a label on purpose.
-  const still = `*,*::before,*::after{transition:none!important${options.motion ? "" : ";animation:none!important"}}`;
+  // Inspect settled geometry without waiting for transitions.
+  const still = `*,*::before,*::after{transition:none!important;animation:none!important}`;
   // The shipped stylesheet resolves logical properties by language, as older engines need.
   const direction = options.rtl ? ' lang="ar" dir="rtl"' : ' lang="en"';
   await page.setContent(
     `<!doctype html><html${direction}><head><style>${stylesheets[mode]}</style><style>${still}</style></head>` +
-      `<body class="k2b-ui" style="margin:0"><div id="app" style="height:40rem"></div></body></html>`,
+      `<body class="k2b-ui" style="margin:0"><div id="app" style="height:52rem"></div></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.getByText("Count and hover action").waitFor();
@@ -315,44 +315,6 @@ describe("@k2b/ui sidebar row controls", () => {
       }
     });
   }
-
-  test("the marquee of a hovered label ends clear of the fade before a revealed action", async () => {
-    const page = await load("fine", { motion: true });
-    try {
-      const ends: Record<string, number> = {};
-      // One label overflows its row; the other fits but ends where the action appears.
-      for (const [label, extra] of [
-        ["Hover action", 60],
-        ["Hover action and preview", -16],
-      ] as const) {
-        const text = row(page, label).locator(".k2b-app-workspace__sidebar-item-label-text");
-        await text.evaluate((element, extra) => {
-          element.style.width = `${element.parentElement!.clientWidth + extra}px`;
-        }, extra);
-        const box = (await text.boundingBox())!;
-        await page.mouse.move(box.x + 8, box.y + box.height / 2);
-        // The workspace controller measures the label in the frame after the pointer enters it.
-        await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-        ends[label] = await row(page, label).evaluate((element) => {
-          const text = element.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-item-label-text")!;
-          // The marquee holds its far end from 85 % of its 4 s run, after a 0.2 s delay.
-          for (const marquee of text.getAnimations()) {
-            marquee.pause();
-            marquee.currentTime = 200 + 4000 * 0.9;
-          }
-          const action = element.querySelector(
-            ":scope > .k2b-app-workspace__sidebar-item-action:not(.k2b-app-workspace__sidebar-preview-trigger)",
-          )!;
-          return action.getBoundingClientRect().left - text.getBoundingClientRect().right;
-        });
-        await page.mouse.move(1400, 880);
-      }
-      // The label fades over 0.75rem before the action, so the text ends at least that far before it.
-      expect(Object.entries(ends).filter(([, gap]) => gap < 12)).toEqual([]);
-    } finally {
-      await page.close();
-    }
-  });
 
   test("the label fades on the side where a right-to-left row reveals its action", async () => {
     const page = await load("fine", { rtl: true });
