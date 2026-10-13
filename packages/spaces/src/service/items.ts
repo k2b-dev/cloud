@@ -704,6 +704,8 @@ export type DashboardItem = {
 export const dashboardSnapshot = async (params: {
   userId: string;
   todoLimit: number;
+  /** Limit all counts and lists to this internal Space id, preserving the access checks. */
+  spaceId?: string;
   dateConfig?: DateContext;
   /** Omit for the dashboard widget; overview routes load only their selected list. */
   view?: "today" | "upcoming" | "counts";
@@ -718,8 +720,9 @@ export const dashboardSnapshot = async (params: {
 }> => {
   const principalMatch = buildSpacePrincipalCondition({ type: "user", userId: params.userId });
   const { todayStart, tomorrowStart } = deadlineWindow(params.dateConfig);
+  const spaceFilter = params.spaceId ? sql`AND i.space_id = ${params.spaceId}::uuid` : sql``;
 
-  // Open-todo aggregate (count + urgent-count) across all reachable spaces.
+  // Counts and lists retain the same access checks when limited to one Space.
   const [agg] = await sql<
     {
       open_count: number;
@@ -756,6 +759,7 @@ export const dashboardSnapshot = async (params: {
         AND a.permission <> 'none'
         AND ${principalMatch}
     )
+    ${spaceFilter}
   `;
 
   type DbWidget = {
@@ -784,6 +788,7 @@ export const dashboardSnapshot = async (params: {
     FROM spaces.items i
     JOIN spaces.spaces s ON s.id = i.space_id
     WHERE i.completed_at IS NULL
+      ${spaceFilter}
       AND (
         (i.starts_at IS NOT NULL AND i.starts_at >= ${todayStart}::timestamptz AND i.starts_at < ${tomorrowStart}::timestamptz)
         OR (i.deadline IS NOT NULL AND i.deadline >= ${todayStart}::timestamptz AND i.deadline < ${tomorrowStart}::timestamptz)
@@ -811,6 +816,7 @@ export const dashboardSnapshot = async (params: {
     JOIN spaces.columns c ON c.id = i.column_id
     JOIN spaces.spaces s ON s.id = i.space_id
     WHERE i.completed_at IS NULL
+      ${spaceFilter}
       AND c.is_done = false
       AND (i.starts_at IS NULL OR i.starts_at < ${todayStart}::timestamptz OR i.starts_at >= ${tomorrowStart}::timestamptz)
       AND EXISTS (

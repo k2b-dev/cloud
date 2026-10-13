@@ -15,6 +15,8 @@ export const CAPABILITY_PROTOCOL_VERSION = 2 as const;
 export const CAPABILITY_MAX_REQUEST_BYTES = 256 * 1024;
 export const CAPABILITY_MAX_RESULT_BYTES = 256 * 1024;
 export const CAPABILITY_MAX_CATALOG_BYTES = 2 * 1024 * 1024;
+export const CAPABILITY_QUALIFIED_ID_MAX_LENGTH = 180;
+export const CLOUD_RESOURCE_ID_MAX_LENGTH = 512;
 
 export const CAPABILITY_FRAMEWORK_ERROR_CODES = {
   appUnavailable: "APP_UNAVAILABLE",
@@ -75,13 +77,13 @@ export const CapabilityLocalIdSchema = z
 export const CapabilityQualifiedIdSchema = z
   .string()
   .min(3)
-  .max(180)
+  .max(CAPABILITY_QUALIFIED_ID_MAX_LENGTH)
   .regex(CAPABILITY_QUALIFIED_ID_PATTERN, "Expected a namespaced capability id such as contacts.contact");
 
 export const CloudResourceRefSchema = z
   .object({
     type: CapabilityQualifiedIdSchema.describe("Namespaced resource type declared by the owning app."),
-    id: z.string().min(1).max(512).describe("Stable app-owned resource identifier."),
+    id: z.string().min(1).max(CLOUD_RESOURCE_ID_MAX_LENGTH).describe("Stable app-owned resource identifier."),
   })
   .strict();
 

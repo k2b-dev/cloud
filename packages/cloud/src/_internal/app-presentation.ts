@@ -1,4 +1,4 @@
-import type { AppMeta, AppPresentationCatalog, AppPresentationTranslation, AppWidgetTranslation } from "../contracts/app";
+import type { AppMeta, AppPresentationCatalog, AppPresentationTranslation, AppWidgetTranslation, WidgetEndpoint } from "../contracts/app";
 import { WIDGET_DESCRIPTION_MAX_LENGTH, WIDGET_TITLE_MAX_LENGTH } from "../contracts/widgets";
 import { canonicalLocale } from "../shared/locale";
 
@@ -14,23 +14,53 @@ const text = (value: string, label: string, max = MAX_SHORT_TEXT): string => {
 
 const labels = (values: Readonly<Record<string, string>> | undefined, allowed: Set<string>, label: string, max = MAX_SHORT_TEXT) => {
   if (!values) return undefined;
-  const normalized: Record<string, string> = {};
-  for (const [key, value] of Object.entries(values)) {
-    if (!allowed.has(key)) throw new Error(`${label} contains unknown key ${JSON.stringify(key)}`);
-    normalized[key] = text(value, `${label}.${key}`, max);
-  }
-  return normalized;
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => {
+      if (!allowed.has(key)) throw new Error(`${label} contains unknown key ${JSON.stringify(key)}`);
+      return [key, text(value, `${label}.${key}`, max)];
+    }),
+  );
 };
 
 const widgetTexts = (
   values: Readonly<Record<string, AppWidgetTranslation>>,
-  allowed: Set<string>,
+  widgets: readonly WidgetEndpoint[],
   label: string,
 ): Record<string, AppWidgetTranslation> => {
   const normalized: Record<string, AppWidgetTranslation> = {};
   for (const [id, value] of Object.entries(values)) {
-    if (!allowed.has(id)) throw new Error(`${label} contains unknown key ${JSON.stringify(id)}`);
+    const widget = widgets.find((widget) => widget.id === id);
+    if (!widget) throw new Error(`${label} contains unknown key ${JSON.stringify(id)}`);
+    const settings: NonNullable<AppWidgetTranslation["settings"]> = Object.fromEntries(
+      Object.entries(value.settings ?? {}).map(([name, translation]) => {
+        const field = widget.settings?.[name];
+        const settingLabel = `${label}.${id}.settings.${name}`;
+        if (!field) throw new Error(`${settingLabel} is not declared`);
+        return [
+          name,
+          {
+            ...(translation.label !== undefined
+              ? { label: text(translation.label, `${settingLabel}.label`, WIDGET_TITLE_MAX_LENGTH) }
+              : {}),
+            ...(translation.placeholder !== undefined
+              ? { placeholder: text(translation.placeholder, `${settingLabel}.placeholder`, WIDGET_TITLE_MAX_LENGTH) }
+              : {}),
+            ...(translation.options
+              ? {
+                  options: labels(
+                    translation.options,
+                    new Set(field.kind === "choice" ? field.options.map((option) => option.value) : []),
+                    `${settingLabel}.options`,
+                    WIDGET_TITLE_MAX_LENGTH,
+                  ),
+                }
+              : {}),
+          },
+        ];
+      }),
+    );
     normalized[id] = {
+      ...(value.settings ? { settings } : {}),
       ...(value.title !== undefined ? { title: text(value.title, `${label}.${id}.title`, WIDGET_TITLE_MAX_LENGTH) } : {}),
       ...(value.description !== undefined
         ? { description: text(value.description, `${label}.${id}.description`, WIDGET_DESCRIPTION_MAX_LENGTH) }
@@ -55,7 +85,6 @@ export const compileAppPresentation = (app: AppMeta, catalog: AppPresentationCat
   const adminHrefs = new Set((app.adminNav ?? []).flatMap((group) => group.links.map((link) => link.href)));
   const searchHrefs = new Set((app.searchLinks ?? []).map((link) => link.href));
   const legalHrefs = new Set((app.legalLinks ?? []).map((link) => link.href));
-  const widgetIds = new Set((app.widgets ?? []).map((widget) => widget.id));
   const translations: Record<string, AppPresentationTranslation> = {};
 
   for (const [locale, translation] of Object.entries(catalog.translations)) {
@@ -82,7 +111,7 @@ export const compileAppPresentation = (app: AppMeta, catalog: AppPresentationCat
           }
         : {}),
       ...(translation.legalLinks ? { legalLinks: labels(translation.legalLinks, legalHrefs, `${canonical}.legalLinks`) } : {}),
-      ...(translation.widgets ? { widgets: widgetTexts(translation.widgets, widgetIds, `${canonical}.widgets`) } : {}),
+      ...(translation.widgets ? { widgets: widgetTexts(translation.widgets, app.widgets ?? [], `${canonical}.widgets`) } : {}),
     };
   }
 

@@ -206,6 +206,7 @@ const catalog = i18n.define({
       importUpdate: "Update",
 
       widgetTitle: "Today",
+      widgetSpaceTitle: ({ space }: { space: string }) => `Today · ${space}`,
       widgetEmptyTitle: "Nothing on today",
       widgetEmptySubtitle: "No events scheduled and no open tasks",
       widgetOverdue: "overdue",
@@ -421,6 +422,7 @@ const catalog = i18n.define({
       importUpdate: "aktualisieren",
 
       widgetTitle: "Heute",
+      widgetSpaceTitle: ({ space }: { space: string }) => `Heute · ${space}`,
       widgetEmptyTitle: "Heute steht nichts an",
       widgetEmptySubtitle: "Keine Termine und keine offenen Aufgaben",
       widgetOverdue: "überfällig",
