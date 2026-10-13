@@ -152,11 +152,10 @@ Cloud validates them at start and updates them by content hash; it offers them o
 
 For capability design or changes, read **App capabilities** in the Docs collection (`/en/docs/platform/capabilities`),
 especially its machine-composition and design-review guidance. Trace real task paths and consumers before choosing
-result fields or changing contracts; keep detailed API rules in that guide.
-Every Type with a page declares a reader that returns the resource's top-level `open` link; use `cloudResourceHref`
-for resource links, never hand-build another app's URL. Cloud records one execution row for every
-capability call on every surface; an application writes `context.requestId` into its own audit rows so the two trails
-join without sharing payloads. Actions may word themselves with optional, translated `presentation.sentences`
+result fields or changing contracts; keep detailed API rules in that guide. Every Type with a page declares a reader
+that returns the resource's `open` link; link resources with `cloudResourceHref`, never a hand-built URL. Cloud records
+one execution row for every capability call on every surface; an application writes `context.requestId` into its own
+audit rows so the two trails join without sharing payloads. Actions may word themselves with optional, translated `presentation.sentences`
 (`approval`, `done`, `rejected`, `notRun`; `{input.path}`, `{data.path}` in `done`); consumers never special-case an app.
 Cloud records every approval as one platform request and repeats the Action's review right before the approved call runs; a changed review asks again, so keep reviews deterministic and carry a revision in the input of Actions on changeable state. Apps show and decide their open approvals only through the shared `Approvals` component and `/api/approvals` route, with no app-owned approval routes or tables; an editor bridge can only reject `confirm` requests.
 For a shared cross-app contract, read `/en/docs/platform/contact-directory` or `/en/docs/platform/file-providers`.

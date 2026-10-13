@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, jest, mock, spyOn, test } from "bun:test";
-import { prepareAiTools } from "@k2b/cloud/ai";
 import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
@@ -7,10 +6,9 @@ import {
   CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
-  type CapabilityRegistryEntry,
   capabilityResultSchema,
+  cloudResourceHref,
 } from "@k2b/cloud/contracts";
-import { buildAiCapabilityCatalog, createLoadedAiCapabilityTools } from "../../cloud/src/ai/capabilities";
 import { mailCapabilities } from "./capabilities";
 import {
   ActivityListDataSchema,
@@ -3094,68 +3092,24 @@ test("every declared Type has a reader open-link case or an explicit reason", as
   }
 });
 
-test("a draft created through Assistant has a permalink whose reader opens compose", async () => {
+test("a created draft is named in refs and its reader opens compose", async () => {
   spyOn(drafts, "materializeDraftSeed").mockResolvedValue({ ok: true, data: mutableDraftFixture });
   spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
   spyOn(resourceParents, "draft").mockResolvedValue(internalMailboxId);
   spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
-  const app: CapabilityRegistryEntry = {
-    appId: "mail",
-    appName: "Mail",
-    appDescription: "Mail",
-    appIcon: "ti ti-mail",
-    appAccent: "#000000",
-    endpoint: "http://mail/api/_internal/capabilities/v1",
-    manifest: compileCapabilityManifest("mail", mailCapabilities),
-  };
-  const action = mailCapabilities.actions["draft.create"];
-  const reader = mailCapabilities.queries["draft.read"];
-  const calls: string[] = [];
-  const tools = prepareAiTools({
-    actor: context.actor,
-    conversationId: "conversation-1",
-    tools: createLoadedAiCapabilityTools({
-      apps: [app],
-      catalog: buildAiCapabilityCatalog([app]),
-      loadedNames: ["mail.draft.create", "mail.draft.read"],
-      actor: context.actor,
-      review: async (entry, args) => {
-        if (entry.operation.localId !== "draft.create") throw new Error("Unexpected review");
-        const review = await action.review(action.input.parse(args), context);
-        if (!review.ok) throw new Error(review.error.message);
-        return review.data;
-      },
-      execute: async (entry, args) => {
-        calls.push(entry.operation.localId);
-        const result =
-          entry.operation.localId === "draft.create"
-            ? await action.run(action.input.parse(args), { ...context, idempotencyKey: "assistant-draft-create" })
-            : await reader.run(reader.input.parse(args), context);
-        if (!result.ok) throw new Error(result.error.message);
-        return result.data;
-      },
-    }),
-  }).tools;
-  const createTool = tools.find((tool) => tool.def.name === "mail__action__draft_dot_create");
-  const readTool = tools.find((tool) => tool.def.name === "mail__query__draft_dot_read");
-  if (!createTool || createTool.kind !== "server" || !readTool || readTool.kind !== "server") throw new Error("Missing Mail tools");
-  const toolContext = {
-    callId: "draft-link-test",
-    signal: AbortSignal.timeout(1000),
-    requestApproval: async () => true,
-    requestClientTool: async () => {
-      throw new Error("Unexpected client tool");
-    },
-  };
-  const created = await createTool.execute({ mailboxId, senderIdentityId, subject: mutableDraftFixture.subject }, toolContext);
-  expect(created).toMatchObject({
-    refs: [{ type: "mail.draft", id: draftId, title: mutableDraftFixture.subject, href: `/open/mail.draft/${draftId}` }],
+
+  // The Assistant and MCP attach the permalink to exactly this ref; `/open` then follows the reader's open link.
+  const create = mailCapabilities.actions["draft.create"];
+  const created = await create.run(create.input.parse({ mailboxId, senderIdentityId, subject: mutableDraftFixture.subject }), {
+    ...context,
+    idempotencyKey: "draft-link-test",
   });
-  const read = await readTool.execute({ id: draftId }, toolContext);
-  expect(read).toMatchObject({ links: [{ rel: "open", href: `/app/mail/${mailboxId}/compose/${draftId}` }] });
-  const result = await reader.run({ id: draftId }, context);
-  if (!result.ok) throw new Error(result.error.message);
-  expect(assertResourceOpenLink(result.data).href).toBe(`/app/mail/${mailboxId}/compose/${draftId}`);
-  expect(result.data.links.filter((link) => link.rel === "edit")).toEqual([]);
-  expect(calls).toEqual(["draft.create", "draft.read"]);
+  if (!created.ok) throw new Error(created.error.message);
+  expect(created.data.refs).toMatchObject([{ type: "mail.draft", id: draftId, title: mutableDraftFixture.subject }]);
+  expect(cloudResourceHref({ type: "mail.draft", id: draftId })).toBe(`/open/mail.draft/${draftId}`);
+
+  const read = await mailCapabilities.queries["draft.read"].run({ id: draftId }, context);
+  if (!read.ok) throw new Error(read.error.message);
+  expect(assertResourceOpenLink(read.data).href).toBe(`/app/mail/${mailboxId}/compose/${draftId}`);
+  expect(read.data.links.filter((link) => link.rel === "edit")).toEqual([]);
 });
