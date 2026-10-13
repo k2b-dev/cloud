@@ -10,8 +10,8 @@ import {
   type MailDraft,
   type SenderIdentity,
 } from "../../contracts";
-import MailComposerEditor from "./MailComposerEditor";
 import MailComposer from "./MailComposer";
+import MailComposerEditor from "./MailComposerEditor";
 
 export type MailComposerEditorHarnessOptions = { locale: "en" | "de" };
 export type MailComposerHarnessOptions = { locale: "en" | "de"; intent: DraftIntent; signatureTemplateId: string | null };
