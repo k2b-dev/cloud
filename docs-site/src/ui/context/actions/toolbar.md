@@ -22,9 +22,11 @@ Separators automatically follow the toolbar orientation: they are vertical in a 
 
 Always provide `label`. Name groups when their purpose is not obvious.
 
-The toolbar has one Tab stop: the last focused item, or the first item initially. Left/Right move and wrap in a horizontal toolbar (reversed in RTL); Up/Down do the same in a vertical toolbar. Home and End focus the first and last items. Modified keys and keys in text fields or menus keep their own behavior.
+The roving group has one Tab stop: the last focused item, or the first item initially. Left/Right move and wrap in a horizontal toolbar (reversed in RTL); Up/Down do the same in a vertical toolbar. Home and End focus the first and last items. Modified keys and keys in menus keep their own behavior.
 
-Items are rendered buttons, links with `href`, inputs, selects, textareas, and controls with `tabindex`. Hidden and natively disabled controls are skipped, as are controls inside menus, listboxes, dialogs, or popovers. `aria-disabled="true"` controls remain reachable; their handlers must guard unavailable actions.
+Roving items are buttons, links with `href`, checkboxes and other button-like inputs, and controls with `tabindex`. Text fields, textareas, selects, sliders, radio buttons, and editable regions stay their own Tab stops. They keep their arrow, Home, and End keys.
+
+Hidden and natively disabled controls are skipped, as are controls inside menus, listboxes, dialogs, or popovers. The tab stop follows visibility. A toolbar that becomes visible later, or whose tab stop is hidden, picks the first visible control. `aria-disabled="true"` controls remain reachable; their handlers must guard unavailable actions.
 
 Set `aria-pressed="true"` or `"false"` on toggle buttons. Pressed buttons use the action colour and selected background without changing their size or position. Forced colours use HighlightText on Highlight.
 

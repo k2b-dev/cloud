@@ -45,7 +45,9 @@ afterAll(async () => {
 const open = async () => {
   const page = await browser.newPage();
   await page.setContent(
-    `<!doctype html><html><head><style>${css}.k2b-ui .k2b-toolbar .hidden-group {display:none}</style></head><body class="k2b-ui"><div id="root"></div></body></html>`,
+    `<!doctype html><html><head><style>${css}
+      .k2b-ui .k2b-toolbar .hidden-group, .hidden-ancestor, body.hide-last #last {display:none}
+    </style></head><body class="k2b-ui"><div id="root"></div></body></html>`,
   );
   await page.addScriptTag({ content: bundle });
   await page.waitForSelector('#first[tabindex="0"]');
@@ -134,7 +136,69 @@ test("vertical and RTL orientations, modifiers and text-entry keys", async () =>
     }
     await page.locator("#checkbox").focus();
     await page.keyboard.press("ArrowRight");
-    expect(await focused(page)).toBe("text");
+    expect(await focused(page)).toBe("field-last");
+  } finally {
+    await page.close();
+  }
+});
+
+test("a toolbar mounted inside a hidden ancestor gains a tab stop when shown", async () => {
+  const page = await open();
+  try {
+    const toolbar = page.locator('[aria-label="Initially hidden"]');
+    expect(await toolbar.locator('[tabindex="0"]').count()).toBe(0);
+    await page.locator("#hidden-ancestor").evaluate((ancestor) => ancestor.classList.remove("hidden-ancestor"));
+    await page.waitForSelector('#revealed-first[tabindex="0"]');
+    expect(await toolbar.locator('[tabindex="0"]').count()).toBe(1);
+    await page.locator("#hidden-before").focus();
+    await page.keyboard.press("Tab");
+    expect(await focused(page)).toBe("revealed-first");
+  } finally {
+    await page.close();
+  }
+});
+
+test("an outside stylesheet hiding the tab stop chooses a visible control", async () => {
+  const page = await open();
+  try {
+    await page.locator("#last").focus();
+    expect(await page.locator("#last").getAttribute("tabindex")).toBe("0");
+    await page.locator("body").evaluate((body) => body.classList.add("hide-last"));
+    await page.waitForSelector('#first[tabindex="0"]');
+    expect(await stops(page)).toBe(1);
+    await page.locator("#before").focus();
+    await page.keyboard.press("Tab");
+    expect(await focused(page)).toBe("first");
+  } finally {
+    await page.close();
+  }
+});
+
+test("fields keep their own Tab stops and native value keys beside the roving group", async () => {
+  const page = await open();
+  try {
+    await page.locator("#fields-before").focus();
+    for (const id of ["field-first", "text", "textarea", "select", "editable", "range", "radio", "fields-after"]) {
+      await page.keyboard.press("Tab");
+      expect(await focused(page)).toBe(id);
+      if (["text", "textarea", "select", "range", "radio"].includes(id))
+        expect(await page.locator(`#${id}`).getAttribute("tabindex")).toBeNull();
+      if (id === "editable") expect(await page.locator("#editable").getAttribute("tabindex")).toBe("0");
+      if (id === "range") {
+        for (const [key, value] of [
+          ["ArrowRight", "6"],
+          ["Home", "0"],
+          ["End", "10"],
+        ]) {
+          await page.keyboard.press(key!);
+          expect(await focused(page)).toBe("range");
+          expect(await page.locator("#range").inputValue()).toBe(value!);
+        }
+      }
+    }
+    expect(
+      await page.locator('[aria-label="Fields"] button[tabindex="0"], [aria-label="Fields"] input[type="checkbox"][tabindex="0"]').count(),
+    ).toBe(1);
   } finally {
     await page.close();
   }

@@ -46,20 +46,32 @@ const ToolbarSpacer = (): JSX.Element => <span class="k2b-toolbar__spacer" aria-
 
 const rovingFocus = (root: HTMLDivElement, orientation: () => ToolbarOrientation) => {
   let last: HTMLElement | undefined;
+  const setLast = (item: HTMLElement | undefined) => {
+    if (item === last) return;
+    if (last) resizeObserver.unobserve(last);
+    last = item;
+    if (last) resizeObserver.observe(last);
+  };
   const controls = () =>
     Array.from(root.querySelectorAll<HTMLElement>("button, a[href], input, select, textarea, [tabindex]")).filter((item) => {
+      if (
+        item.matches("textarea, select") ||
+        item.isContentEditable ||
+        (item.matches("input") && !/^(button|checkbox|reset|submit|image|color|file)$/i.test(item.getAttribute("type") ?? "text"))
+      )
+        return false;
       const nested = item.closest('[role="menu"], [role="listbox"], [role="dialog"], [popover]');
       return !nested || !root.contains(nested);
     });
   const items = () => controls().filter((item) => !item.matches(":disabled") && item.getClientRects().length > 0);
   const sync = () => {
     const available = items();
-    if (!last || !available.includes(last)) last = available[0];
+    if (!last || !available.includes(last)) setLast(available[0]);
     for (const item of controls()) item.tabIndex = item === last ? 0 : -1;
   };
   const focusin = (event: FocusEvent) => {
     if (event.target instanceof HTMLElement && items().includes(event.target)) {
-      last = event.target;
+      setLast(event.target);
       sync();
     }
   };
@@ -68,12 +80,6 @@ const rovingFocus = (root: HTMLDivElement, orientation: () => ToolbarOrientation
     const available = items();
     const target = event.target;
     if (!(target instanceof HTMLElement) || !available.includes(target)) return;
-    if (
-      target.matches("textarea, select") ||
-      target.isContentEditable ||
-      (target instanceof HTMLInputElement && !/^(button|checkbox|radio|reset|submit|image|color|file|range)$/.test(target.type))
-    )
-      return;
     const forward = orientation() === "vertical" ? "ArrowDown" : getComputedStyle(root).direction === "rtl" ? "ArrowLeft" : "ArrowRight";
     const backward = orientation() === "vertical" ? "ArrowUp" : forward === "ArrowRight" ? "ArrowLeft" : "ArrowRight";
     const index = available.indexOf(target);
@@ -89,18 +95,21 @@ const rovingFocus = (root: HTMLDivElement, orientation: () => ToolbarOrientation
               : -1;
     if (next < 0) return;
     event.preventDefault();
-    last = available[next];
+    setLast(available[next]);
     sync();
     last?.focus();
   };
   const observer = new MutationObserver(sync);
   observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "hidden", "class", "style"] });
+  const resizeObserver = new ResizeObserver(sync);
+  resizeObserver.observe(root);
   root.addEventListener("focusin", focusin);
   sync();
   return {
     keydown,
     cleanup: () => {
       observer.disconnect();
+      resizeObserver.disconnect();
       root.removeEventListener("focusin", focusin);
     },
   };
