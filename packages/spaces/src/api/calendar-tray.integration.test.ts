@@ -95,7 +95,7 @@ suite("Spaces calendar day view", () => {
       expect(((await day.json()) as Snapshot).range).toEqual({ from: "2030-03-07T00:00:00.000Z", to: "2030-04-05T00:00:00.000Z" });
       expect((await outsider(`href=${href("day")}`)).status).toBe(403);
 
-      // While the reader scrolls, the day and week views load a chosen week, without the tray.
+      // While the reader scrolls, day, week, and month load a chosen block without the tray.
       const block = (cv: string, from: string, to: string) =>
         member(`href=${href(cv)}&from=${from}T00:00:00.000Z&to=${to}T00:00:00.000Z&includeTray=false`);
       const week = await block("week", "2030-03-14", "2030-03-21");
@@ -117,6 +117,19 @@ suite("Spaces calendar day view", () => {
         [retro, 0],
       ]);
       // A range has both ends, runs forward, and spans at most 366 days.
+      const monthBlock = await block("month", "2030-03-14", "2030-05-09");
+      expect(monthBlock.status).toBe(200);
+      expect((await monthBlock.json()) as Snapshot).toMatchObject({
+        kind: "calendar",
+        view: "month",
+        tray: null,
+        range: { from: "2030-03-14T00:00:00.000Z", to: "2030-05-09T00:00:00.000Z" },
+      });
+      // A URL without a view opens the month, and its weeks load the same way.
+      const plain = encodeURIComponent(`/app/spaces/${team.short_id}?view=calendar&cd=2030-03-14`);
+      const defaultMonth = await member(`href=${plain}&from=2030-05-09T00:00:00.000Z&to=2030-07-04T00:00:00.000Z&includeTray=false`);
+      expect(((await defaultMonth.json()) as Snapshot).range).toEqual({ from: "2030-05-09T00:00:00.000Z", to: "2030-07-04T00:00:00.000Z" });
+
       expect((await member(`href=${href("day")}&from=2030-03-14T00:00:00.000Z`)).status).toBe(400);
       expect((await block("day", "2030-03-21", "2030-03-14")).status).toBe(400);
       expect((await block("day", "2030-01-01", "2031-01-03")).status).toBe(400);

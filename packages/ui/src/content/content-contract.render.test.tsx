@@ -32,6 +32,31 @@ const contentCss = await Bun.file(resolve(import.meta.dir, "../styles/content-pa
 const uiCss = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
 
 describe("@k2b/ui Cloud content contract", () => {
+  for (const [locale, title, first] of [
+    ["en", "October 2026", "Nov 1"],
+    ["de", "Oktober 2026", "1. Nov"],
+  ] as const) {
+    test(`continuous month starts at the first's week in ${locale} on the server`, () => {
+      const html = renderToString(() =>
+        createComponent(Calendar, {
+          view: "month",
+          date: "2026-10-09",
+          events: [],
+          range: { from: "2026-08-31", to: "2026-12-21" },
+          dateConfig: { locale, timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+        }),
+      );
+      expect(html).toContain(title);
+      expect(html).toContain('data-continuous="true"');
+      expect(html).toContain('role="rowgroup"');
+      expect(html.match(/data-week-key="([^"]+)"/)?.[1]).toBe("2026-09-28");
+      expect(html).toContain("--k2b-calendar-week-index:0");
+      expect(html).toContain('data-month-first="true"');
+      expect(html).toContain(`>${first}</span>`);
+      expect(html).not.toContain('data-week-key="2026-08-31"');
+    });
+  }
+
   test("keeps every shipped locale of the calendar's own strings complete", () => {
     expect(checkCalendarMessages()).toEqual([]);
   });

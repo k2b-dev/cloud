@@ -117,8 +117,7 @@ type Scenario = { locale: "en" | "de"; view: "week" | "month"; colorBy?: string;
 const query = (scenario: Scenario) =>
   scenario.search ?? `?view=calendar&cv=${scenario.view}&cd=2026-10-12${scenario.colorBy ? `&ccolor=${scenario.colorBy}` : ""}`;
 /** The route as the workspace page renders it for a URL, with the island's base URL from the page's own builder. */
-const serverBody = (url: URL) => {
-  const locale = url.searchParams.get("lang") === "de" ? "de" : "en";
+const serverBody = (url: URL, locale: "en" | "de") => {
   const dateConfig = { locale, timeZone: "UTC", weekStartsOn: 1 } as const;
   const route = parseCalendarRoute(url, dateConfig);
   // The view the route itself resolves, so an old link shows the fallback the page gives it.
@@ -143,7 +142,7 @@ const serverBody = (url: URL) => {
         view,
         date: route.date,
         filter: route.filter,
-        range: calendarWindow(view === "week" ? "week" : "day", new Date(route.date), dateConfig),
+        range: calendarWindow(view === "year" ? "month" : view, new Date(route.date), dateConfig),
         items,
         weather: {},
         tray: null,
@@ -180,8 +179,10 @@ beforeAll(async () => {
         return Response.json({ message: "The color choice must not load calendar data" }, { status: 500 });
       }
       if (url.pathname !== "/app/spaces/Space1") return new Response("Not found", { status: 404 });
-      // The page renders what its URL asks for, as the workspace page does on a reload.
-      return new Response(pageHtml(url, url.searchParams.get("theme") === "dark" ? "dark" : "light"), {
+      // The page renders what its URL asks for, as the workspace page does on a reload. Locale and theme travel in
+      // headers, so the page URL is the real route that the calendar compares its own links with.
+      const locale = request.headers.get("x-locale") === "de" ? "de" : "en";
+      return new Response(pageHtml(url, locale, request.headers.get("x-theme") === "dark" ? "dark" : "light"), {
         headers: { "content-type": "text/html; charset=utf-8" },
       });
     },
@@ -194,12 +195,12 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-const pageHtml = (url: URL, theme: "light" | "dark") =>
-  `<!doctype html><html lang="${url.searchParams.get("lang") === "de" ? "de" : "en"}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
+const pageHtml = (url: URL, locale: "en" | "de", theme: "light" | "dark") =>
+  `<!doctype html><html lang="${locale}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
   `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style>` +
   "<style>solid-client,solid-island{display:contents}</style></head>" +
   // The workspace main area: a padded flex column the route fills.
-  `<body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;padding:var(--ui-space-shell)">${serverBody(url)}</main>` +
+  `<body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;padding:var(--ui-space-shell)">${serverBody(url, locale)}</main>` +
   `<script type="module">document.querySelectorAll('solid-island').forEach((e)=>import('/_ssr/'+e.dataset.id+'.js'))</script></body></html>`;
 
 type View = { width: number; height: number; touch: boolean };
@@ -212,9 +213,10 @@ const open = async (view: View, scenario: Scenario, theme: "light" | "dark" = "l
     isMobile: view.touch,
     hasTouch: view.touch,
     reducedMotion: "reduce",
+    extraHTTPHeaders: { "x-locale": scenario.locale, "x-theme": theme },
   });
   const page = await context.newPage();
-  await page.goto(`${server.url}app/spaces/Space1${query(scenario)}&lang=${scenario.locale}&theme=${theme}`);
+  await page.goto(`${server.url}app/spaces/Space1${query(scenario)}`);
   await hydrated(page);
   return page;
 };
