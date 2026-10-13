@@ -639,6 +639,7 @@
 /* With a range the month scrolls through its weeks: five rows share the
    height below the weekday row, which stays in place. Rows sit at their week's
    place in the track, so rows that render or load later move nothing. */
+
 .k2b-ui .k2b-calendar-month-viewport {
   --k2b-calendar-weekday-row: 2rem;
   position: relative;
@@ -650,9 +651,6 @@
 }
 
 .k2b-ui .k2b-calendar-month[data-continuous] {
-  /* Whole pixels, as the week view's columns: a scroll position lands exactly on a row, and the last of the five rows
-     shows whole, so focusing it scrolls nothing. */
-  --k2b-calendar-month-row: max(5rem, round(down, calc((100cqb - var(--k2b-calendar-weekday-row)) / 5), 1px));
   --k2b-calendar-month-edge: color-mix(in srgb, var(--k2b-text) 16%, transparent);
   display: block;
   height: 100%;
@@ -681,13 +679,16 @@
 
 .k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__track {
   position: relative;
-  height: calc(var(--k2b-calendar-weeks) * var(--k2b-calendar-month-row));
+  height: calc(var(--k2b-calendar-weeks) * max(5rem, round(down, calc((100cqb - var(--k2b-calendar-weekday-row)) / 5), 1px)));
 }
 
 .k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__week {
   position: absolute;
-  top: calc(var(--k2b-calendar-week-index) * var(--k2b-calendar-month-row));
-  height: var(--k2b-calendar-month-row);
+  /* Whole pixels, as the week view's columns: a scroll position lands exactly on a row, and the last of the five rows
+     shows whole, so focusing it scrolls nothing. The container units stay in these declarations: behind a custom
+     property, WebKit kept the place and height that server-rendered rows had before the viewport settled. */
+  top: calc(var(--k2b-calendar-week-index) * max(5rem, round(down, calc((100cqb - var(--k2b-calendar-weekday-row)) / 5), 1px)));
+  height: max(5rem, round(down, calc((100cqb - var(--k2b-calendar-weekday-row)) / 5), 1px));
   inset-inline: 0;
 }
 
