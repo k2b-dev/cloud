@@ -840,6 +840,8 @@ describe("Spaces Kanban board in a browser", () => {
       await saved;
       expect(moves).toContainEqual(expect.objectContaining({ columnId: "Col002" }));
       await page.waitForSelector('[data-spaces-kanban-column="column:Col002"] [data-item-id="Item02"]');
+      // The drop refreshes every column and replaces its rows; a single read can land between two renders.
+      await waitForLiftedCards(page, []);
       expect(await liftedCards(page)).toEqual([]);
     } finally {
       await page.context().close();
