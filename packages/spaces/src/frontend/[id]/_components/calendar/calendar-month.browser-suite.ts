@@ -724,8 +724,10 @@ describe(`Spaces month view in ${browserName}`, () => {
       const held = Promise.withResolvers<void>();
       let saving = false;
       await page.route("**/api/spaces/Space1/items", async (route) => {
-        saving = true;
-        await held.promise;
+        if (route.request().method() === "POST") {
+          saving = true;
+          await held.promise;
+        }
         await route.continue();
       });
       await page.keyboard.type("Print the price list");

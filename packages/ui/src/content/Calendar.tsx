@@ -282,8 +282,8 @@ export type CalendarQuickCreateControls = {
   /** What the person asked to create through `quickCreate`; absent after a click, a drag, or the keyboard. */
   create?: string;
   /**
-   * Closes the quick create and returns the focus to the selected day only while the focus is still in the quick create;
-   * once another quick create replaced it, nothing.
+   * Closes the quick create, returns the focus to the selected day only while the focus is still in the quick create, and
+   * leaves a newer selection in place; once another quick create replaced it, nothing.
    */
   close: () => void;
 };

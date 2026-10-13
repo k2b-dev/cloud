@@ -1226,9 +1226,12 @@ export const TimeQuickCreate = (props: { view: TimeView }) => {
   /** Whether the focus is in the popover, or fell to the page as it hid: only then does a close return it. */
   const focusInPopover = () => element?.contains(document.activeElement) || document.activeElement === document.body;
   const close = (restore: boolean) => {
-    if (!view.quick()) return;
+    const current = view.quick();
+    if (!current) return;
+    const selection = view.selection();
     view.setQuick(null);
-    view.setSelection(null);
+    // A late close must leave a newer selection in place.
+    if (selection?.key === current.key && selection.start === current.start && selection.end === current.end) view.setSelection(null);
     if (restore && returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
   };
   return (
