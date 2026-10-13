@@ -1,4 +1,4 @@
-import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
+import { arg, type CloudCliContext, cloudResourceUrl, command, flag, withCloudResourcePermalink } from "@k2b/cloud/cli";
 import type { PublicBase as Base } from "../api/public-dto";
 import { GRIDS_BASE_DEFAULT_KEY } from "./resources";
 import { exactMatch, jsonRequest, printJsonOrMessage, printJsonOrTable, readApi } from "./runtime";
@@ -66,7 +66,11 @@ export const baseTemplateCommands = [
         jsonRequest("POST", { name: flags.name, withSampleData: flags.empty ? false : undefined }),
       );
       if (flags.use) await ctx.setDefault(GRIDS_BASE_DEFAULT_KEY, base.id);
-      printJsonOrMessage(ctx, base, `Created ${base.name} (${base.id}) from ${template.name}.${flags.use ? " Using it as default." : ""}`);
+      printJsonOrMessage(
+        ctx,
+        withCloudResourcePermalink(ctx, "grids.base", base),
+        `Created ${base.name} (${base.id}) from ${template.name}.${flags.use ? " Using it as default." : ""} ${cloudResourceUrl(ctx, { type: "grids.base", id: base.id })}`,
+      );
     },
   }),
 ];

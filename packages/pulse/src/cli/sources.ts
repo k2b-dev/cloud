@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
+import { arg, cloudResourceUrl, command, confirmFlag, flag, withCloudResourcePermalink } from "@k2b/cloud/cli";
 import type { PulseSource, PulseSourceScrape, SourceKind } from "../contracts";
 import { listSources, requireRestArg, resolveBaseFromCommand, resolveSource } from "./context";
 import { baseFlag, bearerTokenFlags, sourceKindFlag } from "./flags";
@@ -15,15 +15,12 @@ export const sourceCommands = [
     async run({ ctx, args }) {
       const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
       const sources = await listSources(ctx, base.id);
-      printJsonOrTable(ctx, sources, sourceRows(sources), [
-        { key: "id" },
-        { key: "name" },
-        { key: "kind" },
-        { key: "enabled" },
-        { key: "interval" },
-        { key: "token" },
-        { key: "lastSeenAt" },
-      ]);
+      printJsonOrTable(
+        ctx,
+        sources.map((resource) => withCloudResourcePermalink(ctx, "pulse.source", resource)),
+        sourceRows(sources),
+        [{ key: "id" }, { key: "name" }, { key: "kind" }, { key: "enabled" }, { key: "interval" }, { key: "token" }, { key: "lastSeenAt" }],
+      );
     },
   }),
   command("sources create", {
@@ -59,7 +56,8 @@ export const sourceCommands = [
           scrapeIntervalSeconds: flags.scrapeIntervalSeconds ?? null,
         }),
       );
-      if (!printStructured(ctx, source)) ctx.print(`Created source ${source.name} (${source.id}).`);
+      if (!printStructured(ctx, withCloudResourcePermalink(ctx, "pulse.source", source)))
+        ctx.print(`Created source ${source.name} (${source.id}). ${cloudResourceUrl(ctx, { type: "pulse.source", id: source.id })}`);
     },
   }),
   command("sources update", {
@@ -99,7 +97,8 @@ export const sourceCommands = [
           scrapeIntervalSeconds: flags.scrapeIntervalSeconds,
         }),
       );
-      if (!printStructured(ctx, updated)) ctx.print(`Updated source ${updated.name} (${updated.id}).`);
+      if (!printStructured(ctx, withCloudResourcePermalink(ctx, "pulse.source", updated)))
+        ctx.print(`Updated source ${updated.name} (${updated.id}).`);
     },
   }),
   command("sources delete", {

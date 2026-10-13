@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { withCloudResourcePermalink } from "@k2b/cloud/cli";
 import { buildSectionPatch } from "./cli";
 
 const none = { enabled: false, disabled: false };
@@ -20,4 +21,18 @@ describe("cld venue sections update", () => {
   test("refuses an update without changes", () => {
     expect(() => buildSectionPatch(none)).toThrow("Nothing to update.");
   });
+});
+
+test("resource URLs preserve resource data and use reader IDs", () => {
+  const ctx = { options: { profile: "test", token: "test", server: "https://cloud.test/", output: "json" as const } };
+  const resource = { id: "AbC123", title: "Example", revision: 2 };
+  expect(withCloudResourcePermalink(ctx, "venue.venue", resource)).toEqual({
+    ...resource,
+    permalink: "https://cloud.test/open/venue.venue/AbC123",
+  });
+  expect(withCloudResourcePermalink(ctx, "venue.assignment", resource)).toEqual({
+    ...resource,
+    permalink: "https://cloud.test/open/venue.assignment/AbC123",
+  });
+  expect(resource).not.toHaveProperty("url");
 });

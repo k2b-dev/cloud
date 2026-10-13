@@ -54,12 +54,12 @@ describe("published App terminal journeys", () => {
     expect(values).toEqual([result]);
   });
   test("preserves search, cursor and page scope", async () => {
-    const { ctx, calls } = context([Response.json({ rows: [], nextCursor: "next" })]);
+    const { ctx, calls } = context([Response.json({ ok: true, rows: [], nextCursor: "next" })]);
     await command("records").run({ ctx, args, flags: { params: '{"request_id":"REC001"}', search: "a&b", cursor: "a+b/c" } });
     expect(calls[0]?.path).toEndWith("/records?request_id=REC001&_search=a%26b&_cursor=a%2Bb%2Fc");
   });
   test("keeps page parameters separate from record and comment controls", async () => {
-    const { ctx, calls } = context([Response.json({}), Response.json({}), Response.json({})]);
+    const { ctx, calls } = context([Response.json({ ok: true, rows: [] }), Response.json({ ok: true, rows: [] }), Response.json({})]);
     const params = '{"q":"REC001","cursor":"REC002","limit":"REC003"}';
     await command("records").run({ ctx, args, flags: { params } });
     await command("records").run({ ctx, args, flags: { params, search: "needle", cursor: "next+page" } });
@@ -150,4 +150,56 @@ describe("published App terminal journeys", () => {
       });
     for (const item of publishedAppCommands) expect(paths).toContain(item.path.join(" "));
   });
+});
+
+test("published records and workflow receipts carry resource URLs in JSONL", async () => {
+  const rows = { ok: true, rows: [{ recordId: "REC001", values: { name: "Example" } }, { values: { total: 1 } }] };
+  const { ctx, values } = context([
+    Response.json(rows),
+    Response.json({ recordId: "REC002" }),
+    Response.json({ runId: "RUN001", status: "queued" }),
+  ]);
+  ctx.options.output = "jsonl";
+  await command("records").run({ ctx, args, flags: {} });
+  await command("sidebar-submit").run({ ctx, args: { app: args.app, action: "new" }, flags: { body: body({}), yes: true } });
+  await command("scan").run({ ctx, args, flags: { body: body({}), yes: true } });
+  expect(values).toEqual([
+    { ...rows, rows: [{ ...rows.rows[0], permalink: "http://cloud.test/open/grids.record/REC001" }, rows.rows[1]] },
+    { recordId: "REC002", permalink: "http://cloud.test/open/grids.record/REC002" },
+    { runId: "RUN001", status: "queued", permalink: "http://cloud.test/open/grids.workflow-run/RUN001" },
+  ]);
+});
+
+test("published page resource objects retain their data and gain URLs", async () => {
+  const result = {
+    blocks: [
+      {
+        id: "detail",
+        record: { record: { id: "REC001", data: { FIELD1: "Example" } } },
+        documents: [{ id: "DOC001", number: "Invoice 1", downloadUrl: "/download" }],
+      },
+    ],
+  };
+  const { ctx, values } = context([Response.json(result)]);
+  await command("read").run({ ctx, args: { app: args.app }, flags: {} });
+  expect(values).toEqual([
+    {
+      ...result,
+      blocks: [
+        {
+          ...result.blocks[0],
+          record: { record: { ...result.blocks[0]!.record.record, permalink: "http://cloud.test/open/grids.record/REC001" } },
+          documents: [{ ...result.blocks[0]!.documents[0], permalink: "http://cloud.test/open/grids.document/DOC001" }],
+        },
+      ],
+    },
+  ]);
+});
+
+test("published page text output keeps its existing resource data without permalinks", async () => {
+  const result = { blocks: [{ id: "detail", record: { record: { id: "REC001", data: { FIELD1: "Example" } } } }] };
+  const { ctx, values } = context([Response.json(result)]);
+  ctx.options.output = "text";
+  await command("read").run({ ctx, args: { app: args.app }, flags: {} });
+  expect(values).toEqual([result]);
 });

@@ -313,7 +313,7 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
       const mine = await cldJson<{ items: Array<{ id: string }> }>(["mail", "ls", ids.mailbox, "--view", "mine"]);
       expect(mine.items.map((item) => item.id).sort()).toEqual([conversations[0]!, conversations[1]!].sort());
 
-      const draft = await cldJson<{ id: string; intent: string; subject: string; to: Array<{ address: string }> }>([
+      const draft = await cldJson<{ id: string; permalink: string; intent: string; subject: string; to: Array<{ address: string }> }>([
         "mail",
         "reply",
         conversations[0]!,
@@ -321,6 +321,24 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
         "Thanks, we are on it.",
       ]);
       expect(draft).toMatchObject({ intent: "reply", subject: "Re: Invoice question", to: [{ address: "ada@customer.test" }] });
+      expect(draft.permalink).toBe(`${serverUrl}/open/mail.draft/${draft.id}`);
+    });
+
+    test("draft create returns an absolute resource permalink", async () => {
+      const draft = await cldJson<{ id: string; permalink: string }>([
+        "mail",
+        "draft",
+        "create",
+        "--mailbox",
+        ids.mailbox,
+        "--to",
+        "ada@customer.test",
+        "--subject",
+        "CLI permalink",
+        "--body",
+        "Ready for review.",
+      ]);
+      expect(draft.permalink).toBe(`${serverUrl}/open/mail.draft/${draft.id}`);
     });
 
     test("archive and mv queue one provider move per conversation from the Inbox", async () => {

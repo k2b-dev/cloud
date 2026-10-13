@@ -255,6 +255,8 @@ Every command takes `--json` (and `--jsonl` for lists), destructive commands nee
 
 ## JSON contracts
 
+Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
+
 `ls <space> --json` items carry `overdue`: true only for an open task whose deadline is before today in your timezone (the same day boundary as `--due overdue`; completed tasks and events are never overdue).
 
 | Command | `--json` output |

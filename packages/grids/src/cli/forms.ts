@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
+import { arg, cloudResourceUrl, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import { type Form, formFlag, formRows, listForms, resolveFormFromCommand } from "./forms-support";
 import { baseFlag, requirePublicId, resolveTableFromCommand, tableArgs, tableFlag } from "./resources";
 import {
@@ -173,7 +173,11 @@ export const formCommands = [
       }
       const target = recordId ? `records/${encodeURIComponent(recordId)}` : "submit";
       const result = await readApi<{ recordId: string }>(ctx, `/forms/${encodeURIComponent(form.id)}/${target}`, jsonRequest("POST", body));
-      printJsonOrMessage(ctx, result, `${recordId ? "Saved" : "Created"} record ${result.recordId}.`);
+      printJsonOrMessage(
+        ctx,
+        { ...result, permalink: cloudResourceUrl(ctx, { type: "grids.record", id: result.recordId }) },
+        `${recordId ? "Saved" : "Created"} record ${result.recordId}.${recordId ? "" : ` ${cloudResourceUrl(ctx, { type: "grids.record", id: result.recordId })}`}`,
+      );
     },
   }),
 ];

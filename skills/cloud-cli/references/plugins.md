@@ -43,6 +43,8 @@ cld mail reference compose.md
 
 `reference` prints the plugin's entry page; a file argument prints one of the files it links to. An unknown file lists the available ones. The same files are in this skill under `references/<module>/<version>/`; the table in `SKILL.md` names the folder for each profile and module.
 
+Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
+
 ## Skill targets
 
 ```bash

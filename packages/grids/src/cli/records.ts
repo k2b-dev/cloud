@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
-import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
+import { arg, cloudResourceUrl, command, confirmFlag, flag, withCloudResourcePermalink } from "@k2b/cloud/cli";
 import type {
   PublicGridRecord as GridRecord,
   PublicExternalRecordBatchResponse,
@@ -245,11 +245,18 @@ export const recordCommands = [
       const body = composeRecordListBody(query, flags);
       const payload = await readApi<TableQueryResult>(ctx, `/tables/${encodeURIComponent(table.id)}/query`, jsonRequest("POST", body));
       const items = payload.items ?? [];
-      printJsonOrTable(ctx, payload, recordRows(items), [
-        { key: "id", label: "ID" },
-        { key: "version", label: "VERSION" },
-        { key: "updatedAt", label: "UPDATED" },
-      ]);
+      printJsonOrTable(
+        ctx,
+        { ...payload, items: items.map((record) => (record.deletedAt ? record : withCloudResourcePermalink(ctx, "grids.record", record))) },
+        recordRows(items).map((record, index) =>
+          items[index]?.deletedAt ? record : withCloudResourcePermalink(ctx, "grids.record", record),
+        ),
+        [
+          { key: "id", label: "ID" },
+          { key: "version", label: "VERSION" },
+          { key: "updatedAt", label: "UPDATED" },
+        ],
+      );
       if (ctx.options.output !== "json" && payload.nextCursor) ctx.print(`next cursor: ${payload.nextCursor}`);
     },
   }),
@@ -267,7 +274,13 @@ export const recordCommands = [
       const body = (await readJsonInput<Record<string, unknown>>(flags.body, "table query JSON", true)) ?? {};
       if (flags.cursor) body.cursor = flags.cursor;
       const payload = await readApi<TableQueryResult>(ctx, `/tables/${encodeURIComponent(table.id)}/query`, jsonRequest("POST", body));
-      if (!printCliStructured(ctx, payload)) printJsonOrTable(ctx, payload, recordRows(payload.items ?? []), [{ key: "id", label: "ID" }]);
+      if (
+        !printCliStructured(ctx, {
+          ...payload,
+          items: payload.items?.map((record) => (record.deletedAt ? record : withCloudResourcePermalink(ctx, "grids.record", record))),
+        })
+      )
+        printJsonOrTable(ctx, payload, recordRows(payload.items ?? []), [{ key: "id", label: "ID" }]);
     },
   }),
   command("records show", {
@@ -291,7 +304,7 @@ export const recordCommands = [
           deletedOnly: flags.deletedOnly ? "true" : undefined,
         })}`,
       );
-      if (!printCliStructured(ctx, record)) {
+      if (!printCliStructured(ctx, record.deletedAt ? record : withCloudResourcePermalink(ctx, "grids.record", record))) {
         ctx.print(`${record.id} v${record.version}`);
         ctx.print(JSON.stringify(record.data, null, 2));
       }
@@ -312,7 +325,11 @@ export const recordCommands = [
       const { table } = await resolveTableFromCommand(ctx, args.args);
       const body = await readJsonInput<Record<string, unknown>>(flags.body, "record JSON", true);
       const record = await readApi<GridRecord>(ctx, `/records/by-table/${encodeURIComponent(table.id)}`, jsonRequest("POST", body));
-      printJsonOrMessage(ctx, record, `Created record ${record.id}.`);
+      printJsonOrMessage(
+        ctx,
+        withCloudResourcePermalink(ctx, "grids.record", record),
+        `Created record ${record.id}. ${cloudResourceUrl(ctx, { type: "grids.record", id: record.id })}`,
+      );
     },
   }),
   command("records upsert-external", {
@@ -366,7 +383,11 @@ export const recordCommands = [
         ),
       );
       const verb = payload.replayed ? "Replayed" : payload.created ? "Created" : payload.changed ? "Updated" : "Kept";
-      printJsonOrMessage(ctx, payload, `${verb} record ${payload.recordId} at version ${payload.version}.`);
+      printJsonOrMessage(
+        ctx,
+        { ...payload, permalink: cloudResourceUrl(ctx, { type: "grids.record", id: payload.recordId }) },
+        `${verb} record ${payload.recordId} at version ${payload.version}.${payload.created ? ` ${cloudResourceUrl(ctx, { type: "grids.record", id: payload.recordId })}` : ""}`,
+      );
     },
   }),
   command("records upsert-external-batch", {
@@ -387,8 +408,11 @@ export const recordCommands = [
         `/records/by-table/${encodeURIComponent(table.id)}/external/batch`,
         jsonRequest("POST", body),
       );
-      if (ctx.options.output === "json") ctx.json(payload);
-      else if (ctx.options.output === "jsonl") payload.items.forEach((item) => ctx.jsonLine(item));
+      const items = payload.items.map((item) =>
+        item.ok ? { ...item, permalink: cloudResourceUrl(ctx, { type: "grids.record", id: item.recordId }) } : item,
+      );
+      if (ctx.options.output === "json") ctx.json({ ...payload, items });
+      else if (ctx.options.output === "jsonl") items.forEach((item) => ctx.jsonLine(item));
       else {
         ctx.table(
           payload.items.map((item) =>
@@ -439,11 +463,19 @@ export const recordCommands = [
         `/records/by-table/${encodeURIComponent(table.id)}/import`,
         jsonRequest("POST", body),
       );
-      printJsonOrTable(ctx, payload, recordRows(payload.items), [
-        { key: "id", label: "ID" },
-        { key: "version", label: "VERSION" },
-        { key: "updatedAt", label: "UPDATED" },
-      ]);
+      printJsonOrTable(
+        ctx,
+        {
+          ...payload,
+          items: payload.items.map((record) => withCloudResourcePermalink(ctx, "grids.record", record)),
+        },
+        recordRows(payload.items).map((record) => withCloudResourcePermalink(ctx, "grids.record", record)),
+        [
+          { key: "id", label: "ID" },
+          { key: "version", label: "VERSION" },
+          { key: "updatedAt", label: "UPDATED" },
+        ],
+      );
     },
   }),
   command("records export", {
@@ -503,7 +535,7 @@ export const recordCommands = [
           flags.ifVersion !== undefined ? { "If-Match": String(flags.ifVersion) } : {},
         ),
       );
-      printJsonOrMessage(ctx, record, `Updated record ${record.id}.`);
+      printJsonOrMessage(ctx, withCloudResourcePermalink(ctx, "grids.record", record), `Updated record ${record.id}.`);
     },
   }),
   command("records finalize", {
@@ -523,7 +555,7 @@ export const recordCommands = [
         `/records/${encodeURIComponent(table.id)}/${encodeURIComponent(recordId)}/finalize`,
         jsonRequest("POST"),
       );
-      printJsonOrMessage(ctx, record, `Finalized record ${record.id}.`);
+      printJsonOrMessage(ctx, withCloudResourcePermalink(ctx, "grids.record", record), `Finalized record ${record.id}.`);
     },
   }),
   command("records finalization request", {
@@ -573,7 +605,7 @@ export const recordCommands = [
         `/records/${encodeURIComponent(table.id)}/${encodeURIComponent(recordId)}/finalization/approve`,
         jsonRequest("POST", { requestId, comment: flags.comment?.trim() || null }),
       );
-      printJsonOrMessage(ctx, record, `Approved and finalized record ${record.id}.`);
+      printJsonOrMessage(ctx, withCloudResourcePermalink(ctx, "grids.record", record), `Approved and finalized record ${record.id}.`);
     },
   }),
   command("records finalization reject", {

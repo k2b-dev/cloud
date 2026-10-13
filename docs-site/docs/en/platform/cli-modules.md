@@ -321,6 +321,13 @@ ctx.print(`${item.name} (${item.quantity})`);
 Do not call `ctx.json()` for both structured modes. It pretty-prints JSON and
 does not satisfy the JSONL contract.
 
+Use `cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` to produce an absolute
+resource link on the selected profile's server. When returning a resource
+object, use `withCloudResourcePermalink(ctx, type, resource)` to add that link
+as `permalink`; `resource.id` must be the ID the Type's reader accepts.
+Include links only for resources that remain readable after the command, and
+in text output only on create-style confirmations.
+
 Use `printRows()` for lists:
 
 ```ts

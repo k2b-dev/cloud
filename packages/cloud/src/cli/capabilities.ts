@@ -120,10 +120,10 @@ const invoke = async (config: {
   const manifest = config.manifest;
   printGenericResult(config.ctx, {
     ...result,
-    ...(manifest && result.refs
+    ...(config.ctx.options.output !== "text" && manifest && result.refs
       ? {
           refs: result.refs.map((ref) =>
-            resolveCapabilityResourceReader(manifest, ref) ? { ...ref, url: cloudResourceUrl(config.ctx, ref) } : ref,
+            resolveCapabilityResourceReader(manifest, ref) ? { ...ref, permalink: cloudResourceUrl(config.ctx, ref) } : ref,
           ),
         }
       : {}),

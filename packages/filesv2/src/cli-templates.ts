@@ -11,7 +11,7 @@ import {
   readCliInput,
 } from "@k2b/cloud/cli";
 import type { ApiType } from "./api";
-import { fileResolver } from "./cli-address";
+import { fileResolver, withEntryResultPermalink } from "./cli-address";
 import type { EntryResult } from "./contracts";
 import { TEMPLATE_LIMIT } from "./document-assets";
 import { type FileTemplate, TemplateGrantSchema, TemplateMetadataSchema, type TemplatePage } from "./template-contracts";
@@ -77,12 +77,10 @@ export function templateCommands(locale?: string) {
       examples: ["cld filesv2 templates use <template-id> me:/Documents/Minutes.odt"],
       async run({ ctx, args }) {
         const target = await fileResolver(ctx).file(args.file);
-        output(
-          ctx,
-          await ctx.readJson<EntryResult>(
-            await api(ctx)[":id"].use.$post({ param: { id: args.id }, json: { baseId: target.baseId, path: target.path } }),
-          ),
+        const result = await ctx.readJson<EntryResult>(
+          await api(ctx)[":id"].use.$post({ param: { id: args.id }, json: { baseId: target.baseId, path: target.path } }),
         );
+        output(ctx, ctx.options.output === "text" ? result : withEntryResultPermalink(ctx, result));
       },
     }),
     command("admin templates upload", {

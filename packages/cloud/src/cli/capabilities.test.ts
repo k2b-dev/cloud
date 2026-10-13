@@ -35,66 +35,74 @@ const createContext = (args: string[], flags: CloudCliFlags, fetch: CloudCliCont
 };
 
 describe("capabilities CLI", () => {
-  test("discovers and invokes a canonical resource reader across catalog pages", async () => {
-    const manifest = compileCapabilities(
-      "contacts",
-      defineCapabilities({
-        protocolVersion: 2,
-        types: { contact: { title: "Contact", description: "One contact.", reader: "contact.read" } },
-        queries: {
-          "contact.read": {
-            title: "Read contact",
-            description: "Read one contact.",
-            input: z.object({ id: z.string().describe("Stable contact id.") }).strict(),
-            data: z.object({ id: z.string() }).strict(),
-            openWorld: false,
-            run: async ({ id }) => ok({ data: { id } }),
-          },
-        },
-      }),
-    ).manifest;
-    const requests: Array<{ path: string; body?: unknown }> = [];
-    const { ctx, lines } = createContext(["read", "contacts.contact", "contact-1"], {}, async (path, init) => {
-      requests.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-      if (path.includes("cursor=")) {
-        return Response.json({
+  test.each(["json", "jsonl", "text"] as const)(
+    "discovers and invokes a canonical resource reader across catalog pages in %s",
+    async (output) => {
+      const manifest = compileCapabilities(
+        "contacts",
+        defineCapabilities({
           protocolVersion: 2,
-          apps: [
-            {
-              appId: "contacts",
-              appName: "Contacts",
-              appIcon: "ti ti-address-book",
-              appDescription: "Contacts",
-              manifest,
+          types: { contact: { title: "Contact", description: "One contact.", reader: "contact.read" } },
+          queries: {
+            "contact.read": {
+              title: "Read contact",
+              description: "Read one contact.",
+              input: z.object({ id: z.string().describe("Stable contact id.") }).strict(),
+              data: z.object({ id: z.string() }).strict(),
+              openWorld: false,
+              run: async ({ id }) => ok({ data: { id } }),
             },
+          },
+        }),
+      ).manifest;
+      const requests: Array<{ path: string; body?: unknown }> = [];
+      const { ctx, lines } = createContext(["read", "contacts.contact", "contact-1"], {}, async (path, init) => {
+        requests.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        if (path.includes("cursor=")) {
+          return Response.json({
+            protocolVersion: 2,
+            apps: [
+              {
+                appId: "contacts",
+                appName: "Contacts",
+                appIcon: "ti ti-address-book",
+                appDescription: "Contacts",
+                manifest,
+              },
+            ],
+            page: { hasMore: false },
+          });
+        }
+        if (path.startsWith("/api/capabilities/v1/catalog")) {
+          return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: true, nextCursor: "before-contacts" } });
+        }
+        return Response.json({
+          data: { id: "contact-1" },
+          refs: [
+            { type: "contacts.contact", id: "contact-1" },
+            { type: "foreign.item", id: "one" },
           ],
-          page: { hasMore: false },
         });
-      }
-      if (path.startsWith("/api/capabilities/v1/catalog")) {
-        return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: true, nextCursor: "before-contacts" } });
-      }
-      return Response.json({
+      });
+      ctx.options.output = output;
+      await capabilitiesCliModule.run(ctx);
+      expect(requests.at(-1)).toEqual({
+        path: "/api/capabilities/v1/queries/contacts/contact.read",
+        body: { input: { id: "contact-1" } },
+      });
+      expect(JSON.parse(lines[0] ?? "")).toEqual({
         data: { id: "contact-1" },
         refs: [
-          { type: "contacts.contact", id: "contact-1" },
+          {
+            type: "contacts.contact",
+            id: "contact-1",
+            ...(output === "text" ? {} : { permalink: "http://cloud.test/open/contacts.contact/contact-1" }),
+          },
           { type: "foreign.item", id: "one" },
         ],
       });
-    });
-    await capabilitiesCliModule.run(ctx);
-    expect(requests.at(-1)).toEqual({
-      path: "/api/capabilities/v1/queries/contacts/contact.read",
-      body: { input: { id: "contact-1" } },
-    });
-    expect(JSON.parse(lines[0] ?? "")).toEqual({
-      data: { id: "contact-1" },
-      refs: [
-        { type: "contacts.contact", id: "contact-1", url: "http://cloud.test/open/contacts.contact/contact-1" },
-        { type: "foreign.item", id: "one" },
-      ],
-    });
-  });
+    },
+  );
 
   test("fails closed for missing apps, Types without readers, and repeated catalog cursors", async () => {
     const missing = createContext(["read", "missing.item", "one"], {}, async () =>

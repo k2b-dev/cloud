@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloudCliContext, CloudCliFlags, CloudCliOutputMode } from "@k2b/cloud/cli";
 import pulseCli from "./cli";
+import { withResourcePermalinkForBase } from "./cli/inventory-commands";
 
 type FetchCall = {
   path: string;
@@ -545,6 +546,7 @@ describe("pulse CLI", () => {
     expect(payload.resources).toEqual([
       {
         key: "host:macbook",
+        permalink: "http://cloud.test/open/pulse.resource/Base01%2Fhost%3Amacbook",
         id: "macbook",
         label: "MacBook",
         type: "host",
@@ -612,7 +614,7 @@ describe("pulse CLI", () => {
 
     await pulseCli.run(ctx);
 
-    expect(lines).toEqual([JSON.stringify(base)]);
+    expect(lines).toEqual([JSON.stringify({ ...base, permalink: "http://cloud.test/open/pulse.base/Base01" })]);
     expect(tables).toEqual([]);
   });
 
@@ -878,4 +880,13 @@ test("ingests into an explicit source through the authenticated source endpoint"
   await pulseCli.run(ctx);
   expect(calls.at(-1)?.path).toBe(`/api/pulse/bases/${baseId}/sources/${sourceId}/ingest`);
   expect(JSON.parse(String(calls.at(-1)?.init?.body))).toEqual(batch);
+});
+
+test("resource URLs use the base and resource key instead of the external ID", () => {
+  const ctx = { options: { profile: "test", token: "test", server: "https://cloud.test", output: "json" as const } };
+  const resource = { id: "external-host-id", key: "host:a/b", label: "Host" };
+  expect(withResourcePermalinkForBase(ctx, "Base01", resource)).toEqual({
+    ...resource,
+    permalink: "https://cloud.test/open/pulse.resource/Base01%2Fhost%3Aa%2Fb",
+  });
 });

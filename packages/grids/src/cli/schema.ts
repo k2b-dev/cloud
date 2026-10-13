@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag, paginationFlags } from "@k2b/cloud/cli";
+import { arg, cloudResourceUrl, command, confirmFlag, flag, paginationFlags, withCloudResourcePermalink } from "@k2b/cloud/cli";
 import type { PublicDurableHistoryStatus } from "../api/durable-history";
 import type {
   PublicFederatedRevisionView as FederatedRevisionView,
@@ -183,13 +183,18 @@ export const tableCommands = [
     async run({ ctx, args }) {
       const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
       const tables = await listTables(ctx, base.id);
-      printJsonOrTable(ctx, tables, tableRows(tables), [
-        { key: "id", label: "ID" },
-        { key: "name", label: "NAME" },
-        { key: "kind", label: "KIND" },
-        { key: "fields", label: "FIELDS" },
-        { key: "updatedAt", label: "UPDATED" },
-      ]);
+      printJsonOrTable(
+        ctx,
+        tables.map((table) => withCloudResourcePermalink(ctx, "grids.table", table)),
+        tableRows(tables).map((table) => withCloudResourcePermalink(ctx, "grids.table", table)),
+        [
+          { key: "id", label: "ID" },
+          { key: "name", label: "NAME" },
+          { key: "kind", label: "KIND" },
+          { key: "fields", label: "FIELDS" },
+          { key: "updatedAt", label: "UPDATED" },
+        ],
+      );
     },
   }),
   command("tables show", {
@@ -199,7 +204,7 @@ export const tableCommands = [
     examples: ["cld grids tables show Bookshop:Authors --json", "cld grids tables show Ab12Cd"],
     async run({ ctx, args, flags }) {
       const { table } = await resolveTableFromCommand(ctx, args.args);
-      if (!printCliStructured(ctx, table)) {
+      if (!printCliStructured(ctx, withCloudResourcePermalink(ctx, "grids.table", table))) {
         ctx.print(`${table.name} (${table.id})`);
         if (table.description) ctx.print(table.description);
         ctx.print(`id: ${table.id}`);
@@ -458,7 +463,11 @@ export const tableCommands = [
       });
       if (!body.name) throw new Error("Missing table name. Pass --name or --body JSON.");
       const table = await readApi<Table>(ctx, `/tables/by-base/${encodeURIComponent(base.id)}`, jsonRequest("POST", body));
-      printJsonOrMessage(ctx, table, `Created table ${table.name} (${table.id}).`);
+      printJsonOrMessage(
+        ctx,
+        withCloudResourcePermalink(ctx, "grids.table", table),
+        `Created table ${table.name} (${table.id}). ${cloudResourceUrl(ctx, { type: "grids.table", id: table.id })}`,
+      );
     },
   }),
   command("tables set", {
@@ -485,7 +494,7 @@ export const tableCommands = [
         disableDirectInsert: flags.disableDirectInsert ? true : flags.enableDirectInsert ? false : undefined,
       });
       const updated = await readApi<Table>(ctx, `/tables/${encodeURIComponent(table.id)}`, jsonRequest("PATCH", body));
-      printJsonOrMessage(ctx, updated, `Updated table ${updated.name} (${updated.id}).`);
+      printJsonOrMessage(ctx, withCloudResourcePermalink(ctx, "grids.table", updated), `Updated table ${updated.name} (${updated.id}).`);
     },
   }),
   command("tables rm", {
@@ -505,7 +514,7 @@ export const tableCommands = [
     args: { table: arg.required({ description: "Table public id" }) },
     async run({ ctx, args }) {
       const table = await readApi<Table>(ctx, `/tables/${encodeURIComponent(args.table)}/restore`, jsonRequest("POST"));
-      printJsonOrMessage(ctx, table, `Restored table ${table.name} (${table.id}).`);
+      printJsonOrMessage(ctx, withCloudResourcePermalink(ctx, "grids.table", table), `Restored table ${table.name} (${table.id}).`);
     },
   }),
   command("tables combined get", {

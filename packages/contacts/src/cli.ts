@@ -6,6 +6,7 @@ import {
   arg,
   type CloudCliContext,
   type CloudCliText,
+  cloudResourceUrl,
   command,
   confirmFlag,
   createAccessCommands,
@@ -15,6 +16,7 @@ import {
   parseCliAddress,
   printRows,
   printStructured,
+  withCloudResourcePermalink,
 } from "@k2b/cloud/cli";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import type { Contact, ContactBook, ContactNote, ContactTag } from "./service/types";
@@ -305,7 +307,7 @@ function contactsCommands(locale?: string) {
   // ==========================
 
   const printContact = (ctx: CloudCliContext, contact: Contact) => {
-    if (printStructured(ctx, contact)) return;
+    if (printStructured(ctx, withCloudResourcePermalink(ctx, "contacts.contact", contact))) return;
     ctx.print(`${resolveContactName(contact)} (${contact.id})`);
     const role = [contact.jobTitle, contact.companyName].filter(Boolean).join(", ");
     if (role) ctx.print(role);
@@ -447,11 +449,16 @@ function contactsCommands(locale?: string) {
             const payload = await ctx.readJson<Page<ContactBook>>(
               await ctx.fetch(withQuery(api("/books"), { q: flags.q, page: flags.page, per_page: flags.perPage })),
             );
-            printRows(ctx, payload, payload.data, [
-              { key: "id", label: "ID" },
-              { key: "name", label: "NAME" },
-              { key: "updatedAt", label: t({ en: "UPDATED", de: "GEÄNDERT" }) },
-            ]);
+            printRows(
+              ctx,
+              { ...payload, data: payload.data.map((book) => withCloudResourcePermalink(ctx, "contacts.book", book)) },
+              payload.data,
+              [
+                { key: "id", label: "ID" },
+                { key: "name", label: "NAME" },
+                { key: "updatedAt", label: t({ en: "UPDATED", de: "GEÄNDERT" }) },
+              ],
+            );
             return;
           }
           const book = await resolveBook(ctx, args.book);
@@ -468,7 +475,11 @@ function contactsCommands(locale?: string) {
           );
           printRows(
             ctx,
-            { book: { id: book.id, name: book.name }, data: page.data, pagination: page.pagination },
+            {
+              book: withCloudResourcePermalink(ctx, "contacts.book", { id: book.id, name: book.name }),
+              data: page.data.map((contact) => withCloudResourcePermalink(ctx, "contacts.contact", contact)),
+              pagination: page.pagination,
+            },
             page.data.map(contactRow),
             contactColumns,
           );
@@ -505,7 +516,7 @@ function contactsCommands(locale?: string) {
           }
           const target = await resolveTarget(ctx, args.contact!);
           if (target.contact) return printContact(ctx, target.contact);
-          if (!printStructured(ctx, target.book)) {
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "contacts.book", target.book))) {
             ctx.print(`${target.book.name} (${target.book.id})`);
             if (target.book.description) ctx.print(target.book.description);
           }
@@ -520,7 +531,15 @@ function contactsCommands(locale?: string) {
           const payload = await ctx.readJson<Page<Contact>>(
             await ctx.fetch(withQuery(api("/search"), { q: args.query.join(" "), page: flags.page, per_page: flags.perPage })),
           );
-          printRows(ctx, { data: payload.data, pagination: payload.pagination }, payload.data.map(contactRow), contactColumns);
+          printRows(
+            ctx,
+            {
+              data: payload.data.map((contact) => withCloudResourcePermalink(ctx, "contacts.contact", contact)),
+              pagination: payload.pagination,
+            },
+            payload.data.map(contactRow),
+            contactColumns,
+          );
         },
       }),
       command("add", {
@@ -552,8 +571,10 @@ function contactsCommands(locale?: string) {
           const contact = await ctx.readJson<Contact>(
             await ctx.fetch(bookApi(book.id, "/contacts"), { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(payload) }),
           );
-          if (!printStructured(ctx, contact))
-            ctx.print(`${say("Created", "Angelegt")} ${resolveContactName(contact)} (${contact.id}) in ${book.name}`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "contacts.contact", contact)))
+            ctx.print(
+              `${say("Created", "Angelegt")} ${resolveContactName(contact)} (${contact.id}) in ${book.name} ${cloudResourceUrl(ctx, { type: "contacts.contact", id: contact.id })}`,
+            );
         },
       }),
       command("set", {
@@ -567,7 +588,8 @@ function contactsCommands(locale?: string) {
           const updated = await ctx.readJson<Contact>(
             await ctx.fetch(contactApi(contact), { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(payload) }),
           );
-          if (!printStructured(ctx, updated)) ctx.print(`${say("Updated", "Aktualisiert")} ${resolveContactName(updated)} (${updated.id})`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "contacts.contact", updated)))
+            ctx.print(`${say("Updated", "Aktualisiert")} ${resolveContactName(updated)} (${updated.id})`);
         },
       }),
       command("mv", {
@@ -591,7 +613,7 @@ function contactsCommands(locale?: string) {
               body: JSON.stringify({ targetBookId: target.id }),
             }),
           );
-          if (!printStructured(ctx, moved))
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "contacts.contact", moved)))
             ctx.print(`${say("Moved", "Verschoben")} ${resolveContactName(moved)} (${moved.id}) → ${target.name}`);
         },
       }),
@@ -615,7 +637,11 @@ function contactsCommands(locale?: string) {
         async run({ ctx, args }) {
           const { contact } = await resolveContact(ctx, args.contact);
           const tree = await ctx.readJson<ContactTree>(await ctx.fetch(contactApi(contact, "/tree")));
-          if (printStructured(ctx, tree)) return;
+          const linkTree = (node: ContactTreeNode): ContactTreeNode & { permalink: string } => ({
+            ...withCloudResourcePermalink(ctx, "contacts.contact", node),
+            ...(node.children ? { children: node.children.map(linkTree) } : {}),
+          });
+          if (printStructured(ctx, { ...tree, root: linkTree(tree.root) })) return;
           const visit = (node: ContactTreeNode, depth: number) => {
             const role = node.jobTitle ? ` – ${node.jobTitle}` : "";
             ctx.print(`${"  ".repeat(depth)}${node.id === tree.selectedId ? "*" : "-"} ${treeNodeName(node)}${role} (${node.id})`);
@@ -646,7 +672,13 @@ function contactsCommands(locale?: string) {
           }
           const output = expandHome(flags.out);
           await writeFile(output, body);
-          if (!printStructured(ctx, { book: { id: book.id, name: book.name }, format, output }))
+          if (
+            !printStructured(ctx, {
+              book: withCloudResourcePermalink(ctx, "contacts.book", { id: book.id, name: book.name }),
+              format,
+              output,
+            })
+          )
             ctx.print(`${say("Exported to", "Exportiert nach")} ${output}`);
         },
       }),
@@ -689,7 +721,13 @@ function contactsCommands(locale?: string) {
           const selected = preview.candidates.filter((item) => flags.includeDuplicates || !item.match);
           const skipped = preview.candidates.length - selected.length;
           if (flags.dryRun) {
-            if (printStructured(ctx, { book: { id: book.id, name: book.name }, candidates: preview.candidates })) return;
+            if (
+              printStructured(ctx, {
+                book: withCloudResourcePermalink(ctx, "contacts.book", { id: book.id, name: book.name }),
+                candidates: preview.candidates,
+              })
+            )
+              return;
             for (const item of preview.candidates) {
               const name = resolveContactName(item.candidate as Parameters<typeof resolveContactName>[0]);
               ctx.print(
@@ -712,7 +750,12 @@ function contactsCommands(locale?: string) {
                   }),
                 );
           if (
-            !printStructured(ctx, { book: { id: book.id, name: book.name }, created: result.created, skipped, failures: result.failures })
+            !printStructured(ctx, {
+              book: withCloudResourcePermalink(ctx, "contacts.book", { id: book.id, name: book.name }),
+              created: result.created,
+              skipped,
+              failures: result.failures,
+            })
           ) {
             ctx.print(
               say(
@@ -739,7 +782,10 @@ function contactsCommands(locale?: string) {
               body: JSON.stringify({ name: args.name, ...(flags.description !== undefined ? { description: flags.description } : {}) }),
             }),
           );
-          if (!printStructured(ctx, book)) ctx.print(`${say("Created", "Angelegt")} ${book.name} (${book.id})`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "contacts.book", book)))
+            ctx.print(
+              `${say("Created", "Angelegt")} ${book.name} (${book.id}) ${cloudResourceUrl(ctx, { type: "contacts.book", id: book.id })}`,
+            );
         },
       }),
       command("books update", {
@@ -761,7 +807,8 @@ function contactsCommands(locale?: string) {
           const updated = await ctx.readJson<ContactBook>(
             await ctx.fetch(bookApi(book.id), { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(body) }),
           );
-          if (!printStructured(ctx, updated)) ctx.print(`${say("Updated", "Aktualisiert")} ${updated.name} (${updated.id})`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "contacts.book", updated)))
+            ctx.print(`${say("Updated", "Aktualisiert")} ${updated.name} (${updated.id})`);
         },
       }),
       command("books delete", {
@@ -791,11 +838,16 @@ function contactsCommands(locale?: string) {
         async run({ ctx, args }) {
           const book = await resolveBook(ctx, args.book);
           const tags = await ctx.readJson<ContactTag[]>(await ctx.fetch(bookApi(book.id, "/tags")));
-          printRows(ctx, tags, tags, [
-            { key: "id", label: "ID" },
-            { key: "name", label: "NAME" },
-            { key: "color", label: t({ en: "COLOR", de: "FARBE" }) },
-          ]);
+          printRows(
+            ctx,
+            tags.map((tag) => withCloudResourcePermalink(ctx, "contacts.tag", tag)),
+            tags,
+            [
+              { key: "id", label: "ID" },
+              { key: "name", label: "NAME" },
+              { key: "color", label: t({ en: "COLOR", de: "FARBE" }) },
+            ],
+          );
         },
       }),
       command("tags add", {
@@ -819,7 +871,10 @@ function contactsCommands(locale?: string) {
               body: JSON.stringify({ name: address.path, color: flags.color }),
             }),
           );
-          if (!printStructured(ctx, tag)) ctx.print(`${say("Created", "Angelegt")} ${tag.name} (${tag.id})`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "contacts.tag", tag)))
+            ctx.print(
+              `${say("Created", "Angelegt")} ${tag.name} (${tag.id}) ${cloudResourceUrl(ctx, { type: "contacts.tag", id: tag.id })}`,
+            );
         },
       }),
       command("tags update", {
@@ -842,7 +897,8 @@ function contactsCommands(locale?: string) {
               body: JSON.stringify(body),
             }),
           );
-          if (!printStructured(ctx, updated)) ctx.print(`${say("Updated", "Aktualisiert")} ${updated.name} (${updated.id})`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "contacts.tag", updated)))
+            ctx.print(`${say("Updated", "Aktualisiert")} ${updated.name} (${updated.id})`);
         },
       }),
       command("tags delete", {
@@ -868,7 +924,7 @@ function contactsCommands(locale?: string) {
           const notes = await ctx.readJson<ContactNote[]>(await ctx.fetch(contactApi(contact, "/notes")));
           printRows(
             ctx,
-            notes,
+            notes.map((note) => withCloudResourcePermalink(ctx, "contacts.note", note)),
             notes.map((note) => ({ ...note, content: note.content.replace(/\s+/g, " ").slice(0, 80) })),
             [
               { key: "id", label: "ID" },
@@ -890,7 +946,10 @@ function contactsCommands(locale?: string) {
           const note = await ctx.readJson<ContactNote>(
             await ctx.fetch(contactApi(contact, "/notes"), { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ content }) }),
           );
-          if (!printStructured(ctx, note)) ctx.print(`${say("Added note", "Notiz hinzugefügt")} ${note.id}`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "contacts.note", note)))
+            ctx.print(
+              `${say("Added note", "Notiz hinzugefügt")} ${note.id} ${cloudResourceUrl(ctx, { type: "contacts.note", id: note.id })}`,
+            );
         },
       }),
       command("notes update", {
@@ -908,7 +967,8 @@ function contactsCommands(locale?: string) {
               body: JSON.stringify({ content }),
             }),
           );
-          if (!printStructured(ctx, note)) ctx.print(`${say("Updated note", "Notiz aktualisiert")} ${note.id}`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "contacts.note", note)))
+            ctx.print(`${say("Updated note", "Notiz aktualisiert")} ${note.id}`);
         },
       }),
       command("notes delete", {
