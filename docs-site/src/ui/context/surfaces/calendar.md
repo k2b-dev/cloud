@@ -362,16 +362,20 @@ Day and week views accept `startHour`, `endHour`, `visibleStartHour`, and
 lane. `selectedDate`, `selectedEventId`, and `dayBadges` add host-owned
 selection and compact status context.
 
-Without `dayHours`, the day and week views mark their hour scroller,
-`k2b-calendar-time-grid__scroll`, with `k2b-detail-trail` themselves, so
+The day and week views mark their own scroller with `k2b-detail-trail`, so
 applications add nothing beside an
 [AppWorkspace detail panel](/en/ui/layout/workspace#floating-detail).
-Under the touch-tablet drawer, the week keeps its width and scrolls
-sideways, with its day header and all-day row. Selecting an event scrolls
-its day out beside the drawer. The day view narrows into the space beside
-the drawer, so the hours stay in view. A day with three or more overlapping
-events scrolls at 12 rem per lane. The month view keeps its full width under
-the drawer.
+Without `dayHours`, that is the hour scroller,
+`k2b-calendar-time-grid__scroll`; with `dayHours`, it is the strip of days
+in the week and the stream of days in the day view.
+Under the touch-tablet drawer, the week keeps the width of its days and
+scrolls sideways, with its day header and all-day row. Selecting an event
+scrolls its day out beside the drawer. With `dayHours`, the strip then rests
+with that day's end beside the drawer instead of sliding back to a day
+start. The day view narrows into the space beside the drawer, so the hours
+stay in view. Without `dayHours`, a day with three or more overlapping events
+scrolls at 12 rem per lane. The month view keeps its full width under the
+drawer.
 
 ## Interaction
 

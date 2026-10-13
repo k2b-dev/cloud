@@ -1498,8 +1498,16 @@
   white-space: nowrap;
 }
 
+/* The day and week views' scrollers are their `k2b-detail-trail`. They fill
+   the calendar below its header, and the calendar's own frame rounds and
+   clips their corners, so they keep square ones, also inside a Paper frame. */
+.k2b-ui :is(.k2b-calendar-days, .k2b-calendar-week) > :is(.k2b-calendar-days__scroll, .k2b-calendar-week__scroll) {
+  border-radius: 0;
+}
+
 /* The day view: one scroll through the days, each heading on top while its
-   day is in view. */
+   day is in view. Under a tablet drawer the trail's end space narrows the
+   day into the room beside it, so the hours stay in view. */
 .k2b-ui .k2b-calendar-days__scroll {
   min-height: 0;
   flex: 1;
@@ -2860,7 +2868,10 @@
 }
 
 /* The week view: a strip of days to scroll sideways, the hours on the left,
-   the days and their all-day row on top. */
+   the days and their all-day row on top. Under a tablet drawer the days keep
+   their width and the trail's end space lets the last day scroll out beside
+   the drawer; the end of its scroll padding is the trail's, so a revealed
+   item stops there. */
 .k2b-ui .k2b-calendar-week__scroll {
   position: relative;
   min-height: 0;
@@ -2868,7 +2879,7 @@
   overflow: auto;
   overflow-anchor: none;
   overscroll-behavior: contain;
-  scroll-padding: var(--k2b-calendar-week-top, 5rem) 0 0 var(--k2b-calendar-gutter);
+  scroll-padding: var(--k2b-calendar-week-top, 5rem) var(--k2b-detail-space, 0px) 0 var(--k2b-calendar-gutter);
   scrollbar-width: thin;
   outline: none;
 }

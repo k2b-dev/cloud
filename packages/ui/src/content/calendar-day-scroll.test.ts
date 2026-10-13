@@ -59,6 +59,14 @@ describe("week gestures", () => {
     expect(wheelPixels(1, 2, 800)).toBe(800);
   });
 
+  test("settle on the nearer day edge with room beside the drawer", () => {
+    expect(snapToColumn(205, 100, 250)).toBe(200);
+    expect(snapToColumn(245, 100, 250)).toBe(250);
+    expect(snapToColumn(225, 100, 250)).toBe(200);
+    expect(snapToColumn(245, 100)).toBe(200);
+    expect(snapToColumn(245, 0, 250)).toBe(245);
+  });
+
   test("settle on the nearest day start", () => {
     expect(snapToColumn(290, 197)).toBe(197);
     expect(snapToColumn(300, 197)).toBe(394);

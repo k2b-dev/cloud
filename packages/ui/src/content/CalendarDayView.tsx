@@ -498,7 +498,7 @@ export const CalendarDayView = (props: TimeViewProps) => {
     <div class="k2b-calendar-days" data-view="day" data-dragging={view.dragging() || undefined}>
       <div
         ref={scroller}
-        class="k2b-calendar-days__scroll"
+        class="k2b-calendar-days__scroll k2b-detail-trail"
         tabIndex={-1}
         aria-describedby={helpId}
         onScroll={onScroll}

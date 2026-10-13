@@ -112,9 +112,10 @@ not get. Boards and calendars narrow with Main and keep their own scroll
 content. Mark a board's horizontal scroller with `k2b-detail-trail` too:
 under the tablet drawer, which leaves Main its width, a marked scroller gets
 the drawer's width as space at its end, so its last column scrolls out from
-under the drawer. A marked scroller inside the panel gets no space. Without
-`dayHours`, the week and day views of `Calendar` mark their own hour
-scroller; the day and all-day rows above it follow it.
+under the drawer. A marked scroller inside the panel gets no space. The
+week and day views of `Calendar` mark their own scroller: without `dayHours`
+the hour scroller, which the day and all-day rows above it follow, and with
+`dayHours` the strip or stream of days.
 
 The trail is the scroll viewport that clips the surface beside the panel, and
 it carries `--k2b-radius-surface`: a column or table cut at the panel ends in

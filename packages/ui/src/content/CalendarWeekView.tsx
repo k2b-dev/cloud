@@ -63,7 +63,7 @@ const HINT_SLACK_PX = 36;
 /**
  * The week view with `dayHours`: the loaded days side by side in one strip, seven on a wide screen and three on a
  * phone. A trackpad, Shift with the wheel, or a finger scroll it sideways day by day; each gesture keeps the axis it
- * started on, and the strip settles on a day start. The arrows move by whole weeks.
+ * started on, and the strip settles on a day edge. The arrows move by whole weeks.
  */
 export const CalendarWeekView = (props: TimeViewProps) => {
   const view = createTimeView(props);
@@ -179,7 +179,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
     reportTimer = window.setTimeout(() => props.owner.onVisibleDateChange?.(view.parseKey(first), view.parseKey(last)), 250);
   };
 
-  // A gesture keeps its axis; the strip settles on a day start once the scroll rests.
+  // A gesture keeps its axis; the strip settles on a day edge once the scroll rests.
   let axis: WheelAxis | null = null;
   let lastWheel = 0;
   let fingers = 0;
@@ -188,7 +188,9 @@ export const CalendarWeekView = (props: TimeViewProps) => {
   const settle = () => {
     if (!scroller || fingers > 0 || settling || glideTarget !== null || view.dragging()) return;
     const width = columnWidth();
-    const target = snapToColumn(scroller.scrollLeft, width);
+    const space = Number.parseFloat(getComputedStyle(scroller).scrollPaddingRight) || 0;
+    // With end space, a revealed day can rest with its end beside the drawer.
+    const target = snapToColumn(scroller.scrollLeft, width, space > 0 ? scroller.clientWidth - gutterWidth() - space : undefined);
     if (Math.abs(target - scroller.scrollLeft) <= 0.5) return;
     settling = true;
     scroller.scrollTo({ left: target, behavior: reducedMotion() ? "instant" : "smooth" });
@@ -323,14 +325,17 @@ export const CalendarWeekView = (props: TimeViewProps) => {
       typeof ResizeObserver === "undefined"
         ? undefined
         : new ResizeObserver(() => {
+            if (!scroller) return;
+            // A reveal the scroll handler has not read yet wins over keeping the first day.
+            const unread = Math.abs(scroller.scrollLeft - lastLeft) > 0.5;
             const before = untrack(firstIndex);
             measureCount();
-            if (!scroller) return;
-            scroller.scrollLeft = leftOf(before);
+            if (!unread) scroller.scrollLeft = leftOf(before);
             lastLeft = scroller.scrollLeft;
             syncFirst();
           });
-    if (scroller) observer?.observe(scroller);
+    // Drawer padding changes the content box, not the size that sets the day widths.
+    if (scroller) observer?.observe(scroller, { box: "border-box" });
     onCleanup(() => {
       observer?.disconnect();
       window.clearTimeout(restTimer);
@@ -580,7 +585,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
     <div class="k2b-calendar-week" data-view="week" data-dragging={view.dragging() || undefined}>
       <div
         ref={scroller}
-        class="k2b-calendar-week__scroll"
+        class="k2b-calendar-week__scroll k2b-detail-trail"
         role="group"
         aria-label={view.messages().calendarWeek}
         aria-describedby={helpId}

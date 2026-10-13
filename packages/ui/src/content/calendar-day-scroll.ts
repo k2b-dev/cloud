@@ -3,8 +3,8 @@
  *
  * The day view runs down through the days and stops gently at each day start: within `STOP_ZONE` pixels of one the
  * wheel slows down, and a scroll that rests close to one glides onto it. The week view scrolls sideways through the
- * days; a wheel or trackpad gesture keeps the axis it started on, and a scroll that rests between two days glides to
- * the nearer day.
+ * days; a wheel or trackpad gesture keeps the axis it started on, and a resting scroll glides to the nearest day start
+ * or, with end space, day end at the edge of the visible room.
  */
 
 /** Pixels before and after a day start in which the wheel slows down. */
@@ -95,5 +95,11 @@ export const wheelDelta = (axis: WheelAxis, deltaX: number, deltaY: number, shif
   return shiftKey && deltaX === 0 ? deltaY : deltaX;
 };
 
-/** The scroll position of the nearest day start in a strip of equal columns. */
-export const snapToColumn = (position: number, width: number): number => (width > 0 ? Math.round(position / width) * width : position);
+/** The nearest day start, or with `room` the nearer day edge at either end of the visible room; ties keep the start. */
+export const snapToColumn = (position: number, width: number, room?: number): number => {
+  if (!(width > 0)) return position;
+  const start = Math.round(position / width) * width;
+  if (room === undefined) return start;
+  const end = Math.round((position + room) / width) * width - room;
+  return Math.abs(end - position) < Math.abs(start - position) ? end : start;
+};

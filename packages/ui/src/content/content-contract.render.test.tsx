@@ -37,14 +37,16 @@ describe("@k2b/ui Cloud content contract", () => {
   });
 
   test("marks only the calendar's week and day hour scrollers for workspace detail", () => {
-    const render = (view: CalendarView) =>
-      renderToString(() => createComponent(Calendar, { date: "2026-07-19", events: [], view, timeZone: "UTC" }));
+    const render = (view: CalendarView, dayHours?: readonly [number, number]) =>
+      renderToString(() => createComponent(Calendar, { date: "2026-07-19", events: [], view, timeZone: "UTC", dayHours }));
     for (const view of ["week", "day"] as const) {
       const html = render(view);
       expect(html).toContain(`class="k2b-calendar-time-grid" data-view="${view}"`);
       expect(html).toContain('class="k2b-calendar-time-grid__scroll k2b-detail-trail"');
       expect(html).not.toContain('class="k2b-calendar-time-grid k2b-detail-trail"');
     }
+    expect(render("week", [6, 22])).toContain('class="k2b-calendar-week__scroll k2b-detail-trail"');
+    expect(render("day", [6, 22])).toContain('class="k2b-calendar-days__scroll k2b-detail-trail"');
     expect(render("month")).not.toContain("k2b-detail-trail");
   });
 
