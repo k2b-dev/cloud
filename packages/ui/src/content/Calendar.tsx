@@ -1708,8 +1708,12 @@ const MonthView = (props: {
           }
         } else {
           const row = savedAnchor ? monthRowOf(previousWeeks, savedAnchor.week) : undefined;
-          if (row !== undefined && savedAnchor) scroller.scrollTop = row * untrack(rowHeight) + savedAnchor.delta;
-          if (glideTarget && performance.now() < glideTarget.expires) {
+          const top = row !== undefined && savedAnchor ? row * untrack(rowHeight) + savedAnchor.delta : scroller.scrollTop;
+          // Weeks added below move nothing, and writing the same position would stop a glide on its way.
+          const moved = Math.abs(scroller.scrollTop - top) >= 1;
+          if (moved) scroller.scrollTop = top;
+          // A glide goes on after the weeks above moved it, and one that waited at the end goes on into the new weeks.
+          if (glideTarget && performance.now() < glideTarget.expires && (moved || glideTarget.expires === Number.POSITIVE_INFINITY)) {
             const target = monthRowOf(previousWeeks, glideTarget.week);
             if (target !== undefined) issueGlide(target * untrack(rowHeight) + glideTarget.offset, true);
           }

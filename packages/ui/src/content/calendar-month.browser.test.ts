@@ -90,8 +90,15 @@ afterAll(async () => {
 const GRID = ".k2b-calendar-month[data-continuous]";
 const cell = (key: string) => `[data-calendar-day-key="${key}"]`;
 const title = (page: Page) => page.locator(".k2b-calendar-header__title > span").first().textContent();
-const open = async (motion: "reduce" | "no-preference" = "reduce") => {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, timezoneId: "Europe/Berlin", reducedMotion: motion });
+const open = async (motion: "reduce" | "no-preference" = "reduce", tablet = false) => {
+  const page = await browser.newPage({
+    viewport: tablet ? { width: 820, height: 1180 } : { width: 1280, height: 800 },
+    // Chromium's mobile mode scrolls like a touch device; WebKit has no such mode.
+    isMobile: tablet && browserName === "chromium",
+    hasTouch: tablet,
+    timezoneId: "Europe/Berlin",
+    reducedMotion: motion,
+  });
   await page.clock.setFixedTime(new Date("2026-10-09T08:00:00Z"));
   await page.setContent(
     `<!doctype html><html lang="en"><head><style>${css}</style><style>body{margin:0}#host{height:100vh;display:flex;flex-direction:column}#host>*{flex:1}</style></head><body class="k2b-ui"><div id="host"></div><script>${script}</script></body></html>`,
@@ -209,6 +216,24 @@ describe(`continuous month in ${browserName}`, () => {
       });
       await atWeek(page, "2026-12-28");
       expect(await title(page)).toBe("January 2027");
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+  test("a step keeps gliding on a touch tablet while weeks load below it", async () => {
+    const page = await open("no-preference", true);
+    try {
+      // The reader's own scroll near the last weeks asks for more; they arrive while the step glides.
+      await scrollRow(page, "2026-10-05", 0.25);
+      await page.waitForFunction(() => window.monthFixture.loads.includes("later"));
+      expect(await page.evaluate(() => window.monthFixture.loads)).toEqual(["later"]);
+      const start = await page.locator(GRID).evaluate((grid) => grid.scrollTop);
+      await page.getByRole("button", { name: "Next", exact: true }).click();
+      // The weeks arrive once the glide is on its way.
+      await page.waitForFunction((from) => document.querySelector(".k2b-calendar-month")!.scrollTop > from + 20, start);
+      expect(await page.evaluate(() => window.monthFixture.release())).toBe(1);
+      await atWeek(page, "2026-10-26");
+      expect(await title(page)).toBe("November 2026");
     } finally {
       await page.close();
     }
