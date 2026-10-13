@@ -50,7 +50,7 @@ const entry = resolve(import.meta.dir, "sidebar-item-status.fixture.ts");
 const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { AppWorkspace } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AppWorkspace, IconButton } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const states = ${JSON.stringify(states)};
 const groups = ${JSON.stringify(groups)};
@@ -194,7 +194,19 @@ render(
           }),
           createComponent(AppWorkspace.Content, {
             get children() {
-              return createComponent(AppWorkspace.Main, { children: "Conversation" });
+              // A list page in the content area, like Chat's on a phone, keeps its section title and actions.
+              return createComponent(AppWorkspace.Main, {
+                get children() {
+                  return createComponent(AppWorkspace.SidebarSection, {
+                    title: "Chats",
+                    class: "content-section",
+                    actions: createComponent(IconButton, { label: "Chat actions", size: "xs", children: "…" }),
+                    get children() {
+                      return row("content", "one", {});
+                    },
+                  });
+                },
+              });
             },
           }),
         ];
@@ -378,6 +390,26 @@ describe("@k2b/ui sidebar item status", () => {
       }
     }, 30_000);
   }
+
+  test("on a phone, a section in the content area keeps its header and actions above its rows", async () => {
+    const page = await load("light", "phone");
+    try {
+      const layout = await page.evaluate(() => {
+        const box = (element: Element | null) => element?.getBoundingClientRect() ?? null;
+        const content = document.querySelector(".content-section");
+        const header = content?.querySelector(":scope > .k2b-app-workspace__sidebar-section-header") ?? null;
+        return {
+          header: box(header),
+          firstRow: box(content?.querySelector(".k2b-app-workspace__sidebar-item") ?? null),
+        };
+      });
+      expect(layout.header?.height).toBeGreaterThan(0);
+      expect(layout.header!.bottom).toBeLessThanOrEqual(layout.firstRow!.top);
+      await expect(page.getByRole("button", { name: "Chat actions" }).isVisible()).resolves.toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
 
   test("an unread row inside a preview leaves the rows around it read", async () => {
     const page = await load("light");

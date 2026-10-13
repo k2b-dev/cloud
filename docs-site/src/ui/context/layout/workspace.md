@@ -315,7 +315,9 @@ needs a compact header action such as creating a resource. The section owns
 the header alignment; the control still owns its accessible name and action
 behavior. Section headers and their actions are hidden with the compact rail
 and mobile section layout, so expose an equivalent reachable action in those
-compositions. With a mouse or trackpad, including a tablet with a mouse,
+compositions. A `SidebarSection` in the content area, such as a list page
+that replaces the sidebar on a phone, keeps its header and actions at every
+width. With a mouse or trackpad, including a tablet with a mouse,
 section actions stay hidden until the header is hovered or contains keyboard
 focus. Touch-only screens always show them. An open dropdown keeps its section
 action visible and interactive until the menu closes.
