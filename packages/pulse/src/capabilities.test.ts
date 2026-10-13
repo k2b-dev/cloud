@@ -1,5 +1,5 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityExecutionContext,
@@ -67,6 +67,18 @@ const invoke = (localId: string, input: unknown, context: CapabilityExecutionCon
 
 setDefaultTimeout(60_000);
 const postgresTest = testFor("database");
+
+const resourceReaders: Record<string, string> = {
+  base: "base.read",
+  source: "source.read",
+  resource: "resource.read",
+  saved_query: "saved_query.read",
+};
+
+test("every declared Type has a reader fixture", () => {
+  expect(Object.keys(resourceReaders).sort()).toEqual(Object.keys(pulseCapabilities.types).sort());
+  for (const [typeId, type] of Object.entries(pulseCapabilities.types)) expect(resourceReaders[typeId]).toBe(type.reader);
+});
 
 describe("Pulse capabilities", () => {
   test("declares and compiles the curated read-only v1 surface", () => {
@@ -325,6 +337,18 @@ describe("Pulse capabilities", () => {
         summary: "Read saved Pulse Query “Agent CPU”.",
         refs: [{ type: "pulse.saved_query", id: savedQueryShortId }],
       });
+      const resourceIds: Record<string, string> = {
+        base: baseShortId,
+        source: sourceShortId,
+        resource: `${baseShortId}/${resourceKey}`,
+        saved_query: savedQueryShortId,
+      };
+      for (const [typeId, type] of Object.entries(pulseCapabilities.types)) {
+        const result = await invoke(resourceReaders[typeId]!, { id: resourceIds[typeId] }, context);
+        if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
+        expect(resourceReaders[typeId]).toBe(type.reader);
+        assertResourceOpenLink(result.data);
+      }
       const savedExecution = await invoke("saved_query.execute", { baseId: baseShortId, queryId: savedQueryShortId }, context);
       expect(savedExecution.ok && savedExecution.data.data).toMatchObject({
         kind: "metric",

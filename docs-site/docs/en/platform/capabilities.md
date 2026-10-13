@@ -486,15 +486,22 @@ the page that shows it, such as a comment's conversation. Cloud still accepts
 reader results without links so existing applications can keep reading.
 
 Use `cloudResourceHref(ref)` from `@k2b/cloud/contracts` to link a resource;
-never build another application's URL. Application CLIs use
-`cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` for an absolute URL on the
-profile's server. For example, `{ type: "mail.draft", id: "AbC123" }` produces
-`/open/mail.draft/AbC123`.
+never build another application's URL. For example,
+`{ type: "mail.draft", id: "AbC123" }` produces `/open/mail.draft/AbC123`.
+Application CLIs use `cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` for an
+absolute URL on the profile's server, and
+`withCloudResourcePermalink(ctx, type, resource)` to add it as `permalink` to a
+resource whose `id` the Type's reader accepts. See
+[CLI modules](/en/docs/platform/cli-modules).
 
 Assistant adds `href` to top-level refs whose Type has a live reader. MCP adds
 an absolute `href` using the installation's `app.url` setting. These are
 consumer fields; providers keep returning the existing ref shape. Other result
 links remain optional navigation hints.
+
+An Action that creates or changes a resource returns it in top-level `refs`,
+so every agent can link it. A result does not name a resource that the Action
+deleted or moved out of reach, because its link would not open.
 
 ### Queries read data
 

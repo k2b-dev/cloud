@@ -1938,6 +1938,7 @@ const runCalendarInvitationPreview = async (
             event: item.data.item.title,
           }),
         ),
+        refs: [itemRef(item.data.item, "event")],
         links: [{ rel: "open" as const, href: buildSpaceItemHref(access.data.space.id, item.data.item.id) }],
       })
     : ok({
@@ -2146,7 +2147,7 @@ export const spacesCapabilities = defineCapabilities({
       run: async (input, context) => {
         const resolved = await requireItem(input.id, context);
         if (!resolved.ok) return resolved;
-        return ok({ data: await taskWork.read(resolved.data.internalId) });
+        return ok({ data: await taskWork.read(resolved.data.internalId), refs: [itemRef(resolved.data.item, "task")] });
       },
     },
     "space.search": {
@@ -2414,7 +2415,7 @@ export const spacesCapabilities = defineCapabilities({
             operation: "claim",
             ...{ claimId: input.claimId },
           });
-          return result.ok ? ok({ data: result.data }) : mutationError(result, context);
+          return result.ok ? ok({ data: result.data, refs: [itemRef(resolved.data.item, "task")] }) : mutationError(result, context);
         }),
     },
     "task.release": {
@@ -2440,7 +2441,7 @@ export const spacesCapabilities = defineCapabilities({
             operation: "release",
             ...{ claimId: input.claimId, force: input.force },
           });
-          return result.ok ? ok({ data: result.data }) : mutationError(result, context);
+          return result.ok ? ok({ data: result.data, refs: [itemRef(resolved.data.item, "task")] }) : mutationError(result, context);
         }),
     },
     "task.progress": {
@@ -2466,7 +2467,7 @@ export const spacesCapabilities = defineCapabilities({
             operation: "progress",
             ...{ claimId: input.claimId, content: input.content },
           });
-          return result.ok ? ok({ data: result.data }) : mutationError(result, context);
+          return result.ok ? ok({ data: result.data, refs: [itemRef(resolved.data.item, "task")] }) : mutationError(result, context);
         }),
     },
     "task.checklist.create": {

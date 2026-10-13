@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   type CapabilityActionReviewResult,
   CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
+  type CapabilityInvocationResult,
   capabilityContractIssues,
   capabilityResultSchema,
   contactDirectory,
@@ -766,4 +767,61 @@ test("implements every contact-directory function with the IDs consumers use by 
   expect(issues("read", "contact.read")).toEqual([]);
   expect(issues("listWritableBooks", "book.list")).toEqual([]);
   expect(issues("create", "contact.create")).toEqual([]);
+});
+
+test("every declared Type has a reader open-link case or an explicit reason", async () => {
+  const noteId = "77777777-7777-4777-8777-777777777777";
+  const note = {
+    id: noteId,
+    contactId,
+    content: "Context",
+    authorUserId: userId,
+    authorDisplayName: user.displayName,
+    authorAvatarHash: null,
+    canEdit: true,
+    canDelete: true,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  const tag = {
+    id: "66666666-6666-4666-8666-666666666666",
+    bookId,
+    name: "Customer",
+    color: "#112233",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  spyOn(publicResources, "resolvePublicId").mockImplementation(async (table, value) => {
+    if (table === "books" && value === publicBookId) return bookId;
+    if (table === "contacts" && value === publicContactId) return contactId;
+    if (table === "tags" && value === publicTagId) return tag.id;
+    if (table === "notes" && value === "Note01") return noteId;
+    return null;
+  });
+  spyOn(publicResources, "projectNotes").mockImplementation(async (items) =>
+    items.map((item) => ({ ...item, id: "Note01", contactId: publicContactId })),
+  );
+  spyOn(contactsService.book, "get").mockResolvedValue(book);
+  spyOn(contactsService.contact, "findBookId").mockResolvedValue(bookId);
+  spyOn(contactsService.contact, "get").mockResolvedValue(contact);
+  spyOn(contactsService.tag, "get").mockResolvedValue(tag);
+  spyOn(contactsService.contact.notes, "get").mockResolvedValue(note);
+  const cases: Record<string, { reader: string; read: () => Promise<CapabilityInvocationResult<unknown>> }> = {
+    book: { reader: "book.read", read: async () => contactsCapabilities.queries["book.read"].run({ id: publicBookId }, context) },
+    contact: {
+      reader: "contact.read",
+      read: async () => contactsCapabilities.queries["contact.read"].run({ id: publicContactId }, context),
+    },
+    tag: { reader: "tag.read", read: async () => contactsCapabilities.queries["tag.read"].run({ id: publicTagId }, context) },
+    note: { reader: "note.read", read: async () => contactsCapabilities.queries["note.read"].run({ id: "Note01" }, context) },
+  };
+  expect(Object.keys(cases).sort()).toEqual(Object.keys(contactsCapabilities.types).sort());
+  for (const [typeId, type] of Object.entries(contactsCapabilities.types)) {
+    const fixture = cases[typeId];
+    if (!fixture) throw new Error(`Missing reader fixture for ${typeId}`);
+    expect(fixture.reader).toBe(type.reader);
+    const result = await fixture.read();
+    if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
+    assertResourceOpenLink(result.data);
+  }
 });

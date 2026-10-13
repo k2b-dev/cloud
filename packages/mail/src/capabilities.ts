@@ -382,7 +382,7 @@ const deliveryRef = (id: string, subject: string | null | undefined, state?: str
 });
 const draftMetadata = (mailboxId: string, draftId: string, subject?: string | null, locale?: string) => ({
   refs: [draftRef(draftId, subject, locale)],
-  links: [editLink(draftHref(mailboxId, draftId))],
+  links: [openLink(draftHref(mailboxId, draftId))],
 });
 const conversationMetadata = (
   mailboxId: string,
@@ -518,7 +518,7 @@ const mapDraftSummary = (draft: MailDraft, ids: DraftPublicIds, locale?: string)
     ref: { type: "mail.draft" as const, id },
     title: truncateText(draft.subject || mailCapabilityMessages(locale).noSubject, 500).text,
     ...(preview ? { preview } : {}),
-    links: [editLink(draftHref(requirePublicId(ids.mailboxes, draft.mailboxId), id))],
+    links: [openLink(draftHref(requirePublicId(ids.mailboxes, draft.mailboxId), id))],
     conversationId: draft.conversationId ? requirePublicId(ids.conversations, draft.conversationId) : null,
     intent: draft.intent,
     senderIdentityId: requirePublicId(ids.senderIdentities, draft.senderIdentityId),
@@ -1676,7 +1676,10 @@ const queryDefinitions = {
         data,
         summary: capabilitySummary(t.readAttachment({ filename: data.filename?.trim() || t.unnamedAttachment })),
         refs: [attachmentRef(input.id, data.filename, context.locale)],
-        links: [{ rel: "download" as const, href: data.downloadHref, title: data.filename?.trim() || t.downloadAttachment }],
+        links: [
+          openLink(messageHref(requirePublicId(mailboxIds, parent.mailboxId), requirePublicId(messageIds, parent.messageId))),
+          { rel: "download" as const, href: data.downloadHref, title: data.filename?.trim() || t.downloadAttachment },
+        ],
       });
     },
   },
@@ -2161,7 +2164,7 @@ const queryDefinitions = {
           t.readDelivery({ state: localizedState(item.state, context.locale), subject: reviewSubject(subject, context) }),
         ),
         refs: [deliveryRef(item.id, subject, item.state, context.locale)],
-        links: [statusLink(scheduledHref(requirePublicId(mailboxes, mailboxId)))],
+        links: [openLink(scheduledHref(requirePublicId(mailboxes, mailboxId)))],
       });
     },
   },
@@ -3309,6 +3312,9 @@ const actionDefinitions = {
           const count = result.results.filter((item) => item.status === "ok").length;
           const missing = result.results.length - count;
           return {
+            refs: result.results
+              .filter((item) => item.status === "ok")
+              .map((item) => conversationRef(item.conversationId, undefined, undefined, context.locale)),
             summary: capabilitySummary(
               input.assigneeUserIds.length > 0
                 ? t.assignmentSummary({

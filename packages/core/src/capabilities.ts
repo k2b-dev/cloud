@@ -566,6 +566,7 @@ const readableSkill = (
 ) => aiSkills.getByShortId(skillId, context.accessSubject, permission);
 
 const chatHref = (chatId: string): string => `/app/assistant?conversation=${encodeURIComponent(chatId)}`;
+const skillHref = (skillId: string): string => `/app/assistant?skill=${encodeURIComponent(skillId)}`;
 
 const chatSummary = (chat: AiConversation) => ({
   id: chat.shortId,
@@ -720,7 +721,10 @@ export const aiCapabilities = defineCapabilities({
           const skill = await readableSkill(skillId, context, "admin");
           const grants = skill && (await aiSkills.listAccess(skill.id, context.accessSubject));
           if (!grants) return fail(err.forbidden("Skill access requires Manage permission."));
-          return ok({ data: { skillId, accessRevision: accessRevision(grants), levels: ["read", "write", "admin"], grants } });
+          return ok({
+            data: { skillId, accessRevision: accessRevision(grants), levels: ["read", "write", "admin"], grants },
+            refs: [{ type: "core.ai.skill", id: skillId, title: skill.name }],
+          });
         } catch (error) {
           if (error instanceof AiSkillAppForbiddenError) return fail(err.forbidden(error.message));
           throw error;
@@ -775,6 +779,7 @@ export const aiCapabilities = defineCapabilities({
           data: skillData(skill),
           summary: coreCapabilityMessages(context.locale).t.skillRead({ name: skill.name }),
           refs: [{ type: "core.ai.skill", id: skill.shortId }],
+          links: [{ rel: "open" as const, href: skillHref(skill.shortId) }],
         });
       },
     },
@@ -852,6 +857,7 @@ export const aiCapabilities = defineCapabilities({
             messages: detail.messages.map((message) => z.json().parse(message)),
           },
           summary: detail.occurrence.resultText ?? detail.occurrence.error ?? t.taskRunState({ state: t[detail.occurrence.state] }),
+          refs: [taskReference(detail.task, context.locale)],
         });
       },
     },
@@ -1074,7 +1080,7 @@ export const aiCapabilities = defineCapabilities({
                   : await aiSkills.revokeAccess(skill.id, input.accessId, context.accessSubject, input.expectedAccessRevision)
                 : false;
           if (!changed) return fail(err.forbidden("The grant or permission is no longer available."));
-          return ok({ data: { changed: true }, refs: [{ type: "core.ai.skill", id: input.skillId }] });
+          return ok({ data: { changed: true }, refs: [{ type: "core.ai.skill", id: input.skillId, title: skill.name }] });
         } catch (error) {
           const result = skillRevisionError(error);
           if (result) return result;
@@ -1109,7 +1115,7 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             data: skillData(skill),
             summary: coreCapabilityMessages(context.locale).t.skillCreated({ name: skill.name }),
-            refs: [{ type: "core.ai.skill", id: skill.shortId }],
+            refs: [{ type: "core.ai.skill", id: skill.shortId, title: skill.name }],
           });
         } catch (error) {
           const result = skillRevisionError(error);
@@ -1163,7 +1169,7 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             data: skillData(updated),
             summary: coreCapabilityMessages(context.locale).t.skillUpdated({ name: updated.name }),
-            refs: [{ type: "core.ai.skill", id: updated.shortId }],
+            refs: [{ type: "core.ai.skill", id: updated.shortId, title: updated.name }],
           });
         } catch (error) {
           const result = skillRevisionError(error);
@@ -1210,7 +1216,7 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             data: skillData(updated),
             summary: coreCapabilityMessages(context.locale).t.referenceSaved({ path: input.path, name: updated.name }),
-            refs: [{ type: "core.ai.skill", id: updated.shortId }],
+            refs: [{ type: "core.ai.skill", id: updated.shortId, title: updated.name }],
           });
         } catch (error) {
           const result = skillRevisionError(error);
@@ -1257,7 +1263,7 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             data: skillData(updated),
             summary: coreCapabilityMessages(context.locale).t.referencesSaved({ count: input.references.length, name: updated.name }),
-            refs: [{ type: "core.ai.skill", id: updated.shortId }],
+            refs: [{ type: "core.ai.skill", id: updated.shortId, title: updated.name }],
           });
         } catch (error) {
           const result = skillRevisionError(error);
@@ -1298,7 +1304,7 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             data: skillData(updated),
             summary: coreCapabilityMessages(context.locale).t.referenceRemoved({ path: input.path, name: updated.name }),
-            refs: [{ type: "core.ai.skill", id: updated.shortId }],
+            refs: [{ type: "core.ai.skill", id: updated.shortId, title: updated.name }],
           });
         } catch (error) {
           const result = skillRevisionError(error);
@@ -1337,7 +1343,7 @@ export const aiCapabilities = defineCapabilities({
           summary: enabled
             ? coreCapabilityMessages(context.locale).t.skillEnabled({ name: skill.name })
             : coreCapabilityMessages(context.locale).t.skillDisabled({ name: skill.name }),
-          refs: [{ type: "core.ai.skill", id: skill.shortId }],
+          refs: [{ type: "core.ai.skill", id: skill.shortId, title: skill.name }],
         });
       },
     },

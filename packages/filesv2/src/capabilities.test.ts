@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
+import { assertResourceOpenLink } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityExecutionContext,
+  type CapabilityInvocationResult,
+  type CapabilityResult,
   capabilityResultSchema,
   FILE_PROVIDER_NAME_CONFLICT,
   FileProviderListDataSchema,
@@ -41,6 +44,9 @@ let baseItems: Array<Record<string, unknown>> | null = null;
 let baseIssues: Array<{ area: string; code: string }> = [];
 let readName: string | null = null;
 let uploaded: FileEntry | null = null;
+let changedEntry: FileEntry | null = null;
+let removeError: string | null = null;
+const removed = new Set<string>();
 /** Paths an active public download share covers, by base. */
 let publicPaths: Array<{ baseId: string; path: string }> = [];
 const ids = new Map<string, { baseId: string; path: string }>();
@@ -75,6 +81,12 @@ class MockFilesError extends Error {
 const downloads: Array<{ actor: unknown; input: { baseId: string; path: string } }> = [];
 let downloadFailure: Error | null = null;
 const lease = { url: "https://storage.example.test/direct/opaque-token", method: "GET" as const, expires: "2026-09-21T12:01:00Z" };
+const currentEntry = (path: string) => [changedEntry, uploaded, ...items].find((file) => file?.path === path) ?? entry(path);
+const changed = async () => {
+  if (serviceFailure) throw serviceFailure;
+  if (!changedEntry) throw new Error("expected changed entry fixture");
+  return { base, entry: changedEntry };
+};
 mock.module("./service", () => ({
   FilesError: MockFilesError,
   filesService: {
@@ -131,12 +143,26 @@ mock.module("./service", () => ({
       if (serviceFailure) throw serviceFailure;
       const ref = ids.get(id);
       if (!ref) throw new MockFilesError("not_found", 404);
-      return { base: { ...base, id: ref.baseId }, entry: { ...entry(ref.path), ...(readName ? { name: readName } : {}) } };
+      if (removed.has(ref.path)) throw new MockFilesError("not_found", 404);
+      return { base: { ...base, id: ref.baseId }, entry: { ...currentEntry(ref.path), ...(readName ? { name: readName } : {}) } };
     },
+    entry: async (_actor: unknown, input: { baseId: string; path: string }) => {
+      if (serviceFailure) throw serviceFailure;
+      return { base: { ...base, id: input.baseId }, entry: currentEntry(input.path) };
+    },
+    mkdir: changed,
+    rename: changed,
+    restoreTrash: changed,
+    move: async () => ({ results: [{ ok: true, entry: (await changed()).entry }] }),
+    copy: async () => ({ results: [{ ok: true, entry: (await changed()).entry }] }),
     list: page,
     search: page,
     remove: async (_actor: unknown, input: { paths: string[] }) => ({
-      results: input.paths.map((path) => ({ ok: true, entry: entry(path) })),
+      results: input.paths.map((path) => {
+        if (removeError) return { ok: false, error: removeError };
+        removed.add(path);
+        return { ok: true, entry: { id: "trash-row", original: path, name: currentEntry(path).name } };
+      }),
     }),
   },
 }));
@@ -188,8 +214,23 @@ afterEach(() => {
   baseIssues = [];
   readName = null;
   uploaded = null;
+  changedEntry = null;
+  removeError = null;
+  removed.clear();
 });
 const entry = (path: string): FileEntry => ({ name: "report", path, directory: false, size: 4, modified: "2026-09-19" });
+const assertEntryRef = async (result: CapabilityResult<unknown>, baseId: string, file: FileEntry) => {
+  const ref = result.refs?.[0];
+  if (!ref) throw new Error("expected entry ref");
+  expect(result.refs).toEqual([{ type: "filesv2.entry", id: ref.id, title: file.name }]);
+  if (file.resourceId) expect(ref.id).toBe(file.resourceId);
+  expect(ids.get(ref.id)).toEqual({ baseId, path: file.path });
+  const reader = filesCapabilities.queries["entry.read"];
+  const read = await reader.run(reader.input.parse({ id: ref.id }), context);
+  if (!read.ok) throw new Error("expected reader success");
+  expect(read.data.data).toMatchObject({ base: { id: baseId }, path: file.path, name: file.name });
+  expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
+};
 
 test("capability explicitly describes truncated base and source-page coverage", async () => {
   baseCount = 12;
@@ -272,6 +313,140 @@ test("upload idempotency is stable per user and isolated between users", async (
   expect(uploadKeys[2]).not.toBe(uploadKeys[0]);
 });
 
+for (const form of ["path", "stable", "persisted"] as const) {
+  const sourceBase = "cloud:users:11111111-1111-4111-8111-111111111111";
+  const targetBase = "freeipa:groups:22222222-2222-4222-8222-222222222222";
+  const folder = form === "persisted" ? "Ordner ä/".repeat(100).slice(0, -1) : "Docs";
+  const path = `${folder}/Neuer Name.csv`;
+  const caller = { ...context, idempotencyKey: "change-key" };
+  const changes = [
+    {
+      id: "folder.create",
+      baseId: sourceBase,
+      directory: true,
+      run: () => filesCapabilities.actions["folder.create"].run({ baseId: sourceBase, path }, caller),
+    },
+    {
+      id: "trash.restore",
+      baseId: sourceBase,
+      directory: false,
+      run: () => filesCapabilities.actions["trash.restore"].run({ baseId: sourceBase, id: "trash-row", path }, caller),
+    },
+    {
+      id: "entry.rename",
+      baseId: sourceBase,
+      directory: false,
+      run: () =>
+        filesCapabilities.actions["entry.rename"].run({ baseId: sourceBase, path: `${folder}/old.csv`, name: "Neuer Name.csv" }, caller),
+    },
+    {
+      id: "entry.move",
+      baseId: sourceBase,
+      directory: true,
+      run: () => filesCapabilities.actions["entry.move"].run({ baseId: sourceBase, path: "Neuer Name.csv", folder }, caller),
+    },
+    {
+      id: "entry.copy",
+      baseId: targetBase,
+      directory: false,
+      run: () =>
+        filesCapabilities.actions["entry.copy"].run(
+          { baseId: sourceBase, path: "Neuer Name.csv", targetBaseId: targetBase, folder },
+          caller,
+        ),
+    },
+  ];
+  for (const change of changes) {
+    test(`${change.id} returns only the resulting entry with a ${form} ref`, async () => {
+      changedEntry = {
+        ...entry(path),
+        name: "Neuer Name.csv",
+        directory: change.directory,
+        ...(form === "stable" ? { resourceId: `n:${change.baseId}:019b72cf-5200-7000-8000-000000000001` } : {}),
+      };
+      const result = await change.run();
+      if (!result.ok) throw new Error("expected changed entry");
+      await assertEntryRef(result.data, change.baseId, changedEntry);
+      const ref = result.data.refs?.[0];
+      if (!ref) throw new Error("expected changed entry ref");
+      expect(result.data.data.entry?.ref).toEqual({ type: "filesv2.entry", id: ref.id });
+      expect(result.data.data.entry?.name).toBe("Neuer Name.csv");
+      expect(result.data.data.entry).not.toHaveProperty("resourceId");
+      expect(capabilityResultSchema(filesCapabilities.actions["folder.create"].data).safeParse(result.data).success).toBe(true);
+    });
+  }
+
+  test(`entry.trash omits the unreadable ${form} entry ref`, async () => {
+    changedEntry = {
+      ...entry(path),
+      name: "Neuer Name.csv",
+      ...(form === "stable" ? { resourceId: `n:${sourceBase}:019b72cf-5200-7000-8000-000000000001` } : {}),
+    };
+    const result = await filesCapabilities.actions["entry.trash"].run({ baseId: sourceBase, path }, caller);
+    if (!result.ok) throw new Error("expected trashed entry");
+    expect(result.data.data).toEqual({ baseId: sourceBase });
+    expect(result.data).not.toHaveProperty("refs");
+    expect(capabilityResultSchema(filesCapabilities.actions["entry.trash"].data).safeParse(result.data).success).toBe(true);
+  });
+
+  for (const queryId of ["content.read", "content.download"] as const) {
+    test(`${queryId} returns the file name and its ${form} ref`, async () => {
+      changedEntry = {
+        ...entry(path),
+        name: "Neuer Name.csv",
+        ...(form === "stable" ? { resourceId: `n:${sourceBase}:019b72cf-5200-7000-8000-000000000001` } : {}),
+      };
+      const id = form === "stable" ? changedEntry.resourceId! : await persistedEntryRefId(sourceBase, path);
+      ids.set(id, { baseId: sourceBase, path });
+      const result = await filesCapabilities.queries[queryId].run({ id }, context);
+      if (!result.ok) throw new Error("expected file");
+      await assertEntryRef(result.data, sourceBase, changedEntry);
+      expect(capabilityResultSchema(filesCapabilities.queries[queryId].data).safeParse(result.data).success).toBe(true);
+      if (queryId === "content.download") expect(result.data.data).toEqual(lease);
+    });
+  }
+
+  for (const actionId of ["content.create", "provider.save"] as const) {
+    test(`${actionId} completed write and status name the saved file with its ${form} ref`, async () => {
+      uploaded = {
+        ...entry(path),
+        name: "Neuer Name.csv",
+        ...(form === "stable" ? { resourceId: `n:${sourceBase}:019b72cf-5200-7000-8000-000000000001` } : {}),
+      };
+      ids.set("folder-id", { baseId: sourceBase, path: folder });
+      const offer =
+        actionId === "content.create"
+          ? await filesCapabilities.actions["content.create"].run(
+              { baseId: sourceBase, path, size: 4, mediaType: "text/csv", onConflict: "error" },
+              caller,
+            )
+          : await filesCapabilities.actions["provider.save"].run(
+              { parent: "folder-id", name: uploaded.name, size: 4, mediaType: "text/csv" },
+              caller,
+            );
+      if (!offer.ok || !offer.data.stream) throw new Error("expected write stream");
+      expect(offer.data).not.toHaveProperty("refs");
+      const action = filesCapabilities.actions[actionId];
+      const stream = action.stream!;
+      const receipt = await stream.write(offer.data.stream, new Blob(["data"]).stream(), caller);
+      await assertEntryRef(receipt, sourceBase, uploaded);
+      expect(capabilityResultSchema(action.data).safeParse(receipt).success).toBe(true);
+      const status = await stream.status(offer.data.stream, caller);
+      if (status.state !== "completed") throw new Error("expected completed upload");
+      expect(status.result).toEqual(receipt);
+      await assertEntryRef(status.result, sourceBase, uploaded);
+    });
+  }
+}
+
+test("entry.trash does not return a success ref when the storage mutation fails", async () => {
+  removeError = "forbidden";
+  await expect(filesCapabilities.actions["entry.trash"].run({ baseId: "base", path: "report.csv" }, context)).rejects.toMatchObject({
+    status: 409,
+  });
+  expect(removed.size).toBe(0);
+});
+
 test("canonical entry reader exposes an authorized stable open link", async () => {
   ids.set("entry-id", { baseId: "base", path: "report.pdf" });
   const result = await filesCapabilities.queries["entry.read"].run({ id: "entry-id" }, context);
@@ -323,7 +498,9 @@ for (const query of ["entry.list", "entry.search-in-base"] as const) {
       expect(row.ref.id.length).toBeLessThanOrEqual(512);
       expect(row).not.toHaveProperty("url");
       const download = await filesCapabilities.queries["content.download"].run({ id: row.ref.id }, context);
-      expect(download).toEqual({ ok: true, data: { data: lease } });
+      if (!download.ok) throw new Error("expected download");
+      expect(download.data.data).toEqual(lease);
+      await assertEntryRef(download.data, base.id, currentEntry(row.path));
       expect(downloads.at(-1)).toEqual({ actor: context.actor, input: { baseId: base.id, path: row.path } });
     }
   });
@@ -563,6 +740,7 @@ describe("Files as a file provider", () => {
     await save.run({ ...input, parent: "root-id" }, { ...caller, idempotencyKey: "other-key" });
     if (!first.ok) throw new Error("expected save");
     expect(first.data.data).toEqual({});
+    expect(first.data).not.toHaveProperty("refs");
     expect(first.data.stream).toMatchObject({ direction: "write", name: "Report (2).pdf", mediaType: "application/pdf", size: 4 });
     expect(uploadInputs).toEqual([
       expect.objectContaining({ baseId: "base", path: "Docs/Report (2).pdf", size: 4, onConflict: "error" }),
@@ -644,6 +822,7 @@ describe("Files as a file provider", () => {
     const id = receipt.data?.file?.id ?? "";
     expect(receipt).toEqual({
       data: { file: { id, name: "report.pdf", size: 4 } },
+      refs: [{ type: "filesv2.entry", id, title: "report.pdf" }],
       links: [{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(id)}` }],
     });
     expect(capabilityResultSchema(FileProviderSaveDataSchema).safeParse(receipt).success).toBe(true);
@@ -810,4 +989,20 @@ test("storage failures keep their code and carry the Files message in the caller
     message: "Du hast keine Leseberechtigung für diesen Pfad.",
     status: 403,
   });
+});
+
+test("every declared Type has a reader open-link case or an explicit reason", async () => {
+  const id = await persistedEntryRefId("base", "report.csv");
+  const cases: Record<string, { reader: string; read: () => Promise<CapabilityInvocationResult<unknown>> }> = {
+    entry: { reader: "entry.read", read: async () => filesCapabilities.queries["entry.read"].run({ id }, context) },
+  };
+  expect(Object.keys(cases).sort()).toEqual(Object.keys(filesCapabilities.types).sort());
+  for (const [typeId, type] of Object.entries(filesCapabilities.types)) {
+    const fixture = cases[typeId];
+    if (!fixture) throw new Error(`Missing reader fixture for ${typeId}`);
+    expect(fixture.reader).toBe(type.reader);
+    const result = await fixture.read();
+    if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
+    assertResourceOpenLink(result.data);
+  }
 });

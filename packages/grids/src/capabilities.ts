@@ -139,12 +139,13 @@ const operationKey = (context: CapabilityExecutionContext, action: string) =>
     .digest("hex");
 const documentResult = async (document: Parameters<typeof projectDocuments>[0][number]) => {
   const [value] = await projectDocuments([document]);
+  const data = documentData.parse(value);
   return {
-    data: documentData.parse(value),
-    refs: [{ type: "grids.document", id: document.shortId }],
+    data,
+    refs: [{ type: "grids.document", id: document.shortId, title: data.number }],
     links: [
       { rel: "download" as const, href: documentDownloadUrl(document.shortId) },
-      { rel: "open" as const, href: documentArtifactDownloadUrl(document.shortId, document.primaryArtifactKey) },
+      { rel: "open" as const, href: `${baseHref({ shortId: data.baseId })}/documents?q=${encodeURIComponent(data.number)}` },
     ],
   };
 };
@@ -360,9 +361,14 @@ export const dailyCapabilities = defineCapabilities({
         const workflow = run?.workflowId ? await gridsService.workflow.get(run.workflowId, true) : null;
         if (!run || !workflow) return missing();
         const gate = await gateBaseAtAccess(context, workflow.baseId, "read");
-        return gate.ok
-          ? ok({ data: { id: input.id, status: run.status, mode: run.mode }, refs: [{ type: "grids.workflow-run", id: input.id }] })
-          : gate;
+        if (!gate.ok) return gate;
+        const base = await gridsService.base.get(workflow.baseId);
+        if (!base) return missing();
+        return ok({
+          data: { id: input.id, status: run.status, mode: run.mode },
+          refs: [{ type: "grids.workflow-run", id: input.id }],
+          links: [{ rel: "open", href: baseHref(base) }],
+        });
       },
     },
   },
@@ -616,6 +622,7 @@ const runViewRead = async (input: z.infer<typeof ViewReadInputSchema>, context: 
   const permission = await gateBaseAtAccess(accessContext(context), table.baseId, "read");
   if (!permission.ok) return permission;
   const base = await gridsService.base.get(table.baseId);
+  if (!base) return fail(notFoundError(t.viewNotFound));
   return ok({
     data: {
       kind: "view" as const,
@@ -626,8 +633,8 @@ const runViewRead = async (input: z.infer<typeof ViewReadInputSchema>, context: 
       icon: view.icon ?? null,
     },
     summary: t.readView({ name: view.name }),
-    refs: [{ type: "grids.view", id: view.shortId }],
-    ...(base ? { links: [{ rel: "open" as const, href: viewHref(base, table, view.shortId) }] } : {}),
+    refs: [{ type: "grids.view", id: view.shortId, title: view.name }],
+    links: [{ rel: "open" as const, href: viewHref(base, table, view.shortId) }],
   });
 };
 
@@ -908,7 +915,7 @@ const runGqlContext = async (input: z.infer<typeof GqlContextInputSchema>, conte
   return ok(result);
 };
 
-type GqlCapabilityOutcome = { kind: "preview" | "execute"; viewName?: string; queryLink?: string };
+type GqlCapabilityOutcome = { kind: "preview" | "execute"; viewName?: string; viewId?: string; queryLink?: string };
 
 const gqlCapabilitySummary = (response: DslQueryPreviewResponse, base: Base, outcome: GqlCapabilityOutcome, locale?: string) => {
   const t = capabilityMessagesFor(locale);
@@ -935,6 +942,9 @@ const gqlCapabilityResult = async (
 ) => {
   const locale = context.locale;
   const t = capabilityMessagesFor(locale);
+  const refs: CloudResourceReference[] = outcome.viewId
+    ? [{ type: "grids.view", id: outcome.viewId, ...(outcome.viewName ? { title: outcome.viewName.slice(0, 500) } : {}) }]
+    : [];
   if (!response.ok) {
     const tooLarge = response.diagnostics.find((diagnostic) => diagnostic.message.startsWith("GQL result is too large."));
     return tooLarge
@@ -942,7 +952,7 @@ const gqlCapabilityResult = async (
       : ok({
           data: response,
           summary: gqlCapabilitySummary(response, base, outcome, locale),
-          refs: [{ type: "grids.base" as const, id: base.shortId }],
+          refs: [{ type: "grids.base" as const, id: base.shortId }, ...refs],
           links: [{ rel: "open" as const, href: baseHref(base) }],
         });
   }
@@ -979,7 +989,6 @@ const gqlCapabilityResult = async (
       };
     }),
   };
-  const refs: CloudResourceReference[] = [];
   const seen = new Set<string>();
   for (const [index, row] of projected.rows.entries()) {
     if (!row.recordId || seen.has(row.recordId)) continue;
@@ -1160,6 +1169,7 @@ const runGqlViewExecute = async (input: z.infer<typeof GqlViewExecuteInputSchema
       {
         kind: "execute",
         viewName: view.name,
+        viewId: view.shortId,
         queryLink: queryCapabilityHref({ baseId: input.baseId, query: `from view {${view.shortId}}` }),
       },
       context,
@@ -1253,13 +1263,14 @@ const recordValuesReview = (
   ];
 };
 
-const recordResult = async (record: GridRecord, table: Table, summary?: string) => {
+const recordResult = async (record: GridRecord, table: Table, summary?: string, locale?: string) => {
   const base = await gridsService.base.get(table.baseId);
+  if (!base) return fail(notFoundError(capabilityMessagesFor(locale).recordNotFound));
   return ok({
     data: mapRecord(record, table),
     ...(summary ? { summary } : {}),
     refs: [{ type: "grids.record", id: record.shortId }],
-    ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table, record.shortId) }] } : {}),
+    links: [{ rel: "open" as const, href: recordHref(base, table, record.shortId) }],
   });
 };
 
@@ -1278,7 +1289,7 @@ const runRecordRead = async (input: z.infer<typeof RecordReadInputSchema>, conte
     viewer: actorViewerFor(access),
   });
   return record
-    ? recordResult(record, table, t.readRecord({ table: table.name, version: record.version }))
+    ? recordResult(record, table, t.readRecord({ table: table.name, version: record.version }), context.locale)
     : fail(notFoundError(t.recordNotFound));
 };
 
@@ -1329,7 +1340,7 @@ const runRecordCreate = async (input: z.infer<typeof RecordCreateInputSchema>, c
       viewer: actorViewerFor(access),
     });
     if (!result.ok) return result;
-    return recordResult(result.data, table.data, t.createdRecord({ id: result.data.shortId, table: table.data.name }));
+    return recordResult(result.data, table.data, t.createdRecord({ id: result.data.shortId, table: table.data.name }), context.locale);
   });
 };
 
@@ -1433,6 +1444,7 @@ const runRecordUpdate = async (input: z.infer<typeof RecordUpdateInputSchema>, c
           result.data,
           table.data,
           t.updatedRecord({ count: fieldCount, id: result.data.shortId, table: table.data.name, version: result.data.version }),
+          context.locale,
         )
       : result;
   });

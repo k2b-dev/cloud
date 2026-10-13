@@ -595,12 +595,13 @@ function PrefsDialog(props: {
   prefs: AiUserPrefs;
   openAiApiAccess: OpenAiApiAccess | null;
   initialTab: AssistantPrefsTab;
+  initialSkillEditor?: AssistantSkillEditorRequest;
   close: () => void;
 }) {
   const text = useAssistantText();
   const [activeTab, setActiveTab] = createSignal<AssistantPrefsTab>(props.initialTab);
   const [personalizationDirty, setPersonalizationDirty] = createSignal(false);
-  const [skillEditor, setSkillEditor] = createSignal<AssistantSkillEditorRequest>();
+  const [skillEditor, setSkillEditor] = createSignal<AssistantSkillEditorRequest | undefined>(props.initialSkillEditor);
   const [skillsRefreshKey, setSkillsRefreshKey] = createSignal(0);
   const requestClose = async () => {
     if (await confirmDiscardIfDirty(personalizationDirty)) props.close();
@@ -690,7 +691,11 @@ function PrefsDialog(props: {
   );
 }
 
-export const openAssistantPrefsModal = async (initialTab: AssistantPrefsTab = "personalization"): Promise<void> => {
+/** `initialSkillEditor` opens one Skill directly, as a Skill's Cloud link does; Back returns to the Skills tab. */
+export const openAssistantPrefsModal = async (
+  initialTab: AssistantPrefsTab = "personalization",
+  initialSkillEditor?: AssistantSkillEditorRequest,
+): Promise<void> => {
   let prefs: AiUserPrefs;
   let openAiApiAccess: OpenAiApiAccess | null;
   try {
@@ -701,7 +706,15 @@ export const openAssistantPrefsModal = async (initialTab: AssistantPrefsTab = "p
     return;
   }
   await prompts.dialog<void>(
-    (close) => <PrefsDialog prefs={prefs} openAiApiAccess={openAiApiAccess} initialTab={initialTab} close={() => close()} />,
+    (close) => (
+      <PrefsDialog
+        prefs={prefs}
+        openAiApiAccess={openAiApiAccess}
+        initialTab={initialTab}
+        initialSkillEditor={initialSkillEditor}
+        close={() => close()}
+      />
+    ),
     {
       surface: "bare",
       header: false,

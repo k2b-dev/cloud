@@ -92,6 +92,7 @@ const result = async (baseId: string, entry: ListedEntry): Promise<CapabilityRes
   const listed = await item(baseId, entry);
   return {
     data: { baseId, entry: listed },
+    refs: [{ ...listed.ref, title: entry.name }],
     links: openLink(filesUrl(baseId, entry.directory ? entry.path : entry.path.split("/").slice(0, -1).join("/")), listed.ref.id),
   };
 };
@@ -151,6 +152,7 @@ const savedFile = async (baseId: string, entry: FileEntry): Promise<CapabilityRe
   const id = await entryRef(baseId, entry);
   return {
     data: { file: { id, name: entry.name, size: entry.size } },
+    refs: [{ type: "filesv2.entry", id, title: entry.name }],
     links: openLink(filesUrl(baseId, entry.path.split("/").slice(0, -1).join("/")), id),
   };
 };
@@ -327,7 +329,12 @@ export const fileQueries = {
     openWorld: false,
     run: async (input: { id: string }, c: CapabilityExecutionContext) =>
       domain(c, async () => {
-        return ok({ data: await filesService.downloadById(readActor(c), input.id) });
+        const actor = readActor(c);
+        const file = await filesService.entryById(actor, input.id);
+        return ok({
+          data: await filesService.downloadById(actor, input.id),
+          refs: [{ type: "filesv2.entry", id: await entryRef(file.base.id, file.entry), title: file.entry.name }],
+        });
       }),
   },
   "provider.list": {
@@ -525,7 +532,10 @@ export const fileActions = {
     }),
     async (input, c) => {
       successfulEntry(c, await filesService.remove(readActor(c), { baseId: input.baseId, paths: [input.path] }));
-      return { data: { baseId: input.baseId }, summary: filesCapabilityMessages(c.locale).movedToTrash };
+      return {
+        data: { baseId: input.baseId },
+        summary: filesCapabilityMessages(c.locale).movedToTrash,
+      };
     },
   ),
   "trash.restore": action(
