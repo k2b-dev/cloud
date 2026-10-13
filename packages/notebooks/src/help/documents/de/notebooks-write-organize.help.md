@@ -42,7 +42,7 @@ Zum Wiederherstellen brauchst du Zugriff **Bearbeiten**. Eine gesperrte Notiz ka
 :::reference
 - **Überschriften:** Gliedere die Notiz mit #, ## und tieferen Überschriften. Die erste H1 ist der Notiztitel in Navigation und Suche. Ohne H1 ist die erste sichtbare Zeile der Titel.
 - **Listen und Aufgaben:** Verwende - für Listen. Verwende - [ ] oder - [x] für Aufgaben. Verwende 1. für nummerierte Listen. Sie zählen ab ihrer ersten Nummer weiter. Verschachtelte nummerierte Listen zeigen a., b. und dann i., ii. im Editor, in der Buchansicht und im PDF.
-- **Text formatieren:** Markiere Text und drücke **Strg/⌘+B** für fett, **Strg/⌘+I** für kursiv, **Strg/⌘+Umschalt+S** für durchgestrichen oder **Strg/⌘+E** für Code. Die Werkzeugleiste hat Schaltflächen für fett, kursiv und durchgestrichen. Ohne Auswahl gilt das Format für das Wort am Cursor. Leerzeichen am Rand der Auswahl bleiben außerhalb des Formats. Drücke dieselben Tasten noch einmal, um das Format zu entfernen. Wenn du nur einen Teil von formatiertem Text markierst, verliert nur dieser Teil das Format. In Code, Linkadressen und Tags sowie über Absätze und Listeneinträge hinweg wirkt das Format nicht.
+- **Text formatieren:** Nutze die Werkzeugleiste oder die Tasten unten. Ohne Auswahl gilt das Format für das Wort am Cursor. Leerzeichen am Rand der Auswahl bleiben außerhalb des Formats. Drücke dieselben Tasten noch einmal, um das Format zu entfernen. Wenn du nur einen Teil von formatiertem Text markierst, verliert nur dieser Teil das Format. In Code, Linkadressen und Tags sowie über Absätze und Listeneinträge hinweg wirkt das Format nicht.
 - **Slash-Menü:** Nutze das Einfügemenü des Editors für häufige Blöcke wie Notizlinks, Dateien und Tabellen. Tippe ::: für Daten, Abfragen, Inhaltsverzeichnisse und Hinweisblöcke.
 - **Markdown-Zeichen:** Der Rich-Modus zeigt Zeichen wie `**` oder `#`, wenn dein Cursor darin steht. Wenn du mit der Maus Text auswählst, erscheinen sie erst nach dem Loslassen der Taste. Der Text bleibt beim Ziehen an seiner Stelle.
 :::
@@ -63,6 +63,33 @@ Schreibe kurze Absätze. Behandle in jedem Abschnitt nur ein Thema.
 - Früh in die Altstadt gehen
 - Einen Abend freihalten
 ```
+
+## Text formatieren {icon="typography"}
+
+Die Werkzeugleiste zeigt den aktuellen Textstil und aktive Formate. Schaltflächen und Tasten schalten ein Format ein und aus.
+
+| Taste | Was passiert |
+| --- | --- |
+| **Strg/⌘+B** | Schaltet fett ein oder aus. |
+| **Strg/⌘+I** | Schaltet kursiv ein oder aus. |
+| **Strg/⌘+Umschalt+S** | Schaltet durchgestrichen ein oder aus. |
+| **Strg/⌘+Umschalt+H** | Markiert Text: `==Text==`. Noch einmal entfernt die Markierung. |
+| **Strg/⌘+E** | Schaltet Code im Text ein oder aus. |
+| **Strg/⌘+K** | Fügt einen Link ein; ausgewählter Text wird seine Beschriftung. |
+| **Strg/⌘+Alt+K** | Öffnet die Auswahl, um eine andere Notiz zu verlinken. |
+| **Strg/⌘+Umschalt+1/2/3** | Schaltet Überschrift 1/2/3 ein. Noch einmal ergibt normalen Text. |
+| **Strg/⌘+Umschalt+7/8/9** | Schaltet eine nummerierte Liste, Aufzählung oder Checkliste ein oder aus. |
+| **Strg/⌘+Z** / **Strg/⌘+Umschalt+Z** | Macht rückgängig oder wiederholt. Jede Aktion der Werkzeugleiste und jedes Enter ist ein eigener Schritt. |
+
+Für Überschriften und Listen gelten die Zifferntasten auf jedem Tastaturlayout. Auf einem Mac nutzt macOS **⌘+Umschalt+3** für Bildschirmfotos; wähle Überschrift 3 dann im Stilmenü.
+
+:::reference
+- `/` am Zeilenanfang oder nach einem Leerzeichen öffnet das Einfügemenü. Tippe einen Befehlsnamen, um es zu filtern.
+- `[[` öffnet Notizvorschläge. Die Auswahl ersetzt die getippten Klammern durch einen Markdown-Link zur Notiz.
+- `![[` öffnet Anhangsvorschläge. Die Auswahl bettet ein Bild ein; bei einer anderen Datei fügt sie einen Download-Link ein.
+- `==Text==` markiert Text farbig. Die Markierung bleibt innerhalb einer Zeile.
+- Auf Touchscreens stehen **Rückgängig** und **Wiederholen** am Anfang der Werkzeugleiste.
+:::
 
 ## Listen {icon="keyboard"}
 
@@ -87,7 +114,7 @@ Listen im Notizeditor folgen ihrer Struktur. Die Tasten wirken gleich für Aufz�
 - **Ohne Tab:** **Strg/⌘+]** und **Strg/⌘+[** funktionieren auch, wenn Tab den Fokus bewegt. Nutze am Smartphone **Einrücken** und **Ausrücken** in der Werkzeugleiste des Editors.
 - **Listeneinträge verschieben:** Am Mac nutzt du **Wahltaste+Pfeil nach oben/unten**. Unter Windows und Linux geht das auch mit **Strg+Umschalt+Pfeil nach oben/unten**. Am Mac markiert **⌘+Umschalt+Pfeil nach oben/unten** weiterhin bis zum Anfang oder Ende der Notiz. Reicht deine Auswahl über mehr als einen Eintrag, werden die markierten Zeilen verschoben.
 - **Nummerierte Listen:** Wenn du Einträge hinzufügst, entfernst, einrückst oder verschiebst, wird die geänderte Liste im Markdown neu nummeriert. Sie behält ihre erste Nummer, auch wenn du den ersten Eintrag entfernst. Andere Listen behalten ihre Nummern. Einmal Rückgängig stellt die Änderung samt vorherigen Nummern wieder her.
-- **Werkzeugleiste:** Das Einfügen-Menü bietet dieselben drei Listenarten. Nutze es am Smartphone.
+- **Werkzeugleiste:** Aufzählung, Nummerierte Liste und Checkliste stehen direkt in der Werkzeugleiste, auch am Smartphone.
 - **Tabellen:** **Tab** markiert die nächste Zelle, **Umschalt+Tab** die vorherige.
 - **Vorschläge:** Ist eine Vorschlagsliste offen, setzen **Tab** und **Enter** den markierten Vorschlag ein.
 - **Editor verlassen:** Drücke **Esc** und dann **Tab**, um zum nächsten Bedienelement zu wechseln. Drücke **Esc** und dann **Umschalt+Tab**, um zurückzugehen.

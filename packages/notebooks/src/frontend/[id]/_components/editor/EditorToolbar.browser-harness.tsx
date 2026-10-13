@@ -1,3 +1,4 @@
+import { history, redo, undo } from "@codemirror/commands";
 import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
@@ -5,20 +6,18 @@ import { LocaleProvider, ScrollArea } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
 import { basicExtensions } from "../../../lib/editor/basic";
-import { listCommandsExtension, listIndentAvailability } from "../../../lib/editor/list-commands";
+import { listCommandsExtension } from "../../../lib/editor/list-commands";
 import { listsExtension } from "../../../lib/editor/lists";
 import { markdownExtension } from "../../../lib/editor/markdown";
 import { noteScrollerTheme } from "../../../lib/editor/theme";
-import EditorToolbar from "./EditorToolbar";
+import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
+import { caretFormat, sameCaretFormat } from "./editor-actions";
 
 function Harness() {
   let host!: HTMLDivElement;
   const [view, setView] = createSignal<EditorView>();
-  // Match NoteEditor: availability follows document and selection transactions, with equal values suppressed.
-  const [listIndent, setListIndent] = createSignal(
-    { indent: false, outdent: false },
-    { equals: (a, b) => a.indent === b.indent && a.outdent === b.outdent },
-  );
+  // Match NoteEditor: formats follow document and selection transactions, suppressing equal values.
+  const [format, setFormat] = createSignal(caretFormat(EditorState.create()), { equals: sameCaretFormat });
 
   onMount(() => {
     const editor = new EditorView({
@@ -26,10 +25,12 @@ function Harness() {
       state: EditorState.create({
         extensions: [
           basicExtensions(),
+          history(),
+          formattingKeymap({ notebookId: "Book01" }),
           markdownExtension(),
           listCommandsExtension(),
           EditorView.updateListener.of((update) => {
-            if (update.docChanged || update.selectionSet) setListIndent(listIndentAvailability(update.state));
+            if (update.docChanged || update.selectionSet) setFormat(caretFormat(update.state));
           }),
           listsExtension(),
           noteScrollerTheme,
@@ -70,7 +71,7 @@ function Harness() {
         for (let frame = 0; frame < 5; frame++) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       },
     };
-    Object.assign(window, { harness });
+    window.toolbarHarness = harness;
   });
 
   return (
@@ -85,7 +86,15 @@ function Harness() {
           notebookId="Book01"
           noteId="Note01"
           initialPanelOpen={false}
-          listIndent={listIndent()}
+          format={format()}
+          onUndo={() => {
+            const editor = view();
+            if (editor) undo(editor);
+          }}
+          onRedo={() => {
+            const editor = view();
+            if (editor) redo(editor);
+          }}
         />
       </div>
     </LocaleProvider>
@@ -99,5 +108,11 @@ export type ToolbarHarness = {
   read: () => { doc: string; anchor: number; head: number; hasFocus: boolean };
   settle: () => Promise<void>;
 };
+
+declare global {
+  interface Window {
+    toolbarHarness: ToolbarHarness;
+  }
+}
 
 render(() => <Harness />, document.getElementById("root")!);

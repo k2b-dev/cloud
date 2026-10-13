@@ -18,6 +18,7 @@ import {
 import { type Command, EditorView, keymap } from "@codemirror/view";
 import type { Tree } from "@lezer/common";
 import { ySyncAnnotation } from "y-codemirror.next";
+import { asUndoStep } from "../yjs/history";
 import { inCode, LIST_ITEM, type ListItemLine, leadingWhitespace, listItemLine } from "./_lib/list-item-line";
 import { type ExcludedSpan, excludedSpans, listStructure, markerChanges, renumberChanges, siblingIndex } from "./_lib/list-structure";
 import { listStateField } from "./lists";
@@ -283,6 +284,22 @@ const textStart = (line: Line, item: ListItemLine) => {
   return line.from + start;
 };
 const itemKind = (line: Line, item: ListItemLine) => (taskBox(line, item) ? "task" : /^\d/.test(item.marker) ? "ordered" : "bullet");
+/** The kind whose toggle removes the markers on every selected line. */
+export const listKindAt = (state: EditorState) => {
+  const lines = selectedLines(state);
+  const last = lines.at(-1);
+  if (!last) return null;
+  const tree = ensureSyntaxTree(state, last.to, 50);
+  if (!tree) return null;
+  const excluded = excludedLines(state);
+  const kinds = lines.map((line) => {
+    const item = listItemLine(tree, line, excluded);
+    return item ? itemKind(line, item) : null;
+  });
+  const kind = kinds[0];
+  return kind && kinds.every((value) => value === kind) ? kind : null;
+};
+
 const emptyPrefix = (line: Line, item: ListItemLine) =>
   `${line.text.slice(0, item.indent)}${item.marker} ${taskBox(line, item) ? "[ ] " : ""}`;
 
@@ -1008,6 +1025,16 @@ const renumber = EditorState.transactionFilter.of((tr: Transaction) => {
   return repair.empty ? tr : [tr, { changes: repair, sequential: true }];
 });
 
+const isolatedCommand =
+  (command: Command): Command =>
+  (view) => {
+    let handled = false;
+    void asUndoStep(view, () => {
+      handled = command(view);
+    });
+    return handled;
+  };
+
 export const listCommandsExtension = (): Extension => [
   Prec.highest(
     EditorView.domEventHandlers({
@@ -1020,7 +1047,7 @@ export const listCommandsExtension = (): Extension => [
         )
           return false;
         const kind = event.code === "Digit7" ? "ordered" : event.code === "Digit8" ? "bullet" : event.code === "Digit9" ? "task" : null;
-        if (!kind || !setListKind(kind)(view)) return false;
+        if (!kind || !isolatedCommand(setListKind(kind))(view)) return false;
         event.preventDefault();
         return true;
       },
@@ -1036,8 +1063,8 @@ export const listCommandsExtension = (): Extension => [
   typedTask,
   Prec.high(
     keymap.of([
-      { key: "Mod-]", run: indentListItems },
-      { key: "Mod-[", run: outdentListItems },
+      { key: "Mod-]", run: isolatedCommand(indentListItems) },
+      { key: "Mod-[", run: isolatedCommand(outdentListItems) },
       { key: "Alt-ArrowUp", run: moveListItem(-1) },
       { key: "Alt-ArrowDown", run: moveListItem(1) },
       { win: "Ctrl-Shift-ArrowUp", linux: "Ctrl-Shift-ArrowUp", run: moveListItem(-1) },

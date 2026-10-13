@@ -2,10 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { type Browser, type BrowserContextOptions, type Page, devices as playwrightDevices } from "playwright";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
-import type { ToolbarHarness } from "./EditorToolbar.browser-harness";
 
-const indentLabel = "Indent (Ctrl/⌘+])";
-const outdentLabel = "Outdent (Ctrl/⌘+[)";
+const indentLabel = "Indent";
+const outdentLabel = "Outdent";
 const original = "1. Pack\n2. Charger\n3. Leave";
 const nested = "1. Pack\n   1. Charger\n2. Leave";
 
@@ -85,20 +84,20 @@ afterAll(async () => {
 const { defaultBrowserType: _, ...phone } = playwrightDevices[browserName === "webkit" ? "iPhone 15" : "Pixel 7"];
 const devices: Record<string, BrowserContextOptions> = {
   desktop: { viewport: { width: 1280, height: 800 } },
-  phone,
+  phone: { ...phone, viewport: { width: 390, height: 844 } },
 };
 
 const open = async (device: BrowserContextOptions) => {
   const context = await browser.newContext(device);
   const page = await context.newPage();
   await page.goto(server.url.href);
-  await page.waitForFunction(() => "harness" in window);
+  await page.waitForFunction(() => "toolbarHarness" in window);
   return page;
 };
 
 const load = (page: Page, doc: string) =>
   page.evaluate(async (doc) => {
-    const harness = (window as unknown as { harness: ToolbarHarness }).harness;
+    const harness = window.toolbarHarness;
     harness.loadDocument(doc);
     await harness.settle();
   }, doc);
@@ -106,7 +105,7 @@ const load = (page: Page, doc: string) =>
 const caret = (page: Page, text: string, offset = 3) =>
   page.evaluate(
     async ({ text, offset }) => {
-      const harness = (window as unknown as { harness: ToolbarHarness }).harness;
+      const harness = window.toolbarHarness;
       harness.placeCaret(text, offset);
       await harness.settle();
     },
@@ -115,7 +114,7 @@ const caret = (page: Page, text: string, offset = 3) =>
 
 const read = (page: Page) =>
   page.evaluate(async () => {
-    const harness = (window as unknown as { harness: ToolbarHarness }).harness;
+    const harness = window.toolbarHarness;
     await harness.settle();
     const content = document.querySelector(".cm-content");
     return { ...harness.read(), activeInEditor: content !== null && content.contains(document.activeElement) };
@@ -123,7 +122,7 @@ const read = (page: Page) =>
 
 const select = (page: Page, text: string) =>
   page.evaluate(async (text) => {
-    const harness = (window as unknown as { harness: ToolbarHarness }).harness;
+    const harness = window.toolbarHarness;
     harness.select(text);
     await harness.settle();
   }, text);
@@ -179,7 +178,7 @@ describe.each(Object.entries(devices))("editor toolbar list indentation (%s)", (
       const doc = `Paragraph\n\n${original}`;
       await load(page, doc);
       await caret(page, "Paragraph");
-      const paragraph = await layout(page);
+      let paragraph = await layout(page);
       for (const label of [indentLabel, outdentLabel]) {
         expect(await page.getByRole("button", { name: label, exact: true }).count()).toBe(1);
         const button = page.getByRole("button", { name: label, exact: true });
@@ -194,6 +193,7 @@ describe.each(Object.entries(devices))("editor toolbar list indentation (%s)", (
         await expectEditor(page, doc, "Paragraph");
       }
 
+      paragraph = await layout(page);
       await caret(page, "Charger");
       expect(await page.getByRole("button", { name: indentLabel, exact: true }).getAttribute("aria-disabled")).toBeNull();
       expect(await layout(page)).toEqual(paragraph);
@@ -212,71 +212,36 @@ describe.each(Object.entries(devices))("editor toolbar list indentation (%s)", (
   }, 30_000);
 });
 
-// The device preset (393 or 412 px wide) and the 390 px phone width the layout targets.
-test.each([
-  ["preset", phone],
-  ["390px", { ...phone, viewport: { width: 390, height: 844 } }],
-] as const)(
-  "phone (%s): Indent and Outdent fit inside the viewport and visible toolbar scrollport without scrolling",
-  async (_, device) => {
-    const page = await open(device);
-    try {
-      await load(page, original);
-      await caret(page, "Charger");
-      // Measure before any tap: Playwright must not reveal an off-screen button by scrolling to it.
-      const bounds = await page.locator(".notebooks-editor-toolbar").evaluate(
-        (toolbar, labels) => {
-          const scroll = toolbar.querySelector<HTMLElement>(".overflow-x-auto")!;
-          const rect = scroll.getBoundingClientRect();
-          const visible = {
-            left: rect.left + scroll.clientLeft,
-            top: rect.top + scroll.clientTop,
-            width: scroll.clientWidth,
-            height: scroll.clientHeight,
-          };
-          return {
-            viewport: { width: document.documentElement.clientWidth, height: window.innerHeight },
-            toolbar: toolbar.getBoundingClientRect().toJSON(),
-            visible,
-            scrollLeft: scroll.scrollLeft,
-            buttons: labels.map((label) => {
-              const button = Array.from(toolbar.querySelectorAll("button")).find((button) => button.getAttribute("aria-label") === label);
-              if (!button) throw new Error(`Missing toolbar button: ${label}`);
-              return { label, box: button.getBoundingClientRect().toJSON() };
-            }),
-          };
-        },
-        [outdentLabel, indentLabel],
-      );
-      expect(bounds.scrollLeft).toBe(0);
-      for (const { label, box } of bounds.buttons) {
-        expect(await page.getByRole("button", { name: label, exact: true }).isVisible()).toBe(true);
-        const diagnostic = `${label}: ${JSON.stringify(bounds)}`;
-        expect(box.width, diagnostic).toBeGreaterThan(0);
-        expect(box.height, diagnostic).toBeGreaterThan(0);
-        expect(box.left, diagnostic).toBeGreaterThanOrEqual(0);
-        expect(box.top, diagnostic).toBeGreaterThanOrEqual(0);
-        expect(box.right, diagnostic).toBeLessThanOrEqual(bounds.viewport.width);
-        expect(box.bottom, diagnostic).toBeLessThanOrEqual(bounds.viewport.height);
-        expect(box.left, diagnostic).toBeGreaterThanOrEqual(bounds.visible.left);
-        expect(box.top, diagnostic).toBeGreaterThanOrEqual(bounds.visible.top);
-        expect(box.right, diagnostic).toBeLessThanOrEqual(bounds.visible.left + bounds.visible.width);
-        expect(box.bottom, diagnostic).toBeLessThanOrEqual(bounds.visible.top + bounds.visible.height);
-      }
-    } finally {
-      await page.context().close();
+test("phone at 390px scrolls the toolbar without overflowing the page", async () => {
+  const page = await open({ ...phone, viewport: { width: 390, height: 844 } });
+  try {
+    const bounds = await page.locator(".notebooks-editor-toolbar__tools").evaluate((toolbar) => ({
+      pageWidth: document.documentElement.scrollWidth,
+      viewport: innerWidth,
+      scrollWidth: toolbar.scrollWidth,
+      clientWidth: toolbar.clientWidth,
+    }));
+    expect(bounds.pageWidth).toBeLessThanOrEqual(bounds.viewport);
+    expect(bounds.scrollWidth).toBeGreaterThan(bounds.clientWidth);
+    for (const label of [outdentLabel, indentLabel]) {
+      const button = page.getByRole("button", { name: label, exact: true });
+      await button.scrollIntoViewIfNeeded();
+      const box = await button.boundingBox();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(390);
     }
-  },
-  30_000,
-);
+  } finally {
+    await page.context().close();
+  }
+});
 
 describe.each(Object.entries(devices))("editor toolbar list kinds (%s)", (name, device) => {
-  test("the insert menu converts the selected lines instead of stacking prefixes, keeping focus and the caret", async () => {
+  test("visible list buttons convert the selected lines instead of stacking prefixes, keeping focus and the caret", async () => {
     const page = await open(device);
     try {
       await load(page, "- Pack\n  - Charger");
       await page.evaluate(async () => {
-        const harness = (window as unknown as { harness: ToolbarHarness }).harness;
+        const harness = window.toolbarHarness;
         harness.placeCaret("Pack", 0);
         await harness.settle();
       });
@@ -287,9 +252,7 @@ describe.each(Object.entries(devices))("editor toolbar list kinds (%s)", (name, 
         ["Numbered list", "1. Pack\n   1. Charger"],
         ["Checklist", "- [ ] Pack\n  - [ ] Charger"],
       ] as const) {
-        const trigger = page.getByRole("button", { name: "Insert content", exact: true });
-        await (name === "phone" ? trigger.tap() : trigger.click());
-        const item = page.getByRole("menuitem", { name: new RegExp(`^${label}`) });
+        const item = page.getByRole("button", { name: label, exact: true });
         await (name === "phone" ? item.tap() : item.click());
         const state = await read(page);
         expect(state.doc).toBe(doc);
@@ -345,12 +308,12 @@ describe.each(Object.entries(devices))("editor toolbar inline formatting and ins
     }
   }, 30_000);
 
-  test("Insert content keeps focus on pointer down and inserts an Info callout at the caret line", async () => {
+  test("More keeps focus on pointer down and inserts an Info callout at the caret line", async () => {
     const page = await open(device);
     try {
       await load(page, "First line\nLast line");
       await caret(page, "First", 2);
-      await pressKeepingFocus(page, "Insert content");
+      await pressKeepingFocus(page, "More");
       const item = page.getByRole("menuitem", { name: /^Info/ });
       expect(await item.isVisible()).toBe(true);
       await (name === "phone" ? item.tap() : item.click());
@@ -362,6 +325,112 @@ describe.each(Object.entries(devices))("editor toolbar inline formatting and ins
         hasFocus: true,
         activeInEditor: true,
       });
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+});
+
+describe.each(Object.entries(devices))("toolbar active states and keyboard navigation (%s)", (name, device) => {
+  test("every control keeps its bounding rectangle as the caret and selection change formats", async () => {
+    const page = await open(device);
+    try {
+      await load(page, "plain\n\n**bold**\n\n==highlight==\n\n- item\n\n## heading\n\n###### deepest");
+      const rectangles = () =>
+        page
+          .locator(".notebooks-editor-toolbar")
+          .evaluate((toolbar) =>
+            Array.from(toolbar.querySelectorAll("button, a.k2b-icon-button")).map((control) => control.getBoundingClientRect().toJSON()),
+          );
+      await caret(page, "plain", 2);
+      const original = await rectangles();
+      for (const [text, offset] of [
+        ["bold", 2],
+        ["highlight", 3],
+        ["item", 2],
+        ["heading", 3],
+        ["deepest", 3],
+      ] as const) {
+        await caret(page, text, offset);
+        expect(await rectangles()).toEqual(original);
+      }
+      await select(page, "bold");
+      expect(await rectangles()).toEqual(original);
+      expect(await page.getByRole("button", { name: "Bold", exact: true }).getAttribute("aria-pressed")).toBe("true");
+      await caret(page, "heading");
+      expect(await page.getByRole("button", { name: "Text style: H2", exact: true }).count()).toBe(1);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("one tab stop and wrapping arrow keys navigate the rendered toolbar controls", async () => {
+    const page = await open(device);
+    try {
+      const items = page.locator(".notebooks-editor-toolbar__tools");
+      const visible = await items.evaluate((toolbar) =>
+        Array.from(toolbar.querySelectorAll<HTMLElement>("button, a[href], input, select, textarea, [tabindex]"))
+          .filter((control) => !control.closest("[popover]") && !control.matches(":disabled") && control.getClientRects().length > 0)
+          .map((control) => control.getAttribute("aria-label")),
+      );
+      const first = visible[0]!,
+        second = visible[1]!,
+        last = visible.at(-1)!;
+      await page.getByRole("button", { name: first, exact: true }).focus();
+      const focused = () => page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
+      for (const [key, expected] of [
+        ["ArrowRight", second],
+        ["ArrowLeft", first],
+        ["ArrowLeft", last],
+        ["ArrowRight", first],
+        ["End", last],
+        ["Home", first],
+      ]) {
+        await page.keyboard.press(key!);
+        expect(await focused()).toBe(expected!);
+        expect(await items.locator('[tabindex="0"]').count()).toBe(1);
+      }
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("style menu keeps the selection in the note and applies its checked heading", async () => {
+    const page = await open(device);
+    try {
+      await load(page, "word here");
+      await select(page, "word");
+      const trigger = page.getByRole("button", { name: "Text style: Normal", exact: true });
+      await (name === "phone" ? trigger.tap() : trigger.click());
+      const item = page.getByRole("menuitemradio", { name: /^Heading 2/ });
+      await (name === "phone" ? item.tap() : item.click());
+      expect(await read(page)).toEqual({ doc: "## word here", anchor: 3, head: 7, hasFocus: true, activeInEditor: true });
+      const updated = page.getByRole("button", { name: "Text style: H2", exact: true });
+      await (name === "phone" ? updated.tap() : updated.click());
+      expect(await page.getByRole("menuitemradio", { name: /^Heading 2/ }).getAttribute("aria-checked")).toBe("true");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("Undo and Redo are visible only for touch, and restore the action", async () => {
+    const page = await open(device);
+    try {
+      const undo = page.locator('.notebooks-editor-toolbar__history button[aria-label="Undo"]');
+      const redo = page.locator('.notebooks-editor-toolbar__history button[aria-label="Redo"]');
+      expect(await undo.isVisible()).toBe(name === "phone");
+      expect(await redo.isVisible()).toBe(name === "phone");
+      if (name === "phone") {
+        await load(page, "word");
+        await select(page, "word");
+        await page.getByRole("button", { name: "Bold", exact: true }).tap();
+        expect((await read(page)).doc).toBe("**word**");
+        await undo.tap();
+        expect((await read(page)).doc).toBe("word");
+        await redo.tap();
+        expect((await read(page)).doc).toBe("**word**");
+        expect((await read(page)).activeInEditor).toBe(true);
+      }
     } finally {
       await page.context().close();
     }

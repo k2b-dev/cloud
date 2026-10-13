@@ -12,7 +12,7 @@ import { markdownExtension } from "../../../lib/editor/markdown";
 import { isolateYjsHistory } from "../../../lib/yjs/history";
 
 const loading = createDomTestHarness();
-const { toggleInlineMark } = await import("./editor-actions");
+const { toggleInlineMark, caretFormat, setHeadingLevel, toggleHeadingLevel } = await import("./editor-actions");
 const { formattingKeymap } = await import("./EditorToolbar");
 const { renderNotebookBook } = await import("../../../../lib/book-renderer");
 loading.cleanup();
@@ -30,7 +30,7 @@ const mount = (doc: string, anchor: number, head = anchor, extensions: Extension
         markdownExtension(),
         formattingKeymap({ notebookId: "n" }),
         ...extensions,
-        EditorView.updateListener.of((update) => transactions.push(...update.transactions)),
+        EditorView.updateListener.of((update) => transactions.push(...update.transactions.filter((tr) => tr.docChanged))),
       ],
     }),
   });
@@ -312,4 +312,141 @@ describe("notebook inline formatting", () => {
       b.destroy();
     }
   });
+});
+
+describe("caret formats and highlight", () => {
+  if (isServer) {
+    test.skip("needs browser export conditions", () => {});
+    return;
+  }
+
+  test.each([
+    ["**word**", "bold", 2, 6],
+    ["_word_", "italic", 1, 5],
+    ["~~word~~", "strikethrough", 2, 6],
+    ["==word==", "highlight", 2, 6],
+  ] as const)("%s is pressed inside content and its toggle removes the format", (doc, mark, from, to) => {
+    for (const [anchor, head] of [
+      [from, from],
+      [to, to],
+      [from, to],
+      [to, from],
+    ]) {
+      using editor = mount(doc, anchor!, head!);
+      expect(caretFormat(editor.view.state)[mark]).toBe(true);
+      toggleInlineMark(editor.view, mark);
+      expect(editor.text()).toBe("word");
+      expect(caretFormat(editor.view.state)[mark]).toBe(false);
+    }
+    using outside = mount(`plain ${doc}`, 2);
+    expect(caretFormat(outside.view.state)[mark]).toBe(false);
+    toggleInlineMark(outside.view, mark);
+    expect(caretFormat(outside.view.state)[mark]).toBe(true);
+    using delimiter = mount(doc, 0);
+    expect(caretFormat(delimiter.view.state)[mark]).toBe(false);
+  });
+
+  test("trims selection whitespace for active formats", () => {
+    using editor = mount("**word next**", 2, 7);
+    expect(caretFormat(editor.view.state).bold).toBe(true);
+    toggleInlineMark(editor.view, "bold");
+    expect(editor.text()).toBe("word **next**");
+    expect(caretFormat(editor.view.state).bold).toBe(false);
+  });
+
+  test.each([
+    ["word", 2, 2, "==word=="],
+    ["a word b", 1, 7, "a ==word== b"],
+    ["==word==", 4, 4, "word"],
+    ["==a b c==", 4, 5, "==a== b ==c=="],
+    ["==a==b", 5, 6, "==ab=="],
+    ["==a== b", 2, 7, "==a b=="],
+  ] as const)("highlight toggles %s (%i..%i)", (doc, anchor, head, expected) => {
+    using editor = mount(doc, anchor, head);
+    toggleInlineMark(editor.view, "highlight");
+    expect(editor.text()).toBe(expected);
+    expect(editor.transactions).toHaveLength(1);
+    expect(editor.view.hasFocus).toBe(true);
+  });
+
+  test.each([
+    ["`word`", 2, 2],
+    ["```\nword\n```", 6, 6],
+    ["    word", 6, 6],
+    ["[word](https://example.test)", 17, 17],
+    ["#tag", 2, 2],
+    ["one\ntwo", 0, 7],
+    ["a=b", 0, 3],
+    ["word=", 0, 4],
+    ["word===", 0, 4],
+  ] as const)("refuses invalid highlight in %s", (doc, anchor, head) => {
+    using editor = mount(doc, anchor, head);
+    toggleInlineMark(editor.view, "highlight");
+    expect(editor.text()).toBe(doc);
+    expect(editor.transactions).toHaveLength(0);
+    expect(caretFormat(editor.view.state).highlight).toBe(false);
+  });
+
+  test.each([
+    ["- word", "bullet"],
+    ["1. word", "ordered"],
+    ["- [ ] word", "task"],
+    ["- [x] word", "task"],
+  ] as const)("list pressed state matches the toggle for %s", (doc, kind) => {
+    using editor = mount(doc, doc.length);
+    expect(caretFormat(editor.view.state).list).toBe(kind);
+  });
+
+  test("mixed list selections have no pressed kind", () => {
+    using editor = mount("- first\n1. second", 0, 17);
+    expect(caretFormat(editor.view.state).list).toBeNull();
+    using uniform = mount("- first\n- second", 0, 16);
+    expect(caretFormat(uniform.view.state).list).toBe("bullet");
+  });
+
+  test.each([
+    ["## word", 4, 2],
+    ["word\n====", 2, 0],
+    ["plain", 2, 0],
+    ["> ## word", 6, 2],
+    ["- ## word", 6, 2],
+  ] as const)("reports ATX heading level in %s", (doc, head, level) => {
+    using editor = mount(doc, head);
+    expect(caretFormat(editor.view.state).heading).toBe(level);
+  });
+});
+
+describe("heading levels", () => {
+  if (isServer) {
+    test.skip("needs browser export conditions", () => {});
+    return;
+  }
+  test.each([
+    ["word", "## word"],
+    ["# word", "## word"],
+    ["- word", "- ## word"],
+    ["> word", "> ## word"],
+    ["> - word", "> - ## word"],
+    ["- [ ] word", "- ## [ ] word"],
+  ] as const)("sets H2 after structural prefixes in %s and toggles back", (doc, expected) => {
+    using editor = mount(doc, doc.indexOf("word") + 2);
+    setHeadingLevel(editor.view, 2);
+    expect(editor.text()).toBe(expected);
+    expect(editor.view.state.selection.main.head).toBe(expected.indexOf("word") + 2);
+    expect(caretFormat(editor.view.state).heading).toBe(2);
+    toggleHeadingLevel(editor.view, 2);
+    expect(editor.text()).toBe(expected.replace("## ", ""));
+    setHeadingLevel(editor.view, 6);
+    expect(caretFormat(editor.view.state).heading).toBe(6);
+    setHeadingLevel(editor.view, 0);
+    expect(caretFormat(editor.view.state).heading).toBe(0);
+  });
+  test.each(["```\nword\n```", "    word", "> ```\n> word\n> ```", "- ```\n  word\n  ```", ">     word", ":::data\nword\n:::"])(
+    "leaves code and excluded blocks intact: %s",
+    (doc) => {
+      using editor = mount(doc, doc.indexOf("word") + 2);
+      setHeadingLevel(editor.view, 2);
+      expect(editor.text()).toBe(doc);
+    },
+  );
 });
