@@ -72,7 +72,7 @@ export default function WorkspaceStepFixture(props: Props) {
                   initialState={{
                     view: "month",
                     date: "2026-10-12T00:00:00.000Z",
-                    range: calendarWindow("day", new Date("2026-10-12T00:00:00.000Z")),
+                    range: calendarWindow("month", new Date("2026-10-12T00:00:00.000Z")),
                     filter: defaultCalendarFilter,
                     items: [],
                     weather: {},
