@@ -527,8 +527,9 @@ test("read-only without a snapshot starts from the saved Markdown", async () => 
 
 test("write mode sends no duplicate initialContent in the editor props", async () => {
   const [editor] = await select(await renderEditorPage(), 'solid-client[data-file="NoteEditor.client.tsx"]');
-  expect(islandProps(editor?.attributes["data-props"]).initialContent).toBeNull();
-  expect(islandProps(editor?.attributes["data-props"])).toHaveProperty("contentMd");
+  const props = islandProps(editor?.attributes["data-props"]);
+  expect(props.initialContent).toBeNull();
+  expect(props.initialDetail).toHaveProperty("contentMd");
 });
 
 test("the preview shares the incomplete-history notice with the editor", async () => {
