@@ -476,7 +476,7 @@ describe("Files as a file provider", () => {
     expect(first.data.data).toEqual({
       writable: false,
       items: [
-        { kind: "folder", id: entryRefId("cloud:users:me", "")!, name: "My files", icon: "ti ti-home" },
+        { kind: "folder", id: entryRefId("cloud:users:me", "")!, name: "Personal", icon: "ti ti-home" },
         { kind: "folder", id: entryRefId("cloud:groups:a", "")!, name: "alpha", icon: "ti ti-users" },
       ],
       next: "2",
@@ -487,9 +487,9 @@ describe("Files as a file provider", () => {
     expect(second.data.data.items.map((item) => item.name)).toEqual(["zeta"]);
     expect(second.data.data.next).toBeNull();
 
-    const german = await listProvider({ query: "dateien" }, { ...context, locale: "de" });
+    const german = await listProvider({ query: "persönlich" }, { ...context, locale: "de" });
     if (!german.ok) throw new Error("expected filtered root");
-    expect(german.data.data.items.map((item) => item.name)).toEqual(["Meine Dateien"]);
+    expect(german.data.data.items.map((item) => item.name)).toEqual(["Persönlich"]);
     await expect(listProvider({ cursor: "base0" })).rejects.toMatchObject({ code: "cursor_invalid", status: 409 });
   });
 
@@ -594,7 +594,7 @@ describe("Files as a file provider", () => {
     baseIssues = [{ area: "freeipa", code: "freeipa_disabled" }];
     const root = await listProvider({});
     if (!root.ok) throw new Error("expected root page");
-    expect(root.data.data.items.map((item) => item.name)).toEqual(["My files"]);
+    expect(root.data.data.items.map((item) => item.name)).toEqual(["Personal"]);
   });
 
   test("save reports a taken name with the contract code and every other failure with its own", async () => {
@@ -670,7 +670,7 @@ test("approval reviews name the file, its storage, and the change in the reader'
     data: {
       message: "„report.csv“ in „q3.csv“ umbenennen.",
       details: [
-        { label: "Ablage", value: "Meine Dateien" },
+        { label: "Ablage", value: "Persönlich" },
         { label: "Pfad", value: "Berichte/report.csv" },
         { label: "Neuer Name", value: "q3.csv" },
       ],
@@ -686,7 +686,7 @@ test("approval reviews name the file, its storage, and the change in the reader'
     data: {
       message: "Create the file “test.csv”.",
       details: [
-        { label: "Storage", value: "My files" },
+        { label: "Storage", value: "Personal" },
         { label: "Path", value: "test.csv" },
         { label: "Size", value: "2 KiB" },
       ],
@@ -777,7 +777,7 @@ test("a restore review names the entry and where it returns to", async () => {
     data: {
       message: "„report.csv“ aus dem Papierkorb wiederherstellen.",
       details: [
-        { label: "Ablage", value: "Meine Dateien" },
+        { label: "Ablage", value: "Persönlich" },
         { label: "Wiederherstellen nach", value: "Berichte/report.csv" },
       ],
       approvalScope: "base:home",

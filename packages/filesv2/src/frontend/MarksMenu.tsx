@@ -12,11 +12,9 @@ type MarksOptions = { kind: MarksKind; onOpen: (entry: MarkedEntry) => void; rev
 /** The same authorized, lazily loaded catalog is used by desktop previews and the mobile dialog. */
 export function MarksMenu(props: MarksOptions & { open: boolean; close: () => void; modal?: boolean }) {
   const b = useBrowserMessages();
-  const locale = useLocale();
   const [items, setItems] = createSignal<MarkedEntry[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal(false);
-  const [now, setNow] = createSignal(new Date());
   const [retry, setRetry] = createSignal(0);
   createEffect(() => {
     if (!props.open) return;
@@ -25,8 +23,6 @@ export function MarksMenu(props: MarksOptions & { open: boolean; close: () => vo
     const controller = new AbortController();
     setLoading(true);
     setError(false);
-    setNow(new Date());
-    const timer = setInterval(() => setNow(new Date()), 60_000);
     void (async () => {
       try {
         const response =
@@ -44,21 +40,7 @@ export function MarksMenu(props: MarksOptions & { open: boolean; close: () => vo
     })();
     onCleanup(() => {
       controller.abort();
-      clearInterval(timer);
     });
-  });
-  const ordered = createMemo(() =>
-    [...items()].sort((a, c) =>
-      props.kind === "recent"
-        ? c.markedAt.localeCompare(a.markedAt)
-        : a.entry.name.localeCompare(c.entry.name, undefined, { numeric: true, sensitivity: "base" }) ||
-          baseLabel(a.base, b(), locale()).localeCompare(baseLabel(c.base, b(), locale())),
-    ),
-  );
-  const duplicates = createMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of items()) counts.set(item.entry.name, (counts.get(item.entry.name) ?? 0) + 1);
-    return counts;
   });
   return (
     <div class="flex min-w-0 flex-col gap-2">
@@ -85,41 +67,67 @@ export function MarksMenu(props: MarksOptions & { open: boolean; close: () => vo
             />
           }
         >
-          <For
-            each={ordered()}
-            fallback={
-              <Placeholder
-                variant="inline"
-                align="left"
-                icon={props.kind === "recent" ? "ti ti-history" : "ti ti-star"}
-                description={props.kind === "recent" ? b().noRecent : b().noFavorites}
-              />
-            }
-          >
-            {(item) => (
-              <AppWorkspace.SidebarItem
-                icon={fileIcon(item.entry)}
-                title={item.entry.name}
-                onClick={() => {
-                  props.close();
-                  props.onOpen(item);
-                }}
-                description={
-                  (duplicates().get(item.entry.name) ?? 0) > 1 ? `${baseLabel(item.base, b(), locale())} / ${item.entry.path}` : undefined
-                }
-                meta={
-                  props.kind === "recent" ? (
-                    <Format.RelativeTime value={item.markedAt} base={now()} title={new Date(item.markedAt).toLocaleString()} />
-                  ) : undefined
-                }
-              >
-                <AppWorkspace.SidebarItemLabel marquee={false}>{item.entry.name}</AppWorkspace.SidebarItemLabel>
-              </AppWorkspace.SidebarItem>
-            )}
-          </For>
+          <MarksList kind={props.kind} items={items()} onOpen={props.onOpen} onPick={props.close} />
         </Show>
       </Show>
     </div>
+  );
+}
+
+export function MarksList(props: { kind: MarksKind; items: MarkedEntry[]; onOpen: (entry: MarkedEntry) => void; onPick?: () => void }) {
+  const b = useBrowserMessages();
+  const locale = useLocale();
+  const [now, setNow] = createSignal(new Date());
+  createEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    onCleanup(() => clearInterval(timer));
+  });
+  const ordered = createMemo(() =>
+    [...props.items].sort((a, c) =>
+      props.kind === "recent"
+        ? c.markedAt.localeCompare(a.markedAt)
+        : a.entry.name.localeCompare(c.entry.name, undefined, { numeric: true, sensitivity: "base" }) ||
+          baseLabel(a.base, b(), locale()).localeCompare(baseLabel(c.base, b(), locale())),
+    ),
+  );
+  const duplicates = createMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of props.items) counts.set(item.entry.name, (counts.get(item.entry.name) ?? 0) + 1);
+    return counts;
+  });
+  return (
+    <For
+      each={ordered()}
+      fallback={
+        <Placeholder
+          variant="inline"
+          align="left"
+          icon={props.kind === "recent" ? "ti ti-history" : "ti ti-star"}
+          description={props.kind === "recent" ? b().noRecent : b().noFavorites}
+        />
+      }
+    >
+      {(item) => (
+        <AppWorkspace.SidebarItem
+          icon={fileIcon(item.entry)}
+          title={item.entry.name}
+          onClick={() => {
+            props.onPick?.();
+            props.onOpen(item);
+          }}
+          description={
+            (duplicates().get(item.entry.name) ?? 0) > 1 ? `${baseLabel(item.base, b(), locale())} / ${item.entry.path}` : undefined
+          }
+          meta={
+            props.kind === "recent" ? (
+              <Format.RelativeTime value={item.markedAt} base={now()} title={new Date(item.markedAt).toLocaleString()} />
+            ) : undefined
+          }
+        >
+          <AppWorkspace.SidebarItemLabel marquee={false}>{item.entry.name}</AppWorkspace.SidebarItemLabel>
+        </AppWorkspace.SidebarItem>
+      )}
+    </For>
   );
 }
 

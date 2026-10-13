@@ -36,3 +36,10 @@ export function pathCrumbs(path: string) {
   const parts = path.split("/").filter(Boolean);
   return parts.map((name, index) => ({ name, path: parts.slice(0, index + 1).join("/") }));
 }
+
+/**
+ * Files starts at the overview of all storage when the address names nothing below it (no storage, folder, file,
+ * search or view) and there is more than one storage to choose from. With a single storage Files opens inside it.
+ */
+export const showsOverview = (params: URLSearchParams, storageCount: number) =>
+  storageCount > 1 && !["base", "path", "file", "q", "view"].some((key) => params.get(key));

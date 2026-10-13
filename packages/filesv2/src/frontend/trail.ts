@@ -1,6 +1,6 @@
 import type { LayoutBreadcrumb } from "@k2b/cloud/ssr/layout-runtime";
 import { baseLabel } from "./base-label";
-import { filesUrl, pathCrumbs } from "./urls";
+import { filesUrl, pathCrumbs, showsOverview } from "./urls";
 import type { WorkspaceSnapshot } from "./workspace-state";
 
 type TrailBase = { id: string; label: string };
@@ -9,9 +9,10 @@ type TrailBase = { id: string; label: string };
  * The title array Files gives the shell: the app root (which the shell's rule
  * drops) and the current page. A folder is one level at every depth: the
  * parent row in its listing is the way up, and the sidebar tree shows where it
- * lies, so the shell draws no back link, path, or back arrow for it. A
- * document has no listing; its way up is its folder, with the document's row
- * selected, or the storage when it lies at the top.
+ * lies, so the shell draws no back link, path, or back arrow for it. Above a
+ * storage root lies the overview of all storage, which is a level like a
+ * folder. A document has no listing; its way up is its folder, with the
+ * document's row selected, or the storage when it lies at the top.
  */
 export const filesTitle = (
   appName: string,
@@ -33,14 +34,16 @@ export const filesTitle = (
   return [root, { title: crumbs.at(-1)?.name ?? base.label }];
 };
 
-/** The title array for what the workspace shows: a folder, a document in the editor, or one of the app's own views. */
+/** The workspace title: the overview above storage roots, a folder, a document, or an app view. */
 export const snapshotTitle = (
-  snapshot: Pick<WorkspaceSnapshot, "source" | "directory" | "editor">,
+  snapshot: Pick<WorkspaceSnapshot, "source" | "directory" | "editor" | "bases">,
   appName: string,
-  messages: { myFiles: string },
+  messages: { personal: string; allStorage: string },
   locale: string,
 ): LayoutBreadcrumb[] => {
-  const view = new URL(snapshot.source, "https://files.invalid").searchParams.get("view");
+  const params = new URL(snapshot.source, "https://files.invalid").searchParams;
+  if (showsOverview(params, snapshot.bases.items.length)) return [{ title: appName, href: filesUrl() }, { title: messages.allStorage }];
+  const view = params.get("view");
   const editor = snapshot.editor;
   if (view === "edit" && editor) {
     const path = editor.entry.path;

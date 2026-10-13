@@ -101,14 +101,20 @@ describe("Filesv2 progressive navigation", () => {
       // Seed the real SSR trail; layout.update must publish subsequent trails, without a fixed provider masking them.
       dom.root.classList.add("cloud-app-canvas");
       dom.root.setAttribute("data-app-base", "/app/filesv2");
-      ui.setPageTrail(derivePageTrail(snapshotTitle(snapshot, "Files", { myFiles: "My files" }, "en"), "/app/filesv2", "Files"));
+      ui.setPageTrail(
+        derivePageTrail(
+          snapshotTitle(snapshot, "Files", { personal: "Personal", allStorage: "All storage" }, "en"),
+          "/app/filesv2",
+          "Files",
+        ),
+      );
       const dispose = render(() => createComponent(Workspace, { initial: snapshot, cloudUrl: "https://cloud.test" }), dom.root);
       cleanup = () => {
         dispose();
         dom.cleanup();
       };
       const assertTitle = (current: string) => {
-        expect(ui.readPageTrail()).toEqual({ title: current.split("/").at(-1) || "My files", ancestors: [] });
+        expect(ui.readPageTrail()).toEqual({ title: current.split("/").at(-1) || "Personal", ancestors: [] });
         for (const selector of [
           "[data-k2b-page-trail-up]",
           "[data-k2b-page-trail-link]",
@@ -120,7 +126,7 @@ describe("Filesv2 progressive navigation", () => {
         // The shared head also carries a CSS-hidden fallback h1; the app has exactly one content heading.
         const headings = dom.document.querySelectorAll("h1:not(.k2b-app-workspace__head-heading)");
         expect(headings).toHaveLength(1);
-        expect(headings[0]!.textContent).toBe(current.split("/").at(-1) || "My files");
+        expect(headings[0]!.textContent).toBe(current.split("/").at(-1) || "Personal");
       };
       const assertSidebarStates = async (current: string) => {
         const root = dom.root.querySelector<HTMLElement>("[data-k2b-app-workspace]")!;
@@ -284,6 +290,74 @@ describe("Filesv2 progressive navigation", () => {
     await pending;
     expect(requests[0]!.signal.aborted).toBe(true);
   });
+  test("overview navigation loads recent instead of a directory and failed tile navigation offers retry", async () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", initial.source);
+    const { Workspace } = modules!;
+    const base = {
+      id: "home",
+      name: "Alice",
+      area: "cloud" as const,
+      kind: "users" as const,
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: false,
+      versioningEnabled: false,
+    };
+    const missing = { ...base, id: "missing", name: "Missing group", kind: "groups" as const, status: "missing" as const };
+    const bases = { items: [base, missing], issues: [], editor: null };
+    const directory = { base, path: "", items: [], next: null };
+    const dispose = render(
+      () => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory }, cloudUrl: "https://cloud.test" }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    await flush();
+    for (const request of apiRequests) request.resolve(Response.json(directory));
+    await flush();
+    apiRequests.length = 0;
+    dom.root.querySelector<HTMLAnchorElement>('.k2b-app-workspace__sidebar-body a[href="/app/filesv2"]')!.click();
+    await flush();
+    expect(apiRequests[0]!.kind).toBe("bases");
+    apiRequests[0]!.resolve(Response.json(bases));
+    await flush();
+    expect(apiRequests[1]!.kind).toBe("recent");
+    apiRequests[1]!.resolve(Response.json([]));
+    await flush();
+    expect(apiRequests).toHaveLength(2);
+    expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/filesv2");
+    expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
+    expect(dom.root.querySelector(".filesv2-browser__header")).toBeNull();
+    const search = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Search all storage"),
+    )!;
+    search.click();
+    expect(searches).toEqual([{ query: "", scope: { appId: "filesv2", tag: "file", label: "Files", icon: "ti ti-folders" } }]);
+    dom.root.querySelector<HTMLAnchorElement>('.k2b-link-card[href="/app/filesv2?base=home"]')!.click();
+    await flush();
+    apiRequests[2]!.resolve(Response.json(bases));
+    await flush();
+    expect(apiRequests[3]!.kind).toBe("entries");
+    apiRequests[3]!.resolve(Response.json({ code: "unavailable", message: "Storage unavailable" }, { status: 503 }));
+    await flush();
+    expect(dom.window.location.search).toBe("");
+    expect(dom.root.querySelector(".k2b-link-card")).toBeNull();
+    const error = dom.root.querySelector(".k2b-app-workspace__main .k2b-placeholder")!;
+    expect(error.textContent).toContain("Storage unavailable");
+    expect(error.querySelector("a")!.getAttribute("href")).toBe("/app/filesv2?base=home");
+    error.querySelector<HTMLAnchorElement>("a")!.click();
+    await flush();
+    apiRequests[4]!.resolve(Response.json(bases));
+    await flush();
+    apiRequests[5]!.resolve(Response.json(directory));
+    await flush();
+    expect(dom.window.location.search).toBe("?base=home");
+    expect(dom.root.querySelector(".filesv2-list__row--up")!.textContent).toContain("All storage");
+  });
+
   test("workspace sidebar and folders enhance real hrefs; popstate reloads the matching view", async () => {
     const dom = createDomTestHarness();
     dom.window.history.replaceState(null, "", initial.source);
@@ -317,14 +391,14 @@ describe("Filesv2 progressive navigation", () => {
       [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find(
         (entry) => entry.textContent?.includes(text) || entry.getAttribute("aria-label")?.includes(text),
       )!;
-    // The personal base reads "My files" and keeps its technical name as meta and tooltip; groups keep their name.
-    const home = link("My files");
+    // The personal base reads "Personal" and keeps its technical name as meta and tooltip; groups keep their name.
+    const home = link("Personal");
     expect(home.getAttribute("href")).toBe("/app/filesv2?base=home");
     expect(
       home.closest(".k2b-app-workspace__sidebar-item, [role=treeitem]")?.querySelector(".k2b-app-workspace__sidebar-item-meta")
         ?.textContent,
     ).toBe("Alice");
-    expect(home.closest("[title]")?.getAttribute("title")).toBe("My files · Alice (Cloud)");
+    expect(home.closest("[title]")?.getAttribute("title")).toBe("Personal · Alice (Cloud)");
     expect(link("Alice")).toBe(home);
     // Search is an ordinary footer item with a visible label, directly above Recent; the icon grid is gone.
     expect(dom.root.querySelector(".k2b-app-workspace__sidebar-icon-grid")).toBeNull();
@@ -581,7 +655,7 @@ describe("Filesv2 progressive navigation", () => {
     await flush();
     const entries = [...dom.root.querySelectorAll<HTMLButtonElement>("button")];
     expect(entries).toHaveLength(2);
-    expect(entries[0]!.textContent).toContain("My files / new/Notes");
+    expect(entries[0]!.textContent).toContain("Personal / new/Notes");
     expect(entries[0]!.textContent).not.toContain("Home /");
     expect(entries[0]!.querySelector("time")).not.toBeNull();
     entries[0]!.click();

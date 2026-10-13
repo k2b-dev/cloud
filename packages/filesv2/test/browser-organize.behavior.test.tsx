@@ -62,7 +62,7 @@ describe("Filesv2 ordering and drag-and-drop", () => {
   const mount = async (
     dom: ReturnType<typeof createDomTestHarness>,
     changed: string[],
-    options: { directory?: DirectoryResult; onOpenDirectory?: (path: string) => void } = {},
+    options: { directory?: DirectoryResult; onOpenDirectory?: (path: string) => void; onOpenOverview?: () => void } = {},
   ) => {
     const listing = options.directory ?? directory;
     const Browser = await browserWithUploads();
@@ -74,6 +74,7 @@ describe("Filesv2 ordering and drag-and-drop", () => {
         createComponent(Browser, {
           directory: listing,
           onOpenDirectory: options.onOpenDirectory,
+          onOpenOverview: options.onOpenOverview,
           get source() {
             return source();
           },
@@ -103,7 +104,7 @@ describe("Filesv2 ordering and drag-and-drop", () => {
 
   for (const [lang, path, detail, label] of [
     ["en", "", null, "Parent folder"],
-    ["en", "A", "My files", "Parent folder"],
+    ["en", "A", "Personal", "Parent folder"],
     ["en", "A/B/C", "B", "Parent folder"],
     ["de", "A/B/C", "B", "Übergeordneter Ordner"],
   ] as const) {
@@ -161,6 +162,36 @@ describe("Filesv2 ordering and drag-and-drop", () => {
       expect(opened).toEqual([parent, parent]);
     });
   }
+
+  test("the root row, command and Backspace lead to all storage without a move target", async () => {
+    const dom = createDomTestHarness();
+    const opened: string[] = [];
+    await mount(dom, [], { directory: { ...directory, path: "", items: [] }, onOpenOverview: () => opened.push("overview") });
+    const up = dom.root.querySelector<HTMLElement>(".filesv2-list__row--up")!;
+    expect(up).not.toBeNull();
+    expect(up.querySelector(".filesv2-list__name")!.textContent).toBe("All storage");
+    expect(up.querySelector(".filesv2-list__detail")).toBeNull();
+    expect(up.getAttribute("aria-label")).toBe("Up to all storage");
+    expect(up.querySelector(".ti-layout-grid")).not.toBeNull();
+    expect(up.hasAttribute("data-drop-target")).toBe(false);
+    up.dispatchEvent(new dom.window.Event("drop", { bubbles: true, cancelable: true }));
+    expect(requests).toHaveLength(0);
+    up.click();
+    await flush();
+    expect(up.querySelector(".filesv2-list__cell--icon .ti-loader-2")).not.toBeNull();
+    const commands: ContextAwareCommand[] = [];
+    dom.window.dispatchEvent(new dom.window.CustomEvent("cloud.command.collect", { detail: { commands } }));
+    const command = commands.find((entry) => entry.id === "filesv2.parent-folder")!;
+    expect(command.title).toBe("All storage");
+    expect(command.description).toBe("Up to all storage");
+    expect(command.icon).toBe("ti ti-layout-grid");
+    const { runContextAwareCommand } = await import("@k2b/cloud/browser/commands");
+    await runContextAwareCommand(command);
+    up.focus();
+    up.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+    await flush();
+    expect(opened).toEqual(["overview", "overview", "overview"]);
+  });
 
   for (const path of ["", "A/B/C"]) {
     test(`parent keyboard command and focused-list Backspace at ${path || "storage root"}`, async () => {
