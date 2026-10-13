@@ -6,7 +6,7 @@ import { ShortIdSchema } from "../contracts";
 import { requirePublicId } from "./resources";
 import { JSON_BODY_INPUT, jsonRequest, printCliStructured, queryString, readApi, readJsonInput, writeApiFile } from "./runtime";
 
-const appArg = { app: arg.required({ description: "Published App public ID from its URL; no Base access required" }) };
+const appArg = { app: arg.required({ description: "Published App public ID from its URL; no base access required" }) };
 const pageArgs = { ...appArg, page: arg.required({ description: "Page ID from apps runtime read" }) };
 const blockArgs = { ...pageArgs, block: arg.required({ description: "Visible block ID from apps runtime read" }) };
 const paramsFlag = { params: flag.string({ description: "JSON object of page parameter names to Record public IDs" }) };

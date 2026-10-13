@@ -183,7 +183,7 @@ describe("@k2b/ui AppWorkspace behavior", () => {
       expect(dom.root.querySelector('[data-variant="card"]')).not.toBeNull();
       expect(dom.root.querySelector(".k2b-app-workspace__sidebar-item-context-label")?.textContent).toBe("Verified");
       expect(dom.root.querySelector(".k2b-app-workspace__sidebar-item-context-meta")?.textContent).toBe("3");
-      expect(dom.root.querySelector(".k2b-app-workspace__sidebar-item-label")?.getAttribute("data-marquee")).toBe("false");
+      expect(dom.root.querySelector(".k2b-app-workspace__sidebar-item-label")?.getAttribute("data-lines")).toBe("1");
       setDisabled(true);
       expect(control.disabled).toBe(true);
       control.click();

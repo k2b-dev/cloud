@@ -40,9 +40,9 @@ export function CustomAppSettings(props: {
         <SettingsModal.Tab id="access" title={text("Access")} icon="ti ti-shield">
           <SettingsGroup title={text("Who can open the published app")}>
             <NoticeCard tone="info">
-              <p>{text("App grants are separate from Base access. Choose users, groups, all signed-in users, or public access.")}</p>
+              <p>{text("App grants are separate from base access. Choose users, groups, all signed-in users, or public access.")}</p>
               <p class="mt-2">
-                {text("App access never opens the raw Base, Record API, or GQL. Availability rules can only restrict this access further.")}
+                {text("App access never opens the raw base, Record API, or GQL. Availability rules can only restrict this access further.")}
               </p>
               <p class="mt-2">
                 {text("Forms and workflow actions allow only what you publish. Workflow actions require a signed-in user.")}

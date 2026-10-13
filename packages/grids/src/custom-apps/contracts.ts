@@ -1385,7 +1385,7 @@ export const CUSTOM_APP_REFERENCE = {
   kind: "grids.custom-app",
   identity: {
     id: "Stable 6-character Grids App id",
-    baseId: "Owning Base's 6-character id",
+    baseId: "Owning base's 6-character id",
     icon: "Optional Tabler icon slug, for example app-window",
   },
   limits: {

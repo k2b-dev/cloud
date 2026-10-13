@@ -2,18 +2,18 @@
 id: grids-combined-tables
 title: Combined tables
 icon: ti ti-table-share
-description: Publish one governed, read-only table across several Bases.
+description: Publish one governed, read-only table across several bases.
 order: 122
 ---
-A Combined table shows records from several stored tables as one governed, read-only table. Use it when teams keep working in separate Bases, but another audience needs one consistent dataset. That audience can use it for audit, reporting, search, Grids Apps, documents, workflows, or export.
+A Combined table shows records from several stored tables as one governed, read-only table. Use it when teams keep working in separate bases, but another audience needs one consistent dataset. That audience can use it for audit, reporting, search, Grids Apps, documents, workflows, or export.
 
-For example, regional teams keep different Inventory Bases, and an audit Base publishes one **All inventory** table. Readers query its canonical Name, Status, and Location fields, even when the source tables use different names or select options.
+For example, regional teams keep different Inventory bases, and an audit base publishes one **All inventory** table. Readers query its canonical Name, Status, and Location fields, even when the source tables use different names or select options.
 
 Do not use a Combined table only to show a subset of one table. Use a view for that. Do not use it when readers must edit the source records through it, because the publication is read-only on purpose.
 
 ## Understand what a Combined table changes {icon="table"}
 
-The target Base owns the Combined table, its canonical fields, and its views. People with **Manage** access to a source Base explicitly authorize selected source tables and field mappings. People with access to the target Base, or to a Grids App that includes the combined result, need no access to the source Bases. Search, filters, sorting, pagination, grouping, aggregation, Grids Apps, and exports work across all published sources, as they do for a stored table.
+The target base owns the Combined table, its canonical fields, and its views. People with **Manage** access to a source base explicitly authorize selected source tables and field mappings. People with access to the target base, or to a Grids App that includes the combined result, need no access to the source bases. Search, filters, sorting, pagination, grouping, aggregation, Grids Apps, and exports work across all published sources, as they do for a stored table.
 
 :::reference
 - **Canonical fields:** Create the fields that readers see. Then map each source field to the matching canonical field. A missing mapping returns null for that source.
@@ -24,23 +24,23 @@ The target Base owns the Combined table, its canonical fields, and its views. Pe
 
 ## Create and publish a Combined table {icon="square-plus"}
 
-You need **Manage** access to the target Base. To add a new source, you also need **Manage** access to the source Base.
+You need **Manage** access to the target base. To add a new source, you also need **Manage** access to the source base.
 
 :::steps
 1. **Create the table:** Choose **New table** and select **Combined table**.
 2. **Add canonical fields:** Add the fields that consumers query.
-3. **Choose sources:** In **Edit mode**, open **Combined data**. The picker lists only stored tables in Bases where you have **Manage** access.
+3. **Choose sources:** In **Edit mode**, open **Combined data**. The picker lists only stored tables in bases where you have **Manage** access.
 4. **Map fields:** Map stable source fields by identity.
 5. **Map select options:** For each select field, map every source option explicitly.
 6. **Validate:** Validation reports incomplete or incompatible mappings. It does not change the active publication.
 7. **Publish:** Publish only after you resolve every diagnostic.
-8. **Give access:** Give access to the target Base, or include the result in a Grids App.
+8. **Give access:** Give access to the target base, or include the result in a Grids App.
 :::
 
-People with **Manage** access to a source Base can inspect the exact published field scope and revoke it independently.
+People with **Manage** access to a source base can inspect the exact published field scope and revoke it independently.
 
 :::note Who can publish
-Publishing always requires **Manage** access to the target Base. **Manage** access to the source Base is required only for source scope that is new, wider, or restored after a revocation. You can keep, narrow, or remove existing mappings that were not revoked without a new authorization. A published authorization stays valid when the person who authorized it later loses that access. A person with **Manage** access to the source Base can revoke it explicitly.
+Publishing always requires **Manage** access to the target base. **Manage** access to the source base is required only for source scope that is new, wider, or restored after a revocation. You can keep, narrow, or remove existing mappings that were not revoked without a new authorization. A published authorization stays valid when the person who authorized it later loses that access. A person with **Manage** access to the source base can revoke it explicitly.
 :::
 
 ## Query the table and use it downstream {icon="search"}
@@ -58,7 +58,7 @@ sort Name asc
 
 :::reference
 - **Relations:** A canonical relation must point to one common stored target, or to another explicitly published Combined target that contains the related records.
-- **Files:** People with access to the target Base and compiled Grids App capabilities can preview and download mapped files through the Combined publication boundary. Source file metadata and file changes stay private.
+- **Files:** People with access to the target base and compiled Grids App capabilities can preview and download mapped files through the Combined publication boundary. Source file metadata and file changes stay private.
 - **Computed data:** Mapped results need compatible types. Finalized source values stay frozen. Canonical formulas still calculate from them.
 - **Object lists:** Source and target need identical column definitions, including IDs, types, units, and calculations. There is no mapping of single subcolumns.
 - **Live data and export:** Source changes appear automatically. CSV and JSON exports can continue across all matching records.
@@ -85,15 +85,15 @@ Revoked access returns only when you publish a newly authorized revision.
 
 ## Inspect deleted records and history {icon="history"}
 
-Combined tables keep the lifecycle of published records without giving access to their source Bases. A person with access to the target Base can choose **Show deleted** to inspect records that were deleted in a source table. Their detail panel is read-only and names the published source by Base and table name. To restore or edit the original record, use its source Base.
+Combined tables keep the lifecycle of published records without giving access to their source bases. A person with access to the target base can choose **Show deleted** to inspect records that were deleted in a source table. Their detail panel is read-only and names the published source by base and table name. To restore or edit the original record, use its source base.
 
-The record detail shows its published history. People with access to the target Base can also choose **Actions → Audit trail** to browse and filter the history of all published records. A person who uses a Grids App receives only the history that the published capability snapshot explicitly includes.
+The record detail shows its published history. People with access to the target base can also choose **Actions → Audit trail** to browse and filter the history of all published records. A person who uses a Grids App receives only the history that the published capability snapshot explicitly includes.
 
 :::reference
 - **Current publication:** Grids projects the history through the active canonical mappings. Fields removed from the publication no longer appear, also in older events.
 - **Lifecycle events:** Created, updated, imported, deleted, and restored events stay visible while their source is actively published.
 - **Required explanations:** Answers that an audit policy collects, such as a required deletion reason, stay attached to the event with their question labels.
-- **Private source details:** The Combined table does not expose unpublished fields and values, technical request details, or the navigation of the source Base.
+- **Private source details:** The Combined table does not expose unpublished fields and values, technical request details, or the navigation of the source base.
 - **Changed select options:** An old source option without an active canonical mapping appears as unavailable. Grids does not expose its source identifier.
 - **Fail closed:** Revoked, degraded, or incompatible publications return no partial history. Repair the Combined table and publish it again before you continue.
 :::
@@ -142,6 +142,6 @@ cld grids records audit list Reporting "All inventory" --action deleted
 }
 ```
 
-:::note Control a source Base
-People with **Manage** access to a source Base can inspect its publications with `cld grids tables combined publications`. They can revoke one with `cld grids tables combined revoke`. The revoke command resolves the stored source from its Base and table arguments. It takes the public ID of the Combined table from `--target-table`. A revocation makes the target revision unavailable immediately.
+:::note Control a source base
+People with **Manage** access to a source base can inspect its publications with `cld grids tables combined publications`. They can revoke one with `cld grids tables combined revoke`. The revoke command resolves the stored source from its base and table arguments. It takes the public ID of the Combined table from `--target-table`. A revocation makes the target revision unavailable immediately.
 :::

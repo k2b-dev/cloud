@@ -5,7 +5,7 @@ export const queryMessages = i18n.define({
   messages: {
     en: {
       queryWithAi: "Query with AI",
-      queryAiPrompt: "Help me create a query for this Base.",
+      queryAiPrompt: "Help me create a query for this base.",
       loadSuggestionsFailed: "Could not load query suggestions.",
       noRows: "No rows",
       rowRange: ({ start, end }: { start: number; end: number }) => `Rows ${start}-${end}`,

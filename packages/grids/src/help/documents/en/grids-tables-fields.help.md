@@ -9,7 +9,7 @@ A table stores one kind of record. Choose field types for their meaning, not onl
 
 The [field configuration reference](/app/grids/help/grids-field-configuration) lists all configuration keys, defaults, ID strategies, and object-list columns.
 
-In **Base settings → Tables**, people with **Manage** access search by name or public ID. They compare the counts of fields, indexes, and unique fields, and the history, finalization, and write paths. Open a table for its records and settings. This overview does not count records.
+In **base settings → Tables**, people with **Manage** access search by name or public ID. They compare the counts of fields, indexes, and unique fields, and the history, finalization, and write paths. Open a table for its records and settings. This overview does not count records.
 
 ## Store entered values {icon="table"}
 
@@ -46,7 +46,7 @@ Choose a relation when the target has its own details or lifecycle. A customer n
 
 The live record detail shows up to five **Referenced by** results next to its outgoing relations. Grids groups the results by source table and relation field. **Load more** fetches the next bounded page. The list shows only records that you can currently read. It never adds incoming links to the field data of the record.
 
-In the CLI, use `cld grids records referenced-by <table-id> <record-id> --limit 5 --json`. Record comments are available through `records comments list|create|update|delete`. Use `--body-file` for Markdown and `--yes` to delete. Both lists accept `--cursor` and return `nextCursor`. These commands use public IDs. They keep the same access rules for the Base, authors, and moderation as the record detail.
+In the CLI, use `cld grids records referenced-by <table-id> <record-id> --limit 5 --json`. Record comments are available through `records comments list|create|update|delete`. Use `--body-file` for Markdown and `--yes` to delete. Both lists accept `--cursor` and return `nextCursor`. These commands use public IDs. They keep the same access rules for the base, authors, and moderation as the record detail.
 
 People and groups values give no access. Full accounts can use the directory. Guests can select only themselves and their direct or nested groups, not other users or group members. Saving checks the visibility again, also for API submissions.
 
@@ -88,7 +88,7 @@ Protected revisions or artifacts keep the bytes of a detached file. Grids can cl
 
 ### Keep durable record versions
 
-You need **Manage** access to the Base.
+You need **Manage** access to the base.
 
 :::warning You cannot turn durable history off
 Durable history is permanent. It keeps every record version and uses more storage over time.
@@ -106,7 +106,7 @@ People who can read a current record can open **Record versions** in its detail 
 
 ### Finalize records
 
-After durable history has finished its baseline, a person with **Manage** access to the Base can enable **Record finalization** in the same **History and protection** section. Existing and new records stay drafts until someone finalizes one explicitly. The setting belongs to one stored table and offers two modes:
+After durable history has finished its baseline, a person with **Manage** access to the base can enable **Record finalization** in the same **History and protection** section. Existing and new records stay drafts until someone finalizes one explicitly. The setting belongs to one stored table and offers two modes:
 
 - **Direct:** A person with **Edit** access can finalize the record themselves.
 - **Four-eyes:** A person with **Edit** access requests finalization for the exact current record version. A different person approves and finalizes it. That person must still have **Edit** access and be a current member of the configured **Approver group**.
@@ -133,11 +133,11 @@ Grids stores the submitted answers with the record history. It copies the questi
 
 ## Choose where record changes can start {icon="route"}
 
-A person with **Manage** access to the Base can open **Table settings → Data integrity → Record changes**. There they choose which parts of Grids can change a stored table. **All** is the default and keeps the normal behavior of existing tables.
+A person with **Manage** access to the base can open **Table settings → Data integrity → Record changes**. There they choose which parts of Grids can change a stored table. **All** is the default and keeps the normal behavior of existing tables.
 
 When **All** is off, choose one or more sources:
 
-- **Direct editing and record API** covers editing in the Base or a Grids App, the Record Editor, the API, the CLI, and imports.
+- **Direct editing and record API** covers editing in the base or a Grids App, the Record Editor, the API, the CLI, and imports.
 - **Forms** covers active forms, including forms published in a Grids App.
 - **Workflows and actions** covers enabled workflows, run options, and published Grids App actions.
 

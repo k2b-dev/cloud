@@ -104,7 +104,7 @@ export const gridsDialogMessages = i18n.define({
       allSourcesAllowed: "All record change sources are allowed.",
       changesFrozen: "Record changes are frozen.",
       directEditing: "Direct editing and record API",
-      directEditingDescription: "Editing in the Base or a Grids App, Record Editor, API, CLI, and imports.",
+      directEditingDescription: "Editing in the base or a Grids App, Record Editor, API, CLI, and imports.",
       forms: "Forms",
       formsSourceDescription: "Active Forms, including Forms published in a Grids App.",
       workflowsActions: "Workflows and actions",

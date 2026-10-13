@@ -261,7 +261,7 @@ export default function CustomAppBlockPreview(props: {
         <Placeholder
           align="left"
           title={text({ value: "Form unavailable" })}
-          description={text({ value: "Choose an active Form in this Base." })}
+          description={text({ value: "Choose an active Form in this base." })}
         />
       }
     >

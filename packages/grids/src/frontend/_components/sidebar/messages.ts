@@ -42,7 +42,7 @@ export const sidebarMessages = i18n.define({
         "Adds a Table action for an exact selection. Direct mode finalizes; Four-eyes mode submits requests for another person.",
       table: "Table",
       durableHistoryRequired: "Durable History and Finalization must be enabled for this stored Table.",
-      noStoredTable: "This Base has no stored Table.",
+      noStoredTable: "This base has no stored Table.",
       useStarter: "Use starter",
       createCorrectionDraft: "Create linked follow-up Draft",
       createCorrectionDraftDescription: "Adds a finalized-Record action for a correction or cancellation without changing the original.",

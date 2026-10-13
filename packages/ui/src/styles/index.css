@@ -62,6 +62,9 @@
   --k2b-action: var(--k2b-accent-700);
   --k2b-action-hover: var(--k2b-accent-800);
   --k2b-app-workspace-active: var(--k2b-action);
+  /* Neutral and translucent, so sidebar hover shows on any sidebar surface and
+     never sits in the platform blue beside an app's accent. */
+  --k2b-app-workspace-hover: color-mix(in srgb, var(--k2b-text) 5%, transparent);
   /* Underline and arrow of web and mail links in content. An optional host
      hook, as for the workspace accent; Cloud maps it to the app accent. */
   --k2b-link-accent: var(--k2b-action);
@@ -939,9 +942,12 @@
   cursor: pointer;
 }
 
+/* Sidebar hover is neutral and translucent, like the switcher head above the
+   rows: it shows on any sidebar surface and never competes with the app's
+   accent on the current row. */
 .k2b-ui .k2b-app-workspace__sidebar-item:hover {
   color: var(--k2b-text);
-  background: var(--k2b-hover);
+  background: var(--k2b-app-workspace-hover);
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item:focus-visible {
@@ -1005,8 +1011,8 @@
 }
 
 .k2b-ui .k2b-app-workspace__nav-tree-toggle:hover {
-  color: var(--k2b-action);
-  background: var(--k2b-hover);
+  color: var(--k2b-text);
+  background: var(--k2b-app-workspace-hover);
 }
 
 .k2b-ui .k2b-app-workspace__nav-tree-toggle > i {
@@ -1026,7 +1032,7 @@
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item.is-active:hover {
-  background: var(--k2b-hover);
+  background: var(--k2b-app-workspace-hover);
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item:disabled {
@@ -1040,49 +1046,71 @@
   text-align: center;
 }
 
-/* Cloud: `.sidebar-item-label` clips, `.sidebar-item-label-text` is an
-   inline-block at `max-content` that the marquee translates. `text-overflow`
-   on the outer span cannot apply to an inline-block child, so it is dropped —
-   the animation, not an ellipsis, is how a long label is read in full. */
+/* A row's label takes up to two balanced lines and ends with an ellipsis after
+   them, so names that share a beginning stay apart without hover or motion. A
+   hidden copy of a plain-text label at the weight of the current row sizes it,
+   so selecting a row never wraps it onto another line. `data-lines="1"` keeps
+   one line with an ellipsis instead. */
 .k2b-ui .k2b-app-workspace__sidebar-item-label {
   @apply min-w-0 flex-1;
+  display: grid;
+  text-align: start;
+}
+
+.k2b-ui .k2b-app-workspace__sidebar-item-label-text,
+.k2b-ui .k2b-app-workspace__sidebar-item-label[data-label]::after {
+  display: -webkit-box;
+  grid-area: 1 / 1;
+  align-self: center;
   overflow: hidden;
-  text-align: left;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
-.k2b-ui .k2b-app-workspace__sidebar-item-label-text {
-  display: inline-block;
-  min-width: max-content;
-  transform: translateX(0);
+.k2b-ui .k2b-app-workspace__sidebar-item-label[data-label]::after {
+  content: attr(data-label) / "";
+  font-weight: 600;
+  visibility: hidden;
 }
 
-@keyframes k2b-sidebar-label-marquee {
-  0%,
-  15% {
-    transform: translateX(0);
-  }
-  85%,
-  100% {
-    transform: translateX(calc(-1 * var(--k2b-sidebar-label-overflow, 0px)));
-  }
-}
-
-/* `data-overflow` is written by `installAppWorkspaceController` once it has
-   measured the label, so a label that fits never animates. */
-.k2b-ui .k2b-app-workspace__sidebar-item-label[data-overflow="true"][data-marquee="true"]:hover .k2b-app-workspace__sidebar-item-label-text,
+/* A status changes its marks while the row is on screen, so a row with one
+   keeps one line from its first paint, also while the status shows nothing:
+   a new count or mention never re-wraps its label. Other metadata must keep
+   its width while the row is shown. */
 .k2b-ui
-  .k2b-app-workspace__sidebar-item:focus-within
-  .k2b-app-workspace__sidebar-item-label[data-overflow="true"][data-marquee="true"]
-  .k2b-app-workspace__sidebar-item-label-text {
-  animation: k2b-sidebar-label-marquee 4s ease-in-out 0.2s infinite alternate;
+  .k2b-app-workspace__sidebar-item-label:is(
+    [data-lines="1"],
+    :has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status),
+    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
+  ) {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .k2b-ui .k2b-app-workspace__sidebar-item-label-text {
-    animation: none !important;
-    transform: none !important;
-  }
+.k2b-ui
+  .k2b-app-workspace__sidebar-item-label:is(
+    [data-lines="1"],
+    :has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status),
+    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
+  )::after {
+  display: none;
+}
+
+/* `text-wrap: balance` above would turn wrapping back on. */
+.k2b-ui
+  .k2b-app-workspace__sidebar-item-label:is(
+    [data-lines="1"],
+    :has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status),
+    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
+  )
+  > .k2b-app-workspace__sidebar-item-label-text {
+  display: inline;
+  white-space: nowrap;
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item-meta {
@@ -1106,6 +1134,12 @@
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
+}
+
+/* A status with nothing to show still marks its row as live, which keeps the
+   label on one line, but its slot takes no space while it is all the slot holds. */
+.k2b-ui .k2b-app-workspace__sidebar-item-meta:has(> .k2b-app-workspace__sidebar-status:only-child:empty) {
+  display: none;
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-status-muted,
@@ -4426,8 +4460,10 @@
     pointer-events: auto;
   }
 
+  /* Hidden metadata keeps its box, so revealing it never narrows the label
+     onto another line. */
   .k2b-ui .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
-    display: none;
+    visibility: hidden;
   }
 
   /* Hidden hover actions keep their box, so revealing them moves nothing, and
@@ -4437,7 +4473,7 @@
   }
 
   .k2b-ui .k2b-app-workspace__sidebar-item:is(:hover, :focus-within) .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
-    display: inline-flex;
+    visibility: visible;
   }
 
   .k2b-ui .k2b-app-workspace__sidebar-item:is(:hover, :focus-within, .is-active, :has(> [aria-current="page"])) .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
@@ -4453,7 +4489,7 @@
     .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
     > .k2b-app-workspace__nav-tree-row
     .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
-    display: inline-flex;
+    visibility: visible;
   }
 
   .k2b-ui
@@ -4630,16 +4666,6 @@
     );
   }
 
-  /* The fading end is padding, which the label text runs into but the
-     marquee measures without, so the text ends where it is fully visible. */
-  .k2b-ui
-    .k2b-app-workspace__sidebar-item:has(
-      > :is(.k2b-app-workspace__sidebar-item-action, .k2b-app-workspace__sidebar-item-actions:last-child)[data-visibility="hover"]
-    )
-    .k2b-app-workspace__sidebar-item-label[data-marquee="true"] {
-    padding-inline-end: var(--k2b-sidebar-item-fade-inset, 0px);
-  }
-
   /* Object rows keep their trailing count column in place: revealed actions
      overlay the counts instead of pushing them toward the title. */
   .k2b-ui
@@ -4733,8 +4759,8 @@
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-icon-action:hover {
-  color: var(--k2b-app-workspace-active);
-  background: var(--k2b-hover);
+  color: var(--k2b-text);
+  background: var(--k2b-app-workspace-hover);
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-icon-action.is-active {
@@ -4743,7 +4769,8 @@
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-icon-action.is-active:hover {
-  background: var(--k2b-hover);
+  color: var(--k2b-app-workspace-active);
+  background: var(--k2b-app-workspace-hover);
 }
 
 /* The collapsed rail exists only beside the work area from 64 rem. Narrower,
@@ -11329,7 +11356,7 @@
   background: transparent;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:hover {
-  background: var(--k2b-hover);
+  background: var(--k2b-app-workspace-hover);
 }
 .k2b-ui[data-theme="dark"] .k2b-app-workspace__sidebar-item[data-variant="card"]:not(.is-active):not(:hover),
 .k2b-ui.k2b-dark .k2b-app-workspace__sidebar-item[data-variant="card"]:not(.is-active):not(:hover),
@@ -11359,8 +11386,8 @@
   .k2b-ui [data-scroll-fade], .k2b-ui [data-scroll-fade][data-scroll-fade-axis="horizontal"] { mask-image: none; }
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"].is-active {
-  background: var(--k2b-hover);
-  border-color: color-mix(in srgb, var(--k2b-action) 25%, var(--k2b-border));
+  background: var(--k2b-app-workspace-hover);
+  border-color: color-mix(in srgb, var(--k2b-app-workspace-active) 25%, var(--k2b-border));
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:not(.has-action),
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"] .k2b-app-workspace__sidebar-item-main {
@@ -11438,15 +11465,6 @@
 .k2b-ui .k2b-app-workspace__sidebar-item-context-meta {
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
-}
-.k2b-ui .k2b-app-workspace__sidebar-item-label[data-marquee="false"] {
-  text-overflow: ellipsis;
-}
-.k2b-ui .k2b-app-workspace__sidebar-item-label[data-marquee="false"] .k2b-app-workspace__sidebar-item-label-text {
-  display: inline;
-  min-width: 0;
-  transform: none;
-  animation: none;
 }
 
 /* The fixed-width scroll track occupies the existing right inset, even without overflow. */

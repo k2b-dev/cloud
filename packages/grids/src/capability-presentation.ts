@@ -8,7 +8,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         document: { title: "Grids-Dokument", description: "Ein gespeichertes unveränderliches Dokument mit Artefakt-Metadaten." },
         "workflow-run": { title: "Grids-Workflow-Lauf", description: "Status einer angenommenen Workflow-Ausführung." },
         base: {
-          title: "Grids Basis",
+          title: "Grids-Base",
           description: "Ein Grids-Arbeitsbereich mit Berechtigungsbereich.",
         },
         record: {
@@ -16,11 +16,11 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description: "Ein stabiler Datensatz in einer Grids-Tabelle.",
         },
         table: {
-          title: "Grids Tisch",
-          description: "Eine lesbare gespeicherte oder kombinierte Tabelle in einer Basis.",
+          title: "Grids-Tabelle",
+          description: "Eine lesbare gespeicherte oder kombinierte Tabelle in einer Base.",
         },
         view: {
-          title: "Grids Ansicht",
+          title: "Grids-Ansicht",
           description: "Eine gespeicherte GQL-Datenansicht mit Berechtigungsbereich.",
         },
       },
@@ -65,9 +65,9 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         "workflow.record-actions": {
           title: "Record-Aktionen finden",
           description:
-            "Ausführbare Record-Aktionen einer Basis aus base.list finden. Auch bei leeren gefilterten Seiten nextOffset folgen. Tabelle und Revision anschließend mit workflow.record-action verwenden.",
+            "Ausführbare Record-Aktionen einer Base aus base.list finden. Auch bei leeren gefilterten Seiten nextOffset folgen. Tabelle und Revision anschließend mit workflow.record-action verwenden.",
           input: {
-            baseId: "Öffentliche Basis-ID aus base.list.",
+            baseId: "Öffentliche Base-ID aus base.list.",
             offset: "Position der nächsten Seite aus der vorherigen Antwort; auch leeren Seiten folgen.",
             limit: "Maximale Anzahl von Record-Aktionen pro Seite.",
           },
@@ -75,32 +75,32 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         "workflow.run.read": {
           title: "Workflow-Status lesen",
           description:
-            "Status einer Laufreferenz aus workflow.record-action lesen. Benötigt Lesezugriff auf die Basis; interne Eingaben, Ergebnisse und Ereignisse werden nicht ausgegeben.",
+            "Status einer Laufreferenz aus workflow.record-action lesen. Benötigt Lesezugriff auf die Base; interne Eingaben, Ergebnisse und Ereignisse werden nicht ausgegeben.",
           input: {
             id: "Öffentliche ID der angenommenen Workflow-Ausführung.",
           },
         },
         "base.list": {
-          title: "Liste der Grids-Basen",
+          title: "Liste der Grids-Bases",
           description:
-            "Normaler Eintrag für Grids-Arbeiten mit Basisbereich. Listen Sie zugängliche Basen auf und verwenden Sie zurückgegebenes grids.base refs oder IDs mit base.read, gql.context, gql.preview, gql.execute oder gql.view.execute.",
+            "Normaler Eintrag für Grids-Arbeiten mit Base-Bereich. Listen Sie zugängliche Bases auf und verwenden Sie zurückgegebenes grids.base refs oder IDs mit base.read, gql.context, gql.preview, gql.execute oder gql.view.execute.",
           input: {
-            query: "Optionaler Basisname, Beschreibung oder Kurz-ID-Suche.",
+            query: "Optionaler Base-Name, Beschreibung oder Kurz-ID-Suche.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
             limit: "Maximale Anzahl der zurückzugebenden Artikel.",
           },
         },
         "base.read": {
-          title: "Die Grids-Basis lesen",
+          title: "Die Grids-Base lesen",
           description: "Lesen Sie einen von base.list oder base.search zurückgegebenen grids.base ref.",
           input: {
-            id: "Stabile öffentliche Basis ID.",
+            id: "Stabile öffentliche Base ID.",
           },
         },
         "base.search": {
-          title: "Grids-Basen suchen",
+          title: "Grids-Bases suchen",
           description:
-            "Suchen Sie eine zugängliche Grids-Basis anhand des Namens, der Beschreibung oder der Kurzform ID, wenn der ID unbekannt ist. Verwenden Sie zurückgegebene grids.base refs mit base.read oder deren IDs mit gql.context- und GQL-Abfragen.",
+            "Suchen Sie eine zugängliche Grids-Base anhand des Namens, der Beschreibung oder der Kurzform ID, wenn der ID unbekannt ist. Verwenden Sie zurückgegebene grids.base refs mit base.read oder deren IDs mit gql.context- und GQL-Abfragen.",
           input: {
             scope: "Optionaler Ressourcenkontext, der die Suche einschränkt.",
             "scope.type": "Qualifizierter Ressourcentyp des Suchkontexts.",
@@ -121,7 +121,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Lade das relevante Schema für eine konkrete Aufgabe. Bei unbekannter Quelle zuerst tables, sonst fields mit tableId. options benötigt tableId und fieldId. Unbenutzte IDs weglassen, keine leeren Strings senden. includeWriteContext nur vor Datensatzänderungen verwenden.",
           input: {
-            baseId: "Öffentliche Basis ID, deren berechtigungsbasierter GQL-Kontext geladen werden soll.",
+            baseId: "Öffentliche Base ID, deren berechtigungsbasierter GQL-Kontext geladen werden soll.",
             kind: "Katalogabschnitt: Tabellen, Ansichten, Felder oder genaue Auswahloption IDs.",
             tableId: "Öffentlicher Tisch ID; Erforderlich für Felder und Optionen, optional für Ansichten.",
             fieldId: "Öffentliches Auswahlfeld ID; erforderlich, wenn Art Optionen ist.",
@@ -139,7 +139,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
             showTableToUser: "Ergebnis als interaktive Tabelle für den Benutzer anzeigen.",
             parameters:
               "Werte für @params.name: Skalare, exakte {decimal: string}-Werte oder flache Listen. Kein Authentifizierungs- oder Seitenkontext; parametrisierte Ergebnisse enthalten keinen Editor-Link.",
-            baseId: "Öffentliche Basis ID, in der die GQL-Quelle aufgelöst ist.",
+            baseId: "Öffentliche Base ID, in der die GQL-Quelle aufgelöst ist.",
             query: "Grids Query Auszuführende Sprachquelle.",
             currentTableId: "Optionale öffentliche Tabelle ID, die verwendet wird, wenn die Quelle eine explizite from-Klausel weglässt.",
             currentSource: "Optionale aktuelle Tabellen- oder Ansichtsquelle, die verwendet wird, wenn GQL weglässt.",
@@ -156,7 +156,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
             showTableToUser: "Ergebnis als interaktive Tabelle für den Benutzer anzeigen.",
             parameters:
               "Werte für @params.name: Skalare, exakte {decimal: string}-Werte oder flache Listen. Kein Authentifizierungs- oder Seitenkontext; parametrisierte Ergebnisse enthalten keinen Editor-Link.",
-            baseId: "Öffentliche Basis ID, in der die GQL-Quelle aufgelöst ist.",
+            baseId: "Öffentliche Base ID, in der die GQL-Quelle aufgelöst ist.",
             query: "Grids Query Auszuführende Sprachquelle.",
             currentTableId: "Optionale öffentliche Tabelle ID, die verwendet wird, wenn die Quelle eine explizite from-Klausel weglässt.",
             currentSource: "Optionale aktuelle Tabellen- oder Ansichtsquelle, die verwendet wird, wenn GQL weglässt.",
@@ -167,10 +167,10 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         "gql.view.execute": {
           title: "Gespeicherte Grids-Ansicht ausführen",
           description:
-            "Führen Sie die genaue gespeicherte Abfrage für eine Basis-ID und eine Ansichts-ID aus, die von gql.context-Typansichten zurückgegeben werden. Dies ist der direkte Pfad zur gespeicherten Ansicht. Verwenden Sie gql.execute für Ad-hoc-GQL und nextCursor für weitere Seiten.",
+            "Führen Sie die genaue gespeicherte Abfrage für eine Base-ID und eine Ansichts-ID aus, die von gql.context-Typansichten zurückgegeben werden. Dies ist der direkte Pfad zur gespeicherten Ansicht. Verwenden Sie gql.execute für Ad-hoc-GQL und nextCursor für weitere Seiten.",
           input: {
             showTableToUser: "Ergebnis als interaktive Tabelle für den Benutzer anzeigen.",
-            baseId: "Öffentliche Basis ID, die die gespeicherte Ansicht enthält.",
+            baseId: "Öffentliche Base ID, die die gespeicherte Ansicht enthält.",
             viewId: "Öffentliche gespeicherte Ansicht ID, deren genau gespeicherter GQL ausgeführt werden soll.",
             pageSize: "Maximale Anzahl an Zeilen, die auf dieser Cursorseite zurückgegeben werden sollen.",
             cursor: "Undurchsichtiger Cursor, der von der vorherigen Seite zurückgegeben wurde.",
@@ -187,7 +187,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         "table.read": {
           title: "Die Tabelle Grids lesen",
           description:
-            "Lesen Sie eine von gql.context-Typtabellen zurückgegebene grids.table ref, einschließlich des Basiskontexts und der effektiven Berechtigung.",
+            "Lesen Sie eine von gql.context-Typtabellen zurückgegebene grids.table ref, einschließlich des Base-Kontexts und der effektiven Berechtigung.",
           input: {
             id: "Stabiler öffentlicher Tisch ID.",
           },
@@ -195,7 +195,7 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         "view.read": {
           title: "Die Grids-Ansicht lesen",
           description:
-            "Lesen Sie einen von gql.context zurückgegebenen grids.view ref-Typ. Führen Sie es mit gql.view.execute und derselben Basis-ID aus.",
+            "Lesen Sie einen von gql.context zurückgegebenen grids.view ref-Typ. Führen Sie es mit gql.view.execute und derselben Base-ID aus.",
           input: {
             id: "Stabile öffentliche Ansicht ID.",
           },
@@ -207,11 +207,11 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Eine geprüfte GQL-Abfrage als persönliche oder geteilte Ansicht speichern. Erfordert Base-Adminrechte und Bestätigung. Ändert keine Tabellen oder Datensätze. Bei ungewissem Ergebnis zuerst vorhandene Ansichten prüfen, nicht blind wiederholen.",
           input: {
-            baseId: "Öffentliche Basis-ID der neuen Ansicht.",
+            baseId: "Öffentliche Base-ID der neuen Ansicht.",
             query: "Geprüfte GQL-Abfrage für die gespeicherte Ansicht.",
             currentSource: "Tabellen- oder Ansichtsquelle für eine Abfrage ohne from-Klausel.",
             name: "Name der neuen gespeicherten Ansicht.",
-            shared: "Mit Lesern der Basis teilen; sonst persönlich speichern. Beides erfordert Verwaltungsrechte für die Basis.",
+            shared: "Mit Lesern der Base teilen; sonst persönlich speichern. Beides erfordert Verwaltungsrechte für die Base.",
           },
         },
         "document.create": {

@@ -5,18 +5,18 @@ icon: ti ti-building-store
 description: Model inventory, loans, CRM, invoices, and expenses around the work people must complete.
 order: 107
 ---
-Start with one complete journey. You need **Manage** access to the Base to configure it. Templates are editable examples, not your business rules.
+Start with one complete journey. You need **Manage** access to the base to configure it. Templates are editable examples, not your business rules.
 
 ## Choose the records you need {icon="table"}
 
-Every template includes workflows, document templates, and published apps. Template updates affect only new Bases. Existing Bases keep their configuration and data.
+Every template includes workflows, document templates, and published apps. Template updates affect only new bases. Existing bases keep their configuration and data.
 
 - **Bookshop:** Start from orders and add positions inside the order. The catalog and the customers have their own sections. The header shows the fulfillment status. **Next step** offers shipping, collection, or completion, as the order requires. Short forms to create and edit open in dialogs. Sending the order summary is optional and does not change the fulfillment. Review the saved sale prices before you send it. Later catalog changes do not update those prices or existing documents.
 - **Personal finance:** Record income and expenses, check transactions against your bank, and compare the spending of the current month with its budget. Sending a receipt is optional and does not mark a transaction as reconciled. Transfers count neither as income nor as spending. The template does not synchronize bank balances.
 - **Inventory:** Borrowers select several kits and single items in one request and track their own requests. A request needs at least one kit or item. Staff explicitly enable single items for the catalog. They use a separate loan-desk app for preparation, handover, and returns. Issuing starts the physical loan. Sending the agreement is optional. Returns work from the item detail and from a scanner.
 - **Billing:** Draft and issue invoices, corrections, and commission self-billing. Then record actual payments. Follow the Billing journey below.
 
-Bookshop and Personal finance each serve one working audience. Inventory separates borrowers from staff, because they need different records and actions. Share the right app with these audiences instead of giving them raw access to the Base.
+Bookshop and Personal finance each serve one working audience. Inventory separates borrowers from staff, because they need different records and actions. Share the right app with these audiences instead of giving them raw access to the base.
 
 Share **Equipment loans** with borrowers. Share **Loan desk** only with the staff who look after equipment and requests. The template does not assign these audiences automatically. The requester sees the comments on a loan. Use the separate **Admin notes** field for internal notes.
 
@@ -45,9 +45,9 @@ For merchandise management, define the scope of purchases, receipts, orders, shi
 8. **Check access and publish.** Review the publish preflight. Test the published journey with an account from each intended audience.
 :::
 
-**View** access to a Base shows every record. Personal views and hidden navigation do not separate audiences. For narrower access, share Grids Apps with server-enforced queries and availability rules on lists, details, forms, and actions. Test a copied opportunity URL of another customer. Do not give raw access to the Base to make a portal work.
+**View** access to a base shows every record. Personal views and hidden navigation do not separate audiences. For narrower access, share Grids Apps with server-enforced queries and availability rules on lists, details, forms, and actions. Test a copied opportunity URL of another customer. Do not give raw access to the base to make a portal work.
 
-Bind all required workflow inputs before you publish. Fixed launchers use stored bindings. `inputMode: prompt` requires App-supplied inputs, not a free-form dialog. In Inventory, the row action Add loan position binds `item` to `ROW.id` and `loan` to `RECORD.id`. So it needs no raw record picker for the Base.
+Bind all required workflow inputs before you publish. Fixed launchers use stored bindings. `inputMode: prompt` requires App-supplied inputs, not a free-form dialog. In Inventory, the row action Add loan position binds `item` to `ROW.id` and `loan` to `RECORD.id`. So it needs no raw record picker for the base.
 
 ## Make handovers and deliveries safe to repeat {icon="repeat"}
 
@@ -63,7 +63,7 @@ Claim a ready delivery before you generate documents or send email. A retry key 
 Cancellation does not undo sent email or generated documents. If a delivery is stuck, inspect the original run, the documents, and the email delivery before you retry.
 :::
 
-When a template delivery is interrupted, a person with **Manage** access to the Base reviews the original run under **Workflows**. Resolve the delivery there before you reset its status in the Base table. The app offers no blind resend action on purpose.
+When a template delivery is interrupted, a person with **Manage** access to the base reviews the original run under **Workflows**. Resolve the delivery there before you reset its status in the base table. The app offers no blind resend action on purpose.
 
 ## Preserve invoices {icon="file-invoice"}
 
@@ -74,7 +74,7 @@ Generated documents keep their original snapshot and their exact files. Editing 
 The **Billing** template provides invoices, corrections, and commission self-billing in EUR. It covers distinct German business partners with German VAT IDs and 7% or 19% VAT. Other cases need a different model or renderer.
 
 :::steps
-1. Ask a person with **Manage** access to the Base to complete **Base settings → Documents** with real company and bank details. The sample records are drafts.
+1. Ask a person with **Manage** access to the base to complete **base settings → Documents** with real company and bank details. The sample records are drafts.
 2. Create an invoice. Choose or create its partner and enter the object-list positions.
 3. Check the totals, the service date, and the due date before you issue.
 4. Choose **Issue invoice** on the saved document page. You can keep working while Grids creates the PDF.
@@ -89,7 +89,7 @@ The **Billing** template provides invoices, corrections, and commission self-bil
 
 Choose **Use as new invoice** on a finalized invoice to create a fresh draft with its recipient, buyer reference, and positions. Check the current partner details and prices, and choose new service and due dates. Payments, corrections, internal notes, and issued files are not copied.
 
-Partners receive a read-only customer number such as KD-00001, unique within the Base. You find it in the partner list, the recipient selection, the partner details, and the bill details. Renaming a partner keeps the number.
+Partners receive a read-only customer number such as KD-00001, unique within the base. You find it in the partner list, the recipient selection, the partner details, and the bill details. Renaming a partner keeps the number.
 
 ### Correct and settle bills
 

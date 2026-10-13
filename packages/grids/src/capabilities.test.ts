@@ -332,7 +332,7 @@ describe("Grids capabilities", () => {
         .filter(([, action]) => "review" in action && action.review)
         .map(([id]) => id),
     ).toEqual(["document.create", "workflow.record-action", "view.create", "record.create", "record.upsert-external", "record.update"]);
-    expect(gridsCapabilities.queries?.["base.list"]?.description).toContain("Normal entry for Base-scoped Grids work");
+    expect(gridsCapabilities.queries?.["base.list"]?.description).toContain("Normal entry for base-scoped Grids work");
     expect(gridsCapabilities.queries?.["gql.context"]?.description).toContain("request tables first");
     expect(gridsCapabilities.queries?.["gql.execute"]?.description).toContain("normally gql.preview");
     expect(gridsCapabilities.queries?.["gql.view.execute"]?.description).toContain("direct saved-view path");
@@ -514,7 +514,7 @@ describe("Grids capabilities", () => {
       expect(loadedBase.ok && loadedBase.data.data).toMatchObject({ id: basePublicId });
       if (loadedBase.ok) {
         expect(loadedBase.data.data).not.toHaveProperty("shortId");
-        expect(loadedBase.data.summary).toBe("Read Grids Base “Capability Base”.");
+        expect(loadedBase.data.summary).toBe("Read Grids base “Capability Base”.");
       }
 
       const tables = await invoke("query", "gql.context", { baseId: basePublicId, kind: "tables", limit: 25 }, context);

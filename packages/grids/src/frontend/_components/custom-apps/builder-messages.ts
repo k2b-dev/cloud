@@ -53,9 +53,9 @@ const deCopy = {
   General: "Allgemein",
   Lifecycle: "Lebenszyklus",
   "Who can open the published app": "Wer die veröffentlichte App öffnen darf",
-  "App grants are separate from Base access. Choose users, groups, all signed-in users, or public access.":
+  "App grants are separate from base access. Choose users, groups, all signed-in users, or public access.":
     "App-Berechtigungen sind unabhängig vom Base-Zugriff. Wähle Nutzer, Gruppen, alle angemeldeten Nutzer oder öffentlichen Zugriff.",
-  "App access never opens the raw Base, Record API, or GQL. Availability rules can only restrict this access further.":
+  "App access never opens the raw base, Record API, or GQL. Availability rules can only restrict this access further.":
     "App-Zugriff gewährt keinen Zugriff auf die Base, die Datensatz-API oder GQL. Verfügbarkeitsregeln können diesen Zugriff nur weiter einschränken.",
   "Forms and workflow actions allow only what you publish. Workflow actions require a signed-in user.":
     "Formulare und Workflow-Aktionen erlauben nur die von dir veröffentlichten Funktionen. Workflow-Aktionen erfordern einen angemeldeten Nutzer.",
@@ -109,7 +109,7 @@ const deCopy = {
   "This block is loaded from the current record when the published app page opens.":
     "Dieser Block wird beim Öffnen der veröffentlichten App-Seite aus dem aktuellen Datensatz geladen.",
   "Form unavailable": "Formular nicht verfügbar",
-  "Choose an active Form in this Base.": "Wähle ein aktives Formular in dieser Base aus.",
+  "Choose an active Form in this base.": "Wähle ein aktives Formular in dieser Base aus.",
   "Signed-in readers can scan codes here. Open the published app to use the camera.":
     "Angemeldete Benutzer können hier Codes scannen. Öffne die veröffentlichte App, um die Kamera zu verwenden.",
   "The selected HTML template renders here for the record in the published app.":
@@ -380,7 +380,7 @@ const deCopy = {
     "Benutzern erlauben, die angezeigten Ergebnisfelder zu durchsuchen. Die Filterung erfolgt sicher in PostgreSQL.",
   "Readers can move through additional pages. A GQL limit still caps the whole result.":
     "Benutzer können weitere Seiten aufrufen. Ein GQL-Limit begrenzt weiterhin das gesamte Ergebnis.",
-  "Only views you can use in this Base are listed.": "Es werden nur Ansichten aufgeführt, die du in dieser Base verwenden kannst.",
+  "Only views you can use in this base are listed.": "Es werden nur Ansichten aufgeführt, die du in dieser Base verwenden kannst.",
   "Choose a saved view": "Gespeicherte Ansicht auswählen",
   "Unavailable view": "Nicht verfügbare Ansicht",
   "Choose a saved view to configure this block visually.": "Wähle eine gespeicherte Ansicht aus, um diesen Block visuell zu konfigurieren.",
@@ -417,7 +417,7 @@ const deCopy = {
   Embedded: "Eingebettet",
   Dialog: "Dialog",
   "Choose the active Form rendered by this block.": "Wähle das aktive Formular aus, das dieser Block rendert.",
-  "Only active forms you can use in this Base are listed.":
+  "Only active forms you can use in this base are listed.":
     "Es werden nur aktive Formulare aufgeführt, die du in dieser Base verwenden kannst.",
   "Choose an active form": "Aktives Formular auswählen",
   "Unavailable form": "Nicht verfügbares Formular",

@@ -20,7 +20,7 @@ describe("Evidence exports settings contract", () => {
     expect(messages).toContain("Building baseline");
     expect(messages).toContain("Not enabled");
     expect(messages).toContain("Evidence coverage is unavailable");
-    expect(messages).toContain("No stored Tables in this Base");
+    expect(messages).toContain("No stored Tables in this base");
     expect(messages).toContain("Open Table");
     expect(coverageDialog).toContain("DataTable");
     expect(messages).toContain("Everything is selected by default");

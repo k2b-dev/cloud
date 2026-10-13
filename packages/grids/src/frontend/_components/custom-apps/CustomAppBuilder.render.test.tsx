@@ -432,7 +432,7 @@ describe("CustomAppBuilder", () => {
     expect(html).toContain('role="tablist"');
     expect(html).toContain("General");
     expect(html).toContain("Lifecycle");
-    expect(html).toContain("App grants are separate from Base access");
+    expect(html).toContain("App grants are separate from base access");
     expect(html).toContain("Record API, or GQL");
     expect(html).toContain("Workflow actions require a signed-in user");
     expect(html).toContain("Loading access");

@@ -24,13 +24,13 @@ export const BaseListDataSchema = z.array(BaseCapabilityDataSchema).max(100);
 
 export const BaseListInputSchema = z
   .object({
-    query: z.string().trim().max(500).optional().describe("Optional Base name, description, or short-ID search."),
+    query: z.string().trim().max(500).optional().describe("Optional base name, description, or short-ID search."),
     cursor: CursorSchema,
     limit: PageLimitSchema,
   })
   .strict();
 
-export const BaseReadInputSchema = z.object({ id: ShortIdSchema.describe("Stable public Base ID.") }).strict();
+export const BaseReadInputSchema = z.object({ id: ShortIdSchema.describe("Stable public base ID.") }).strict();
 
 const ContextKindSchema = z.enum(["tables", "views", "fields", "options", "list-columns"]);
 const GridsPermissionSchema = z.enum(["read", "write", "admin"]);
@@ -144,7 +144,7 @@ export const GqlContextDataSchema = z
 
 export const GqlContextInputSchema = z
   .object({
-    baseId: ShortIdSchema.describe("Public Base ID whose permission-shaped GQL context should be loaded."),
+    baseId: ShortIdSchema.describe("Public base ID whose permission-shaped GQL context should be loaded."),
     kind: ContextKindSchema.default("tables").describe(
       "Catalog section: tables, views, fields, select options, or typed object-list columns.",
     ),
@@ -177,7 +177,7 @@ const CurrentSourceSchema = z.discriminatedUnion("kind", [
 ]);
 
 const GqlInputShape = {
-  baseId: ShortIdSchema.describe("Public Base ID in which the GQL source is resolved."),
+  baseId: ShortIdSchema.describe("Public base ID in which the GQL source is resolved."),
   query: z.string().trim().min(1).max(20_000).describe("Grids Query Language source to execute."),
   currentTableId: ShortIdSchema.optional().describe("Optional public Table ID used when the source omits an explicit from clause."),
   currentSource: CurrentSourceSchema.optional().describe("Optional current Table or View source used when GQL omits from."),
@@ -196,7 +196,7 @@ export const ViewCreateInputSchema = z
     shared: z
       .boolean()
       .default(false)
-      .describe("Share the View with Base readers; otherwise create a personal View. Both require Base admin access."),
+      .describe("Share the View with base readers; otherwise create a personal View. Both require base admin access."),
   })
   .strict();
 
@@ -226,7 +226,7 @@ export const GqlExecuteInputSchema = z
 
 export const GqlViewExecuteInputSchema = z
   .object({
-    baseId: ShortIdSchema.describe("Public Base ID containing the saved View."),
+    baseId: ShortIdSchema.describe("Public base ID containing the saved View."),
     viewId: ShortIdSchema.describe("Public saved View ID whose exact stored GQL should execute."),
     showTableToUser: ShowTableToUserSchema,
     pageSize: z.number().int().min(1).max(100).default(100).describe("Maximum rows to return on this cursor page."),

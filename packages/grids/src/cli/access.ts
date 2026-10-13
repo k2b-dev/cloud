@@ -30,7 +30,7 @@ export const accessCommands = [
         principalFlags: [
           "--user <id|uid|email|display name>",
           "--group <id|name>",
-          "--service-account <id|name> (Base only)",
+          "--service-account <id|name> (base only)",
           "--authenticated",
           "--public (Grids App only)",
         ],
@@ -91,7 +91,7 @@ export const accessCommands = [
     flags: {
       user: flag.string({ description: "User id, uid, email, or exact display name" }),
       group: flag.string({ description: "Group id or exact name" }),
-      serviceAccount: flag.string({ name: "service-account", description: "Service account id or exact name; Base grants only" }),
+      serviceAccount: flag.string({ name: "service-account", description: "Service account id or exact name; base grants only" }),
       authenticated: flag.boolean({ description: "Signed-in users" }),
       public: flag.boolean({ description: "Anyone with the link, including anonymous users" }),
       permission: flag.enum(PERMISSION_LEVELS, { required: true, description: "Permission to grant" }),
@@ -129,7 +129,7 @@ export const accessCommands = [
     flags: {
       user: flag.string({ description: "User id, uid, email, or exact display name" }),
       group: flag.string({ description: "Group id or exact name" }),
-      serviceAccount: flag.string({ name: "service-account", description: "Service account id or exact name; Base grants only" }),
+      serviceAccount: flag.string({ name: "service-account", description: "Service account id or exact name; base grants only" }),
       authenticated: flag.boolean({ description: "Signed-in users" }),
       public: flag.boolean({ description: "Anyone with the link, including anonymous users" }),
       accessId: flag.string({ name: "access-id", description: "Direct access entry id from access list" }),

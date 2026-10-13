@@ -185,7 +185,7 @@ export const recordsRoutes = new Hono<AuthContext>()
     requirePublicIdParam("baseId", "base", "Base"),
     describeRoute({
       tags: ["Grids:Record"],
-      summary: "Resume bounded Record changes for a Base",
+      summary: "Resume bounded Record changes for a base",
       description:
         "Returns committed Record change receipts for the last 30 days. A change appears once every earlier write transaction has ended, so the cursor never passes it. Save the returned cursor and reread current Records separately.",
       responses: {

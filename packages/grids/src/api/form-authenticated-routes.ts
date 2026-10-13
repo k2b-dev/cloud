@@ -119,7 +119,7 @@ export const createAuthenticatedFormRoutes = (deps: AuthenticatedFormRoutesDeps 
       "/:formId/submit",
       describeRoute({
         tags: ["Grids:Form"],
-        summary: "Submit a form with authenticated Base write access",
+        summary: "Submit a form with authenticated base write access",
         responses: {
           201: jsonResponse(z.object({ recordId: ShortIdSchema }), "Created"),
           400: jsonResponse(ErrorResponseSchema, "Invalid input"),
