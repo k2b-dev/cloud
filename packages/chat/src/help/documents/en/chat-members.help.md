@@ -8,7 +8,7 @@ order: 300
 
 With **Manage** access to a chat, you can add people, guest accounts, and groups.
 
-## Include a group
+## Include a group {icon="users"}
 
 :::reference
 - A group can contain up to 500 people, including people in nested groups. Group members can read and write messages.
@@ -17,7 +17,7 @@ With **Manage** access to a chat, you can add people, guest accounts, and groups
 - People who belong through a group cannot leave the chat. They can archive it instead.
 :::
 
-## Include guests
+## Include guests {icon="user-check"}
 
 :::reference
 - A person with **Manage** access can add a guest account directly.
@@ -25,7 +25,7 @@ With **Manage** access to a chat, you can add people, guest accounts, and groups
 - Guests cannot add groups. A shared group is not enough to choose a person.
 :::
 
-## Recognize former accounts
+## Recognize former accounts {icon="history"}
 
 Deleted accounts appear as **Former account**. Their messages stay in the chat.
 Deactivated accounts keep their name.

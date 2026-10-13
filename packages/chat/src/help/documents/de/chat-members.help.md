@@ -8,7 +8,7 @@ order: 300
 
 Mit dem Zugriff **Verwalten** auf einen Chat kannst du Personen, Gastkonten und Gruppen hinzufügen.
 
-## Eine Gruppe aufnehmen
+## Eine Gruppe aufnehmen {icon="users"}
 
 :::reference
 - Eine Gruppe kann bis zu 500 Personen enthalten, einschließlich Personen in verschachtelten Gruppen. Gruppenmitglieder können Nachrichten lesen und schreiben.
@@ -17,7 +17,7 @@ Mit dem Zugriff **Verwalten** auf einen Chat kannst du Personen, Gastkonten und 
 - Personen, die über eine Gruppe dazugehören, können den Chat nicht verlassen. Sie können ihn stattdessen archivieren.
 :::
 
-## Gäste aufnehmen
+## Gäste aufnehmen {icon="user-check"}
 
 :::reference
 - Eine Person mit dem Zugriff **Verwalten** kann ein Gastkonto direkt hinzufügen.
@@ -25,7 +25,7 @@ Mit dem Zugriff **Verwalten** auf einen Chat kannst du Personen, Gastkonten und 
 - Gäste können keine Gruppen hinzufügen. Eine gemeinsame Gruppe reicht nicht, um eine Person auszuwählen.
 :::
 
-## Ehemalige Konten erkennen
+## Ehemalige Konten erkennen {icon="history"}
 
 Gelöschte Konten erscheinen als **Ehemaliges Konto**. Ihre Nachrichten bleiben im Chat.
 Deaktivierte Konten behalten ihren Namen.
