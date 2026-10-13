@@ -119,6 +119,40 @@ export default function EditorToolbar(props: Props) {
     });
   });
 
+  // A phone keyboard covers the bottom of the page and shrinks only the visual viewport. While the note has focus, a
+  // bottom margin lifts the toolbar to the keyboard's top edge and shortens the note above it, so the caret line stays
+  // visible as well. Without an on-screen keyboard the visual viewport keeps its height, and a fine pointer never lifts
+  // the toolbar, so hardware keyboards and desktop pinch zoom change nothing.
+  let toolbar!: HTMLDivElement;
+  const [lift, setLift] = createSignal(0);
+  onMount(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const coarse = window.matchMedia("(pointer: coarse)");
+    const measure = () => {
+      const view = props.editorView;
+      const focused = !!view && (view.hasFocus || toolbar.contains(document.activeElement));
+      // The bottom the toolbar has without the lift; the note above it gives up the same height.
+      const inFlowBottom = toolbar.getBoundingClientRect().bottom + lift();
+      const next = coarse.matches && focused ? Math.max(0, inFlowBottom - viewport.offsetTop - viewport.height) : 0;
+      const previous = lift();
+      if (Math.abs(next - previous) < 0.5) return;
+      setLift(next);
+      // A shorter note may hide the caret line; CodeMirror brings it back after it measured the new height.
+      if (view && next > previous) view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head) });
+    };
+    viewport.addEventListener("resize", measure);
+    viewport.addEventListener("scroll", measure);
+    document.addEventListener("focusin", measure);
+    document.addEventListener("focusout", measure);
+    onCleanup(() => {
+      viewport.removeEventListener("resize", measure);
+      viewport.removeEventListener("scroll", measure);
+      document.removeEventListener("focusin", measure);
+      document.removeEventListener("focusout", measure);
+    });
+  });
+
   const toggleDetailPanel = () => window.dispatchEvent(new CustomEvent(DETAIL_PANEL_TOGGLE_EVENT));
 
   const Btn = (p: { icon: string; title: string; shortcut?: string; pressed?: boolean; enabled?: boolean; onClick: () => void }) => (
@@ -144,7 +178,9 @@ export default function EditorToolbar(props: Props) {
     // Pointer presses on any control, menu items included, keep focus and selection in the note. A native listener,
     // because the menus are popovers inside this element and must not depend on delegation reaching them.
     <div
+      ref={toolbar}
       class="notebooks-editor-toolbar mt-1 flex min-w-0 items-center gap-2 px-2 py-2 text-base text-dimmed"
+      style={{ "margin-bottom": lift() ? `${lift()}px` : undefined }}
       on:mousedown={(event) => event.preventDefault()}
     >
       {/* The navigation sidebar exists from lg up; phones keep the header's menu. */}

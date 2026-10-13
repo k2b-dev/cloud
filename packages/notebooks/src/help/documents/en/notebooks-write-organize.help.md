@@ -89,6 +89,7 @@ The heading and list shortcuts use the physical digit keys on every keyboard lay
 - `![[` opens attachment suggestions. Choosing an image embeds it; choosing another file inserts a download link.
 - `==text==` highlights text. Highlight stays within one line.
 - On touch screens, **Undo** and **Redo** sit at the start of the toolbar.
+- On a phone, the toolbar stays above the keyboard while you type, so you can format, indent, and outdent without closing the keyboard.
 :::
 
 ## Lists {icon="keyboard"}

@@ -87,8 +87,27 @@ const devices: Record<string, BrowserContextOptions> = {
   phone: { ...phone, viewport: { width: 390, height: 844 } },
 };
 
-const open = async (device: BrowserContextOptions) => {
+const open = async (device: BrowserContextOptions, options: { keyboard?: boolean } = {}) => {
   const context = await browser.newContext(device);
+  if (options.keyboard) {
+    await context.addInitScript(() => {
+      const viewport = Object.assign(new EventTarget(), {
+        offsetLeft: 0,
+        offsetTop: 0,
+        width: innerWidth,
+        height: innerHeight,
+        scale: 1,
+      });
+      Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
+      const show = (top: number, height: number) => {
+        const panned = viewport.offsetTop !== top;
+        Object.assign(viewport, { offsetTop: top, height });
+        viewport.dispatchEvent(new Event("resize"));
+        if (panned) viewport.dispatchEvent(new Event("scroll"));
+      };
+      window.keyboard = { show, hide: () => show(0, innerHeight) };
+    });
+  }
   const page = await context.newPage();
   await page.goto(server.url.href);
   await page.waitForFunction(() => "toolbarHarness" in window);
@@ -145,6 +164,129 @@ const layout = (page: Page) =>
       x: button.getBoundingClientRect().x,
     })),
   }));
+
+const keyboardLayout = (page: Page) =>
+  page.evaluate(async () => {
+    await window.toolbarHarness.settle();
+    const toolbar = document.querySelector<HTMLDivElement>(".notebooks-editor-toolbar")!;
+    const toolbarRect = toolbar.getBoundingClientRect();
+    const scroller = document.querySelector<HTMLDivElement>(".k2b-scroll-area")!;
+    const scrollRect = scroller.getBoundingClientRect();
+    return {
+      top: toolbarRect.top,
+      bottom: toolbarRect.bottom,
+      marginBottom: toolbar.style.marginBottom,
+      transform: getComputedStyle(toolbar).transform,
+      rootBottom: document.getElementById("root")!.getBoundingClientRect().bottom,
+      viewportBottom: window.visualViewport!.offsetTop + window.visualViewport!.height,
+      scrollTop: scrollRect.top,
+      scrollHeight: scrollRect.height,
+      contentHeight: scroller.scrollHeight,
+      caret: window.toolbarHarness.caretRect(),
+      windowScrollY: window.scrollY,
+    };
+  });
+
+const expectLifted = async (page: Page) => {
+  const bounds = await keyboardLayout(page);
+  expect(Math.abs(bounds.bottom - bounds.viewportBottom)).toBeLessThanOrEqual(1);
+};
+
+const expectInFlow = async (page: Page) => {
+  const bounds = await keyboardLayout(page);
+  expect(["", "0px"]).toContain(bounds.marginBottom);
+  expect(Math.abs(bounds.bottom - bounds.rootBottom)).toBeLessThanOrEqual(1);
+};
+
+describe("editor toolbar above the phone keyboard", () => {
+  test("keyboard opening and panning shrink the scroller and keep the last-line caret above the toolbar", async () => {
+    const page = await open(devices.phone!, { keyboard: true });
+    try {
+      await load(page, Array.from({ length: 60 }, (_, index) => `${index + 1}. Item ${index + 1}`).join("\n"));
+      await caret(page, "Item 60", 7);
+      const before = await keyboardLayout(page);
+      expect(before.contentHeight).toBeGreaterThan(before.scrollHeight);
+      for (const [top, height] of [
+        [0, 844 - 336],
+        [120, 400],
+      ] as const) {
+        await page.evaluate(({ top, height }) => window.keyboard.show(top, height), { top, height });
+        const bounds = await keyboardLayout(page);
+        expect(Math.abs(bounds.bottom - bounds.viewportBottom)).toBeLessThanOrEqual(1);
+        expect(Math.abs(before.scrollHeight - bounds.scrollHeight - (before.bottom - bounds.bottom))).toBeLessThanOrEqual(1);
+        expect(bounds.caret).not.toBeNull();
+        expect(bounds.caret!.bottom).toBeLessThanOrEqual(bounds.top + 0.5);
+        expect(bounds.caret!.top).toBeGreaterThanOrEqual(bounds.scrollTop);
+      }
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("Indent and Undo keep the toolbar lifted and focus in the editor", async () => {
+    const page = await open(devices.phone!, { keyboard: true });
+    try {
+      await load(page, original);
+      await caret(page, "Charger");
+      await page.evaluate(() => window.keyboard.show(0, 844 - 336));
+      await expectLifted(page);
+      await page.getByRole("button", { name: indentLabel, exact: true }).tap();
+      await expectEditor(page, nested, "Charger");
+      await expectLifted(page);
+      await page.locator('.notebooks-editor-toolbar__history button[aria-label="Undo"]').tap();
+      await expectEditor(page, original, "Charger");
+      await expectLifted(page);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("closing the keyboard returns the toolbar to flow without scrolling the window", async () => {
+    const page = await open(devices.phone!, { keyboard: true });
+    try {
+      await load(page, original);
+      await caret(page, "Charger");
+      const scrollY = await page.evaluate(() => window.scrollY);
+      await page.evaluate(() => window.keyboard.show(0, 844 - 336));
+      await expectLifted(page);
+      await page.evaluate(() => window.keyboard.hide());
+      await expectInFlow(page);
+      expect((await keyboardLayout(page)).windowScrollY).toBe(scrollY);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("blurring the editor drops the lift while the keyboard remains open", async () => {
+    const page = await open(devices.phone!, { keyboard: true });
+    try {
+      await load(page, original);
+      await caret(page, "Charger");
+      await page.evaluate(() => window.keyboard.show(0, 844 - 336));
+      await expectLifted(page);
+      await page.evaluate(() => window.toolbarHarness.blur());
+      await expectInFlow(page);
+      expect((await read(page)).activeInEditor).toBe(false);
+      expect((await keyboardLayout(page)).viewportBottom).toBe(844 - 336);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+});
+
+test("a fine-pointer desktop keeps the focused toolbar in flow when the visual viewport shrinks", async () => {
+  const page = await open(devices.desktop!, { keyboard: true });
+  try {
+    await load(page, original);
+    await caret(page, "Charger");
+    await page.evaluate(() => window.keyboard.show(0, 500));
+    await expectInFlow(page);
+    expect((await keyboardLayout(page)).transform).toBe("none");
+    expect((await read(page)).activeInEditor).toBe(true);
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
 
 describe.each(Object.entries(devices))("editor toolbar list indentation (%s)", (name, device) => {
   const press = (page: Page, label: string, disabled = false) => {

@@ -6,6 +6,7 @@ import { LocaleProvider, ScrollArea } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { render } from "solid-js/web";
 import { basicExtensions } from "../../../lib/editor/basic";
+import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
 import { listCommandsExtension } from "../../../lib/editor/list-commands";
 import { listsExtension } from "../../../lib/editor/lists";
 import { markdownExtension } from "../../../lib/editor/markdown";
@@ -15,6 +16,7 @@ import { caretFormat, sameCaretFormat } from "./editor-actions";
 
 function Harness() {
   let host!: HTMLDivElement;
+  let scrollPort: HTMLDivElement | undefined;
   const [view, setView] = createSignal<EditorView>();
   // Match NoteEditor: formats follow document and selection transactions, suppressing equal values.
   const [format, setFormat] = createSignal(caretFormat(EditorState.create()), { equals: sameCaretFormat });
@@ -34,6 +36,7 @@ function Harness() {
           }),
           listsExtension(),
           noteScrollerTheme,
+          fadeScrollMarginsExtension(() => scrollPort),
         ],
       }),
     });
@@ -65,6 +68,13 @@ function Harness() {
           hasFocus: editor.hasFocus,
         };
       },
+      caretRect(): { top: number; bottom: number } | null {
+        const rect = editor.coordsAtPos(editor.state.selection.main.head);
+        return rect ? { top: rect.top, bottom: rect.bottom } : null;
+      },
+      blur() {
+        editor.contentDOM.blur();
+      },
       async settle() {
         await document.fonts.ready;
         // Allow CodeMirror measurements and Solid's DOM updates to finish; never refocus after a toolbar press.
@@ -77,7 +87,7 @@ function Harness() {
   return (
     <LocaleProvider locale="en">
       <div class="flex flex-1 min-h-0 min-w-0 flex-col">
-        <ScrollArea class="flex-1 min-h-0">
+        <ScrollArea ref={scrollPort} style={{ "scroll-padding-block": fadeScrollPadding }} class="flex-1 min-h-0">
           <div ref={host} />
         </ScrollArea>
         <EditorToolbar
@@ -106,12 +116,15 @@ export type ToolbarHarness = {
   placeCaret: (text: string, offset: number) => void;
   select: (text: string) => void;
   read: () => { doc: string; anchor: number; head: number; hasFocus: boolean };
+  caretRect: () => { top: number; bottom: number } | null;
+  blur: () => void;
   settle: () => Promise<void>;
 };
 
 declare global {
   interface Window {
     toolbarHarness: ToolbarHarness;
+    keyboard: { show: (top: number, height: number) => void; hide: () => void };
   }
 }
 
