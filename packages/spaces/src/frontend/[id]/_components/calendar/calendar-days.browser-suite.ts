@@ -482,7 +482,23 @@ describe(`Spaces day and week views in ${browserName}`, () => {
     await popover.waitFor();
     expect(await popover.locator("[data-spaces-quick-create-when]").textContent()).toBe("Fr 9. Okt · 11:15–12:30");
     await popover.getByRole("textbox").fill("Rückruf Spedition");
+    // A slow save leaves the focus and selection on the day the person moved to.
+    const held = Promise.withResolvers<void>();
+    let saving = false;
+    await page.route("**/api/spaces/Space1/items", async (route) => {
+      if (route.request().method() === "POST") {
+        saving = true;
+        await held.promise;
+      }
+      await route.continue();
+    });
     await popover.getByRole("textbox").press("Enter");
+    await eventually(() => saving || undefined);
+    const day = page.locator('.k2b-calendar-days__day[data-calendar-keys="2026-10-13"] .k2b-calendar-days__title-button');
+    await day.focus();
+    await day.press("Enter");
+    expect(await day.getAttribute("aria-pressed")).toBe("true");
+    held.resolve();
     expect(
       await eventually(() => writes.find((write) => write.method === "POST" && write.path === "/api/spaces/Space1/items")?.body),
     ).toMatchObject({
@@ -491,6 +507,9 @@ describe(`Spaces day and week views in ${browserName}`, () => {
       endsAt: at("10-09", "12:30"),
       allDay: false,
     });
+    await page.waitForFunction(() => !document.querySelector(".k2b-calendar-popover:popover-open"));
+    expect(await day.evaluate((element) => element === document.activeElement)).toBe(true);
+    expect(await day.getAttribute("aria-pressed")).toBe("true");
 
     await page.getByRole("checkbox", { name: "Erledigt: Frachtbriefe prüfen" }).click();
     // It was the last to-do due today, so today's heading celebrates for a moment in the place of its note.

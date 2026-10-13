@@ -720,14 +720,28 @@ describe(`Spaces month view in ${browserName}`, () => {
       await page.locator(openPopover).waitFor();
       expect(await page.locator(`${openPopover} [role='radio'][aria-checked='true']`).innerText()).toBe("Task");
       expect(await quickCreateWhen(page)).toBe("due Wed, Oct 14, 17:00");
+      // The save answers only after the person moved on to another day: its late close leaves the focus there.
+      const held = Promise.withResolvers<void>();
+      let saving = false;
+      await page.route("**/api/spaces/Space1/items", async (route) => {
+        if (route.request().method() === "POST") {
+          saving = true;
+          await held.promise;
+        }
+        await route.continue();
+      });
       await page.keyboard.type("Print the price list");
       await page.keyboard.press("Enter");
+      await waitFor(() => saving, "the held create request");
+      await page.locator(day("2026-10-27")).focus();
+      held.resolve();
       await waitFor(() => created.length === 1, "the create request");
       expect(created[0]).toMatchObject({ title: "Print the price list", deadline: at(10, 14, "17:00") });
       expect(created[0]!.startsAt).toBeUndefined();
+      await page.waitForFunction(() => !document.querySelector(".k2b-calendar-popover:popover-open"));
+      expect(await focusedDay(page)).toBe("2026-10-27");
 
       // The keyboard opens the same menu at the focused day; Escape gives the day the focus back, where the arrows go on.
-      await page.locator(day("2026-10-27")).focus();
       await page.keyboard.press("Shift+F10");
       await menu.waitFor();
       expect(await selectedDays(page)).toEqual(["2026-10-27"]);

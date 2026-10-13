@@ -281,7 +281,10 @@ export type CalendarSelectionControls = {
 export type CalendarQuickCreateControls = {
   /** What the person asked to create through `quickCreate`; absent after a click, a drag, or the keyboard. */
   create?: string;
-  /** Closes the quick create and returns the focus to the selected day; once another quick create replaced it, nothing. */
+  /**
+   * Closes the quick create, returns the focus to the selected day only while the focus is still in the quick create, and
+   * leaves a newer selection in place; once another quick create replaced it, nothing.
+   */
   close: () => void;
 };
 
@@ -1480,6 +1483,8 @@ const MonthView = (props: {
     return null;
   };
   const focusCell = (key: string) => cells.get(key)?.focus({ preventScroll: true });
+  /** Whether the focus is in the popover, or fell to the page as it hid: only then does a close return it. */
+  const focusInPopover = () => popoverElement?.contains(document.activeElement) || document.activeElement === document.body;
   const closePopover = (restoreFocus = true) => {
     if (!popover()) return;
     setPopover(null);
@@ -2173,8 +2178,7 @@ const MonthView = (props: {
           // A late close of the popover that another opening already replaced keeps the new one. Focus returns to the
           // grid only from inside the popover, never from what a click outside it chose.
           if (event.newState !== "closed" || !popover() || event.currentTarget.matches(":popover-open")) return;
-          const inside = event.currentTarget.contains(document.activeElement) || document.activeElement === document.body;
-          closePopover(inside);
+          closePopover(focusInPopover());
         }}
       >
         {/* Keyed: another day or another selection replaces the content while the popover stays open. A late close, such
@@ -2185,7 +2189,7 @@ const MonthView = (props: {
               ? props.owner.renderQuickCreate?.(rangeOf(value.range), {
                   create: value.create,
                   close: () => {
-                    if (popover() === value) closePopover();
+                    if (popover() === value) closePopover(focusInPopover());
                   },
                 })
               : dayList(value.dayKey)
