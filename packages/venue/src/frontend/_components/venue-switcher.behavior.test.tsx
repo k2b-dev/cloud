@@ -20,10 +20,10 @@ describe("venue container switcher loader", () => {
   const get = mock(() => reply());
   mock.module("../../api/client", () => ({ apiClient: { venues: { $get: get } } }));
   const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
-  const mount = async () => {
+  const mount = async (canCreate = false) => {
     const { createVenueSwitcher } = await import("./venue-switcher");
     return createRoot((dispose) => ({
-      switcher: createVenueSwitcher(() => ({ id: "Cafe01", name: "Corner Café", icon: "ti ti-coffee", accentColor: "#2563eb" }), false),
+      switcher: createVenueSwitcher(() => ({ id: "Cafe01", name: "Corner Café", icon: "ti ti-coffee", accentColor: "#2563eb" }), canCreate),
       dispose,
     }));
   };
@@ -34,6 +34,22 @@ describe("venue container switcher loader", () => {
     dom = createDomTestHarness();
     get.mockClear();
     reply = async () => success();
+  });
+
+  test("switcher labels match the overview in English and German", async () => {
+    for (const { locale, expected } of [
+      { locale: "en", expected: { switchLabel: "Switch venue", actions: ["New venue", "All venues"] } },
+      { locale: "de", expected: { switchLabel: "Standort wechseln", actions: ["Neuer Standort", "Alle Standorte"] } },
+    ]) {
+      dom.document.documentElement.lang = locale;
+      const view = await mount(true);
+      try {
+        const { switchLabel, actions } = view.switcher();
+        expect({ switchLabel, actions: actions?.map((action) => action.label) }).toEqual(expected);
+      } finally {
+        view.dispose();
+      }
+    }
   });
 
   test("loads accessible options once and marks the open container", async () => {

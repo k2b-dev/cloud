@@ -2612,8 +2612,8 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 
 /* Sidebar switcher: the container an app works in, at the top of its sidebar.
    The head is one flat row like the sidebar's items: a tinted icon tile, the
-   name, an optional fact, and a chevron. It keeps one size in every state, so
-   loading, opening, and long names never move what follows. Its panel is the
+   name, an optional fact, and a chevron. Its size follows the name alone, so
+   loading, hovering, and opening never move what follows. Its panel is the
    shared menu surface; groups are set apart by spacing, not lines. */
 /* Without specificity, so a sizing class such as `flex-1` places it in a row. */
 :where(.k2b-ui .k2b-sidebar-switcher) {
@@ -2679,22 +2679,29 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   flex: 1 1 auto;
 }
 
-.k2b-ui .k2b-sidebar-switcher__copy > :is(span, small) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* The name takes up to two balanced lines and ends with an ellipsis after them; the fact stays on one line. The
+   height follows the rendered name alone, so the server's first paint already has it and hover, opening, or
+   arriving options never change it. The full name stays in the button's title and accessible name. */
 .k2b-ui .k2b-sidebar-switcher__copy > span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   font-size: 0.8125rem;
   font-weight: 600;
   line-height: 1.125rem;
+  overflow-wrap: break-word;
+  text-wrap: balance;
 }
 
 .k2b-ui .k2b-sidebar-switcher__copy > small {
+  overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: 0.6875rem;
   line-height: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .k2b-ui .k2b-sidebar-switcher__chevron {
@@ -2710,7 +2717,8 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   display: none;
   width: max(var(--k2b-sidebar-switcher-width, 0px), min(16rem, 100vw - 1rem));
   max-width: calc(100vw - 1rem);
-  max-height: min(28rem, 80dvh);
+  /* The room beside the trigger, set while open, so the panel never covers its own trigger. */
+  max-height: min(28rem, 80dvh, var(--k2b-sidebar-switcher-room, 80dvh));
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.25rem;

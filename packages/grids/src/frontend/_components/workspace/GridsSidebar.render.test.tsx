@@ -295,7 +295,7 @@ describe("Grids container head", () => {
     expect(snapshot).not.toContain('"id":"all"');
     expect(await selectHtml(html, '.k2b-app-workspace__sidebar-item[href="/app/grids"]')).toHaveLength(0);
     expect((await selectHtml(html, '.k2b-sidebar-switcher__actions a[href="/app/grids"]'))[0]?.text).toContain(
-      locale === "en" ? "All grids" : "Alle Bases",
+      locale === "en" ? "All bases" : "Alle Bases",
     );
   });
 });

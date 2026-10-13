@@ -13,18 +13,19 @@ import { createComponent, render } from "solid-js/web";
 import { AppWorkspace, createNavigation, Navigation } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
 const params = new URLSearchParams(document.body.dataset.fixtureParams);
+const name = params.has("long") ? "Offene Fahrradwerkstatt der Nachbarschaftsinitiative Südviertel im Hinterhof" : "Work";
 const [options, setOptions] = createSignal();
 const [error, setError] = createSignal();
 let loading = false;
 let attempts = 0;
 const containers = [
   { id: "personal", label: "Personal", href: "#personal" },
-  { id: "work", label: "Work", description: "team@example.com", href: "#work" },
+  { id: "work", label: name, description: "team@example.com", href: "#work" },
   { id: "archive", label: "Archive", description: "shared@example.com", href: "#archive" },
   ...(params.has("many") ? Array.from({ length: 7 }, (_, index) => ({ id: "book-" + index, label: "Book " + index, href: "#book-" + index })) : []),
 ];
 const switcher = {
-  currentId: "work", label: "Work", icon: "ti-notebook", switchLabel: "Switch notebook",
+  currentId: "work", label: name, icon: "ti-notebook", switchLabel: "Switch notebook",
   description: params.has("description") ? "team@example.com" : undefined,
   get options() { return options(); },
   get error() { return error(); },
@@ -77,7 +78,7 @@ const beforeSelect = params.has("guard")
       done(params.get("guard") !== "deny");
     }, 50))
   : undefined;
-if (params.has("low")) document.getElementById("app").style.paddingTop = "560px";
+if (params.has("low")) document.getElementById("app").style.paddingTop = params.get("low") + "px";
 render(() => params.has("navigation")
   ? createComponent(Navigation, { navigation: createNavigation({ switcher: () => switcher, items }), label: "Notes", beforeSelect })
   : workspace(), document.getElementById("app"));
@@ -98,8 +99,8 @@ const trigger = ".k2b-sidebar-switcher__trigger";
 const panel = ".k2b-sidebar-switcher__panel";
 const search = 'input[type="search"]';
 const option = (id: string) => `[data-switcher-option][href="#${id}"]`;
-const load = async (width = 1366, params = "", touch = false) => {
-  const page = await browser.newPage({ viewport: { width, height: 800 }, hasTouch: touch, isMobile: touch });
+const load = async (width = 1366, params = "", touch = false, height = 800) => {
+  const page = await browser.newPage({ viewport: { width, height }, hasTouch: touch, isMobile: touch });
   await page.setContent(
     `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style>` +
       `<style>*,*::before,*::after{transition:none!important;animation:none!important}</style></head>` +
@@ -322,6 +323,84 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
   );
 
   test(
+    "a long name takes two lines without moving on hover or opening",
+    async () => {
+      const fullName = "Offene Fahrradwerkstatt der Nachbarschaftsinitiative Südviertel im Hinterhof";
+      for (const long of [false, true]) {
+        const page = await load(1366, long ? "long=1&delay=500" : "delay=500");
+        try {
+          const title = page.locator(`${trigger} .k2b-sidebar-switcher__copy > span`);
+          const size = await title.evaluate((element) => ({
+            height: element.getBoundingClientRect().height,
+            lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight),
+            scrollHeight: element.scrollHeight,
+            clientHeight: element.clientHeight,
+          }));
+          expect(size.height).toBe((long ? 2 : 1) * size.lineHeight);
+          if (long) expect(size.scrollHeight).toBeGreaterThan(size.clientHeight);
+          expect(await page.locator(trigger).getAttribute("title")).toBe(long ? fullName : "Work");
+          expect(await page.locator(trigger).getAttribute("aria-label")).toBe(long ? fullName : "Work");
+          const before = await geometry(page);
+          await page.locator(trigger).hover();
+          expect(await geometry(page)).toEqual(before);
+          await page.locator(trigger).click();
+          await page.locator(panel).waitFor({ state: "visible" });
+          expect(await geometry(page)).toEqual(before);
+          await loaded(page);
+          expect(await geometry(page)).toEqual(before);
+          await page.keyboard.press("Escape");
+          await closed(page);
+          expect(await geometry(page)).toEqual(before);
+        } finally {
+          await page.close();
+        }
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "the panel never covers its trigger in the phone menu",
+    async () => {
+      for (const low of [false, true]) {
+        const page = await load(390, low ? "navigation=1&long=1&many=1&low=420" : "navigation=1&long=1", true, 844);
+        try {
+          await page.locator(trigger).tap();
+          await loaded(page);
+          await page.waitForFunction(() => {
+            const button = document.querySelector(".k2b-sidebar-switcher__trigger")!.getBoundingClientRect();
+            const bounds = document.querySelector(".k2b-sidebar-switcher__panel")!.getBoundingClientRect();
+            return bounds.top >= 8 && bounds.bottom <= innerHeight - 8 && (bounds.bottom <= button.top - 4 || bounds.top >= button.bottom);
+          });
+          const button = (await page.locator(trigger).boundingBox())!;
+          const bounds = (await page.locator(panel).boundingBox())!;
+          expect(bounds.x).toBeGreaterThanOrEqual(8);
+          expect(bounds.x + bounds.width).toBeLessThanOrEqual(390 - 8);
+          if (low) {
+            expect(bounds.y + bounds.height).toBeLessThanOrEqual(button.y - 4);
+            const list = page.locator(".k2b-sidebar-switcher__options");
+            expect(await list.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+            expect(
+              await list.evaluate((element) => {
+                element.scrollTop = element.scrollHeight;
+                return element.scrollTop;
+              }),
+            ).toBeGreaterThan(0);
+          } else expect(bounds.y).toBeGreaterThanOrEqual(button.y + button.height);
+          const all = page.locator('[href="#all"]');
+          expect(await all.isVisible()).toBe(true);
+          const action = (await all.boundingBox())!;
+          expect(action.y).toBeGreaterThanOrEqual(bounds.y);
+          expect(action.y + action.height).toBeLessThanOrEqual(bounds.y + bounds.height);
+        } finally {
+          await page.close();
+        }
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "the compact overlay stays open when Escape closes the switcher above it",
     async () => {
       const page = await load(900);
@@ -411,7 +490,7 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
   test(
     "a panel that grows after opening is placed again within the viewport",
     async () => {
-      const page = await load(390, "navigation=1&many=1&low=1&delay=300", true);
+      const page = await load(390, "navigation=1&many=1&low=560&delay=300", true, 844);
       try {
         await page.locator(trigger).tap();
         await page.locator(panel).waitFor({ state: "visible" });
@@ -420,7 +499,8 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
         await page.locator(search).waitFor({ state: "visible" });
         await page.waitForFunction((selector) => {
           const rect = document.querySelector(selector)!.getBoundingClientRect();
-          return rect.top >= 8 && rect.bottom <= innerHeight - 8;
+          const button = document.querySelector(".k2b-sidebar-switcher__trigger")!.getBoundingClientRect();
+          return rect.top >= 8 && rect.bottom <= innerHeight - 8 && (rect.bottom <= button.top - 4 || rect.top >= button.bottom);
         }, panel);
         expect(await page.locator('[href="#all"]').isVisible()).toBe(true);
       } finally {

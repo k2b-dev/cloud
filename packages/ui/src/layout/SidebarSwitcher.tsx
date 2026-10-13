@@ -61,6 +61,10 @@ export type AppWorkspaceSidebarSwitcherProps = {
 /** From this many containers the panel scrolls, so it offers a search field. */
 export const APP_WORKSPACE_SWITCHER_SEARCH_FROM = 8;
 
+/** The space between trigger and panel, and the panel's distance from the viewport edges, as for every dropdown. */
+const SWITCHER_GAP = 4;
+const SWITCHER_INSET = 8;
+
 const iconClass = (icon: string) => (icon.split(/\s+/).includes("ti") ? icon : `ti ${icon}`);
 const tint = (color: string | undefined) => (color ? { "--k2b-sidebar-switcher-color": color } : undefined);
 const plainClick = (event: MouseEvent) => event.button === 0 && !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
@@ -102,13 +106,24 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
   const place = () => {
     if (!trigger || !panel) return;
     const rect = trigger.getBoundingClientRect();
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
     // As wide as the sidebar row and never narrower than a menu, so long names keep their words; fixed while open,
     // so filtering never changes the panel's width.
     panel.style.setProperty("--k2b-sidebar-switcher-width", `${inRail() ? 0 : Math.round(rect.width)}px`);
-    const position = dropdownPosition(rect, panel.getBoundingClientRect(), inRail() ? "right-start" : "bottom-right", {
-      width: window.innerWidth,
-      height: window.innerHeight,
-    });
+    // Measured at its natural height, so the room it took last time does not decide where it goes now.
+    panel.style.removeProperty("--k2b-sidebar-switcher-room");
+    const size = panel.getBoundingClientRect();
+    const position = dropdownPosition(rect, size, inRail() ? "right-start" : "bottom-right", viewport);
+    if (!inRail()) {
+      // Below the trigger, or above it when it fits there and not below, as in the lower half of the phone menu. The
+      // panel never covers its trigger: it takes at most the room on its side, and its list scrolls.
+      const below = viewport.height - rect.bottom - SWITCHER_GAP - SWITCHER_INSET;
+      const above = rect.top - SWITCHER_GAP - SWITCHER_INSET;
+      const down = size.height <= below || below >= above;
+      const room = Math.max(0, down ? below : above);
+      panel.style.setProperty("--k2b-sidebar-switcher-room", `${room}px`);
+      position.top = down ? rect.bottom + SWITCHER_GAP : rect.top - SWITCHER_GAP - Math.min(size.height, room);
+    }
     panel.style.left = `${position.left}px`;
     panel.style.top = `${position.top}px`;
   };

@@ -59,3 +59,30 @@ test("an app with its own menu keeps the segmented header", async () => {
     dom.cleanup();
   }
 });
+
+test("the portaled workspace menu inherits the shell accent only when supplied", async () => {
+  for (const accent of ["#eab308", undefined]) {
+    const dom = createDomTestHarness();
+    const shell = document.createElement("script");
+    shell.id = "cloud-shell-data";
+    shell.type = "application/json";
+    shell.textContent = JSON.stringify({ accent });
+    const workspace = document.createElement("script");
+    workspace.type = "application/json";
+    workspace.setAttribute("data-cloud-workspace-navigation", "");
+    workspace.textContent = JSON.stringify({ label: "Notebooks", items: [{ id: "notes", label: "Notes", href: "#notes" }] });
+    document.body.append(shell, workspace);
+    const { menu } = await openAndSettle(apps);
+    try {
+      const navigation = document.querySelector("dialog .k2b-navigation")!;
+      const scope = navigation.closest<HTMLElement>(".app-accent-scope");
+      expect(scope).not.toBeNull();
+      expect(scope?.style.getPropertyValue("--app-accent")).toBe(accent ?? "");
+      if (!accent) expect(scope?.getAttribute("style") ?? "").not.toContain("--app-accent");
+      expect(scope?.closest(".cloud-app-canvas")).toBeNull();
+    } finally {
+      await closeAndSettle(menu);
+      dom.cleanup();
+    }
+  }
+});

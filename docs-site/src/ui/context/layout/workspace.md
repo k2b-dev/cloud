@@ -360,7 +360,9 @@ descriptions without regard to case. Supply **New …** only when the person may
 create a container; **All …** leads to the overview. The component adds no
 actions of its own.
 
-In the sidebar column and compact overlay the panel opens below the trigger.
+The panel opens below the trigger, or above it when it does not fit below and
+there is more room above, for example low in the phone menu. It never covers
+its trigger: it takes at most the room on its side and scrolls its option list.
 In a collapsed rail from 64 rem, the trigger shows only its icon and the panel
 opens to the side. On phones, pass the same props through
 `createNavigation({ items, switcher: () => switcher })` so the host menu shows
@@ -375,8 +377,10 @@ Leave `options` undefined until they load. `onLoad` asks for them on pointer
 entry, focus, and opening; ignore repeated calls while a request runs. The
 panel shows **Loading...** and holds focus while waiting. Set `error` after a
 failed request to show its message and a retry button that calls `onLoad`.
-Loading, opening, and arriving options keep the trigger and the rows below it
-in place.
+The name takes up to two balanced lines and ends with an ellipsis when it
+overflows; the optional fact stays on one line. The head's height follows the
+server-rendered name, so hover, opening, loading, and arriving options keep the
+trigger and the rows below it in place.
 
 Enter, Space, or ArrowDown opens at the current option, or at search when
 present. On touch, search waits for a tap so the keyboard does not cover the
@@ -388,8 +392,9 @@ only the panel and returns focus to the trigger, leaving a compact sidebar
 overlay open; Tab out and an outside press close it too. Choosing the current
 container closes without navigation.
 
-The trigger's accessible name is the full container name. Its description
-combines the optional fact and `switchLabel`, which also names the dialog.
+The full container name stays in the trigger's `title` and accessible name.
+Its description combines the optional fact and `switchLabel`, which also names
+the dialog.
 `aria-expanded` and `aria-controls` connect trigger and panel; the current link
 has `aria-current="true"`. Loading, errors, and empty results are status text.
 The UI locale supplies search, loading, empty, and retry messages; the app

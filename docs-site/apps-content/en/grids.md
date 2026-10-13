@@ -21,8 +21,8 @@ tables across all Bases, and a **New base** menu for a blank Base or a
 template. **All apps** lists every usable App.
 
 Open the Base name in the sidebar or phone menu to switch Bases. Signed-in
-users can choose **New base** to create and open a blank Base. Use the overview
-to start from a template.
+users can choose **New base** to create and open a blank Base; **All bases**
+opens the overview. Use the overview to start from a template.
 
 ## Use Grids
 
