@@ -1,6 +1,6 @@
 ---
 name: assistant-data-analysis
-description: Analyze source data, explain metrics and comparisons, and build evidence-backed reports or HTML dashboards in Assistant Code Mode. Use for multi-step analysis, data exploration, and dashboards; computed charts and tables use cloud.view.* in the run, while a few non-run values use the chart tool.
+description: Analyze source data, explain metrics and comparisons, and build evidence-backed reports or dashboards in Assistant Code Mode. Use for multi-step analysis, data exploration, and dashboards; computed charts, tables and one-off dashboards use cloud.view.* in the run, a dashboard to keep, reload or share is a Studio App, and a few non-run values use the chart tool.
 ---
 
 # Analyze data and deliver an inspectable result
@@ -25,6 +25,9 @@ For categorical CSV or spreadsheet analyses where the reader will compare or
 filter (status per category, price against stock), deliver `cloud.view.stats`
 key figures plus an explorer over the rows instead of isolated
 single-distribution charts or an offer to build a filter app.
+A dashboard of an upload that the person does not ask to keep, reload or share
+is such views: `cloud.view.stats`, a `cloud.view.group` of charts and an
+explorer, presented in the chat. Build no app for it.
 
 ## Establish the data
 

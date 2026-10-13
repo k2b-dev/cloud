@@ -195,6 +195,7 @@ Choose by where the values came from:
    compare and filter (status per category, price against stock), deliver
    `cloud.view.stats` key figures plus an explorer over the rows instead of
    isolated single-distribution charts or an offer to build a filter app.
+   A one-off dashboard of an upload is these views too.
 5. Anything the person interacts with beyond an explorer (inputs, what-if,
    own layout, forms), and kept data, live loading, reuse, sharing or actions
    → Studio App; see "Build an app the person asked for".
