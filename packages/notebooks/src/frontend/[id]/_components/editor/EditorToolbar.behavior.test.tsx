@@ -27,7 +27,18 @@ describe("editor toolbar pointer and keyboard focus", () => {
             notebookId="notebook-1"
             noteId="note-1"
             initialPanelOpen={false}
-            listIndent={{ indent: false, outdent: false }}
+            format={{
+              bold: false,
+              italic: false,
+              strikethrough: false,
+              highlight: false,
+              list: null,
+              heading: 0,
+              indent: false,
+              outdent: false,
+            }}
+            onUndo={() => {}}
+            onRedo={() => {}}
           />
         </LocaleProvider>
       ),
@@ -82,7 +93,18 @@ describe("editor toolbar navigation toggle", () => {
             notebookId="notebook-1"
             noteId="note-1"
             initialPanelOpen={false}
-            listIndent={{ indent: false, outdent: false }}
+            format={{
+              bold: false,
+              italic: false,
+              strikethrough: false,
+              highlight: false,
+              list: null,
+              heading: 0,
+              indent: false,
+              outdent: false,
+            }}
+            onUndo={() => {}}
+            onRedo={() => {}}
           />
         </LocaleProvider>
       ),
@@ -92,8 +114,8 @@ describe("editor toolbar navigation toggle", () => {
     try {
       const buttons = Array.from(dom.document.querySelectorAll<HTMLButtonElement>(".notebooks-editor-toolbar .k2b-icon-button"));
       const toggle = buttons[0]!;
-      // Far left, directly before Bold.
-      expect(buttons.slice(0, 2).map((button) => button.getAttribute("aria-label"))).toEqual(["Navigation ausblenden", "Fett"]);
+      // Navigation stays outside the formatting toolbar.
+      expect(toggle.getAttribute("aria-label")).toBe("Navigation ausblenden");
       expect(toggle.getAttribute("aria-expanded")).toBe("true");
       expect(toggle.getAttribute("aria-controls")).toBe("notebook-navigation");
       expect(toggle.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }))).toBe(false);
@@ -112,6 +134,121 @@ describe("editor toolbar navigation toggle", () => {
     } finally {
       window.removeEventListener(NAVIGATION_VISIBILITY_EVENT, onChange);
       dispose();
+      dom.cleanup();
+    }
+  });
+});
+
+describe("editor toolbar formats and shortcuts", () => {
+  if (isServer) {
+    test.skip("needs browser export conditions", () => {});
+    return;
+  }
+
+  test("pressed formats and current style follow a real editor's caret and selection", async () => {
+    const dom = createDomTestHarness();
+    const { createSignal } = await import("solid-js");
+    const { EditorState } = await import("@codemirror/state");
+    const { EditorView } = await import("@codemirror/view");
+    const { forceParsing } = await import("@codemirror/language");
+    const { markdownExtension } = await import("../../../lib/editor/markdown");
+    const { caretFormat } = await import("./editor-actions");
+    const { default: EditorToolbar, formattingKeymap } = await import("./EditorToolbar");
+    const { LocaleProvider } = await import("@k2b/ui");
+    const [format, setFormat] = createSignal(caretFormat(EditorState.create()));
+    const editorHost = dom.document.createElement("div");
+    dom.root.append(editorHost);
+    const view = new EditorView({
+      parent: editorHost,
+      state: EditorState.create({
+        extensions: [
+          markdownExtension(),
+          formattingKeymap({ notebookId: "Book01" }),
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged || update.selectionSet) setFormat(caretFormat(update.state));
+          }),
+        ],
+      }),
+    });
+    const dispose = render(
+      () => (
+        <LocaleProvider locale="en">
+          <EditorToolbar
+            connected
+            editorView={view}
+            notebookId="Book01"
+            noteId="Note01"
+            initialPanelOpen={false}
+            format={format()}
+            onUndo={() => {}}
+            onRedo={() => {}}
+          />
+        </LocaleProvider>
+      ),
+      dom.root,
+    );
+    const button = (label: string) => {
+      const found = dom.root.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+      if (!found) throw new Error(`Missing ${label}`);
+      return found;
+    };
+    const load = (doc: string, anchor: number, head = anchor) => {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc }, selection: { anchor, head } });
+      forceParsing(view, doc.length, 5000);
+      view.dispatch({ selection: { anchor, head } });
+      view.focus();
+    };
+    try {
+      for (const [doc, label, head] of [
+        ["**b**", "Bold", 3],
+        ["*i*", "Italic", 2],
+        ["~~s~~", "Strikethrough", 3],
+        ["==h==", "Highlight", 3],
+        ["- item", "Bullet list", 4],
+        ["1. item", "Numbered list", 4],
+        ["- [ ] item", "Checklist", 8],
+      ] as const) {
+        load(doc, head);
+        expect(button(label).getAttribute("aria-pressed")).toBe("true");
+        load("plain", 2);
+        expect(button(label).getAttribute("aria-pressed")).toBe("false");
+      }
+      load("## x", 4);
+      expect(button("Text style: H2").textContent).toContain("H2");
+      load("plain **bold**", 8, 12);
+      expect(button("Bold").getAttribute("aria-pressed")).toBe("true");
+      load("word", 2);
+      const heading = () =>
+        new KeyboardEvent("keydown", { key: "@", code: "Digit2", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true });
+      const first = heading();
+      view.contentDOM.dispatchEvent(first);
+      expect(first.defaultPrevented).toBe(true);
+      expect(view.state.doc.toString()).toBe("## word");
+      expect(button("Text style: H2")).toBeDefined();
+      view.contentDOM.dispatchEvent(heading());
+      expect(view.state.doc.toString()).toBe("word");
+      const highlight = new KeyboardEvent("keydown", {
+        key: "H",
+        keyCode: 72,
+        code: "KeyH",
+        ctrlKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      view.contentDOM.dispatchEvent(highlight);
+      expect(highlight.defaultPrevented).toBe(true);
+      expect(view.state.doc.toString()).toBe("==word==");
+      expect(button("Highlight").getAttribute("aria-pressed")).toBe("true");
+      expect(button("Bold").getAttribute("aria-keyshortcuts")).toBe("Control+B");
+      for (const control of dom.root.querySelectorAll(".notebooks-editor-toolbar button, .notebooks-editor-toolbar a")) {
+        const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+        control.dispatchEvent(down);
+        expect(down.defaultPrevented).toBe(true);
+      }
+    } finally {
+      dispose();
+      view.destroy();
       dom.cleanup();
     }
   });

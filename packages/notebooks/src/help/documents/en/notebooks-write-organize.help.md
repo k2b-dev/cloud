@@ -42,7 +42,7 @@ You need **Edit** access to restore. A locked note can only be restored as a cop
 :::reference
 - **Headings:** Use #, ##, and deeper headings to create sections. The first H1 is the note title in navigation and search. Without an H1, the first visible line is the title.
 - **Lists and tasks:** Use - for lists. Use - [ ] or - [x] for tasks. Use 1. for numbered lists. They count up from their first number. Nested numbered lists show a., b. and then i., ii. in the editor, Book view, and PDF.
-- **Format text:** Select text and press **Ctrl/⌘+B** for bold, **Ctrl/⌘+I** for italic, **Ctrl/⌘+Shift+S** for strikethrough or **Ctrl/⌘+E** for code. The toolbar has buttons for bold, italic and strikethrough. Without a selection, the format applies to the word at the cursor. Spaces at the edge of a selection stay outside the format. Press the same keys again to remove the format. If you select only part of formatted text, only that part loses the format. Formatting does not apply in code, in link addresses, in tags, or across paragraphs and list items.
+- **Format text:** Use the toolbar or the keys below. Without a selection, the format applies to the word at the cursor. Spaces at the edge of a selection stay outside the format. Press the same keys again to remove the format. If you select only part of formatted text, only that part loses the format. Formatting does not apply in code, in link addresses, in tags, or across paragraphs and list items.
 - **Slash menu:** Use the insert menu of the editor for common blocks such as notes, files, and tables. Type ::: for data, query, contents, and callout blocks.
 - **Markdown characters:** Rich mode shows characters such as `**` or `#` when your cursor is in them. When you select with the mouse, they appear after you release the button. The text stays still while you drag.
 :::
@@ -63,6 +63,33 @@ Use short paragraphs. Keep one idea per section.
 - Visit the old town early
 - Keep one evening open
 ```
+
+## Format text {icon="typography"}
+
+The toolbar shows the current text style and active formats. Its buttons and keys turn a format on and off.
+
+| Key | What happens |
+| --- | --- |
+| **Ctrl/⌘+B** | Toggles bold. |
+| **Ctrl/⌘+I** | Toggles italic. |
+| **Ctrl/⌘+Shift+S** | Toggles strikethrough. |
+| **Ctrl/⌘+Shift+H** | Toggles highlight: `==text==`. |
+| **Ctrl/⌘+E** | Toggles inline code. |
+| **Ctrl/⌘+K** | Inserts a link; selected text becomes its label. |
+| **Ctrl/⌘+Alt+K** | Opens the picker to link another note. |
+| **Ctrl/⌘+Shift+1/2/3** | Toggles Heading 1/2/3. Press again to return to normal text. |
+| **Ctrl/⌘+Shift+7/8/9** | Toggles a numbered list, bullet list, or checklist. |
+| **Ctrl/⌘+Z** / **Ctrl/⌘+Shift+Z** | Undoes or redoes. Every toolbar action and every Enter is its own step. |
+
+The heading and list shortcuts use the physical digit keys on every keyboard layout. On a Mac, macOS keeps **⌘+Shift+3** for screenshots; choose Heading 3 in the style menu instead.
+
+:::reference
+- `/` at a line start or after whitespace opens the insert menu. Type a command name to filter it.
+- `[[` opens note suggestions. Choosing a note replaces the typed brackets with a Markdown link to it.
+- `![[` opens attachment suggestions. Choosing an image embeds it; choosing another file inserts a download link.
+- `==text==` highlights text. Highlight stays within one line.
+- On touch screens, **Undo** and **Redo** sit at the start of the toolbar.
+:::
 
 ## Lists {icon="keyboard"}
 
@@ -87,7 +114,7 @@ Lists in the note editor follow their structure. The keys work the same for bull
 - **Without Tab:** **Ctrl/⌘+]** and **Ctrl/⌘+[** work even when Tab moves focus. On a phone, use **Indent** and **Outdent** in the editor toolbar.
 - **Move list items:** On a Mac, use **Option+Up/Down**. On Windows and Linux, **Ctrl+Shift+Up/Down** does the same. On a Mac, **⌘+Shift+Up/Down** keeps selecting to the start or end of the note. If your selection covers more than one item, the selected lines move instead.
 - **Numbered lists:** When you add, remove, indent or move items, the list you changed is numbered again in the Markdown. It keeps its first number, also when you remove the first item. Other lists keep their numbers. One undo restores the change and its previous numbers.
-- **Toolbar:** The insert menu has the same three list types. Use it on a phone.
+- **Toolbar:** Bullet list, Numbered list, and Checklist are directly in the toolbar, also on phones.
 - **Tables:** **Tab** selects the next cell, **Shift+Tab** the previous cell.
 - **Suggestions:** If a suggestion list is open, **Tab** and **Enter** accept the highlighted suggestion.
 - **Leave the editor:** Press **Esc**, then **Tab** to move to the next control. Press **Esc**, then **Shift+Tab** to move back.

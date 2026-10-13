@@ -20,7 +20,7 @@ import type { Backlink } from "../../../../service/links";
 import { editor } from "../../../lib/editor";
 import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
 import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
-import { listCommandsExtension, listIndentAvailability } from "../../../lib/editor/list-commands";
+import { listCommandsExtension } from "../../../lib/editor/list-commands";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
 import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
 import { remoteCursors } from "../../../lib/editor/remote-cursors";
@@ -60,6 +60,7 @@ import { dispatchWorkspaceEvent } from "../sidebar/workspace-events";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOversizeImage, uploadAndInsert } from "./attachments-client";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
+import { caretFormat, sameCaretFormat } from "./editor-actions";
 import { createLinkedHeadingJump, type LinkedHeading } from "./linked-heading";
 import { createNoteNavigationCoordinator, headingFromHash, resolveSameNotebookNoteTarget } from "./note-navigation";
 import { NOTE_PREVIEW_ID } from "./note-preview";
@@ -454,21 +455,23 @@ function EditorInstance(
   addExtension(() => (props.readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []));
   // Tab indents unless the person prefers focus movement; Esc, then Tab always leaves the editor.
   addExtension(tabKeys.extension);
-  // List keys work whatever the Tab preference; the toolbar's Indent and Outdent follow the caret.
-  const [listIndent, setListIndent] = createSignal(
-    { indent: false, outdent: false },
-    { equals: (a, b) => a.indent === b.indent && a.outdent === b.outdent },
-  );
+  // List keys work whatever the Tab preference; toolbar formats follow the caret.
+  const [format, setFormat] = createSignal(caretFormat(EditorState.create()), { equals: sameCaretFormat });
   addExtension(() =>
     props.readOnly
       ? []
       : [
           listCommandsExtension(),
           EditorView.updateListener.of((update) => {
-            if (update.docChanged || update.selectionSet) setListIndent(listIndentAvailability(update.state));
+            if (update.docChanged || update.selectionSet) setFormat(caretFormat(update.state));
           }),
         ],
   );
+
+  createEffect(() => {
+    const view = editorView();
+    if (view) setFormat(caretFormat(view.state));
+  });
 
   addExtension(() => {
     if (richMode()) return isDark() ? editor.customDarkInit() : editor.customLightInit();
@@ -955,7 +958,9 @@ function EditorInstance(
           notebookId={props.notebookId}
           noteId={props.noteId}
           initialPanelOpen={props.initialPanelOpen}
-          listIndent={listIndent()}
+          format={format()}
+          onUndo={() => undoManager?.undo()}
+          onRedo={() => undoManager?.redo()}
         />
       </Show>
     </div>
