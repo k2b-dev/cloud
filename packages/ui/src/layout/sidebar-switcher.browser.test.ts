@@ -129,7 +129,7 @@ const geometry = (page: Page) =>
       const rect = document.querySelector(selector)!.getBoundingClientRect();
       return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
     };
-    return { trigger: box(".k2b-sidebar-switcher__trigger"), row: box(".k2b-app-workspace__sidebar-item") };
+    return { trigger: box(".k2b-sidebar-switcher__trigger"), row: box(".k2b-app-workspace__sidebar-item, .k2b-navigation__row") };
   });
 
 // Each test walks a whole flow of key presses; WebKit through a remote Playwright server needs about 5 s for one.
@@ -323,40 +323,57 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
   );
 
   test(
-    "a long name takes two lines without moving on hover or opening",
+    "short and long names give the head one height that hover and opening keep",
     async () => {
       const fullName = "Offene Fahrradwerkstatt der Nachbarschaftsinitiative Südviertel im Hinterhof";
-      for (const long of [false, true]) {
-        const page = await load(1366, long ? "long=1&delay=500" : "delay=500");
-        try {
-          const title = page.locator(`${trigger} .k2b-sidebar-switcher__copy > span`);
-          const size = await title.evaluate((element) => ({
-            height: element.getBoundingClientRect().height,
-            lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight),
-            scrollHeight: element.scrollHeight,
-            clientHeight: element.clientHeight,
-          }));
-          expect(size.height).toBe((long ? 2 : 1) * size.lineHeight);
-          if (long) expect(size.scrollHeight).toBeGreaterThan(size.clientHeight);
-          expect(await page.locator(trigger).getAttribute("title")).toBe(long ? fullName : "Work");
-          expect(await page.locator(trigger).getAttribute("aria-label")).toBe(long ? fullName : "Work");
-          const before = await geometry(page);
-          await page.locator(trigger).hover();
-          expect(await geometry(page)).toEqual(before);
-          await page.locator(trigger).click();
-          await page.locator(panel).waitFor({ state: "visible" });
-          expect(await geometry(page)).toEqual(before);
-          await loaded(page);
-          expect(await geometry(page)).toEqual(before);
-          await page.keyboard.press("Escape");
-          await closed(page);
-          expect(await geometry(page)).toEqual(before);
-        } finally {
-          await page.close();
+      for (const [width, base] of [
+        [1366, "delay=500"],
+        [390, "navigation=1&delay=500"],
+      ] as const) {
+        const heads: Awaited<ReturnType<typeof geometry>>[] = [];
+        for (const variant of ["", "&long=1", "&long=1&description=1"]) {
+          const long = variant.includes("long");
+          const page = await load(width, base + variant, width < 600, 844);
+          try {
+            const size = await page.locator(`${trigger} .k2b-sidebar-switcher__copy`).evaluate((element) => {
+              const name = element.querySelector("span")!;
+              return {
+                height: element.getBoundingClientRect().height,
+                line: Number.parseFloat(getComputedStyle(name).lineHeight),
+                clamped: name.scrollHeight > name.clientHeight,
+              };
+            });
+            // Two name lines are reserved for every name; a long one ends with an ellipsis after them, or after one beside a fact.
+            expect(size.height).toBe(2 * size.line);
+            expect(size.clamped).toBe(long);
+            expect(await page.locator(trigger).getAttribute("title")).toBe(long ? fullName : "Work");
+            expect(await page.locator(trigger).getAttribute("aria-label")).toBe(long ? fullName : "Work");
+            const before = await geometry(page);
+            heads.push(before);
+            if (width > 600) {
+              await page.locator(trigger).hover();
+              expect(await geometry(page)).toEqual(before);
+            }
+            await page.locator(trigger).click();
+            await page.locator(panel).waitFor({ state: "visible" });
+            expect(await geometry(page)).toEqual(before);
+            await loaded(page);
+            expect(await geometry(page)).toEqual(before);
+            await page.keyboard.press("Escape");
+            await closed(page);
+            expect(await geometry(page)).toEqual(before);
+          } finally {
+            await page.close();
+          }
+        }
+        // Switching from a short to a long name keeps every row below the head in place.
+        for (const head of heads.slice(1)) {
+          expect(head.trigger.height).toBe(heads[0]!.trigger.height);
+          expect(head.row.y).toBe(heads[0]!.row.y);
         }
       }
     },
-    TEST_TIMEOUT,
+    TEST_TIMEOUT * 2,
   );
 
   test(
@@ -488,21 +505,37 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
   );
 
   test(
-    "a panel that grows after opening is placed again within the viewport",
+    "the panel keeps its side and its edge by the trigger while options load and a search narrows them",
     async () => {
-      const page = await load(390, "navigation=1&many=1&low=560&delay=300", true, 844);
+      const page = await load(390, "navigation=1&many=1&long=1&low=420&delay=300", true, 844);
       try {
+        const box = () =>
+          page.evaluate(() => {
+            const rect = document.querySelector(".k2b-sidebar-switcher__panel")!.getBoundingClientRect();
+            const field = document.querySelector('.k2b-sidebar-switcher__panel input[type="search"]')?.getBoundingClientRect();
+            return { top: rect.top, bottom: rect.bottom, field: field?.top };
+          });
         await page.locator(trigger).tap();
         await page.locator(panel).waitFor({ state: "visible" });
         expect(await page.getByRole("status").textContent()).toBe("Loading...");
+        const button = (await page.locator(trigger).boundingBox())!;
+        // The panel at its tallest does not fit below the low trigger, so it opens above from the start.
+        const loading = await box();
+        expect(loading.bottom).toBe(button.y - 4);
         await loaded(page);
         await page.locator(search).waitFor({ state: "visible" });
-        await page.waitForFunction((selector) => {
-          const rect = document.querySelector(selector)!.getBoundingClientRect();
-          const button = document.querySelector(".k2b-sidebar-switcher__trigger")!.getBoundingClientRect();
-          return rect.top >= 8 && rect.bottom <= innerHeight - 8 && (rect.bottom <= button.top - 4 || rect.top >= button.bottom);
-        }, panel);
+        const full = await box();
+        expect(full.bottom).toBe(loading.bottom);
+        expect(full.top).toBeGreaterThanOrEqual(8);
         expect(await page.locator('[href="#all"]').isVisible()).toBe(true);
+        await page.locator(search).tap();
+        await focused(page, search);
+        for (const text of ["Book 1", "nothing matches", ""]) {
+          await page.locator(search).fill(text);
+          await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+          expect(await box()).toEqual(full);
+        }
+        expect(await page.locator("[data-switcher-option]").count()).toBe(10);
       } finally {
         await page.close();
       }

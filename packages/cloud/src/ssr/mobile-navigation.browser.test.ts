@@ -46,7 +46,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-test("the phone menu uses each app's accent for its active row and switcher icon", async () => {
+test("the phone menu uses each app's accent for its active row, switcher icon and current check", async () => {
   const colors: string[] = [];
   for (const accent of ["#eab308", "#008f4c"]) {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -74,12 +74,14 @@ test("the phone menu uses each app's accent for its active row and switcher icon
           fallback: color(document.getElementById("fallback")!),
           active: color(navigation.querySelector('[aria-current="page"] .k2b-navigation__copy > span')!),
           icon: color(navigation.querySelector(".k2b-sidebar-switcher__icon")!),
+          check: color(navigation.querySelector('.k2b-sidebar-switcher__option[aria-current="true"] .k2b-dropdown__check')!),
         };
       });
       expect(result.accent).toBe(accent);
       expect(result.canvas).toBe(false);
       expect(result.active).toBe(result.expected);
       expect(result.icon).toBe(result.expected);
+      expect(result.check).toBe(result.expected);
       expect(result.expected).not.toBe(result.fallback);
       colors.push(result.expected);
     } finally {

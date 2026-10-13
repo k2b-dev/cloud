@@ -7,7 +7,13 @@ const owner = document.getElementById("workspace")!;
 render(() => {
   const navigation = createNavigation({
     items: () => [{ id: "notes", label: "Notes", href: "#notes", active: true }],
-    switcher: () => ({ currentId: "work", label: "Work", icon: "ti-notebook", switchLabel: "Switch notebook" }),
+    switcher: () => ({
+      currentId: "work",
+      label: "Work",
+      icon: "ti-notebook",
+      switchLabel: "Switch notebook",
+      options: [{ id: "work", label: "Work", href: "#work" }],
+    }),
   });
   provideWorkspaceNavigation(navigation, { label: () => "Workspace", owner: () => owner });
   return <button onClick={() => void openCloudMobileMenu({ apps: [], legalLinks: [] })}>Open menu</button>;

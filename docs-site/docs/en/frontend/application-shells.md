@@ -202,8 +202,9 @@ presentation: current ID, name, optional fact, icon, optional color, and purpose
 label. The phone menu therefore shows the same head before hydration, with
 **Loading...** in its panel until the island supplies options and handlers;
 registering the owner adds no second head or space. The menu opens outside the
-app canvas, so Cloud gives it the current app's accent: its active row and the
-switcher icon look as they do in the sidebar. Links remain usable before
+app canvas, so Cloud gives it the current app's accent: its active row, the
+switcher icon, and the check on the current container look as they do in the
+sidebar. Links remain usable before
 the application island loads. Until the owner is ready, action-only entries, also in `actions`, and every inline action
 remain disabled, and `expanded` items only set where their disclosure starts,
 then toggle locally. Do not register embedded

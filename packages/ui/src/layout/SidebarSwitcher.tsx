@@ -103,36 +103,62 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
       trigger?.closest('[data-sidebar-collapsed="true"] .k2b-app-workspace__sidebar[data-workspace-collapsible="true"]') &&
         window.matchMedia("(min-width: 64rem)").matches,
     );
-  const place = () => {
+  /** Whether the panel opens above its trigger; chosen on opening and on a viewport resize only. */
+  let above = false;
+  /**
+   * Places the panel beside its trigger. `choose` picks its side again; otherwise it keeps the side, so arriving
+   * options, an error, or a narrowed search never flip it to the other side while it is open.
+   */
+  const place = (choose = false) => {
     if (!trigger || !panel) return;
     const rect = trigger.getBoundingClientRect();
     const viewport = { width: window.innerWidth, height: window.innerHeight };
+    const rail = inRail();
     // As wide as the sidebar row and never narrower than a menu, so long names keep their words; fixed while open,
     // so filtering never changes the panel's width.
-    panel.style.setProperty("--k2b-sidebar-switcher-width", `${inRail() ? 0 : Math.round(rect.width)}px`);
-    // Measured at its natural height, so the room it took last time does not decide where it goes now.
-    panel.style.removeProperty("--k2b-sidebar-switcher-room");
-    const size = panel.getBoundingClientRect();
-    const position = dropdownPosition(rect, size, inRail() ? "right-start" : "bottom-right", viewport);
-    if (!inRail()) {
-      // Below the trigger, or above it when it fits there and not below, as in the lower half of the phone menu. The
-      // panel never covers its trigger: it takes at most the room on its side, and its list scrolls.
-      const below = viewport.height - rect.bottom - SWITCHER_GAP - SWITCHER_INSET;
-      const above = rect.top - SWITCHER_GAP - SWITCHER_INSET;
-      const down = size.height <= below || below >= above;
-      const room = Math.max(0, down ? below : above);
-      panel.style.setProperty("--k2b-sidebar-switcher-room", `${room}px`);
-      position.top = down ? rect.bottom + SWITCHER_GAP : rect.top - SWITCHER_GAP - Math.min(size.height, room);
+    panel.style.setProperty("--k2b-sidebar-switcher-width", `${rail ? 0 : Math.round(rect.width)}px`);
+    if (rail) {
+      panel.style.removeProperty("--k2b-sidebar-switcher-room");
+      panel.style.removeProperty("min-height");
+      panel.style.bottom = "auto";
+      const position = dropdownPosition(rect, panel.getBoundingClientRect(), "right-start", viewport);
+      panel.style.left = `${position.left}px`;
+      panel.style.top = `${position.top}px`;
+      return;
     }
-    panel.style.left = `${position.left}px`;
-    panel.style.top = `${position.top}px`;
+    // Below the trigger, or above it when the panel at its tallest does not fit below and there is more room above,
+    // as in the lower half of the phone menu. Its tallest is its CSS max-height, min(28rem, 80dvh), so the side does
+    // not depend on what the panel shows at the moment. It never covers its trigger: it takes at most the room on its
+    // side, and its list scrolls.
+    const roomBelow = viewport.height - rect.bottom - SWITCHER_GAP - SWITCHER_INSET;
+    const roomAbove = rect.top - SWITCHER_GAP - SWITCHER_INSET;
+    if (choose) {
+      const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      above = Math.min(28 * rem, 0.8 * viewport.height) > roomBelow && roomAbove > roomBelow;
+      panel.style.removeProperty("min-height");
+    }
+    const room = Math.max(0, above ? roomAbove : roomBelow);
+    panel.style.setProperty("--k2b-sidebar-switcher-room", `${room}px`);
+    panel.style.left = `${dropdownPosition(rect, panel.getBoundingClientRect(), "bottom-right", viewport).left}px`;
+    if (above) {
+      // Its bottom edge stays beside the trigger, and it does not shrink while open, so a narrowed search keeps the
+      // search field where the person is typing.
+      const height = Math.min(room, Math.max(panel.getBoundingClientRect().height, Number.parseFloat(panel.style.minHeight) || 0));
+      panel.style.minHeight = `${height}px`;
+      panel.style.top = "auto";
+      panel.style.bottom = `${document.documentElement.clientHeight - rect.top + SWITCHER_GAP}px`;
+    } else {
+      panel.style.top = `${rect.bottom + SWITCHER_GAP}px`;
+      panel.style.bottom = "auto";
+    }
   };
   const reposition = () => open() && place();
+  const resize = () => open() && place(true);
   // Arriving options, an error, or the search field grow the panel after it opened, so its size places it too.
   let resizing: ResizeObserver | undefined;
   const listen = (on: boolean) => {
     const method = on ? "addEventListener" : "removeEventListener";
-    window[method]("resize", reposition);
+    window[method]("resize", resize);
     window[method]("scroll", reposition, true);
     if (on && panel) {
       resizing ??= new ResizeObserver(reposition);
@@ -170,7 +196,7 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
     panel.showPopover();
     setOpen(true);
     listen(true);
-    place();
+    place(true);
     queueMicrotask(() => {
       // On touch the search field waits for a tap, so the keyboard does not cover the list on opening.
       if (searchable() && focus === "start" && !window.matchMedia("(pointer: coarse)").matches) search?.focus();
