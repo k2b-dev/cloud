@@ -329,8 +329,10 @@ Third-party applications use the same frame.
 Links to another article or section of the same app's Help open inside the
 reader without reloading: `/app/<id>/help/<documentId>`,
 `/help/apps/<id>/<documentId>`, or `#section`. On the full page, the address
-updates and the browser's Back button returns to the previous article. Other
-links navigate normally.
+updates and the browser's Back button returns to the previous article. Back to
+the topic list keeps the typed search, and an address with an unknown article
+shows the topic list. The phone menu or a dialog that closes does not move the
+open article. Other links navigate normally.
 
 The reader adapts to its own width in a dialog, on the full page, or inside an
 application's embedded reader.

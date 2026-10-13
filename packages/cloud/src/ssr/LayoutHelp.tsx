@@ -143,6 +143,12 @@ const HelpShell = (props: {
   const currentHelpTarget = () =>
     helpLinkTarget(`${location.pathname}${location.hash}`, location.href, { appId, pageBase: props.pageBase });
   let pendingHash = props.syncPageUrl && typeof location !== "undefined" ? (currentHelpTarget()?.hash ?? "") : "";
+  /**
+   * The address Help shows now. The phone menu and dialogs with a history entry put a second entry on the same address
+   * and take it away again; that is not Help navigation and must not move the article or the search.
+   */
+  const pageAddress = () => `${location.pathname}${location.hash}`;
+  let shownAddress = props.syncPageUrl && typeof location !== "undefined" ? pageAddress() : "";
   let requestVersion = 0;
   let searchVersion = 0;
   let copyAllController: AbortController | undefined;
@@ -206,6 +212,7 @@ const HelpShell = (props: {
       const url = new URL(location.href);
       url.hash = encodeURIComponent(section.id);
       history.replaceState(history.state, "", url);
+      shownAddress = pageAddress();
     }
   };
 
@@ -343,10 +350,15 @@ const HelpShell = (props: {
     };
     document.addEventListener("scroll", onScroll, { capture: true, passive: true });
     const onPopState = () => {
+      const address = pageAddress();
+      if (address === shownAddress) return;
       const target = currentHelpTarget();
       if (target?.kind !== "topic") return;
-      if (target.topicId === null) showHub(false);
-      else if (topics().some((topic) => topic.id === target.topicId)) openTopic(target.topicId, target.hash, false);
+      shownAddress = address;
+      const id = target.topicId;
+      if (id !== null && topics().some((topic) => topic.id === id)) openTopic(id, target.hash, false);
+      // The hub keeps its search, as the reader's own Back button does. An unknown topic shows the hub, as the server does.
+      else setView("hub");
     };
     if (props.syncPageUrl) window.addEventListener("popstate", onPopState);
     onCleanup(() => {
@@ -466,6 +478,7 @@ const HelpShell = (props: {
   const pushHelpUrl = (id: string | null, hash = "") => {
     if (props.syncPageUrl && props.pageBase) {
       history.pushState(history.state, "", layoutHelpTopicHref(props.pageBase, id) + (hash ? `#${encodeURIComponent(hash)}` : ""));
+      shownAddress = pageAddress();
     }
   };
   const openTopic = (id: string, hash = "", push = true) => {
@@ -514,6 +527,7 @@ const HelpShell = (props: {
         const url = new URL(location.href);
         url.hash = encodeURIComponent(target.hash);
         history.replaceState(history.state, "", url);
+        shownAddress = pageAddress();
       }
     } else if (target.topicId === null) {
       event.preventDefault();

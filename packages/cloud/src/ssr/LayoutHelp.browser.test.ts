@@ -104,8 +104,8 @@ afterAll(async () => {
   for (const spy of spies) spy.mockRestore();
   await browser?.close();
 });
-const open = async (query = "") => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+const open = async (query = "", viewport = { width: 1440, height: 900 }) => {
+  const page = await browser.newPage({ viewport, reducedMotion: "reduce" });
   await page.route("http://cloud.test/**", (route) => route.fulfill({ contentType: "text/html", body: markup }));
   await page.goto(`http://cloud.test/help/apps/spaces${query}`);
   await page.addScriptTag({ content: bundle });
@@ -136,6 +136,29 @@ test("the TOC stays in view and follows Layout's actual page scroller", async ()
     expect(rect!.y).toBeGreaterThanOrEqual(0);
     expect(rect!.y + rect!.height).toBeLessThanOrEqual(900);
     expect(await page.locator(".layout-content-main").evaluate((element) => element.scrollTop)).toBeGreaterThanOrEqual(2000);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("on a phone the document scrolls: the TOC strip stays in view and follows the reading position", async () => {
+  const page = await open("", { width: 390, height: 844 });
+  try {
+    await page.getByRole("button", { name: "Topic 0", exact: false }).first().click();
+    const active = page.locator('.help-article-toc button[aria-current="location"]');
+    await active.waitFor();
+    expect(await active.getAttribute("title")).toBe("Section 0");
+    // Below md, Layout's main does not scroll; the document does.
+    expect(await page.locator(".layout-content-main").evaluate((element) => getComputedStyle(element).overflowY)).toBe("visible");
+    await page.evaluate(() => window.scrollTo(0, 2000));
+    await page.waitForFunction(
+      () => document.querySelector('.help-article-toc button[aria-current="location"]')?.getAttribute("title") !== "Section 0",
+    );
+    expect(await page.evaluate(() => document.scrollingElement!.scrollTop)).toBeGreaterThanOrEqual(2000);
+    const rect = await page.locator(".help-article-toc").boundingBox();
+    expect(rect).not.toBeNull();
+    expect(rect!.y).toBeGreaterThanOrEqual(0);
+    expect(rect!.y + rect!.height).toBeLessThanOrEqual(844);
   } finally {
     await page.close();
   }
