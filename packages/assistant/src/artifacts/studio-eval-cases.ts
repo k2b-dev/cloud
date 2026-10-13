@@ -3,7 +3,8 @@
 export type StudioEvalCase = {
   name: string;
   locale: "de" | "en";
-  expect: "studio-app" | "view";
+  /** An answer is direct (optionally calculated), with no app or view presentation: route "none". */
+  expect: "studio-app" | "view" | "answer";
   request: string;
   files?: { path: string; mediaType: string; bytes: () => Uint8Array }[];
 };
@@ -142,6 +143,58 @@ export const STUDIO_EVAL_CASES: StudioEvalCase[] = [
     expect: "view",
     request: "Table of the top 10 customers by revenue",
     files: [{ path: "/bestellungen.csv", mediaType: "text/csv", bytes: () => orderCsv() }],
+  },
+  {
+    name: "dashboard-de",
+    locale: "de",
+    expect: "view",
+    request: "Mach mir ein Dashboard der Umsätze aus dieser CSV",
+    files: [{ path: "/bestellungen.csv", mediaType: "text/csv", bytes: () => orderCsv() }],
+  },
+  {
+    name: "dashboard-en",
+    locale: "en",
+    expect: "view",
+    request: "Give me a dashboard of this export",
+    files: [{ path: "/bestellungen.csv", mediaType: "text/csv", bytes: () => orderCsv() }],
+  },
+  {
+    name: "explorer-de",
+    locale: "de",
+    expect: "view",
+    request: "Lass mich die Bestellungen nach Region filtern und vergleichen",
+    files: [{ path: "/bestellungen.csv", mediaType: "text/csv", bytes: () => orderCsv() }],
+  },
+  {
+    name: "explorer-en",
+    locale: "en",
+    expect: "view",
+    request: "Let me filter and compare the orders by region",
+    files: [{ path: "/bestellungen.csv", mediaType: "text/csv", bytes: () => orderCsv() }],
+  },
+  {
+    name: "tip-answer-de",
+    locale: "de",
+    expect: "answer",
+    request: "Was sind 15 % Trinkgeld auf 84,50 € für 3 Personen?",
+  },
+  {
+    name: "tip-answer-en",
+    locale: "en",
+    expect: "answer",
+    request: "What is a 15% tip on $84.50 split between 3 people?",
+  },
+  {
+    name: "convert-answer-de",
+    locale: "de",
+    expect: "answer",
+    request: "Rechne 5 Meilen in Kilometer um",
+  },
+  {
+    name: "convert-answer-en",
+    locale: "en",
+    expect: "answer",
+    request: "Convert 5 miles to kilometers",
   },
 ];
 

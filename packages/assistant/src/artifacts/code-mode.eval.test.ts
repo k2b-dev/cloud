@@ -61,8 +61,20 @@ const check = (id: string, result: unknown, isError = false) => ({ name: "code_c
 const passed = (hash: string) => ({ passed: true, hash });
 const present = (id: string) => ({ name: "code_present", isError: false, args: { id }, result: { userVisible: true } });
 
-test("only checks of the presented app count, and a failed check call checks no version", () => {
-  // A lost host is not a failed first check; a passing helper app does not stand in for the presented one.
+test("a rejected check counts as a version that needed correction before presentation or opening", () => {
+  const rejected = { ...check("app", "Invalid steps.json", true), rejected: true };
+  for (const presentation of [present("app"), { name: "code_open", isError: false, args: { id: "app" }, result: { opened: "app" } }]) {
+    expect(studioEvalMetrics([rejected, check("app", passed("a")), presentation])).toEqual({
+      failedCheckCalls: 0,
+      firstCheckPassed: false,
+      presented: true,
+      correctionRounds: 1,
+      presentedWithoutCorrection: false,
+    });
+  }
+});
+
+test("a check tool error without a rejection checks no version", () => {
   expect(studioEvalMetrics([check("app", "Evaluation host lost; no replay", true), check("app", passed("a")), present("app")])).toEqual({
     failedCheckCalls: 1,
     firstCheckPassed: true,
@@ -70,6 +82,10 @@ test("only checks of the presented app count, and a failed check call checks no 
     correctionRounds: 0,
     presentedWithoutCorrection: true,
   });
+});
+
+test("only checks of the presented app count up to its first presentation", () => {
+  // A passing helper app does not stand in for the presented one.
   expect(
     studioEvalMetrics([
       check("helper", passed("h")),
@@ -132,7 +148,7 @@ test("the summary names the run and leaves unmeasured cases out of the totals", 
     "| Case | Expected | Route | Match | Minutes | Model turns | Model s | Tool s | Tool calls | Checks | First check passed | Presented without correction |",
   );
   expect(summary).toContain("| todo | studio-app | studio-app | yes | 2.0 | 5 | 80.0 | 35.0 | 12 | 0 | yes | yes |");
-  expect(summary).toContain("Route matches: 1/1 overall. App cases: 1/1. View cases: 0/0.");
+  expect(summary).toContain("Route matches: 1/1 overall. App cases: 1/1. View cases: 0/0. Answer cases: 0/0.");
   expect(summary).toContain("First check passed: 1/1. Presented without a correction round: 1/1. Presented at all: 1/1.");
   expect(summary).toContain("Not measured, because the case failed or ended before the model finished: contacts.");
 });
@@ -152,6 +168,7 @@ test("routes distinguish saved apps, chat apps, views and no presentation", () =
   expect(studioEvalRoute([chat, present("app")])).toBe("studio-app");
   expect(studioEvalRoute([present("app"), chat])).toBe("studio-app");
   expect(studioEvalRoute([])).toBe("none");
+  expect(studioEvalRoute([call("calculate", { expression: "5 * 1.609344" })])).toBe("none");
   expect(studioEvalRoute([call("code_create"), call("present", { path: "/report.pdf" })])).toBe("none");
   expect(studioEvalRoute([call("present", { path: "/views-other/file" })])).toBe("none");
   for (const failed of [
@@ -167,16 +184,20 @@ test("routes distinguish saved apps, chat apps, views and no presentation", () =
   }
 });
 
-test("route totals separate app and view cases and exclude unmeasured cases", () => {
+test("route totals separate app, view and answer cases and exclude unmeasured cases", () => {
   const base = { ...studioEvalFailure("calculator-de", "unused"), error: undefined };
   const summary = studioEvalSummary([
     { ...base, route: "studio-app", routeMatches: true },
     { ...base, name: "calculator-en", locale: "en", route: "chat-app", routeMatches: false },
     { ...base, name: "sales-chart-de", expect: "view", route: "view", routeMatches: true },
     { ...base, name: "top-customers-en", expect: "view", route: "none", routeMatches: false },
+    { ...base, name: "tip-answer-de", expect: "answer", route: "none", routeMatches: true },
+    { ...base, name: "tip-answer-en", expect: "answer", locale: "en", route: "studio-app", routeMatches: false },
+    studioEvalFailure("timer-de", "timeout", { locale: "de", expect: "studio-app" }),
     studioEvalFailure("sales-chart-en", "timeout", { locale: "en", expect: "view" }),
+    studioEvalFailure("convert-answer-en", "timeout", { locale: "en", expect: "answer" }),
   ]);
-  expect(summary).toContain("Route matches: 2/4 overall. App cases: 1/2. View cases: 1/2.");
+  expect(summary).toContain("Route matches: 3/6 overall. App cases: 1/2. View cases: 1/2. Answer cases: 1/2.");
 });
 
 test("turn timings retain call arguments, results, duration and errors", async () => {
@@ -238,4 +259,32 @@ test("failed tools stay in the turn timing report", async () => {
   expect(result.error).toBeUndefined();
   expect(result.turns[0]?.toolCalls).toEqual([expect.objectContaining({ name: "failing", isError: true })]);
   expect(result.calls[0]?.result).toContain("not answerable in this evaluation");
+});
+
+test("rejected runtime call IDs mark the recorded call and turn timing", async () => {
+  let turn = 0;
+  const rejectedCalls = new Set<string>();
+  const rejecting = defineTool({ name: "code_check", description: "Checks an app", inputSchema: z.object({ id: z.string() }) }).server(
+    async () => {
+      rejectedCalls.add("rejection");
+      throw new Error("Invalid steps.json");
+    },
+  );
+  const result = await collectStudioLoop(
+    nessi({
+      provider: scripted(() =>
+        turn++ === 0 ? { type: "tool_call", id: "rejection", name: "code_check", args: { id: "app" } } : { type: "text", text: "Done" },
+      ),
+      systemPrompt: "",
+      input: "Check it",
+      tools: [rejecting],
+      store: memoryStore(),
+    }),
+    "rejection",
+    rejectedCalls,
+  );
+  expect(result.error).toBeUndefined();
+  expect(result.calls).toEqual([expect.objectContaining({ name: "code_check", args: { id: "app" }, isError: true, rejected: true })]);
+  expect(result.turns[0]?.toolCalls).toEqual(result.calls);
+  expect(result.calls[0]?.result).toContain("Invalid steps.json");
 });

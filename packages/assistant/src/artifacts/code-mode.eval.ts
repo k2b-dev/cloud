@@ -30,7 +30,7 @@ import { appChecks } from "./html/check-service";
 import { artifacts, readArtifactRevision, requireArtifact } from "./service";
 import type { StudioEvalCase } from "./studio-eval-cases";
 
-type Call = { name: string; isError: boolean; elapsedMs: number; args?: unknown; result?: unknown };
+type Call = { name: string; isError: boolean; rejected?: boolean; elapsedMs: number; args?: unknown; result?: unknown };
 type TurnTiming = { index: number; elapsedMs: number; modelMs: number; toolCalls: Call[] };
 type Counts = {
   loadSkill: number;
@@ -63,7 +63,7 @@ export type StudioEvalResult = {
   modelTurns: number;
   toolCalls: number;
   checks: Check[];
-  /** code_check calls that failed as tool calls (lost host, abort) and checked nothing. */
+  /** code_check calls that checked nothing (lost host, abort, transport), excluding runtime rejections. */
   failedCheckCalls: number;
   firstCheckPassed: boolean;
   presented: boolean;
@@ -121,8 +121,9 @@ const RUNTIME_TOOLS = ["code_run", "code_action", "code_inspect", "code_stop", "
 /**
  * Consumes one agent loop. Nessi does not throw on a provider failure, timeout, abort or turn limit: it ends the loop
  * with that reason, and only "stop" means the model finished on its own.
+ * Runtime CodeToolFailure call IDs mark rejections that Nessi records as tool errors.
  */
-export async function collectStudioLoop(events: AsyncIterable<OutboundEvent>, label: string) {
+export async function collectStudioLoop(events: AsyncIterable<OutboundEvent>, label: string, rejectedCalls?: ReadonlySet<string>) {
   const calls: Call[] = [];
   const issues: NessiIssue[] = [];
   const pending = new Map<string, { args: unknown; started: number }>();
@@ -177,6 +178,7 @@ export async function collectStudioLoop(events: AsyncIterable<OutboundEvent>, la
         const call: Call = {
           name: event.name,
           isError: Boolean(event.isError),
+          ...(rejectedCalls?.has(event.callId) ? { rejected: true } : {}),
           elapsedMs: performance.now() - (start?.started ?? performance.now()),
           args: start?.args,
           result: event.result,
@@ -250,10 +252,10 @@ const studioEvalCounts = (calls: Call[], issues: NessiIssue[]): Counts => {
 
 /**
  * The two numbers of one case. Only checks of the presented app count, up to its first presentation. A code_check call
- * that failed as a tool call checked nothing. A rejection without a hash, such as an invalid steps.json, is a failed
- * check of a version that had to change.
+ * that failed without a runtime rejection (lost host, abort, transport) checked nothing. A runtime rejection or a
+ * legacy failed result without a hash, such as an invalid steps.json, is a failed check of a version that had to change.
  */
-export function studioEvalMetrics(calls: Pick<Call, "name" | "isError" | "args" | "result">[]) {
+export function studioEvalMetrics(calls: Pick<Call, "name" | "isError" | "rejected" | "args" | "result">[]) {
   // Opening a saved app beside the chat shows it as much as a card in the chat does.
   const presentIndex = calls.findIndex(
     (call) =>
@@ -264,7 +266,9 @@ export function studioEvalMetrics(calls: Pick<Call, "name" | "isError" | "args" 
   const checks = calls
     .slice(0, presented ? presentIndex : undefined)
     .filter((call) => call.name === "code_check" && (!presented || appId(call.args) === target));
-  const reports = checks.filter((call) => !call.isError).map((call) => CheckResult.safeParse(call.result).data);
+  const reports = checks
+    .filter((call) => !call.isError || call.rejected)
+    .map((call) => (call.isError ? undefined : CheckResult.safeParse(call.result).data));
   const versions = new Set(reports.map((report, index) => report?.hash ?? `rejected-${index}`));
   const firstCheckPassed = reports[0]?.passed ?? false;
   const correctionRounds = presented ? Math.max(0, versions.size - 1) : null;
@@ -329,6 +333,7 @@ export async function evaluateStudioCase(evalCase: StudioEvalCase, context: Code
   const history: StoreEntry[] = [];
 
   let approvalError: string | undefined;
+  const rejectedCalls = new Set<string>();
   const runtime = async (name: (typeof RUNTIME_TOOLS)[number], args: unknown, callId?: string) => {
     if (!callId) throw new Error("Missing tool call ID");
     for (;;) {
@@ -340,7 +345,10 @@ export async function evaluateStudioCase(evalCase: StudioEvalCase, context: Code
       }
       if (state.status === "done") {
         const failure = CodeToolFailure.safeParse(state.result);
-        if (failure.success) throw new Error([failure.data.error, failure.data.guidance].filter(Boolean).join(" "));
+        if (failure.success) {
+          rejectedCalls.add(callId);
+          throw new Error([failure.data.error, failure.data.guidance].filter(Boolean).join(" "));
+        }
         return state.result;
       }
       if (state.status === "lost") throw new Error("Evaluation host lost; no replay");
@@ -574,6 +582,7 @@ export async function evaluateStudioCase(evalCase: StudioEvalCase, context: Code
       },
     }),
     evalCase.name,
+    rejectedCalls,
   );
 
   await mkdir(directory, { recursive: true });
@@ -630,7 +639,7 @@ export async function evaluateStudioCase(evalCase: StudioEvalCase, context: Code
     expect: evalCase.expect,
     route,
     appCreated: calls.some((call) => call.name === "code_create" && !callFailed(call)),
-    routeMatches: route === evalCase.expect,
+    routeMatches: evalCase.expect === "answer" ? route === "none" : route === evalCase.expect,
     modelMs,
     toolMs,
     turns,
@@ -683,10 +692,10 @@ export function studioEvalSummary(results: StudioEvalResult[]) {
       return `| ${result.name} | ${result.expect} | ${values.join(" | ")} |`;
     }),
     "",
-    `Route matches: ${count((result) => result.routeMatches)} overall. ${(["studio-app", "view"] as const)
+    `Route matches: ${count((result) => result.routeMatches)} overall. ${(["studio-app", "view", "answer"] as const)
       .map((expected) => {
         const cases = measured.filter((result) => result.expect === expected);
-        return `${expected === "studio-app" ? "App" : "View"} cases: ${cases.filter((result) => result.routeMatches).length}/${cases.length}.`;
+        return `${expected === "studio-app" ? "App" : expected === "view" ? "View" : "Answer"} cases: ${cases.filter((result) => result.routeMatches).length}/${cases.length}.`;
       })
       .join(" ")}`,
     `First check passed: ${count((result) => result.firstCheckPassed)}. Presented without a correction round: ${count((result) => result.presentedWithoutCorrection)}. Presented at all: ${count((result) => result.presented)}.`,

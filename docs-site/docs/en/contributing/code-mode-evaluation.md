@@ -5,7 +5,7 @@ section: Contributing
 order: 1316
 description: Verify Code Mode with disposable services, real browser execution, and a real model choosing Assistant routes.
 tags: [testing, ai, assistant]
-updated: 2026-10-12
+updated: 2026-10-13
 ---
 
 # Evaluate Assistant Code Mode
@@ -28,8 +28,8 @@ Install the Playwright Chrome channel before running browser tests.
 
 Each case runs one interactive web chat turn with a fresh disposable user and
 chat. Compare **route and time** before and after a prompt change: does the
-Assistant choose a saved Studio app, a one-off chat app, or a view, and how long
-does the turn take? Expected routes are evaluation targets, not instructions
+Assistant choose a saved Studio app, a one-off chat app, a view or a direct
+answer, and how long does the turn take? Expected routes are evaluation targets, not instructions
 sent to the model.
 
 The app cases include German requests for apps with stored data and paired
@@ -56,7 +56,9 @@ German and English requests for small tools:
 | `form-en` | EN | studio-app | Create a simple form where my team enters vacation requests |
 
 Each view case attaches the same `bestellungen.csv` export at
-`/bestellungen.csv`, with 300 orders over twelve months:
+`/bestellungen.csv`, with 300 orders over twelve months. A one-off dashboard,
+filter or comparison request without wording about keeping or sharing stays a
+view:
 
 | Case | Language | Expected | Request |
 | --- | --- | --- | --- |
@@ -64,12 +66,26 @@ Each view case attaches the same `bestellungen.csv` export at
 | `top-customers-de` | DE | view | Tabelle der Top 10 Kunden nach Umsatz |
 | `sales-chart-en` | EN | view | Show me a chart of the revenue |
 | `top-customers-en` | EN | view | Table of the top 10 customers by revenue |
+| `dashboard-de` | DE | view | Mach mir ein Dashboard der Umsätze aus dieser CSV |
+| `dashboard-en` | EN | view | Give me a dashboard of this export |
+| `explorer-de` | DE | view | Lass mich die Bestellungen nach Region filtern und vergleichen |
+| `explorer-en` | EN | view | Let me filter and compare the orders by region |
+
+A question for one calculated value expects a direct answer, possibly with the
+`calculate` tool, without an app or a view:
+
+| Case | Language | Expected | Request |
+| --- | --- | --- | --- |
+| `tip-answer-de` | DE | answer | Was sind 15 % Trinkgeld auf 84,50 € für 3 Personen? |
+| `tip-answer-en` | EN | answer | What is a 15% tip on $84.50 split between 3 people? |
+| `convert-answer-de` | DE | answer | Rechne 5 Meilen in Kilometer um |
+| `convert-answer-en` | EN | answer | Convert 5 miles to kilometers |
 
 ```bash
 bun packages/assistant/scripts/eval-code-mode.ts --case todo --case contacts
 ```
 
-Without `--case`, all 21 cases run, three at a time (`--concurrency`). The
+Without `--case`, all 29 cases run, three at a time (`--concurrency`). The
 model is the configured Cloud default model, which needs that installation's
 `DATABASE_URL` and `APP_SECRET`. To evaluate another model, pass one profile in
 the `ai.model_profiles_json` format with `--profile` and its API key in
@@ -128,7 +144,7 @@ Route classification considers successful calls and uses this priority:
 2. **chat-app**: `code_present` with `files`.
 3. **view**: `present` of a path under `/views/`, or `chart` or `card`.
 4. **none**: no matching successful call, including a table written only as
-   Markdown in the answer.
+   Markdown in the answer. An `answer` case matches this route.
 
 Creating an app alone does not determine the route. Failed calls are ignored,
 including runtime results marked `failed: true`.
@@ -136,7 +152,7 @@ including runtime results marked `failed: true`.
 The summary columns are **Case**, **Expected**, **Route**, **Match**, **Minutes**,
 **Model turns**, **Model s**, **Tool s**, **Tool calls**, **Checks**, **First check
 passed** and **Presented without correction**. Route totals are shown overall
-and separately for app and view cases. Minutes measure the agent loop, excluding
+and separately for app, view and answer cases. Minutes measure the agent loop, excluding
 fixture setup and saving results. Model and tool totals use nessi's aggregate
 timing, which includes provider wait through the evaluation proxy. Per-turn
 elapsed time runs from `turn_start` to `turn_end`; because nessi ends a turn
@@ -155,8 +171,11 @@ broken. **Presented without a correction round** says that the first checked
 version is the one the agent showed; it differs from the first number only
 when the agent changes a passing version before showing it, for example after
 looking at its screenshots. A successful `code_present` or `code_open` counts
-as the presentation. The metrics remain unchanged for view cases. A `code_check` call that
-fails as a tool call, such as a lost host, checks no version and is listed
+as the presentation. The metrics remain unchanged for view cases. A
+`code_check` that the runtime rejects, such as for an invalid `steps.json`,
+reaches the model as a tool error, as in production, and counts as a failed
+check of a version that had to change. A `code_check` call that fails for
+another reason, such as a lost host, checks no version and is listed
 separately.
 
 A case that ends before the model finishes on its own, through a provider
