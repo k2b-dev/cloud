@@ -3,7 +3,7 @@ import { ensureSyntaxTree } from "@codemirror/language";
 import { type ChangeSet, type ChangeSpec, EditorSelection, type EditorState, type SelectionRange } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { prompts } from "@k2b/ui";
-import type { Tree } from "@lezer/common";
+import type { SyntaxNode, Tree } from "@lezer/common";
 import { MARK_REGEX, TAG_REGEX } from "../../../lib/editor/_lib/inline-syntax";
 import { inCode } from "../../../lib/editor/_lib/list-item-line";
 import { excludedSpans } from "../../../lib/editor/_lib/list-structure";
@@ -58,7 +58,7 @@ const trimmedRange = (state: EditorState) => {
   return { from, to: from + selected.trim().length };
 };
 
-const highlightBlocked = (state: EditorState, tree: Tree, from: number, to: number) => {
+const highlightCodeOverlap = (tree: Tree, from: number, to: number) => {
   let blocked = false;
   tree.iterate({
     from,
@@ -67,8 +67,10 @@ const highlightBlocked = (state: EditorState, tree: Tree, from: number, to: numb
       if (["InlineCode", "FencedCode", "CodeBlock", "URL"].includes(node.name) && node.from < to && node.to > from) blocked = true;
     },
   });
-  return blocked || breaksTag(state, from, true) || breaksTag(state, to, false);
+  return blocked;
 };
+const highlightBlocked = (state: EditorState, tree: Tree, from: number, to: number) =>
+  highlightCodeOverlap(tree, from, to) || breaksTag(state, from, true) || breaksTag(state, to, false);
 
 const markSpans = (state: EditorState, tree: Tree, mark: InlineMark, from: number, to: number) => {
   const found: { from: number; to: number; opening: { from: number; to: number }; closing: { from: number; to: number } }[] = [];
@@ -78,7 +80,14 @@ const markSpans = (state: EditorState, tree: Tree, mark: InlineMark, from: numbe
       for (const match of line.text.matchAll(MARK_REGEX)) {
         const start = line.from + match.index;
         const end = start + match[0].length;
-        if (start <= to && end >= from && !highlightBlocked(state, tree, start, end))
+        if (
+          start <= to &&
+          end >= from &&
+          !highlightCodeOverlap(tree, start, start + 2) &&
+          !highlightCodeOverlap(tree, end - 2, end) &&
+          !breaksTag(state, start, true) &&
+          !breaksTag(state, end, false)
+        )
           found.push({ from: start, to: end, opening: { from: start, to: start + 2 }, closing: { from: end - 2, to: end } });
       }
     }
@@ -98,18 +107,19 @@ const markSpans = (state: EditorState, tree: Tree, mark: InlineMark, from: numbe
 const containingMark = (state: EditorState, tree: Tree, mark: InlineMark, from: number, to: number) =>
   markSpans(state, tree, mark, from, to).findLast((span) => span.opening.to <= from && to <= span.closing.from);
 
-const headingAt = (state: EditorState, tree: Tree) => {
+const headingNodeAt = (state: EditorState, tree: Tree) => {
   const line = state.doc.lineAt(state.selection.main.head);
-  let level = 0;
+  let heading: SyntaxNode | undefined;
   tree.iterate({
     from: line.from,
     to: line.to,
     enter(node) {
-      if (/^ATXHeading[1-6]$/.test(node.name)) level = Number(node.name.at(-1));
+      if (/^(?:ATXHeading[1-6]|SetextHeading[12])$/.test(node.name)) heading = node.node;
     },
   });
-  return level;
+  return heading;
 };
+const headingAt = (state: EditorState, tree: Tree) => Number(headingNodeAt(state, tree)?.name.at(-1) ?? 0);
 
 export type CaretFormat = ReturnType<typeof caretFormat>;
 
@@ -124,7 +134,10 @@ export const sameCaretFormat = (a: CaretFormat, b: CaretFormat) =>
   a.indent === b.indent &&
   a.outdent === b.outdent;
 
-/** Formats at the selection; a mark or list kind counts exactly when its toggle would remove it. */
+/**
+ * Formats at the selection. A mark counts when its toggle would remove it; list is the kind shared by every
+ * selected line. The list toggle only turns top-level items without children back into text.
+ */
 export const caretFormat = (state: EditorState) => {
   const inactive = {
     bold: false,
@@ -307,13 +320,31 @@ export const setHeadingLevel = (view: EditorView, level: HeadingLevel): void => 
   const line = state.doc.lineAt(state.selection.main.head);
   const tree = parsedTree(state, line.to);
   if (!tree) return;
-  const leading = /^[ \t]*(?:(?:>[ \t]*|(?:[-+*]|\d{1,9}[.)])[ \t]+)[ \t]*)*/.exec(line.text)![0];
-  const from = line.from + leading.length;
+  const node = headingNodeAt(state, tree);
+  const setext = node?.name.startsWith("SetextHeading") ? node : undefined;
+  const content = setext ? state.doc.lineAt(setext.from) : line;
+  const underline = setext?.getChild("HeaderMark");
+  if (setext && (!underline || state.doc.lineAt(underline.from).number !== content.number + 1)) return;
+  const leading = /^[ \t]*(?:(?:>[ \t]*|(?:[-+*]|\d{1,9}[.)])[ \t]+)[ \t]*)*/.exec(content.text)![0];
+  if (/(?:[-+*]|\d{1,9}[.)])[ \t]+$/.test(leading) && /^\[[ xX]\](?:[ \t]+|$)/.test(content.text.slice(leading.length))) return;
+  const from = content.from + leading.length;
   if (inCode(tree, from) || excludedSpans(state).some((span) => from >= span.from && from < span.to)) return;
-  const heading = /^(#{1,6})(?:[ \t]+|$)/.exec(line.text.slice(leading.length));
+  const heading = /^(#{1,6})(?:[ \t]+|$)/.exec(content.text.slice(leading.length));
   const prefix = level ? `${"#".repeat(level)} ` : "";
-  const changes = state.changes({ from, to: from + (heading?.[0].length ?? 0), insert: prefix });
-  view.dispatch({ changes, selection: state.selection.map(changes, 1), annotations: isolateHistory.of("full") });
+  const changes = state.changes(
+    underline
+      ? level
+        ? [
+            { from, insert: prefix },
+            { from: content.to, to: state.doc.lineAt(underline.to).to },
+          ]
+        : { from: underline.from, to: state.doc.lineAt(underline.to).to }
+      : { from, to: from + (heading?.[0].length ?? 0), insert: prefix },
+  );
+  let selection = state.selection.map(changes, 1);
+  if (setext && state.selection.main.empty && state.selection.main.head > content.to)
+    selection = selection.replaceRange(EditorSelection.cursor(changes.mapPos(content.to, 1)));
+  view.dispatch({ changes, selection, annotations: isolateHistory.of("full") });
   view.focus();
 };
 

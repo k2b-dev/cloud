@@ -156,6 +156,42 @@ describe("Yjs undo boundaries", () => {
     }
   });
 
+  test.each([
+    ["- a\n  - ", "- a\n- ", "x"],
+    ["- ", "", "abc"],
+  ] as const)("Enter on an empty list item is separate from following typing: %s", (original, entered, typed) => {
+    const a = new Y.Doc(),
+      b = new Y.Doc();
+    const aText = a.getText("codemirror"),
+      bText = b.getText("codemirror");
+    aText.insert(0, original);
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a));
+    const manager = new Y.UndoManager(aText);
+    using editor = mount(original, [yCollab(aText, null, { undoManager: manager }), isolateYjsHistory(manager)]);
+    const sync = () => Y.applyUpdate(b, Y.encodeStateAsUpdate(a), "remote");
+    try {
+      const event = new KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true, cancelable: true });
+      editor.view.contentDOM.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+      expect(editor.text()).toBe(entered);
+      editor.type(typed);
+      sync();
+      expect(bText.toString()).toBe(entered + typed);
+      manager.undo();
+      expect(editor.text()).toBe(entered);
+      sync();
+      expect(bText.toString()).toBe(entered);
+      manager.undo();
+      expect(editor.text()).toBe(original);
+      sync();
+      expect(bText.toString()).toBe(original);
+    } finally {
+      manager.destroy();
+      a.destroy();
+      b.destroy();
+    }
+  });
+
   test("empty boundary transactions reach the extender and listener", () => {
     const doc = new Y.Doc();
     const text = doc.getText("codemirror");

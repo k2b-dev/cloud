@@ -182,7 +182,8 @@ export default function EditorToolbar(props: Props) {
                   choice: "radio",
                   label: level === 0 ? t().normalText : level === 1 ? t().heading1 : level === 2 ? t().heading2 : t().heading3,
                   checked: props.format.heading === level,
-                  description: level ? keys(`Mod-Shift-${level}`) : undefined,
+                  // macOS takes ⇧⌘3 for screenshots, so Mac users pick Heading 3 here.
+                  description: level && !(level === 3 && isApple()) ? keys(`Mod-Shift-${level}`) : undefined,
                   action: withView((view) => setHeadingLevel(view, level)),
                 })),
               },

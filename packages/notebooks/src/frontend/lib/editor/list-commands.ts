@@ -284,7 +284,7 @@ const textStart = (line: Line, item: ListItemLine) => {
   return line.from + start;
 };
 const itemKind = (line: Line, item: ListItemLine) => (taskBox(line, item) ? "task" : /^\d/.test(item.marker) ? "ordered" : "bullet");
-/** The kind whose toggle removes the markers on every selected line. */
+/** The kind shared by every selected line; its toggle only turns top-level items without children back into text. */
 export const listKindAt = (state: EditorState) => {
   const lines = selectedLines(state);
   const last = lines.at(-1);
@@ -398,10 +398,16 @@ const separateLines = (state: EditorState, changes: ChangeSet, paragraphs: reado
   );
 };
 
-const liftAtCaret = (view: EditorView, line: Line, item: ListItemLine, event: string) => {
+const liftAtCaret = (view: EditorView, line: Line, item: ListItemLine, event: string, annotation?: Annotation<unknown>) => {
   const changes = shiftChanges(view.state, -1)!;
   if (!changes.empty) {
-    view.dispatch({ changes, selection: { anchor: changes.mapPos(textStart(line, item), 1) }, scrollIntoView: true, userEvent: event });
+    view.dispatch({
+      changes,
+      selection: { anchor: changes.mapPos(textStart(line, item), 1) },
+      scrollIntoView: true,
+      userEvent: event,
+      annotations: annotation,
+    });
   }
   return true;
 };
@@ -413,6 +419,7 @@ const paragraphAtCaret = (
   event: string,
   tree: Tree,
   excluded: () => readonly ExcludedSpan[],
+  annotation?: Annotation<unknown>,
 ) => {
   const { state } = view;
   const from = textStart(line, item);
@@ -435,7 +442,7 @@ const paragraphAtCaret = (
     selection: { anchor: changes.mapPos(from, 1) },
     scrollIntoView: true,
     userEvent: event,
-    annotations: orderedSuffixRestart.of(following.length > 0),
+    annotations: [orderedSuffixRestart.of(following.length > 0), ...(annotation ? [annotation] : [])],
   });
   return true;
 };
@@ -455,14 +462,20 @@ const enterListItem: Command = (view) => {
   const start = textStart(line, item);
   const child = firstChild(state, line, item, tree, excluded);
   if (!line.text.slice(start - line.from).trim()) {
-    if (item.indent) return liftAtCaret(view, line, item, "input");
-    return child ? true : paragraphAtCaret(view, line, item, "input", tree, excluded);
+    if (item.indent) return liftAtCaret(view, line, item, "input", isolateHistory.of("full"));
+    return child ? true : paragraphAtCaret(view, line, item, "input", tree, excluded, isolateHistory.of("full"));
   }
   if (head <= start) {
     const prefix = emptyPrefix(line, item);
     const inserted = state.changes({ from: line.from, insert: prefix + "\n" });
     const separated = separateLines(state, inserted, [], [line.from]);
-    view.dispatch({ changes: separated, selection: { anchor: separated.mapPos(start, 1) }, scrollIntoView: true, userEvent: "input" });
+    view.dispatch({
+      changes: separated,
+      selection: { anchor: separated.mapPos(start, 1) },
+      scrollIntoView: true,
+      userEvent: "input",
+      annotations: isolateHistory.of("full"),
+    });
     return true;
   }
   if (!child) return false;
@@ -474,6 +487,7 @@ const enterListItem: Command = (view) => {
     selection: { anchor: from + 1 + prefix.length },
     scrollIntoView: true,
     userEvent: "input",
+    annotations: isolateHistory.of("full"),
   });
   return true;
 };

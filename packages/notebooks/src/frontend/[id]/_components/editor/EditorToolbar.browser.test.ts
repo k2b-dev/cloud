@@ -235,6 +235,22 @@ test("phone at 390px scrolls the toolbar without overflowing the page", async ()
   }
 });
 
+test("on a Mac the style menu offers no Heading 3 shortcut, because macOS takes ⇧⌘3 for screenshots", async () => {
+  const context = await browser.newContext(devices.desktop);
+  await context.addInitScript(() => Object.defineProperty(Navigator.prototype, "platform", { get: () => "MacIntel" }));
+  const page = await context.newPage();
+  try {
+    await page.goto(server.url.href);
+    await page.waitForFunction(() => "toolbarHarness" in window);
+    await load(page, "word here");
+    await page.getByRole("button", { name: "Text style: Normal", exact: true }).click();
+    expect(await page.getByRole("menuitemradio", { name: /^Heading 2/ }).textContent()).toContain("⇧⌘2");
+    expect(await page.getByRole("menuitemradio", { name: /^Heading 3/ }).textContent()).not.toContain("⌘");
+  } finally {
+    await context.close();
+  }
+});
+
 describe.each(Object.entries(devices))("editor toolbar list kinds (%s)", (name, device) => {
   test("visible list buttons convert the selected lines instead of stacking prefixes, keeping focus and the caret", async () => {
     const page = await open(device);
