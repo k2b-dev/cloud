@@ -8,6 +8,7 @@ import automaticRepliesPage from "./[mailboxId]/automations/replies/page";
 import workflowsPage from "./[mailboxId]/automations/workflows/page";
 import draftComposePage from "./[mailboxId]/compose/[draftId]/page";
 import draftSeedComposePage from "./[mailboxId]/compose/local/[seedId]/page";
+import draftReadPage from "./[mailboxId]/drafts/[draftId]/page";
 import mailboxPage from "./[mailboxId]/page";
 import composePage from "./compose/page";
 import { mailCalendarCommandHref } from "./mail-calendar-command";
@@ -22,6 +23,7 @@ export default new Hono<AuthContext>()
   .get("/", auth.requireRole("user", ssr.access), ...page)
   .get("/:mailboxId/compose/local/:seedId", auth.requireRole("user", ssr.access), ...draftSeedComposePage)
   .get("/:mailboxId/compose/:draftId", auth.requireRole("user", ssr.access), ...draftComposePage)
+  .get("/:mailboxId/drafts/:draftId", auth.requireRole("user", ssr.access), ...draftReadPage)
   .get("/:mailboxId/automations", auth.requireRole("user", ssr.access), ...automationsPage)
   .get("/:mailboxId/automations/replies", auth.requireRole("user", ssr.access), ...automaticRepliesPage)
   .get("/:mailboxId/automations/incoming", auth.requireRole("user", ssr.access), ...incomingAutomationsPage)

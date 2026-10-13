@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, jest, mock, spyOn, test } from "bun:test";
-import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest, withResourceOpenLinkAssertions } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
@@ -60,6 +60,8 @@ import {
   search,
   triage,
 } from "./service";
+
+withResourceOpenLinkAssertions("mail", mailCapabilities);
 
 const mailboxId = "MbA123";
 const conversationId = "CvB234";
@@ -3106,10 +3108,38 @@ test("a created draft is named in refs and its reader opens compose", async () =
   });
   if (!created.ok) throw new Error(created.error.message);
   expect(created.data.refs).toMatchObject([{ type: "mail.draft", id: draftId, title: mutableDraftFixture.subject }]);
-  expect(cloudResourceHref({ type: "mail.draft", id: draftId })).toBe(`/open/mail.draft/${draftId}`);
+  expect(cloudResourceHref({ type: "mail.draft", id: draftId })).toBe(`/open/mail.draft/~${draftId}`);
 
   const read = await mailCapabilities.queries["draft.read"].run({ id: draftId }, context);
   if (!read.ok) throw new Error(read.error.message);
   expect(assertResourceOpenLink(read.data).href).toBe(`/app/mail/${mailboxId}/compose/${draftId}`);
   expect(read.data.links.filter((link) => link.rel === "edit")).toEqual([]);
+});
+
+test("a draft reader without write access opens the read view", async () => {
+  spyOn(resourceParents, "draft").mockResolvedValue(internalMailboxId);
+  spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+  const access = spyOn(mailboxAccess, "requireMailboxAccess").mockImplementation(async (_context, _mailboxId, permission) =>
+    permission === "write"
+      ? { ok: false, error: { code: "FORBIDDEN", message: "Write denied", status: 403 } }
+      : { ok: true, data: { scope: "mailbox", permission } },
+  );
+  const result = await mailCapabilities.queries["draft.read"].run({ id: draftId }, context);
+  if (!result.ok) throw new Error(result.error.message);
+  expect(access.mock.calls[0]?.[2]).toBe("write");
+  expect(assertResourceOpenLink(result.data).href).toBe(`/app/mail/${mailboxId}/drafts/${draftId}`);
+  expect(result.data.links).toHaveLength(1);
+  expect(result.data.links.filter((link) => link.rel === "edit")).toEqual([]);
+});
+
+test("a draft reader without access returns 404 and no link", async () => {
+  spyOn(resourceParents, "draft").mockResolvedValue(internalMailboxId);
+  spyOn(drafts, "getDraft").mockResolvedValue({
+    ok: false,
+    error: { code: "NOT_FOUND", message: "Draft not found", status: 404 },
+  });
+  const result = await mailCapabilities.queries["draft.read"].run({ id: draftId }, context);
+  expect(result).toEqual({ ok: false, error: { code: "NOT_FOUND", message: "Draft not found", status: 404 } });
+  expect(result).not.toHaveProperty("data");
+  expect(result).not.toHaveProperty("links");
 });

@@ -185,7 +185,7 @@ test("focus lists a cross-mailbox queue without resolving one mailbox", async ()
   expect(result.exitCode, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual({
     ...page,
-    items: page.items.map((item) => ({ ...item, permalink: `http://127.0.0.1:${server.port}/open/mail.conversation/${item.id}` })),
+    items: page.items.map((item) => ({ ...item, permalink: `http://127.0.0.1:${server.port}/open/mail.conversation/~${item.id}` })),
   });
   expect(requests).toEqual(["GET /api/mail/overview/conversations?view=mine&limit=25"]);
 });
@@ -379,7 +379,7 @@ test("conversation context commands expose Contacts and deterministic related ma
   expect(JSON.parse(results[1]!.stdout)).toEqual([
     {
       id: "rel123",
-      permalink: `${origin}/open/mail.conversation/rel123`,
+      permalink: `${origin}/open/mail.conversation/~rel123`,
       subject: "Re: Release update",
       participantSummary: "Ada",
       latestMessageAt: "2026-08-18T12:00:00.000Z",
@@ -430,7 +430,7 @@ test("conversation drafts lists resumable work for one conversation", async () =
   expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stderr).toBe("");
   expect(requestedPath).toBe(`/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/drafts?limit=12`);
-  expect(JSON.parse(result.stdout)).toEqual(drafts.map((draft) => ({ ...draft, permalink: `${origin}/open/mail.draft/${draft.id}` })));
+  expect(JSON.parse(result.stdout)).toEqual(drafts.map((draft) => ({ ...draft, permalink: `${origin}/open/mail.draft/~${draft.id}` })));
 });
 
 test("mailbox configure maps automatic reply access to the mailbox policy", async () => {
@@ -2118,7 +2118,7 @@ test("ls lists mailboxes, or a folder's conversations with a built-in view", asy
   const mailboxes = await cli();
   expect(mailboxes.exitCode, mailboxes.stderr).toBe(0);
   expect(JSON.parse(mailboxes.stdout)).toEqual([
-    { ...mailbox, permission: "admin", permalink: `http://127.0.0.1:${server.port}/open/mail.mailbox/${mailbox.id}` },
+    { ...mailbox, permission: "admin", permalink: `http://127.0.0.1:${server.port}/open/mail.mailbox/~${mailbox.id}` },
   ]);
 
   const folder = await cli("Support:INBOX", "--view", "mine");
@@ -2196,7 +2196,7 @@ test("show includes shared context and the latest message window in English and 
   expect(result.exitCode, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual({
     conversationId: CONVERSATION_ID,
-    permalink: `${origin}/open/mail.conversation/${CONVERSATION_ID}`,
+    permalink: `${origin}/open/mail.conversation/~${CONVERSATION_ID}`,
     summary: summary.summary,
     summaryRevision: summary.summaryRevision,
     collaboration: {
@@ -2206,7 +2206,7 @@ test("show includes shared context and the latest message window in English and 
       revision: collaboration.revision,
     },
     tags: [{ id: TAG_ID, name: "Launch", color: "blue", revision: 2 }],
-    messages: [{ ...message, permalink: `${origin}/open/mail.message/${MESSAGE_ID}` }],
+    messages: [{ ...message, permalink: `${origin}/open/mail.message/~${MESSAGE_ID}` }],
     messagesTruncated: true,
   });
   expect(requested).toContain(`/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/messages?limit=50&latest=true`);
@@ -3393,7 +3393,7 @@ test("message inspect and source expose metadata and exact RFC bytes", async () 
   const inspected = await runCli(origin, ["--json", "mail", "message", "inspect", MESSAGE_ID, "--mailbox", MAILBOX_ID]);
   expect(inspected.exitCode).toBe(0);
   expect(inspected.stderr).toBe("");
-  expect(JSON.parse(inspected.stdout)).toEqual({ ...inspector, permalink: `${origin}/open/mail.message/${MESSAGE_ID}` });
+  expect(JSON.parse(inspected.stdout)).toEqual({ ...inspector, permalink: `${origin}/open/mail.message/~${MESSAGE_ID}` });
 
   const downloaded = await runCli(origin, ["--json", "mail", "message", "source", MESSAGE_ID, "--mailbox", MAILBOX_ID, "--out", output]);
   expect(downloaded.exitCode).toBe(0);

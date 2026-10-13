@@ -321,7 +321,7 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
         "Thanks, we are on it.",
       ]);
       expect(draft).toMatchObject({ intent: "reply", subject: "Re: Invoice question", to: [{ address: "ada@customer.test" }] });
-      expect(draft.permalink).toBe(`${serverUrl}/open/mail.draft/${draft.id}`);
+      expect(draft.permalink).toBe(`${serverUrl}/open/mail.draft/~${draft.id}`);
     });
 
     test("draft create returns an absolute resource permalink", async () => {
@@ -338,7 +338,7 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
         "--body",
         "Ready for review.",
       ]);
-      expect(draft.permalink).toBe(`${serverUrl}/open/mail.draft/${draft.id}`);
+      expect(draft.permalink).toBe(`${serverUrl}/open/mail.draft/~${draft.id}`);
     });
 
     test("archive and mv queue one provider move per conversation from the Inbox", async () => {
