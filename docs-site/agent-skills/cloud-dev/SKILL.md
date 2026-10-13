@@ -152,13 +152,12 @@ Cloud validates them at start and updates them by content hash; it offers them o
 
 For capability design or changes, read **App capabilities** in the Docs collection (`/en/docs/platform/capabilities`),
 especially its machine-composition and design-review guidance. Trace real task paths and consumers before choosing
-result fields or changing contracts; keep detailed API rules in that guide. Every Type with a page declares a reader
-that returns the resource's `open` link; link resources with `cloudResourceHref`, never a hand-built URL. Apply the
-resource-link test guard to all Query and Action success fixtures, including lists and multiple resources (see
-**App capabilities**). Cloud records one execution row for every capability call on every surface; an application
-writes `context.requestId` into its own audit rows so the two trails join without sharing payloads. Actions may word themselves with optional, translated `presentation.sentences`
+result fields or changing contracts; keep detailed API rules in that guide. Cloud records one execution row for every
+capability call on every surface; an application writes `context.requestId` into its own audit rows so the two trails
+join without sharing payloads. Actions may word themselves with optional, translated `presentation.sentences`
 (`approval`, `done`, `rejected`, `notRun`; `{input.path}`, `{data.path}` in `done`); consumers never special-case an app.
 Cloud records every approval as one platform request and repeats the Action's review right before the approved call runs; a changed review asks again, so keep reviews deterministic and carry a revision in the input of Actions on changeable state. Apps show and decide their open approvals only through the shared `Approvals` component and `/api/approvals` route, with no app-owned approval routes or tables; an editor bridge can only reject `confirm` requests.
+Every Type with a page declares a reader that returns the resource's `open` link, a page the caller may open; link resources with `cloudResourceHref`, never a hand-built URL, and run `withResourceOpenLinkAssertions` over the capability tests (*Resource links*).
 For a shared cross-app contract, read `/en/docs/platform/contact-directory` or `/en/docs/platform/file-providers`.
 
 For deployment questions, read **Deployment requirements** in the Docs

@@ -1,4 +1,5 @@
-import { type CloudResourceRef, cloudResourceHref } from "../contracts/capabilities";
+import type { CloudResourceRef } from "../contracts/capabilities";
+import { cloudResourceHref } from "../contracts/resource-href";
 import type { CloudCliContext } from "./index";
 
 export const cloudResourceUrl = (ctx: Pick<CloudCliContext, "options">, ref: CloudResourceRef): string =>

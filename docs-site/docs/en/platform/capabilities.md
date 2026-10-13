@@ -503,11 +503,9 @@ Providers keep the strict ref shape and root-relative semantic links. MCP's
 advertised output schema accepts its added `refs[].href`; that consumer field
 is optional and does not become a provider field. Generic `cld capabilities
 read`, `query` and `action` add permalinks for refs with live readers and make
-returned semantic links absolute, including links inside resource lists.
-Enrichment fetches the catalog only for ref apps not covered by the reader's
-manifest, stopping when all are found or pages end. A catalog failure warns
-once and preserves the successful result; `read` requires catalog discovery
-before invoking its reader.
+returned semantic links absolute, including links inside resource lists. They
+read the catalog for this only when a result names refs; if the catalog is
+unavailable, the command warns and still prints the successful result.
 Assistant CLI JSON, JSONL, terminal and ACP output make supplied Cloud-relative
 Markdown links absolute. Models use supplied links and never construct URLs.
 
