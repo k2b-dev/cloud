@@ -5,7 +5,7 @@ import { type Context, Hono } from "hono";
 import { buildSpaceItemHref } from "../routes";
 import { spacesService } from "../service";
 import { type SpacesMessages, spacesMessages } from "../service/messages";
-import { projectItemReferences } from "../service/public-resources";
+import { projectItemReferences, resolvePublicId } from "../service/public-resources";
 
 /**
  * Spaces dashboard widget — today's events + next-up todos for the user,
@@ -52,17 +52,37 @@ const formatTimeRange = (startsAt: string | null, endsAt: string | null, t: Spac
   return t.widgetToday;
 };
 
+/** Return today's summary, authorizing a chosen Space on every invocation. */
 export const spacesTodayWidgetHandler = async (c: Context<AuthContext>) => {
   const user = getUserBackedActor(c);
-  // 403 = unauthenticated; signed-in users always have access (data may be empty → 204).
+  // The summary needs a user-backed actor; a selected Space also needs current read access.
   if (!user) return c.body(null, 403);
 
   const locale = getLocale(c);
   const t = spacesMessages(locale);
   const dateConfig = getDateConfig(c);
-  const rows = getWidgetRequest(c).size === "large" ? 6 : 2;
+  const request = getWidgetRequest(c);
+  const selected = request.settings.space;
+  let spaceId: string | undefined;
+  let title = t.widgetTitle;
+  let href = "/app/spaces";
+  if (typeof selected === "object") {
+    const resolved = await resolvePublicId("spaces", selected.id);
+    if (
+      !resolved ||
+      !(await spacesService.space.permission.canAccess({ spaceId: resolved, subject: c.get("accessSubject"), requiredLevel: "read" }))
+    )
+      return c.body(null, 403);
+    const space = await spacesService.space.get({ id: resolved });
+    if (!space) return c.body(null, 403);
+    spaceId = resolved;
+    title = t.widgetSpaceTitle({ space: space.name });
+    href = `/app/spaces/${selected.id}`;
+  }
+  const rows = request.size === "large" ? 6 : 2;
   const internalSnapshot = await spacesService.item.dashboardSnapshot({
     userId: user.id,
+    spaceId,
     todoLimit: rows,
     dateConfig,
   });
@@ -74,9 +94,9 @@ export const spacesTodayWidgetHandler = async (c: Context<AuthContext>) => {
 
   if (snap.openTodoCount === 0 && snap.events.length === 0) {
     const body: WidgetResponse = {
-      title: t.widgetTitle,
+      title,
       icon: "ti ti-checklist",
-      href: "/app/spaces",
+      href,
       blocks: [
         {
           kind: "hero",
@@ -118,9 +138,9 @@ export const spacesTodayWidgetHandler = async (c: Context<AuthContext>) => {
   const blocks: WidgetBlock[] = [{ kind: "list", items: items.slice(0, rows) }];
 
   const body: WidgetResponse = {
-    title: t.widgetTitle,
+    title,
     icon: "ti ti-checklist",
-    href: "/app/spaces",
+    href,
     meta: [
       snap.events.length > 0 ? t.widgetTodayCount({ count: snap.events.length }) : null,
       snap.openTodoCount > 0 ? t.widgetOpenCount({ count: snap.openTodoCount }) : null,

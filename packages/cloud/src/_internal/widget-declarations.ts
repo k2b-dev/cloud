@@ -6,6 +6,7 @@ import {
   WIDGET_DESCRIPTION_MAX_LENGTH,
   WIDGET_TITLE_MAX_LENGTH,
 } from "../contracts/widgets";
+import { WidgetSettingsDeclarationSchema } from "./widget-settings";
 
 const text = (value: string | undefined, label: string, max: number): string | undefined => {
   if (value === undefined) return undefined;
@@ -18,7 +19,7 @@ const text = (value: string | undefined, label: string, max: number): string | u
  * Validates and copies an app's widget declarations at `defineApp()`, so a typo fails at startup instead of a widget
  * silently missing from the gallery: unique ids without `@`, which separates a widget's key from the size the
  * dashboard asks for, bounded titles and descriptions, known sizes with the default among them, a boolean `suggest`,
- * and known roles.
+ * known roles, and a bounded settings declaration.
  */
 export const compileWidgetDeclarations = (
   appId: string,
@@ -42,8 +43,14 @@ export const compileWidgetDeclarations = (
     if (widget.suggest !== undefined && typeof widget.suggest !== "boolean")
       throw new Error(`${label} must declare suggest as true or false`);
     if (widget.requiresRoles?.some((role) => !RoleSchema.safeParse(role).success)) throw new Error(`${label} requires an unknown role`);
+    const settings = widget.settings === undefined ? undefined : WidgetSettingsDeclarationSchema.safeParse(widget.settings);
+    if (settings && !settings.success) {
+      const issue = settings.error.issues[0]!;
+      throw new Error(`${label} setting ${JSON.stringify(issue.path[0] ?? "settings")}: ${issue.message}`);
+    }
     return {
       ...widget,
+      ...(settings?.success ? { settings: settings.data } : {}),
       title: text(widget.title, `${label} title`, WIDGET_TITLE_MAX_LENGTH),
       description: text(widget.description, `${label} description`, WIDGET_DESCRIPTION_MAX_LENGTH),
       sizes: sizes ? DASHBOARD_WIDGET_SIZES.filter((size) => sizes.includes(size)) : undefined,

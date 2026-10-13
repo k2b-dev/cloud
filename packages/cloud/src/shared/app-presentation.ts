@@ -26,7 +26,22 @@ const mergedTranslation = (catalog: AppPresentationCatalog, requestedLocale: str
       widgets: Object.fromEntries(
         [...new Set([...Object.keys(current.widgets ?? {}), ...Object.keys(next.widgets ?? {})])].map((id) => [
           id,
-          { ...current.widgets?.[id], ...next.widgets?.[id] },
+          {
+            ...current.widgets?.[id],
+            ...next.widgets?.[id],
+            settings: Object.fromEntries(
+              [...new Set([...Object.keys(current.widgets?.[id]?.settings ?? {}), ...Object.keys(next.widgets?.[id]?.settings ?? {})])].map(
+                (name) => [
+                  name,
+                  {
+                    ...current.widgets?.[id]?.settings?.[name],
+                    ...next.widgets?.[id]?.settings?.[name],
+                    options: { ...current.widgets?.[id]?.settings?.[name]?.options, ...next.widgets?.[id]?.settings?.[name]?.options },
+                  },
+                ],
+              ),
+            ),
+          },
         ]),
       ),
     };
@@ -65,6 +80,39 @@ export const resolveAppPresentation = <T extends AppMeta>(app: T, requestedLocal
       ...widget,
       title: translation.widgets?.[widget.id]?.title ?? widget.title,
       description: translation.widgets?.[widget.id]?.description ?? widget.description,
+      ...(widget.settings && typeof widget.settings === "object" && !Array.isArray(widget.settings)
+        ? {
+            settings: Object.fromEntries(
+              Object.entries(widget.settings).map(([name, field]) => {
+                if (!field || typeof field !== "object") return [name, field];
+                const translated = translation.widgets?.[widget.id]?.settings?.[name];
+                return [
+                  name,
+                  {
+                    ...field,
+                    label: translated?.label ?? field.label,
+                    ...(field.kind === "text" ? { placeholder: translated?.placeholder ?? field.placeholder } : {}),
+                    ...(field.kind === "choice" && Array.isArray(field.options)
+                      ? {
+                          options: field.options.map((option) =>
+                            option && typeof option === "object"
+                              ? {
+                                  ...option,
+                                  label:
+                                    translated?.options && Object.hasOwn(translated.options, option.value)
+                                      ? (translated.options[option.value] ?? option.label)
+                                      : option.label,
+                                }
+                              : option,
+                          ),
+                        }
+                      : {}),
+                  },
+                ];
+              }),
+            ),
+          }
+        : {}),
     })),
   };
 };

@@ -3,9 +3,9 @@ import { sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
 import type { DashboardWidget } from "../_internal/registry";
-import type { WidgetStreamLine } from "../contracts/widgets";
+import { WIDGET_REQUEST_MAX_BYTES, type WidgetStreamLine } from "../contracts/widgets";
 import type { AuthContext } from "../server";
-import type { signInvocationToken } from "../services/identity/invocation-token";
+import { type signInvocationToken, signInvocationToken as signRealInvocation } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { createWidgetRoutes as buildWidgetRoutes, WIDGET_CONCURRENCY } from "./widgets";
 
@@ -635,5 +635,170 @@ describe("Core widget stream", () => {
     });
     expect((await routes.request("/widgets/v1")).status).toBe(403);
     expect(registryCalls).toBe(0);
+  });
+});
+
+describe("widget entry stream", () => {
+  test("asks the same widget per entry with validated settings and distinct invocations", async () => {
+    const seen: { settings: unknown; token: string | null; size: string | null }[] = [];
+    let signed = 0;
+    const declared: DashboardWidget = {
+      ...widget,
+      settings: {
+        space: { kind: "resource", label: "Space", type: "spaces.space" },
+        enabled: { kind: "toggle", label: "Enabled", default: true },
+      },
+    };
+    const routes = buildWidgetRoutes({
+      authenticate,
+      withActiveSigner,
+      listWidgets: async () => [declared],
+      signInvocation: async (params) => {
+        signed += 1;
+        return signRealInvocation(params);
+      },
+      fetch: async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : input);
+        const settings: unknown = JSON.parse(url.searchParams.get("settings")!);
+        seen.push({ settings, token: new Headers(init?.headers).get("authorization"), size: url.searchParams.get("size") });
+        return Response.json({ title: JSON.stringify(settings), blocks: [] });
+      },
+    });
+    const response = await routes.request("/widgets/v1", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        widgets: [
+          {
+            id: "second",
+            key: "weather/current",
+            size: "medium",
+            settings: { space: { type: "spaces.space", id: "two" }, enabled: false, extra: true },
+          },
+          { id: "unknown", key: "missing/current" },
+          { id: "first", key: "weather/current", size: "huge", settings: { space: { type: "spaces.space", id: "one" }, enabled: "no" } },
+          { id: "defaults", key: "weather/current" },
+          { id: "invalid", key: "weather/current", settings: { space: { type: "files.file", id: "one" } } },
+        ],
+      }),
+    });
+    const lines = await readLines(response);
+    expect(lines[0]).toEqual({ type: "start", widgets: ["second", "first", "defaults", "invalid"] });
+    expect(signed).toBe(4);
+    expect(new Set(seen.map((entry) => entry.token)).size).toBe(4);
+    expect(seen).toEqual([
+      { settings: { space: { type: "spaces.space", id: "two" }, enabled: false }, token: expect.any(String), size: "medium" },
+      { settings: { space: { type: "spaces.space", id: "one" }, enabled: true }, token: expect.any(String), size: "small" },
+      { settings: { enabled: true }, token: expect.any(String), size: "small" },
+      { settings: { enabled: true }, token: expect.any(String), size: "small" },
+    ]);
+    for (const [index, id] of ["second", "first", "defaults", "invalid"].entries()) {
+      const line = lines.find((line) => line.type === "widget" && line.id === id);
+      expect(line).toMatchObject({
+        type: "widget",
+        id,
+        key: "weather/current",
+        status: "ok",
+        widget: { title: JSON.stringify(seen[index]!.settings), blocks: [] },
+      });
+    }
+    expect(lines.at(-1)).toEqual({ type: "done", status: "complete" });
+  });
+
+  test("never forwards settings to an undeclared widget in GET or POST", async () => {
+    const routes = createWidgetRoutes({
+      authenticate,
+      listWidgets: async () => [widget],
+      fetch: async (input) => {
+        const url = new URL(input instanceof Request ? input.url : input);
+        expect(url.searchParams.has("settings")).toBe(false);
+        return Response.json({ title: "Weather", blocks: [] });
+      },
+    });
+    const get = await readLines(await routes.request('/widgets/v1?settings={"extra":true}'));
+    expect(get[0]).toEqual({ type: "start", widgets: ["weather/current"] });
+    expect(get.find((line) => line.type === "widget")).not.toHaveProperty("id");
+    await readLines(
+      await routes.request("/widgets/v1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ widgets: [{ id: "entry", key: "weather/current", settings: { extra: true } }] }),
+      }),
+    );
+    expect((await routes.request('/widgets/v1/weather/current?settings={"extra":true}')).status).toBe(200);
+  });
+
+  test("always forwards defaults or an empty object when settings are declared, including GET", async () => {
+    const declarations: NonNullable<DashboardWidget["settings"]>[] = [{ enabled: { kind: "toggle", label: "Enabled", default: true } }, {}];
+    for (const settings of declarations) {
+      const routes = createWidgetRoutes({
+        authenticate,
+        listWidgets: async () => [{ ...widget, settings }],
+        fetch: async (input) => {
+          const url = new URL(input instanceof Request ? input.url : input);
+          expect(url.searchParams.get("settings")).toBe(JSON.stringify("enabled" in settings ? { enabled: true } : {}));
+          return Response.json({ title: "Weather", blocks: [] });
+        },
+      });
+      await readLines(await routes.request("/widgets/v1"));
+      expect((await routes.request("/widgets/v1/weather/current")).status).toBe(200);
+    }
+  });
+
+  test("rejects invalid, duplicate and oversized bodies before looking up providers", async () => {
+    let lookups = 0;
+    const routes = createWidgetRoutes({
+      authenticate,
+      listWidgets: async () => {
+        lookups += 1;
+        return [widget];
+      },
+    });
+    const entry = { id: "entry", key: "weather/current" };
+    for (const body of [
+      "{",
+      JSON.stringify({ widgets: [] }),
+      JSON.stringify({ widgets: [entry, entry] }),
+      JSON.stringify({ widgets: Array.from({ length: 101 }, (_, i) => ({ ...entry, id: String(i) })) }),
+      JSON.stringify({ widgets: [{ ...entry, settings: { one: true, two: true, three: true, four: true, five: true } }] }),
+      JSON.stringify({ widgets: [{ ...entry, settings: { text: "x".repeat(WIDGET_REQUEST_MAX_BYTES) } }] }),
+      JSON.stringify({ widgets: [{ ...entry, id: "x".repeat(121) }] }),
+      JSON.stringify({ widgets: [{ ...entry, key: "x".repeat(201) }] }),
+      JSON.stringify({ widgets: [{ ...entry, settings: [] }] }),
+      JSON.stringify({ widgets: [{ ...entry, unknown: true }] }),
+      JSON.stringify({ widgets: [entry], unknown: true }),
+      JSON.stringify({ widgets: [{ ...entry, key: "invalid" }] }),
+    ]) {
+      const response = await routes.request("/widgets/v1", { method: "POST", headers: { "content-type": "application/json" }, body });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ message: expect.any(String) });
+    }
+    expect(lookups).toBe(0);
+  });
+
+  test("POST uses the same authentication and setup failures as GET", async () => {
+    const request = {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ widgets: [{ id: "entry", key: "weather/current" }] }),
+    };
+    const denied = createWidgetRoutes({ authenticate: async (c) => c.json({ message: "No access" }, 403) });
+    expect((await denied.request("/widgets/v1", request)).status).toBe(403);
+    for (const dependencies of [
+      {
+        listWidgets: async () => {
+          throw new Error("registry unavailable");
+        },
+      },
+      {
+        listWidgets: async () => [widget],
+        withActiveSigner: async () => {
+          throw new Error("signer unavailable");
+        },
+      },
+    ]) {
+      const routes = createWidgetRoutes({ authenticate, ...dependencies });
+      expect((await routes.request("/widgets/v1", request)).status).toBe(503);
+    }
   });
 });

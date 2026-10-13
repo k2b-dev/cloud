@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { CloudResourceRef } from "./capabilities";
 
 /**
  * Widget JSON contract — what an app's widget endpoint must return when the
@@ -65,6 +66,32 @@ export const WIDGET_TITLE_MAX_LENGTH = 80;
 /** Longest declared widget description, in characters: one sentence in the widget gallery. */
 export const WIDGET_DESCRIPTION_MAX_LENGTH = 200;
 
+/** Maximum settings a widget can declare. */
+export const WIDGET_SETTINGS_MAX_FIELDS = 4;
+/** Maximum options in a choice setting; at least one is required. */
+export const WIDGET_SETTING_MAX_OPTIONS = 6;
+/** Maximum text setting length, also used when no maxLength is declared. */
+export const WIDGET_SETTING_TEXT_MAX_LENGTH = 200;
+/** Maximum board entries in one widget stream request. */
+export const WIDGET_REQUEST_MAX_ENTRIES = 100;
+/** Maximum board entry identifier length, in characters. */
+export const WIDGET_REQUEST_MAX_ID_LENGTH = 120;
+/** Request body budget in bytes, covering 100 entries of realistic size. */
+export const WIDGET_REQUEST_MAX_BYTES = 64 * 1024;
+
+/** A widget's editable setting; resource values carry identity, never authorization. */
+export type WidgetSettingField =
+  | { kind: "choice"; label: string; options: readonly { label: string; value: string }[]; default?: string }
+  | { kind: "resource"; label: string; type: string }
+  | { kind: "toggle"; label: string; default?: boolean }
+  | { kind: "text"; label: string; placeholder?: string; maxLength?: number };
+/** Settings keyed by short camelCase names, shared by discovery and request validation. */
+export type WidgetSettingsDeclaration = Readonly<Record<string, WidgetSettingField>>;
+/** A validated setting value; a handler must still authorize every resource reference. */
+export type WidgetSettingValue = string | boolean | CloudResourceRef;
+/** Validated widget settings; handlers must also work when values are missing. */
+export type WidgetSettings = Readonly<Record<string, WidgetSettingValue>>;
+
 export const isDashboardWidgetSize = (value: unknown): value is DashboardWidgetSize =>
   DASHBOARD_WIDGET_SIZES.some((size) => size === value);
 
@@ -89,10 +116,15 @@ export const fitWidgetSize = (
   widget: { sizes: readonly DashboardWidgetSize[]; defaultSize: DashboardWidgetSize },
 ): DashboardWidgetSize => (isDashboardWidgetSize(requested) && widget.sizes.includes(requested) ? requested : widget.defaultSize);
 
-/** What the dashboard asks a widget handler for, read with `getWidgetRequest(c)`. */
+/**
+ * What the dashboard asks a widget handler for, read with `getWidgetRequest(c)`. Settings are validated against the
+ * declaration; handlers must still authorize every chosen resource and work without settings.
+ */
 export type WidgetRequest = {
   /** The size the widget is shown in, always one the widget declares. */
   size: DashboardWidgetSize;
+  /** Declared, validated values with choice and toggle defaults filled. */
+  settings: WidgetSettings;
 };
 
 export const WidgetAccentSchema = z
@@ -237,12 +269,27 @@ export const widgetKey = (appId: string, widgetId: string): string => `${appId}/
 export type WidgetStreamStatus = "ok" | "empty" | "forbidden" | "timeout" | "error";
 
 /**
- * One line of `GET /api/widgets/v1` (`application/x-ndjson`): `start` names the widgets Core asks, in registry
- * order; one `widget` line follows per widget in the order they finish; `done` closes the stream. Every widget named
- * in `start` gets exactly one line.
+ * One line of `GET` or `POST /api/widgets/v1` (`application/x-ndjson`). GET names widget keys in registry order; POST
+ * names entry ids in request order. One `widget` line follows per entry in the order they finish; `done` closes the
+ * stream. Every name in `start` gets exactly one line. Only POST widget lines include a board entry id.
  */
 export type WidgetStreamLine =
   | { type: "start"; widgets: string[] }
-  | { type: "widget"; key: string; status: "ok"; widget: WidgetResponse; ms: number }
-  | { type: "widget"; key: string; status: Exclude<WidgetStreamStatus, "ok">; ms: number }
+  | {
+      type: "widget";
+      /** Board entry id, set only for POST entries. */
+      id?: string;
+      key: string;
+      status: "ok";
+      widget: WidgetResponse;
+      ms: number;
+    }
+  | {
+      type: "widget";
+      /** Board entry id, set only for POST entries. */
+      id?: string;
+      key: string;
+      status: Exclude<WidgetStreamStatus, "ok">;
+      ms: number;
+    }
   | { type: "done"; status: "complete" | "partial" };

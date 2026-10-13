@@ -12,7 +12,13 @@ export const app = defineApp({
     translations: {
       de: {
         description: "Aufgaben und Termine gemeinsam in übersichtlichen Spaces planen und bearbeiten.",
-        widgets: { today: { title: "Heute", description: "Termine und fällige To-dos von heute aus allen deinen Spaces." } },
+        widgets: {
+          today: {
+            title: "Heute",
+            description: "Termine und fällige To-dos von heute aus allen deinen Spaces.",
+            settings: { space: { label: "Space" } },
+          },
+        },
       },
     },
   },
@@ -38,6 +44,7 @@ export const app = defineApp({
       description: "Today's events and due to-dos from all your spaces.",
       sizes: ["medium", "large"],
       defaultSize: "large",
+      settings: { space: { kind: "resource", type: "spaces.space", label: "Space" } },
       suggest: true,
       // Recommended before sizes existed; the dashboard reads it only to convert boards saved then.
       presentation: { defaultZone: "focus", defaultSpan: "wide" },

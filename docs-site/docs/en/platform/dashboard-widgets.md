@@ -5,7 +5,7 @@ section: Platform services
 order: 570
 description: Add application-owned information to the shared Cloud dashboard.
 tags: [dashboard, widgets, authorization]
-updated: 2026-10-10
+updated: 2026-10-13
 ---
 
 # Dashboard widgets
@@ -61,6 +61,7 @@ absolute route served by that application.
 | `defaultSize` | Size the widget starts in, one of `sizes`. Defaults to the largest offered size. |
 | `suggest` | Put the widget on the default board and under **Suggested for you**. |
 | `requiresRoles` | Offer the widget only to people with one of these roles, like `nav.requiresRoles`. |
+| `settings` | Up to four settings each board entry can set; see [Declare settings](#declare-settings). |
 
 Translate `title` and `description` under
 `presentation.translations.<locale>.widgets.<id>`. `defineApp()` rejects a
@@ -98,6 +99,60 @@ instead, and keep an existing `presentation` for now. The dashboard reads it
 only to convert a board saved before sizes existed into the board the person
 saw.
 
+### Declare settings
+
+A widget can declare up to four settings. Each board entry can ask the same
+widget with its own values. For example, Spaces declares an optional Space:
+
+```ts
+settings: {
+  space: { kind: "resource", type: "spaces.space", label: "Space" },
+}
+```
+
+| Kind | Declaration | Value |
+| --- | --- | --- |
+| `choice` | `label`, 1–6 `options` with `label` and `value`, optional `default` | One declared option value as a string. |
+| `resource` | `label`, a namespaced resource `type`, such as `spaces.space` | A `CloudResourceRef`: `{ type, id }`. |
+| `toggle` | `label`, optional boolean `default` | A boolean. |
+| `text` | `label`, optional `placeholder` and `maxLength` | A trimmed string. |
+
+Names are camelCase identifiers matching `/^[a-z][a-zA-Z0-9]{0,31}$/`.
+Labels, option labels, and placeholders are trimmed and must contain 1–80
+characters. Option values must be distinct within a field, contain 1–100
+characters, and contain no control characters. A choice default must be one
+of its values. Text `maxLength` is an integer from 1 to 200 and defaults to
+200. `defineApp()` rejects invalid declarations at startup.
+
+Translate setting presentation under
+`presentation.translations.<locale>.widgets.<id>.settings.<name>`:
+
+```ts
+presentation: {
+  baseLocale: "en",
+  translations: {
+    de: { widgets: { today: { settings: { space: { label: "Space" } } } } },
+  },
+}
+```
+
+A setting translation can supply `label`, `placeholder`, and `options`, an
+object of option labels keyed by option value. Regional overlays merge each
+setting and each option, so a `de-CH` label keeps other translations from `de`.
+Values and resource types never change with the locale.
+
+Read values with `getWidgetRequest(c).settings`. Core validates them before
+forwarding, and the application validates them again against its declaration.
+Unknown names and invalid values are silently dropped, never reported as a
+settings error. Missing or dropped choice and toggle values use their declared
+defaults. Empty, overlong, or control-containing text and resource references
+of another type are dropped.
+
+A widget must work without settings. Values can be missing, dropped, or stale.
+A valid resource reference grants no access: resolve its app-owned ID and
+use the normal service to authorize every chosen resource on every call.
+Answer `403` if the resource no longer exists or access is gone.
+
 ### Register the handler
 
 Export the Hono handler used by that route and register the same function with
@@ -123,11 +178,13 @@ the framework-owned internal invocation contract. Startup rejects an internal
 handler whose ID was not declared. Invocation JWTs are accepted only by the generated internal widget
 route, never by the public application route.
 
-`getWidgetRequest(c)` returns `{ size }`: the size the board shows the widget
-in, always one the widget declares. Return the content that fits it, for
+`getWidgetRequest(c)` returns `{ size, settings }`. The size is always one
+the widget declares. Return the content that fits it, for
 example only the most important number in `small` and a longer list in
 `large`. Outside a dashboard invocation, such as a request to the handler's
-own public route, the size is `large`.
+own public route, it returns `{ size: "large", settings: {} }`. Settings are
+validated against the declaration; the handler still authorizes chosen
+resources and works without them.
 
 ## Return widget data
 
@@ -306,6 +363,35 @@ does not offer, answers in its default size. A browser reads the stream with
 `streamWidgets()` from `@k2b/cloud/browser/widgets`, which takes the sizes as
 `sizes`, keyed by widget; aborting its signal stops every widget Core still
 waits for.
+
+Use `POST /api/widgets/v1` to ask once per board entry, including repeated
+widget keys with different settings. Send JSON with
+`Content-Type: application/json` and `Accept: application/x-ndjson`:
+
+```json
+{
+  "widgets": [
+    { "id": "first", "key": "spaces/today", "size": "large", "settings": { "space": { "type": "spaces.space", "id": "abc123" } } },
+    { "id": "second", "key": "spaces/today" }
+  ]
+}
+```
+
+The strict body accepts 1–100 entries and at most 64 KiB. Each entry needs a
+unique `id` of 1–120 characters and a `<appId>/<widgetId>` key of 1–200
+characters. `size` is an optional string, fitted to the widget's offered
+sizes. `settings` is an optional object with at most four values. Invalid
+JSON, a schema failure, duplicate IDs, or an oversized body returns `400`
+with `{ "message": "..." }`.
+
+Unknown widget keys are left out. `start.widgets` lists the requested entry
+IDs in request order. Every `widget` line includes that entry's `id` and its
+`key`; lines arrive as entries finish. GET keeps its existing lines without
+`id` and names keys in `start.widgets`.
+
+Pass `requests: [{ id, key, size?, settings? }]` to `streamWidgets()` to use
+POST. This ignores `keys` and `sizes`. Both transports forward the locale and
+share the concurrency, cancellation, and timeout rules above.
 
 `GET /api/widgets/v1/<appId>/<widgetId>` returns one widget as JSON with the
 same per-widget budget; append `?size=small` to ask for a size. It answers

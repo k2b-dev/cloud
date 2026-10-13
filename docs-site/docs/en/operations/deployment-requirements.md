@@ -739,6 +739,18 @@ and gives up on one after a minute; requests asked for meanwhile share one
 read after it. Hidden tabs send nothing. Count these requests when sizing the
 application.
 
+### Let widgets declare settings
+
+Widget settings need no configuration change. Core gains `POST /api/widgets/v1`
+for repeated entries with their own settings. GET stays unchanged, so an older
+Dashboard keeps working during a rolling deploy. See
+[Declare settings](/en/docs/platform/dashboard-widgets#declare-settings).
+
+An application image from before settings existed ignores them. An application
+that declares settings needs a Core that forwards them; with an older Core,
+it answers with its no-settings behavior. Deploy Core before a Dashboard that
+uses settings.
+
 ### Upgrade the dashboard to one board
 
 This release turns the dashboard into one board of widgets in three sizes; see

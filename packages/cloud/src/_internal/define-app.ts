@@ -629,6 +629,7 @@ export const defineApp = <
           : undefined,
         widgets: meta.widgets?.map((widget) => ({
           ...widget,
+          ...(widget.settings ? { settings: structuredClone(widget.settings) } : {}),
           sizes: widget.sizes ? [...widget.sizes] : undefined,
           requiresRoles: widget.requiresRoles ? [...widget.requiresRoles] : undefined,
         })),
