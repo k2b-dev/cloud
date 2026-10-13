@@ -54,6 +54,17 @@ An open `MainPane` keeps its content mounted when layout state, mobile selection
 `Detail` and `BottomDrawer` remain mounted while closed. Their `open` property
 controls visibility, so local state and SSR DOM identity remain stable.
 
+A host that places the workspace on the window's bottom edge sets
+`--k2b-workspace-inset-bottom` on it, for example to
+`env(safe-area-inset-bottom, 0px)` in an installed app on a tablet. The default
+is 0. The surfaces on that edge still reach it and fill the inset with their
+own background: the sidebar, `Main` or each of its panes, and an open
+`BottomDrawer`. Their content ends above the inset, so the last row clears the
+home indicator. A scrolling `Main` or pane fades its last rows above the
+inset, and the inset keeps the end of that fade. A floating `Detail` keeps its 0.5 rem inset above it. Cloud
+sets the property on the outermost workspace of its tablet and laptop shell, so
+applications need nothing.
+
 ## Floating detail
 
 Pass `onClose` when the application can close or deselect the detail. Escape,
