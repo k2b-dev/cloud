@@ -9,7 +9,13 @@ import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
-import { enqueueMailCommand, runMailboxCommandsJob, startCommandWorkers, stopCommandWorkers } from "./command-runtime";
+import {
+  enqueueMailCommand,
+  MOVE_SET_ADMISSION_MS,
+  runMailboxCommandsJob,
+  startCommandWorkers,
+  stopCommandWorkers,
+} from "./command-runtime";
 import { createActorCommand, createMailCommand } from "./commands";
 import { type ConnectorEnvelope, imapSmtpConnector, type RemoteMessageState } from "./connectors";
 import { createDraft } from "./drafts";
@@ -116,11 +122,12 @@ type SyncFolderJobInput = { folderId: string; backfill?: boolean };
 /**
  * Runs one `mail:sync-folder` job the way its worker does: a resubmitted job runs again after its
  * delay, until it finishes, or with `oneBatch` until one batch got the provider lease. Returns
- * how long that took, recording each attempt's times and outcome when `turns` is passed.
+ * how long that took, recording each attempt's times and outcome when `turns` is passed, and the
+ * start of the first turn that got the lease when `timing` is passed.
  */
 const runFolderSyncJob = async (
   folderId: string,
-  options: { input?: SyncFolderJobInput; oneBatch?: boolean; turns?: string[] } = {},
+  options: { input?: SyncFolderJobInput; oneBatch?: boolean; turns?: string[]; timing?: { firstLeaseTurnMs?: number } } = {},
 ): Promise<number> => {
   const startedAt = performance.now();
   let input: SyncFolderJobInput = options.input ?? { folderId };
@@ -136,6 +143,9 @@ const runFolderSyncJob = async (
     };
     const start = Math.round(performance.now() - startedAt);
     await runSyncFolderJob(ctx);
+    if ((next === null || next === 0) && options.timing && options.timing.firstLeaseTurnMs === undefined) {
+      options.timing.firstLeaseTurnMs = start;
+    }
     if (options.turns) {
       const end = Math.round(performance.now() - startedAt);
       const outcome = next === null ? "done" : next === 0 ? "batch" : `busy, again in ${next} ms`;
@@ -567,6 +577,37 @@ suite("mail provider lease fairness", () => {
 
   const confirmed = async (commandIds: string[]): Promise<number> => (await commandStates(commandIds)).confirmed ?? 0;
 
+  let slowCommandTrigger = 0;
+  /**
+   * Lets every update of the mailbox's `mail.commands` rows that matches `when` take `seconds`
+   * longer, like a slow database. Returns a function that removes it again.
+   */
+  const slowCommandUpdates = async (mailbox: Mailbox, seconds: number, when = "true"): Promise<() => Promise<void>> => {
+    const name = `test_slow_commands_${suffix}_${++slowCommandTrigger}`;
+    // One transaction each, so a failed step leaves neither the function nor the trigger behind.
+    await sql.begin(async (tx) => {
+      await tx.unsafe(`
+        CREATE FUNCTION mail.${name}() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_sleep(${seconds});
+          RETURN NEW;
+        END;
+        $$
+      `);
+      await tx.unsafe(`
+        CREATE TRIGGER ${name} BEFORE UPDATE ON mail.commands
+        FOR EACH ROW WHEN (OLD.mailbox_id = '${mailbox.mailboxId}'::uuid AND (${when}))
+        EXECUTE FUNCTION mail.${name}()
+      `);
+    });
+    return async () => {
+      await sql.begin(async (tx) => {
+        await tx.unsafe(`DROP TRIGGER ${name} ON mail.commands`);
+        await tx.unsafe(`DROP FUNCTION mail.${name}()`);
+      });
+    };
+  };
+
   beforeAll(async () => {
     await migrate();
     const uid = `mail-lease-fairness-${suffix}`;
@@ -857,7 +898,9 @@ suite("mail provider lease fairness", () => {
 
     const moves = await queueMoves(mailbox, messageIds, "set-move", { startTogether: true });
     await waitFor(async () => (await confirmed(moves)) === 300, "the moves to Archive");
-    expect(sets()).toEqual([50, 50, 50, 50, 50, 50]);
+    expect(sets().every((count) => count <= 50)).toBe(true);
+    expect(sets().reduce((sum, count) => sum + count, 0)).toBe(300);
+    expect(sets().length).toBeLessThan(60);
     // Every message keeps its own command and its own execution activity.
     const [activity] = await sql<{ commands: number; events: number }[]>`
       SELECT count(DISTINCT command_id)::int AS commands, count(*)::int AS events
@@ -876,6 +919,114 @@ suite("mail provider lease fairness", () => {
     expect(await placedIn(mailbox, INBOX, undone)).toBe(100);
     expect(await placedIn(mailbox, ARCHIVE, messageIds)).toBe(200);
     expect(folderOf(mailbox.account, INBOX).entries.size).toBe(100);
+  }, 120_000);
+
+  test("a folder sync waits for at most one move set's two seconds while every move's database work is slow", async () => {
+    const mailbox = await connect("slow-moves", { condstore: false });
+    const messageIds = await deliverAndSync(mailbox, 150, "slow-moves");
+    // Each move's own statements take 50 ms longer: its claim, its effect marker, and its outcome.
+    // The set's shared statements, such as the heartbeat of all its commands, stay one statement each,
+    // as on a slow database, instead of paying the delay once per row. Without a time budget, a set of
+    // 50 moves would hold the lease about 50 × 150 ms ≈ 8 s.
+    const removeSlowUpdates = await slowCommandUpdates(
+      mailbox,
+      0.05,
+      "OLD.state IS DISTINCT FROM NEW.state OR OLD.provider_effect_attempt IS DISTINCT FROM NEW.provider_effect_attempt",
+    );
+    let moves: string[] = [];
+    try {
+      moves = await queueMoves(mailbox, messageIds, "slow-moves", { startTogether: true });
+      // The head is claimed before the lease; a second executing move proves the set holds it.
+      await waitFor(async () => ((await commandStates(moves)).executing ?? 0) >= 2, "the slow move set to start");
+      const [newMail] = deliver(mailbox, 1, "slow-moves-new");
+      const turns: string[] = [];
+      const timing: { firstLeaseTurnMs?: number } = {};
+      const startedAt = performance.now();
+      await runFolderSyncJob(mailbox.folderId(INBOX), { turns, timing });
+      const leaseWaitMs = timing.firstLeaseTurnMs ?? Number.POSITIVE_INFINITY;
+      // Two seconds for the turn, plus the UID MOVE and the sync's lease-line retry of up to 1.5 s,
+      // with slack for a loaded host.
+      const longestWaitMs = MOVE_SET_ADMISSION_MS * 5 + 3_000;
+      if (leaseWaitMs >= longestWaitMs) {
+        const uidMoves = moveSets
+          .filter((entry) => entry.label === "slow-moves")
+          .map((entry) => `${Math.round(entry.at - startedAt)} ms ${entry.uids} UIDs`);
+        console.error(`Sync waited ${Math.round(leaseWaitMs)} ms; turns: ${turns.join(", ")}; UID MOVEs: ${uidMoves.join(", ")}`);
+      }
+      expect(leaseWaitMs).toBeLessThan(longestWaitMs);
+      expect(await imported(mailbox, newMail!)).toBe(true);
+    } finally {
+      await removeSlowUpdates();
+    }
+    await waitFor(async () => (await pending(moves)) === 0, "all slow moves to finish", 90_000);
+    expect(await confirmed(moves)).toBe(150);
+    const activity = await sql<{ command_id: string; events: number }[]>`
+      SELECT command_id, count(*)::int AS events FROM mail.activity_events
+      WHERE command_id IN ${sql(moves)} AND action = 'command.execute'
+      GROUP BY command_id ORDER BY command_id
+    `;
+    expect(activity).toEqual(moves.toSorted().map((command_id) => ({ command_id, events: 1 })));
+    const sets = moveSets.filter((entry) => entry.label === "slow-moves").map((entry) => entry.uids);
+    expect(sets.every((count) => count <= 50)).toBe(true);
+    expect(sets.reduce((sum, count) => sum + count, 0)).toBe(150);
+    expect(sets[0]).toBeLessThan(50);
+    const queued = await sql<{ id: string }[]>`SELECT id FROM mail.commands WHERE id IN ${sql(moves)} ORDER BY queue_position`;
+    const finished = await sql<
+      { id: string }[]
+    >`SELECT id FROM mail.commands WHERE id IN ${sql(moves)} ORDER BY finished_at, queue_position`;
+    expect(finished).toEqual(queued);
+    expect(await placedIn(mailbox, ARCHIVE, messageIds)).toBe(150);
+    expect(await placedIn(mailbox, INBOX, messageIds)).toBe(0);
+  }, 120_000);
+
+  test("a move a set leaves out stays queued as it was and runs with the next set", async () => {
+    const mailbox = await connect("left-out");
+    const messageIds = await deliverAndSync(mailbox, 5, "left-out");
+    const removeSlowUpdates = await slowCommandUpdates(
+      mailbox,
+      (MOVE_SET_ADMISSION_MS + 100) / 1000,
+      "OLD.state = 'queued' AND NEW.state = 'executing'",
+    );
+    type CommandSnapshot = { state: string; attempt: number; queue_position: string; last_error_code: string | null };
+    const snapshot: CommandSnapshot[] = [];
+    let moves: string[] = [];
+    afterStatus = async (account, path) => {
+      if (account !== mailbox.account || path !== ARCHIVE) return;
+      afterStatus = null;
+      snapshot.push(
+        ...(await sql<CommandSnapshot[]>`
+        SELECT state, attempt, queue_position::text AS queue_position, last_error_code FROM mail.commands
+        WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND kind = 'move' ORDER BY mail.commands.queue_position
+      `),
+      );
+    };
+    try {
+      moves = await queueMoves(mailbox, messageIds, "left-out", { startTogether: true });
+      await waitFor(async () => (await pending(moves)) === 0, "the moves left out to finish");
+      const commands = await sql<CommandSnapshot[]>`
+        SELECT state, attempt, queue_position::text AS queue_position, last_error_code FROM mail.commands
+        WHERE id IN ${sql(moves)} ORDER BY mail.commands.queue_position
+      `;
+      // Initial state and attempt are known; queue positions never change, so reading them after draining is race-free.
+      const initial = commands.map(({ queue_position }) => ({ state: "queued", attempt: 0, queue_position, last_error_code: null }));
+      expect(snapshot).toEqual(initial.map((command, index) => (index < 2 ? { ...command, state: "executing", attempt: 1 } : command)));
+      expect(commands).toEqual(initial.map((command) => ({ ...command, state: "confirmed", attempt: 1 })));
+      const activity = await sql<{ command_id: string; events: number }[]>`
+        SELECT command_id, count(*)::int AS events FROM mail.activity_events
+        WHERE command_id IN ${sql(moves)} AND action = 'command.execute'
+        GROUP BY command_id ORDER BY command_id
+      `;
+      expect(activity).toEqual(moves.toSorted().map((command_id) => ({ command_id, events: 1 })));
+      const queued = await sql<{ id: string }[]>`SELECT id FROM mail.commands WHERE id IN ${sql(moves)} ORDER BY queue_position`;
+      const finished = await sql<
+        { id: string }[]
+      >`SELECT id FROM mail.commands WHERE id IN ${sql(moves)} ORDER BY finished_at, queue_position`;
+      expect(finished).toEqual(queued);
+      expect(moveSets.filter((entry) => entry.label === "left-out").map((entry) => entry.uids)).toEqual([2, 2, 1]);
+    } finally {
+      afterStatus = null;
+      await removeSlowUpdates();
+    }
   }, 120_000);
 
   test("a set move that partly fails proves each moved message and leaves the others where they are", async () => {
