@@ -3,6 +3,43 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.40.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.39.0...cloud-v0.40.0) (2026-10-13)
+
+
+### Features
+
+* **chat:** add directory groups, guests and account lifecycle to chats ([#1071](https://github.com/k2b-dev/cloud/issues/1071)) ([d07a6cf](https://github.com/k2b-dev/cloud/commit/d07a6cf3f447d8cc008c15e8ee2b8b377159b2a2))
+* **chat:** open chats in a full view and keep it live ([#1038](https://github.com/k2b-dev/cloud/issues/1038)) ([99a4e3f](https://github.com/k2b-dev/cloud/commit/99a4e3f71a0d609fa216d7c73f670e7d27e75d7c))
+* **cloud:** follow the system light or dark appearance automatically ([#1048](https://github.com/k2b-dev/cloud/issues/1048)) ([fa6a391](https://github.com/k2b-dev/cloud/commit/fa6a391d1a6e02c090f4ee811d0e00651f2fd1f1))
+* **mail:** let one automation mark mail read and move it, and exclude senders or text ([#1042](https://github.com/k2b-dev/cloud/issues/1042)) ([e6a3ded](https://github.com/k2b-dev/cloud/commit/e6a3dede32a6a702be6c8fb2da0de3b4de545a8f))
+* **notebooks:** a personal 'Full width' switch for wide screens ([#1052](https://github.com/k2b-dev/cloud/issues/1052)) ([2978663](https://github.com/k2b-dev/cloud/commit/2978663f382c905b49a021018a78ded91160200c))
+* **notebooks:** restore a version in place, or as a copy next to the original ([#1073](https://github.com/k2b-dev/cloud/issues/1073)) ([05fcb57](https://github.com/k2b-dev/cloud/commit/05fcb57877904b4f7c3b24bd37aa268123fe8d00))
+* **ui:** let the app area reach the window edge in the installed iPad app ([#1067](https://github.com/k2b-dev/cloud/issues/1067)) ([5d6493e](https://github.com/k2b-dev/cloud/commit/5d6493eb92a39fed8e6349e0587c0ce073bc7d71)), closes [#1049](https://github.com/k2b-dev/cloud/issues/1049)
+* **ui:** one sidebar switcher for the current notebook, space, mailbox or base in every app ([#1059](https://github.com/k2b-dev/cloud/issues/1059)) ([9783993](https://github.com/k2b-dev/cloud/commit/9783993ffd04b327fc242c38a009a49a874a05e1)), closes [#1047](https://github.com/k2b-dev/cloud/issues/1047)
+
+
+### Bug Fixes
+
+* **ai:** find relevant memories for long messages too ([#1068](https://github.com/k2b-dev/cloud/issues/1068)) ([4a654ad](https://github.com/k2b-dev/cloud/commit/4a654ad605d74ce018a9b85bbe7ca11b0795abb3))
+* **ai:** learn only about the person, skip sensitive data, keep project knowledge in projects, and use memories only when they matter ([#1062](https://github.com/k2b-dev/cloud/issues/1062)) ([e739ca3](https://github.com/k2b-dev/cloud/commit/e739ca38fec1a8f9dac44303b26eca2abd003357))
+* **assistant:** build requested apps as Studio apps, quickly, instead of visualizations ([#1074](https://github.com/k2b-dev/cloud/issues/1074)) ([25409be](https://github.com/k2b-dev/cloud/commit/25409bef7810c7bea419c98fdf3f57ca0c6ad006)), closes [#1051](https://github.com/k2b-dev/cloud/issues/1051)
+* **cloud:** keep outbox claims bounded when the outbox statistics are from an empty table ([#1070](https://github.com/k2b-dev/cloud/issues/1070)) ([2bc7772](https://github.com/k2b-dev/cloud/commit/2bc77727718a1b7e3c993e3a4f8c416cf4007ce6)), closes [#1046](https://github.com/k2b-dev/cloud/issues/1046)
+* **mail:** end a move set after a time budget, not only after 50 moves ([#1014](https://github.com/k2b-dev/cloud/issues/1014)) ([738d198](https://github.com/k2b-dev/cloud/commit/738d1988752b9d36caf9ceccfa1b0ea024e78dc8)), closes [#982](https://github.com/k2b-dev/cloud/issues/982)
+* **notebooks:** search finds word starts and ranks exact titles first ([#1077](https://github.com/k2b-dev/cloud/issues/1077)) ([0e3145b](https://github.com/k2b-dev/cloud/commit/0e3145bece0009454c90050814bb4e2a1a50839d))
+* **spaces:** move Kanban cards by touch without selecting their text ([#1057](https://github.com/k2b-dev/cloud/issues/1057)) ([085adf6](https://github.com/k2b-dev/cloud/commit/085adf6279a6819de6fe0ca4dda18927554428ef)), closes [#1050](https://github.com/k2b-dev/cloud/issues/1050)
+* **ssr:** fail the build when an island imports another island ([#1069](https://github.com/k2b-dev/cloud/issues/1069)) ([aea0429](https://github.com/k2b-dev/cloud/commit/aea0429f2fef9acf03c5df01bb79056433d56b4b))
+* **ui:** keep the selected event beside the detail in the day and week views with dayHours ([#1076](https://github.com/k2b-dev/cloud/issues/1076)) ([5095e7f](https://github.com/k2b-dev/cloud/commit/5095e7fb4abce838fe6d0f7fbd11d9f201f52c3b)), closes [#1066](https://github.com/k2b-dev/cloud/issues/1066)
+* **ui:** keep wide boards and tables tidy beside the detail panel ([#1015](https://github.com/k2b-dev/cloud/issues/1015)) ([2dd2777](https://github.com/k2b-dev/cloud/commit/2dd2777438e12cb59ae1fd7a9a1fa2adf4f8ac52)), closes [#1031](https://github.com/k2b-dev/cloud/issues/1031)
+* **ui:** leave the focus where the person went when a slow quick create save closes ([#1072](https://github.com/k2b-dev/cloud/issues/1072)) ([b674abf](https://github.com/k2b-dev/cloud/commit/b674abf8a32700d9e35a07703e4df0d35188e08f)), closes [#1063](https://github.com/k2b-dev/cloud/issues/1063)
+* **ui:** let the week's hours glide to a selected day and keep items clear of the hour gutter ([#1061](https://github.com/k2b-dev/cloud/issues/1061)) ([2361b12](https://github.com/k2b-dev/cloud/commit/2361b12049baf19cd18941230c36d18517ca859d))
+* **ui:** sidebar switcher keeps app colors on phones, never covers or jumps around its trigger, and keeps one head height ([#1075](https://github.com/k2b-dev/cloud/issues/1075)) ([6eaef4b](https://github.com/k2b-dev/cloud/commit/6eaef4b7d46d1f94a38934eecd7b69011c7b2ad0))
+
+
+### Performance Improvements
+
+* **cloud:** render the app shell with at most four islands ([#1033](https://github.com/k2b-dev/cloud/issues/1033)) ([759266b](https://github.com/k2b-dev/cloud/commit/759266bc70bf702871832013dc3cfdaf98afff94))
+* **cloud:** stop loading dayjs and big.js on pages that do not use them ([#1065](https://github.com/k2b-dev/cloud/issues/1065)) ([84fcc0b](https://github.com/k2b-dev/cloud/commit/84fcc0bb258aeb22f0e9152800c8c7411d82e65e))
+
 ## [0.39.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.38.0...cloud-v0.39.0) (2026-10-12)
 
 

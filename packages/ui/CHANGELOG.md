@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.24.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.23.0...npm-ui-v0.24.0) (2026-10-13)
+
+
+### Features
+
+* **ui:** let the app area reach the window edge in the installed iPad app ([#1067](https://github.com/k2b-dev/cloud/issues/1067)) ([5d6493e](https://github.com/k2b-dev/cloud/commit/5d6493eb92a39fed8e6349e0587c0ce073bc7d71)), closes [#1049](https://github.com/k2b-dev/cloud/issues/1049)
+* **ui:** one sidebar switcher for the current notebook, space, mailbox or base in every app ([#1059](https://github.com/k2b-dev/cloud/issues/1059)) ([9783993](https://github.com/k2b-dev/cloud/commit/9783993ffd04b327fc242c38a009a49a874a05e1)), closes [#1047](https://github.com/k2b-dev/cloud/issues/1047)
+
+
+### Bug Fixes
+
+* **ui:** keep the selected event beside the detail in the day and week views with dayHours ([#1076](https://github.com/k2b-dev/cloud/issues/1076)) ([5095e7f](https://github.com/k2b-dev/cloud/commit/5095e7fb4abce838fe6d0f7fbd11d9f201f52c3b)), closes [#1066](https://github.com/k2b-dev/cloud/issues/1066)
+* **ui:** keep wide boards and tables tidy beside the detail panel ([#1015](https://github.com/k2b-dev/cloud/issues/1015)) ([2dd2777](https://github.com/k2b-dev/cloud/commit/2dd2777438e12cb59ae1fd7a9a1fa2adf4f8ac52)), closes [#1031](https://github.com/k2b-dev/cloud/issues/1031)
+* **ui:** leave the focus where the person went when a slow quick create save closes ([#1072](https://github.com/k2b-dev/cloud/issues/1072)) ([b674abf](https://github.com/k2b-dev/cloud/commit/b674abf8a32700d9e35a07703e4df0d35188e08f)), closes [#1063](https://github.com/k2b-dev/cloud/issues/1063)
+* **ui:** let the week's hours glide to a selected day and keep items clear of the hour gutter ([#1061](https://github.com/k2b-dev/cloud/issues/1061)) ([2361b12](https://github.com/k2b-dev/cloud/commit/2361b12049baf19cd18941230c36d18517ca859d))
+* **ui:** sidebar switcher keeps app colors on phones, never covers or jumps around its trigger, and keeps one head height ([#1075](https://github.com/k2b-dev/cloud/issues/1075)) ([6eaef4b](https://github.com/k2b-dev/cloud/commit/6eaef4b7d46d1f94a38934eecd7b69011c7b2ad0))
+
+
+### Performance Improvements
+
+* **cloud:** render the app shell with at most four islands ([#1033](https://github.com/k2b-dev/cloud/issues/1033)) ([759266b](https://github.com/k2b-dev/cloud/commit/759266bc70bf702871832013dc3cfdaf98afff94))
+* **cloud:** stop loading dayjs and big.js on pages that do not use them ([#1065](https://github.com/k2b-dev/cloud/issues/1065)) ([84fcc0b](https://github.com/k2b-dev/cloud/commit/84fcc0bb258aeb22f0e9152800c8c7411d82e65e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.15.0 to 0.15.1
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 to ^0.15.1
+
 ## [0.23.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.22.0...npm-ui-v0.23.0) (2026-10-12)
 
 

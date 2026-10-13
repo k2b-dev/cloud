@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.33.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.32.0...npm-cloud-v0.33.0) (2026-10-13)
+
+
+### Features
+
+* **cloud:** follow the system light or dark appearance automatically ([#1048](https://github.com/k2b-dev/cloud/issues/1048)) ([fa6a391](https://github.com/k2b-dev/cloud/commit/fa6a391d1a6e02c090f4ee811d0e00651f2fd1f1))
+* **mail:** let one automation mark mail read and move it, and exclude senders or text ([#1042](https://github.com/k2b-dev/cloud/issues/1042)) ([e6a3ded](https://github.com/k2b-dev/cloud/commit/e6a3dede32a6a702be6c8fb2da0de3b4de545a8f))
+* **ui:** let the app area reach the window edge in the installed iPad app ([#1067](https://github.com/k2b-dev/cloud/issues/1067)) ([5d6493e](https://github.com/k2b-dev/cloud/commit/5d6493eb92a39fed8e6349e0587c0ce073bc7d71)), closes [#1049](https://github.com/k2b-dev/cloud/issues/1049)
+* **ui:** one sidebar switcher for the current notebook, space, mailbox or base in every app ([#1059](https://github.com/k2b-dev/cloud/issues/1059)) ([9783993](https://github.com/k2b-dev/cloud/commit/9783993ffd04b327fc242c38a009a49a874a05e1)), closes [#1047](https://github.com/k2b-dev/cloud/issues/1047)
+
+
+### Bug Fixes
+
+* **ai:** find relevant memories for long messages too ([#1068](https://github.com/k2b-dev/cloud/issues/1068)) ([4a654ad](https://github.com/k2b-dev/cloud/commit/4a654ad605d74ce018a9b85bbe7ca11b0795abb3))
+* **ai:** learn only about the person, skip sensitive data, keep project knowledge in projects, and use memories only when they matter ([#1062](https://github.com/k2b-dev/cloud/issues/1062)) ([e739ca3](https://github.com/k2b-dev/cloud/commit/e739ca38fec1a8f9dac44303b26eca2abd003357))
+* **assistant:** build requested apps as Studio apps, quickly, instead of visualizations ([#1074](https://github.com/k2b-dev/cloud/issues/1074)) ([25409be](https://github.com/k2b-dev/cloud/commit/25409bef7810c7bea419c98fdf3f57ca0c6ad006)), closes [#1051](https://github.com/k2b-dev/cloud/issues/1051)
+* **cloud:** keep outbox claims bounded when the outbox statistics are from an empty table ([#1070](https://github.com/k2b-dev/cloud/issues/1070)) ([2bc7772](https://github.com/k2b-dev/cloud/commit/2bc77727718a1b7e3c993e3a4f8c416cf4007ce6)), closes [#1046](https://github.com/k2b-dev/cloud/issues/1046)
+* **ui:** sidebar switcher keeps app colors on phones, never covers or jumps around its trigger, and keeps one head height ([#1075](https://github.com/k2b-dev/cloud/issues/1075)) ([6eaef4b](https://github.com/k2b-dev/cloud/commit/6eaef4b7d46d1f94a38934eecd7b69011c7b2ad0))
+
+
+### Performance Improvements
+
+* **cloud:** render the app shell with at most four islands ([#1033](https://github.com/k2b-dev/cloud/issues/1033)) ([759266b](https://github.com/k2b-dev/cloud/commit/759266bc70bf702871832013dc3cfdaf98afff94))
+* **cloud:** stop loading dayjs and big.js on pages that do not use them ([#1065](https://github.com/k2b-dev/cloud/issues/1065)) ([84fcc0b](https://github.com/k2b-dev/cloud/commit/84fcc0bb258aeb22f0e9152800c8c7411d82e65e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.15.0 to 0.15.1
+    * @k2b/ui bumped from 0.23.0 to 0.24.0
+
 ## [0.32.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.31.0...npm-cloud-v0.32.0) (2026-10-12)
 
 
