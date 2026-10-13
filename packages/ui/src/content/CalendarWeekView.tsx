@@ -176,7 +176,10 @@ export const CalendarWeekView = (props: TimeViewProps) => {
     if (`${first}/${last}` === reported) return;
     reported = `${first}/${last}`;
     window.clearTimeout(reportTimer);
-    reportTimer = window.setTimeout(() => props.owner.onVisibleDateChange?.(view.parseKey(first), view.parseKey(last)), 250);
+    reportTimer = window.setTimeout(
+      () => props.owner.onVisibleDateChange?.(view.parseKey(first), view.parseKey(last), view.parseKey(first)),
+      250,
+    );
   };
 
   // A gesture keeps its axis; the strip settles on a day edge once the scroll rests.

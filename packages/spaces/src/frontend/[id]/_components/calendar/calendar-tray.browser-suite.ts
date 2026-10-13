@@ -146,7 +146,7 @@ const serverBody = (options: { canWrite: boolean; items: CalendarItem[]; tray: C
         tags,
         initialState: {
           ...route,
-          range: calendarWindow(route.view === "week" ? "week" : "day", new Date(route.date), dateConfig),
+          range: calendarWindow(route.view === "year" ? "month" : route.view, new Date(route.date), dateConfig),
           items: route.view === "day" ? itemsOn(options.items, route.date) : options.items,
           weather: {},
           tray: trayFor(options.tray, route.view, route.filter),
@@ -198,7 +198,7 @@ beforeAll(async () => {
         const body = {
           kind: "calendar",
           ...route,
-          range: calendarWindow(route.view === "week" ? "week" : "day", new Date(route.date), dateConfig),
+          range: calendarWindow(route.view === "year" ? "month" : route.view, new Date(route.date), dateConfig),
           items: route.view === "day" ? itemsOn(data?.items ?? [], route.date) : (data?.items ?? []),
           weather: {},
           tray: trayFor(data?.tray ?? emptyTray(), route.view, route.filter),

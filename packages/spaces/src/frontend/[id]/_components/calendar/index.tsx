@@ -21,7 +21,7 @@ import {
   panelDialogOptions,
   toast,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, on, onCleanup, Show, untrack } from "solid-js";
 import { apiClient } from "@/api/client";
 import {
   AssignedToFilterSchema,
@@ -226,18 +226,22 @@ export default function Calendar(props: CalendarProps) {
   const retryToast = createRetryToasts();
   const [optimisticTimes, setOptimisticTimes] = createSignal<Record<string, CalendarEventTimeChange>>({});
   const [createDialogPending, setCreateDialogPending] = createSignal(false);
-  /** The days selected in the month view; New event and the menus create on them. */
-  const [selectedDays, setSelectedDays] = createSignal<CalendarDays | null>(null);
   const [seriesItemSource, setSeriesItemSource] = createSignal<string | null>(null);
   const [controller, setController] = createSignal<CalendarController | null>(null);
-  /** The first day the day or week view shows after scrolling; the URL and other views follow it. */
+  /** The focus date the scrolling view reports; the URL and other views follow it. */
   const [visibleDate, setVisibleDate] = createSignal<Date | null>(null);
-  /** The days the day or week view shows, for the count of what is in view. */
+  /** The days the scrolling view shows, for the count of what is in view. */
   const [visibleDays, setVisibleDays] = createSignal<{ first: string; last: string } | null>(null);
   createEffect(
     on(
       [() => props.view, () => props.date.getTime()],
-      () => {
+      (current, previous) => {
+        // A continuous month keeps counting the last reported rows while a host date waits for its weeks.
+        if (
+          current[0] === previous?.[0] &&
+          ((props.view === "month" && props.range) || props.date.getTime() === untrack(visibleDate)?.getTime())
+        )
+          return;
         setVisibleDate(null);
         setVisibleDays(null);
       },
@@ -247,9 +251,8 @@ export default function Calendar(props: CalendarProps) {
   /** The date filters and the view switcher keep: the day the reader scrolled to, else the route's. */
   const shownDate = () => visibleDate() ?? props.date;
   /**
-   * The toolbar counts what is in view: the days the day or week view shows, or what the header names in the month,
-   * its own days without the padding days of the months around it. The month counts the events the grid paints, so a
-   * drag across the month's edge updates it at once.
+   * The toolbar counts the days in view. Month counts the events painted on its visible week rows, including days
+   * outside the focus month; before the first report it counts that month's own days.
    */
   const shownCount = () => {
     if (isScrollingCalendarView(props.view)) {
@@ -257,6 +260,17 @@ export default function Calendar(props: CalendarProps) {
       return countCalendarDays(props.items, days.first, days.last, props.dateConfig);
     }
     if (props.view !== "month") return props.items.length;
+    const days = visibleDays();
+    if (days)
+      return countCalendarEvents(
+        events(),
+        days.first,
+        calendar.formatDateKey(
+          calendar.addDays(calendar.parseCalendarDate(days.last, props.dateConfig), 1, props.dateConfig),
+          props.dateConfig,
+        ),
+        props.dateConfig,
+      );
     const monthStart = calendar.startOfMonth(props.date, props.dateConfig);
     const firstKey = calendar.formatDateKey(monthStart, props.dateConfig);
     const endKey = calendar.formatDateKey(calendar.addMonths(monthStart, 1, props.dateConfig), props.dateConfig);
@@ -667,14 +681,14 @@ export default function Calendar(props: CalendarProps) {
   ];
   const creatingEvent = createDialogPending;
   /**
-   * New event creates on the selected days of the month view; in the day and week views at the selected slot or day,
-   * else today at the next full hour while today shows, else at nine on the first shown day; otherwise at nine on the
-   * shown date.
+   * New event creates on the selected days of the month view, else on today while it shows, else on the 1st of the
+   * month in view; in the day and week views at the selected slot or day, else today at the next full hour while today
+   * shows, else at nine on the first shown day; otherwise at nine on the shown date.
    */
   const createNewEvent = () => {
-    const target = isScrollingCalendarView(props.view) ? controller()?.createTarget() : undefined;
+    const target = isScrollingCalendarView(props.view) || props.view === "month" ? controller()?.createTarget() : undefined;
     if (target && !target.allDay) return createEventFromSlot(target);
-    const days = props.view === "month" ? selectedDays() : target ? daysOf(target) : null;
+    const days = target ? daysOf(target) : null;
     const date = calendar.formatDateKey(props.date, props.dateConfig);
     return createOnDays(days ?? { first: date, last: date });
   };
@@ -787,13 +801,12 @@ export default function Calendar(props: CalendarProps) {
         range={props.range}
         onLoadEarlier={props.onLoadEarlier}
         onLoadLater={props.onLoadLater}
-        onVisibleDateChange={(first, last) => {
+        onVisibleDateChange={(first, last, focus) => {
           setVisibleDays({ first: calendar.formatDateKey(first, props.dateConfig), last: calendar.formatDateKey(last, props.dateConfig) });
-          setVisibleDate(first);
-          // The URL follows the visible day: the day view reopens there, the week view at its week's start,
-          // or on a phone at that day within its week.
+          setVisibleDate(focus);
+          // Reload and other views open at the scrolling view's focus date.
           const url = new URL(window.location.href);
-          const day = calendar.formatDateKey(first, props.dateConfig);
+          const day = calendar.formatDateKey(focus, props.dateConfig);
           if (url.searchParams.get("cd") === day) return;
           url.searchParams.set("cd", day);
           const href = `${url.pathname}${url.search}${url.hash}`;
@@ -899,7 +912,6 @@ export default function Calendar(props: CalendarProps) {
             ? (slot) => void createEventFromSlot(slot)
             : undefined
         }
-        onSelectionChange={(range) => setSelectedDays(range ? daysOf(range) : null)}
         selectionMenu={selectionMenu}
         renderQuickCreate={
           props.canWrite

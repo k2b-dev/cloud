@@ -60,8 +60,9 @@ export default function ItemActions(props: {
 }
 ```
 
-Props are serialized with Seroval. Pass data such as strings, arrays, plain
-objects, dates, maps, and sets.
+Props travel as Seroval JSON data, and the browser never evaluates them. Island
+props do not need `'unsafe-eval'`. Pass strings, arrays, plain objects, dates,
+maps, and sets.
 
 Do not pass functions, event handlers, Solid signals, DOM nodes, or arbitrary
 class instances.

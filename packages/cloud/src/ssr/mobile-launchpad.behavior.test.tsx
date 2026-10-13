@@ -90,7 +90,6 @@ test("opening without arguments reads the shared shell payload and validates the
     profile: { name: "Test user", appHref: "/unexpected" },
     theme: "light",
     searchLinks: {},
-    searchHelpApps: [],
   });
   dom.document.body.append(script);
   try {

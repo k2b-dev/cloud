@@ -351,6 +351,18 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Where a row that leads somewhere goes, such as the parent folder's name: quiet, and it alone gives way to the label. */
+.filesv2-list__detail {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filesv2-list__row--virtual .filesv2-list__name {
+  flex: none;
+}
 .filesv2-list__disclosure {
   display: inline-flex;
   align-items: center;

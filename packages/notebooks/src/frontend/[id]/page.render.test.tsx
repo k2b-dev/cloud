@@ -3,12 +3,18 @@ import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as cloudServices from "@k2b/cloud/services";
 import { Hono } from "hono";
+import { fromJSON } from "seroval";
 import { stubRailSnapshot } from "../../../../../tests/fixtures/rail-snapshot";
 import { notebooksService } from "../../service";
 import * as notebookStore from "../../service/notebooks";
 import * as noteStore from "../../service/notes";
 import * as routeState from "../../service/route-state";
 import "./_components/detail/ssr-test-plugin";
+
+const islandProps = (attribute: string | undefined) =>
+  fromJSON<Record<string, unknown>>(
+    JSON.parse((attribute ?? "").replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&")),
+  );
 
 const { default: handler } = await import("./page");
 const { default: attachmentsHandler } = await import("./attachments/page");
@@ -245,7 +251,7 @@ test.each(["write", "book"] as const)(
     const [island, ...others] = await select(html, 'solid-island[data-file="RememberNotebook.island.tsx"]');
 
     expect(others).toEqual([]);
-    expect(island?.attributes["data-props"]).toBe("({notebookId:&quot;book01&quot;})");
+    expect(islandProps(island?.attributes["data-props"])).toEqual({ notebookId: "book01" });
   },
 );
 
@@ -283,7 +289,7 @@ test.each([
   const [island, ...others] = await select(html, 'solid-island[data-file="RememberNotebook.island.tsx"]');
 
   expect(others).toEqual([]);
-  expect(island?.attributes["data-props"]).toBe("({notebookId:&quot;book01&quot;})");
+  expect(islandProps(island?.attributes["data-props"])).toEqual({ notebookId: "book01" });
 });
 
 const renderNotebookWithNotes = async (preferences: Record<string, unknown>, mode: "graph" | "write" | "readonly" = "graph") => {
@@ -516,13 +522,14 @@ test("read-only without a snapshot starts from the saved Markdown", async () => 
   const html = await renderEditorPage({ mode: "readonly", snapshot: null });
   expect((await select(html, "#notebook-note-preview"))[0]?.text).toContain("Wir sammeln wichtige Gedanken für das Team.");
   const [editor] = await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]');
-  expect(editor?.attributes["data-props"]).toContain("initialContent:&quot;# Wochenplan");
+  expect(islandProps(editor?.attributes["data-props"]).initialContent).toStartWith("# Wochenplan");
 });
 
 test("write mode sends no duplicate initialContent in the editor props", async () => {
   const [editor] = await select(await renderEditorPage(), 'solid-client[data-file="NoteEditor.client.tsx"]');
-  expect(editor?.attributes["data-props"]).toContain("initialContent:null");
-  expect(editor?.attributes["data-props"]).toContain("contentMd:");
+  const props = islandProps(editor?.attributes["data-props"]);
+  expect(props.initialContent).toBeNull();
+  expect(props.initialDetail).toHaveProperty("contentMd");
 });
 
 test("the preview shares the incomplete-history notice with the editor", async () => {

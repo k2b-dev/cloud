@@ -129,13 +129,52 @@ The month view is a grid of selectable days (`role="grid"`, each day a
 `gridcell` with `aria-selected`). A click or tap on a day selects it and never
 navigates. A drag across days, or Shift with a click or an arrow key, selects
 a range; the selection shows as one tinted band with stronger ends and an
-inner line. The arrow keys move the selection and page to the next or
-previous month at the edge of the grid; Home and End go to the start and end
-of the week, Page Up and Page Down to the same day of the previous and next
-month, or to that month's last day when it is shorter; the previous and next
-buttons step the same way. Escape closes an open popover first and then
-clears the selection. A new month starts without a selection. A range takes a
-mouse or the keyboard; on a touch screen a tap selects one day.
+inner line. The arrow keys move the selection; Home and End go to the start
+and end of the week, Page Up and Page Down to the same day of the previous and
+next month, or to that month's last day when it is shorter; the previous and
+next buttons step a month the same way. Escape closes an open popover first
+and then clears the selection. A range takes a mouse or the keyboard; on a
+touch screen a tap selects one day.
+
+Without `range`, the month view shows one month and pages: the arrow keys
+page at the edge of the grid, and a new month starts without a selection.
+
+With `range`, the month view scrolls through the weeks of `range` from top to
+bottom, without stops. Five rows share the height below the weekday row,
+which stays in place. The week in the middle of the view sets the month in
+focus by its middle day (Thursday when weeks start on Monday): the header
+names that month, and the days of other months are dimmed. Each 1st names its
+month, such as “Nov 1” or “1. Nov”. While the weeks glide by, a label names the
+month in focus and leaves once the view rests; phones leave it out.
+
+- The previous and next buttons, J and K, and Page Up and Page Down move one
+  month and put the week with its 1st on top; quick repeated steps add up.
+- Today goes to today's month the same way, scrolls on when today lies below
+  the visible rows, and lets today's number pulse once. With reduced motion
+  every move is instant and nothing pulses.
+- Go to shows the month of its day, and that day when it lies further down.
+- The arrow keys scroll their day into view, also across months. The
+  selection, the focused day, and an open popover stay while the view scrolls,
+  and a drag across days or of an entry scrolls at the top and bottom edges.
+- The Today button points up or down until more than half of today's week is
+  in view, and shows a calm dot then.
+
+Near the first or the last loaded week, scrolling calls `onLoadEarlier` or
+`onLoadLater` once for each range; extend `range` and `events` there, and keep
+the shown `events` until the new ones arrive. Weeks that arrive above the view
+do not move what the reader sees. A step to a month past the loaded weeks
+asks for them the same way and moves there once they arrive; the reader's own
+scrolling ends the wait. Return a promise from `onLoadEarlier` or
+`onLoadLater` to mark an end: when it settles without moving that end of
+`range`, steps past it go through `getDateHref` or `onDateChange`, as they do
+without these callbacks. `onVisibleDateChange(date, last, focus)` reports the
+first and the last day of the weeks more than half in view, and `focus`: the
+first selected day in the month in focus, else `date` when it lies in that
+month, else today when it lies there, else that month's 1st. It reports once the view opened and
+whenever one of them changed, for example to keep `focus` in the URL or to
+count what is in view. A `date` that names the reported `focus` keeps the
+view in place; another `date` shows its month as soon as `range` covers it.
+The year and the compact mobile-month views ignore `range`.
 
 The day view is a deliberate step, never a side effect of a click:
 
@@ -294,18 +333,19 @@ and the visible hours.
 
 `range` names the days of `events`, from `from` up to `to`, which is
 exclusive: the start of the day after the last one. Without it the views
-cover the day or the week of `date`. Near the first or the last loaded day,
-scrolling toward it calls `onLoadEarlier` or `onLoadLater` once for each
-range; extend `range` and `events` there. Days that arrive above the view do
-not move what the reader sees. `onVisibleDateChange(date, last)` reports the
-first and the last day on screen once the view opened and whenever scrolling
-changed them, for example to keep the first in the URL or to count what is in
-view; the header title, the view switcher, and the previous and next links
-follow the first too. A `date` outside `range` puts its day on screen as soon
-as `range` covers it, so a host may change `date` first and load the days
-after. A `date` that names the first day on screen keeps the reader's place,
-so a host that writes the reported day back into `date` does not move the
-view.
+cover the day or the week of `date`; the month view reads it as described
+above. Near the first or the last loaded day, scrolling toward it calls
+`onLoadEarlier` or `onLoadLater` once for each range; extend `range` and
+`events` there. Days that arrive above the view do not move what the reader
+sees. `onVisibleDateChange(date, last, focus)` reports the first and the last
+day on screen, with the first as `focus`, once the view opened and whenever
+scrolling changed them, for example to keep the first in the URL or to count
+what is in view; the header title, the view switcher, and the previous and
+next links follow the first too. A `date` outside `range` puts its day on
+screen as soon as `range` covers it, so a host may change `date` first and
+load the days after. A `date` that names the first day on screen keeps the
+reader's place, so a host that writes the reported day back into `date` does
+not move the view.
 `onSelectionChange` reports a selected hour or day of these views as it does
 the month's days.
 
@@ -316,9 +356,10 @@ position once they mount.
 
 In the day and week views with `dayHours`, the Today button shows an arrow
 toward today, left or right in the week and up or down in the day view, or a
-calm dot while today is on screen. Its icon always keeps its place, so the
-button never changes its width. The other views name their period in the
-title and keep a plain Today button.
+calm dot while today is on screen. The continuous month view points up or
+down until more than half of today's row is visible. The icon keeps its
+place, so the button never changes its width. Paged month and the other
+views keep a plain Today button.
 
 `onCommandsChange(commands)` receives the calendar's commands for the host's
 shortcut dispatcher, command palette, and help: Today (H), Next (J),
@@ -512,7 +553,7 @@ type CalendarProps<V extends string = never> = {
   customViews?: CalendarCustomView<V>[]; children?: JSX.Element; labels?: CalendarLabels; dateConfig?: DateContext; timeZone?: string; firstDayOfWeek?: 0 | 1;
   withWeekNumbers?: boolean; startHour?: number; endHour?: number;
   dayHours?: readonly [start: number, end: number]; range?: CalendarRange;
-  onLoadEarlier?: () => unknown; onLoadLater?: () => unknown; onVisibleDateChange?: (date: Date, last: Date) => void;
+  onLoadEarlier?: () => unknown; onLoadLater?: () => unknown; onVisibleDateChange?: (date: Date, last: Date, focus: Date) => void;
   visibleStartHour?: number;
   visibleEndHour?: number; allDayMaxHeightRem?: number; hideAllDay?: boolean; selectedDate?: Date | string;
   selectedEventId?: string; dayBadges?: Record<string, CalendarDayBadge>;

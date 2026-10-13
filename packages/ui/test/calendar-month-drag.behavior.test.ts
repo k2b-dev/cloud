@@ -1,7 +1,7 @@
-import { describe, expect, test } from "bun:test";
-import { createComponent, createSignal } from "solid-js";
+import { describe, expect, setSystemTime, test } from "bun:test";
+import { batch, createComponent, createSignal } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
-import type { CalendarEvent, CalendarEventTimeChange } from "../src/content/Calendar";
+import type { CalendarController, CalendarEvent, CalendarEventTimeChange } from "../src/content/Calendar";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
 
 /** happy-dom has no popover API; the quick create only needs open state and focus. */
@@ -21,6 +21,33 @@ const installPopoverApi = (dom: DomTestHarness) => {
   });
 };
 
+/** happy-dom has no layout; five 100 px weeks sit below a 32 px weekday header. */
+const installMonthLayout = (dom: DomTestHarness) => {
+  const prototype = dom.window.HTMLElement.prototype;
+  Object.defineProperty(prototype, "clientHeight", {
+    configurable: true,
+    get() {
+      return this.classList.contains("k2b-calendar-month") ? 532 : 100;
+    },
+  });
+  Object.defineProperty(prototype, "scrollHeight", {
+    configurable: true,
+    get() {
+      const track = this.querySelector(".k2b-calendar-month__track");
+      return track ? Number(track.style.getPropertyValue("--k2b-calendar-weeks")) * 100 + 32 : 532;
+    },
+  });
+  prototype.getBoundingClientRect = function () {
+    const height = this.classList.contains("k2b-calendar-month__weekdays") ? 32 : 100;
+    return new dom.window.DOMRect(0, 0, 700, height);
+  };
+  prototype.scrollTo = function (options: ScrollToOptions | number) {
+    if (typeof options !== "number")
+      this.scrollTop = Math.max(0, Math.min(options.top ?? this.scrollTop, this.scrollHeight - this.clientHeight));
+    this.dispatchEvent(new dom.window.Event("scroll"));
+  };
+};
+
 const key = (date: Date) => date.toISOString().slice(0, 10);
 const range = (value: CalendarEventTimeChange | null) =>
   value ? { start: key(value.start), end: key(value.end), allDay: value.allDay } : null;
@@ -30,6 +57,710 @@ describe("@k2b/ui Calendar month selection and bars", () => {
     test.skip("runs in the dedicated browser-conditions test process", () => {});
     return;
   }
+
+  test("without range the grid keeps its paged DOM and Next calls the host one month later", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    delegateEvents(["click"], dom.document);
+    const [date, setDate] = createSignal("2026-10-09");
+    const changes: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          get date() {
+            return date();
+          },
+          view: "month",
+          events: [],
+          timeZone: "UTC",
+          onDateChange: (next) => {
+            changes.push(key(next));
+            setDate(key(next));
+          },
+        }),
+      dom.root,
+    );
+    expect(dom.root.querySelectorAll(".k2b-calendar-month[role=grid]")).toHaveLength(1);
+    expect(dom.root.querySelector("[data-continuous]")).toBeNull();
+    expect(dom.root.querySelector(".k2b-calendar-month__track")).toBeNull();
+    expect(dom.root.querySelectorAll(".k2b-calendar-month > .k2b-calendar-month__week")).toHaveLength(5);
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Next"]')!.click();
+    expect(changes).toEqual(["2026-11-09"]);
+    expect(dom.root.querySelector(".k2b-calendar-header__title > span")?.textContent).toBe("November 2026");
+    expect(dom.root.querySelectorAll(".k2b-calendar-month[role=grid]")).toHaveLength(1);
+    expect(dom.root.querySelector("[data-continuous]")).toBeNull();
+    dispose();
+    dom.cleanup();
+  });
+
+  test("continuous month keeps host echoes, prepended rows, selection, and pinned focus coherent", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    delegateEvents(["click", "keydown", "focusin"], dom.document);
+    installMonthLayout(dom);
+    setSystemTime(new Date("2026-10-09T08:00:00Z"));
+    const [date, setDate] = createSignal("2026-10-09");
+    const [from, setFrom] = createSignal("2026-08-31");
+    const [to, setTo] = createSignal("2027-04-12");
+    const reports: string[][] = [];
+    const loads: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          get date() {
+            return date();
+          },
+          view: "month",
+          events: [],
+          timeZone: "UTC",
+          get range() {
+            return { from: from(), to: to() };
+          },
+          onVisibleDateChange: (first, last, focus) => {
+            reports.push([key(first), key(last), key(focus)]);
+            setDate(key(focus));
+          },
+          onLoadEarlier: () => loads.push("earlier"),
+          onLoadLater: () => loads.push("later"),
+          onDateChange: (next) => setDate(key(next)),
+        }),
+      dom.root,
+    );
+    const grid = dom.root.querySelector<HTMLElement>(".k2b-calendar-month")!;
+    const cell = (day: string) => dom.root.querySelector<HTMLElement>(`[data-calendar-day-key="${day}"]`)!;
+    const scroll = async (top: number) => {
+      grid.scrollTop = top;
+      grid.dispatchEvent(new dom.window.Event("scroll") as unknown as Event);
+      await new Promise<void>((done) => dom.window.requestAnimationFrame(() => done()));
+    };
+    try {
+      expect(grid.scrollTop).toBe(400);
+      expect(loads).toEqual([]);
+      // Rapid navigation accumulates even while the last target needs more weeks below to reach the top.
+      setTo("2027-01-04");
+      const next = () => dom.root.querySelector<HTMLButtonElement>('button[aria-label="Next"]')!;
+      next().click();
+      next().click();
+      next().click();
+      expect(grid.scrollTop).toBe(1300);
+      expect(loads.filter((edge) => edge === "later")).toHaveLength(1);
+      setTo("2027-04-12");
+      expect(grid.scrollTop).toBe(1700);
+      dom.root.querySelector<HTMLButtonElement>(".k2b-calendar-header__today")!.click();
+      // The mock moves immediately; signal arrival before the reader starts another scroll.
+      grid.dispatchEvent(new dom.window.Event("scrollend") as unknown as Event);
+      await scroll(400);
+      // Tab focus without a selection also pins its week.
+      const tabbed = cell("2026-10-09");
+      tabbed.focus();
+      await scroll(1800);
+      expect(dom.document.activeElement === tabbed).toBe(true);
+      expect(tabbed.getAttribute("aria-selected")).toBe("false");
+      await scroll(400);
+      cell("2026-10-09").click();
+      const focused = cell("2026-10-09");
+      focused.focus();
+      await scroll(1800);
+      expect(dom.document.activeElement === focused).toBe(true);
+      expect(focused.isConnected).toBe(true);
+      expect(focused.getAttribute("aria-selected")).toBe("true");
+      await new Promise((done) => dom.window.setTimeout(done, 300));
+      expect(reports.at(-1)).toEqual(["2027-01-04", "2027-02-07", "2027-01-01"]);
+      // The host's own echo must not align January's first week or change the current scroll.
+      expect(grid.scrollTop).toBe(1800);
+      // Wheel input cancels a navigation glide, so a later prepend follows the reader's position.
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Previous"]')!.click();
+      grid.dispatchEvent(new dom.window.WheelEvent("wheel", { deltaY: 100 }) as unknown as Event);
+      await scroll(1800);
+      const visible = cell("2027-01-04");
+      setFrom("2026-07-06");
+      expect(grid.scrollTop).toBe(2600);
+      expect(cell("2027-01-04") === visible).toBe(true);
+      await scroll(1200);
+      expect(focused.getAttribute("aria-selected")).toBe("true");
+      // A host date outside the loaded days waits for its range, then positions and reports that month.
+      setDate("2027-05-09");
+      expect(grid.scrollTop).toBe(1200);
+      batch(() => {
+        setTo("2027-06-07");
+      });
+      expect(grid.scrollTop).toBe(4200);
+      expect(dom.root.querySelector(".k2b-calendar-header__title > span")?.textContent).toBe("May 2027");
+    } finally {
+      dispose();
+      setSystemTime();
+      dom.cleanup();
+    }
+  });
+
+  for (const links of [false, true]) {
+    test(`rapid Next clicks beyond loaded weeks navigate from the queued month through ${links ? "the link" : "onDateChange"}`, async () => {
+      const dom = createDomTestHarness();
+      const { default: Calendar } = await import("../src/content/Calendar");
+      delegateEvents(["click"], dom.document);
+      installMonthLayout(dom);
+      const changes: string[] = [];
+      const dispose = render(
+        () =>
+          createComponent(Calendar, {
+            date: "2026-10-09",
+            view: "month",
+            events: [],
+            timeZone: "UTC",
+            range: { from: "2026-08-31", to: "2027-01-04" },
+            ...(links
+              ? {
+                  getDateHref: (date: Date) => `/calendar?date=${key(date)}`,
+                  onNavigateHref: (href: string) => changes.push(href),
+                }
+              : { onDateChange: (date: Date) => changes.push(key(date)) }),
+          }),
+        dom.root,
+      );
+      try {
+        const next = () => dom.root.querySelector<HTMLElement>('[aria-label="Next"]')!;
+        next().click();
+        next().click();
+        next().click();
+        expect(changes).toEqual([]);
+        // January is loaded but cannot reach the top yet; February must go through the host.
+        if (links) expect(next().getAttribute("href")).toBe("/calendar?date=2027-02-01");
+        next().click();
+        expect(changes).toEqual([links ? "/calendar?date=2027-02-01" : "2027-02-01"]);
+      } finally {
+        dispose();
+        dom.cleanup();
+      }
+    });
+  }
+
+  test("a Next while the glide waits for more weeks goes on from the month it waits for", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    delegateEvents(["click"], dom.document);
+    installMonthLayout(dom);
+    const changes: string[] = [];
+    const [to, setTo] = createSignal("2027-01-04");
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          date: "2026-10-09",
+          view: "month",
+          events: [],
+          timeZone: "UTC",
+          get range() {
+            return { from: "2026-08-31", to: to() };
+          },
+          onDateChange: (date: Date) => changes.push(key(date)),
+          onLoadLater: () => {},
+        }),
+      dom.root,
+    );
+    try {
+      const next = () => dom.root.querySelector<HTMLElement>('[aria-label="Next"]')!;
+      next().click();
+      next().click();
+      next().click();
+      // Longer than quick repeated steps add up: January still waits for its weeks, so the next step is February.
+      await new Promise((done) => dom.window.setTimeout(done, 1300));
+      next().click();
+      // February now waits in the view too, even past the queue timer, until its weeks arrive.
+      await new Promise((done) => dom.window.setTimeout(done, 1300));
+      expect(changes).toEqual([]);
+      setTo("2027-04-12");
+      expect(dom.root.querySelector(".k2b-calendar-header__title > span")?.textContent).toBe("February 2027");
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("four quick Next clicks load more weeks and arrive in February without host navigation", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    delegateEvents(["click"], dom.document);
+    installMonthLayout(dom);
+    const [to, setTo] = createSignal("2027-01-04");
+    const changes: string[] = [];
+    const loads: Array<() => void> = [];
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          date: "2026-10-09",
+          view: "month",
+          events: [],
+          timeZone: "UTC",
+          get range() {
+            return { from: "2026-08-31", to: to() };
+          },
+          onDateChange: (date: Date) => changes.push(key(date)),
+          onLoadLater: () => new Promise<void>((resolve) => loads.push(resolve)),
+        }),
+      dom.root,
+    );
+    try {
+      const next = () => dom.root.querySelector<HTMLElement>('[aria-label="Next"]')!;
+      for (let count = 0; count < 4; count++) next().click();
+      expect(changes).toEqual([]);
+      expect(loads).toHaveLength(1);
+      // Each request grows by one eight-week block; February also needs room below it to reach the top.
+      for (let count = 0; count < 2; count++) {
+        const resolve = loads.shift()!;
+        batch(() => {
+          setTo(key(new Date(new Date(`${to()}T00:00:00Z`).getTime() + 56 * 86400000)));
+          resolve();
+        });
+        await new Promise<void>((done) => dom.window.requestAnimationFrame(() => done()));
+      }
+      const grid = dom.root.querySelector<HTMLElement>(".k2b-calendar-month")!;
+      grid.dispatchEvent(new Event("scrollend"));
+      expect(grid.scrollTop).toBe(2200);
+      expect(dom.root.querySelector(".k2b-calendar-header__title > span")?.textContent).toBe("February 2027");
+      expect(changes).toEqual([]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("two quick Previous clicks load earlier weeks and arrive in August without host navigation", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    delegateEvents(["click"], dom.document);
+    installMonthLayout(dom);
+    const [from, setFrom] = createSignal("2026-08-31");
+    const changes: string[] = [];
+    const loads: Array<() => void> = [];
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          date: "2026-10-09",
+          view: "month",
+          events: [],
+          timeZone: "UTC",
+          get range() {
+            return { from: from(), to: "2026-12-21" };
+          },
+          onDateChange: (date: Date) => changes.push(key(date)),
+          onLoadEarlier: () => new Promise<void>((resolve) => loads.push(resolve)),
+        }),
+      dom.root,
+    );
+    try {
+      const previous = () => dom.root.querySelector<HTMLElement>('[aria-label="Previous"]')!;
+      previous().click();
+      previous().click();
+      expect(loads).toHaveLength(1);
+      expect(changes).toEqual([]);
+      // A partial prepend must keep the old anchor and ask again while August is still absent.
+      const grid = dom.root.querySelector<HTMLElement>(".k2b-calendar-month")!;
+      const first = loads.shift()!;
+      batch(() => {
+        setFrom("2026-08-24");
+        first();
+      });
+      await Promise.resolve();
+      expect(grid.scrollTop).toBe(100);
+      expect(loads).toHaveLength(1);
+      batch(() => {
+        setFrom("2026-07-06");
+        loads.shift()!();
+      });
+      await Promise.resolve();
+      expect(dom.root.querySelector(".k2b-calendar-header__title > span")?.textContent).toBe("August 2026");
+      expect(grid.scrollTop).toBe(300);
+      expect(changes).toEqual([]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  for (const outcome of ["fulfilled", "rejected"]) {
+    test(`a ${outcome} load without range growth navigates the pending step and exhausts that edge`, async () => {
+      const dom = createDomTestHarness();
+      const { default: Calendar } = await import("../src/content/Calendar");
+      delegateEvents(["click"], dom.document);
+      installMonthLayout(dom);
+      const changes: string[] = [];
+      let settle!: () => void;
+      let loads = 0;
+      const dispose = render(
+        () =>
+          createComponent(Calendar, {
+            date: "2026-10-09",
+            view: "month",
+            events: [],
+            timeZone: "UTC",
+            range: { from: "2026-08-31", to: "2027-01-04" },
+            onDateChange: (date: Date) => changes.push(key(date)),
+            onLoadLater: () => {
+              loads++;
+              return new Promise<void>((resolve, reject) => {
+                settle = outcome === "fulfilled" ? resolve : () => reject(new Error("No more weeks"));
+              });
+            },
+          }),
+        dom.root,
+      );
+      try {
+        const next = () => dom.root.querySelector<HTMLElement>('[aria-label="Next"]')!;
+        for (let count = 0; count < 4; count++) next().click();
+        expect(loads).toBe(1);
+        expect(changes).toEqual([]);
+        settle();
+        await Promise.resolve();
+        expect(changes).toEqual(["2027-02-01"]);
+        const grid = dom.root.querySelector<HTMLElement>(".k2b-calendar-month")!;
+        // Exhaustion ends the clamped January glide and returns the navigation origin to the visible month.
+        const top = grid.scrollTop;
+        grid.dispatchEvent(new Event("scrollend"));
+        expect(grid.scrollTop).toBe(top);
+        next().click();
+        expect(changes).toEqual(["2027-02-01"]);
+        next().click();
+        expect(changes).toEqual(["2027-02-01", "2027-02-01"]);
+        expect(loads).toBe(1);
+      } finally {
+        dispose();
+        dom.cleanup();
+      }
+    });
+  }
+
+  test("wheel input cancels a pending Previous even when no glide has started", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    delegateEvents(["click"], dom.document);
+    installMonthLayout(dom);
+    const [from, setFrom] = createSignal("2026-11-02");
+    const changes: string[] = [];
+    let loads = 0;
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          date: "2026-11-20",
+          view: "month",
+          events: [],
+          timeZone: "UTC",
+          get range() {
+            return { from: from(), to: "2027-03-01" };
+          },
+          onDateChange: (date: Date) => changes.push(key(date)),
+          onLoadEarlier: () => {
+            loads++;
+          },
+        }),
+      dom.root,
+    );
+    try {
+      dom.root.querySelector<HTMLElement>('[aria-label="Previous"]')!.click();
+      expect(loads).toBe(1);
+      expect(changes).toEqual([]);
+      const grid = dom.root.querySelector<HTMLElement>(".k2b-calendar-month")!;
+      grid.dispatchEvent(new Event("wheel"));
+      setFrom("2026-09-07");
+      expect(grid.scrollTop).toBe(800);
+      expect(dom.root.querySelector(".k2b-calendar-header__title > span")?.textContent).toBe("November 2026");
+      expect(changes).toEqual([]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("the continuous month reports the host date before today or the month's first day", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    installMonthLayout(dom);
+    setSystemTime(new Date("2026-11-09T08:00:00Z"));
+    const reports: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          date: "2026-11-18",
+          view: "month",
+          events: [],
+          timeZone: "UTC",
+          range: { from: "2026-08-31", to: "2027-04-12" },
+          onVisibleDateChange: (_first, _last, focus) => reports.push(key(focus)),
+        }),
+      dom.root,
+    );
+    try {
+      await new Promise((done) => dom.window.setTimeout(done, 300));
+      expect(reports).toEqual(["2026-11-18"]);
+    } finally {
+      dispose();
+      setSystemTime();
+      dom.cleanup();
+    }
+  });
+
+  test("a continuous month whose first day is unloaded keeps one rendered gridcell as its tab stop", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    installMonthLayout(dom);
+    setSystemTime(new Date("2026-10-09T08:00:00Z"));
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          date: "2026-11-20",
+          view: "month",
+          events: [],
+          timeZone: "UTC",
+          range: { from: "2026-11-02", to: "2027-03-01" },
+        }),
+      dom.root,
+    );
+    try {
+      const grid = dom.root.querySelector<HTMLElement>(".k2b-calendar-month")!;
+      grid.scrollTop = 0;
+      grid.dispatchEvent(new Event("scroll"));
+      await new Promise<void>((done) => dom.window.requestAnimationFrame(() => done()));
+      const stops = dom.root.querySelectorAll<HTMLElement>('[role="gridcell"][tabindex="0"]');
+      expect(stops).toHaveLength(1);
+      expect(stops[0]!.isConnected).toBe(true);
+      expect(stops[0]!.dataset.calendarDayKey).toBe("2026-11-02");
+    } finally {
+      dispose();
+      setSystemTime();
+      dom.cleanup();
+    }
+  });
+
+  test("an echo of the reported focus cancels a stale host target before its weeks arrive", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    installMonthLayout(dom);
+    const [date, setDate] = createSignal("2027-01-09");
+    const [to, setTo] = createSignal("2027-04-12");
+    const reports: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          get date() {
+            return date();
+          },
+          view: "month",
+          events: [],
+          timeZone: "UTC",
+          get range() {
+            return { from: "2026-08-31", to: to() };
+          },
+          onVisibleDateChange: (_first, _last, focus) => reports.push(key(focus)),
+        }),
+      dom.root,
+    );
+    try {
+      await new Promise((done) => dom.window.setTimeout(done, 300));
+      expect(reports).toEqual(["2027-01-09"]);
+      const grid = dom.root.querySelector<HTMLElement>(".k2b-calendar-month")!;
+      const top = grid.scrollTop;
+      setDate("2027-05-09");
+      setDate(reports.at(-1)!);
+      setTo("2027-06-07");
+      expect(grid.scrollTop).toBe(top);
+      expect(dom.root.querySelector(".k2b-calendar-header__title > span")?.textContent).toBe("January 2027");
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("Today reveals August 31 in the sixth week instead of hiding it below five rows", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    delegateEvents(["click"], dom.document);
+    installMonthLayout(dom);
+    setSystemTime(new Date("2026-08-31T08:00:00Z"));
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          date: "2026-07-09",
+          view: "month",
+          events: [],
+          timeZone: "UTC",
+          firstDayOfWeek: 1,
+          range: { from: "2026-06-01", to: "2026-10-05" },
+        }),
+      dom.root,
+    );
+    try {
+      dom.root.querySelector<HTMLButtonElement>(".k2b-calendar-header__today")!.click();
+      const grid = dom.root.querySelector<HTMLElement>(".k2b-calendar-month")!;
+      const rowTop = 13 * 100;
+      expect(rowTop).toBeGreaterThanOrEqual(grid.scrollTop);
+      expect(rowTop).toBeLessThan(grid.scrollTop + 500);
+      expect(rowTop + 100).toBeLessThanOrEqual(grid.scrollTop + 500);
+    } finally {
+      dispose();
+      setSystemTime();
+      dom.cleanup();
+    }
+  });
+
+  test("a glide still aligns its target month's first week when more weeks arrive after 1.6 seconds", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    delegateEvents(["click"], dom.document);
+    installMonthLayout(dom);
+    const [to, setTo] = createSignal("2027-01-04");
+    const loads: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          date: "2026-10-09",
+          view: "month",
+          events: [],
+          timeZone: "UTC",
+          get range() {
+            return { from: "2026-08-31", to: to() };
+          },
+          onDateChange: () => {},
+          onLoadLater: () => loads.push("later"),
+        }),
+      dom.root,
+    );
+    try {
+      const grid = dom.root.querySelector<HTMLElement>(".k2b-calendar-month")!;
+      const next = () => dom.root.querySelector<HTMLElement>('[aria-label="Next"]')!;
+      next().click();
+      next().click();
+      next().click();
+      expect(grid.scrollTop).toBe(1300);
+      expect(loads).toEqual(["later"]);
+      await new Promise((done) => dom.window.setTimeout(done, 1750));
+      setTo("2027-04-12");
+      grid.dispatchEvent(new dom.window.Event("scrollend") as unknown as Event);
+      // The week containing January 1 is December 28, 17 rows after August 31.
+      expect(grid.scrollTop).toBe(1700);
+      expect(dom.root.querySelector(".k2b-calendar-header__title > span")?.textContent).toBe("January 2027");
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  for (const shown of ["2026-10-09", "2026-11-01"]) {
+    test(`without selection createTarget and New event use ${shown} after keyboard focus visited another month`, async () => {
+      const dom = createDomTestHarness();
+      const { default: Calendar } = await import("../src/content/Calendar");
+      delegateEvents(["click", "focusin"], dom.document);
+      installMonthLayout(dom);
+      setSystemTime(new Date("2026-10-09T08:00:00Z"));
+      let controller!: CalendarController;
+      const slots: Array<ReturnType<typeof range>> = [];
+      const dispose = render(
+        () =>
+          createComponent(Calendar, {
+            date: "2026-10-09",
+            view: "month",
+            events: [],
+            timeZone: "UTC",
+            range: { from: "2026-08-31", to: "2027-04-12" },
+            controller: (value) => {
+              controller = value;
+            },
+            onDateChange: () => {},
+            onSlotActivate: (value) => slots.push(range(value)),
+          }),
+        dom.root,
+      );
+      try {
+        const grid = dom.root.querySelector<HTMLElement>(".k2b-calendar-month")!;
+        dom.root.querySelector<HTMLElement>('[data-calendar-day-key="2026-09-09"]')!.focus();
+        if (shown === "2026-11-01") {
+          dom.root.querySelector<HTMLElement>('[aria-label="Next"]')!.click();
+          grid.dispatchEvent(new dom.window.Event("scrollend") as unknown as Event);
+        }
+        expect(dom.root.querySelectorAll('[aria-selected="true"]')).toHaveLength(0);
+        const expected = { start: shown, end: shown === "2026-10-09" ? "2026-10-10" : "2026-11-02", allDay: true };
+        expect(range(controller.createTarget())).toEqual(expected);
+        controller.quickCreate("event");
+        expect(slots).toEqual([expected]);
+      } finally {
+        dispose();
+        setSystemTime();
+        dom.cleanup();
+      }
+    });
+  }
+
+  test("Page Down from July 31 selects August 31 and reveals its whole sixth week", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    delegateEvents(["click", "keydown"], dom.document);
+    installMonthLayout(dom);
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          date: "2026-07-31",
+          view: "month",
+          events: [],
+          timeZone: "UTC",
+          firstDayOfWeek: 1,
+          range: { from: "2026-06-01", to: "2026-10-05" },
+        }),
+      dom.root,
+    );
+    try {
+      const july = dom.root.querySelector<HTMLElement>('[data-calendar-day-key="2026-07-31"]')!;
+      july.click();
+      july.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "PageDown", bubbles: true, cancelable: true }) as unknown as Event);
+      const selected = dom.root.querySelector<HTMLElement>('[aria-selected="true"]')!;
+      expect(selected.dataset.calendarDayKey).toBe("2026-08-31");
+      const grid = dom.root.querySelector<HTMLElement>(".k2b-calendar-month")!;
+      // August 31's row starts 13 weeks after June 1; the weekday header occupies 32 px.
+      const rowTop = 13 * 100;
+      expect(rowTop).toBeGreaterThanOrEqual(grid.scrollTop);
+      expect(rowTop + 100).toBeLessThanOrEqual(grid.scrollTop + grid.clientHeight - 32);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("a range passed after mount starts month positioning and visible-date reports", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    installMonthLayout(dom);
+    setSystemTime(new Date("2026-06-01T08:00:00Z"));
+    const [loaded, setLoaded] = createSignal(false);
+    const reports: string[][] = [];
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          date: "2026-10-09",
+          view: "month",
+          events: [],
+          timeZone: "UTC",
+          get range() {
+            return loaded() ? { from: "2026-08-31", to: "2027-04-12" } : undefined;
+          },
+          onVisibleDateChange: (first, last, focus) => reports.push([key(first), key(last), key(focus)]),
+        }),
+      dom.root,
+    );
+    try {
+      expect(dom.root.querySelector("[data-continuous]")).toBeNull();
+      expect(reports).toEqual([]);
+      setLoaded(true);
+      const grid = dom.root.querySelector<HTMLElement>("[data-continuous]")!;
+      expect(grid.scrollTop).toBe(400);
+      await new Promise((done) => dom.window.setTimeout(done, 300));
+      expect(reports.at(-1)).toEqual(["2026-09-28", "2026-11-01", "2026-10-09"]);
+      grid.scrollTop = 900;
+      grid.dispatchEvent(new dom.window.Event("scroll") as unknown as Event);
+      await new Promise<void>((done) => dom.window.requestAnimationFrame(() => done()));
+      await new Promise((done) => dom.window.setTimeout(done, 300));
+      expect(reports.at(-1)).toEqual(["2026-11-02", "2026-12-06", "2026-11-01"]);
+    } finally {
+      dispose();
+      setSystemTime();
+      dom.cleanup();
+    }
+  });
 
   test("a click selects a day instead of navigating; the keys move and extend the selection, and Enter creates on it", async () => {
     const dom = createDomTestHarness();

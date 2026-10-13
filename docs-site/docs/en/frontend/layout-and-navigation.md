@@ -250,6 +250,13 @@ onCleanup(stop);
 Do not add a back button of your own for a page the title array already
 leads up to. Keep buttons that do something else, such as leaving an editor.
 
+An app whose content already holds the way up, as the Files listing does with
+its parent row, passes only its root and the current page for those pages.
+The shell then draws no back link there at any depth. The app registers its
+own context command for `Alt+↑` with `registerContextAwareCommand` from
+`@k2b/cloud/browser/commands`, because **One level up** is offered only on a
+page with a level above.
+
 ## Render anonymous application pages
 
 `Layout` uses the same application shell for authenticated and anonymous

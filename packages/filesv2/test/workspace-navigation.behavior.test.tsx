@@ -27,6 +27,9 @@ const load = async () => {
   try {
     return {
       Workspace: (await import("../src/frontend/Workspace.island")).default,
+      ui: await import("@k2b/ui"),
+      derivePageTrail: (await import("@k2b/cloud/ssr/page-trail")).derivePageTrail,
+      snapshotTitle: (await import("../src/frontend/trail")).snapshotTitle,
       PAGE_UP_EVENT: (await import("@k2b/cloud/ssr/layout-runtime")).PAGE_UP_EVENT,
     };
   } finally {
@@ -75,6 +78,82 @@ describe("Filesv2 progressive navigation", () => {
     };
     return { controller, requests, dispose };
   };
+
+  for (const path of ["", "A", "A/B", "A/B/C", "A/B/C/D"]) {
+    test(`folder depth ${path ? path.split("/").length : 0} has no shell way up before or after in-place navigation`, async () => {
+      const dom = createDomTestHarness();
+      const { Workspace, ui, derivePageTrail, snapshotTitle } = modules!;
+      const base = {
+        id: "home",
+        name: "Alice",
+        area: "cloud" as const,
+        kind: "users" as const,
+        status: "existing" as const,
+        reason: null,
+        indexEnabled: false,
+        versioningEnabled: false,
+      };
+      const bases = { items: [base], issues: [], editor: null };
+      const directory = (path: string) => ({ base, path, items: [], next: null });
+      const source = `/app/filesv2?base=home${path ? `&path=${encodeURIComponent(path)}` : ""}`;
+      const snapshot = { ...initial, source, bases, selectedId: base.id, directory: directory(path) };
+      dom.window.history.replaceState(null, "", source);
+      // Seed the real SSR trail; layout.update must publish subsequent trails, without a fixed provider masking them.
+      dom.root.classList.add("cloud-app-canvas");
+      dom.root.setAttribute("data-app-base", "/app/filesv2");
+      ui.setPageTrail(derivePageTrail(snapshotTitle(snapshot, "Files", { myFiles: "My files" }, "en"), "/app/filesv2", "Files"));
+      const dispose = render(() => createComponent(Workspace, { initial: snapshot, cloudUrl: "https://cloud.test" }), dom.root);
+      cleanup = () => {
+        dispose();
+        dom.cleanup();
+      };
+      const assertTitle = (current: string) => {
+        expect(ui.readPageTrail()).toEqual({ title: current.split("/").at(-1) || "My files", ancestors: [] });
+        for (const selector of [
+          "[data-k2b-page-trail-up]",
+          "[data-k2b-page-trail-link]",
+          ".k2b-page-title__back",
+          ".k2b-page-title__trail",
+        ]) {
+          expect(dom.document.querySelector(selector)).toBeNull();
+        }
+        // The shared head also carries a CSS-hidden fallback h1; the app has exactly one content heading.
+        const headings = dom.document.querySelectorAll("h1:not(.k2b-app-workspace__head-heading)");
+        expect(headings).toHaveLength(1);
+        expect(headings[0]!.textContent).toBe(current.split("/").at(-1) || "My files");
+      };
+      const assertSidebarStates = async (current: string) => {
+        const root = dom.root.querySelector<HTMLElement>("[data-k2b-app-workspace]")!;
+        const handle = root.querySelector<HTMLButtonElement>('[data-app-workspace-resize="sidebar"]')!;
+        const key = (key: string) =>
+          handle.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+        key("Home");
+        key("ArrowRight");
+        await flush();
+        expect(root.dataset.sidebarCollapsed).not.toBe("true");
+        assertTitle(current);
+        key("Home");
+        key("ArrowLeft");
+        await flush();
+        expect(root.dataset.sidebarCollapsed).toBe("true");
+        assertTitle(current);
+      };
+      await flush();
+      await assertSidebarStates(path);
+      const destination = path ? path.split("/").slice(0, -1).join("/") : "A";
+      dom.window.history.replaceState(null, "", `/app/filesv2?base=home${destination ? `&path=${encodeURIComponent(destination)}` : ""}`);
+      dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+      for (let round = 0; round < 5; round++) {
+        await flush();
+        for (const request of apiRequests.splice(0)) {
+          const requestedPath = (request.input as { query?: { path?: string } } | undefined)?.query?.path ?? "";
+          request.resolve(Response.json(request.kind === "bases" ? bases : directory(requestedPath)));
+        }
+      }
+      await flush();
+      await assertSidebarStates(destination);
+    });
+  }
 
   test("SSR snapshot suppresses initial fetch; history commits only after its matching snapshot", async () => {
     const { controller, requests } = setup();

@@ -18,7 +18,7 @@ import { resolveRecurringOccurrence } from "@/service/recurrence";
 import { resolveReferenceViews } from "@/service/resource-reference-views";
 import { spaceMessages } from "../../messages";
 import { type CalendarFilter, parseCalendarFilter } from "../calendar/filter";
-import { type CalendarRange, calendarItemsEnd, calendarWindow, isScrollingCalendarView } from "../calendar/range";
+import { type CalendarRange, calendarItemsEnd, calendarWindow, isBlockLoadingCalendarView } from "../calendar/range";
 import { TASK_TRAY_SIZE, taskTrayFilters } from "../calendar/tray";
 import type { CalendarView, DayWeather } from "../calendar/types";
 import { boardFilter, defaultFilter, type FilterState, hasActiveFilters, parseFilterFromUrl } from "../filter/types";
@@ -41,9 +41,9 @@ type WorkspaceRequest = {
   cookieHeader?: string;
   authorizationHeader?: string;
   dateConfig?: DateContext;
-  /** The days a day or week view loads instead of its first window, such as the days it already shows. */
+  /** The days a day, week, or month view loads instead of its first window, such as the days it already shows. */
   calendarRange?: CalendarRange;
-  /** False for a week the day or week view adds while the reader scrolls: it keeps the tray it has. */
+  /** False for a block the day, week, or month view adds while the reader scrolls: it keeps the tray it has. */
   includeTray?: boolean;
 };
 
@@ -266,7 +266,7 @@ const resolveCalendarRange = (params: {
   dateConfig?: DateContext;
   calendarRange?: CalendarRange;
 }): { from: Date; to: Date } => {
-  if (isScrollingCalendarView(params.calendarView)) {
+  if (isBlockLoadingCalendarView(params.calendarView)) {
     const range = params.calendarRange ?? calendarWindow(params.calendarView, params.calendarDate, params.dateConfig);
     return { from: new Date(range.from), to: new Date(range.to) };
   }
@@ -388,7 +388,7 @@ const loadCalendarState = async (params: {
 
   const { from, to } = calendarRange;
   // The night after the last day belongs to it, so the day and week views also need what lies there until 06:00.
-  const itemsTo = isScrollingCalendarView(calendarView) ? new Date(calendarItemsEnd(to.toISOString(), params.dateConfig)) : to;
+  const itemsTo = isBlockLoadingCalendarView(calendarView) ? new Date(calendarItemsEnd(to.toISOString(), params.dateConfig)) : to;
   const [accessibleItems, calendarWeather, calendarTray] = await Promise.all([
     spacesService.item.calendar.list({
       subject: { type: "user", userId: params.user.id },
