@@ -7,201 +7,203 @@ import { compileArtifact } from "../../assistant/src/artifacts/runtime/compile";
 import { buildEchoPlugin } from "../test/fixtures/build-plugin";
 import { installFirstPartyModules } from "../test/fixtures/first-party";
 import { type PluginCloudState, servedEchoPlugin, startPluginCloud } from "../test/fixtures/plugin-cloud";
+import { traced } from "../test/fixtures/process-trace";
 
-test("standalone CLI starts and runs offline without Cloud server configuration", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "cld-standalone-test-"));
-  const root = resolve(import.meta.dir, "../../..");
-  const target = `${process.platform}_${process.arch}`;
-  try {
-    const build = Bun.spawn([process.execPath, "run", "packages/cloud-cli/scripts/build.ts"], {
-      cwd: root,
-      env: { ...process.env, CLD_TARGETS: target, CLD_OUTPUT_DIR: join(directory, "build"), CLD_VERSION: "1.2.3-test" },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [buildExit, buildOut, buildErr] = await Promise.all([
-      build.exited,
-      new Response(build.stdout).text(),
-      new Response(build.stderr).text(),
-    ]);
-    expect(buildExit, `${buildOut}\n${buildErr}`).toBe(0);
-    // First-party modules are plugins like any other; the binary loads them from disk.
-    await installFirstPartyModules(join(directory, ".config"), ["assistant", "grids"]);
+const TIMEOUT = 60_000;
 
-    const run = async (args: string[], extraEnv: Record<string, string> = {}) => {
-      const child = Bun.spawn([join(directory, "build", `cld_${target}`), ...args], {
-        cwd: directory,
-        env: { HOME: directory, CLD_CONFIG: join(directory, "config.json"), ...extraEnv },
-        stdout: "pipe",
-        stderr: "pipe",
+test(
+  "standalone CLI starts and runs offline without Cloud server configuration",
+  traced(TIMEOUT, async (trace) => {
+    const directory = await mkdtemp(join(tmpdir(), "cld-standalone-test-"));
+    const root = resolve(import.meta.dir, "../../..");
+    const target = `${process.platform}_${process.arch}`;
+    try {
+      const build = await trace.spawn("compile cld", [process.execPath, "run", "packages/cloud-cli/scripts/build.ts"], {
+        cwd: root,
+        env: { ...process.env, CLD_TARGETS: target, CLD_OUTPUT_DIR: join(directory, "build"), CLD_VERSION: "1.2.3-test" },
       });
-      const [exitCode, stdout, stderr] = await Promise.all([
-        child.exited,
-        new Response(child.stdout).text(),
-        new Response(child.stderr).text(),
-      ]);
-      return { exitCode, stdout, stderr };
-    };
-    const version = await run(["--version"]);
-    expect(version.exitCode, version.stderr).toBe(0);
-    expect(version.stdout).toContain("1.2.3-test");
-    expect(version.stderr).toBe("");
+      expect(build.exitCode, `${build.stdout}\n${build.stderr}`).toBe(0);
+      // First-party modules are plugins like any other; the binary loads them from disk.
+      await trace.phase("bundle first-party modules", () => installFirstPartyModules(join(directory, ".config"), ["assistant", "grids"]));
 
-    for (const args of [["help"], ["assistant", "help"], ["grids", "apps", "runtime", "help"]]) {
-      const help = await run(args);
-      expect(help.exitCode, help.stderr).toBe(0);
-      expect(help.stdout).toContain("Usage:");
-      expect(help.stderr).toBe("");
-    }
+      const run = (name: string, args: string[], extraEnv: Record<string, string> = {}) =>
+        trace.spawn(`cld ${name}`, [join(directory, "build", `cld_${target}`), ...args], {
+          cwd: directory,
+          env: { HOME: directory, CLD_CONFIG: join(directory, "config.json"), ...extraEnv },
+        });
+      const version = await run("--version", ["--version"]);
+      expect(version.exitCode, version.stderr).toBe(0);
+      expect(version.stdout).toContain("1.2.3-test");
+      expect(version.stderr).toBe("");
 
-    const reference = await run([
-      "--server",
-      "https://cloud.invalid",
-      "--token",
-      "test-token",
-      "--json",
-      "grids",
-      "workflows",
-      "reference",
-    ]);
-    expect(reference.exitCode, reference.stderr).toBe(0);
-    expect(reference.stderr).toBe("");
-    expect(JSON.parse(reference.stdout).language.actions).toEqual(
-      expect.arrayContaining([expect.objectContaining({ kind: "createRecord" }), expect.objectContaining({ kind: "sendEmail" })]),
-    );
+      for (const args of [["help"], ["assistant", "help"], ["grids", "apps", "runtime", "help"]]) {
+        const help = await run(args.join(" "), args);
+        expect(help.exitCode, help.stderr).toBe(0);
+        expect(help.stdout).toContain("Usage:");
+        expect(help.stderr).toBe("");
+      }
 
-    // A third-party module bundled with its own @k2b/cloud/cli copy loads
-    // into the compiled binary from disk and gets the host's context.
-    const plugin = await buildEchoPlugin(join(directory, "echo-plugin"));
-    const installed = await run(["plugins", "install", plugin, "--yes"]);
-    expect(installed.exitCode, installed.stderr).toBe(0);
-    const echoServer = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      fetch: (request) =>
-        Response.json({ authorization: request.headers.get("authorization"), locale: request.headers.get("accept-language") }),
-    });
-    try {
-      const echoed = await run(["--server", echoServer.url.origin, "--token", "plugin-token", "--json", "echo", "whoami"]);
-      expect(echoed.exitCode, echoed.stderr).toBe(0);
-      expect(echoed.stderr).toBe("");
-      expect(JSON.parse(echoed.stdout)).toEqual({ authorization: "Bearer plugin-token", locale: null, profile: "default", output: "json" });
-      const viaRun = await run([
+      const reference = await run("grids workflows reference", [
         "--server",
-        echoServer.url.origin,
+        "https://cloud.invalid",
         "--token",
-        "plugin-token",
-        "plugins",
-        "run",
-        "echo",
-        "whoami",
+        "test-token",
         "--json",
+        "grids",
+        "workflows",
+        "reference",
       ]);
-      expect(viaRun.exitCode, viaRun.stderr).toBe(0);
-      expect(JSON.parse(viaRun.stdout)).toEqual(JSON.parse(echoed.stdout));
-    } finally {
-      await echoServer.stop(true);
-    }
-    const listed = await run(["plugins", "list", "--json"]);
-    expect(JSON.parse(listed.stdout).plugins).toContainEqual({
-      profile: null,
-      name: "echo",
-      alias: null,
-      shortcuts: {},
-      inactive: [],
-      app: null,
-      installed: "1.0.0",
-      available: null,
-      status: "ok",
-      source: plugin,
-    });
-    expect((await run(["plugins", "remove", "echo"])).exitCode).toBe(0);
-
-    // The same module served by a Cloud: installed for one profile, verified, and run from the store.
-    const cloud: PluginCloudState = { plugins: [await servedEchoPlugin("1.0.0")], authorizations: [] };
-    const pluginCloud = startPluginCloud(cloud);
-    try {
-      await Bun.write(
-        join(directory, "config.json"),
-        JSON.stringify({ currentProfile: "work", profiles: { work: { server: pluginCloud.url.origin, token: "served-token" } } }),
+      expect(reference.exitCode, reference.stderr).toBe(0);
+      expect(reference.stderr).toBe("");
+      expect(JSON.parse(reference.stdout).language.actions).toEqual(
+        expect.arrayContaining([expect.objectContaining({ kind: "createRecord" }), expect.objectContaining({ kind: "sendEmail" })]),
       );
-      const served = await run(["plugins", "install", "echo"]);
-      expect(served.exitCode, served.stderr).toBe(0);
-      const echoed = await run(["--json", "echo", "whoami"]);
-      expect(echoed.exitCode, echoed.stderr).toBe(0);
-      expect(JSON.parse(echoed.stdout)).toMatchObject({ authorization: "Bearer served-token", profile: "work" });
-      // The core skill travels inside the binary; the installed module adds its references.
-      const skillsDir = join(directory, "agent-skills");
-      const skills = await run(["skills", "add", skillsDir]);
-      expect(skills.exitCode, skills.stderr).toBe(0);
-      const skill = await Bun.file(join(skillsDir, "cloud-cli", "SKILL.md")).text();
-      expect(skill).toContain("name: cloud-cli");
-      expect(skill).toContain("| work | echo | 1.0.0 | `references/echo/1.0.0/` |");
-      expect(await Bun.file(join(skillsDir, "cloud-cli", "references", "sign-in.md")).exists()).toBe(true);
-      await Bun.write(join(directory, "config.json"), "{}");
-    } finally {
-      await pluginCloud.stop(true);
-    }
 
-    // Exercise the compiled parent AND its internal browser subprocess, from
-    // outside the checkout. No installation or user Cloud data is contacted.
-    // Like `cld` by default, the child launches Playwright's Chromium where
-    // Playwright looks for it: PLAYWRIGHT_BROWSERS_PATH, XDG_CACHE_HOME, or
-    // HOME. A system Chrome is only used when CLOUD_CLI_CHROMIUM names it: the
-    // CI image's Google Chrome needed 9-33 seconds for its first start.
-    const browserEnv: Record<string, string> = { HOME: homedir() };
-    for (const name of ["CLOUD_CLI_CHROMIUM", "PLAYWRIGHT_BROWSERS_PATH", "XDG_CACHE_HOME"]) {
-      const value = process.env[name];
-      if (value) browserEnv[name] = value;
-    }
-    const bundle = await cliHostBundle();
-    const code = "export default () => 42";
-    const compiled = await compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code }] });
-    const conversationId = crypto.randomUUID();
-    const server = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      fetch(request) {
-        const path = new URL(request.url).pathname;
-        if (path === `/api/ai/conversations/${conversationId}`) return Response.json({ conversation: { id: conversationId } });
-        if (path.endsWith("/runtime/host.js")) return new Response(bundle);
-        if (path.endsWith("/compile")) return Response.json(compiled);
-        return new Response("Unexpected test request", { status: 404 });
-      },
-    });
-    try {
-      const input = join(directory, "run.json");
-      await Bun.write(input, JSON.stringify({ code }));
-      const executed = await run(
-        [
+      // A third-party module bundled with its own @k2b/cloud/cli copy loads
+      // into the compiled binary from disk and gets the host's context.
+      const plugin = await trace.phase("build echo plugin", () => buildEchoPlugin(join(directory, "echo-plugin")));
+      const installed = await run("plugins install", ["plugins", "install", plugin, "--yes"]);
+      expect(installed.exitCode, installed.stderr).toBe(0);
+      const echoServer = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: (request) =>
+          Response.json({ authorization: request.headers.get("authorization"), locale: request.headers.get("accept-language") }),
+      });
+      try {
+        const echoed = await run("echo whoami", ["--server", echoServer.url.origin, "--token", "plugin-token", "--json", "echo", "whoami"]);
+        expect(echoed.exitCode, echoed.stderr).toBe(0);
+        expect(echoed.stderr).toBe("");
+        expect(JSON.parse(echoed.stdout)).toEqual({
+          authorization: "Bearer plugin-token",
+          locale: null,
+          profile: "default",
+          output: "json",
+        });
+        const viaRun = await run("plugins run echo whoami", [
           "--server",
-          server.url.origin,
+          echoServer.url.origin,
           "--token",
-          "test-token",
-          "--json",
-          "assistant",
-          "code",
+          "plugin-token",
+          "plugins",
           "run",
-          "--chat",
-          conversationId,
-          "--input-file",
-          input,
-        ],
-        { ...browserEnv, XDG_CONFIG_HOME: join(directory, ".config") },
-      );
-      expect(executed.exitCode, executed.stderr).toBe(0);
-      expect(executed.stderr).toBe("");
-      expect(JSON.parse(executed.stdout)).toMatchObject({ status: "ready", output: "42" });
-    } finally {
-      await server.stop(true);
-    }
+          "echo",
+          "whoami",
+          "--json",
+        ]);
+        expect(viaRun.exitCode, viaRun.stderr).toBe(0);
+        expect(JSON.parse(viaRun.stdout)).toEqual(JSON.parse(echoed.stdout));
+      } finally {
+        await trace.phase("stop echo server", () => echoServer.stop(true));
+      }
+      const listed = await run("plugins list", ["plugins", "list", "--json"]);
+      expect(JSON.parse(listed.stdout).plugins).toContainEqual({
+        profile: null,
+        name: "echo",
+        alias: null,
+        shortcuts: {},
+        inactive: [],
+        app: null,
+        installed: "1.0.0",
+        available: null,
+        status: "ok",
+        source: plugin,
+      });
+      expect((await run("plugins remove echo", ["plugins", "remove", "echo"])).exitCode).toBe(0);
 
-    const offline = await run(["--json", "grids", "evidence", "verify", join(directory, "missing.tar")]);
-    expect(offline.exitCode).toBe(1);
-    expect(offline.stdout).toBe("");
-    expect(JSON.parse(offline.stderr).error.message).toContain("missing.tar");
-    expect(offline.stderr).not.toContain("No server configured");
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-}, 60_000);
+      // The same module served by a Cloud: installed for one profile, verified, and run from the store.
+      const cloud: PluginCloudState = {
+        plugins: [await trace.phase("serve echo plugin", () => servedEchoPlugin("1.0.0"))],
+        authorizations: [],
+      };
+      const pluginCloud = startPluginCloud(cloud);
+      try {
+        await Bun.write(
+          join(directory, "config.json"),
+          JSON.stringify({ currentProfile: "work", profiles: { work: { server: pluginCloud.url.origin, token: "served-token" } } }),
+        );
+        const served = await run("plugins install echo", ["plugins", "install", "echo"]);
+        expect(served.exitCode, served.stderr).toBe(0);
+        const echoed = await run("echo whoami", ["--json", "echo", "whoami"]);
+        expect(echoed.exitCode, echoed.stderr).toBe(0);
+        expect(JSON.parse(echoed.stdout)).toMatchObject({ authorization: "Bearer served-token", profile: "work" });
+        // The core skill travels inside the binary; the installed module adds its references.
+        const skillsDir = join(directory, "agent-skills");
+        const skills = await run("skills add", ["skills", "add", skillsDir]);
+        expect(skills.exitCode, skills.stderr).toBe(0);
+        const skill = await Bun.file(join(skillsDir, "cloud-cli", "SKILL.md")).text();
+        expect(skill).toContain("name: cloud-cli");
+        expect(skill).toContain("| work | echo | 1.0.0 | `references/echo/1.0.0/` |");
+        expect(await Bun.file(join(skillsDir, "cloud-cli", "references", "sign-in.md")).exists()).toBe(true);
+        await Bun.write(join(directory, "config.json"), "{}");
+      } finally {
+        await trace.phase("stop plugin Cloud", () => pluginCloud.stop(true));
+      }
+
+      // Exercise the compiled parent AND its internal browser subprocess, from
+      // outside the checkout. No installation or user Cloud data is contacted.
+      // Like `cld` by default, the child launches Playwright's Chromium where
+      // Playwright looks for it: PLAYWRIGHT_BROWSERS_PATH, XDG_CACHE_HOME, or
+      // HOME. A system Chrome is only used when CLOUD_CLI_CHROMIUM names it: the
+      // CI image's Google Chrome needed 9-33 seconds for its first start.
+      const browserEnv: Record<string, string> = { HOME: homedir() };
+      for (const name of ["CLOUD_CLI_CHROMIUM", "PLAYWRIGHT_BROWSERS_PATH", "XDG_CACHE_HOME"]) {
+        const value = process.env[name];
+        if (value) browserEnv[name] = value;
+      }
+      const bundle = await trace.phase("bundle the browser host", () => cliHostBundle());
+      const code = "export default () => 42";
+      const compiled = await trace.phase("compile artifact", () =>
+        compileArtifact({ entry: "main.ts", files: [{ path: "main.ts", content: code }] }),
+      );
+      const conversationId = crypto.randomUUID();
+      const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch(request) {
+          const path = new URL(request.url).pathname;
+          if (path === `/api/ai/conversations/${conversationId}`) return Response.json({ conversation: { id: conversationId } });
+          if (path.endsWith("/runtime/host.js")) return new Response(bundle);
+          if (path.endsWith("/compile")) return Response.json(compiled);
+          return new Response("Unexpected test request", { status: 404 });
+        },
+      });
+      try {
+        const input = join(directory, "run.json");
+        await Bun.write(input, JSON.stringify({ code }));
+        const executed = await run(
+          "assistant code run",
+          [
+            "--server",
+            server.url.origin,
+            "--token",
+            "test-token",
+            "--json",
+            "assistant",
+            "code",
+            "run",
+            "--chat",
+            conversationId,
+            "--input-file",
+            input,
+          ],
+          { ...browserEnv, XDG_CONFIG_HOME: join(directory, ".config") },
+        );
+        expect(executed.exitCode, executed.stderr).toBe(0);
+        expect(executed.stderr).toBe("");
+        expect(JSON.parse(executed.stdout)).toMatchObject({ status: "ready", output: "42" });
+      } finally {
+        await trace.phase("stop artifact server", () => server.stop(true));
+      }
+
+      const offline = await run("grids evidence verify", ["--json", "grids", "evidence", "verify", join(directory, "missing.tar")]);
+      expect(offline.exitCode).toBe(1);
+      expect(offline.stdout).toBe("");
+      expect(JSON.parse(offline.stderr).error.message).toContain("missing.tar");
+      expect(offline.stderr).not.toContain("No server configured");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }),
+  TIMEOUT,
+);
