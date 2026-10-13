@@ -101,6 +101,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await sql`CREATE TABLE ai.project_access(project_id uuid,access_id uuid)`;
     await sql`CREATE TABLE ai.turns(id uuid PRIMARY KEY,status text,conversation_id uuid,run_config jsonb)`;
     await sql`CREATE TABLE ai.files(conversation_id uuid,path text,bytes bytea,size bigint,media_type text,origin text,producer_call_key text,dictation_recorded_at timestamptz,updated_at timestamptz DEFAULT now(),version bigint DEFAULT 1,PRIMARY KEY(conversation_id,path))`;
+    // The evaluation attaches uploads to its turn the way a submitted turn does.
+    await sql`CREATE TABLE ai.turn_files(turn_id uuid,path text,bytes bytea,media_type text,size bigint,origin text,dictation_recorded_at timestamptz,updated_at timestamptz DEFAULT now(),version bigint DEFAULT 1,PRIMARY KEY(turn_id,path))`;
     await sql`CREATE TABLE ai.dictations(conversation_id uuid,source_bytes bytea)`;
 
     await sql`CREATE TABLE ai.tool_calls(request_id text,conversation_id uuid,turn_id uuid,location text,call_id text,tool_name text,status text,started_at timestamptz,UNIQUE(turn_id,call_id))`;
@@ -804,6 +806,64 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await expect(artifacts.get(app.id, reader)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
   });
 
+  test("agent creates save the first HTML and steps in one revision and report diagnostics", async () => {
+    const context = {
+      ...owner,
+      locale: "en",
+      timeZone: "UTC",
+      requestId: crypto.randomUUID(),
+      origin: "assistant" as const,
+      signal: new AbortController().signal,
+    };
+    const html = `<main><button type="button">Add</button><output>0</output></main>
+<style>output { color: var(--k2b-action) }</style>
+<script type="module">
+  const output = document.querySelector("output");
+  document.querySelector("button").addEventListener("click", () => { output.value = Number(output.value) + 1; });
+</script>
+`;
+    const steps = '[{"action":"click","target":{"role":"button","name":"Add"}}]';
+    const created = await artifactCodeHandlers.code_create({ title: "Counter", html, steps }, context);
+    if (!created.ok) throw new Error(created.error.message);
+    expect(created.data.data).toMatchObject({
+      revision: 1,
+      entry: "index.html",
+      diagnostics: [],
+      files: [
+        { path: "index.html", lines: 6, length: html.length },
+        { path: "steps.json", lines: 1, length: steps.length },
+      ],
+    });
+    expect((await artifacts.get(created.data.data.id, owner)).source).toEqual({
+      entry: "index.html",
+      files: [
+        { path: "index.html", content: html },
+        { path: "steps.json", content: steps },
+      ],
+    });
+    for (const [input, finding] of [
+      [{ title: "Invalid steps", html, steps: '[{"action":"fly"}]' }, /error steps\.json:.*step 1 \(fly\)/],
+      [{ title: "Invalid JSON", steps: "{" }, /error steps\.json: steps\.json is not valid JSON/],
+    ] as const) {
+      const saved = await artifactCodeHandlers.code_create(input, context);
+      if (!saved.ok) throw new Error(saved.error.message);
+      expect(saved.data.data.revision).toBe(1);
+      expect(saved.data.data.diagnostics).toContainEqual(expect.stringMatching(finding));
+      const source = (await artifacts.get(saved.data.data.id, owner)).source;
+      expect(source.files.find((file) => file.path === "index.html")?.content).toBe(
+        "html" in input ? input.html : `<main>\n  <h1>${input.title}</h1>\n</main>\n`,
+      );
+      expect(source.files.find((file) => file.path === "steps.json")?.content).toBe("steps" in input ? input.steps : undefined);
+    }
+    const empty = await artifactCodeHandlers.code_create({ title: "Empty source", html: "", steps: "" }, context);
+    if (!empty.ok) throw new Error(empty.error.message);
+    expect(empty.data.data).toMatchObject({ revision: 1, diagnostics: [] });
+    expect((await artifacts.get(empty.data.data.id, owner)).source.files).toEqual([
+      { path: "index.html", content: "" },
+      { path: "steps.json", content: "" },
+    ]);
+  });
+
   test("agent file writes persist incomplete code, preserve helpers and enforce permissions", async () => {
     const context = {
       ...owner,
@@ -813,11 +873,16 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       origin: "assistant" as const,
       signal: new AbortController().signal,
     };
-    const created = await artifactCodeHandlers.code_create({ title: "Agent test" }, context);
+    const created = await artifactCodeHandlers.code_create({ title: "Agent & <test>" }, context);
     if (!created.ok) throw new Error(created.error.message);
     const id = created.data.data.id;
     // A new App starts as an index.html interface; static findings of its JavaScript come back on write.
-    expect((await artifacts.get(id, owner)).source.entry).toBe("index.html");
+    expect((await artifacts.get(id, owner)).source).toEqual({
+      entry: "index.html",
+      files: [{ path: "index.html", content: "<main>\n  <h1>Agent &#38; &#60;test&#62;</h1>\n</main>\n" }],
+    });
+    expect(created.data.data).toMatchObject({ revision: 1 });
+    expect(created.data.data).not.toHaveProperty("diagnostics");
     const write = async (path: string, content: string, entry?: string) =>
       artifactCodeHandlers.code_write({ id, expectedRevision: (await artifacts.get(id, owner)).revision, path, content, entry }, context);
     const html = await write("app.js", 'alert("hi"); import x from "lodash";');
@@ -2740,7 +2805,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     }
   });
   test.skipIf(!process.env.ASSISTANT_EVAL_URL)(
-    "real model builds the Studio wow cases",
+    "real model handles the Assistant evaluation cases",
     async () => {
       const selected = (process.env.ASSISTANT_EVAL_CASES ?? "").split(",").filter(Boolean);
       const cases = STUDIO_EVAL_CASES.filter((item) => !selected.length || selected.includes(item.name));
@@ -2759,6 +2824,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${run.conversationId}::uuid,${run.identity.user.id}::uuid)`;
         await sql`INSERT INTO ai.turns(id,status,conversation_id) VALUES(${run.turnId}::uuid,'running',${run.conversationId}::uuid)`;
       }
+      // A finished case reads as a cancelled turn, so the host sweep releases its code host for the next case.
+      const finished = new Set<string>();
       const turnOf = (conversationId: string) => {
         const run = byConversation.get(conversationId);
         return run
@@ -2772,6 +2839,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
               createdAt: new Date().toISOString(),
               completedAt: null,
               error: null,
+              cancelRequestedAt: finished.has(conversationId) ? new Date().toISOString() : null,
             }
           : null;
       };
@@ -2805,21 +2873,24 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         // A failing case becomes its own unmeasured record, so the teardown waits for every other case.
         await Promise.all(
           Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
-            for (let run = queue.shift(); run; run = queue.shift())
+            for (let run = queue.shift(); run; run = queue.shift()) {
               results.push(
                 await evaluateStudioCase(
                   run.evalCase,
                   {
                     ...run.identity,
                     conversationId: run.conversationId,
-                    locale: "de",
+                    locale: run.evalCase.locale,
                     timeZone: "Europe/Berlin",
                     signal: AbortSignal.timeout(STUDIO_EVAL_CASE_MS),
                   },
                   run.turnId,
                   `${directory}/${run.evalCase.name}`,
-                ).catch((caught: unknown) => studioEvalFailure(run.evalCase.name, caught)),
+                ).catch((caught: unknown) => studioEvalFailure(run.evalCase.name, caught, run.evalCase)),
               );
+              finished.add(run.conversationId);
+              await agentHost.sweep();
+            }
           }),
         );
       } finally {

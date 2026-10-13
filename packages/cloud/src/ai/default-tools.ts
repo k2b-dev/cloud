@@ -99,12 +99,12 @@ export const createCloudAiCardTool = () =>
 export const createCloudAiChartTool = () =>
   defineAiTool({
     name: "chart",
-    description: `Show one chart in the chat from a few values you already have that did not come from a code run, such as figures from the conversation, a web page or a small capability result: bar, line (area: true fills it), scatter, pie, donut, histogram, gauge, sparkline, boxplot, heatmap, barGauge or stat. Several related measures go into one call as a group of small charts (charts, at most ${CLOUD_AI_GROUP_MAX_CHARTS}); linkX shares the x cursor between line charts with the same kind of x. There is no second y axis: compare measures with different units as a group. Cloud draws it with the renderer of cloud.chart() and gives the reader a data table and Copy data; no code, sandbox or app check is involved. Values computed in code_run never go here: the script shows them itself with cloud.view.chart, cloud.view.group, cloud.view.table, cloud.view.stats, cloud.view.details or cloud.view.explorer, and you present the returned path. Aggregate first. Say what the chart shows in title and put the unit, period or source in subtitle; formats are data ({ style: "percent" } takes fractions). The chart has no state, filters or actions: filters, steps and comparison over computed rows come from cloud.view.explorer in code_run; for other interaction show an app in the chat with code_present, and build a saved Studio App only when data must be kept or the app reused. After the chart, state the finding instead of repeating its values.`,
+    description: `Show one chart in the chat from a few values you already have that did not come from a code run, such as figures from the conversation, a web page or a small capability result: bar, line (area: true fills it), scatter, pie, donut, histogram, gauge, sparkline, boxplot, heatmap, barGauge or stat. Several related measures go into one call as a group of small charts (charts, at most ${CLOUD_AI_GROUP_MAX_CHARTS}); linkX shares the x cursor between line charts with the same kind of x. There is no second y axis: compare measures with different units as a group. Cloud draws it with the renderer of cloud.chart() and gives the reader a data table and Copy data; no code, sandbox or app check is involved. Values computed in code_run never go here: the script shows them itself with cloud.view.chart, cloud.view.group, cloud.view.table, cloud.view.stats, cloud.view.details or cloud.view.explorer, and you present the returned path. Aggregate first. Say what the chart shows in title and put the unit, period or source in subtitle; formats are data ({ style: "percent" } takes fractions). The chart has no state, filters or actions: filters, steps and comparison over computed rows come from cloud.view.explorer in code_run; anything else the person interacts with, such as a calculator, converter or form, is a Studio app built with code_create. After the chart, state the finding instead of repeating its values.`,
     inputSchema: CloudAiChartInputSchema,
     outputSchema: CloudAiChartOutputSchema,
     approval: "never",
     promptHint:
-      "show a few values you already have (not from a code run) as a chart in the chat. Code results use cloud.view.* and present; filters, steps and comparison use cloud.view.explorer in code_run; interaction beyond that needs a chat app (code_present).",
+      "show a few values you already have (not from a code run) as a chart in the chat. Code results use cloud.view.* and present; filters, steps and comparison use cloud.view.explorer in code_run; an app or tool to interact with is a Studio app (code_create).",
   }).clientView();
 
 export const createCloudAiSurveyTool = () =>
@@ -246,7 +246,7 @@ export const createCloudAiCodeTools = () => [
   defineAiTool({
     name: "code_open",
     description:
-      "Show the app beside the chat without starting it; HTML apps require a passing code_check for the current files and tables. For one-off calculations, return the result instead of opening an app.",
+      "Show a saved Studio app beside the chat without starting it; HTML apps require a passing code_check for the current files and tables. When the person only wants one calculated result, answer it instead of building an app.",
     inputSchema: CodeOpenInput,
     outputSchema: z.json(),
     approval: "never",
@@ -262,7 +262,7 @@ export const createCloudAiCodeTools = () => [
   defineAiTool({
     name: "code_present",
     description:
-      "Show an HTML app as a card in this chat after a passing code_check for exactly these files and table definitions. Pass files (index.html plus optional style.css and app.js) for a one-off app without saved data, or the id of a saved app to run it live with its data. The person starts the card with a click. Static problems such as CDN scripts, inline handlers or a missing index.html are rejected before anything is saved. For a reusable app beside the chat use code_open.",
+      "Show a saved Studio app as a card in this chat: pass its id after a passing code_check for its current files and tables; it runs live with its data, and the person starts the card with a click. Every app, calculator, converter, form or tool the person asks for is a Studio app created with code_create; code_open shows it beside the chat instead. files (index.html plus optional style.css and app.js) instead of id show a throwaway card that is not saved and does not appear in Studio: only when the person explicitly asks for a preview they do not want to keep, after a passing code_check for exactly these files. Static problems such as CDN scripts, inline handlers or a missing index.html are rejected before anything is saved.",
     inputSchema: CodePresentInput,
     outputSchema: z.json(),
     approval: "never",

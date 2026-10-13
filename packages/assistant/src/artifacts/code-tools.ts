@@ -415,7 +415,7 @@ export const artifactCodeHandlers = {
     result(context, async () => ({ data: sourceManifest(await artifacts.restore(id, version, expectedRevision, context)), ...links(id) })),
   code_update: ({ id, ...patch }, context) =>
     result(context, async () => ({ data: sourceManifest(await artifacts.metadata(id, patch, context)), ...links(id) })),
-  code_create: ({ title, description, icon }, context) =>
+  code_create: ({ title, description, icon, html, steps }, context) =>
     result(context, async () => {
       const created = await artifacts.create(
         {
@@ -425,13 +425,23 @@ export const artifactCodeHandlers = {
           source: {
             entry: "index.html",
             files: [
-              { path: "index.html", content: `<main>\n  <h1>${title.replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`)}</h1>\n</main>\n` },
+              {
+                path: "index.html",
+                content: html ?? `<main>\n  <h1>${title.replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`)}</h1>\n</main>\n`,
+              },
+              ...(steps !== undefined ? [{ path: "steps.json", content: steps }] : []),
             ],
           },
         },
         context,
       );
-      return { data: sourceManifest(created), ...links(created.id) };
+      return {
+        data: {
+          ...sourceManifest(created),
+          ...(html !== undefined || steps !== undefined ? { diagnostics: await sourceDiagnostics(created.source) } : {}),
+        },
+        ...links(created.id),
+      };
     }),
   code_write: ({ id, path, content, expectedRevision, entry }, context) =>
     result(context, async () => {

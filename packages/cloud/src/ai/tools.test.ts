@@ -335,6 +335,7 @@ describe("AI tools", () => {
       "survey",
       "text_editor",
       "chart",
+      "code_create",
       "list_files",
       "read_file",
       "fetch_file",

@@ -25,7 +25,7 @@ small input schema; there is no app prefix or capability name to translate.
 
 | Tool | Input | Purpose |
 | --- | --- | --- |
-| `code_create` | `title`, optional `description`, `icon` | Create one private resource; returns `id`, `entry`, and files |
+| `code_create` | `title`, optional `description`, `icon`, `html`, `steps` | Create one private resource with its first `index.html` and `steps.json`; returns `id`, `revision`, files and, with `html` or `steps`, diagnostics |
 | `code_read` | `id`, optional `path`, `offset`, `revision` | Current directory without path; file content with path |
 | `code_write` | `id`, `expectedRevision`, `path`, `content`, optional `entry` | Save one file and return the new revision, lines and length per file, and diagnostics |
 | `code_import` | `id`, `expectedRevision`, `files: [{path, fromFile}]`, optional `entry` | Import exact UTF-8 files atomically with one review for the batch |
@@ -39,8 +39,10 @@ interface. `runId` identifies a particular execution. The resource reader follow
 Cloud's standard `id` contract. Source file paths are relative, such as
 `index.html`, `app.js` or `lib/math.js`.
 
-Create returns a minimal `index.html` entry: an app with an interface. Write its
-`index.html`, `style.css` and `app.js` as [HTML apps](apps.md) describes; app
+Pass the first complete `index.html` as `html` and its `steps.json` as `steps`,
+so one call creates the app; without `html` it starts with a minimal
+`index.html`. Write `style.css`, `app.js` and later changes with `code_write`,
+as [HTML apps](apps.md) describes; app
 JavaScript imports only other app `.js` files, with relative paths and the
 extension. For a saved script that `code_run` executes instead, write the script
 and pass it as `entry`; it default-exports a function. Script imports may omit
@@ -53,12 +55,12 @@ Creation does not start code or share the app.
 {
   "id": "ID returned by code_create",
   "expectedRevision": 1,
-  "path": "index.html",
-  "content": "<main>\n  <h1>Tips</h1>\n  <output id=\"tip\"></output>\n</main>\n"
+  "path": "app.js",
+  "content": "document.querySelector(\"#tip\").value = \"0\";\n"
 }
 ```
 
-Then write `app.js` the same way, with the revision this call returned. Send
+Then write `style.css` the same way, with the revision this call returned. Send
 one `code_write` at a time and wait for its result: calls sent together in one
 response carry the same `expectedRevision`, so every call after the first
 returns `CONFLICT`.

@@ -283,9 +283,24 @@ export const CODE_SOURCE_TOOLS = {
     input: Id.extend(ArtifactMetadata.shape),
   },
   code_create: {
+    promptHint:
+      "build every app, calculator, converter, timer, form or other tool the person asks for as a saved Studio app. In one turn, load_skill assistant-code-mode and load_tools code_create, code_write, code_check and code_open.",
     description:
-      "Create a private reusable App: an index.html interface with optional style.css and app.js, published actions and optional persistence. Starts with a minimal index.html. For one-off analysis, use code_run with code instead. Returns id and entry path; write source with code_write. Optional icon uses the complete class, e.g. ti ti-chart-bar; omit it when unsure. Does not run or share anything.",
-    input: ArtifactCreate.pick({ title: true, description: true, icon: true }),
+      "Create a saved Studio app; it appears in the person's Studio Apps and can be opened, reused and shared. Use it for every app, calculator, converter, timer, form or other interactive tool the person asks for, even when it keeps no data. Pass the complete first version as html (a small app is this one file) and steps (its steps.json), so one call creates it; add style.css, app.js or more files with code_write. Without html it starts with a minimal index.html. Returns id, revision and the lines and length of every file; with html or steps also diagnostics, like code_write. Optional icon uses the complete class, e.g. ti ti-calculator; omit it when unsure. For a one-off analysis use code_run instead. Does not run, check or share anything.",
+    input: ArtifactCreate.pick({ title: true, description: true, icon: true }).extend({
+      html: z
+        .string()
+        .max(1024 * 1024)
+        .optional()
+        .describe(
+          'Complete index.html. A small app fits in this one file: put its script in <script type="module"> and its CSS in <style>. Omit it to start with a minimal page.',
+        ),
+      steps: z
+        .string()
+        .max(1024 * 1024)
+        .optional()
+        .describe("Complete steps.json text for code_check: the main flow, at most 20 steps."),
+    }),
   },
   // Source text stays top-level because some providers corrupt strings nested in arrays.
   // Imports carry only references, so they keep an array and one review per batch.

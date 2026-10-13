@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-10-11
+updated: 2026-10-12
 ---
 
 # Files, Projects, Skills, and personalization
@@ -62,8 +62,8 @@ that the current file still has assistant origin.
 
 The assistant keeps intermediate steps below `/temp/` in the chat, one folder
 per purpose, for example `/temp/quarterly-report/`. A result is what it hands
-over: `present({ path, title?, description? })` for a file, `code_open` for a
-Studio app, and `code_present` for a visualization in the chat. The optional
+over: `present({ path, title?, description? })` for a file or a view, and
+`code_open` or `code_present({ id })` for a Studio app. The optional
 `description` is one sentence of at most 160 characters in the user's
 language; a new delivery of the same file replaces it, also with none.
 Assistant shows results first and working files one level deeper, grouped by

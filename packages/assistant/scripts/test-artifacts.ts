@@ -91,7 +91,7 @@ try {
     // Evaluated apps render PDFs with cloud.pdf.render.
     ...(evaluation ? { CLOUD_TEST_GOTENBERG_URL: process.env.CLOUD_TEST_GOTENBERG_URL } : {}),
   };
-  const only = evaluation ? ["--test-name-pattern", "real model builds the Studio"] : [];
+  const only = evaluation ? ["--test-name-pattern", "real model handles the Assistant evaluation cases"] : [];
   const child = Bun.spawn(
     [process.execPath, "--no-env-file", "test", "--preload", testInfra, "--timeout", "20000", ...only, serviceSuite],
     {

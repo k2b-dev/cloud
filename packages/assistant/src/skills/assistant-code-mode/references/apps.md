@@ -227,10 +227,10 @@ For the todo example, write `steps.json`:
 ]
 ```
 
-A reusable app: `code_create`, one `code_write` per file (see
+Every app the person asked for is a saved app: `code_create` with the first
+`html` and `steps`, one `code_write` per further file (see
 [Source workflow](source-workflow.md)), check, then `code_open` or
-`code_present({id})`. One-off: check exactly the files, then
-`code_present({title,files})`; no saved app or data is needed. Studio managers
+`code_present({id})`. A small single-file app is one `code_create`. Studio managers
 can start apps on their app page; chat cards and tabs wait for Start. A shown
 saved app always loads its current source: after the final `code_write`, check
 again before you tell the person to reload or reopen it.

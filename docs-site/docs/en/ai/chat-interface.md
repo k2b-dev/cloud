@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-10-11
+updated: 2026-10-12
 ---
 
 # Chat interface
@@ -877,6 +877,10 @@ The server derives the chat context and checks current user, conversation,
 Project and resource permissions. GUI and CLI use the same resource services.
 Writes reuse the platform replay guard; uncertain calls are not repeated.
 `cloud.capabilities.run` remains available for other applications, not these tools.
+`code_create` accepts optional top-level `html` and `steps` strings for the initial
+`index.html` and `steps.json`, so a small single-file app can be created in one call.
+Without `html`, it starts with a minimal page; supplied source returns diagnostics
+without rejecting incomplete code.
 `code_write` saves one complete file per call with top-level `path` and `content`.
 Source text travels only in top-level strings because some providers corrupt
 strings nested in array arguments. Other files stay unchanged. Pass the revision
@@ -915,6 +919,14 @@ The Assistant image includes Chromium; other application images do not need it.
 The direct CLI code command retains its own isolated local execution host.
 
 ### Assistant apps and browser work
+
+An app, calculator, converter, timer, form or other tool a person asks for is a
+saved Studio app, even when it keeps no data: the `code_create` prompt hint and
+tool descriptions route it there, so it appears in the Studio catalog. Charts,
+tables, key figures and explorers of a one-off result stay views. A small app
+takes one `code_create` with its first `html` and `steps`, one `code_check` with
+its screenshot review, and `code_open`. `code_present` with `files` shows a
+throwaway card only when the person asks for a preview they do not want to keep.
 
 The Assistant **Studio** navigation opens its app catalog on hover or click;
 its search button opens global search filtered to Studio apps. Use-level users

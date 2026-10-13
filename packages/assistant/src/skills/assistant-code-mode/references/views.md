@@ -5,8 +5,8 @@ Numbers computed in `code_run` stay in the run. Call `await cloud.view.chart(spe
 `await cloud.view.stats(spec)`, `await cloud.view.details(spec)` or
 `await cloud.view.explorer(spec)` there, then call
 the **tool** `present({path})` for each returned view the person should see. Never retype run values into
-`chart` arguments, `data.js` or Markdown; a chat app's `data.js` is the module
-the run wrote, copied unchanged ([Chat apps](chat.md)). Return only the key figures mentioned
+`chart` arguments, app data or Markdown; an app's data module is the file the
+run wrote, copied with `code_file_copy` or `code_import` ([File transfers](files.md)). Return only the key figures mentioned
 in the answer. If a view is missing, rerun the script with `cloud.view.*`.
 A few values that did not come from a run use the `chart` tool.
 
@@ -300,7 +300,7 @@ number columns. No extra keys, markup options or functions belong in the spec.
 Filtering, steps, comparison, row selection and sorting happen locally and reset
 on reload. The table shows the rows of the current state, including the pinned
 step when comparing; **Copy data** copies those rows. The CLI prints the initial
-state's table. Use a chat app only for interaction an explorer cannot express.
+state's table. Interaction an explorer cannot express belongs in a Studio App.
 
 ## Choose and label
 

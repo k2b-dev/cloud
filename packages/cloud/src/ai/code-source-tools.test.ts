@@ -183,6 +183,23 @@ test("code_write sends one write without a preview or approval", async () => {
   expect(requestApproval).not.toHaveBeenCalled();
 });
 
+test("code_create accepts optional top-level source text and keeps its strict input contract", () => {
+  const input = { title: "Calculator", html: "<main>Calculator</main>", steps: '[{"action":"reload"}]' };
+  expect(CODE_SOURCE_TOOLS.code_create.input.parse(input)).toEqual(input);
+  expect(CODE_SOURCE_TOOLS.code_create.input.parse({ title: input.title })).toEqual({ title: input.title });
+  expect(CODE_SOURCE_TOOLS.code_create.input.safeParse({ html: input.html }).success).toBe(false);
+  expect(CODE_SOURCE_TOOLS.code_create.input.safeParse({ ...input, unknown: true }).success).toBe(false);
+  expect(
+    CODE_SOURCE_TOOLS.code_create.input.safeParse({ title: input.title, files: [{ path: "index.html", content: input.html }] }).success,
+  ).toBe(false);
+  for (const field of ["html", "steps"] as const) {
+    expect(CODE_SOURCE_TOOLS.code_create.input.safeParse({ ...input, [field]: "x".repeat(1024 * 1024) }).success).toBe(true);
+    expect(CODE_SOURCE_TOOLS.code_create.input.safeParse({ ...input, [field]: "x".repeat(1024 * 1024 + 1) }).success).toBe(false);
+    expect(CODE_SOURCE_TOOLS.code_create.input.safeParse({ ...input, [field]: [input[field]] }).success).toBe(false);
+    expect(CODE_SOURCE_TOOLS.code_create.input.safeParse({ ...input, [field]: 42 }).success).toBe(false);
+  }
+});
+
 test("code_write rejects array arguments and accepts only top-level source text", () => {
   const input = { id: "AbC234", expectedRevision: 1, path: "app.js", content: 'const title = "Hello";\n' };
   expect(CODE_SOURCE_TOOLS.code_write.input.safeParse(input).success).toBe(true);
