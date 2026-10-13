@@ -9,6 +9,7 @@ import * as Y from "yjs";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 import { basicExtensions } from "../../../lib/editor/basic";
 import { markdownExtension } from "../../../lib/editor/markdown";
+import { isolateYjsHistory } from "../../../lib/yjs/history";
 
 const loading = createDomTestHarness();
 const { toggleInlineMark } = await import("./editor-actions");
@@ -16,7 +17,7 @@ const { formattingKeymap } = await import("./EditorToolbar");
 const { renderNotebookBook } = await import("../../../../lib/book-renderer");
 loading.cleanup();
 
-const mount = (doc: string, anchor: number, head = anchor, extensions: Extension[] = []) => {
+const mount = (doc: string, anchor: number, head = anchor, extensions: Extension[] = [], parse = true) => {
   const dom = createDomTestHarness();
   const transactions: Transaction[] = [];
   const view = new EditorView({
@@ -33,7 +34,7 @@ const mount = (doc: string, anchor: number, head = anchor, extensions: Extension
       ],
     }),
   });
-  forceParsing(view, doc.length, 5000);
+  if (parse) forceParsing(view, doc.length, 5000);
   view.focus();
   view.dispatch({ selection: { anchor, head } });
   transactions.length = 0;
@@ -53,7 +54,7 @@ const mount = (doc: string, anchor: number, head = anchor, extensions: Extension
       });
       view.contentDOM.dispatchEvent(event);
       expect(event.defaultPrevented).toBe(true);
-      forceParsing(view, view.state.doc.length, 5000);
+      if (parse) forceParsing(view, view.state.doc.length, 5000);
     },
     [Symbol.dispose]() {
       view.destroy();
@@ -167,6 +168,117 @@ describe("notebook inline formatting", () => {
     editor.press(key, shift);
     expect(editor.text()).toBe("Wort");
     expect(editor.view.state.selection.main.head).toBe(2);
+  });
+
+  test.each([
+    ["`code` x", 2, 2, "b"],
+    ["`a*b` x", 1, 1, "i"],
+    ["```\nlet wert = 1\n```", 9, 9, "b"],
+    ["```\nlet wert = 1\n```", 9, 9, "e"],
+    ["    let wert = 1", 9, 9, "b"],
+    ["[Wort](https://x.y/abc)", 14, 14, "b"],
+    ["#projekt x", 3, 3, "b"],
+    ["- a\n- b", 2, 7, "b"],
+    ["foo\n\nbar", 0, 8, "b"],
+    ["*kursiv* mehr", 5, 11, "b"],
+    ["foobar.baz", 3, 7, "b"],
+    ["x(Wort)y", 1, 7, "b"],
+  ] as const)("invalid wrap dispatches nothing: %s (%i..%i, Mod-%s)", (doc, anchor, head, key) => {
+    using editor = mount(doc, anchor, head);
+    for (let press = 0; press < 2; press++) {
+      editor.press(key);
+      expect(editor.text()).toBe(doc);
+      expect(editor.transactions).toHaveLength(0);
+    }
+  });
+
+  test.each([
+    ["*kursiv*", 1, 7, "b", "***kursiv***"],
+    ["a `x` b", 0, 7, "b", "**a `x` b**"],
+    ["foo\nbar", 0, 7, "b", "**foo\nbar**"],
+    ["- a b", 2, 5, "i", "- *a b*"],
+  ] as const)("valid wraps around other syntax still apply: %s", (doc, anchor, head, key, expected) => {
+    using editor = mount(doc, anchor, head);
+    editor.press(key);
+    expect(editor.text()).toBe(expected);
+    editor.press(key);
+    expect(editor.text()).toBe(doc);
+  });
+
+  test("bold in link text keeps the URL intact", () => {
+    using editor = mount("[Wort](https://x.y/abc)", 3);
+    editor.press("b");
+    expect(editor.text()).toBe("[**Wort**](https://x.y/abc)");
+    editor.press("b");
+    expect(editor.text()).toBe("[Wort](https://x.y/abc)");
+  });
+
+  test.each([
+    ["**fett wort**", 7, 11, "**fett** wort", "wort", "**fett** **wort**"],
+    ["**fett wort**", 11, 7, "**fett** wort", "wort", "**fett** **wort**"],
+    ["**a b c**", 4, 5, "**a** b **c**", "b", "**a** **b** **c**"],
+    ["**fett wort**", 2, 6, "fett **wort**", "fett", "**fett** **wort**"],
+    ["__a b c__", 4, 5, "__a__ b __c__", "b", "__a__ **b** __c__"],
+  ] as const)("splits the selection out of %s (%i..%i), a second press bolds it again", (doc, anchor, head, split, selected, again) => {
+    using editor = mount(doc, anchor, head);
+    editor.press("b");
+    expect(editor.text()).toBe(split);
+    expect(editor.selected()).toBe(selected);
+    expect(editor.view.state.selection.main.anchor > editor.view.state.selection.main.head).toBe(anchor > head);
+    expect(editor.transactions).toHaveLength(1);
+    editor.press("b");
+    expect(editor.text()).toBe(again);
+    expect(editor.selected()).toBe(selected);
+  });
+
+  test.each([false, true])("absorbs a touching span (caret: %s)", (caret) => {
+    using editor = mount("**a**b", 5, caret ? 5 : 6);
+    editor.press("b");
+    expect(editor.text()).toBe("**ab**");
+    if (!caret) expect(editor.selected()).toBe("ab");
+    editor.press("b");
+    expect(editor.text()).toBe("ab");
+  });
+
+  test("word expansion absorbs touching intraword italic", () => {
+    using editor = mount("Wo*r*t", 1);
+    editor.press("i");
+    expect(editor.text()).toBe("*Wor*t");
+    const { html } = renderNotebookBook({ markdown: editor.text(), notebookId: "n", locale: "en" });
+    expect(html).toContain("<em>Wor</em>");
+    expect(html).not.toContain("*");
+    editor.press("i");
+    expect(editor.text()).toBe("Wort");
+  });
+
+  test("parses a distant span before toggling without forceParsing", () => {
+    const prefix = "Paragraph\n\n".repeat(1000);
+    using editor = mount(prefix + "**word**", prefix.length + 2, prefix.length + 6, [], false);
+    editor.press("b");
+    expect(editor.text()).toBe(prefix + "word");
+    expect(editor.selected()).toBe("word");
+  });
+
+  test.each([false, true])("Yjs isolates formatting from adjacent typing (type after: %s)", (after) => {
+    const doc = new Y.Doc();
+    const text = doc.getText("codemirror");
+    text.insert(0, "Ein ");
+    const undoManager = new Y.UndoManager(text);
+    using editor = mount("Ein ", 4, undefined, [yCollab(text, null, { undoManager }), isolateYjsHistory(undoManager)]);
+    try {
+      editor.view.dispatch({ changes: { from: 4, insert: "Wort" }, selection: { anchor: 6 }, userEvent: "input.type" });
+      editor.press("b");
+      expect(editor.text()).toBe("Ein **Wort**");
+      if (after) {
+        editor.view.dispatch({ changes: { from: 8, insert: "X" }, userEvent: "input.type" });
+        expect(editor.text()).toBe("Ein **WoXrt**");
+      }
+      undoManager.undo();
+      expect(editor.text()).toBe(after ? "Ein **Wort**" : "Ein Wort");
+    } finally {
+      undoManager.destroy();
+      doc.destroy();
+    }
   });
 
   test("one undo restores text and selection after merging a span", () => {
