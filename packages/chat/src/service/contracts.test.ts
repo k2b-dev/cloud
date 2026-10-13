@@ -75,6 +75,13 @@ describe("derived conversation titles", () => {
     expect(deriveTitle(null, members.slice(0, 1), "en")).toBe("Lea Müller");
     expect(deriveTitle(null, members, "de")).toBe("Lea, Tim");
   });
+  test("uses group names and keeps their full names after people", () => {
+    const lea = { displayName: "Lea Müller", givenName: "Lea" };
+    const group = { displayName: "Engineering", givenName: "", group: true };
+    expect(deriveTitle(null, [group], "en")).toBe("Engineering");
+    expect(deriveTitle(null, [lea, group], "en")).toBe("Lea, Engineering");
+    expect(deriveTitle(null, [lea, { ...group, displayName: "Engineering Team" }], "en")).toBe("Lea, Engineering Team");
+  });
   test("bounds the title to three names", () => {
     expect(
       deriveTitle(

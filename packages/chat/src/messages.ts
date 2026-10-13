@@ -37,6 +37,7 @@ export const chatMessages = i18n.define({
       guestCoMembers: "Guests can add only people they already share a chat with.",
       guestGroups: "Guests cannot add groups to chats.",
       groupMemberLeave: "You belong to this chat through a group, so you cannot leave it. Archive the chat instead.",
+      noDirectEntry: "You are not a direct member of this chat.",
       formerAccount: "Former account",
       systemGroupsAdded: ({ actor, names, count }: { actor: string; names: string; count: number }) =>
         count === 1 ? `${actor} added the group ${names}.` : `${actor} added the groups ${names}.`,
@@ -123,6 +124,7 @@ export const chatMessages = i18n.define({
       guestGroups: "Gäste können keine Gruppen zu Chats hinzufügen.",
       groupMemberLeave:
         "Du gehörst über eine Gruppe zu diesem Chat und kannst ihn deshalb nicht verlassen. Archiviere den Chat stattdessen.",
+      noDirectEntry: "Du bist kein direktes Mitglied dieses Chats.",
       formerAccount: "Ehemaliges Konto",
       systemGroupsAdded: ({ actor, names, count }: { actor: string; names: string; count: number }) =>
         count === 1 ? `${actor} hat die Gruppe ${names} hinzugefügt.` : `${actor} hat die Gruppen ${names} hinzugefügt.`,

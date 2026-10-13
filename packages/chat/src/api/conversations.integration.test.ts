@@ -294,6 +294,48 @@ suite("chat conversations, people, and directory groups", () => {
     expect(archived).toMatchObject({ outcome: "existing", matches: [{ id: duplicate.id, archived: true }] });
   });
 
+  test("a chat with a group entry is not an exact match for a direct-only set", async () => {
+    const owner = await user();
+    const other = await user();
+    const headers = await cookie(owner);
+    const groupId = await group([], "local", "Engineering Team");
+    const grouped = await create(headers, [], {
+      members: [
+        { type: "user", userId: other },
+        { type: "group", groupId },
+      ],
+    });
+    expect(grouped.title).toBe("Lea, Engineering Team");
+    const direct = await create(headers, [other]);
+    expect(direct.id).not.toBe(grouped.id);
+  });
+
+  test("discoverable users and service accounts get the no-direct-entry leave message", async () => {
+    const owner = await user();
+    const reader = await user();
+    const chat = await fixture(owner);
+    await grant(chat.id, reader, "read", owner, "discoverable");
+    const headers = await cookie(reader);
+    expect((await request(headers, `/${chat.shortId}`)).status).toBe(200);
+    for (const [locale, message] of [
+      ["en", "You are not a direct member of this chat."],
+      ["de", "Du bist kein direktes Mitglied dieses Chats."],
+    ]) {
+      const response = await request({ ...headers, "accept-language": locale! }, `/${chat.shortId}/leave`, "POST", {});
+      expect(response.status).toBe(409);
+      expect((await response.json()).message).toBe(message);
+    }
+    const account = await credential("standalone");
+    const access = await createAccess({ principal: { type: "service_account", serviceAccountId: account.id }, permission: "read" });
+    if (!access.ok) throw new Error(access.error.message);
+    accessIds.push(access.data.id);
+    await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
+      VALUES (${chat.id}::uuid, ${access.data.id}::uuid, 'discoverable', 'user', ${owner}::uuid)`;
+    const response = await request(account.headers, `/${chat.shortId}/leave`, "POST", {});
+    expect(response.status).toBe(409);
+    expect((await response.json()).message).toBe("You are not a direct member of this chat.");
+  });
+
   test("a deleted account cannot hide an existing chat from the duplicate check", async () => {
     const owner = await user();
     const b = await user();
@@ -725,6 +767,28 @@ suite("chat conversations, people, and directory groups", () => {
     const rejectedAdd = await request(headers, `/${chat.shortId}/members`, "POST", { members: [{ type: "group", groupId: parent }] });
     expect(rejectedAdd.status).toBe(400);
     expect((await rejectedAdd.json()).message).toContain("more than 500");
+  });
+
+  test("two groups of 300 people seed all 600 ondemand participants on create and add", async () => {
+    const owner = await user();
+    const headers = await cookie(owner);
+    const ids = await bulkUsers(600);
+    const members = [
+      { type: "group", groupId: await group(ids.slice(0, 300)) },
+      { type: "group", groupId: await group(ids.slice(300)) },
+    ];
+    const created = await create(headers, [], { members });
+    const added = await fixture(owner);
+    expect((await request(headers, `/${added.shortId}/members`, "POST", { members })).status).toBe(200);
+    for (const shortId of [created.id, added.shortId]) {
+      const [count] = await sql<{ count: number }[]>`SELECT COUNT(*)::int AS count FROM chat.participants p
+        JOIN chat.conversations c ON c.id = p.conversation_id WHERE c.short_id = ${shortId} AND p.origin = 'ondemand'
+        AND p.principal_type = 'user' AND p.principal_id = ANY(${toPgUuidArray(ids)}::uuid[])`;
+      expect(count?.count).toBe(600);
+      expect(ConversationSchema.parse(await (await request(headers, `/${shortId}`)).json()).memberCount).toBe(601);
+      const [row] = await sql<{ member_count: number }[]>`SELECT member_count FROM chat.conversations WHERE short_id = ${shortId}`;
+      expect(row?.member_count).toBe(601);
+    }
   });
 
   test("group adds seed ondemand state, retain it on direct upgrades, and grant future group members access", async () => {

@@ -4,7 +4,7 @@ import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { messageFixtures } from "../api/messages.test-fixture";
-import { ConversationSchema, MessagePageSchema } from "./contracts";
+import { ConversationSchema, CreateOutcomeSchema, MessagePageSchema } from "./contracts";
 import { maintenanceLifecycle, reconcile } from "./maintenance";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -117,6 +117,41 @@ suite("chat membership maintenance", () => {
       }
     });
 
+  test("directory members without participant rows succeed the manager in user-id order", async () => {
+    const owner = await f.person("Old manager");
+    const c = await f.person("C");
+    const d = await f.person("D");
+    const groupId = await f.group([]);
+    const response = await f.request(owner.headers, "", "POST", { members: [{ type: "group", groupId }] });
+    expect(response.status).toBe(201);
+    const outcome = CreateOutcomeSchema.parse(await response.json());
+    if (outcome.outcome !== "created") throw new Error("Expected group chat");
+    f.trackChat(outcome.conversation.id);
+    const [chat] = await sql<
+      { id: string; seq_head: string }[]
+    >`SELECT id, seq_head FROM chat.conversations WHERE short_id = ${outcome.conversation.id}`;
+    if (!chat) throw new Error("Missing created chat");
+    await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${c.id}::uuid, ${groupId}::uuid), (${d.id}::uuid, ${groupId}::uuid)`;
+    expect(
+      await sql`SELECT principal_id FROM chat.participants WHERE conversation_id = ${chat.id}::uuid
+      AND principal_id = ANY(${toPgUuidArray([c.id, d.id])}::uuid[])`,
+    ).toHaveLength(0);
+    await sql`DELETE FROM auth.users WHERE id = ${owner.id}::uuid`;
+    await run();
+    const successor = c.id < d.id ? c : d;
+    const access = await sql<{ user_id: string; permission: string }[]>`SELECT a.user_id, a.permission
+      FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+      WHERE ca.conversation_id = ${chat.id}::uuid AND ca.role = 'member' AND a.user_id IS NOT NULL`;
+    expect(access).toEqual([{ user_id: successor.id, permission: "admin" }]);
+    const participant = await sql<
+      { origin: string; joined_seq: string }[]
+    >`SELECT origin, joined_seq FROM chat.participants WHERE conversation_id = ${chat.id}::uuid
+      AND principal_type = 'user' AND principal_id = ${successor.id}::uuid`;
+    expect(participant).toEqual([{ origin: "direct", joined_seq: chat.seq_head }]);
+    const page = MessagePageSchema.parse(await (await f.request(successor.headers, `/${outcome.conversation.id}/messages`)).json());
+    expect(page.items.at(-1)?.system).toEqual({ code: "manager_assigned", params: { member: { id: successor.id, name: successor.name } } });
+  });
+
   test("a chat without an eligible successor remains managerless without messages", async () => {
     const owner = await f.person();
     const expired = await f.person();
@@ -133,7 +168,41 @@ suite("chat membership maintenance", () => {
     expect(await state(chat.id)).toEqual(stable);
   });
 
-  test("aborting after a batch leaves later conversations untouched", async () => {
+  test("a failed conversation rolls back and does not stop later conversations or heartbeats", async () => {
+    const owner = await f.person();
+    const chats = [await f.fixture(owner), await f.fixture(owner)].sort((a, b) => a.id.localeCompare(b.id));
+    const failed = chats[0]!;
+    const later = chats[1]!;
+    await sql`UPDATE chat.conversations SET member_count = 99 WHERE id = ANY(${toPgUuidArray(chats.map((chat) => chat.id))}::uuid[])`;
+    const before = await state(failed.id);
+    const triggerName = `test_chat_reconcile_${crypto.randomUUID().replaceAll("-", "")}`;
+    await sql.unsafe(
+      `CREATE FUNCTION chat.${triggerName}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test reconcile failure'; END $$`,
+    );
+    try {
+      await sql.unsafe(
+        `CREATE TRIGGER ${triggerName} BEFORE UPDATE ON chat.conversations FOR EACH ROW WHEN (NEW.id = '${failed.id}'::uuid) EXECUTE FUNCTION chat.${triggerName}()`,
+      );
+      let heartbeats = 0;
+      const result = await reconcile({
+        signal: new AbortController().signal,
+        heartbeat: () => {
+          heartbeats++;
+        },
+      });
+      expect(result).toMatchObject({ failed: 1, countsFixed: 1 });
+      expect(heartbeats).toBe(result.conversations + result.failed);
+      expect(await state(failed.id)).toEqual(before);
+      const [row] = await sql<{ member_count: number }[]>`SELECT member_count FROM chat.conversations WHERE id = ${later.id}::uuid`;
+      expect(row?.member_count).toBe(1);
+    } finally {
+      await sql.unsafe(`DROP TRIGGER IF EXISTS ${triggerName} ON chat.conversations`);
+      await sql.unsafe(`DROP FUNCTION chat.${triggerName}()`);
+    }
+    await run();
+  });
+
+  test("aborting after a conversation leaves later conversations untouched", async () => {
     const owner = await f.person();
     const prefix = crypto.randomUUID().replaceAll("-", "").slice(0, 3);
     const rows = await sql<
@@ -141,8 +210,7 @@ suite("chat membership maintenance", () => {
     >`INSERT INTO chat.conversations (short_id, created_by_type, created_by_id, member_count)
       SELECT ${prefix} || lpad(i::text, 3, '0'), 'user', ${owner.id}::uuid, 1 FROM generate_series(1, 101) i RETURNING id, short_id`;
     for (const row of rows) f.trackChat(row.short_id);
-    const firstBatch = await sql<{ id: string }[]>`SELECT id FROM chat.conversations ORDER BY id LIMIT 100`;
-    const firstIds = new Set(firstBatch.map((row) => row.id));
+    const [first] = await sql<{ id: string }[]>`SELECT id FROM chat.conversations ORDER BY id LIMIT 1`;
     const controller = new AbortController();
     let heartbeats = 0;
     await reconcile({
@@ -156,7 +224,7 @@ suite("chat membership maintenance", () => {
     const after = await sql<
       { id: string; member_count: number }[]
     >`SELECT id, member_count FROM chat.conversations WHERE id = ANY(${toPgUuidArray(rows.map((row) => row.id))}::uuid[])`;
-    for (const row of after) expect(row.member_count).toBe(firstIds.has(row.id) ? 0 : 1);
+    for (const row of after) expect(row.member_count).toBe(row.id === first?.id ? 0 : 1);
     expect(after.some((row) => row.member_count === 1)).toBeTrue();
     const stable = await Promise.all(rows.map((row) => state(row.id)));
     await reconcile({

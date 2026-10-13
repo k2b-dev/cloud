@@ -4,7 +4,7 @@ export const TITLE_NAME_LIMIT = 3;
 /** Members here exclude the caller and are already in stable membership order. */
 export const deriveTitle = (
   name: string | null,
-  others: { displayName: string; givenName: string; former?: boolean }[],
+  others: { displayName: string; givenName: string; former?: boolean; group?: boolean }[],
   locale?: string,
 ): string => {
   if (name) return name;
@@ -14,7 +14,11 @@ export const deriveTitle = (
   const names = others
     .slice(0, TITLE_NAME_LIMIT)
     .map((member) =>
-      member.former ? t.formerAccount : member.givenName.trim() || member.displayName.trim().split(/\s+/)[0] || member.displayName,
+      member.former
+        ? t.formerAccount
+        : member.group
+          ? member.displayName
+          : member.givenName.trim() || member.displayName.trim().split(/\s+/)[0] || member.displayName,
     );
   return [...names, ...(others.length > TITLE_NAME_LIMIT ? [t.moreNames] : [])].join(", ");
 };
