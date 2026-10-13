@@ -185,12 +185,23 @@ export const CalendarWeekView = (props: TimeViewProps) => {
   let fingers = 0;
   let restTimer = 0;
   let ready = false;
+  /** Whether a wheel or a finger moved the strip since it last settled, and the way it last moved. */
+  let gesture = false;
+  let heading = 0;
+  let headingFrom = 0;
   const settle = () => {
     if (!scroller || fingers > 0 || settling || glideTarget !== null || view.dragging()) return;
     const width = columnWidth();
     const space = Number.parseFloat(getComputedStyle(scroller).scrollPaddingRight) || 0;
-    // With end space, a revealed day can rest with its end beside the drawer.
-    const target = snapToColumn(scroller.scrollLeft, width, space > 0 ? scroller.clientWidth - gutterWidth() - space : undefined);
+    // A gesture rests on the nearest edge. A scroll without one, such as a reveal, goes on its way, so what it brought
+    // into view stays there; with end space, a revealed day can rest with its end beside the drawer.
+    const target = snapToColumn(
+      scroller.scrollLeft,
+      width,
+      space > 0 ? scroller.clientWidth - gutterWidth() - space : undefined,
+      gesture ? 0 : heading,
+    );
+    gesture = false;
     if (Math.abs(target - scroller.scrollLeft) <= 0.5) return;
     settling = true;
     scroller.scrollTo({ left: target, behavior: reducedMotion() ? "instant" : "smooth" });
@@ -202,6 +213,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
     if (!scroller || event.ctrlKey || view.dragging()) return;
     // A gesture that goes on takes over from a glide onto a day start; the strip settles again once it rests.
     settling = false;
+    gesture = true;
     if (event.timeStamp - lastWheel > GESTURE_GAP_MS || axis === null) axis = wheelAxis(event.deltaX, event.deltaY, event.shiftKey);
     lastWheel = event.timeStamp;
     const delta = wheelPixels(
@@ -252,6 +264,8 @@ export const CalendarWeekView = (props: TimeViewProps) => {
   const onScroll = () => {
     if (!scroller) return;
     if (glideTarget !== null && Math.abs(scroller.scrollLeft - glideTarget) < 2) glideTarget = null;
+    if (Math.abs(scroller.scrollLeft - headingFrom) > 0.5) heading = Math.sign(scroller.scrollLeft - headingFrom);
+    headingFrom = scroller.scrollLeft;
     if (!frame)
       frame = requestAnimationFrame(() => {
         frame = 0;
@@ -314,6 +328,8 @@ export const CalendarWeekView = (props: TimeViewProps) => {
     ),
   );
 
+  /** The day width the strip last kept its first day for. */
+  let measuredWidth = 0;
   onMount(() => {
     setMounted(true);
     queueMicrotask(() => {
@@ -330,12 +346,16 @@ export const CalendarWeekView = (props: TimeViewProps) => {
             const unread = Math.abs(scroller.scrollLeft - lastLeft) > 0.5;
             const before = untrack(firstIndex);
             measureCount();
-            if (!unread) scroller.scrollLeft = leftOf(before);
+            // Only days of a new width move the strip back onto its first day. Setting scrollLeft stops a smooth scroll
+            // on its way, such as a reveal, so a drawer's padding or the strip's own trim must not.
+            const width = columnWidth();
+            const resized = Math.abs(width - measuredWidth) > 0.01;
+            measuredWidth = width;
+            if (resized && !unread && Math.abs(scroller.scrollLeft - leftOf(before)) > 0.5) scroller.scrollLeft = leftOf(before);
             lastLeft = scroller.scrollLeft;
             syncFirst();
           });
-    // Drawer padding changes the content box, not the size that sets the day widths.
-    if (scroller) observer?.observe(scroller, { box: "border-box" });
+    if (scroller) observer?.observe(scroller);
     onCleanup(() => {
       observer?.disconnect();
       window.clearTimeout(restTimer);
@@ -598,6 +618,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
         }}
         onTouchStart={(event) => {
           fingers = event.touches.length;
+          gesture = true;
           glideTarget = null;
         }}
         onTouchEnd={(event) => {

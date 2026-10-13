@@ -21,6 +21,10 @@ render(() => createComponent(PageTrailProvider, { trail:{title:"Calendar",ancest
         ...(document.body.dataset.hours ? {dayHours:[6,22],range:{from:"2026-07-13",to:"2026-07-20"}} : {}),
         events:[
           {id:"sunday",title:"Sunday meeting",start:"2026-07-19T10:00:00Z",end:"2026-07-19T11:00:00Z"},
+          ...(document.body.dataset.lanes ? [
+            {id:"standup",title:"Sunday standup",start:"2026-07-19T10:15:00Z",end:"2026-07-19T11:00:00Z"},
+            {id:"review",title:"Sunday review",start:"2026-07-19T10:30:00Z",end:"2026-07-19T11:30:00Z"},
+          ] : []),
           {id:"monday",title:"Monday review",start:"2026-07-13T10:00:00Z",end:"2026-07-13T11:00:00Z"},
           ...[1, 2, 3, 4, 5].map((n) => ({id:"tuesday-" + n,title:"Tuesday call " + n,start:"2026-07-14T10:00:00Z",end:"2026-07-14T11:00:00Z"})),
         ],
@@ -47,7 +51,9 @@ afterAll(async () => {
 
 type View = "week" | "day";
 type PanelWidth = "md" | "lg";
-const eventOf = (page: Page) => page.locator("[data-calendar-event]", { hasText: "Sunday meeting" });
+/** The event a test opens: "Sunday meeting", or with lanes, which share Sunday 10:00 in three lanes, one of them. */
+const eventOf = (page: Page, title = "Sunday meeting") => page.locator("[data-calendar-event]", { hasText: title });
+const motion: BrowserContextOptions = { reducedMotion: "no-preference" };
 const touch: BrowserContextOptions = { hasTouch: true, isMobile: true };
 // Main's 0.5 rem padding is the one Spaces gives its calendar, so the surface ends one gap before the panel.
 const load = async (
@@ -57,6 +63,7 @@ const load = async (
   options: BrowserContextOptions = {},
   panel: PanelWidth = "md",
   hours = false,
+  lane?: string,
 ) => {
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce", ...options });
   await page.setContent(
@@ -67,21 +74,22 @@ const load = async (
     </style></head><body class="k2b-ui" style="margin:0"><div id="app" style="height:100vh"></div></body></html>`,
   );
   await page.evaluate(
-    ([view, panel, hours]) => {
+    ([view, panel, hours, lane]) => {
       document.body.dataset.view = view;
       document.body.dataset.width = panel;
       if (hours) document.body.dataset.hours = view;
+      if (lane) document.body.dataset.lanes = "3";
     },
-    [view, panel, hours] as const,
+    [view, panel, hours, lane] as const,
   );
   await page.addScriptTag({ content: script });
   await eventOf(page).waitFor();
   await page.bringToFront();
   if (hours) {
-    expect(await eventOf(page).count()).toBe(1);
+    expect(await eventOf(page, lane).count()).toBe(1);
     await hoursSettled(page);
     const closed = view === "week" ? await hoursColumns(page) : [];
-    await eventOf(page).click();
+    await eventOf(page, lane).click();
     await page.locator(".k2b-app-workspace__detail").waitFor();
     await page.waitForFunction(() => document.querySelector(".k2b-app-workspace__detail")!.getAnimations().length === 0);
     await hoursSettled(page);
@@ -226,8 +234,8 @@ const hoursColumns = (page: Page) =>
       return { width: rect.width, headerOffset: Math.abs(head.getBoundingClientRect().left - rect.left) };
     });
   });
-const hoursPlacement = (page: Page) =>
-  eventOf(page).evaluate((event) => {
+const hoursPlacement = (page: Page, lane?: string) =>
+  eventOf(page, lane).evaluate((event) => {
     const rect = event.getBoundingClientRect();
     const scroll = event.closest<HTMLElement>(".k2b-calendar-week__scroll, .k2b-calendar-days__scroll")!;
     const scroller = scroll.getBoundingClientRect();
@@ -246,6 +254,7 @@ const hoursPlacement = (page: Page) =>
       gutterLeft: scroll.querySelector(".k2b-calendar-week__gutter")?.getBoundingClientRect().left,
       trackRight: scroll.querySelector(".k2b-calendar-days__track")?.getBoundingClientRect().right,
       columnRight: event.closest("[data-calendar-column]")?.getBoundingClientRect().right,
+      gutterRight: scroll.querySelector(".k2b-calendar-week__gutter")?.getBoundingClientRect().right,
       trailEnd:
         scroller.left + scroll.clientLeft + scroll.clientWidth - (Number.parseFloat(getComputedStyle(scroll).scrollPaddingRight) || 0),
       overflow: scroll.scrollWidth - scroll.clientWidth,
@@ -356,6 +365,57 @@ describe("dayHours calendar beside the workspace detail", () => {
       try {
         const shape = await hoursPlacement(page);
         expect(shape.bottom).toBeLessThanOrEqual(shape.panelTop);
+        expect(shape.hit).toBe(true);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
+  // A smooth reveal starts a frame before the strip reads it; a resize or settle on the way must not stop or undo it.
+  test("1280×800 with motion: the dayHours week scrolls Sunday out beside the panel", async () => {
+    const { page } = await load(1280, 800, "week", motion, "md", true);
+    try {
+      const shape = await hoursPlacement(page);
+      expect(shape.scrollLeft).toBeGreaterThan(0);
+      expect(shape.right).toBeLessThanOrEqual(shape.panelLeft + 0.5);
+      expect(shape.hit).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+  test("390×844 touch phone with motion: the dayHours week scrolls Sunday above the sheet", async () => {
+    const { page } = await load(390, 844, "week", { ...touch, ...motion }, "md", true);
+    try {
+      const shape = await hoursPlacement(page);
+      expect(shape.bottom).toBeLessThanOrEqual(shape.panelTop);
+      expect(shape.hit).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+  test("820×1180 touch tablet with motion: the dayHours week settles Sunday's end beside the drawer", async () => {
+    const { page } = await load(820, 1180, "week", { ...touch, ...motion }, "md", true);
+    try {
+      const shape = await hoursPlacement(page);
+      expect(Math.abs(shape.columnRight! - shape.trailEnd)).toBeLessThan(0.5);
+      expect(shape.right).toBeLessThanOrEqual(shape.panelLeft);
+      expect(shape.hit).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+  // A narrow lane ends well inside its day, so the nearest day edge would slide the strip back over it.
+  for (const [width, height, panel, lane] of [
+    [820, 1180, "md", "Sunday meeting"],
+    [768, 1024, "lg", "Sunday standup"],
+  ] as const) {
+    test(`${width}×${height} touch tablet, ${panel} drawer: ${lane} in a lane of three settles whole beside the drawer`, async () => {
+      const { page } = await load(width, height, "week", touch, panel, true, lane);
+      try {
+        const shape = await hoursPlacement(page, lane);
+        expect(shape.right).toBeLessThanOrEqual(shape.trailEnd + 0.5);
+        expect(shape.left).toBeGreaterThanOrEqual(shape.gutterRight! - 0.5);
         expect(shape.hit).toBe(true);
       } finally {
         await page.close();

@@ -67,6 +67,20 @@ describe("week gestures", () => {
     expect(snapToColumn(245, 0, 250)).toBe(245);
   });
 
+  test("settle a scroll without a gesture onward in its direction", () => {
+    // A reveal that left a day end 5px past the room's end goes on, where the nearest edge would slide back over it.
+    expect(snapToColumn(255, 100, 250)).toBe(250);
+    expect(snapToColumn(255, 100, 250, 1)).toBe(300);
+    expect(snapToColumn(205, 100, 250, 1)).toBe(250);
+    expect(snapToColumn(205, 100, 250, -1)).toBe(200);
+    expect(snapToColumn(245, 100, 250, -1)).toBe(200);
+    expect(snapToColumn(210, 100, undefined, 1)).toBe(300);
+    expect(snapToColumn(290, 100, undefined, -1)).toBe(200);
+    // Within half a pixel of an edge the strip stays.
+    expect(snapToColumn(200.3, 100, undefined, 1)).toBe(200);
+    expect(snapToColumn(199.7, 100, undefined, -1)).toBe(200);
+  });
+
   test("settle on the nearest day start", () => {
     expect(snapToColumn(290, 197)).toBe(197);
     expect(snapToColumn(300, 197)).toBe(394);

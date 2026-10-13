@@ -4,7 +4,8 @@
  * The day view runs down through the days and stops gently at each day start: within `STOP_ZONE` pixels of one the
  * wheel slows down, and a scroll that rests close to one glides onto it. The week view scrolls sideways through the
  * days; a wheel or trackpad gesture keeps the axis it started on, and a resting scroll glides to the nearest day start
- * or, with end space, day end at the edge of the visible room.
+ * or, with end space, day end at the edge of the visible room. A scroll no gesture made, such as a reveal, glides on in
+ * its own direction, so what it brought into view stays there.
  */
 
 /** Pixels before and after a day start in which the wheel slows down. */
@@ -95,11 +96,18 @@ export const wheelDelta = (axis: WheelAxis, deltaX: number, deltaY: number, shif
   return shiftKey && deltaX === 0 ? deltaY : deltaX;
 };
 
-/** The nearest day start, or with `room` the nearer day edge at either end of the visible room; ties keep the start. */
-export const snapToColumn = (position: number, width: number, room?: number): number => {
+/**
+ * The day start nearest to `position` in a strip of equal columns, or with `room` the nearer day edge at either end of
+ * the visible room; ties keep the start. A `heading` of 1 or -1 only looks ahead or back, for a scroll that brought
+ * something into view and must not slide back over it.
+ */
+export const snapToColumn = (position: number, width: number, room?: number, heading = 0): number => {
   if (!(width > 0)) return position;
-  const start = Math.round(position / width) * width;
+  // Half a pixel of slack keeps a strip already on an edge where it is.
+  const edge = (at: number) =>
+    heading > 0 ? Math.ceil((at - 0.5) / width) : heading < 0 ? Math.floor((at + 0.5) / width) : Math.round(at / width);
+  const start = edge(position) * width;
   if (room === undefined) return start;
-  const end = Math.round((position + room) / width) * width - room;
+  const end = edge(position + room) * width - room;
   return Math.abs(end - position) < Math.abs(start - position) ? end : start;
 };
