@@ -67,6 +67,12 @@ applications need nothing.
 
 ## Floating detail
 
+Use `phone="page"` for a panel that is a destination of its own on phones, such
+as a chat’s info. Below 48 rem it covers the window with the page surface and
+safe-area padding, without a grabber, detents, drag gestures, or extra space in
+Main; Escape and focus handling stay the same. From 48 rem it remains the
+normal floating Detail.
+
 Pass `onClose` when the application can close or deselect the detail. Escape,
 a downward phone drag, and a rightward touch-tablet swipe call the same action
 as the panel’s close button. A panel rendered on the server only cannot pass a
@@ -648,7 +654,7 @@ type AppWorkspaceMainPaneProps = {
 };
 
 type AppWorkspaceDetailProps = {
-  children: JSX.Element; open: boolean; id: string; class?: string; width?: AppWorkspaceDetailWidth;
+  children: JSX.Element; open: boolean; id: string; class?: string; width?: AppWorkspaceDetailWidth; phone?: "sheet" | "page";
   viewTransitionName?: string; resizable?: boolean; minWidth?: number; maxWidth?: number;
   onClose?: () => void; onStep?: (direction: 1 | -1) => HTMLElement | null | undefined | void;
 };

@@ -1236,8 +1236,28 @@
 }
 
 @media (max-width: 47.999rem) {
+  /* `phone="page"`: the panel is a destination of its own, so it covers the
+     window like a page instead of rising as a sheet: the page surface, the
+     safe areas, no grabber, and no space reserved in `Main`. It lies above a
+     layer the application fixes over the workspace on a phone, such as an
+     open chat. */
+  .k2b-ui .k2b-app-workspace__detail[data-workspace-detail-phone="page"] {
+    z-index: 30;
+    inset: 0;
+    height: auto;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-inline: max(1rem, env(safe-area-inset-left, 0px)) max(1rem, env(safe-area-inset-right, 0px));
+    border-radius: 0;
+    background: var(--k2b-surface);
+    box-shadow: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__detail[data-workspace-detail-phone="page"] .k2b-app-workspace__detail-grabber {
+    display: none;
+  }
+
   /* The header drags the sheet, so the browser must not claim a pan first. */
-  .k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__header {
+  .k2b-ui .k2b-app-workspace__detail:not([data-workspace-detail-phone="page"]) .k2b-detail-panel__header {
     touch-action: none;
   }
 
@@ -1249,14 +1269,14 @@
      240 px the main area always reserves. */
   .k2b-ui
     .k2b-app-workspace__content:has(
-      > .k2b-app-workspace__detail:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+      > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"])
     )
     > .k2b-app-workspace__main::after,
   .k2b-ui
     .k2b-app-workspace__content:has(
-      > .k2b-app-workspace__detail:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+      > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"])
     )
     > :is(solid-island, solid-client)
     > .k2b-app-workspace__main::after {
@@ -1268,14 +1288,14 @@
 
   .k2b-ui
     .k2b-app-workspace__content:has(
-      > .k2b-app-workspace__detail:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+      > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"])
     )
     > .k2b-app-workspace__main,
   .k2b-ui
     .k2b-app-workspace__content:has(
-      > .k2b-app-workspace__detail:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+      > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"])
     )
     > :is(solid-island, solid-client)
     > .k2b-app-workspace__main {

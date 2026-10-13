@@ -65,7 +65,7 @@ render(() => createComponent(PageTrailProvider, { trail:{title:"Devices",ancesto
     createComponent(AppWorkspace.Content, { get children() { return [
       createComponent(AppWorkspace.Main, { class:"fixture-main", scroll:!params.has("trail") && !params.has("table"), get children() { return mainContent(); } }),
       createComponent(AppWorkspace.Detail, {
-        id:"record", width:params.get("width") || "md", get open() { return open(); }, onClose:params.has("fixed") ? undefined : close, onStep:direction => {
+        id:"record", phone:params.has("phone-page") ? "page" : "sheet", width:params.get("width") || "md", get open() { return open(); }, onClose:params.has("fixed") ? undefined : close, onStep:direction => {
           document.body.dataset.steps = String(Number(document.body.dataset.steps || 0) + direction);
           const count = document.querySelectorAll('[id^="row-"]').length;
           selected = Math.max(0, Math.min(count - 1, selected + direction));
@@ -594,6 +594,85 @@ describe("floating workspace detail", () => {
       }
     });
   }
+  test("390×844: a phone page fills the viewport without sheet space or gestures and Escape closes it", async () => {
+    const page = await load(390, 844, "phone-page=1", { hasTouch: true });
+    try {
+      const mainState = () =>
+        page.locator(".k2b-app-workspace__main").evaluate((main) => ({
+          height: main.clientHeight,
+          scrollHeight: main.scrollHeight,
+          scrollTop: main.scrollTop,
+          padding: getComputedStyle(main).scrollPaddingBottom,
+          after: getComputedStyle(main, "::after").content,
+        }));
+      await page.locator("#row-30").scrollIntoViewIfNeeded();
+      const before = await mainState();
+      await page.locator("#row-30").click();
+      await settlePanel(page);
+      const shape = await geometry(page);
+      expect(shape.detail).toMatchObject({ top: 0, left: 0, width: 390, height: 844, bottom: 844 });
+      expect(shape.full).toBeNull();
+      expect(await page.locator(".k2b-app-workspace__detail-grabber").isVisible()).toBe(false);
+      expect(await mainState()).toEqual(before);
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Selected record");
+      const header = page.locator(".k2b-detail-panel__header");
+      expect(await header.evaluate((element) => getComputedStyle(element).touchAction)).not.toBe("none");
+      const box = await header.boundingBox();
+      const x = box!.x + 30,
+        y = box!.y + box!.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x, y + 140, { steps: 8 });
+      expect((await geometry(page)).detail).toEqual(shape.detail);
+      await page.mouse.up();
+      await settlePanel(page);
+      expect((await geometry(page)).detail).toEqual(shape.detail);
+      expect(await page.locator("body").getAttribute("data-closes")).toBeNull();
+      if (browserName !== "webkit") {
+        for (const type of ["touchstart", "touchmove", "touchend"]) {
+          await header.evaluate((element, type) => {
+            const sample = new Touch({ identifier: 1, target: element, clientX: 100, clientY: type === "touchstart" ? 20 : 180 });
+            element.dispatchEvent(
+              new TouchEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                touches: type === "touchend" ? [] : [sample],
+                changedTouches: [sample],
+              }),
+            );
+          }, type);
+        }
+        await settlePanel(page);
+        expect((await geometry(page)).detail).toEqual(shape.detail);
+        expect(await page.locator("body").getAttribute("data-closes")).toBeNull();
+      }
+      await page.keyboard.press("Escape");
+      await settlePanel(page);
+      expect(await page.locator("body").getAttribute("data-closes")).toBe("1");
+      expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(false);
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe("row-30");
+    } finally {
+      await page.close();
+    }
+  });
+  test("1440px: phone page detail keeps the normal floating desktop geometry", async () => {
+    const sheet = await load(1440, 900);
+    const page = await load(1440, 900, "phone-page=1");
+    try {
+      await openRow(sheet);
+      await openRow(page);
+      expect((await geometry(page)).detail).toEqual((await geometry(sheet)).detail);
+      expect((await geometry(page)).main).toEqual((await geometry(sheet)).main);
+      expect((await geometry(page)).detail.top).toBe(8);
+      expect(await page.locator(".k2b-app-workspace__detail-grabber").isVisible()).toBe(false);
+      await page.keyboard.press("Escape");
+      await settlePanel(page);
+      expect(await page.locator("body").getAttribute("data-closes")).toBe("1");
+    } finally {
+      await sheet.close();
+      await page.close();
+    }
+  });
   test("390×844: the half sheet sits on the window's bottom edge, Main's last row scrolls above it, and the grabber toggles detents", async () => {
     const page = await load(390, 844);
     try {

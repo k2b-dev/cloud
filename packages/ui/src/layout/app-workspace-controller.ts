@@ -589,7 +589,9 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     // An element-scoped controller cannot see its own root leave the document.
     observer.observe(ownerDocument, { childList: true, subtree: true });
   };
+  const phonePage = (aside: HTMLElement) => aside.dataset.workspaceDetailPhone === "page";
   const setDetent = (aside: HTMLElement, full: boolean) => {
+    if (phonePage(aside)) return;
     touchedDetails.add(aside);
     if (full) aside.dataset.workspaceDetailSheet = "full";
     else delete aside.dataset.workspaceDetailSheet;
@@ -637,6 +639,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     root.dataset.workspaceDetailSliding = "";
   };
   const revealItem = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem) => {
+    if (phone?.matches && phonePage(aside)) return;
     const pending = revealFrames.get(root);
     if (pending !== undefined) cancelAnimationFrame(pending);
     revealFrames.set(
@@ -905,6 +908,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const aside = target?.closest<HTMLElement>(detailSelector);
     const root = aside?.closest<HTMLElement>(ROOT_SELECTOR);
     if (!target || !aside || !root || aside.hidden || !observedRoots.has(root) || target.closest(ROOT_SELECTOR) !== root) return;
+    if (phonePage(aside)) return;
     const grabber = target.closest<HTMLElement>(grabberSelector);
     if (
       !grabber &&
@@ -935,7 +939,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const target = eventElement(event);
     const grabber = target?.closest(grabberSelector);
     const aside = grabber?.closest<HTMLElement>(detailSelector);
-    if (!aside || aside.hidden || !phone?.matches || claimedToggleClicks.has(event)) return;
+    if (!aside || aside.hidden || phonePage(aside) || !phone?.matches || claimedToggleClicks.has(event)) return;
     claimedToggleClicks.add(event);
     if (suppressedClick === aside && event instanceof MouseEvent && event.detail !== 0) {
       event.preventDefault();
@@ -970,6 +974,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const touch = event.touches[0];
     const root = aside?.closest<HTMLElement>(ROOT_SELECTOR);
     if (!target || !aside || !root || aside.hidden || !touch || !observedRoots.has(root) || target.closest(ROOT_SELECTOR) !== root) return;
+    if (phone?.matches && phonePage(aside)) return;
     if (phone?.matches && (verticalScroller(target, aside) ?? aside).scrollTop <= 0) {
       if (!ownsTouchGesture(target, aside, "sheet"))
         beginDetailDrag(aside, target, "sheet", touch.clientX, touch.clientY, touch.identifier);
