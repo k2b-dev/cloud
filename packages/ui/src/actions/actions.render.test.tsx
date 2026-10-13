@@ -61,7 +61,12 @@ describe("@k2b/ui complete action migrations", () => {
         wrap: true,
         get children() {
           return [
-            createComponent(Toolbar.Group, { label: "Edit", children: "Actions" }),
+            createComponent(Toolbar.Group, {
+              label: "Edit",
+              get children() {
+                return createComponent(Button, { children: "Edit" });
+              },
+            }),
             createComponent(Toolbar.Separator, {}),
             createComponent(Toolbar.Spacer, {}),
           ];
@@ -90,6 +95,8 @@ describe("@k2b/ui complete action migrations", () => {
     expect(rule('.k2b-ui .k2b-disclosure:not([open]):not([data-disabled="true"]) > summary:hover')).toContain("var(--k2b-hover)");
     expect(rule(".k2b-ui .k2b-disclosure[open]")).toContain("color-mix");
     expect(rule('.k2b-ui .k2b-disclosure[open]:not([data-disabled="true"]):has(> summary:hover)')).toContain("var(--k2b-hover)");
+    expect(toolbar).not.toContain("tabindex=");
+    expect(verticalToolbar).not.toContain("tabindex=");
     expect(toolbar).toContain('role="toolbar"');
     expect(toolbar).toContain('aria-label="Document actions"');
     expect(toolbar).toContain('role="separator"');

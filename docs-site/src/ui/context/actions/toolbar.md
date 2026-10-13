@@ -14,17 +14,23 @@ import { Button, IconButton, Toolbar } from "@k2b/ui";
 
 ## Layout
 
-Enable `wrap` where actions may outgrow the available width. The toolbar does not impose button variants or a second focus model.
+Enable `wrap` where actions may outgrow the available width. Button variants remain yours.
 
 Separators automatically follow the toolbar orientation: they are vertical in a horizontal toolbar and horizontal in a vertical toolbar.
 
 ## Accessibility
 
-Always provide `label`. Name groups when their purpose is not obvious. Buttons keep native keyboard behavior, labels, and disabled state.
+Always provide `label`. Name groups when their purpose is not obvious.
+
+The toolbar has one Tab stop: the last focused item, or the first item initially. Left/Right move and wrap in a horizontal toolbar (reversed in RTL); Up/Down do the same in a vertical toolbar. Home and End focus the first and last items. Modified keys and keys in text fields or menus keep their own behavior.
+
+Items are rendered buttons, links with `href`, inputs, selects, textareas, and controls with `tabindex`. Hidden and natively disabled controls are skipped, as are controls inside menus, listboxes, dialogs, or popovers. `aria-disabled="true"` controls remain reachable; their handlers must guard unavailable actions.
+
+Set `aria-pressed="true"` or `"false"` on toggle buttons. Pressed buttons use the action colour and selected background without changing their size or position. Forced colours use HighlightText on Highlight.
 
 ## Runtime
 
-The layout renders on the server. Only child action handlers require hydration.
+The layout renders on the server without roving `tabindex` attributes. Keyboard navigation and child action handlers require hydration.
 
 ## Example
 

@@ -10809,6 +10809,20 @@
   flex: 1;
 }
 
+/* A pressed toggle swaps only colour and background, so state changes never move or resize it. */
+.k2b-ui .k2b-toolbar .k2b-button[aria-pressed="true"],
+.k2b-ui .k2b-toolbar .k2b-button[aria-pressed="true"]:hover:not(:disabled) {
+  color: var(--k2b-action);
+  background: var(--k2b-selected);
+}
+@media (forced-colors: active) {
+  .k2b-ui .k2b-toolbar .k2b-button[aria-pressed="true"] {
+    forced-color-adjust: none;
+    color: HighlightText;
+    background: Highlight;
+  }
+}
+
 .k2b-ui .k2b-tag-editor {
   display: flex;
   min-width: 0;
