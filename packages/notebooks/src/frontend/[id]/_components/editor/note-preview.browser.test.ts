@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { serialize } from "seroval";
+import { toJSON } from "seroval";
 import type { ComponentProps } from "solid-js";
 import { createComponent, renderToString } from "solid-js/web";
 import * as Y from "yjs";
@@ -145,7 +145,7 @@ beforeAll(async () => {
         },
       } satisfies ComponentProps<typeof NoteEditor>;
       const preview = renderToString(() => createComponent(NotePreview, { text: note, mode, historyIncomplete }));
-      const serialized = Bun.escapeHTML(serialize(props));
+      const serialized = Bun.escapeHTML(JSON.stringify(toJSON(props)));
       return new Response(
         `<!doctype html><html lang="en"${url.searchParams.has("dark") ? ' class="dark"' : ""}><head>
         <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style>

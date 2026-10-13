@@ -1,4 +1,4 @@
-import { deserialize } from "seroval";
+import { fromJSON } from "seroval";
 import type { Component } from "solid-js";
 import { createComponent, ErrorBoundary, render } from "solid-js/web";
 
@@ -57,7 +57,8 @@ export const mount = <Props extends object>(
                 });
               },
               get children() {
-                return createComponent(Component, deserialize<Props>(element.dataset.props || "{}"));
+                // Props are data: JSON.parse and Seroval fromJSON never evaluate them.
+                return createComponent(Component, fromJSON<Props>(JSON.parse(element.dataset.props ?? "")));
               },
             }),
           element,

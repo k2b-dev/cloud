@@ -13,8 +13,10 @@ It uses file conventions:
 - `*.tsx`: server-only output
 
 Islands are not hydrated. When an island's code loads, the client clears the
-island's server HTML and renders the component again from its serialized props.
-Two consequences follow:
+island's server HTML and renders the component again from its props, which the
+server writes as Seroval JSON data. Props are never evaluated, so pages work
+under a Content Security Policy without `'unsafe-eval'`. Two consequences of
+re-rendering follow:
 
 - state that exists only in the server HTML inside an island, such as a typed
   input value, focus, or a scroll position, is replaced on mount;
@@ -38,7 +40,7 @@ The browser receives only:
 
 - your island bundles
 - Solid runtime from your app dependencies
-- `seroval` deserialize runtime
+- Seroval `fromJSON` runtime (props are JSON data)
 - a tiny island loader snippet
 
 Framework overhead in the browser is intentionally small.
@@ -277,9 +279,10 @@ their scroll position across enhanced navigation.
 
 Every island and client component instance is mounted inside its own error
 boundary. No setup is needed. If a component throws while it mounts, while its
-props are deserialized, or later in a reactive update, only that instance is
+props are parsed, or later in a reactive update, only that instance is
 replaced with a fallback. Other instances and other islands keep working, also
-when they are updated by the same signal write.
+when they are updated by the same signal write. Malformed `data-props` also
+ends in the fallback.
 
 The default fallback is plain, unstyled markup:
 

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { fromJSON } from "seroval";
 import { createComponent } from "solid-js";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { createDomTestHarness } from "../../../ui/test/dom";
@@ -137,6 +138,9 @@ const render = async (path: string, headers: Record<string, string> = {}) => {
   return { response, html, document };
 };
 
+const islandProps = (document: Document, file: string): unknown =>
+  fromJSON(JSON.parse(document.querySelector(`solid-island[data-file="${file}"]`)?.getAttribute("data-props") ?? ""));
+
 const tabs = (document: Document) =>
   [...document.querySelectorAll<HTMLAnchorElement>(".k2b-tab-bar a")].map((link) => ({
     href: link.getAttribute("href"),
@@ -227,18 +231,18 @@ describe("PwaLayout", () => {
   test("hides the tab bar without parts and without a user, and keeps the session alive only for a user", async () => {
     signIn("app");
     apps = [shell];
-    let { document, html } = await render("/pwa/open");
+    let { document } = await render("/pwa/open");
     expect(document.querySelector(".k2b-tab-bar")).toBeNull();
-    expect(html).toContain("keepalive:!0");
-    expect(html).toContain("reload:!0");
+    expect(islandProps(document, "PwaRuntime.island.tsx")).toMatchObject({ keepalive: true });
+    expect(islandProps(document, "TimezoneCookie.island.tsx")).toMatchObject({ reload: true });
 
     tokenSpy.mockReturnValue(null);
     apps = [shell, part("inventory", "Inventory")];
-    ({ document, html } = await render("/pwa/open"));
+    ({ document } = await render("/pwa/open"));
     expect(document.querySelector(".k2b-tab-bar")).toBeNull();
-    expect(html).toContain("keepalive:!1");
+    expect(islandProps(document, "PwaRuntime.island.tsx")).toMatchObject({ keepalive: false });
     // A page without a person shows no times and may hold a pairing link in memory only: no timezone reload.
-    expect(html).toContain("reload:!1");
+    expect(islandProps(document, "TimezoneCookie.island.tsx")).toMatchObject({ reload: false });
   });
 
   test("refuses framing and referrers on every app page", async () => {

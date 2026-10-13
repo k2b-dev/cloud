@@ -7,7 +7,9 @@
     "./scripts/**/*.ts",
     "./test/integration/**/*.ts",
     "./test/island-errors/**/*.ts",
-    "./test/island-errors/**/*.tsx"
+    "./test/island-errors/**/*.tsx",
+    "./test/island-props-csp/**/*.ts",
+    "./test/island-props-csp/**/*.tsx"
   ],
   "exclude": ["./dist", "./node_modules"],
   "compilerOptions": {

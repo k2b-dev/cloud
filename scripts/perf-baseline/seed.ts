@@ -1,24 +1,24 @@
+import { fromJSON } from "seroval";
 import { z } from "zod";
 import { decodeAttribute, type PageId, type PageResult } from "./model";
 import { localTls, type Runtime, waitFor } from "./runtime";
 
 const resourceSchema = z.object({ id: z.string().min(1) });
 
-/** Read only island props, as static measurement does; never execute seroval. */
+/** Read only island props; parse props as JSON data, never evaluate them. */
 export async function extractConsentVersion(html: string): Promise<string> {
   const versions: string[] = [];
   await new HTMLRewriter()
     .on("solid-island, solid-client", {
       element(element) {
-        const props = decodeAttribute(element.getAttribute("data-props") ?? "");
-        // ConsentForm's version is a string property in the serialized object.
-        for (const match of props.matchAll(/(?:^|[,{])\s*(?:version|"version")\s*:\s*("(?:\\.|[^"\\])*")/g)) {
-          const value: unknown = JSON.parse(match[1] ?? "null");
+        const props: unknown = fromJSON(JSON.parse(decodeAttribute(element.getAttribute("data-props") ?? "")));
+        // ConsentForm's version is a string property of its props object.
+        if (props && typeof props === "object" && "version" in props) {
           versions.push(
             z
               .string()
               .regex(/^[a-f0-9]{64}$/)
-              .parse(value),
+              .parse(props.version),
           );
         }
       },

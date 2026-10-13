@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { toJSON } from "seroval";
 import {
   aggregate,
   aggregateMetrics,
@@ -48,15 +49,16 @@ describe("performance baseline contracts", () => {
   });
 
   test("HTML counts instances, distinct entries, decoded UTF-8 props, inline and external modules", async () => {
-    const props = '({text:"Grüße & <world>"})';
+    const props = JSON.stringify(toJSON({ text: "Grüße & <world>" }));
+    const empty = JSON.stringify(toJSON({}));
     const encoded = props.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;");
-    const html = `<base href="/app/faq/"><solid-island data-id="one" data-props="${encoded}"></solid-island><solid-client data-id="one" data-props="{}"></solid-client><script type="module">const p="/faq/_ssr/123";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script><script type="module" src="extra.js"></script><script type="module">import "./inline.js";</script><link rel="stylesheet" href="/public/faq/app.css"><link rel="preload" href="ignored.css">`;
+    const html = `<base href="/app/faq/"><solid-island data-id="one" data-props="${encoded}"></solid-island><solid-client data-id="one" data-props="${Bun.escapeHTML(empty)}"></solid-client><script type="module">const p="/faq/_ssr/123";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script><script type="module" src="extra.js"></script><script type="module">import "./inline.js";</script><link rel="stylesheet" href="/public/faq/app.css"><link rel="preload" href="ignored.css">`;
     const info = await inspectHtml(html, "http://127.0.0.1:4100/faq");
     expect(info.islands).toBe(2);
     expect(info.islandEntries).toEqual(["/faq/_ssr/123/one.js"]);
     expect(info.modules).toEqual(["/app/faq/extra.js", "/app/faq/inline.js", "/faq/_ssr/123/one.js"]);
     expect(info.css).toEqual(["/public/faq/app.css"]);
-    expect(info.propsBytes).toBe(Buffer.byteLength(props) + 2);
+    expect(info.propsBytes).toBe(Buffer.byteLength(props) + Buffer.byteLength(empty));
     expect(info.propsShare).toBeCloseTo(info.propsBytes / Buffer.byteLength(html), 6);
   });
 

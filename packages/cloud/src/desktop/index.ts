@@ -304,8 +304,9 @@ let sqlInstance: DesktopSql | null = null;
 
 const getSql = (): DesktopSql => {
   if (sqlInstance) return sqlInstance;
-  const req = runtimeRequire();
-  if (!req || typeof window !== "undefined") throw new Error("desktop.sql is only available in the Bun desktop process.");
+  // Checked before `runtimeRequire`: its `Function` probe would report a `script-src` violation under a CSP without 'unsafe-eval'.
+  const req = typeof window === "undefined" ? runtimeRequire() : null;
+  if (!req) throw new Error("desktop.sql is only available in the Bun desktop process.");
   const requireFn = req as (id: string) => unknown;
 
   const { Database } = requireFn("bun:sqlite") as { Database: new (path: string) => any };
