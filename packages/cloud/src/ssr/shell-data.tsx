@@ -3,7 +3,6 @@ import type { AppSearchLink } from "../contracts/app";
 import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { CloudThemePreference } from "../shared/theme";
 import type { AppLaunchpadLegalLink } from "./app-launchpad";
-import type { GlobalSearchHelpApp } from "./GlobalSearchHelpDialog";
 import type { RailApp } from "./rail-navigation";
 
 export type ShellData = {
@@ -19,7 +18,8 @@ export type ShellData = {
   accent?: string;
   /** The search destinations of each app in `apps`, by app id in registry order; the search host expands them into rows. */
   searchLinks: Record<string, readonly AppSearchLink[]>;
-  searchHelpApps: GlobalSearchHelpApp[];
+  /** The current app, for links inside its Help. */
+  appId?: string;
 };
 
 const ShellDataContext = createContext<() => ShellData>();

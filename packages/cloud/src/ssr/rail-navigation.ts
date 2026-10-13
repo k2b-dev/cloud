@@ -1,4 +1,5 @@
 import type { RailPreferences, RailSnapshot } from "../contracts/rail-preferences";
+import { helpPageAppId } from "./layout-help-url";
 
 export type RailApp = {
   id: string;
@@ -55,6 +56,8 @@ export const projectRailNavigation = (apps: readonly RailApp[], settings: RailSn
 /** `currentPath` is the route as `pathname + search`; an absolute URL is accepted but never required. */
 export const railLinkActive = (link: RailLink, currentPath: string): boolean => {
   const current = new URL(currentPath, "https://cloud.invalid");
+  const helpAppId = helpPageAppId(current.pathname);
+  if (helpAppId && link.appId) return link.appId === helpAppId;
   const target = new URL(link.match, current);
   if (target.origin !== current.origin) return false;
   if (link.exact) return target.pathname === current.pathname && target.search === current.search && target.hash === current.hash;

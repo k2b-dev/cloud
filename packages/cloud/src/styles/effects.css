@@ -345,12 +345,22 @@
   background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 10%, var(--ui-surface-muted));
 }
 
+/* The reader's layout steps follow its own width: a dialog, a full page, or
+   an app's embedded reader, never the window. */
+.help-article {
+  container: help-article / inline-size;
+}
+
+.help-article-toc[data-empty] {
+  visibility: hidden;
+}
+
 .help-article-layout {
   display: grid;
   grid-template-columns: minmax(10rem, 13rem) minmax(0, 52rem);
   justify-content: center;
   align-items: start;
-  gap: clamp(2rem, 4vw, 4rem);
+  gap: clamp(2rem, 4cqi, 4rem);
 }
 
 .help-article-copy {
@@ -892,7 +902,7 @@
   border: 0;
 }
 
-@media (max-width: 72rem) {
+@container help-article (max-width: 56rem) {
   .help-article-layout {
     grid-template-columns: 3.25rem minmax(0, 52rem);
     gap: 2rem;
@@ -919,7 +929,7 @@
   }
 }
 
-@media (max-width: 48rem) {
+@container help-article (max-width: 40rem) {
   .help-article-layout {
     grid-template-columns: minmax(0, 1fr);
     gap: 1.5rem;
