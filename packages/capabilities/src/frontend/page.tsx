@@ -1,7 +1,7 @@
 import type { AuthContext } from "@k2b/cloud/server";
 import { getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
-import { AppOverview, ButtonLink, LinkCard } from "@k2b/ui";
+import { AppOverview, ButtonLink, LinkCard, ScrollArea } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import { loadCapabilityApps } from "../catalog";
 import { ssr } from "../config";
@@ -16,7 +16,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.capabilities }]}>
-      <div class="k2b-ui min-w-0 flex-1">
+      <ScrollArea class="min-h-0 min-w-0 flex-1">
         <AppOverview
           title={t.capabilities}
           subtitle={t.overview}
@@ -68,7 +68,7 @@ export default ssr<AuthContext>(async (c) => {
             </Show>
           </AppOverview.Main>
         </AppOverview>
-      </div>
+      </ScrollArea>
     </Layout>
   );
 });

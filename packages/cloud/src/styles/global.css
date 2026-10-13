@@ -316,6 +316,25 @@ solid-island {
 
 }
 
+/* Card: the outermost workspace is the app card, so it gets the card's radius
+   and frame also when it is flat. Its sidebar and content round their corners
+   with that radius and clip what they show. A workspace fills `main` and
+   scrolls inside itself, so `main` keeps no scrollbar gutter beside it and the
+   card keeps the shell spacing on every side. For signed-in people, the flush
+   range below removes the frame again; it comes later at equal specificity. */
+@media (min-width: 768px) {
+  .cloud-app-canvas .layout-content-main:has(.k2b-app-workspace) {
+    scrollbar-gutter: auto;
+  }
+  .cloud-app-canvas .layout-content-main .k2b-app-workspace[data-flat="true"]:not(.k2b-app-workspace *) {
+    --k2b-workspace-radius: var(--k2b-radius-dialog);
+    box-shadow: var(--k2b-shadow-frame);
+  }
+  .dark .cloud-app-canvas .layout-content-main .k2b-app-workspace[data-flat="true"]:not(.k2b-app-workspace *) {
+    border-color: var(--k2b-border);
+  }
+}
+
 /* Flush: the app area is one opaque surface from the rail to the window's
    edges, without padding, radius, shadow, or border. The rail keeps the app
    canvas, so the change of surface alone separates the two; no line does. The

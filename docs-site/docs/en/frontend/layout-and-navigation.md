@@ -32,6 +32,11 @@ when people navigate.
 | 1024 to 1535 px (laptops) | Same as above | Header with breadcrumbs, theme and language, and sign-in; cards on the app background |
 | From 1536 px | No header. The app area is a card with 8 px spacing on the app background | Same as above |
 
+Where the app area is a card, the outermost workspace is that card. It has
+rounded corners and the card's frame, also when it is `flat`. A page without a
+workspace shows its content on the app background, so scroll the content in a
+`ScrollArea` and do not wrap it in an opaque surface that fills the app area.
+
 From 768 px the app bar holds Home, the apps, the app grid, search, help, and
 the profile avatar. Between the app bar and the app area there is no line:
 the app bar shows the app background, and the app area is one opaque surface.

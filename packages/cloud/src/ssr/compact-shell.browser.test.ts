@@ -136,6 +136,46 @@ const listWorkspace = () =>
     },
   });
 
+/** A sidebar-first overview that is the page itself, as Mail and Notebooks render. Invented content. */
+const overviewWorkspace = () =>
+  createComponent(AppWorkspace, {
+    mobileSurface: "flush",
+    flat: true,
+    resizable: false,
+    get children() {
+      return [
+        createComponent(AppWorkspace.Sidebar, {
+          id: "overview-navigation",
+          label: "Mailboxes",
+          get children() {
+            return createComponent(AppWorkspace.SidebarDesktop, {
+              get children() {
+                return createComponent(AppWorkspace.SidebarBody, {
+                  get children() {
+                    return ["Personal", "Projects", "Support"].map((name) =>
+                      createComponent(AppWorkspace.SidebarItem, { href: `#${name.toLowerCase()}`, children: name }),
+                    );
+                  },
+                });
+              },
+            });
+          },
+        }),
+        createComponent(AppWorkspace.Content, {
+          get children() {
+            return createComponent(AppWorkspace.Main, {
+              get children() {
+                return Array.from({ length: 80 }, (_, index) =>
+                  createComponent(Button, { class: "overview-row", align: "start", children: `Message ${index + 1}` }),
+                );
+              },
+            });
+          },
+        }),
+      ];
+    },
+  });
+
 const server = new Hono()
   .get(
     "/app/mail/:folder",
@@ -150,6 +190,16 @@ const server = new Hono()
     ...probe.ssr((c) => {
       const folder = c.req.param("folder") ?? "inbox";
       const title = folder[0]!.toUpperCase() + folder.slice(1);
+      // `?overview=` keeps regular Layout props, including its page scroller's gutter.
+      if (c.req.query("overview"))
+        return () =>
+          createComponent(Layout, {
+            c: c as unknown as LayoutContextArg,
+            title: [{ title: "Home", href: "/" }, { title: "Mail" }],
+            get children() {
+              return overviewWorkspace();
+            },
+          });
       // `?list=` renders the task list: `scroll` in a page that grows with its content, `page` in a full page.
       const list = c.req.query("list");
       if (list)
@@ -186,7 +236,9 @@ const server = new Hono()
         createComponent(Layout, {
           c: c as unknown as LayoutContextArg,
           title: [{ title: "Home", href: "/" }, { title: c.req.query("title") ?? "Public tools" }],
-          children: "Public content",
+          get children() {
+            return c.req.query("overview") ? overviewWorkspace() : "Public content";
+          },
         }),
     ),
   );
@@ -490,6 +542,186 @@ describe("signed-in shell", () => {
       } finally {
         await context.close();
       }
+    }
+  });
+});
+
+describe("the app card keeps its rounded corners", () => {
+  const pages = [
+    { name: "framed workspace", path: "/app/mail/inbox?list=scroll" },
+    { name: "flat overview", path: "/app/mail/inbox?overview=1" },
+  ];
+  type CardGeometry = {
+    box: Box;
+    railRight: number | null;
+    radii: string[];
+    expectedRadius: string;
+    shellSpacing: number;
+    shadow: string;
+    workspaceScroll: { top: number; end: number };
+    pageScroll: { height: number; clientHeight: number; width: number; clientWidth: number };
+  };
+  const cardGeometry = (page: Page): Promise<CardGeometry> =>
+    page.evaluate(async () => {
+      const workspace = document.querySelector<HTMLElement>(".layout-content-main .k2b-app-workspace")!;
+      const main = workspace.querySelector<HTMLElement>(".k2b-app-workspace__main")!;
+      const pageMain = document.querySelector<HTMLElement>(".layout-content-main")!;
+      // Resolve the host's tokens on the workspace, including var() and rem values.
+      const probe = document.createElement("span");
+      probe.style.cssText = "position:absolute;pointer-events:none;width:var(--ui-space-shell);border-radius:var(--k2b-radius-dialog)";
+      workspace.append(probe);
+      const expectedRadius = getComputedStyle(probe).borderTopLeftRadius;
+      const shellSpacing = Number.parseFloat(getComputedStyle(probe).width);
+      probe.remove();
+      const rect = workspace.getBoundingClientRect();
+      const style = getComputedStyle(workspace);
+      // The corners are sampled with the content scrolled to its end, not on the first rows.
+      main.scrollTop = main.scrollHeight;
+      await new Promise<void>((settle) => requestAnimationFrame(() => settle()));
+      return {
+        box: {
+          left: Math.round(rect.left),
+          top: Math.round(rect.top),
+          right: Math.round(rect.right),
+          bottom: Math.round(rect.bottom),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        },
+        railRight: document.querySelector(".layout-rail")?.getBoundingClientRect().right ?? null,
+        radii: [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomRightRadius, style.borderBottomLeftRadius],
+        expectedRadius,
+        shellSpacing,
+        shadow: style.boxShadow,
+        workspaceScroll: { top: main.scrollTop, end: main.scrollHeight - main.clientHeight },
+        pageScroll: {
+          height: pageMain.scrollHeight,
+          clientHeight: pageMain.clientHeight,
+          width: pageMain.scrollWidth,
+          clientWidth: pageMain.clientWidth,
+        },
+      };
+    });
+
+  /**
+   * Reads what the engine painted at the card's corners. Every part of the workspace and its text is
+   * filled red first, so a part that reaches past the rounded corner shows in the pixel one step inside
+   * the box's corner, which lies outside the card. Hit testing cannot tell this: WebKit ignores a
+   * rounded clip there.
+   */
+  const cornerPaint = async (page: Page, box: Box) => {
+    await page.addStyleTag({
+      content:
+        ".layout-content-main .k2b-app-workspace, .layout-content-main .k2b-app-workspace * { background: rgb(255 0 0) !important; color: rgb(255 0 0) !important; }",
+    });
+    const corners = [
+      { corner: "top left", x: box.left, y: box.top, dx: 1, dy: 1 },
+      { corner: "top right", x: box.right - 1, y: box.top, dx: -1, dy: 1 },
+      { corner: "bottom right", x: box.right - 1, y: box.bottom - 1, dx: -1, dy: -1 },
+      { corner: "bottom left", x: box.left, y: box.bottom - 1, dx: 1, dy: -1 },
+    ];
+    const shot = (await page.screenshot()).toString("base64");
+    return page.evaluate(
+      async ({ shot, corners }) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${shot}`;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext("2d")!;
+        context.drawImage(image, 0, 0);
+        const filled = (x: number, y: number) => {
+          const [red, green, blue] = context.getImageData(x, y, 1, 1).data;
+          return red! > 200 && green! < 60 && blue! < 60;
+        };
+        return corners.map(({ corner, x, y, dx, dy }) => ({
+          corner,
+          outside: filled(x + dx, y + dy),
+          inside: filled(x + 48 * dx, y + 48 * dy),
+        }));
+      },
+      { shot, corners },
+    );
+  };
+
+  for (const device of [{ name: "card boundary", width: 1536, height: 900, touch: false }, desktop]) {
+    test(`${device.width}×${device.height}: flat and framed cards share their frame, spacing, and corner clipping`, async () => {
+      let framed: CardGeometry | undefined;
+      for (const { path } of pages) {
+        const { context, page } = await open(device, path);
+        try {
+          const shape = await cardGeometry(page);
+          expect(Number.parseFloat(shape.expectedRadius)).toBeGreaterThan(0);
+          expect(shape.radii).toEqual(Array(4).fill(shape.expectedRadius));
+          for (const radius of shape.radii) expect(Number.parseFloat(radius)).toBeGreaterThan(0);
+          expect(shape.shadow).not.toBe("none");
+          expect(shape.shellSpacing).toBeGreaterThan(0);
+          expect(shape.box).toMatchObject({
+            left: shape.railRight,
+            top: shape.shellSpacing,
+            right: device.width - shape.shellSpacing,
+            bottom: device.height - shape.shellSpacing,
+          });
+          expect(shape.workspaceScroll.top).toBeGreaterThan(0);
+          expect(shape.workspaceScroll.top).toBeCloseTo(shape.workspaceScroll.end, 0);
+          for (const corner of await cornerPaint(page, shape.box))
+            expect(corner).toEqual({ corner: corner.corner, outside: false, inside: true });
+          expect(shape.pageScroll.height).toBeLessThanOrEqual(shape.pageScroll.clientHeight);
+          expect(shape.pageScroll.width).toBeLessThanOrEqual(shape.pageScroll.clientWidth);
+          if (framed) {
+            expect(shape.radii).toEqual(framed.radii);
+            expect(shape.shadow).toBe(framed.shadow);
+            expect(shape.box).toEqual(framed.box);
+          } else framed = shape;
+        } finally {
+          await context.close();
+        }
+      }
+    });
+  }
+
+  for (const device of [
+    { name: "flush boundary", width: 1535, height: 900, touch: false },
+    { name: "flush laptop", width: 1024, height: 768, touch: false },
+  ]) {
+    test(`${device.width}×${device.height}: flat and framed workspaces fill the flush app area without a frame`, async () => {
+      let framed: CardGeometry | undefined;
+      for (const { path } of pages) {
+        const { context, page } = await open(device, path);
+        try {
+          const shape = await cardGeometry(page);
+          expect(shape.radii).toEqual(Array(4).fill("0px"));
+          expect(shape.shadow).toBe("none");
+          expect(shape.box).toMatchObject({ left: shape.railRight, top: 0, right: device.width, bottom: device.height });
+          if (framed) expect(shape.box).toEqual(framed.box);
+          else framed = shape;
+        } finally {
+          await context.close();
+        }
+      }
+    });
+  }
+
+  test("phone: a flat overview keeps square corners and no shadow", async () => {
+    const { context, page } = await open(phone, "/app/mail/inbox?overview=1");
+    try {
+      const shape = await cardGeometry(page);
+      expect(shape.radii).toEqual(Array(4).fill("0px"));
+      expect(shape.shadow).toBe("none");
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("anonymous 1024×768: a flat workspace already has the card's radius and shadow", async () => {
+    const { context, page } = await open({ name: "anonymous laptop", width: 1024, height: 768, touch: false }, "/public?overview=1");
+    try {
+      const shape = await cardGeometry(page);
+      expect(Number.parseFloat(shape.expectedRadius)).toBeGreaterThan(0);
+      expect(shape.radii).toEqual(Array(4).fill(shape.expectedRadius));
+      expect(shape.shadow).not.toBe("none");
+    } finally {
+      await context.close();
     }
   });
 });
