@@ -1,3 +1,4 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { PageTrail } from "@k2b/cloud/ssr/islands";
 import { downloadArchive } from "@k2b/filegate/utils";
 import { navigate as commitHistory, type LinkNavigateEvent } from "@k2b/ssr/nav";
@@ -1116,8 +1117,47 @@ export default function Browser(props: {
     setOpening("trash");
     props.onOpenTrash?.();
   };
+  const parentName = () => folderLabel(parentPath(folder()));
+  // Alt+↑ goes to the parent folder from anywhere on the page; the shell offers no way up for a folder (see `filesTitle`).
+  createEffect(() => {
+    if (!folder()) return;
+    onCleanup(
+      registerContextAwareCommand({
+        id: "filesv2.parent-folder",
+        title: b().parentRow,
+        description: b().parentFolderUp(parentName()),
+        icon: "ti ti-folder-up",
+        shortcut: "alt+arrowup",
+        action: goUp,
+      }),
+    );
+  });
+  // Backspace does the same while the listing has the focus, never while someone types.
+  const upOnBackspace = (event: KeyboardEvent) => {
+    if (event.key !== "Backspace" || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.defaultPrevented) return;
+    if (!folder() || !(event.target instanceof Element) || !event.target.closest(".filesv2-browser__collection")) return;
+    if (event.target.closest("input,textarea,select,[contenteditable]")) return;
+    event.preventDefault();
+    goUp();
+  };
+  let surface!: HTMLDivElement;
+  onMount(() => {
+    surface.addEventListener("keydown", upOnBackspace);
+    onCleanup(() => surface.removeEventListener("keydown", upOnBackspace));
+  });
   const virtualBefore = (): VirtualRow[] =>
-    folder() && !searching() && view().view !== "tree" ? [{ key: "up", label: "..", icon: "ti ti-folder-up", onClick: goUp }] : [];
+    folder() && !searching() && view().view !== "tree"
+      ? [
+          {
+            key: "up",
+            label: b().parentRow,
+            detail: parentName(),
+            ariaLabel: b().parentFolderUp(parentName()),
+            icon: "ti ti-folder-up",
+            onClick: goUp,
+          },
+        ]
+      : [];
   const virtualAfter = (): VirtualRow[] =>
     !folder() && !searching() && props.onOpenTrash
       ? [{ key: "trash", label: b().trashTitle, icon: "ti ti-trash", onClick: openTrash }]
@@ -1169,7 +1209,6 @@ export default function Browser(props: {
     toggle: b().toggleFolder,
     select: b().selectEntry,
     more: b().more,
-    up: b().parentFolderUp,
   });
   const closeInspector = () => {
     const focused = selection.focused();
@@ -1180,14 +1219,14 @@ export default function Browser(props: {
   return (
     <>
       <AppWorkspace.Main scroll={false} class="filesv2-browser" aria-busy={props.pending}>
-        <div class="filesv2-browser__surface">
+        <div ref={surface} class="filesv2-browser__surface">
           <FileDropTarget
             label={b().dropInto({ name: folderLabel(folder()) })}
             disabled={searching() || !canCreate()}
             onDrop={(files, { dataTransfer }) => dropFiles(files, dataTransfer, folder())}
           />
           <header class="filesv2-browser__header">
-            {/* The folder's title with its path; Files draws this header itself, so it holds the shell's trail. */}
+            {/* The folder's name alone at every depth; Files draws this header itself, so it holds the shell's title. */}
             <PageTrail />
             <div class="flex items-center gap-2">
               <input
@@ -1493,9 +1532,11 @@ export default function Browser(props: {
                         );
                       }}
                       renderLabel={(row) => <span title={virtualOf(row) ? undefined : row.name}>{row.name}</span>}
-                      renderMeta={(row) =>
-                        searching() && !virtualOf(row) ? <span title={parentOf(row.path)}>{parentOf(row.path)}</span> : null
-                      }
+                      renderMeta={(row) => {
+                        const virtual = virtualOf(row);
+                        if (virtual) return virtual.detail ?? null;
+                        return searching() ? <span title={parentOf(row.path)}>{parentOf(row.path)}</span> : null;
+                      }}
                     />
                     <Show when={!props.directory.items.length}>
                       <Placeholder class="mx-2" icon="ti ti-folder" title={b().emptyTitle} description={b().emptyDescription} />

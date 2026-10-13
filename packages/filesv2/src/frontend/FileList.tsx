@@ -9,7 +9,17 @@ import { fileIcon } from "./file-preview";
 
 /** One flat row list; tree mode adds depth and disclosure, search mode shows the path below the folder. */
 export type FileRow = FileEntry & { depth?: number; expanded?: boolean; loading?: boolean; more?: boolean };
-export type VirtualRow = { key: "up" | "trash"; label: string; icon: string; onClick: () => void; depth?: number };
+export type VirtualRow = {
+  key: "up" | "trash";
+  label: string;
+  /** Quiet text after the label: where the row leads. */
+  detail?: string;
+  /** The row's name for assistive technology when the visible label alone does not say where it leads. */
+  ariaLabel?: string;
+  icon: string;
+  onClick: () => void;
+  depth?: number;
+};
 export default function FileList(props: {
   baseId: string;
   rows: readonly FileRow[];
@@ -39,7 +49,6 @@ export default function FileList(props: {
     toggle: (name: string) => string;
     select: (name: string) => string;
     more: string;
-    up: string;
   };
   /** Current order; clicking a column header asks the host to sort by it. */
   sort?: { key: "name" | "modified" | "size" | "type"; direction: "asc" | "desc" };
@@ -96,7 +105,8 @@ export default function FileList(props: {
       class={`filesv2-list__row filesv2-list__row--virtual filesv2-list__row--${row.key}`}
       style={{ "--depth": row.depth ?? 0 }}
       tabIndex={0}
-      aria-label={row.key === "up" ? props.messages.up : row.label}
+      aria-label={row.ariaLabel ?? row.label}
+      aria-keyshortcuts={row.key === "up" ? "Alt+ArrowUp Backspace" : undefined}
       onClick={row.onClick}
       onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && (event.preventDefault(), row.onClick())}
     >
@@ -104,10 +114,16 @@ export default function FileList(props: {
         <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--check" />
       </Show>
       <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--icon">
-        <i class={props.opening === row.key ? "ti ti-loader-2 animate-spin" : row.icon} aria-hidden="true" />
+        {/* The entries' icon slot, so the icon column lines up and keeps its size. */}
+        <span class="filesv2-thumbnail" aria-hidden="true">
+          <i class={props.opening === row.key ? "ti ti-loader-2 animate-spin" : row.icon} />
+        </span>
       </span>
       <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--name">
         <span class="filesv2-list__name">{row.label}</span>
+        <Show when={row.detail}>
+          <span class="filesv2-list__detail">{row.detail}</span>
+        </Show>
       </span>
       <span role="gridcell" class="filesv2-list__cell filesv2-list__cell--size" />
       <Show when={props.showModified}>

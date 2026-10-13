@@ -12,17 +12,11 @@ const folder = (path: string, source = `/app/filesv2?base=b1&path=${encodeURICom
   editor: null,
 });
 
-describe("Files reports its folder path to the shell", () => {
-  test("the storage root and a top-level folder are one level; each folder below adds one", () => {
-    expect(trailOf(folder(""))).toEqual({ title: "My files", ancestors: [] });
-    expect(trailOf(folder("Projects"))).toEqual({ title: "Projects", ancestors: [] });
-    expect(trailOf(folder("Projects/2026/Quotes"))).toEqual({
-      title: "Quotes",
-      ancestors: [
-        { title: "Projects", href: "/app/filesv2?base=b1&path=Projects" },
-        { title: "2026", href: "/app/filesv2?base=b1&path=Projects%2F2026" },
-      ],
-    });
+describe("Files reports its current page to the shell", () => {
+  test("folders at depths zero through four have a title without shell ancestors", () => {
+    for (const path of ["", "A", "A/B", "A/B/C", "A/B/C/D"]) {
+      expect(trailOf(folder(path))).toEqual({ title: path.split("/").at(-1) || "My files", ancestors: [] });
+    }
   });
 
   test("a document leads up to its folder with its row selected, or to the storage at the top", () => {
