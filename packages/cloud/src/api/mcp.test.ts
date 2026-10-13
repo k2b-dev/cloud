@@ -276,6 +276,9 @@ describe("capability MCP projection", () => {
       help: fixtureHelpReader(async () => [help]),
       getCapability: async () => app,
       authenticate: authenticated,
+      getAppUrl: async () => "https://cloud.example",
+      fetch: async () =>
+        Response.json({ data: { id: "one" }, refs: [{ type: "demo.item", id: "one" }], links: [{ rel: "open", href: "/app/demo/one" }] }),
     });
     const transport = new StreamableHTTPClientTransport(new URL("http://localhost/mcp/v1"), {
       requestInit: { headers: { authorization: "Bearer caller" } },
@@ -286,6 +289,21 @@ describe("capability MCP projection", () => {
     try {
       expect((await client.listTools()).tools.map((tool) => tool.name)).toContain("demo__query__get");
       expect((await client.listTools()).tools.map((tool) => tool.name)).toContain("cloud__resource__read");
+      for (const name of ["demo__query__get", "demo__action__create", "cloud__resource__read"]) {
+        const result = await client.callTool({
+          name,
+          arguments:
+            name === "cloud__resource__read"
+              ? { type: "demo.item", id: "one" }
+              : name === "demo__action__create"
+                ? { title: "SDK item", idempotencyKey: "sdk-created" }
+                : { id: "one" },
+        });
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({
+          refs: [{ type: "demo.item", id: "one", href: "https://cloud.example/open/demo.item/~one" }],
+        });
+      }
       expect((await client.listResources()).resources).toMatchObject([{ uri: "cloud://help/demo/getting-started" }]);
       expect((await client.readResource({ uri: "cloud://help/demo/getting-started" })).contents[0]).toMatchObject({
         mimeType: "text/markdown",
@@ -945,7 +963,7 @@ describe("capability MCP projection", () => {
     expect(result.isError).toBeUndefined();
     expect(result.structuredContent).toMatchObject({
       data: { id: "created" },
-      refs: [{ type: "demo.item", id: "created", href: "https://cloud.example/open/demo.item/created" }],
+      refs: [{ type: "demo.item", id: "created", href: "https://cloud.example/open/demo.item/~created" }],
     });
     expect(result.content).toContainEqual(
       expect.objectContaining({
@@ -996,7 +1014,7 @@ describe("capability MCP projection", () => {
       result: {
         structuredContent: {
           data: { id: "one" },
-          refs: [{ type: "demo.item", id: "one", href: "https://cloud.example/open/demo.item/one" }],
+          refs: [{ type: "demo.item", id: "one", href: "https://cloud.example/open/demo.item/~one" }],
         },
       },
     });

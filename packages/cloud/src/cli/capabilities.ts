@@ -7,6 +7,7 @@ import {
   CapabilityCatalogSchema,
   CapabilityErrorSchema,
   type CapabilityManifest,
+  CapabilitySemanticLinkSchema,
   CapabilityStreamSchema,
   CloudResourceRefSchema,
   capabilityResultSchema,
@@ -67,6 +68,26 @@ const readCapabilityJson = async (response: Response, maxBytes: number): Promise
   return parsed.data;
 };
 
+const findCatalogApps = async (ctx: CloudCliContext, appIds: ReadonlySet<string>) => {
+  const wantedApps = new Set(appIds);
+  const apps: z.infer<typeof CapabilityCatalogSchema>["apps"] = [];
+  let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  while (wantedApps.size) {
+    const query = new URLSearchParams({ limit: "25" });
+    if (cursor) query.set("cursor", cursor);
+    const page = CapabilityCatalogSchema.parse(
+      await readCapabilityJson(await ctx.fetch(`/api/capabilities/v1/catalog?${query}`), CAPABILITY_MAX_CATALOG_BYTES),
+    );
+    for (const app of page.apps) if (wantedApps.delete(app.appId)) apps.push(app);
+    if (!wantedApps.size || !page.page.hasMore) break;
+    cursor = page.page.nextCursor;
+    if (seenCursors.has(cursor)) throw new Error("Capability catalog returned a repeated cursor.");
+    seenCursors.add(cursor);
+  }
+  return apps;
+};
+
 const invoke = async (config: {
   ctx: CloudCliContext;
   kind: "queries" | "actions";
@@ -117,17 +138,39 @@ const invoke = async (config: {
     throw error;
   }
   const result = capabilityResultSchema(z.unknown()).parse(body);
-  const manifest = config.manifest;
-  printGenericResult(config.ctx, {
-    ...result,
-    ...(config.ctx.options.output !== "text" && manifest && result.refs
-      ? {
-          refs: result.refs.map((ref) =>
-            resolveCapabilityResourceReader(manifest, ref) ? { ...ref, permalink: cloudResourceUrl(config.ctx, ref) } : ref,
-          ),
-        }
-      : {}),
-  });
+  const manifests = config.manifest ? [config.manifest] : [];
+  const wantedApps = new Set((result.refs ?? []).map(cloudResourceRefAppId));
+  for (const manifest of manifests) wantedApps.delete(manifest.appId);
+  if (wantedApps.size) {
+    try {
+      const apps = await findCatalogApps(config.ctx, wantedApps);
+      manifests.push(...apps.map((app) => app.manifest));
+    } catch {
+      config.ctx.error("The capability catalog is unavailable; some resource permalinks could not be added.");
+    }
+  }
+  const absoluteLinks = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(absoluteLinks);
+    if (!value || typeof value !== "object") return value;
+    const link = CapabilitySemanticLinkSchema.safeParse(value);
+    if (link.success) return { ...link.data, href: new URL(link.data.href, config.ctx.options.server).href };
+    return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, absoluteLinks(nested)]));
+  };
+  printGenericResult(
+    config.ctx,
+    absoluteLinks({
+      ...result,
+      ...(result.refs
+        ? {
+            refs: result.refs.map((ref) =>
+              manifests.some((manifest) => resolveCapabilityResourceReader(manifest, ref))
+                ? { ...ref, permalink: cloudResourceUrl(config.ctx, ref) }
+                : ref,
+            ),
+          }
+        : {}),
+    }),
+  );
 };
 
 export default defineCliCommands({
@@ -244,21 +287,8 @@ export default defineCliCommands({
       run: async ({ ctx, args }) => {
         const ref = CloudResourceRefSchema.parse({ type: args.type, id: args.id });
         const appId = cloudResourceRefAppId(ref);
-        let cursor: string | undefined;
-        const seenCursors = new Set<string>();
-        let app: z.infer<typeof CapabilityCatalogSchema>["apps"][number] | undefined;
-        do {
-          const query = new URLSearchParams({ limit: "25" });
-          if (cursor) query.set("cursor", cursor);
-          const page = CapabilityCatalogSchema.parse(
-            await readCapabilityJson(await ctx.fetch(`/api/capabilities/v1/catalog?${query}`), CAPABILITY_MAX_CATALOG_BYTES),
-          );
-          app = page.apps.find((candidate) => candidate.appId === appId);
-          const nextCursor = page.page.hasMore ? page.page.nextCursor : undefined;
-          if (nextCursor && seenCursors.has(nextCursor)) throw new Error("Capability catalog returned a repeated cursor.");
-          if (nextCursor) seenCursors.add(nextCursor);
-          cursor = nextCursor;
-        } while (!app && cursor);
+        const apps = await findCatalogApps(ctx, new Set([appId]));
+        const app = apps.find((candidate) => candidate.appId === appId);
         if (!app) throw new Error(`Capability app ${appId} is unavailable.`);
         const reader = resolveCapabilityResourceReader(app.manifest, ref);
         if (!reader) throw new Error(`Cloud resource type ${ref.type} is unknown or has no reader.`);

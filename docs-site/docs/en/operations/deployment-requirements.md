@@ -812,16 +812,27 @@ table, so a rollback turns quiet time off and keeps the saved settings.
 
 ### Enable resource permalinks
 
-Deploy updated Core to serve `/open/<type>/<id>` and register its `/open`
-prefix with the gateway. Assistant and MCP supply these links for refs with
-live readers. Deploy Core before exposing the new links; older Core images
-return 404 for them. No configuration or database migration is needed.
+Deploy Core and the owning applications together to enable resource permalinks.
+Core serves `/open/<type>/~<encoded-id>` and registers `/open` with the gateway;
+owners provide permission-aware top-level `open` destinations in their readers.
+The `~` prefix is required; links without it return 404.
+Deploy Core before clients start exposing these links, because older Core images
+return 404. Updating Core alone does not update Mail's draft destination or
+other owning-app readers. No configuration or database migration is needed.
 
-Verify a permalink while signed out and signed in: sign-in preserves the
-return URL, and an authorized reader with a top-level `open` link redirects to
-the resource's page. Missing access, offline apps, and missing reader links
-all show Core's 404 page. Existing readers without links keep working through
-capability calls. See [Resource links](/en/docs/platform/capabilities#resource-links).
+During a rolling update, Core accepts an older reader's validated `edit` link
+when it has no `open`. This preserves existing writer links, but cannot repair
+a destination that requires more access than the reader. Update Mail with Core
+so readable drafts open the read view for readers and the composer for writers.
+MCP advertises its consumer `refs[].href` field in the output schema; owning-app
+responses retain the strict provider ref schema.
+
+Verify permalinks while signed out, as a writer, as a reader and without access.
+Sign-in must preserve the return URL, and the destination page must recheck
+current permissions, including revocation after resolution. Missing access,
+offline apps and missing destinations show Core's 404 page. Existing readers
+without links keep working through capability calls. See
+[Resource links](/en/docs/platform/capabilities#resource-links).
 
 ## Coordinate an existing installation's identity upgrade
 

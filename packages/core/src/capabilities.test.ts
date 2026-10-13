@@ -12,7 +12,7 @@ import {
   aiConversations,
   aiSkills,
 } from "@k2b/cloud/ai";
-import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest, withResourceOpenLinkAssertions } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   CapabilityActionReviewSchema,
@@ -26,6 +26,8 @@ import { accessRevision } from "@k2b/cloud/server";
 import { accountsAppService, audit } from "@k2b/cloud/services";
 import * as taskRuntime from "./ai-chat-tasks-runtime";
 import { aiCapabilities } from "./capabilities";
+
+withResourceOpenLinkAssertions("core", aiCapabilities);
 
 const user: User = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -1030,4 +1032,19 @@ test("Skill, task and chat reviews and summaries use the reader's language", asy
     ok: true,
     data: { message: "Pause scheduled task tSk234.", details: [{ label: "Task" }, { label: "Schedule" }] },
   });
+});
+
+test("revoking the caller's last Skill access does not offer an unreadable ref or open link", async () => {
+  let revoked = false;
+  spyOn(aiSkills, "getByShortId").mockImplementation(async () => (revoked ? null : skill));
+  spyOn(aiSkills, "revokeAccess").mockImplementation(async () => {
+    revoked = true;
+    return true;
+  });
+  const action = aiCapabilities.actions["ai.skill.access.change"];
+  const result = await action.run(
+    action.input.parse({ skillId: skill.shortId, accessId: "AbC234", permission: null, expectedAccessRevision: "a".repeat(64) }),
+    context,
+  );
+  expect(result).toEqual({ ok: true, data: { data: { changed: true } } });
 });

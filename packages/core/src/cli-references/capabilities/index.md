@@ -31,8 +31,17 @@ cld capabilities action contacts create \
   automation expects a stream record.
 - Treat `VALIDATION_FAILED` details as recoverable input guidance. Refresh the
   catalog after `SCHEMA_MISMATCH`, `CAPABILITY_NOT_FOUND`, or `APP_UNAVAILABLE`.
-- `refs` are stable app-owned identities. `links` are root-relative Cloud URLs
-  for opening, editing, previewing, downloading, or checking status.
+- `refs` are stable app-owned identities; readable refs carry an absolute
+  `permalink` on the selected profile's server. `read`, `query` and `action`
+  print semantic `links[].href` as absolute URLs in JSON and JSONL, including
+  links inside resource lists. The provider authors the `open` destination;
+  Core resolves `/open/<type>/~<encoded-id>` under current permissions; `~` is
+  required. Enrichment fetches the catalog only for ref apps not covered by the
+  reader's manifest. If it fails, the CLI warns and prints the successful result.
+  `read` first requires catalog discovery of its reader. Published Grids app
+  commands add no permalinks because projections can be accessible without the
+  Base access canonical readers require. Use supplied links without constructing
+  application routes.
 
 Capabilities do not bypass app authorization. Core authenticates the caller,
 then the owning app reconstructs the actor/access subject and checks current

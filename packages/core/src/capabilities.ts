@@ -724,6 +724,7 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             data: { skillId, accessRevision: accessRevision(grants), levels: ["read", "write", "admin"], grants },
             refs: [{ type: "core.ai.skill", id: skillId, title: skill.name }],
+            links: [{ rel: "open", href: skillHref(skillId) }],
           });
         } catch (error) {
           if (error instanceof AiSkillAppForbiddenError) return fail(err.forbidden(error.message));
@@ -761,6 +762,7 @@ export const aiCapabilities = defineCapabilities({
             ref: { type: "core.ai.skill" as const, id: skill.shortId },
           })),
           refs: page.map((skill) => ({ type: "core.ai.skill", id: skill.shortId })),
+          links: [{ rel: "open", href: "/app/assistant" }],
           page: capabilityPage(offset + input.limit < matches.length ? String(offset + input.limit) : undefined),
         });
       },
@@ -797,6 +799,7 @@ export const aiCapabilities = defineCapabilities({
           data: { skillId: skill.shortId, revision: skill.revision, path: reference.path, content: reference.content },
           summary: coreCapabilityMessages(context.locale).t.referenceRead({ path: reference.path, name: skill.name }),
           refs: [{ type: "core.ai.skill", id: skill.shortId }],
+          links: [{ rel: "open", href: skillHref(skill.shortId) }],
         });
       },
     },
@@ -815,6 +818,7 @@ export const aiCapabilities = defineCapabilities({
         return ok({
           data: items.map((task) => ({ ...taskData(task), ref: { type: "core.ai.task" as const, id: task.shortId } })),
           refs: items.map((task) => taskReference(task, context.locale)),
+          links: [{ rel: "open", href: "/app/assistant" }],
           page: capabilityPage(tasks.length > input.limit ? String(offset + input.limit) : undefined),
         });
       },
@@ -1011,6 +1015,7 @@ export const aiCapabilities = defineCapabilities({
             chat: { id: resource.chat.shortId, title: resource.chat.title, updatedAt: resource.chat.updatedAt },
           })),
           refs: page.resources.map((resource) => resource.ref),
+          links: [{ rel: "open", href: "/app/assistant" }],
           page: capabilityPage(page.nextCursor),
         });
       },
@@ -1080,7 +1085,16 @@ export const aiCapabilities = defineCapabilities({
                   : await aiSkills.revokeAccess(skill.id, input.accessId, context.accessSubject, input.expectedAccessRevision)
                 : false;
           if (!changed) return fail(err.forbidden("The grant or permission is no longer available."));
-          return ok({ data: { changed: true }, refs: [{ type: "core.ai.skill", id: input.skillId, title: skill.name }] });
+          const readable = await readableSkill(input.skillId, context);
+          return ok({
+            data: { changed: true },
+            ...(readable
+              ? {
+                  refs: [{ type: "core.ai.skill", id: input.skillId, title: skill.name }],
+                  links: [{ rel: "open" as const, href: skillHref(input.skillId) }],
+                }
+              : {}),
+          });
         } catch (error) {
           const result = skillRevisionError(error);
           if (result) return result;
@@ -1116,6 +1130,7 @@ export const aiCapabilities = defineCapabilities({
             data: skillData(skill),
             summary: coreCapabilityMessages(context.locale).t.skillCreated({ name: skill.name }),
             refs: [{ type: "core.ai.skill", id: skill.shortId, title: skill.name }],
+            links: [{ rel: "open", href: skillHref(skill.shortId) }],
           });
         } catch (error) {
           const result = skillRevisionError(error);
@@ -1170,6 +1185,7 @@ export const aiCapabilities = defineCapabilities({
             data: skillData(updated),
             summary: coreCapabilityMessages(context.locale).t.skillUpdated({ name: updated.name }),
             refs: [{ type: "core.ai.skill", id: updated.shortId, title: updated.name }],
+            links: [{ rel: "open", href: skillHref(updated.shortId) }],
           });
         } catch (error) {
           const result = skillRevisionError(error);
@@ -1217,6 +1233,7 @@ export const aiCapabilities = defineCapabilities({
             data: skillData(updated),
             summary: coreCapabilityMessages(context.locale).t.referenceSaved({ path: input.path, name: updated.name }),
             refs: [{ type: "core.ai.skill", id: updated.shortId, title: updated.name }],
+            links: [{ rel: "open", href: skillHref(updated.shortId) }],
           });
         } catch (error) {
           const result = skillRevisionError(error);
@@ -1264,6 +1281,7 @@ export const aiCapabilities = defineCapabilities({
             data: skillData(updated),
             summary: coreCapabilityMessages(context.locale).t.referencesSaved({ count: input.references.length, name: updated.name }),
             refs: [{ type: "core.ai.skill", id: updated.shortId, title: updated.name }],
+            links: [{ rel: "open", href: skillHref(updated.shortId) }],
           });
         } catch (error) {
           const result = skillRevisionError(error);
@@ -1305,6 +1323,7 @@ export const aiCapabilities = defineCapabilities({
             data: skillData(updated),
             summary: coreCapabilityMessages(context.locale).t.referenceRemoved({ path: input.path, name: updated.name }),
             refs: [{ type: "core.ai.skill", id: updated.shortId, title: updated.name }],
+            links: [{ rel: "open", href: skillHref(updated.shortId) }],
           });
         } catch (error) {
           const result = skillRevisionError(error);
@@ -1344,6 +1363,7 @@ export const aiCapabilities = defineCapabilities({
             ? coreCapabilityMessages(context.locale).t.skillEnabled({ name: skill.name })
             : coreCapabilityMessages(context.locale).t.skillDisabled({ name: skill.name }),
           refs: [{ type: "core.ai.skill", id: skill.shortId, title: skill.name }],
+          links: [{ rel: "open", href: skillHref(skill.shortId) }],
         });
       },
     },
@@ -1441,6 +1461,7 @@ export const aiCapabilities = defineCapabilities({
               data: taskData(replay),
               summary: coreCapabilityMessages(context.locale).t.taskCreated({ chat: replay.chatTitle }),
               refs: [taskReference(replay, context.locale), taskChatReference(replay, context.locale)],
+              links: [{ rel: "open", href: chatHref(replay.chatId) }],
             });
         } catch (error) {
           if (error instanceof AiChatTaskIdempotencyConflictError) return fail(capabilityIdempotencyConflict(error.message));
@@ -1474,6 +1495,7 @@ export const aiCapabilities = defineCapabilities({
           data: taskData(task),
           summary: coreCapabilityMessages(context.locale).t.taskCreated({ chat: task.chatTitle }),
           refs: [taskReference(task, context.locale), taskChatReference(task, context.locale)],
+          links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
       },
     },
@@ -1536,6 +1558,7 @@ export const aiCapabilities = defineCapabilities({
           data: taskData(task),
           summary: taskUpdateSummary(input, task, context.locale),
           refs: [taskReference(task, context.locale)],
+          links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
       },
     },
@@ -1581,6 +1604,7 @@ export const aiCapabilities = defineCapabilities({
           data: taskData(task),
           summary: coreCapabilityMessages(context.locale).t.taskPaused({ chat: task.chatTitle }),
           refs: [taskReference(task, context.locale)],
+          links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
       },
     },
@@ -1628,6 +1652,7 @@ export const aiCapabilities = defineCapabilities({
           data: taskData(task),
           summary: coreCapabilityMessages(context.locale).t.taskResumed({ chat: task.chatTitle }),
           refs: [taskReference(task, context.locale)],
+          links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
       },
     },
@@ -1676,6 +1701,7 @@ export const aiCapabilities = defineCapabilities({
           data: { id: occurrence.shortId, state: occurrence.state },
           summary: coreCapabilityMessages(context.locale).t.taskQueued({ chat: task.chatTitle }),
           refs: [taskReference(task, context.locale)],
+          links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
       },
     },

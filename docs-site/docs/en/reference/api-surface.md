@@ -313,7 +313,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/capabilities` | Supported, browser | Runtime-validated capability catalog, invocation, and Action review client | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/server` | Supported, server-only | Registry-backed capability catalog, invocation, and Action review client | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/store` | Platform-owned, server-only | Capability execution history: migration, recording, listing, summary, and retention | [App capabilities](/en/docs/platform/capabilities) |
-| `@k2b/cloud/capabilities/testing` | Supported, tests | Provider manifest compilation and additive-evolution assertions | [App capabilities](/en/docs/platform/capabilities) |
+| `@k2b/cloud/capabilities/testing` | Supported, tests | Provider manifest compilation, evolution and resource-link assertions | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/cli/account` | Platform-owned | Built-in account commands | — |
 | `@k2b/cloud/cli/apps` | Platform-owned | Built-in application commands | — |
 | `@k2b/cloud/cli/admin` | Platform-owned | Built-in administration commands | — |

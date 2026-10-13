@@ -36,6 +36,12 @@ invent one MCP tool per Type. Pass a returned `{ type, id }` ref unchanged to
 `cloud__resource__read`. The tool resolves the Type's current declared reader
 from the live manifest and rechecks app authorization during the Query.
 
+Successful capability results retain provider data and root-relative semantic
+links. MCP adds absolute `refs[].href` permalinks using `app.url`, and advertises
+that optional consumer field in each capability tool's output schema so MCP
+clients can validate structured responses. Providers do not add `href` to refs.
+See [Resource links](/en/docs/platform/capabilities#resource-links).
+
 ## Follow the server instructions
 
 The initialize response tells compatible clients to use Capability tools for

@@ -546,7 +546,7 @@ describe("pulse CLI", () => {
     expect(payload.resources).toEqual([
       {
         key: "host:macbook",
-        permalink: "http://cloud.test/open/pulse.resource/Base01%2Fhost%3Amacbook",
+        permalink: "http://cloud.test/open/pulse.resource/~Base01%2Fhost%3Amacbook",
         id: "macbook",
         label: "MacBook",
         type: "host",
@@ -614,7 +614,7 @@ describe("pulse CLI", () => {
 
     await pulseCli.run(ctx);
 
-    expect(lines).toEqual([JSON.stringify({ ...base, permalink: "http://cloud.test/open/pulse.base/Base01" })]);
+    expect(lines).toEqual([JSON.stringify({ ...base, permalink: "http://cloud.test/open/pulse.base/~Base01" })]);
     expect(tables).toEqual([]);
   });
 
@@ -887,6 +887,6 @@ test("resource URLs use the base and resource key instead of the external ID", (
   const resource = { id: "external-host-id", key: "host:a/b", label: "Host" };
   expect(withResourcePermalinkForBase(ctx, "Base01", resource)).toEqual({
     ...resource,
-    permalink: "https://cloud.test/open/pulse.resource/Base01%2Fhost%3Aa%2Fb",
+    permalink: "https://cloud.test/open/pulse.resource/~Base01%2Fhost%3Aa%2Fb",
   });
 });

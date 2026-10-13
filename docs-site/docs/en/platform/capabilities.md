@@ -474,34 +474,84 @@ JSON or inferring it from text. See
 
 ### Resource links
 
-Cloud supplies one permanent link per resource ref: `/open/<type>/<id>`, with
-`id` URL-encoded. Core resolves it through the Type's current reader as the
-signed-in user, then redirects to the first top-level `open` link. Signed-out
-users return to the permalink after signing in. Unavailable or inaccessible
-resources, and readers without an `open` link, show the same 404 page.
+The owning application returns a root-relative semantic link with `rel: "open"`
+for each resource it exposes. Its canonical reader returns that destination
+in top-level `links`. Choose a page the current caller may open: a reader's
+Mail draft opens a read view, while a writer's draft opens the composer. A
+resource without its own page can open its containing page, such as a comment's
+conversation. Never build another application's page route.
 
-Every Type with a page declares a reader. The reader returns the resource's
-`open` link in top-level `links`; for a resource without its own page, return
-the page that shows it, such as a comment's conversation. Cloud still accepts
-reader results without links so existing applications can keep reading.
+Cloud supplies a permanent entry through `cloudResourceHref(ref)` from
+`@k2b/cloud/contracts`: `/open/<type>/~<encoded-id>`. The required `~` prefix keeps
+IDs such as `.` and `..` intact during URL normalization; the helper supports
+the full 512-character resource ID limit. For example,
+`{ type: "mail.draft", id: "AbC123" }` produces `/open/mail.draft/~AbC123`.
+Core invokes the Type's live reader under the signed-in user's authority and
+redirects to its first top-level `open` link. Signed-out users return to the
+permalink after signing in. Missing access, unavailable apps and missing
+readers or destinations show the same 404 page. Links without `~` also return 404.
 
-Use `cloudResourceHref(ref)` from `@k2b/cloud/contracts` to link a resource;
-never build another application's URL. For example,
-`{ type: "mail.draft", id: "AbC123" }` produces `/open/mail.draft/AbC123`.
-Application CLIs use `cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` for an
-absolute URL on the profile's server, and
-`withCloudResourcePermalink(ctx, type, resource)` to add it as `permalink` to a
-resource whose `id` the Type's reader accepts. See
-[CLI modules](/en/docs/platform/cli-modules).
+These fields serve different boundaries:
 
-Assistant adds `href` to top-level refs whose Type has a live reader. MCP adds
-an absolute `href` using the installation's `app.url` setting. These are
-consumer fields; providers keep returning the existing ref shape. Other result
-links remain optional navigation hints.
+| Field | Author and meaning |
+| --- | --- |
+| Provider `links[].rel: "open"` with `href` | The owning app's root-relative, permission-aware destination |
+| Consumer `refs[].href` | Assistant adds the canonical `/open` link for refs with live readers; MCP makes it absolute using the installation's `app.url` |
+| CLI `permalink` | An absolute `/open` URL on the selected profile's server, added by `cloudResourceUrl(ctx, ref)` or `withCloudResourcePermalink(ctx, type, resource)` |
 
-An Action that creates or changes a resource returns it in top-level `refs`,
-so every agent can link it. A result does not name a resource that the Action
-deleted or moved out of reach, because its link would not open.
+Providers keep the strict ref shape and root-relative semantic links. MCP's
+advertised output schema accepts its added `refs[].href`; that consumer field
+is optional and does not become a provider field. Generic `cld capabilities
+read`, `query` and `action` add permalinks for refs with live readers and make
+returned semantic links absolute, including links inside resource lists.
+Enrichment fetches the catalog only for ref apps not covered by the reader's
+manifest, stopping when all are found or pages end. A catalog failure warns
+once and preserves the successful result; `read` requires catalog discovery
+before invoking its reader.
+Assistant CLI JSON, JSONL, terminal and ACP output make supplied Cloud-relative
+Markdown links absolute. Models use supplied links and never construct URLs.
+
+A permalink identifies a resource; it grants no access and contains only its
+Type and ID. A CLI must omit a canonical link if its reader requires access the
+caller lacks. Published Grids app commands add no permalinks: projections can
+be accessible without Base access, but canonical readers require it.
+See [CLI modules](/en/docs/platform/cli-modules).
+
+### Test resource links
+
+Apply the resource contract to every Query and Action in the provider's behavior
+suite, before running its fixtures:
+
+```ts
+import { withResourceOpenLinkAssertions } from "@k2b/cloud/capabilities/testing";
+
+withResourceOpenLinkAssertions("inventory", capabilities);
+```
+
+The guard checks every successful resource-bearing invocation, including
+Actions, lists, multiple refs and nested resources. Each readable resource must
+have an `open` link in its enclosing result or its list entry; data without
+resources and Types deliberately declared without readers are exempt. A missing
+or invalid destination fails the test. Use `assertResourceOpenLinks(result,
+manifest)` for individual fixtures, and `assertResourceOpenLink(result)` to
+check a canonical reader's required top-level destination.
+
+Application authors must supply success fixtures for every resource-returning
+operation and every declared reader, including empty and populated lists,
+multiple-resource results, and the relevant read, write and denied permission
+cases. Check a reader's single top-level `open` destination and absence of an
+`edit` link when write access is denied; a denied read must return no link.
+Test Core's prefixed route and exact sign-in return URL separately from the
+owning app's destination page and its access checks.
+The guard checks invoked operations; it does not create fixtures or
+replace authorization integration tests. When an Action removes a resource or
+revokes its access, omit that resource's ref and link from the result.
+
+Older owning-app readers that return only `edit` remain usable: Core accepts a
+validated `edit` destination during rollout when no `open` is supplied. Readers
+without any destination still work through capability calls but cannot open a
+permalink. Update owning apps together with Core; see the
+[rollout note](/en/docs/operations/deployment-requirements#enable-resource-permalinks).
 
 ### Queries read data
 

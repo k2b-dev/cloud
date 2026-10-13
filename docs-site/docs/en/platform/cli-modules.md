@@ -324,7 +324,17 @@ does not satisfy the JSONL contract.
 Use `cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` to produce an absolute
 resource link on the selected profile's server. When returning a resource
 object, use `withCloudResourcePermalink(ctx, type, resource)` to add that link
-as `permalink`; `resource.id` must be the ID the Type's reader accepts.
+as `permalink`; `resource.id` must be the ID the Type's reader accepts. The URL
+uses `/open/<type>/~<encoded-id>` with a required `~` prefix.
+Generic capability commands convert provider semantic links to absolute URLs
+and add `permalink` to refs with live readers. Enrichment fetches the catalog
+only for ref apps not covered by the reader's manifest; catalog failure warns
+without hiding a successful result. `read` first discovers its reader through
+the catalog. Published Grids app commands add no permalinks because their
+projections can be accessible without the Base access canonical readers require.
+A provider's `open`, the
+consumer's `href` and the CLI's `permalink` are described together in
+[Resource links](/en/docs/platform/capabilities#resource-links).
 Include links only for resources that remain readable after the command, and
 in text output only on create-style confirmations.
 

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { resolveCloudResourceHref } from "@k2b/cloud/api";
+import { cloudResourceHref } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { session } from "@k2b/cloud/services";
 import * as railSnapshot from "@k2b/cloud/services/rail-snapshot";
@@ -61,7 +62,7 @@ test("redirects the signed-in user with decoded identity and the normal session 
   const response = await routes(async (params) => {
     invocation = params;
     return "/app/mail/box?draft=AbC123";
-  }).request("https://cloud.example/open/mail.draft/a%2Fb%3Fc%23d%20%C3%BC");
+  }).request(new URL(cloudResourceHref({ type: "mail.draft", id: "a/b?c#d ü" }), "https://cloud.example"));
   expect(response.status).toBe(302);
   expect(response.headers.get("location")).toBe("/app/mail/box?draft=AbC123");
   expect(invocation?.ref).toEqual({ type: "mail.draft", id: "a/b?c#d ü" });
@@ -75,7 +76,9 @@ test("redirects the signed-in user with decoded identity and the normal session 
 
 test("returns Core's existing localized NotFound page when resolution fails", async () => {
   signIn();
-  const response = await routes(async () => null).request("https://cloud.example/open/mail.draft/missing");
+  const response = await routes(async () => null).request(
+    new URL(cloudResourceHref({ type: "mail.draft", id: "missing" }), "https://cloud.example"),
+  );
   expect(response.status).toBe(404);
   expect(await response.text()).toContain("Nothing here");
 });
@@ -85,10 +88,33 @@ test("redirects signed-out users to the normal sign-in flow with the permalink a
   const response = await routes(async () => {
     called = true;
     return "/app/mail";
-  }).request("https://cloud.example/open/mail.draft/AbC123");
+  }).request(new URL(cloudResourceHref({ type: "mail.draft", id: "AbC123" }), "https://cloud.example"));
   expect(response.status).toBe(302);
   const location = new URL(response.headers.get("location") ?? "", "https://cloud.example");
   expect(location.pathname).toBe("/auth/login");
-  expect(location.searchParams.get("redirectTo")).toBe("/open/mail.draft/AbC123");
+  expect(location.searchParams.get("redirectTo")).toBe("/open/mail.draft/~AbC123");
+  expect(called).toBe(false);
+});
+
+test.each([".", "..", "~", "東京".repeat(256), "ü".repeat(512)])("resolves the original id after URL normalization: %s", async (id) => {
+  signIn();
+  let resolved: string | undefined;
+  const response = await routes(async ({ ref }) => {
+    resolved = ref.id;
+    return "/app/demo";
+  }).request(new URL(cloudResourceHref({ type: "demo.item", id }), "https://cloud.example"));
+  expect(response.status).toBe(302);
+  expect(resolved).toBe(id);
+});
+
+test("returns 404 without resolving an id segment missing the required prefix", async () => {
+  signIn();
+  let called = false;
+  const response = await routes(async () => {
+    called = true;
+    return "/app/mail";
+  }).request("https://cloud.example/open/mail.draft/AbC123");
+  expect(response.status).toBe(404);
+  expect(await response.text()).toContain("Nothing here");
   expect(called).toBe(false);
 });

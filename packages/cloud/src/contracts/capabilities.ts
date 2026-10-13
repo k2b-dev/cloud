@@ -89,7 +89,7 @@ export const CloudResourceRefSchema = z
 
 export type CloudResourceRef = z.infer<typeof CloudResourceRefSchema>;
 
-export const cloudResourceHref = (ref: CloudResourceRef): string => `/open/${ref.type}/${encodeURIComponent(ref.id)}`;
+export const cloudResourceHref = (ref: CloudResourceRef): string => `/open/${ref.type}/~${encodeURIComponent(ref.id)}`;
 
 export const CloudResourceReferenceSchema = CloudResourceRefSchema.extend({
   title: z.string().min(1).max(500).optional().describe("Optional current user-facing resource label."),
@@ -98,6 +98,13 @@ export const CloudResourceReferenceSchema = CloudResourceRefSchema.extend({
 }).strict();
 
 export type CloudResourceReference = z.infer<typeof CloudResourceReferenceSchema>;
+
+// Consumer permalinks may encode all 512 UTF-16 units of an id (up to 4,608 characters).
+export const CloudResourceHrefSchema = z.string().min(1).max(8192).regex(CLOUD_PATH_PATTERN);
+
+export const LinkedCloudResourceReferenceSchema = CloudResourceReferenceSchema.extend({
+  href: z.union([CloudResourceHrefSchema, z.url({ protocol: /^https?$/ }).max(8192)]).optional(),
+}).strict();
 
 export const CapabilitySemanticLinkSchema = z
   .object({
@@ -223,7 +230,10 @@ export const capabilityResultSchema = <T extends z.ZodType>(
       data,
       stream: CapabilityStreamSchema.optional(),
       summary: z.string().trim().min(1).max(500).optional(),
-      refs: z.array(CloudResourceReferenceSchema).max(100).optional(),
+      refs: z
+        .array(options?.consumer ? LinkedCloudResourceReferenceSchema : CloudResourceReferenceSchema)
+        .max(100)
+        .optional(),
       page: CapabilityPageSchema.optional(),
       links: z.array(CapabilitySemanticLinkSchema).max(20).optional(),
       presentation: options?.consumer
@@ -245,8 +255,14 @@ export const capabilityResultSchema = <T extends z.ZodType>(
       }
     }) as unknown as z.ZodType<CapabilityResult<z.output<T>>>;
 
-export const capabilityResultJsonSchema = (dataSchema: Record<string, unknown>): Record<string, unknown> =>
-  z.toJSONSchema(capabilityResultSchema(z.fromJSONSchema(structuredClone(dataSchema))), { io: "output" }) as Record<string, unknown>;
+export const capabilityResultJsonSchema = (
+  dataSchema: Record<string, unknown>,
+  options?: { consumer?: boolean },
+): Record<string, unknown> =>
+  z.toJSONSchema(capabilityResultSchema(z.fromJSONSchema(structuredClone(dataSchema)), options), { io: "output" }) as Record<
+    string,
+    unknown
+  >;
 
 export const CapabilityErrorSchema = z
   .object({

@@ -481,7 +481,7 @@ describe("Assistant CLI stream", () => {
   });
 });
 
-test("streamed Cloud links are rewritten across deltas and reconnects only in text output", async () => {
+test("streamed Cloud links are absolute across deltas, reconnects and structured output", async () => {
   const text = "[Mail](/app/mail/x) [Other](//external.test/x)";
   const events = () => [
     [delta("link", "[Mail]"), delta("link", "(")],
@@ -494,15 +494,38 @@ test("streamed Cloud links are rewritten across deltas and reconnects only in te
   ];
   const reply = await run(events());
   expect(reply.text).toBe("[Mail](http://example.test/app/mail/x) [Other](//external.test/x)\n");
-  expect(reply.result.text).toBe(text);
+  expect(reply.result.text).toBe(text.replace("](/", "](http://example.test/"));
   expect((await run(events(), "json")).text).toBe("");
   const jsonl = await run(events(), "jsonl");
-  expect(textDeltas(jsonl.lines).join("")).not.toContain("http://example.test");
-  expect(jsonl.result.text).toBe(text);
+  expect(textDeltas(jsonl.lines).join("")).toContain("http://example.test");
+  const absolute = text.replace("](/", "](http://example.test/");
+  expect(jsonl.result.text).toBe(absolute);
+  expect((await run(events(), "json")).result.text).toBe(absolute);
+  expect(jsonl.result.messages[0]).toMatchObject({ message: { content: [{ type: "text", text: absolute }] } });
+  expect(jsonl.lines.at(-1)).toMatchObject({
+    type: "turn_finished",
+    text: absolute,
+    messages: [{ message: { content: [{ text: absolute }] } }],
+  });
 });
 
 test("stream finish flushes incomplete link delimiters", async () => {
   expect((await run([[delta("link", "[Mail]("), finished(["[Mail]("])]])).text).toBe("[Mail](\n");
+  const jsonl = await run([[delta("link", "[Mail]("), finished(["[Mail]("])]], "jsonl");
+  expect(textDeltas(jsonl.lines)).toEqual(["link:[Mail", "link:]("]);
+  expect(jsonl.lines.at(-1)).toMatchObject({ type: "turn_finished", text: "[Mail](" });
+});
+
+test("JSONL rewrites links within their own text block", async () => {
+  const jsonl = await run(
+    [[delta("first", "[Unfinished]"), delta("second", "(/app/mail) [Draft](/open/mail.draft/~one)"), finished([])]],
+    "jsonl",
+  );
+  expect(textDeltas(jsonl.lines)).toEqual([
+    "first:[Unfinished",
+    "second:(/app/mail) [Draft](http://example.test/open/mail.draft/~one)",
+    "first:]",
+  ]);
 });
 
 test("link delimiters flush before approval pauses the turn", async () => {

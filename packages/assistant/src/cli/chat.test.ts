@@ -5,7 +5,8 @@ import { resolveConversation } from "./turn";
 
 const context = (args: string[] = [], flags: CloudCliContext["flags"] = {}) => {
   const requests: unknown[] = [];
-  let conversation = { id: "chat", title: "New chat", titleSource: "default" };
+  const values: unknown[] = [];
+  let conversation = { id: "chat", shortId: "chat", title: "New chat", titleSource: "default" };
   const ctx: CloudCliContext = {
     args,
     flags,
@@ -31,11 +32,15 @@ const context = (args: string[] = [], flags: CloudCliContext["flags"] = {}) => {
     print: () => {},
     write: async () => {},
     error: () => {},
-    json: () => {},
-    jsonLine: () => {},
+    json: (value) => {
+      values.push(value);
+    },
+    jsonLine: (value) => {
+      values.push(value);
+    },
     table: () => {},
   };
-  return { ctx, requests };
+  return { ctx, requests, values };
 };
 const expectedRequests = (title: string) => [
   { path: "/api/ai/conversations", method: "POST", body: {} },
@@ -106,4 +111,17 @@ test("system-prompt --local includes this computer and the profile's local tools
   expect(params.get("os")).toBeTruthy();
   expect(params.get("shell")).toBe("/bin/bash");
   expect(params.get("localTools")).toBe("off");
+});
+
+test.each(["json", "jsonl"] as const)("chats create emits an absolute canonical permalink in %s", async (output) => {
+  const { ctx, values } = context(["chats", "create"]);
+  ctx.options.output = output;
+  await defineCliCommands({ name: "assistant", summary: "Assistant", commands: [...assistantChatCommands] }).run(ctx);
+  expect(values).toMatchObject([{ id: "chat", permalink: "http://example.test/open/core.ai.chat/~chat" }]);
+});
+
+test.each(["pin", "unpin", "restore", "done", "reopen"])("chats %s returns an absolute permalink with the updated chat", async (action) => {
+  const { ctx, values } = context(["chats", action, "chat"]);
+  await defineCliCommands({ name: "assistant", summary: "Assistant", commands: [...assistantChatCommands] }).run(ctx);
+  expect(values).toMatchObject([{ id: "chat", permalink: "http://example.test/open/core.ai.chat/~chat" }]);
 });

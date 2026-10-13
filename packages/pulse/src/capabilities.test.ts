@@ -1,5 +1,5 @@
 import { describe, expect, setDefaultTimeout, test } from "bun:test";
-import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest, withResourceOpenLinkAssertions } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityExecutionContext,
@@ -20,6 +20,8 @@ import {
   SourceReadInputSchema,
 } from "./capability-contracts";
 import { newShortId } from "./lib/short-id";
+
+withResourceOpenLinkAssertions("pulse", pulseCapabilities);
 
 const userContext = (user: User): CapabilityExecutionContext => ({
   actor: { kind: "user", user },

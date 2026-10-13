@@ -12,7 +12,7 @@ import {
   serializeAiSkillMarkdown,
   validateAiSkillReferences,
 } from "@k2b/cloud/ai/browser";
-import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
+import { arg, type CloudCliContext, cloudResourceUrl, command, flag } from "@k2b/cloud/cli";
 import { maxSkillBytes } from "./local-context";
 import { resolveLocalPath } from "./local-paths";
 import { jsonRequest, printRows, printValue, queryString, readApi } from "./shared";
@@ -140,10 +140,17 @@ export const assistantSkillCommands = [
       const result = await listSkills(ctx, flags.search);
       printRows(
         ctx,
-        result,
+        {
+          ...result,
+          skills: result.skills.map((skill) => ({
+            ...skill,
+            permalink: cloudResourceUrl(ctx, { type: "core.ai.skill", id: skill.shortId }),
+          })),
+        },
         result.skills.map((skill) => ({
           name: skill.name,
           id: skill.id,
+          permalink: cloudResourceUrl(ctx, { type: "core.ai.skill", id: skill.shortId }),
           source: skill.source?.appName ?? "-",
           enabled: skill.enabled ? "yes" : "no",
           start: skill.manualOnly ? "selected" : "auto",
@@ -217,7 +224,17 @@ export const assistantSkillCommands = [
         text += `\nNot pushed: ${folder.skipped.join(", ")}. Cloud keeps SKILL.md and Markdown files directly in references/ with lowercase names (a-z, 0-9, ., _, -), and does not run scripts.`;
       printValue(
         ctx,
-        { action, skill: { id: skill.id, name: skill.name, revision: skill.revision }, skipped: folder.skipped, removedReferences },
+        {
+          action,
+          skill: {
+            id: skill.id,
+            name: skill.name,
+            revision: skill.revision,
+            permalink: cloudResourceUrl(ctx, { type: "core.ai.skill", id: skill.shortId }),
+          },
+          skipped: folder.skipped,
+          removedReferences,
+        },
         text,
       );
     },
@@ -234,7 +251,16 @@ export const assistantSkillCommands = [
       const target = relative(process.cwd(), dir) || ".";
       printValue(
         ctx,
-        { skill: { id: skill.id, name: skill.name, revision: skill.revision }, dir: target, files: files.map((file) => file.path) },
+        {
+          skill: {
+            id: skill.id,
+            name: skill.name,
+            revision: skill.revision,
+            permalink: cloudResourceUrl(ctx, { type: "core.ai.skill", id: skill.shortId }),
+          },
+          dir: target,
+          files: files.map((file) => file.path),
+        },
         `Pulled ${skill.name} (revision ${skill.revision}, ${skill.references.length} reference${skill.references.length === 1 ? "" : "s"}) to ${target}.`,
       );
     },

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest, withResourceOpenLinkAssertions } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   type CapabilityActionReviewResult,
@@ -26,6 +26,8 @@ import {
 } from "./capability-contracts";
 import { type Contact, contactsService } from "./service";
 import * as publicResources from "./service/public-resources";
+
+withResourceOpenLinkAssertions("contacts", contactsCapabilities);
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const bookId = "22222222-2222-4222-8222-222222222222";

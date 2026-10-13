@@ -332,7 +332,7 @@ describe("addressing", () => {
 
   test("<space>: addresses the space itself", async () => {
     const { json } = await run(["show", "Roadmap:"]);
-    expect(json).toEqual({ ...spaceDetail, permalink: `${base}/open/spaces.space/${spaceDetail.id}` });
+    expect(json).toEqual({ ...spaceDetail, permalink: `${base}/open/spaces.space/~${spaceDetail.id}` });
   });
 
   test("<space>: names the enabled automatic columns in text output", async () => {
@@ -351,7 +351,7 @@ describe("browse", () => {
       expect(JSON.parse(result.stdout)).toMatchObject({
         id: event.id,
         url: event.url,
-        permalink: `${base}/open/spaces.item/${event.id}`,
+        permalink: `${base}/open/spaces.item/~${event.id}`,
       });
     }
   });
@@ -359,7 +359,7 @@ describe("browse", () => {
   test("ls lists spaces, filtered by -q", async () => {
     expect((await run(["ls"])).json).toHaveLength(2);
     expect((await run(["ls", "--q", "hir"])).json).toEqual([
-      { ...space, id: "Space2", name: "Hiring", permalink: `${base}/open/spaces.space/Space2` },
+      { ...space, id: "Space2", name: "Hiring", permalink: `${base}/open/spaces.space/~Space2` },
     ]);
   });
 
@@ -504,16 +504,16 @@ describe("changes", () => {
   test("deps lists both directions and adds or removes blockers by address", async () => {
     const listed = await run(["deps", "Item01"]);
     expect(listed.json).toEqual({
-      item: { id: "Item01", title: "Ship release", permalink: `${base}/open/spaces.item/Item01` },
+      item: { id: "Item01", title: "Ship release", permalink: `${base}/open/spaces.item/~Item01` },
       blockers: blockers.map((entry) => ({
         ...entry,
-        blocker: { ...entry.blocker, permalink: `${base}/open/spaces.item/${entry.blocker.id}` },
+        blocker: { ...entry.blocker, permalink: `${base}/open/spaces.item/~${entry.blocker.id}` },
       })),
       blocks: {
         ...blocksPage,
         items: blocksPage.items.map((entry) => ({
           ...entry,
-          dependent: { ...entry.dependent, permalink: `${base}/open/spaces.item/${entry.dependent.id}` },
+          dependent: { ...entry.dependent, permalink: `${base}/open/spaces.item/~${entry.dependent.id}` },
         })),
       },
     });
@@ -557,7 +557,7 @@ describe("secondary resources", () => {
   test("comments list, add, update and delete", async () => {
     expect((await run(["comments", "list", "Item01", "--page", "2", "--per-page", "10"])).json).toEqual({
       ...commentsPage,
-      items: commentsPage.items.map((comment) => ({ ...comment, permalink: `${base}/open/spaces.comment/${comment.id}` })),
+      items: commentsPage.items.map((comment) => ({ ...comment, permalink: `${base}/open/spaces.comment/~${comment.id}` })),
     });
     expect(writes((await run(["comments", "add", "Item01", "--content", "Ready"])).requests)[0]?.body).toEqual({ content: "Ready" });
     const updated = await run(["comments", "update", "Item01", "Cmt001", "--content", "Edited"]);
@@ -659,7 +659,7 @@ describe("secondary resources", () => {
         title: "Launch",
         startsAt: "a",
         endsAt: "b",
-        permalink: `${base}/open/spaces.item/Evt001`,
+        permalink: `${base}/open/spaces.item/~Evt001`,
       },
     ]);
     expect(calendar.requests.at(-1)?.path).toBe(

@@ -1,5 +1,5 @@
 import {
-  CapabilitySemanticLinkSchema,
+  CloudResourceHrefSchema,
   type CloudResourceRef,
   CloudResourceReferenceSchema,
   type CloudResourceView,
@@ -12,7 +12,7 @@ import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { AiConversationResourceObservation } from "./types";
 
 const LinkedResourceReferenceSchema = CloudResourceReferenceSchema.extend({
-  href: CapabilitySemanticLinkSchema.shape.href.optional(),
+  href: CloudResourceHrefSchema.optional(),
 });
 
 export const addCloudResourceHrefs = <T>(
@@ -30,7 +30,7 @@ export const addCloudResourceHrefs = <T>(
       const ref = parsed.data;
       const app = apps.find((candidate) => candidate.appId === cloudResourceRefAppId(ref));
       if (!app || !resolveCapabilityResourceReader(app.manifest, ref)) return reference;
-      const href = CapabilitySemanticLinkSchema.shape.href.safeParse(cloudResourceHref(ref));
+      const href = CloudResourceHrefSchema.safeParse(cloudResourceHref(ref));
       if (!href.success) return reference;
       return { ...ref, href: origin ? new URL(href.data, origin).href : href.data };
     }),

@@ -97,10 +97,10 @@ test("resource URLs use Files reader IDs for stable, persisted, and inline entri
   const stableId = `n:${baseId}:22222222-2222-4222-8222-222222222222`;
   for (const id of [stableId, `p:${"a".repeat(64)}`, entryRefId(baseId, entry.path)!]) {
     const result = withEntryResultPermalink(ctx, { base, entry, resourceId: id });
-    expect(result.entry).toEqual({ ...entry, permalink: `http://cloud.test/open/filesv2.entry/${encodeURIComponent(id)}` });
+    expect(result.entry).toEqual({ ...entry, permalink: `http://cloud.test/open/filesv2.entry/~${encodeURIComponent(id)}` });
   }
   const inline = withEntryResultPermalink(ctx, { base, entry });
-  expect(inline.entry.permalink).toBe(`http://cloud.test/open/filesv2.entry/${entryRefId(baseId, entry.path)}`);
+  expect(inline.entry.permalink).toBe(`http://cloud.test/open/filesv2.entry/~${entryRefId(baseId, entry.path)}`);
   expect(entry).not.toHaveProperty("permalink");
   expect(requests).toHaveLength(0);
 });
@@ -125,10 +125,10 @@ test("resource URLs use locally known IDs and leave unknown entries unchanged wi
   expect(withEntryResultPermalink(ctx, { base, entry }).entry).toBe(entry);
   expect(withEntryPermalinks(ctx, baseId, [entry])).toEqual([entry]);
   const known = { ...entry, resourceId };
-  expect(withEntryPermalink(ctx, baseId, known).permalink).toBe(`http://cloud.test/open/filesv2.entry/${encodeURIComponent(resourceId)}`);
-  expect(withEntryPermalink(ctx, baseId, known, "explicit-id").permalink).toBe("http://cloud.test/open/filesv2.entry/explicit-id");
+  expect(withEntryPermalink(ctx, baseId, known).permalink).toBe(`http://cloud.test/open/filesv2.entry/~${encodeURIComponent(resourceId)}`);
+  expect(withEntryPermalink(ctx, baseId, known, "explicit-id").permalink).toBe("http://cloud.test/open/filesv2.entry/~explicit-id");
   expect(withEntryResultPermalink(ctx, { base, entry, resourceId }).entry.permalink).toBe(
-    `http://cloud.test/open/filesv2.entry/${encodeURIComponent(resourceId)}`,
+    `http://cloud.test/open/filesv2.entry/~${encodeURIComponent(resourceId)}`,
   );
   expect(requests).toHaveLength(0);
   const text = inventory("text");

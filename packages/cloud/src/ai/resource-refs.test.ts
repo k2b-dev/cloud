@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
-import { defineCapabilities } from "../contracts/capabilities";
+import { cloudResourceHref, defineCapabilities } from "../contracts/capabilities";
 import { addCloudResourceHrefs, collectConversationResourceObservations, isConversationResourceCursor } from "./resource-refs";
 
 describe("collectConversationResourceObservations", () => {
@@ -82,13 +82,13 @@ test("observations accept only validated hrefs and otherwise keep strict referen
   expect(
     collectConversationResourceObservations({
       refs: [
-        { type: "mail.draft", id: "one", title: "Draft", href: "/open/mail.draft/one" },
+        { type: "mail.draft", id: "one", title: "Draft", href: "/open/mail.draft/~one" },
         { type: "mail.draft", id: "two", href: "https://foreign.example" },
         { type: "mail.draft", id: "three", href: "//foreign.example" },
-        { type: "mail.draft", id: "four", href: "/open/mail.draft/four", extra: true },
+        { type: "mail.draft", id: "four", href: "/open/mail.draft/~four", extra: true },
       ],
     }),
-  ).toEqual([{ ref: { type: "mail.draft", id: "one" }, title: "Draft", href: "/open/mail.draft/one" }]);
+  ).toEqual([{ ref: { type: "mail.draft", id: "one" }, title: "Draft", href: "/open/mail.draft/~one" }]);
 });
 
 test("enriches only top-level refs with live readers, preserving existing hrefs and all data", () => {
@@ -122,31 +122,31 @@ test("enriches only top-level refs with live readers, preserving existing hrefs 
   const noReader = { type: "demo.other", id: "other" };
   const offline = { type: "offline.item", id: "offline" };
   const malformed = { type: "demo.item", id: "bad", extra: true };
-  // A valid 512-character id can encode past the 2,048-character link limit; such refs stay unlinked.
+  // A maximum-length id stays linked even when URL encoding expands it.
   const overlong = { type: "demo.item", id: "ü".repeat(512) };
   const result = { data, refs: [{ type: "demo.item", id: "a/b", title: "Item" }, existing, noReader, offline, malformed, overlong], view };
   const enriched: unknown = addCloudResourceHrefs(result, apps);
   expect(enriched).toEqual({
     ...result,
     refs: [
-      { type: "demo.item", id: "a/b", title: "Item", href: "/open/demo.item/a%2Fb" },
+      { type: "demo.item", id: "a/b", title: "Item", href: "/open/demo.item/~a%2Fb" },
       existing,
       noReader,
       offline,
       malformed,
-      overlong,
+      { ...overlong, href: cloudResourceHref(overlong) },
     ],
   });
   const absolute: unknown = addCloudResourceHrefs(result, apps, "https://cloud.example");
   expect(absolute).toEqual({
     ...result,
     refs: [
-      { type: "demo.item", id: "a/b", title: "Item", href: "https://cloud.example/open/demo.item/a%2Fb" },
+      { type: "demo.item", id: "a/b", title: "Item", href: "https://cloud.example/open/demo.item/~a%2Fb" },
       existing,
       noReader,
       offline,
       malformed,
-      overlong,
+      { ...overlong, href: new URL(cloudResourceHref(overlong), "https://cloud.example").href },
     ],
   });
   expect(result.refs[0]).not.toHaveProperty("href");

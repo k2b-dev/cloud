@@ -213,7 +213,7 @@ describe("AI capability catalog", () => {
     );
     expect(result).toEqual({
       data: { id: "contact-1" },
-      refs: [{ type: "contacts.contact", id: "contact-1", title: "Ada", href: "/open/contacts.contact/contact-1" }],
+      refs: [{ type: "contacts.contact", id: "contact-1", title: "Ada", href: "/open/contacts.contact/~contact-1" }],
     });
     const loaded = prepareAiTools({
       tools: createLoadedAiCapabilityTools({
@@ -238,7 +238,7 @@ describe("AI capability catalog", () => {
           },
         },
       ),
-    ).toEqual({ data: {}, refs: [{ type: "contacts.contact", id: "contact-2", href: "/open/contacts.contact/contact-2" }] });
+    ).toEqual({ data: {}, refs: [{ type: "contacts.contact", id: "contact-2", href: "/open/contacts.contact/~contact-2" }] });
     expect(invocation).toEqual({ localId: "contact.read", args: { id: "contact-1" } });
   });
 

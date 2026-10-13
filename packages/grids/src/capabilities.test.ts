@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
-import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest, withResourceOpenLinkAssertions } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
@@ -24,6 +24,8 @@ import { migrate } from "./migrate";
 import { gridsService } from "./service";
 import { enable as enableDurableHistory } from "./service/durable-history";
 import { enable as enableFinalization, finalize as finalizeRecord } from "./service/record-finalization";
+
+withResourceOpenLinkAssertions("grids", gridsCapabilities);
 
 const zDocument = (value: unknown) => gridsCapabilities.queries["document.read"].data.parse(value);
 

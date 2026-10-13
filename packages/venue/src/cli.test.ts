@@ -28,11 +28,11 @@ test("resource URLs preserve resource data and use reader IDs", () => {
   const resource = { id: "AbC123", title: "Example", revision: 2 };
   expect(withCloudResourcePermalink(ctx, "venue.venue", resource)).toEqual({
     ...resource,
-    permalink: "https://cloud.test/open/venue.venue/AbC123",
+    permalink: "https://cloud.test/open/venue.venue/~AbC123",
   });
   expect(withCloudResourcePermalink(ctx, "venue.assignment", resource)).toEqual({
     ...resource,
-    permalink: "https://cloud.test/open/venue.assignment/AbC123",
+    permalink: "https://cloud.test/open/venue.assignment/~AbC123",
   });
   expect(resource).not.toHaveProperty("url");
 });

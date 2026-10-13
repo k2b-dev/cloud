@@ -372,7 +372,7 @@ describe("composeAiSystemPrompt", () => {
     expect(prompt).toContain("Without a supplied href, use plain text");
     expect(prompt).toContain("Never construct a Cloud URL");
     expect(prompt).toContain("Cloud adds an href to resource refs it can open");
-    expect(prompt).toContain("[Urgent invoice review 001](/open/mail.draft/AbC123)");
+    expect(prompt).toContain("[Urgent invoice review 001](/open/mail.draft/~AbC123)");
   });
 
   it("orders platform, organization, turn, Project instructions, context and personalization", () => {
@@ -465,7 +465,7 @@ test("web prompt stays byte-identical with organization and selected Cloud Skill
     loadedSkills: [{ name: "invoice", revision: 2, instructions: "Read rules.", files: ["/skills/invoice/SKILL.md"] }],
   });
   expect(new Bun.CryptoHasher("sha256").update(prompt).digest("hex")).toBe(
-    "17c2ee16795d62dac52fc2388f2794e43c650176240df2e2c870c53ae35c02f8",
+    "0d4f6c8d60cd6dc853c24f87085275fa83e3dbd2db7fd4fec3af83905b64016e",
   );
 });
 

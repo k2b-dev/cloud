@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { assertResourceOpenLink } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, withResourceOpenLinkAssertions } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityExecutionContext,
@@ -167,6 +167,7 @@ mock.module("./service", () => ({
   },
 }));
 const { filesCapabilities } = await import("./capabilities");
+withResourceOpenLinkAssertions("filesv2", filesCapabilities);
 const user = {
   id: "user",
   uid: "alice",

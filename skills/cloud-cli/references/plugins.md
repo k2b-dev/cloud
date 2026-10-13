@@ -43,7 +43,15 @@ cld mail reference compose.md
 
 `reference` prints the plugin's entry page; a file argument prints one of the files it links to. An unknown file lists the available ones. The same files are in this skill under `references/<module>/<version>/`; the table in `SKILL.md` names the folder for each profile and module.
 
-Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
+Readable resource objects in JSON/JSONL output carry `permalink`, an absolute
+`/open/<type>/~<encoded-id>` link on the selected profile's server; the `~` prefix
+is required. Share supplied links without building URLs. Generic capability
+commands also make provider semantic `links[].href` absolute. Enrichment fetches
+the catalog only for ref apps not covered by the reader's manifest; failure warns
+and preserves the successful result. `read` first discovers its reader through
+the catalog. Owning apps choose the `open` destination and Core checks current
+access. Published Grids app commands add no permalinks: projections can be
+accessible without Base access, but canonical readers require it.
 
 ## Skill targets
 

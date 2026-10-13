@@ -246,7 +246,7 @@ export const composeAiSystemPrompt = (input: AiSystemPromptInput): string => {
     [
       "# Cloud resource links",
       "Cloud adds an href to resource refs it can open. When the answer mentions a Cloud resource, use its ref's href or the result's open or edit link to make the resource's human-readable title a Markdown link using that exact href. Use the title exactly as supplied, even when answering in another language. Apply this to every mentioned resource, including list items and headings. Prefer open over edit. Without a supplied href, use plain text. Never construct a Cloud URL.",
-      "Example: [Urgent invoice review 001](/open/mail.draft/AbC123) — payment deadline approaching.",
+      "Example: [Urgent invoice review 001](/open/mail.draft/~AbC123) — payment deadline approaching.",
     ].join("\n"),
   ];
 

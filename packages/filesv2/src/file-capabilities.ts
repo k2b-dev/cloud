@@ -3,6 +3,7 @@ import {
   type CapabilityActionDefinition,
   type CapabilityExecutionContext,
   type CapabilityResult,
+  CapabilitySemanticLinkSchema,
   type CapabilityStream,
   FILE_PROVIDER_NAME_CONFLICT,
   type FileProviderEntry,
@@ -47,7 +48,7 @@ const Entry = z.object({
   revision: z.string().optional(),
 });
 const Ref = z.object({ type: z.literal("filesv2.entry"), id: z.string() });
-const Item = Entry.extend({ ref: Ref });
+const Item = Entry.extend({ ref: Ref, links: z.array(CapabilitySemanticLinkSchema).max(10) });
 const Result = z.object({ baseId: Base, entry: Item.optional(), uploadId: z.string().optional() });
 const readActor = (c: CapabilityExecutionContext) => {
   if (c.actor.kind !== "user") throw err.forbidden("Files require a signed-in user.");
@@ -79,11 +80,15 @@ async function saveDomain<T>(c: { locale: string }, run: () => Promise<T>): Prom
   }
 }
 type ListedEntry = z.infer<typeof Entry> & { resourceId?: string };
-const item = async (baseId: string, { resourceId, ...entry }: ListedEntry) => ({
-  ...entry,
-  revision: markdownRevision(entry),
-  ref: { type: "filesv2.entry" as const, id: await entryRef(baseId, { path: entry.path, resourceId }) },
-});
+const item = async (baseId: string, { resourceId, ...entry }: ListedEntry) => {
+  const id = await entryRef(baseId, { path: entry.path, resourceId });
+  return {
+    ...entry,
+    revision: markdownRevision(entry),
+    ref: { type: "filesv2.entry" as const, id },
+    links: openLink(`/app/filesv2/ref/${encodeURIComponent(id)}`, id),
+  };
+};
 /** Capability links hold at most 2,048 characters; a deep path opens through the entry's deep link instead. */
 const openLink = (href: string, id: string) => [
   { rel: "open" as const, href: href.length <= 2048 ? href : `/app/filesv2/ref/${encodeURIComponent(id)}` },
@@ -331,9 +336,11 @@ export const fileQueries = {
       domain(c, async () => {
         const actor = readActor(c);
         const file = await filesService.entryById(actor, input.id);
+        const id = await entryRef(file.base.id, file.entry);
         return ok({
           data: await filesService.downloadById(actor, input.id),
-          refs: [{ type: "filesv2.entry", id: await entryRef(file.base.id, file.entry), title: file.entry.name }],
+          refs: [{ type: "filesv2.entry", id, title: file.entry.name }],
+          links: openLink(`/app/filesv2/ref/${encodeURIComponent(id)}`, id),
         });
       }),
   },

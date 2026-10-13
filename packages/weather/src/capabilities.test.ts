@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest, withResourceOpenLinkAssertions } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   CapabilityActionReviewSchema,
@@ -12,6 +12,8 @@ import { audit, weatherService } from "@k2b/cloud/services";
 import { fail, ok } from "@k2b/stdlib";
 import { decodeWeatherCapabilityCursor, weatherCapabilities } from "./capabilities";
 import { CurrentWeatherSchema } from "./contracts";
+
+withResourceOpenLinkAssertions("weather", weatherCapabilities);
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const locationId = "Wthr01";

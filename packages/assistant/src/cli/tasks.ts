@@ -1,5 +1,5 @@
 import type { AiChatTaskView as AssistantChatTask, AiChatTaskOccurrenceView as AssistantChatTaskOccurrence } from "@k2b/cloud/ai";
-import { arg, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
+import { arg, command, confirmFlag, flag, readCliInput, withCloudResourcePermalink } from "@k2b/cloud/cli";
 import { idempotentJsonRequest, jsonRequest, printRows, printValue, queryString, readApi, requireConfirmation } from "./shared";
 
 type TaskDetail = { task: AssistantChatTask; occurrences: AssistantChatTaskOccurrence[] };
@@ -31,7 +31,11 @@ const scheduleInput = (at?: string, cron?: string): { kind: "once"; localAt: str
 };
 
 const printTask = (ctx: Parameters<typeof printValue>[0], task: AssistantChatTask, verb?: string): void =>
-  printValue(ctx, task, `${verb ? `${verb} ` : ""}${task.id}\t${task.state}\t${scheduleText(task)}\t${promptPreview(task.prompt)}`);
+  printValue(
+    ctx,
+    withCloudResourcePermalink(ctx, "core.ai.task", task),
+    `${verb ? `${verb} ` : ""}${task.id}\t${task.state}\t${scheduleText(task)}\t${promptPreview(task.prompt)}`,
+  );
 
 export const assistantTaskCommands = [
   command("tasks activities", {
@@ -42,7 +46,11 @@ export const assistantTaskCommands = [
         items: Array<{ task: AssistantChatTask; occurrence: AssistantChatTaskOccurrence; chatTitle: string; unread: boolean }>;
         hasMore: boolean;
       }>(ctx, `/tasks/activities${queryString(flags)}`);
-      if (ctx.options.output !== "text") return printValue(ctx, page);
+      if (ctx.options.output !== "text")
+        return printValue(ctx, {
+          ...page,
+          items: page.items.map((item) => ({ ...item, task: withCloudResourcePermalink(ctx, "core.ai.task", item.task) })),
+        });
       for (const item of page.items)
         ctx.print(
           `${item.occurrence.id}\t${item.task.id}\t${item.occurrence.state}\t${item.chatTitle}\t${item.occurrence.resultText ?? item.occurrence.error ?? ""}`,
@@ -78,9 +86,10 @@ export const assistantTaskCommands = [
       );
       printRows(
         ctx,
-        tasks,
+        tasks.map((task) => withCloudResourcePermalink(ctx, "core.ai.task", task)),
         tasks.map((task) => ({
           id: task.id,
+          permalink: withCloudResourcePermalink(ctx, "core.ai.task", task).permalink,
           chat: task.chatId,
           state: task.state,
           schedule: scheduleText(task),
@@ -96,7 +105,8 @@ export const assistantTaskCommands = [
     args: { task: arg.required({ valueLabel: "task-id" }) },
     async run({ ctx, args }) {
       const detail = await readApi<TaskDetail>(ctx, path(args.task));
-      if (ctx.options.output !== "text") return printValue(ctx, detail);
+      if (ctx.options.output !== "text")
+        return printValue(ctx, { ...detail, task: withCloudResourcePermalink(ctx, "core.ai.task", detail.task) });
       ctx.print(`${detail.task.id}\t${detail.task.state}\t${scheduleText(detail.task)}\t${detail.task.timezone}`);
       ctx.print(detail.task.prompt);
       ctx.print(`Capability grants: ${JSON.stringify(detail.task.grants)}`);

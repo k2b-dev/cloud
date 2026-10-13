@@ -127,7 +127,6 @@ describe("resource permalink resolution", () => {
 
   test.each([
     { data: {} },
-    { data: {}, links: [{ rel: "edit", href: "/edit" }] },
     { data: {}, links: [{ rel: "open", href: "https://foreign.example" }] },
     { data: {}, links: [{ rel: "open", href: "//foreign.example" }] },
     { data: {}, links: [{ rel: "open", href: "/\\foreign.example" }] },
@@ -144,4 +143,19 @@ describe("resource permalink resolution", () => {
     };
     expect(resolveCloudResourceHref(params, { getCapability: async () => app, dispatch })).rejects.toThrow("Offline");
   });
+});
+
+test("older owning-app readers may still return only a validated edit link", async () => {
+  expect(
+    await resolveCloudResourceHref(params, {
+      getCapability: async () => app,
+      dispatch: async () => Response.json({ data: {}, links: [{ rel: "edit", href: "/edit" }] }),
+    }),
+  ).toBe("/edit");
+  expect(
+    await resolveCloudResourceHref(params, {
+      getCapability: async () => app,
+      dispatch: async () => Response.json({ data: {}, links: [{ rel: "edit", href: "https://foreign.example" }] }),
+    }),
+  ).toBeNull();
 });

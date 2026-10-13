@@ -208,7 +208,7 @@ const projectTool = (
       title: `${app.appName}: ${operation.title}`,
       description: operation.description,
       inputSchema: action ? actionInputSchema(action) : cloneObjectSchema(operation.inputSchema),
-      outputSchema: cloneObjectSchema(capabilityResultJsonSchema(operation.dataSchema)),
+      outputSchema: cloneObjectSchema(capabilityResultJsonSchema(operation.dataSchema, { consumer: true })),
       annotations: {
         title: operation.title,
         readOnlyHint: !isAction,

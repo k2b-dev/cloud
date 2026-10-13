@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest, withResourceOpenLinkAssertions } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   type CapabilityActionReviewResult,
@@ -43,6 +43,8 @@ import * as notebookStore from "./service/notebooks";
 import * as noteStore from "./service/notes";
 import * as noteSearch from "./service/search";
 import * as noteTags from "./service/tags";
+
+withResourceOpenLinkAssertions("notebooks", notebooksCapabilities);
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const serviceAccountId = "22222222-2222-4222-8222-222222222222";

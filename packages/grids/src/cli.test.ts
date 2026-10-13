@@ -416,12 +416,12 @@ describe("grids CLI conventions", () => {
     await gridsCli.run(listed.ctx);
     expect(listed.calls.map((call) => call.path)).toEqual(["/api/grids/bases?q=Book&limit=100&offset=0"]);
     expect(listed.jsonValues).toEqual([
-      { ...basePage, items: basePage.items.map((item) => ({ ...item, permalink: `http://cloud.test/open/grids.base/${item.id}` })) },
+      { ...basePage, items: basePage.items.map((item) => ({ ...item, permalink: `http://cloud.test/open/grids.base/~${item.id}` })) },
     ]);
 
     const show = createContext(["bases", "show", baseId], {}, [jsonResponse(resolved())], { output: "json" });
     await gridsCli.run(show.ctx);
-    expect(show.jsonValues).toEqual([{ ...base, permalink: `http://cloud.test/open/grids.base/${base.id}` }]);
+    expect(show.jsonValues).toEqual([{ ...base, permalink: `http://cloud.test/open/grids.base/~${base.id}` }]);
 
     const removeBase = createContext(["bases", "rm", baseId], { yes: true }, [jsonResponse(resolved()), jsonResponse({ message: "ok" })], {
       output: "json",
@@ -433,7 +433,7 @@ describe("grids CLI conventions", () => {
     const tableShow = createContext(["tables", "show", "Bookshop:Authors"], {}, [jsonResponse(resolved(table))], { output: "json" });
     await gridsCli.run(tableShow.ctx);
     expect(tableShow.calls.map((call) => call.path)).toEqual(["/api/grids/resolve?base=Bookshop&table=Authors"]);
-    expect(tableShow.jsonValues).toEqual([{ ...table, permalink: `http://cloud.test/open/grids.table/${table.id}` }]);
+    expect(tableShow.jsonValues).toEqual([{ ...table, permalink: `http://cloud.test/open/grids.table/~${table.id}` }]);
 
     const removeTable = createContext(
       ["tables", "rm", tableId],
@@ -455,7 +455,7 @@ describe("grids CLI conventions", () => {
       `/api/grids/resolve?record=${recordId}`,
       `/api/grids/records/${tableId}/${recordId}`,
     ]);
-    expect(recordShow.jsonValues).toEqual([{ ...record, permalink: `http://cloud.test/open/grids.record/${record.id}` }]);
+    expect(recordShow.jsonValues).toEqual([{ ...record, permalink: `http://cloud.test/open/grids.record/~${record.id}` }]);
 
     const removeRecord = createContext(
       ["records", "rm", `Bookshop:Authors/${recordId}`],
@@ -1028,7 +1028,7 @@ describe("grids CLI", () => {
     expect(calls[1]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ name: "Equipment", withSampleData: false });
     expect(defaults["grids.base"]).toBe(base.id);
-    expect(lines).toEqual(["Created Equipment (bk001A) from Inventory. Using it as default. http://cloud.test/open/grids.base/bk001A"]);
+    expect(lines).toEqual(["Created Equipment (bk001A) from Inventory. Using it as default. http://cloud.test/open/grids.base/~bk001A"]);
   });
 
   test("lists restorable resources in a base trash", async () => {
@@ -1432,7 +1432,7 @@ describe("grids CLI", () => {
     ]);
     expect(calls[1]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ [fieldId]: "Octavia Butler" });
-    expect(lines).toEqual([`Created record ${recordId}. http://cloud.test/open/grids.record/${recordId}`]);
+    expect(lines).toEqual([`Created record ${recordId}. http://cloud.test/open/grids.record/~${recordId}`]);
   });
 
   test("resumes bounded Record changes through public ids", async () => {
@@ -1590,7 +1590,7 @@ describe("grids CLI", () => {
     expect(batch.calls[1]?.init?.method).toBe("POST");
     expect(JSON.parse(String(batch.calls[1]?.init?.body))).toEqual(body);
     expect(batch.jsonValues).toEqual(
-      response.items.map((item) => (item.ok ? { ...item, permalink: `http://cloud.test/open/grids.record/${item.recordId}` } : item)),
+      response.items.map((item) => (item.ok ? { ...item, permalink: `http://cloud.test/open/grids.record/~${item.recordId}` } : item)),
     );
   });
 
@@ -1765,7 +1765,7 @@ describe("grids CLI", () => {
     await gridsCli.run(finalize.ctx);
     expect(finalize.calls.at(-1)?.path).toBe(`/api/grids/records/${tableId}/${recordId}/finalize`);
     expect(finalize.calls.at(-1)?.init?.method).toBe("POST");
-    expect(finalize.jsonValues).toEqual([{ ...finalizedRecord, permalink: `http://cloud.test/open/grids.record/${finalizedRecord.id}` }]);
+    expect(finalize.jsonValues).toEqual([{ ...finalizedRecord, permalink: `http://cloud.test/open/grids.record/~${finalizedRecord.id}` }]);
 
     const missingConfirmation = createContext(["records", "finalize", baseId, "Authors", recordId]);
     await expect(gridsCli.run(missingConfirmation.ctx)).rejects.toThrow("Pass --yes to permanently finalize the record.");
@@ -1919,7 +1919,7 @@ describe("grids CLI", () => {
       { output: "jsonl" },
     );
     await gridsCli.run(ctx);
-    const linked = { ...record, permalink: `http://cloud.test/open/grids.record/${record.id}` };
+    const linked = { ...record, permalink: `http://cloud.test/open/grids.record/~${record.id}` };
     if (verb === "ls") {
       expect(jsonValues).toMatchObject([{ id: record.id, permalink: linked.permalink }, { id: deleted.id }]);
       expect(jsonValues[1]).not.toHaveProperty("permalink");
@@ -2302,7 +2302,7 @@ describe("grids CLI", () => {
       name: "Recent authors",
       source: "from table Authors",
     });
-    expect(lines).toEqual(["Created view Recent authors (view1A). http://cloud.test/open/grids.view/view1A"]);
+    expect(lines).toEqual(["Created view Recent authors (view1A). http://cloud.test/open/grids.view/~view1A"]);
   });
 
   test("exposes forms and Apps in top-level help", async () => {
@@ -2411,7 +2411,7 @@ describe("grids CLI", () => {
     ]);
     expect(calls[2]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ [fieldId]: "N. K. Jemisin" });
-    expect(lines).toEqual([`Created record ${recordId}. http://cloud.test/open/grids.record/${recordId}`]);
+    expect(lines).toEqual([`Created record ${recordId}. http://cloud.test/open/grids.record/~${recordId}`]);
   });
 
   test("edits through a Form with explicit target, versions and retry key", async () => {
@@ -2574,7 +2574,7 @@ describe("grids CLI", () => {
     const get = createContext(["documents", "get", documentId], {}, [jsonResponse(document)], { output: "json" });
     await gridsCli.run(get.ctx);
     expect(get.calls.map((call) => call.path)).toEqual([`/api/grids/documents/${documentId}`]);
-    expect(get.jsonValues).toEqual([{ ...document, permalink: `http://cloud.test/open/grids.document/${document.id}` }]);
+    expect(get.jsonValues).toEqual([{ ...document, permalink: `http://cloud.test/open/grids.document/~${document.id}` }]);
 
     const dir = await mkdtemp(join(tmpdir(), "grids-cli-document-artifact-"));
     const out = join(dir, "factur-x.xml");
@@ -2866,7 +2866,7 @@ describe("grids CLI", () => {
     ]);
     expect(calls[2]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ mode: "execute", inputs: { recordId }, idempotencyKey: "reminder-1" });
-    expect(lines).toEqual([`Created workflow run ${runId} (queued). http://cloud.test/open/grids.workflow-run/${runId}`]);
+    expect(lines).toEqual([`Created workflow run ${runId} (queued). http://cloud.test/open/grids.workflow-run/~${runId}`]);
   });
 
   test("manually invokes scheduled workflows through the same CLI endpoint", async () => {
@@ -2893,7 +2893,7 @@ describe("grids CLI", () => {
     ]);
     expect(calls[2]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ mode: "execute", inputs: {}, idempotencyKey: "scheduled-manual-1" });
-    expect(lines).toEqual([`Created workflow run ${runId} (queued). http://cloud.test/open/grids.workflow-run/${runId}`]);
+    expect(lines).toEqual([`Created workflow run ${runId} (queued). http://cloud.test/open/grids.workflow-run/~${runId}`]);
   });
 
   test("lists workflow run steps", async () => {
@@ -2955,6 +2955,6 @@ test("GQL JSONL rows link Records and preserve aggregate rows", async () => {
   );
   await gridsCli.run(ctx);
   expect(jsonValues).toEqual([
-    { ...payload, rows: [{ ...payload.rows[0], permalink: `http://cloud.test/open/grids.record/${recordId}` }, payload.rows[1]] },
+    { ...payload, rows: [{ ...payload.rows[0], permalink: `http://cloud.test/open/grids.record/~${recordId}` }, payload.rows[1]] },
   ]);
 });

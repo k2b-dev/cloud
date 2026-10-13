@@ -517,7 +517,7 @@ test("cat prints text, refuses binary content, and saves with --out", async () =
     path: "Documents/notes.txt",
     bytes: 12,
     content: "hello notes\n",
-    permalink: `${server.url.origin}/open/filesv2.entry/${entryRefId(home.id, "Documents/notes.txt")}`,
+    permalink: `${server.url.origin}/open/filesv2.entry/~${entryRefId(home.id, "Documents/notes.txt")}`,
   });
   expect(requests).toEqual(["GET /bases", `POST /bases/${home.id}/download`]);
   expect(await failure(["cat", "me:/Documents/binary.bin"])).toBe("This file is not text. Save it with --out or get.");

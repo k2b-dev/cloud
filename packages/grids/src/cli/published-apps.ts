@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
-import { arg, type CloudCliContext, cloudResourceUrl, command, confirmFlag, flag, withCloudResourcePermalink } from "@k2b/cloud/cli";
+import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import { z } from "zod";
 import type { projectCustomAppRuntimePage } from "../api/custom-app-runtime-dto";
 import type { PublicGridRecord } from "../api/public-dto";
@@ -21,18 +21,7 @@ const segment = (value: string) => {
 const path = (args: { app: string; page?: string; block?: string }, tail: string[] = []) =>
   `/apps/runtime/${[requirePublicId(args.app, "App"), ...[args.page, args.block].filter((value): value is string => value !== undefined), ...tail].map(segment).join("/")}`;
 
-const withRecordsPermalinks = (ctx: CloudCliContext, result: CustomAppRecordsSuccess) => ({
-  ...result,
-  rows: result.rows.map((row) =>
-    row.recordId ? { ...row, permalink: cloudResourceUrl(ctx, { type: "grids.record", id: row.recordId }) } : row,
-  ),
-  ...(result.cards
-    ? {
-        cards: { ...result.cards, records: result.cards.records?.map((record) => withCloudResourcePermalink(ctx, "grids.record", record)) },
-      }
-    : {}),
-});
-
+// Published projections need no Base access; canonical readers do, so added permalinks would return 404.
 export const publishedAppCommands = [
   command("apps runtime read", {
     summary: "Discover an authorized published page, its data, forms and available actions",
@@ -43,20 +32,7 @@ export const publishedAppCommands = [
         ctx,
         `${path({ ...args, page: flags.page })}${queryString(params(flags.params))}`,
       );
-      const linked = {
-        ...result,
-        blocks: result.blocks.map((block) => ({
-          ...block,
-          ...(block.record
-            ? { record: { ...block.record, record: withCloudResourcePermalink(ctx, "grids.record", block.record.record) } }
-            : {}),
-          ...(block.records?.ok ? { records: { ...block.records, result: withRecordsPermalinks(ctx, block.records.result) } } : {}),
-          ...(block.documents
-            ? { documents: block.documents.map((document) => withCloudResourcePermalink(ctx, "grids.document", document)) }
-            : {}),
-        })),
-      };
-      if (!printCliStructured(ctx, linked)) ctx.json(result);
+      if (!printCliStructured(ctx, result)) ctx.json(result);
     },
   }),
   command("apps runtime records", {
@@ -72,8 +48,7 @@ export const publishedAppCommands = [
         ctx,
         `${path(args, ["records"])}${queryString({ ...params(flags.params), _search: flags.search, _cursor: flags.cursor })}`,
       );
-      const linked = withRecordsPermalinks(ctx, result);
-      if (!printCliStructured(ctx, linked)) ctx.json(result);
+      if (!printCliStructured(ctx, result)) ctx.json(result);
     },
   }),
   ...(
@@ -95,15 +70,7 @@ export const publishedAppCommands = [
           `${path(args, [endpoint])}${queryString(params(flags.params))}`,
           jsonRequest(method, body),
         );
-        const linked =
-          name === "update" && "id" in result
-            ? withCloudResourcePermalink(ctx, "grids.record", { ...result, id: result.id })
-            : "recordId" in result
-              ? { ...result, permalink: cloudResourceUrl(ctx, { type: "grids.record", id: result.recordId }) }
-              : "runId" in result
-                ? { ...result, permalink: cloudResourceUrl(ctx, { type: "grids.workflow-run", id: result.runId }) }
-                : result;
-        if (!printCliStructured(ctx, linked)) ctx.json(result);
+        if (!printCliStructured(ctx, result)) ctx.json(result);
       },
     }),
   ),
@@ -118,8 +85,7 @@ export const publishedAppCommands = [
         path(args, ["sidebar", "forms", args.action, "submit"]),
         jsonRequest("POST", await readJsonInput(flags.body, "form values")),
       );
-      const linked = { ...result, permalink: cloudResourceUrl(ctx, { type: "grids.record", id: result.recordId }) };
-      if (!printCliStructured(ctx, linked)) ctx.json(result);
+      if (!printCliStructured(ctx, result)) ctx.json(result);
     },
   }),
   ...(["action", "row-action"] as const).map((kind) =>
@@ -134,9 +100,7 @@ export const publishedAppCommands = [
           `${path(args, [kind === "action" ? "actions" : "row-actions", args.action])}${queryString(params(flags.params))}`,
           jsonRequest("POST", await readJsonInput(flags.body, "operationId and, for row actions, rowId/search/cursor")),
         );
-        const linked =
-          "runId" in result ? { ...result, permalink: cloudResourceUrl(ctx, { type: "grids.workflow-run", id: result.runId }) } : result;
-        if (!printCliStructured(ctx, linked)) ctx.json(result);
+        if (!printCliStructured(ctx, result)) ctx.json(result);
       },
     }),
   ),
@@ -147,8 +111,7 @@ export const publishedAppCommands = [
     async run({ ctx, args, flags }) {
       const tail = flags.action ? ["actions", flags.action, "runs", args.run] : ["scanner", "runs", args.run];
       const result = await readApi<{ status: string }>(ctx, `${path(args, tail)}${queryString(params(flags.params))}`);
-      const linked = { ...result, permalink: cloudResourceUrl(ctx, { type: "grids.workflow-run", id: args.run }) };
-      if (!printCliStructured(ctx, linked)) ctx.json(result);
+      if (!printCliStructured(ctx, result)) ctx.json(result);
     },
   }),
   ...(["list", "create", "update", "delete"] as const).map((verb) =>

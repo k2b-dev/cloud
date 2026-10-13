@@ -10,8 +10,10 @@ export const createResourceOpenRoutes = (resolve = resolveCloudResourceHref) =>
     auth.requireRole("authenticated", ssr.access),
     auth.requireUser(ssr.access),
     async (c, next) => {
+      const id = c.req.param("id");
+      if (!id.startsWith("~")) return next();
       const href = await resolve({
-        ref: { type: c.req.param("type"), id: c.req.param("id") },
+        ref: { type: c.req.param("type"), id: id.slice(1) },
         request: c.req.raw,
         authority: auth.getAuthority(c),
         locale: getLocale(c),

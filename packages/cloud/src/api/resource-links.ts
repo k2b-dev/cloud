@@ -36,6 +36,8 @@ export const resolveCloudResourceHref = async (
   if (!response.ok) return null;
   const result = capabilityResultSchema(z.unknown(), { consumer: true }).safeParse(await response.json());
   if (!result.success) return null;
-  const link = CapabilitySemanticLinkSchema.safeParse(result.data.links?.find((link) => link.rel === "open"));
+  const link = CapabilitySemanticLinkSchema.safeParse(
+    result.data.links?.find((link) => link.rel === "open") ?? result.data.links?.find((link) => link.rel === "edit"),
+  );
   return link.success ? link.data.href : null;
 };

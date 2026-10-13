@@ -65,7 +65,7 @@ describe("Grids operational CLI", () => {
     await command("documents sources").run({ ctx, args: { document: "DOC001" }, flags: {} });
     expect(calls[0]?.path).toBe("/api/grids/documents/DOC001/sources");
     expect(values).toEqual([
-      { ...page, items: [page.items[0], { ...page.items[1], permalink: "http://cloud.test/open/grids.record/REC002" }] },
+      { ...page, items: [page.items[0], { ...page.items[1], permalink: "http://cloud.test/open/grids.record/~REC002" }] },
     ]);
   });
   test("keeps the skill command index aligned with operational commands", async () => {
@@ -219,5 +219,5 @@ test("referenced-by exposes the source Record's permalink", async () => {
   };
   const { ctx, values } = context([resolvedRecord(), Response.json({ items: [item], nextCursor: null })]);
   await command("records referenced-by").run({ ctx, args: record, flags: {} });
-  expect(values).toEqual([{ items: [{ ...item, permalink: "http://cloud.test/open/grids.record/REC002" }], nextCursor: null }]);
+  expect(values).toEqual([{ items: [{ ...item, permalink: "http://cloud.test/open/grids.record/~REC002" }], nextCursor: null }]);
 });

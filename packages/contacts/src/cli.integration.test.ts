@@ -184,11 +184,19 @@ if (process.env.CONTACTS_CLI_CHILD !== "1") {
       expect((await cldJson<Contact>(["contacts", "show", "--email", `ADA-${suffix}@example.org`])).id).toBe(ada.id);
       expect(await cldJson<Book>(["contacts", "show", `${customers.name}:`])).toMatchObject({ id: customers.id, name: customers.name });
 
-      const listed = await cldJson<{ book: Book; data: Contact[] }>(["contacts", "ls", customers.name, "--tag", "VIP", "--q", "ada"]);
+      const listed = await cldJson<{ book: Book & { permalink: string }; data: Contact[] }>([
+        "contacts",
+        "ls",
+        customers.name,
+        "--tag",
+        "VIP",
+        "--q",
+        "ada",
+      ]);
       expect(listed.book).toEqual({
         id: customers.id,
         name: customers.name,
-        permalink: `${serverUrl}/open/contacts.book/${customers.id}`,
+        permalink: `${serverUrl}/open/contacts.book/~${customers.id}`,
       });
       expect(listed.data.map((contact) => contact.id)).toEqual([ada.id]);
       expect((await cldJson<{ data: Book[] }>(["contacts", "ls", "--q", suffix])).data.map((book) => book.id).sort()).toEqual(

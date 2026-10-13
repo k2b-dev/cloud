@@ -12,7 +12,7 @@ import type {
   AiUserPrefs,
 } from "@k2b/cloud/ai";
 import { guessAiMediaType } from "@k2b/cloud/ai/browser";
-import { arg, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
+import { arg, cloudResourceUrl, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
 import { buildAssistantChatDiagnostic } from "./diagnostics";
 import { AI_API, jsonRequest, parseJson, printRows, printValue, queryString, readApi, requireConfirmation, shortId } from "./shared";
 import { streamAssistantTurn } from "./stream";
@@ -86,9 +86,10 @@ export const assistantChatCommands = [
       );
       printRows(
         ctx,
-        chats,
+        chats.map((chat) => ({ ...chat, permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: chat.shortId }) })),
         chats.map((chat) => ({
           id: chat.id,
+          permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: chat.shortId }),
           title: chat.title,
           status: chat.isDone ? "done" : chat.runStatus,
           unread: chat.unreadCompletion ? "yes" : "",
@@ -104,7 +105,13 @@ export const assistantChatCommands = [
     args: { chat: arg.required({ valueLabel: "chat-id" }) },
     async run({ ctx, args }) {
       const detail = await readApi<FullConversationDetail>(ctx, conversationPath(args.chat));
-      printValue(ctx, detail);
+      printValue(ctx, {
+        ...detail,
+        conversation: {
+          ...detail.conversation,
+          permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: detail.conversation.shortId }),
+        },
+      });
     },
   }),
   command("chats diagnose", {
@@ -120,7 +127,11 @@ export const assistantChatCommands = [
     flags: { title: flag.string(), project: flag.string({ description: "Attach the chat to a Project ID" }) },
     async run({ ctx, flags }) {
       const chat = await resolveConversation(ctx, { title: flags.title, projectId: flags.project });
-      printValue(ctx, chat, `${chat.id}\t${chat.title}`);
+      printValue(
+        ctx,
+        { ...chat, permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: chat.shortId }) },
+        `${chat.id}\t${chat.title}`,
+      );
     },
   }),
   command("chats update", {
@@ -138,7 +149,11 @@ export const assistantChatCommands = [
           ...(flags.description !== undefined ? { description: flags.description } : {}),
         }),
       );
-      printValue(ctx, updated, `${updated.id}\t${updated.title}`);
+      printValue(
+        ctx,
+        { ...updated, permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: updated.shortId }) },
+        `${updated.id}\t${updated.title}`,
+      );
     },
   }),
   ...(["pin", "unpin", "archive", "restore", "mark-read"] as const).map((action) =>
@@ -159,6 +174,15 @@ export const assistantChatCommands = [
         if (action === "archive") requireConfirmation((flags as { yes: boolean }).yes, "Archiving a chat");
         const method = action === "unpin" ? "DELETE" : "POST";
         const route = action === "mark-read" ? "viewed" : action;
+        if (action === "pin" || action === "unpin" || action === "restore") {
+          const chat = await readApi<AiConversation>(ctx, conversationPath(args.chat, `/${route}`), { method });
+          printValue(
+            ctx,
+            { ...chat, permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: chat.shortId }) },
+            `${action}: ${args.chat}`,
+          );
+          return;
+        }
         const result = await readApi<unknown>(ctx, conversationPath(args.chat, `/${route}`), { method });
         printValue(ctx, result, `${action}: ${args.chat}`);
       },
@@ -174,7 +198,7 @@ export const assistantChatCommands = [
           conversationPath(args.chat, "/done"),
           jsonRequest("PUT", { done: action === "done" }),
         );
-        printValue(ctx, result);
+        printValue(ctx, { ...result, permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: result.shortId }) });
       },
     }),
   ),
@@ -379,7 +403,14 @@ export const assistantManagementCommands = [
         conversationPath(args.chat, `/messages/${encodeURIComponent(args.messageId)}/fork`),
         jsonRequest("POST", flags.title ? { title: flags.title } : {}),
       );
-      printValue(ctx, fork, `${fork.conversation.id}\t${fork.conversation.title}`);
+      printValue(
+        ctx,
+        {
+          ...fork,
+          conversation: { ...fork.conversation, permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: fork.conversation.shortId }) },
+        },
+        `${fork.conversation.id}\t${fork.conversation.title}`,
+      );
     },
   }),
   command("turns watch", {

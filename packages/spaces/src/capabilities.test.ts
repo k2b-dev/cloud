@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
-import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest, withResourceOpenLinkAssertions } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
@@ -39,6 +39,8 @@ import {
 import type { SpaceComment, SpaceItem, SpaceItemTemplate, SpaceTag } from "./contracts";
 import { spacesService } from "./service";
 import { type ResourceTable, spacesPublicResources } from "./service/public-resources";
+
+withResourceOpenLinkAssertions("spaces", spacesCapabilities);
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const serviceAccountId = "22222222-2222-4222-8222-222222222222";

@@ -7,6 +7,7 @@ import {
   type CapabilityResult,
   type CloudResourceView,
   capabilityPage,
+  cloudResourceHref,
   defineCapabilities,
   UniversalSearchDataSchema,
   type UniversalSearchInput,
@@ -1298,6 +1299,7 @@ const runChecklistCreate = async (input: z.infer<typeof TaskChecklistCreateInput
       ? ok({
           data: { id: result.data.id, label: result.data.label, completed: result.data.completed },
           refs: [itemRef(task.data.item, "task")],
+          links: [{ rel: "open", href: buildSpaceItemHref(task.data.item.spaceId, task.data.item.id) }],
         })
       : mutationError(result, context);
   });
@@ -1318,6 +1320,7 @@ const runChecklistUpdate = async (input: z.infer<typeof TaskChecklistUpdateInput
       ? ok({
           data: { id: result.data.id, label: result.data.label, completed: result.data.completed },
           refs: [itemRef(task.data.item, "task")],
+          links: [{ rel: "open", href: buildSpaceItemHref(task.data.item.spaceId, task.data.item.id) }],
         })
       : mutationError(result, context);
   });
@@ -1330,7 +1333,11 @@ const runChecklistDelete = async (input: z.infer<typeof TaskChecklistDeleteInput
     if (!id) return fail(localizeSpacesError(err.notFound("Checklist entry"), context.locale));
     const result = await spacesService.item.checklist.remove({ itemId: task.data.internalId, id, actor: spaceActivityActor(context) });
     return result.ok
-      ? ok({ data: { id: input.entryId, deleted: true as const }, refs: [itemRef(task.data.item, "task")] })
+      ? ok({
+          data: { id: input.entryId, deleted: true as const },
+          refs: [itemRef(task.data.item, "task")],
+          links: [{ rel: "open", href: buildSpaceItemHref(task.data.item.spaceId, task.data.item.id) }],
+        })
       : mutationError(result, context);
   });
 
@@ -2053,6 +2060,7 @@ const runCalendarInvitationResponseCommit = async (
             }),
           ),
           refs: [{ type: "mail.draft", id: input.draftId }],
+          links: [{ rel: "open", href: cloudResourceHref({ type: "mail.draft", id: input.draftId }) }],
         })
       : fail(localizeSpacesError(result.error, context.locale));
   });
@@ -2147,7 +2155,11 @@ export const spacesCapabilities = defineCapabilities({
       run: async (input, context) => {
         const resolved = await requireItem(input.id, context);
         if (!resolved.ok) return resolved;
-        return ok({ data: await taskWork.read(resolved.data.internalId), refs: [itemRef(resolved.data.item, "task")] });
+        return ok({
+          data: await taskWork.read(resolved.data.internalId),
+          refs: [itemRef(resolved.data.item, "task")],
+          links: [{ rel: "open", href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
+        });
       },
     },
     "space.search": {
@@ -2415,7 +2427,13 @@ export const spacesCapabilities = defineCapabilities({
             operation: "claim",
             ...{ claimId: input.claimId },
           });
-          return result.ok ? ok({ data: result.data, refs: [itemRef(resolved.data.item, "task")] }) : mutationError(result, context);
+          return result.ok
+            ? ok({
+                data: result.data,
+                refs: [itemRef(resolved.data.item, "task")],
+                links: [{ rel: "open", href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
+              })
+            : mutationError(result, context);
         }),
     },
     "task.release": {
@@ -2441,7 +2459,13 @@ export const spacesCapabilities = defineCapabilities({
             operation: "release",
             ...{ claimId: input.claimId, force: input.force },
           });
-          return result.ok ? ok({ data: result.data, refs: [itemRef(resolved.data.item, "task")] }) : mutationError(result, context);
+          return result.ok
+            ? ok({
+                data: result.data,
+                refs: [itemRef(resolved.data.item, "task")],
+                links: [{ rel: "open", href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
+              })
+            : mutationError(result, context);
         }),
     },
     "task.progress": {
@@ -2467,7 +2491,13 @@ export const spacesCapabilities = defineCapabilities({
             operation: "progress",
             ...{ claimId: input.claimId, content: input.content },
           });
-          return result.ok ? ok({ data: result.data, refs: [itemRef(resolved.data.item, "task")] }) : mutationError(result, context);
+          return result.ok
+            ? ok({
+                data: result.data,
+                refs: [itemRef(resolved.data.item, "task")],
+                links: [{ rel: "open", href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
+              })
+            : mutationError(result, context);
         }),
     },
     "task.checklist.create": {
