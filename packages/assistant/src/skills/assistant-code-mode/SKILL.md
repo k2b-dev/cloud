@@ -47,8 +47,7 @@ First decide which kind it is:
   [example](references/examples.md) and the references it uses, such as
   [Database](references/database.md) or [PDF generation](references/pdf.md).
   Then create it with its first `html` and `steps`, and fix and check again
-  until the check passes; the one-correction limit below is only for small
-  tools.
+  until the check passes.
 
 A small tool in one pass:
 
@@ -58,14 +57,15 @@ A small tool in one pass:
 2. Call `code_create({title, icon, html, steps})` once with the complete app:
    one `index.html` with its script in `<script type="module">` and its CSS in
    `<style>`, plus its `steps.json`.
-3. Call `code_check({id})` once, then `view_image` with the report's
-   `review.prompt` for every path in `review.paths`, all in one turn. Fix only
+3. Call `code_check({id})`, then `view_image` with the report's
+   `review.prompt` for every path in `review.paths`, all in one turn. Fix
    errors and defects that break use, such as a wrong result or a clipped
-   control, not matters of taste, with one `code_write`, then check again.
-   Make at most this one correction: open the app once a check passes.
-4. Call `code_open({id})`; use `code_present({id})` instead when the person
-   asks to see the app in the chat. Then say in one or two sentences what the
-   app does.
+   control, with one `code_write` and check again. Never change a passing app
+   for matters of taste.
+4. As soon as a check passes and its screenshots show no such defect, call
+   `code_open({id})`; use `code_present({id})` instead when the person asks
+   to see the app in the chat. Then say in one or two sentences what the app
+   does.
 
 The single file follows these rules:
 
