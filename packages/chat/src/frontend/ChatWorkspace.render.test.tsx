@@ -24,6 +24,8 @@ const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
   icon: null,
   purpose: null,
   memberCount: 3,
+  unread: 0,
+  read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
   withGuests: false,
   peerDeactivated: false,
   permission: "write",

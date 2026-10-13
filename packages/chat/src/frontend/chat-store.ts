@@ -14,6 +14,10 @@ import {
   ConversationSchema,
   MessagePageSchema,
   MessageSchema,
+  ReadAllOutcomeSchema,
+  ReadUpdateSchema,
+  readStart,
+  UNREAD_CAP,
 } from "../service/contracts";
 
 type Conversation = z.infer<typeof ConversationSchema>;
@@ -23,6 +27,9 @@ type MessagePage = z.infer<typeof MessagePageSchema>;
 type ChangesPage = z.infer<typeof ChangesPageSchema>;
 type Summary = Extract<z.infer<typeof ChatLiveEventSchema>, { type: "summary" }>;
 export type ChatStoreApi = {
+  read(id: string, seq: number): Promise<z.infer<typeof ReadUpdateSchema>>;
+  markUnread(id: string, message?: string): Promise<z.infer<typeof ReadUpdateSchema>>;
+  readAll(confirmed: boolean): Promise<z.infer<typeof ReadAllOutcomeSchema>>;
   conversations(cursor?: string): Promise<ConversationPage>;
   conversation(id: string): Promise<Conversation | null>;
   messages(id: string, query?: { before?: number; after?: number }): Promise<MessagePage | null>;
@@ -30,7 +37,12 @@ export type ChatStoreApi = {
   changes(id: string, afterRev: number): Promise<ChangesPage | "RESYNC_REQUIRED" | null>;
 };
 export type OpenChatSnapshot = { cursor: string; conversation: Conversation; page: MessagePage };
-export type ChatStoreSnapshot = { cursor: string; sidebar: ConversationPage; open?: { conversation: Conversation; page: MessagePage } };
+export type ChatStoreSnapshot = {
+  viewerId: string;
+  cursor: string;
+  sidebar: ConversationPage;
+  open?: { conversation: Conversation; page: MessagePage };
+};
 export type OpenChat = {
   id: string;
   status: "live" | "no-access" | "stopped";
@@ -49,7 +61,24 @@ const parseResponse = async <T>(response: Pick<Response, "status" | "ok" | "json
 };
 export const createChatStoreApi = (): ChatStoreApi => {
   const client = createApiClient<ApiType>({ baseUrl: "/api/chat" });
+  const requiredResponse = async <T>(response: Pick<Response, "status" | "ok" | "json">, schema: z.ZodType<T>) => {
+    const result = await parseResponse(response, schema);
+    if (result === null) throw new Error("Chat request failed (404)");
+    return result;
+  };
   return {
+    read: async (id, seq) =>
+      requiredResponse(
+        await client.conversations[":conversation"].read.$post({ param: { conversation: id }, json: { seq } }),
+        ReadUpdateSchema,
+      ),
+    markUnread: async (id, message) =>
+      requiredResponse(
+        await client.conversations[":conversation"].unread.$post({ param: { conversation: id }, json: { message } }),
+        ReadUpdateSchema,
+      ),
+    readAll: async (confirmed) =>
+      requiredResponse(await client.conversations["read-all"].$post({ json: { confirmed } }), ReadAllOutcomeSchema),
     conversations: async (cursor) => {
       const page = await parseResponse(await client.conversations.$get({ query: { cursor } }), ConversationPageSchema);
       if (!page) throw new Error("Chat request failed (404)");
@@ -92,6 +121,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const listeners = new Set<() => void>();
   // Rows stay in server order: a contiguous prefix of the sidebar, the whole list when `complete`.
   let rows = [...snapshot.sidebar.items];
+  const unreadRev = new Map(rows.map((row) => [row.id, row.rev]));
   let nextCursor = snapshot.sidebar.nextCursor;
   let complete = nextCursor === null;
   let moreSidebar: Promise<void> | null = null;
@@ -126,6 +156,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     chat.subscription?.close();
     chat.subscription = null;
     rows = rows.filter((row) => row.id !== chat.view.id);
+    unreadRev.delete(chat.view.id);
     notify();
   };
   const stopped = () => {
@@ -322,6 +353,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     const page = await api.conversations();
     if (disposed) return;
     rows = [...page.items];
+    unreadRev.clear();
+    for (const row of rows) unreadRev.set(row.id, row.rev);
     nextCursor = page.nextCursor;
     complete = nextCursor === null;
     notify();
@@ -336,13 +369,50 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     else if (complete || rest.length < rows.length) rest.push(row);
     rows = rest;
   };
+  const refetchRow = async (id: string) => {
+    const row = await api.conversation(id);
+    if (disposed) return;
+    if (row === null) {
+      rows = rows.filter((other) => other.id !== id);
+      unreadRev.delete(id);
+      if (current?.view.id === id) noAccess(current);
+    } else {
+      unreadRev.set(id, row.rev);
+      place(row);
+      if (current?.view.id === id) metadata(current, row);
+    }
+    notify();
+  };
+  const applyRead = async (data: z.infer<typeof ReadUpdateSchema>) => {
+    const known = rows.find((row) => row.id === data.conversationId);
+    if (!known) return;
+    if (data.asOfRev < (unreadRev.get(known.id) ?? known.rev)) return refetchRow(known.id);
+    const read = { lastReadSeq: data.lastReadSeq, unreadFromSeq: data.unreadFromSeq, joinedSeq: data.joinedSeq };
+    rows = rows.map((row) => (row.id === known.id ? { ...row, read, unread: data.unread } : row));
+    unreadRev.set(known.id, data.asOfRev);
+    if (current?.view.id === known.id && current.view.conversation)
+      current.view = { ...current.view, conversation: { ...current.view.conversation, read, unread: data.unread } };
+    notify();
+  };
   const applySummary = async (summary: Summary) => {
-    const known = rows.find((row) => row.id === summary.conversationId);
+    let known = rows.find((row) => row.id === summary.conversationId);
+    if (known && summary.rev > (unreadRev.get(known.id) ?? known.rev)) {
+      const start = readStart(known.read);
+      if (summary.kind === "text" && summary.author.id !== snapshot.viewerId && start !== null && summary.seq > start) {
+        const counted = { ...known, unread: Math.min(UNREAD_CAP, known.unread + 1) };
+        rows = rows.map((row) => (row.id === counted.id ? counted : row));
+        known = counted;
+      }
+      // Slice 2.3 adds the decrement/refetch path at the cap with deletes.
+      unreadRev.set(known.id, summary.rev);
+    }
     if (known && summary.rev <= known.rev) return;
     if (!known || summary.kind === "system") {
       const row = await api.conversation(summary.conversationId);
       if (disposed) return;
+      if (row !== null) unreadRev.set(row.id, row.rev);
       if (row === null) {
+        unreadRev.delete(summary.conversationId);
         rows = rows.filter((other) => other.id !== summary.conversationId);
         if (current?.view.id === summary.conversationId) noAccess(current);
       } else if (known && row.lastActivityAt === known.lastActivityAt) rows = rows.map((other) => (other.id === row.id ? row : other));
@@ -382,6 +452,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         apply: (events) =>
           sidebar(async () => {
             if (events.some(({ data }) => data.type === "membership")) await reloadSidebar();
+            for (const { data } of events) if (data.type === "read") await applyRead(data);
           }),
         resync: () => sidebar(reloadSidebar),
         unavailable: stopped,
@@ -390,6 +461,10 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   );
   if (snapshot.open) open({ ...snapshot.open, cursor: snapshot.cursor });
   return {
+    // Only the FIFO personal live channel applies write results; HTTP responses never change local state.
+    markRead: (id: string, seq: number) => api.read(id, seq),
+    markUnread: (id: string, message?: string) => api.markUnread(id, message),
+    readAll: (confirmed: boolean) => api.readAll(confirmed),
     get sidebar(): readonly Conversation[] {
       return rows;
     },
@@ -408,6 +483,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         for (const row of page.items)
           if (!present.has(row.id)) {
             appended.push(row);
+            unreadRev.set(row.id, row.rev);
             present.add(row.id);
           }
         rows = appended;

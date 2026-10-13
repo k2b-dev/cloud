@@ -94,6 +94,11 @@ export type VirtualFeedProps<T> = {
   announce?: (added: readonly T[]) => string | undefined;
   /** Called when the reader reaches or leaves the end. */
   onEndChange?: (atEnd: boolean) => void;
+  /**
+   * Called when the items in view change: the first and last item whose whole height is in view. An item taller
+   * than the view counts while it covers the view. `null` while no item is in view.
+   */
+  onVisibleChange?: (visible: { first: T; last: T } | null) => void;
   /** Receives the controller once the feed is mounted. */
   controller?: (controller: VirtualFeedController) => void;
   /** Shown while `items` is empty. */
@@ -281,6 +286,29 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     return next;
   };
 
+  let visibleKeys: { first: string; last: string } | null | undefined;
+  const reportVisible = () => {
+    if (!props.onVisibleChange) return;
+    const top = logicalTop();
+    const bottom = top + viewport.clientHeight;
+    let first = -1;
+    let last = -1;
+    if (bottom > top && hi > lo)
+      for (let index = indexAt(top); index < hi && offsetOf(index) < bottom; index++) {
+        const from = offsetOf(index);
+        const to = offsetOf(index + 1);
+        // Rounded scroll positions may cut a fully shown item by a fraction of a pixel.
+        if ((from >= top - END_TOLERANCE && to <= bottom + END_TOLERANCE) || (from <= top && to >= bottom)) {
+          if (first < 0) first = index;
+          last = index;
+        }
+      }
+    const next = first < 0 ? null : { first: keys[first]!, last: keys[last]! };
+    if (visibleKeys !== undefined && next?.first === visibleKeys?.first && next?.last === visibleKeys?.last) return;
+    visibleKeys = next;
+    props.onVisibleChange(first < 0 ? null : { first: list[first]!, last: list[last]! });
+  };
+
   const updateRange = () => {
     const top = logicalTop();
     const height = viewport.clientHeight;
@@ -296,6 +324,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     }
     renderRows(indices);
     setTabStop(focusIndex >= lo && focusIndex < hi ? focusIndex : hi > lo ? indexAt(top + height - 1) : -1);
+    if (!restoring) reportVisible();
   };
 
   const measure = (measured: ReadonlyArray<readonly [HTMLElement, number]>) => {
@@ -446,6 +475,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       restoring = false;
     }
     checkEdges();
+    reportVisible();
   };
 
   /**

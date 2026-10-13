@@ -57,6 +57,7 @@ import {
 } from "./contracts";
 import { chatLive } from "./live";
 import { appendMessage, deletedPeople, personSnapshots } from "./message-store";
+import { projectRead, type ReadProjection, unreadQuery } from "./read-state";
 import { deriveTitle, TITLE_NAME_LIMIT } from "./titles";
 
 const creationLimit = ratelimit({ id: "chat.conversation.create", limit: CREATE_LIMIT, windowSecs: CREATE_WINDOW_SECONDS });
@@ -326,6 +327,7 @@ const project = (
   title: string,
   lastMessage: z.infer<typeof ConversationSchema>["lastMessage"],
   flags: { withGuests: boolean; peerDeactivated: boolean },
+  state: Pick<z.infer<typeof ConversationSchema>, "read" | "unread">,
 ): z.infer<typeof ConversationSchema> => ({
   id: row.short_id,
   name: row.name,
@@ -333,6 +335,7 @@ const project = (
   purpose: row.purpose,
   memberCount: row.member_count,
   ...flags,
+  ...state,
   rev: Number(row.rev),
   permission,
   title,
@@ -444,6 +447,7 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
           names.get(row.id)!,
           latest.get(row.id) ?? null,
           (await lifecycleFlags([row], input, db)).get(row.id)!,
+          projectRead((await db<ReadProjection[]>`${unreadQuery(db, input.accessSubject, [row.id])}`)[0]!),
         ),
       });
     });
@@ -455,50 +459,70 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
   }
 };
 
-const get = async (input: ChatContext & { conversationId: string }, db: typeof sql = sql) => {
+const getInSnapshot = async (input: ChatContext & { conversationId: string }, db: typeof sql) => {
   const result = await requireConversation({ ...input, required: "read" }, db);
   if (!result.ok) return result;
   const row = result.data;
   const names = await titles([row], input, db);
   const latest = await lastMessages([row], input, db);
   return ok(
-    project(row, row.permission, names.get(row.id)!, latest.get(row.id) ?? null, (await lifecycleFlags([row], input, db)).get(row.id)!),
+    project(
+      row,
+      row.permission,
+      names.get(row.id)!,
+      latest.get(row.id) ?? null,
+      (await lifecycleFlags([row], input, db)).get(row.id)!,
+      projectRead((await db<ReadProjection[]>`${unreadQuery(db, input.accessSubject, [row.id])}`)[0]!),
+    ),
   );
 };
-const list = async (input: ChatContext & { query?: unknown }) => {
-  const parsed = parse(ConversationQuerySchema, input.query ?? {}, input);
-  if (!parsed.ok) return parsed;
-  const bound = boundConversation(input.actor, input.locale);
-  if (!bound.ok) return fail(err.forbidden(messages(input).forbidden));
-  if (capPermission("read", input.actor) === "none") return ok({ items: [], nextCursor: null });
-  const cursor = parsed.data.cursor;
-  const rows = await sql<(ConversationRow & { permission_rank: number; cursor_at: string })[]>`
+const get = (input: ChatContext & { conversationId: string }, db?: typeof sql) =>
+  db ? getInSnapshot(input, db) : sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", (tx) => getInSnapshot(input, tx));
+const list = (input: ChatContext & { query?: unknown }) =>
+  sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
+    const parsed = parse(ConversationQuerySchema, input.query ?? {}, input);
+    if (!parsed.ok) return parsed;
+    const bound = boundConversation(input.actor, input.locale);
+    if (!bound.ok) return fail(err.forbidden(messages(input).forbidden));
+    if (capPermission("read", input.actor) === "none") return ok({ items: [], nextCursor: null });
+    const cursor = parsed.data.cursor;
+    const rows = await db<(ConversationRow & { permission_rank: number; cursor_at: string })[]>`
     SELECT c.*, MAX(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END)::int AS permission_rank,
       to_char(c.last_activity_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
     FROM chat.conversations c JOIN chat.conversation_access ca ON ca.conversation_id = c.id JOIN auth.access a ON a.id = ca.access_id
-    WHERE ${readableMemberCondition(input.accessSubject, bound.data)}
-      AND ${cursor ? sql`(c.last_activity_at, c.short_id) < (${cursor.at}::timestamptz, ${cursor.id})` : sql`true`}
+    WHERE ${readableMemberCondition(input.accessSubject, bound.data, db)}
+      AND ${cursor ? db`(c.last_activity_at, c.short_id) < (${cursor.at}::timestamptz, ${cursor.id})` : db`true`}
     GROUP BY c.id ORDER BY c.last_activity_at DESC, c.short_id DESC LIMIT ${CONVERSATION_PAGE_SIZE + 1}
   `;
-  const page = rows.slice(0, CONVERSATION_PAGE_SIZE);
-  const names = await titles(page, input, sql);
-  const latest = await lastMessages(page, input, sql);
-  const flags = await lifecycleFlags(page, input, sql);
-  const items = page.map((row) =>
-    project(
-      row,
-      z.enum(["read", "write", "admin"]).parse(capPermission(permissionFromRank(row.permission_rank), input.actor)),
-      names.get(row.id)!,
-      latest.get(row.id) ?? null,
-      flags.get(row.id)!,
-    ),
-  );
-  const last = page.at(-1);
-  return ok({
-    items,
-    nextCursor: rows.length > CONVERSATION_PAGE_SIZE && last ? JSON.stringify({ at: last.cursor_at, id: last.short_id }) : null,
+    const page = rows.slice(0, CONVERSATION_PAGE_SIZE);
+    const names = await titles(page, input, db);
+    const latest = await lastMessages(page, input, db);
+    const flags = await lifecycleFlags(page, input, db);
+    const states = new Map(
+      (
+        await db<ReadProjection[]>`${unreadQuery(
+          db,
+          input.accessSubject,
+          page.map((row) => row.id),
+        )}`
+      ).map((row) => [row.conversation_id, projectRead(row)]),
+    );
+    const items = page.map((row) =>
+      project(
+        row,
+        z.enum(["read", "write", "admin"]).parse(capPermission(permissionFromRank(row.permission_rank), input.actor)),
+        names.get(row.id)!,
+        latest.get(row.id) ?? null,
+        flags.get(row.id)!,
+        states.get(row.id)!,
+      ),
+    );
+    const last = page.at(-1);
+    return ok({
+      items,
+      nextCursor: rows.length > CONVERSATION_PAGE_SIZE && last ? JSON.stringify({ at: last.cursor_at, id: last.short_id }) : null,
+    });
   });
-};
 const update = async (input: ChatContext & { conversationId: string; input: unknown }) => {
   const parsed = parse(UpdateConversationSchema, input.input, input);
   if (!parsed.ok) return parsed;
@@ -531,6 +555,7 @@ const update = async (input: ChatContext & { conversationId: string; input: unkn
         names.get(before.id)!,
         latest.get(row.id) ?? null,
         (await lifecycleFlags([row], input, db)).get(row.id)!,
+        projectRead((await db<ReadProjection[]>`${unreadQuery(db, input.accessSubject, [row.id])}`)[0]!),
       ),
     );
   });

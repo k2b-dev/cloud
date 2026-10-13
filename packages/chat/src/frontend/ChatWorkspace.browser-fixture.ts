@@ -163,6 +163,8 @@ export const startChatHarness = async () => {
         purpose: null,
         title,
         memberCount: options.members.length,
+        unread: 0,
+        read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
         withGuests: false,
         peerDeactivated: false,
         rev: 0,

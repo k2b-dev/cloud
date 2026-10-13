@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { LiveConnection, LiveSubscriptionHandlers } from "@k2b/cloud/browser/live";
-import { ConversationSchema, MessageSchema } from "../service/contracts";
+import { ConversationSchema, MessageSchema, readStart } from "../service/contracts";
 import { chatLiveUpdates } from "../service/live-updates";
 import { type ChatStoreApi, createChatStore, createChatStoreApi } from "./chat-store";
 
@@ -11,6 +11,8 @@ const conversation = ConversationSchema.parse({
   icon: null,
   purpose: null,
   memberCount: 2,
+  unread: 0,
+  read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
   withGuests: false,
   peerDeactivated: false,
   lastMessage: null,
@@ -69,6 +71,9 @@ class ManualConnection implements LiveConnection {
 const fixture = (overrides: Partial<ChatStoreApi> = {}) => {
   const connection = new ManualConnection();
   const api: ChatStoreApi = {
+    read: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: null, joinedSeq: 0, unread: 0, asOfRev: 1 }),
+    markUnread: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: 1, joinedSeq: 0, unread: 0, asOfRev: 1 }),
+    readAll: async () => ({ outcome: "done", marked: 0, more: false }),
     snapshot: async () => ({ cursor: "snapshot", conversation, page: page(1), focus: null }),
     conversations: async () => ({ items: [conversation], nextCursor: null }),
     conversation: async () => conversation,
@@ -77,7 +82,12 @@ const fixture = (overrides: Partial<ChatStoreApi> = {}) => {
     ...overrides,
   };
   const store = createChatStore(
-    { cursor: "cursor", sidebar: { items: [conversation], nextCursor: null }, open: { conversation, page: page(1) } },
+    {
+      viewerId: "22222222-2222-4222-8222-222222222222",
+      cursor: "cursor",
+      sidebar: { items: [conversation], nextCursor: null },
+      open: { conversation, page: page(1) },
+    },
     { api, connection },
   );
   return { api, connection, store };
@@ -308,6 +318,9 @@ test("a system event already in the SSR page still refreshes older SSR metadata"
     system: { code: "details_changed", params: { name: "Renamed" } },
   });
   const api: ChatStoreApi = {
+    read: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: null, joinedSeq: 0, unread: 0, asOfRev: 1 }),
+    markUnread: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: 1, joinedSeq: 0, unread: 0, asOfRev: 1 }),
+    readAll: async () => ({ outcome: "done", marked: 0, more: false }),
     snapshot: async () => ({ cursor: "snapshot", conversation, page: page(1), focus: null }),
     conversations: async () => ({ items: [conversation], nextCursor: null }),
     conversation: async () => ({ ...conversation, rev: 2, name: "Renamed", title: "Renamed" }),
@@ -316,6 +329,7 @@ test("a system event already in the SSR page still refreshes older SSR metadata"
   };
   const store = createChatStore(
     {
+      viewerId: "22222222-2222-4222-8222-222222222222",
       cursor: "before",
       sidebar: { items: [conversation], nextCursor: null },
       open: { conversation, page: { ...page(2), items: [{ ...system, systemText: null }] } },
@@ -331,9 +345,23 @@ test("a system event already in the SSR page still refreshes older SSR metadata"
 const storeAt = (rev: number, api: Partial<ChatStoreApi>, sidebar = { items: [conversation], nextCursor: null as string | null }) => {
   const connection = new ManualConnection();
   const store = createChatStore(
-    { cursor: "before", sidebar, open: { conversation: { ...conversation, rev }, page: page(rev) } },
+    {
+      viewerId: "22222222-2222-4222-8222-222222222222",
+      cursor: "before",
+      sidebar,
+      open: { conversation: { ...conversation, rev }, page: page(rev) },
+    },
     {
       api: {
+        read: async () => {
+          throw new Error("Unused write");
+        },
+        markUnread: async () => {
+          throw new Error("Unused write");
+        },
+        readAll: async () => {
+          throw new Error("Unused write");
+        },
         snapshot: async () => ({ cursor: "snapshot", conversation, page: page(1), focus: null }),
         conversations: async () => sidebar,
         conversation: async () => conversation,
@@ -763,4 +791,84 @@ test("loadLatest retains newer metadata applied while its conversation read is i
   expect(store.openConversation?.conversation).toMatchObject({ rev: 3, title: "Renamed" });
   expect(store.openConversation?.messages.map((row) => row.seq)).toEqual([2, 3]);
   store.dispose();
+});
+
+test("summary unread counts exclude own, system, no-row and messages at or before start, and cap at 100", async () => {
+  const viewerId = "22222222-2222-4222-8222-222222222222";
+  for (const scenario of ["other", "own", "system", "no-row", "before-start", "cap"] as const) {
+    const initial = {
+      ...conversation,
+      unread: scenario === "cap" ? 100 : 0,
+      read: scenario === "no-row" ? null : { lastReadSeq: scenario === "before-start" ? 10 : 1, unreadFromSeq: null, joinedSeq: 0 },
+    };
+    const { store, connection } = storeAt(
+      1,
+      { conversation: async () => ({ ...initial, rev: 2 }) },
+      { items: [initial], nextCursor: null },
+    );
+    const sent = {
+      ...message(2),
+      ...(scenario === "own" ? { author: { type: "user" as const, id: viewerId, name: "Me" } } : {}),
+      ...(scenario === "system"
+        ? { kind: "system" as const, body: null, system: { code: "conversation_created" as const, params: {} } }
+        : {}),
+    };
+    const summary = chatLiveUpdates(initial.id, sent, "text", []).find((row) => row.data.type === "summary")!.data;
+    await connection.get("list").apply(summary);
+    expect(store.sidebar[0]?.unread).toBe(scenario === "cap" ? 100 : scenario === "other" ? 1 : 0);
+    store.dispose();
+  }
+});
+
+test("read updates apply personally and stale counts refetch just that row", async () => {
+  let calls = 0;
+  const { store, connection } = fixture({
+    conversation: async () => {
+      calls++;
+      return { ...conversation, rev: 4, unread: 1, read: { lastReadSeq: 3, unreadFromSeq: null, joinedSeq: 0 } };
+    },
+  });
+  const read = { type: "read", conversationId: conversation.id, lastReadSeq: 2, unreadFromSeq: null, joinedSeq: 0, unread: 0, asOfRev: 2 };
+  await connection.get("me").apply(read);
+  expect(store.sidebar[0]?.read?.lastReadSeq).toBe(2);
+  expect(store.openConversation?.conversation?.read?.lastReadSeq).toBe(2);
+  await connection.get("list").apply(chatLiveUpdates(conversation.id, message(4), "text", [])[1]!.data);
+  await connection.get("me").apply(read);
+  expect(calls).toBe(1);
+  expect(store.sidebar[0]).toMatchObject({ unread: 1, read: { lastReadSeq: 3 } });
+  store.dispose();
+});
+
+test("unknown personal rows are ignored and a stale read refetch can remove access", async () => {
+  let calls = 0;
+  const { store, connection } = fixture({
+    conversation: async () => {
+      calls++;
+      return null;
+    },
+  });
+  const read = { type: "read", conversationId: "zzzzzz", lastReadSeq: 1, unreadFromSeq: null, joinedSeq: 0, unread: 0, asOfRev: 0 };
+  await connection.get("me").apply(read);
+  expect(calls).toBe(0);
+  await connection.get("me").apply({ ...read, conversationId: conversation.id });
+  expect(calls).toBe(1);
+  expect(store.sidebar).toEqual([]);
+  store.dispose();
+});
+
+test("read actions return HTTP results without applying them ahead of the personal channel", async () => {
+  const { store } = fixture();
+  const before = store.sidebar[0];
+  expect(await store.markRead(conversation.id, 1)).toMatchObject({ lastReadSeq: 1 });
+  expect(await store.markUnread(conversation.id)).toMatchObject({ unreadFromSeq: 1 });
+  expect(await store.readAll(true)).toEqual({ outcome: "done", marked: 0, more: false });
+  expect(store.sidebar[0]).toBe(before);
+  store.dispose();
+});
+
+test("readStart is shared by the store and UI, including absent rows and a personal unread mark", () => {
+  expect(readStart(null)).toBeNull();
+  expect(readStart({ joinedSeq: 10, lastReadSeq: null, unreadFromSeq: null })).toBe(10);
+  expect(readStart({ joinedSeq: 10, lastReadSeq: 20, unreadFromSeq: null })).toBe(20);
+  expect(readStart({ joinedSeq: 10, lastReadSeq: 20, unreadFromSeq: 5 })).toBe(4);
 });

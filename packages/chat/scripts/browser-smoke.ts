@@ -53,7 +53,9 @@ const TIMEOUT = Number(options["timeout-ms"]);
 const relayLiveSocket = async (context: BrowserContext, sessionToken: string) => {
   if (APP_ORIGIN === new URL(BASE_URL).origin) return;
   await context.routeWebSocket(/\/api\/chat\/live$/, (route) => {
-    const upstream = new WebSocket(route.url(), { headers: { Origin: APP_ORIGIN, Cookie: `session_token=${sessionToken}` } });
+    const socketOptions = { headers: { Origin: APP_ORIGIN, Cookie: `session_token=${sessionToken}` } } satisfies Bun.WebSocketOptions;
+    // @ts-expect-error Bun supports headers; lib.dom omits its constructor overload.
+    const upstream = new WebSocket(route.url(), socketOptions);
     const waiting: string[] = [];
     upstream.onopen = () => {
       for (const message of waiting.splice(0)) upstream.send(message);
@@ -273,7 +275,7 @@ const runSmoke = async (fixture: Awaited<ReturnType<typeof createFixture>>) => {
       : await webkit.launch({ headless: !options.headed, timeout: TIMEOUT });
     try {
       for (const theme of ["light", "dark"]) {
-        // Each round sends seven messages into the same chat; the next one waits out the chat's send window.
+        // Each round sends eight messages into the same chat; the next one waits out the chat's send window.
         if (theme !== "light") await Bun.sleep(SEND_CONVERSATION_WINDOW_SECONDS * 1000);
         const admin = await desktop.newContext({
           baseURL: BASE_URL,
@@ -349,6 +351,52 @@ const runSmoke = async (fixture: Awaited<ReturnType<typeof createFixture>>) => {
               });
               if (shifts.sum !== 0) fail(`${theme} layout-shift sum was ${shifts.sum} at ${page.url()}`);
               if (!shifts.supported) console.log("WebKit has no Layout Instability API; header and composer geometry checked instead.");
+            }
+            // Another context of the first person stays on the list while device 1 reads.
+            const secondDevice = await desktop.newContext({
+              baseURL: BASE_URL,
+              viewport: { width: 1440, height: 900 },
+              locale: "en",
+              timezoneId: "UTC",
+            });
+            try {
+              await addCookies(secondDevice, fixture.adminToken, theme);
+              await relayLiveSocket(secondDevice, fixture.adminToken);
+              const listPage = await secondDevice.newPage();
+              listPage.setDefaultTimeout(TIMEOUT);
+              listPage.on("pageerror", (error) => errors.push(`second device: ${error.message}`));
+              await adminPage
+                .getByRole("link", { name: /unread/ })
+                .and(adminPage.locator(`a[href="/app/chat/c/${fixture.chatId}"]`))
+                .waitFor({ state: "hidden" });
+              await adminPage.goto("/app/chat", { waitUntil: "load" });
+              await listPage.goto("/app/chat", { waitUntil: "load" });
+              const chatLink = listPage.getByRole("link").and(listPage.locator(`a[href="/app/chat/c/${fixture.chatId}"]`));
+              await chatLink.waitFor();
+              await sendMessage(personPage, `${theme} another device unread`, true);
+              await listPage
+                .getByRole("link", { name: /, 1 unread$/ })
+                .and(chatLink)
+                .waitFor();
+              await adminPage.bringToFront();
+              const reading = adminPage.waitForResponse(
+                (response) =>
+                  response.request().method() === "POST" &&
+                  new URL(response.url()).pathname === `/api/chat/conversations/${fixture.chatId}/read`,
+              );
+              await adminPage
+                .getByRole("link")
+                .and(adminPage.locator(`a[href="/app/chat/c/${fixture.chatId}"]`))
+                .click();
+              if ((await reading).status() !== 200) fail("opening the chat did not report visible messages read");
+              await listPage
+                .getByRole("link", { name: /unread/ })
+                .and(chatLink)
+                .waitFor({ state: "hidden" });
+              await chatLink.waitFor();
+              ok(`${theme}: device 2's unread count appears and clears after device 1 reads, without reload`);
+            } finally {
+              await secondDevice.close();
             }
             if (errors.length) fail(`browser errors:\n${errors.join("\n")}`);
             ok(`${theme}: both people see all seven messages; phone header and composer stay in place; observed layout-shift sums are 0`);

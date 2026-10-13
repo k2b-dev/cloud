@@ -231,6 +231,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
   onMount(() => {
     const live = createChatStore({
+      viewerId: props.viewerId,
       cursor: props.cursor,
       sidebar: props.sidebar,
       ...(props.open ? { open: { conversation: props.open.conversation, page: props.open.page } } : {}),

@@ -28,6 +28,7 @@ import {
   CreateConversationSchema,
   CreateOutcomeSchema,
   LeaveSchema,
+  MarkUnreadSchema,
   MemberPageSchema,
   MemberParamSchema,
   MemberQuerySchema,
@@ -37,6 +38,10 @@ import {
   MessageViewSchema,
   PeoplePageSchema,
   PeopleQuerySchema,
+  ReadAllOutcomeSchema,
+  ReadAllSchema,
+  ReadSchema,
+  ReadUpdateSchema,
   SendMessageSchema,
   SnapshotQuerySchema,
   SuccessSchema,
@@ -115,6 +120,34 @@ const app = new Hono<AuthContext>()
       const cursor = c.req.valid("query").cursor;
       return respond(c, chatService.conversations.list({ ...context(c), query: cursor ? { cursor: JSON.stringify(cursor) } : {} }));
     },
+  )
+  .post(
+    "/conversations/read-all",
+    description("Mark your unread chats read", ReadAllOutcomeSchema),
+    validator("json", ReadAllSchema, invalidInput),
+    async (c) => respond(c, chatService.readState.readAll({ ...context(c), input: c.req.valid("json") })),
+  )
+  .post(
+    "/conversations/:conversation/read",
+    description("Advance your read position", ReadUpdateSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", ReadSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.readState.read({ ...context(c), conversationId: c.req.valid("param").conversation, input: c.req.valid("json") }),
+      ),
+  )
+  .post(
+    "/conversations/:conversation/unread",
+    description("Mark a chat unread for yourself", ReadUpdateSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", MarkUnreadSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.readState.markUnread({ ...context(c), conversationId: c.req.valid("param").conversation, input: c.req.valid("json") }),
+      ),
   )
   .get(
     "/conversations/:conversation",
