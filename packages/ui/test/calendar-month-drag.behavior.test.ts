@@ -234,6 +234,40 @@ describe("@k2b/ui Calendar month selection and bars", () => {
     });
   }
 
+  test("a Next while the glide waits for more weeks goes on from the month it waits for", async () => {
+    const dom = createDomTestHarness();
+    const { default: Calendar } = await import("../src/content/Calendar");
+    delegateEvents(["click"], dom.document);
+    installMonthLayout(dom);
+    const changes: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Calendar, {
+          date: "2026-10-09",
+          view: "month",
+          events: [],
+          timeZone: "UTC",
+          range: { from: "2026-08-31", to: "2027-01-04" },
+          onDateChange: (date: Date) => changes.push(key(date)),
+          onLoadLater: () => {},
+        }),
+      dom.root,
+    );
+    try {
+      const next = () => dom.root.querySelector<HTMLElement>('[aria-label="Next"]')!;
+      next().click();
+      next().click();
+      next().click();
+      // Longer than quick repeated steps add up: January still waits for its weeks, so the next step is February.
+      await new Promise((done) => dom.window.setTimeout(done, 1300));
+      next().click();
+      expect(changes).toEqual(["2027-02-01"]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("a glide still aligns its target month's first week when more weeks arrive after 1.6 seconds", async () => {
     const dom = createDomTestHarness();
     const { default: Calendar } = await import("../src/content/Calendar");

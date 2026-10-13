@@ -1637,7 +1637,10 @@ const MonthView = (props: {
     // Instant positioning may finish during positionMonth; queue afterwards so rapid clicks still accumulate.
     setQueuedMonth(target);
     window.clearTimeout(queueTimer);
-    queueTimer = window.setTimeout(() => setQueuedMonth(null), 1200);
+    // A glide that waits for more weeks keeps its month queued until it arrives or the reader scrolls.
+    queueTimer = window.setTimeout(() => {
+      if (glideTarget?.expires !== Number.POSITIVE_INFINITY) setQueuedMonth(null);
+    }, 1200);
     return true;
   };
   const goToday = () => {
