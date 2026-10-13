@@ -149,8 +149,9 @@ month in focus and leaves once the view rests; phones leave it out.
 
 - The previous and next buttons, J and K, and Page Up and Page Down move one
   month and put the week with its 1st on top; quick repeated steps add up.
-- Today goes to today's month the same way and lets today's number pulse once.
-  With reduced motion every move is instant and nothing pulses.
+- Today goes to today's month the same way, scrolls on when today lies below
+  the visible rows, and lets today's number pulse once. With reduced motion
+  every move is instant and nothing pulses.
 - Go to shows the month of its day, and that day when it lies further down.
 - The arrow keys scroll their day into view, also across months. The
   selection, the focused day, and an open popover stay while the view scrolls,
@@ -161,10 +162,15 @@ month in focus and leaves once the view rests; phones leave it out.
 Near the first or the last loaded week, scrolling calls `onLoadEarlier` or
 `onLoadLater` once for each range; extend `range` and `events` there, and keep
 the shown `events` until the new ones arrive. Weeks that arrive above the view
-do not move what the reader sees. `onVisibleDateChange(date, last, focus)`
-reports the first and the last day of the weeks more than half in view, and
-`focus`: the first selected day in the month in focus, else today when it lies
-in that month, else that month's 1st. It reports once the view opened and
+do not move what the reader sees. A step to a month past the loaded weeks
+asks for them the same way and moves there once they arrive; the reader's own
+scrolling ends the wait. Return a promise from `onLoadEarlier` or
+`onLoadLater` to mark an end: when it settles without moving that end of
+`range`, steps past it go through `getDateHref` or `onDateChange`, as they do
+without these callbacks. `onVisibleDateChange(date, last, focus)` reports the
+first and the last day of the weeks more than half in view, and `focus`: the
+first selected day in the month in focus, else `date` when it lies in that
+month, else today when it lies there, else that month's 1st. It reports once the view opened and
 whenever one of them changed, for example to keep `focus` in the URL or to
 count what is in view. A `date` that names the reported `focus` keeps the
 view in place; another `date` shows its month as soon as `range` covers it.

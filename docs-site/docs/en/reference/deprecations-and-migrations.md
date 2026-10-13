@@ -10,6 +10,17 @@ updated: 2026-10-13
 
 # Deprecations and migrations
 
+## `@k2b/ui` Calendar month reads `range`
+
+The `Calendar` month view now reads `range`. With `range`, the month scrolls
+through the weeks of that range, names the month in the middle, and calls
+`onLoadEarlier` and `onLoadLater` near its ends. Before, only the day and week
+views with `dayHours` read `range`, and the month always paged. A host that
+passes `range` in every view gets the scrolling month after the upgrade. To
+keep the paged month, pass `range` only in the day and week views, for example
+`range={view === "day" || view === "week" ? range : undefined}`. See
+[Calendar](/en/ui/surfaces/calendar).
+
 ## Spaces scrolling calendars load days in blocks
 
 The Spaces day and week views load days a week at a time. Month now scrolls

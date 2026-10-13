@@ -208,14 +208,23 @@ export type CalendarProps<V extends string = never> = {
   dayHours?: readonly [start: number, end: number];
   /** Loaded days of the continuous month view and the day/week views with `dayHours`, with an exclusive end. */
   range?: CalendarRange;
-  /** Called once when the reader nears the first loaded day, again once `range.from` moved. */
+  /**
+   * Called once when the reader nears the first loaded day, again once `range.from` moved.
+   * May return a promise that settles once the range has grown; when it settles without moving that end, the
+   * continuous month treats the end as reached, and Next/Previous past it go through the host's navigation.
+   */
   onLoadEarlier?: () => unknown;
-  /** Called once when the reader nears the last loaded day, again once `range.to` moved. */
+  /**
+   * Called once when the reader nears the last loaded day, again once `range.to` moved.
+   * May return a promise that settles once the range has grown; when it settles without moving that end, the
+   * continuous month treats the end as reached, and Next/Previous past it go through the host's navigation.
+   */
   onLoadLater?: () => unknown;
   /**
    * Scrolling views: the first and last visible day, and the focus date, after positioning and when they change.
    * Day/week views use their first day as focus. Continuous month uses the first selected day inside its focus month,
-   * else today when in that month, else its first. Month rows count as visible when more than half is on screen.
+   * else the host's `date` when in that month, else today when in that month, else its first. Month rows count as
+   * visible when more than half is on screen.
    */
   onVisibleDateChange?: (date: Date, last: Date, focus: Date) => void;
   visibleStartHour?: number;
@@ -1329,6 +1338,8 @@ const MonthView = (props: {
   labels: Required<CalendarLabels>;
   /** The first selected day, for the view switcher; `null` without a selection. */
   onFocusDay?: (date: Date | null) => void;
+  /** The host's navigation, for a step past an end of `range` that the host has reached. */
+  goToDate?: (date: Date) => void;
   /** Receives what the calendar's controller asks of the month view. */
   register?: (handle: MonthHandle | null) => void;
 }): JSX.Element => {
@@ -1424,18 +1435,22 @@ const MonthView = (props: {
   /** The month that quick repeated steps head for; the next step and the arrows' links go on from it. */
   const [queuedMonth, setQueuedMonth] = createSignal<string | null>(null);
   let pendingTarget: string | null = null;
+  let pendingOrigin: "mount" | "host" | -1 | 1 | null = null;
   let glideTarget: { week: string; offset: number; expires: number } | null = null;
   let pulseOnArrival = false;
   let reported = "";
   let reportedFocus = "";
   let askedEarlier = "";
   let askedLater = "";
+  let exhaustedEarlier = "";
+  let exhaustedLater = "";
 
   const scrollFocusDay = createMemo(() => {
     const first = focusMonthKey();
     const range = selection();
     const selected = range && range.last >= first ? (range.first > first ? range.first : first) : null;
     if (selected?.slice(0, 7) === first.slice(0, 7)) return selected;
+    if (hostKey().slice(0, 7) === first.slice(0, 7)) return hostKey();
     return todayKey().slice(0, 7) === first.slice(0, 7) ? todayKey() : first;
   });
   const visibleRange = createMemo(() => {
@@ -1505,16 +1520,52 @@ const MonthView = (props: {
     setViewHeight(Math.max(0, scroller.clientHeight - (weekdayElement?.getBoundingClientRect().height ?? 0)));
   };
   const loadMore = (edge: "earlier" | "later") => {
-    if (!ready || (edge === "earlier" && glideTarget)) return;
+    if (!ready) return;
     const range = loadedRange();
-    if (edge === "earlier" && props.owner.onLoadEarlier && askedEarlier !== range.first) {
-      askedEarlier = range.first;
-      void props.owner.onLoadEarlier();
+    const asked = edge === "earlier" ? range.first : range.to;
+    const loader = edge === "earlier" ? props.owner.onLoadEarlier : props.owner.onLoadLater;
+    if (
+      !loader ||
+      (edge === "earlier" ? askedEarlier === asked || exhaustedEarlier === asked : askedLater === asked || exhaustedLater === asked)
+    )
+      return;
+    if (edge === "earlier") askedEarlier = asked;
+    else askedLater = asked;
+    const result = loader();
+    if (
+      result !== null &&
+      (typeof result === "object" || typeof result === "function") &&
+      "then" in result &&
+      typeof result.then === "function"
+    ) {
+      const settled = () => {
+        if (!ready || (edge === "earlier" ? loadedRange().first : loadedRange().to) !== asked) return;
+        if (edge === "earlier") exhaustedEarlier = asked;
+        else exhaustedLater = asked;
+        const target = pendingOrigin === (edge === "earlier" ? -1 : 1) ? pendingTarget : null;
+        if (target) {
+          pendingTarget = null;
+          pendingOrigin = null;
+          setQueuedMonth(null);
+          window.clearTimeout(queueTimer);
+        }
+        if (edge === "later" && glideTarget?.expires === Number.POSITIVE_INFINITY) {
+          glideTarget = null;
+          pulseOnArrival = false;
+          setQueuedMonth(null);
+          for (const timer of [queueTimer, glideTimer, arrivalTimer]) window.clearTimeout(timer);
+          readScroll();
+        }
+        if (target) props.goToDate?.(parseKey(target));
+      };
+      void Promise.resolve(result).then(settled, settled);
     }
-    if (edge === "later" && props.owner.onLoadLater && askedLater !== range.to) {
-      askedLater = range.to;
-      void props.owner.onLoadLater();
-    }
+  };
+  /** Asks for more weeks near either end; weeks inserted above a running glide would move its way, so it waits. */
+  const loadNearEdges = () => {
+    if (!scroller) return;
+    if (!glideTarget && scroller.scrollTop < MONTH_ROWS_IN_VIEW * rowHeight()) loadMore("earlier");
+    if (scroller.scrollTop + viewHeight() > (trackWeeks().length - MONTH_ROWS_IN_VIEW * 2) * rowHeight()) loadMore("later");
   };
   const reportVisible = () => {
     if (!ready) return;
@@ -1564,18 +1615,29 @@ const MonthView = (props: {
     // A clamped glide may still be waiting for more weeks below; scrollend is not arrival then.
     if (target && row !== undefined && Math.abs(scroller.scrollTop - (row * rowHeight() + target.offset)) > 1) return;
     glideTarget = null;
-    setQueuedMonth(null);
-    window.clearTimeout(queueTimer);
+    if (pendingOrigin !== -1 && pendingOrigin !== 1) {
+      setQueuedMonth(null);
+      window.clearTimeout(queueTimer);
+    }
     window.clearTimeout(glideTimer);
     window.clearTimeout(arrivalTimer);
     readScroll();
+    // A glide that lands near an end asks for the next weeks there, as the reader's own scrolling does.
+    if (target) loadNearEdges();
     if (pulseOnArrival) {
       pulseOnArrival = false;
       pulseToday();
     }
   };
   const cancelGlide = () => {
-    if (!glideTarget || !scroller) return;
+    if (!scroller) return;
+    if (pendingOrigin === -1 || pendingOrigin === 1) {
+      pendingTarget = null;
+      pendingOrigin = null;
+      setQueuedMonth(null);
+      window.clearTimeout(queueTimer);
+    }
+    if (!glideTarget) return;
     // A reader's wheel or touch takes over from navigation, including any target waiting for more weeks.
     glideTarget = null;
     pulseOnArrival = false;
@@ -1633,20 +1695,34 @@ const MonthView = (props: {
       calendar.addMonths(parseKey(queuedMonth() ?? focusMonthKey()), direction, dateConfig()),
       dateConfig(),
     );
-    if (!positionMonth(target)) return false;
+    if (loaded(target)) {
+      pendingTarget = null;
+      pendingOrigin = null;
+      if (!positionMonth(target)) return false;
+    } else {
+      // A month past the loaded weeks asks for them and waits; an end the host has reached goes through its navigation.
+      const range = loadedRange();
+      const later = direction === 1;
+      const edge = later ? range.to : range.first;
+      if (!(later ? props.owner.onLoadLater : props.owner.onLoadEarlier) || (later ? exhaustedLater : exhaustedEarlier) === edge)
+        return false;
+      pendingTarget = target;
+      pendingOrigin = direction;
+      loadMore(later ? "later" : "earlier");
+    }
     // Instant positioning may finish during positionMonth; queue afterwards so rapid clicks still accumulate.
     setQueuedMonth(target);
     window.clearTimeout(queueTimer);
     // A glide that waits for more weeks keeps its month queued until it arrives or the reader scrolls.
     queueTimer = window.setTimeout(() => {
-      if (glideTarget?.expires !== Number.POSITIVE_INFINITY) setQueuedMonth(null);
+      if (pendingOrigin !== -1 && pendingOrigin !== 1 && glideTarget?.expires !== Number.POSITIVE_INFINITY) setQueuedMonth(null);
     }, 1200);
     return true;
   };
   const goToday = () => {
     if (!continuous() || !loaded(todayKey()) || !scroller) return false;
     pulseOnArrival = !reducedMotion();
-    if (positionMonth(todayKey())) return true;
+    if (positionMonth(todayKey(), true, true)) return true;
     pulseOnArrival = false;
     return false;
   };
@@ -1667,8 +1743,7 @@ const MonthView = (props: {
         frame = 0;
         readScroll();
         if (!scroller) return;
-        if (scroller.scrollTop < MONTH_ROWS_IN_VIEW * rowHeight()) loadMore("earlier");
-        if (scroller.scrollTop + viewHeight() > (trackWeeks().length - MONTH_ROWS_IN_VIEW * 2) * rowHeight()) loadMore("later");
+        loadNearEdges();
       });
   };
   // Capture the old track before render effects change its height, then restore the same week and pixel below.
@@ -1697,9 +1772,15 @@ const MonthView = (props: {
         if (!untrack(mounted) || !scroller) return;
         measureScroll();
         previousWeeks = untrack(trackWeeks);
+        const row = savedAnchor ? monthRowOf(previousWeeks, savedAnchor.week) : undefined;
+        const top = row !== undefined && savedAnchor ? row * untrack(rowHeight) + savedAnchor.delta : scroller.scrollTop;
+        // Weeks added below move nothing, and writing the same position would stop a glide on its way.
+        const moved = Math.abs(scroller.scrollTop - top) >= 1;
+        if (moved) scroller.scrollTop = top;
         if (pendingTarget && loaded(pendingTarget)) {
           const key = pendingTarget;
           pendingTarget = null;
+          pendingOrigin = null;
           positioned = positionMonth(key, positioned) || positioned;
           if (pendingKey === key) {
             pendingKey = null;
@@ -1707,11 +1788,7 @@ const MonthView = (props: {
             queueMicrotask(() => focusCell(key));
           }
         } else {
-          const row = savedAnchor ? monthRowOf(previousWeeks, savedAnchor.week) : undefined;
-          const top = row !== undefined && savedAnchor ? row * untrack(rowHeight) + savedAnchor.delta : scroller.scrollTop;
-          // Weeks added below move nothing, and writing the same position would stop a glide on its way.
-          const moved = Math.abs(scroller.scrollTop - top) >= 1;
-          if (moved) scroller.scrollTop = top;
+          if (pendingTarget && (pendingOrigin === -1 || pendingOrigin === 1)) loadMore(pendingOrigin === -1 ? "earlier" : "later");
           // A glide goes on after the weeks above moved it, and one that waited at the end goes on into the new weeks.
           if (glideTarget && performance.now() < glideTarget.expires && (moved || glideTarget.expires === Number.POSITIVE_INFINITY)) {
             const target = monthRowOf(previousWeeks, glideTarget.week);
@@ -1729,8 +1806,16 @@ const MonthView = (props: {
     on(
       hostKey,
       (key) => {
-        if (!continuous() || !untrack(mounted) || !scroller || key === reportedFocus) return;
+        if (!continuous() || !untrack(mounted) || !scroller) return;
+        if (key === reportedFocus) {
+          if (pendingOrigin === "host") {
+            pendingTarget = null;
+            pendingOrigin = null;
+          }
+          return;
+        }
         pendingTarget = loaded(key) ? null : key;
+        pendingOrigin = pendingTarget ? "host" : null;
         if (pendingTarget) return;
         const visible = untrack(visibleRange);
         if (key.slice(0, 7) !== untrack(focusMonthKey).slice(0, 7) || key < visible.first || key > visible.last) positionMonth(key);
@@ -1764,7 +1849,10 @@ const MonthView = (props: {
       // Too few weeks below the month, such as the days of another view while the month's own load, cannot put its
       // first week on top yet; the month goes there once its weeks arrive.
       positioned = row !== undefined && Math.abs(scroller.scrollTop - row * rowHeight()) < 1;
-      if (!positioned) pendingTarget = hostKey();
+      if (!positioned) {
+        pendingTarget = hostKey();
+        pendingOrigin = "mount";
+      }
       readScroll(false);
       silentTop = scroller.scrollTop;
       ready = true;
@@ -1813,7 +1901,15 @@ const MonthView = (props: {
     if (focus && keys.includes(focus)) return focus;
     if (keys.includes(todayKey()) && (!continuous() || (todayKey() >= visibleRange().first && todayKey() <= visibleRange().last)))
       return todayKey();
-    return calendar.formatDateKey(zonedMonthDate(month().year, month().month, dateConfig()), dateConfig());
+    const first = calendar.formatDateKey(zonedMonthDate(month().year, month().month, dateConfig()), dateConfig());
+    if (!continuous() || keys.includes(first)) return first;
+    const visible = visibleRange();
+    return (
+      keys.find((key) => key.slice(0, 7) === first.slice(0, 7) && key >= visible.first && key <= visible.last) ??
+      keys.find((key) => key >= visible.first && key <= visible.last) ??
+      keys[0] ??
+      first
+    );
   });
   const dropRange = createMemo((): MonthSelection | null => {
     const preview = movePreview();
@@ -3646,6 +3742,7 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
                 events={normalizedEvents()}
                 labels={mergedLabels()}
                 onFocusDay={setFocusDay}
+                goToDate={(date) => go(date, view())}
                 register={setMonthCreate}
               />
             </CalendarBody>

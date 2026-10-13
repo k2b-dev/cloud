@@ -220,6 +220,23 @@ describe(`continuous month in ${browserName}`, () => {
       await page.close();
     }
   }, 30_000);
+  test("a step that lands at the first loaded week asks for earlier weeks, and the next step waits for them", async () => {
+    const page = await open("no-preference");
+    try {
+      await page.getByRole("button", { name: "Previous", exact: true }).click();
+      await atWeek(page, "2026-08-31");
+      await page.waitForFunction(() => window.monthFixture.loads.includes("earlier"));
+      await page.getByRole("button", { name: "Previous", exact: true }).click();
+      expect(await title(page)).toBe("September 2026");
+      // The glide away from October also passed the last weeks, so both ends wait for their weeks.
+      expect(await page.evaluate(() => window.monthFixture.loads.filter((edge) => edge === "earlier").length)).toBe(1);
+      await page.evaluate(() => window.monthFixture.release());
+      await atWeek(page, "2026-07-27");
+      expect(await title(page)).toBe("August 2026");
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
   test("a step keeps gliding on a touch tablet while weeks load below it", async () => {
     const page = await open("no-preference", true);
     try {

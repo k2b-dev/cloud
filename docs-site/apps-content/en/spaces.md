@@ -155,10 +155,13 @@ The month scrolls up and down through week rows, with the weekday names
 kept on top. The title follows the month in the center; other months' days
 are dimmed, and each first day names its month. The arrows and **Page Up** or
 **Page Down** move by a month with the first day's week on top. **Today**
-returns to today's month. More weeks load as you scroll without clearing
-entries or selection, and the count follows the visible days. The URL names
-a selected day in the focus month, otherwise today in that month, otherwise
-its first day.
+returns to today's month. More weeks load as you scroll or step without
+clearing entries or selection, and the count follows the visible days. The
+month holds at most 366 days at once; past that, scrolling stops at the last
+loaded week, and the arrows open their month on its own. The URL names
+a selected day in the focus month, otherwise the day it already named when
+that day lies in the focus month, otherwise today in that month, otherwise its
+first day.
 
 In the day and week views a day runs from 06:00 to 06:00, so the night after
 22:00 belongs to the day before. Nights fold unless an entry lies in them. The
