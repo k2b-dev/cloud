@@ -21,6 +21,9 @@ import {
   Format,
   InlineGuidance,
   Lightbox,
+  Kbd,
+  LabelChip,
+  Steps,
   LinkCard,
   LocaleProvider,
   LogEntriesTable,
@@ -1424,7 +1427,10 @@ const MarkdownDemo = (props: { html: string }) => {
       "| Item | Note | Amount |\n| --- | --- | ---: |\n| Subtotal | Two dinners and one dessert, shared by both guests | 123.00 |\n| Tip | | 12.30 |",
       "| | |\n| --- | ---: |\n| Tip | **12.30** |\n| Total | **135.30** |",
       "> Prices include VAT.",
-      ":::info Before you share\nCheck that every guest is on the **receipt**.\n:::",
+      ...["note", "info", "success", "warning", "danger"].flatMap((type) => [
+        `:::${type} Before you share\nCheck that every guest is on the **receipt**.\n:::`,
+        `:::${type}\nCheck that every guest is on the **receipt**.\n:::`,
+      ]),
       "```ts\nconst total = subtotal + tip;\n```",
     ].join("\n\n"),
   );
@@ -1504,6 +1510,88 @@ const IntlDemo = () => (
 );
 
 const demos: DemoSection = {
+  kbd: () => (
+    <DemoGrid>
+      <DemoCard
+        id="kbd-apple"
+        chip={{ kind: "component", name: "Kbd", from: "@k2b/ui" }}
+        description="Apple modifier symbols."
+        code={`<Kbd keys="mod+alt+n" platform="apple" />
+<Kbd keys="enter" platform="apple" />`}
+      >
+        <Kbd keys="mod+alt+n" platform="apple" />
+        <Kbd keys="enter" platform="apple" />
+      </DemoCard>
+      <DemoCard
+        id="kbd-other"
+        chip={{ kind: "component", name: "Kbd", from: "@k2b/ui" }}
+        description="Control, Alt and Shift caps."
+        code={`<Kbd keys="mod+k" platform="other" />
+<Kbd keys="shift+/" platform="other" />
+<Kbd keys="escape" platform="other" />`}
+      >
+        <Kbd keys="mod+k" platform="other" />
+        <Kbd keys="shift+/" platform="other" />
+        <Kbd keys="escape" platform="other" />
+      </DemoCard>
+      <DemoCard
+        id="kbd-german"
+        chip={{ kind: "component", name: "Kbd", from: "@k2b/ui" }}
+        description="German key labels and spoken names."
+        code={`<LocaleProvider locale="de">
+  <Kbd keys="ctrl+shift+k" platform="other" />
+  <Kbd keys="space" platform="apple" />
+</LocaleProvider>`}
+      >
+        <LocaleProvider locale="de">
+          <Kbd keys="ctrl+shift+k" platform="other" />
+          <Kbd keys="space" platform="apple" />
+        </LocaleProvider>
+      </DemoCard>
+    </DemoGrid>
+  ),
+  "label-chip": () => (
+    <DemoGrid>
+      <DemoCard
+        id="label-chip"
+        chip={{ kind: "component", name: "LabelChip", from: "@k2b/ui" }}
+        description="A control name and a menu path inside running text."
+        code={`<p>Select <LabelChip icon="ti ti-share">Share</LabelChip> and copy the link.</p>
+<p>Open <LabelChip>Settings</LabelChip> › <LabelChip>Profile</LabelChip>.</p>`}
+      >
+        <p>
+          Select <LabelChip icon="ti ti-share">Share</LabelChip> and copy the link.
+        </p>
+        <p>
+          Open <LabelChip>Settings</LabelChip> › <LabelChip>Profile</LabelChip>.
+        </p>
+      </DemoCard>
+    </DemoGrid>
+  ),
+  steps: () => (
+    <DemoGrid>
+      <DemoCard
+        id="steps"
+        chip={{ kind: "component", name: "Steps", from: "@k2b/ui" }}
+        description="Instructions with a continued sequence."
+        code={`<Steps>
+  <li>Select <LabelChip>Share</LabelChip>.</li>
+  <li>Copy the link.</li>
+</Steps>
+<Steps start={3}><li>Send the link.</li></Steps>`}
+      >
+        <Steps>
+          <li>
+            Select <LabelChip>Share</LabelChip>.
+          </li>
+          <li>Copy the link.</li>
+        </Steps>
+        <Steps start={3}>
+          <li>Send the link.</li>
+        </Steps>
+      </DemoCard>
+    </DemoGrid>
+  ),
   charts: (props) => (
     <DemoGrid columns="one">
       <ChartDemo window={new URLSearchParams(props.search).get("window") === "1h" ? "1h" : "24h"} />

@@ -34,6 +34,13 @@ const ownedSelectors =
 const ownedSelectorFiles = new Set(stylesheets.filter((file) => ownedSelectors.test(readFileSync(resolve(stylesDir, file), "utf8"))));
 
 describe("@k2b/ui Cloud-faithful surfaces", () => {
+  test("NoticeCard keeps its calm markup without a Markdown callout icon", () => {
+    const html = renderToString(() => createComponent(NoticeCard, { tone: "warning", title: "x", children: "Body" }));
+    expect(html).toContain('data-tone="warning"');
+    expect(html).not.toContain("<svg");
+    expect(html).not.toContain("k2b-callout");
+  });
+
   test("renders a quiet padding-free paper with opt-in elevation and interaction", () => {
     const section = renderToString(() => (
       <Paper as="section" class="project-summary">

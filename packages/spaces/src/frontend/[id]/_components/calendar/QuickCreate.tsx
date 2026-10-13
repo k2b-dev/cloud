@@ -1,5 +1,5 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { Button, InlineGuidance, SegmentedControl, TextInput } from "@k2b/ui";
+import { Button, InlineGuidance, Kbd, SegmentedControl, TextInput } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import type { SpaceItem } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
@@ -16,9 +16,6 @@ export type QuickCreateDefaults = NonNullable<ItemFormProps["defaults"]>;
 export type QuickCreateKind = "event" | "allday" | "task";
 
 const KINDS: readonly QuickCreateKind[] = ["event", "allday", "task"];
-
-const KBD =
-  "inline-grid h-5 min-w-5 place-items-center rounded-[0.3125rem] bg-[var(--k2b-surface-muted)] px-1 font-sans text-[0.6875rem] font-medium shadow-[inset_0_-1px_0_var(--k2b-border)]";
 
 /** The kind a menu entry asked for, or the default for the days: one day gets a timed event, several an all-day one. */
 export const quickCreateKind = (create: string | undefined, days: CalendarDays): QuickCreateKind =>
@@ -180,7 +177,7 @@ export default function QuickCreate(props: {
       <div class="mt-0.5 flex items-center gap-1">
         {/* Keys help only where a keyboard is likely. */}
         <span class="mr-auto text-[0.6875rem] text-[var(--k2b-text-muted)] pointer-coarse:invisible" aria-hidden="true">
-          <kbd class={KBD}>↵</kbd> {t.quickCreateEnter} · <kbd class={KBD}>Esc</kbd> {t.quickCreateEscape}
+          <Kbd keys="enter" /> {t.quickCreateEnter} · <Kbd keys="escape" /> {t.quickCreateEscape}
         </span>
         {/* While a save runs, the full form would create the same item a second time. */}
         <Button type="button" variant="ghost" size="sm" disabled={submitting()} onClick={() => props.onMoreOptions(formDefaults())}>

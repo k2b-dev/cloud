@@ -150,7 +150,8 @@ export const createSafeMarked = (locale?: string): Marked => new Marked(markdown
  *
  * Renders untrusted Markdown safely by default. Raw HTML and unsafe link
  * protocols are escaped. Info blocks (`:::note`, `:::info`, `:::success`,
- * `:::warning`, `:::danger`) render as the calm `NoticeCard`. Already-rendered
+ * `:::warning`, `:::danger`) render on a tinted surface without a border.
+ * The icon and title use the tone colour; body text stays neutral. Rendered
  * HTML requires the deliberately named `trustedHtml` boundary; the caller owns
  * sanitization in that mode.
  *

@@ -74,7 +74,7 @@ export function formattingKeymap(opts: { notebookId: string }) {
 export default function EditorToolbar(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
-  const keys = (spec: string) => shortcutLabel(spec, { ctrl: t().keyCtrl, shift: t().keyShift, alt: t().keyAlt });
+  const keys = (spec: string) => shortcutLabel(spec, locale());
   // Every action is one undo step and leaves focus in the note, also after a picker closes.
   const withView = (action: (view: EditorView) => void | Promise<void>) => () => {
     const view = props.editorView;

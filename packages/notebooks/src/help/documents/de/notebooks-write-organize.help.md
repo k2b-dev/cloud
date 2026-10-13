@@ -200,7 +200,7 @@ Verwende Hinweisblöcke für Kontext, Entscheidungen, Warnungen und Status, die 
 4. Schließe den Hinweisblock mit `:::` in einer eigenen Zeile.
 :::
 
-Ein Hinweisblock ist ein ruhiger Kasten: eine helle Tönung je nach Art, normaler Text und kein Symbol. Editor, Buchansicht und PDF-Export zeigen denselben Kasten. Beschreibungen und Kommentare in Spaces und die Hilfe zeigen ihn ebenso.
+Ein Hinweisblock zeigt ein Symbol für seine Art und eine helle Tönung. Symbol und Überschrift tragen die Farbe der Art; der Text bleibt neutral. Editor, Buchansicht und PDF-Export zeigen denselben Kasten. Beschreibungen und Kommentare in Spaces und die Hilfe zeigen ihn ebenso.
 
 **Gut lesbare Kästen**
 

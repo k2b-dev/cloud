@@ -89,14 +89,19 @@ import { NOTICE_CARD_CLASSES } from "@k2b/ui";
 ```
 
 Use `NOTICE_CARD_CLASSES` only when a renderer cannot mount the Solid
-component, such as a server-side Markdown extension or an editor node view.
+component, such as a custom notice renderer or an editor node view.
 It exposes the same markup classes so those renderers produce the same calm
 notice: a root with `data-tone`, an optional title, and a body. Normal Solid
 code should render `NoticeCard` instead of assembling its internal markup.
-Markdown info blocks (`:::note`, `:::info`, `:::success`, `:::warning`,
-`:::danger`) use exactly this contract everywhere they render; see
-[Markdown content](/en/ui/content/markdown#info-blocks) for their syntax and
-the renderer helpers.
+Markdown callouts (`:::note`, `:::info`, `:::success`, `:::warning`,
+`:::danger`) share the tint, title, and body classes but add a decorative type
+icon and a title in the tone colour. `NoticeCard` stays calm with neutral text
+and no icon. Callout icons are inline SVG, so they print without an icon font.
+`MARKDOWN_CALLOUT_CLASSES` exports the root `k2b-callout` and icon
+`k2b-callout__icon` classes. Hosts with their own sanitizer must allow the
+`svg` and `path` markup, including `viewBox` and `aria-hidden="true"`.
+See [Markdown content](/en/ui/content/markdown#info-blocks) for the syntax,
+renderer helpers, and SVG attribute contract.
 
 ## Accessibility
 

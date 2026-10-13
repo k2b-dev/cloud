@@ -4,6 +4,7 @@ import {
   Button,
   IconButton,
   IconButtonLink,
+  Kbd,
   MarkdownView,
   NoticeCard,
   Placeholder,
@@ -13,7 +14,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
-import { COMMANDS_CHANGED, contextCommandsWithShortcuts, shortcutLabel } from "../browser/command-shortcuts";
+import { COMMANDS_CHANGED, contextCommandsWithShortcuts } from "../browser/command-shortcuts";
 import { appAccentStyle } from "./app-appearance";
 import { helpMessages } from "./help-messages";
 import { formatHelpBundleMarkdown, formatHelpDocumentMarkdown } from "./layout-help-markdown";
@@ -89,9 +90,7 @@ const Shortcuts = (props: { focusSearch: () => void }) => {
                   <p class="mt-0.5 text-xs text-dimmed">{entry.description}</p>
                 </Show>
               </div>
-              <kbd class="shrink-0 rounded bg-[var(--ui-surface-raised)] px-1.5 py-1 text-[11px] ring-1 ring-black/10 dark:ring-white/10">
-                {shortcutLabel(entry.shortcut!)}
-              </kbd>
+              <Kbd keys={entry.shortcut!} />
             </div>
           )}
         </For>

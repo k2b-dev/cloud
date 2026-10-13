@@ -234,6 +234,7 @@ describe("Notebook Book HTML", () => {
       for (const type of ["note", "info", "success", "warning", "danger"] as const) {
         const { html } = render(`:::${type}\nBody\n:::`, locale);
         expect(html).toBe(renderMarkdownInfoBlock({ type, bodyHtml: "<p>Body</p>\n", locale }));
+        expect(html.match(/<svg class="k2b-callout__icon" aria-hidden="true"/g)).toHaveLength(1);
       }
     }
     expect(render(":::note\nBody\n:::", "de").html).toContain('<span class="k2b-sr-only">Notiz: </span>');

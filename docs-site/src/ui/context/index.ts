@@ -1,3 +1,7 @@
+import layoutTableOfContents from "./layout/table-of-contents.md" with { type: "text" };
+import contentSteps from "./content/steps.md" with { type: "text" };
+import contentLabelChip from "./content/label-chip.md" with { type: "text" };
+import contentKbd from "./content/kbd.md" with { type: "text" };
 import actionButtons from "./actions/buttons.md" with { type: "text" };
 import actionCopyRemove from "./actions/copy-remove.md" with { type: "text" };
 import actionDisclosure from "./actions/disclosure.md" with { type: "text" };
@@ -155,6 +159,10 @@ const catalogContextSources = {
   "feedback/hover-preview": { file: "feedback/hover-preview.md", content: feedbackHoverPreview },
   "feedback/prompts": { file: "feedback/prompts.md", content: feedbackPrompts },
   "feedback/install-guide": { file: "feedback/install-guide.md", content: feedbackInstallGuide },
+  "content/kbd": { file: "content/kbd.md", content: contentKbd },
+  "content/label-chip": { file: "content/label-chip.md", content: contentLabelChip },
+  "content/steps": { file: "content/steps.md", content: contentSteps },
+  "layout/table-of-contents": { file: "layout/table-of-contents.md", content: layoutTableOfContents },
   "content/charts": { file: "content/charts.md", content: contentCharts },
   "content/tables": { file: "content/tables.md", content: contentTables },
   "content/calendar": { file: "surfaces/calendar.md", content: contentCalendar },

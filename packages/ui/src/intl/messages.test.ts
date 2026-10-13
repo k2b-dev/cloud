@@ -10,6 +10,8 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const catalogs = {
+  Shortcut: (await import("./shortcut-messages")).checkShortcutMessages,
+  TableOfContents: (await import("../layout/table-of-contents-messages")).checkTableOfContentsMessages,
   Ui: (await import("./messages")).checkUiMessages,
   Chart: (await import("../content/chart-messages")).checkChartMessages,
   Chat: (await import("../chat/chat-messages")).checkChatMessages,

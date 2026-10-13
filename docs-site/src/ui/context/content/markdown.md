@@ -18,7 +18,7 @@ Renderers with their own Markdown pipeline import the info-block and link
 helpers:
 
 ```ts
-import { markdownInfoBlocks, renderMarkdownInfoBlock, scanMarkdownInfoBlock } from "@k2b/ui";
+import { MARKDOWN_CALLOUT_CLASSES, markdownInfoBlocks, renderMarkdownInfoBlock, scanMarkdownInfoBlock } from "@k2b/ui";
 import { markdownLinkReference, markStandaloneLinks, renderMarkdownLink } from "@k2b/ui";
 ```
 
@@ -48,15 +48,17 @@ These options also work with `renderSafeMarkdown(source, options)`. They apply
 to Markdown rendering only; `trustedHtml` already crosses an explicit trust
 boundary and bypasses the renderer.
 
-Embedded components such as `NoticeCard` keep their own inner spacing and sit
-one paragraph apart from the surrounding prose; ordinary Markdown paragraphs
+`NoticeCard` and Markdown callouts keep their own inner spacing. They sit one
+paragraph apart from the surrounding prose; ordinary Markdown paragraphs
 retain the standard prose spacing.
 
 ### Info blocks
 
-Info blocks render as the same calm notice as the
-[`NoticeCard`](/en/ui/feedback/blocks) component: a light tint of the tone,
-neutral text, and no icon.
+Markdown callouts show a light tint and a decorative type icon. The icon and
+title use the tone colour; body text stays neutral. The
+[`NoticeCard`](/en/ui/feedback/blocks) component keeps its calm look with
+neutral text and no icon. Callout icons are inline SVG, so they print without
+an icon font.
 
 ```md
 :::warning Before deleting
@@ -69,8 +71,7 @@ Export the data first. **Deleting cannot be undone.**
 - The opening line holds `:::`, the type, and an optional plain-text title.
   The title is the visible heading. Without a title, screen readers hear the
   type name in the render locale, such as "Warning" or "Warnung"; sighted
-  readers see only the tint, so start the text with a label when the type
-  matters.
+  readers see the icon and tint only. Add a title when the type matters.
 - The block ends at a line holding only `:::`, indented no deeper than the
   opener. A `:::` inside code, a list, a quote, or an HTML block does not end
   it.
@@ -95,6 +96,15 @@ markup. The scanner accepts any line endings; `length` counts the source as
 given, and `body` uses `\n`. `bodyHtml` crosses a trust boundary: the caller
 sanitizes it. `renderSafeMarkdown(source, { locale })` names untitled blocks
 in that locale; `MarkdownView` passes the inherited render locale.
+
+`MARKDOWN_CALLOUT_CLASSES` exports `root: "k2b-callout"` and
+`icon: "k2b-callout__icon"`. The root also uses `NOTICE_CARD_CLASSES.root`;
+the title and body use its title and body classes. Hosts with their own
+sanitizer must allow the inline `svg` and `path` markup. For `svg`, keep only
+`aria-hidden`, `class`, `width`, `height`, `viewBox`, `fill`, `stroke`,
+`stroke-width`, `stroke-linecap`, and `stroke-linejoin`. Preserve `viewBox`
+casing and `aria-hidden="true"`. For `path`, keep only `d`. Allow no other SVG
+elements or attributes.
 
 Prose stays flat on the surrounding surface. Links follow
 [Links and references](#links-and-references). Inline code and fenced code blocks are text on a light fill

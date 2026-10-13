@@ -211,3 +211,6 @@ export {
 } from "./SidebarSwitcher";
 export type { TabBarItem, TabBarProps } from "./TabBar";
 export { default as TabBar } from "./TabBar";
+
+export type { TableOfContentsItem, TableOfContentsProps } from "./TableOfContents";
+export { TableOfContents } from "./TableOfContents";

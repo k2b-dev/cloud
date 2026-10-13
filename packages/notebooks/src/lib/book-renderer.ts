@@ -491,7 +491,7 @@ export const renderNotebookBook = (
           if (token.type === "heading") headingSource.set(token, bodyLine);
           bodyLine += token.raw.split("\n").length - 1;
         }
-        // Notices are the shared info block: the calm NoticeCard with an optional title.
+        // Callouts share the type icon, tone colour, and optional title of every Markdown view.
         return renderMarkdownInfoBlock({ type: notice.type, title: notice.title, bodyHtml: marked.parser(bodyTokens), locale });
       }),
       "",
@@ -523,7 +523,7 @@ export const renderNotebookBook = (
   for (const anchor of printAnchors) if (!headingIds.has(anchor)) html = html.replaceAll(`href="${anchorHash(anchor)}"`, 'href="#top"');
   const sanitize = (value: string) =>
     sanitizeHtml(value, {
-      allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "input", "time", "mark", "del"],
+      allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "input", "time", "mark", "del", "svg", "path"],
       allowedAttributes: {
         "*": ["class", "id", "title", "role", "aria-hidden", "aria-label", "data-tone", "data-depth", "data-block-name"],
         a: [
@@ -538,12 +538,37 @@ export const renderNotebookBook = (
         th: ["scope"],
         time: ["datetime"],
         ol: ["start"],
+        svg: ["aria-hidden", "class", "width", "height", "viewBox", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"],
+        path: ["d"],
       },
       allowedSchemes: ["http", "https", "mailto", "tel"],
       allowedSchemesByTag: { img: ["http", "https"] },
       allowProtocolRelative: false,
       allowedStyles: { span: { width: [/^\d+(?:\.\d+)?%$/] } },
       transformTags: {
+        svg: (tagName, attrs) => ({
+          tagName,
+          attribs: Object.fromEntries(
+            Object.entries(attrs)
+              .map(([name, value]) => [name === "viewbox" ? "viewBox" : name, value] as const)
+              .filter(([name]) =>
+                [
+                  "aria-hidden",
+                  "class",
+                  "width",
+                  "height",
+                  "viewBox",
+                  "fill",
+                  "stroke",
+                  "stroke-width",
+                  "stroke-linecap",
+                  "stroke-linejoin",
+                ].includes(name),
+              ),
+          ),
+        }),
+        path: (tagName, attrs) => ({ tagName, attribs: Object.fromEntries(Object.entries(attrs).filter(([name]) => name === "d")) }),
+
         a: (_tag, attrs) => {
           const href = attrs.href ? resolveUrl(attrs.href) : null;
           const { href: _href, ...other } = attrs;

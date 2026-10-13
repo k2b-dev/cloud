@@ -167,12 +167,11 @@ code render as they do elsewhere on the page. Close the callout with `:::` on
 its own line; a `:::` inside code or a list does not close it. Callouts inside
 lists, quotes, or another callout stay text.
 
-A callout renders as a calm [notice](/en/ui/feedback/blocks): a light tint of
-its tone, neutral text, and no icon. The optional plain-text title after the
-type is the visible heading and names the callout for everyone. Without a
-title, screen readers hear the type name in the Help document's language, and
-sighted readers see only the tint, so add a title, or start the text with a
-word such as **Risk:**, when the type matters.
+A callout shows its type's icon and a light tint. The icon and title use the
+tone colour; body text stays neutral. The icon is decorative. The optional
+plain-text title names the callout. Without a title, screen readers hear the
+type name in the Help document's language. Sighted readers see the icon and
+tint only, so add a title when the type matters.
 
 Callouts are one syntax and one look across Cloud: `MarkdownView` from
 `@k2b/ui`, the shared `markdown.render()` and `markdown.renderSync()` helpers

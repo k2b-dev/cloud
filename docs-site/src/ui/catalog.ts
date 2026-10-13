@@ -167,6 +167,7 @@ const portableSections = [
       page("panes", "Panes", "ti ti-columns", "Controlled serializable tabs and nested split layouts."),
       page("overview", "AppOverview", "ti ti-home", "Application landing page with primary and supporting panels."),
       page("settings-modal", "Settings", "ti ti-settings", "Accessible settings tabs, fields, and save state."),
+      page("table-of-contents", "TableOfContents", "ti ti-list", "Native section links with a container or window scroll spy."),
       page("navigation", "Navigation", "ti ti-list", "Serializable navigation with native links and owner-local actions."),
       page("bottom-sheet", "BottomSheet", "ti ti-layout-bottombar", "Bottom-edge dialogs using the shared modal lifecycle."),
       page(
@@ -240,6 +241,9 @@ const portableSections = [
     title: "Content",
     icon: "ti ti-file-description",
     pages: [
+      page("kbd", "Kbd", "ti ti-keyboard", "Accessible platform and locale aware shortcut caps."),
+      page("label-chip", "LabelChip", "ti ti-tag", "Control names inside running text."),
+      page("steps", "Steps", "ti ti-list-numbers", "Ordered instructions with accent numbers."),
       page("charts", "Charts", "ti ti-chart-line", "Typed responsive charts and interactive state timelines."),
       page("tables", "DataTable", "ti ti-table", "Basic records and professional panels with search, filters, actions, and pagination."),
       page("calendar", "Calendar", "ti ti-calendar-month", "Controlled generic calendar navigation and items."),
@@ -365,7 +369,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 135;
+export const portableUiComponentCount = 139;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -405,6 +409,8 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  formatShortcut: "Documented Kbd formatter for plain text labels and spoken names.",
+  keyboardPlatform: "Documented Kbd platform detection for browser and server hosts.",
   reconcileChatMentions: "Documented Chat composer helper for preserving reference ranges during external text edits.",
   findNavigationItem: "Documented lookup for the latest enabled Navigation item.",
   parseSignature: "Documented server-side reader that rebuilds a submitted SignatureInput value.",
@@ -433,6 +439,7 @@ export const documentedOnlyUiCatalogExports = {
   DocInlineCode: "Documented inline member of the documentation component family.",
   DropdownItem: "Documented compositional child of Dropdown.",
   FileTree: "Documented child composed by the FileBrowserPanel demo.",
+  MARKDOWN_CALLOUT_CLASSES: "Documented Markdown callout root and icon classes for non-Solid renderers.",
   NOTICE_CARD_CLASSES: "Documented NoticeCard class contract for non-Solid renderers.",
   PANES_LAYOUT_VERSION: "Documented Panes serialization version.",
   abbreviations: "Documented completion dictionary used by editor examples.",
