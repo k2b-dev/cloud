@@ -63,12 +63,12 @@ Do not draw a line between the header, content, and footer of an app-owned
 surface, such as a dialog, panel, card, or page section. Spacing and type
 already show where the header ends.
 
-Do not draw vertical or horizontal borders between workspace regions either:
-not between sidebar, list, and detail, not under header rows, and not at the
-edge between the app rail and the application. Panes separate only through the
-surface steps and spacing that `AppWorkspace` and `Panes` already provide.
-A line between regions splits one workbench into separate boxes and competes
-with the content for attention.
+App code draws no vertical or horizontal borders between workspace regions
+either: not between sidebar, list, and detail, not under header rows, and not
+at the edge between the app rail and the application. The regions separate
+through the surfaces, spacing, and edges that `AppWorkspace`, `Panes`, and
+`SettingsModal` own. A line that app code adds between regions splits one
+workbench into separate boxes and competes with the content for attention.
 
 To verify, look at the changed screen in light and dark mode and search the
 diff for `border-t`, `border-b`, `border-l`, `border-r`, `divide-`, and `<hr>`
@@ -79,6 +79,8 @@ Boundaries are valid when they explain how a shared component operates:
 - `DataTable` may expose row and column structure.
 - A compound control may separate functional parts.
 - A resizable layout may expose an interactive separator.
+- A shared workspace layout may mark the edge between adjacent panes or a
+  drawer.
 - The app bar separates its shortcuts from the ordinary apps with one group
   divider.
 
@@ -247,9 +249,10 @@ On Safari, diagrams need Safari 17.4 or later.
   quiet well of an input, never from an outer shadow, a nested border, or a
   box inside a box. Floating layers, such as dialogs, popovers, menus, and
   toasts, keep their soft outer shadow, because they sit above the page and
-  must read as separate from it. A shared frame that owns its shadow, such as
-  the workspace card or an `elevated` `Paper`, keeps it; app code does not add
-  one.
+  must read as separate from it. Shared components that own their frame,
+  shadow, or inner sections, such as the workspace card, an `elevated`
+  `Paper`, or a floating `PanelDialog`, keep them; app code does not add its
+  own.
 - Keep one visible dialog frame. With `PanelDialog`, the header and footer stay
   fixed while `PanelDialog.Body` owns scrolling.
 - Inputs are quiet wells with a clear focus state, not permanently emphasized
@@ -282,22 +285,26 @@ a click into a click on the wrong target.
   shared component that owns the clipping region.
 - For scrollbars, follow [Keep dynamic scroll regions stable](#keep-dynamic-scroll-regions-stable).
 
-To verify, compare the bounding boxes of the changed element and its neighbors
-before and after each state change, at desktop width and at phone width. A
-browser test can read them with `getBoundingClientRect()` and expect them to be
-equal. The test "Aa adds one row above the field; … never move the field, a
-control, or the newest message" in
+To verify, decide which neighbors must stay put, then compare their bounding
+boxes before and after each state change, at desktop width and at phone width.
+A browser test can read them with `getBoundingClientRect()` and expect them to
+be equal. When a person opens something on purpose, such as the formatting
+row of a composer, the opened region may grow: test that it grows in the
+intended direction and that content anchored to it follows in the same frame
+instead of jumping. The test "Aa adds one row above the
+field; … never move the field, a control, or the newest message" in
 `packages/ui/src/chat/chat-composer.browser.test.ts` shows the pattern: it
-toggles each state at 720 px and 360 px and checks that the field, every
-control, and the newest message keep their position.
+toggles each state at 720 px and 360 px and checks that the field and every
+control keep their position, and that the newest message stays directly above
+the composer in every frame.
 
 ## Respond to hover without movement
 
-Hover and focus change only colors, focus rings, and borders where a
-component owns them.
-Do not translate, scale, or lift an element on hover, and do not grow its
-shadow. Movement under the pointer makes a target harder to hit and draws
-attention away from the content. This is the general form of the rule that
+Hover and focus never move, resize, or lift an element: no translate, no
+scale, and no growing shadow. Paint changes are fine, such as a color, a focus
+ring, or an action or affordance that the shared component reveals in space it
+already reserves. Movement under the pointer makes a target harder to hit and
+draws attention away from the content. This is the general form of the rule that
 [cards](/en/ui/surfaces/cards) and
 [file drop targets](/en/ui/input/file-drop-target) already follow.
 
@@ -403,8 +410,9 @@ when a refresh fails.
 ## Treat phones as first-class
 
 Design and verify every screen at phone width with touch, in WebKit as well as
-Chromium. A phone is a full Cloud client, not a fallback, and every browser on
-iOS runs WebKit, so a screen checked only in a desktop Chromium is not checked.
+Chromium. A phone is a full Cloud client, not a fallback, and Safari and most
+iOS browsers run WebKit, so a screen checked only in a desktop Chromium is not
+checked.
 
 Use `Layout`, `AppWorkspace`, dialogs, and shared sidebars for responsive
 geometry. Content must not depend on pointer hover. Dialogs must fit the
@@ -486,8 +494,8 @@ Before accepting a component or screen, verify:
 
 - [The layout stays still](#keep-the-layout-still): focus, hover, loading,
   async results, validation, save bars, and badges move or resize nothing.
-- [Hover and focus change only colors](#respond-to-hover-without-movement), not
-  position, size, or shadow.
+- [Hover and focus never move, resize, or lift](#respond-to-hover-without-movement)
+  an element; they change only paint.
 - Hierarchy works without decorative color or separator lines.
 - Lists, settings, forms, details, and pagination use spacing or shared
   surfaces instead of `<hr>`, `divide-y`, or app-owned hairlines.
