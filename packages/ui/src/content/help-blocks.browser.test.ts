@@ -227,3 +227,15 @@ test("Steps numbers use the host accent or action token on a transparent list", 
   expect(colors.accent.background).toBe("rgba(0, 0, 0, 0)");
   expect(colors.accent.counter).toBe("k2b-step 2");
 });
+
+test("Steps in rendered Markdown content keep their numbers and no list marker", async () => {
+  // Trusted HTML such as Help uses the Steps class inside MarkdownView, whose own lists are numbered.
+  await page.setContent(
+    `<style>${css}</style><div class="k2b-ui"><div class="k2b-content-markdown">${steps.replace("Instructions", "<li>Copy the link.</li>")}</div></div>`,
+  );
+  const list = await page.evaluate(() => {
+    const ol = document.querySelector("ol")!;
+    return { style: getComputedStyle(ol).listStyleType, padding: getComputedStyle(ol).paddingLeft };
+  });
+  expect(list).toEqual({ style: "none", padding: "0px" });
+});

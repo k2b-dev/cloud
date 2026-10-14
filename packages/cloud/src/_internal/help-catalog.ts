@@ -1,5 +1,84 @@
+import { i18n } from "@k2b/stdlib";
+import { formatShortcut } from "@k2b/ui";
+import type { Token } from "marked";
 import type { HelpArticle } from "../services/help/types";
-import { markdownToPlainText } from "../shared/markdown";
+import { parseHelpReference } from "../shared/help";
+import { lexHelpMarkdown, markdownToPlainText } from "../shared/markdown";
+
+const helpAgentMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: { apple: ({ shortcut }: { shortcut: string }) => `${shortcut} on Mac` },
+    de: { apple: ({ shortcut }) => `${shortcut} auf dem Mac` },
+  },
+});
+
+/** Portable source for agents and Copy as Markdown; code is kept verbatim. */
+export const helpAgentMarkdown = (article: Pick<HelpArticle, "markdown" | "locale" | "appId" | "links">): string => {
+  const { t } = helpAgentMessages.resolve([article.locale]);
+  const rewriteChildren = (raw: string, children: readonly Token[]): string => {
+    let offset = 0;
+    let result = "";
+    for (const child of children) {
+      let start = raw.indexOf(child.raw, offset);
+      let source = child.raw;
+      // Marked removes quote markers and list indentation from child block sources.
+      if (start < 0 && child.raw.includes("\n")) {
+        const pattern = child.raw
+          .split("\n")
+          .map((line) => line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+          .join("\\r?\\n[ \\t>]*");
+        const match = new RegExp(pattern).exec(raw.slice(offset));
+        if (match) {
+          start = offset + match.index;
+          source = match[0];
+        }
+      }
+      if (start < 0) continue;
+      result += raw.slice(offset, start) + rewrite(child, source);
+      offset = start + source.length;
+    }
+    return result + raw.slice(offset);
+  };
+  const rewrite = (token: Token, source: string): string => {
+    if (token.type === "code" || token.type === "codespan") return source;
+    if (token.type === "helpKbd") {
+      const keys = String(token.keys);
+      const other = formatShortcut(keys, { platform: "other", locale: article.locale });
+      const apple = formatShortcut(keys, { platform: "apple", locale: article.locale }).label;
+      // A key without a platform modifier reads by its name: "Enter", not "↵".
+      return other.label === apple ? other.name : `${other.label} (${t.apple({ shortcut: apple })})`;
+    }
+    if (token.type === "helpDetails") {
+      const newline = source.includes("\r\n") ? "\r\n" : "\n";
+      const bodyStart = source.indexOf("\n") + 1;
+      const closing = [...source.matchAll(/^[ \t>]*:::[ \t]*(?:\r?\n|$)/gm)].at(-1)!;
+      const body = source.slice(bodyStart, closing.index);
+      const prefix = body.match(/^[ \t>]+/)?.[0] ?? "";
+      const trailing = source.slice(closing.index + closing[0].length);
+      return `**${rewriteChildren(String(token.title), token.titleTokens ?? [])}**${newline}${prefix}${newline}${rewriteChildren(body, token.tokens ?? [])}${trailing}`;
+    }
+    if (token.type === "helpLabel") return rewriteChildren(source.replace(/\{icon="[a-z0-9-]+"\}$/, ""), token.tokens ?? []);
+    if (token.type === "link" && token.href.startsWith("help:")) {
+      const ref = parseHelpReference(token.href.slice(5));
+      const target = ref && article.links[`${ref.appId ?? article.appId}/${ref.documentId}`];
+      const label = rewriteChildren(source.match(/^\[([\s\S]*)\]\(/)?.[1] ?? token.text, token.tokens ?? []);
+      return target ? `[${label}](${target.url}${ref.fragment})` : label;
+    }
+    const children =
+      token.type === "list"
+        ? token.items
+        : token.type === "table"
+          ? [...token.header, ...token.rows.flat()].flatMap((cell) => cell.tokens)
+          : "tokens" in token
+            ? (token.tokens ?? [])
+            : [];
+    const raw = rewriteChildren(source, children);
+    return token.type === "heading" ? raw.replace(/[ \t]+\{icon="[a-z0-9-]+"\}(?=[ \t]*\r?\n?$)/i, "") : raw;
+  };
+  return rewriteChildren(article.markdown, lexHelpMarkdown(article.markdown, article.locale));
+};
+
 export const HELP_SEARCH_MAX_LIMIT = 25;
 export const HELP_READ_MAX_CHARS = 7_000;
 const normalizeSearchText = (value: string): string =>
@@ -79,7 +158,7 @@ export const readHelpArticle = (document: HelpArticle, query?: string) => ({
   documentId: document.documentId,
   title: document.title,
   description: document.description,
-  ...selectHelpMarkdown(document.markdown, query),
+  ...selectHelpMarkdown(helpAgentMarkdown(document), query),
 });
 
 export const helpResourceUri = (appId: string, documentId: string): string =>

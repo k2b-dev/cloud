@@ -40,7 +40,24 @@ else {
       Object.assign(
         async (input: URL | RequestInfo) => {
           const id = String(input).split("/").at(-1) ?? "first";
-          return Response.json({ id, locale: "en", title: `Article ${id}`, markdown: "Steps", html });
+          const link = (appId: string, documentId: string) => ({
+            appId,
+            appName: appId,
+            documentId,
+            title: `Article ${documentId}`,
+            url: `/help/apps/${appId}/${documentId}`,
+          });
+          return Response.json({
+            id,
+            locale: "en",
+            title: `Article ${id}`,
+            markdown: "Steps",
+            html,
+            kind: "task",
+            needs: "edit",
+            next: link("spaces", "second"),
+            related: [link("spaces", "third"), link("mail", "mail-share")],
+          });
         },
         { preconnect: () => {} },
       ),
@@ -78,7 +95,7 @@ else {
       anchor.dispatchEvent(event);
       return event;
     };
-    const title = () => dom.document.querySelector("article h3, dialog #layout-help-title")?.textContent ?? "";
+    const title = () => dom.document.querySelector("article h3")?.textContent ?? "";
     return {
       dom,
       button,
@@ -243,6 +260,30 @@ else {
       await until(() => !!reader.dom.document.querySelector("[data-help-search]"));
       expect(location.pathname).toBe("/help/apps/spaces/does-not-exist");
       expect(reader.dom.document.querySelector("article h3")).toBeNull();
+    } finally {
+      await reader.cleanup();
+    }
+  });
+
+  test("page: Next and a related article of the same app open in place; another app's article navigates", async () => {
+    const reader = await setup("page", "first");
+    try {
+      await until(() => !!reader.dom.document.querySelector(".help-article-next"));
+      const click = (selector: string) => {
+        const anchor = reader.dom.document.querySelector<HTMLAnchorElement>(selector);
+        if (!anchor) throw new Error(`Missing ${selector}`);
+        const event = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+        anchor.dispatchEvent(event);
+        return event;
+      };
+      expect(reader.dom.document.querySelector(".help-article-fact")?.textContent).toBe("You need Edit");
+      expect(click('.help-article-related-link[href="/help/apps/mail/mail-share"]').defaultPrevented).toBe(false);
+      expect(click(".help-article-next").defaultPrevented).toBe(true);
+      await until(() => reader.title() === "Article second");
+      expect(location.pathname).toBe("/app/spaces/help/second");
+      await until(() => !!reader.dom.document.querySelector(".help-article-related-link"));
+      expect(click('.help-article-related-link[href="/help/apps/spaces/third"]').defaultPrevented).toBe(true);
+      await until(() => reader.title() === "Article third");
     } finally {
       await reader.cleanup();
     }

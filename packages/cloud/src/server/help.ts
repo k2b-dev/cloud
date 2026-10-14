@@ -1,8 +1,20 @@
+import { formatShortcut } from "@k2b/ui";
 import { Hono } from "hono";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
-import { type HelpDocumentManifest, type HelpDocumentPayload, type HelpSearchPayload, helpLocaleChain } from "../shared/help";
-import { markdownToPlainText, renderHelpMarkdown } from "../shared/markdown";
+import { helpAgentMarkdown } from "../_internal/help-catalog";
+import {
+  HELP_ACCESS_LEVELS,
+  HELP_KINDS,
+  HELP_REFERENCE_PATTERN,
+  type HelpDocumentManifest,
+  type HelpDocumentPayload,
+  type HelpKind,
+  type HelpSearchPayload,
+  helpLocaleChain,
+  parseHelpReference,
+} from "../shared/help";
+import { lexHelpMarkdown, markdownToPlainText, renderHelpMarkdown, walkHelpTokens } from "../shared/markdown";
 import { auth } from "./middleware/auth";
 
 const metadataSchema = z.object({
@@ -11,10 +23,22 @@ const metadataSchema = z.object({
   icon: z.string().trim().min(1).optional(),
   description: z.string().trim().min(1).optional(),
   order: z.number().int().optional(),
+  kind: z.enum(HELP_KINDS).optional(),
+  needs: z.enum(HELP_ACCESS_LEVELS).optional(),
+  next: z
+    .string()
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    .optional(),
+  related: z
+    .array(z.string().regex(HELP_REFERENCE_PATTERN))
+    .refine((refs) => new Set(refs).size === refs.length, "Duplicate related Help reference")
+    .optional(),
 });
 
-export type HelpDefinitionDocument = Omit<z.infer<typeof metadataSchema>, "order"> & {
+export type HelpDefinitionDocument = Omit<z.infer<typeof metadataSchema>, "order" | "kind" | "related"> & {
   order: number;
+  kind: HelpKind;
+  related: readonly string[];
   markdown: string;
   html: string;
   searchText: string;
@@ -34,7 +58,7 @@ export type HelpCollection = {
   getMarkdown: (id: string) => string | undefined;
 };
 
-type ParsedHelpDocument = Omit<HelpDefinitionDocument, "order"> & { order?: number };
+type ParsedHelpDocument = z.infer<typeof metadataSchema> & Pick<HelpDefinitionDocument, "markdown" | "html" | "searchText">;
 
 const parseSource = (source: string, locale: string): ParsedHelpDocument => {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/.exec(source);
@@ -47,7 +71,7 @@ const parseSource = (source: string, locale: string): ParsedHelpDocument => {
   return {
     ...metadata,
     markdown,
-    html: renderHelpMarkdown(markdown, locale),
+    html: renderHelpMarkdown(markdown, { locale }),
     searchText: markdownToPlainText(markdown),
   };
 };
@@ -69,12 +93,27 @@ const parseDocuments = (
     .map((source) => parseSource(source, locale))
     .map((document): HelpDefinitionDocument => {
       const base = baseById?.get(document.id);
-      if (!baseById) return { ...document, order: document.order ?? 100 };
+      if (!baseById)
+        return { ...document, order: document.order ?? 100, kind: document.kind ?? "task", related: Object.freeze(document.related ?? []) };
       if (!base) throw new Error(`Help locale "${locale}" contains unknown document id "${document.id}"`);
       if ((document.icon !== undefined && document.icon !== base.icon) || (document.order !== undefined && document.order !== base.order)) {
         throw new Error(`Help locale "${locale}" must preserve icon and order for document "${document.id}"`);
       }
-      return { ...document, icon: base.icon, description: document.description ?? base.description, order: base.order };
+      for (const field of ["kind", "needs", "next", "related"] as const) {
+        if (document[field] !== undefined && JSON.stringify(document[field]) !== JSON.stringify(base[field])) {
+          throw new Error(`Help locale "${locale}" must preserve ${field} for document "${document.id}"`);
+        }
+      }
+      return {
+        ...document,
+        icon: base.icon,
+        description: document.description ?? base.description,
+        order: base.order,
+        kind: base.kind,
+        needs: base.needs,
+        next: base.next,
+        related: base.related,
+      };
     })
     .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
     .map((document) => Object.freeze(document));
@@ -116,6 +155,27 @@ export const defineHelp = (
     documentsByLocale[locale] = parseDocuments(sources, locale, baseById);
   }
 
+  for (const [locale, localizedDocuments] of Object.entries(documentsByLocale)) {
+    for (const document of localizedDocuments) {
+      const validate = (reference: string, field: string) => {
+        const ref = parseHelpReference(reference);
+        if (!ref || (!ref.appId && !baseById.has(ref.documentId))) {
+          throw new Error(`Help locale "${locale}" document "${document.id}" has unknown ${field} reference "${reference}"`);
+        }
+      };
+      if (document.next === document.id)
+        throw new Error(`Help locale "${locale}" document "${document.id}" must not reference itself in next`);
+      if (document.next) validate(document.next, "next");
+      for (const reference of document.related) validate(reference, "related");
+      walkHelpTokens(lexHelpMarkdown(document.markdown, locale), (token) => {
+        if (token.type === "link" && token.href.startsWith("help:")) validate(token.href.slice(5), "help:");
+        if (token.type === "helpKbd" && formatShortcut(String(token.keys), { platform: "other", locale }).keys.length === 0) {
+          throw new Error(`Help document "${document.id}" has an invalid key shortcut "${token.keys}" in locale "${locale}"`);
+        }
+      });
+    }
+  }
+
   return {
     baseLocale,
     documentsByLocale: Object.freeze(documentsByLocale),
@@ -134,6 +194,8 @@ export const defineHelp = (
  * Define one app-owned help corpus. The explicit source list is deliberate:
  * IDs, ordering and ownership stay visible in code; no filesystem scanning or
  * build-time convention is required.
+ *
+ * Its payload includes kind and needs, but no next and an empty related list: it has no page route to link to.
  *
  * @deprecated Declare Help with `defineHelp()` and pass it to `app.start({ help })`. This router only
  * requires sign-in; it does not apply the app's Help visibility, so the mounting app's routes must guard it.
@@ -180,8 +242,11 @@ export const defineHelpCollection = (options: { basePath: string; sources: reado
         locale: "en",
         id: document.id,
         title: document.title,
-        markdown: document.markdown,
+        markdown: helpAgentMarkdown({ markdown: document.markdown, locale: "en", appId: "", links: {} }),
         html: document.html,
+        kind: document.kind,
+        needs: document.needs,
+        related: [],
       };
       return context.json(payload);
     });

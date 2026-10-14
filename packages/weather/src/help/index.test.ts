@@ -9,7 +9,7 @@ describe("weatherHelp", () => {
     expect(weatherHelp.getMarkdown("weather-start")).toContain("location search is limited to German cities");
     const startHtml = weatherHelp.documents.find((document) => document.id === "weather-start")?.html;
     expect(startHtml).toContain('<h2 id="use-weather" class="help-section-title"');
-    expect(startHtml).toContain("<span>Use Weather</span>");
+    expect(startHtml).toContain('class="help-section-title">Use Weather</h2>');
     expect(weatherHelp.getMarkdown("weather-read")).toContain("Choose the forecast section");
     expect(weatherHelp.getMarkdown("weather-troubleshooting")).toContain("Search currently covers German cities");
   });

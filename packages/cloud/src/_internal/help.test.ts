@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { defineHelp, type HelpDefinition } from "../server/help";
 import { compileHelp, HELP_DOCUMENT_MAX_BYTES } from "./help";
 
@@ -77,6 +78,8 @@ describe("Help registration compiler", () => {
         id: `article-${index}`,
         title: `Article ${index}`,
         order: index,
+        kind: "task",
+        related: [],
         markdown: "x".repeat(120 * 1024),
         html: "",
         searchText: "",
@@ -109,4 +112,35 @@ describe("Help registration compiler", () => {
     expect(compiled.corpus.documents[0]?.searchText).toBeTruthy();
     expect(compiled.corpus.documentsByLocale?.de?.[0]?.searchText).toBeTruthy();
   });
+});
+
+test("own-app prefixed related and inline references validate at compile time", () => {
+  for (const source of [
+    article("start", "Start", 10).replace("order: 10", "order: 10\nrelated: [inventory/missing]"),
+    article("start", "Start", 10, "[Read](help:inventory/missing#section)"),
+  ]) {
+    const definition = defineHelp({ documents: [source] });
+    expect(() => compileHelp({ appId: "inventory", definition })).toThrow(
+      'Help locale "en" document "start" has unknown reference "inventory/missing',
+    );
+    expect(() => compileHelp({ appId: "other", definition })).not.toThrow();
+  }
+});
+
+test("revision two republishes an unchanged definition", () => {
+  const { corpus } = compileHelp({ appId: "inventory", definition: defineHelp({ documents: [article("start", "Start", 10)] }) });
+  const hash = (revision: number) =>
+    createHash("sha256")
+      .update(
+        JSON.stringify({
+          revision,
+          appId: corpus.appId,
+          baseLocale: corpus.baseLocale,
+          documents: corpus.documents,
+          documentsByLocale: corpus.documentsByLocale,
+        }),
+      )
+      .digest("hex");
+  expect(corpus.manifestHash).toBe(hash(2));
+  expect(corpus.manifestHash).not.toBe(hash(1));
 });

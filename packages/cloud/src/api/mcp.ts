@@ -15,7 +15,13 @@ import {
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
-import { HELP_SEARCH_MAX_LIMIT, helpResourceUri, parseHelpResourceUri, readHelpArticle } from "../_internal/help-catalog";
+import {
+  HELP_SEARCH_MAX_LIMIT,
+  helpAgentMarkdown,
+  helpResourceUri,
+  parseHelpResourceUri,
+  readHelpArticle,
+} from "../_internal/help-catalog";
 import { getCapability, listApps } from "../_internal/registry";
 import { addCloudResourceHrefs } from "../ai/resource-refs";
 import { capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
@@ -540,7 +546,7 @@ const createMcpServer = (
         {
           uri: message.params.uri,
           mimeType: "text/markdown",
-          text: document.markdown,
+          text: helpAgentMarkdown(document),
           _meta: { "cloud/manifestHash": document.manifestHash, "cloud/locale": document.locale },
         },
       ],

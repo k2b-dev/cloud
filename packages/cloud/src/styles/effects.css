@@ -345,123 +345,295 @@
   background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 10%, var(--ui-surface-muted));
 }
 
-/* The reader's layout steps follow its own width: a dialog, a full page, or
-   an app's embedded reader, never the window. */
+/* One reader for the dialog, the full page, and an app's embedded reader. Its
+   layout steps follow its own width, never the window. Wide: the article and a
+   text table of contents beside it. Narrow: one column, and the contents become
+   an "On this page" menu under the head. */
 .help-article {
   container: help-article / inline-size;
 }
 
-.help-article-toc[data-empty] {
-  visibility: hidden;
-}
-
 .help-article-layout {
   display: grid;
-  grid-template-columns: minmax(10rem, 13rem) minmax(0, 52rem);
+  grid-template-columns: minmax(0, 40rem) minmax(10rem, 13rem);
   justify-content: center;
-  align-items: start;
-  gap: clamp(2rem, 4cqi, 4rem);
+  gap: 3.5rem;
 }
 
-.help-article-copy {
+.help-article-main {
   min-width: 0;
 }
 
-.help-article-toc {
+.help-article-aside {
+  min-width: 0;
+}
+
+.help-article-aside-sticky {
   position: sticky;
-  top: 0.25rem;
-  align-self: start;
-  min-width: 0;
+  top: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+  padding-top: 0.25rem;
 }
 
-.help-article-toc-label {
-  margin: 0 0 0.6rem;
-  color: var(--color-zinc-500);
-  font-size: 0.6875rem;
-  font-weight: 650;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.help-article-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 2rem;
 }
 
-.help-article-toc ol {
-  display: grid;
-  gap: 0.2rem;
-  margin: 0 !important;
-  padding: 0 !important;
-  list-style: none !important;
-}
-
-.help-article-toc li {
-  min-width: 0;
-}
-
-.help-article-toc button {
-  display: grid;
-  grid-template-columns: 2.25rem minmax(0, 1fr);
-  width: 100%;
+.help-article-path {
+  display: flex;
   min-width: 0;
   align-items: center;
-  gap: 0.6rem;
-  border-radius: var(--ui-radius-control);
-  color: var(--color-zinc-600);
-  padding: 0.3rem;
-  text-align: left;
-  transition:
-    background-color 140ms ease,
-    color 140ms ease;
-}
-
-.help-article-toc button:hover {
-  color: var(--ui-app-accent-text);
-}
-
-.help-article-toc button:focus-visible {
-  outline: none;
-  box-shadow: var(--ui-focus);
-}
-
-.help-article-toc button[aria-current="location"] {
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 8%, var(--ui-surface-subtle));
-  color: var(--ui-app-accent-text);
-}
-
-.help-article-toc-icon {
-  display: grid;
-  width: 2.25rem;
-  height: 2.25rem;
-  place-items: center;
-  border-radius: var(--ui-radius-control);
-  background: var(--ui-surface-muted);
-  color: inherit;
-  font-size: 0.95rem;
-}
-
-.help-article-toc button[aria-current="location"] .help-article-toc-icon {
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 13%, var(--ui-surface-muted));
-}
-
-.help-article-toc-title {
-  overflow: hidden;
-  font-size: 0.75rem;
+  gap: 0.375rem;
+  margin: 0;
+  color: var(--color-zinc-500);
+  font-size: 0.8125rem;
   font-weight: 550;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25rem;
 }
 
-.dark .help-article-toc button {
+.help-article-path > i {
+  font-size: 0.75rem;
+}
+
+.help-article-path-link {
+  border-radius: var(--ui-radius-control);
+  color: inherit;
+}
+
+.help-article-path-link:hover {
+  color: var(--ui-app-accent-text);
+}
+
+.help-article-title {
+  margin: 0;
+  border-radius: var(--ui-radius-control);
+  color: var(--color-zinc-950);
+  font-size: 1.75rem;
+  font-weight: 650;
+  letter-spacing: -0.022em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.dark .help-article-title {
+  color: var(--color-zinc-50);
+}
+
+/* The short answer: the article's first paragraph, one step larger than the body. */
+.help-article-lead,
+.help-document.help-article-lead {
+  margin: 0;
+  color: var(--color-zinc-700);
+  font-size: 1.125rem;
+  line-height: 1.55;
+}
+
+.help-document.help-article-lead > p {
+  margin: 0;
+}
+
+.dark :is(.help-article-lead, .help-document.help-article-lead) {
+  color: var(--color-zinc-300);
+}
+
+.help-article-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.help-article-fact {
+  display: inline-flex;
+  min-height: 1.75rem;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 999px;
+  background: var(--ui-surface-muted);
+  color: var(--color-zinc-700);
+  padding: 0 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.25;
+}
+
+.help-article-fact > i {
+  color: var(--ui-app-accent-text);
+  font-size: 0.9375rem;
+}
+
+.help-article-fact strong {
+  color: var(--color-zinc-950);
+  font-weight: 650;
+}
+
+.dark .help-article-fact {
+  color: var(--color-zinc-300);
+}
+
+.dark .help-article-fact strong {
+  color: var(--color-zinc-50);
+}
+
+/* Narrow readers only: the section menu and the copy action under the head. */
+.help-article-tools {
+  display: none;
+  width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.help-article-tools-copy {
+  margin-inline-start: auto;
+}
+
+/* The end of an article: one large "Next" tile, then related articles. */
+.help-article-end {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  margin-top: 3.5rem;
+}
+
+.help-article-next {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-radius: var(--ui-radius-surface);
+  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 9%, var(--ui-surface-subtle));
+  padding: 1.25rem 1.25rem 1.375rem;
+  text-decoration: none;
+  transition: background-color 140ms ease;
+}
+
+.help-article-next:hover {
+  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 15%, var(--ui-surface-subtle));
+}
+
+.help-article-next-label {
+  color: var(--ui-app-accent-text);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.help-article-next-row {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.help-article-next-icon {
+  margin-top: 0.125rem;
+  color: var(--ui-app-accent-text);
+  font-size: 1.375rem;
+}
+
+.help-article-next-arrow {
+  margin-top: 0.25rem;
+  margin-inline-start: auto;
+  color: var(--ui-app-accent-text);
+  font-size: 1.25rem;
+}
+
+.help-article-next .help-article-link-title {
+  font-size: 1.125rem;
+}
+
+.help-article-link-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.help-article-link-title {
+  color: var(--color-zinc-950);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.help-article-link-description {
+  color: var(--color-zinc-600);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.dark .help-article-link-title {
+  color: var(--color-zinc-50);
+}
+
+.dark .help-article-link-description {
   color: var(--color-zinc-400);
 }
 
-.dark .help-article-toc button:hover,
-.dark .help-article-toc button[aria-current="location"] {
-  color: var(--ui-app-accent-text);
+.help-article-related > h4 {
+  margin: 0 0 0.5rem;
+  color: var(--color-zinc-600);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.dark .help-article-related > h4 {
+  color: var(--color-zinc-400);
+}
+
+.help-article-related > ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.help-article-related-link {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: var(--ui-radius-control);
+  padding: 0.5rem;
+  margin-inline: -0.5rem;
+  text-decoration: none;
+  transition: background-color 140ms ease;
+}
+
+.help-article-related-link:hover {
+  background: var(--ui-surface-subtle);
+}
+
+.help-article-related-icon {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: var(--ui-radius-control);
+  font-size: 1.0625rem;
+}
+
+.help-article-related-app {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .help-document {
+  max-width: 40rem;
   color: var(--color-zinc-800);
-  font-size: 0.9375rem;
-  line-height: 1.65;
+  font-size: 1rem;
+  line-height: 1.6;
 }
 
 .dark .help-document {
@@ -491,35 +663,21 @@
   color: var(--color-zinc-100);
 }
 
-.help-document :where(h2, h3) {
-  margin: 2.5rem 0 0.75rem;
+.help-document :where(h3) {
+  margin: 2rem 0 0.5rem;
   font-size: 1.125rem;
   line-height: 1.35;
 }
 
-.help-document .help-section-title {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  margin: 3.75rem 0 1.25rem;
-  scroll-margin-top: 4rem;
+.help-document :where(h2) {
+  margin: 2.5rem 0 0.75rem;
+  scroll-margin-top: 1rem;
   font-size: 1.25rem;
+  line-height: 1.3;
 }
 
-.help-document .help-section-title:first-child {
+.help-document > :where(h2:first-child) {
   margin-top: 0;
-}
-
-.help-section-icon {
-  display: grid;
-  width: 2.625rem;
-  height: 2.625rem;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: var(--ui-radius-control);
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 11%, var(--ui-surface-muted));
-  color: var(--ui-app-accent-text);
-  font-size: 1.05rem;
 }
 
 .help-document :where(h4) {
@@ -587,9 +745,9 @@
 }
 
 .help-document .help-reference > ul {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.25rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   margin: 0 !important;
   padding: 0 !important;
   list-style: none;
@@ -600,11 +758,14 @@
   margin: 0;
 }
 
+/* One column: the term leads its line, its explanation follows on the same line. */
 .help-document .help-reference > ul > li > strong:first-child {
-  display: block;
-  margin-bottom: 0.2rem;
-  color: var(--ui-app-accent-text);
-  font-size: 0.875rem;
+  color: var(--color-zinc-950);
+  font-weight: 650;
+}
+
+.dark .help-document .help-reference > ul > li > strong:first-child {
+  color: var(--color-zinc-50);
 }
 
 /* Tailwind Typography decorates inline code with visible backticks. Help
@@ -614,64 +775,68 @@
   content: none !important;
 }
 
+/* Steps use the shared @k2b/ui look: no surface, large numbers in the app colour. */
 .help-document .help-steps {
-  margin: 1rem 0 2rem;
-  border-radius: var(--ui-radius-surface);
-  background: var(--ui-surface-subtle);
-  padding: 0.25rem 1.25rem;
+  margin: 1rem 0 1.75rem;
 }
 
-.help-document .help-steps > ol {
+.help-document .help-steps > ol.k2b-steps {
   margin: 0 !important;
   padding: 0 !important;
-  list-style: none;
-  counter-reset: help-step;
 }
 
-.help-document .help-steps > ol > li {
-  position: relative;
-  min-height: 3rem;
-  margin: 0;
-  padding: 1rem 0 1rem 3.25rem;
-  counter-increment: help-step;
+.help-document .help-steps > ol.k2b-steps > li + li {
+  margin-top: 0;
 }
 
-.help-document .help-steps > ol > li::before {
-  position: absolute;
-  top: 1rem;
-  left: 0;
-  z-index: 1;
-  display: grid;
-  width: 2.25rem;
-  height: 2.25rem;
-  place-items: center;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 13%, var(--ui-surface-muted));
-  color: var(--ui-app-accent-text);
-  content: counter(help-step);
-  font-size: 0.75rem;
-  font-weight: 650;
-}
-
-.help-document .help-steps > ol > li:not(:last-child)::after {
-  position: absolute;
-  top: 3.25rem;
-  /* Reach the next item's marker despite the next row's top padding. */
-  bottom: -1rem;
-  left: 1.1rem;
-  width: 1px;
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 20%, var(--ui-border));
-  content: "";
-}
-
+/* A step's first bold words often name it ("Choose:"); keep them in the text colour. */
 .help-document .help-steps > ol > li > strong:first-child,
 .help-document .help-steps > ol > li > p:first-child > strong:first-child {
-  color: var(--color-zinc-900);
+  color: var(--color-zinc-950);
 }
 
 .dark .help-document .help-steps > ol > li > strong:first-child,
 .dark .help-document .help-steps > ol > li > p:first-child > strong:first-child {
+  color: var(--color-zinc-50);
+}
+
+/* A bold menu path: label chips joined by ›. */
+.help-document .help-menu-path {
+  white-space: normal;
+}
+
+.help-document .help-menu-path-separator {
+  margin-inline: 0.3em;
+  color: var(--color-zinc-500);
+}
+
+/* Details: reasons and special cases, collapsed, read at body size. They stay
+   flat when open: the text continues on the page, not in a box. The selectors
+   outrank the shared Disclosure surface rules. */
+.help-document details.help-details[data-surface] {
+  margin: 1rem 0 1.25rem;
+  padding: 0;
+  background: transparent;
+}
+
+.help-document details.help-details > summary {
+  min-height: 2.75rem;
+  margin-inline: -0.5rem;
+  padding-inline: 0.5rem;
+  color: var(--color-zinc-900);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.dark .help-document details.help-details > summary {
   color: var(--color-zinc-100);
+}
+
+.help-document details.help-details > .k2b-disclosure__content {
+  padding: 0.25rem 0;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .help-document .help-compare {
@@ -860,14 +1025,14 @@
   overflow-wrap: break-word;
   /* The row fill and column band reach as far past the text on every side. */
   padding: var(--md-table-bleed);
-  font-size: 0.78rem;
+  font-size: 0.875rem;
   line-height: 1.45;
   word-break: normal;
 }
 
 .help-document .md-table thead .md-table-cell {
   color: var(--color-zinc-700);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 650;
 }
 
@@ -904,66 +1069,22 @@
 
 @container help-article (max-width: 56rem) {
   .help-article-layout {
-    grid-template-columns: 3.25rem minmax(0, 52rem);
-    gap: 2rem;
+    grid-template-columns: minmax(0, 40rem);
+    gap: 0;
   }
 
-  .help-article-toc-label,
-  .help-article-toc-title {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
+  .help-article-aside {
+    display: none;
   }
 
-  .help-article-toc button {
-    display: grid;
-    width: 2.85rem;
-    height: 2.85rem;
-    grid-template-columns: 1fr;
-    place-items: center;
+  .help-article-tools {
+    display: flex;
   }
 }
 
 @container help-article (max-width: 40rem) {
-  .help-article-layout {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 1.5rem;
-  }
-
-  .help-article-toc {
-    z-index: 2;
-    top: 0;
-    overflow-x: auto;
-    border-radius: var(--ui-radius-surface);
-    background: color-mix(in srgb, var(--ui-surface-raised) 90%, transparent);
-    box-shadow: var(--ui-shadow-hover);
-    backdrop-filter: blur(12px);
-    scrollbar-width: none;
-  }
-
-  .help-article-toc::-webkit-scrollbar {
-    display: none;
-  }
-
-  .help-article-toc ol {
-    display: flex;
-    width: max-content;
-    padding: 0.35rem !important;
-  }
-
-  .help-document .help-section-title {
-    margin-top: 3rem;
-    scroll-margin-top: 4.5rem;
-  }
-
-  .help-document .help-reference > ul,
-  .help-document .help-compare > ul {
-    grid-template-columns: minmax(0, 1fr);
+  .help-article-head {
+    margin-bottom: 1.5rem;
   }
 }
 

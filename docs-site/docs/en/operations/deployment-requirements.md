@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-13
+updated: 2026-10-14
 ---
 
 # Deployment requirements
@@ -1035,6 +1035,12 @@ Help publication and native full-text search require the Core-managed Postgres
 schema. Every supported PostgreSQL version (15 to 17) provides this baseline.
 Apps renew their Help collection through the existing app heartbeat; Core owns
 bounded cleanup of expired collections. See [In-product Help](/en/docs/platform/help).
+
+On upgrade, Core adds four columns to `help.documents` idempotently during
+setup: `kind`, `needs`, `next_id`, and `related`. Every running app republishes
+its Help once after upgrading because the manifest revision changed.
+Old collections expire as usual after six minutes without renewal. No operator
+action is required.
 
 Help, Notebooks, Mail, Assistant conversations, AI memories, and AI Skills
 search with native PostgreSQL full-text search. BM25 ranking with

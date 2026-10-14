@@ -111,3 +111,47 @@ describe("Help API", () => {
     expect((await failed.request("/help/v1/inventory/search?q=test")).status).toBe(500);
   });
 });
+
+test("article payload resolves author navigation, hides invisible references and uses Mac key caps", async () => {
+  const target = {
+    appId: "mail",
+    appName: "Mail",
+    documentId: "mail-invitations",
+    title: "Invitations",
+    accent: "blue",
+    url: "/help/apps/mail/mail-invitations",
+  };
+  const dialect = fixtureHelpReader(async () => [
+    {
+      appId: "mail",
+      appName: "Mail",
+      manifestHash: "current",
+      documents: [
+        {
+          id: "start",
+          title: "Start",
+          order: 10,
+          kind: "start",
+          needs: "edit",
+          next: "mail-invitations",
+          related: ["mail-invitations", "hidden/private"],
+          links: { "mail/mail-invitations": target },
+          markdown:
+            ':kbd[mod+k]\n\n**Hide**{icon="eye-off"}\n\n[reply](help:mail-invitations#reply) and [private guidance](help:hidden/private)',
+        },
+      ],
+    },
+  ]);
+  const routes = createHelpRoutes({ help: dialect, authenticate });
+  const read = async (agent: string) =>
+    (await routes.request("/help/v1/mail/documents/start", { headers: { "User-Agent": agent } })).json();
+  const article = await read("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)");
+  expect(article).toMatchObject({ kind: "start", needs: "edit", next: target, related: [target] });
+  expect(article.html).toContain('class="k2b-kbd__key">⌘</kbd>');
+  expect(article.html).toContain('href="/help/apps/mail/mail-invitations#reply"');
+  expect(article.html).toContain("private guidance");
+  expect(article.html).not.toContain("hidden/private");
+  expect(article.html).not.toContain('private"');
+  expect(article.markdown).toBe("Ctrl+K (⌘K on Mac)\n\n**Hide**\n\n[reply](/help/apps/mail/mail-invitations#reply) and private guidance");
+  expect((await read("Linux")).html).toContain('class="k2b-kbd__key">Ctrl</kbd>');
+});

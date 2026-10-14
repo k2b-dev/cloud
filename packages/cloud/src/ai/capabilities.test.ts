@@ -368,7 +368,7 @@ describe("AI capability catalog", () => {
           title: "Permissions",
           description: "Share contact books safely.",
           order: 20,
-          markdown: `# Permissions\n\n## Background\n\n${"Background details. ".repeat(700)}\n\n## Member permissions\n\nEditors can update contacts. Viewers can only read them.`,
+          markdown: `# Permissions\n\n## Background\n\n${"Background details. ".repeat(700)}\n\n## Member permissions\n\nEditors can update contacts. Viewers can only read them.\n\nPress :kbd[mod+k].\n\n**Hide**{icon="eye-off"}\n\n:::details Why?\nAll details stay available.\n:::\n\n[private](help:hidden/private)`,
         },
       ],
     };
@@ -404,6 +404,11 @@ describe("AI capability catalog", () => {
     });
     if (!article.document) throw new Error("Help article missing");
     expect(article.document.markdown).toContain("Editors can update contacts");
+    expect(article.document.markdown).toContain("Ctrl+K (⌘K on Mac)");
+    expect(article.document.markdown).toContain("**Hide**");
+    expect(article.document.markdown).not.toContain('{icon="');
+    expect(article.document.markdown).toContain("**Why?**\n\nAll details stay available.");
+    expect(article.document.markdown).not.toContain("help:hidden/private");
     expect(article.document.markdown.length).toBeLessThanOrEqual(7_000);
     expect(article.document.markdown).not.toContain("Background details");
   });

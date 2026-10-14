@@ -5,13 +5,14 @@
  * the visual appearance of the CodeMirror editor extensions.
  */
 
-import { markdownInfoBlocks } from "@k2b/ui";
-import { Marked, type MarkedExtension } from "marked";
+import { formatShortcut, type KeyboardPlatform, markdownInfoBlocks } from "@k2b/ui";
+import { Marked, type MarkedExtension, type Token } from "marked";
 import sanitizeHtml from "sanitize-html";
+import { type HelpLinkResolver, parseHelpReference } from "../help";
 import { markdownCalloutSanitizeOptions } from "./callout-sanitizer";
 import { markdownClient } from "./client";
 import { codeExtension, plainCodeExtension } from "./extensions/code";
-import { guidedHelpExtension } from "./extensions/guided-help";
+import { guidedHelpExtension, headingMetaPattern, helpHeadingSlug } from "./extensions/guided-help";
 import { imagesExtension } from "./extensions/images";
 import { katexExtension } from "./extensions/katex";
 import { linksExtension } from "./extensions/links";
@@ -19,6 +20,7 @@ import { markExtension } from "./extensions/mark";
 import { subSupExtension } from "./extensions/sub-sup";
 import { tablesExtension } from "./extensions/tables";
 import { taskListExtension } from "./extensions/task-list";
+import { escapeHtml } from "./shared";
 
 // Create a configured marked instance
 type MarkdownProfile = "content" | "help";
@@ -74,7 +76,7 @@ export type MarkdownRenderOptions = {
   locale?: string;
 };
 
-const sanitizeRenderedHtml = (html: string): string => {
+const sanitizeRenderedHtml = (html: string, profile: MarkdownProfile = "content"): string => {
   const callouts = markdownCalloutSanitizeOptions();
   return sanitizeHtml(html, {
     ...callouts,
@@ -84,6 +86,7 @@ const sanitizeRenderedHtml = (html: string): string => {
       "aside",
       "br",
       "div",
+      ...(profile === "help" ? ["details", "summary", "kbd"] : []),
       "figcaption",
       "figure",
       "i",
@@ -115,7 +118,7 @@ const sanitizeRenderedHtml = (html: string): string => {
       "tr",
     ],
     allowedAttributes: {
-      "*": ["aria-hidden", "aria-label", "class", "data-help-icon", "data-tone", "id", "title"],
+      "*": ["aria-hidden", "aria-label", "class", "data-tone", "id", "title"],
       a: [
         "href",
         "name",
@@ -128,6 +131,7 @@ const sanitizeRenderedHtml = (html: string): string => {
       annotation: ["encoding"],
       aside: [{ name: "role", multiple: false, values: ["note"] }],
       code: ["class"],
+      ...(profile === "help" ? { details: [{ name: "data-surface", multiple: false, values: ["plain"] }] } : {}),
       div: ["class", "data-block-name", "style"],
       img: ["alt", "class", "height", "loading", "src", "title", "width", "style"],
       input: ["checked", "class", "disabled", "type"],
@@ -210,16 +214,49 @@ export function renderMarkdownSync(content: string, options: MarkdownRenderOptio
  * Render trusted documentation Markdown with guided sections and internal
  * navigation. All fenced code remains visible source, as in ordinary Markdown.
  */
-export function renderHelpMarkdown(content: string, locale?: string): string {
+export type HelpMarkdownRenderOptions = { locale?: string; platform?: KeyboardPlatform; links?: HelpLinkResolver };
+export type { HelpLinkResolver } from "../help";
+
+/** Lexer shared by rendering, startup validation and agent source conversion. */
+export const lexHelpMarkdown = (content: string, locale?: string) => markedFor("help", "widget", locale).lexer(content);
+export const walkHelpTokens = (tokens: Token[], visitor: (token: Token) => void) => markedFor("help").walkTokens(tokens, visitor);
+
+export function renderHelpMarkdown(content: string, options: HelpMarkdownRenderOptions = {}): string {
   if (!content || typeof content !== "string") return "";
-  const html = markedFor("help", "widget", locale).parse(content);
-  return typeof html === "string" ? sanitizeRenderedHtml(html) : "";
+  const instance = markedFor("help", "widget", options.locale);
+  const tokens = instance.lexer(content);
+  const headingIds = new Map<string, number>();
+  instance.walkTokens(tokens, (token) => {
+    if (token.type === "heading") {
+      const base = helpHeadingSlug(token.text.replace(headingMetaPattern, "").trim());
+      const occurrence = headingIds.get(base) ?? 0;
+      headingIds.set(base, occurrence + 1);
+      Reflect.set(token, "helpId", occurrence === 0 ? base : `${base}-${occurrence + 1}`);
+    } else if (token.type === "helpKbd") {
+      const shortcut = formatShortcut(String(token.keys), { platform: options.platform ?? "other", locale: options.locale });
+      token.html = `<kbd class="k2b-kbd"><span class="k2b-sr-only">${escapeHtml(shortcut.name)}</span><span class="k2b-kbd__keys" aria-hidden="true">${shortcut.keys.map((key) => `<kbd class="k2b-kbd__key">${escapeHtml(key.label)}</kbd>`).join("")}</span></kbd>`;
+    } else if (token.type === "link" && token.href.startsWith("help:")) {
+      const ref = parseHelpReference(token.href.slice(5));
+      const target = ref && options.links?.(ref);
+      if (target) token.href = target.url + ref.fragment;
+      else token.type = "helpUnresolvedLink";
+    }
+  });
+  return sanitizeRenderedHtml(instance.parser(tokens), "help");
 }
 
 /** Plain text used by lightweight client-side help search indexes. */
 export function markdownToPlainText(content: string): string {
-  const html = renderHelpMarkdown(content);
-  return sanitizeHtml(html, { allowedTags: [], allowedAttributes: {} }).replace(/\s+/g, " ").trim();
+  // The text a screen reader reads: key names instead of key caps, no decorative separators, and words of
+  // adjacent blocks (a callout's title and body, a summary and its details) kept apart.
+  const html = renderHelpMarkdown(content).replace(/<\/(?:p|div|summary|li|h[1-6]|td|th)>/g, "$& ");
+  // Hidden parts are spans and icons; the filter only sees tags that the first pass keeps.
+  const spoken = sanitizeHtml(html, {
+    allowedTags: ["span", "i"],
+    allowedAttributes: { "*": ["aria-hidden"] },
+    exclusiveFilter: (frame) => frame.attribs["aria-hidden"] === "true",
+  });
+  return sanitizeHtml(spoken, { allowedTags: [], allowedAttributes: {} }).replace(/\s+/g, " ").trim();
 }
 
 export { marked };
