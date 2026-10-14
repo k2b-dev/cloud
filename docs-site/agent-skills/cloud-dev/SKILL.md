@@ -102,9 +102,9 @@ SolidJS library remains independent of Cloud and application domains.
 - Do not recreate generic component contracts inside an application. If no
   primitive fits, surface the gap and agree with the application author
   whether to extend `@k2b/ui` or build application-owned UI.
-- Custom UI follows the same tokens, semantics, interaction, accessibility,
-  responsive, theme, and state principles. Reusable presentation belongs in
-  the library; applications retain their domain behavior.
+- Custom UI follows the same tokens, semantics, interaction, accessibility, responsive, theme, and state principles.
+  Reusable presentation belongs in the library; applications retain their domain behavior. Check every screen
+  against **Styling and accessibility** (`/en/docs/frontend/styling-and-accessibility`).
 - Give an application's landing page the shared overview pattern: either a
   sidebar-first `AppWorkspace` (`SidebarItem variant="object"` rows,
   `AppWorkspace.Main width="content"`, a `PanelHeader size="lg"` with one
