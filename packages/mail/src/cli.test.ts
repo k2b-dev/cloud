@@ -1414,7 +1414,7 @@ test("conversation update replaces repeated and comma-separated assignees and un
   ]);
 });
 
-test("reference config set preserves unspecified settings", async () => {
+test("reference-number config set preserves unspecified settings", async () => {
   let requestBody: unknown;
   const current = {
     mailboxId: MAILBOX_ID,
@@ -1443,7 +1443,7 @@ test("reference config set preserves unspecified settings", async () => {
   const result = await runCli(`http://127.0.0.1:${server.port}`, [
     "--json",
     "mail",
-    "reference",
+    "reference-number",
     "config",
     "set",
     "--mailbox",
@@ -1484,10 +1484,17 @@ test("reference list and ensure expose the permanent value without a row id", as
   });
   servers.push(server);
 
-  const listed = await runCli(`http://127.0.0.1:${server.port}`, ["mail", "reference", "list", CONVERSATION_ID, "--mailbox", MAILBOX_ID]);
+  const listed = await runCli(`http://127.0.0.1:${server.port}`, [
+    "mail",
+    "reference-number",
+    "list",
+    CONVERSATION_ID,
+    "--mailbox",
+    MAILBOX_ID,
+  ]);
   const ensured = await runCli(`http://127.0.0.1:${server.port}`, [
     "mail",
-    "reference",
+    "reference-number",
     "ensure",
     CONVERSATION_ID,
     "--mailbox",
