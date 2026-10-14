@@ -32,14 +32,18 @@ as the Layout: a service account without a user sees no Help, and Help of an
 application the user may not see neither lists nor reads.
 
 Capability Types remain resource identities in result `refs`; Cloud does not
-invent one MCP tool per Type. Pass a returned `{ type, id }` ref unchanged to
-`cloud__resource__read`. The tool resolves the Type's current declared reader
-from the live manifest and rechecks app authorization during the Query.
+invent one MCP tool per Type. Pass a returned ref unchanged to
+`cloud__resource__read`, including its optional `title`, `preview`, `icon` and
+`href`; the tool reads only `type` and `id`. It resolves the Type's current
+declared reader from the live manifest and rechecks app authorization during
+the Query.
 
 Successful capability results retain provider data and root-relative semantic
 links. MCP adds absolute `refs[].href` permalinks using `app.url`, and advertises
 that optional consumer field in each capability tool's output schema so MCP
 clients can validate structured responses. Providers do not add `href` to refs.
+If the added links would push a result over the size bound, MCP returns the
+result without them.
 See [Resource links](/en/docs/platform/capabilities#resource-links).
 
 ## Follow the server instructions

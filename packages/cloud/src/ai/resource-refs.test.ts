@@ -122,9 +122,14 @@ test("enriches only top-level refs with live readers, preserving existing hrefs 
   const noReader = { type: "demo.other", id: "other" };
   const offline = { type: "offline.item", id: "offline" };
   const malformed = { type: "demo.item", id: "bad", extra: true };
+  const illFormed = { type: "demo.item", id: "\ud800" };
   // A maximum-length id stays linked even when URL encoding expands it.
   const overlong = { type: "demo.item", id: "ü".repeat(512) };
-  const result = { data, refs: [{ type: "demo.item", id: "a/b", title: "Item" }, existing, noReader, offline, malformed, overlong], view };
+  const result = {
+    data,
+    refs: [{ type: "demo.item", id: "a/b", title: "Item" }, existing, noReader, offline, malformed, overlong, illFormed],
+    view,
+  };
   const enriched: unknown = addCloudResourceHrefs(result, apps);
   expect(enriched).toEqual({
     ...result,
@@ -135,6 +140,7 @@ test("enriches only top-level refs with live readers, preserving existing hrefs 
       offline,
       malformed,
       { ...overlong, href: cloudResourceHref(overlong) },
+      illFormed,
     ],
   });
   const absolute: unknown = addCloudResourceHrefs(result, apps, "https://cloud.example");
@@ -147,6 +153,7 @@ test("enriches only top-level refs with live readers, preserving existing hrefs 
       offline,
       malformed,
       { ...overlong, href: new URL(cloudResourceHref(overlong), "https://cloud.example").href },
+      illFormed,
     ],
   });
   expect(result.refs[0]).not.toHaveProperty("href");

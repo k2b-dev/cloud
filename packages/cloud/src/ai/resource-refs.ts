@@ -28,6 +28,7 @@ export const addCloudResourceHrefs = <T>(
       const parsed = CloudResourceReferenceSchema.safeParse(reference);
       if (!parsed.success) return reference;
       const ref = parsed.data;
+      if (!ref.id.isWellFormed()) return reference;
       const app = apps.find((candidate) => candidate.appId === cloudResourceRefAppId(ref));
       if (!app || !resolveCapabilityResourceReader(app.manifest, ref)) return reference;
       const href = CloudResourceHrefSchema.safeParse(cloudResourceHref(ref));

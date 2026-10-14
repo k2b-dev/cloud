@@ -501,7 +501,10 @@ These fields serve different boundaries:
 
 Providers keep the strict ref shape and root-relative semantic links. MCP's
 advertised output schema accepts its added `refs[].href`; that consumer field
-is optional and does not become a provider field. Generic `cld capabilities
+is optional and does not become a provider field. Assistant's
+`read_cloud_resource` and MCP's `cloud__resource__read` accept a ref with its
+`href` unchanged. A ref whose ID is not well-formed Unicode gets no `href` or
+`permalink`. Generic `cld capabilities
 read`, `query` and `action` add permalinks for refs with live readers and make
 returned semantic links absolute, including links inside resource lists. They
 read the catalog for this only when a result names refs; if the catalog is

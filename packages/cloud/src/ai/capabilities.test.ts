@@ -162,7 +162,7 @@ const actor = {
 };
 
 describe("AI capability catalog", () => {
-  test("resolves a structured ref to its canonical reader and invokes it with only id", async () => {
+  test.each([false, true])("resolves a ref (enriched: %s) to its canonical reader with only id", async (enriched) => {
     const compiled = compileCapabilities(
       "contacts",
       defineCapabilities({
@@ -191,24 +191,27 @@ describe("AI capability catalog", () => {
     };
     const catalog = buildAiCapabilityCatalog([app]);
     let invocation: unknown;
+    const readerTool = createAiResourceReaderTool({
+      apps: [app],
+      catalog,
+      execute: async (entry, args) => {
+        invocation = { localId: entry.operation.localId, args };
+        return { data: { id: "contact-1" }, refs: [{ type: "contacts.contact", id: "contact-1", title: "Ada" }] };
+      },
+    });
     const prepared = prepareAiTools({
-      tools: [
-        createAiResourceReaderTool({
-          apps: [app],
-          catalog,
-          execute: async (entry, args) => {
-            invocation = { localId: entry.operation.localId, args };
-            return { data: { id: "contact-1" }, refs: [{ type: "contacts.contact", id: "contact-1", title: "Ada" }] };
-          },
-        }),
-      ],
+      tools: [readerTool],
       actor,
       conversationId: "conversation-1",
     });
     const tool = prepared.tools[0];
     if (!tool || tool.kind !== "server") throw new Error("resource reader missing");
     const result = await tool.execute(
-      { type: "contacts.contact", id: "contact-1" },
+      readerTool.def.inputSchema.parse({
+        type: "contacts.contact",
+        id: "contact-1",
+        ...(enriched ? { title: "Ada", href: "https://cloud.test/open/contacts.contact/~contact-1" } : {}),
+      }),
       { signal: AbortSignal.timeout(1_000), requestApproval: async () => true, requestClientTool: async <T>() => undefined as T },
     );
     expect(result).toEqual({

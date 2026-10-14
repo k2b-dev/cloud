@@ -163,7 +163,7 @@ const invoke = async (config: {
       ...(result.refs
         ? {
             refs: result.refs.map((ref) =>
-              manifests.some((manifest) => resolveCapabilityResourceReader(manifest, ref))
+              ref.id.isWellFormed() && manifests.some((manifest) => resolveCapabilityResourceReader(manifest, ref))
                 ? { ...ref, permalink: cloudResourceUrl(config.ctx, ref) }
                 : ref,
             ),

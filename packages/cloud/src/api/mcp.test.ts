@@ -9,7 +9,7 @@ import { decodeJwt, generateKeyPair } from "jose";
 import { z } from "zod";
 import { type FixtureCorpus, fixtureHelpReader } from "../../test/help-reader";
 import { compileCapabilities } from "../_internal/capabilities";
-import { defineCapabilities } from "../contracts/capabilities";
+import { CAPABILITY_MAX_RESULT_BYTES, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { type AuthContext, auth, type RequestActor } from "../server";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
@@ -991,7 +991,7 @@ describe("capability MCP projection", () => {
     expect(forwarded?.get("idempotency-key")).toBe("create-1");
   });
 
-  test("reads a typed resource ref through its current canonical reader", async () => {
+  test.each([false, true])("reads a resource ref (enriched: %s) through its canonical reader", async (enriched) => {
     let requestedUrl = "";
     let requestedBody: unknown;
     const routes = createMcpRoutes({
@@ -1007,7 +1007,10 @@ describe("capability MCP projection", () => {
       jsonrpc: "2.0",
       id: 70,
       method: "tools/call",
-      params: { name: "cloud__resource__read", arguments: { type: "demo.item", id: "one" } },
+      params: {
+        name: "cloud__resource__read",
+        arguments: { type: "demo.item", id: "one", ...(enriched ? { title: "One", href: "https://cloud.test/open/demo.item/~one" } : {}) },
+      },
     });
 
     expect(await response.json()).toMatchObject({
@@ -1020,6 +1023,34 @@ describe("capability MCP projection", () => {
     });
     expect(requestedUrl).toContain("/queries/get");
     expect(requestedBody).toEqual({ input: { id: "one" } });
+  });
+
+  test("omits optional hrefs when enrichment would exceed the MCP result limit", async () => {
+    const refs = Array.from({ length: 100 }, (_, index) => ({ type: "demo.item", id: `${index}-${"ü".repeat(500)}` }));
+    const body = { data: { id: "" }, refs };
+    const resultBytes = () =>
+      new TextEncoder().encode(JSON.stringify({ structuredContent: body, content: [{ type: "text", text: JSON.stringify(body) }] }))
+        .byteLength;
+    body.data.id = "x".repeat(Math.floor((CAPABILITY_MAX_RESULT_BYTES - resultBytes() - 100) / 2));
+    expect(resultBytes()).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
+    expect(resultBytes()).toBeGreaterThan(CAPABILITY_MAX_RESULT_BYTES - 200);
+    const routes = createMcpRoutes({ getCapability: async () => app, fetch: async () => Response.json(body) });
+    const response = await rpc(routes, {
+      jsonrpc: "2.0",
+      id: 73,
+      method: "tools/call",
+      params: { name: "demo__query__get", arguments: { id: "one" } },
+    });
+    const result = z
+      .object({
+        result: z.object({
+          isError: z.boolean().optional(),
+          structuredContent: z.object({ data: z.object({ id: z.string() }), refs: z.array(z.record(z.string(), z.unknown())) }),
+        }),
+      })
+      .parse(await response.json()).result;
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toEqual(body);
   });
 
   test("preserves successful capability results when the registry goes offline during link enrichment", async () => {

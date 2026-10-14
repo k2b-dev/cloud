@@ -280,6 +280,7 @@ test.each(["query", "action"] as const)("%s emits absolute provider links and ca
           refs: [
             { type: "demo.item", id: ".." },
             { type: "demo.item", id: "two" },
+            { type: "demo.item", id: "\ud800" },
           ],
           links: [{ rel: "open", href: "/app/demo" }],
         }),
@@ -287,9 +288,14 @@ test.each(["query", "action"] as const)("%s emits absolute provider links and ca
   await capabilitiesCliModule.run(ctx);
   expect(JSON.parse(lines[0] ?? "")).toMatchObject({
     data: [{ links: [{ rel: "open", href: "http://cloud.test/app/demo/one" }] }],
-    refs: [{ permalink: "http://cloud.test/open/demo.item/~.." }, { permalink: "http://cloud.test/open/demo.item/~two" }],
+    refs: [
+      { permalink: "http://cloud.test/open/demo.item/~.." },
+      { permalink: "http://cloud.test/open/demo.item/~two" },
+      { type: "demo.item", id: "\ud800" },
+    ],
     links: [{ rel: "open", href: "http://cloud.test/app/demo" }],
   });
+  expect(JSON.parse(lines[0] ?? "").refs[2]).toEqual({ type: "demo.item", id: "\ud800" });
 });
 
 test("catalog enrichment failure does not hide a successful action", async () => {

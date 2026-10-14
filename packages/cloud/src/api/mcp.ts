@@ -27,10 +27,11 @@ import {
   type CapabilityActionManifest,
   type CapabilityQueryManifest,
   CapabilitySemanticLinkSchema,
-  CloudResourceRefSchema,
+  type CloudResourceRef,
   capabilityResultJsonSchema,
   capabilityResultSchema,
   cloudResourceRefAppId,
+  LinkedCloudResourceReferenceSchema,
   resolveCapabilityResourceReader,
 } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
@@ -123,7 +124,7 @@ const platformTools: Tool[] = [
     title: "Read Cloud resource",
     description:
       "Read one Cloud resource through its current canonical reader. Pass a typed ref returned by search, list, lookup, or another capability unchanged; never guess a reader name or substitute an id from another resource type.",
-    inputSchema: structuredClone(z.toJSONSchema(CloudResourceRefSchema)) as Tool["inputSchema"],
+    inputSchema: structuredClone(z.toJSONSchema(LinkedCloudResourceReferenceSchema)) as Tool["inputSchema"],
     annotations: { title: "Read Cloud resource", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _meta: { "cloud/kind": "resource-read" },
   },
@@ -302,7 +303,7 @@ const findCapabilityTool = async (
 };
 
 const findResourceReaderTool = async (
-  ref: z.infer<typeof CloudResourceRefSchema>,
+  ref: CloudResourceRef,
   lookup: (appId: string) => Promise<CapabilityRegistryEntry | null>,
   registry: () => Promise<AppRegistryEntry[]>,
 ): Promise<CapabilityTool | null> => {
@@ -335,15 +336,20 @@ const responseTooLargeToolResult = (): CallToolResult => {
   return { isError: true, structuredContent: error, content: [{ type: "text", text: JSON.stringify(error) }] };
 };
 
+const toolResult = (body: Record<string, unknown>, isError: boolean): CallToolResult => ({
+  ...(isError ? { isError: true } : {}),
+  structuredContent: body,
+  content: [{ type: "text", text: JSON.stringify(body) }],
+});
+
+const fitsToolResult = (result: CallToolResult): boolean =>
+  new TextEncoder().encode(JSON.stringify(result)).byteLength <= CAPABILITY_MAX_RESULT_BYTES;
+
 const ensureBoundedToolResult = (result: CallToolResult): CallToolResult =>
-  new TextEncoder().encode(JSON.stringify(result)).byteLength > CAPABILITY_MAX_RESULT_BYTES ? responseTooLargeToolResult() : result;
+  fitsToolResult(result) ? result : responseTooLargeToolResult();
 
 const boundedToolResult = (body: Record<string, unknown>, isError: boolean): CallToolResult =>
-  ensureBoundedToolResult({
-    ...(isError ? { isError: true } : {}),
-    structuredContent: body,
-    content: [{ type: "text", text: JSON.stringify(body) }],
-  });
+  ensureBoundedToolResult(toolResult(body, isError));
 
 const semanticResourceLinks = (body: Record<string, unknown>, origin: string): CallToolResult["content"] => {
   const found = new Map<string, z.infer<typeof CapabilitySemanticLinkSchema>>();
@@ -575,14 +581,14 @@ const createMcpServer = (
     let args: Record<string, unknown>;
     try {
       if (message.params.name === RESOURCE_READ_TOOL) {
-        const parsed = CloudResourceRefSchema.safeParse(message.params.arguments);
+        const parsed = LinkedCloudResourceReferenceSchema.safeParse(message.params.arguments);
         if (!parsed.success) {
           const issues = parsed.error.issues.map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`).join("; ");
           return validationToolError(
             `cloud__resource__read requires one exact typed ref returned by a current Cloud capability (${issues})`,
           );
         }
-        selected = await findResourceReaderTool(parsed.data, capabilityLookup, registry);
+        selected = await findResourceReaderTool({ type: parsed.data.type, id: parsed.data.id }, capabilityLookup, registry);
         args = { id: parsed.data.id };
         if (!selected) {
           return boundedToolResult(
@@ -648,7 +654,8 @@ const createMcpServer = (
       authority,
       dependencies,
     });
-    let body = await parseResponse(response);
+    const providerBody = await parseResponse(response);
+    let body = providerBody;
     const origin = response.ok ? publicCloudOrigin(await (dependencies.getAppUrl ?? defaultAppUrl)()) : undefined;
     if (origin) {
       const parsed = capabilityResultSchema(z.unknown()).safeParse(body);
@@ -668,6 +675,8 @@ const createMcpServer = (
         origin,
       );
     }
+    // Added hrefs are optional: they never turn a result that fits into RESPONSE_TOO_LARGE.
+    if (!fitsToolResult(toolResult(body, !response.ok))) body = providerBody;
     const result = boundedToolResult(body, !response.ok);
     if (origin) result.content.push(...semanticResourceLinks(body, origin));
     return ensureBoundedToolResult(result);

@@ -104,7 +104,7 @@ describe("resource permalink resolution", () => {
 
   test("returns null for an offline app and surfaces a failed registry", async () => {
     expect(await resolveCloudResourceHref(params, { getCapability: async () => null })).toBeNull();
-    expect(
+    await expect(
       resolveCloudResourceHref(params, {
         getCapability: async () => {
           throw new Error("Offline");
@@ -141,7 +141,7 @@ describe("resource permalink resolution", () => {
     const dispatch = async (): Promise<Response> => {
       throw new Error("Offline");
     };
-    expect(resolveCloudResourceHref(params, { getCapability: async () => app, dispatch })).rejects.toThrow("Offline");
+    await expect(resolveCloudResourceHref(params, { getCapability: async () => app, dispatch })).rejects.toThrow("Offline");
   });
 });
 

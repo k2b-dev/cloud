@@ -15,8 +15,8 @@ import {
   type CapabilityActionManifest,
   type CapabilityActionReview,
   type CapabilityQueryManifest,
-  CloudResourceRefSchema,
   cloudResourceRefAppId,
+  LinkedCloudResourceReferenceSchema,
   resolveCapabilityResourceReader,
 } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
@@ -703,7 +703,7 @@ export const createAiResourceReaderTool = (input: {
     name: "read_cloud_resource",
     description:
       "Read a Cloud resource from its structured reference using the resource type's current canonical reader. Pass refs returned by search, Projects, or other capabilities unchanged; never substitute an id from another resource type.",
-    inputSchema: CloudResourceRefSchema,
+    inputSchema: LinkedCloudResourceReferenceSchema,
     outputSchema: z.unknown(),
     approval: "never",
   }).server(async (ref, context) => {
