@@ -124,8 +124,8 @@ export default function MailComposer(props: {
   const preferences = readMailUserPreferences(props.mailboxId);
   const [identityId, setIdentityId] = createSignal(initialContent.senderIdentityId);
   const [signatureTemplateId, setSignatureTemplateId] = createSignal(initialContent.signatureTemplateId ?? null);
-  // Keep the row's presence fixed from the initial snapshot, including an unavailable shared signature.
-  const signatureRowVisible = () => props.signatures.templates.length > 0 || Boolean(initialContent.signatureTemplateId);
+  // Keep the button's presence fixed from the initial snapshot, including an unavailable shared signature.
+  const signatureChoiceVisible = () => props.signatures.templates.length > 0 || Boolean(initialContent.signatureTemplateId);
   const senderDefaultSignatureId = () => defaultSignatureTemplateId(props.signatures, props.identities, identityId());
   const selectedIdentity = () => verifiedIdentities().find((identity) => identity.id === identityId()) ?? null;
   const identityMenuItems = createMemo<DropdownItem[]>(() =>
@@ -1353,16 +1353,6 @@ export default function MailComposer(props: {
           }
         />
 
-        <Show when={signatureRowVisible()}>
-          <MailComposerSignature
-            signatures={props.signatures}
-            value={signatureTemplateId()}
-            senderDefaultId={senderDefaultSignatureId()}
-            disabled={!editable()}
-            onChange={setSignatureTemplateId}
-          />
-        </Show>
-
         <MailComposerAttachments
           attachments={() => draft()?.attachments ?? props.initialSeed?.attachments ?? []}
           uploads={uploads}
@@ -1397,6 +1387,7 @@ export default function MailComposer(props: {
           size="sm"
           variant="ai"
           type="button"
+          aria-label={t().writeWithAi}
           loading={composeWithAi.loading()}
           disabled={!editable() || uploads().length > 0 || composeWithAi.loading()}
           onClick={() =>
@@ -1405,8 +1396,18 @@ export default function MailComposer(props: {
               .catch((error: unknown) => prompts.error(error instanceof Error ? error.message : t().assistantFailed))
           }
         >
-          <i class="ti ti-sparkles" aria-hidden="true" /> {t().writeWithAi}
+          <i class="ti ti-sparkles" aria-hidden="true" />
+          <span class="hidden sm:inline">{t().writeWithAi}</span>
         </Button>
+        <Show when={signatureChoiceVisible()}>
+          <MailComposerSignature
+            signatures={props.signatures}
+            value={signatureTemplateId()}
+            senderDefaultId={senderDefaultSignatureId()}
+            disabled={!editable()}
+            onChange={setSignatureTemplateId}
+          />
+        </Show>
         <Tooltip.Anchor
           content={
             deliveryOptionsSummary().length > 0

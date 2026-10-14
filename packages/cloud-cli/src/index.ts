@@ -15,9 +15,11 @@ import type {
   CloudCliTableColumn,
 } from "@k2b/cloud/cli";
 import { CLOUD_CLI_MODULE_NAME, localizeCloudCliText, resolveCloudCliLocale } from "@k2b/cloud/cli";
+import { i18n } from "@k2b/stdlib";
 import type { Hono } from "hono";
 import { hc } from "hono/client";
 import { configPath, envLacksLocalBrowser, envLocale, envServer, envToken, posixLocale } from "./config";
+import { loginPageResponse } from "./login-page";
 import {
   collectPluginGarbage,
   downloadPlugin,
@@ -2548,7 +2550,7 @@ const promptToOpenBrowser = async (url: string, signal: AbortSignal, locale: str
   }
 };
 
-const oauthCallbackResponse = (message: string, status = 200): Response =>
+const plainTextResponse = (message: string, status: number): Response =>
   new Response(`${message}\n`, {
     status,
     headers: {
@@ -2556,6 +2558,14 @@ const oauthCallbackResponse = (message: string, status = 200): Response =>
       "content-type": "text/plain; charset=utf-8",
     },
   });
+
+const loginPageLocale = (request: Request, locale: string): string => {
+  for (const tag of i18n.parseAcceptLanguage(request.headers.get("accept-language"))) {
+    const language = tag.split("-")[0]?.toLowerCase();
+    if (language === "en" || language === "de") return tag;
+  }
+  return locale;
+};
 
 const waitForOAuthCode = async (
   authorizationUrl: URL,
@@ -2577,70 +2587,54 @@ const waitForOAuthCode = async (
     fetch: (request) => {
       const url = new URL(request.url);
       if (url.pathname !== "/callback") {
-        return oauthCallbackResponse(
+        return plainTextResponse(
           text(locale, "This is not a Cloud CLI login callback.", "Dies ist kein Anmelde-Callback der Cloud CLI."),
           404,
         );
       }
 
+      const pageLocale = loginPageLocale(request, locale);
       const state = url.searchParams.get("state");
       if (state !== expectedState) {
-        return oauthCallbackResponse(
-          text(
-            locale,
-            "Authentication failed: the OAuth callback did not match the expected state. You may close this window.",
-            "Die Anmeldung ist fehlgeschlagen: Der OAuth-Callback entsprach nicht dem erwarteten Zustand. Du kannst dieses Fenster schließen.",
-          ),
-          400,
-        );
+        return loginPageResponse("mismatch", { locale: pageLocale });
       }
 
       if (url.searchParams.get("iss") !== expectedIssuer) {
         rejectCode(new CliError("OAuth callback did not match the expected issuer."));
-        return oauthCallbackResponse(
-          text(
-            locale,
-            "Authentication failed: the OAuth callback did not match the expected issuer. You may close this window.",
-            "Die Anmeldung ist fehlgeschlagen: Der OAuth-Callback stammte nicht vom erwarteten Aussteller. Du kannst dieses Fenster schließen.",
+        return loginPageResponse("failed", {
+          locale: pageLocale,
+          detail: text(
+            pageLocale,
+            "The callback did not come from the expected Cloud.",
+            "Der Callback kam nicht von der erwarteten Cloud.",
           ),
-          400,
-        );
+        });
       }
 
       const error = url.searchParams.get("error");
       if (error) {
         const message = url.searchParams.get("error_description") ?? error;
         rejectCode(new CliError(message));
-        return oauthCallbackResponse(
-          text(
-            locale,
-            `Authentication failed: ${message}. You may close this window.`,
-            `Die Anmeldung ist fehlgeschlagen: ${message}. Du kannst dieses Fenster schließen.`,
-          ),
-        );
+        return error === "access_denied"
+          ? loginPageResponse("denied", { locale: pageLocale })
+          : loginPageResponse("failed", { locale: pageLocale, detail: message });
       }
 
       const code = url.searchParams.get("code");
       if (!code) {
         rejectCode(new CliError("OAuth callback did not include an authorization code."));
-        return oauthCallbackResponse(
-          text(
-            locale,
-            "Authentication failed: the OAuth callback did not include an authorization code. You may close this window.",
-            "Die Anmeldung ist fehlgeschlagen: Der OAuth-Callback enthielt keinen Autorisierungscode. Du kannst dieses Fenster schließen.",
+        return loginPageResponse("failed", {
+          locale: pageLocale,
+          detail: text(
+            pageLocale,
+            "The callback did not include an authorization code.",
+            "Der Callback enthielt keinen Autorisierungscode.",
           ),
-          400,
-        );
+        });
       }
 
       resolveCode(code);
-      return oauthCallbackResponse(
-        text(
-          locale,
-          "Authentication complete. You may close this window.",
-          "Die Anmeldung ist abgeschlossen. Du kannst dieses Fenster schließen.",
-        ),
-      );
+      return loginPageResponse("success", { locale: pageLocale });
     },
   });
 

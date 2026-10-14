@@ -1,0 +1,265 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`login page (en) success is self-contained and has the expected response 1`] = `
+"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Cloud CLI connected</title>
+<style>:root{color-scheme:light dark;--canvas:#fafafa;--surface:#fff;--border:rgb(228 228 231/.72);--text:#09090b;--muted:#52525b;--success:#047857;--shadow:0 -3px 10px -8px rgb(15 23 19/.16),0 0 16px -9px rgb(15 23 19/.16),0 14px 36px -32px rgb(15 23 19/.22),0 1px 5px rgb(15 23 19/.04)}
+@media (prefers-color-scheme:dark){:root{--canvas:#090d12;--surface:#11151b;--border:rgb(41 49 58/.72);--text:#fafafa;--muted:#a1a1aa;--success:#6ee7b7;--shadow:0 -3px 10px -8px rgb(0 0 0/.32),0 0 16px -9px rgb(0 0 0/.56),0 16px 40px -30px rgb(0 0 0/.48),0 1px 7px rgb(0 0 0/.14)}}
+*{box-sizing:border-box}
+html{height:100%;-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100%;display:flex;align-items:center;justify-content:center;padding:2rem 1rem;background:var(--canvas);color:var(--text);font:400 1rem/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{width:100%;max-width:28rem;padding:2rem;border:1px solid var(--border);border-radius:.75rem;background:var(--surface);box-shadow:var(--shadow);text-align:center}
+svg{display:block;width:2.25rem;height:2.25rem;margin:0 auto;color:var(--muted)}
+.success svg{color:var(--success)}
+h1,p{text-wrap:balance}
+h1{margin:.75rem 0 0;font-size:1.25rem;font-weight:600;line-height:1.375;overflow-wrap:anywhere}
+p{margin:.5rem 0 0;font-size:.875rem;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+code{display:block;margin-top:1rem;font:400 .75rem/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted);overflow-wrap:anywhere}
+@media not all and (min-width:48rem){main{padding:0;border:0;border-radius:0;background:none;box-shadow:none}}</style>
+</head>
+<body>
+<main role="status" class="success">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 12l2 2l4 -4"/></svg>
+<h1>Cloud CLI connected</h1>
+<p>You can close this tab now. cld finishes the sign-in in your terminal.</p>
+</main>
+</body>
+</html>
+"
+`;
+
+exports[`login page (en) denied is self-contained and has the expected response 1`] = `
+"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Access denied</title>
+<style>:root{color-scheme:light dark;--canvas:#fafafa;--surface:#fff;--border:rgb(228 228 231/.72);--text:#09090b;--muted:#52525b;--success:#047857;--shadow:0 -3px 10px -8px rgb(15 23 19/.16),0 0 16px -9px rgb(15 23 19/.16),0 14px 36px -32px rgb(15 23 19/.22),0 1px 5px rgb(15 23 19/.04)}
+@media (prefers-color-scheme:dark){:root{--canvas:#090d12;--surface:#11151b;--border:rgb(41 49 58/.72);--text:#fafafa;--muted:#a1a1aa;--success:#6ee7b7;--shadow:0 -3px 10px -8px rgb(0 0 0/.32),0 0 16px -9px rgb(0 0 0/.56),0 16px 40px -30px rgb(0 0 0/.48),0 1px 7px rgb(0 0 0/.14)}}
+*{box-sizing:border-box}
+html{height:100%;-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100%;display:flex;align-items:center;justify-content:center;padding:2rem 1rem;background:var(--canvas);color:var(--text);font:400 1rem/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{width:100%;max-width:28rem;padding:2rem;border:1px solid var(--border);border-radius:.75rem;background:var(--surface);box-shadow:var(--shadow);text-align:center}
+svg{display:block;width:2.25rem;height:2.25rem;margin:0 auto;color:var(--muted)}
+.success svg{color:var(--success)}
+h1,p{text-wrap:balance}
+h1{margin:.75rem 0 0;font-size:1.25rem;font-weight:600;line-height:1.375;overflow-wrap:anywhere}
+p{margin:.5rem 0 0;font-size:.875rem;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+code{display:block;margin-top:1rem;font:400 .75rem/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted);overflow-wrap:anywhere}
+@media not all and (min-width:48rem){main{padding:0;border:0;border-radius:0;background:none;box-shadow:none}}</style>
+</head>
+<body>
+<main role="status" class="denied">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M10 10l4 4m0 -4l-4 4"/></svg>
+<h1>Access denied</h1>
+<p>The Cloud CLI was not connected. You can close this tab now. To sign in after all, run cld login again in your terminal.</p>
+</main>
+</body>
+</html>
+"
+`;
+
+exports[`login page (en) mismatch is self-contained and has the expected response 1`] = `
+"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>This page does not match your sign-in</title>
+<style>:root{color-scheme:light dark;--canvas:#fafafa;--surface:#fff;--border:rgb(228 228 231/.72);--text:#09090b;--muted:#52525b;--success:#047857;--shadow:0 -3px 10px -8px rgb(15 23 19/.16),0 0 16px -9px rgb(15 23 19/.16),0 14px 36px -32px rgb(15 23 19/.22),0 1px 5px rgb(15 23 19/.04)}
+@media (prefers-color-scheme:dark){:root{--canvas:#090d12;--surface:#11151b;--border:rgb(41 49 58/.72);--text:#fafafa;--muted:#a1a1aa;--success:#6ee7b7;--shadow:0 -3px 10px -8px rgb(0 0 0/.32),0 0 16px -9px rgb(0 0 0/.56),0 16px 40px -30px rgb(0 0 0/.48),0 1px 7px rgb(0 0 0/.14)}}
+*{box-sizing:border-box}
+html{height:100%;-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100%;display:flex;align-items:center;justify-content:center;padding:2rem 1rem;background:var(--canvas);color:var(--text);font:400 1rem/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{width:100%;max-width:28rem;padding:2rem;border:1px solid var(--border);border-radius:.75rem;background:var(--surface);box-shadow:var(--shadow);text-align:center}
+svg{display:block;width:2.25rem;height:2.25rem;margin:0 auto;color:var(--muted)}
+.success svg{color:var(--success)}
+h1,p{text-wrap:balance}
+h1{margin:.75rem 0 0;font-size:1.25rem;font-weight:600;line-height:1.375;overflow-wrap:anywhere}
+p{margin:.5rem 0 0;font-size:.875rem;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+code{display:block;margin-top:1rem;font:400 .75rem/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted);overflow-wrap:anywhere}
+@media not all and (min-width:48rem){main{padding:0;border:0;border-radius:0;background:none;box-shadow:none}}</style>
+</head>
+<body>
+<main role="status" class="mismatch">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+<h1>This page does not match your sign-in</h1>
+<p>It does not belong to the sign-in that is waiting in your terminal. Open the login URL printed there again.</p>
+</main>
+</body>
+</html>
+"
+`;
+
+exports[`login page (en) failed is self-contained and has the expected response 1`] = `
+"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sign-in failed</title>
+<style>:root{color-scheme:light dark;--canvas:#fafafa;--surface:#fff;--border:rgb(228 228 231/.72);--text:#09090b;--muted:#52525b;--success:#047857;--shadow:0 -3px 10px -8px rgb(15 23 19/.16),0 0 16px -9px rgb(15 23 19/.16),0 14px 36px -32px rgb(15 23 19/.22),0 1px 5px rgb(15 23 19/.04)}
+@media (prefers-color-scheme:dark){:root{--canvas:#090d12;--surface:#11151b;--border:rgb(41 49 58/.72);--text:#fafafa;--muted:#a1a1aa;--success:#6ee7b7;--shadow:0 -3px 10px -8px rgb(0 0 0/.32),0 0 16px -9px rgb(0 0 0/.56),0 16px 40px -30px rgb(0 0 0/.48),0 1px 7px rgb(0 0 0/.14)}}
+*{box-sizing:border-box}
+html{height:100%;-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100%;display:flex;align-items:center;justify-content:center;padding:2rem 1rem;background:var(--canvas);color:var(--text);font:400 1rem/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{width:100%;max-width:28rem;padding:2rem;border:1px solid var(--border);border-radius:.75rem;background:var(--surface);box-shadow:var(--shadow);text-align:center}
+svg{display:block;width:2.25rem;height:2.25rem;margin:0 auto;color:var(--muted)}
+.success svg{color:var(--success)}
+h1,p{text-wrap:balance}
+h1{margin:.75rem 0 0;font-size:1.25rem;font-weight:600;line-height:1.375;overflow-wrap:anywhere}
+p{margin:.5rem 0 0;font-size:.875rem;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+code{display:block;margin-top:1rem;font:400 .75rem/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted);overflow-wrap:anywhere}
+@media not all and (min-width:48rem){main{padding:0;border:0;border-radius:0;background:none;box-shadow:none}}</style>
+</head>
+<body>
+<main role="status" class="failed">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+<h1>Sign-in failed</h1>
+<p>The Cloud CLI was not connected. Run cld login again in your terminal.</p><code>The authorization server could not complete the sign-in.</code>
+</main>
+</body>
+</html>
+"
+`;
+
+exports[`login page (de) success is self-contained and has the expected response 1`] = `
+"<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Cloud CLI verbunden</title>
+<style>:root{color-scheme:light dark;--canvas:#fafafa;--surface:#fff;--border:rgb(228 228 231/.72);--text:#09090b;--muted:#52525b;--success:#047857;--shadow:0 -3px 10px -8px rgb(15 23 19/.16),0 0 16px -9px rgb(15 23 19/.16),0 14px 36px -32px rgb(15 23 19/.22),0 1px 5px rgb(15 23 19/.04)}
+@media (prefers-color-scheme:dark){:root{--canvas:#090d12;--surface:#11151b;--border:rgb(41 49 58/.72);--text:#fafafa;--muted:#a1a1aa;--success:#6ee7b7;--shadow:0 -3px 10px -8px rgb(0 0 0/.32),0 0 16px -9px rgb(0 0 0/.56),0 16px 40px -30px rgb(0 0 0/.48),0 1px 7px rgb(0 0 0/.14)}}
+*{box-sizing:border-box}
+html{height:100%;-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100%;display:flex;align-items:center;justify-content:center;padding:2rem 1rem;background:var(--canvas);color:var(--text);font:400 1rem/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{width:100%;max-width:28rem;padding:2rem;border:1px solid var(--border);border-radius:.75rem;background:var(--surface);box-shadow:var(--shadow);text-align:center}
+svg{display:block;width:2.25rem;height:2.25rem;margin:0 auto;color:var(--muted)}
+.success svg{color:var(--success)}
+h1,p{text-wrap:balance}
+h1{margin:.75rem 0 0;font-size:1.25rem;font-weight:600;line-height:1.375;overflow-wrap:anywhere}
+p{margin:.5rem 0 0;font-size:.875rem;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+code{display:block;margin-top:1rem;font:400 .75rem/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted);overflow-wrap:anywhere}
+@media not all and (min-width:48rem){main{padding:0;border:0;border-radius:0;background:none;box-shadow:none}}</style>
+</head>
+<body>
+<main role="status" class="success">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 12l2 2l4 -4"/></svg>
+<h1>Cloud CLI verbunden</h1>
+<p>Du kannst diesen Tab jetzt schließen. cld schließt die Anmeldung in deinem Terminal ab.</p>
+</main>
+</body>
+</html>
+"
+`;
+
+exports[`login page (de) denied is self-contained and has the expected response 1`] = `
+"<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Zugriff abgelehnt</title>
+<style>:root{color-scheme:light dark;--canvas:#fafafa;--surface:#fff;--border:rgb(228 228 231/.72);--text:#09090b;--muted:#52525b;--success:#047857;--shadow:0 -3px 10px -8px rgb(15 23 19/.16),0 0 16px -9px rgb(15 23 19/.16),0 14px 36px -32px rgb(15 23 19/.22),0 1px 5px rgb(15 23 19/.04)}
+@media (prefers-color-scheme:dark){:root{--canvas:#090d12;--surface:#11151b;--border:rgb(41 49 58/.72);--text:#fafafa;--muted:#a1a1aa;--success:#6ee7b7;--shadow:0 -3px 10px -8px rgb(0 0 0/.32),0 0 16px -9px rgb(0 0 0/.56),0 16px 40px -30px rgb(0 0 0/.48),0 1px 7px rgb(0 0 0/.14)}}
+*{box-sizing:border-box}
+html{height:100%;-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100%;display:flex;align-items:center;justify-content:center;padding:2rem 1rem;background:var(--canvas);color:var(--text);font:400 1rem/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{width:100%;max-width:28rem;padding:2rem;border:1px solid var(--border);border-radius:.75rem;background:var(--surface);box-shadow:var(--shadow);text-align:center}
+svg{display:block;width:2.25rem;height:2.25rem;margin:0 auto;color:var(--muted)}
+.success svg{color:var(--success)}
+h1,p{text-wrap:balance}
+h1{margin:.75rem 0 0;font-size:1.25rem;font-weight:600;line-height:1.375;overflow-wrap:anywhere}
+p{margin:.5rem 0 0;font-size:.875rem;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+code{display:block;margin-top:1rem;font:400 .75rem/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted);overflow-wrap:anywhere}
+@media not all and (min-width:48rem){main{padding:0;border:0;border-radius:0;background:none;box-shadow:none}}</style>
+</head>
+<body>
+<main role="status" class="denied">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M10 10l4 4m0 -4l-4 4"/></svg>
+<h1>Zugriff abgelehnt</h1>
+<p>Die Cloud CLI wurde nicht verbunden. Du kannst diesen Tab jetzt schließen. Um dich doch anzumelden, führe cld login erneut in deinem Terminal aus.</p>
+</main>
+</body>
+</html>
+"
+`;
+
+exports[`login page (de) mismatch is self-contained and has the expected response 1`] = `
+"<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Diese Seite passt nicht zu deiner Anmeldung</title>
+<style>:root{color-scheme:light dark;--canvas:#fafafa;--surface:#fff;--border:rgb(228 228 231/.72);--text:#09090b;--muted:#52525b;--success:#047857;--shadow:0 -3px 10px -8px rgb(15 23 19/.16),0 0 16px -9px rgb(15 23 19/.16),0 14px 36px -32px rgb(15 23 19/.22),0 1px 5px rgb(15 23 19/.04)}
+@media (prefers-color-scheme:dark){:root{--canvas:#090d12;--surface:#11151b;--border:rgb(41 49 58/.72);--text:#fafafa;--muted:#a1a1aa;--success:#6ee7b7;--shadow:0 -3px 10px -8px rgb(0 0 0/.32),0 0 16px -9px rgb(0 0 0/.56),0 16px 40px -30px rgb(0 0 0/.48),0 1px 7px rgb(0 0 0/.14)}}
+*{box-sizing:border-box}
+html{height:100%;-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100%;display:flex;align-items:center;justify-content:center;padding:2rem 1rem;background:var(--canvas);color:var(--text);font:400 1rem/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{width:100%;max-width:28rem;padding:2rem;border:1px solid var(--border);border-radius:.75rem;background:var(--surface);box-shadow:var(--shadow);text-align:center}
+svg{display:block;width:2.25rem;height:2.25rem;margin:0 auto;color:var(--muted)}
+.success svg{color:var(--success)}
+h1,p{text-wrap:balance}
+h1{margin:.75rem 0 0;font-size:1.25rem;font-weight:600;line-height:1.375;overflow-wrap:anywhere}
+p{margin:.5rem 0 0;font-size:.875rem;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+code{display:block;margin-top:1rem;font:400 .75rem/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted);overflow-wrap:anywhere}
+@media not all and (min-width:48rem){main{padding:0;border:0;border-radius:0;background:none;box-shadow:none}}</style>
+</head>
+<body>
+<main role="status" class="mismatch">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+<h1>Diese Seite passt nicht zu deiner Anmeldung</h1>
+<p>Sie gehört nicht zu der Anmeldung, die in deinem Terminal wartet. Öffne die dort ausgegebene Anmelde-URL erneut.</p>
+</main>
+</body>
+</html>
+"
+`;
+
+exports[`login page (de) failed is self-contained and has the expected response 1`] = `
+"<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Anmeldung fehlgeschlagen</title>
+<style>:root{color-scheme:light dark;--canvas:#fafafa;--surface:#fff;--border:rgb(228 228 231/.72);--text:#09090b;--muted:#52525b;--success:#047857;--shadow:0 -3px 10px -8px rgb(15 23 19/.16),0 0 16px -9px rgb(15 23 19/.16),0 14px 36px -32px rgb(15 23 19/.22),0 1px 5px rgb(15 23 19/.04)}
+@media (prefers-color-scheme:dark){:root{--canvas:#090d12;--surface:#11151b;--border:rgb(41 49 58/.72);--text:#fafafa;--muted:#a1a1aa;--success:#6ee7b7;--shadow:0 -3px 10px -8px rgb(0 0 0/.32),0 0 16px -9px rgb(0 0 0/.56),0 16px 40px -30px rgb(0 0 0/.48),0 1px 7px rgb(0 0 0/.14)}}
+*{box-sizing:border-box}
+html{height:100%;-webkit-text-size-adjust:100%}
+body{margin:0;min-height:100%;display:flex;align-items:center;justify-content:center;padding:2rem 1rem;background:var(--canvas);color:var(--text);font:400 1rem/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+main{width:100%;max-width:28rem;padding:2rem;border:1px solid var(--border);border-radius:.75rem;background:var(--surface);box-shadow:var(--shadow);text-align:center}
+svg{display:block;width:2.25rem;height:2.25rem;margin:0 auto;color:var(--muted)}
+.success svg{color:var(--success)}
+h1,p{text-wrap:balance}
+h1{margin:.75rem 0 0;font-size:1.25rem;font-weight:600;line-height:1.375;overflow-wrap:anywhere}
+p{margin:.5rem 0 0;font-size:.875rem;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
+code{display:block;margin-top:1rem;font:400 .75rem/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted);overflow-wrap:anywhere}
+@media not all and (min-width:48rem){main{padding:0;border:0;border-radius:0;background:none;box-shadow:none}}</style>
+</head>
+<body>
+<main role="status" class="failed">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+<h1>Anmeldung fehlgeschlagen</h1>
+<p>Die Cloud CLI wurde nicht verbunden. Führe cld login erneut in deinem Terminal aus.</p><code>The authorization server could not complete the sign-in.</code>
+</main>
+</body>
+</html>
+"
+`;

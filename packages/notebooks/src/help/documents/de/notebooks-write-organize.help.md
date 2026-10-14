@@ -89,6 +89,7 @@ Für Überschriften und Listen gelten die Zifferntasten auf jedem Tastaturlayout
 - `![[` öffnet Anhangsvorschläge. Die Auswahl bettet ein Bild ein; bei einer anderen Datei fügt sie einen Download-Link ein.
 - `==Text==` markiert Text farbig. Die Markierung bleibt innerhalb einer Zeile.
 - Auf Touchscreens stehen **Rückgängig** und **Wiederholen** am Anfang der Werkzeugleiste.
+- Am Smartphone bleibt die Werkzeugleiste beim Tippen über der Tastatur. So kannst du formatieren, einrücken und ausrücken, ohne die Tastatur zu schließen.
 :::
 
 ## Listen {icon="keyboard"}

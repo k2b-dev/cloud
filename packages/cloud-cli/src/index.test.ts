@@ -3,6 +3,7 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "n
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { installFirstPartyModules } from "../test/fixtures/first-party";
+import { LOGIN_PAGE_CSP } from "./login-page";
 
 type MockServerState = {
   refreshCalls: number;
@@ -203,6 +204,22 @@ const readUntil = async (stream: ReadableStream<Uint8Array>, marker: string): Pr
 
   reader.releaseLock();
   return text;
+};
+
+const readLoginCallbackUrl = async (stream: ReadableStream<Uint8Array>, locale: string): Promise<URL> => {
+  const marker = locale === "de" ? "Warte auf den OAuth-Callback." : "Waiting for the OAuth callback.";
+  const stdout = await readUntil(stream, marker);
+  const printedLoginUrl = stdout.match(/(?:Login URL|Anmelde-URL):\n(?<url>http:\/\/127\.0\.0\.1:\d+\/oauth\/authorize[^\n]+)/)?.groups
+    ?.url;
+  if (!printedLoginUrl) throw new Error("CLI did not print a login URL.");
+  const loginUrl = new URL(printedLoginUrl);
+  const redirectUri = loginUrl.searchParams.get("redirect_uri");
+  const state = loginUrl.searchParams.get("state");
+  if (!redirectUri || !state) throw new Error("Login URL is missing callback parameters.");
+  const callbackUrl = new URL(redirectUri);
+  callbackUrl.searchParams.set("state", state);
+  callbackUrl.searchParams.set("iss", loginUrl.origin);
+  return callbackUrl;
 };
 
 describe("cloud CLI OAuth session handling", () => {
@@ -620,7 +637,7 @@ describe("cloud CLI OAuth session handling", () => {
     expect(parsed.items.at(-1)?.id).toBe(19999);
   });
 
-  test("login callback returns a plain-text completion message", async () => {
+  test("login callback returns an HTML completion page and ignores unrelated callbacks", async () => {
     const state: MockServerState = { refreshCalls: 0, authorizationCodeCalls: 0, revokeCalls: 0, meCalls: 0 };
     const server = startMockServer(state);
     const dir = await createTempDir();
@@ -657,26 +674,40 @@ describe("cloud CLI OAuth session handling", () => {
       expect(stateParam).toBeString();
 
       const callbackUrl = new URL(redirectUri!);
+      const faviconResponse = await fetch(new URL("/favicon.ico", callbackUrl));
+      expect(faviconResponse.status).toBe(404);
+      expect(faviconResponse.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+      expect(await faviconResponse.text()).toBe("This is not a Cloud CLI login callback.\n");
       callbackUrl.searchParams.set("error", "access_denied");
       callbackUrl.searchParams.set("state", "wrong-state");
       const unrelatedCallback = await fetch(callbackUrl);
       expect(unrelatedCallback.status).toBe(400);
+      expect(unrelatedCallback.headers.get("content-type")).toBe("text/html; charset=utf-8");
+      expect(unrelatedCallback.headers.get("content-security-policy")).toBe(LOGIN_PAGE_CSP);
+      expect(await unrelatedCallback.text()).toContain("This page does not match your sign-in");
 
       callbackUrl.searchParams.delete("error");
       callbackUrl.searchParams.set("code", "test-code");
       callbackUrl.searchParams.set("state", stateParam!);
       callbackUrl.searchParams.set("iss", `http://127.0.0.1:${server.port}`);
-      const callbackResponse = await fetch(callbackUrl);
+      // A second valid callback racing the first (a double submit or reload)
+      // must not start a second token exchange. It either still gets a page or
+      // finds the listener already closed.
+      const callbacks = await Promise.allSettled([fetch(callbackUrl), fetch(callbackUrl)]);
+      const callbackResponse = callbacks.find((result) => result.status === "fulfilled")?.value;
+      if (!callbackResponse) throw new Error("No callback request got a response.");
       const callbackText = await callbackResponse.text();
 
       expect(callbackResponse.status).toBe(200);
-      expect(callbackResponse.headers.get("content-type")).toContain("text/plain");
-      expect(callbackText).toBe("Authentication complete. You may close this window.\n");
+      expect(callbackResponse.headers.get("content-type")).toBe("text/html; charset=utf-8");
+      expect(callbackResponse.headers.get("content-security-policy")).toBe(LOGIN_PAGE_CSP);
+      expect(callbackText).toContain("Cloud CLI connected");
 
       const exitCode = await proc.exited;
       expect(exitCode).toBe(0);
       expect(await stderrPromise).toBe("");
       expect(state.authorizationCodeCalls).toBe(1);
+      await expect(fetch(callbackUrl)).rejects.toThrow();
       expect(state.revokedTokens).toEqual(["old-refresh"]);
 
       const config = JSON.parse(await readFile(configPath, "utf8")) as {
@@ -691,6 +722,85 @@ describe("cloud CLI OAuth session handling", () => {
       server.stop(true);
     }
   });
+
+  for (const [locale, acceptLanguage, pageLanguage] of [
+    ["en", "de-DE,de;q=0.9,en;q=0.8", "de"],
+    ["en", "en;q=0.8,de;q=0.9", "de"],
+    ["en", "fr", "en"],
+    ["de", "fr", "de"],
+  ] as const) {
+    test(`login page uses ${pageLanguage} for Accept-Language ${acceptLanguage} with CLI locale ${locale}`, async () => {
+      const state: MockServerState = { refreshCalls: 0, authorizationCodeCalls: 0, revokeCalls: 0, meCalls: 0 };
+      const server = startMockServer(state);
+      const dir = await createTempDir();
+      const configPath = join(dir, "config.json");
+
+      try {
+        const proc = startCli(configPath, [
+          "--locale",
+          locale,
+          "login",
+          "local",
+          "--server",
+          `http://127.0.0.1:${server.port}`,
+          "--no-open",
+        ]);
+        const stderrPromise = new Response(proc.stderr).text();
+        const callbackUrl = await readLoginCallbackUrl(proc.stdout, locale);
+        const stdoutPromise = proc.stdout.pipeTo(new WritableStream());
+        callbackUrl.searchParams.set("code", "test-code");
+        const response = await fetch(callbackUrl, { headers: { "Accept-Language": acceptLanguage } });
+        const html = await response.text();
+
+        expect(response.status).toBe(200);
+        expect(html).toContain(`<html lang="${pageLanguage}">`);
+        expect(html).toContain(pageLanguage === "de" ? "Cloud CLI verbunden" : "Cloud CLI connected");
+        expect(await proc.exited).toBe(0);
+        expect(await stderrPromise).toBe("");
+        await stdoutPromise;
+        expect(state.authorizationCodeCalls).toBe(1);
+      } finally {
+        server.stop(true);
+      }
+    });
+  }
+
+  for (const [error, detail, title, status] of [
+    ["access_denied", undefined, "Access denied", 200],
+    ["server_error", "<img src=x onerror=alert(1)>", "Sign-in failed", 400],
+  ] as const) {
+    test(`login callback shows ${title} for ${error} and exits unsuccessfully`, async () => {
+      const state: MockServerState = { refreshCalls: 0, authorizationCodeCalls: 0, revokeCalls: 0, meCalls: 0 };
+      const server = startMockServer(state);
+      const dir = await createTempDir();
+      const configPath = join(dir, "config.json");
+
+      try {
+        const proc = startCli(configPath, ["login", "local", "--server", `http://127.0.0.1:${server.port}`, "--no-open"]);
+        const stderrPromise = new Response(proc.stderr).text();
+        const callbackUrl = await readLoginCallbackUrl(proc.stdout, "en");
+        const stdoutPromise = proc.stdout.pipeTo(new WritableStream());
+        callbackUrl.searchParams.set("error", error);
+        if (detail) callbackUrl.searchParams.set("error_description", detail);
+        const response = await fetch(callbackUrl);
+        const html = await response.text();
+
+        expect(response.status).toBe(status);
+        expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+        expect(response.headers.get("content-security-policy")).toBe(LOGIN_PAGE_CSP);
+        expect(html).toContain(title);
+        expect(html).not.toContain("<img");
+        if (detail) expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+        else expect(html).not.toContain("<code>");
+        expect(await proc.exited).toBe(1);
+        expect(await stderrPromise).toContain(detail ?? error);
+        await stdoutPromise;
+        expect(state.authorizationCodeCalls).toBe(0);
+      } finally {
+        server.stop(true);
+      }
+    });
+  }
 
   test("login records served names even when the plugin offer has nothing missing", async () => {
     const state: MockServerState = { refreshCalls: 0, revokeCalls: 0, meCalls: 0, cliPlugins: [] };
