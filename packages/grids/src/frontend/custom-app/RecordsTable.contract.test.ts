@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 describe("App Records table actions", () => {
   test("renders plural accessible row actions and sends the selected row id", async () => {
-    const source = await Bun.file(new URL("./RecordsTable.island.tsx", import.meta.url)).text();
+    const source = await Bun.file(new URL("./RecordsTable.tsx", import.meta.url)).text();
 
     expect(source).toContain("<For each={props.rowActions ?? []}>");
     expect(source).toContain("renderActions={");
@@ -35,7 +35,7 @@ describe("App Records table actions", () => {
   });
 
   test("does not retain the removed Bulk action surface", async () => {
-    const source = await Bun.file(new URL("./RecordsTable.island.tsx", import.meta.url)).text();
+    const source = await Bun.file(new URL("./RecordsTable.tsx", import.meta.url)).text();
 
     expect(source).not.toContain("bulkActions");
     expect(source).not.toContain("recordIds");

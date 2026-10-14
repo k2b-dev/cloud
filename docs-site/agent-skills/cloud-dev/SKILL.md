@@ -58,7 +58,7 @@ and durable data.
 - Durable background work that calls another application stores one revocable
   mandate for the workload. It authenticates to Core with its app-bound
   workload credential and never stores the user's session or personal API key.
-- Keep transport conversion in handlers and domain rules in the application.
+- Keep transport conversion in handlers and domain rules in the application. Pass `c.req.raw.signal` to costly request work: the gateway cancels the upstream request when the client disconnects. A handler answering more than 10 seconds after the request raises its own idle timeout with `setRequestTimeout(c, seconds)` (at most 240) and restores it once answering; longer work streams or runs as a job.
 - Ship server-side files (templates, fixtures a service reads at runtime)
   under `src/assets/` and resolve them with `appAssetPath()` from
   `@k2b/cloud/server`; `import.meta.url` does not point at the source tree in
@@ -106,11 +106,11 @@ SolidJS library remains independent of Cloud and application domains.
   responsive, theme, and state principles. Reusable presentation belongs in
   the library; applications retain their domain behavior.
 - Give an application's landing page the shared overview pattern: either a
-  sidebar-first `AppWorkspace` (objects as `SidebarItem variant="object"` rows,
-  `AppWorkspace.Main width="content"`, a `PanelHeader size="lg"` page header
-  with one primary action) when users own many objects, or `AppOverview` with
-  `AppOverview.Cards` of `LinkCard`s when they own few. Keep rows and cards to
-  one secondary fact.
+  sidebar-first `AppWorkspace` (`SidebarItem variant="object"` rows,
+  `AppWorkspace.Main width="content"`, a `PanelHeader size="lg"` with one
+  primary action) for many objects, or `AppOverview.Cards` of `LinkCard`s for
+  few; one secondary fact per row or card. Inside one container, head its
+  sidebar and phone menu with `AppWorkspace.SidebarSwitcher`.
 
 ## Keep server and browser behavior coherent
 
@@ -156,6 +156,7 @@ result fields or changing contracts; keep detailed API rules in that guide. Clou
 capability call on every surface; an application writes `context.requestId` into its own audit rows so the two trails
 join without sharing payloads. Actions may word themselves with optional, translated `presentation.sentences`
 (`approval`, `done`, `rejected`, `notRun`; `{input.path}`, `{data.path}` in `done`); consumers never special-case an app.
+Cloud records every approval as one platform request and repeats the Action's review right before the approved call runs; a changed review asks again, so keep reviews deterministic and carry a revision in the input of Actions on changeable state. Apps show and decide their open approvals only through the shared `Approvals` component and `/api/approvals` route, with no app-owned approval routes or tables; an editor bridge can only reject `confirm` requests.
 For a shared cross-app contract, read `/en/docs/platform/contact-directory` or `/en/docs/platform/file-providers`.
 
 For deployment questions, read **Deployment requirements** in the Docs

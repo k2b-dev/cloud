@@ -49,6 +49,7 @@ const capabilityRowHref = (appId: string, row: CapabilityOperationRow, state: Ca
 function CapabilitiesSidebar(props: {
   apps: readonly CapabilityAppSummary[];
   selectedAppId: string;
+  ancestor?: boolean;
   labels: ReturnType<typeof capabilityUiMessages.resolve>["t"];
 }) {
   const renderApp = (app: CapabilityAppSummary) => (
@@ -56,7 +57,7 @@ function CapabilitiesSidebar(props: {
       href={capabilityHref({ appId: app.id })}
       navigation="document"
       icon={app.icon || "ti ti-apps"}
-      active={app.id === props.selectedAppId}
+      active={app.id === props.selectedAppId && (props.ancestor ? "ancestor" : true)}
       title={app.description}
     >
       {app.name}
@@ -241,7 +242,7 @@ export default ssr<AuthContext>(async (c) => {
     >
       <div class="k2b-ui min-h-0 min-w-0 flex-1 overflow-hidden" style={{ background: "transparent" }}>
         <AppWorkspace mobileSurface="flush">
-          <CapabilitiesSidebar apps={workspace.apps} selectedAppId={loaded.app.id} labels={t} />
+          <CapabilitiesSidebar apps={workspace.apps} selectedAppId={loaded.app.id} ancestor={Boolean(capabilityId)} labels={t} />
 
           <AppWorkspace.Content>
             <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scroll={false}>

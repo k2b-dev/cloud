@@ -145,7 +145,7 @@ describe("Assistant sidebar", () => {
     // No context header with project name and time above each title, and no cards.
     expect(html).not.toContain('data-variant="card"');
     expect(html).not.toContain("k2b-app-workspace__sidebar-item-context");
-    expect(html).toContain('data-marquee="false"');
+    expect(html).toContain('data-lines="1"');
   });
 
   test("separates Done from pinned and Project chats and offers reopening", () => {

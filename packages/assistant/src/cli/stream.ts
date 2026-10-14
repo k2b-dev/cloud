@@ -1,10 +1,12 @@
 import type { AiStoredMessage, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/ai";
-import { CODE_RUNTIME_TOOL_NAMES, type CodeToolFailure, parseAiSse } from "@k2b/cloud/ai/browser";
+import { CODE_RUNTIME_TOOL_NAMES, type CodeToolFailure, parseAiSse, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import type { CloudCliContext } from "@k2b/cloud/cli";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
 import { printCapabilityTable } from "./capability-table";
+import { createCloudLinkRewriter } from "./cloud-links";
 import { cliCodeHost, closeCliCodeHost } from "./code-host";
 import { printDeliveredBlock } from "./delivered-blocks";
+import { localToolTarget } from "./local-tool-target";
 import { AI_API, jsonRequest } from "./shared";
 import { terminalSafeModelText, terminalSafeText } from "./terminal";
 
@@ -18,15 +20,23 @@ export type AssistantTurnStreamResult = {
   pending?: { type: "approval" | "client_tool"; callId: string; name: string };
 };
 
+export type AssistantClientTools = {
+  names: ReadonlySet<string>;
+  run: (call: { name: string; args: unknown; callId: string }, signal: AbortSignal) => Promise<unknown>;
+};
+
 type PrintedBlock = { id?: string; text: string };
 
 export type AssistantTurnOutput = {
   blocks: PrintedBlock[];
   ids: Map<string, PrintedBlock>;
   closed: boolean;
+  links?: ReturnType<typeof createCloudLinkRewriter>;
   toolStatuses: Map<string, Extract<AiTurnBlock, { kind: "tool" }>["status"]>;
   renderedTables: Set<string>;
   namedFiles: Set<string>;
+  printedPlans: Set<string>;
+  executedClientCalls: Set<string>;
 };
 
 export const createAssistantTurnOutput = (): AssistantTurnOutput => ({
@@ -36,6 +46,8 @@ export const createAssistantTurnOutput = (): AssistantTurnOutput => ({
   toolStatuses: new Map(),
   renderedTables: new Set(),
   namedFiles: new Set(),
+  printedPlans: new Set(),
+  executedClientCalls: new Set(),
 });
 
 const norm = (text: string): string => text.trimStart();
@@ -70,6 +82,10 @@ export const streamAssistantTurn = async (input: {
   onCapabilityApproval?: (request: CodeApproval) => Promise<CapabilityDecision>;
   signal?: AbortSignal;
   output?: AssistantTurnOutput;
+  clientTools?: AssistantClientTools;
+  onToolBlock?: (block: Extract<AiTurnBlock, { kind: "tool" }>) => void;
+  onThinkingDelta?: (delta: string) => void;
+  waitingApprovals?: ReadonlySet<string>;
 }): Promise<AssistantTurnStreamResult> => {
   const { ctx, conversationId } = input;
   const approvedTools = new Set(input.approveTools ?? []);
@@ -78,8 +94,10 @@ export const streamAssistantTurn = async (input: {
   const abort = new AbortController();
   const onInterrupt = () => abort.abort();
   const onExternalAbort = () => abort.abort(input.signal?.reason);
-  if (input.signal) input.signal.addEventListener("abort", onExternalAbort, { once: true });
-  else process.once("SIGINT", onInterrupt);
+  if (input.signal) {
+    if (input.signal.aborted) onExternalAbort();
+    else input.signal.addEventListener("abort", onExternalAbort, { once: true });
+  } else process.once("SIGINT", onInterrupt);
 
   let targetTurnId = input.turnId ?? null;
   let initialResponse = input.initialResponse;
@@ -88,14 +106,23 @@ export const streamAssistantTurn = async (input: {
   const output = input.output ?? createAssistantTurnOutput();
   const { blocks: printedBlocks, ids, toolStatuses, renderedTables, namedFiles } = output;
   const blocks = new Map<string, AiTurnBlock>();
+  const writeText = (text: string) => {
+    output.links ??= createCloudLinkRewriter(ctx.options.server);
+    const rewritten = output.links.push(text);
+    if (rewritten) ctx.write(terminalSafeModelText(rewritten));
+  };
+  const flushLinks = () => {
+    const held = output.links?.flush();
+    if (held) ctx.write(terminalSafeModelText(held));
+  };
   const emitTable = (callId: string, result: unknown) => {
     if (ctx.options.output !== "text" || renderedTables.has(callId)) return;
     if (printCapabilityTable(ctx, result)) renderedTables.add(callId);
   };
   // Cards and charts draw in the web chat; every text client prints what they show instead.
-  const emitDelivered = (block: Extract<AiTurnBlock, { kind: "tool" }>) => {
+  const emitDelivered = async (block: Extract<AiTurnBlock, { kind: "tool" }>) => {
     if (ctx.options.output !== "text" || renderedTables.has(block.callId)) return;
-    if (printDeliveredBlock(ctx, block)) renderedTables.add(block.callId);
+    if (await printDeliveredBlock(ctx, block, conversationId, abort.signal)) renderedTables.add(block.callId);
   };
 
   const emitJsonLine = (value: Record<string, unknown>) => {
@@ -109,7 +136,7 @@ export const streamAssistantTurn = async (input: {
     printedBlocks.push(block);
     if (id !== undefined) ids.set(id, block);
     emittedText += separator + text;
-    if (ctx.options.output === "text") ctx.write(separator + terminalSafeModelText(text));
+    if (ctx.options.output === "text") writeText(separator + text);
     if (id !== undefined && jsonlDeltas) emitJsonLine({ type: "text_delta", blockId: id, delta: text });
   };
   const extend = (block: PrintedBlock, text: string, jsonlDeltas = true) => {
@@ -119,7 +146,7 @@ export const streamAssistantTurn = async (input: {
     const suffix = current.slice(previous.length);
     block.text = text;
     emittedText += suffix;
-    if (ctx.options.output === "text") ctx.write(terminalSafeModelText(suffix));
+    if (ctx.options.output === "text") writeText(suffix);
     if (block.id !== undefined && jsonlDeltas) emitJsonLine({ type: "text_delta", blockId: block.id, delta: suffix });
   };
   const emitLiveText = (id: string, text: string) => {
@@ -162,10 +189,15 @@ export const streamAssistantTurn = async (input: {
   };
   const reconcileBlocks = (baseline: AiTurnBlock[]) =>
     reconcile(baseline.filter((block) => block.kind === "text").filter((block) => block.text.trim()));
-  const finish = (result: AssistantTurnStreamResult): AssistantTurnStreamResult => {
+  const finish = async (result: AssistantTurnStreamResult): Promise<AssistantTurnStreamResult> => {
+    flushLinks();
     for (const stored of result.messages) {
       if (stored.message.role !== "tool_result") continue;
       emitTable(stored.message.callId, stored.message.result);
+      if (!stored.message.isError && !renderedTables.has(stored.message.callId) && ctx.options.output === "text") {
+        if (await printDeliveredBlock(ctx, { name: stored.message.name, result: stored.message.result }, conversationId, abort.signal))
+          renderedTables.add(stored.message.callId);
+      }
       const path = stored.message.isError ? null : presentedPath(stored.message.name, stored.message.result);
       if (path && ctx.options.output === "text" && !namedFiles.has(stored.message.callId)) {
         namedFiles.add(stored.message.callId);
@@ -176,28 +208,61 @@ export const streamAssistantTurn = async (input: {
       assistantTextParts(result.messages).map((text) => ({ text })),
       false,
     );
-    if (ctx.options.output === "text" && (result.text || emittedText)) {
-      ctx.write("\n");
-      output.closed = true;
+    if (ctx.options.output === "text") {
+      const tail = output.links?.flush() ?? "";
+      if (tail) ctx.write(terminalSafeModelText(tail));
+      if (result.text || emittedText || tail) {
+        ctx.write("\n");
+        output.closed = true;
+      }
     }
     return result;
   };
 
   const handleToolBlock = async (block: Extract<AiTurnBlock, { kind: "tool" }>): Promise<AssistantTurnStreamResult | null> => {
+    input.onToolBlock?.(block);
+    const previous = toolStatuses.get(block.callId);
+    // A resumed attempt replays finished calls as running first; a settled call never goes back.
+    if ((previous === "completed" || previous === "failed" || previous === "rejected") && block.status === "running") return null;
+    const changed = previous !== block.status;
+    if (changed && ctx.options.output === "text") flushLinks();
+    const inline = input.clientTools?.names.has(block.name) === true;
+    if (
+      block.status === "completed" &&
+      block.name === "todo_write" &&
+      ctx.options.output === "text" &&
+      !output.printedPlans.has(block.callId)
+    ) {
+      const plan = parseAiTodoPlan(block.args);
+      if (plan) {
+        output.printedPlans.add(block.callId);
+        ctx.error("Plan");
+        for (const item of plan.todos) {
+          if (item.status === "cancelled") continue;
+          ctx.error(
+            `  [${item.status === "completed" ? "x" : item.status === "in_progress" ? ">" : " "}] ${terminalSafeText(item.content)}`,
+          );
+        }
+      }
+    }
     if (block.status === "completed") {
       emitTable(block.callId, block.result);
-      emitDelivered(block);
+      await emitDelivered(block);
     }
-    if (toolStatuses.get(block.callId) !== block.status) {
+    if (changed) {
       toolStatuses.set(block.callId, block.status);
       emitJsonLine({ type: "tool", callId: block.callId, name: block.name, status: block.status });
-      if (ctx.options.output === "text") {
+      // A local call runs when it awaits this client; only then are its arguments complete enough to name a target.
+      if (ctx.options.output === "text" && !(inline && block.status === "running")) {
         const path = block.status === "completed" ? presentedPath(block.name, block.result) : null;
         if (path) namedFiles.add(block.callId);
-        ctx.error(`${block.name}: ${block.status.replaceAll("_", " ")}${path ? ` ${terminalSafeText(path)}` : ""}`);
+        const target = inline && block.status === "awaiting_client" ? localToolTarget(block.name, block.args) : "";
+        const status = inline && block.status === "awaiting_client" ? "running" : block.status.replaceAll("_", " ");
+        ctx.error(terminalSafeText(`${block.name}: ${status}${path ? ` ${path}` : target ? ` ${target}` : ""}`));
       }
     }
     if (block.status === "awaiting_approval") {
+      if (input.waitingApprovals?.has(block.callId)) return null;
       if (approvedTools.has(block.name) && !approvedCalls.has(block.callId)) {
         approvedCalls.add(block.callId);
         await ctx.readJson(
@@ -218,6 +283,38 @@ export const streamAssistantTurn = async (input: {
         messages: [],
         pending: { type: "approval", callId: block.callId, name: block.name },
       };
+    }
+    if (block.status === "awaiting_client" && inline && input.clientTools) {
+      if (output.executedClientCalls.has(block.callId)) return null;
+      output.executedClientCalls.add(block.callId);
+      let result: unknown;
+      try {
+        result = await input.clientTools.run({ name: block.name, args: block.args, callId: block.callId }, abort.signal);
+      } catch (error) {
+        const errorText = (error instanceof Error ? error.message : String(error)).slice(0, 2000);
+        result =
+          block.name === "local_bash"
+            ? { status: "failed", exitCode: null, stdout: "", stderr: errorText, truncated: false }
+            : block.name === "local_move"
+              ? { status: "failed", moved: [], conflicts: [], error: errorText }
+              : { status: "failed", error: errorText };
+      }
+      if (abort.signal.aborted)
+        return {
+          conversationId,
+          turnId: targetTurnId,
+          status: "aborted",
+          error: "Streaming interrupted.",
+          text: emittedText,
+          messages: [],
+        };
+      await ctx.readJson(
+        await ctx.fetch(
+          `${AI_API}/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(targetTurnId!)}/actions/${encodeURIComponent(block.callId)}`,
+          jsonRequest("POST", { type: "tool_result", result }),
+        ),
+      );
+      return null;
     }
     if (block.status === "awaiting_client" && CODE_RUNTIME_TOOL_NAMES.some((name) => name === block.name)) {
       if (executedCalls.has(block.callId)) return null;
@@ -304,6 +401,12 @@ export const streamAssistantTurn = async (input: {
         blocks.clear();
         for (const block of event.blocks) blocks.set(block.id, block);
         reconcileBlocks(event.blocks);
+        for (const block of event.blocks) {
+          if (block.kind === "tool") {
+            const result = await handleToolBlock(block);
+            if (result) return result;
+          }
+        }
       }
       emitJsonLine({ type: "turn_started", modelProfileId: event.modelProfileId, providerModel: event.providerModel });
       return null;
@@ -314,7 +417,10 @@ export const streamAssistantTurn = async (input: {
       const block = { id: event.blockId, kind: event.blockKind, text: currentText + event.delta };
       blocks.set(event.blockId, block);
       if (event.blockKind === "text") emitLiveText(block.id, block.text);
-      else emitJsonLine({ type: "thinking_delta", blockId: event.blockId, delta: event.delta });
+      else {
+        input.onThinkingDelta?.(event.delta);
+        emitJsonLine({ type: "thinking_delta", blockId: event.blockId, delta: event.delta });
+      }
       return null;
     }
     if (event.type === "block_set") {

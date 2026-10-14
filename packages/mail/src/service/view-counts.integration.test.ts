@@ -166,6 +166,14 @@ const expectedCounts = (keptInside?: Folder): ConversationViewCounts => {
 const fixtureShortId = (index: number) => `0${index.toString(16).padStart(5, "0")}`;
 
 suite("mail conversation view counts in a large mailbox", () => {
+  const analyzedTables = [
+    "message_contents",
+    "message_placements",
+    "conversations",
+    "conversation_messages",
+    "conversation_assignees",
+    "outbox_submissions",
+  ];
   const suffix = crypto.randomUUID().slice(0, 8);
   const userIds: string[] = [];
   let mailboxId = "";
@@ -405,14 +413,7 @@ suite("mail conversation view counts in a large mailbox", () => {
     // statistics it took while earlier tests had emptied mail.conversation_assignees, PostgreSQL took
     // the 6,700 assignments for one row and checked each conversation's assignees by reading all of
     // (user_id, conversation_id): about 1 s instead of 100 ms.
-    for (const table of [
-      "message_contents",
-      "message_placements",
-      "conversations",
-      "conversation_messages",
-      "conversation_assignees",
-      "outbox_submissions",
-    ]) {
+    for (const table of analyzedTables) {
       await sql.unsafe(`ANALYZE mail.${table}`);
     }
   }, 120_000);
@@ -435,6 +436,10 @@ suite("mail conversation view counts in a large mailbox", () => {
     }
     if (userIds.length > 0) {
       await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${userIds}::jsonb))`;
+    }
+    if (mailboxId) {
+      // Leave statistics that match the emptied tables; later files would otherwise plan with those of the bulk load.
+      for (const table of analyzedTables) await sql.unsafe(`ANALYZE mail.${table}`);
     }
   }, 600_000);
 

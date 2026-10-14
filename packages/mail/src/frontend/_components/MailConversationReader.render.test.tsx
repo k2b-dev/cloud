@@ -78,6 +78,7 @@ const renderReader = (
     keep?: ConversationKeep | null;
     canAdmin?: boolean;
     toolbarActions?: Array<"reply" | "reply_all" | "trash" | "spam" | "keep">;
+    theme?: "light" | "dark" | null;
   } = {},
 ) => {
   const messages = options.messages ?? [message];
@@ -89,6 +90,7 @@ const renderReader = (
       canAdmin: options.canAdmin ?? false,
       mailboxWide: true,
       identities: [],
+      onOpenDeliverySettings: () => undefined,
       selectionKey: "Conv01",
       selectedConversationId: "Conv01",
       selectedMessageId: options.selectedMessageId ?? null,
@@ -106,7 +108,7 @@ const renderReader = (
       error: null,
       dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
       readingFormat: "automatic",
-      theme: "light",
+      theme: options.theme === undefined ? "light" : options.theme,
       calendarIntegrationAvailable: false,
       listCollapsed: false,
       detailsOpen: false,
@@ -115,6 +117,7 @@ const renderReader = (
       onToggleDetails: () => undefined,
       onToolbarActionsChange: () => undefined,
       actionPending: false,
+      structurePending: false,
       onAction: () => undefined,
       onOpenHref: () => undefined,
       onManageTags: () => undefined,
@@ -132,6 +135,17 @@ const renderReader = (
 };
 
 describe("Mail conversation reader", () => {
+  test("renders both bodies under Automatic so the html class picks one before the first paint", () => {
+    const both = { ...message, contentType: "multipart/alternative", sanitizedHtml: "<p>Hello</p>" };
+    const automatic = renderReader([], { messages: [both], theme: null });
+    expect(automatic).toContain('class="contents dark:hidden" data-mail-body-format="html"');
+    expect(automatic).toContain('class="hidden dark:contents" data-mail-body-format="plain"');
+
+    const dark = renderReader([], { messages: [both], theme: "dark" });
+    expect(dark).toContain('class="contents" data-mail-body-format="plain"');
+    expect(dark).not.toContain('data-mail-body-format="html"');
+  });
+
   test("marks Reply when the conversation has a draft without rendering a header CTA", () => {
     const html = renderReader([draft]);
 

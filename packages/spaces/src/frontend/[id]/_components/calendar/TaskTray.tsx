@@ -9,7 +9,7 @@ import { useSpaceMessages } from "../../messages";
 import { type ClaimFields, resolveCompletionClaim } from "../shared/claim/claim";
 import { setItemCompleted, showCompletion } from "../shared/completion";
 import { createLeavingItems, keepHeld, snapshotOf } from "../shared/leaving";
-import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
+import { invalidateSpacesData, requestSpacesDetailNavigation } from "../workspace/workspace-events";
 import type { CalendarTray as Tray } from "../workspace/workspace-types";
 import type { TaskTraySection } from "./tray";
 
@@ -27,6 +27,8 @@ type Props = {
   /** The list view with every task of a part, or undefined where the filter rules the part out. */
   listHref: (section: TaskTraySection) => string | undefined;
   dateConfig?: DateContext;
+  /** Starts dragging a task into the free time of the day above, to plan it there; without it tasks only open. */
+  onSchedulePointerDown?: (event: PointerEvent, item: SpaceItem) => void;
 };
 
 const emptyTray: Tray = { overdue: { items: [], total: 0 }, undated: { items: [], total: 0 } };
@@ -131,12 +133,25 @@ export default function TaskTray(props: Props) {
       (next?.querySelector<HTMLElement>(control) ?? next?.querySelector<HTMLElement>("input, a") ?? container).focus();
     });
   };
-  const Row = (row: { item?: string; class: string; onClick?: JSX.EventHandler<HTMLLIElement, MouseEvent>; children: JSX.Element }) => {
+  const Row = (row: {
+    item?: string;
+    class: string;
+    /** The row lifts while its task is dragged into the day, and a long press on it is no link preview. */
+    dragSource?: boolean;
+    onClick?: JSX.EventHandler<HTMLLIElement, MouseEvent>;
+    children: JSX.Element;
+  }) => {
     let element: HTMLLIElement | undefined;
     onCleanup(() => element && handOffFocus(element));
     return (
       // biome-ignore lint/a11y/useKeyWithClickEvents: it only watches the clicks of the checkbox inside, which Space fires too.
-      <li ref={element} class={row.class} data-spaces-tray-item={row.item} onClick={row.onClick}>
+      <li
+        ref={element}
+        class={row.class}
+        data-spaces-tray-item={row.item}
+        data-calendar-drag-source={row.dragSource ? "" : undefined}
+        onClick={row.onClick}
+      >
         {row.children}
       </li>
     );
@@ -151,6 +166,7 @@ export default function TaskTray(props: Props) {
       timeZone: props.dateConfig?.timeZone,
     }).format(new Date(deadline));
   const empty = () => tray.overdue.items.length === 0 && tray.undated.items.length === 0;
+  const dragHintId = createUniqueId();
 
   const Section = (section: { kind: TaskTraySection; label: string; allLabel: (count: number) => string }) => {
     const headingId = createUniqueId();
@@ -185,6 +201,7 @@ export default function TaskTray(props: Props) {
                     // jumping. The chip's padding sits inside a wrapper without any, so the column can reach zero.
                     <Row
                       item={item.id}
+                      dragSource={Boolean(props.onSchedulePointerDown)}
                       class={`grid shrink-0 transition-[grid-template-columns,margin,opacity] duration-200 ease-out motion-reduce:transition-none ${
                         collapsing() ? "-mr-2 grid-cols-[0fr] opacity-0" : "grid-cols-[1fr]"
                       }`}
@@ -210,10 +227,17 @@ export default function TaskTray(props: Props) {
                           <a
                             href={href()}
                             class="focus-ui relative flex min-w-0 items-center gap-1.5 rounded-[var(--ui-radius-control)] text-secondary hover:app-accent-text"
+                            draggable={props.onSchedulePointerDown ? false : undefined}
+                            aria-describedby={props.onSchedulePointerDown ? dragHintId : undefined}
+                            onPointerDown={(event) => {
+                              // A task being checked off, or leaving the row after it, stays where it is.
+                              if (event.button !== 0 || !event.isPrimary || busy(item.id) || leaving.held().has(item.id)) return;
+                              props.onSchedulePointerDown?.(event, item);
+                            }}
                             onClick={(event) => {
                               if (!shouldHandleDetailClick(event, event.currentTarget)) return;
                               event.preventDefault();
-                              requestSpacesRouteNavigation(href(), { scroll: "preserve" });
+                              requestSpacesDetailNavigation(href(), { scroll: "preserve" });
                             }}
                           >
                             <span class={`truncate font-medium ${shownDone(item) ? "text-dimmed line-through" : ""}`}>{item.title}</span>
@@ -227,6 +251,9 @@ export default function TaskTray(props: Props) {
                             </Show>
                             <Show when={blocked()}>
                               <span class="sr-only">, {t.blockedByCount({ count: item.activeBlockerCount })}</span>
+                            </Show>
+                            <Show when={props.onSchedulePointerDown}>
+                              <i class="ti ti-grip-vertical shrink-0 text-sm text-dimmed opacity-45" aria-hidden="true" />
                             </Show>
                           </a>
                         </div>
@@ -283,6 +310,12 @@ export default function TaskTray(props: Props) {
           <div class="flex w-max items-center gap-2 px-1 py-2">
             <Section kind="overdue" label={t.overdue} allLabel={(count) => t.taskTrayAllOverdue({ count })} />
             <Section kind="undated" label={t.taskTrayUndated} allLabel={(count) => t.taskTrayAllUndated({ count })} />
+            <Show when={props.onSchedulePointerDown}>
+              <span id={dragHintId} class="ml-3 shrink-0 pr-2 text-[11px] text-dimmed max-sm:sr-only">
+                <span class="pointer-coarse:hidden">{t.taskTrayDragHint}</span>
+                <span class="hidden pointer-coarse:inline">{t.taskTrayDragHintTouch}</span>
+              </span>
+            </Show>
           </div>
         </ScrollArea>
       </Show>

@@ -29,6 +29,7 @@ import { CompletionInputSchema, type TaskWork } from "../work-contracts";
 import { buildSpacePrincipalCondition, mayReadAcrossSpaces } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
+import { publishDependentsChange } from "./item-dependencies";
 import { insertMany as insertItemResourceReferences } from "./item-resource-references";
 import { publishSpaceChange, spacesLive } from "./live";
 import { rank } from "./rank";
@@ -671,6 +672,10 @@ const deadlineWindow = (dateConfig?: DateContext) => {
   };
 };
 
+/** isTaskOverdue in SQL, without the completion check that the status filter owns: a task, not an event, due before today. */
+const overdueMatch = (todayStart: string) =>
+  sql`((i.starts_at IS NULL OR i.ends_at IS NULL) AND i.deadline IS NOT NULL AND i.deadline < ${todayStart}::timestamptz)`;
+
 /**
  * Dashboard widget query: today's events and the next deadlines, across
  * every space the user can reach (direct user grant, group grant,
@@ -699,6 +704,8 @@ export type DashboardItem = {
 export const dashboardSnapshot = async (params: {
   userId: string;
   todoLimit: number;
+  /** Limit all counts and lists to this internal Space id, preserving the access checks. */
+  spaceId?: string;
   dateConfig?: DateContext;
   /** Omit for the dashboard widget; overview routes load only their selected list. */
   view?: "today" | "upcoming" | "counts";
@@ -713,8 +720,9 @@ export const dashboardSnapshot = async (params: {
 }> => {
   const principalMatch = buildSpacePrincipalCondition({ type: "user", userId: params.userId });
   const { todayStart, tomorrowStart } = deadlineWindow(params.dateConfig);
+  const spaceFilter = params.spaceId ? sql`AND i.space_id = ${params.spaceId}::uuid` : sql``;
 
-  // Open-todo aggregate (count + urgent-count) across all reachable spaces.
+  // Counts and lists retain the same access checks when limited to one Space.
   const [agg] = await sql<
     {
       open_count: number;
@@ -751,6 +759,7 @@ export const dashboardSnapshot = async (params: {
         AND a.permission <> 'none'
         AND ${principalMatch}
     )
+    ${spaceFilter}
   `;
 
   type DbWidget = {
@@ -779,6 +788,7 @@ export const dashboardSnapshot = async (params: {
     FROM spaces.items i
     JOIN spaces.spaces s ON s.id = i.space_id
     WHERE i.completed_at IS NULL
+      ${spaceFilter}
       AND (
         (i.starts_at IS NOT NULL AND i.starts_at >= ${todayStart}::timestamptz AND i.starts_at < ${tomorrowStart}::timestamptz)
         OR (i.deadline IS NOT NULL AND i.deadline >= ${todayStart}::timestamptz AND i.deadline < ${tomorrowStart}::timestamptz)
@@ -806,6 +816,7 @@ export const dashboardSnapshot = async (params: {
     JOIN spaces.columns c ON c.id = i.column_id
     JOIN spaces.spaces s ON s.id = i.space_id
     WHERE i.completed_at IS NULL
+      ${spaceFilter}
       AND c.is_done = false
       AND (i.starts_at IS NULL OR i.starts_at < ${todayStart}::timestamptz OR i.starts_at >= ${tomorrowStart}::timestamptz)
       AND EXISTS (
@@ -893,6 +904,7 @@ export const listFiltered = async (params: {
 }): Promise<ItemListResult> => {
   const { spaceId, filter, currentUserId } = params;
   const {
+    itemIds,
     type,
     status,
     activity: activityFilter,
@@ -906,6 +918,7 @@ export const listFiltered = async (params: {
     search,
     sort,
     sortDesc,
+    groupBy,
     page,
     pageSize,
   } = filter;
@@ -913,6 +926,13 @@ export const listFiltered = async (params: {
   // Build WHERE conditions as SQL fragments (safe from injection)
   // Base condition - always filter by space
   let conditions = sql`i.space_id = ${spaceId}`;
+
+  // Resolve public item IDs in the query so deleted or unknown items simply do not match.
+  if (itemIds !== undefined) {
+    conditions = sql`${conditions} AND i.id IN (
+      SELECT id FROM spaces.items WHERE space_id = ${spaceId}::uuid AND short_id = ANY(${toPgTextArray(itemIds)}::text[])
+    )`;
+  }
 
   // Type filter (task vs event)
   if (type === "task") {
@@ -931,8 +951,8 @@ export const listFiltered = async (params: {
   if (filter.overdue !== undefined) {
     const { todayStart } = deadlineWindow(params.dateConfig);
     conditions = filter.overdue
-      ? sql`${conditions} AND i.deadline IS NOT NULL AND i.deadline < ${todayStart}::timestamptz`
-      : sql`${conditions} AND (i.deadline IS NULL OR i.deadline >= ${todayStart}::timestamptz)`;
+      ? sql`${conditions} AND ${overdueMatch(todayStart)}`
+      : sql`${conditions} AND NOT ${overdueMatch(todayStart)}`;
   }
 
   // Status filter
@@ -968,7 +988,7 @@ export const listFiltered = async (params: {
   // Deadline filter
   if (deadlineFilter === "overdue") {
     const { todayStart } = deadlineWindow(params.dateConfig);
-    conditions = sql`${conditions} AND i.deadline IS NOT NULL AND i.deadline < ${todayStart}::timestamptz`;
+    conditions = sql`${conditions} AND ${overdueMatch(todayStart)}`;
   } else if (deadlineFilter === "today") {
     const { todayStart, tomorrowStart } = deadlineWindow(params.dateConfig);
     conditions = sql`${conditions} AND i.deadline IS NOT NULL AND i.deadline >= ${todayStart}::timestamptz AND i.deadline < ${tomorrowStart}::timestamptz`;
@@ -1049,6 +1069,58 @@ export const listFiltered = async (params: {
       break;
   }
 
+  // Group before pagination, then apply the selected sort within each group.
+  // These keys match the list's groups; resource IDs remain internal until projection.
+  const sortClause = orderClause;
+  let groupKey = sql`COALESCE(i.priority, 'none')`;
+  switch (groupBy) {
+    case "priority":
+      orderClause = sql`CASE i.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 ELSE 5 END ASC, ${orderClause}`;
+      break;
+    case "column":
+      groupKey = sql`i.column_id::text`;
+      orderClause = sql`c.rank ASC, ${orderClause}`;
+      break;
+    case "tag":
+      // Space tags are ordered by name. Pages follow each item's first tag; the rows of a page come back in the
+      // selected sort, because an item with several tags also shows in its other tag groups.
+      orderClause = sql`(SELECT MIN(t.name) FROM spaces.item_tags it JOIN spaces.tags t ON t.id = it.tag_id WHERE it.item_id = i.id) ASC NULLS LAST, ${orderClause}`;
+      break;
+    case "deadline": {
+      const timeZone = params.dateConfig?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const todayKey = dates.formatDateKey(dates.today(params.dateConfig), params.dateConfig);
+      const schedule = sql`CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN i.starts_at ELSE i.deadline END`;
+      const dayKey = sql`to_char(${schedule} AT TIME ZONE ${timeZone}, 'YYYY-MM-DD')`;
+      groupKey = sql`CASE
+        WHEN ${schedule} IS NULL THEN 'none'
+        WHEN ${dayKey} < ${todayKey} AND i.completed_at IS NULL THEN
+          CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN 'past-events' ELSE 'overdue' END
+        ELSE 'date:' || ${dayKey}
+      END`;
+      orderClause = sql`CASE ${groupKey} WHEN 'overdue' THEN 0 WHEN 'past-events' THEN 1 WHEN 'none' THEN 3 ELSE 2 END ASC, ${groupKey} ASC, ${orderClause}`;
+      break;
+    }
+  }
+
+  let groupCounts: Record<string, number> | undefined;
+  if (groupBy !== "none") {
+    const counts =
+      groupBy === "tag"
+        ? await sql<{ key: string; count: string }[]>`
+          SELECT COALESCE(it.tag_id::text, 'none') AS key, COUNT(*) AS count
+          FROM spaces.items i LEFT JOIN spaces.item_tags it ON it.item_id = i.id
+          WHERE ${conditions}
+          GROUP BY 1
+        `
+        : await sql<{ key: string; count: string }[]>`
+          SELECT ${groupKey} AS key, COUNT(*) AS count
+          FROM spaces.items i
+          WHERE ${conditions}
+          GROUP BY 1
+        `;
+    groupCounts = Object.fromEntries(counts.map(({ key, count }) => [key, Number(count)]));
+  }
+
   // Get total count
   const [countResult] = await sql<{ count: string }[]>`
     SELECT COUNT(*) as count
@@ -1070,9 +1142,14 @@ export const listFiltered = async (params: {
            i.created_by, i.created_at, i.updated_at
     FROM spaces.items i
     LEFT JOIN spaces.columns c ON i.column_id = c.id
-    WHERE ${conditions}
-    ORDER BY ${orderClause}
-    LIMIT ${pageSize} OFFSET ${offset}
+    WHERE i.id IN (
+      SELECT i.id FROM spaces.items i
+      LEFT JOIN spaces.columns c ON i.column_id = c.id
+      WHERE ${conditions}
+      ORDER BY ${orderClause}
+      LIMIT ${pageSize} OFFSET ${offset}
+    )
+    ORDER BY ${groupBy === "tag" ? sortClause : orderClause}
   `;
 
   const items = await hydrateRelations(rows.map(mapToItem));
@@ -1083,6 +1160,7 @@ export const listFiltered = async (params: {
     page,
     pageSize,
     totalPages,
+    ...(groupCounts ? { groupCounts } : {}),
   };
 };
 
@@ -1259,7 +1337,7 @@ export const searchAcross = async (params: {
   const window = deadlineWindow(params.dateConfig);
   const deadlineMatch =
     params.deadlineFilter === "overdue"
-      ? sql`i.deadline < ${window.todayStart}::timestamptz`
+      ? overdueMatch(window.todayStart)
       : params.deadlineFilter === "today"
         ? sql`i.deadline >= ${window.todayStart}::timestamptz AND i.deadline < ${window.tomorrowStart}::timestamptz`
         : params.deadlineFilter === "week"
@@ -1935,6 +2013,7 @@ export const remove = async (params: { id: string; actor?: SpaceActivityIdentity
       tx,
     );
     await publishSpaceChange(tx, { type: "item.deleted", spaceId: existing.space_id, itemId: params.id });
+    await publishDependentsChange(tx, { spaceId: existing.space_id, blockerItemId: params.id });
     await tx`DELETE FROM spaces.items WHERE id = ${params.id}`;
     return { ok: true, data: undefined };
   });
@@ -2150,6 +2229,7 @@ export const move = async (params: {
       tx,
     );
     await publishSpaceChange(tx, { type: completes ? "item.completed" : "item.moved", spaceId: existing.space_id, itemId: id });
+    if (completes) await publishDependentsChange(tx, { spaceId: existing.space_id, blockerItemId: id });
     return { ok: true, data: row };
   });
   if (!result.ok) return result;
@@ -2281,6 +2361,7 @@ export const setCompleted = async (params: {
       tx,
     );
     await publishSpaceChange(tx, { type: "item.completed", spaceId: current.space_id, itemId: id });
+    if (completed !== (current.completed_at !== null)) await publishDependentsChange(tx, { spaceId: current.space_id, blockerItemId: id });
     return { ok: true, data: row };
   });
   if (!result.ok) return result;

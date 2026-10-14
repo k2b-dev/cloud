@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import { memoryStore, nessi, type Provider } from "@k2b/nessi";
+import { openAICompatible } from "@k2b/nessi/ai";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
+import { completeThroughStream } from "./provider";
 import { AiQuotaError } from "./quotas";
 import {
   AiTurnFailure,
@@ -76,6 +78,103 @@ test("an error a model call throws is remembered by its reason and still ends th
   stopped.abort();
   await expect(reset.complete({ messages: [], signal: stopped.signal })).rejects.toThrow();
   expect(reasons).toEqual([{ error: { code: "quota_exhausted" } }, { error: { code: "model_unavailable" } }]);
+});
+
+test.each(["first_byte", "idle"] as const)(
+  "a model call that stalls at %s through Cloud's provider times out as an unavailable model",
+  async (stall) => {
+    const server = Bun.serve({
+      port: 0,
+      idleTimeout: 0,
+      fetch() {
+        if (stall === "first_byte") return new Promise<Response>(() => {});
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"Partial"}}]}\n\n'));
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        );
+      },
+    });
+    try {
+      const reasons: (AiTurnFailureReason | null)[] = [];
+      const provider = rememberProviderErrors(
+        completeThroughStream(
+          openAICompatible({
+            name: "stalled",
+            model: "mock",
+            baseURL: `http://localhost:${server.port}/v1`,
+            timeouts: { firstByteMs: 200, idleMs: 200 },
+          }),
+        ),
+        (reason) => reasons.push(reason),
+      );
+      const startedAt = Date.now();
+      // nessi reports an idle stall after streamed text as an unexpected end of the stream, not as a timeout.
+      await expect(provider.complete({ messages: [] })).rejects.toThrow(
+        stall === "first_byte" ? /first byte timeout/i : /ended unexpectedly/i,
+      );
+      expect(Date.now() - startedAt).toBeLessThan(3_000);
+      expect(reasons).toEqual([null, { error: { code: "model_unavailable" } }]);
+    } finally {
+      server.stop(true);
+    }
+  },
+);
+
+test("a slow model that keeps making progress through Cloud's provider completes", async () => {
+  const chunks = Array.from({ length: 10 }, (_, index) => `Part ${index}. `);
+  const encoder = new TextEncoder();
+  const server = Bun.serve({
+    port: 0,
+    fetch() {
+      let index = 0;
+      return new Response(
+        new ReadableStream<Uint8Array>({
+          async pull(controller) {
+            if (index < chunks.length) {
+              await Bun.sleep(100);
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: chunks[index++] } }] })}\n\n`));
+              return;
+            }
+            controller.enqueue(
+              encoder.encode(
+                'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":10}}\n\ndata: [DONE]\n\n',
+              ),
+            );
+            controller.close();
+          },
+        }),
+        { headers: { "Content-Type": "text/event-stream" } },
+      );
+    },
+  });
+  try {
+    const reasons: (AiTurnFailureReason | null)[] = [];
+    const provider = rememberProviderErrors(
+      completeThroughStream(
+        openAICompatible({
+          name: "progressing",
+          model: "mock",
+          baseURL: `http://localhost:${server.port}/v1`,
+          // Chunks arrive every 100 ms, well inside each timeout; the whole answer takes longer than both together.
+          timeouts: { firstByteMs: 400, idleMs: 400 },
+        }),
+      ),
+      (reason) => reasons.push(reason),
+    );
+    const startedAt = Date.now();
+    const result = await provider.complete({ messages: [] });
+    expect(result.message.content).toEqual([{ type: "text", text: chunks.join("") }]);
+    expect(result.finishReason).toBe("stop");
+    expect(result.usage).toMatchObject({ input: 3, output: 10 });
+    expect(Date.now() - startedAt).toBeGreaterThan(800);
+    expect(reasons).toEqual([null]);
+  } finally {
+    server.stop(true);
+  }
 });
 
 test("each model call starts without a reason, and its own issue names one where the call runs", async () => {

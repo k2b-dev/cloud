@@ -33,6 +33,7 @@ import adminOutgoingMailRoutes from "./admin-outgoing-mail";
 import adminRailRoutes from "./admin-rail";
 import { adminAnnouncementRoutes, announcementRoutes } from "./announcements";
 import { createAppApprovalRoutes } from "./app-approval";
+import { approvalRoutes } from "./approvals";
 import { appDiscoveryRoutes } from "./apps";
 import { createAuthRoutes } from "./auth";
 import { createCapabilityRoutes } from "./capabilities";
@@ -44,6 +45,7 @@ import { createSearchRoutes } from "./search";
 import { createSyncOpsProxyRoutes } from "./sync-ops";
 import { createWidgetRoutes } from "./widgets";
 
+export { createAiOpenAiRoutes } from "../ai/openai-api";
 export { type CapabilityDispatchDependencies, dispatchCapability } from "./capabilities";
 export { cliPluginListRoutes } from "./cli-plugins";
 export { createPwaPhoneRoutes } from "./pwa-phone";
@@ -72,6 +74,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/me", meRoutes)
     .route("/accounts", accountsEntitiesRoutes)
     .route("/apps", appDiscoveryRoutes)
+    .route("/approvals", approvalRoutes)
     .route("/announcements", announcementRoutes)
     .route("/admin/core/ai-usage", adminAiUsageRoutes)
     .route("/admin/core/ai-quotas", adminAiQuotaRoutes)

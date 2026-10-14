@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -32,8 +32,47 @@ const contentCss = await Bun.file(resolve(import.meta.dir, "../styles/content-pa
 const uiCss = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
 
 describe("@k2b/ui Cloud content contract", () => {
+  for (const [locale, title, first] of [
+    ["en", "October 2026", "Nov 1"],
+    ["de", "Oktober 2026", "1. Nov"],
+  ] as const) {
+    test(`continuous month starts at the first's week in ${locale} on the server`, () => {
+      const html = renderToString(() =>
+        createComponent(Calendar, {
+          view: "month",
+          date: "2026-10-09",
+          events: [],
+          range: { from: "2026-08-31", to: "2026-12-21" },
+          dateConfig: { locale, timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+        }),
+      );
+      expect(html).toContain(title);
+      expect(html).toContain('data-continuous="true"');
+      expect(html).toContain('role="rowgroup"');
+      expect(html.match(/data-week-key="([^"]+)"/)?.[1]).toBe("2026-09-28");
+      expect(html).toContain("--k2b-calendar-week-index:0");
+      expect(html).toContain('data-month-first="true"');
+      expect(html).toContain(`>${first}</span>`);
+      expect(html).not.toContain('data-week-key="2026-08-31"');
+    });
+  }
+
   test("keeps every shipped locale of the calendar's own strings complete", () => {
     expect(checkCalendarMessages()).toEqual([]);
+  });
+
+  test("marks only the calendar's week and day hour scrollers for workspace detail", () => {
+    const render = (view: CalendarView, dayHours?: readonly [number, number]) =>
+      renderToString(() => createComponent(Calendar, { date: "2026-07-19", events: [], view, timeZone: "UTC", dayHours }));
+    for (const view of ["week", "day"] as const) {
+      const html = render(view);
+      expect(html).toContain(`class="k2b-calendar-time-grid" data-view="${view}"`);
+      expect(html).toContain('class="k2b-calendar-time-grid__scroll k2b-detail-trail"');
+      expect(html).not.toContain('class="k2b-calendar-time-grid k2b-detail-trail"');
+    }
+    expect(render("week", [6, 22])).toContain('class="k2b-calendar-week__scroll k2b-detail-trail"');
+    expect(render("day", [6, 22])).toContain('class="k2b-calendar-days__scroll k2b-detail-trail"');
+    expect(render("month")).not.toContain("k2b-detail-trail");
   });
 
   test("keeps the complete calendar event and view contract on the server", () => {
@@ -72,6 +111,9 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html).toContain('aria-busy="true"');
     expect(html).toMatch(/class="k2b-button k2b-calendar-header__today[^"]*"[^>]*data-size="sm"[^>]*data-variant="input"/);
     expect(html).toContain('<span class="k2b-button__label">Today</span>');
+    // Only the day and week views that scroll through their days point the Today button toward today.
+    expect(html).not.toContain("k2b-calendar-header__today-direction");
+    expect(html).not.toMatch(/k2b-calendar-header__today[^>]*data-direction/);
     expect(html).toContain("Review");
     expect(html).toContain("Review, 09:00 to 10:00");
     expect(html).toContain("view=day");
@@ -364,6 +406,82 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(detailed).toContain('aria-label="Sommerfest, Deadline, High"');
   });
 
+  test("renders the day and week views with dayHours on the server, in English and German", () => {
+    // Friday, 9 October 2026, 10:48 in Berlin.
+    setSystemTime(new Date("2026-10-09T08:48:00Z"));
+    try {
+      const events: CalendarEvent[] = [
+        { id: "call", title: "Supplier call", start: "2026-10-09T10:30:00+02:00", end: "2026-10-09T11:15:00+02:00" },
+        { id: "planning", title: "Route planning", start: "2026-10-09T12:30:00+02:00", end: "2026-10-09T14:00:00+02:00" },
+        { id: "invoices", title: "Check invoices", start: "2026-10-09T16:00:00+02:00", display: "marker", checked: false },
+        { id: "shift", title: "Night shift", start: "2026-10-12T23:00:00+02:00", end: "2026-10-13T01:30:00+02:00" },
+        { id: "fair", title: "Trade fair", start: "2026-10-08", end: "2026-10-14", allDay: true },
+      ];
+      const render = (locale: "en" | "de", view: "day" | "week") =>
+        renderToString(() =>
+          createComponent(LocaleProvider, {
+            locale,
+            get children() {
+              return createComponent(Calendar, {
+                date: "2026-10-09",
+                view,
+                events,
+                timeZone: "Europe/Berlin",
+                dayHours: [6, 22],
+                range: { from: "2026-10-05", to: "2026-10-19" },
+                onEventCheck: () => undefined,
+                onSlotActivate: () => undefined,
+                onCommandsChange: () => undefined,
+              });
+            },
+          }),
+        );
+
+      const dayDe = render("de", "day");
+      // The header names the shown day, as the browser does once it measured.
+      expect(dayDe).toContain("Fr, 9. Okt 2026");
+      expect(dayDe).toContain("Heute");
+      expect(dayDe).toContain("Freitag, 9. Oktober");
+      // The day starts at six; its night folds.
+      expect(dayDe.indexOf(">06:00<")).toBeLessThan(dayDe.indexOf(">07:00<"));
+      expect(dayDe).toContain("Nacht · 22–06");
+      // The running event says what is left; free time is labelled; the deadline has its box.
+      expect(dayDe).toContain("noch 27 Min");
+      expect(dayDe).toContain("1 Std. 15 frei");
+      expect(dayDe).toContain('aria-label="Erledigt: Check invoices"');
+      expect(dayDe).toContain("3 Termine · 1 To-do");
+      // The weekend holds nothing and folds into one row; Monday's night with the shift opens.
+      expect(dayDe).toContain("Nichts geplant");
+      expect(dayDe).toContain("Nacht · Mo 12. → Di 13.");
+      // The server starts at the shown day, so the page never flashes the days before it.
+      expect(dayDe).not.toContain("Donnerstag, 8. Oktober");
+
+      const dayEn = render("en", "day");
+      expect(dayEn).toContain("Fri, Oct 9, 2026");
+      expect(dayEn).toContain("27 min left");
+      expect(dayEn).toContain("1 hr 15 min free");
+      expect(dayEn).toContain("Nothing planned");
+      expect(dayEn).toContain("Night · 22–06");
+      expect(dayEn).toContain('aria-label="Done: Check invoices"');
+      expect(dayEn).toContain('aria-label="Keyboard shortcuts"');
+
+      const weekDe = render("de", "week");
+      expect(weekDe).toContain("5.–11. Okt 2026");
+      expect(weekDe).toContain("KW 41");
+      expect(weekDe).toContain("ganztägig");
+      // The fair began before the week and goes on after it: one bar with torn ends.
+      expect(weekDe).toContain('data-continues-after="true"');
+      expect(weekDe).toContain('aria-label="Nächte ausklappen, 22–06 Uhr"');
+      expect(weekDe).toContain('aria-label="Tastenkürzel"');
+      const weekEn = render("en", "week");
+      expect(weekEn).toContain("Oct 5 – 11, 2026");
+      expect(weekEn).toContain("W 41");
+      expect(weekEn).toContain("all day");
+    } finally {
+      setSystemTime();
+    }
+  });
+
   test("renders default boolean and date cells with the inherited locale", () => {
     const date = new Date("2026-01-02T03:04:05Z");
     const html = renderToString(() =>
@@ -462,6 +580,7 @@ describe("@k2b/ui Cloud content contract", () => {
       DataTable({
         surface: "paper",
         class: "overflow-x-auto",
+        scrollClass: "k2b-detail-trail",
         rows: [{ id: "one" }],
         columns: [{ id: "id", header: "ID", value: "id" }],
       }),
@@ -476,7 +595,8 @@ describe("@k2b/ui Cloud content contract", () => {
 
     expect(paper).toContain('data-surface="paper"');
     expect(paper).toContain('class="k2b-paper k2b-table-shell overflow-x-auto');
-    expect(paper).toContain('class="k2b-table-wrap"');
+    expect(paper).toContain('class="k2b-table-wrap k2b-detail-trail"');
+    expect(plain).toContain('class="k2b-table-wrap"');
     expect(paper).toContain("overflow-x-auto");
     expect(plain).toContain('data-surface="plain"');
     expect(plain).not.toContain("k2b-paper");
@@ -655,6 +775,38 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html.indexOf("<tbody")).toBeLessThan(html.indexOf("<tfoot"));
   });
 
+  test("keeps numeric and date values intact with explicit wrapping overrides, including footers", () => {
+    const html = renderToString(() =>
+      DataTable({
+        rows: [
+          { amount: null, date: null, code: null, count: null },
+          { amount: 12400, date: new Date("2026-11-14T12:00:00Z"), code: "ABC-123", count: 3n },
+        ],
+        columns: [
+          { id: "amount", header: "Amount", value: "amount" },
+          { id: "date", header: "Date", value: "date", align: "center" },
+          { id: "text", header: "Text", value: "code" },
+          { id: "code", header: "Code", value: "code", nowrap: true },
+          { id: "wrapped", header: "Wrapped", value: "amount", nowrap: false },
+          { id: "count", header: "Count", value: "count" },
+        ],
+        footer: { values: { amount: 12400, code: "ABC-123" } },
+      }),
+    );
+    const cells = (section: string) => [
+      ...html
+        .split(`<${section}`)[1]!
+        .split(`</${section}>`)[0]!
+        .matchAll(/<td\b[^>]*>/g),
+    ];
+    const expected = [true, true, false, true, false, true];
+    cells("tbody").forEach((cell, index) => expect(cell[0].includes('data-nowrap="true"')).toBe(expected[index % expected.length]!));
+    cells("tfoot").forEach((cell, index) => expect(cell[0].includes('data-nowrap="true"')).toBe(expected[index]!));
+    expect(cells("tbody")).toHaveLength(12);
+    expect(cells("tfoot")).toHaveLength(6);
+    expect(html.match(/<th\b[^>]*data-nowrap/g)).toBeNull();
+  });
+
   test("infers each DataTable column alignment once per row set", () => {
     const rows = Array.from({ length: 100 }, (_, index) => ({ value: index + 1 }));
     let reads = 0;
@@ -731,7 +883,19 @@ describe("@k2b/ui Cloud content contract", () => {
   });
 
   test("styles every class the content group renders", async () => {
-    const owned = ["Calendar.tsx", "Chart.tsx", "DataTable.tsx", "LogEntriesTable.tsx", "Pagination.tsx", "RangePicker.tsx"];
+    const owned = [
+      "Calendar.tsx",
+      "CalendarDayView.tsx",
+      "CalendarWeekView.tsx",
+      "calendar-dialogs.tsx",
+      "calendar-shared.tsx",
+      "calendar-time-view.tsx",
+      "Chart.tsx",
+      "DataTable.tsx",
+      "LogEntriesTable.tsx",
+      "Pagination.tsx",
+      "RangePicker.tsx",
+    ];
     const packageRoot = resolve(import.meta.dir, "../..");
     const css = await Bun.file(resolve(packageRoot, "dist/styles.css")).text();
     const defined = new Set<string>();

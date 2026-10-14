@@ -143,7 +143,7 @@ export const composeRecordExportBody = (suppliedBody: Record<string, unknown>, f
 
 export const recordCommands = [
   command("records changes", {
-    summary: "Resume recent Record changes in a Base",
+    summary: "Resume recent Record changes in a base",
     description:
       "Returns public Record identities and versions from the last 30 days. A change appears once every earlier write has ended, so the cursor never passes it. Save the cursor and read current Record values separately.",
     args: baseArgs,

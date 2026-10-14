@@ -37,9 +37,24 @@ import {
 
 Each column has a stable `id`, a `header`, and usually a `value` key or function. Numeric values align right by default. `renderCell` and `renderHeader` customize presentation without changing the underlying row model.
 
+The default cell wrapper keeps every value on one line and truncates it.
+With `cellContentClass`, values can wrap, and a column's `nowrap` decides:
+set `nowrap: true` for dates, times, numbers, amounts, or short codes. Body
+and footer values then stay on one line and set the column's minimum width;
+headers may wrap. Without `nowrap`, the first non-empty value decides:
+numbers, including bigint, and `Date` values stay on one line; strings wrap.
+`nowrap: false` allows wrapping for numeric or date values too. A
+`white-space` set by `cellContentClass` itself wins over `nowrap`.
+
 Pass `getRowId` when selection or stable row identity matters. Use `selectedRowId` for a selected record, not the row index.
 
 The default cell renderer displays missing values as an em dash, dates with the current locale, and booleans as Yes or No.
+
+Assistant view tables may declare a `ref` column whose cells are Cloud
+references or null. The cell shows `title ?? id`; sorting and Copy data use
+that visible text. References contain only `{type, id, title?}`, with no URL,
+and open after a confirmation through the owning app's reader with the viewer's
+access. Original row-index keys let the host recover the reference after sorting.
 
 ## Add a header and controls
 
@@ -94,6 +109,12 @@ Mark a column `sortable: true`, or provide the server's sort key as a string. Pa
 
 Sorting is link-based so it works on a cold server render and survives reload, sharing, and browser navigation. The same rule applies to filters and pagination: put user intent in the URL, query the server, then pass the returned rows to the table.
 
+For a complete local dataset, pass `onSortChange` instead of `sortHref`: sortable
+headers become buttons. The caller sorts the rows and passes the updated `sort`.
+If both are supplied, `sortHref` takes precedence. A sort changes only the
+header's `aria-sort` and arrow, never the button itself, so keyboard focus stays
+on it and pressing it again reverses the order.
+
 Do not filter or sort a paginated result in the browser. The client does not own the complete dataset.
 
 ## Presentation
@@ -120,7 +141,7 @@ type DataTableColumn<T> = {
   header: JSX.Element | ((ctx: { col: DataTableColumn<T> }) => JSX.Element);
   subtitle?: JSX.Element | ((ctx: { col: DataTableColumn<T> }) => JSX.Element);
   value?: keyof T | ((row: T) => unknown); class?: string; headerClass?: string; cellClass?: string;
-  align?: "left" | "center" | "right"; sortable?: boolean | string;
+  align?: "left" | "center" | "right"; nowrap?: boolean; sortable?: boolean | string;
 };
 
 type DataTableSort = { key: string; direction: "asc" | "desc" };
@@ -139,13 +160,14 @@ type DataTableFooter<T> = {
 type DataTableProps<T> = {
   rows: readonly T[]; columns: readonly DataTableColumn<T>[]; ariaLabel?: string; ariaLabelledBy?: string;
   getRowId?: (row: T) => string; sort?: DataTableSort | null; sortHref?: (next: DataTableSort) => string;
+  onSortChange?: (next: DataTableSort) => void;
   selectedRowId?: string | null; rowClass?: string | ((row: T) => string | undefined); hoverRows?: boolean;
   onRowClick?: (row: T) => void; onRowDoubleClick?: (row: T) => void; renderCell?: DataTableRenderCell<T>;
   renderHeader?: DataTableRenderHeader<T>; footer?: DataTableFooter<T>; hasMore?: boolean;
   loadingMore?: boolean; onLoadMore?: () => void; empty?: JSX.Element; density?: "compact" | "normal";
   stickyHeader?: boolean; highlightColumns?: boolean; verticalAlign?: "top" | "middle" | "bottom";
   cellContentClass?: string; fillHeight?: boolean; surface?: "paper" | "plain"; class?: string;
-  tableClass?: string; scrollPreserveKey?: string | false;
+  tableClass?: string; scrollClass?: string; scrollPreserveKey?: string | false;
 };
 
 type DataTablePanelProps = {
@@ -168,7 +190,7 @@ type DataTablePanelFooterProps = {
 
 The four panel types correspond to `DataTable.Panel`, `.Header`, `.Controls`, and `.Footer`. All row callbacks receive the original row. Footer values are keyed by **column id**. `getRowId` returns a stable string. `onLoadMore` returns `void`; expose request state through `loadingMore` and append rows after success.
 
-Defaults: `density="normal"`, `stickyHeader=true`, `verticalAlign="middle"`. Use `onRowClick`/`onRowDoubleClick` only for real row actions; selection remains controlled through `selectedRowId`. `scrollPreserveKey={false}` disables restoration for the table. `fillHeight` makes the table fill a bounded parent's height. `hoverRows` defaults to whether a row callback exists; `highlightColumns` defaults on when row hover is enabled. Omitted `surface` is paper without a custom class and plain with one, so set it explicitly when styling. `rowClass` styles rows, `tableClass` the table, and `class` its outer shell.
+Defaults: `density="normal"`, `stickyHeader=true`, `verticalAlign="middle"`. Use `onRowClick`/`onRowDoubleClick` only for real row actions; selection remains controlled through `selectedRowId`. `scrollPreserveKey={false}` disables restoration for the table. `fillHeight` makes the table fill a bounded parent's height. `hoverRows` defaults to whether a row callback exists; `highlightColumns` defaults on when row hover is enabled. Omitted `surface` is paper without a custom class and plain with one, so set it explicitly when styling. `rowClass` styles rows, `tableClass` the table, `scrollClass` the scroll container, and `class` its outer shell. Pass `scrollClass="k2b-detail-trail"` to keep column widths beside a [floating workspace detail](/en/ui/layout/workspace#floating-detail). The scroller narrows and scrolls the table at its width without the panel; closing returns the full width without extra space. Under the tablet drawer the scroller gets the drawer's width as space at its end instead.
 
 ## Accessibility
 

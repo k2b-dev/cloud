@@ -3,7 +3,7 @@ title: Grids
 navTitle: Grids
 section: Work
 order: 140
-description: Structured data with Bases, Views, Forms, Custom Apps, documents, and workflows.
+description: Structured data with bases, Views, Forms, Custom Apps, documents, and workflows.
 tags: [grids, tables, workflows]
 updated: 2026-10-08
 ---
@@ -14,11 +14,15 @@ Grids builds structured applications from tables and records. A base can grow
 from a simple shared dataset into forms, saved views, dashboards, generated
 documents, and workflows without splitting the domain across unrelated tools.
 
-The Grids overview lists your Bases in a sidebar with their table count and
+The Grids overview lists your bases in a sidebar with their table count and
 last change. The page shows the published Apps you may use, including Apps
-shared with you from Bases you cannot open, then the most recently changed
-tables across all Bases, and a **New base** menu for a blank Base or a
+shared with you from bases you cannot open, then the most recently changed
+tables across all bases, and a **New base** menu for a blank base or a
 template. **All apps** lists every usable App.
+
+Open the base name in the sidebar or phone menu to switch bases. Signed-in
+users can choose **New base** to create and open a blank base; **All bases**
+opens the overview. Use the overview to start from a template.
 
 ## Use Grids
 
@@ -62,8 +66,8 @@ grouping, indexes and joins into the external app are not supported.
 
 ### Choose a template for daily work
 
-Templates create a new Base with tables, Forms, Workflows, Documents, and published
-Apps. Later template improvements apply to newly created Bases; existing Bases
+Templates create a new base with tables, Forms, Workflows, Documents, and published
+Apps. Later template improvements apply to newly created bases; existing bases
 keep their configuration and data.
 
 | Template | Daily work | App audience |
@@ -102,8 +106,8 @@ approval, issue, and return. Handing over an item starts the loan; emailing an
 agreement does not. Staff can record a return from its detail page without a
 scanner. A request does not guarantee a future reservation.
 
-Share the appropriate App with each audience. App access does not require Base
-access; Base Read exposes all records. Bookshop and Finance use one App because
+Share the appropriate App with each audience. App access does not require base
+access; base Read exposes all records. Bookshop and Finance use one App because
 their tasks share an audience. Inventory needs separate Apps because borrowers
 and the loan desk have different records and actions available.
 Share **Equipment loans** with borrowers and **Loan desk** only with the staff
@@ -113,7 +117,7 @@ for internal notes.
 
 ### Start with the billing template
 
-The **Billing** Base template provides invoices, credit notes linked to an
+The **Billing** base template provides invoices, credit notes linked to an
 original invoice, and commission self-billing. Positions belong to their bill
 as an Object list; payments have their own table.
 It uses EUR and German business partners with distinct German VAT IDs,
@@ -151,9 +155,9 @@ payment remains possible after settlement or overpayment, as a secondary action.
 Pending payments appear on the bill only when there are entries to confirm.
 Empty notes are omitted.
 
-1. Ask a Base admin to complete **Settings → Documents**: legal company name,
+1. Ask a base admin to complete **Settings → Documents**: legal company name,
    address, postal code, city, country code, VAT ID, IBAN and account name.
-   Billing uses these shared Base defaults; it has no separate company table
+   Billing uses these shared base defaults; it has no separate company table
    or company page. Example records contain no usable issuer details.
 2. Create an invoice draft, choose or create the business partner, and enter
    positions. Review the calculated totals before issuing.
@@ -164,7 +168,7 @@ Empty notes are omitted.
    appears only when the stored file exists. Finalization alone is not completion.
    If rendering fails after finalization, use **Continue creation** on the same
    bill. It retains the original document number, company details and template
-   captured at finalization, even if the Base settings change before the PDF is ready.
+   captured at finalization, even if the base settings change before the PDF is ready.
    A workflow requiring administrator
    attention cannot be restarted from this button.
 4. Record actual money movements from the bill: payment received for invoices,
@@ -182,7 +186,7 @@ App tables display calculated numeric results using the current locale without r
 
 On a finalized invoice, choose **Use as new invoice** to open a fresh draft with its business partner, buyer reference and positions. Check current partner details and prices. The document date starts at today; choose the service date and due date again. Notes, corrections, payments, document numbers and files are not copied. Saving the form and issuing both require the missing dates.
 
-Business partners receive an automatic customer number such as **KD-00001** within their Base. The number appears in partner lists, partner details, recipient selection and the bill detail page. It is read-only, remains stable when the name changes, and is frozen with issued bill data.
+Business partners receive an automatic customer number such as **KD-00001** within their base. The number appears in partner lists, partner details, recipient selection and the bill detail page. It is read-only, remains stable when the name changes, and is frozen with issued bill data.
 
 Use **Discard draft** on the bill detail page to move an unfinished bill to Trash.
 Issued bills and their documents cannot be discarded this way.
@@ -199,7 +203,7 @@ after rounding. An incompatible split stays a draft; adjust its positions or
 correct the complete remaining amount. Refunds require the recipient's bank
 details. The document and its draft preview retain the original issuer and
 recipient facts. The correction workflow copies the issuer from the original
-stored Document, so a later change to the Base company settings does not alter it.
+stored Document, so a later change to the base company settings does not alter it.
 
 For self-billing, choose the partner, supply the agreement reference and enter
 positions directly in the bill's Object list. Review the saved totals and
@@ -208,13 +212,13 @@ is no separate commission collection or automatic check against earlier
 commission settlements. The issuer must avoid entering the same obligation
 twice. This is not accounting certification or a payment-execution service.
 
-### Navigate a Base
+### Navigate a base
 
 Use **New** in Edit mode for permitted creation actions. Table-based actions ask for a table and preselect the current one when eligible. **View** opens the existing query editor. **Documents** always expands to **All documents** and individual template destinations. Workflow email templates live under **Settings → Email templates**.
 
-**All documents** shows every Document of the Base in any format, whether a template, a workflow, or both produced it. It defaults to folders by document template or workflow and year. Search matches filenames, document numbers, and tags across the Base. Combinable filters narrow it by workflow, template, record table (direct record binding only, never the source rows of an export or ZIP contents), and primary file type; sort is newest first by default, or oldest first or by filename. Search, filters, and sort flatten the folders into one list and stay in the URL. Workflow Documents link to their run when the reader can open the workflow, and a ZIP Document lists its archive contents as provenance without associating the archive with the contained Documents' records. Both the Base catalog and template document pages load their initial results on the server.
+**All documents** shows every Document of the base in any format, whether a template, a workflow, or both produced it. It defaults to folders by document template or workflow and year. Search matches filenames, document numbers, and tags across the base. Combinable filters narrow it by workflow, template, record table (direct record binding only, never the source rows of an export or ZIP contents), and primary file type; sort is newest first by default, or oldest first or by filename. Search, filters, and sort flatten the folders into one list and stay in the URL. Workflow Documents link to their run when the reader can open the workflow, and a ZIP Document lists its archive contents as provenance without associating the archive with the contained Documents' records. Both the base catalog and template document pages load their initial results on the server.
 
-Open a Base's **Overview** to search its resources and use shared navigation groups.
+Open a base's **Overview** to search its resources and use shared navigation groups.
 Base admins configure one level of ordered groups in **Settings → Navigation**; groups can mix
 Tables, Views, Forms, Document templates, Workflows, and Apps. Shortcuts do not
 change access or resource ownership. Without visible groups, the sidebar keeps
@@ -225,7 +229,7 @@ configuration through `grids bases navigation get` and `grids bases navigation s
 - Create a base for one operational domain, then define tables, fields, and
   relationships around its records.
 - Review Table structure, indexed and unique fields, write paths, Durable
-  History, and Finalization together in the admin-only **Tables** Base setting.
+  History, and Finalization together in the admin-only **Tables** base setting.
 - Save filtered or grouped views for recurring work and reporting.
 - Publish Forms for guided record creation and Custom Apps for focused metrics,
   lists, instructions, and actions.
@@ -233,7 +237,7 @@ configuration through `grids bases navigation get` and `grids bases navigation s
   bounded workflow row actions on Records blocks. Published Apps pin the View
   contract and recheck selected records server-side.
 - Let signed-in App readers manage explicitly editable File fields from Record details
-  without granting access to the Base record API.
+  without granting access to the base record API.
 
 Custom App charts display date-typed categories as localized calendar dates.
 Text categories keep their original labels, even when they resemble dates.
@@ -246,20 +250,20 @@ Text categories keep their original labels, even when they resemble dates.
 - Replace or remove a record attachment without rewriting file history. Removal
   detaches it from the current record; protected revisions or artifacts can
   retain exact bytes, while unprotected files can be cleaned up.
-- Let a Base admin set one optional retention floor for trashed Records and
+- Let a base admin set one optional retention floor for trashed Records and
   newly unreferenced Files. The retention preview opens paginated,
   server-filtered Record and File lists. Record review links into the existing
   table Trash view; File review supports read-only preview and exact-byte
   download. It neither deletes data nor makes a compliance claim.
-- Let a Base admin create multiple preservation holds for the entire Base or
-  one active Table, with a recorded reason for creation and release. A Base
+- Let a base admin create multiple preservation holds for the entire base or
+  one active Table, with a recorded reason for creation and release. A base
   hold covers every Table. A Table hold covers only that Table and also blocks
-  destruction of its parent Base so the hold cannot be bypassed. Records remain
+  destruction of its parent base so the hold cannot be bypassed. Records remain
   editable, access and Finalization do not change, and releasing a hold never
   starts deletion.
-- Let a Base admin preview and start a durable, irreversible destruction run
+- Let a base admin preview and start a durable, irreversible destruction run
   for at most 100 exact unreferenced File candidates whose retention floor has
-  been reached. The admin confirms the exact Base name; every File is rechecked
+  been reached. The admin confirms the exact base name; every File is rechecked
   for retention, references, origin Table, and preservation holds immediately
   before deletion. Records, Documents, evidence exports, and Durable History
   are excluded. Remaining work can be canceled, but destroyed bytes cannot be
@@ -304,7 +308,7 @@ Text categories keep their original labels, even when they resemble dates.
 
 For Assistant discovery, `grids.gql.context` keeps the `fields` catalog compact. Request `kind: "list-columns"` with the parent `tableId` and `fieldId` to read an object list's column IDs, scalar settings, required flags and calculations. Follow the returned cursor; `data.list` contains its effective minimum and maximum row counts. Results use the same table permissions and byte budget as other context pages. An individual column that exceeds the result budget returns `BAD_INPUT`, not a silently truncated configuration. An optional `fieldId` also filters `kind: "fields"` to one field.
 
-- Keep the default open mutation policy, or let a Base admin limit record,
+- Keep the default open mutation policy, or let a base admin limit record,
   Relation, and File changes to direct editing and APIs, Forms, or Workflows
   and actions. Every client follows the same server-enforced policy.
 - Open a record's **Referenced by** section to page through permission-aware
@@ -331,7 +335,7 @@ For Assistant discovery, `grids.gql.context` keeps the `fields` catalog compact.
 - Use automatically provisioned durable number series for sequential ID fields
   and numbered Documents. Allocations are atomic and never reused; technical
   gaps are possible, and formatting changes affect future values only.
-- Let a Base admin create a bounded evidence package for one Base or table.
+- Let a base admin create a bounded evidence package for one base or table.
   The short-lived TAR contains the selected current and historical sources,
   exact stored File and Document bytes, public Grids IDs, coverage statements,
   and SHA-256 hashes. It reports unavailable history rather than reconstructing
@@ -492,11 +496,11 @@ their frozen calculated cells and totals even after formulas change.
 | Custom App | Immutable published capability surface for a focused audience |
 | Document and workflow | Immutable template output from one Record, and a versioned sequence of checked effects |
 
-Base access opens the complete raw workspace and every record in that Base.
+Base access opens the complete raw workspace and every record in that base.
 Tables, Views, Forms, document templates, and Workflows do not have separate
 Cloud grants. Use a published Custom App when an authenticated or public
 audience needs only selected data, Forms, documents, and actions. App readers
-do not need Base access, and an app grant never opens raw Grids APIs or GQL.
+do not need base access, and an app grant never opens raw Grids APIs or GQL.
 Base grants support service accounts. Custom App grants support users, groups,
 all authenticated accounts, or the public, but not service accounts. Delegated
 credentials access a Custom App through their user identity.
@@ -629,7 +633,7 @@ evidence creation and event replay return request state rather than promising
 that background processing has completed.
 
 Published-App readers use `cld grids apps runtime read <app-id>` to discover
-available pages, data, forms and action IDs without Base access. The runtime
+available pages, data, forms and action IDs without base access. The runtime
 commands support bounded record reads, form submission, editable record fields,
 comments, attachments, stored document downloads, actions, scanners and scoped
 run status. They retain the published App's permission and availability checks.
@@ -668,7 +672,7 @@ remove actions in the keyboard order.
 
 Published-runtime HTTP list controls use `_search`, `_cursor`, and `_limit` so
 they cannot overwrite a page's Record parameters. CLI flags remain `--search`,
-`--cursor`, and `--limit`; Base APIs retain their existing query parameters.
+`--cursor`, and `--limit`; base APIs retain their existing query parameters.
 
 Capabilities remain a curated daily-task surface: discover templates, read or
 issue immutable documents, discover configured correction/cancellation Draft actions, execute
@@ -695,7 +699,7 @@ Records have no per-table number, so a record address always ends in the
 record's public ID. IDs always resolve. Names are exact; when one matches
 several bases or tables, the command fails with `409` and lists every candidate
 as `path (id)` instead of guessing. The CLI resolves addresses through
-`GET /api/grids/resolve`, which applies the same Base Read permissions as the
+`GET /api/grids/resolve`, which applies the same base Read permissions as the
 app.
 
 ```bash
@@ -731,7 +735,7 @@ To resume a connector after a short interruption, first scan the current
 Records it owns, then save the opaque cursor returned by `cld grids records
 changes`. The feed reports committed Record identities, event types, versions,
 and deletion times for the last 30 days; it does not return field values or
-replace a current Record read. Every page rechecks Base Read access, and an
+replace a current Record read. Every page rechecks base Read access, and an
 optional `--table` narrows the feed without creating a separate permission
 boundary. A change appears once every earlier write transaction on the
 PostgreSQL server has ended, so a long import delays the changes after it
@@ -743,7 +747,7 @@ Run `cld grids help` for bases, schema, records, views, forms, Custom Apps,
 documents, templates, and workflows. Run `cld grids <area> <command> --help`
 before changing schema, data, access, or automation.
 
-Document automation is available through `documents renderers|list|list-by-template|browse|by-record|generate|get|download|download-artifact`. Template-generated Documents bind a template and Record; workflow Documents can instead use a captured GQL result containing multiple records or aggregates. Both use the same immutable Document and artifact API. Workflow Documents expose a `dataSnapshot` summary with row count and capture time, not the captured rows. Output can be PDF, CSV, JSON, XML or a supported financial profile. Template generation requires Base Write and an explicit stable idempotency key; reads and artifact downloads require Base Read. Public resource arguments use six-character IDs, never internal UUIDs. Base- and table-scoped evidence packages include the covered Documents and their exact artifacts.
+Document automation is available through `documents renderers|list|list-by-template|browse|by-record|generate|get|download|download-artifact`. Template-generated Documents bind a template and Record; workflow Documents can instead use a captured GQL result containing multiple records or aggregates. Both use the same immutable Document and artifact API. Workflow Documents expose a `dataSnapshot` summary with row count and capture time, not the captured rows. Output can be PDF, CSV, JSON, XML or a supported financial profile. Template generation requires base Write and an explicit stable idempotency key; reads and artifact downloads require base Read. Public resource arguments use six-character IDs, never internal UUIDs. Base- and table-scoped evidence packages include the covered Documents and their exact artifacts.
 
 ## Deployment requirements
 
@@ -769,7 +773,7 @@ restore of the database, saved feed cursors answer `409` once and integrations
 perform a full Record scan.
 
 Platform admins can open **Grids** in the administration area and select a
-Base's failed record events to inspect the error and retry count. After fixing
+base's failed record events to inspect the error and retry count. After fixing
 the cause, replay a stopped event explicitly. Workflow replay retains its
 failure history; replaying an outbox failure resets its publication attempts
 and removes that failure entry. Upgrading does not replay historical failures
@@ -930,8 +934,8 @@ sending requests. The checked-in manifest in
 `tests/fixtures/capabilities/v2/grids.json` is the baseline for subsequent
 additive changes; the shared compatibility check remains enabled.
 
-- `gql.context` returns compact Base and catalog entries. Use `base.read` for
-  full Base metadata and `includeWriteContext: true` with `kind: "fields"`
+- `gql.context` returns compact base and catalog entries. Use `base.read` for
+  full base metadata and `includeWriteContext: true` with `kind: "fields"`
   before writing records. Typed list columns use `kind: "list-columns"`.
 - GQL results omit internal `sqlType` and `recordMeta` fields. Use the published
   column format, resource references, and `record.read` instead.

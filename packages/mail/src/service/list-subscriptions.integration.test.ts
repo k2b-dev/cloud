@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
@@ -384,5 +385,58 @@ suite("mailing-list subscriptions", () => {
     });
     expect(denied.ok).toBe(false);
     if (!denied.ok) expect(denied.error.status).toBe(403);
+  });
+  test("subscription disposal skips Trash, Junk and kept conversations without aborting the batch", async () => {
+    const [resource] = await sql<{ id: string }[]>`SELECT remote_resource_id AS id FROM mail.folders WHERE id = ${inboxFolderId}::uuid`;
+    if (!resource) throw new Error("Missing resource");
+    const [binding] = await sql<{ id: string }[]>`SELECT id FROM mail.provider_bindings WHERE remote_resource_id = ${resource.id}::uuid`;
+    if (!binding) throw new Error("Missing binding");
+    const addFolder = async (role: string) => {
+      const [folder] = await sql<{ id: string }[]>`INSERT INTO mail.folders (short_id, remote_resource_id, stable_key, name, role)
+        VALUES (${newShortId()}, ${resource.id}::uuid, ${role}, ${role}, ${role}) RETURNING id`;
+      if (!folder) throw new Error("Missing folder");
+      await sql`INSERT INTO mail.binding_folder_refs (binding_id, folder_id, remote_path, uid_validity, uid_next, effective_rights, last_verified_at)
+        VALUES (${binding.id}::uuid, ${folder.id}::uuid, ${role}, 1, 1, ${toPgTextArray(FOLDER_RIGHTS)}::text[], now())`;
+      return folder.id;
+    };
+    const trashId = await addFolder("trash");
+    const junkId = await addFolder("junk");
+    let index = 100;
+    for (const folderId of [inboxFolderId, inboxFolderId, trashId, junkId]) {
+      index++;
+      const [message] = await sql<{ id: string }[]>`INSERT INTO mail.message_contents
+        (short_id, mailbox_id, message_id, subject, internal_date, size_bytes, content_hash, hydration_status, protocol_facts)
+        VALUES (${newShortId()}, ${mailboxId}::uuid, ${`<cleanup-${index}-${suffix}@test>`}, 'Cleanup', now(), 1,
+          ${String(index).padEnd(64, "0")}, 'complete', ${{ ...EMPTY_MESSAGE_PROTOCOL_FACTS, list: { ...EMPTY_MESSAGE_PROTOCOL_FACTS.list, id: "cleanup.example.test" } }}::jsonb)
+        RETURNING id`;
+      if (!message) throw new Error("Missing message");
+      const [ref] = await sql<{ id: string }[]>`INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
+        VALUES (${folderId}::uuid, ${message.id}::uuid, 1, ${index}) RETURNING id`;
+      if (!ref) throw new Error("Missing ref");
+      await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id)
+        VALUES (${ref.id}::uuid, ${folderId}::uuid, ${message.id}::uuid)`;
+      if (index === 101) {
+        const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations
+          (short_id, mailbox_id, subject, participant_summary, latest_message_at)
+          VALUES (${newShortId()}, ${mailboxId}::uuid, 'Keep', 'sender', now()) RETURNING id`;
+        if (!conversation || ownerContext.actor.kind !== "user") throw new Error("Missing keep actor");
+        await sql`INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by)
+          VALUES (${conversation.id}::uuid, ${message.id}::uuid, 1, 'headers')`;
+        await sql`INSERT INTO mail.conversation_keeps (conversation_id, mailbox_id, kept_by_kind, kept_by_id)
+          VALUES (${conversation.id}::uuid, ${mailboxId}::uuid, 'user', ${ownerContext.actor.user.id}::uuid)`;
+      }
+    }
+    const result = await applyMailingListDisposition({
+      context: ownerContext,
+      mailboxId,
+      input: { listKey: "cleanup.example.test", disposition: "trash", idempotencyKey: crypto.randomUUID() },
+    });
+    expect(result).toEqual({ ok: true, data: { commandCount: 1, truncated: false } });
+    const archive = await applyMailingListDisposition({
+      context: ownerContext,
+      mailboxId,
+      input: { listKey: "cleanup.example.test", disposition: "archive", idempotencyKey: crypto.randomUUID() },
+    });
+    expect(archive).toEqual({ ok: true, data: { commandCount: 2, truncated: false } });
   });
 });

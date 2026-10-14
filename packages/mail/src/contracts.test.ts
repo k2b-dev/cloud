@@ -1,12 +1,20 @@
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
+import { DraftMutationDataSchema } from "./capability-contracts";
 import {
+  type AutomaticReplyPreview,
   activateWorkflowInputSchema,
   actorCommandInputSchema,
   addConversationLocalTagsSchema,
   assignConversationsSchema,
   automaticReplyPreviewInputSchema,
+  automaticReplyPreviewSchema,
+  type ComposeFormattingWarning,
   cancelScheduledSendInputSchema,
+  composeFormattingWarningSchema,
+  composePreviewSchema,
   conversationTriageInputSchema,
+  conversationTriageUndoInputSchema,
   createAutomaticReplyConfigurationSchema,
   createAutomaticReplySetupSchema,
   createConversationCommentSchema,
@@ -21,6 +29,8 @@ import {
   draftContentInputSchema,
   draftEditableContentInputSchema,
   MAIL_CONVERSATION_ASSIGNEE_LIMIT,
+  MAX_CONVERSATION_ACTION_MESSAGES,
+  mailboxComposeStyleSchema,
   mailSearchExpressionSchema,
   mergeConversationsInputSchema,
   messageStateChangeSchema,
@@ -29,6 +39,7 @@ import {
   reassignConversationMessageInputSchema,
   restoreWorkflowVersionInputSchema,
   scheduledSendPageSchema,
+  senderDispositionInputSchema,
   splitConversationInputSchema,
   startIncomingAutomationBackfillInputSchema,
   updateAutomaticReplyConfigurationSchema,
@@ -95,6 +106,16 @@ const draftEditableContent = {
 };
 
 describe("mail draft contracts", () => {
+  test("signature choices distinguish omission, none, and a public template ID", () => {
+    expect(draftEditableContentInputSchema.parse(draftEditableContent)).not.toHaveProperty("signatureTemplateId");
+    expect(draftEditableContentInputSchema.parse({ ...draftEditableContent, signatureTemplateId: null }).signatureTemplateId).toBeNull();
+    expect(draftEditableContentInputSchema.parse({ ...draftEditableContent, signatureTemplateId: "Sign01" }).signatureTemplateId).toBe(
+      "Sign01",
+    );
+    expect(
+      draftEditableContentInputSchema.safeParse({ ...draftEditableContent, signatureTemplateId: crypto.randomUUID() }).success,
+    ).toBeFalse();
+  });
   test("keeps draft context immutable and bounds attachment uploads", () => {
     expect(draftEditableContentInputSchema.safeParse({ ...draftEditableContent, intent: "reply" }).success).toBe(false);
     expect(
@@ -265,6 +286,25 @@ describe("automatic reply configuration contracts", () => {
         referenceConfiguration,
       }).success,
     ).toBe(false);
+  });
+
+  test("accepts formatting warnings in automatic reply previews and rejects unknown fields", () => {
+    const preview: AutomaticReplyPreview = {
+      subject: "Re: Example request",
+      html: "<p>Fine print</p>",
+      text: "Fine print",
+      formattingWarnings: [
+        { code: "ignored_mailbox_css", property: "font-family" },
+        { code: "unsupported_element", element: "small" },
+      ],
+    };
+    expect(automaticReplyPreviewSchema.parse(preview)).toEqual(preview);
+    expect(automaticReplyPreviewSchema.safeParse({ ...preview, unknown: true }).success).toBe(false);
+    expect(automaticReplyPreviewSchema.safeParse({ ...preview, formattingWarnings: [] }).success).toBe(true);
+  });
+
+  test("requires formatting warnings in automatic reply previews", () => {
+    expect(automaticReplyPreviewSchema.safeParse({ subject: "Reply", html: "<p>Body</p>", text: "Body" }).success).toBe(false);
   });
 
   test("requires the reference format for reference-enabled previews", () => {
@@ -482,7 +522,7 @@ describe("incoming automation contracts", () => {
     });
     expect(result.success).toBe(false);
     if (!result.success)
-      expect(result.error.issues.some((issue) => issue.message.includes("already changes the message on the provider"))).toBe(true);
+      expect(result.error.issues.some((issue) => issue.message.includes("one reachable path can move only once"))).toBe(true);
     expect(
       createIncomingAutomationSchema.safeParse({
         name: "Single-result multi routing",
@@ -510,6 +550,20 @@ describe("incoming automation contracts", () => {
 
   test("requires bounded, explicit inputs for previews and existing-message backfills", () => {
     expect(previewIncomingAutomationMatchesInputSchema.safeParse({ scope: { mode: "all" } }).success).toBe(true);
+    expect(
+      startIncomingAutomationBackfillInputSchema.safeParse({
+        operationId: "6962b64e-6de0-4e73-838b-f067d805f46e",
+        expectedRevision: 2,
+        retryFailed: true,
+      }).success,
+    ).toBe(true);
+    expect(
+      startIncomingAutomationBackfillInputSchema.safeParse({
+        operationId: "6962b64e-6de0-4e73-838b-f067d805f46e",
+        expectedRevision: 2,
+        retryFailed: "true",
+      }).success,
+    ).toBe(false);
     expect(
       startIncomingAutomationBackfillInputSchema.safeParse({
         operationId: "6962b64e-6de0-4e73-838b-f067d805f46e",
@@ -846,4 +900,121 @@ test("assignment schemas bound sets and require users for add and remove", () =>
     assignConversationsSchema.safeParse({ conversationIds: ["Conv01"], assigneeUserIds: [], mode: "replace", assigneeUserId: null })
       .success,
   ).toBeFalse();
+});
+
+describe("compose formatting contracts", () => {
+  test("keeps HTML warnings and adds strict stored-design warnings", () => {
+    const warnings: ComposeFormattingWarning[] = [
+      { code: "unsupported_element", element: "small" },
+      { code: "unsupported_attribute", element: "span", attribute: "class" },
+      { code: "unsupported_link", element: "a" },
+      { code: "ignored_mailbox_css", property: "font-family" },
+      { code: "ignored_mailbox_css", property: "@media" },
+      { code: "ignored_mailbox_css" },
+    ];
+    for (const warning of warnings) expect(composeFormattingWarningSchema.parse(warning)).toEqual(warning);
+    for (const warning of [
+      { code: "ignored_mailbox_css", element: "p" },
+      { code: "ignored_mailbox_css", property: "x".repeat(65) },
+      { code: "unsupported_element", element: "p", property: "color" },
+      { code: "unsupported_element" },
+    ])
+      expect(composeFormattingWarningSchema.safeParse(warning).success).toBe(false);
+  });
+
+  test("requires design warnings on style reads and serializes preview and capability contracts", () => {
+    const style = { mailboxId: "Mail01", customCss: "", revision: 1, updatedAt: "2026-07-17T00:00:00.000Z" };
+    expect(mailboxComposeStyleSchema.safeParse(style).success).toBe(false);
+    expect(mailboxComposeStyleSchema.parse({ ...style, formattingWarnings: [] }).formattingWarnings).toEqual([]);
+    const formattingWarnings: ComposeFormattingWarning[] = [{ code: "ignored_mailbox_css", property: "font-family" }];
+    expect(composePreviewSchema.parse({ html: "<p>Hello</p>", text: "Hello", formattingWarnings }).formattingWarnings).toEqual(
+      formattingWarnings,
+    );
+    for (const schema of [mailboxComposeStyleSchema, composePreviewSchema, DraftMutationDataSchema]) {
+      const serialized = JSON.stringify(z.toJSONSchema(schema));
+      expect(serialized).toContain("ignored_mailbox_css");
+      expect(JSON.parse(serialized)).toBeDefined();
+    }
+  });
+});
+
+describe("sender disposition contracts", () => {
+  const input = { match: "domain", value: " example.com ", idempotencyKey: crypto.randomUUID() };
+
+  test("sender disposition accepts exactly one role or public folder destination and trims values", () => {
+    expect(senderDispositionInputSchema.parse({ ...input, destination: "archive" }).value).toBe("example.com");
+    expect(senderDispositionInputSchema.safeParse({ ...input, folderId: "Foldr1" }).success).toBe(true);
+    for (const destination of [{}, { destination: "trash", folderId: "Foldr1" }]) {
+      const result = senderDispositionInputSchema.safeParse({ ...input, ...destination });
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.issues[0]?.message).toContain("exactly one");
+    }
+  });
+
+  test("sender disposition is strict, bounds values, and requires a UUID command key", () => {
+    const valid = { ...input, destination: "trash" };
+    for (const changes of [
+      { extra: true },
+      { idempotencyKey: "arbitrary-key" },
+      { value: " " },
+      { value: "a".repeat(321) },
+      { match: "list" },
+      { destination: "junk" },
+      { destination: undefined, folderId: crypto.randomUUID() },
+    ])
+      expect(senderDispositionInputSchema.safeParse({ ...valid, ...changes }).success).toBe(false);
+  });
+});
+
+test("guided rules allow flag and keyword changes before one placement", () => {
+  const read = { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } };
+  const keyword = { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "add_keyword", keyword: "review" } };
+  for (const kind of ["junk", "trash", "move_to_folder"]) {
+    const move = {
+      id: crypto.randomUUID(),
+      kind: "mail_action",
+      action: { kind, ...(kind === "move_to_folder" ? { folderId: "Arch01" } : {}) },
+    };
+    const definition = (steps: unknown[]) => ({ name: "Read and file", scope: { mode: "all" }, steps });
+    expect(createIncomingAutomationSchema.safeParse(definition([read, keyword, move])).success).toBe(true);
+    expect(createIncomingAutomationSchema.safeParse(definition([move, read])).success).toBe(false);
+    expect(createIncomingAutomationSchema.safeParse(definition([move, keyword])).success).toBe(false);
+    expect(createIncomingAutomationSchema.safeParse(definition([move, { ...move, id: crypto.randomUUID() }])).success).toBe(false);
+  }
+});
+
+test("guided negation keeps operators field-specific, bounded and strict", () => {
+  const definition = (field: string, operator: string, value: unknown, extra = {}) => ({
+    name: "Exclude sorted senders",
+    scope: { mode: "matching", conditions: { mode: "all", items: [{ field, operator, value, ...extra }] } },
+    steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } }],
+  });
+  for (const field of ["sender_address", "sender_domain", "subject", "body_text"]) {
+    const operator = field.startsWith("sender") ? "is_not" : "not_contains";
+    const value = field === "sender_address" ? "user@example.com" : "example.com";
+    expect(createIncomingAutomationSchema.safeParse(definition(field, operator, value)).success).toBe(true);
+    expect(createIncomingAutomationSchema.safeParse(definition(field, operator, "")).success).toBe(false);
+    expect(createIncomingAutomationSchema.safeParse(definition(field, operator, "x".repeat(1001))).success).toBe(false);
+    expect(createIncomingAutomationSchema.safeParse(definition(field, operator, value, { extra: true })).success).toBe(false);
+    expect(
+      createIncomingAutomationSchema.safeParse(definition(field, field.startsWith("sender") ? "not_contains" : "is_not", value)).success,
+    ).toBe(false);
+  }
+  expect(createIncomingAutomationSchema.safeParse(definition("attachment_presence", "is_not", false)).success).toBe(false);
+});
+
+describe("conversation action undo contracts", () => {
+  test("accepts command UUIDs up to one conversation action's command bound", () => {
+    const id = crypto.randomUUID();
+    expect(conversationTriageUndoInputSchema.safeParse({ commandIds: [id] }).success).toBe(true);
+    expect(conversationTriageUndoInputSchema.safeParse({ commandIds: Array(MAX_CONVERSATION_ACTION_MESSAGES).fill(id) }).success).toBe(
+      true,
+    );
+    expect(conversationTriageUndoInputSchema.safeParse({ commandIds: Array(MAX_CONVERSATION_ACTION_MESSAGES + 1).fill(id) }).success).toBe(
+      false,
+    );
+    expect(conversationTriageUndoInputSchema.safeParse({ commandIds: [] }).success).toBe(false);
+    expect(conversationTriageUndoInputSchema.safeParse({ commandIds: ["cmd123"] }).success).toBe(false);
+    expect(conversationTriageUndoInputSchema.safeParse({ commandIds: [id], extra: true }).success).toBe(false);
+  });
 });

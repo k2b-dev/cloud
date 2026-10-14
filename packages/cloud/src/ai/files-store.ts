@@ -2,6 +2,14 @@ import { type SQL, sql } from "bun";
 import { stripImageMetadata } from "../services/image-metadata";
 import { AiFileVersionConflict, AiFileWriteError, aiFileContentVersion } from "./file-content-version";
 import { isAiImage } from "./file-media-type";
+import {
+  CLOUD_AI_VIEW_MAX_BYTES,
+  CLOUD_AI_VIEW_SUFFIX,
+  type CloudAiViewSummary,
+  checkCloudAiView,
+  cloudAiViewSummary,
+  isAiViewPath,
+} from "./view-block";
 
 export { guessAiMediaType } from "./file-media-type";
 
@@ -697,6 +705,7 @@ export async function createAiConversationArtifact(input: {
   const { aiConversations } = await import("./store");
   const conversation = await aiConversations.getConversation({ conversationId: input.conversationId, ownerUserId: input.ownerUserId });
   if (!conversation || conversation.archivedAt) throw new Error("Conversation access denied");
+  assertAiModelWritablePath(input.path);
   return aiFileStore.createToolArtifact(input);
 }
 
@@ -710,6 +719,57 @@ export async function writeAiConversationFile(input: {
   expectedVersion: string | null;
 }): Promise<AiFileStat> {
   if (normalizeAiFilePath(input.path) !== input.path) throw new Error("Invalid file path");
+  assertAiModelWritablePath(input.path);
   const current = await aiFileStore.stat(input);
   return aiFileStore.write({ ...input, origin: current?.origin ?? "assistant", allowUserOverwrite: current?.origin === "user" });
+}
+
+export function assertAiModelWritablePath(path: string): void {
+  if (isAiViewPath(normalizeAiFilePath(path) ?? path))
+    throw new Error("The /views folder holds views that code runs create with cloud.view.*; choose another path.");
+}
+export class AiViewInvalidError extends Error {
+  constructor(readonly issues: string[]) {
+    super(`View rejected: ${issues.join("; ")}`);
+    this.name = "AiViewInvalidError";
+  }
+}
+
+/** Run-produced views use the same ownership, budget and retry rules as other chat artifacts. */
+export async function createAiConversationView(input: {
+  conversationId: string;
+  ownerUserId: string;
+  turnId: string;
+  runId: string;
+  index: number;
+  view: unknown;
+}): Promise<{ path: string } & CloudAiViewSummary> {
+  const { aiConversations } = await import("./store");
+  const conversation = await aiConversations.getConversation({ conversationId: input.conversationId, ownerUserId: input.ownerUserId });
+  if (!conversation || conversation.archivedAt) throw new Error("Conversation access denied");
+  const checked = checkCloudAiView(input.view);
+  if ("issues" in checked) throw new AiViewInvalidError(checked.issues);
+  const bytes = new TextEncoder().encode(JSON.stringify(checked.view));
+  if (bytes.byteLength > CLOUD_AI_VIEW_MAX_BYTES)
+    throw new AiViewInvalidError([`view: At most ${CLOUD_AI_VIEW_MAX_BYTES} bytes are allowed.`]);
+  const slug =
+    checked.view.title
+      .normalize("NFKD")
+      .replace(/\p{M}/gu, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 48)
+      .replace(/-+$/g, "") || "view";
+  const key = `${input.turnId}:${input.runId}:${input.index}`;
+  const digest = new Bun.CryptoHasher("sha256").update(key).digest("hex").slice(0, 8);
+  const path = `/views/${slug}-${digest}${CLOUD_AI_VIEW_SUFFIX}`;
+  await aiFileStore.createToolArtifact({
+    conversationId: input.conversationId,
+    path,
+    bytes,
+    mediaType: "application/json",
+    producerCallKey: `view:${key}`,
+  });
+  return { path, ...cloudAiViewSummary(checked.view) };
 }

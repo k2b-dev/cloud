@@ -415,7 +415,7 @@ export const artifactCodeHandlers = {
     result(context, async () => ({ data: sourceManifest(await artifacts.restore(id, version, expectedRevision, context)), ...links(id) })),
   code_update: ({ id, ...patch }, context) =>
     result(context, async () => ({ data: sourceManifest(await artifacts.metadata(id, patch, context)), ...links(id) })),
-  code_create: ({ title, description, icon }, context) =>
+  code_create: ({ title, description, icon, html, steps }, context) =>
     result(context, async () => {
       const created = await artifacts.create(
         {
@@ -425,15 +425,33 @@ export const artifactCodeHandlers = {
           source: {
             entry: "index.html",
             files: [
-              { path: "index.html", content: `<main>\n  <h1>${title.replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`)}</h1>\n</main>\n` },
+              {
+                path: "index.html",
+                content: html ?? `<main>\n  <h1>${title.replace(/[&<>]/g, (c) => `&#${c.charCodeAt(0)};`)}</h1>\n</main>\n`,
+              },
+              ...(steps !== undefined ? [{ path: "steps.json", content: steps }] : []),
             ],
           },
         },
         context,
       );
-      return { data: sourceManifest(created), ...links(created.id) };
+      return {
+        data: {
+          ...sourceManifest(created),
+          ...(html !== undefined || steps !== undefined ? { diagnostics: await sourceDiagnostics(created.source) } : {}),
+        },
+        ...links(created.id),
+      };
     }),
-  code_write: ({ id, files, expectedRevision, entry }, context) =>
+  code_write: ({ id, path, content, expectedRevision, entry }, context) =>
+    result(context, async () => {
+      const current = await artifacts.get(id, context);
+      if (current.permission !== "admin") throw new ArtifactError("ACCESS_DENIED");
+      if (current.revision !== expectedRevision) throw new ArtifactError("CONFLICT");
+      const saved = await artifacts.writeFiles(id, { files: [{ path, content }], expectedRevision, entry }, context);
+      return { data: { ...sourceManifest(saved), saved: true, diagnostics: await sourceDiagnostics(saved.source) }, ...links(id) };
+    }),
+  code_import: ({ id, files, expectedRevision, entry }, context) =>
     result<unknown>(context, async () => {
       // Authorize the destination before loading any source data.
       const current = await artifacts.get(id, context);
@@ -441,10 +459,6 @@ export const artifactCodeHandlers = {
       if (current.revision !== expectedRevision) throw new ArtifactError("CONFLICT");
       const resolved = [];
       for (const file of files) {
-        if ("content" in file) {
-          resolved.push(file);
-          continue;
-        }
         const data = await studioFiles.readReference(file.fromFile, context);
         if (data.bytes.byteLength > LIMITS.fileBytes) throw new ArtifactError("INVALID_INPUT");
         let content: string;
@@ -461,9 +475,7 @@ export const artifactCodeHandlers = {
           data: {
             message: [
               t.importFiles({ app }),
-              ...files.flatMap((file) =>
-                "fromFile" in file ? [`${file.path}: ${t[file.fromFile.scope]} ${file.fromFile.id} · ${file.fromFile.path}`] : [],
-              ),
+              ...files.map((file) => `${file.path}: ${t[file.fromFile.scope]} ${file.fromFile.id} · ${file.fromFile.path}`),
               t.importEffect,
             ].join("\n"),
           },
@@ -474,7 +486,7 @@ export const artifactCodeHandlers = {
         data: {
           ...sourceManifest(saved),
           saved: true,
-          imported: files.filter((file) => "fromFile" in file),
+          imported: files,
           diagnostics: await sourceDiagnostics(saved.source),
         },
         ...links(id),

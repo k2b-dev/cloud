@@ -1,14 +1,43 @@
-import { basename } from "node:path";
-import { createInterface } from "node:readline";
-import type { AiFileStat, AiPendingTurnAction, AiPublicModelProfile, CloudAiSurveyInput, CloudAiTextEditorInput } from "@k2b/cloud/ai";
-import { AI_TURN_ATTACHMENT_MAX_ITEMS, CloudAiSurveyInputSchema, CloudAiTextEditorInputSchema } from "@k2b/cloud/ai/browser";
+import { realpathSync, statSync } from "node:fs";
+import { release as osRelease, type as osType } from "node:os";
+import { basename, relative, sep } from "node:path";
+import type {
+  AiConversation,
+  AiDraftContentPart,
+  AiFileStat,
+  AiPendingTurnAction,
+  AiProject,
+  AiPublicModelProfile,
+  AiSkillSummary,
+  AiStoredMessage,
+  CloudAiSurveyInput,
+  CloudAiTextEditorInput,
+} from "@k2b/cloud/ai";
+import {
+  AI_LOCAL_SELECTED_SKILLS_MAX_ITEMS,
+  AI_LOCAL_TOOL_NAMES,
+  AI_TURN_ATTACHMENT_MAX_ITEMS,
+  CloudAiSurveyInputSchema,
+  CloudAiTextEditorInputSchema,
+} from "@k2b/cloud/ai/browser";
 import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
+import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
 import { httpApprovalNotice } from "../artifacts/code-approval-message";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
+import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
 import { closeCliCodeHost } from "./code-host";
-import { deniedLocalBashResult, parseLocalBashInput, runLocalBash } from "./local-bash";
-import { jsonRequest, readApi } from "./shared";
-import { type AssistantTurnOutput, type AssistantTurnStreamResult, createAssistantTurnOutput, streamAssistantTurn } from "./stream";
+import { createLineReader, type LineReader } from "./line-reader";
+import { createLocalContextReader, type LocalContext, type LocalSkill, localSkillCatalog, readLocalSkill } from "./local-context";
+import { classifyLocalPath, completeLocalPath, extractMessageAttachments, lastMentionToken, resolveLocalPath } from "./local-paths";
+import { createLocalSessionFolder, runLocalTool } from "./local-tools";
+import { jsonRequest, readApi, readProjectsApi } from "./shared";
+import {
+  type AssistantClientTools,
+  type AssistantTurnOutput,
+  type AssistantTurnStreamResult,
+  createAssistantTurnOutput,
+  streamAssistantTurn,
+} from "./stream";
 import { selectNumberedChoice, terminalInfo, terminalSafeText } from "./terminal";
 import { editTextWithExternalEditor } from "./text-editor";
 import {
@@ -20,14 +49,6 @@ import {
   validateLocalAttachments,
 } from "./turn";
 
-type LineReader = {
-  read(prompt: string): Promise<string | null>;
-  close(): void;
-  onInterrupt(handler: () => void): () => void;
-  pause?(): void;
-  resume?(): void;
-};
-
 type InteractiveOptions = {
   conversationId?: string;
   title?: string;
@@ -36,49 +57,50 @@ type InteractiveOptions = {
   attachments?: string[];
   initialPrompt?: string;
   allowBash?: boolean;
+  noBash?: boolean;
 };
 
 type FileList = { files: AiFileStat[]; totalBytes: number };
 type AssistantStatus = { defaultModelId?: string; models?: AiPublicModelProfile[] };
 
-const createLineReader = (): LineReader => {
-  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-  let closed = false;
-  rl.once("close", () => {
-    closed = true;
-  });
-  return {
-    read(prompt) {
-      if (closed) return Promise.resolve(null);
-      return new Promise((resolve) => {
-        let settled = false;
-        const finish = (value: string | null) => {
-          if (settled) return;
-          settled = true;
-          rl.removeListener("close", onClose);
-          resolve(value);
-        };
-        const onClose = () => finish(null);
-        rl.once("close", onClose);
-        rl.question(prompt, (answer) => finish(answer));
-      });
-    },
-    close: () => rl.close(),
-    pause: () => rl.pause(),
-    resume: () => rl.resume(),
-    onInterrupt(handler) {
-      rl.on("SIGINT", handler);
-      return () => rl.removeListener("SIGINT", handler);
-    },
-  };
+export const INTERACTIVE_COMMANDS: ReadonlyArray<{ name: string; usage: string; summary: string }> = [
+  { name: "/help", usage: "/help", summary: "Show these commands" },
+  { name: "/new", usage: "/new", summary: "Start a new chat on the next message" },
+  { name: "/resume", usage: "/resume [chat-id]", summary: "Open a recent chat" },
+  { name: "/project", usage: "/project [id|none]", summary: "Choose a Project for this chat" },
+  { name: "/model", usage: "/model [id|default]", summary: "Choose interactively or set the session model" },
+  { name: "/retry", usage: "/retry [retry|details|concise]", summary: "Answer the last user message again" },
+  { name: "/attach", usage: "/attach <path>", summary: "Attach a local file to the next message" },
+  { name: "/skills", usage: "/skills", summary: "List local and Cloud Skills" },
+  { name: "/files", usage: "/files", summary: "List files in this chat" },
+  { name: "/web", usage: "/web", summary: "Open this chat in your browser" },
+  { name: "/status", usage: "/status", summary: "Show this session's settings" },
+  { name: "/usage", usage: "/usage", summary: "Show usage shares and reset dates" },
+  { name: "/permissions", usage: "/permissions [ask|off]", summary: "Change local tools mode" },
+  { name: "/approvals", usage: "/approvals [approval-id]", summary: "List and revoke remembered Cloud approvals" },
+  { name: "/exit", usage: "/exit", summary: "End the session" },
+];
+
+type LocalToolsMode = "ask" | "off";
+
+/** Complete session commands or the local path at the cursor. */
+export const completeInteractiveLine = (line: string, cwd: string, skillNames: readonly string[] = []): [string[], string] => {
+  if (line.startsWith("/") && !/\s/.test(line)) {
+    return [
+      [...new Set([...INTERACTIVE_COMMANDS.map((command) => command.name), ...skillNames.map((name) => `/${name}`)])].filter((name) =>
+        name.startsWith(line),
+      ),
+      line,
+    ];
+  }
+  const token = line.startsWith("/attach ") ? line.slice(8) : lastMentionToken(line);
+  return [line.startsWith("/attach ") || token.startsWith("@") ? completeLocalPath(token, cwd) : [], token];
 };
 
 const printInteractiveHelp = (ctx: CloudCliContext): void => {
-  ctx.print("/help                 Show these commands");
-  ctx.print("/attach <path>        Attach a local file to the next message");
-  ctx.print("/files                List files in this chat");
-  ctx.print("/model [id|default]   Choose interactively or set the session model");
-  ctx.print("/exit                 End the session");
+  const width = Math.max(...INTERACTIVE_COMMANDS.map((command) => command.usage.length)) + 3;
+  for (const command of INTERACTIVE_COMMANDS) ctx.print(`${command.usage.padEnd(width)}${command.summary}`);
+  ctx.print(`${"/<skill>".padEnd(width)}Select a Skill for your next message (/skills lists them)`);
 };
 
 const readInitialModelLabel = async (ctx: CloudCliContext, requestedModelId?: string): Promise<string> => {
@@ -103,20 +125,20 @@ const printResumeHint = (ctx: CloudCliContext, conversationId: string, created =
 };
 
 const readChoice = async (
-  reader: LineReader,
+  reader: Pick<LineReader, "read">,
   prompt: string,
   allowed: readonly string[],
   defaultValue?: string,
 ): Promise<string | null> => {
   while (true) {
-    const answer = (await reader.read(prompt))?.trim().toLowerCase();
+    const answer = (await reader.read(prompt, { typedOnly: true }))?.trim().toLowerCase();
     if (answer === undefined) return null;
     if (!answer && defaultValue) return defaultValue;
     if (allowed.includes(answer)) return answer;
   }
 };
 
-type ApprovalAnswer = "once" | "always" | "deny";
+type ApprovalAnswer = "once" | "chat" | "always" | "deny";
 
 const APPROVAL_INPUT_PREVIEW_CHARS = 16_000;
 
@@ -127,23 +149,51 @@ const approvalInputPreview = (input: unknown): string => {
   return `${terminalSafeText(json.slice(0, APPROVAL_INPUT_PREVIEW_CHARS))}\n[Input preview is incomplete; deny if you need to see the rest.]`;
 };
 
-/**
- * Asks one approval question in the shape every terminal approval uses: `y` approves, `a` or `always` remembers
- * where the server allows it, and Enter or `n` denies. Any other answer asks again, so a stray key never approves.
- */
-const readApproval = async (reader: LineReader, question: string, allowAlways: boolean): Promise<ApprovalAnswer | null> => {
-  const answer = await readChoice(
-    reader,
-    `${question}? ${allowAlways ? "[y/N/a=always]" : "[y/N]"}: `,
-    allowAlways ? ["y", "yes", "a", "always", "n", "no"] : ["y", "yes", "n", "no"],
-    "n",
-  );
+/** A deliberate typed yes approves once; Enter denies and invalid answers ask again. */
+const readApproval = async (reader: Pick<LineReader, "read">, question: string): Promise<ApprovalAnswer | null> => {
+  const answer = await readChoice(reader, `${question} [y/N]: `, ["y", "yes", "n", "no"], "n");
   if (answer === null) return null;
-  if (answer === "y" || answer === "yes") return "once";
-  return answer === "a" || answer === "always" ? "always" : "deny";
+  return answer === "y" || answer === "yes" ? "once" : "deny";
 };
 
-export const collectSurveyResult = async (ctx: CloudCliContext, reader: LineReader, args: unknown): Promise<unknown | null> => {
+/** Offer only the approval scopes the server permits for this action. */
+export const collectActionApproval = async (
+  ctx: CloudCliContext,
+  reader: Pick<LineReader, "read">,
+  action: { allowAlways: boolean; allowChat?: boolean; website?: string },
+): Promise<{ approved: boolean; remember?: "chat" | "always" } | null> => {
+  const choices: Array<{ value: ApprovalAnswer; label: string }> = [{ value: "once", label: "Approve once" }];
+  if (action.allowChat && !action.website) choices.push({ value: "chat", label: "Approve for this chat" });
+  if (action.allowAlways && !action.website) choices.push({ value: "always", label: "Always approve" });
+  let closed = false;
+  const answer =
+    choices.length === 1
+      ? await readApproval(reader, "Approve?")
+      : await selectNumberedChoice({
+          output: ctx,
+          reader: {
+            read: async (prompt) => {
+              const answer = await reader.read(prompt, { typedOnly: true });
+              closed = answer === null;
+              return answer;
+            },
+          },
+          title: "Approve?",
+          prompt: "Choice [Enter to reject]: ",
+          choices,
+        });
+  if (closed || answer === null) return null;
+  return {
+    approved: answer === "once" || answer === "chat" || answer === "always",
+    ...(answer === "chat" || answer === "always" ? { remember: answer } : {}),
+  };
+};
+
+export const collectSurveyResult = async (
+  ctx: CloudCliContext,
+  reader: Omit<LineReader, "readMessage">,
+  args: unknown,
+): Promise<unknown | null> => {
   const parsed = CloudAiSurveyInputSchema.safeParse(args);
   if (!parsed.success) return null;
   const survey: CloudAiSurveyInput = parsed.data;
@@ -202,7 +252,7 @@ export const collectSurveyResult = async (ctx: CloudCliContext, reader: LineRead
 
 export const collectTextEditorResult = async (
   ctx: CloudCliContext,
-  reader: LineReader,
+  reader: Omit<LineReader, "readMessage">,
   args: unknown,
   edit: (input: CloudAiTextEditorInput) => Promise<unknown> = editTextWithExternalEditor,
 ): Promise<unknown | null> => {
@@ -249,48 +299,26 @@ const resolveAttention = async (input: {
   conversationId: string;
   turnId: string;
   signal: AbortSignal;
-  allowBash: boolean;
-  bashCwd: string;
-  setStreaming: (streaming: boolean) => void;
+  clientTools: AssistantClientTools;
   output: AssistantTurnOutput;
 }): Promise<AssistantTurnStreamResult | null> => {
   let result = { status: "needs_attention" as const, turnId: input.turnId };
   while (result.status === "needs_attention") {
+    if (input.signal.aborted) return null;
     const actions = await readApi<AiPendingTurnAction[]>(
       input.ctx,
       conversationPath(input.conversationId, `/pending-actions/${encodeURIComponent(input.turnId)}`),
     );
+    if (input.signal.aborted) return null;
     const action = actions[0];
     if (!action) return null;
 
     if (action.type === "approval_request") {
       input.ctx.print(terminalSafeText(`Approval required: ${action.message ?? action.name}`));
       input.ctx.print(approvalInputPreview(action.args));
-      const answer = await readApproval(input.reader, "Approve", action.allowAlways);
-      if (answer === null) return null;
-      await submitAction(input.ctx, action, {
-        type: "approval_response",
-        approved: answer !== "deny",
-        ...(answer === "always" ? { remember: "always" as const } : {}),
-      });
-    } else if (action.name === "local_bash" && input.allowBash) {
-      const bash = parseLocalBashInput(action.args);
-      if (!bash) {
-        input.ctx.error("The local Bash request has invalid arguments and was left pending.");
-        return null;
-      }
-      input.ctx.error(`Bash wants to run in ${input.bashCwd}:`);
-      input.ctx.error("");
-      input.ctx.error(`  ${terminalSafeText(bash.command)}`);
-      input.ctx.error("");
-      const answer = await readApproval(input.reader, "Run", false);
-      if (answer === null) return null;
-      const bashResult =
-        answer === "once" ? await runLocalBash(bash.command, { cwd: input.bashCwd, signal: input.signal }) : deniedLocalBashResult();
-      if (bashResult.stdout) input.ctx.error(terminalSafeText(bashResult.stdout.trimEnd()));
-      if (bashResult.stderr) input.ctx.error(terminalSafeText(bashResult.stderr.trimEnd()));
-      if (bashResult.truncated) input.ctx.error("[Local Bash output truncated]");
-      await submitAction(input.ctx, action, { type: "tool_result", result: bashResult });
+      const decision = await collectActionApproval(input.ctx, input.reader, action);
+      if (decision === null) return null;
+      await submitAction(input.ctx, action, { type: "approval_response", ...decision });
     } else if (action.name === "survey" || action.name === "cloud_survey") {
       const surveyResult = await collectSurveyResult(input.ctx, input.reader, action.args);
       if (surveyResult === null) {
@@ -306,22 +334,22 @@ const resolveAttention = async (input: {
       }
       await submitAction(input.ctx, action, { type: "tool_result", result: editorResult });
     } else {
-      input.ctx.error(`Frontend tool ${action.name} needs a result.`);
+      input.ctx.error(terminalSafeText(`Frontend tool ${action.name} needs a result.`));
       input.ctx.error(
         `Run \`cld assistant actions submit ${input.conversationId} ${input.turnId} ${action.callId} --result-file <file>\`.`,
       );
       return null;
     }
 
-    input.setStreaming(true);
     const streamed = await streamAssistantTurn({
       ctx: input.ctx,
       conversationId: input.conversationId,
       turnId: input.turnId,
       output: input.output,
+      clientTools: input.clientTools,
       signal: input.signal,
       onCapabilityApproval: (request) => collectCapabilityApproval(input.ctx, input.reader, request),
-    }).finally(() => input.setStreaming(false));
+    });
     if (streamed.status !== "needs_attention") return streamed.status === "idle" ? null : streamed;
     result = { status: "needs_attention", turnId: input.turnId };
   }
@@ -330,7 +358,7 @@ const resolveAttention = async (input: {
 
 export async function collectCapabilityApproval(
   ctx: CloudCliContext,
-  reader: LineReader,
+  reader: Omit<LineReader, "readMessage">,
   request: CodeApproval,
 ): Promise<CapabilityDecision> {
   if ("type" in request) {
@@ -339,7 +367,7 @@ export async function collectCapabilityApproval(
     ctx.print(terminalSafeText(JSON.stringify(request.headers, null, 2)));
     if (request.bodyBytes) ctx.print(terminalSafeText(`${request.bodyBytes} bytes: ${request.bodyPreview}`));
     if (request.bodyTruncated) ctx.print("Body preview is incomplete; review source and inputs before approving.");
-    return { approved: (await readApproval(reader, "Send request", false)) === "once" };
+    return { approved: (await readApproval(reader, "Send request?")) === "once" };
   }
 
   if (request.resource) {
@@ -348,38 +376,299 @@ export async function collectCapabilityApproval(
   }
   ctx.print(terminalSafeText(request.review?.message ?? request.title));
   ctx.print(approvalInputPreview(request.input));
-  const answer = await readApproval(reader, "Approve", request.allowAlways);
-  if (answer === "always") return { approved: true, remember: "always" };
-  return { approved: answer === "once" };
+  const decision = await collectActionApproval(ctx, reader, request);
+  return decision?.remember === "always" ? { approved: true, remember: "always" } : { approved: decision?.approved === true };
 }
+
+/** The local client fields of a turn, the same for the terminal and an editor. */
+export const localTurnFields = (input: {
+  context: LocalContext;
+  localTools: "ask" | "off";
+  workspace: string;
+  client: { kind: "cli" | "acp"; name?: string };
+}) => {
+  const skills = input.localTools === "ask" ? localSkillCatalog(input.context) : [];
+  return {
+    clientToolIds:
+      input.localTools === "ask"
+        ? ["local_bash", ...AI_LOCAL_TOOL_NAMES.filter((name) => name !== "load_local_skill" || skills.length > 0)]
+        : [],
+    client: { ...input.client, cwd: input.workspace, os: `${osType()} ${osRelease()}`, shell: "/bin/bash", localTools: input.localTools },
+    localContext: { instructions: input.context.instructions, skills },
+  };
+};
+
+export const readSelectedLocalSkill = async (input: {
+  skill: LocalSkill;
+  context: LocalContext;
+  workspace: string;
+  ask: (question: string) => Promise<boolean>;
+}) => {
+  const { skill, context, workspace, ask } = input;
+  const rule = classifyLocalPath(skill.path, { workspace });
+  if (rule.access === "blocked") throw new Error("cld's configuration is never available to the assistant.");
+  const target = realpathSync(skill.path);
+  const free = context.skills.some(({ directory }) => {
+    const child = relative(directory, target);
+    return child === "" || (child !== ".." && !child.startsWith(`..${sep}`) && !child.startsWith(sep));
+  });
+  if (rule.access === "ask" && !free) {
+    const question =
+      rule.reason === "home"
+        ? `Read ${skill.path}? You started cld in your home folder or above, so every file asks first.`
+        : rule.reason === "protected"
+          ? `Read ${skill.path}? It may contain secrets.`
+          : `Read ${skill.path}? It is outside ${workspace}.`;
+    if (!(await ask(terminalSafeText(question)))) return null;
+  }
+  return readLocalSkill(skill, workspace);
+};
 
 export const runInteractiveAssistant = async (
   ctx: CloudCliContext,
   options: InteractiveOptions,
-  reader: LineReader = createLineReader(),
+  suppliedReader?: LineReader,
 ): Promise<number> => {
+  if (options.allowBash && options.noBash) throw new Error("Pass either --allow-bash or --no-bash.");
+  const workspace = process.cwd();
+  let context: LocalContext;
+  let cloudSkills: AiSkillSummary[] = [];
+  const skillNames = () => [...(context?.skills.map((skill) => skill.name) ?? []), ...cloudSkills.map((skill) => skill.name)];
+  const reader =
+    suppliedReader ?? createLineReader({ cwd: workspace, completer: (line) => completeInteractiveLine(line, workspace, skillNames()) });
+  const choiceReader = { read: (prompt: string) => reader.read(prompt, { typedOnly: true }) };
   let conversationId = options.conversationId;
-  let activeConversation: Awaited<ReturnType<typeof resolveConversation>> | undefined;
+  let activeConversation: AiConversation | undefined;
   let model = options.model;
-  let attachments = [...(options.attachments ?? [])];
+  let projectId = options.projectId;
+  let savedMode: LocalToolsMode = (await ctx.getDefault("assistant.localTools")) === "off" ? "off" : "ask";
+  let localTools: LocalToolsMode = options.noBash ? "off" : options.allowBash ? "ask" : savedMode;
+  let modeSource = options.noBash || options.allowBash ? "this session" : savedMode === "off" ? "profile default" : "default";
+  let attachments: string[] = [];
+  let selectedLocal: LocalSkill[] = [];
+  let selectedCloud: AiDraftContentPart[] = [];
+  const sessionFolder = createLocalSessionFolder();
+  const readContext = createLocalContextReader({
+    ctx,
+    workspace,
+    askTrust: async (found) => {
+      const parts: string[] = [];
+      if (found.instructionPaths.length)
+        parts.push(`AGENTS.md (${found.instructionPaths.length} ${found.instructionPaths.length === 1 ? "file" : "files"})`);
+      const count = found.skills.filter((skill) => skill.scope === "project").length;
+      if (count) parts.push(`${count} Skills in .agents/skills`);
+      else if (found.hasProjectContext && !parts.length) parts.push("Skills in .agents/skills");
+      return selectNumberedChoice({
+        output: { print: (line = "") => ctx.error(line), error: (line) => ctx.error(line) },
+        reader: choiceReader,
+        title: terminalSafeText(`This folder has instructions for the assistant: ${parts.join(", ")}.
+They go to the model with every message and can steer what it does with your Cloud data.`),
+        prompt: "Choice [Enter = do not load]: ",
+        choices: [
+          { value: "folder" as const, label: "Trust this folder" },
+          { value: "session" as const, label: "Only this session" },
+        ],
+      });
+    },
+  });
+  const refreshSkills = async () => {
+    context = await readContext();
+    try {
+      cloudSkills = (await readApi<{ skills: AiSkillSummary[] }>(ctx, "/skills")).skills.filter((skill) => skill.enabled);
+    } catch {
+      cloudSkills = [];
+    }
+    return context;
+  };
+  const skillCounts = () => {
+    const project = context.skills.filter((skill) => skill.scope === "project").length;
+    const global = context.skills.length - project;
+    return [project ? `${project} project` : "", global ? `${global} global` : ""].filter(Boolean).join(", ");
+  };
+  const instructionsSummary = () =>
+    !context.instructionPaths.length
+      ? "none"
+      : !context.trusted
+        ? "not loaded"
+        : `${context.instructions.length} ${context.instructions.length === 1 ? "file" : "files"}${context.shortened ? ", shortened" : ""}`;
+  const clientTools: AssistantClientTools = {
+    names: new Set(["local_bash", ...AI_LOCAL_TOOL_NAMES]),
+    run: async (call, signal) =>
+      runLocalTool(
+        call,
+        {
+          ctx,
+          workspace,
+          conversationId: conversationId!,
+          mode: localTools,
+          skills: context.skills,
+          freeReadRoots: context.skills.map((skill) => skill.directory),
+          sessionFolder,
+          ask: async (lines, question) => {
+            if (signal.aborted) return false;
+            for (const line of lines) ctx.error(terminalSafeText(line));
+            return (await readApproval(reader, terminalSafeText(question))) === "once" && !signal.aborted;
+          },
+          printBash: (stdout, stderr, truncated) => {
+            if (stdout) ctx.error(terminalSafeText(stdout.trimEnd()));
+            if (stderr) ctx.error(terminalSafeText(stderr.trimEnd()));
+            if (truncated) ctx.error("[Local Bash output truncated]");
+          },
+        },
+        signal,
+      ),
+  };
+  const readSelectedSkill = (skill: LocalSkill) =>
+    readSelectedLocalSkill({
+      skill,
+      context,
+      workspace,
+      ask: async (question) => (await readApproval(reader, question)) === "once",
+    });
   const preparedAttachments = new Map<string, Awaited<ReturnType<typeof uploadAttachment>>>();
   let activeAbort: AbortController | null = null;
-  let streaming = false;
   let exitRequested = false;
-  const bashCwd = process.cwd();
-  const removeInterrupt = reader.onInterrupt(() => {
-    if (activeAbort && streaming) activeAbort.abort();
-    else {
+  const removeInterrupt = reader.onInterrupt((question) => {
+    if (activeAbort) activeAbort.abort();
+    else if (!question) {
       exitRequested = true;
-      activeAbort?.abort();
       reader.close();
     }
   });
 
+  const attachLocalFile = async (path: string): Promise<void> => {
+    let target: string;
+    try {
+      target = realpathSync(resolveLocalPath(path, workspace));
+      if (!statSync(target).isFile()) throw new Error("Not a file");
+    } catch {
+      throw new Error(`Attachment not found: ${terminalSafeText(path)}`);
+    }
+    if (attachments.some((attached) => realpathSync(resolveLocalPath(attached, workspace)) === target)) return;
+    const access = classifyLocalPath(path, { workspace });
+    if (access.access === "blocked") {
+      ctx.error(`Not attached: ${terminalSafeText(path)} is cld's configuration.`);
+      return;
+    }
+    if (access.access === "ask") {
+      const question =
+        access.reason === "home"
+          ? `Attach ${terminalSafeText(path)}? You started cld in your home folder or above, so every file asks first.`
+          : access.reason === "protected"
+            ? `Attach ${terminalSafeText(path)}? It may contain secrets.`
+            : `Attach ${terminalSafeText(path)}? It is outside ${terminalSafeText(workspace)}.`;
+      const answer = await readApproval(reader, question);
+      if (answer !== "once") {
+        ctx.print(`Not attached: ${terminalSafeText(path)}`);
+        return;
+      }
+    }
+    await validateLocalAttachments([...attachments, target]);
+    attachments.push(target);
+  };
+
+  const runTurn = async (input: { path: string; body: unknown } | { turnId: string }): Promise<number> => {
+    if (!conversationId) return 0;
+    const chatId = conversationId;
+    const resuming = "turnId" in input;
+    const output = createAssistantTurnOutput();
+    const abort = new AbortController();
+    let turnId = resuming ? input.turnId : undefined;
+    activeAbort = abort;
+    try {
+      let result: AssistantTurnStreamResult | undefined;
+      if ("turnId" in input) {
+        result = await streamAssistantTurn({
+          ctx,
+          conversationId: chatId,
+          turnId,
+          output,
+          clientTools,
+          signal: abort.signal,
+          onCapabilityApproval: (request) => collectCapabilityApproval(ctx, reader, request),
+        });
+      } else {
+        const submission = await submitAssistantTurn({
+          ctx,
+          conversationId: chatId,
+          path: input.path,
+          body: input.body,
+          watch: true,
+          onSubmitted: (submitted) => {
+            turnId = submitted.turn.id;
+            if (input.path.endsWith("/turns")) {
+              attachments = [];
+              preparedAttachments.clear();
+              selectedLocal = [];
+              selectedCloud = [];
+            }
+          },
+          output,
+          clientTools,
+          signal: abort.signal,
+          onCapabilityApproval: (request) => collectCapabilityApproval(ctx, reader, request),
+        });
+        turnId = submission.submitted.turn.id;
+        result = submission.result;
+      }
+      if (result?.status === "needs_attention" && result.turnId) {
+        result =
+          (await resolveAttention({
+            ctx,
+            reader,
+            conversationId: chatId,
+            turnId: result.turnId,
+            output,
+            signal: abort.signal,
+            clientTools,
+          })) ?? undefined;
+        if (!result && !abort.signal.aborted) return 2;
+      }
+      if (result?.status === "aborted" || (!result && abort.signal.aborted)) {
+        if (turnId) await readApi(ctx, conversationPath(chatId, `/turns/${encodeURIComponent(turnId)}/abort`), { method: "POST" });
+        printInfo(ctx, "Turn stopped.");
+        return resuming ? 130 : 0;
+      }
+      if (result?.status === "failed") ctx.error(terminalSafeText(result.error || "Assistant turn failed."));
+      return 0;
+    } catch (error) {
+      if (abort.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+        if (turnId) await readApi(ctx, conversationPath(chatId, `/turns/${encodeURIComponent(turnId)}/abort`), { method: "POST" });
+        printInfo(ctx, "Turn stopped.");
+        return resuming ? 130 : 0;
+      }
+      if (resuming) throw error;
+      ctx.error(terminalSafeText(error instanceof Error ? error.message : String(error)));
+      return 0;
+    } finally {
+      activeAbort = null;
+    }
+  };
+
+  const openChat = async (id: string): Promise<number> => {
+    const detail = await readConversationDetail(ctx, id);
+    activeConversation = detail.conversation;
+    conversationId = detail.conversation.id;
+    projectId = detail.conversation.projectId ?? undefined;
+    preparedAttachments.clear();
+    printInfo(ctx, `Chat: ${detail.conversation.title} (${conversationId})`);
+    return detail.activeTurn ? runTurn({ turnId: detail.activeTurn.turnId }) : 0;
+  };
+
+  const localClientInput = async () => {
+    context = await readContext();
+    return localTurnFields({ context, localTools, workspace, client: { kind: "cli" } });
+  };
+
   const send = async (message: string): Promise<number> => {
+    const clientInput = await localClientInput();
+    for (const path of extractMessageAttachments(message, workspace)) {
+      const count = attachments.length;
+      await attachLocalFile(path);
+      if (attachments.length > count) printInfo(ctx, `Attached: ${basename(path)}`);
+    }
     await validateLocalAttachments(attachments);
-    if (!activeConversation)
-      activeConversation = await resolveConversation(ctx, { conversationId, title: options.title, projectId: options.projectId });
+    if (!activeConversation) activeConversation = await resolveConversation(ctx, { conversationId, title: options.title, projectId });
     const conversation = activeConversation;
     if (!conversationId) {
       conversationId = conversation.id;
@@ -388,222 +677,472 @@ export const runInteractiveAssistant = async (
     for (const path of attachments) {
       if (!preparedAttachments.has(path)) preparedAttachments.set(path, await uploadAttachment(ctx, conversation.id, path));
     }
-    const attachmentContent = attachments.map((path) => preparedAttachments.get(path)!);
-    const output = createAssistantTurnOutput();
-    const abort = new AbortController();
-    activeAbort = abort;
-    try {
-      streaming = true;
-      const { submitted, result } = await submitAssistantTurn({
-        ctx,
-        conversationId: conversation.id,
-        path: conversationPath(conversation.id, "/turns"),
-        body: {
-          message,
-          ...(attachmentContent.length > 0 ? { content: attachmentContent } : {}),
-          ...(model ? { modelProfileId: model } : {}),
-          ...(options.allowBash ? { clientToolIds: ["local_bash"] } : {}),
-        },
-        watch: true,
-        output,
-        signal: abort.signal,
-        onCapabilityApproval: (request) => collectCapabilityApproval(ctx, reader, request),
-      }).finally(() => {
-        streaming = false;
-      });
-      attachments = [];
-      preparedAttachments.clear();
-      if (!result) return 0;
-      if (result.status === "aborted") {
-        await readApi(ctx, conversationPath(conversation.id, `/turns/${encodeURIComponent(submitted.turn.id)}/abort`), { method: "POST" });
-        printInfo(ctx, "Turn stopped.");
-        return 0;
-      }
-      if (result.status === "failed") {
-        ctx.error(result.error || "Assistant turn failed.");
-        return 0;
-      }
-      if (result.status === "needs_attention" && result.turnId) {
-        const attentionResult = await resolveAttention({
-          ctx,
-          reader,
-          conversationId: conversation.id,
-          turnId: result.turnId,
-          output,
-          signal: abort.signal,
-          allowBash: options.allowBash === true,
-          bashCwd,
-          setStreaming: (value) => {
-            streaming = value;
-          },
-        });
-        if (!attentionResult) return 2;
-        if (attentionResult.status === "aborted") {
-          await readApi(ctx, conversationPath(conversation.id, `/turns/${encodeURIComponent(submitted.turn.id)}/abort`), {
-            method: "POST",
-          });
-          printInfo(ctx, "Turn stopped.");
-        } else if (attentionResult.status === "failed") {
-          ctx.error(attentionResult.error || "Assistant turn failed.");
+    const content = [...attachments.map((path) => preparedAttachments.get(path)!), ...selectedCloud];
+    const selectedSkills = [];
+    if (localTools === "ask") {
+      for (const selected of selectedLocal) {
+        const skill = context.skills.find((skill) => skill.name === selected.name && skill.directory === selected.directory);
+        if (skill) {
+          const loaded = await readSelectedSkill(skill);
+          if (loaded) selectedSkills.push(loaded);
         }
-        return 0;
       }
-      return 0;
-    } finally {
-      activeAbort = null;
     }
+    return runTurn({
+      path: conversationPath(conversation.id, "/turns"),
+      body: {
+        message,
+        ...(content.length > 0 ? { content } : {}),
+        ...(model ? { modelProfileId: model } : {}),
+        ...clientInput,
+        localContext: {
+          ...clientInput.localContext,
+          selectedSkills,
+        },
+      },
+    });
   };
 
-  const sendSafely = async (message: string): Promise<number> => {
-    try {
-      return await send(message);
-    } catch (error) {
-      if ((error as { name?: string }).name === "AbortError") printInfo(ctx, "Turn stopped.");
-      else ctx.error(error instanceof Error ? error.message : String(error));
-      return 0;
-    }
-  };
-
-  const resumeActiveTurn = async (): Promise<number> => {
-    if (!options.conversationId) return 0;
-    const detail = await readConversationDetail(ctx, options.conversationId);
-    activeConversation = detail.conversation;
-    const turnId = detail.activeTurn?.turnId;
-    if (!turnId) return 0;
-
-    const output = createAssistantTurnOutput();
-    const abort = new AbortController();
-    activeAbort = abort;
-    try {
-      streaming = true;
-      const result = await streamAssistantTurn({
-        ctx,
-        conversationId: detail.conversation.id,
-        turnId,
-        output,
-        signal: abort.signal,
-        onCapabilityApproval: (request) => collectCapabilityApproval(ctx, reader, request),
-      }).finally(() => {
-        streaming = false;
-      });
-      if (result.status === "needs_attention") {
-        const resumed = await resolveAttention({
-          ctx,
-          reader,
-          conversationId: detail.conversation.id,
-          turnId,
-          output,
-          signal: abort.signal,
-          allowBash: options.allowBash === true,
-          bashCwd,
-          setStreaming: (value) => {
-            streaming = value;
-          },
+  const handleCommand = async (name: string, value: string): Promise<number> => {
+    switch (name) {
+      case "/help":
+        printInteractiveHelp(ctx);
+        break;
+      case "/exit":
+        exitRequested = true;
+        break;
+      case "/new":
+        if (conversationId) printResumeHint(ctx, conversationId);
+        conversationId = undefined;
+        activeConversation = undefined;
+        preparedAttachments.clear();
+        printInfo(ctx, "The next message starts a new chat.");
+        break;
+      case "/resume": {
+        let selected = value || undefined;
+        if (!selected) {
+          const chats = await readApi<AiConversation[]>(ctx, "/conversations?limit=20");
+          const dates = new Intl.DateTimeFormat(ctx.options.locale, { dateStyle: "medium", timeStyle: "short" });
+          selected = await selectNumberedChoice({
+            output: ctx,
+            reader: choiceReader,
+            title: "Open a chat:",
+            prompt: "Chat [Enter to cancel]: ",
+            choices: chats.map((chat) => ({
+              value: chat.id,
+              label: chat.title,
+              current: chat.id === conversationId,
+              description:
+                chat.runStatus === "running" || chat.runStatus === "queued"
+                  ? "running"
+                  : chat.runStatus === "needs_attention" || chat.runStatus === "waiting_for_browser"
+                    ? "needs attention"
+                    : chat.runStatus === "failed"
+                      ? "failed"
+                      : chat.unreadCompletion
+                        ? "unread"
+                        : dates.format(new Date(chat.updatedAt)),
+            })),
+            emptyMessage: "No recent chats.",
+          });
+        }
+        // Ctrl+C stops an attached turn but keeps the session open.
+        if (!selected) break;
+        const code = await openChat(selected);
+        return code === 130 ? 0 : code;
+      }
+      case "/project": {
+        const { projects } = await readProjectsApi<{ projects: AiProject[] }>(ctx, "/");
+        const current = activeConversation ? activeConversation.projectId : projectId;
+        const selected = value
+          ? value === "none"
+            ? null
+            : value
+          : await selectNumberedChoice<string | null>({
+              output: ctx,
+              reader: choiceReader,
+              title: "Select a Project:",
+              prompt: "Project [Enter to cancel]: ",
+              zeroChoice: { value: null, label: "No Project", current: !current },
+              choices: projects.map((project) => ({
+                value: project.shortId,
+                label: project.name,
+                description: project.description.replaceAll(/\s+/g, " ").trim(),
+                current: current === project.shortId,
+              })),
+            });
+        if (selected === undefined) break;
+        const project = projects.find((project) => project.shortId === selected);
+        if (conversationId) {
+          activeConversation = await readApi<AiConversation>(
+            ctx,
+            conversationPath(conversationId, "/project"),
+            jsonRequest("PUT", { projectId: selected }),
+          );
+        } else if (selected !== null && !project) {
+          throw new Error(`Project not found: ${selected}`);
+        }
+        projectId = selected ?? undefined;
+        printInfo(ctx, `Project: ${selected === null ? "none" : (project?.name ?? selected)}`);
+        break;
+      }
+      case "/model": {
+        if (value) {
+          model = value === "default" ? undefined : value;
+          printInfo(ctx, model ? `Model: ${model}` : "Model: default");
+          break;
+        }
+        const models = await readApi<AiPublicModelProfile[]>(ctx, "/models");
+        const selected = await selectNumberedChoice<string | null>({
+          output: ctx,
+          reader: choiceReader,
+          title: "Select a model:",
+          prompt: "Model [Enter to cancel]: ",
+          zeroChoice: { value: null, label: "Cloud default", current: !model },
+          choices: models.map((profile) => ({
+            value: profile.id,
+            label: profile.label,
+            description: `${profile.provider} · ${profile.model}`,
+            current: model === profile.id,
+          })),
+          emptyMessage: "No selectable models are available.",
         });
-        return resumed ? 0 : 2;
+        if (selected !== undefined) {
+          model = selected ?? undefined;
+          const label = model ? (models.find((profile) => profile.id === model)?.label ?? model) : undefined;
+          printInfo(ctx, label ? `Model: ${label}` : "Model: default");
+        }
+        break;
       }
-      if (result.status === "failed") ctx.error(result.error || "Assistant turn failed.");
-      return result.status === "aborted" ? 130 : 0;
-    } finally {
-      activeAbort = null;
-    }
-  };
-
-  const handleCommand = async (line: string): Promise<boolean> => {
-    if (line === "/help") {
-      printInteractiveHelp(ctx);
-      return true;
-    }
-    if (line === "/exit") {
-      exitRequested = true;
-      return true;
-    }
-    if (line === "/files") {
-      if (!conversationId) ctx.print("No chat files yet.");
-      else {
-        const files = await readApi<FileList>(ctx, conversationPath(conversationId, "/files"));
-        if (files.files.length === 0) ctx.print("No chat files yet.");
-        else files.files.forEach((file) => ctx.print(`${file.path}\t${file.size}`));
+      case "/retry": {
+        if (value && value !== "retry" && value !== "details" && value !== "concise")
+          throw new Error("Use /retry, /retry retry, /retry details, or /retry concise.");
+        if (!conversationId) {
+          ctx.print("Nothing to answer again yet.");
+          break;
+        }
+        const detail = await readApi<{ messages: AiStoredMessage[]; hasMoreMessages: boolean }>(ctx, conversationPath(conversationId));
+        let { messages, hasMoreMessages: hasMore } = detail;
+        let message = messages.findLast((stored) => stored.kind === "message" && stored.message.role === "user");
+        while (!message && hasMore && messages.length > 0) {
+          const before = Math.min(...messages.map((stored) => stored.seq));
+          const page = await readApi<{ messages: AiStoredMessage[]; hasMore: boolean }>(
+            ctx,
+            conversationPath(conversationId, `/messages?before=${before}&limit=200`),
+          );
+          messages = page.messages;
+          hasMore = page.hasMore;
+          message = messages.findLast((stored) => stored.kind === "message" && stored.message.role === "user");
+        }
+        if (!message) {
+          ctx.print("Nothing to answer again yet.");
+          break;
+        }
+        const mode =
+          value ||
+          (await selectNumberedChoice({
+            output: ctx,
+            reader: choiceReader,
+            title: "Answer again:",
+            prompt: "Choice [Enter to cancel]: ",
+            choices: [
+              { value: "retry", label: "Try again" },
+              { value: "details", label: "More detailed" },
+              { value: "concise", label: "More concise" },
+            ],
+          }));
+        if (mode) {
+          const clientInput = await localClientInput();
+          return runTurn({
+            path: conversationPath(conversationId, `/messages/${encodeURIComponent(message.id)}/retry`),
+            body: {
+              mode,
+              ...(model ? { modelProfileId: model } : {}),
+              ...clientInput,
+              clientToolIds: [...clientInput.clientToolIds, "code_open", "code_secret"],
+            },
+          });
+        }
+        break;
       }
-      return true;
-    }
-    if (line.startsWith("/attach ")) {
-      const path = line.slice(8).trim();
-      if (!path || !(await Bun.file(path).exists())) ctx.error(`Attachment not found: ${path || "<path>"}`);
-      else if (attachments.length >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
-        ctx.error(`At most ${AI_TURN_ATTACHMENT_MAX_ITEMS} attachments can be sent with one message.`);
-      } else {
-        attachments.push(path);
-        printInfo(ctx, `Attached for next message: ${basename(path)}`);
+      case "/files": {
+        if (!conversationId) ctx.print("No chat files yet.");
+        else {
+          const files = await readApi<FileList>(ctx, conversationPath(conversationId, "/files"));
+          if (files.files.length === 0) ctx.print("No chat files yet.");
+          else files.files.forEach((file) => ctx.print(`${terminalSafeText(file.path)}\t${file.size}`));
+        }
+        break;
       }
-      return true;
-    }
-    if (line === "/model") {
-      const models = await readApi<AiPublicModelProfile[]>(ctx, "/models");
-      const selected = await selectNumberedChoice<string | null>({
-        output: ctx,
-        reader,
-        title: "Select a model:",
-        prompt: "Model [Enter to cancel]: ",
-        zeroChoice: { value: null, label: "Cloud default", current: !model },
-        choices: models.map((profile) => ({
-          value: profile.id,
-          label: profile.label,
-          description: `${profile.provider} · ${profile.model}`,
-          current: model === profile.id,
-        })),
-        emptyMessage: "No selectable models are available.",
-      });
-      if (selected !== undefined) {
-        model = selected ?? undefined;
-        const label = model ? (models.find((profile) => profile.id === model)?.label ?? model) : undefined;
-        printInfo(ctx, label ? `Model: ${label}` : "Model: default");
+      case "/attach": {
+        if (!value) throw new Error("Attachment not found: <path>");
+        const count = attachments.length;
+        await attachLocalFile(value);
+        if (attachments.length > count) printInfo(ctx, `Attached for next message: ${basename(value)}`);
+        break;
       }
-      return true;
+      case "/web": {
+        const url = new URL(`${ctx.options.server.replace(/\/+$/, "")}/app/assistant`);
+        if (conversationId) url.searchParams.set("conversation", conversationId);
+        ctx.print(url.href);
+        if (await ctx.openUrl?.(url.href)) printInfo(ctx, "Opened in your browser.");
+        break;
+      }
+      case "/skills": {
+        await refreshSkills();
+        const localNames = new Map(context.skills.map((skill) => [skill.name, skill]));
+        const visibleCloud = cloudSkills.filter((skill) => !localNames.has(skill.name));
+        if (!context.skills.length && !visibleCloud.length && !context.hidden.length && !context.problems.length) {
+          ctx.print("No Skills found. Local Skills live in .agents/skills or ~/.agents/skills.");
+          break;
+        }
+        ctx.print("Skills · /<name> selects one for your next message");
+        const preview = (description: string) => {
+          const line = description.replaceAll(/\s+/g, " ").trim();
+          return line.length > 72 ? `${line.slice(0, 71)}…` : line;
+        };
+        const width = Math.max(1, ...skillNames().map((name) => name.length));
+        for (const skill of context.skills)
+          ctx.print(
+            terminalSafeText(
+              `  ${skill.name.padEnd(width)}  ${skill.scope.padEnd(7)}  ${preview(skill.description)}${skill.manualOnly ? ` (only with /${skill.name})` : ""}`,
+            ),
+          );
+        for (const skill of visibleCloud)
+          ctx.print(
+            terminalSafeText(
+              `  ${skill.name.padEnd(width)}  Cloud    ${preview(skill.description)}${skill.manualOnly ? ` (only with /${skill.name})` : ""}`,
+            ),
+          );
+        const hidden = [
+          ...context.hidden,
+          ...cloudSkills
+            .filter((skill) => localNames.has(skill.name))
+            .map((skill) => ({ name: skill.name, scope: "Cloud", reason: `hidden by the ${localNames.get(skill.name)!.scope} Skill` })),
+        ];
+        if (hidden.length) {
+          ctx.print("Hidden");
+          for (const skill of hidden)
+            ctx.print(terminalSafeText(`  ${skill.name.padEnd(width)}  ${skill.scope.padEnd(7)}  ${skill.reason}`));
+        }
+        if (context.problems.length) {
+          ctx.print("Problems");
+          for (const problem of context.problems) ctx.print(terminalSafeText(`  ${problem.path}  ${problem.error}`));
+        }
+        break;
+      }
+      case "/status": {
+        await refreshSkills();
+        const selectedProject = activeConversation ? activeConversation.projectId : projectId;
+        const projects = selectedProject ? (await readProjectsApi<{ projects: AiProject[] }>(ctx, "/")).projects : [];
+        const project = projects.find((project) => project.shortId === selectedProject);
+        const rows: Array<[string, string]> = [
+          ["Profile", `${ctx.options.profile} · ${ctx.options.server}`],
+          [
+            "Chat",
+            conversationId
+              ? `${conversationId} · ${activeConversation?.title ?? conversationId}`
+              : "none yet · the next message starts one",
+          ],
+          ["Model", await readInitialModelLabel(ctx, model)],
+          ["Project", selectedProject ? `${project?.name ?? selectedProject} (${selectedProject})` : "none"],
+          ["Local tools", `${localTools} (${modeSource}) · ${workspace}`],
+          [
+            "AGENTS.md",
+            !context.instructionPaths.length
+              ? "none"
+              : context.trusted
+                ? context.instructions.map((file) => file.path).join(", ")
+                : "not loaded (folder not trusted)",
+          ],
+          ["Skills", `${[skillCounts(), `${cloudSkills.length} Cloud`].filter(Boolean).join(", ")} · /skills lists them`],
+        ];
+        for (const [label, value] of rows) ctx.print(`${label.padEnd(13)}${terminalSafeText(value)}`);
+        break;
+      }
+      case "/usage": {
+        const quota = await readApi<AiChatQuotaSnapshot>(ctx, "/quotas");
+        if (!quota.enabled) {
+          ctx.print("No usage limits apply.");
+          break;
+        }
+        const models = await readApi<AiPublicModelProfile[]>(ctx, "/models");
+        const label = (id: string) => models.find((model) => model.id === id)?.label ?? id;
+        const dates = new Intl.DateTimeFormat(ctx.options.locale, { dateStyle: "medium", timeStyle: "short" });
+        for (const balance of quota.balances) {
+          const usage = balance.unlimited ? "no limit" : balance.usedPercent === null ? "usage unknown" : `${balance.usedPercent}% used`;
+          const reset = !balance.unlimited && balance.resetsAt ? ` · resets ${dates.format(new Date(balance.resetsAt))}` : "";
+          ctx.print(terminalSafeText(`${balance.scope === "*" ? "All models" : label(balance.scope)}  ${usage}${reset}`));
+        }
+        if (quota.unlimitedModels?.length) ctx.print(terminalSafeText(`Not counted: ${quota.unlimitedModels.map(label).join(", ")}`));
+        break;
+      }
+      case "/permissions": {
+        try {
+          if (value && value !== "ask" && value !== "off") {
+            ctx.error("Use /permissions, /permissions ask, or /permissions off.");
+            break;
+          }
+          const selected =
+            value === "ask" || value === "off"
+              ? value
+              : await selectNumberedChoice<LocalToolsMode>({
+                  output: ctx,
+                  reader: choiceReader,
+                  title: terminalSafeText(
+                    `Local tools · run in ${workspace} as your OS user · results are stored in this chat and sent to the model`,
+                  ),
+                  prompt: "Choice [Enter to cancel]: ",
+                  choices: [
+                    {
+                      value: "ask",
+                      label: "ask",
+                      description:
+                        "list, read, upload, and create files here freely; ask before commands, changing or moving files, and other folders",
+                      current: localTools === "ask",
+                    },
+                    { value: "off", label: "off", description: "do not offer local tools to the model", current: localTools === "off" },
+                  ],
+                });
+          if (selected === undefined) break;
+          localTools = selected;
+          modeSource = "this session";
+          printInfo(ctx, `Local tools: ${selected} for this session.`);
+          if (!value && selected !== savedMode) {
+            const answer = await readChoice(
+              reader,
+              `Save as default for profile "${terminalSafeText(ctx.options.profile)}"? [y/N]: `,
+              ["y", "yes", "n", "no"],
+              "n",
+            );
+            if (answer === "y" || answer === "yes") {
+              await ctx.setDefault("assistant.localTools", selected === "off" ? "off" : undefined);
+              savedMode = selected;
+              printInfo(ctx, `Saved ${selected} as the default for profile "${ctx.options.profile}".`);
+            }
+          }
+        } catch (error) {
+          ctx.error(terminalSafeText(error instanceof Error ? error.message : String(error)));
+        } finally {
+          ctx.print("Cloud approvals: /approvals");
+        }
+        break;
+      }
+      case "/approvals": {
+        const everywhere = await readApprovalPreferences(ctx);
+        const chat = conversationId ? await readApprovalPreferences(ctx, conversationId) : { approvals: [] };
+        const approvals = [...everywhere.approvals, ...chat.approvals];
+        const selected = value
+          ? approvals.find((approval) => approval.id === value)
+          : await selectNumberedChoice({
+              output: ctx,
+              reader: choiceReader,
+              title: "Remembered Cloud approvals:",
+              prompt: "Revoke [Enter to cancel]: ",
+              choices: approvals.map((approval) => ({
+                value: approval,
+                label: approval.title,
+                description: `${approval.website ? "Website" : (approval.app?.name ?? "Cloud AI tool")} · ${approval.conversationId ? "this chat" : "everywhere"}`,
+              })),
+              emptyMessage: "No remembered Cloud approvals.",
+            });
+        if (value && !selected) throw new Error(`Approval not found: ${value}`);
+        if (selected) {
+          await revokeApprovalPreference(ctx, selected.id);
+          printInfo(ctx, `Revoked: ${selected.title} (${selected.conversationId ? "this chat" : "everywhere"}).`);
+        }
+        break;
+      }
+      default: {
+        await refreshSkills();
+        const skillName = name.slice(1);
+        const local = context.skills.find((skill) => skill.name === skillName);
+        const cloud = cloudSkills.find((skill) => skill.name === skillName);
+        if (local) {
+          if (localTools === "off") {
+            ctx.error("Local tools are off in this session.");
+            break;
+          }
+          if (!selectedLocal.some((skill) => skill.name === local.name)) {
+            if (selectedLocal.length >= AI_LOCAL_SELECTED_SKILLS_MAX_ITEMS)
+              throw new Error("At most 4 local Skills can be selected for one message.");
+            selectedLocal.push(local);
+          }
+        } else if (cloud) {
+          if (!selectedCloud.some((part) => part.type === "resource" && part.ref.id === cloud.shortId))
+            selectedCloud.push({ type: "resource", ref: { type: "core.ai.skill", id: cloud.shortId }, title: cloud.name });
+        } else {
+          ctx.error(`Unknown command ${terminalSafeText(name)}. Type /help for the list.`);
+          break;
+        }
+        if (value) return send(value);
+        printInfo(ctx, `Skill ${skillName} is selected for your next message.`);
+        break;
+      }
     }
-    if (line.startsWith("/model ")) {
-      const value = line.slice(7).trim();
-      model = value === "default" ? undefined : value || model;
-      printInfo(ctx, model ? `Model: ${model}` : "Model: default");
-      return true;
-    }
-    return false;
+    return 0;
   };
 
   try {
-    ctx.print(`Assistant · ${await readInitialModelLabel(ctx, model)} · /help for commands`);
-    if (options.allowBash) {
+    ctx.print(terminalSafeText(`Assistant · ${await readInitialModelLabel(ctx, model)} · /help for commands`));
+    context = await refreshSkills();
+    const workspaceAccess = classifyLocalPath(workspace, { workspace });
+    const instructions = context.instructionPaths.length ? ` · AGENTS.md: ${instructionsSummary()}` : "";
+    const skills = context.skills.length ? ` · Skills: ${skillCounts()}` : "";
+    printInfo(
+      ctx,
+      localTools === "ask"
+        ? `Local tools: ask · ${workspace}${instructions}${skills}`
+        : `Local tools: off${instructions} · /permissions to change.`,
+    );
+    if (localTools === "ask")
       printInfo(
         ctx,
-        `Local Bash enabled in ${bashCwd}. Commands run as your current OS user after confirmation; their output is stored in Cloud and sent to the model.`,
+        workspaceAccess.access === "ask" && workspaceAccess.reason === "home"
+          ? `${workspace} is your home folder or above, so every file access asks first. /permissions to change.`
+          : "Reads and creates files here freely; asks before commands, changing or moving files, and other folders. What it reads is stored in this chat and sent to the model. /permissions to change.",
       );
-    }
-    const resumeCode = await resumeActiveTurn();
-    if (resumeCode !== 0) return resumeCode;
-    if (options.initialPrompt?.trim()) {
-      const code = await sendSafely(options.initialPrompt.trim());
+    for (const path of options.attachments ?? []) await attachLocalFile(path);
+    if (conversationId) {
+      const code = await openChat(conversationId);
       if (code !== 0) return code;
     }
+    if (options.initialPrompt?.trim()) {
+      try {
+        const code = await send(options.initialPrompt.trim());
+        if (code !== 0) return code;
+      } catch (error) {
+        ctx.error(terminalSafeText(error instanceof Error ? error.message : String(error)));
+      }
+    }
     while (!exitRequested) {
-      const line = await reader.read("> ");
+      const line = await reader.readMessage("> ");
       if (line === null) break;
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
-        if (await handleCommand(trimmed)) continue;
+        const firstWord = trimmed.split(/\s+/, 1)[0]!;
+        const code = /^\/[a-z0-9-]+$/.test(firstWord)
+          ? await handleCommand(firstWord, trimmed.slice(firstWord.length).trim())
+          : await send(trimmed);
+        if (code !== 0) return code;
       } catch (error) {
-        ctx.error(error instanceof Error ? error.message : String(error));
-        continue;
+        ctx.error(terminalSafeText(error instanceof Error ? error.message : String(error)));
       }
-      const code = await sendSafely(trimmed);
-      if (code !== 0) return code;
     }
     return 0;
   } finally {
-    await closeCliCodeHost(ctx);
-    if (activeConversation) printResumeHint(ctx, activeConversation.id);
-    removeInterrupt();
-    reader.close();
+    try {
+      await closeCliCodeHost(ctx);
+    } finally {
+      try {
+        await sessionFolder.close();
+      } finally {
+        if (activeConversation) printResumeHint(ctx, activeConversation.id);
+        removeInterrupt();
+        reader.close();
+      }
+    }
   }
 };
 
@@ -618,7 +1157,8 @@ export const assistantRootCommand = command("", {
     project: flag.string({ description: "Create a new chat in this Project ID" }),
     attach: flag.stringList({ description: "Attach a local file; repeat for multiple files" }),
     approve: flag.stringList({ description: "Approve this exact tool name in print mode; repeat as needed" }),
-    allowBash: flag.boolean({ description: "Offer a locally executed Bash tool with confirmation for every command" }),
+    allowBash: flag.boolean({ description: "Offer local tools in this session, asking before every command" }),
+    noBash: flag.boolean({ description: "Do not offer local tools in this session" }),
     detach: flag.boolean({ description: "Submit without waiting in print mode" }),
   },
   examples: [
@@ -631,6 +1171,7 @@ export const assistantRootCommand = command("", {
     if (flags.attach.length > AI_TURN_ATTACHMENT_MAX_ITEMS) {
       throw new Error(`At most ${AI_TURN_ATTACHMENT_MAX_ITEMS} attachments can be sent with one message.`);
     }
+    if (flags.allowBash && flags.noBash) throw new Error("Pass either --allow-bash or --no-bash.");
     const positional = args.prompt.join(" ").trim();
     if (!flags.print) {
       if (ctx.options.output !== "text") throw new Error("--json and --jsonl require --print.");
@@ -645,10 +1186,12 @@ export const assistantRootCommand = command("", {
         attachments: flags.attach,
         initialPrompt: positional || undefined,
         allowBash: flags.allowBash,
+        noBash: flags.noBash,
       });
     }
 
     if (flags.allowBash) throw new Error("--allow-bash is available only in interactive mode.");
+    if (flags.noBash) throw new Error("--no-bash is available only in interactive mode.");
 
     const piped = process.stdin.isTTY ? "" : (await Bun.stdin.text()).trim();
     if (positional && piped) throw new Error("Pass the message either as arguments or through stdin.");

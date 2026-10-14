@@ -1,7 +1,6 @@
 import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { ssr } from "../config";
-import { mailCalendarCommandHref } from "./_components/mail-compose-route";
 import automationActivityPage from "./[mailboxId]/automations/activity/page";
 import incomingAutomationsPage from "./[mailboxId]/automations/incoming/page";
 import automationsPage from "./[mailboxId]/automations/page";
@@ -11,6 +10,7 @@ import draftComposePage from "./[mailboxId]/compose/[draftId]/page";
 import draftSeedComposePage from "./[mailboxId]/compose/local/[seedId]/page";
 import mailboxPage from "./[mailboxId]/page";
 import composePage from "./compose/page";
+import { mailCalendarCommandHref } from "./mail-calendar-command";
 import page from "./page";
 
 export default new Hono<AuthContext>()

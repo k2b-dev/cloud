@@ -731,7 +731,7 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
     const own = unwrap(await queueState());
     const foreign = unwrap(await queueState(owner));
     const hidden = unwrap(await queueState(owner, c2));
-    const list = unwrap(await commands.listCommands(contextFor(writer), mailboxId, 100));
+    const list = unwrap(await commands.listCommands(contextFor(writer), mailboxId, { limit: 100 }));
     expect(list.some((command) => command.id === own.id)).toBe(true);
     expect(list.some((command) => command.id === foreign.id || command.id === hidden.id)).toBe(false);
     expect(

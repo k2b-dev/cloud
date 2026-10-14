@@ -99,10 +99,35 @@ action or following a link. Returning `false` cancels selection. Cloud uses it
 to complete the temporary menu history entry before committing navigation.
 Standalone hosts can compose this renderer with [BottomSheet](/en/ui/layout/bottom-sheet).
 
-`createNavigation({ items, onAction?, onNavigate?, onExpandedChange? })` returns
-`items`, `onNavigate`, `onExpandedChange`, and `activate(id)`. `activate`
+Set `keepOpen: true` on an action that changes only what the menu shows, such
+as a filter or a sort order. It runs without `beforeSelect`, so the menu stays
+open and shows the result. Leave it off for an action that opens something,
+such as a dialog or a new item, and for every link.
+
+```tsx
+{ id: "favorites", label: "Favorites", action: "filter:favorites", keepOpen: true, active: showsFavorites() }
+```
+
+`createNavigation({ items, switcher?, onAction?, onNavigate?, onExpandedChange? })` returns
+`items`, `switcher`, `onNavigate`, `onExpandedChange`, and `activate(id)`. `activate`
 resolves the latest enabled item before calling its action.
 `findNavigationItem(items, id)` exposes that lookup.
+
+## Container switcher
+
+Pass `switcher: () => props` to show an
+[AppWorkspace.SidebarSwitcher](/en/ui/layout/workspace#switcher) before the
+rows inside the navigation landmark. The accessor returns
+`AppWorkspaceSidebarSwitcherProps`, including reactive `options`, `onLoad`,
+and permission-filtered `actions`. Reuse the sidebar's props so a phone host
+menu shows the same container head and loads the same options on demand.
+Omit `switcher` for navigation without a current container; no head or space
+is added.
+
+```tsx
+const navigation = createNavigation({ items, switcher: () => switcher });
+<Navigation navigation={navigation} label="Notebook" />
+```
 
 ## Accessibility
 

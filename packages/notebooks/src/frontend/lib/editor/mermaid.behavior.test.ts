@@ -39,6 +39,7 @@ describe("Mermaid editor widget", () => {
     const dom = createDomTestHarness();
     delegateEvents(["click", "keydown", "pointerdown", "pointermove", "pointerup"], dom.document);
     const { EditorState } = await import("@codemirror/state");
+    const { forceParsing } = await import("@codemirror/language");
     const { EditorView } = await import("@codemirror/view");
     const { markdownExtension } = await import("./markdown");
     const { mermaidExtension } = await import("./mermaid");
@@ -50,6 +51,9 @@ describe("Mermaid editor widget", () => {
         extensions: [markdownExtension(), mermaidExtension()],
       }),
     });
+    // The first parse has a ~20 ms budget and can stop before the fenced block on a busy machine.
+    // forceParsing finishes it and dispatches the tree, so the widget exists before any assertion.
+    if (!forceParsing(view, view.state.doc.length, 5000)) throw new Error("Markdown did not finish parsing");
     return { dom, view };
   };
 

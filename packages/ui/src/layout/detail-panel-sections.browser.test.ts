@@ -80,55 +80,57 @@ const discussion = (comments: Comments, composer: boolean) =>
 // The order of a real inspector: a summary, a group, a section placed directly
 // in the body, the comments, and a closing group.
 const panel = (id: string, comments: Comments, composer = false) =>
-  `<div id="${id}" class="k2b-app-workspace__detail" style="height:60rem">${renderToString(() =>
-    createComponent(DetailPanel, {
-      get children() {
-        return [
-          createComponent(DetailPanel.Header, { title: "Migration plan", subtitle: "Collaborative note", meta: "Edited today" }),
-          createComponent(DetailPanel.Body, {
-            get children() {
-              return [
-                createComponent(DetailPanel.Summary, { title: "Overview", children: "Two of three tasks done" }),
-                createComponent(DetailPanel.Group, {
-                  get children() {
-                    return [section("Contents", "ti ti-list"), section("Attachments", "ti ti-paperclip", "1")];
-                  },
-                }),
-                section("Conversation summary", "ti ti-sparkles"),
-                discussion(comments, composer),
-                createComponent(DetailPanel.Group, {
-                  get children() {
-                    return section("Info", "ti ti-info-circle");
-                  },
-                }),
-              ];
-            },
-          }),
-        ];
-      },
-    }),
-  )}</div>`;
+  `<div class="k2b-app-workspace" style="height:60rem;--k2b-detail-size:416px;--k2b-detail-min:320px;--k2b-detail-max:640px"><div class="k2b-app-workspace__content"><div class="k2b-app-workspace__main"></div><aside id="${id}" class="k2b-app-workspace__detail" style="--k2b-workspace-panel-size:416px;--k2b-workspace-panel-min:320px;--k2b-workspace-panel-max:640px">${renderToString(
+    () =>
+      createComponent(DetailPanel, {
+        get children() {
+          return [
+            createComponent(DetailPanel.Header, { title: "Migration plan", subtitle: "Collaborative note", meta: "Edited today" }),
+            createComponent(DetailPanel.Body, {
+              get children() {
+                return [
+                  createComponent(DetailPanel.Summary, { title: "Overview", children: "Two of three tasks done" }),
+                  createComponent(DetailPanel.Group, {
+                    get children() {
+                      return [section("Contents", "ti ti-list"), section("Attachments", "ti ti-paperclip", "1")];
+                    },
+                  }),
+                  section("Conversation summary", "ti ti-sparkles"),
+                  discussion(comments, composer),
+                  createComponent(DetailPanel.Group, {
+                    get children() {
+                      return section("Info", "ti ti-info-circle");
+                    },
+                  }),
+                ];
+              },
+            }),
+          ];
+        },
+      }),
+  )}</aside></div></div>`;
 
 // A discussion placed in a group is one of its sections; inside a section the section frames it.
 const nested = () =>
-  `<div id="nested" class="k2b-app-workspace__detail" style="height:40rem">${renderToString(() =>
-    createComponent(DetailPanel, {
-      get children() {
-        return createComponent(DetailPanel.Body, {
-          get children() {
-            return [
-              createComponent(DetailPanel.Group, {
-                get children() {
-                  return [section("Contents", "ti ti-list"), discussion("one", false), section("Info", "ti ti-info-circle")];
-                },
-              }),
-              section("Notes", "ti ti-notes", undefined, () => discussion("one", false)),
-            ];
-          },
-        });
-      },
-    }),
-  )}</div>`;
+  `<div class="k2b-app-workspace" style="height:40rem;--k2b-detail-size:416px;--k2b-detail-min:320px;--k2b-detail-max:640px"><div class="k2b-app-workspace__content"><div class="k2b-app-workspace__main"></div><aside id="nested" class="k2b-app-workspace__detail" style="--k2b-workspace-panel-size:416px;--k2b-workspace-panel-min:320px;--k2b-workspace-panel-max:640px">${renderToString(
+    () =>
+      createComponent(DetailPanel, {
+        get children() {
+          return createComponent(DetailPanel.Body, {
+            get children() {
+              return [
+                createComponent(DetailPanel.Group, {
+                  get children() {
+                    return [section("Contents", "ti ti-list"), discussion("one", false), section("Info", "ti ti-info-circle")];
+                  },
+                }),
+                section("Notes", "ti ti-notes", undefined, () => discussion("one", false)),
+              ];
+            },
+          });
+        },
+      }),
+  )}</aside></div></div>`;
 
 // A panel reused inside a tinted dialog group: that group turns field wells white
 // for its tint, but every frame of the panel paints its own surface again.
@@ -240,7 +242,7 @@ const measure = () => {
     return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
   };
   const action = document.querySelector("#one .k2b-discussion__actions .k2b-button")!;
-  const frame = document.querySelector("#one .k2b-discussion")!;
+  const frame = document.querySelector("#one")!;
   const [light, dark] = [luminance(style(action).color), luminance(style(frame).backgroundColor)].sort((a, b) => b - a);
   return {
     actionContrast: (light! + 0.05) / (dark! + 0.05),
@@ -291,11 +293,11 @@ describe("DetailPanel sections and Discussion share one frame", () => {
           expect(result.overflow).toBe(0);
 
           for (const blocks of Object.values(result.blocks)) {
-            // The summary, groups, a lone section and the discussion are one column of equal frames:
-            // the same edges, surface and radius, and no border anywhere.
+            // Summary, groups, lone sections, and discussion align inside the raised host.
+            // Their transparent surfaces leave the host as the one frame.
             expect(new Set(blocks.map((block) => block.left)).size).toBe(1);
             expect(new Set(blocks.map((block) => block.width)).size).toBe(1);
-            expect(new Set(blocks.map((block) => block.background)).size).toBe(1);
+            expect(blocks.every((block) => block.background === "rgba(0, 0, 0, 0)")).toBe(true);
             expect(new Set(blocks.map((block) => block.radius)).size).toBe(1);
             expect(blocks.every((block) => block.border === "0px")).toBe(true);
             expect(blocks.map((block) => block.kind)).toContain("k2b-discussion");

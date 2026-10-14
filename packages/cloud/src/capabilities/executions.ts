@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import type { CapabilityOrigin } from "../contracts/capabilities";
+import { pruneApprovalRequests } from "../services/approvals";
 import { logger } from "../services/logging";
 import { CAPABILITY_CLAIM_RETENTION_HOURS, pruneCapabilityIdempotencyClaims } from "./claims";
 
@@ -280,6 +281,8 @@ export const startCapabilityExecutionMaintenance = (): (() => void) => {
     try {
       const removed = await pruneCapabilityExecutions(new Date(Date.now() - CAPABILITY_EXECUTION_RETENTION_DAYS * 86_400_000));
       if (removed > 0) log.info("Pruned expired capability executions", { removed });
+      const requests = await pruneApprovalRequests(new Date(Date.now() - CAPABILITY_EXECUTION_RETENTION_DAYS * 86_400_000));
+      if (requests > 0) log.info("Pruned expired approval requests", { removed: requests });
       const claims = await pruneCapabilityIdempotencyClaims(new Date(Date.now() - CAPABILITY_CLAIM_RETENTION_HOURS * 3_600_000));
       if (claims > 0) log.info("Pruned expired capability idempotency claims", { removed: claims });
     } catch (error) {

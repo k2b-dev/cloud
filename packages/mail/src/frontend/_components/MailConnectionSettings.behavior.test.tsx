@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
-import type { Mailbox, ProviderBinding, ProviderConnection } from "../../contracts";
+import type { Mailbox, ProviderBinding, ProviderConnection, SenderIdentity } from "../../contracts";
 import type { MailboxAdminSettingsContext } from "../../settings-context";
 
 // Load once outside any test, so the cold Solid transform of the settings' source graph does not count against the
@@ -81,6 +81,47 @@ const connectedAdmin: MailboxAdminSettingsContext = {
   folders: [],
   identities: [],
 };
+
+const pendingCommandId = "00000000-0000-4000-8000-0000000000aa";
+const defaultIdentity = (pendingVerificationCommandId: string | null, status: SenderIdentity["status"]): SenderIdentity => ({
+  id: "Snd123",
+  mailboxId: "Mbx123",
+  label: "Support",
+  displayName: "Support",
+  fromAddress: "person@example.test",
+  replyTo: null,
+  defaultCc: [],
+  defaultBcc: [],
+  defaultFormat: "markdown",
+  defaultPriority: "normal",
+  defaultDeliveryReceipt: false,
+  defaultReadReceipt: false,
+  vcard: null,
+  envelopeSender: null,
+  defaultSignatureTemplateId: null,
+  transport: {
+    mode: "mailbox",
+    host: null,
+    port: null,
+    tlsMode: null,
+    username: null,
+    secret: { kind: null, isSet: false },
+    revision: 0,
+    status: "active",
+    capabilities: { dsn: false, size: false, maxMessageBytes: null },
+    lastVerifiedAt: null,
+    lastError: null,
+  },
+  authenticationPolicy: { automation: "mailbox" },
+  sentFolderId: null,
+  draftsFolderId: null,
+  isDefault: true,
+  status,
+  statusReason: status === "verified" ? null : pendingVerificationCommandId ? "verification_pending" : "verification_required",
+  pendingVerificationCommandId,
+  createdAt: now,
+  updatedAt: now,
+});
 
 const settle = async () => {
   await Promise.resolve();
@@ -197,6 +238,23 @@ describe("Mail connection settings recovery", () => {
         expect(call.url).toEndWith("/mailboxes/Mbx123/sender-identities/default/setup");
         expect(call.body).toEqual({ bindingId, savesSentAutomatically: false });
       }
+    } finally {
+      view.dispose();
+    }
+  });
+
+  test("shows a sender verification that waits behind synchronization as pending, not as a failure", async () => {
+    const pending = defaultIdentity(pendingCommandId, "unverified");
+    mockFetch([Response.json(pending)]);
+    const view = await mount({ afterReload: { ...connectedAdmin, identities: [pending] } });
+    try {
+      view.button("Set up sending").click();
+      await settle();
+      const status = view.dom.document.querySelector('[role="status"]');
+      expect(status?.textContent).toContain("Verification waiting");
+      expect(status?.textContent).toContain("sends the test message automatically");
+      expect(view.text()).not.toContain("Receiving is connected; sending is not set up yet");
+      expect(view.text()).not.toContain("Sending needs verification");
     } finally {
       view.dispose();
     }

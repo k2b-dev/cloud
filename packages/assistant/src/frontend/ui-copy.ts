@@ -40,6 +40,8 @@ const germanText: Record<string, string> = {
   "Open run": "Lauf öffnen",
   "No background activity yet": "Noch keine Hintergrundaktivitäten",
   "Background activity": "Hintergrundaktivitäten",
+  "What the Assistant wants to do for you. Nothing of it happens until you approve it here or in its chat.":
+    "Was der Assistent für dich tun möchte. Nichts davon passiert, bevor du hier oder im Chat zustimmst.",
   "Background run": "Hintergrundlauf",
   "Manage task": "Aufgabe verwalten",
   "Run history": "Laufverlauf",
@@ -491,9 +493,12 @@ const germanText: Record<string, string> = {
   "Edit reference": "Referenz bearbeiten",
   "Actions for": "Aktionen für",
   "Skill ZIP must contain exactly one SKILL.md.": "Das Skill-ZIP muss genau eine SKILL.md enthalten.",
-  "This Cloud version supports SKILL.md and Markdown references, but not scripts or assets.":
-    "Diese Cloud-Version unterstützt SKILL.md und Markdown-Referenzen, aber keine Skripte oder Assets.",
   "Skill import is too large.": "Der Skill-Import ist zu groß.",
+  "Some files are not imported": "Einige Dateien werden nicht übernommen",
+  "Only when selected": "Nur bei Auswahl",
+  "Start only when selected": "Nur bei Auswahl starten",
+  "Assistant does not choose this Skill on its own. Select it with / in a message.":
+    "Der Assistent wählt diesen Skill nicht selbst aus. Wähle ihn in einer Nachricht mit / aus.",
   "Choose a SKILL.md or a skill ZIP.": "Wähle eine SKILL.md oder ein Skill-ZIP.",
   "Delete personalization": "Personalisierung löschen",
   "Personalization unpinned": "Personalisierung nicht mehr angeheftet",
@@ -536,6 +541,26 @@ const germanText: Record<string, string> = {
     "Lege fest, wie der Assistent eine wiederkehrende Aufgabe erledigt, und füge bei Bedarf Zusatzinformationen hinzu.",
   "Save skill": "Skill speichern",
   "For example, IT support": "Zum Beispiel IT-Support",
+  "API access": "API-Zugang",
+  "Use your Assistant models in other apps through an OpenAI-compatible API.":
+    "Nutze die Modelle des Assistenten in anderen Apps über eine OpenAI-kompatible API.",
+  Connection: "Verbindung",
+  "Apps with an OpenAI-compatible provider, such as a dictation app, need this address, an API key, and a model ID. They get the models only: no chats, files, or personalization.":
+    "Apps mit einem OpenAI-kompatiblen Anbieter, etwa eine Diktier-App, brauchen diese Adresse, einen API-Schlüssel und eine Modell-ID. Sie bekommen nur die Modelle: keine Chats, keine Dateien und keine Personalisierung.",
+  "Base URL": "Base-URL",
+  "Copy base URL": "Base-URL kopieren",
+  "API key": "API-Schlüssel",
+  "In your profile, create a key with the access “AI models only”.":
+    "Erstelle in deinem Profil einen Schlüssel mit dem Zugriff „Nur KI-Modelle“.",
+  "Create API key": "API-Schlüssel erstellen",
+  Models: "Modelle",
+  "Use one of these model IDs. Requests count toward your Assistant usage limits.":
+    "Nutze eine dieser Modell-IDs. Anfragen zählen zu deinen Nutzungslimits im Assistenten.",
+  "No AI model is available to you. An administrator can grant model access in the AI settings.":
+    "Dir steht kein KI-Modell zur Verfügung. Eine Administratorin oder ein Administrator kann dir in den KI-Einstellungen Zugriff geben.",
+  Hosted: "Gehostet",
+  Private: "Privat",
+  "Copy model ID": "Modell-ID kopieren",
 };
 
 export const missingAssistantGermanText = (values: Iterable<string>): string[] =>
@@ -561,8 +586,8 @@ const copy = i18n.define({
       searchNamed: ({ name }: { name: string }) => `Search ${name}…`,
       invalidMarkdown: ({ path }: { path: string }) => `${path} is not valid UTF-8 Markdown.`,
       unsafeArchivePath: ({ path }: { path: string }) => `Skill archive contains an unsafe path: ${path}`,
-      outsideSkillFolder: ({ path }: { path: string }) => `Skill ZIP contains a file outside its skill folder: ${path}`,
-      unsupportedSkillFile: ({ path }: { path: string }) => `Unsupported skill file: ${path}`,
+      skippedSkillFiles: ({ paths }: { paths: string }) =>
+        `${paths}. Cloud keeps SKILL.md and Markdown files directly in references/ with lowercase names (a-z, 0-9, ., _, -), and does not run scripts.`,
       deleteScheduledTask: ({ prompt }: { prompt: string }) => `Delete scheduled task “${prompt}”?`,
       editNamed: ({ name }: { name: string }) => `Edit ${name}`,
       deleteFileNamed: ({ name }: { name: string }) => `Delete ${name}`,
@@ -592,8 +617,8 @@ const copy = i18n.define({
       searchNamed: ({ name }: { name: string }) => `${name} durchsuchen…`,
       invalidMarkdown: ({ path }: { path: string }) => `${path} ist kein gültiges UTF-8-Markdown.`,
       unsafeArchivePath: ({ path }: { path: string }) => `Das Skill-Archiv enthält einen unsicheren Pfad: ${path}`,
-      outsideSkillFolder: ({ path }: { path: string }) => `Das Skill-ZIP enthält eine Datei außerhalb des Skill-Ordners: ${path}`,
-      unsupportedSkillFile: ({ path }: { path: string }) => `Nicht unterstützte Skill-Datei: ${path}`,
+      skippedSkillFiles: ({ paths }: { paths: string }) =>
+        `${paths}. Cloud übernimmt SKILL.md und Markdown-Dateien direkt in references/ mit kleingeschriebenen Namen (a-z, 0-9, ., _, -) und führt keine Skripte aus.`,
       deleteScheduledTask: ({ prompt }: { prompt: string }) => `Geplante Aufgabe „${prompt}“ löschen?`,
       editNamed: ({ name }: { name: string }) => `${name} bearbeiten`,
       deleteFileNamed: ({ name }: { name: string }) => `${name} löschen`,

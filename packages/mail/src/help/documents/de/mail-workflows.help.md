@@ -68,7 +68,7 @@ Mail akzeptiert höchstens 20 Eingaben, 500 Schritte, 20 verschachtelte Schritte
 
 ### `messageReceived`
 
-`messageReceived` startet einmal für eine stabile, neu importierte Nachricht. Für E-Mails, die der Anbieter direkt in den Papierkorb oder in Spam zustellt, startet er nicht. Verschiebt oder kopiert ein anderes E-Mail-Programm eine Nachricht in einen anderen Ordner, startet er nicht erneut. Auch für eine Kopie einer Nachricht, die das Postfach schon enthält, startet er nicht. Der Trigger stellt Folgendes bereit:
+`messageReceived` startet einmal für eine stabile, neu importierte Nachricht. Für E-Mails, die der Anbieter direkt in den Papierkorb oder in Spam zustellt, startet er nicht. Bei Gmail startet er für die Kopie im Posteingang oder in einem anderen Ordner, nicht für die Kopie in **All Mail**. Verschiebt oder kopiert ein anderes E-Mail-Programm eine Nachricht in einen anderen Ordner, startet er nicht erneut. Auch für eine Kopie einer Nachricht, die das Postfach schon enthält, startet er nicht. Der Trigger stellt Folgendes bereit:
 
 - `trigger.message`
 - `trigger.conversation`
@@ -227,7 +227,7 @@ Referenzfelder namens `message`, `conversation` oder `draft` akzeptieren einen r
 
 `createDraft.to` ist erforderlich. `cc` und `bcc` sind optional. `createReplyDraft` leitet Empfänger und Betreff aus der Quellnachricht ab. Das Feld `model` akzeptiert die ID eines aktivierten KI-Modellprofils mit höchstens 120 Zeichen. KI-Ausgaben, Entwurfsausgaben, Referenzausgaben und Variablen sind nur für spätere Schritte im selben erreichbaren Gültigkeitsbereich sichtbar.
 
-Ein erreichbarer Pfad kann nicht mehrere Anbieteränderungen auf dieselbe Nachricht anwenden. Mail lehnt zum Beispiel einen Zweig ab, der ein Schlüsselwort ergänzt und dieselbe Nachricht danach verschiebt. Brauchst du beides, teile es auf separate Workflows auf.
+Auf einem erreichbaren Pfad können beliebig viele Änderungen mit `addFlag`, `removeFlag`, `addKeyword` und `removeKeyword` vor höchstens einem `moveMessage`, `copyMessage`, `archiveMessage`, `trashMessage` oder `junkMessage` für dieselbe Nachricht stehen. Nach diesem Verschieben oder Kopieren kann keine Anbieteraktion mehr folgen; Mail lehnt eine solche Definition mit `action.sequence` ab. Die erste Anbieteraktion prüft den Zustand der Nachricht beim Start des Laufs. Spätere erwarten zusätzlich die bestätigten Änderungen dieses Laufs, sodass ein Flag, das der Workflow selbst gesetzt hat, sein Verschieben nicht verhindert. Behalte diese Änderungen in einem Workflow: Ändern zwei Workflows dieselbe Nachricht, kann einer davon scheitern.
 
 `createDraft` und `createReplyDraft` erzeugen immer `deliveryClass: normal`. `createReplyDraft` leitet Empfänger und Betreff aus der Quellnachricht ab, erhält den Antwortverlauf und bleibt mit seiner Unterhaltung verknüpft. Nur `automaticReply` kann `deliveryClass: automatic_reply` erzeugen. Normale Workflow-Sendungen erhalten daher weder Header für automatische Antworten noch einen leeren Envelope-Absender. `scheduleDraftSend` akzeptiert nur ein `mail.draft`-Ergebnis, das zuvor im selben erreichbaren Gültigkeitsbereich erstellt wurde.
 

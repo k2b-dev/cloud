@@ -174,13 +174,7 @@ export default function NotificationBatchActions(props: Props) {
           <i class={loadingAction() === "delete" ? "ti ti-loader-2 animate-spin" : "ti ti-trash"} />
           <span>{messages().deleteDraft}</span>
         </Button>
-        <Button
-          size="sm"
-          class={finalizeBlocked() ? "opacity-60" : undefined}
-          onClick={finalize}
-          disabled={isLoading()}
-          aria-disabled={finalizeBlocked() ? "true" : undefined}
-        >
+        <Button size="sm" onClick={finalize} disabled={isLoading()} aria-disabled={finalizeBlocked() ? "true" : undefined}>
           <i class={loadingAction() === "finalize" ? "ti ti-loader-2 animate-spin" : "ti ti-send"} />
           <span>{loadingAction() === "finalize" ? messages().checking : messages().finalize}</span>
         </Button>

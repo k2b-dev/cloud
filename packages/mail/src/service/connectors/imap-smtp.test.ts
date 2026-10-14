@@ -929,6 +929,27 @@ describe("IMAP source downloads", () => {
   const requests = [1, 2, 3].map((uid) => ({ key: `message-${uid}`, uidValidity: "10", uid }));
   const source = (uid: number) => ({ meta: { expectedSize: 1, contentType: "message/rfc822" }, content: Readable.from([String(uid)]) });
 
+  test("stop before requesting the next source when the consumer ends the batch", async () => {
+    const consumed: string[] = [];
+    let downloads = 0;
+    const first = source(1);
+    const client = {
+      usable: true,
+      mailbox: { path: "INBOX", delimiter: "/", flags: new Set<string>(), uidValidity: 10n, uidNext: 4, exists: 3 },
+      download: async (uid: number) => {
+        downloads += 1;
+        return uid === 1 ? first : source(uid);
+      },
+    };
+    await downloadSelectedSources(client, requests, async (download) => {
+      consumed.push(download.key);
+      return "stop";
+    });
+    expect(consumed).toEqual(["message-1"]);
+    expect(downloads).toBe(1);
+    expect(first.content.destroyed).toBe(true);
+  });
+
   test("skip a UID the provider no longer has and keep streaming the rest of the batch", async () => {
     const consumed: string[] = [];
     await downloadSelectedSources(

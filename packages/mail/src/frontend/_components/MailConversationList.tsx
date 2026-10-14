@@ -27,9 +27,8 @@ import {
   MAIL_SEARCH_PARAMETER,
   type MailQuickSearchField,
   parseMailQuickSearchFields,
-  parseMailSearchState,
-  resolveMailSearchRoute,
-} from "../../search-state";
+  type ResolvedMailSearchRoute,
+} from "../../search-url";
 import type { LocalTag } from "../../service/local-tags";
 import type { MailFolderView } from "../../service/messages";
 import type { SavedConversationView } from "../../service/saved-views";
@@ -41,6 +40,7 @@ import { type MailActionId, spamActionForConversation } from "./mail-actions";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { mailboxHealthPresentation } from "./mail-health-presentation";
+import { mailListRowKey } from "./mail-list-projection";
 import { buildMailListHref, buildMailSelectionHref, type MailListItem, mailRouteUrl } from "./mail-navigation";
 import { createMailQuickLookLoader } from "./mail-quick-look";
 import { summarizeMailSearchExpression } from "./mail-search-builder-model";
@@ -66,8 +66,10 @@ export default function MailConversationList(props: {
   mailboxId: string;
   requestUrl: string;
   query: string;
+  search: ResolvedMailSearchRoute;
   title: string;
   items: MailListItem[];
+  leavingKeys?: ReadonlySet<string>;
   error: MailListError | null;
   selectedConversationId: string | null;
   selectedMessageId: string | null;
@@ -184,14 +186,16 @@ export default function MailConversationList(props: {
   let listScrollElement: HTMLDivElement | undefined;
   let requestedLoadHref: string | null = null;
   const listHref = () => buildMailListHref(requestUrl());
-  const parsedSearch = createMemo(() => parseMailSearchState(requestUrl()));
   const activeSavedView = createMemo(() => props.savedViews.find((view) => view.id === props.activeSavedViewId) ?? null);
   const currentSearchState = createMemo(() => {
-    const parsed = parsedSearch().state;
+    const resolved = props.search;
+    const parsed =
+      requestUrl().searchParams.has(MAIL_SEARCH_PARAMETER) && resolved.expression
+        ? { expression: resolved.expression, sort: resolved.sort }
+        : null;
     if (parsed) return parsed;
     const saved = activeSavedView()?.filter;
     if (saved) return saved;
-    const resolved = resolveMailSearchRoute(requestUrl());
     return resolved.expression ? { expression: resolved.expression, sort: resolved.sort } : null;
   });
   const structuredSummary = createMemo(() => {
@@ -342,7 +346,7 @@ export default function MailConversationList(props: {
           fallback={
             <div class="flex min-w-0 items-center gap-2">
               <div class="min-w-0 flex-1">
-                <h1 ref={listHeading} tabIndex={-1} class="truncate text-base font-semibold text-primary">
+                <h1 data-mail-list-heading ref={listHeading} tabIndex={-1} class="truncate text-base font-semibold text-primary">
                   {props.title}
                 </h1>
                 <p class="flex min-w-0 items-center gap-1 overflow-hidden text-xs text-dimmed">
@@ -618,6 +622,7 @@ export default function MailConversationList(props: {
                 {(item) => (
                   <MailConversationRow
                     item={item}
+                    leaving={props.leavingKeys?.has(mailListRowKey(item))}
                     requestUrl={requestUrl()}
                     state={{
                       selectedConversationId: props.selectedConversationId,

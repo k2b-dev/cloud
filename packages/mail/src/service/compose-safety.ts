@@ -137,9 +137,9 @@ const suspiciousLink = (body: string, format: "plain" | "markdown"): boolean => 
     } catch {
       return true;
     }
-    if (!["http:", "https:", "mailto:"].includes(target.protocol)) return true;
+    if (!["http:", "https:", "mailto:", "tel:"].includes(target.protocol)) return true;
     const shownHost = visibleUrlHost(label);
-    if (!shownHost || target.protocol === "mailto:") return false;
+    if (!shownHost || target.protocol === "mailto:" || target.protocol === "tel:") return false;
     const targetHost = normalizeDomain(target.hostname);
     return !targetHost || shownHost !== targetHost;
   });

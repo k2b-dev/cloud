@@ -153,6 +153,8 @@ Die Texterkennung in Anhängen blockiert nie das Empfangen, Lesen oder Senden ei
 
 Öffne **Postfachwerkzeuge → Postfachstatus → Erweiterte Diagnose und Reparatur**. Suche den geschwärzten Befehlseintrag über seine ID und seinen Fehlercode.
 
+Im Terminal listet `cld mail command list --state failed` oder `--state needs_attention` die betroffenen Befehle mit ihrem Fehler auf. Ist eine Seite voll, nennt Mail den Wert für `--before` für die nächste Seite; behalte dabei denselben `--state`. Mit Zugriff **Verwalten** folgen `cld mail operator run reconcile --command <id>` und `cld mail operator run retry --command <id>` denselben Regeln wie die Schaltflächen unten. Ein fehlgeschlagenes Verschieben oder Senden lässt sich dort nicht wiederholen.
+
 - **Anbietervorgang abgleichen** ist bei einem unklaren Ergebnis beim Anbieter sicher, weil es den Zustand beim Anbieter liest, bevor es das Ergebnis des Befehls ändert.
 - **Vorgang erneut versuchen** erscheint nur bei fehlgeschlagener Wartung, die beim Anbieter liest und bei der beim Anbieter keine Wirkung begonnen hat.
 - **Vorgang abbrechen** erscheint nur, solange passende Wartung eingereiht oder fehlgeschlagen ist.

@@ -24,11 +24,11 @@ The tools can work together, but creating one does not activate another. Referen
 With **Manage** access, you create one guided flow under **Automations → Incoming mail**. You can also start it directly from the organization menu of a message.
 
 - Choose **All incoming mail** when you need no condition.
-- Or combine up to eight conditions on sender, domain, subject, body text, or attachment presence. Choose whether all or any condition must match.
+- Or combine up to eight conditions on sender, domain, subject, body text, or attachment presence. Conditions can also exclude a sender or domain with **is not**, or text with **does not contain**. Choose whether all or any condition must match.
 
-An incoming automation runs once per received message. Mail that the provider delivers straight to Trash or Junk, such as spam that its filter caught, does not start incoming automations or automatic replies. Someone can move the message to another folder in a different email client, for example back to the Inbox after the automation moved it away. The automation then does not run again.
+An incoming automation runs once per received message. Mail that the provider delivers straight to Trash or Junk, such as spam that its filter caught, does not start incoming automations or automatic replies. At Gmail, the automation runs on the copy in the Inbox or in another folder, never on the copy in **All Mail**. Someone can move the message to another folder in a different email client, for example back to the Inbox after the automation moved it away. The automation then does not run again.
 
-Add steps in the order in which they run. A flow can freely mix:
+Add steps in the order in which they run. When you add **Mark as read** to a flow with an existing move, the editor puts it in front of the move. A flow can freely mix:
 
 - **Mail action** to move, mark, add a local tag, assign, or change the conversation status.
 - **AI generate text** to produce limited text for later steps.
@@ -51,7 +51,8 @@ The guided editor and the CLI use the same strict definition. Mail rejects unkno
 
 :::reference
 - **Scope:** `scope.mode: all` needs no conditions. `scope.mode: matching` requires a `conditions` object with `mode: all|any` and an `items` list of 1–8 unique conditions, for example `conditions: { mode: all, items: [{ field: sender_address, operator: is, value: user@example.com }] }`.
-- **Condition fields:** `sender_address`, `sender_domain`, `subject`, `body_text`, and `attachment_presence`. Sender address and domain use `operator: is`. Subject and body accept `is`, `contains`, `starts_with`, or `ends_with`. Attachment presence uses `is` with a boolean `value`.
+- **Condition fields:** `sender_address`, `sender_domain`, `subject`, `body_text`, and `attachment_presence`. Sender address and domain accept `operator: is` or `is_not`. Subject and body accept `is`, `contains`, `not_contains`, `starts_with`, or `ends_with`. Attachment presence uses `is` with a boolean `value`.
+- **Exclusion safety:** Negated sender conditions alone do not make `junk` or `trash` safe. With `all`, at least one condition must be a positive external sender condition; with `any`, every condition must be one. Positive sender-address conditions cannot name the mailbox's own identities; negated ones can.
 - **Condition values:** Addresses accept 1–320 characters, domains 1–253, and subject or body values 1–1,000.
 - **Steps:** Every step has a unique UUID in `id`. Step kinds are `mail_action`, `ai_generate_text`, `ai_classify`, `ai_classify_many`, `ai_extract_event`, `link_space_item`, `create_space_event`, `create_reply_draft`, `add_comment`, `set_summary`, and `if`.
 - **Mail actions:** A `mail_action` is `junk`, `trash`, `mark_read`, `add_keyword`, `move_to_folder`, `add_local_tag`, `assign_user`, or `set_status`. Actions from the catalog use `folderId`, `tagId`, or `userId`. `move_to_folder.folderId` and `add_local_tag.tagId` also accept an exact folder or tag name, and Mail saves it as the ID. A name that several folders or tags share needs the ID. The status is `needs_action`, `waiting`, or `done`.
@@ -63,23 +64,25 @@ The guided editor and the CLI use the same strict definition. Mail rejects unkno
 - **Text steps:** `create_reply_draft`, `add_comment`, and `set_summary` use `body: { kind: custom, value: ... }` with 1–50,000 characters, or `body: { kind: step_output, sourceStepId: ... }` for an earlier AI step that produces text. A multi-choice result is not a text source. Reply drafts also require a `senderIdentityId` from the catalog.
 - **Conditions:** An `if` condition refers to an earlier AI `sourceStepId`. Use `equals` for generated text or one classification. Use `includes` for a multi-classification. `value` accepts 1–500 characters and must name a declared choice for a classification. Both `then` and `else` contain at most 12 steps.
 - **Size:** A definition contains 1–20 top-level steps, at most 40 steps across branches, at most 4 branch levels, and at most 10 AI calls.
-- **One path:** One reachable path can contain only one provider message action, one assignment, one status change, and one summary replacement. It cannot add the same local tag twice. Consecutive `if` steps are on the same path, because both can match. Put actions that exclude each other in the `then` and `else` branches of one `if`. `set_status` is a local status change, not a provider message action, so it can share a path with `mark_read`.
+- **One path:** One reachable path can contain any number of `mark_read` and `add_keyword` actions before at most one placement: `junk`, `trash`, or `move_to_folder`. Nothing that changes the message on the provider may follow that placement. A path can contain one assignment, one status change, and one summary replacement. It cannot add the same local tag twice. Consecutive `if` steps are on the same path, because both can match. Put actions that exclude each other in the `then` and `else` branches of one `if`. `set_status` is a local status change, not a provider message action, so it can share a path with `mark_read`.
 :::
 
 Mail generates canonical workflow YAML from the flow and shows it read-only in the editor. Steps run from top to bottom through the shared workflow runtime.
 
-- **Several matching automations:** The oldest automation decides where the message goes. A later automation skips its move, trash, or junk step instead of failing. Its other steps still run.
+- **Several matching automations:** The oldest automation decides where the message goes. A later automation skips its move, trash, or junk step instead of failing. Its other steps still run. When two automations change the same message on the provider, for example one marks it read and the other moves it, one of them can still fail. Put these changes in one automation.
 - **Failed step:** If a later step fails, the effects of earlier completed steps stay.
 - **Versions:** Editing the flow publishes a new unchangeable workflow version. Changing only the name or the active state does not duplicate identical source.
 - **Protected targets:** Destructive actions cannot target an identity of the mailbox, a configured internal domain, its subdomains, or an unsafe parent domain.
 
-Text conditions support exact, contains, starts-with, and ends-with matching. Regular expressions are unavailable on purpose until Mail can enforce a limited RE2-compatible matcher.
+Text conditions support exact, contains, does-not-contain, starts-with, and ends-with matching. Regular expressions are unavailable on purpose until Mail can enforce a limited RE2-compatible matcher.
 
 New incoming automations start inactive. A flow without AI steps can preview and process existing matching messages with a resumable backfill:
 
 - One backfill hands at most 100 messages to the automation. If more messages match, it ends as **Limit reached** and shows how many are left. Run it again to continue with the next messages.
 - A backfill survives restarts. Mail retries a failed message without stopping unrelated workflow runs.
 - A repeated backfill skips messages already accepted for the same unchangeable version.
+- As a mailbox administrator, you can re-run messages whose last run of the same automation version failed or was canceled: `cld mail automation backfill start <automation-id> --revision <revision> --retry-failed --yes`.
+- A retry runs the whole flow again. Flows that add internal comments, create reply drafts, or create Spaces events cannot be retried, because a second run would create them again. After a retry, the automation menu shows **Retry failed messages**. Use it to continue with the next failed messages.
 - **Completed** means that Mail handed every matching message to the automation. The actions themselves then run in the workflow runtime and appear under **Activity**.
 - Progress counts only grow while a backfill runs. The automation menu shows the progress and lets you cancel the backfill or run it again.
 
@@ -93,11 +96,24 @@ A generated text output has no effect until a later step uses it. Reply automati
 
 Spaces steps run with a delegation of the user who set up the automation, and that user can revoke it. Mail stores its token encrypted. It revokes the token when someone removes the last Spaces step or deletes the automation. Every run still checks the current Mail access and the current Spaces access. Linking updates an existing link or creates one, and event creation uses a durable idempotency key, so retries create no duplicate events. If someone revokes the delegated API key or removes the Space access, future runs fail instead of acting without that access.
 
-Use `set_status: done` to complete a conversation. Use `needs_action` or `waiting` to open it again explicitly. A verified new incoming message already moves a completed conversation back to Needs action. A separate step that unmarks Done on incoming mail is therefore normally not needed.
+Use `set_status: done` to complete a conversation. Done is a local state and does not mark mail read. Unread counts follow the provider read flag, so add **Mark as read** when mail should also stop counting as unread. Use `needs_action` or `waiting` to open it again explicitly. A verified new incoming message already moves a completed conversation back to Needs action. A separate step that unmarks Done on incoming mail is therefore normally not needed.
 
 For automation through `cld`, use `mail automation catalog` to find valid IDs. `mail automation create` and `mail automation update` accept the complete guided definition as JSON or YAML through `--definition-file` or `--definition-stdin`, including `scope` and the ordered `steps` tree. The CLI and the interface therefore behave the same, including output references and nested conditions. For an invalid definition, Mail names each affected field by its path, such as `scope.conditions.items`, with the reason.
 
 Mail uses the platform workflow model automatically and offers no separate model choice. Use advanced **Workflows** only when the guided building blocks do not cover the task.
+
+## Clean up existing mail by sender {icon="mail"}
+
+To move mail that is already in the mailbox, use the terminal. Check how much matches first, then move it. Moving needs **Edit** or **Manage** access to the whole mailbox; **Edit assigned only** is not enough.
+
+```bash
+cld mail sender preview --match domain --value example.com
+cld mail sender move --match domain --value example.com --destination archive --yes
+```
+
+Use `--match sender` for one address, and `--destination trash` or `--folder <name-or-id>` for another target. Like incoming automations, Mail matches the first From address and never the mailbox's own sender addresses.
+
+Mail leaves messages in Sent, Drafts, Trash, and Junk where they are and does not move kept conversations to Trash. On Gmail, each message moves once from the Inbox: Archive removes only the Inbox label, and another folder replaces it with that folder's label. Only Trash and Junk also take archived messages; for other targets, archived messages stay where they are. The preview can count more messages than Mail moves. Each run moves at most 500 messages. If Mail says that more remain, run it again after these moves are done.
 
 ## Configure an automatic reply {icon="send"}
 
@@ -110,6 +126,8 @@ Mail uses the platform workflow model automatically and offers no separate model
 6. Use **Preview** for Markdown content.
 7. Choose **Save automatic reply**.
 :::
+
+**Preview** lists the formatting that email leaves out and the values of the mailbox email design that Mail ignores. The automatic reply still sends without them.
 
 Subjects and messages are Liquid templates. Use the variables that you can copy in the editor, for example `{{ inputs.message.subject }}`. After a reference is assigned, `{{ reference.value }}` is also available. Mail rejects invalid syntax and unavailable variables before it saves the reply.
 

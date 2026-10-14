@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-10-08
+updated: 2026-10-12
 ---
 
 # Notebooks
@@ -26,6 +26,10 @@ keep them first, or use the shared search prompt to open an accessible
 notebook or note directly. Activity stays beside the overview on larger
 screens and opens as a separate panel on mobile so it does not replace the
 note list.
+
+Open the notebook name in the sidebar or phone menu to switch notebooks.
+Signed-in users can choose **New notebook** to create and open a blank notebook,
+including from Book view. Use the overview to start from a template.
 
 ## Use Notebooks
 
@@ -80,11 +84,62 @@ a server-rendered preview; move the cursor into the block or choose **Show
 source** to edit it. Invalid settings are marked at their source lines. Previewing
 a draft does not save it or change the notes returned by the query.
 
+Rich mode indents list items by their Markdown nesting. Numbered lists count
+from their starting number. Nested numbered lists show a., b., then i., ii.,
+then decimal numbers again in the editor, Book view, and PDF.
+
+On wide screens, **Full width** lets text use the available space instead of
+the centered reading column in Write, Read-only, and Book. Toggle it in a
+note's detail panel under **View**, in **Settings → Notebook → View & behavior →
+Only for you**, or through **Turn on full width** / **Turn off full width** in
+Cloud search. The choice applies to every notebook and open tab in this browser and
+survives reloads. Full width works only on large screens, where these controls
+show. When the navigation and the detail panel leave less room than the
+reading column, the lines get longer only after you close the panel.
+
+The editor toolbar shows the current text style in its style menu and marks active
+bold, italic, strikethrough, highlight, and list formats as pressed. Bullet,
+numbered, and checklist buttons are directly available, beside Outdent and
+Indent. Link, note link, and attachment controls sit beside **More**, which
+inserts callouts, tables, code blocks, and inline code. Touch devices show
+**Undo** and **Redo** at the start of the toolbar.
+
+**Ctrl/⌘+Shift+1/2/3** toggles H1/H2/H3, matching the shared Markdown editor;
+pressing the same heading shortcut again restores normal text. These shortcuts
+match physical digit keys on every keyboard layout; macOS keeps ⌘+Shift+3 for
+screenshots, so Mac users pick H3 in the style menu. **Ctrl/⌘+Shift+H** now
+toggles highlight (`==text==`); it previously cycled heading levels.
+
+Every toolbar action and formatting shortcut is a separate undo step, as is
+every Enter. Typing before and after these actions stays in separate steps;
+undoing your edit preserves other people's concurrent text.
+
 In the editor, Tab indents: it nests list items together with their sub-items,
 moves between table cells, accepts an open suggestion, and otherwise inserts two
 spaces. Press Esc, then Tab to move focus out of the editor. Each person can
 keep Tab for focus movement under **Settings → Notebook → View & behavior**; the
-choice is stored in that browser.
+choice is stored in that browser. **Ctrl/⌘+]** and **Ctrl/⌘+[** nest and lift list
+items even with that preference; **Indent** and **Outdent** in the editor toolbar
+provide the same controls on phones. **Alt+Up/Down** (Option on a Mac) moves an
+item with its sub-items within its list and stops at the edge; Windows and Linux
+also accept **Ctrl+Shift+Up/Down**, while ⌘+Shift+Up/Down on a Mac keeps
+selecting to the start or end of the note. A selection across several items
+moves those lines instead. After your own structural change, the numbered list
+you changed gets its Markdown numbers repaired, keeping its first number, in the
+same undo step; other lists keep theirs.
+
+Enter continues a list; on an empty item it lifts one level or ends the list.
+At an item's text start, Enter inserts an empty item above. Splitting an item
+with children adds a new first child and keeps the existing children under it.
+Backspace at an item's start lifts it or turns a top-level item without children
+into normal text. Empty top-level items with children stay in place.
+**Ctrl/⌘+Shift+7/8/9** changes selected lines to numbered lists, bullet lists,
+or checklists. The editor matches the physical digit keys, so the shortcuts work
+on every keyboard layout. Repeat to turn top-level items without children into
+normal text; their continuation lines lose the item indentation. **Ctrl/⌘+Enter**
+checks or unchecks the task under the cursor, also from its continuation lines.
+Type `[] ` at a line start to begin a checklist. Backspace after `# ` turns a
+heading into normal text, also inside quotes and list items.
 
 Mermaid diagrams enhance their server-rendered source in the browser. Without
 JavaScript, or if a diagram cannot render, its source stays readable. On mobile,

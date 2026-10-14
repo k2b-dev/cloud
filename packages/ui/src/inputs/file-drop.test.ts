@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { resolveUiMessages } from "../intl/messages";
 import { fileDropRejectionMessage, partitionDroppedFiles, refusesDraggedTypes } from "./file-drop";
+import { resolveFileDropMessages } from "./file-drop-messages";
 
 const file = (name: string, type: string, size = 1) => new File([new Uint8Array(size)], name, { type });
 
@@ -38,7 +38,7 @@ describe("dropped files", () => {
       })),
       { file: file("big.mov", "video/quicktime", 2_000_000), reason: "size" as const },
     ];
-    expect(fileDropRejectionMessage(rejected, { maxSize: 1024 * 1024 }, resolveUiMessages("de"), "de")).toBe(
+    expect(fileDropRejectionMessage(rejected, { maxSize: 1024 * 1024 }, resolveFileDropMessages("de"), "de")).toBe(
       "Nicht hinzugefügt, dieser Dateityp wird hier nicht angenommen: 1.exe, 2.exe, 3.exe und 2 weitere\nNicht hinzugefügt, größer als 1 MiB: big.mov",
     );
   });

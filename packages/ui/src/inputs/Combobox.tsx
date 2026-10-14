@@ -4,6 +4,7 @@ import { useUiMessages } from "../intl/messages";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, nextEnabledChoiceIndex } from "./choice";
 import type { FieldProps, MaybeAccessor } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
+import { useSelectMessages } from "./select-messages";
 
 export type ComboboxOption = { id: string; label: string; description?: string; icon?: string };
 export type ComboboxProps = FieldProps & {
@@ -19,6 +20,7 @@ const iconClass = (icon: string) => (icon.split(/\s+/).includes("ti") ? icon : `
 
 export function Combobox(props: ComboboxProps): JSX.Element {
   const messages = useUiMessages();
+  const selectMessages = useSelectMessages();
   const meta = createFieldMeta(props.id);
   const listboxId = `${meta.controlId}-listbox`;
   const [localQuery, setLocalQuery] = createSignal("");
@@ -98,6 +100,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
       <div class="k2b-combobox" data-invalid={error() ? "true" : undefined}>
         <div ref={popover.setTrigger} class="k2b-combobox__input">
           <i class="ti ti-search" aria-hidden="true" />
+          {/* A click, typing, or an arrow key opens the list. Focus alone (Tab, a dialog's initial focus) does not, so Escape still closes the enclosing dialog. */}
           <input
             ref={(element) => {
               inputRef = element;
@@ -113,7 +116,6 @@ export function Combobox(props: ComboboxProps): JSX.Element {
             aria-controls={listboxId}
             aria-activedescendant={focusedOption() ? `${listboxId}-${focusedIndex()}` : undefined}
             {...fieldControlAria(meta, props)}
-            onFocus={() => open()}
             onClick={() => open()}
             onInput={(event) => {
               setQuery(event.currentTarget.value);
@@ -141,7 +143,9 @@ export function Combobox(props: ComboboxProps): JSX.Element {
             </Show>
             <For
               each={loader.error() ? [] : options()}
-              fallback={<div class="k2b-choice-status">{query().length >= 2 ? messages().noResultsFound : messages().typeToSearch}</div>}
+              fallback={
+                <div class="k2b-choice-status">{query().length >= 2 ? selectMessages().noResultsFound : selectMessages().typeToSearch}</div>
+              }
             >
               {(option, index) => (
                 <button

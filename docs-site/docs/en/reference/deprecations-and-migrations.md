@@ -5,10 +5,72 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-10
+updated: 2026-10-13
 ---
 
 # Deprecations and migrations
+
+## @k2b/ui Calendar month reads range
+
+The `Calendar` month view now reads `range`. With `range`, the month scrolls
+through the weeks of that range, names the month in the middle, and calls
+`onLoadEarlier` and `onLoadLater` near its ends. Before, only the day and week
+views with `dayHours` read `range`, and the month always paged. A host that
+passes `range` in every view gets the scrolling month after the upgrade. To
+keep the paged month, pass `range` only in the day and week views, for example
+`range={view === "day" || view === "week" ? range : undefined}`. See
+[Calendar](/en/ui/surfaces/calendar).
+
+## Spaces scrolling calendars load days in blocks
+
+The Spaces day and week views load days a week at a time. Month now scrolls
+through continuous week rows and loads eight weeks at a time. The internal
+`GET /api/spaces/workspace/view` endpoint accepts `from`, `to`, and
+`includeTray` for `cv=day`, `cv=week`, and `cv=month`, for at most 366 days.
+Every calendar snapshot carries `range`, the days it loaded from midnight
+to midnight. Queries for these views include entries until 06:00 after the
+last day, so timed views can keep the night with the day before. The year
+view ignores `from` and `to`; an old timeline link opens the scrolling month
+of its day. No setting, data migration, or operator action is required.
+See [Spaces](/en/apps/spaces).
+
+## Mail drafts keep the signature outside the body
+
+Mail drafts now store a signature choice separately from the editable body.
+Preview and delivery place it after the text; when the text sits above a quoted
+reply or a forwarded message, the signature goes before that history. The
+composer offers **Signature** in its action bar, including **No signature**;
+switching the sender selects that sender's default. Draft copies in the
+provider's Drafts folder contain only the body, without the signature.
+
+Drafts and draft seeds no longer return `initialSignatureSource`. Use
+`signatureTemplateId` instead: a signature template ID, or `null` for none.
+On create, omitting it uses the sender's default; on update or patch, omitting
+it keeps the current choice. Keep signatures out of the body. Compose
+suggestions return snippets only, and render-snippet refuses signatures.
+
+Existing drafts move recognized signatures out of the body when opened or
+saved. Drafts that have not yet been saved again still send correctly. No
+configuration change is needed; Mail adds one nullable column on its next
+start. See
+[Mail draft signatures](/en/docs/operations/deployment-requirements#mail-draft-signatures)
+for the rollout.
+
+## Studio source writes save one file per call
+
+`code_write` no longer accepts a `files` array. Use
+`code_write({id, expectedRevision, path, content, entry?})` for each source file,
+one call at a time, passing the returned revision as the next `expectedRevision`.
+A stale revision still returns `CONFLICT` without saving. Results add `lines`
+beside `length` for every file; check that the line count matches what you
+wrote.
+
+Move `fromFile` imports to
+`code_import({id, expectedRevision, files: [{path, fromFile}], entry?})`.
+Imports remain atomic and require one fresh review for the batch. Ordinary
+source writes require no approval. Stored source and recorded chat arguments
+are unchanged. Operators must update Core and Assistant together; see
+[Update Studio source writes](/en/docs/operations/deployment-requirements#update-studio-source-writes).
 
 ## The dashboard becomes one board of widgets in three sizes
 
@@ -488,8 +550,10 @@ and `code_present`. Before, only turns whose client listed them
 in `clientToolIds` had them, so `cld assistant --detach`, API clients, and
 scheduled tasks could not run code. Scheduled tasks now run them with their
 task grants, as [Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode)
-describes. Only `code_open`, `code_secret`, and `local_bash` still need a client
-that declares them. Clients that list the server-run names keep working; the
+describes. `code_open`, `code_secret`, and the local client tools
+(`local_bash`, `local_list`, `local_read`, `local_upload`, `local_download`,
+`local_write`, `local_move`, `load_local_skill`) need a client that declares
+and handles them. Clients that list the server-run names keep working; the
 names have no effect.
 
 The `load_tools` result changed. `loaded` and `alreadyLoaded` hold

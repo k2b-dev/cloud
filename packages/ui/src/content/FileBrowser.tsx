@@ -11,11 +11,13 @@ import { createEffect, createMemo, createResource, createSignal, Match, onCleanu
 import Dropdown from "../actions/Dropdown";
 import { dialogCore } from "../feedback/dialog-core";
 import { prompts } from "../feedback/prompts";
-import { resolveUiMessages, useUiMessages } from "../intl/messages";
+import { useFileInputMessages } from "../inputs/file-input-messages";
+import { useUiMessages } from "../intl/messages";
 import PanelDialog, { panelDialogOptions } from "../layout/PanelDialog";
 import Placeholder from "../surfaces/Placeholder";
 import FileTree, { type FileTreeEntry } from "./FileTree";
 import FileView, { type FileViewContent, type FileViewRenderer } from "./FileView";
+import { resolveFileBrowserMessages, useFileBrowserMessages } from "./file-browser-messages";
 
 export type FileSource = {
   previewPreferencesKey?: string;
@@ -57,6 +59,8 @@ const parentOf = (path: string): string => {
 
 export function FileBrowserPanel(props: FileBrowserPanelProps) {
   const messages = useUiMessages();
+  const fileBrowserMessages = useFileBrowserMessages();
+  const fileInputMessages = useFileInputMessages();
   // FileSource is an imperative adapter. Its methods may read host signals,
   // but refreshes stay owned by this component (`refetch` / `refreshKey`);
   // tracking those implementation details can otherwise feed a write back
@@ -117,8 +121,8 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
     if (selectedDirty() && current) {
       const confirmed = props.confirmDiscard
         ? await props.confirmDiscard(current, nextPath)
-        : await prompts.confirm(messages().discardUnsavedFile, {
-            title: messages().discardChanges,
+        : await prompts.confirm(fileBrowserMessages().discardUnsavedFile, {
+            title: fileBrowserMessages().discardChanges,
             variant: "danger",
           });
       if (!confirmed) return false;
@@ -150,7 +154,7 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
 
   const createFile = (dirPath: string) =>
     run(async () => {
-      const name = await prompts.prompt(messages().newFileName, "", { title: messages().newFile });
+      const name = await prompts.prompt(fileBrowserMessages().newFileName, "", { title: fileBrowserMessages().newFile });
       if (!name || typeof name !== "string" || !name.trim() || name.includes("/")) return;
       const path = `${dirPath === "/" ? "" : dirPath}/${name.trim()}`;
       if (!(await canLeaveCurrent(path))) return;
@@ -161,7 +165,7 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
 
   const createFolder = (dirPath: string) =>
     void (async () => {
-      const name = await prompts.prompt(messages().newFolderName, "", { title: messages().newFolder });
+      const name = await prompts.prompt(fileBrowserMessages().newFolderName, "", { title: fileBrowserMessages().newFolder });
       if (!name || typeof name !== "string" || !name.trim() || name.includes("/")) return;
       const path = `${dirPath === "/" ? "" : dirPath}/${name.trim()}`;
       setPendingFolders((folders) => [...folders, path]);
@@ -231,13 +235,13 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
           return;
         }
         const files = filesBehind(path);
-        if (files.length === 0) throw new Error(messages().folderEmpty);
+        if (files.length === 0) throw new Error(fileBrowserMessages().folderEmpty);
         const zipEntries = await Promise.all(
           files.map(async (file) => ({ filename: file.slice(path.length + 1), source: await contentBytes(file) })),
         );
         downloadFileFromContent(await createZip(zipEntries), `${baseName(path) || "files"}.zip`, "application/zip");
       } catch (error) {
-        void prompts.error(error instanceof Error ? error.message : messages().downloadFailed);
+        void prompts.error(error instanceof Error ? error.message : fileBrowserMessages().downloadFailed);
       }
     })();
 
@@ -257,10 +261,10 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
   });
 
   const addMenuItems = () => [
-    ...(pathWritable("/") ? [{ icon: "ti ti-file-plus", label: messages().newFile, action: () => createFile("/") }] : []),
-    ...(pathWritable("/") ? [{ icon: "ti ti-folder-plus", label: messages().newFolder, action: () => createFolder("/") }] : []),
+    ...(pathWritable("/") ? [{ icon: "ti ti-file-plus", label: fileBrowserMessages().newFile, action: () => createFile("/") }] : []),
+    ...(pathWritable("/") ? [{ icon: "ti ti-folder-plus", label: fileBrowserMessages().newFolder, action: () => createFolder("/") }] : []),
     ...(pathMutable("/") && props.source.upload
-      ? [{ icon: "ti ti-upload", label: messages().uploadFiles, action: () => pickUpload("/") }]
+      ? [{ icon: "ti ti-upload", label: fileBrowserMessages().uploadFiles, action: () => pickUpload("/") }]
       : []),
   ];
 
@@ -268,29 +272,29 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
     <div class={`k2b-content-file-browser ${props.class ?? ""}`} data-default-height={props.class ? undefined : "true"}>
       <div class="k2b-content-file-browser__sidebar">
         <div class="k2b-content-file-browser__header">
-          <p class="k2b-content-file-browser__title">{messages().files}</p>
+          <p class="k2b-content-file-browser__title">{fileBrowserMessages().files}</p>
           <Show when={addMenuItems().length > 0}>
-            <Dropdown.Root position="bottom-left" items={addMenuItems()} label={messages().addFileFolderUpload}>
+            <Dropdown.Root position="bottom-left" items={addMenuItems()} label={fileBrowserMessages().addFileFolderUpload}>
               <Dropdown.Trigger
                 appearance="plain"
                 class="k2b-content-file-browser__add"
-                label={messages().addFileFolderUpload}
+                label={fileBrowserMessages().addFileFolderUpload}
                 tooltip={messages().add}
               >
                 <i class="ti ti-plus" aria-hidden="true" />
-                <span class="k2b-sr-only">{messages().addFileFolderUpload}</span>
+                <span class="k2b-sr-only">{fileBrowserMessages().addFileFolderUpload}</span>
               </Dropdown.Trigger>
             </Dropdown.Root>
           </Show>
         </div>
         <Switch>
           <Match when={entries.loading && entries() === undefined}>
-            <Placeholder icon="ti ti-loader-2" title={messages().loadingFiles} />
+            <Placeholder icon="ti ti-loader-2" title={fileBrowserMessages().loadingFiles} />
           </Match>
           <Match when={entries.error}>
             <Placeholder
               icon="ti ti-alert-circle"
-              title={messages().failedLoadFiles}
+              title={fileInputMessages().failedLoadFiles}
               description={String(entries.error?.message ?? entries.error ?? "")}
             />
           </Match>
@@ -304,7 +308,7 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
             />
           </Match>
           <Match when={true}>
-            <Placeholder icon="ti ti-folder-open" title={messages().noFiles} description={messages().spaceEmpty} />
+            <Placeholder icon="ti ti-folder-open" title={fileBrowserMessages().noFiles} description={fileBrowserMessages().spaceEmpty} />
           </Match>
         </Switch>
         <input
@@ -316,9 +320,17 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
         />
       </div>
 
-      <Switch fallback={<Placeholder icon="ti ti-file" title={messages().selectFile} description={messages().pickFileFromTree} />}>
+      <Switch
+        fallback={
+          <Placeholder icon="ti ti-file" title={fileBrowserMessages().selectFile} description={fileBrowserMessages().pickFileFromTree} />
+        }
+      >
         <Match when={selectedEntry()?.kind === "folder"}>
-          <Placeholder icon="ti ti-folder" title={messages().folderSelected} description={messages().chooseFileToPreview} />
+          <Placeholder
+            icon="ti ti-folder"
+            title={fileBrowserMessages().folderSelected}
+            description={fileBrowserMessages().chooseFileToPreview}
+          />
         </Match>
         <Match when={selectedEntry()}>
           {(entry) => (
@@ -354,12 +366,12 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
 
 /** Open the file browser as a dialog. Returns when the dialog closes. */
 export const openFileBrowser = (options: { source: FileSource; title?: string; subtitle?: string; icon?: string }): Promise<void> => {
-  const messages = resolveUiMessages();
+  const fileBrowserMessages = resolveFileBrowserMessages();
   return dialogCore.open<void>(
     (close) => (
       <PanelDialog>
         <PanelDialog.Header
-          title={options.title ?? messages.files}
+          title={options.title ?? fileBrowserMessages.files}
           subtitle={options.subtitle}
           icon={options.icon ?? "ti ti-folder"}
           close={() => close()}

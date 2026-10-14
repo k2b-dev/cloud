@@ -422,6 +422,8 @@ add menu. The footer props of the assistant prompt (`models`, `modelDetails`,
   frame `container-type: size`; without one, the cap is a third of the small
   viewport height. A hidden copy measures the text, so the field never
   collapses for a frame and the feed above keeps the newest message in place.
+  A placeholder longer than the empty field stays on its one line and ends
+  with an ellipsis.
 - **Hint line:** one line of fixed height above the field, always reserved,
   so a hint never moves the field. Pass `hint` for short application notes,
   such as what people without access see after a reference was attached.

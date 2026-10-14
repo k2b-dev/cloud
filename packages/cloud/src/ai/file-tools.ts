@@ -6,6 +6,7 @@ import {
 } from "@k2b/cloud/services/document-extraction";
 import { z } from "zod";
 import type { RequestActor } from "../server";
+import { aiMissingChatFileError } from "./file-error";
 import {
   AI_PROJECT_FILE_MOUNT,
   AI_SKILL_FILE_MOUNT,
@@ -14,8 +15,9 @@ import {
   mountAiProjectFilePath,
   mountAiSkillFilePath,
 } from "./file-mount";
-import { aiFileStore, guessAiMediaType, isAiWorkingFilePath, normalizeAiFilePath } from "./files-store";
+import { aiFileStore, assertAiModelWritablePath, guessAiMediaType, isAiWorkingFilePath, normalizeAiFilePath } from "./files-store";
 import { defineAiTool } from "./tools";
+import { CLOUD_AI_VIEW_MAX_BYTES, CloudAiViewSummarySchema, cloudAiViewSummary, isAiViewFile, parseCloudAiView } from "./view-block";
 
 const FILE_READ_MAX_BYTES = 64 * 1024;
 const FILE_WRITE_MAX_BYTES = 100 * 1024;
@@ -234,7 +236,7 @@ export const createCloudAiReadFileTool = () => {
             length: input.length,
           })
         : null);
-    if (!stored) throw new Error(`No such file: ${path}`);
+    if (!stored) throw aiMissingChatFileError(path, ctx.localToolsEnabled);
     const extractAsDocument = shouldExtractDocument(path, stored.mediaType);
     if (isTextMediaType(stored.mediaType) && !extractAsDocument) {
       if (input.offset > stored.size) throw new Error(`Offset ${input.offset} is past the end of ${path} (${stored.size} bytes).`);
@@ -271,7 +273,7 @@ export const createCloudAiReadFileTool = () => {
           ? await aiFileStore.readTurnFile({ turnId: ctx.turnId, path })
           : await aiFileStore.read({ conversationId: conversationId(ctx.conversationId, "read_file"), path });
       if (!fullFile) {
-        throw new Error(snapshot ? `Attached file snapshot is unavailable: ${path}` : `No such file: ${path}`);
+        throw snapshot ? new Error(`Attached file snapshot is unavailable: ${path}`) : aiMissingChatFileError(path, ctx.localToolsEnabled);
       }
       try {
         extracted = await extractDocumentMarkdown({ bytes: fullFile.bytes, filename: path, signal: ctx.signal });
@@ -328,6 +330,7 @@ export const createCloudAiWriteFileTool = () =>
     const id = conversationId(ctx.conversationId, "write_file");
     const path = toolPath(input.path, "write");
     assertConversationFilePath(path, "written");
+    assertAiModelWritablePath(path);
     const existing = await aiFileStore.stat({ conversationId: id, path });
     if (existing?.origin === "user") throw new Error(`Cannot overwrite user-uploaded file ${path}. Choose another path.`);
     const bytes = new TextEncoder().encode(input.content);
@@ -356,13 +359,29 @@ export const CloudAiPresentInputSchema = z.object({
       "One sentence in the user's language that says what the file is and what it is for, without repeating its name. Shown next to the file in the chat's results.",
     ),
 });
-export const CloudAiPresentOutputSchema = z.object({ path: z.string(), size: z.number(), mediaType: z.string() });
+export const CloudAiPresentOutputSchema = z.object({
+  path: z.string(),
+  size: z.number(),
+  mediaType: z.string(),
+  view: CloudAiViewSummarySchema.optional(),
+});
+
+/** A view file as it is now; invalid user edits leave an ordinary file. */
+const readView = async (conversationId: string, path: string) => {
+  const file = await aiFileStore.read({ conversationId, path });
+  if (!file || !isAiViewFile(file) || file.bytes.byteLength > CLOUD_AI_VIEW_MAX_BYTES) return undefined;
+  try {
+    return parseCloudAiView(JSON.parse(new TextDecoder().decode(file.bytes)));
+  } catch {
+    return undefined;
+  }
+};
 
 export const createCloudAiPresentTool = () =>
   defineAiTool({
     name: "present",
     description:
-      "Present a conversation file to the user as an openable and downloadable chat attachment. The returned path is a conversation-local file identifier, not a website URL. Refer to the delivered attachment by title; do not turn its path into a Markdown link.",
+      "Present a conversation file to the user as an openable and downloadable chat attachment. The returned path is a conversation-local file identifier, not a website URL. Refer to the delivered attachment by title; do not turn its path into a Markdown link. A view file from cloud.view.* (/views/…view.json) shows inline as its chart, group, table, stats or details view, so present every view the person should see.",
     inputSchema: CloudAiPresentInputSchema,
     outputSchema: CloudAiPresentOutputSchema,
     approval: "never",
@@ -372,8 +391,9 @@ export const createCloudAiPresentTool = () =>
     const path = toolPath(input.path, "read");
     assertConversationFilePath(path, "presented");
     const stat = await aiFileStore.stat({ conversationId: id, path });
-    if (!stat) throw new Error(`No such file: ${path}`);
-    return { path: stat.path, size: stat.size, mediaType: stat.mediaType };
+    if (!stat) throw aiMissingChatFileError(path, ctx.localToolsEnabled);
+    const view = isAiViewFile(stat) && stat.size <= CLOUD_AI_VIEW_MAX_BYTES ? await readView(id, path) : undefined;
+    return { path: stat.path, size: stat.size, mediaType: stat.mediaType, ...(view ? { view: cloudAiViewSummary(view) } : {}) };
   });
 
 type MathToken = { kind: "number"; value: number } | { kind: "ident"; name: string } | { kind: "op"; op: string };

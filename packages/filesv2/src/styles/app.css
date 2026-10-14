@@ -18,6 +18,12 @@
   flex-direction: column;
   min-height: 0;
 }
+.filesv2-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
 .filesv2-browser__header {
   display: flex;
   flex-shrink: 0;
@@ -26,7 +32,8 @@
   padding: 0.75rem 0.75rem 0.5rem;
 }
 @media (min-width: 640px) {
-  .filesv2-browser__header {
+  .filesv2-browser__header,
+  .filesv2-overview {
     padding-inline: 1rem;
   }
 }
@@ -350,6 +357,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Where a row that leads somewhere goes, such as the parent folder's name: quiet, and it alone gives way to the label. */
+.filesv2-list__detail {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filesv2-list__row--virtual .filesv2-list__name {
+  flex: none;
 }
 .filesv2-list__disclosure {
   display: inline-flex;

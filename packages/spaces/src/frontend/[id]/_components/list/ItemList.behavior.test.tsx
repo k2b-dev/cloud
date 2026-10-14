@@ -80,7 +80,10 @@ let leaving: LeavingItems<SpaceItem>;
 let refreshFails = false;
 
 /** Renders the list as the list route wires it, under a filter that shows open tasks or every task. */
-const mount = async (status: "active" | "all", options: { groupBy?: ItemGroupBy; tags?: SpaceTag[] } = {}) => {
+const mount = async (
+  status: "active" | "all",
+  options: { groupBy?: ItemGroupBy; tags?: SpaceTag[]; groupCounts?: Record<string, number> } = {},
+) => {
   dom = createDomTestHarness();
   refreshFails = false;
   fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
@@ -126,6 +129,7 @@ const mount = async (status: "active" | "all", options: { groupBy?: ItemGroupBy;
     return (
       <ItemList
         items={items()}
+        groupCounts={options.groupCounts}
         columns={columns}
         tags={options.tags ?? []}
         spaceId="Space1"
@@ -395,4 +399,17 @@ domTest("still confirms a completion with Undo when the list cannot be read agai
   undoButton()!.click();
   await settle();
   expect(requests.at(-1)?.path).toBe("/api/spaces/Space1/items/TaskB/move");
+});
+
+domTest("headers use full filtered counts, including zero, and fall back to visible rows when absent", async () => {
+  await mount("active", { groupBy: "column", groupCounts: { Col001: 57, Col002: 0 } });
+  const counts = () =>
+    [...dom.root.querySelectorAll("section")].map((section) => section.querySelector("h2")!.parentElement!.lastElementChild!.textContent);
+  expect(counts()).toEqual(["57", "0"]);
+  dispose!();
+  dispose = undefined;
+  fetchSpy?.mockRestore();
+  dom.cleanup();
+  await mount("active", { groupBy: "column" });
+  expect(counts()).toEqual(["1", "2"]);
 });

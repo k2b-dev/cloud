@@ -38,6 +38,8 @@ const identity = (id: string, options: { isDefault?: boolean; status?: SenderIde
   draftsFolderId: null,
   isDefault: options.isDefault ?? false,
   status: options.status ?? "verified",
+  statusReason: null,
+  pendingVerificationCommandId: null,
   createdAt: "2026-08-01T00:00:00.000Z",
   updatedAt: "2026-08-01T00:00:00.000Z",
 });

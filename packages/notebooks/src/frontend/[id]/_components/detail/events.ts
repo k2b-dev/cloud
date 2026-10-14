@@ -11,6 +11,8 @@ export const DETAIL_PANEL_STATE_EVENT = "notebooks.detail-panel.stateChanged";
 export const TOGGLE_RICH_MODE_EVENT = "notebooks.editor.toggleRich";
 /** Settings → editor: the personal Tab key preference changed; the editor rereads it. */
 export const TAB_KEY_PREFERENCE_EVENT = "notebooks.editor.tabKeyPreference";
+/** Panel, settings or command → reading surfaces, panel and command: the personal full-width preference changed; listeners reread it. */
+export const FULL_WIDTH_PREFERENCE_EVENT = "notebooks.view.fullWidthPreference";
 /** Editor → panel: current rich/raw mode after every flip (and on mount). */
 export const RICH_MODE_CHANGED_EVENT = "notebooks.editor.richModeChanged";
 export const TOC_UPDATE_EVENT = "notebooks.toc.updated";
@@ -50,7 +52,9 @@ export const NAMED_BLOCK_SCROLL_EVENT = "notebooks.namedBlocks.scrollTo";
 /**
  * Editor-side progressive enhancement: same-notebook note navigation updated
  * the URL + current note without a full SSR roundtrip. Detail = the new note
- * metadata plus SSR-equivalent sidebar/detail data.
+ * metadata plus SSR-equivalent sidebar/detail data, and `href`, the path and
+ * query the note opens at. The event comes before the browser history shows
+ * that address, so read the address from `href`, not from `window.location`.
  */
 export const NOTE_SOFT_NAVIGATED_EVENT = "notebooks.note.softNavigated";
 /** Editor → local workspace surfaces while the persisted projection catches up. */

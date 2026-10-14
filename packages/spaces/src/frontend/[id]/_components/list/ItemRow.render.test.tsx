@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: ItemRow } = await import("./ItemRow");
 const { createLeavingItems } = await import("../shared/leaving");
+const { LocaleProvider } = await import("@k2b/ui");
 
 const task = (overrides: Partial<SpaceItem> = {}): SpaceItem => ({
   id: "Item01",
@@ -43,25 +44,31 @@ const task = (overrides: Partial<SpaceItem> = {}): SpaceItem => ({
   ...overrides,
 });
 
-const renderRow = (item: SpaceItem, canWrite = true) =>
+const renderRow = (item: SpaceItem, canWrite = true, locale = "en") =>
   renderToString(() =>
-    createComponent(ItemRow, {
-      item,
-      spaceId: item.spaceId,
-      columns: [{ id: "Col001", spaceId: item.spaceId, name: "To Do", color: null, rank: "1024", isDone: false }],
-      tags: [],
-      isSelected: false,
-      baseUrl: "/app/spaces/Space1",
-      canWrite,
-      currentUserId: "33333333-3333-4333-8333-333333333333",
-      isListed: () => true,
-      leaving: createLeavingItems<SpaceItem>(),
-      list: () => undefined,
-      retryToast: () => {},
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return createComponent(ItemRow, {
+          item,
+          spaceId: item.spaceId,
+          columns: [{ id: "Col001", spaceId: item.spaceId, name: "To Do", color: null, rank: "1024", isDone: false }],
+          tags: [],
+          isSelected: false,
+          baseUrl: "/app/spaces/Space1",
+          dateConfig: { timeZone: "Europe/Berlin" },
+          canWrite,
+          currentUserId: "33333333-3333-4333-8333-333333333333",
+          isListed: () => true,
+          leaving: createLeavingItems<SpaceItem>(),
+          list: () => undefined,
+          retryToast: () => {},
+        });
+      },
     }),
   );
 
-test("disables overview completion while a task has active blockers", () => {
+test("disables list completion while a task has active blockers", () => {
   const html = renderRow(task({ activeBlockerCount: 1 }));
 
   expect(html).toContain('title="Complete all blocking tasks first"');
@@ -69,9 +76,30 @@ test("disables overview completion while a task has active blockers", () => {
   expect(html).toContain("Blocked by 1");
 });
 
+test.each([1, 3])("renders the German blocked-by label with %s blockers", (count) => {
+  const html = renderRow(task({ activeBlockerCount: count }), true, "de");
+
+  expect(html).toContain(`Blockiert durch ${count}`);
+  expect(html).not.toContain("Blocked by");
+});
+
 test("names a read-only task's checkbox by the task alone, so an open task is not announced as completed", () => {
   const html = renderRow(task(), false);
 
   expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*disabled[^>]*aria-label="Confirm room booking"/);
   expect(html).not.toContain("Completed:");
+});
+
+test.each([
+  ["earlier today at 09:00", "2026-10-09T07:00:00Z", false],
+  ["today in Berlin but yesterday in UTC", "2026-10-08T22:30:00Z", false],
+  ["yesterday", "2026-10-08T07:00:00Z", true],
+])("only marks a past-day deadline red: %s", (_label, deadline, overdue) => {
+  setSystemTime(new Date("2026-10-09T12:00:00Z"));
+  try {
+    const html = renderRow(task({ deadline }));
+    expect(html.includes("text-red-500")).toBe(overdue);
+  } finally {
+    setSystemTime();
+  }
 });

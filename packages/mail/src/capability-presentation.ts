@@ -411,6 +411,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             expectedRevision: "Erwartete aktuelle Revision zum Schutz vor gleichzeitigen Änderungen.",
             patch: "Nur die zu ändernden Felder; nicht übergebene Felder bleiben erhalten.",
             "patch.senderIdentityId": "ID der gewünschten Absenderidentität.",
+            "patch.signatureTemplateId": "Signaturvorlage nach dem Text oder null für keine; weglassen behält die aktuelle Auswahl.",
             "patch.to": "Vollständige neue Empfängerliste; [] leert sie.",
             "patch.to[].name": "Optionaler Anzeigename des Empfängers.",
             "patch.to[].address": "E-Mail-Adresse des Empfängers.",
@@ -636,6 +637,8 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           input: {
             mailboxId: "Exaktes mail.mailbox ID, das von Listenpostfächern oder einem eingegebenen Postfach ref zurückgegeben wird.",
             senderIdentityId: "Verifizierte Absenderidentität ID.",
+            signatureTemplateId:
+              "Signaturvorlage nach dem Text oder null für keine; weglassen verwendet die Standardsignatur des Absenders.",
             to: "Hauptempfänger.",
             "to[].name": "Optionaler Anzeigename des Empfängers.",
             "to[].address": "E-Mail-Adresse des Empfängers.",
@@ -701,6 +704,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
             draft: "Vollständiger bearbeitbarer Entwurfsinhalt, der den aktuellen Inhalt ersetzt.",
             "draft.senderIdentityId": "Verifizierte Absenderidentität ID.",
+            "draft.signatureTemplateId": "Signaturvorlage nach dem Text oder null für keine; weglassen behält die aktuelle Auswahl.",
             "draft.to": "Hauptempfänger.",
             "draft.to[].name": "Optionaler Anzeigename des Empfängers.",
             "draft.to[].address": "E-Mail-Adresse des Empfängers.",

@@ -130,7 +130,7 @@ else {
     }
   });
 
-  test("the dialog shows the QR code on fine pointers, a countdown and the copy link; cancel closes it and ends the pairing", async () => {
+  test("the dialog shows the QR code, a countdown and the copy link; cancel closes it and ends the pairing", async () => {
     const dom = createDomTestHarness();
     const copied: string[] = [];
     Object.defineProperty(dom.window.navigator, "clipboard", {
@@ -168,19 +168,61 @@ else {
     }
   });
 
-  test("touch screens get the copy link as the main action, no QR code, and the way to install the app", async () => {
+  test("touch screens show the QR code too, with the copy link as the main action and the way to install the app", async () => {
     const dom = createDomTestHarness();
     const fetch = mockFetch((method, path) => (method === "POST" && path === "/api/auth/pwa/v1/pairings" ? started() : undefined));
     const dispose = mount(dom, { fine: false });
     try {
       button(dom, "Pair a phone")!.click();
       await waitFor(() => Boolean(button(dom, "Copy link")), "copy link");
-      expect(dom.document.querySelector("dialog img")).toBeNull();
+      // A tablet or a touch laptop is scanned like a computer; the phone itself copies the link.
+      expect(dom.document.querySelector('dialog img[alt="Pairing code for the app"]')).not.toBeNull();
+      expect(dialogText(dom)).toContain("In the app, tap Scan code.");
       expect(button(dom, "Copy link")!.dataset.variant).toBe("primary");
       const install = dom.document.querySelector<HTMLAnchorElement>('dialog a[href="/pwa/"]');
       expect(install?.textContent?.trim()).toBe("Install the app");
       // Shaped like a button: a touch screen has no hover to reveal a text link.
       expect(install?.classList.contains("k2b-button")).toBeTrue();
+    } finally {
+      modules!.ui.dialogCore.close();
+      dispose();
+      fetch.restore();
+      dom.cleanup();
+    }
+  });
+
+  test("once the phone scanned the code, the dialog moves on to the code entry by itself, without waiting for a poll interval", async () => {
+    const dom = createDomTestHarness();
+    let scanned = () => {};
+    const claim = new Promise<void>((resolve) => {
+      scanned = resolve;
+    });
+    const fetch = mockFetch((method, path) => {
+      if (method === "POST" && path === "/api/auth/pwa/v1/pairings") return started();
+      if (method === "POST" && path === `/api/auth/pwa/v1/pairings/${PAIRING}/cancel`) return new Response(null, { status: 204 });
+      if (method === "GET" && path === `/api/auth/pwa/v1/pairings/${PAIRING}`)
+        // As the server does: the read of an unclaimed pairing is held until the phone claims it.
+        return claim.then(() =>
+          Response.json({
+            state: "claimed",
+            claimUntil: new Date(Date.now() + 300_000).toISOString(),
+            expiresAt: new Date(Date.now() + 600_000).toISOString(),
+            device: { name: "iPhone", platform: "ios" },
+            attemptsLeft: 3,
+          }),
+        );
+    });
+    const dispose = mount(dom);
+    try {
+      button(dom, "Pair a phone")!.click();
+      await waitFor(() => Boolean(dom.document.querySelector('dialog img[alt="Pairing code for the app"]')), "QR code");
+      // The read is on its way while the code is still on the screen.
+      await waitFor(() => fetch.calls.some((call) => call.method === "GET"), "held read");
+      expect(dom.document.querySelector("dialog .k2b-pin-input")).toBeNull();
+      scanned();
+      await waitFor(() => dialogText(dom).includes("iPhone wants to connect. Enter the code shown in the app."), "code entry");
+      expect(dom.document.querySelector("dialog img")).toBeNull();
+      expect(dom.document.activeElement).toBe(dom.document.querySelector("dialog .k2b-pin-input input"));
     } finally {
       modules!.ui.dialogCore.close();
       dispose();

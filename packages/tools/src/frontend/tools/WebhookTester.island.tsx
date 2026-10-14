@@ -664,7 +664,13 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
             </div>
           </AppWorkspace.Main>
 
-          <AppWorkspace.Detail id="webhook-request" open={Boolean(selectedLog())} width="lg" viewTransitionName="webhook-request-detail">
+          <AppWorkspace.Detail
+            id="webhook-request"
+            open={Boolean(selectedLog())}
+            onClose={() => commitRoute({ requestId: null })}
+            width="lg"
+            viewTransitionName="webhook-request-detail"
+          >
             <Show when={selectedLog()}>
               {(log) => (
                 <RequestDetail

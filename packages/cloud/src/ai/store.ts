@@ -193,6 +193,7 @@ type TurnRow = {
 };
 
 type PendingActionRow = {
+  approval_id: string | null;
   turn_id: string;
   conversation_id: string;
   call_id: string;
@@ -687,6 +688,7 @@ const pendingActionToPublicEvent = (row: PendingActionRow): AiPendingTurnAction 
       };
 
 const rowToPendingActionRecord = (row: PendingActionRow): AiPendingTurnActionRecord => ({
+  approvalId: row.approval_id ?? undefined,
   turnId: row.turn_id,
   conversationId: row.conversation_id,
   callId: row.call_id,
@@ -790,6 +792,18 @@ const messageSearchText = (message: Message): string => {
     .join("\n")
     .trim();
   return text.slice(0, SEARCH_TEXT_MAX_CHARS);
+};
+
+/**
+ * An ended turn uses no further approval: cancel its open questions and the turn's own approvals that no call used.
+ * A Studio request linked from the turn stays as decided, because the code run uses it when the call runs there.
+ */
+const cancelTurnApprovals = async (db: typeof sql, turnId: string): Promise<void> => {
+  await db`
+    UPDATE approvals.requests SET status = 'cancelled'
+    WHERE id IN (SELECT approval_id FROM ai.pending_actions WHERE turn_id = ${turnId} AND approval_id IS NOT NULL)
+      AND (status = 'pending' OR (status = 'approved' AND requester_kind = 'assistant_turn'))
+  `;
 };
 
 /**
@@ -2884,6 +2898,7 @@ export const aiConversations: AiConversationService = {
           WHERE turn_id = ${input.turnId}
             AND conversation_id = ${input.conversationId}
             AND status = 'resolved'
+            AND consumed_inline = FALSE
         ) < ${maxAttempts}
         AND (
           (
@@ -3054,6 +3069,7 @@ export const aiConversations: AiConversationService = {
         WHERE turn_id = ${input.turnId}
           AND status = 'pending'
       `;
+      await cancelTurnApprovals(tx, input.turnId);
       if (input.status !== "completed") {
         await recordTurnEnd(tx, {
           conversationId: input.conversationId,
@@ -3100,6 +3116,7 @@ export const aiConversations: AiConversationService = {
             WHERE action.turn_id = turn_row.id
               AND action.conversation_id = turn_row.conversation_id
               AND action.status = 'resolved'
+              AND action.consumed_inline = FALSE
           ) >= ${maxAttempts}
           AND (
             turn_row.status = 'queued'
@@ -3210,6 +3227,7 @@ export const aiConversations: AiConversationService = {
         WHERE turn_id = ${finalized.turnId}
           AND status = 'pending'
       `;
+      await cancelTurnApprovals(sql, finalized.turnId);
       await sql`
         UPDATE ai.turn_steers
         SET status = 'discarded', consumed_at = COALESCE(consumed_at, now())
@@ -3262,6 +3280,7 @@ export const aiConversations: AiConversationService = {
           WHERE action.turn_id = turn_row.id
             AND action.conversation_id = turn_row.conversation_id
             AND action.status = 'resolved'
+            AND action.consumed_inline = FALSE
         ) < ${maxAttempts}
         AND EXISTS (
           SELECT 1
@@ -3298,6 +3317,7 @@ export const aiConversations: AiConversationService = {
   savePendingTurnAction: async (input) => {
     await sql`
       INSERT INTO ai.pending_actions (
+        approval_id,
         turn_id,
         conversation_id,
         call_id,
@@ -3316,6 +3336,7 @@ export const aiConversations: AiConversationService = {
         resolved_at
       )
       VALUES (
+        ${input.approvalId ?? null}::uuid,
         ${input.turnId},
         ${input.conversationId},
         ${input.callId},
@@ -3335,6 +3356,7 @@ export const aiConversations: AiConversationService = {
       )
       ON CONFLICT (turn_id, call_id)
       DO UPDATE SET
+        approval_id = EXCLUDED.approval_id,
         kind = EXCLUDED.kind,
         tool_name = EXCLUDED.tool_name,
         args = EXCLUDED.args,
@@ -3370,6 +3392,17 @@ export const aiConversations: AiConversationService = {
       LIMIT 1
     `;
     return rows[0] ? rowToPendingActionRecord(rows[0]) : null;
+  },
+
+  findPendingTurnActionByApproval: async (input) => {
+    // Keep resolved questions reachable so the same response can replay through submitAiTurnAction.
+    const [row] = await sql<PendingActionRow[]>`SELECT p.* FROM ai.pending_actions p
+      JOIN ai.conversations c ON c.id=p.conversation_id JOIN approvals.requests r ON r.id=p.approval_id
+      WHERE p.approval_id=${input.approvalId}::uuid AND c.created_by_user_id=${input.ownerUserId}::uuid
+        AND r.approver_user_id=${input.ownerUserId}::uuid AND p.status IN ('pending','resolved')
+        AND r.status IN ('pending','approved','rejected','consumed') AND (r.status <> 'pending' OR r.expires_at > now())
+      ORDER BY p.created_at DESC,p.id DESC LIMIT 1`;
+    return row ? rowToPendingActionRecord(row) : null;
   },
 
   listPendingActionRecords: async (input) => {
@@ -3411,14 +3444,28 @@ export const aiConversations: AiConversationService = {
     return rows[0] ? rowToPendingActionRecord(rows[0]) : null;
   },
 
-  clearPendingTurnActions: async (input) => {
+  markPendingTurnActionConsumedInline: async (input) => {
     await sql`
       UPDATE ai.pending_actions
+      SET consumed_inline = TRUE
+      WHERE conversation_id = ${input.conversationId}
+        AND turn_id = ${input.turnId}
+        AND call_id = ${input.callId}
+        AND status = 'resolved'
+    `;
+  },
+
+  clearPendingTurnActions: async (input) => {
+    await sql`
+      WITH aborted AS (UPDATE ai.pending_actions
       SET status = 'aborted',
           resolved_at = COALESCE(resolved_at, now())
       WHERE conversation_id = ${input.conversationId}
         AND turn_id = ${input.turnId}
         AND status = 'pending'
+        RETURNING approval_id)
+      UPDATE approvals.requests SET status='cancelled'
+      WHERE id IN (SELECT approval_id FROM aborted WHERE approval_id IS NOT NULL) AND status='pending'
     `;
   },
 

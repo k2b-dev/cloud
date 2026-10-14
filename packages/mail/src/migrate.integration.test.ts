@@ -58,20 +58,28 @@ suite("mail baseline schema", () => {
     await migrate();
     await sql`DROP TABLE mail.personal_mailbox_preferences`;
     await sql`DROP INDEX mail.message_contents_hydration_claim_idx`;
+    await sql`DROP INDEX mail.sync_runs_resource_not_completed_idx`;
     await sql`ALTER TABLE mail.outbox_submissions DROP COLUMN sent_copy_pending`;
+    await sql`ALTER TABLE mail.message_contents DROP COLUMN receipt_pending`;
+    await sql`ALTER TABLE mail.drafts DROP COLUMN signature_template_id`;
     await migrate();
     const [shape] = await sql<
       {
         table_exists: boolean;
         claim_index_exists: boolean;
+        sync_run_state_index_exists: boolean;
         sent_copy_index_exists: boolean;
         sent_copy_pending: string | null;
+        receipt_pending: string | null;
+        signature_template_id: boolean;
+        signature_template_fk: boolean;
         versions: number;
       }[]
     >`
       SELECT
         to_regclass('mail.personal_mailbox_preferences') IS NOT NULL AS table_exists,
         to_regclass('mail.message_contents_hydration_claim_idx') IS NOT NULL AS claim_index_exists,
+        to_regclass('mail.sync_runs_resource_not_completed_idx') IS NOT NULL AS sync_run_state_index_exists,
         to_regclass('mail.outbox_sent_copy_pending_idx') IS NOT NULL AS sent_copy_index_exists,
         (
           SELECT pg_get_expr(d.adbin, d.adrelid)
@@ -79,14 +87,31 @@ suite("mail baseline schema", () => {
           JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
           WHERE a.attrelid = 'mail.outbox_submissions'::regclass AND a.attname = 'sent_copy_pending' AND a.attnotnull
         ) AS sent_copy_pending,
+        (
+          SELECT pg_get_expr(d.adbin, d.adrelid)
+          FROM pg_attribute a
+          JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+          WHERE a.attrelid = 'mail.message_contents'::regclass AND a.attname = 'receipt_pending' AND a.attnotnull
+        ) AS receipt_pending,
+        EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'mail.drafts'::regclass
+          AND attname = 'signature_template_id' AND NOT attisdropped AND NOT attnotnull
+          AND atttypid = 'uuid'::regtype) AS signature_template_id,
+        EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'mail.drafts'::regclass
+          AND confrelid = 'mail.compose_templates'::regclass AND confdeltype = 'n'
+          AND conkey = ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid = 'mail.drafts'::regclass
+            AND attname = 'signature_template_id' AND NOT attisdropped)]) AS signature_template_fk,
         (SELECT count(*)::int FROM mail.schema_migrations) AS versions
     `;
     // No version is recorded, so an older Mail image still starts on the upgraded database.
     expect(shape).toEqual({
       table_exists: true,
       claim_index_exists: true,
+      sync_run_state_index_exists: true,
       sent_copy_index_exists: true,
       sent_copy_pending: "false",
+      receipt_pending: "false",
+      signature_template_id: true,
+      signature_template_fk: true,
       versions: 1,
     });
   });
@@ -333,6 +358,38 @@ suite("mail baseline schema", () => {
         SELECT cache_size::text FROM pg_sequences WHERE schemaname = 'mail' AND sequencename = 'commands_queue_position_seq'
       `;
       expect({ cacheSize: sequence?.cache_size, rewritten: (await storage()) !== before }).toEqual({ cacheSize: "1", rewritten: false });
+    } finally {
+      await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox!.id}::uuid`;
+    }
+  });
+
+  test("lets a database installed before queue sender verifications as commands", async () => {
+    await migrate();
+    await sql`ALTER TABLE mail.commands DROP CONSTRAINT commands_kind_check`;
+    await sql`
+      ALTER TABLE mail.commands ADD CONSTRAINT commands_kind_check CHECK (kind = ANY (ARRAY[
+        'set_flags', 'change_message_state', 'move', 'copy', 'delete', 'create_folder', 'rename_folder', 'delete_folder',
+        'set_folder_subscription', 'send', 'sync_mailbox', 'sync_folder', 'discover_folders', 'verify_binding', 'rebuild_folder',
+        'hydrate_missing', 'rebuild_search', 'rebuild_threads', 'reconcile_effect', 'retry_command', 'cancel_command'
+      ]))
+    `;
+    const [mailbox] = await sql<{ id: string }[]>`
+      INSERT INTO mail.mailboxes (short_id, name) VALUES (${newShortId()}, 'Sender verification')
+      RETURNING id
+    `;
+    // A real promise: `expect().rejects` does not run a pending SQL query.
+    const addCommand = async (kind: string) => {
+      await sql`
+        INSERT INTO mail.commands (mailbox_id, kind, actor_kind, idempotency_key, request_hash, target, payload, access_subject_kind)
+        VALUES (${mailbox!.id}::uuid, ${kind}, 'system', ${crypto.randomUUID()}, ${"0".repeat(64)}, '{}'::jsonb, '{}'::jsonb, 'system')
+      `;
+    };
+    try {
+      await expect(addCommand("verify_sender_identity")).rejects.toThrow(/commands_kind_check/);
+      await migrate();
+      await migrate();
+      await addCommand("verify_sender_identity");
+      await expect(addCommand("unknown_kind")).rejects.toThrow(/commands_kind_check/);
     } finally {
       await sql`DELETE FROM mail.mailboxes WHERE id = ${mailbox!.id}::uuid`;
     }

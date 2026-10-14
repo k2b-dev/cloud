@@ -45,6 +45,8 @@ import {
   type AutomationActionKind,
   createMailAutomationAction,
   initialMailAutomationAction,
+  isMailAutomationMessageStateChange,
+  isMailAutomationPlacement,
   mailAutomationActionKindsFor,
 } from "./mail-automation-actions";
 import { waitForMailPageTransition } from "./mail-page-transition";
@@ -93,8 +95,9 @@ const nextMailAction = (
   actions: MailAutomationAction[],
   catalog: MailWorkflowCatalogSnapshot,
   preferred: readonly AutomationActionKind[],
+  later: MailAutomationAction[] = [],
 ): MailAutomationAction | null => {
-  const available = mailAutomationActionKindsFor({ actions, catalog });
+  const available = mailAutomationActionKindsFor({ actions, catalog, later });
   const kind = preferred.find((candidate) => available.includes(candidate));
   return kind ? createMailAutomationAction({ kind, actions, catalog }) : null;
 };
@@ -180,6 +183,25 @@ const outputReferencesResolve = (steps: readonly MailAutomationStep[], inherited
   return true;
 };
 
+/** Flag and keyword changes must reach the provider before a move takes the message out of its folder. */
+const providerOrderValid = (steps: readonly MailAutomationStep[], placedBefore: boolean): boolean => {
+  let placed = placedBefore;
+  for (const step of steps) {
+    if (step.kind === "mail_action") {
+      const placement = isMailAutomationPlacement(step.action.kind);
+      if (placed && (placement || isMailAutomationMessageStateChange(step.action.kind))) return false;
+      placed ||= placement;
+    }
+    if (step.kind === "if") {
+      if (!providerOrderValid(step.then, placed) || !providerOrderValid(step.else, placed)) return false;
+      placed ||= containsPlacement([...step.then, ...step.else]);
+    }
+  }
+  return true;
+};
+const containsPlacement = (steps: readonly MailAutomationStep[]): boolean =>
+  flattenSteps(steps).some((step) => step.kind === "mail_action" && isMailAutomationPlacement(step.action.kind));
+
 const ifStep = (
   output: AutomationOutput,
   value: string,
@@ -197,11 +219,12 @@ const classificationSteps = (
   many: boolean,
   catalog: MailWorkflowCatalogSnapshot,
   actions: MailAutomationAction[] = [],
+  later: MailAutomationAction[] = [],
   locale = browserLocale(),
 ): MailAutomationStep[] => {
   const messages = mailRemainingMessages.resolve([locale]).t;
-  const available = mailAutomationActionKindsFor({ actions, catalog });
-  const fallbackAction = nextMailAction(actions, catalog, branchActionOrder);
+  const available = mailAutomationActionKindsFor({ actions, catalog, later });
+  const fallbackAction = nextMailAction(actions, catalog, branchActionOrder, later);
   const choices = [choice(messages.important, messages.importantDescription), choice(messages.routine, messages.routineDescription)];
   const classifier: MailAutomationStep = many
     ? {
@@ -267,7 +290,7 @@ const presetSteps = (
   locale = browserLocale(),
 ): MailAutomationStep[] => {
   const messages = mailRemainingMessages.resolve([locale]).t;
-  if (preset === "ai-route") return classificationSteps(false, catalog, [], locale);
+  if (preset === "ai-route") return classificationSteps(false, catalog, [], [], locale);
   if (preset === "ai-tag") {
     const tags = (catalog.localTags ?? []).slice(0, 4);
     if (tags.length >= 2) {
@@ -466,6 +489,7 @@ function AutomationStepsEditor(props: {
   steps: MailAutomationStep[];
   workflowSteps?: MailAutomationStep[];
   availableActions: MailAutomationAction[];
+  laterActions?: MailAutomationAction[];
   availableOutputs?: AutomationOutput[];
   catalog: MailWorkflowCatalogSnapshot;
   allowEmpty?: boolean;
@@ -479,6 +503,11 @@ function AutomationStepsEditor(props: {
   const actionsBefore = (index: number): MailAutomationAction[] => [
     ...props.availableActions,
     ...flattenSteps(props.steps.slice(0, index)).flatMap((step) => (step.kind === "mail_action" ? [step.action] : [])),
+  ];
+  // Actions that run after this list position on the same path, including steps after enclosing conditions.
+  const actionsFrom = (index: number): MailAutomationAction[] => [
+    ...flattenSteps(props.steps.slice(index)).flatMap((step) => (step.kind === "mail_action" ? [step.action] : [])),
+    ...(props.laterActions ?? []),
   ];
   const outputsBefore = (index: number): AutomationOutput[] => [
     ...(props.availableOutputs ?? []),
@@ -508,7 +537,13 @@ function AutomationStepsEditor(props: {
     if (destination < 0 || destination >= props.steps.length) return false;
     const next = [...props.steps];
     [next[index], next[destination]] = [next[destination]!, next[index]!];
-    return outputReferencesResolve(next, new Set((props.availableOutputs ?? []).map((output) => output.id)));
+    return (
+      outputReferencesResolve(next, new Set((props.availableOutputs ?? []).map((output) => output.id))) &&
+      providerOrderValid(
+        next,
+        props.availableActions.some((action) => isMailAutomationPlacement(action.kind)),
+      )
+    );
   };
   const move = (index: number, offset: -1 | 1) => {
     const destination = index + offset;
@@ -544,14 +579,21 @@ function AutomationStepsEditor(props: {
       branchDepth: shape.branchDepth ?? 0,
     }) === null;
   const append = (step: MailAutomationStep) => appendMany([step]);
-  const appendMany = (steps: MailAutomationStep[]) => {
+  const appendMany = (steps: MailAutomationStep[]) => insertAt(props.steps.length, steps);
+  const insertAt = (index: number, steps: MailAutomationStep[]) => {
     const issue = capacityIssue(steps);
     if (issue) {
       void prompts.error(issue);
       return;
     }
     steps.forEach((step) => expand(step.id));
-    props.onChange([...props.steps, ...steps]);
+    props.onChange([...props.steps.slice(0, index), ...steps, ...props.steps.slice(index)]);
+  };
+  // A flag change added after a move in this list goes in front of the step that moves the message.
+  const mailActionInsertIndex = (kind: AutomationActionKind): number => {
+    if (!isMailAutomationMessageStateChange(kind)) return props.steps.length;
+    const placementIndex = props.steps.findIndex((step) => containsPlacement([step]));
+    return placementIndex >= 0 ? placementIndex : props.steps.length;
   };
   const insertAfterOutput = (index: number, sourceStepId: string, step: MailAutomationStep) => {
     const issue = capacityIssue([step]);
@@ -699,21 +741,29 @@ function AutomationStepsEditor(props: {
     const actions = actionsBefore(props.steps.length);
     const outputs = outputsBefore(props.steps.length);
     const latestOutput = outputs.at(-1);
-    const availableMailActions = mailAutomationActionKindsFor({ actions, catalog: props.catalog });
     const replyDraft = replyDraftStep(props.catalog);
     const remaining = (props.maxSteps ?? 20) - props.steps.length;
-    const classification = classificationSteps(false, props.catalog, actions, locale());
-    const multiClassification = classificationSteps(true, props.catalog, actions, locale());
+    // Classifier branches are appended here, so the provider actions after enclosing conditions follow them.
+    const later = actionsFrom(props.steps.length);
+    const classification = classificationSteps(false, props.catalog, actions, later, locale());
+    const multiClassification = classificationSteps(true, props.catalog, actions, later, locale());
     return [
       ...directActionOrder
-        .filter((kind) => availableMailActions.includes(kind))
+        .filter((kind) =>
+          mailAutomationActionKindsFor({
+            actions: actionsBefore(mailActionInsertIndex(kind)),
+            catalog: props.catalog,
+            later: actionsFrom(mailActionInsertIndex(kind)),
+          }).includes(kind),
+        )
         .filter(() => canInsertShape({ localSteps: 1 }))
         .map((kind) => {
-          const action = createMailAutomationAction({ kind, actions, catalog: props.catalog });
+          const index = mailActionInsertIndex(kind);
+          const action = createMailAutomationAction({ kind, actions: actionsBefore(index), catalog: props.catalog });
           return {
             label: `${messages().mailAction} · ${messages().automationAction({ kind })}`,
             icon: "ti ti-mail-forward",
-            action: () => action && append(mailActionStep(action)),
+            action: () => action && insertAt(index, [mailActionStep(action)]),
           };
         }),
       ...(canInsertShape({ localSteps: 1 })
@@ -869,6 +919,7 @@ function AutomationStepsEditor(props: {
                     <MailAutomationActionEditor
                       action={(step as Extract<MailAutomationStep, { kind: "mail_action" }>).action}
                       otherActions={actions()}
+                      laterActions={actionsFrom(index() + 1)}
                       catalog={props.catalog}
                       onChange={(action) => replace(index(), { ...step, kind: "mail_action", action })}
                     />
@@ -1253,6 +1304,7 @@ function AutomationStepsEditor(props: {
                               steps={conditionStep.then}
                               workflowSteps={props.workflowSteps ?? props.steps}
                               availableActions={actions()}
+                              laterActions={actionsFrom(index() + 1)}
                               availableOutputs={outputs()}
                               catalog={props.catalog}
                               labelContext={`${context}, ${messages().then}`}
@@ -1269,6 +1321,7 @@ function AutomationStepsEditor(props: {
                               steps={conditionStep.else}
                               workflowSteps={props.workflowSteps ?? props.steps}
                               availableActions={actions()}
+                              laterActions={actionsFrom(index() + 1)}
                               availableOutputs={outputs()}
                               catalog={props.catalog}
                               labelContext={`${context}, ${messages().else}`}
@@ -1773,29 +1826,42 @@ export default function MailIncomingAutomationSettings(props: {
     onError: (error) => prompts.error(error.message),
   });
 
-  const startBackfill = mutation.create<IncomingAutomationBackfill | null, IncomingAutomation, { operationId: string }>({
+  const startBackfill = mutation.create<
+    IncomingAutomationBackfill | null,
+    { automation: IncomingAutomation; retryFailed: boolean },
+    { operationId: string }
+  >({
     onBefore: () => ({ operationId: crypto.randomUUID() }),
-    mutation: async (automation, { abortSignal, operationId }) => {
+    mutation: async ({ automation, retryFailed }, { abortSignal, operationId }) => {
       if (hasAi(automation.steps)) throw new Error(messages().aiFutureOnly);
-      const previewResponse = await apiClient.mailboxes[":mailboxId"]["incoming-automations"].preview.$post(
-        { param: { mailboxId: props.mailboxId }, json: { scope: automation.scope } },
-        { init: { signal: abortSignal } },
-      );
-      if (!previewResponse.ok) throw new Error(await readApiError(previewResponse, messages().couldNotPreviewExisting));
-      const preview = await previewResponse.json();
-      if (preview.messageCount === 0) {
-        toast(messages().noExistingMatches, { title: messages().nothingToBackfill });
-        return null;
+      if (retryFailed) {
+        // A retry takes only messages whose last run failed or was canceled, so the scope preview count does not apply.
+        const confirmed = await prompts.confirm(messages().retryFailedConfirmation, {
+          title: messages().retryFailedTitle,
+          confirmText: messages().startRetry,
+        });
+        if (!confirmed || abortSignal.aborted) return null;
+      } else {
+        const previewResponse = await apiClient.mailboxes[":mailboxId"]["incoming-automations"].preview.$post(
+          { param: { mailboxId: props.mailboxId }, json: { scope: automation.scope } },
+          { init: { signal: abortSignal } },
+        );
+        if (!previewResponse.ok) throw new Error(await readApiError(previewResponse, messages().couldNotPreviewExisting));
+        const preview = await previewResponse.json();
+        if (preview.messageCount === 0) {
+          toast(messages().noExistingMatches, { title: messages().nothingToBackfill });
+          return null;
+        }
+        const confirmed = await prompts.confirm(messages().backfillConfirmation({ count: preview.messageCount }), {
+          title: messages().applyExistingMail,
+          confirmText: messages().startBackfill,
+        });
+        if (!confirmed || abortSignal.aborted) return null;
       }
-      const confirmed = await prompts.confirm(messages().backfillConfirmation({ count: preview.messageCount }), {
-        title: messages().applyExistingMail,
-        confirmText: messages().startBackfill,
-      });
-      if (!confirmed || abortSignal.aborted) return null;
       const response = await apiClient.mailboxes[":mailboxId"]["incoming-automations"][":automationId"].backfills.$post(
         {
           param: { mailboxId: props.mailboxId, automationId: automation.id },
-          json: { operationId, expectedRevision: automation.revision },
+          json: { operationId, expectedRevision: automation.revision, ...(retryFailed ? { retryFailed: true } : {}) },
         },
         { init: { signal: abortSignal } },
       );
@@ -1929,25 +1995,32 @@ export default function MailIncomingAutomationSettings(props: {
             if (!backfill) return <span class="text-dimmed">{messages().notRun}</span>;
             const accepted = backfill.alreadyAcceptedCount + backfill.newlyAcceptedCount;
             if (activeBackfillStates.has(backfill.state)) {
+              const progress = { accepted: formatNumber(accepted), total: formatNumber(backfill.candidateCount) };
               return (
                 <StatusBadge
                   tone="running"
-                  label={messages().backfillProgress({ accepted: formatNumber(accepted), total: formatNumber(backfill.candidateCount) })}
+                  label={backfill.retryFailed ? messages().retryProgress(progress) : messages().backfillProgress(progress)}
                 />
               );
             }
-            if (backfill.state === "completed")
-              return <StatusBadge tone="ok" label={messages().completedNew({ count: formatNumber(backfill.newlyAcceptedCount) })} />;
-            if (backfill.state === "limited")
+            if (backfill.state === "completed") {
+              const count = formatNumber(backfill.newlyAcceptedCount);
+              return (
+                <StatusBadge
+                  tone="ok"
+                  label={backfill.retryFailed ? messages().retryCompleted({ count }) : messages().completedNew({ count })}
+                />
+              );
+            }
+            if (backfill.state === "limited") {
+              const progress = { count: formatNumber(backfill.newlyAcceptedCount), remaining: formatNumber(backfill.remainingCount) };
               return (
                 <StatusBadge
                   tone="warning"
-                  label={messages().limitedNew({
-                    count: formatNumber(backfill.newlyAcceptedCount),
-                    remaining: formatNumber(backfill.remainingCount),
-                  })}
+                  label={backfill.retryFailed ? messages().retryLimited(progress) : messages().limitedNew(progress)}
                 />
               );
+            }
             if (backfill.state === "failed") return <StatusBadge tone="warning" label={messages().failed} />;
             return <StatusBadge tone="neutral" label={messages().canceled} />;
           }
@@ -1976,11 +2049,19 @@ export default function MailIncomingAutomationSettings(props: {
                     : []),
                   ...(row.enabled && !hasAi(row.steps) && !active
                     ? [
-                        {
-                          label: backfill || row.latestBackfillOperationId ? messages().runBackfillAgain : messages().applyToExistingMail,
-                          icon: "ti ti-database-import",
-                          action: () => startBackfill.mutate(row),
-                        },
+                        // Continue a retry with another retry: a normal backfill skips messages an earlier backfill handed over, even failed ones.
+                        backfill?.retryFailed
+                          ? {
+                              label: messages().retryFailedMessages,
+                              icon: "ti ti-refresh",
+                              action: () => startBackfill.mutate({ automation: row, retryFailed: true }),
+                            }
+                          : {
+                              label:
+                                backfill || row.latestBackfillOperationId ? messages().runBackfillAgain : messages().applyToExistingMail,
+                              icon: "ti ti-database-import",
+                              action: () => startBackfill.mutate({ automation: row, retryFailed: false }),
+                            },
                       ]
                     : []),
                   ...(backfill && active

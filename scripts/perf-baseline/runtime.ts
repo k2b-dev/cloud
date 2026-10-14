@@ -83,7 +83,7 @@ export async function command(
 
 export function runtimeImage(dockerfile: string) {
   const image = /^FROM\s+(\S+)\s+AS\s+runtime\s*$/im.exec(dockerfile)?.[1];
-  if (!image || !/^oven\/bun:[^\s]+@sha256:[a-f0-9]{64}$/.test(image))
+  if (!image || !/^(?:ghcr\.io\/k2b-dev\/mirror\/)?oven\/bun:[^\s]+@sha256:[a-f0-9]{64}$/.test(image))
     throw new Error("Dockerfile runtime stage must pin the Bun image digest");
   return image;
 }

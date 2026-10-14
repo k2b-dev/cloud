@@ -13,6 +13,7 @@ import { defaultFilter } from "../filter/types";
 import { buildSpacesItemLinkBaseUrl } from "../workspace/workspace-types";
 import { calendarPersonColor } from "./colors";
 import { parseCalendarRoute } from "./filter";
+import { calendarWindow } from "./range";
 
 // Whether a color choice moves anything is a layout question, so the calendar route renders on the server and then
 // runs its real island bundle in a real browser, as the workspace page does. The island bundle resolves Solid from
@@ -116,8 +117,7 @@ type Scenario = { locale: "en" | "de"; view: "week" | "month"; colorBy?: string;
 const query = (scenario: Scenario) =>
   scenario.search ?? `?view=calendar&cv=${scenario.view}&cd=2026-10-12${scenario.colorBy ? `&ccolor=${scenario.colorBy}` : ""}`;
 /** The route as the workspace page renders it for a URL, with the island's base URL from the page's own builder. */
-const serverBody = (url: URL) => {
-  const locale = url.searchParams.get("lang") === "de" ? "de" : "en";
+const serverBody = (url: URL, locale: "en" | "de") => {
   const dateConfig = { locale, timeZone: "UTC", weekStartsOn: 1 } as const;
   const route = parseCalendarRoute(url, dateConfig);
   // The view the route itself resolves, so an old link shows the fallback the page gives it.
@@ -138,7 +138,15 @@ const serverBody = (url: URL) => {
       }),
       columns,
       tags,
-      initialState: { view, date: route.date, filter: route.filter, items, weather: {}, tray: null },
+      initialState: {
+        view,
+        date: route.date,
+        filter: route.filter,
+        range: calendarWindow(view === "year" ? "month" : view, new Date(route.date), dateConfig),
+        items,
+        weather: {},
+        tray: null,
+      },
       selectedItemId: url.searchParams.get("item") ?? "",
       dateConfig,
       canWrite: true,
@@ -171,8 +179,10 @@ beforeAll(async () => {
         return Response.json({ message: "The color choice must not load calendar data" }, { status: 500 });
       }
       if (url.pathname !== "/app/spaces/Space1") return new Response("Not found", { status: 404 });
-      // The page renders what its URL asks for, as the workspace page does on a reload.
-      return new Response(pageHtml(url, url.searchParams.get("theme") === "dark" ? "dark" : "light"), {
+      // The page renders what its URL asks for, as the workspace page does on a reload. Locale and theme travel in
+      // headers, so the page URL is the real route that the calendar compares its own links with.
+      const locale = request.headers.get("x-locale") === "de" ? "de" : "en";
+      return new Response(pageHtml(url, locale, request.headers.get("x-theme") === "dark" ? "dark" : "light"), {
         headers: { "content-type": "text/html; charset=utf-8" },
       });
     },
@@ -185,12 +195,12 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-const pageHtml = (url: URL, theme: "light" | "dark") =>
-  `<!doctype html><html lang="${url.searchParams.get("lang") === "de" ? "de" : "en"}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
+const pageHtml = (url: URL, locale: "en" | "de", theme: "light" | "dark") =>
+  `<!doctype html><html lang="${locale}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
   `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style>` +
   "<style>solid-client,solid-island{display:contents}</style></head>" +
   // The workspace main area: a padded flex column the route fills.
-  `<body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;padding:var(--ui-space-shell)">${serverBody(url)}</main>` +
+  `<body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box;padding:var(--ui-space-shell)">${serverBody(url, locale)}</main>` +
   `<script type="module">document.querySelectorAll('solid-island').forEach((e)=>import('/_ssr/'+e.dataset.id+'.js'))</script></body></html>`;
 
 type View = { width: number; height: number; touch: boolean };
@@ -203,9 +213,10 @@ const open = async (view: View, scenario: Scenario, theme: "light" | "dark" = "l
     isMobile: view.touch,
     hasTouch: view.touch,
     reducedMotion: "reduce",
+    extraHTTPHeaders: { "x-locale": scenario.locale, "x-theme": theme },
   });
   const page = await context.newPage();
-  await page.goto(`${server.url}app/spaces/Space1${query(scenario)}&lang=${scenario.locale}&theme=${theme}`);
+  await page.goto(`${server.url}app/spaces/Space1${query(scenario)}`);
   await hydrated(page);
   return page;
 };
@@ -237,22 +248,20 @@ const layout = (page: Page) =>
     };
   });
 /**
- * The layout once the day and week views have scrolled to the working hours, at once under the reduced motion these
- * pages ask for. A loaded engine can run that scroll late, so two equal samples prove nothing; the scroll is done
- * when the first working hour sits at the top of the time grid, or the grid cannot scroll further.
+ * The layout once the week view took its first place: it puts the shown week at the start of its strip as it mounts,
+ * at once under the reduced motion these pages ask for. A loaded engine can run that late, so two equal samples prove
+ * nothing; the place is taken when the strip has scrolled to the week.
  */
 const settledLayout = async (page: Page) => {
   await page.waitForFunction(
     () => {
-      const grid = window.document.querySelector<HTMLElement>(".k2b-calendar-time-grid__scroll");
-      const start = window.document.querySelector(".k2b-calendar-time-grid__hour:not([data-outside-business])");
-      if (!grid || !start) return false;
-      const atStart = Math.abs(start.getBoundingClientRect().top - grid.getBoundingClientRect().top) <= 1;
-      return atStart || grid.scrollTop >= grid.scrollHeight - grid.clientHeight - 1;
+      const strip = window.document.querySelector<HTMLElement>(".k2b-calendar-week__scroll");
+      return Boolean(strip && strip.scrollLeft > 0);
     },
     undefined,
     { timeout: 15_000 },
   );
+  await settle(page);
   return layout(page);
 };
 type Look = { accent: string; fill: string; marker: boolean; flag: boolean; dots: number };

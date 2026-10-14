@@ -5,7 +5,7 @@ section: Frontend
 order: 800
 description: Keep server authority while adding the smallest useful browser interaction to a Cloud application.
 tags: [frontend, ssr, solidjs]
-updated: 2026-10-04
+updated: 2026-10-11
 ---
 
 # Frontend
@@ -19,7 +19,7 @@ current through application APIs.
 
 This boundary lets an independently deployed app participate in Cloud's shared
 shell without becoming a client-only application or importing another app's
-frontend. A reload remains a complete, authorized rendering path; hydration,
+frontend. A reload remains a complete, authorized rendering path; islands,
 enhanced navigation, mutations, and realtime updates improve that path.
 
 ## Choose the page shape
@@ -29,7 +29,7 @@ enhanced navigation, mutations, and realtime updates improve that path.
 | Authorized route and initial result | Application server | [SSR pages and routing](/en/docs/frontend/ssr-pages-and-routing) |
 | Cloud chrome, breadcrumbs, and registered navigation | Shared layout and live app registry | [Layout and navigation](/en/docs/frontend/layout-and-navigation) |
 | Content geometry inside the page | Application using shared shells | [Application shells](/en/docs/frontend/application-shells) |
-| Local browser interaction | The smallest hydrated application island | [Islands and hydration](/en/docs/frontend/islands-and-hydration) |
+| Local browser interaction | The smallest interactive application island | [Islands](/en/docs/frontend/islands-and-hydration) |
 | Phone pages in the installable mobile app (preview) | Application, framed by `PwaLayout` | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages) |
 
 Use the URL for filters, sorting, pagination, selection, and the active view.

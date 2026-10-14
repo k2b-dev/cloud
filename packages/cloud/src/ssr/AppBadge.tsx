@@ -4,10 +4,10 @@ import { appBadgeCount } from "./app-badges";
 import { railMessages } from "./rail-messages";
 
 /** What a screen reader hears after the app name; empty without a count. Says no more than the "99+" shown. */
-export const useAppBadgeDescription = (endpoint: () => string | undefined) => {
+export const useAppBadgeDescription = (input: () => { endpoint?: string; appId?: string }) => {
   const locale = useLocale();
   return () => {
-    const count = appBadgeCount(endpoint());
+    const count = appBadgeCount(input());
     const t = railMessages.resolve([locale()]).t;
     return count > 99 ? t.badgeMany : count > 0 ? t.badge({ count }) : "";
   };
@@ -18,8 +18,8 @@ export const useAppBadgeDescription = (endpoint: () => string | undefined) => {
  * takes layout space, so appearing, growing to "99+", or clearing moves
  * nothing. Decorative: the link carries the description.
  */
-export function AppBadge(props: { endpoint?: string }) {
-  const count = () => appBadgeCount(props.endpoint);
+export function AppBadge(props: { endpoint?: string; appId?: string }) {
+  const count = () => appBadgeCount(props);
   return (
     <Show when={count() > 0}>
       <span class="cloud-app-badge" aria-hidden="true">

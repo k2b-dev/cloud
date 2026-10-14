@@ -51,6 +51,7 @@ import { waitForMailProviderSlot } from "./provider-pacer";
 import { notifySendWaitingForLogin } from "./send-login-notifications";
 import { loadSenderIdentityTransportRuntimeById } from "./sender-identity-transports";
 import { enqueueFolderSync } from "./sync-runtime";
+import { normalizeWorkflowKeywords } from "./workflow-data";
 import { publishMailWorkflowDependency } from "./workflow-dependencies";
 
 const log = logger("mail:commands");
@@ -263,6 +264,52 @@ const remoteTarget = (message: DbRemoteMessage): RemoteMutationTarget => ({
   uid: Number(message.uid),
 });
 
+type CommandStateTarget = {
+  id: string;
+  mailbox_id: string;
+  actor_kind: string;
+  actor_id: string | null;
+  transport_metadata: JsonRecord | string;
+};
+
+export const recordCommandState = async (
+  tx: typeof sql,
+  command: CommandStateTarget,
+  state: CommandState,
+  code: string | null,
+): Promise<void> => {
+  if (state === "failed" || state === "cancelled") {
+    const projection = localStateProjectionSchema.safeParse(parseJsonRecord(command.transport_metadata).localStateProjection);
+    if (projection.success) await rollbackLocalStateProjection(tx, { id: command.id, projection: projection.data });
+  }
+  await tx`
+    INSERT INTO mail.activity_events (
+      mailbox_id, command_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata
+    )
+    VALUES (
+      ${command.mailbox_id}::uuid,
+      ${command.id}::uuid,
+      ${command.actor_kind},
+      ${command.actor_id}::uuid,
+      'command.execute',
+      ${state === "confirmed" || state === "reconciled" ? "confirmed" : state === "ambiguous" ? "requested" : "failed"},
+      'command',
+      ${command.id}::uuid,
+      ${{ state, code }}::jsonb
+    )
+  `;
+};
+
+export const notifyCommandState = async (command: Pick<CommandStateTarget, "id" | "mailbox_id">, state: CommandState): Promise<void> => {
+  mailLive.wake();
+  if (["confirmed", "failed", "cancelled", "reconciled", "needs_attention"].includes(state)) {
+    await publishMailWorkflowDependency({
+      mailboxId: command.mailbox_id,
+      dependency: { kind: "mail.command", key: command.id },
+    });
+  }
+};
+
 const commandState = async (
   command: Pick<DbCommandExecution, "id" | "attempt">,
   state: CommandState,
@@ -293,36 +340,11 @@ const commandState = async (
       RETURNING mailbox_id, actor_kind, actor_id, transport_metadata
     `;
     if (!updated) return null;
-    if (state === "failed" || state === "cancelled") {
-      const projection = localStateProjectionSchema.safeParse(parseJsonRecord(updated.transport_metadata).localStateProjection);
-      if (projection.success) await rollbackLocalStateProjection(tx, { id: command.id, projection: projection.data });
-    }
-    await tx`
-      INSERT INTO mail.activity_events (
-        mailbox_id, command_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata
-      )
-      VALUES (
-        ${updated.mailbox_id}::uuid,
-        ${command.id}::uuid,
-        ${updated.actor_kind},
-        ${updated.actor_id}::uuid,
-        'command.execute',
-        ${state === "confirmed" || state === "reconciled" ? "confirmed" : state === "ambiguous" ? "requested" : "failed"},
-        'command',
-        ${command.id}::uuid,
-        ${{ state, code }}::jsonb
-      )
-    `;
+    await recordCommandState(tx, { id: command.id, ...updated }, state, code);
     return updated;
   });
   if (!updated) return false;
-  mailLive.wake();
-  if (["confirmed", "failed", "cancelled", "reconciled", "needs_attention"].includes(state)) {
-    await publishMailWorkflowDependency({
-      mailboxId: updated.mailbox_id,
-      dependency: { kind: "mail.command", key: command.id },
-    });
-  }
+  await notifyCommandState({ id: command.id, ...updated }, state);
   return true;
 };
 
@@ -437,6 +459,7 @@ const updateMutationProjection = async (params: {
   destinationUid?: number | null;
   flags?: string[];
   keywords?: string[];
+  modseq?: string | null;
 }): Promise<boolean> => {
   return sql.begin(async (tx) => {
     const [active] = await tx<{ id: string }[]>`
@@ -460,6 +483,14 @@ const updateMutationProjection = async (params: {
         UPDATE mail.message_placements
         SET keywords = ${toPgTextArray(params.keywords)}::text[], updated_at = now()
         WHERE remote_message_ref_id = ${params.source.remote_message_ref_id}::uuid
+      `;
+    }
+    if (params.modseq != null) {
+      await tx`
+        UPDATE mail.remote_message_refs
+        SET modseq = ${params.modseq}::numeric
+        WHERE id = ${params.source.remote_message_ref_id}::uuid
+          AND (modseq IS NULL OR modseq < ${params.modseq}::numeric)
       `;
     }
     let destinationProjected = false;
@@ -797,7 +828,8 @@ const normalizedStandardFlags = (flags: readonly string[]): string[] => {
   return [...new Set(flags.map((flag) => standard[flag.toLowerCase()]).filter((flag): flag is string => Boolean(flag)))].sort();
 };
 
-const normalizedKeywords = (keywords: readonly string[]): string[] => [...new Set(keywords.map((keyword) => keyword.toLowerCase()))].sort();
+const normalizedKeywords = (keywords: readonly string[]): string[] =>
+  [...new Set(normalizeWorkflowKeywords(keywords).map((keyword) => keyword.toLowerCase()))].sort();
 
 const assertRemoteMessagePrecondition = (current: RemoteMessageState, expected?: RemoteMessagePrecondition): void => {
   if (!expected) return;
@@ -835,7 +867,8 @@ const executeSetFlagsMutation = async (params: {
     throw Object.assign(new Error("Provider did not confirm the requested flags"), { code: "FLAG_RECONCILIATION_FAILED" });
   }
   await persistMutationOutcome(async () => {
-    if (!(await updateMutationProjection({ command: params.command, source: params.source, flags: expected }))) return;
+    if (!(await updateMutationProjection({ command: params.command, source: params.source, flags: expected, modseq: verified.modseq })))
+      return;
     await commandState(params.command, "confirmed");
   });
 };
@@ -860,7 +893,15 @@ const executeMessageStateMutation = async (params: {
     throw Object.assign(new Error("Provider did not confirm the requested message state"), { code: "STATE_RECONCILIATION_FAILED" });
   }
   await persistMutationOutcome(async () => {
-    if (!(await updateMutationProjection({ command: params.command, source: params.source, flags: state.flags, keywords: state.keywords })))
+    if (
+      !(await updateMutationProjection({
+        command: params.command,
+        source: params.source,
+        flags: state.flags,
+        keywords: state.keywords,
+        modseq: state.modseq,
+      }))
+    )
       return;
     await commandState(params.command, "confirmed");
   });
@@ -991,29 +1032,28 @@ const assertCommandKeepProtection = async (command: DbCommandExecution): Promise
   if (!result.ok) throw Object.assign(new Error(result.error.message), result.error);
 };
 
+/** Checks a fresh move's access and keep protection and loads its message, before it joins a set. */
+const prepareFreshMove = async (command: DbCommandExecution): Promise<FreshMove> => {
+  if (!(await commandStillAuthorized(command, "write")))
+    throw commandError("Mailbox write access was revoked before execution", "ACCESS_REVOKED");
+  await assertCommandKeepProtection(command);
+  const target = sourceTargetSchema.parse(parseJsonRecord(command.target));
+  const source = await loadRemoteMessage(command, target);
+  requireRights(source.effective_rights, ["read", "move"]);
+  return { command, target, source };
+};
+
 /**
- * Moves the messages of fresh move commands that share their source and destination folder over
+ * Moves the messages of prepared fresh moves that share their source and destination folder over
  * one session: one UIDNEXT of the destination as the baseline, one FETCH to check the messages,
  * one UID MOVE, and one FETCH for the messages that stayed in the source. Each command keeps its
- * own authorization check, effect marker, and outcome, as if it ran alone. A command whose own step
- * fails goes to `fail` and the others go on; a failure of the whole set, such as a connection lost
- * during MOVE, is thrown.
+ * own effect marker and outcome, as if it ran alone. A command whose own step fails goes to `fail`
+ * and the others go on; a failure of the whole set, such as a connection lost during MOVE, is thrown.
  */
-const executeFreshMoves = async (commands: DbCommandExecution[], assertLeaseActive: LeaseAssertion, fail: MoveFailure): Promise<void> => {
-  const authorized: DbCommandExecution[] = [];
-  for (const command of commands) {
-    try {
-      if (!(await commandStillAuthorized(command, "write")))
-        throw commandError("Mailbox write access was revoked before execution", "ACCESS_REVOKED");
-      await assertCommandKeepProtection(command);
-      authorized.push(command);
-    } catch (error) {
-      await fail(command, error);
-    }
-  }
-  const [first] = authorized;
-  if (!first) return;
-  const binding = await loadPinnedBinding(first);
+const executeFreshMoves = async (moves: FreshMove[], assertLeaseActive: LeaseAssertion, fail: MoveFailure): Promise<void> => {
+  const [head] = moves;
+  if (!head) return;
+  const binding = await loadPinnedBinding(head.command);
   const runtime = await loadPinnedRuntime(binding);
   // Without MOVE or UIDPLUS the provider can only copy and mark the source deleted, which leaves the
   // message in both folders. Refuse before any provider effect instead of reporting a partial move.
@@ -1021,19 +1061,6 @@ const executeFreshMoves = async (commands: DbCommandExecution[], assertLeaseActi
   if (capabilities.move !== true && capabilities.uidplus !== true) {
     throw commandError("Provider cannot move a message without losing the source", "SAFE_MOVE_UNSUPPORTED");
   }
-  const moves: FreshMove[] = [];
-  for (const command of authorized) {
-    try {
-      const target = sourceTargetSchema.parse(parseJsonRecord(command.target));
-      const source = await loadRemoteMessage(command, target);
-      requireRights(source.effective_rights, ["read", "move"]);
-      moves.push({ command, target, source });
-    } catch (error) {
-      await fail(command, error);
-    }
-  }
-  const [head] = moves;
-  if (!head) return;
   if (!head.target.destinationFolderId) throw commandError("Destination folder is missing", "INVALID_COMMAND_TARGET");
   const destination = await loadDestinationFolder(head.command, head.target.destinationFolderId);
   requireRights(destination.effective_rights, ["insert"]);
@@ -1136,7 +1163,7 @@ const moveMessageSet = async (params: {
 const executeFreshMutation = async (command: DbCommandExecution, assertLeaseActive: LeaseAssertion): Promise<void> => {
   // A move runs as a set of one, exactly like the moves the mailbox's job runs together.
   if (command.kind === "move") {
-    return executeFreshMoves([command], assertLeaseActive, async (_command, error) => {
+    return executeFreshMoves([await prepareFreshMove(command)], assertLeaseActive, async (_command, error) => {
       throw error;
     });
   }
@@ -1233,7 +1260,8 @@ const reconcileSetFlagsMutation = async (params: {
   const state = await imapSmtpConnector.getMessageState(params.runtime, params.target);
   const matches = state.exists && JSON.stringify([...state.flags].sort()) === JSON.stringify([...payload.flags].sort());
   if (matches) {
-    if (!(await updateMutationProjection({ command: params.command, source: params.source, flags: payload.flags }))) return;
+    if (!(await updateMutationProjection({ command: params.command, source: params.source, flags: payload.flags, modseq: state.modseq })))
+      return;
     await commandState(params.command, "reconciled");
     return;
   }
@@ -1253,7 +1281,15 @@ const reconcileMessageStateMutation = async (params: {
   const change = remoteStateChange(messageStatePayloadSchema.parse(parseJsonRecord(params.command.payload)));
   const state = await imapSmtpConnector.getMessageState(params.runtime, params.target);
   if (stateChangeMatches(state, change)) {
-    if (!(await updateMutationProjection({ command: params.command, source: params.source, flags: state.flags, keywords: state.keywords })))
+    if (
+      !(await updateMutationProjection({
+        command: params.command,
+        source: params.source,
+        flags: state.flags,
+        keywords: state.keywords,
+        modseq: state.modseq,
+      }))
+    )
       return;
     await commandState(params.command, "reconciled");
     return;
@@ -3840,12 +3876,21 @@ const nextMailboxMutation = async (mailboxId: string): Promise<{ id: string; wai
 
 /**
  * Moves one turn carries at most. Their UID set takes at most 550 octets, ten digits and a comma
- * per UID, far inside the 8,192-octet command line RFC 7162 asks clients to stay under. The tighter
- * bound is the provider lease: each move still claims, marks, and settles its own command row while
- * the set holds the lease, a few database round trips each, so 50 moves keep one turn to about two
- * seconds. That is how long a folder sync that starts waiting during the turn waits.
+ * per UID, far inside the 8,192-octet command line RFC 7162 asks clients to stay under. How long the
+ * turn holds the provider lease is bounded by `MOVE_SET_ADMISSION_MS`.
  */
 const MOVE_SET_LIMIT = 50;
+
+/**
+ * How long a move set takes in moves once it holds the provider lease. A set should give the
+ * provider back after about two seconds, the longest a folder sync that starts waiting during it
+ * waits. After the cut, each taken move still marks its effect and settles after the one UID MOVE;
+ * under load that measured two to four times what taking it in cost (about 40 ms against 12-16 ms
+ * per move), so a fifth of the two seconds keeps the whole turn near two. While taking a move in
+ * costs less than 8 ms, all 50 fit. This bounds the turn when the per-move statements slow down
+ * together; a statement that is slow only when a move settles still costs once per taken move.
+ */
+export const MOVE_SET_ADMISSION_MS = 2_000 / 5;
 
 /**
  * The commands that move together with `headId`, the mailbox's next command, in queue order:
@@ -3914,9 +3959,10 @@ const pendingMoveSet = async (mailboxId: string, headId: string): Promise<string
 /**
  * Runs a set of fresh moves under one provider lease and over one session. Each move is claimed and
  * settled as its own command, so idempotency, activity, and reconciliation stay those of one move.
+ * The set stops taking in moves after `MOVE_SET_ADMISSION_MS`, so it holds the lease about two seconds.
  */
 const runMoveSet = async (commandIds: string[], jobHeartbeat?: () => Promise<void>): Promise<LeaseOutcome> => {
-  const [headId, ...restIds] = commandIds;
+  const [headId] = commandIds;
   const head = headId ? await claimCommand(headId, ["move"], ["queued"]) : null;
   if (!head) return RAN;
   // The others are claimed once the set holds the provider lease, so a busy lease puts back one command, not the set.
@@ -3929,24 +3975,31 @@ const runMoveSet = async (commandIds: string[], jobHeartbeat?: () => Promise<voi
     try {
       const binding = await loadPinnedBinding(head.command);
       const outcome = await withMutationLease(head.command, binding.remote_resource_id, assertJobLeaseActive, async (assertLeaseActive) => {
-        for (const commandId of restIds) {
-          const member = await claimCommand(commandId, ["move"], ["queued"]);
-          if (member) claimed.push(member);
-        }
-        // An earlier change of the same message can have become pending again since the set was chosen.
-        const ready: DbCommandExecution[] = [];
-        for (const member of claimed) {
-          if (!(await hasEarlierActiveMessageMutation(member.command.id))) ready.push(member.command);
-          else {
+        const startedAt = performance.now();
+        const moves: FreshMove[] = [];
+        for (const [index, commandId] of commandIds.entries()) {
+          // The rest stay queued as they are and go with the next set, after a waiting folder sync.
+          if (index > 0 && performance.now() - startedAt >= MOVE_SET_ADMISSION_MS) break;
+          const member = index === 0 ? head : await claimCommand(commandId, ["move"], ["queued"]);
+          if (!member) continue;
+          if (index > 0) claimed.push(member);
+          // An earlier change of the same message can have become pending again since the set was chosen.
+          if (await hasEarlierActiveMessageMutation(member.command.id)) {
             await requeueCommand(
               member.command,
               "queued",
               "MESSAGE_MUTATION_PREDECESSOR_ACTIVE",
               "An earlier change to this message is still pending",
             );
+            continue;
+          }
+          try {
+            moves.push(await prepareFreshMove(member.command));
+          } catch (error) {
+            await fail(member.command, error);
           }
         }
-        await executeFreshMoves(ready, assertLeaseActive, fail);
+        await executeFreshMoves(moves, assertLeaseActive, fail);
       });
       if (outcome.busyRetryAfterMs !== null) {
         await requeueCommand(head.command, "queued", "REMOTE_RESOURCE_BUSY", "Remote mailbox is currently being synchronized or changed");
@@ -4136,7 +4189,7 @@ export const enqueueMailCommand = async (commandId: string, kind: MailCommand["k
     if (command) await submitMailboxCommandsJob(command.mailbox_id);
     return;
   }
-  if (isOperatorMaintenanceKind(kind)) {
+  if (isOperatorMaintenanceKind(kind) || kind === "verify_sender_identity") {
     await enqueueMaintenanceCommand(commandId);
   }
 };

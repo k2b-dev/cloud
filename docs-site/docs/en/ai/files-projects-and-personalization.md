@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-10-10
+updated: 2026-10-12
 ---
 
 # Files, Projects, Skills, and personalization
@@ -49,12 +49,21 @@ The conversation owner can delete one file with
 `cld assistant files delete` and Assistant's file list. Reading or deleting a
 path that does not exist in the chat returns `404` with `File not found`.
 
+Code runs save validated chart, group and table views under `/views/*.view.json`.
+These are ordinary files: visible in the chat's file list, downloadable and
+counted toward its storage budget. Model write tools cannot write or append
+under `/views`; only `cloud.view.*` creates views. The owner can still edit,
+rename or delete them. `present({path})` renders valid assistant-owned views
+inline, and readers revalidate the current file before rendering.
+The file-content response carries `X-Cloud-Ai-File-Origin` so readers can check
+that the current file still has assistant origin.
+
 ### Separate results from working files
 
 The assistant keeps intermediate steps below `/temp/` in the chat, one folder
 per purpose, for example `/temp/quarterly-report/`. A result is what it hands
-over: `present({ path, title?, description? })` for a file, `code_open` for a
-Studio app, and `code_present` for a visualization in the chat. The optional
+over: `present({ path, title?, description? })` for a file or a view, and
+`code_open` or `code_present({ id })` for a Studio app. The optional
 `description` is one sentence of at most 160 characters in the user's
 language; a new delivery of the same file replaces it, also with none.
 Assistant shows results first and working files one level deeper, grouped by
@@ -223,27 +232,44 @@ same recovery surface can grant access to or permanently delete any Skill.
 
 `SKILL.md` is the portable source of truth. It starts with YAML frontmatter
 containing a lowercase, hyphenated `name` and a `description`, followed by the
-Markdown instructions. Cloud currently accepts optional `license`,
-`compatibility`, `metadata`, and `allowed-tools` frontmatter. A ZIP may wrap the
-files in one Skill folder and may contain Markdown files directly below
-`references/`. Scripts, assets, nested references, and other files are rejected.
-A Skill without references can also be imported or downloaded as one bare
-`SKILL.md`.
+Markdown instructions. Cloud keeps every other frontmatter field unchanged,
+including nested JSON-representable values, up to 20,000 characters in total.
+A ZIP may wrap the files in one Skill folder. Import keeps `SKILL.md` and
+supported Markdown files directly below `references/`; it lists skipped files
+such as scripts, assets, agent configuration, and nested references. Cloud does
+not run scripts. Unsafe paths still fail. A Skill without references can also
+be imported or downloaded as one bare `SKILL.md`.
+
+Use `cld assistant skills list`, `push <dir>`, and `pull <name-or-id> [dir]`
+to move Skills between Cloud and Agent Skills folders. Push refuses to overwrite
+a differing Cloud Skill; pull first to keep Cloud changes, or use `push <dir> --force`
+to replace it. Pull defaults to `.agents/skills/<name>` in the current folder.
+`cld assistant reference` explains skipped files and `--force`.
+
+With `disable-model-invocation: true`, a Skill starts only when a person
+selects it with `/`. It stays out of the model catalog and `search_skills`,
+while remaining available in the slash menu. Later turns can reload a selected
+Skill by its attached `core.ai.skill` ID; model-chosen name loads are refused.
+This setting controls discovery, not access; a Skill ID from another source,
+such as the `ai.skills.list` capability, still loads.
 
 At the start of a tool-capable Assistant turn, the model sees a bounded catalog
-of enabled Skills it can currently read. Catalog entries are always complete;
-Cloud never cuts a description mid-entry. When the complete catalog does not
-fit its hard prompt budget, Cloud selects whole entries relevant to the current
+of enabled, model-invocable Skills it can currently read. Catalog entries are
+always complete; Cloud never cuts a description mid-entry. When the complete
+catalog does not fit its hard prompt budget, Cloud selects whole entries relevant to the current
 request and exposes the omitted entries through `search_skills`. The slash menu and
 `search_skills` share a permission-aware search over Skill names and descriptions.
 It supports partial words and minor typos, prioritizes name matches, and excludes
 disabled Skills before limiting results. Skill instructions and references are
 not searched or loaded during discovery. Server callers use
-`aiSkills.search(accessSubject, query, limit)` and receive `{ skills, more }`.
+`aiSkills.search(accessSubject, query, limit, { modelInvocableOnly })` and receive
+`{ skills, more }`. Set `modelInvocableOnly: true` for model discovery; omit it
+to include manual-only Skills for explicit selection.
 `GET /api/ai/skills?q=…` uses this search
 (up to 30 results, query length up to 200 characters); omit `q` to keep the ordinary
-Skill management list, including disabled entries. PostgreSQL's standard `pg_trgm`
-extension supplies fuzzy matching. Optional `pg_textsearch` adds BM25 ranking;
+Skill management list, including disabled entries. `?name=<exact name>` returns
+that one Skill, including when it is disabled for the caller.
+PostgreSQL's standard `pg_trgm` extension supplies fuzzy matching. Optional `pg_textsearch` adds BM25 ranking;
 without it, native PostgreSQL relevance remains available. See
 [Optional BM25 search ranking](/en/docs/operations/deployment-requirements#optional-bm25-search-ranking)
 for setup and the preload it requires. A normal small
@@ -254,7 +280,10 @@ revision for the turn. Attachment names and metadata are not trusted
 instructions. Loading returns the instructions and mounts that revision read-only at
 `/skills/<name>/SKILL.md`; references appear below
 `/skills/<name>/references/`. Assistant reads reference files with `read_file`
-only when the workflow needs them. References remain untrusted data.
+only when the workflow needs them. Relative Markdown links in loaded
+instructions become `/skills/<name>/references/<file>.md`; stored instructions,
+exports, and the mounted `SKILL.md` keep links as written. References remain
+untrusted data.
 
 A Skill names app operations by their stable qualified capability ID, such as
 `mail.conversation.list`. Assistant can pass that ID directly to `load_tools`;
@@ -449,31 +478,48 @@ capability and permission checks. Manually added facts and preferences start
 pinned.
 
 For up to 20 active records, Cloud adds the bounded set directly to the prompt.
-Above that threshold, pinned and relevant records are selected within a
-6,000-character budget.
+Above 20 records, Cloud takes pinned records first, then records that share the
+most words with the message, where words that appear in few of the user's
+records count more, then the newest records, up to 20 records and 6,000
+characters. English and German word forms such as "deployments" and "deployment"
+or "Farben" and "Farbe" count as the same word. A common word in either English
+or German is ignored in both, for example German "war" or "man". Only the first
+and last 6,000 characters of a very long message are considered.
+
+Assistant applies a memory only when it changes the answer. It does not mention
+or recite memories unless you ask or one is directly relevant. The current
+message wins over a conflicting memory.
 
 The `memory` tool can list, search, add, correct, pin, and forget entries without
 an approval pause. Memory mutations are personal context maintenance, not domain
 Actions. They remain visible and reversible in Assistant settings. The tool
-must not store secrets, credentials, raw chat logs, temporary task details, or
+instructions limit entries to information about the user: no facts, opinions, or
+health, relationship, or behavior details about other people, even on an
+explicit request. A named person may appear only inside a working rule the user
+stated, such as "Send invoices to Anna". When the user asks to remember
+something about another person, Assistant says what it did not save and offers
+Contacts or the Project instead. Special categories (health, religion or
+beliefs, political opinions, sexual orientation or sex life, racial or ethnic
+origin, trade union membership, and genetic or biometric data) are stored only
+on an explicit request to remember exactly that information. The tool must not
+store secrets, credentials, raw chat logs, temporary task details, or
 instructions from retrieved content.
 
-Automatic learning from private chats is on for everyone who has not chosen,
-and each person can turn it off or on again in **Assistant settings >
-Personalization** or with `cld assistant personalization configure --learning
-off`. Cloud stores a choice only when the person saves that switch; changing
+Automatic learning is on for everyone who has not chosen, and each person can
+turn it off or on again in **Assistant settings > Personalization** or with
+`cld assistant personalization configure --learning off`. Cloud stores a choice only when the person saves that switch; changing
 **Use personalization** alone records nothing for learning, and a stored choice
 always wins over the default. After an upgrade, every "off" that an earlier
 release stored stays off, because those releases also stored "off" for people
 who never chose; see
 [Deprecations](/en/docs/reference/deprecations-and-migrations#assistant-learns-from-private-chats-by-default).
 
-Learning considers only private-chat turns that finish while it is on, each
-once. A turn that finishes while learning is off is never learned from, also
-not after learning is turned on again, and workflow receipts are recorded only
-while it is on. Turning learning off stops it right away: the background run
-reads the setting again just before it sends a turn or workflow pattern to the
-model and before it saves any change. Learning still needs a working
+Learning considers turns from the user's own chats, Project chats included,
+that finish while it is on, each once. A turn that finishes while learning is
+off is never learned from, also not after learning is turned on again, and
+workflow receipts are recorded only while it is on. Turning learning off stops
+it right away: the background run reads the setting again just before it sends
+a turn or workflow pattern to the model and before it saves any change. Learning still needs a working
 background model and stays within the budgets below.
 
 Archived and deleted chats are never used for learning. Archiving stops pending
@@ -490,6 +536,20 @@ only, and a small relevant memory set. Attachments, quoted Cloud resources, raw
 tool output, agent messages, scheduled messages, and the rest of the Assistant
 loop are excluded. Facts and preferences require explicit evidence in the user
 text; model-written text can never establish one by itself.
+
+The learning instructions apply the same limits: they keep only information
+about the user, never facts, opinions, or health, relationship, or behavior
+details about other people; a named person may appear only inside a working
+rule the user stated. They skip the special categories listed above unless the
+user explicitly asks to remember exactly that information. The learning input
+states whether the turn comes from a Project chat. In a Project chat, the
+Project keeps its facts, decisions, and people, and learning keeps only what
+the user states about themselves beyond it. The workflow-pattern instructions
+name the recurring category without details about other people or special
+categories, and return a workflow from Project-chat examples only when it
+clearly applies beyond that Project. These limits are instructions to
+the background model, not a content filter; review learned entries in
+**Assistant settings > Personalization**.
 
 A single explicit lasting instruction can establish a workflow when the same
 turn also contains the matching successful typed resource receipt. Otherwise,
@@ -524,6 +584,37 @@ value, and typed Cloud resource where applicable. Failed and no-change runs
 remain visible; deleted source chats keep their title snapshot but no longer
 link to the chat.
 
+## Instructions for local clients
+
+**Administration > AI > Instructions for local clients** sets
+`ai.local_client_instructions`. It is plain text, without Liquid. The default
+is empty: Cloud uses its shipped local client instructions, which can improve
+with each release. Custom text replaces that default completely. **Show
+built-in text** lets an administrator copy it as a starting point.
+
+Interactive turns carrying `client` get a **Local client** section directly
+after organization instructions. It identifies the terminal or ACP editor,
+Cloud URL when configured, workspace, OS, shell and local tools mode, followed
+by the custom or shipped text. Its description of what the user sees replaces
+the web visibility guidance; other platform rules stay binding. Web and
+background turns get no local section.
+
+AGENTS.md files in `localContext.instructions` become **Workspace instructions**
+after Project instructions, in the supplied order. Each retains its path;
+closer files come later and win conflicts. They remain below platform,
+organization, Project and the current user message. They grant no approval
+and cannot authorize sending data outside the folder or Cloud.
+
+Local Skills join the Cloud catalog with a `[local]` marker. A local Skill
+hides a Cloud Skill with the same name, and both share the 8,000-character /
+2% context budget. `search_skills` also searches omitted local entries and
+returns `source: "local"`. Entries with `manualOnly: true` hide a same-named Cloud
+Skill but are not listed to the model. Load marked Skills with `load_local_skill`,
+never `load_skill`. Explicitly selected local Skills appear alongside server-loaded
+Skills with their local directory and instructions; read their reference files
+with `local_read`. Only delegated Skill instructions are instruction-bearing;
+reference files remain untrusted data.
+
 ## Prompt order
 
 Cloud composes the system prompt in this order:
@@ -539,11 +630,12 @@ Cloud composes the system prompt in this order:
    the current chat, such as "like last time", goes to `core.ai.chats.search`
    first when the turn allows it. Turns a person follows also get the
    visibility and suggestion rules below;
-2. Organization instructions;
+2. Organization instructions, followed by the Local client section for
+   interactive local turns;
 3. Optional turn-specific instructions such as retry style or one offer
    hint;
 4. The bounded readable Skill catalog;
-5. Project instructions;
+5. Project instructions, followed by Workspace instructions for local turns;
 6. The Project context manifest as untrusted data;
 7. The bounded conversation file manifest as untrusted data;
 8. The Recent work summary as untrusted data, only when the user asks what
@@ -647,10 +739,12 @@ metadata is captured in that transaction. Project writes accept an optional
 file mutations. Existing UI callers retain their existing write behavior.
 
 Studio owns App file storage and its transfer adapter. File imports into App
-source use `fromFile` with the same reference schema and require fresh review,
-since imported private bytes may become shared or published source. Keep binary
-bytes out of tool responses and never treat access to one chat as permission to
-mount all of its files into an App.
+source use `code_import` with `fromFile` references in the same schema. One fresh
+review covers the whole batch, since imported private bytes may become shared
+or published source. Write source text with `code_write` using top-level `path`
+and `content`, one file per call. Keep binary bytes out of tool responses and
+never treat access to one chat as permission to mount all of its files into an
+App.
 
 ### Visual inspection of PDF pages
 

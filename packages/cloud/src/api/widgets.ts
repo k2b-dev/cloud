@@ -1,18 +1,26 @@
 import { type Context, Hono, type MiddlewareHandler } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { type DashboardWidget, listWidgets } from "../_internal/registry";
+import { parseWidgetSettings } from "../_internal/widget-settings";
 import {
   type DashboardWidgetSize,
   fitWidgetSize,
   isDashboardWidgetSize,
+  WIDGET_KEY_MAX_LENGTH,
   WIDGET_MAX_RESPONSE_BYTES,
+  WIDGET_REQUEST_MAX_BYTES,
+  WIDGET_REQUEST_MAX_ENTRIES,
+  WIDGET_REQUEST_MAX_ID_LENGTH,
+  WIDGET_SETTINGS_MAX_FIELDS,
   type WidgetResponse,
   WidgetResponseSchema,
   type WidgetStreamLine,
   widgetKey,
 } from "../contracts/widgets";
 import { type AuthContext, auth, preferredLocale, rejectReservedWorkloadCredential } from "../server";
-import { WIDGET_SIZE_PARAM } from "../server/widget-request";
+import { WIDGET_SETTINGS_PARAM, WIDGET_SETTINGS_PARAM_MAX_LENGTH, WIDGET_SIZE_PARAM } from "../server/widget-request";
 import { CLOUD_INVOCATION_TOKEN_TTL_SECONDS } from "../services/identity/constants";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { widgetInvocationOperation } from "../services/identity/invocation-operations";
@@ -49,6 +57,7 @@ type WidgetRejectionReason =
   | "upstream_timeout"
   | "upstream_status"
   | "too_large"
+  | "settings_too_large"
   | "invalid_json"
   | "invalid_schema"
   | "deadline_exceeded"
@@ -84,6 +93,7 @@ const callProvider = async (options: {
   widget: DashboardWidget;
   /** What the browser asked for, fitted to the widget's declared sizes before it reaches the app. */
   size: unknown;
+  settings?: unknown;
   token: string;
   requestId: string | undefined;
   signal: AbortSignal;
@@ -105,6 +115,12 @@ const callProvider = async (options: {
 
     const targetUrl = new URL(`/api/_internal/widgets/v1/${encodeURIComponent(widget.widgetId)}`, widget.url);
     targetUrl.searchParams.set(WIDGET_SIZE_PARAM, fitWidgetSize(options.size, widget));
+    if (widget.settings) {
+      const json = JSON.stringify(parseWidgetSettings(widget.settings, options.settings));
+      const encodedLength = new URLSearchParams([[WIDGET_SETTINGS_PARAM, json]]).toString().length - WIDGET_SETTINGS_PARAM.length - 1;
+      if (encodedLength > WIDGET_SETTINGS_PARAM_MAX_LENGTH) return { status: "error", phase: "provider", reason: "settings_too_large" };
+      targetUrl.searchParams.set(WIDGET_SETTINGS_PARAM, json);
+    }
     signal.throwIfAborted();
     const response = await options.fetch(targetUrl, { headers, signal });
     if (response.status === 204 || response.status === 403) {
@@ -143,6 +159,30 @@ const parseRequestedWidget = (value: string, declared: ReadonlySet<string>): [st
   return isDashboardWidgetSize(size) && declared.has(value.slice(0, at)) ? [value.slice(0, at), size] : [value, undefined];
 };
 
+const WidgetEntriesSchema = z
+  .object({
+    widgets: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1).max(WIDGET_REQUEST_MAX_ID_LENGTH),
+            key: z.string().min(1).max(WIDGET_KEY_MAX_LENGTH),
+            size: z.string().optional(),
+            settings: z
+              .record(z.string(), z.unknown())
+              .refine((values) => Object.keys(values).length <= WIDGET_SETTINGS_MAX_FIELDS)
+              .optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(WIDGET_REQUEST_MAX_ENTRIES)
+      .refine((entries) => new Set(entries.map((entry) => entry.id)).size === entries.length, "Widget entry ids must be unique"),
+  })
+  .strict();
+
+type WidgetEntry = { widget: DashboardWidget; id?: string; size?: string; settings?: unknown };
+
 export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) => {
   const registry = dependencies.listWidgets ?? listWidgets;
   const fetchWidget = dependencies.fetch ?? globalThis.fetch;
@@ -166,6 +206,96 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
       signer,
       issuer: signer.issuer,
     });
+
+  const stream = async (c: Context<AuthContext>, entries: WidgetEntry[], requestId: string | undefined) => {
+    const streamDeadline = AbortSignal.timeout(WIDGET_STREAM_DEADLINE_MS);
+    // A client that stops reading, such as a browser leaving the dashboard, ends every widget it still waits for.
+    const streamCancelled = new AbortController();
+    const fanoutSignal = AbortSignal.any([c.req.raw.signal, streamDeadline, streamCancelled.signal]);
+    // One signing guard for the whole dashboard, not one Postgres check per widget.
+    let tokens: PromiseSettledResult<Awaited<ReturnType<typeof signInvocationToken>>>[] = [];
+    try {
+      if (entries.length > 0) {
+        const signing = AbortSignal.any([fanoutSignal, AbortSignal.timeout(timeoutMs)]);
+        tokens = await waitWithin(
+          withActiveSigner(
+            "invocation",
+            (signer) =>
+              Promise.all(startBounded(entries, WIDGET_CONCURRENCY, async (entry) => sign(c, entry.widget, requestId, signer), signing)),
+            { signal: signing, timeoutMs },
+          ),
+          signing,
+        );
+      }
+    } catch {
+      log.warn("Widget invocation authority unavailable", { reason: fanoutSignal.aborted ? "deadline_exceeded" : "operation_failed" });
+      return c.json({ message: "Widget invocation authority is currently unavailable" }, 503);
+    }
+
+    const fanoutStarted = performance.now();
+    const settled = startBounded(
+      entries,
+      WIDGET_CONCURRENCY,
+      async (entry, index): Promise<WidgetStreamLine> => {
+        const { widget } = entry;
+        const identity = entry.id === undefined ? {} : { id: entry.id };
+        const key = widgetKey(widget.appId, widget.widgetId);
+        const started = performance.now();
+        const elapsed = () => Math.round(performance.now() - started);
+        const token = tokens[index];
+        if (token?.status !== "fulfilled") {
+          logRejection(widget, "signing", "operation_failed");
+          return { type: "widget", ...identity, key, status: "error", ms: elapsed() };
+        }
+        const timeout = AbortSignal.timeout(timeoutMs);
+        const outcome = await callProvider({
+          c,
+          widget,
+          token: token.value.token,
+          requestId,
+          signal: AbortSignal.any([fanoutSignal, timeout]),
+          timeout,
+          fetch: fetchWidget,
+          size: entry.size,
+          settings: entry.settings,
+        });
+        if (outcome.status === "ok") return { type: "widget", ...identity, key, status: "ok", widget: outcome.widget, ms: elapsed() };
+        // A widget the stream itself stopped has already been settled, and is logged once, below.
+        if ("reason" in outcome && !fanoutSignal.aborted) logRejection(widget, outcome.phase, outcome.reason, outcome.upstreamStatus);
+        return { type: "widget", ...identity, key, status: outcome.status, ms: elapsed() };
+      },
+      fanoutSignal,
+    );
+
+    return ndjsonStream<WidgetStreamLine>({
+      first: { type: "start", widgets: entries.map((entry) => entry.id ?? widgetKey(entry.widget.appId, entry.widget.widgetId)) },
+      pending: settled.map((pending, index) =>
+        pending.then((result): WidgetStreamLine => {
+          if (result.status === "fulfilled") return result.value;
+          // Only the stream's own deadline or the browser leaving settles a widget this way. Leaving is not a
+          // failure of the widget, so only the deadline is logged.
+          const entry = entries[index]!;
+          const { widget } = entry;
+          const status = streamDeadline.aborted ? "timeout" : "error";
+          if (streamDeadline.aborted) logRejection(widget, "provider", "deadline_exceeded");
+          return {
+            type: "widget",
+            ...(entry.id === undefined ? {} : { id: entry.id }),
+            key: widgetKey(widget.appId, widget.widgetId),
+            status,
+            ms: Math.round(performance.now() - fanoutStarted),
+          };
+        }),
+      ),
+      last: (lines) => ({
+        type: "done",
+        status: lines.some((line) => line.type === "widget" && (line.status === "timeout" || line.status === "error"))
+          ? "partial"
+          : "complete",
+      }),
+      onCancel: () => streamCancelled.abort(),
+    });
+  };
 
   return (
     new Hono<AuthContext>()
@@ -197,89 +327,40 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
           return c.json({ message: "Widget registry is currently unavailable" }, 503);
         }
 
-        const streamDeadline = AbortSignal.timeout(WIDGET_STREAM_DEADLINE_MS);
-        // A client that stops reading, such as a browser leaving the dashboard, ends every widget it still waits for.
-        const streamCancelled = new AbortController();
-        const fanoutSignal = AbortSignal.any([c.req.raw.signal, streamDeadline, streamCancelled.signal]);
-        // One signing guard for the whole dashboard, not one Postgres check per widget.
-        let tokens: PromiseSettledResult<Awaited<ReturnType<typeof signInvocationToken>>>[] = [];
-        try {
-          if (widgets.length > 0) {
-            const signing = AbortSignal.any([fanoutSignal, AbortSignal.timeout(timeoutMs)]);
-            tokens = await waitWithin(
-              withActiveSigner(
-                "invocation",
-                (signer) =>
-                  Promise.all(startBounded(widgets, WIDGET_CONCURRENCY, async (widget) => sign(c, widget, requestId, signer), signing)),
-                { signal: signing, timeoutMs },
-              ),
-              signing,
-            );
-          }
-        } catch {
-          log.warn("Widget invocation authority unavailable", { reason: fanoutSignal.aborted ? "deadline_exceeded" : "operation_failed" });
-          return c.json({ message: "Widget invocation authority is currently unavailable" }, 503);
-        }
-
-        const fanoutStarted = performance.now();
-        const settled = startBounded(
-          widgets,
-          WIDGET_CONCURRENCY,
-          async (widget, index): Promise<WidgetStreamLine> => {
-            const key = widgetKey(widget.appId, widget.widgetId);
-            const started = performance.now();
-            const elapsed = () => Math.round(performance.now() - started);
-            const token = tokens[index];
-            if (token?.status !== "fulfilled") {
-              logRejection(widget, "signing", "operation_failed");
-              return { type: "widget", key, status: "error", ms: elapsed() };
-            }
-            const timeout = AbortSignal.timeout(timeoutMs);
-            const outcome = await callProvider({
-              c,
-              widget,
-              token: token.value.token,
-              requestId,
-              signal: AbortSignal.any([fanoutSignal, timeout]),
-              timeout,
-              fetch: fetchWidget,
-              size: requested.get(key),
-            });
-            if (outcome.status === "ok") return { type: "widget", key, status: "ok", widget: outcome.widget, ms: elapsed() };
-            // A widget the stream itself stopped has already been settled, and is logged once, below.
-            if ("reason" in outcome && !fanoutSignal.aborted) logRejection(widget, outcome.phase, outcome.reason, outcome.upstreamStatus);
-            return { type: "widget", key, status: outcome.status, ms: elapsed() };
-          },
-          fanoutSignal,
+        return stream(
+          c,
+          widgets.map((widget) => ({ widget, size: requested.get(widgetKey(widget.appId, widget.widgetId)) })),
+          requestId,
         );
-
-        return ndjsonStream<WidgetStreamLine>({
-          first: { type: "start", widgets: widgets.map((widget) => widgetKey(widget.appId, widget.widgetId)) },
-          pending: settled.map((pending, index) =>
-            pending.then((result): WidgetStreamLine => {
-              if (result.status === "fulfilled") return result.value;
-              // Only the stream's own deadline or the browser leaving settles a widget this way. Leaving is not a
-              // failure of the widget, so only the deadline is logged.
-              const widget = widgets[index]!;
-              const status = streamDeadline.aborted ? "timeout" : "error";
-              if (streamDeadline.aborted) logRejection(widget, "provider", "deadline_exceeded");
-              return {
-                type: "widget",
-                key: widgetKey(widget.appId, widget.widgetId),
-                status,
-                ms: Math.round(performance.now() - fanoutStarted),
-              };
-            }),
-          ),
-          last: (lines) => ({
-            type: "done",
-            status: lines.some((line) => line.type === "widget" && (line.status === "timeout" || line.status === "error"))
-              ? "partial"
-              : "complete",
-          }),
-          onCancel: () => streamCancelled.abort(),
-        });
       })
+      .post(
+        "/widgets/v1",
+        bodyLimit({ maxSize: WIDGET_REQUEST_MAX_BYTES, onError: (c) => c.json({ message: "Widget request is too large" }, 400) }),
+        async (c) => {
+          let raw: unknown;
+          try {
+            raw = await c.req.json();
+          } catch {
+            return c.json({ message: "Invalid widget request JSON" }, 400);
+          }
+          const parsed = WidgetEntriesSchema.safeParse(raw);
+          if (!parsed.success) return c.json({ message: "Invalid widget request" }, 400);
+          const setup = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(timeoutMs)]);
+          let declared: DashboardWidget[];
+          try {
+            declared = await waitWithin(registry(), setup);
+          } catch {
+            log.warn("Widget registry unavailable", { reason: setup.aborted ? "deadline_exceeded" : "operation_failed" });
+            return c.json({ message: "Widget registry is currently unavailable" }, 503);
+          }
+          const byKey = new Map(declared.map((widget) => [widgetKey(widget.appId, widget.widgetId), widget]));
+          const entries = parsed.data.widgets.flatMap((entry) => {
+            const widget = byKey.get(entry.key);
+            return widget ? [{ ...entry, widget }] : [];
+          });
+          return stream(c, entries, normalizeInvocationRequestId(c.req.header("x-request-id")));
+        },
+      )
       .get("/widgets/v1/:appId/:widgetId", async (c) => {
         const timeout = AbortSignal.timeout(timeoutMs);
         const signal = AbortSignal.any([c.req.raw.signal, timeout]);

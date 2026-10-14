@@ -30,7 +30,7 @@ export const evidenceCommands = [
     },
   }),
   command("evidence list", {
-    summary: "List retained evidence export requests in a Base",
+    summary: "List retained evidence export requests in a base",
     args: baseArgs,
     flags: baseFlag,
     async run({ ctx, args }) {
@@ -40,7 +40,7 @@ export const evidenceCommands = [
     },
   }),
   command("evidence create", {
-    summary: "Request an evidence export using the Base administrator permission",
+    summary: "Request an evidence export using the base administrator permission",
     args: baseArgs,
     flags: { ...baseFlag, body: JSON_BODY_INPUT, yes: confirmFlag("Create an evidence package") },
     async run({ ctx, args, flags }) {
@@ -107,7 +107,7 @@ export const evidenceCommands = [
         if (result.package.sha256) ctx.print(`Package SHA-256: ${result.package.sha256}`);
         if (result.manifest.sha256) ctx.print(`Manifest SHA-256: ${result.manifest.sha256}`);
         if (result.scope && result.consistency) {
-          ctx.print(`Scope: Base ${result.scope.baseId}${result.scope.tableId ? `, table ${result.scope.tableId}` : ""}`);
+          ctx.print(`Scope: base ${result.scope.baseId}${result.scope.tableId ? `, table ${result.scope.tableId}` : ""}`);
           ctx.print(`Cut: ${result.consistency.cutAt}`);
           ctx.print(`Sections: ${result.scope.sections.join(", ")}`);
         }

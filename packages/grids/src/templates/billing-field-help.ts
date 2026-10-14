@@ -4,7 +4,7 @@ const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      number: "Assigned automatically when the business partner is created. Stable customer reference within this Base.",
+      number: "Assigned automatically when the business partner is created. Stable customer reference within this base.",
       name: "Legal company name used on billing documents.",
       vat_id: "German VAT ID: DE followed by nine digits. Required before issuing.",
       street: "Street and building number for the billing address.",

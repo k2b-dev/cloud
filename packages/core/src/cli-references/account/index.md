@@ -22,10 +22,17 @@ Read `cld account profile set --help` for the available contact and address fiel
 ```bash
 cld account api-keys list --json
 cld account api-keys create "Terminal agent" --expires 90d
+cld account api-keys create "Transcript cleanup" --access models
 cld account api-keys revoke <id-or-prefix-or-name> --yes
 ```
 
 Creating a key prints its token once. Store it in the user's chosen secret store before continuing; it cannot be displayed again. Revoke only after identifying the exact key with `api-keys list`.
+
+The default `--access full` keeps personal automation access. `--access models`
+creates a key that works only at `/api/ai/openai/v1` on this Cloud, with the
+Assistant models the person may use. An administrator must enable the
+OpenAI-compatible API first. The text list includes an `access` column; JSON
+keeps the server credential fields, including `scopes`.
 
 ## SSH keys and account actions
 

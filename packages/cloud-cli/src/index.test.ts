@@ -3,6 +3,7 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "n
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { installFirstPartyModules } from "../test/fixtures/first-party";
+import { LOGIN_PAGE_CSP } from "./login-page";
 
 type MockServerState = {
   refreshCalls: number;
@@ -17,7 +18,8 @@ type MockServerState = {
   appsCalls?: number;
   appsSearch?: string | null;
   capabilityCatalog?: unknown;
-  acceptLanguages?: string[];
+  cliPlugins?: Array<{ name: string; app: string; version: string }>;
+  acceptLanguages?: Array<string | null>;
   cookies?: Array<string | null>;
 };
 
@@ -73,9 +75,10 @@ const startMockServer = (state: MockServerState) =>
     fetch: async (request) => {
       const url = new URL(request.url);
       state.acceptLanguages ??= [];
-      state.acceptLanguages.push(request.headers.get("accept-language") ?? "");
+      state.acceptLanguages.push(request.headers.get("accept-language"));
       state.cookies ??= [];
       state.cookies.push(request.headers.get("cookie"));
+      if (url.pathname === "/cli/plugins" && state.cliPlugins) return Response.json({ plugins: state.cliPlugins });
       if (url.pathname === "/oauth/token") {
         if (state.tokenDelayMs) await Bun.sleep(state.tokenDelayMs);
         const body = await request.formData();
@@ -163,7 +166,16 @@ const startCli = (configPath: string, args: string[], extraEnv: Record<string, s
   Bun.spawn({
     cmd: [process.execPath, "run", "packages/cloud-cli/src/index.ts", ...args],
     cwd: process.cwd(),
-    env: { ...process.env, ...extraEnv, CLD_CONFIG: configPath, XDG_CONFIG_HOME: dirname(configPath) },
+    env: {
+      ...process.env,
+      CLD_LOCALE: "",
+      LC_ALL: "",
+      LC_MESSAGES: "",
+      LANG: "C",
+      ...extraEnv,
+      CLD_CONFIG: configPath,
+      XDG_CONFIG_HOME: dirname(configPath),
+    },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -194,6 +206,22 @@ const readUntil = async (stream: ReadableStream<Uint8Array>, marker: string): Pr
   return text;
 };
 
+const readLoginCallbackUrl = async (stream: ReadableStream<Uint8Array>, locale: string): Promise<URL> => {
+  const marker = locale === "de" ? "Warte auf den OAuth-Callback." : "Waiting for the OAuth callback.";
+  const stdout = await readUntil(stream, marker);
+  const printedLoginUrl = stdout.match(/(?:Login URL|Anmelde-URL):\n(?<url>http:\/\/127\.0\.0\.1:\d+\/oauth\/authorize[^\n]+)/)?.groups
+    ?.url;
+  if (!printedLoginUrl) throw new Error("CLI did not print a login URL.");
+  const loginUrl = new URL(printedLoginUrl);
+  const redirectUri = loginUrl.searchParams.get("redirect_uri");
+  const state = loginUrl.searchParams.get("state");
+  if (!redirectUri || !state) throw new Error("Login URL is missing callback parameters.");
+  const callbackUrl = new URL(redirectUri);
+  callbackUrl.searchParams.set("state", state);
+  callbackUrl.searchParams.set("iss", loginUrl.origin);
+  return callbackUrl;
+};
+
 describe("cloud CLI OAuth session handling", () => {
   test("selects localized human help explicitly without changing command syntax", async () => {
     const dir = await createTempDir();
@@ -220,6 +248,33 @@ describe("cloud CLI OAuth session handling", () => {
 
     expect(fromEnvironment.stdout).toContain("Verwendung:");
     expect(explicit.stdout).toContain("Usage:");
+  });
+
+  test("uses the POSIX locale for help unless explicitly overridden", async () => {
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+    const env = { LANG: "de_DE.UTF-8" };
+    const [german, explicit, cldOverride, posixOverride] = await Promise.all([
+      runCli(configPath, ["help"], env),
+      runCli(configPath, ["--locale", "en", "help"], env),
+      runCli(configPath, ["help"], { ...env, CLD_LOCALE: "en" }),
+      runCli(configPath, ["help"], { ...env, LC_ALL: "C" }),
+    ]);
+    for (const result of [german, explicit, cldOverride, posixOverride]) expect(result.exitCode, result.stderr).toBe(0);
+    expect(german.stdout).toContain("Verwendung:");
+    for (const result of [explicit, cldOverride, posixOverride]) expect(result.stdout).toContain("Usage:");
+  });
+
+  test("rejects invalid explicit locales rather than using the POSIX locale", async () => {
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+    for (const result of await Promise.all([
+      runCli(configPath, ["--locale", "not_a_locale", "help"], { LANG: "de_DE.UTF-8" }),
+      runCli(configPath, ["help"], { CLD_LOCALE: "not_a_locale", LANG: "de_DE.UTF-8" }),
+    ])) {
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Invalid locale "not_a_locale"');
+    }
   });
 
   test("prints its version without requiring a configured server", async () => {
@@ -582,7 +637,7 @@ describe("cloud CLI OAuth session handling", () => {
     expect(parsed.items.at(-1)?.id).toBe(19999);
   });
 
-  test("login callback returns a plain-text completion message", async () => {
+  test("login callback returns an HTML completion page and ignores unrelated callbacks", async () => {
     const state: MockServerState = { refreshCalls: 0, authorizationCodeCalls: 0, revokeCalls: 0, meCalls: 0 };
     const server = startMockServer(state);
     const dir = await createTempDir();
@@ -619,26 +674,40 @@ describe("cloud CLI OAuth session handling", () => {
       expect(stateParam).toBeString();
 
       const callbackUrl = new URL(redirectUri!);
+      const faviconResponse = await fetch(new URL("/favicon.ico", callbackUrl));
+      expect(faviconResponse.status).toBe(404);
+      expect(faviconResponse.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+      expect(await faviconResponse.text()).toBe("This is not a Cloud CLI login callback.\n");
       callbackUrl.searchParams.set("error", "access_denied");
       callbackUrl.searchParams.set("state", "wrong-state");
       const unrelatedCallback = await fetch(callbackUrl);
       expect(unrelatedCallback.status).toBe(400);
+      expect(unrelatedCallback.headers.get("content-type")).toBe("text/html; charset=utf-8");
+      expect(unrelatedCallback.headers.get("content-security-policy")).toBe(LOGIN_PAGE_CSP);
+      expect(await unrelatedCallback.text()).toContain("This page does not match your sign-in");
 
       callbackUrl.searchParams.delete("error");
       callbackUrl.searchParams.set("code", "test-code");
       callbackUrl.searchParams.set("state", stateParam!);
       callbackUrl.searchParams.set("iss", `http://127.0.0.1:${server.port}`);
-      const callbackResponse = await fetch(callbackUrl);
+      // A second valid callback racing the first (a double submit or reload)
+      // must not start a second token exchange. It either still gets a page or
+      // finds the listener already closed.
+      const callbacks = await Promise.allSettled([fetch(callbackUrl), fetch(callbackUrl)]);
+      const callbackResponse = callbacks.find((result) => result.status === "fulfilled")?.value;
+      if (!callbackResponse) throw new Error("No callback request got a response.");
       const callbackText = await callbackResponse.text();
 
       expect(callbackResponse.status).toBe(200);
-      expect(callbackResponse.headers.get("content-type")).toContain("text/plain");
-      expect(callbackText).toBe("Authentication complete. You may close this window.\n");
+      expect(callbackResponse.headers.get("content-type")).toBe("text/html; charset=utf-8");
+      expect(callbackResponse.headers.get("content-security-policy")).toBe(LOGIN_PAGE_CSP);
+      expect(callbackText).toContain("Cloud CLI connected");
 
       const exitCode = await proc.exited;
       expect(exitCode).toBe(0);
       expect(await stderrPromise).toBe("");
       expect(state.authorizationCodeCalls).toBe(1);
+      await expect(fetch(callbackUrl)).rejects.toThrow();
       expect(state.revokedTokens).toEqual(["old-refresh"]);
 
       const config = JSON.parse(await readFile(configPath, "utf8")) as {
@@ -649,6 +718,113 @@ describe("cloud CLI OAuth session handling", () => {
       expect(config.profiles.local.oauth.accessToken).toBe("login-access");
       expect(config.profiles.local.oauth.refreshToken).toBe("login-refresh");
       expect("clientId" in config.profiles.local.oauth).toBe(false);
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  for (const [locale, acceptLanguage, pageLanguage] of [
+    ["en", "de-DE,de;q=0.9,en;q=0.8", "de"],
+    ["en", "en;q=0.8,de;q=0.9", "de"],
+    ["en", "fr", "en"],
+    ["de", "fr", "de"],
+  ] as const) {
+    test(`login page uses ${pageLanguage} for Accept-Language ${acceptLanguage} with CLI locale ${locale}`, async () => {
+      const state: MockServerState = { refreshCalls: 0, authorizationCodeCalls: 0, revokeCalls: 0, meCalls: 0 };
+      const server = startMockServer(state);
+      const dir = await createTempDir();
+      const configPath = join(dir, "config.json");
+
+      try {
+        const proc = startCli(configPath, [
+          "--locale",
+          locale,
+          "login",
+          "local",
+          "--server",
+          `http://127.0.0.1:${server.port}`,
+          "--no-open",
+        ]);
+        const stderrPromise = new Response(proc.stderr).text();
+        const callbackUrl = await readLoginCallbackUrl(proc.stdout, locale);
+        const stdoutPromise = proc.stdout.pipeTo(new WritableStream());
+        callbackUrl.searchParams.set("code", "test-code");
+        const response = await fetch(callbackUrl, { headers: { "Accept-Language": acceptLanguage } });
+        const html = await response.text();
+
+        expect(response.status).toBe(200);
+        expect(html).toContain(`<html lang="${pageLanguage}">`);
+        expect(html).toContain(pageLanguage === "de" ? "Cloud CLI verbunden" : "Cloud CLI connected");
+        expect(await proc.exited).toBe(0);
+        expect(await stderrPromise).toBe("");
+        await stdoutPromise;
+        expect(state.authorizationCodeCalls).toBe(1);
+      } finally {
+        server.stop(true);
+      }
+    });
+  }
+
+  for (const [error, detail, title, status] of [
+    ["access_denied", undefined, "Access denied", 200],
+    ["server_error", "<img src=x onerror=alert(1)>", "Sign-in failed", 400],
+  ] as const) {
+    test(`login callback shows ${title} for ${error} and exits unsuccessfully`, async () => {
+      const state: MockServerState = { refreshCalls: 0, authorizationCodeCalls: 0, revokeCalls: 0, meCalls: 0 };
+      const server = startMockServer(state);
+      const dir = await createTempDir();
+      const configPath = join(dir, "config.json");
+
+      try {
+        const proc = startCli(configPath, ["login", "local", "--server", `http://127.0.0.1:${server.port}`, "--no-open"]);
+        const stderrPromise = new Response(proc.stderr).text();
+        const callbackUrl = await readLoginCallbackUrl(proc.stdout, "en");
+        const stdoutPromise = proc.stdout.pipeTo(new WritableStream());
+        callbackUrl.searchParams.set("error", error);
+        if (detail) callbackUrl.searchParams.set("error_description", detail);
+        const response = await fetch(callbackUrl);
+        const html = await response.text();
+
+        expect(response.status).toBe(status);
+        expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+        expect(response.headers.get("content-security-policy")).toBe(LOGIN_PAGE_CSP);
+        expect(html).toContain(title);
+        expect(html).not.toContain("<img");
+        if (detail) expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+        else expect(html).not.toContain("<code>");
+        expect(await proc.exited).toBe(1);
+        expect(await stderrPromise).toContain(detail ?? error);
+        await stdoutPromise;
+        expect(state.authorizationCodeCalls).toBe(0);
+      } finally {
+        server.stop(true);
+      }
+    });
+  }
+
+  test("login records served names even when the plugin offer has nothing missing", async () => {
+    const state: MockServerState = { refreshCalls: 0, revokeCalls: 0, meCalls: 0, cliPlugins: [] };
+    const server = startMockServer(state);
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+    const origin = `http://127.0.0.1:${server.port}`;
+    try {
+      const proc = startCli(configPath, ["login", "local", "--server", origin, "--no-open"]);
+      const stderrPromise = new Response(proc.stderr).text();
+      const stdout = await readUntil(proc.stdout, "Waiting for the OAuth callback.");
+      const printedLoginUrl = stdout.match(/Login URL:\n(?<url>http:\/\/127\.0\.0\.1:\d+\/oauth\/authorize[^\n]+)/)?.groups?.url;
+      if (!printedLoginUrl) throw new Error("CLI did not print a login URL.");
+      const loginUrl = new URL(printedLoginUrl);
+      const redirectUri = loginUrl.searchParams.get("redirect_uri");
+      const stateParam = loginUrl.searchParams.get("state");
+      if (!redirectUri || !stateParam) throw new Error("Login URL is missing callback parameters.");
+      const callbackUrl = new URL(redirectUri);
+      callbackUrl.searchParams.set("code", "test-code");
+      callbackUrl.searchParams.set("state", stateParam);
+      callbackUrl.searchParams.set("iss", origin);
+      expect((await fetch(callbackUrl)).status).toBe(200);
+      expect(await proc.exited, await stderrPromise).toBe(0);
+      expect(JSON.parse(await readFile(configPath, "utf8")).profiles.local.servedPlugins).toEqual([]);
     } finally {
       server.stop(true);
     }
@@ -1113,7 +1289,7 @@ describe("cloud CLI OAuth session handling", () => {
       expect(result.exitCode).toBe(0);
       expect(state.meCalls).toBe(2);
       expect(state.refreshCalls).toBe(1);
-      expect(state.acceptLanguages).toContain("en");
+      expect(state.acceptLanguages?.every((locale) => locale === null)).toBe(true);
       expect(result.stdout).toContain("tester");
     } finally {
       server.stop(true);
@@ -1143,6 +1319,94 @@ describe("cloud CLI OAuth session handling", () => {
       expect(state.acceptLanguages).toContain("de-CH");
     } finally {
       server.stop(true);
+    }
+  });
+
+  test("forwards the POSIX locale and omits Accept-Language when it is unusable", async () => {
+    const state: MockServerState = { refreshCalls: 0, revokeCalls: 0, meCalls: 0 };
+    const server = startMockServer(state);
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+    const args = ["--server", server.url.origin, "--token", "test-token", "account", "whoami", "--json"];
+    try {
+      for (const [env, expected] of [
+        [{ LANG: "de_DE.UTF-8" }, "de-DE"],
+        [{ LANG: "C" }, null],
+        [{ LANG: "de_DE.UTF-8", LC_ALL: "C" }, null],
+      ] satisfies Array<[Record<string, string>, string | null]>) {
+        const result = await runCli(configPath, args, env);
+        expect(result.exitCode, result.stderr).toBe(0);
+        expect(JSON.parse(result.stdout).uid).toBe("tester");
+        expect(state.acceptLanguages?.at(-1)).toBe(expected);
+      }
+    } finally {
+      server.stop(true);
+    }
+  });
+
+  test.skipIf(process.platform === "win32")("openUrl validates links, checks the host, and silently reports opener results", async () => {
+    const dir = await createTempDir();
+    const configPath = join(dir, "config.json");
+    const pluginDir = join(dir, "cloud", "cld", "plugins", "browser");
+    const binDir = join(dir, "bin");
+    const logPath = join(dir, "browser.log");
+    await mkdir(join(pluginDir, "dist"), { recursive: true });
+    await mkdir(binDir);
+    await writeFile(
+      join(pluginDir, "package.json"),
+      JSON.stringify({ name: "browser", version: "1.0.0", cld: { apiVersion: 1, entry: "dist/cli.js" } }),
+    );
+    await writeFile(
+      join(pluginDir, "dist", "cli.js"),
+      `export default { name: "browser", summary: "Open a link", requiresCloud: false, run: async (ctx) => {
+        ctx.json({ opened: await ctx.openUrl(ctx.args[0]), locale: ctx.options.locale ?? null });
+        return 0;
+      } };`,
+    );
+    await writeFile(
+      join(binDir, process.platform === "darwin" ? "open" : "xdg-open"),
+      `#!/bin/sh
+printf '%s\n' "$#" "$@" > "$BROWSER_LOG"
+printf 'opener stdout\n'
+printf 'opener stderr\n' >&2
+exit "$BROWSER_EXIT"
+`,
+      { mode: 0o700 },
+    );
+    const desktop = {
+      PATH: binDir,
+      BROWSER_LOG: logPath,
+      BROWSER_EXIT: "0",
+      SSH_CONNECTION: "",
+      SSH_TTY: "",
+      DISPLAY: ":0",
+      WAYLAND_DISPLAY: "",
+    };
+    for (const url of ["file:///tmp/file", "javascript:alert(1)", "mailto:user@example.test", "ftp://example.test", "not a URL"]) {
+      const result = await runCli(configPath, ["plugins", "run", "browser", url], desktop);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual({ opened: false, locale: null });
+      expect(result.stderr).toBe("");
+    }
+    const url = "https://example.test/path?text=hello world&value=$(echo nope)";
+    const unavailableHosts: Array<Record<string, string>> = [{ SSH_CONNECTION: "ssh session" }, { SSH_TTY: "/dev/pts/1" }];
+    if (process.platform === "linux") unavailableHosts.push({ DISPLAY: "" });
+    for (const env of unavailableHosts) {
+      const result = await runCli(configPath, ["plugins", "run", "browser", url], { ...desktop, ...env });
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual({ opened: false, locale: null });
+      expect(result.stderr).toBe("");
+    }
+    expect(await Bun.file(logPath).exists()).toBe(false);
+    for (const [link, exit, opened] of [
+      [url, "0", true],
+      ["http://example.test", "1", false],
+    ] satisfies Array<[string, string, boolean]>) {
+      const result = await runCli(configPath, ["plugins", "run", "browser", link], { ...desktop, BROWSER_EXIT: exit });
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual({ opened, locale: null });
+      expect(result.stderr).toBe("");
+      expect(await readFile(logPath, "utf8")).toBe(`1\n${link}\n`);
     }
   });
 

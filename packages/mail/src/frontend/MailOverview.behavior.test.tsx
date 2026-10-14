@@ -3,6 +3,16 @@ import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
+import type { MailFocusPage, MailFocusView } from "../contracts";
+
+const emptyPage = { items: [], nextCursor: null };
+/** The first page of every view and their counts, as the server renders the overview. */
+const focusOverview = (
+  pages: Partial<Record<MailFocusView, Pick<MailFocusPage, "items" | "nextCursor">>> = {},
+  counts: MailFocusPage["counts"] = { mine: 0, unassigned: 0, waiting: 0, all: 0 },
+  mailboxCounts: MailFocusPage["mailboxCounts"] = [],
+) => ({ pages: { mine: emptyPage, unassigned: emptyPage, waiting: emptyPage, all: emptyPage, ...pages }, counts, mailboxCounts });
+const emptyFocus = focusOverview();
 
 test.skipIf(isServer)("deleted mailboxes load on disclosure, retry failures, and paginate", async () => {
   const dom = createDomTestHarness();
@@ -12,6 +22,9 @@ test.skipIf(isServer)("deleted mailboxes load on disclosure, retry failures, and
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL) => {
       const url = String(input);
+      // Idle file-provider discovery is independent of Mail's Focus and preference requests.
+      if (new URL(url, "http://localhost").pathname === "/api/capabilities/v1/catalog")
+        return Response.json({ code: "APP_UNAVAILABLE", message: "Down" }, { status: 503 });
       requests.push(url);
       if (!url.includes("/mailboxes/deleted")) throw new Error(`Unexpected request: ${url}`);
       if (fail) return Response.json({ message: "Temporarily unavailable" }, { status: 503 });
@@ -33,7 +46,7 @@ test.skipIf(isServer)("deleted mailboxes load on disclosure, retry failures, and
         contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
         dateConfig: { locale: "en", timeZone: "UTC" },
         initialFocusError: null,
-        initialFocus: { items: [], counts: { mine: 0, unassigned: 0, waiting: 0, all: 0 }, mailboxCounts: [], nextCursor: null },
+        initialFocus: emptyFocus,
       }),
     dom.root,
   );
@@ -118,7 +131,7 @@ test.skipIf(isServer)("pinning saves for the person and puts the row back when t
         contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
         dateConfig: { locale: "en", timeZone: "UTC" },
         initialFocusError: null,
-        initialFocus: { items: [], counts: { mine: 0, unassigned: 0, waiting: 0, all: 0 }, mailboxCounts: [], nextCursor: null },
+        initialFocus: emptyFocus,
       }),
     dom.root,
   );
@@ -192,6 +205,9 @@ test.skipIf(isServer)("hiding a mailbox moves it under Hidden and refreshes Focu
         saves.push({ mailboxId: url.pathname.split("/").at(-2), body });
         return Response.json({ pinned: body.pinned ?? false, hidden: body.hidden ?? false });
       }
+      // Idle file-provider discovery is independent of Mail's Focus and preference requests.
+      if (url.pathname === "/api/capabilities/v1/catalog")
+        return Response.json({ code: "APP_UNAVAILABLE", message: "Down" }, { status: 503 });
       requests.push(url);
       if (!url.pathname.endsWith("/overview/conversations")) return Response.json({ message: "Unexpected request" }, { status: 500 });
       const excluded = url.searchParams.get("excludeMailboxIds");
@@ -237,12 +253,16 @@ test.skipIf(isServer)("hiding a mailbox moves it under Hidden and refreshes Focu
         contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
         dateConfig: { locale: "en", timeZone: "UTC" },
         initialFocusError: null,
-        initialFocus: {
-          items: [focusItem("Convo1", "Mail01", "Refund request"), focusItem("Convo2", "Mail02", "Automatic notice")],
-          counts: { mine: 0, unassigned: 2, waiting: 0, all: 2 },
-          mailboxCounts: [{ mailboxId: "Mail02", unread: 4, needsAction: 1 }],
-          nextCursor: null,
-        },
+        initialFocus: focusOverview(
+          {
+            unassigned: {
+              items: [focusItem("Convo1", "Mail01", "Refund request"), focusItem("Convo2", "Mail02", "Automatic notice")],
+              nextCursor: null,
+            },
+          },
+          { mine: 0, unassigned: 2, waiting: 0, all: 2 },
+          [{ mailboxId: "Mail02", unread: 4, needsAction: 1 }],
+        ),
       }),
     dom.root,
   );
@@ -261,18 +281,18 @@ test.skipIf(isServer)("hiding a mailbox moves it under Hidden and refreshes Focu
     element.focus();
     element.click();
   };
-  const scope = () => dom.root.querySelector(".mail-overview-scope")?.textContent;
   try {
     await settle();
     expect(requests).toHaveLength(0);
     expect(sectionToggle()).toBeNull();
-    expect(scope()).toBe("All mailboxes");
+    // Focus names no mailbox scope, so hiding a mailbox changes nothing above the list.
+    expect(dom.root.querySelector(".mail-overview-scope")).toBeNull();
 
     press("Hide Notifications");
     // Its rows leave Focus at once; the refreshed page brings counts without it.
     expect(dom.root.textContent).not.toContain("Automatic notice");
     expect(dom.root.textContent).toContain("Refund request");
-    expect(scope()).toBe("All mailboxes except 1 hidden");
+    expect(dom.root.textContent).not.toContain("All mailboxes");
     // Focus moves to the row that took its place and stays there when the refreshed page arrives.
     expect(document.activeElement).toBe(rowLink("Mail01"));
     await settle();
@@ -280,7 +300,8 @@ test.skipIf(isServer)("hiding a mailbox moves it under Hidden and refreshes Focu
     expect(requests).toHaveLength(1);
     expect(requests[0]!.searchParams.get("view")).toBe("unassigned");
     expect(requests[0]!.searchParams.get("excludeMailboxIds")).toBe("Mail02,Gone01");
-    expect(dom.root.textContent).toContain("1 conversation without an assignee · All mailboxes except 1 hidden");
+    expect(dom.root.textContent).toContain("1 conversation without an assignee");
+    expect(dom.root.textContent).not.toContain("except");
     expect(saves).toEqual([{ mailboxId: "Mail02", body: { hidden: true } }]);
 
     // The Hidden section starts collapsed and reveals the mailbox with its counts.
@@ -300,7 +321,8 @@ test.skipIf(isServer)("hiding a mailbox moves it under Hidden and refreshes Focu
     expect(document.activeElement).toBe(rowLink("Mail02"));
     expect(rowLink("Mail02")?.closest("[data-hidden]")).toBeNull();
     expect(sectionToggle()).toBeNull();
-    expect(scope()).toBe("All mailboxes");
+    // Focus names no mailbox scope, so hiding a mailbox changes nothing above the list.
+    expect(dom.root.querySelector(".mail-overview-scope")).toBeNull();
     expect(saves.at(-1)).toEqual({ mailboxId: "Mail02", body: { hidden: false } });
     expect(requests).toHaveLength(2);
     expect(requests[1]!.searchParams.get("excludeMailboxIds")).toBe("Gone01");
@@ -320,7 +342,7 @@ test.skipIf(isServer)("hiding a mailbox moves it under Hidden and refreshes Focu
     expect(document.activeElement).toBe(sectionToggle());
     await settle();
     expect(document.activeElement).toBe(sectionToggle());
-    expect(scope()).toBe("All mailboxes except 2 hidden");
+    expect(dom.root.textContent).not.toContain("All mailboxes");
   } finally {
     dispose();
     globalThis.fetch = originalFetch;
@@ -335,6 +357,10 @@ test.skipIf(isServer)("a full hidden list keeps the mailbox in place and says wh
   const requests: string[] = [];
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      // Idle file-provider discovery is independent of Mail's Focus and preference requests.
+      if (url.pathname === "/api/capabilities/v1/catalog")
+        return Response.json({ code: "APP_UNAVAILABLE", message: "Down" }, { status: 503 });
       requests.push(String(input));
       return Response.json({ message: "Unexpected request" }, { status: 500 });
     },
@@ -373,7 +399,7 @@ test.skipIf(isServer)("a full hidden list keeps the mailbox in place and says wh
         contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
         dateConfig: { locale: "en", timeZone: "UTC" },
         initialFocusError: null,
-        initialFocus: { items: [], counts: { mine: 0, unassigned: 0, waiting: 0, all: 0 }, mailboxCounts: [], nextCursor: null },
+        initialFocus: emptyFocus,
       }),
     dom.root,
   );

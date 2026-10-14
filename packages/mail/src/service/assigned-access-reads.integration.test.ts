@@ -428,6 +428,18 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
       expect(page.items.every((item) => visible && item.id === c1.id)).toBe(true);
       expect(page.counts).toEqual({ mine: visible ? 1 : 0, waiting: 0, unassigned: 0, all: visible ? 1 : 0 });
     }
+    // The server-rendered overview reads every view at once and must filter the same way.
+    const overviewPages = unwrap(await focus.listFocusOverview({ context }));
+    expect(
+      Object.fromEntries(Object.entries(overviewPages.pages).map(([view, page]) => [view, page.items.map((item) => item.id)])),
+    ).toEqual({
+      mine: visible ? [c1.id] : [],
+      unassigned: [],
+      waiting: [],
+      all: visible ? [c1.id] : [],
+    });
+    expect(overviewPages.counts).toEqual({ mine: visible ? 1 : 0, waiting: 0, unassigned: 0, all: visible ? 1 : 0 });
+    expect(overviewPages.mailboxCounts).toEqual(visible ? [{ mailboxId, unread: 1, needsAction: 1 }] : []);
     expect(unwrap(await focus.listMailboxCounts(context))).toEqual(visible ? [{ mailboxId, unread: 1, needsAction: 1 }] : []);
     const folderList = unwrap(await messages.listFolders(context, mailboxId));
     expect(folderList.map((item) => item.id).sort()).toEqual(visible ? [inboxId, draftsFolderId].sort() : []);
@@ -780,6 +792,9 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
       expect(unwrap(await drafts.listDrafts(context, mailboxId))).toHaveLength(3);
       expect(unwrap(await messages.getConversationViewCounts({ context, mailboxId })).recently_active).toBe(3);
       expect(unwrap(await messages.getMessage({ context, mailboxId, messageId: c3.messageId })).subject).toContain("hiddenquasar");
+      const overviewPages = unwrap(await focus.listFocusOverview({ context }));
+      expect(overviewPages.pages.all.items.map((item) => item.id)).toEqual(expect.arrayContaining([c1.id, c3.id]));
+      expect(overviewPages.pages.unassigned.items.map((item) => item.id)).toContain(c3.id);
     }
     const response = await call(tokenR, `${base()}/conversations`);
     expect(response.status).toBe(200);
@@ -846,6 +861,7 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
         mailboxId,
         requestUrl: new URL(`http://localhost/app/mail/${mailboxShortId}?conversation=${c1.id}`),
         search: { query: "", expression: null, sort: "newest", error: null },
+        publicSearch: { query: "", expression: null, sort: "relevance", error: null },
       }),
     );
     expect(page.access).toEqual({ scope: "assigned", permission: "read" });

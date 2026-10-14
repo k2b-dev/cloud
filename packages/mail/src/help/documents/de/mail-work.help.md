@@ -128,6 +128,8 @@ Mail klappt den zitierten Verlauf früherer Nachrichten ein. Wähle **Zitierten 
 
 Die oberen Aktionen nehmen die Unterhaltung aus dem Ordner, den du gerade ansiehst, etwa dem Posteingang. Das gilt auch, wenn deine neueste Antwort in Gesendet liegt. In Ansichten über mehrere Ordner, etwa **Alle E-Mails** oder **Handlungsbedarf**, nehmen sie die Unterhaltung aus jedem Ordner, in dem sie liegt. Deine Kopien in Gesendet und Entwürfe bleiben, wo sie sind. Das gilt auch für Nachrichten in Spam, im Papierkorb oder im Ordner **All Mail** von Gmail. Die Ausnahme ist eine Unterhaltung, die nur dort liegt.
 
+Die Zeile verschwindet sofort aus der Liste. Ein Hinweis bietet dir für einige Sekunden **Rückgängig** an. Hat Mail die Änderung noch nicht an den Mailserver gesendet, hält Rückgängig sie auf. Andernfalls verschiebt Mail die Unterhaltung zurück. Lehnt der Mailserver die Änderung ab, kommt die Zeile zurück. Mail erklärt den Grund und bietet **Erneut versuchen** an. Aktionen, die du während einer laufenden Aktion startest, werden in der von dir gewählten Reihenfolge ausgeführt.
+
 Bei Gmail sind Ordner Labels, und diese Ansichten wirken auf ein Label: den Posteingang, wenn die Unterhaltung darin liegt.
 
 - **Archivieren** entfernt nur das Label Posteingang und behält deine anderen Labels und Sterne. Eine Unterhaltung außerhalb des Posteingangs hat nichts zu archivieren.
@@ -203,7 +205,7 @@ Die Anfrage betrifft künftige Zustellungen für dieses Postfach und lässt sich
 - **Abmelden** bittet die Liste, keine E-Mails mehr zu senden. Mail nutzt eine geschützte Ein-Klick-Anfrage, wenn die Liste sie unterstützt. Sonst öffnet Mail die Abmeldeseite der Liste oder bereitet die Abmelde-E-Mail vor, die die Liste nennt.
 - **An Mailingliste schreiben** öffnet die Adresse, die die Liste für neue Nachrichten nennt.
 - **Archiv der Mailingliste** öffnet das Archiv, das die Liste angibt.
-- Nach einer Ein-Klick-Abmeldung verschieben **Vorhandene archivieren** oder **Vorhandene in den Papierkorb verschieben** bis zu 500 bereits synchronisierte Nachrichten auf einmal. Wiederhole die Aktion, wenn Mail meldet, dass weitere Nachrichten übrig sind.
+- Nach einer Ein-Klick-Abmeldung verschieben **Vorhandene archivieren** oder **Vorhandene in den Papierkorb verschieben** bis zu 500 bereits synchronisierte Nachrichten auf einmal. Nachrichten in Gesendet, Entwürfe, Papierkorb und Spam bleiben, wo sie sind, und aufbewahrte Unterhaltungen kommen nicht in den Papierkorb. Wiederhole die Aktion, sobald diese Verschiebungen abgeschlossen sind, wenn Mail meldet, dass weitere Nachrichten übrig sind.
 
 Mail öffnet nie einen Abmeldelink, nur weil du eine Nachricht in der Vorschau siehst oder liest. Listen ohne standardisierte Listenangaben erscheinen nicht unter **Mailinglisten**.
 

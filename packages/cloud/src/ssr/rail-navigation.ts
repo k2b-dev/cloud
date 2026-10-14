@@ -1,4 +1,5 @@
 import type { RailPreferences, RailSnapshot } from "../contracts/rail-preferences";
+import { helpPageAppId } from "./layout-help-url";
 
 export type RailApp = {
   id: string;
@@ -12,7 +13,7 @@ export type RailApp = {
   /** The app's `nav.badge` endpoint. */
   badge?: string;
 };
-export type RailLink = Omit<RailApp, "defaultVisible"> & { exact?: boolean };
+export type RailLink = Omit<RailApp, "defaultVisible"> & { appId?: string; exact?: boolean };
 
 export const isRailAppVisible = (app: RailApp, settings: RailPreferences): boolean =>
   Object.hasOwn(settings.visibility, app.id) ? (settings.visibility[app.id] ?? app.defaultVisible) : app.defaultVisible;
@@ -32,7 +33,7 @@ export const projectRailNavigation = (apps: readonly RailApp[], settings: RailSn
       const app = catalog.get(shortcut.appId);
       if (!app || pinned.has(app.id)) continue;
       pinned.add(app.id);
-      shortcuts.push({ ...app, id: shortcut.id });
+      shortcuts.push({ ...app, id: shortcut.id, appId: app.id });
     } else {
       shortcuts.push({
         id: shortcut.id,
@@ -46,13 +47,17 @@ export const projectRailNavigation = (apps: readonly RailApp[], settings: RailSn
   }
   return {
     shortcuts,
-    apps: sortRailApps(apps, locale).filter((app) => !pinned.has(app.id) && isRailAppVisible(app, settings)),
+    apps: sortRailApps(apps, locale)
+      .filter((app) => !pinned.has(app.id) && isRailAppVisible(app, settings))
+      .map((app) => ({ ...app, appId: app.id })),
   };
 };
 
 /** `currentPath` is the route as `pathname + search`; an absolute URL is accepted but never required. */
 export const railLinkActive = (link: RailLink, currentPath: string): boolean => {
   const current = new URL(currentPath, "https://cloud.invalid");
+  const helpAppId = helpPageAppId(current.pathname);
+  if (helpAppId && link.appId) return link.appId === helpAppId;
   const target = new URL(link.match, current);
   if (target.origin !== current.origin) return false;
   if (link.exact) return target.pathname === current.pathname && target.search === current.search && target.hash === current.hash;

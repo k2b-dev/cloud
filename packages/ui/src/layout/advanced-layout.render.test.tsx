@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { createComponent } from "solid-js";
+import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import {
   APP_WORKSPACE_MAIN_MIN,
@@ -24,8 +24,66 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: AppWorkspace } = await import("./AppWorkspace");
+const { PageTrailProvider } = await import("./PageTitle");
 
 describe("@k2b/ui complete advanced layout migrations", () => {
+  for (const active of [true, "ancestor"] as const) {
+    test(`renders a sidebar item marked ${active} with the current-page semantics`, () => {
+      const html = renderToString(() => createComponent(AppWorkspace.SidebarItem, { href: "/devices", active, children: "Devices" }));
+      expect(html).toMatch(/class="[^"]*\bis-active\b/);
+      expect(html).toContain(`aria-current="${active === "ancestor" ? "true" : "page"}"`);
+    });
+  }
+
+  test("renders the page heading and exact-current navigation before hydration", () => {
+    const html = renderToString(() =>
+      createComponent(PageTrailProvider, {
+        trail: { title: "Devices", ancestors: [{ title: "Inventory", href: "/inventory" }] },
+        get children() {
+          return createComponent(AppWorkspace, {
+            get children() {
+              return [
+                createComponent(AppWorkspace.Sidebar, {
+                  get children() {
+                    return createComponent(AppWorkspace.SidebarDesktop, {
+                      get children() {
+                        return createComponent(AppWorkspace.SidebarItem, { href: "/devices", active: true, children: "Devices" });
+                      },
+                    });
+                  },
+                }),
+                createComponent(AppWorkspace.Content, {
+                  get children() {
+                    return createComponent(AppWorkspace.Main, { children: "Devices table" });
+                  },
+                }),
+              ];
+            },
+          });
+        },
+      }),
+    );
+    expect(html).toMatch(/class="k2b-app-workspace__head"[^>]*data-trail="up"/);
+    // The visible title is no heading; the head's heading stands in once the sidebar hides the row.
+    expect(html).toMatch(/<p[^>]*class="k2b-page-title__title\s*"[^>]*>.*?Devices.*?<\/p>/);
+    expect(html).toMatch(/<h1[^>]*class="k2b-app-workspace__head-heading"[^>]*data-k2b-server[^>]*>.*?Devices.*?<\/h1>/);
+    expect(html).toMatch(/<a[^>]*href="\/devices"[^>]*aria-current="page"/);
+    const source = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
+    expect(source).toMatch(
+      /@media \(min-width: 64rem\) \{[^}]*\[aria-current="page"\][^}]*> \.k2b-app-workspace__head\[data-trail="up"\] \{[^}]*clip-path: inset\(50%\)/,
+    );
+  });
+
+  test("a flat workspace marks itself and its stylesheet drops the frame", () => {
+    const html = renderToString(() => createComponent(AppWorkspace, { flat: true, children: "Overview" }));
+    expect(html).toMatch(/class="k2b-app-workspace\s*"[^>]*data-flat="true"/);
+    expect(renderToString(() => createComponent(AppWorkspace, { children: "Workspace" }))).not.toContain("data-flat");
+    const source = readFileSync(resolve(import.meta.dir, "../styles/layout-parity.css"), "utf8");
+    expect(source).toMatch(
+      /\.k2b-app-workspace\[data-flat="true"\] \{\s*--k2b-workspace-radius: 0px;\s*border-color: transparent;\s*box-shadow: none;/,
+    );
+  });
+
   test("renders the complete workspace compound composition", () => {
     const html = renderToString(() =>
       createComponent(AppWorkspace, {
@@ -76,6 +134,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
                                     return createComponent(AppWorkspace.NavTree.Item, {
                                       id: "available",
                                       label: "Available",
+                                      description: "Updated today",
                                       meta: "8",
                                       metaVisibility: "hover",
                                       get actions() {
@@ -127,6 +186,10 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     );
 
     expect(html).toContain("data-k2b-app-workspace");
+    // A tree item's description is a second line under its label.
+    expect(html).toMatch(
+      /k2b-app-workspace__sidebar-item-copy"><span class="k2b-app-workspace__sidebar-item-label" data-label="Available"><span class="k2b-app-workspace__sidebar-item-label-text">Available<\/span><\/span><span class="k2b-app-workspace__sidebar-item-description">Updated today<\/span>/,
+    );
     expect(html).not.toContain("k2b-app-workspace__sidebar-mobile");
     expect(html).not.toContain('data-mobile="stacked"');
     expect(html).toContain("Inventory");
@@ -203,7 +266,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(html).toMatch(/<aside[^>]*aria-label="Mailboxes"[^>]*data-mobile="stacked"/);
     expect(html).toMatch(/class="k2b-app-workspace__main[^"]*"[^>]*data-width="content"/);
     expect(html).toMatch(/<a href="\/app\/mail\/support"[^>]*data-variant="object"/);
-    expect(html).toContain('class="k2b-app-workspace__sidebar-item-label" data-marquee="false"');
+    expect(html).toContain('class="k2b-app-workspace__sidebar-item-label" data-lines="1"');
     expect(html).toContain('<span class="k2b-app-workspace__sidebar-item-description">support@example.test</span>');
     expect(html).toContain('<span class="k2b-app-workspace__sidebar-item-meta">12</span>');
   });
@@ -261,13 +324,13 @@ describe("@k2b/ui complete advanced layout migrations", () => {
   test("reveals hover sidebar and section actions for pointer and keyboard users without hiding them on touch", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
 
-    expect(css).toContain("@media (hover: hover) and (pointer: fine)");
+    expect(css).toContain("@media (any-hover: hover)");
     expect(css).toContain(".k2b-app-workspace__sidebar-section-actions");
     expect(css).toContain(':has(.k2b-dropdown__trigger[aria-expanded="true"])');
     expect(css).toContain('.k2b-app-workspace__sidebar-item-action[data-visibility="hover"]');
-    expect(css).toContain('.k2b-app-workspace__sidebar-item-meta[data-visibility="hover"]');
+    expect(css).toMatch(/sidebar-item-meta\[data-visibility="hover"\] \{\s*visibility: hidden/);
     expect(css).toContain('.k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]');
-    expect(css).toContain(":is(:hover, :focus-within)");
+    expect(css).toContain(':is(:hover, :focus-within, .is-active, :has(> [aria-current="page"]))');
     expect(css).toContain("gap: 0");
     expect(css).toContain("pointer-events: none");
     expect(css).toContain("pointer-events: auto");
@@ -275,16 +338,16 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
   test("overlays revealed object-row actions on the trailing counts instead of shifting them", async () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
-    const finePointer = css.slice(
-      css.indexOf("@media (hover: hover) and (pointer: fine) {\n  .k2b-ui .k2b-app-workspace__sidebar-section-actions"),
-    );
-    const block = finePointer.slice(0, finePointer.indexOf("\n}\n"));
+    const hoverPointer = css.slice(css.indexOf("@media (any-hover: hover) {\n  .k2b-ui .k2b-app-workspace__sidebar-section-actions"));
+    const block = hoverPointer.slice(0, hoverPointer.indexOf("\n}\n"));
     const overlay = block.match(
       /\[data-variant="object"\]:has\(\.k2b-app-workspace__sidebar-item-meta\)\s*> \.k2b-app-workspace__sidebar-item-actions\[data-visibility="hover"\] \{([^}]*)\}/,
     )?.[1];
     expect(overlay).toContain("position: absolute");
     expect(overlay).toContain("inset-inline-end: 0");
-    const hiddenMeta = block.match(/\):is\(:hover, :focus-within\)\s*\.k2b-app-workspace__sidebar-item-meta \{([^}]*)\}/)?.[1];
+    const hiddenMeta = block.match(
+      /\):is\(:hover, :focus-within, \.is-active, :has\(> \[aria-current="page"\]\)\)\s*\.k2b-app-workspace__sidebar-item-meta \{([^}]*)\}/,
+    )?.[1];
     // Opacity keeps the counts' visually hidden text in the accessibility tree.
     expect(hiddenMeta).toContain("opacity: 0");
     expect(hiddenMeta).not.toContain("visibility");
@@ -319,10 +382,24 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(activeItemRule).toContain("color: var(--k2b-app-workspace-active)");
     expect(activeItemRule).toContain("background: transparent");
     expect(activeItemRule).toContain("font-weight: 600");
-    expect(activeItemHoverRule).toContain("background: var(--k2b-hover)");
+    expect(activeItemHoverRule).toContain("background: var(--k2b-app-workspace-hover)");
     expect(activeIconRule).toContain("color: var(--k2b-app-workspace-active)");
     expect(activeIconRule).toContain("background: transparent");
-    expect(activeIconHoverRule).toContain("background: var(--k2b-hover)");
+    expect(activeIconHoverRule).toContain("background: var(--k2b-app-workspace-hover)");
+    // Every hover in the sidebar uses the one neutral fill, so none sits in platform blue beside the app accent.
+    expect(css).toContain("--k2b-app-workspace-hover: color-mix(in srgb, var(--k2b-text) 5%, transparent)");
+    for (const selector of [
+      ".k2b-app-workspace__sidebar-item:hover",
+      '.k2b-app-workspace__sidebar-item[data-variant="card"]:hover',
+      ".k2b-app-workspace__nav-tree-toggle:hover",
+      ".k2b-app-workspace__sidebar-icon-action:hover",
+    ]) {
+      const rule = css.match(new RegExp(`\\.k2b-ui ${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`))?.[1];
+      expect({ selector, background: rule?.match(/background: ([^;]+);/)?.[1] }).toEqual({
+        selector,
+        background: "var(--k2b-app-workspace-hover)",
+      });
+    }
   });
 
   // FloatingWindow portals its frame, so SSR yields no markup to assert on.
@@ -331,7 +408,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     const handles = source.match(/class="k2b-floating-window__resize"/g) ?? [];
 
     expect(handles).toHaveLength(2);
-    expect(source.match(/aria-label=\{messages\(\)\.resizeWindow\}/g) ?? []).toHaveLength(1);
+    expect(source.match(/aria-label=\{floatingWindowMessages\(\)\.resizeWindow\}/g) ?? []).toHaveLength(1);
     expect(source).toContain('edge === "bottom-right" ? (');
     expect(source).toContain('aria-hidden="true"');
   });
@@ -492,12 +569,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       max: 296,
     });
     expect(appWorkspaceResizeLimits({ kind: "detail", workspaceSize: 1400, reservedSize: 208 })).toEqual({
-      min: 288,
+      min: 320,
       max: 640,
     });
     expect(appWorkspaceResizeLimits({ kind: "detail", workspaceSize: 900, reservedSize: 500 })).toEqual({
-      min: 288,
-      max: 288,
+      min: 320,
+      max: 320,
     });
     expect(appWorkspaceResizeLimits({ kind: "pane", workspaceSize: 1200, reservedSize: 320 })).toEqual({
       min: 240,
@@ -659,32 +736,38 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(renderToString(() => createComponent(AppWorkspace, { children: "body" }))).toContain("data-k2b-app-workspace");
   });
 
-  test("renders a measurable marquee label that honours marquee={false}", () => {
-    const item = (marquee?: boolean) =>
+  test("wraps plain row labels and honours marquee={false}", () => {
+    const item = (marquee?: boolean, label: JSX.Element = "A very long row label") =>
       renderToString(() =>
         createComponent(AppWorkspace.SidebarItem, {
           href: "/items",
           get children() {
-            return createComponent(AppWorkspace.SidebarItemLabel, { marquee, children: "A very long row label" });
+            return createComponent(AppWorkspace.SidebarItemLabel, { marquee, children: label });
           },
         }),
       );
 
-    // The controller measures this inner span against its clipping parent.
+    // Only wrapping plain strings reserve their selected weight.
     expect(item()).toContain('class="k2b-app-workspace__sidebar-item-label-text"');
-    expect(item()).toContain('data-marquee="true"');
-    expect(item(false)).toContain('data-marquee="false"');
-    expect(item(false)).toContain('class="k2b-app-workspace__sidebar-item-label-text"');
+    expect(item()).toContain('data-label="A very long row label"');
+    expect(item()).not.toContain("data-lines");
+    expect(item(false)).toContain('data-lines="1"');
+    expect(item(false)).not.toContain("data-label");
+    expect(item(undefined, <strong>Styled label</strong>)).not.toContain("data-label");
+    expect(item(undefined, 123)).not.toContain("data-label");
   });
 
   test("uses Cloud's default detail widths and drawer heights", () => {
     // These land in `aria-valuenow` and in the `var(…, Npx)` first-paint
     // fallback, so a drifting default is a visible first-paint difference.
-    const detail = (width: "lg" | "xl") =>
+    const detail = (width: "sm" | "md" | "lg" | "xl") =>
       renderToString(() => createComponent(AppWorkspace.Detail, { id: "d", open: true, width, children: "x" }));
     const drawer = (height: "sm" | "lg") =>
       renderToString(() => createComponent(AppWorkspace.BottomDrawer, { id: "b", open: true, height, children: "x" }));
 
+    expect(detail("sm")).toContain('aria-valuenow="320"');
+    expect(detail("md")).toContain('aria-valuenow="416"');
+    expect(detail("md")).toContain('aria-valuemin="320"');
     expect(detail("lg")).toContain("480px");
     expect(detail("xl")).toContain("544px");
     expect(drawer("sm")).toContain("192px");
@@ -746,20 +829,19 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       const resize = rule(".k2b-app-workspace__resize");
       expect(resize).toContain("position:absolute");
       expect(resize).toContain("width:var(--k2b-workspace-resize-hit-size)");
-      const inlineResize = rule(
-        ".k2b-app-workspace__main>.k2b-app-workspace__resize[data-app-workspace-resize=pane],.k2b-ui .k2b-app-workspace__content>.k2b-app-workspace__resize[data-app-workspace-resize=detail]",
+      const paneResize = rule(".k2b-app-workspace__main>.k2b-app-workspace__resize[data-app-workspace-resize=pane]");
+      expect(paneResize).toContain("flex:0 0 var(--k2b-workspace-resize-hit-size)");
+      const detailResize = rule(".k2b-app-workspace__resize[data-app-workspace-resize=detail]");
+      expect(detailResize).toContain(
+        "right:calc(max(var(--k2b-workspace-panel-min),100% - var(--k2b-workspace-detail-inset)) + var(--k2b-workspace-detail-inset))",
       );
-      expect(inlineResize).toContain("flex:0 0 var(--k2b-workspace-resize-hit-size)");
-      // The detail handle is emitted before its panel. Giving only the handle
-      // an order moves it behind the panel and puts the hit target on the
-      // trailing edge instead of between main and detail.
-      expect(inlineResize).not.toContain("order:");
+      expect(detailResize).not.toContain("order:");
     });
 
     test("keeps workspace geometry transparent across Solid island wrappers", () => {
       expect(css).toMatch(/>:is\(solid-island,solid-client\)>\.k2b-app-workspace__sidebar/);
       expect(css).toMatch(/>:is\(solid-island,solid-client\)>\.k2b-app-workspace__detail:not\(\[hidden\]\)/);
-      expect(css).toMatch(/>:is\(solid-island,solid-client\)>\.k2b-app-workspace__resize\[data-app-workspace-resize=detail\]/);
+      expect(rule(".k2b-app-workspace__resize[data-app-workspace-resize=detail]")).toContain("grid-area:detail");
       expect(css).toMatch(/>:is\(solid-island,solid-client\)>\.k2b-app-workspace__resize\[data-app-workspace-resize=drawer\]/);
     });
 
@@ -805,8 +887,10 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-app-workspace__sidebar-icon-action")).toContain("width:100%");
       expect(rule(".k2b-app-workspace__main-pane[data-surface=navigation]")).toContain("background:var(--k2b-surface-muted)");
       expect(rule(".k2b-app-workspace__main-pane[data-surface=navigation]")).toContain("padding:.5rem");
-      expect(rule(".k2b-app-workspace__detail")).toContain("background:var(--k2b-surface-muted)");
-      expect(rule(".k2b-app-workspace__detail")).toContain("padding:.75rem");
+      expect(rule(".k2b-app-workspace__detail")).toContain("background:var(--k2b-surface-elevated)");
+      // A phone sheet belongs to the window; from 48 rem the panel floats inside the content area.
+      expect(rule(".k2b-app-workspace__detail")).toContain("position:fixed");
+      expect(css).toContain(".k2b-ui .k2b-app-workspace__detail{position:absolute;");
       expect(rule(".k2b-app-workspace__drawer")).toContain("background:var(--k2b-surface-muted)");
     });
 
@@ -1043,13 +1127,13 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-panes")).toContain("overflow:hidden");
     });
 
-    test("drives the sidebar marquee from a measured overflow", () => {
-      // The prop used to emit `data-marquee` with nothing behind it.
-      expect(css).toContain("@keyframes k2b-sidebar-label-marquee");
-      expect(css).toContain(".k2b-app-workspace__sidebar-item-label[data-overflow=true][data-marquee=true]");
-      expect(rule(".k2b-app-workspace__sidebar-item-label-text")).toContain("min-width:max-content");
-      // Reduced motion must win over the running animation.
-      expect(css).toContain("animation:none!important");
+    test("balances two label lines and reserves the selected weight", () => {
+      expect(rule(".k2b-app-workspace__sidebar-item-label")).toContain("display:grid");
+      expect(css).toContain("-webkit-line-clamp:2");
+      expect(css).toContain("text-wrap:balance");
+      expect(css).toMatch(/sidebar-item-label\[data-label\]:after\{[^}]*font-weight:600/);
+      // One-line labels, and labels beside a live status, keep the ellipsis.
+      expect(css).toMatch(/sidebar-item-label:is\(\[data-lines="1"\][^{]*sidebar-status[^{]*\{[^}]*text-overflow:ellipsis/);
     });
 
     test("mutes a pane separator that cannot be dragged", () => {

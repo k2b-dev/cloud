@@ -1,8 +1,5 @@
 import { type Accessor, createSignal, onCleanup, onMount } from "solid-js";
-import { isServer } from "solid-js/web";
-import { parseNavigatorQuery } from "../../../../lib/navigator-url";
-import { readNavigationHidden, readSettings, writeNavigationHidden } from "../settings/NotebookSettingsStore";
-import type { NotebookContext } from "./types";
+import { readNavigationHidden, writeNavigationHidden } from "../settings/NotebookSettingsStore";
 
 /**
  * The desktop navigation's hidden state is one global, cookie-backed
@@ -73,13 +70,3 @@ export const createNavigationHidden = (initial: boolean): Accessor<boolean> => {
   });
   return hidden;
 };
-
-/**
- * Showing a hidden navigation mounts the navigator again. It resumes from the
- * URL and the stored sort, which may have changed since the server rendered
- * the page; while hydrating, both still equal the server's values.
- */
-export const navigatorStart = (ctx: NotebookContext) =>
-  isServer
-    ? { query: ctx.navigatorQuery, sortMode: ctx.settings.navigatorSort }
-    : { query: parseNavigatorQuery(new URLSearchParams(window.location.search)), sortMode: readSettings(ctx.notebook.id).navigatorSort };

@@ -3,6 +3,7 @@ id: mail-compose
 title: Write and send messages
 icon: ti ti-pencil
 description: Compose, recover drafts, use templates, attach files, and control delivery.
+updated: 2026-10-11
 order: 30
 ---
 
@@ -21,6 +22,8 @@ Choose **Write with AI** to save the current Mail draft and open it in a new Ass
 For recipients without doubt, Mail can also attach the matching contacts that you can read in the contact directory, which is Contacts by default. A missing or unavailable contact directory does not block the chat.
 
 The Assistant chat does not copy the message into a separate Mail draft and does not gain additional mailbox access. Mail checks your current access each time Assistant reads or changes the draft. Assistant shows updating or sending mail as an Action review. Sending still requires your explicit approval and the normal final check of Mail. To review the current composer state directly, return to Mail through the draft link.
+
+When the Assistant asks to send this draft, a band above the draft shows the waiting request. Review the request there. You can approve or reject it without returning to the chat.
 
 ## Use Cloud Mail for email links {icon="link"}
 
@@ -54,6 +57,8 @@ Open **Message options** and choose the format for the current draft:
 :::
 
 Mail sends Markdown as readable HTML with the mailbox email design and a text alternative. Plain text sends no HTML alternative. If the Preview cannot show the message, for example because it is too long, it says why and offers **Retry**. You can arrange the available panes. Mail keeps the layout compatible when another draft offers a different set of panes.
+
+Markdown can also contain simple HTML. Email keeps the elements `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1` to `h3`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul`, and the table elements. It removes other elements, such as `small`, but keeps their text. It also removes `class`, inline `style`, and most other attributes. Links can open web pages, email addresses (`mailto:`), and phone numbers, for example `[+49 731 000000](tel:+49731000000)`. Email does not show images or horizontal lines. It shows Markdown quotes with a line on the left. Code blocks keep their line breaks but not their language label. When Mail removes HTML or an image, the Preview lists it below the message. The Preview also lists values of the mailbox email design that email ignores. For a very long message, Mail uses the built-in design if the mailbox email design would make it too complex to render. The Preview says so, and the message still sends. To change the look of every message, a mailbox manager edits the mailbox email design. Inline styles cannot do this.
 
 History loads only when you open it. Mail first expands the newest message. You can expand or collapse several messages independently, and Mail loads earlier summaries page by page. Mail loads a complete message only when you expand it. Links and attachments have the same security protection as in the conversation reader.
 
@@ -100,14 +105,44 @@ If another session schedules, sends, or discards the draft, every open composer 
 
 ## Use signatures and snippets {icon="pencil"}
 
-Type `/` in the body to search available signatures and snippets. Mail inserts the chosen template into the draft, where you can edit or remove it.
+The action bar at the bottom of the composer has a **Signature** button between **Write with AI** and **Options** when a signature is available. It shows your current signature. On narrow screens, it shows only the signature icon. New messages, replies, and forwards start with the sender's default signature. A personal default takes precedence over the mailbox default for that sender. Choose another signature or **No signature**. Switching the sender switches to that sender's default.
+
+Signatures stay separate from the editable text. Preview and the sent message show the signature after your text. When you write above a quoted reply or a forwarded message, the signature goes between your text and that message. The copy in the provider's Drafts folder contains only your text, so add a signature yourself if you send the draft from another mail program. When you open an older draft that still has its signature in the text, Mail moves the signature into the signature choice.
+
+Type `/` in the body to search snippets only. Mail inserts the chosen snippet into the text, where you can edit or remove it.
 
 - **Snippet:** Inserts reusable text with its values already filled in. Values such as `{{ actor.email }}` appear as plain text. In Markdown messages, Mail adds a backslash only before characters that would change the formatting, for example `\*`.
-- **Signature:** Keeps its safe Liquid variables until preview and send. Values such as `{{ sender.display_name }}` or `{{ mailbox.name }}` are filled in at delivery.
+- **Signature:** Keeps its safe Liquid variables until preview and send.
 - **Private:** Only the owner sees the template.
 - **Mailbox:** The template is shared with collaborators.
 
-When a verified sender has a default signature, Mail inserts it automatically into new messages, replies, and forwards. In a reply or forward, Mail places the signature before the quoted message history. A personal default replaces the mailbox default for that sender. You can still edit the inserted source. Signatures are not mandatory or locked. If you delete only part of a signature, Mail may no longer recognize the rest as a signature. Mail then sends the rest as written and warns you about any placeholders in it before sending.
+Use these Liquid variables in your template:
+
+| Variable | Value |
+| --- | --- |
+| `actor.display_name` | Name of the person who previews or sends the message, or inserts the snippet; a user-bound service account uses the name of its user, another service account its own name, other automations "Mailbox automation" |
+| `actor.email` | Email address of the person in actor.display_name; empty when there is none |
+| `sender.display_name` | Display name of the sender identity, or its address when it has no name |
+| `sender.email` | From address of the sender identity |
+| `sender.reply_to` | Reply-To address of the sender identity; empty when not set |
+| `mailbox.name` | Mailbox name |
+| `mailbox.description` | Mailbox description; empty when not set |
+| `message.subject` | Subject of the draft |
+| `message.to` | List of To addresses |
+| `message.cc` | List of Cc addresses |
+
+For example, write this signature:
+
+```liquid
+Best regards
+{{ actor.display_name }}
+{{ mailbox.name }}
+```
+
+To separate the addresses in `message.to` and `message.cc`, use `join`:
+`{{ message.to | join: ", " }}`.
+
+Mail warns you before sending about placeholders that remain in the text and would be sent as written.
 
 With **Manage** access, you change templates and defaults in **Settings → Writing**. Choose **Edit design** there to open the mailbox CSS editor. Its preview updates from the current unsaved CSS. The Preview in the composer uses the same rendering as delivery.
 

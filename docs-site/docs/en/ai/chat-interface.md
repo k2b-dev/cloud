@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-10-10
+updated: 2026-10-12
 ---
 
 # Chat interface
@@ -266,9 +266,11 @@ order:
    above it moves when the result arrives. Its alt text is the start of what
    the step saw, the image description or the answer to its prompt. With the
    host's `onOpenFile`, the thumbnail is a button that opens the file larger;
-   its name is that action, and the alt text describes it. Without `fileUrl`,
-   such as in a background run transcript, the step shows no thumbnail.
-2. **Results.** Presented files, `code_present` apps, charts, cards, and
+   its name is that action, and the alt text describes it. Without `fileUrl`
+   the step shows no thumbnail. The run history of a scheduled task passes the
+   file route of the task's chat, so its thumbnails, files and views load with
+   the viewer's access as in the chat.
+2. **Results.** Presented files and code views, `code_present` apps, charts, cards, and
    capability tables in the order they were made. A later result with the same
    target, the same file path for `present` or the same title for
    `code_present`, replaces the earlier one at its place. A running delivery
@@ -280,13 +282,81 @@ order:
    and Copy data; the table scrolls inside the same height, so neither the
    finished call nor the switch moves anything. While the model still writes a
    chart's arguments, the work line says it prepares a chart. Text output of
-   `cld assistant`, interactive or not, prints a chart's data table and a
-   card's title and value instead.
+   `cld assistant`, interactive or not, prints chart data tables (one per chart
+   for a group) and a card's title and value instead. Series legends wrap below
+   the chart inside its fixed viewport: 18rem for ordinary charts, 8rem for
+   sparkline, 10rem for stat and 12rem for barGauge. A group stacks 2..6 charts;
+   `layout: "grid"` uses two columns when the chat column is at least 42rem wide,
+   and one column on phones. With `linkX`, line charts of the same x type share
+   a cursor on hover, arrow keys and tap. A phone tap pins it; dragging scrolls
+   the page. Each chart keeps its own y axis.
+   A card shows one stat tile, the same look as stats views; its `tone` is
+   not shown, and its trend stays neutral because a card does not say whether
+   up is better. A presented `/views/*.view.json` file renders inline
+   as a chart, group, table, stats, details or explorer. Stats show 1..6 comparable key
+   figures above charts, with optional scope text, sparkline and change;
+   use them instead of several cards or stat charts for computed figures.
+   Details show one record's 1..100 exact fields, such as a checked invoice,
+   as read-only rows. Table ref columns and details ref fields show Cloud
+   objects found by a script instead of Markdown links. They carry only
+   `{type, id, title?}`, never a URL; on click, a confirmation precedes opening
+   through the owning app's reader with the viewer's current access. The finished
+   `present` summary reserves its height while loading;
+   group summaries list each chart's kind and title, so every frame reserves
+   its own height. Stats summaries carry per-item booleans for sparkline, sub
+   and delta to reserve the exact tile height; details summaries carry the
+   field count and the label, reference flag and text length of the first
+   twelve fields, so wrapped values keep their room on a phone. These
+   summaries contain no values. A card's text wraps instead of being cut off. While the call runs, the work
+   line names the step and the place stays empty. Table header labels stay on one line and the table
+   scrolls sideways, so up to eight rows fit the reserved height on a phone.
+   Readers validate the file again; missing or invalid data shows unavailable
+   in that frame. A group chart that cannot be drawn shows unavailable in its
+   own frame. The CLI fetches and validates views and prints their tables
+   (first 100 rows per table, plus a table footer), or `View unavailable: <path>`.
+   Stats and details use Field/Value tables; reference text includes `(type:id)`.
+   An explorer shows one typed dataset in up to six chart views and a table, picked
+   in the header's switcher. Its summary lists the view ids, labels and kinds
+   and the `step`, `filter` and `compare` flags, so the slider row and the row
+   with the series filter and the comparison pin are reserved before the file
+   loads. Those rows never wrap: the slider spans the block, and a long column
+   label, step name, filter label or step label in the pin is shortened on one
+   line. The step name keeps the width of the longest one, so the slider never
+   resizes while stepping. The chart, its legend and the table share one
+   18rem viewport, also on a phone. The series filter shows the chart's colors
+   only while the shown view colors its series by the filter column. A view
+   that draws no value of the shown rows says so in the reader's language
+   instead of showing an empty plot; only the shown view is drawn. Filtering
+   removes rows from every chart and the table; the step starts at the last
+   step in row order. Pinning a step and
+   moving the slider adds that step as dashed lines or hollow scatter points in
+   the same colors. Comparison needs a step and line/scatter views. Numeric
+   axes and heatmap color bounds cover the whole dataset, so filtering and
+   stepping never rescale them; date x axes follow the shown points. A selected
+   row stays selected across charts and the table. The table renders up to 100
+   rows of the current state, including the pinned step, in the reader's sort;
+   **Copy data** copies all of them and, like a table view, puts an
+   apostrophe before text that a spreadsheet would read as a formula. Explorer
+   files contain plain data,
+   validated on write and on every read. Filtering, steps, comparison,
+   row selection and sorting run in the browser and reset on reload. The CLI prints the title,
+   subtitle and the table of the initial state: the last step with every filter
+   value visible (first 100 rows).
+   [Tools and approvals](/en/docs/ai/tools-and-approvals) defines these contracts.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
    the previous one in the same element once its first sentence has streamed,
-   and the place keeps its height until the turn ends. Finished, it is the final
-   message: the turn's last text, even if a tool call followed it. A stopped or
-   failed turn has no final message; its texts stay in the work line.
+   and the place keeps its height until the turn ends. A text that ends the
+   turn so far may still be the answer and keeps answer typography. As soon as
+   a step starts after it, it reads quietly in the muted, smaller style of the
+   intermediate texts in the expanded work line, also while an approval or
+   survey waits for the user; its card says what is asked. It changes together
+   with the work line's new step and keeps its line height. The place keeps the
+   height the text has as the answer, also when the chat opens while a step
+   runs, so nothing moves when the text turns quiet, is replaced, or becomes
+   the final message.
+   Finished, it is the final message in answer typography: the turn's last
+   text, even if a tool call followed it. A stopped or failed turn has no final
+   message; its texts stay in the work line.
 4. **Actions.** Open approvals, surveys, editors, and secret prompts, and
    receipts for capability actions and for every approval the user decided.
    A pending approval is a calm card with a warning tint and no border: its
@@ -300,8 +370,14 @@ order:
    its button rather than pushing the card wider, while the title above shows
    it in full. When code asks for approval again, each new request is a new
    card in the same place.
-   A receipt is one line in the reader's language, never the raw tool name. A
-   Cloud action reads as the sentence its app declares for the outcome, such
+   A receipt is one line in the reader's language, never the raw tool name.
+   Once the call has an outcome, the receipt ends with its time, such as
+   "· 10:42"; older history without a recorded time shows none. Pass the reader's
+   time zone, such as `timeZone: getTimeZone(c)` from the page, to
+   `createAiChatTimeline` so server-rendered history shows the same times as
+   the browser. Without it, times and dates in the chat use the browser's zone
+   and UTC on the server.
+   A Cloud action reads as the sentence its app declares for the outcome, such
    as "Sent email to jana@example.com", else as the action's own summary with its
    links. Without either, it names the call with the app's approval sentence
    or with its title and up to two labelled fields, such as "Done: Send email ·
@@ -594,8 +670,12 @@ forwards only IDs that have a handler. The client-run tools are `code_open` and
 `code_secret`, which need a client with a code host: the web app, or
 `cld assistant` while it watches the turn. Entering a secret through
 `code_secret` still needs the web app; in the CLI the call fails with that
-hint. `local_bash` needs `cld assistant --allow-bash`. Detached CLI turns, API
-clients without a code host, and scheduled tasks never get `code_open` or
+hint. The local client tools `local_bash`, `local_list`, `local_read`,
+`local_upload`, `local_download`, `local_write`, `local_move`, and
+`load_local_skill` also need a client that declares and handles them.
+See [local client tools](/en/docs/ai/tools-and-approvals#run-an-optional-tool-in-a-local-cli)
+for execution and approval boundaries. Detached CLI
+turns, API clients without a code host, and scheduled tasks never get `code_open` or
 `code_secret`. The other code tool names are still accepted in `clientToolIds`
 and have no effect. Unknown names are ignored so older clients keep working
 after a tool is retired. Turn and draft submissions accept at most 64 distinct
@@ -623,6 +703,8 @@ code tools report it to the model as a tool error.
 `inputPaths`, takes a fixed snapshot of current source, and returns a run ID and
 compact state. There is no required source revision. An app whose interface is
 `index.html` does not run there; `code_open` and `code_present` show it.
+`code_run` and `code_inspect` also return `views`: paths and chart, group, table, stats, details or explorer
+summaries without values. Present each view with `present({path})`.
 `code_inspect` returns status, progress, logs, output and captured files, and can
 wait for background work with `waitMs`.
 Inspection also reports the tested source revision. `code_open` never starts the visible
@@ -734,9 +816,38 @@ lays out the HTML of every `cloud.pdf.render` call at its printed width with the
 base stylesheet and print media, as the renderer prints it, and reports the same
 findings for the PDF. It loads no images from `assets`; the findings rest on
 margins and text. Visible values such as `NaN`, `undefined`, `Invalid Date` or
-`[object Object]` warn in the page and in PDFs. `cloud.chart` keeps complete
-category labels and skips some at narrow widths; it does not shorten them to
-one or two characters.
+`[object Object]` warn in the page and in PDFs.
+
+`cloud.chart(options)` returns chart markup for apps, scripts and PDFs without
+needing a DOM. It takes the same kinds and options as chat charts and maps them
+through the same path: bar, line, scatter, pie, donut, histogram, gauge,
+sparkline, boxplot, heatmap, barGauge and stat. See
+[Tools and approvals](/en/docs/ai/tools-and-approvals#tool-contracts) for data,
+axes, declarative formats, references, thresholds, series style/role and limits.
+There is no grouped or stacked bar mode, or second y axis. For related computed
+measures in chat, use `cloud.view.group`.
+
+Function `format(value)` is also accepted on axes and values. `width` and
+`height` set the logical size: 480 × 280 by default, or 160 × 40 for sparkline.
+Apps redraw stretched charts at their measured width when `width` is omitted;
+pie, donut and gauge keep their aspect ratio. Date and ISO-with-offset x values
+become the viewer's wall-clock time; ISO strings without an offset, including
+`YYYY-MM` and date-times with a space or fractions, stay as written. When every
+x is at midnight, the axis shows days. Date references become wall-clock
+date-time strings. Labels may be numbers. Category labels remain complete; some
+are skipped when they do not fit.
+
+An app redraws with whatever its data or filters leave, so `cloud.chart()`
+does not apply the chat's size and fit limits: empty data, a one-point line,
+more than 8 series or 480 points, empty titles and long labels draw, and
+missing or non-finite values are left out. It throws `invalid` with a path such
+as `series[0].data[2].x` for unknown kinds and wrong option types, and for
+input the renderer cannot draw: a fixed domain that does not contain every
+value, or values too close for their size to label an axis. Options supported
+only by stdlib and outside this contract are ignored.
+Pie and donut slices show shares, so a value `format` only changes the values
+in chat tooltips and tables. A scatter comparison series (`role: "reference"`)
+draws hollow points in chat; `cloud.chart()` draws them filled.
 
 Checks use the existing host admission and a 45-second deadline. Each user can
 hold at most 16 disposable check copies at a time, two for each of the eight
@@ -757,23 +868,40 @@ include each local path alongside its chat path. Existing local files are not
 overwritten.
 
 Assistant exposes direct server tools: `code_create`, `code_read`, `code_write`,
-`code_remove`, `code_list`, `code_history`, `code_update`, `code_fork`,
-`code_publish`, `code_versions`, `code_restore`, and `code_sql`. These are
-deferred built-ins with flat inputs, not application capabilities.
+`code_import`, `code_remove`, `code_list`, `code_history`, `code_update`,
+`code_fork`, `code_publish`, `code_versions`, `code_restore`, and `code_sql`.
+These are deferred built-ins with flat inputs, not application capabilities.
 `CODE_SOURCE_TOOLS` from `@k2b/cloud/ai` supplies their shared input contracts.
 Core forwards each operation to Assistant using an operation-bound invocation.
 The server derives the chat context and checks current user, conversation,
 Project and resource permissions. GUI and CLI use the same resource services.
 Writes reuse the platform replay guard; uncertain calls are not repeated.
 `cloud.capabilities.run` remains available for other applications, not these tools.
-`code_write` saves one atomic batch against `expectedRevision`, preserves sibling
-files and reports compilation diagnostics without rejecting incomplete source.
-Conflicting revisions and duplicate paths reject the whole batch. A file can
-use `{path,content}` or `{path,fromChatFile:{path,version}}`; the latter copies
-validated data bytes on the server without printing/retyping them through the
-model. `code_export` returns the required chat path and version. Relative JSON
-imports expose data; CSV/TSV/TXT imports expose text. Execution requires a
-compilable entry exporting one function.
+`code_create` accepts optional top-level `html` and `steps` strings for the initial
+`index.html` and `steps.json`, so a small single-file app can be created in one call.
+Without `html`, it starts with a minimal page; supplied source returns diagnostics
+without rejecting incomplete code.
+`code_write` saves one complete file per call with top-level `path` and `content`.
+Source text travels only in top-level strings because some providers corrupt
+strings nested in array arguments. Other files stay unchanged. Pass the revision
+from `code_read`, `code_create` or the previous write as `expectedRevision`, then
+chain each returned revision into the next call. A stale revision returns
+`CONFLICT` without saving. Re-read and reconcile before retrying. The tool
+description tells the model to send one write at a time: calls sent together in
+one model response share a revision, so every call after the first conflicts.
+Results list `lines` and `length` (UTF-16 units) for every file, so a model
+can see when content arrived cut, plus compiler diagnostics for the saved state.
+A trailing newline adds no extra line. Diagnostics do not reject incomplete
+source: a missing import remains a finding until its file is saved. A normal
+multi-file build is one call per file with no approval.
+
+`code_import` atomically copies exact chat, Project or App `fromFile` references
+as UTF-8 source without printing their bytes. Use `code_file_stat` first. Imports
+carry references only and receive one fresh review for the whole batch, because
+source may be shared or published. Source file and bundle byte limits apply;
+stale destination revisions, source versions or duplicate paths reject the batch.
+Relative JSON imports expose data; CSV/TSV/TXT imports expose text. Execution
+requires a compilable entry exporting one function.
 
 The host owns isolation, artifact permissions, input file authorization,
 cancellation, and execution deduplication. Assistant persists call ownership
@@ -791,6 +919,14 @@ The Assistant image includes Chromium; other application images do not need it.
 The direct CLI code command retains its own isolated local execution host.
 
 ### Assistant apps and browser work
+
+An app, calculator, converter, timer, form or other tool a person asks for is a
+saved Studio app, even when it keeps no data: the `code_create` prompt hint and
+tool descriptions route it there, so it appears in the Studio catalog. Charts,
+tables, key figures and explorers of a one-off result stay views. A small app
+takes one `code_create` with its first `html` and `steps`, one `code_check` with
+its screenshot review, and `code_open`. `code_present` with `files` shows a
+throwaway card only when the person asks for a preview they do not want to keep.
 
 The Assistant **Studio** navigation opens its app catalog on hover or click;
 its search button opens global search filtered to Studio apps. Use-level users
@@ -936,11 +1072,13 @@ Visible running sessions check for updates every 30 seconds and on window focus,
 with at most one background check in flight. Updates offer a restart instead of
 discarding current inputs. Historical selections stay on their selected version.
 
-Code source edits use `code_write({id, expectedRevision, files, entry?})` to
-commit related files in one revision. Each file supplies `content` or
-`fromChatFile: {path, version}`; the latter copies authorized UTF-8 chat data
-without a model-output round trip. JSON and CSV/TSV/text imports are supported.
-Stale destination revisions or source versions fail before saving any files.
+Code source edits use `code_write({id, expectedRevision, path, content, entry?})`
+to save one file per revision. File imports use
+`code_import({id, expectedRevision, files: [{path, fromFile}], entry?})` with exact
+versioned references from `code_file_stat`. One review covers the import batch.
+JSON and CSV/TSV/text imports are supported. Stale destination revisions or source
+versions fail before saving any files. Both tools return `lines` and `length` for
+every file, the new revision, and diagnostics.
 CSV previews expose encoding, delimiter and raw-text choices; Assistant remembers
 those choices in browser-local preferences, without modifying uploaded files.
 

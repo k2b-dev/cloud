@@ -1,4 +1,4 @@
-import { type AppDeviceView, accountCategory, accountCategoryLabel } from "@k2b/cloud/contracts";
+import { type AppDeviceView, accountCategory, accountCategoryLabel, isModelsOnlyApiKey } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import {
@@ -266,7 +266,13 @@ export default ssr<AuthContext>(async (c) => {
         { title: user.uid },
       ]}
     >
-      <AccountsWorkspace active="users" isAdmin={true} pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-user-detail">
+      <AccountsWorkspace
+        active="users"
+        ancestor
+        isAdmin={true}
+        pendingRequests={pendingRequestsPage.total}
+        scrollPreserveKey="accounts-user-detail"
+      >
         <div class="flex flex-col gap-3">
           <div class="flex flex-wrap items-start justify-between gap-3 py-2" style="view-transition-name: accounts-user-title">
             <div class="flex min-w-0 flex-1 items-start gap-3">
@@ -349,7 +355,14 @@ export default ssr<AuthContext>(async (c) => {
                     if (col.id === "key")
                       return (
                         <div class="flex min-w-0 flex-col gap-1">
-                          <span class="truncate font-medium text-primary">{key.name}</span>
+                          <div class="flex min-w-0 items-center gap-2">
+                            <span class="truncate font-medium text-primary">{key.name}</span>
+                            {isModelsOnlyApiKey(key) && (
+                              <Tag icon="ti ti-sparkles" size="sm">
+                                {t.modelsOnlyKey}
+                              </Tag>
+                            )}
+                          </div>
                           <span class="truncate font-mono text-xs text-dimmed">cld_{key.tokenPrefix}_...</span>
                         </div>
                       );

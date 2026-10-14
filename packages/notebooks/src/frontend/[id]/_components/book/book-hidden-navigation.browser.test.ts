@@ -27,6 +27,7 @@ const render = (navigationHidden: boolean, html = welcome) =>
         return createComponent(BookSurface, {
           notebookId: "book01",
           notebookName: "Company handbook",
+          notebookIcon: null,
           selectedNoteId: "note02",
           currentHref: "/app/notebooks/book01/notes/note02?mode=book",
           canWrite: false,
@@ -38,6 +39,7 @@ const render = (navigationHidden: boolean, html = welcome) =>
           cursor: null,
           tags: [],
           navigationHidden,
+          fullWidth: false,
           tree: [{ id: "note01", title: "Private folder", children: [{ id: "note02", title: "Welcome", children: [] }] }],
         });
       },
@@ -223,8 +225,8 @@ const run = async (keep: boolean): Promise<Run> => {
   }
 };
 
-/** The line moves by less than two of the article's 28 px lines; without help it leaves the view. */
-const steady = (offsets: number[], expected: number) => offsets.every((offset) => Math.abs(offset - expected) < 56);
+/** The line moves by less than two of the article's 25.6 px lines; without help it leaves the view. */
+const steady = (offsets: number[], expected: number) => offsets.every((offset) => Math.abs(offset - expected) < 51.2);
 
 describe("Book view reading position when the navigation hides and shows", () => {
   test("keeps the text the reader is on in place while the article rewraps, and returns to it exactly", async () => {

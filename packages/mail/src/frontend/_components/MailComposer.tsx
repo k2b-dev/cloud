@@ -48,15 +48,18 @@ import { openMailComposerCalendarDialog } from "./MailComposerCalendarDialog";
 import MailComposerEditor from "./MailComposerEditor";
 import MailComposerHistory from "./MailComposerHistory";
 import MailComposerLifecycleNotice from "./MailComposerLifecycleNotice";
+import MailComposerSignature from "./MailComposerSignature";
 import { mailDraftCollaborationCopy, openMailDraftCollaborationDialog } from "./MailDraftCollaborationDialog";
 import MailRecipientInput from "./MailRecipientInput";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
+import MailSenderUnavailableNotice from "./MailSenderUnavailableNotice";
 import { readMailUserPreferences, writeMailComposerPanes } from "./MailSettingsStore";
 import { mailConversationHref, mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
 import { createMailComposerAttachmentManager, type UnfinishedDraftUpload } from "./mail-composer-attachment-manager";
 import { focusMailComposerEditorAtStart } from "./mail-composer-editor-focus";
 import { mailComposerMessages } from "./mail-composer-messages";
 import { reconcileMailComposerPanes } from "./mail-composer-panes";
+import { defaultSignatureTemplateId, type MailComposerSignatures } from "./mail-composer-signature";
 import { createMailComposerTransition } from "./mail-composer-transition";
 import { useMailContactDirectory } from "./mail-contact-directory-context";
 import { removeMailDraftSeed } from "./mail-draft-seed-store";
@@ -80,6 +83,7 @@ export default function MailComposer(props: {
   mailboxId: string;
   currentActor: { kind: "user" | "service_account"; id: string };
   identities: SenderIdentity[];
+  signatures: MailComposerSignatures;
   initialDraft?: MailDraft;
   initialSeed?: MailDraftSeed;
   unfinishedUploads?: UnfinishedDraftUpload[];
@@ -89,6 +93,9 @@ export default function MailComposer(props: {
   dateConfig: DateContext;
   canShareAttachments?: boolean;
   calendarIntegrationAvailable?: boolean;
+  /** Lets the composer open the mailbox's sender settings when no verified sender can send. */
+  canManageMailbox?: boolean;
+  currentUserEmail?: string | null;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -100,6 +107,7 @@ export default function MailComposer(props: {
   const initialContent = props.initialDraft
     ? {
         senderIdentityId: props.initialDraft.senderIdentityId,
+        signatureTemplateId: props.initialDraft.signatureTemplateId,
         to: props.initialDraft.to,
         cc: props.initialDraft.cc,
         bcc: props.initialDraft.bcc,
@@ -115,13 +123,20 @@ export default function MailComposer(props: {
   const verifiedIdentities = () => props.identities.filter((identity) => identity.status === "verified");
   const preferences = readMailUserPreferences(props.mailboxId);
   const [identityId, setIdentityId] = createSignal(initialContent.senderIdentityId);
+  const [signatureTemplateId, setSignatureTemplateId] = createSignal(initialContent.signatureTemplateId ?? null);
+  // Keep the button's presence fixed from the initial snapshot, including an unavailable shared signature.
+  const signatureChoiceVisible = () => props.signatures.templates.length > 0 || Boolean(initialContent.signatureTemplateId);
+  const senderDefaultSignatureId = () => defaultSignatureTemplateId(props.signatures, props.identities, identityId());
   const selectedIdentity = () => verifiedIdentities().find((identity) => identity.id === identityId()) ?? null;
   const identityMenuItems = createMemo<DropdownItem[]>(() =>
     verifiedIdentities().map((identity) => ({
       icon: identity.id === identityId() ? "ti ti-check" : "ti ti-user",
       label: `${identity.label} · ${identity.fromAddress}`,
       action: () => {
-        setIdentityId(identity.id);
+        if (identity.id !== identityId()) {
+          setIdentityId(identity.id);
+          setSignatureTemplateId(defaultSignatureTemplateId(props.signatures, props.identities, identity.id));
+        }
         writeMailSenderPreference(localStorage, props.mailboxId, identity.id);
       },
     })),
@@ -162,6 +177,7 @@ export default function MailComposer(props: {
 
   const content = (): DraftEditableContent => ({
     senderIdentityId: identityId(),
+    signatureTemplateId: signatureTemplateId(),
     to: parseMailRecipients(to()),
     cc: parseMailRecipients(cc()),
     bcc: parseMailRecipients(bcc()),
@@ -175,6 +191,7 @@ export default function MailComposer(props: {
 
   const applyDraftContent = (value: DraftEditableContent) => {
     setIdentityId(value.senderIdentityId);
+    setSignatureTemplateId(value.signatureTemplateId ?? null);
     setTo(formatMailRecipients(value.to));
     setCc(formatMailRecipients(value.cc));
     setBcc(formatMailRecipients(value.bcc));
@@ -1074,6 +1091,26 @@ export default function MailComposer(props: {
   };
   const handleReadonlyAction = () => (leaseConflict() ? void presentLeaseConflict() : void resumeCurrentLease());
 
+  const [senderSettingsOpening, setSenderSettingsOpening] = createSignal(false);
+  const openSenderSettings = async () => {
+    if (senderSettingsOpening()) return;
+    setSenderSettingsOpening(true);
+    try {
+      const settings = await importOnDemand(() => import("./MailboxSettingsDialog"));
+      if (!settings || disposed) return;
+      const result = await settings.openMailboxSettingsDialog({
+        mailboxId: props.mailboxId,
+        currentUserEmail: props.currentUserEmail ?? null,
+        contactDirectory,
+        initialTab: "delivery",
+      });
+      // The page renders its senders on the server; a fixed sender shows after a reload.
+      if (result.workspaceChanged && !disposed) window.location.reload();
+    } finally {
+      if (!disposed) setSenderSettingsOpening(false);
+    }
+  };
+
   const composerIntent = () => draft()?.intent ?? initial.intent;
   const retryPreview = () => void previewQuery.refresh();
   const IdentitySwitcher = () => {
@@ -1248,6 +1285,15 @@ export default function MailComposer(props: {
         )}
       </Show>
 
+      <Show when={verifiedIdentities().length === 0}>
+        <MailSenderUnavailableNotice
+          class="mx-3 mt-3"
+          identities={props.identities}
+          onOpenSettings={props.canManageMailbox ? () => void openSenderSettings() : undefined}
+          opening={senderSettingsOpening()}
+        />
+      </Show>
+
       <div class="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-3">
         <div class="grid shrink-0 gap-1.5 py-1.5 text-sm lg:grid-cols-2">
           <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2 lg:col-span-2">
@@ -1341,6 +1387,7 @@ export default function MailComposer(props: {
           size="sm"
           variant="ai"
           type="button"
+          aria-label={t().writeWithAi}
           loading={composeWithAi.loading()}
           disabled={!editable() || uploads().length > 0 || composeWithAi.loading()}
           onClick={() =>
@@ -1349,8 +1396,18 @@ export default function MailComposer(props: {
               .catch((error: unknown) => prompts.error(error instanceof Error ? error.message : t().assistantFailed))
           }
         >
-          <i class="ti ti-sparkles" aria-hidden="true" /> {t().writeWithAi}
+          <i class="ti ti-sparkles" aria-hidden="true" />
+          <span class="hidden sm:inline">{t().writeWithAi}</span>
         </Button>
+        <Show when={signatureChoiceVisible()}>
+          <MailComposerSignature
+            signatures={props.signatures}
+            value={signatureTemplateId()}
+            senderDefaultId={senderDefaultSignatureId()}
+            disabled={!editable()}
+            onChange={setSignatureTemplateId}
+          />
+        </Show>
         <Tooltip.Anchor
           content={
             deliveryOptionsSummary().length > 0

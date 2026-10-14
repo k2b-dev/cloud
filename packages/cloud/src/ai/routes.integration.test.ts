@@ -1,16 +1,23 @@
 import { beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { redis, sql } from "bun";
+import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
+import * as aiSettings from "./settings";
+import { composeAiSystemPrompt } from "./system-prompt";
 import "../../../../scripts/fixtures/authorization-preload";
+import { APPROVAL_ACP_CLIENT, APPROVAL_CLIENT_HEADER } from "../contracts/approvals";
 import { accounts } from "../services/accounts";
+import { approvalScopeFromToolName, approvals } from "../services/approvals";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
 import { session } from "../services/session/index";
 import { createTestSession } from "../services/session/session.test-fixture";
 import * as platformSettings from "../services/settings";
 import { createAiApprovalPreferenceRoutes } from "./approval-routes";
 import { AI_WEBSITE_APPROVAL_TOOL, findRememberedAiToolApproval, hasRememberedAiToolApproval } from "./approvals";
+import * as assistantModels from "./assistant-models";
 import { aiFileStore } from "./files-store";
+import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
 import type { AiStreamEvent } from "./protocol";
@@ -102,13 +109,84 @@ suite("global AI conversation boundaries", () => {
           Authorization: `Bearer ${await createTestSession(userId)}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ draftRevision: saved.draft.revision, clientToolIds: ["code_interact", "code_run"] }),
+        body: JSON.stringify({
+          draftRevision: saved.draft.revision,
+          clientToolIds: ["code_interact", "code_run"],
+          client: { kind: "cli", cwd: "/work", os: "Linux", shell: "bash", localTools: "ask" },
+          localContext: { instructions: [{ path: "/work/AGENTS.md", content: "Rules." }], skills: [], selectedSkills: [] },
+        }),
       });
       expect(response.status).toBe(500);
       expect(submissions).toHaveLength(1);
       expect(submissions[0]?.clientToolIds).toEqual(["code_run"]);
+      expect(submissions[0]?.client?.cwd).toBe("/work");
+      expect(submissions[0]?.localContext?.instructions).toEqual([{ path: "/work/AGENTS.md", content: "Rules." }]);
     } finally {
       submit.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
+  test.each([false, true])("message retry uses the retrying client's local context: local=%p", async (local) => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const model = spyOn(assistantModels, "selectAssistantAiModelId").mockResolvedValue("test-model");
+    const submit = spyOn(aiRuntime, "submitAiChatTurn").mockImplementation(async (submission) =>
+      aiConversations.submitChatTurn({
+        conversationId: submission.conversationId,
+        modelProfileId: "test-model",
+        userMessage: submission.userMessage,
+        truncateFromSeq: submission.truncateFromSeq,
+        runConfig: {
+          kind: "chat",
+          input: submission.input,
+          toolSource: submission.toolSource ?? { kind: "none" },
+          clientToolIds: submission.clientToolIds,
+          client: submission.client,
+          localContext: submission.localContext,
+        },
+      }),
+    );
+    const selectedSkills = [{ name: "invoice", directory: "/original/.agents/skills/invoice", instructions: "Original selection." }];
+    const client = { kind: "cli" as const, cwd: "/current", os: "Linux", shell: "bash", localTools: "ask" as const };
+    const localContext = {
+      instructions: [{ path: "/current/AGENTS.md", content: "Current rules." }],
+      skills: [{ name: "current", description: "Current Skill.", scope: "project" as const }],
+    };
+    try {
+      const first = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "test-model",
+        userMessage: { role: "user", content: [{ type: "text", text: "Retry me" }] },
+        runConfig: {
+          kind: "chat",
+          input: "Retry me",
+          toolSource: { kind: "default" },
+          clientToolIds: ["local_bash", ...AI_LOCAL_TOOL_NAMES, "code_open"],
+          client: { ...client, cwd: "/original" },
+          localContext: { instructions: [{ path: "/original/AGENTS.md", content: "Old rules." }], skills: [], selectedSkills },
+        },
+      });
+      await sql`UPDATE ai.turns SET status='completed' WHERE id=${first.turn.id}::uuid`;
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/messages/${first.message.shortId}/retry`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" },
+        body: JSON.stringify(local ? { client, localContext, clientToolIds: ["local_read", "code_secret"] } : {}),
+      });
+      expect(response.status).toBe(201);
+      expect(submit).toHaveBeenCalledTimes(1);
+      const active = await aiConversations.getActiveTurn({ conversationId: chat.id });
+      expect(active).not.toBeNull();
+      if (!active) throw new Error("Missing retry turn");
+      const config = await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: active.turn.id });
+      if (!config || config.kind !== "chat") throw new Error("Missing retry run config");
+      expect(config.clientToolIds).toEqual(local ? ["local_read", "code_secret"] : ["code_open"]);
+      expect(config.client).toEqual(local ? client : undefined);
+      expect(config.localContext).toEqual(local ? { ...localContext, selectedSkills } : undefined);
+    } finally {
+      submit.mockRestore();
+      model.mockRestore();
       await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
@@ -202,6 +280,12 @@ suite("global AI conversation boundaries", () => {
       const missing = await remove(chat.shortId, "/missing.md", owner);
       expect(missing.status).toBe(404);
       expect(await missing.json()).toMatchObject({ message: "File not found" });
+
+      const readable = await aiRoutes.request(`/conversations/${chat.shortId}/files/content?${new URLSearchParams({ path: file.path })}`, {
+        headers: { Authorization: `Bearer ${owner}` },
+      });
+      expect(readable.status).toBe(200);
+      expect(readable.headers.get("X-Cloud-Ai-File-Origin")).toBe("user");
 
       const deleted = await remove(chat.shortId, file.path, owner);
       expect(deleted.status).toBe(200);
@@ -565,13 +649,17 @@ suiteFor("database", "nats")("chat and website approvals", () => {
         userMessage: { role: "user", content: [{ type: "text", text: "Read the quotes" }] },
       });
       const origin = "https://query1.finance.yahoo.com";
-      const ask = (callId: string, extra: Partial<Parameters<typeof aiConversations.savePendingTurnAction>[0]> = {}) =>
-        aiConversations.savePendingTurnAction({
+      const ask = async (
+        callId: string,
+        extra: Partial<Parameters<typeof aiConversations.savePendingTurnAction>[0]> = {},
+        assurance: "confirm" | "standard" = "standard",
+      ) => {
+        const snapshot = {
           turnId: turn.id,
           conversationId: chat.id,
           callId,
-          kind: "custom_approval",
-          status: "pending",
+          kind: "custom_approval" as const,
+          status: "pending" as const,
           name: "code_run",
           args: {},
           message: `HTTP request: GET ${origin}/v7/finance/quote?symbols=NVDA`,
@@ -581,7 +669,23 @@ suiteFor("database", "nats")("chat and website approvals", () => {
           rememberToolName: AI_WEBSITE_APPROVAL_TOOL,
           resolvedEvent: null,
           ...extra,
+        };
+        const record = await approvals.request({
+          ...approvalScopeFromToolName(snapshot.name),
+          approvalScope: snapshot.approvalScope,
+          requester: { kind: "assistant_turn", ref: `${turn.id}/${callId}`, appId: "assistant", title: chat.title },
+          subjectId: userId,
+          approverUserId: userId,
+          assurance,
+          sentence: snapshot.message,
+          input: snapshot.args,
+          review: snapshot.review,
+          expiresInMs: 60_000,
         });
+        if (!record.ok) throw new Error("Expected a new approval request");
+        await aiConversations.savePendingTurnAction({ ...snapshot, approvalId: record.id });
+        return record.id;
+      };
       const decide = (callId: string, headers: Record<string, string>, remember?: "chat" | "always") =>
         aiRoutes.request(`/conversations/${chat.shortId}/turns/${turn.shortId}/actions/${encodeURIComponent(callId)}`, {
           method: "POST",
@@ -592,17 +696,37 @@ suiteFor("database", "nats")("chat and website approvals", () => {
         sql<{ conversation_id: string | null }[]>`SELECT conversation_id FROM ai.tool_approval_preferences
           WHERE actor_user_id=${userId}::uuid AND tool_name=${AI_WEBSITE_APPROVAL_TOOL}`;
 
-      await ask("run-approval-0");
+      const bridgeHeaders = { ...apiKey, [APPROVAL_CLIENT_HEADER]: APPROVAL_ACP_CLIENT };
+      const bridgeConfirm = await ask(
+        "bridge-confirm",
+        { allowAlways: false, allowChat: false, rememberToolName: "mail.draft.send" },
+        "confirm",
+      );
+      const bridgeDenied = await decide("bridge-confirm", bridgeHeaders);
+      expect(bridgeDenied.status).toBe(403);
+      expect(await bridgeDenied.json()).toMatchObject({
+        code: "FORBIDDEN",
+        message: "Approve this request in Cloud. An editor can only reject it.",
+      });
+      expect(await approvals.get(bridgeConfirm)).toMatchObject({ status: "pending" });
+      expect((await decide("bridge-confirm", session)).status).toBe(200);
+      const bridgeStandard = await ask("bridge-standard");
+      expect((await decide("bridge-standard", bridgeHeaders)).status).toBe(200);
+      expect(await approvals.get(bridgeStandard)).toMatchObject({ status: "approved", decidedVia: "acp_bridge" });
+      const firstApproval = await ask("run-approval-0");
       // An API key, like `cld` or another delegated credential, may approve this one request, but never the next ones.
       expect((await decide("run-approval-0", apiKey, "chat")).status).toBe(400);
       // A website is never remembered everywhere.
       expect((await decide("run-approval-0", session, "always")).status).toBe(400);
       expect(await websiteRows()).toEqual([]);
+      expect(await approvals.get(firstApproval)).toMatchObject({ status: "pending" });
       expect((await decide("run-approval-0", apiKey)).status).toBe(200);
       expect(await websiteRows()).toEqual([]);
 
-      await ask("run-approval-1");
+      expect(await approvals.get(firstApproval)).toMatchObject({ status: "approved", decidedVia: "api_key" });
+      const secondApproval = await ask("run-approval-1");
       expect((await decide("run-approval-1", session, "chat")).status).toBe(200);
+      expect(await approvals.get(secondApproval)).toMatchObject({ status: "approved", decidedVia: "web_session" });
       expect(await websiteRows()).toEqual([{ conversation_id: chat.id }]);
       expect(
         await findRememberedAiToolApproval(
@@ -651,3 +775,145 @@ const aiApprovalList = async (headers: Record<string, string>, conversation?: st
   expect(response.status).toBe(200);
   return ((await response.json()) as { approvals: Array<{ toolName: string }> }).approvals;
 };
+
+suite("local client actions and preview", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
+  test("invalid local_list output returns 400 and leaves the action pending; valid output resolves it", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const token = await createTestSession(userId);
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "mock",
+        runConfig: { kind: "chat", input: "List files" },
+        userMessage: { role: "user", content: ["List files"] },
+      });
+      await aiConversations.savePendingTurnAction({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId: "list-1",
+        name: "local_list",
+        kind: "client_tool",
+        frontendMode: "client",
+        status: "pending",
+        args: { path: "." },
+        approvalScope: "local_list",
+        allowAlways: false,
+        allowChat: false,
+        resolvedEvent: null,
+      });
+      const respond = (result: unknown) =>
+        aiRoutes.request(`/conversations/${chat.shortId}/turns/${turn.shortId}/actions/list-1`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "tool_result", result }),
+        });
+      const invalid = await respond({ status: "completed", entries: "not an array" });
+      expect(invalid.status).toBe(400);
+      expect(JSON.stringify(await invalid.json())).toContain("Invalid local_list result");
+      expect(await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "list-1" })).toMatchObject({
+        status: "pending",
+        resolvedEvent: null,
+      });
+      const result = { status: "completed", path: "/work", entries: [], nextAfter: null };
+      expect((await respond(result)).status).toBe(200);
+      expect(await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "list-1" })).toMatchObject({
+        status: "resolved",
+        resolvedEvent: { type: "tool_result", result },
+      });
+      expect((await respond(result)).status).toBe(200);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+  test("a pending code_secret action accepts a CodeToolFailure result", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const token = await createTestSession(userId);
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "mock",
+        runConfig: { kind: "chat", input: "Store a secret" },
+        userMessage: { role: "user", content: ["Store a secret"] },
+      });
+      await aiConversations.savePendingTurnAction({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId: "secret-1",
+        name: "code_secret",
+        kind: "client_tool",
+        frontendMode: "client",
+        status: "pending",
+        args: { name: "API_TOKEN" },
+        approvalScope: "code_secret",
+        allowAlways: false,
+        allowChat: false,
+        resolvedEvent: null,
+      });
+      const result = { failed: true, error: "The secret prompt was cancelled." };
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/turns/${turn.shortId}/actions/secret-1`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "tool_result", result }),
+      });
+      expect(response.status).toBe(200);
+      expect(await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "secret-1" })).toMatchObject({
+        status: "resolved",
+        resolvedEvent: { type: "tool_result", callId: "secret-1", result },
+      });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+  test("preview validates local facts and uses the same local section as a turn", async () => {
+    const userId = await insertUser();
+    const token = await createTestSession(userId);
+    const headers = { Authorization: `Bearer ${token}` };
+    const settings = spyOn(aiSettings, "readAiSettingsState").mockResolvedValue({
+      ok: true,
+      enabled: false,
+      defaultModelId: "",
+      globalInstructions: "",
+      localClientInstructions: "Literal {{ cwd }}.",
+      compactionInstructions: "",
+      maxToolResultChars: 2000,
+      firecrawlConfigured: false,
+      profiles: [],
+    });
+    try {
+      expect((await aiRoutes.request("/prefs/system-prompt?clientKind=unknown", { headers })).status).toBe(400);
+      const query = new URLSearchParams({
+        clientKind: "acp",
+        clientName: "Editor",
+        cwd: "/work",
+        os: "Linux",
+        shell: "bash",
+        localTools: "off",
+      });
+      const response = await aiRoutes.request(`/prefs/system-prompt?${query}`, { headers });
+      expect(response.status).toBe(200);
+      const data = z.object({ prompt: z.string() }).parse(await response.json());
+      const cloudUrl = (await platformSettings.get<string>("app.url")) || "";
+      const turnPrompt = composeAiSystemPrompt({
+        globalInstructions: "",
+        localClient: {
+          client: { kind: "acp", name: "Editor", cwd: "/work", os: "Linux", shell: "bash", localTools: "off" },
+          cloudUrl,
+          instructions: "Literal {{ cwd }}.",
+        },
+      });
+      const section = (prompt: string) => prompt.split("# Local client\n")[1]?.split("\n\n#")[0];
+      expect(section(data.prompt)).toBe(section(turnPrompt));
+      expect(data.prompt).not.toContain("# Workspace instructions");
+    } finally {
+      settings.mockRestore();
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+});

@@ -6,6 +6,7 @@
  */
 
 import { APP_READINESS_PATH } from "@k2b/cloud";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import { logger } from "@k2b/cloud/services";
 import { resolveClientAddress } from "./client-address";
 import { gatewayRouter } from "./config";
@@ -51,11 +52,13 @@ const health = (): Response => {
 
 export default {
   port: gatewayRouter.port,
+  idleTimeout: REQUEST_IDLE_TIMEOUT_SECONDS,
   async fetch(
     req: Request,
     server: {
       upgrade: (req: Request, options?: { data?: unknown; headers?: Record<string, string> }) => boolean;
       requestIP: (req: Request) => { address: string } | null;
+      timeout: (req: Request, seconds: number) => void;
     },
   ): Promise<Response | undefined> {
     const url = new URL(req.url);
@@ -80,6 +83,7 @@ export default {
         log.info(msg, meta);
       },
       client,
+      server.timeout.bind(server),
     );
   },
   websocket: websocketHandlers,

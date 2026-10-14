@@ -5,9 +5,9 @@ icon: ti ti-app-window
 description: Choose a guide to build, publish, or use a focused Grids App.
 order: 137
 ---
-A Grids App gives signed-in or public audiences a focused app at `/apps/<id>`. It does not open the full Grids workspace. Each app belongs to one Base and combines existing records, views, forms, documents, and workflow actions.
+A Grids App gives signed-in or public audiences a focused app at `/apps/<id>`. It does not open the full Grids workspace. Each app belongs to one base and combines existing records, views, forms, documents, and workflow actions.
 
-Apps do not copy data. Publishing freezes the definition and the exact resources that the app can use. Each request checks the current access to the app and the published capability. People who use an app do not need access to the Base. Access to an app never allows arbitrary GQL or raw access to the Base.
+Apps do not copy data. Publishing freezes the definition and the exact resources that the app can use. Each request checks the current access to the app and the published capability. People who use an app do not need access to the base. Access to an app never allows arbitrary GQL or raw access to the base.
 
 ## Choose your next step {icon="arrow-right"}
 
@@ -16,11 +16,11 @@ Apps do not copy data. Publishing freezes the definition and the exact resources
 - [YAML & CLI](/app/grids/help/grids-custom-app-yaml-cli): Follow the complete definition example. Validate, plan, apply, and export it.
 - [Publish a Grids App](/app/grids/help/grids-publish-custom-app): Review access, publish a draft, restore the live version, or unpublish.
 
-You need **Manage** access to the Base to build and publish an app. People who use the app see only what the publication exposes. Public access includes anonymous visitors, but workflow actions require a signed-in account.
+You need **Manage** access to the base to build and publish an app. People who use the app see only what the publication exposes. Public access includes anonymous visitors, but workflow actions require a signed-in account.
 
 ## Use an app from the terminal {icon="terminal-2"}
 
-Run `cld grids apps runtime read <app-id> --json` with the ID from the app URL. The result lists the visible pages, block IDs, data, form fields, and available actions. You do not need access to the Base. To open a detail page, add `--page <page-id> --params '{"request_id":"REC001"}'`. Use the parameter name and the record ID from the returned navigation.
+Run `cld grids apps runtime read <app-id> --json` with the ID from the app URL. The result lists the visible pages, block IDs, data, form fields, and available actions. You do not need access to the base. To open a detail page, add `--page <page-id> --params '{"request_id":"REC001"}'`. Use the parameter name and the record ID from the returned navigation.
 
 The `apps runtime` commands can:
 
@@ -49,6 +49,6 @@ The builder also offers **Publish changes** when the live app uses a form, view,
 **Restore live version** discards pending draft changes. In **App settings → Lifecycle**, you can unpublish or delete the app. Both actions require a confirmation:
 
 - Unpublishing removes the live snapshot but keeps the draft and the access entries.
-- Deleting an app removes its route. It does not delete Base data.
+- Deleting an app removes its route. It does not delete base data.
 
 An app loads only the active page and its optional record. It does not load hidden detail pages in advance.

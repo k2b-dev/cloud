@@ -1,0 +1,390 @@
+/* Pending Action approvals (`@k2b/cloud/approvals/ui`). A flat list: rows are set apart by space, not by lines or
+   boxes. A decided row keeps its content and height and turns its decision into a receipt in the same slot. */
+.k2b-ui .cloud-approvals {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+}
+
+.k2b-ui .cloud-approvals__toolbar {
+  display: flex;
+  min-height: 1.75rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .cloud-approvals__list {
+  display: grid;
+  min-width: 0;
+  gap: 2rem;
+}
+
+.k2b-ui .cloud-approvals__group {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+}
+
+.k2b-ui .cloud-approvals__group + .cloud-approvals__group {
+  margin-top: 1rem;
+}
+
+.k2b-ui .cloud-approvals__group-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.k2b-ui .cloud-approvals__more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.k2b-ui .cloud-approvals__more-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  color: var(--k2b-danger-text);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .cloud-approvals__elsewhere {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  margin: 0.5rem 0 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .cloud-approvals__elsewhere a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--k2b-link-accent);
+  font-weight: 500;
+}
+
+.k2b-ui .cloud-approval {
+  display: grid;
+  min-width: 0;
+  gap: 0.875rem;
+  grid-template-columns: 2rem minmax(0, 1fr);
+}
+
+.k2b-ui .cloud-approval__icon {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+  font-size: 1rem;
+}
+
+/* Only an approval is a success; a rejection or a decision that did not apply keeps the neutral icon tile. */
+.k2b-ui .cloud-approval[data-decided="approved"] .cloud-approval__icon {
+  color: var(--k2b-success-text);
+  background: var(--k2b-success-surface);
+}
+
+.k2b-ui .cloud-approval__main {
+  display: grid;
+  min-width: 0;
+  gap: 0.75rem;
+  container-type: inline-size;
+}
+
+.k2b-ui .cloud-approval__content {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+  transition: opacity 150ms ease-out;
+}
+
+.k2b-ui .cloud-approval[data-decided] .cloud-approval__content {
+  opacity: 0.55;
+}
+
+.k2b-ui .cloud-approval__title,
+.k2b-ui .cloud-approval__sheet-title {
+  margin: 0;
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .cloud-approval__sheet-title {
+  font-size: 1.0625rem;
+}
+
+.k2b-ui .cloud-approval__origin {
+  margin: -0.25rem 0 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .cloud-approval__origin a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-underline-offset: 0.15em;
+}
+
+.k2b-ui .cloud-approval__origin a:hover {
+  color: var(--k2b-text);
+}
+
+.k2b-ui .cloud-approval__text {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .cloud-approval__fields {
+  display: grid;
+  margin: 0;
+  gap: 0.25rem 1rem;
+  grid-template-columns: max-content minmax(0, 1fr);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .cloud-approval__fields dt,
+.k2b-ui .cloud-approval__label {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.k2b-ui .cloud-approval__fields dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--k2b-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .cloud-approval__block {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+}
+
+/* Long content sits inset, so it reads as quoted from the app without a frame or a rule. */
+.k2b-ui .cloud-approval__quote,
+.k2b-ui .cloud-approval__markdown {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+  font-size: 0.75rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The inner text clamps, so the quote's padding never shows a cut line. */
+.k2b-ui .cloud-approval__quote[data-clamp] > span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.k2b-ui .cloud-approval__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-left: -0.625rem;
+}
+
+.k2b-ui .cloud-approval__sheet {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+}
+
+.k2b-ui .cloud-approval__sheet-foot {
+  width: 100%;
+  container-type: inline-size;
+}
+
+.k2b-ui .cloud-approval__callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .cloud-approval__callout i {
+  margin-top: 0.125rem;
+}
+
+/* The foot keeps its height in every state: the note is one line, and the decision slot keeps one button height, so a
+   receipt replaces the buttons without moving anything. A narrow row puts the decision on a line of its own. */
+.k2b-ui .cloud-approval__foot {
+  display: grid;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.k2b-ui .cloud-approval__note {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .cloud-approval__note > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .cloud-approval__note[data-tone="danger"] {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .cloud-approval__actions {
+  display: flex;
+  min-height: 1.75rem;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.375rem;
+}
+
+@container (max-width: 32rem) {
+  .k2b-ui .cloud-approval__foot {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The decision shares the width; a receipt keeps the same line. */
+  .k2b-ui .cloud-approval__actions > .k2b-button,
+  .k2b-ui .cloud-approval__actions > .k2b-split-button {
+    flex: 1;
+    min-width: 0;
+    justify-content: center;
+  }
+}
+
+.k2b-ui .cloud-approval__receipt {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.k2b-ui .cloud-approval__receipt[data-outcome="approved"] {
+  color: var(--k2b-success-text);
+}
+
+/* The band sits above the resource a request would change, tinted like the approval card in a chat. */
+.k2b-ui .cloud-approval-bands {
+  display: grid;
+  gap: 0.5rem;
+}
+
+/* Two rows in every width: the decision never shares a line with the title, so a receipt cannot rewrap it. */
+.k2b-ui .cloud-approval-band {
+  display: grid;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  container-type: inline-size;
+  padding: 0.75rem 1rem;
+  /* Transparent, so forced colours still draw an outline where the tint disappears. */
+  border: 1px solid transparent;
+  border-radius: var(--k2b-radius-surface);
+  color: var(--k2b-text-secondary);
+  background: color-mix(in srgb, var(--k2b-warning-surface) 70%, var(--k2b-surface-canvas));
+  font-size: 0.8125rem;
+}
+
+.k2b-ui.k2b-dark .cloud-approval-band,
+.dark .k2b-ui .cloud-approval-band {
+  background: color-mix(in srgb, var(--k2b-warning-surface) 55%, var(--k2b-surface-canvas));
+}
+
+.k2b-ui .cloud-approval-band > i {
+  color: var(--k2b-warning-text);
+  font-size: 1.125rem;
+}
+
+.k2b-ui .cloud-approval-band[data-decided] {
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .cloud-approval-band[data-decided] > i {
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .cloud-approval-band[data-decided="approved"] > i {
+  color: var(--k2b-success-text);
+}
+
+.k2b-ui .cloud-approval-band__text {
+  display: grid;
+  min-width: 0;
+  gap: 0.125rem;
+}
+
+.k2b-ui .cloud-approval-band__text strong {
+  color: var(--k2b-text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .cloud-approval-band__text .cloud-approval__origin {
+  margin: 0;
+}
+
+.k2b-ui .cloud-approval-band > .cloud-approval__foot {
+  grid-column: 2;
+}
+
+@media (max-width: 40rem) {
+  .k2b-ui .cloud-approval {
+    gap: 0.75rem;
+  }
+
+  .k2b-ui .cloud-approval__fields {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .k2b-ui .cloud-approval__fields dd {
+    margin-bottom: 0.35rem;
+  }
+}

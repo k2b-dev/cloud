@@ -588,11 +588,17 @@ throw. Disposal aborts work; refresh after disposal does not load.
 | `title`, `data`, `columns` | Required heading, `ChartExplorerData<T>`, and nonempty columns with unique nonempty IDs. |
 | `selectedKey`, `onSelectedKeyChange` | Optional controlled row selection. Omit key for local selection. A missing local row never clears a sibling's controlled selection. |
 | `view`, `onViewChange` | Optional controlled `"chart" \| "table"`. Otherwise, `defaultView` initializes local view; default `"chart"`. |
+| `charts`, `chart`, `onChartChange` | Optional `{ id, label }[]` for several charts of the same rows. The switcher then lists each chart and the table instead of Diagram and Table. `chart` names the chart that `data` holds; a pick calls `onChartChange(id)` and switches `view` to `"chart"`, and the owner passes that chart's data. Keep `data.rows` the same rows for every chart so selection, sorting and Copy data stay put while switching. |
+| `controls` | Optional JSX between the header and the viewport, such as `ChartFilterControls` with `compare`. It is part of the block: give it a fixed layout so a change of filter or pin never moves the viewport. |
+| `tableRows` | Optional number of rows the table renders, in the current sort order. A note inside the viewport names the shown and total rows; sorting and Copy data use every row. Use it for datasets that are larger than a readable table, such as more than 100 rows. |
 | `sort`, `onSortChange` | Optional controlled `DataTableSort \| null`. Otherwise `defaultSort` initializes local sort; default `null`. |
 | `renderDetails` | Optional row renderer replacing the DescriptionList inside the selection Paper. `false` hides the whole local detail area, for a parent-owned shared Paper. |
 | `description`, `class` | Optional JSX below the heading and extra root class. |
+| `headingLevel` | Level of the title heading, `2`–`6`; default `3`. Use one level below the surrounding heading, for example `4` for charts under a group's `h3`. |
 | `cursor` | Optional shared `ChartCursor` for a line snapshot. Same matching and lifecycle as `Chart.cursor`; table mode does not participate. |
 | `height` | CSS viewport height; default `"18rem"`, shared by chart and scrollable table. |
+| `legend` | Optional `ChartLegendEntry[]` (`{ label, color, style?, reference? }`, `color` is the palette index 0–7). Shows the series names as a wrapping list below the chart, inside the same viewport height, and only in chart view. The chart keeps at least 60% of the height; a longer legend scrolls in the rest. Prepare the snapshot with `legend: false` and pass the names here: the renderer's legend is one SVG row and runs out of a stretched phone-width chart. `style` `"dashed"` or `"dotted"` shows a line swatch; `reference` shows a hollow swatch like the comparison marks. |
+| `empty` | Optional JSX shown in the viewport without rows, such as loading or unavailable text; default **No data**. The header and height stay in place. |
 
 ```ts
 type ChartExplorerColumn<T> = {
@@ -608,12 +614,18 @@ type ChartExplorerColumn<T> = {
 `value` is plain text for copy and default details. `render` optionally customizes
 the table cell, such as a current value with a muted reference and change below.
 Include the same reference information in `value` so copying remains complete.
+A custom first cell owns its content, including links or buttons; the row still
+supports selection with Enter or Space. Default first cells have a selection button.
 `sortValue` opts into sorting: finite numbers compare numerically, strings use the
 inherited locale, and nulls stay last in both directions. Default click order is
 ascending, then descending. Sort and view changes never load data. Controlled props
 stay owner-owned until the corresponding value is updated. Sorting only rearranges
 the supplied rows; copy includes all rows in that order, not just the scroll window,
-as escaped tab-separated text with column headings. Clipboard failures appear inline.
+as escaped tab-separated text with column headings. Copy data prefixes text and
+headings starting with `=`, `+`, `-`, `@`, tab or carriage return with an apostrophe
+to guard spreadsheet formulas, then quotes tabs, carriage returns, newlines and
+quotes. A cell whose `sortValue(row)` returns a number keeps its numeric text,
+including negative values, without the apostrophe. Clipboard failures appear inline.
 
 `ChartExplorerControlsProps<C>` requires `explorer` and `title`; optional `steps`
 are ordered `{ key, label }` entries, optional `series` entries are
@@ -627,9 +639,55 @@ before the reference buttons appears after 200 ms; buttons do not shift. The
 accessible status names the old displayed step. Failures expose Retry. Pinning is
 disabled while loading, on failure, or when the displayed step is already pinned.
 
+`ChartFilterControlsProps` requires `request`, `displayedRequest` and `onRequest`.
+Optional `steps` and `series` use the same entries as above; `dimensionLabel`
+and `seriesLabel` name the slider and filter. Set `compare` to show a comparison
+pin when there are steps. It pins the requested step through `onRequest`, and
+clicking the pinned label clears `referenceStep`. The pin is disabled with
+`disabled`, or when there is no requested step to pin. `failed` and `onRetry`
+show the failure and retry action; `displayedRequest` names the previous data.
+
 For a shared Paper, set `renderDetails={false}` on the chart components and read
 `explorer.selectedKey()` and the matching rows in `explorer.snapshot().charts` in
 the parent. Use a single shared selection action, with clearly named metrics.
+
+### Several charts of one dataset
+
+When the reader should look at the same rows in different ways, give one
+`ChartExplorer` several charts instead of stacking explorers. Build every chart
+and the table rows from the same request in one `createChartExplorer` snapshot,
+keyed by chart id plus an entry for the table, and pass the entry of the current
+pick as `data`. The filters in `controls` change all charts at once, and the
+selection is a row key, so it stays on the same row in every chart and the table.
+The viewport keeps its height for every chart and the table.
+
+```tsx
+const explorer = createChartExplorer({ snapshot: () => initial, load: buildLocally });
+const [chart, setChart] = createSignal("orders");
+const [view, setView] = createSignal<"chart" | "table">("chart");
+
+<ChartExplorer
+  title="Orders by region"
+  charts={[{ id: "orders", label: "Orders" }, { id: "basket", label: "Average basket" }]}
+  chart={chart()} onChartChange={setChart} view={view()} onViewChange={setView}
+  data={explorer.snapshot().charts[view() === "table" ? "table" : chart()]}
+  selectedKey={explorer.selectedKey()} onSelectedKeyChange={explorer.select}
+  tableRows={100} columns={columns}
+  controls={<ChartFilterControls request={explorer.desired()} displayedRequest={explorer.snapshot().request}
+    steps={years} series={regions} compare onRequest={explorer.setRequest} />}
+/>
+```
+
+Set `compare` on `ChartFilterControls` to include the comparison pin. The slider
+spans the block; the series filter and pin share the row below without wrapping.
+The pin label truncates with an ellipsis, so pinning or unpinning keeps the same
+row height down to a 320px block. The slider label, the step name and the filter
+label keep one line and truncate too; next to the pin the filter takes at most
+half the row. The step name keeps the width of the longest step name, up to 40%
+of the row or 10rem, so the slider never resizes while stepping. Keep series
+slots stable while filtering, as described under comparison semantics, so a hidden series never recolors the others. The live
+example "One dataset, several charts" filters regions, steps through two years
+and pins one year as a dashed reference.
 
 ### Synchronized inspection
 
@@ -670,7 +728,9 @@ A horizontal guide follows the pointer only in the active plot. Pointer movement
 is restricted to the plot, excluding axes and legends. Arrow keys also share the
 inspected X value; Escape or leaving the active chart dismisses inspection.
 Existing click/tap selection and tooltip pinning remain separate from transient
-hover. Updating or unmounting the active chart clears the shared cursor; updating
+hover. On touch screens a tap pins the inspected X and moves every linked chart to
+it; a drag scrolls the page instead of scrubbing, so a group of charts never traps
+the scroll. Updating or unmounting the active chart clears the shared cursor; updating
 a follower rechecks the current X against its new data. Hover never changes
 selection, reference, sorting, filters, or URL state.
 
@@ -725,7 +785,10 @@ from `prepareChartSnapshot`; never accept arbitrary SVG from a script or network
 response. Selection uses the snapshot row keys. Its viewport is snapshot-owned.
 
 `ChartFilterControls` accepts `request`, `displayedRequest`, `onRequest`, optional
-`steps: {key,label}[]`, `series: {key,label,color}[]`, `dimensionLabel`, `disabled`,
+`steps: {key,label}[]`, `series: {key,label,color?}[]` (pass `color` only when
+the chart colors that series that way; without it the filter shows no swatch),
+`dimensionLabel`, `seriesLabel`
+(the filter chip's label, default **Series visibility**; name the column the series come from), `disabled`,
 `failed`, and `onRetry`. It does not load data. Keep the displayed request tied to
 the last committed snapshot while a new desired request is pending. Its exported
 `ChartFilterControlsProps` type describes the same contract.

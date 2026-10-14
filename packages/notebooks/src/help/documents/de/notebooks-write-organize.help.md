@@ -25,14 +25,26 @@ Dauerhaftes Handbuchwissen gehört in die Notiz selbst. Nutze Kommentare, um die
 
 **Mit KI bearbeiten** öffnet Assistant mit der Seite und ihrer Diskussion. Nach einer Prüfung kann Assistant auch deine neuen Kommentare korrigieren oder löschen. Es gelten dieselben Regeln für Autor und zehn Minuten. Assistant kann Entwürfe für Abfragen und Inhaltsverzeichnisse prüfen, ohne sie zu speichern. Diese Prüfung deckt nicht alle Markdown-Funktionen oder Tabellenformeln ab.
 
+## Eine gespeicherte Version wiederherstellen {icon="history"}
+
+Öffne die Notizdetails und wähle **Versionsverlauf**. Wähle eine Version, um ihren Inhalt oder die Änderungen anzusehen.
+
+**Diese Version wiederherstellen** macht sie zum aktuellen Inhalt für alle, die in der Notiz arbeiten. Danach öffnet sich die Notiz in der Ansicht **Bearbeiten**. Der vorherige Inhalt bleibt im Verlauf. Wähle **Rückgängig** in der Bestätigung, um ihn zurückzuholen.
+
+**Als Kopie wiederherstellen** erstellt eine neue Notiz direkt unter dem Original auf derselben Ebene. Das Original bleibt unverändert.
+
+Zum Wiederherstellen brauchst du Zugriff **Bearbeiten**. Eine gesperrte Notiz kannst du nur als Kopie wiederherstellen.
+
 **Markdown**
 
 ## Eine nützliche Notiz schreiben {icon="pencil"}
 
 :::reference
 - **Überschriften:** Gliedere die Notiz mit #, ## und tieferen Überschriften. Die erste H1 ist der Notiztitel in Navigation und Suche. Ohne H1 ist die erste sichtbare Zeile der Titel.
-- **Listen und Aufgaben:** Verwende - für Listen. Verwende - [ ] oder - [x] für Aufgaben.
+- **Listen und Aufgaben:** Verwende - für Listen. Verwende - [ ] oder - [x] für Aufgaben. Verwende 1. für nummerierte Listen. Sie zählen ab ihrer ersten Nummer weiter. Verschachtelte nummerierte Listen zeigen a., b. und dann i., ii. im Editor, in der Buchansicht und im PDF.
+- **Text formatieren:** Nutze die Werkzeugleiste oder die Tasten unten. Ohne Auswahl gilt das Format für das Wort am Cursor. Leerzeichen am Rand der Auswahl bleiben außerhalb des Formats. Drücke dieselben Tasten noch einmal, um das Format zu entfernen. Wenn du nur einen Teil von formatiertem Text markierst, verliert nur dieser Teil das Format. In Code, Linkadressen und Tags sowie über Absätze und Listeneinträge hinweg wirkt das Format nicht.
 - **Slash-Menü:** Nutze das Einfügemenü des Editors für häufige Blöcke wie Notizlinks, Dateien und Tabellen. Tippe ::: für Daten, Abfragen, Inhaltsverzeichnisse und Hinweisblöcke.
+- **Markdown-Zeichen:** Der Rich-Modus zeigt Zeichen wie `**` oder `#`, wenn dein Cursor darin steht. Wenn du mit der Maus Text auswählst, erscheinen sie erst nach dem Loslassen der Taste. Der Text bleibt beim Ziehen an seiner Stelle.
 :::
 
 **Normale Notiz**
@@ -52,29 +64,91 @@ Schreibe kurze Absätze. Behandle in jedem Abschnitt nur ein Thema.
 - Einen Abend freihalten
 ```
 
-## Mit Tab einrücken {icon="keyboard"}
+## Text formatieren {icon="typography"}
 
-**Tab** rückt im Notizeditor ein. So verschachtelst du Listen und richtest Code aus, ohne zur Maus zu greifen. Die Notiz speichert normale Leerzeichen.
+Die Werkzeugleiste zeigt den aktuellen Textstil und aktive Formate. Schaltflächen und Tasten schalten ein Format ein und aus.
+
+| Taste | Was passiert |
+| --- | --- |
+| **Strg/⌘+B** | Schaltet fett ein oder aus. |
+| **Strg/⌘+I** | Schaltet kursiv ein oder aus. |
+| **Strg/⌘+Umschalt+S** | Schaltet durchgestrichen ein oder aus. |
+| **Strg/⌘+Umschalt+H** | Markiert Text: `==Text==`. Noch einmal entfernt die Markierung. |
+| **Strg/⌘+E** | Schaltet Code im Text ein oder aus. |
+| **Strg/⌘+K** | Fügt einen Link ein; ausgewählter Text wird seine Beschriftung. |
+| **Strg/⌘+Alt+K** | Öffnet die Auswahl, um eine andere Notiz zu verlinken. |
+| **Strg/⌘+Umschalt+1/2/3** | Schaltet Überschrift 1/2/3 ein. Noch einmal ergibt normalen Text. |
+| **Strg/⌘+Umschalt+7/8/9** | Schaltet eine nummerierte Liste, Aufzählung oder Checkliste ein oder aus. |
+| **Strg/⌘+Z** / **Strg/⌘+Umschalt+Z** | Macht rückgängig oder wiederholt. Jede Aktion der Werkzeugleiste und jedes Enter ist ein eigener Schritt. |
+
+Für Überschriften und Listen gelten die Zifferntasten auf jedem Tastaturlayout. Auf einem Mac nutzt macOS **⌘+Umschalt+3** für Bildschirmfotos; wähle Überschrift 3 dann im Stilmenü.
 
 :::reference
-- **Text und Code:** **Tab** fügt an der Cursorposition zwei Leerzeichen ein oder rückt die markierten Zeilen ein. **Umschalt+Tab** entfernt bis zu zwei Leerzeichen Einzug.
-- **Listen:** **Tab** ordnet den aktuellen Eintrag dem Eintrag darüber unter. Seine Untereinträge wandern mit. **Umschalt+Tab** holt ihn eine Ebene zurück.
+- `/` am Zeilenanfang oder nach einem Leerzeichen öffnet das Einfügemenü. Tippe einen Befehlsnamen, um es zu filtern.
+- `[[` öffnet Notizvorschläge. Die Auswahl ersetzt die getippten Klammern durch einen Markdown-Link zur Notiz.
+- `![[` öffnet Anhangsvorschläge. Die Auswahl bettet ein Bild ein; bei einer anderen Datei fügt sie einen Download-Link ein.
+- `==Text==` markiert Text farbig. Die Markierung bleibt innerhalb einer Zeile.
+- Auf Touchscreens stehen **Rückgängig** und **Wiederholen** am Anfang der Werkzeugleiste.
+- Am Smartphone bleibt die Werkzeugleiste beim Tippen über der Tastatur. So kannst du formatieren, einrücken und ausrücken, ohne die Tastatur zu schließen.
+:::
+
+## Listen {icon="keyboard"}
+
+Listen im Notizeditor folgen ihrer Struktur. Die Tasten wirken gleich für Aufzählungen, nummerierte Listen und Checklisten.
+
+| Taste | Was passiert |
+| --- | --- |
+| **Enter** | Fügt den nächsten Eintrag an. Am Anfang des Textes fügt es einen leeren Eintrag darüber ein. Bei einem Eintrag mit Untereinträgen wird der neue Eintrag sein erster Untereintrag. |
+| **Enter** auf einem leeren Eintrag | Rückt den Eintrag eine Ebene aus. Auf oberster Ebene endet die Liste, und du schreibst normalen Text. Ein Eintrag der obersten Ebene mit Untereinträgen bleibt. |
+| **Rücktaste** am Anfang eines Eintrags | Rückt den Eintrag eine Ebene aus. Auf oberster Ebene wird der Eintrag zu normalem Text. Ein Eintrag der obersten Ebene mit Untereinträgen bleibt. |
+| **Tab** oder **Strg/⌘+]** | Ordnet den Eintrag dem Eintrag darüber unter. Seine Untereinträge wandern mit. |
+| **Umschalt+Tab** oder **Strg/⌘+[** | Rückt den Eintrag eine Ebene aus. |
+| **Alt+Pfeil nach oben/unten** | Verschiebt den Eintrag samt Untereinträgen am Eintrag darüber oder darunter vorbei. Am Listenrand bleibt er stehen. |
+| **Strg/⌘+Umschalt+7**, **8**, **9** | Macht aus den markierten Zeilen eine nummerierte Liste, eine Aufzählung oder eine Checkliste. Die Tiefe bleibt. Noch einmal auf einem Eintrag der obersten Ebene ergibt normalen Text. Gemeint sind die Zifferntasten 7, 8 und 9, auf jedem Tastaturlayout. |
+| **Strg/⌘+Enter** | Hakt die Aufgabe am Cursor ab oder entfernt den Haken, auch aus einer weiteren Zeile der Aufgabe. |
+| `- `, `1. ` oder `[] ` am Zeilenanfang | Beginnt eine Aufzählung, eine nummerierte Liste oder eine Checkliste. |
+
+**Umschalt+Enter** beginnt eine neue Zeile im selben Eintrag. **Rücktaste** direkt nach `# ` macht aus einer Überschrift normalen Text.
+
+:::reference
+- **Text und Code:** **Tab** fügt an der Cursorposition zwei Leerzeichen ein oder rückt die markierten Zeilen ein. **Umschalt+Tab** entfernt bis zu zwei Leerzeichen Einzug. Die Notiz speichert normale Leerzeichen.
+- **Ohne Tab:** **Strg/⌘+]** und **Strg/⌘+[** funktionieren auch, wenn Tab den Fokus bewegt. Nutze am Smartphone **Einrücken** und **Ausrücken** in der Werkzeugleiste des Editors.
+- **Listeneinträge verschieben:** Am Mac nutzt du **Wahltaste+Pfeil nach oben/unten**. Unter Windows und Linux geht das auch mit **Strg+Umschalt+Pfeil nach oben/unten**. Am Mac markiert **⌘+Umschalt+Pfeil nach oben/unten** weiterhin bis zum Anfang oder Ende der Notiz. Reicht deine Auswahl über mehr als einen Eintrag, werden die markierten Zeilen verschoben.
+- **Nummerierte Listen:** Wenn du Einträge hinzufügst, entfernst, einrückst oder verschiebst, wird die geänderte Liste im Markdown neu nummeriert. Sie behält ihre erste Nummer, auch wenn du den ersten Eintrag entfernst. Andere Listen behalten ihre Nummern. Einmal Rückgängig stellt die Änderung samt vorherigen Nummern wieder her.
+- **Werkzeugleiste:** Aufzählung, Nummerierte Liste und Checkliste stehen direkt in der Werkzeugleiste, auch am Smartphone.
 - **Tabellen:** **Tab** markiert die nächste Zelle, **Umschalt+Tab** die vorherige.
-- **Vorschläge:** Ist eine Vorschlagsliste offen, setzt **Tab** den markierten Vorschlag ein.
+- **Vorschläge:** Ist eine Vorschlagsliste offen, setzen **Tab** und **Enter** den markierten Vorschlag ein.
 - **Editor verlassen:** Drücke **Esc** und dann **Tab**, um zum nächsten Bedienelement zu wechseln. Drücke **Esc** und dann **Umschalt+Tab**, um zurückzugehen.
 - **Tab für den Fokus behalten:** Öffne **Einstellungen → Notizbuch → Ansicht und Verhalten** und schalte **Tab-Taste bewegt den Fokus statt einzurücken** ein. Dieser Browser speichert die Wahl, und sie gilt sofort.
 :::
 
+## Notizen in der Seitenleiste finden {icon="layout-sidebar"}
+
+Die Seitenleiste zeigt die Notizen des Notizbuchs als Baum, mit der Startseite zuerst. Filter machen daraus eine Liste.
+
+:::reference
+- **Name des Notizbuchs:** Wähle den Namen oben, um zu einem anderen Notizbuch zu wechseln oder **Alle Notizbücher** zu öffnen.
+- **Suche und neue Notizen:** Wähle **Notizen durchsuchen** oder drücke **Cmd/Strg+Umschalt+K**. Mit Zugriff **Bearbeiten** oder **Verwalten** erstellst du mit dem Stift neben dem Namen oder mit **Cmd/Strg+Alt+N** eine Notiz. Das letzte Wort deiner Eingabe findet auch Wortanfänge: *Bespr* findet *Besprechungen*. Notizen, deren Titel deiner Eingabe entspricht oder damit beginnt, stehen oben.
+- **Favoriten, Zuletzt und Tags:** Diese Filter zeigen statt des Baums eine Liste, die zuletzt geänderte Notiz zuerst. **Zuletzt** zeigt die 12 zuletzt geänderten Notizen. Jede Notiz zeigt, wann sie sich geändert hat, und ihre ersten zwei Tags. Wähle den Filter erneut oder **×** über der Liste, um wieder den Baum zu sehen.
+- **Die Liste bleibt ruhig:** Solange die Liste offen ist, verschieben Änderungen von dir oder anderen ihre Notizen nicht. Eine Notiz, die neu zum Filter passt, kommt ans Ende. Um die Liste neu zu sortieren, wähle den Filter zweimal.
+- **Deine Favoriten:** Wähle im Menü einer Notiz **Zu Favoriten hinzufügen**. Nur du siehst deine Favoriten.
+- **Menü einer Notiz:** Wähle **⋯** neben der Notiz, öffne ihr Kontextmenü mit der rechten Maustaste oder wähle sie aus und drücke **Umschalt+F10**.
+- **Der Filter bleibt:** Er bleibt, wenn du eine Notiz aus der Liste öffnest und wenn du die Seite neu lädst. Öffnest du eine andere Notiz über einen Link in einer Notiz, über die Suche oder als neue Notiz, zeigt sich wieder der Baum.
+- **Smartphones:** Das Menü bietet dieselben Filter und zeigt die Liste sofort. Öffne eine Notiz aus der Liste, um den Filter zu behalten. Schließt du das Menü, ohne eine Notiz zu öffnen, zeigt es wieder, was es vorher gezeigt hat.
+:::
+
 ## Navigation ausblenden {icon="layout-sidebar-left-collapse"}
 
-Blende die Navigation aus, um mit der ganzen Breite zu schreiben. Blende sie auch aus, wenn andere deinen Bildschirm sehen und deine Notizen und Ordner nicht sehen dürfen.
+Blende die Navigation aus, um dich auf die Notiz zu konzentrieren. Blende sie auch aus, wenn andere deinen Bildschirm sehen und deine Notizen und Ordner nicht sehen dürfen.
 
 :::reference
 - **Ausblenden:** Wähle ganz links in der Werkzeugleiste des Editors **Navigation ausblenden**. Du kannst auch **Cmd/Strg+Alt+S** drücken oder in der Cloud-Suche `>` tippen und **Notizbuch-Navigation ausblenden** ausführen. Oder ziehe den Rand der Navigation fast ganz nach links.
-- **Was verschwindet:** Die Navigation verschwindet in beiden Layouts und in der Buchansicht vollständig. Das gilt auch für die Notizliste des Navigators und die Seitenliste der Buchansicht.
+- **Was verschwindet:** Die Seitenleiste verschwindet vollständig, ebenso die Seitenliste der Buchansicht.
 - **Einblenden:** Wähle an derselben Stelle **Navigation einblenden** oder drücke erneut **Cmd/Strg+Alt+S**. Du kannst auch in der Cloud-Suche `>` tippen und **Notizbuch-Navigation einblenden** ausführen.
 - **Ohne Werkzeugleiste:** Manche Stellen zeigen keine Werkzeugleiste des Editors: die Buchansicht, ein leeres Notizbuch, **Schreibgeschützt**, der Graph und die Anhänge. Dort steht die Schaltfläche unten links.
 - **Bleibt ausgeblendet:** Dieser Browser speichert die Wahl. Sie gilt für alle Notizbücher, auch nach dem Neuladen und in anderen offenen Tabs. Ein Notizbuch mit ausgeblendeter Navigation öffnet ohne sie, Notiztitel erscheinen also auch beim Laden nicht.
+- **Lesebreite:** Auf einem großen Bildschirm bleibt der Text in einer Spalte, so breit wie in der Buchansicht, auch im Editor und in **Schreibgeschützt**. Blendest du die Navigation aus, rückt die Spalte in die Mitte. Die Zeilen werden nicht länger.
+- **Volle Breite:** Für längere Zeilen schalte im Detailbereich **Volle Breite** ein, oder tippe in der Cloud-Suche `>` und führe **Volle Breite einschalten** aus. Der Text füllt dann den freien Platz im Editor, in **Schreibgeschützt** und in der Buchansicht. Nur du siehst das, und dieser Browser speichert die Wahl für alle Notizbücher und offenen Tabs. Volle Breite gilt nur auf großen Bildschirmen, dort erscheint der Schalter. Lassen Navigation und Detailbereich weniger Platz als die Spalte, werden die Zeilen erst länger, wenn du den Detailbereich schließt.
 - **Deine Stelle in der Notiz:** Beim Aus- und Einblenden bleibt der Cursor, wo er ist. Der Text oben im Editor oder in der Buchansicht bleibt an seiner Stelle.
 - **Smartphones und Tablets:** Auf kleinen Bildschirmen bleibt die Navigation im Menü. Auf einem Tablet öffnet die Schaltfläche oben links die Navigation über der Notiz. Ist sie ausgeblendet, zeigt die Schaltfläche unten links sie wieder an. Auf größeren Bildschirmen steht die Navigation neben der Notiz.
 :::

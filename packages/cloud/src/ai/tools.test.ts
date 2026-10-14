@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { OutboundEvent, ProviderRequest, StoreEntry } from "@k2b/nessi";
-import { nessi } from "@k2b/nessi";
+import type { InboundEvent, OutboundEvent, ProviderRequest, StoreEntry, Tool } from "@k2b/nessi";
+import { defineTool as defineNessiTool, nessi } from "@k2b/nessi";
 import type { Provider } from "@k2b/nessi/ai";
 import { z } from "zod";
 import type { RequestActor } from "../server";
@@ -22,8 +22,8 @@ import {
 import { aiModelAccess } from "./model-access";
 import { AiTurnActionSchema } from "./runtime";
 import * as settings from "./settings";
-import { aiToolPromptHints, defineAiTool, prepareAiTools } from "./tools";
-import type { AiModelProfile } from "./types";
+import { type AiApprovalUse, aiApprovalAskedLater, aiToolPromptHints, defineAiTool, prepareAiTools } from "./tools";
+import type { AiApprovalTarget, AiModelProfile, AiToolRuntime } from "./types";
 
 afterEach(() => mock.restore());
 
@@ -335,6 +335,7 @@ describe("AI tools", () => {
       "survey",
       "text_editor",
       "chart",
+      "code_create",
       "list_files",
       "read_file",
       "fetch_file",
@@ -481,5 +482,257 @@ describe("AI tools", () => {
       name: "card",
       args: { title: "Status", value: "OK", tone: "teal", trendDirection: "flat" },
     });
+  });
+});
+
+describe("platform approval consumption in server tools", () => {
+  const callProvider = (name: string): Provider => {
+    let calls = 0;
+    return {
+      name: "approval-binding-test",
+      family: "openai-compatible",
+      model: "test",
+      capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
+      async complete() {
+        throw new Error("Unexpected completion");
+      },
+      async *stream() {
+        if (calls++ === 0) {
+          yield { type: "block_start", blockId: "call", index: 0, kind: "tool_call", callId: "run", name };
+          yield {
+            type: "block_end",
+            blockId: "call",
+            index: 0,
+            block: { type: "tool_call", id: "run", name, args: { value: "one" } },
+          };
+          yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "tool_use" };
+        } else {
+          yield { type: "block_start", blockId: "done", index: 0, kind: "text" };
+          yield { type: "block_end", blockId: "done", index: 0, block: { type: "text", text: "Done" } };
+          yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
+        }
+      },
+    };
+  };
+  const toolResult = (entries: StoreEntry[]) =>
+    entries.flatMap((entry) => (entry.message.role === "tool_result" ? [entry.message.result] : []));
+  const runTool = async (
+    tool: AiToolRuntime | Tool,
+    hooks: Pick<Parameters<typeof prepareAiTools>[0], "consumeApproval" | "linkApproval" | "describeApproval">,
+    approved = true,
+  ) => {
+    const entries: StoreEntry[] = [];
+    const requested: string[] = [];
+    const loop = nessi({
+      loopId: "approval-binding",
+      provider: callProvider(tool.def.name),
+      systemPrompt: "",
+      input: "Run",
+      maxTurns: 3,
+      tools: prepareAiTools({ tools: [tool], actor, ...hooks }).tools,
+      store: {
+        load: async () => entries,
+        append: async (message) => {
+          entries.push({ seq: entries.length + 1, kind: "message", message });
+        },
+      },
+    });
+    for await (const event of loop) {
+      if (event.type !== "tool_action_request") continue;
+      requested.push(event.callId);
+      loop.push({ type: "approval_response", callId: event.callId, approved });
+    }
+    return { requested, entries };
+  };
+  const definition = (approval: "never" | "once" = "never") =>
+    defineAiTool({
+      name: "write",
+      description: "Write",
+      inputSchema: z.object({ value: z.string() }),
+      outputSchema: z.boolean(),
+      approval,
+    });
+  test("consumes a nested approval against its action ID and real tool input", async () => {
+    const consume = mock(async (_callId: string, _input: unknown): Promise<AiApprovalUse> => "approved");
+    const result = await runTool(
+      definition().server(async (_input, ctx) => ctx.requestApproval("Write?")),
+      { consumeApproval: consume },
+    );
+    expect(result.requested).toEqual(["run-approval-0"]);
+    expect(consume).toHaveBeenCalledWith("run-approval-0", { value: "one" });
+  });
+  test("a failed consumption asks again under the next ID and describes the target again", async () => {
+    const consume = mock(async (_callId: string, _input: unknown): Promise<AiApprovalUse> => "approved").mockResolvedValueOnce("changed");
+    const describe = mock((_callId: string, _target: AiApprovalTarget) => {});
+    const target = { toolName: "demo.write", approvalScope: "item:one", always: true };
+    const result = await runTool(
+      definition().server(async (_input, ctx) => ctx.requestApprovalFor!("Write?", target)),
+      {
+        consumeApproval: consume,
+        describeApproval: describe,
+      },
+    );
+    expect(result.requested).toEqual(["run-approval-0", "run-approval-1"]);
+    expect(consume.mock.calls).toEqual([
+      ["run-approval-0", { value: "one" }],
+      ["run-approval-1", { value: "one" }],
+    ]);
+    expect(describe.mock.calls).toEqual([
+      ["run-approval-0", target],
+      ["run-approval-1", target],
+    ]);
+  });
+  test("a rejection does not consume", async () => {
+    const consume = mock(async (_callId: string, _input: unknown): Promise<AiApprovalUse> => "approved");
+    await runTool(
+      definition().server(async (_input, ctx) => ctx.requestApproval("Write?")),
+      { consumeApproval: consume },
+      false,
+    );
+    expect(consume).not.toHaveBeenCalled();
+  });
+  test("relays link the record and describe the target without consuming it", async () => {
+    const consume = mock(async (_callId: string, _input: unknown): Promise<AiApprovalUse> => "changed"),
+      link = mock((_callId: string, _approvalId: string) => {}),
+      describe = mock((_callId: string, _target: AiApprovalTarget) => {});
+    const approvalId = crypto.randomUUID();
+    const target = { toolName: "demo.write", approvalScope: "item:one", always: true };
+    const result = await runTool(
+      definition().server(async (_input, ctx) => ctx.requestRelayedApproval!("Write?", { approvalId, target })),
+      {
+        consumeApproval: consume,
+        linkApproval: link,
+        describeApproval: describe,
+      },
+    );
+    expect(result.requested).toEqual(["run-approval-0"]);
+    expect(link).toHaveBeenCalledWith("run-approval-0", approvalId);
+    expect(describe).toHaveBeenCalledWith("run-approval-0", target);
+    expect(consume).not.toHaveBeenCalled();
+  });
+  test("native Nessi server tools inherit the same protection", async () => {
+    const consume = mock(async (_callId: string, _input: unknown): Promise<AiApprovalUse> => "changed"),
+      execute = mock(async () => true);
+    const tool = defineNessiTool({
+      name: "write",
+      description: "Write",
+      inputSchema: z.object({ value: z.string() }),
+      needsApproval: true,
+    }).server(execute);
+    await runTool(tool, { consumeApproval: consume });
+    expect(consume).toHaveBeenCalledWith("run", { value: "one" });
+    expect(execute).not.toHaveBeenCalled();
+  });
+  test("tool-level approvals refuse execution when consumption fails", async () => {
+    for (const [use, error] of [
+      ["changed", "This approval no longer matches the call. Ask again."],
+      ["used", "This approval was already used, so Cloud does not run the call again."],
+    ] as const) {
+      const execute = mock(async () => true),
+        consume = mock(async (_callId: string, _input: unknown): Promise<AiApprovalUse> => use);
+      const result = await runTool(definition("once").server(execute), { consumeApproval: consume });
+      expect(result.requested).toEqual(["run"]);
+      expect(consume).toHaveBeenCalledWith("run", { value: "one" });
+      expect(execute).not.toHaveBeenCalled();
+      expect(JSON.stringify(toolResult(result.entries))).toContain(error);
+    }
+  });
+
+  /** Uses each approval once, like the platform, and lets the call's own resume after a later question through. */
+  const platform = () => {
+    const asked: string[] = [],
+      used = new Set<string>();
+    const consume = mock(async (approvalCallId: string, _input: unknown): Promise<AiApprovalUse> => {
+      if (!used.has(approvalCallId)) {
+        used.add(approvalCallId);
+        return "approved";
+      }
+      return aiApprovalAskedLater(approvalCallId, asked) ? "approved" : "used";
+    });
+    return { asked, consume };
+  };
+  /** Suspends at every question and resumes with all answers so far, as each new claim of a waiting turn does. */
+  const resumeTool = async (tool: AiToolRuntime, fake: ReturnType<typeof platform>) => {
+    const entries: StoreEntry[] = [],
+      responses: InboundEvent[] = [],
+      requested: { callId: string; message?: string }[] = [];
+    const provider = callProvider(tool.def.name);
+    const tools = prepareAiTools({ tools: [tool], actor, consumeApproval: fake.consume }).tools;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const loop = nessi({
+        loopId: "approval-resume",
+        provider,
+        systemPrompt: "",
+        tools,
+        maxTurns: 3,
+        ...(attempt === 0 ? { input: "Run" } : {}),
+        store: {
+          load: async () => entries,
+          append: async (message) => {
+            entries.push({ seq: entries.length + 1, kind: "message", message });
+          },
+        },
+      });
+      for (const response of responses) loop.push(response);
+      let suspended = false;
+      for await (const event of loop) {
+        if (event.type !== "tool_action_request") continue;
+        requested.push({ callId: event.callId, ...(event.message ? { message: event.message } : {}) });
+        fake.asked.push(event.callId);
+        responses.push({ type: "approval_response", callId: event.callId, approved: true });
+        suspended = true;
+        break;
+      }
+      if (!suspended) return { requested, entries };
+    }
+    throw new Error("The tool kept asking");
+  };
+  test("a tool-level approval stays valid when the call resumes after its own nested question", async () => {
+    const fake = platform();
+    const result = await resumeTool(
+      definition("once").server(async (_input, ctx) => ctx.requestApproval("Also archive the attachments?")),
+      fake,
+    );
+    expect(result.requested.map(({ callId }) => callId)).toEqual(["run", "run-approval-0"]);
+    expect(fake.consume.mock.calls.map(([callId]) => callId)).toEqual(["run", "run", "run-approval-0"]);
+    expect(toolResult(result.entries)).toEqual([true]);
+  });
+  test("two questions of one call keep their own approvals across resumes", async () => {
+    const fake = platform();
+    const result = await resumeTool(
+      definition().server(async (_input, ctx) => (await ctx.requestApproval("First?")) && ctx.requestApproval("Second?")),
+      fake,
+    );
+    expect(result.requested).toEqual([
+      { callId: "run-approval-0", message: "First?" },
+      { callId: "run-approval-1", message: "Second?" },
+    ]);
+    expect(toolResult(result.entries)).toEqual([true]);
+  });
+  test("an approval an earlier run already used ends the call instead of asking or running again", async () => {
+    const execute = mock(async () => true);
+    const result = await runTool(
+      definition().server(async (_input, ctx) => (await ctx.requestApproval("Write?")) && execute()),
+      { consumeApproval: mock(async (_callId: string, _input: unknown): Promise<AiApprovalUse> => "used") },
+    );
+    expect(result.requested).toEqual(["run-approval-0"]);
+    expect(execute).not.toHaveBeenCalled();
+    expect(JSON.stringify(toolResult(result.entries))).toContain("This approval was already used");
+  });
+  test("a relay without a record of its own uses the chat's approval when it hands the decision over", async () => {
+    const consume = mock(async (_callId: string, _input: unknown): Promise<AiApprovalUse> => "approved");
+    const relay = definition().server(async (_input, ctx) => ctx.requestRelayedApproval!("GET https://example.test/", {}));
+    expect(toolResult((await runTool(relay, { consumeApproval: consume })).entries)).toEqual([true]);
+    expect(consume).toHaveBeenCalledWith("run-approval-0", { value: "one" });
+    // A decision the chat cannot use any more reaches the effect as a refusal.
+    consume.mockResolvedValueOnce("used");
+    expect(toolResult((await runTool(relay, { consumeApproval: consume })).entries)).toEqual([false]);
+  });
+  test("only a later question of the same call continues a used approval", () => {
+    expect(aiApprovalAskedLater("run", ["run-approval-0"])).toBe(true);
+    expect(aiApprovalAskedLater("run", ["run", "other-approval-0"])).toBe(false);
+    expect(aiApprovalAskedLater("run-approval-1", ["run-approval-0", "run-approval-1"])).toBe(false);
+    expect(aiApprovalAskedLater("run-approval-1", ["run-approval-10"])).toBe(true);
+    expect(aiApprovalAskedLater("run-approval-1", ["xrun-approval-2"])).toBe(false);
   });
 });

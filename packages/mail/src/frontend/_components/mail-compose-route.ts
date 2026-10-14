@@ -1,8 +1,6 @@
-import { CommandPathSchema, commandPath, readCommand } from "@k2b/cloud/contracts";
-import { MailDraftCalendarInputSchema } from "../../commands";
+import { isCommandPath } from "@k2b/cloud/contracts/command-path";
 
-export const mailDraftReturnHref = (value: string, mailboxId: string): string =>
-  CommandPathSchema.safeParse(value).success ? value : `/app/mail/${mailboxId}`;
+export const mailDraftReturnHref = (value: string, mailboxId: string): string => (isCommandPath(value) ? value : `/app/mail/${mailboxId}`);
 
 export const mailDraftHref = (mailboxId: string, draftId: string, returnHref: string, options: { popout?: boolean } = {}): string => {
   const query = new URLSearchParams({ return: mailDraftReturnHref(returnHref, mailboxId) });
@@ -40,22 +38,5 @@ export const registerMailtoHandler = (
     return { kind: "requested" };
   } catch {
     return { kind: "failed" };
-  }
-};
-
-/** Resolve the fixed Command entry route into the existing permission-checked draft page. */
-export const mailCalendarCommandHref = (url: URL): string | null => {
-  try {
-    const target = readCommand(url);
-    if (target?.id !== "mail.draft.calendar") return null;
-    const input = MailDraftCalendarInputSchema.parse(target.input);
-    return commandPath(
-      mailDraftHref(input.mailboxId, input.draftId, target.options.returnTo ?? `/app/mail/${input.mailboxId}`),
-      target.id,
-      input,
-      target.options,
-    );
-  } catch {
-    return null;
   }
 };

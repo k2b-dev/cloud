@@ -36,9 +36,14 @@ export const localizedAppName = (
   appId: string,
   fallback: string,
 ): string => {
+  return appNameIn(carrier, appId, getLocale(carrier as Parameters<typeof getLocale>[0]), fallback);
+};
+
+/** An app's registered name in the locale of a recorded request. */
+export const appNameIn = (carrier: RuntimeCarrier, appId: string, locale: string, fallback: string): string => {
   const runtime = carrier.get("runtime");
   const apps =
     runtime && typeof runtime === "object" && Array.isArray((runtime as RuntimeContext).apps) ? (runtime as RuntimeContext).apps : [];
   const app = apps.find((entry) => entry.id === appId);
-  return app ? resolveAppPresentation(app, getLocale(carrier as Parameters<typeof getLocale>[0])).name : fallback;
+  return app ? resolveAppPresentation(app, locale).name : fallback;
 };

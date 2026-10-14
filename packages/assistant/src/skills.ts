@@ -24,6 +24,7 @@ import assistantCodeModePublishing from "./skills/assistant-code-mode/references
 import assistantCodeModeRuntime from "./skills/assistant-code-mode/references/runtime.md" with { type: "text" };
 import assistantCodeModeSourceWorkflow from "./skills/assistant-code-mode/references/source-workflow.md" with { type: "text" };
 import assistantCodeModeStorage from "./skills/assistant-code-mode/references/storage.md" with { type: "text" };
+import assistantCodeModeViews from "./skills/assistant-code-mode/references/views.md" with { type: "text" };
 import assistantCodeMode from "./skills/assistant-code-mode/SKILL.md" with { type: "text" };
 import assistantDataAnalysis from "./skills/assistant-data-analysis/SKILL.md" with { type: "text" };
 import cloudAssistant from "./skills/cloud-assistant/SKILL.md" with { type: "text" };
@@ -35,6 +36,7 @@ export const SKILLS = [
   skill({
     markdown: assistantCodeMode,
     references: {
+      "references/views.md": assistantCodeModeViews,
       "references/access.md": assistantCodeModeAccess,
       "references/ai.md": assistantCodeModeAi,
       "references/app-actions.md": assistantCodeModeAppActions,

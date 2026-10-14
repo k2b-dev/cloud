@@ -7,7 +7,7 @@ import { pwaMessages } from "./pwa-messages";
 /** Set once per browsing session, so the first page renews and later navigations do not. */
 const RENEWED_MARKER = "cloud.pwa.renewed";
 const KEEPALIVE_INTERVAL_MS = 60 * 60 * 1000;
-/** Matches `cloud:theme-preference` in the preference controller. */
+/** Fires for preference changes and system scheme changes from the head script. */
 const THEME_PREFERENCE_EVENT = "cloud:theme-preference";
 
 export type PwaRuntimeProps = {

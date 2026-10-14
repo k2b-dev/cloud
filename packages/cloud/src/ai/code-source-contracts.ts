@@ -12,15 +12,6 @@ const ArtifactPath = z
   .max(180)
   .regex(/^[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*$/)
   .refine((path) => path.split("/").every((part) => part !== "." && part !== ".."));
-const ArtifactFile = z
-  .object({
-    path: ArtifactPath,
-    content: z
-      .string()
-      .max(1024 * 1024)
-      .describe("Complete source file content; read existing content before replacing it."),
-  })
-  .strict();
 const Icon = z
   .string()
   .regex(/^ti ti-[a-z0-9-]+$/)
@@ -37,15 +28,6 @@ const PublicationNote = z.string().trim().min(1).max(1000);
 const DatabaseSql = z.object({
   sql: z.string().trim().min(1).max(16000).describe("Read-only SELECT; no writes, CTEs or comments. Use LIMIT."),
   params: z.array(z.json()).max(1000).default([]),
-});
-
-const CodeWriteInput = Id.extend({
-  expectedRevision: z.number().int().positive(),
-  entry: ArtifactPath.optional().describe("index.html for an app with an interface, or the script that code_run executes."),
-  files: z
-    .array(z.union([ArtifactFile, z.object({ path: ArtifactPath, fromFile: AiFileReference }).strict()]))
-    .min(1)
-    .max(64),
 });
 
 const DbName = z
@@ -301,15 +283,52 @@ export const CODE_SOURCE_TOOLS = {
     input: Id.extend(ArtifactMetadata.shape),
   },
   code_create: {
+    promptHint:
+      "build every app, calculator, converter, timer, form or other tool the person asks for as a saved Studio app. In one turn, load_skill assistant-code-mode and load_tools code_create, code_write, code_check and code_open.",
     description:
-      "Create a private reusable App: an index.html interface with optional style.css and app.js, published actions and optional persistence. Starts with a minimal index.html. For one-off analysis, use code_run with code instead. Returns id and entry path; write source with code_write. Optional icon uses the complete class, e.g. ti ti-chart-bar; omit it when unsure. Does not run or share anything.",
-    input: ArtifactCreate.pick({ title: true, description: true, icon: true }),
+      "Create a saved Studio app; it appears in the person's Studio Apps and can be opened, reused and shared. Use it for every app, calculator, converter, timer, form or other interactive tool the person asks for, even when it keeps no data. Pass the complete first version as html (a small app is this one file) and steps (its steps.json), so one call creates it; add style.css, app.js or more files with code_write. Without html it starts with a minimal index.html. Returns id, revision and the lines and length of every file; with html or steps also diagnostics, like code_write. Optional icon uses the complete class, e.g. ti ti-calculator; omit it when unsure. For a one-off analysis use code_run instead. Does not run, check or share anything.",
+    input: ArtifactCreate.pick({ title: true, description: true, icon: true }).extend({
+      html: z
+        .string()
+        .max(1024 * 1024)
+        .optional()
+        .describe(
+          'Complete index.html. A small app fits in this one file: put its script in <script type="module"> and its CSS in <style>. Omit it to start with a minimal page.',
+        ),
+      steps: z
+        .string()
+        .max(1024 * 1024)
+        .optional()
+        .describe("Complete steps.json text for code_check: the main flow, at most 20 steps."),
+    }),
   },
+  // Source text stays top-level because some providers corrupt strings nested in arrays.
+  // Imports carry only references, so they keep an array and one review per batch.
   code_write: {
     description:
-      "Atomically save complete source files against expectedRevision from code_read/create. Other files stay unchanged. Returns revision and compiler diagnostics; never runs. fromFile imports one exact chat/Project/App file reference as UTF-8 source without printing bytes. File imports receive fresh review because source may be shared or published. Use code_file_stat first; source file and bundle byte limits apply.",
-    review: (input: unknown) => CodeWriteInput.parse(input).files.some((file) => "fromFile" in file),
-    input: CodeWriteInput,
+      "Save one complete source file against expectedRevision from code_read, code_create or the previous write. Other files stay unchanged. Write a multi-file app with one call per file and wait for each result, passing its returned revision as the next expectedRevision; calls sent together in one response share a stale revision, so all but the first fail with CONFLICT. Returns revision, the lines and length of every file, and compiler diagnostics for the saved state; an import of a file not yet written is reported as missing until it is saved. Never runs. Copy exact chat, Project or App files with code_import.",
+    input: Id.extend({
+      expectedRevision: z.number().int().positive().describe("Revision from code_read, code_create or the previous write."),
+      path: ArtifactPath.describe("Relative path of the file to save."),
+      content: z
+        .string()
+        .max(1024 * 1024)
+        .describe("Complete file content as plain text; read existing content before replacing it."),
+      entry: ArtifactPath.optional().describe("index.html for an app with an interface, or the script that code_run executes."),
+    }),
+  },
+  code_import: {
+    description:
+      "Atomically import exact chat, Project or App file references as UTF-8 source files against expectedRevision, without printing their bytes. One fresh review covers the whole batch because source may be shared or published. Use code_file_stat first; source file and bundle byte limits apply. Returns revision, the lines and length of every file, imported and diagnostics. Write source text with code_write.",
+    review: true,
+    input: Id.extend({
+      expectedRevision: z.number().int().positive(),
+      entry: ArtifactPath.optional().describe("index.html for an app with an interface, or the script that code_run executes."),
+      files: z
+        .array(z.object({ path: ArtifactPath, fromFile: AiFileReference }).strict())
+        .min(1)
+        .max(64),
+    }),
   },
   code_remove: {
     description:

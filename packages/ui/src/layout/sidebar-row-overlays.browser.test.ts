@@ -4,8 +4,8 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../test/browser";
 
-// Whether a revealed row control covers another one, or a label scrolls into
-// its fade, depends on layout and paint, which happy-dom does not model, so a
+// Whether a revealed row control covers another one depends on layout and
+// paint, which happy-dom does not model, so a
 // real engine runs the shipped browser build.
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
@@ -24,6 +24,13 @@ const label = (children) => createComponent(AppWorkspace.SidebarItemLabel, { chi
 const action = (label, visibility) => createComponent(AppWorkspace.SidebarItemAction, { icon: "ti ti-dots", label, visibility });
 const button = (label) => createComponent(IconButton, { label, size: "xs", variant: "ghost", children: "+" });
 const preview = (label, trigger) => ({ label, trigger, content: label });
+const group = (labels) =>
+  createComponent(AppWorkspace.SidebarItemActions, {
+    visibility: "hover",
+    get children() {
+      return labels.map(button);
+    },
+  });
 // Every supported combination of trailing row controls.
 const rows = () => [
   { href: "#hover", children: [label("Hover action"), action("Row actions", "hover")] },
@@ -46,7 +53,59 @@ const rows = () => [
   },
   { preview: preview("Open archive", "row"), children: [label("Visible action and chevron"), action("Archive")] },
   { href: "#count", meta: "12", children: [label("Count and hover action"), action("Inbox actions", "hover")] },
+  {
+    href: "#group",
+    get actions() {
+      return group(["Pin"]);
+    },
+    children: [label("Hover group")],
+  },
+  {
+    href: "#group-count",
+    meta: "12",
+    get actions() {
+      return group(["Pin", "Hide"]);
+    },
+    children: [label("Count and hover group")],
+  },
+  {
+    href: "#object-group",
+    variant: "object",
+    description: "Updated today",
+    get actions() {
+      return group(["Flag"]);
+    },
+    children: [label("Object and hover group")],
+  },
 ];
+
+// A tree row keeps its chevron at the end and a list row has a second line; both reveal a hover group.
+const tree = () =>
+  createComponent(AppWorkspace.NavTree, {
+    ariaLabel: "Notes",
+    defaultExpandedIds: ["parent"],
+    get children() {
+      return createComponent(AppWorkspace.NavTree.Item, {
+        id: "parent",
+        label: "Tree row with sub-notes",
+        href: "#parent",
+        get actions() {
+          return group(["Note actions"]);
+        },
+        get children() {
+          return createComponent(AppWorkspace.NavTree.Item, {
+            id: "child",
+            label: "Tree row with a date",
+            description: "Yesterday · #garden",
+            href: "#child",
+            get actions() {
+              return group(["Date actions"]);
+            },
+          });
+        },
+      });
+    },
+  });
 
 render(
   () =>
@@ -60,12 +119,15 @@ render(
                 get children() {
                   return createComponent(AppWorkspace.SidebarBody, {
                     get children() {
-                      return createComponent(AppWorkspace.SidebarSection, {
-                        title: "Rows",
-                        get children() {
-                          return rows().map((row) => createComponent(AppWorkspace.SidebarItem, row));
-                        },
-                      });
+                      return [
+                        createComponent(AppWorkspace.SidebarSection, { title: "Tree", get children() { return tree(); } }),
+                        createComponent(AppWorkspace.SidebarSection, {
+                          title: "Rows",
+                          get children() {
+                            return rows().map((row) => createComponent(AppWorkspace.SidebarItem, row));
+                          },
+                        }),
+                      ];
                     },
                   });
                 },
@@ -95,15 +157,15 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const load = async (mode: Mode, options: { motion?: boolean; rtl?: boolean } = {}) => {
+const load = async (mode: Mode, options: { rtl?: boolean } = {}) => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  // Transitions only delay the settled state; the marquee moves a label on purpose.
-  const still = `*,*::before,*::after{transition:none!important${options.motion ? "" : ";animation:none!important"}}`;
+  // Inspect settled geometry without waiting for transitions.
+  const still = `*,*::before,*::after{transition:none!important;animation:none!important}`;
   // The shipped stylesheet resolves logical properties by language, as older engines need.
   const direction = options.rtl ? ' lang="ar" dir="rtl"' : ' lang="en"';
   await page.setContent(
     `<!doctype html><html${direction}><head><style>${stylesheets[mode]}</style><style>${still}</style></head>` +
-      `<body class="k2b-ui" style="margin:0"><div id="app" style="height:40rem"></div></body></html>`,
+      `<body class="k2b-ui" style="margin:0"><div id="app" style="height:52rem"></div></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.getByText("Count and hover action").waitFor();
@@ -142,7 +204,7 @@ const inspect = (page: Page, label: string, rest: string[] | null) =>
           const style = getComputedStyle(node);
           if (style.opacity !== "1" || style.pointerEvents === "none" || style.display === "none") return false;
         }
-        return true;
+        return getComputedStyle(element).visibility === "visible";
       };
       const controls = Array.from(
         owner.querySelectorAll(":scope > .k2b-app-workspace__sidebar-item-action, :scope > .k2b-app-workspace__sidebar-item-actions > *"),
@@ -160,6 +222,8 @@ const inspect = (page: Page, label: string, rest: string[] | null) =>
   );
 
 const labels = [
+  "Tree row with sub-notes",
+  "Tree row with a date",
   "Hover action",
   "Preview",
   "Hover action and preview",
@@ -169,6 +233,9 @@ const labels = [
   "Action group and preview",
   "Visible action and chevron",
   "Count and hover action",
+  "Hover group",
+  "Count and hover group",
+  "Object and hover group",
 ];
 
 describe("@k2b/ui sidebar row controls", () => {
@@ -194,11 +261,16 @@ describe("@k2b/ui sidebar row controls", () => {
           await page.keyboard.press("Tab");
           const stop = await page.evaluate(() => {
             const focused = document.activeElement;
-            const owner = focused?.closest(".k2b-app-workspace__sidebar-item");
+            // Roving focus rests on a tree node, which holds its own row.
+            const owner =
+              focused?.closest(".k2b-app-workspace__sidebar-item") ?? focused?.querySelector(":scope > .k2b-app-workspace__nav-tree-row");
             if (!focused || !owner) return null;
             return {
               label: owner.querySelector(".k2b-app-workspace__sidebar-item-label")?.textContent?.trim() ?? "",
-              control: focused.getAttribute("aria-label") ?? focused.textContent?.trim() ?? "",
+              control:
+                owner === focused.closest(".k2b-app-workspace__sidebar-item")
+                  ? (focused.getAttribute("aria-label") ?? focused.textContent?.trim() ?? "")
+                  : "tree node",
               preview: focused.matches(".k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger])"),
             };
           });
@@ -225,6 +297,11 @@ describe("@k2b/ui sidebar row controls", () => {
           "Action group and preview": touch ? ["Pin", "Share", "Review details"] : ["Pin", "Share"],
           "Visible action and chevron": ["Archive", "Open archive"],
           "Count and hover action": ["Inbox actions"],
+          "Tree row with sub-notes": ["Note actions"],
+          "Tree row with a date": ["Date actions"],
+          "Hover group": ["Pin"],
+          "Count and hover group": ["Pin", "Hide"],
+          "Object and hover group": ["Flag"],
         });
         // With a fine pointer alone, the focused preview button takes the place of the control before it.
         expect(previewFocused).toEqual({
@@ -238,44 +315,6 @@ describe("@k2b/ui sidebar row controls", () => {
       }
     });
   }
-
-  test("the marquee of a hovered label ends clear of the fade before a revealed action", async () => {
-    const page = await load("fine", { motion: true });
-    try {
-      const ends: Record<string, number> = {};
-      // One label overflows its row; the other fits but ends where the action appears.
-      for (const [label, extra] of [
-        ["Hover action", 60],
-        ["Hover action and preview", -16],
-      ] as const) {
-        const text = row(page, label).locator(".k2b-app-workspace__sidebar-item-label-text");
-        await text.evaluate((element, extra) => {
-          element.style.width = `${element.parentElement!.clientWidth + extra}px`;
-        }, extra);
-        const box = (await text.boundingBox())!;
-        await page.mouse.move(box.x + 8, box.y + box.height / 2);
-        // The workspace controller measures the label in the frame after the pointer enters it.
-        await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-        ends[label] = await row(page, label).evaluate((element) => {
-          const text = element.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-item-label-text")!;
-          // The marquee holds its far end from 85 % of its 4 s run, after a 0.2 s delay.
-          for (const marquee of text.getAnimations()) {
-            marquee.pause();
-            marquee.currentTime = 200 + 4000 * 0.9;
-          }
-          const action = element.querySelector(
-            ":scope > .k2b-app-workspace__sidebar-item-action:not(.k2b-app-workspace__sidebar-preview-trigger)",
-          )!;
-          return action.getBoundingClientRect().left - text.getBoundingClientRect().right;
-        });
-        await page.mouse.move(1400, 880);
-      }
-      // The label fades over 0.75rem before the action, so the text ends at least that far before it.
-      expect(Object.entries(ends).filter(([, gap]) => gap < 12)).toEqual([]);
-    } finally {
-      await page.close();
-    }
-  });
 
   test("the label fades on the side where a right-to-left row reveals its action", async () => {
     const page = await load("fine", { rtl: true });

@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Deployment requirements
@@ -36,7 +36,7 @@ this service set.
 | NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. The JetStream account must fit every stream's configured byte limit times its replicas; see [Reserve JetStream storage](#reserve-jetstream-storage) for the budget per application. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |
 | Valkey / Redis-compatible service | Rate limits, caches and short-lived authentication flows | Supply `REDIS_URL`. JWT browser sessions do not use Redis session storage. |
 | Private service network | Gateway-to-app traffic, public-key retrieval and Core broker calls | Make each advertised app address reachable. Do not publish individual app, database or coordination ports. Protect cross-host traffic with authenticated TLS or an equivalent protected transport. |
-| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. |
+| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. The gateway waits up to 4 minutes for an app's response headers and then answers 502; a reverse proxy in front of the gateway must wait at least 5 minutes for response headers. |
 | Clock synchronization | JWT expiry and short-lived invocations | Synchronize all hosts; invocation clock-skew tolerance is two seconds. |
 | Browser for diagrams | Mermaid diagrams in Notebooks and rendered Markdown | Users on Safari need Safari 17.4 or later (iOS and iPadOS 17.4 or later). Mermaid 12 targets ES2024 and is not transpiled for older browsers. |
 
@@ -107,7 +107,7 @@ Per replica, the built-in applications reserve:
 
 | Application | Jobs and queues at the default | Larger streams, log and dead letters together | Reservation |
 | --- | --- | --- | --- |
-| Core, with the platform services it runs | 20 | [outgoing mail](/en/docs/operations/outgoing-mail) attachment store (`cloud-outgoing-mail-attachments`) 2 GiB and settled wakeups 4 MiB, AI turn streams 520 MiB, `cloud:live:core` 65 MiB, previous AI invalidations (`cloud-ai-invalidations`) 128 MiB until a later release removes them, FreeIPA backfill pump 64 MiB, app login hints 2 MiB | 4.1 GiB |
+| Core, with the platform services it runs | 20 | [outgoing mail](/en/docs/operations/outgoing-mail) attachment store (`cloud-outgoing-mail-attachments`) 2 GiB and settled wakeups 4 MiB, AI turn streams 520 MiB, `cloud:live:core` 65 MiB, previous AI invalidations (`cloud-ai-invalidations`) 128 MiB until a later release removes them, FreeIPA backfill pump 64 MiB, app login hints 2 MiB, mobile app pairing claim hints (`cloud:pwa-pairing-claims`) 2 MiB | 4.1 GiB |
 | Gateway | 0 | `cloud-gateway-telemetry` 2 GiB | 2 GiB |
 | Gateway Ops | 2 | none | 132 MiB |
 | Grids | 2 | `grids:workflow-record-events` 1 GiB, workflow runtime events 32 MiB, workflow wake hints (`cloud:workflow-wake`) 2 MiB shared with Mail, `cloud:live:grids` 65 MiB, previous record events (`grids:records`) 1 GiB, run events 512 MiB, and metadata events 128 MiB until a later release removes them | 2.9 GiB |
@@ -243,7 +243,22 @@ publishing these ports. Binary bodies preserve backpressure across this hop.
 Eight simultaneous host requests per process are admitted; excess requests
 receive `operation_busy`. Size memory for the existing 50 MiB per-file and
 250 MiB per-run code budgets plus Chromium; streaming transport does not remove
-the memory occupied by files loaded for analysis.
+the memory occupied by files loaded for analysis. View files are ordinary chat
+files under `/views` and count toward the per-chat file budget; they need no
+configuration or migration.
+
+Assistant's `cloud.chart()` draws Studio app, chat app, script and PDF charts
+through the same options mapping as chat charts. Existing charts keep drawing:
+the chat's limits on series, points, labels and phone-width fit do not apply to
+apps, and empty, one-point or partly missing data still draws. Visible changes
+are a default logical width of 480 instead of 640 (height 280; sparkline remains
+160 × 40, and apps without explicit width redraw at their measured width), date
+axes in the viewer's wall-clock time, and stdlib-only options outside the chart
+contract, such as `padding`, being ignored. Renderer errors, such as a fixed
+domain that does not contain every value, now throw `invalid` instead of a plain
+error, and x strings must be ISO dates as documented. Chart groups and the
+additional chart kinds need no configuration or data migration. See
+[Code Mode charts](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it).
 
 ### Assistant Chromium isolation
 
@@ -440,6 +455,20 @@ it changes are lost when Mail is updated again. After the rollout, assign two
 people to a test conversation and check that
 `cld --json mail show <conversation-id>` lists both.
 
+### Mail draft signatures
+
+Mail adds the column `mail.drafts.signature_template_id` on its next start. No
+configuration change is needed. Drafts keep their signature in that column
+instead of in the editable text; see
+[Deprecations and migrations](/en/docs/reference/deprecations-and-migrations#mail-drafts-keep-the-signature-outside-the-body).
+
+Roll the Mail replicas over in one go. A replica of the previous version does
+not read the column, so a message it sends from a draft that the new version
+saved goes out without its signature. Rolling Mail back keeps the column and
+has the same effect for drafts saved after the update. After the rollout, open
+a new message in a mailbox with a default signature and check that the preview
+shows the signature below the text.
+
 ### Mail storage for kept conversations
 
 Mail adds the table `mail.conversation_keeps` and a trigger on
@@ -465,6 +494,27 @@ mail volume. The stored sources and attachments are in
 `mail.message_part_chunks`, so
 `SELECT pg_size_pretty(pg_total_relation_size('mail.message_part_chunks'))`
 shows the largest share.
+
+### Queue Mail sender verification behind provider work
+
+Mail no longer refuses a sender verification with `409 PROVIDER_BUSY` while a
+sync or other provider work holds the mailbox. It keeps the verification as a
+`verify_sender_identity` command that runs when it is its turn and ends within
+10 minutes. No configuration change is needed. The first Mail start after the
+update replaces the `commands_kind_check` constraint of `mail.commands` so that
+it allows the new command kind. It does not read the table for this.
+
+During a rolling update, Mail processes of the previous version leave these
+commands to updated processes. A `cld` from before this release prints
+`Verified` for a verification that still waits, so update `cld` together with
+Mail. API clients that verify an identity or set up the default sender must
+check `pendingVerificationCommandId` in the response: a `200` response no
+longer always means that the identity is verified.
+
+Rolling back keeps the wider constraint, and the previous version ignores
+waiting verifications. After the next update, a verification that waited
+longer than 10 minutes fails with `SENDER_VERIFICATION_TIMEOUT`, and the person
+verifies the identity again.
 
 ### Update Assistant approvals for chats and websites
 
@@ -503,6 +553,137 @@ After the rollout, ask Assistant in a chat to run code that reads one public
 JSON URL twice. The first request asks and offers
 **Allow this website for this chat**. After you choose it, the second request
 runs without asking and shows its full URL with **Revoke**.
+
+### Update Studio source writes
+
+`code_write` now saves one file per call with top-level `path` and `content`.
+File imports moved to the new `code_import` tool. Results report `lines` next to
+`length`. No configuration change or database migration is required. Stored
+source, revisions and chats are unchanged; older chat blocks keep their recorded
+arguments.
+
+Roll Core and Assistant over together. A mixed version rejects the other side's
+`code_write` input as invalid, and an older Assistant has no `code_import` route.
+Rollback is replacing both images; nothing needs undoing in the database. A turn
+running during the rollout may get one invalid-input error and then follows the
+new tool description.
+
+An app build now takes one tool round per source file instead of one round for
+all files. If a model profile sets a positive `maxToolRounds`, check that it
+still covers a typical multi-file build; otherwise the turn stops using tools
+earlier and answers with the files it saved so far.
+
+After rollout, ask Assistant to build a small app with `index.html` and `app.js`.
+The turn should show one `code_write` per file, no approval, and each result
+should list line counts that match the files.
+
+### Record approvals as platform requests
+
+This release records every approval that Assistant asks for as one
+[platform approval request](/en/docs/identity/approvals). It needs no
+configuration change. The first Core start creates the schema `approvals` with
+the table `approvals.requests`, adds `approval_id` to `ai.pending_actions` and
+`approval_decided_via` to `ai.tool_calls`, and gives every chat approval that
+is still open a request. Assistant adds `approval_id` to
+`assistant.capability_calls`. Core deletes a request 90 days after it expired.
+
+Update Core before Assistant. Until Core has created the table, Studio code
+that calls an Action which asks for approval fails. One behavior changes for
+people: when an Action's review changes between the question and the run, for
+example because a draft got another recipient, the chat asks again instead of
+running the Action.
+
+Rolling back keeps the new table and columns, and the previous release ignores
+them. After the next update, Core gives the chat approvals that are open then a
+request.
+
+After the rollout, approve one Action in a chat, then check that its request
+was used and that the decision is in the audit log:
+
+```sql
+SELECT app_id, action, status, decided_via FROM approvals.requests ORDER BY created_at DESC LIMIT 1;
+SELECT action FROM audit.events WHERE target_type = 'approval_request' ORDER BY created_at DESC LIMIT 1;
+```
+
+The request shows `consumed` and `web_session`, and the event
+`auth.action.approve`.
+
+### Decide pending approvals in Cloud
+
+This release adds [approval lists and decision channels](/en/docs/identity/approvals).
+Core upgrades the `decided_via` CHECK constraint of `approvals.requests` on
+start. The migration is idempotent. It replaces the existing constraint only
+when it lacks `acp_bridge`. No configuration change is required.
+
+Core serves the new `/api/approvals` list, counts, and decision routes.
+They fall under Core's registered catch-all `/` prefix. Core does not declare
+a separate `/api/approvals` prefix.
+
+Update Core before Assistant and Mail. Both read the approvals list during
+SSR through the platform service. Core must migrate the approvals schema
+before they serve those pages.
+Core also registers **Pending approvals** as a user notification.
+Browser delivery is recommended. Users can change delivery in their settings.
+
+Rolling back keeps the expanded constraint. The older release ignores the
+new channel value. It does not apply the ACP restriction or serve the new
+approval lists.
+
+After the rollout, ask Assistant to send a Mail draft. Open
+**My account → Approvals**, the Assistant's **Approvals** view, and the draft.
+Check that each shows the waiting request.
+Try to approve a `confirm` request through a client that sends
+`x-cloud-client: acp`. It must return `403` and leave the request open.
+Approve it in Cloud and check the decision in the audit log.
+
+### Approve Actions in Cloud Login
+
+Deploy the updated platform package and Core together. On start, Core adds
+`cloud_login` to the `decided_via` constraint of `approvals.requests` and adds
+two nullable timestamps, `actions_at` and `action_wake_at`, to
+`auth.app_devices`. These migrations are idempotent. No configuration change
+is required.
+
+Update the Cloud Login image too. A newer Cloud still works with an older
+Cloud Login server: that server answers Action wake-ups with `400`, which
+Cloud ignores. Existing paired phones keep signing in. They show Actions
+after the authenticator app updates, without pairing again.
+
+The updated Cloud Login app no longer uses an app PIN. On a phone that still
+has one, the app asks for it one last time and then opens without it. Its
+connected Clouds stay paired. If someone forgot the PIN, **Reset Cloud Login**
+works as before; they then revoke the old device in Cloud and pair again. Tell
+users that the phone's own screen lock now protects their approvals.
+
+After the rollout, ask for an Action through `cld` or an editor bridge. Check
+that a paired phone shows the request and that its decision continues the
+waiting chat. See [Approve an Action](./app-approval.md#approve-an-action)
+for the signed protocol and push rules.
+
+Rolling back leaves the widened constraint and new columns in place. Older
+Core ignores the columns and keeps the widened constraint. Existing sign-in
+commands and pairing keys remain valid.
+
+### Reuse Agent Skills folders
+
+Update Core and Assistant together for portable Skill frontmatter, relative
+reference links, and manual-only invocation. No schema migration or new
+configuration is required. Skills with `disable-model-invocation: true` stay
+available for explicit selection but disappear from model discovery; loading
+by name is refused. Stored and exported links stay relative and are mounted
+when a Skill loads. Existing absolute links keep working.
+
+Update installed CLI plugins with `cld plugins update` to get
+`cld assistant skills list`, `push`, and `pull`. See
+[Reuse shared Skills](/en/docs/ai/files-projects-and-personalization#reuse-shared-skills).
+
+### Run Assistant in editors
+
+The Assistant `cld` plugin adds `cld assistant acp` (shortcut `cld acp`), an
+ACP agent for editors such as T3 Code and Zed. It uses the existing Assistant
+API and approval rules and needs no configuration or infrastructure change.
+People who installed the plugin earlier get the command with
+`cld plugins update`. See [Assistant in editors](/en/docs/ai/editors).
 
 ### Update browser notifications for grouping and badges
 
@@ -557,6 +738,23 @@ after a change. Each tab keeps at most one such request per route in flight
 and gives up on one after a minute; requests asked for meanwhile share one
 read after it. Hidden tabs send nothing. Count these requests when sizing the
 application.
+
+### Let widgets declare settings
+
+Widget settings need no configuration change. Core gains `POST /api/widgets/v1`
+for repeated entries with their own settings. GET stays unchanged, so an older
+Dashboard keeps working during a rolling deploy. See
+[Declare settings](/en/docs/platform/dashboard-widgets#declare-settings).
+
+An application image from before settings existed ignores them. An application
+that declares settings needs a Core that forwards them; with an older Core,
+it answers with its no-settings behavior. Deploy Core before a Dashboard that
+uses settings.
+
+`defineApp()` now rejects a widget ID that Core could never invoke: longer
+than 188 characters, or with characters other than lowercase letters, digits,
+`.`, `_`, `-`, and `:`. Such a widget only ever showed an error, so an
+application that declares one now fails at startup instead.
 
 ### Upgrade the dashboard to one board
 

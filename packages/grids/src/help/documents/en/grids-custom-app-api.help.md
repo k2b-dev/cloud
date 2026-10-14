@@ -69,7 +69,7 @@ Every block requires `id` and `type`. All blocks accept an optional `title` (1�
 
 `referenced_records`, `record`, `html`, and `comments` require a bound page Record. Incoming relations must target its table. Across Record and HTML blocks, a page can expose at most 30 distinct fields. Editable fields are an explicit writable subset of the displayed fields. `documents.templateIds` allows reading existing generated documents. It does not allow issuing new ones. An `html` block displays an existing HTML field in an isolated frame.
 
-`documents.preview:true` allows PDF previews of saved drafts, including the queried data of the templates. It does not issue and does not reserve a number. Source interpolation accepts only `{{ record.id }}` or `{{ record.shortId }}`, without Liquid filters or tags. Changes to a template or to the Base schema require a new publication.
+`documents.preview:true` allows PDF previews of saved drafts, including the queried data of the templates. It does not issue and does not reserve a number. Source interpolation accepts only `{{ record.id }}` or `{{ record.shortId }}`, without Liquid filters or tags. Changes to a template or to the base schema require a new publication.
 
 `valueFormat` requires `style:number|integer|percent`. Optional keys are `decimalPlaces` (0–20), `unit` (1–20 characters), and `unitPosition:prefix|suffix`. The integer style rejects decimal places. Only the number style accepts a custom unit. A unit position requires a unit. Omitted formatting options use the normal renderer formatting.
 
@@ -115,7 +115,7 @@ Fixed-value keys are public form field IDs. Workflow input keys are the input na
 
 `availableWhen:{query}` applies to pages, blocks, and actions. A result row means available. An empty result or an error means unavailable. The server checks reads and writes again. The typed context is `@auth`, the declared `@params`, `@page`, `@app`, `@base`, and `@time`. Global sidebar queries cannot use page or parameter context. See [GQL](/app/grids/help/grids-gql) for the syntax.
 
-Authoring requires **Manage** access to the Base. People who use the app receive only the published scopes, not raw access to the Base. Workflow actions and scanners require sign-in. All writes keep the runtime access, finalization, and mutation-policy checks. Hidden navigation is not authorization.
+Authoring requires **Manage** access to the base. People who use the app receive only the published scopes, not raw access to the base. Workflow actions and scanners require sign-in. All writes keep the runtime access, finalization, and mutation-policy checks. Hidden navigation is not authorization.
 
 ## Submit and edit forms through the API {icon="forms"}
 
@@ -135,11 +135,11 @@ An `object_list` is one field value, not a relation: `{"data":{"ITEMS1":[{"Label
 }
 ```
 
-Use the discovered IDs and full form values. Keep required inputs, and send explicit empty values to clear a value. Related inputs allow only `inlineCreate.fields`, at most 20 creates or updates per relation, and 50 in total. Edited children must stay linked exclusively to this parent in the same Base. Detaching does not delete children. Finalized records are read-only. All writes commit or roll back together.
+Use the discovered IDs and full form values. Keep required inputs, and send explicit empty values to clear a value. Related inputs allow only `inlineCreate.fields`, at most 20 creates or updates per relation, and 50 in total. Edited children must stay linked exclusively to this parent in the same base. Detaching does not delete children. Finalized records are read-only. All writes commit or roll back together.
 
 `initialRecord` contains the root `version`, the editable `values`, and drafts in `inlineCreates` with `{tempId,data,existing:{id,version}}`. Replace existing temporary references with `existing.id`. Send edits of existing records as `inlineUpdates`, and only new drafts as `inlineCreates`. `initialRecord` is not a write payload.
 
-The server chooses the edit target from the bound page Record, never from a `recordId` in the body. For people with **Edit** access to the Base, the equivalent is `cld grids forms submit BASE TABLE FORM --record REC001 --body-file submission.json --yes`, with current versions from `records show`. The HTTP endpoint is `POST /api/grids/forms/FORM/records/REC001`. Create uses `POST /api/grids/forms/FORM/submit`.
+The server chooses the edit target from the bound page Record, never from a `recordId` in the body. For people with **Edit** access to the base, the equivalent is `cld grids forms submit BASE TABLE FORM --record REC001 --body-file submission.json --yes`, with current versions from `records show`. The HTTP endpoint is `POST /api/grids/forms/FORM/records/REC001`. Create uses `POST /api/grids/forms/FORM/submit`.
 
 ### Retry safely
 

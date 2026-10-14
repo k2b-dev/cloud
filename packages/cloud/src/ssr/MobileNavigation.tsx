@@ -1,8 +1,10 @@
 import { BottomSheet, Navigation, SegmentedControl, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { type AppLaunchpadContext, AppLaunchpadPanel } from "./AppLaunchpadPanel";
+import { appAccentStyle } from "./app-appearance";
 import { openMobileMenu } from "./mobile-menu-history";
 import { platformMessages } from "./platform-messages";
+import { readShellData } from "./shell-data";
 import { observeWorkspaceNavigation, readWorkspaceNavigation } from "./workspace-navigation";
 
 export function openCloudMobileMenu(apps: AppLaunchpadContext) {
@@ -58,14 +60,17 @@ function MobileNavigation(props: {
           when={workspace() && tab() === "app"}
           fallback={<AppLaunchpadPanel surface="sheet" {...props.apps} close={props.close} beforeSelect={props.beforeSelect} />}
         >
-          <Navigation
-            navigation={workspace()!.navigation}
-            label={workspace()!.label || t().appMenu}
-            beforeSelect={async () => {
-              const owner = workspace()?.owner;
-              return (await props.beforeSelect()) && Boolean(owner?.isConnected && readWorkspaceNavigation()?.owner === owner);
-            }}
-          />
+          {/* The sheet opens outside the app canvas, so the app menu takes the app's accent here, as the canvas does. */}
+          <div class="app-accent-scope" style={appAccentStyle(readShellData()?.accent)}>
+            <Navigation
+              navigation={workspace()!.navigation}
+              label={workspace()!.label || t().appMenu}
+              beforeSelect={async () => {
+                const owner = workspace()?.owner;
+                return (await props.beforeSelect()) && Boolean(owner?.isConnected && readWorkspaceNavigation()?.owner === owner);
+              }}
+            />
+          </div>
         </Show>
       </BottomSheet.Body>
     </BottomSheet>

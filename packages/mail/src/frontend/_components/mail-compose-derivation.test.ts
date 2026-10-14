@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { SenderIdentity } from "../../contracts";
+import { splitQuotedHistory } from "../../service/compose-renderer";
 import type { MessageDetail } from "../../service/messages";
 import {
   deriveReplyIdentityId,
@@ -43,6 +44,8 @@ const identity = {
   draftsFolderId: null,
   isDefault: true,
   status: "verified",
+  statusReason: null,
+  pendingVerificationCommandId: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 } satisfies SenderIdentity;
@@ -194,5 +197,14 @@ describe("Mail compose derivation presentation", () => {
     expect(quoteReplyBody(message(), "Erste Zeile\nZweite Zeile", { timeZone: "UTC" }, "de-CH")).toContain("schrieb Sender:");
     expect(quoteReplyBody(message(), "Text", { timeZone: "UTC" }, "fr")).toContain("Sender wrote:");
     expect(forwardMessageBody(message(), { timeZone: "UTC" }, "fr")).toContain("---------- Forwarded message ----------");
+  });
+
+  test("the signature renderer recognizes the history written in every locale", () => {
+    for (const locale of mailComposeDerivationMessages.locales) {
+      const forward = forwardMessageBody(message(), { timeZone: "UTC" }, locale);
+      expect(splitQuotedHistory(`Answer${forward}`)).toEqual({ reply: "Answer", history: forward.trimStart() });
+      const quote = quoteReplyBody(message(), "Old\ntext", { timeZone: "UTC" }, locale);
+      expect(splitQuotedHistory(`Answer\n\n${quote}`)).toEqual({ reply: "Answer", history: quote });
+    }
   });
 });

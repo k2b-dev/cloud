@@ -1,20 +1,10 @@
 import { z } from "zod";
+import { COMMAND_MAX_URL_LENGTH, isCommandPathSyntax } from "./command-path";
 
-/** Commands carry small public references/options, never document bodies or secrets. */
-export const COMMAND_MAX_URL_LENGTH = 8192;
-export const CommandPathSchema = z
-  .string()
-  .max(2000)
-  .refine((value) => {
-    if (!value.startsWith("/") || /[\\\u0000-\u0020]/u.test(value)) return false;
-    try {
-      const url = new URL(value, "https://cloud.invalid");
-      // Dot segments can resolve to `//host`, which a browser reads as another host.
-      return url.origin === "https://cloud.invalid" && !url.pathname.startsWith("//");
-    } catch {
-      return false;
-    }
-  }, "Expected a Cloud path");
+export { COMMAND_MAX_URL_LENGTH, isCommandPath } from "./command-path";
+
+// Keep the size error separate from the syntax error, as before.
+export const CommandPathSchema = z.string().max(2000).refine(isCommandPathSyntax, "Expected a Cloud path");
 
 export const CommandOptionsSchema = z.object({ returnTo: CommandPathSchema.optional() }).strict();
 export type CommandOptions = z.infer<typeof CommandOptionsSchema>;

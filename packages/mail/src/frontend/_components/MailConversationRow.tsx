@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { Dropdown, type HoverPreviewController, Tooltip, useLocale } from "@k2b/ui";
-import { createMemo, For, Show } from "solid-js";
+import { createEffect, createMemo, For, Show } from "solid-js";
 import { getMailAction, type MailActionId } from "./mail-actions";
 import { MAX_MAIL_CONVERSATION_SELECTION } from "./mail-conversation-selection";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
@@ -41,6 +41,7 @@ type MailConversationRowQuickLook = Pick<HoverPreviewController<string>, "id" | 
 
 export default function MailConversationRow(props: {
   item: MailListItem;
+  leaving?: boolean;
   requestUrl: URL;
   state: MailConversationRowState;
   actions: MailConversationRowActions;
@@ -84,13 +85,22 @@ export default function MailConversationRow(props: {
   const quickLookId = props.item.selectionKind === "conversation" ? props.item.conversationId : null;
   const quickLook = quickLookId ? props.quickLook : undefined;
   const peeking = () => Boolean(quickLook && quickLook.active() === quickLookId);
+  let entry: HTMLDivElement | undefined;
+  // The collapse starts from the row's own height; a fixed value would make taller rows jump first.
+  createEffect(() => {
+    if (props.leaving && entry) entry.style.setProperty("--mail-row-height", `${entry.offsetHeight}px`);
+  });
 
   return (
     <div
       ref={(element) => {
+        entry = element;
         if (quickLook && quickLookId) quickLook.anchor(quickLookId, () => link)(element);
       }}
-      class="mail-list-entry group relative"
+      data-leaving={props.leaving ? "true" : undefined}
+      inert={props.leaving}
+      aria-hidden={props.leaving ? "true" : undefined}
+      class="mail-list-entry k2b-progressive-row relative"
       classList={{
         "mail-list-entry-active": selected(),
         "mail-list-entry-unread": props.item.unread,
@@ -220,7 +230,7 @@ export default function MailConversationRow(props: {
         </span>
         <span class="mail-list-meta">
           <time
-            class="shrink-0 tabular-nums transition-opacity group-focus-within:opacity-0 group-hover:opacity-0 [@media(hover:none)]:opacity-0"
+            class="mail-list-time shrink-0 tabular-nums transition-opacity"
             dateTime={props.item.latestMessageAt}
             title={dates.formatDateTime(props.item.latestMessageAt, props.state.dateConfig)}
           >
@@ -275,7 +285,7 @@ export default function MailConversationRow(props: {
       <Show when={attachmentDownloadHref()}>
         {(href) => (
           <a
-            class="focus-ui absolute bottom-1.5 right-3 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md text-dimmed opacity-0 transition-opacity hover:text-current group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+            class="k2b-progressive-action focus-ui absolute bottom-1.5 right-3 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md text-dimmed hover:text-current"
             href={href()}
             target="_blank"
             rel="noopener noreferrer"
@@ -289,7 +299,7 @@ export default function MailConversationRow(props: {
         )}
       </Show>
       <Show when={props.state.canWrite && !props.state.selectionMode && props.item.conversationId}>
-        <div class="absolute right-3 top-2 z-10 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
+        <div class="k2b-progressive-action absolute right-3 top-2 z-10">
           <Dropdown.Root
             position="bottom-left"
             width="13rem"

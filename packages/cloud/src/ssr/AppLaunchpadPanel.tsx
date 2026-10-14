@@ -3,7 +3,7 @@ import { IconButton, ScrollArea, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { importOnDemand } from "../browser/reload";
-import type { CloudTheme } from "../shared/theme";
+import type { CloudThemePreference } from "../shared/theme";
 import { AppBadge, useAppBadgeDescription } from "./AppBadge";
 import { MobileProfileActions } from "./MobileProfileActions";
 import { platformMessages } from "./platform-messages";
@@ -29,7 +29,7 @@ export type AppLaunchpadLegalLink = {
 };
 
 export type AppLaunchpadContext = {
-  profile?: { name: string; theme: CloudTheme; appHref?: string };
+  profile?: { name: string; theme: CloudThemePreference; appHref?: string };
   apps: AppLaunchpadApp[];
   legalLinks: AppLaunchpadLegalLink[];
 };
@@ -132,7 +132,7 @@ export const AppLaunchpadPanel = (
           <div class="flex flex-wrap justify-center gap-3">
             <For each={shortcuts()}>
               {(shortcut) => {
-                const badge = useAppBadgeDescription(() => shortcut.badge);
+                const badge = useAppBadgeDescription(() => ({ endpoint: shortcut.badge, appId: shortcut.appId }));
                 return (
                   <a
                     onClick={follow}
@@ -141,7 +141,7 @@ export const AppLaunchpadPanel = (
                   >
                     <span class="relative grid h-9 w-9 place-items-center rounded-xl bg-[var(--ui-hover)] text-lg transition-colors group-hover:bg-[var(--ui-active)]">
                       <i class={shortcut.iconClass} aria-hidden="true" />
-                      <AppBadge endpoint={shortcut.badge} />
+                      <AppBadge endpoint={shortcut.badge} appId={shortcut.appId} />
                     </span>
                     <span class="max-w-full truncate text-[11px] font-medium text-primary dark:text-white">
                       {shortcut.label}
@@ -159,7 +159,7 @@ export const AppLaunchpadPanel = (
       <div class="launchpad-apps-grid flex flex-wrap justify-center gap-x-4 gap-y-4 sm:gap-x-7 sm:gap-y-6">
         <For each={apps()}>
           {(app) => {
-            const badge = useAppBadgeDescription(() => app.badge);
+            const badge = useAppBadgeDescription(() => ({ endpoint: app.badge, appId: app.id }));
             return (
               <a
                 onClick={follow}
@@ -171,7 +171,7 @@ export const AppLaunchpadPanel = (
                   style={appIconStyle(app)}
                 >
                   <i class={app.iconClass} />
-                  <AppBadge endpoint={app.badge} />
+                  <AppBadge endpoint={app.badge} appId={app.id} />
                 </span>
                 <span class="max-w-full truncate text-[11px] font-medium text-primary sm:text-xs dark:text-white">
                   {app.label}

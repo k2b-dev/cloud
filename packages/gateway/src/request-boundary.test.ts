@@ -49,7 +49,18 @@ describe("public gateway request boundary", () => {
     );
     for (const path of privatePaths) {
       const request = new Request(`https://cloud.test${path}`, { headers: { authorization: "Bearer cld_test", upgrade: "websocket" } });
-      expect((await proxyRequest(request, table, createProxyStats(), () => undefined)).status).toBe(404);
+      expect(
+        (
+          await proxyRequest(
+            request,
+            table,
+            createProxyStats(),
+            () => undefined,
+            null,
+            () => {},
+          )
+        ).status,
+      ).toBe(404);
       let upgraded = false;
       const result = tryUpgradeWebSocket(
         request,

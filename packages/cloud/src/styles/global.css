@@ -28,6 +28,7 @@
 @import "./utilities-markdown-editor.css";
 @import "./base-popover.css";
 @import "./effects.css";
+@import "./approvals.css";
 @import "./input.css";
 @import "./resource-search.css";
 @import "./file-chooser.css";
@@ -123,7 +124,9 @@ html:has(.cloud-app-canvas[data-layout-full-page="true"]) {
   height: 100%;
 }
 
-:root .stdlib-chart {
+/* Cloud's chart palette on every @k2b/ui surface, which sets its own palette on `.k2b-ui` (Cloud's body), so legends
+   and series filters, also in popovers, name the colors the chart draws. */
+:root :is(.k2b-ui, .stdlib-chart, .k2b-chart-legend) {
   --stdlib-chart-c1: #14b8a6;
   --stdlib-chart-c2: #f97316;
   --stdlib-chart-c3: #8b5cf6;
@@ -317,23 +320,34 @@ solid-island {
    edges, without padding, radius, shadow, or border. The rail keeps the app
    canvas, so the change of surface alone separates the two; no line does. The
    outermost workspace and the notices above it lose their frame, so nothing
-   draws a box inside the app area. */
+   draws a box inside the app area.
+   The rail and the app area reach the window's edges also where the installed
+   app reports safe areas, such as the status bar and the home indicator. Their
+   own surfaces fill the insets, and their content stays inside them. */
 @media (min-width: 768px) and (max-width: 1535px) {
   .cloud-app-canvas[data-layout-authenticated] {
-    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    padding: 0;
   }
   .cloud-app-canvas[data-layout-authenticated] > .layout-rail {
-    width: 3rem;
+    width: calc(3rem + env(safe-area-inset-left, 0px));
     margin-inline-start: 0;
-    padding-bottom: var(--ui-space-shell);
+    padding: env(safe-area-inset-top, 0px) 0 calc(var(--ui-space-shell) + env(safe-area-inset-bottom, 0px))
+      env(safe-area-inset-left, 0px);
   }
   .cloud-app-canvas[data-layout-authenticated] > .layout-shell-content {
     gap: 0;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 0;
     background: var(--k2b-surface);
   }
+  /* A regular page scrolls `main`, so its end clears the home indicator. A
+     workspace reaches the bottom edge and clears it inside its own surfaces. */
+  .cloud-app-canvas[data-layout-authenticated] .layout-content-main:not(:has(.k2b-app-workspace)) {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
   .cloud-app-canvas[data-layout-authenticated] .layout-content-main .k2b-app-workspace:not(.k2b-app-workspace *) {
+    --k2b-workspace-radius: 0px;
+    --k2b-workspace-inset-bottom: env(safe-area-inset-bottom, 0px);
     border: 0;
-    border-radius: 0;
     box-shadow: none;
   }
   .cloud-app-canvas[data-layout-authenticated] > .layout-shell-content > :not(.layout-content-main) .k2b-notice-card {
@@ -373,4 +387,5 @@ solid-island {
   width: 100%; white-space: normal; overflow-wrap: anywhere; font-size: .8125rem; line-height: 1.3;
 }
 .cloud-mobile-profile { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; border-top: 1px solid var(--ui-border); padding-top: 1rem; }
-.cloud-mobile-profile :is(a, button) { min-height: 2.75rem; white-space: normal; text-align: start; justify-content: flex-start; }
+.cloud-mobile-profile > :is(a, button) { min-height: 2.75rem; white-space: normal; text-align: start; justify-content: flex-start; }
+.cloud-mobile-profile__appearance { grid-column: 1 / -1; }

@@ -866,8 +866,9 @@ export type AssignedToFilter = z.infer<typeof AssignedToFilterSchema>;
 
 export const ItemFilterSchema = z.object({
   // Filter options
+  itemIds: z.array(ResourceShortIdSchema).max(100).optional().describe("Only these items"),
   blocked: z.boolean().optional().describe("Whether unfinished blocker tasks exist"),
-  overdue: z.boolean().optional().describe("Whether the deadline lies before today, as the deadline filter overdue counts it"),
+  overdue: z.boolean().optional().describe("Whether it is a task due before today, as the deadline filter overdue counts it"),
   type: ItemTypeSchema.default("all").describe("Filter by item type"),
   status: ItemStatusSchema.default("active").describe("Filter by completion status"),
   activity: ItemActivityFilterSchema.default("all").describe("Filter open tasks by recent activity or an active claim"),
@@ -885,7 +886,9 @@ export const ItemFilterSchema = z.object({
   sortDesc: z.boolean().default(false).describe("Sort descending"),
 
   // Grouping
-  groupBy: ItemGroupBySchema.default("deadline").describe("Group items by field"),
+  groupBy: ItemGroupBySchema.default("deadline").describe(
+    "Order by group before pagination, then by the selected sort within groups. Tag pages follow each item's first tag by name and return their rows in the selected sort",
+  ),
 
   // Pagination
   page: z.number().int().min(1).default(1).describe("Page number (1-indexed)"),
@@ -899,6 +902,12 @@ export const ItemListResultSchema = z.object({
   page: z.number().int().describe("Current page"),
   pageSize: z.number().int().describe("Items per page"),
   totalPages: z.number().int().describe("Total number of pages"),
+  groupCounts: z
+    .record(z.string(), z.number().int().nonnegative())
+    .optional()
+    .describe(
+      "Counts across all matching items, absent for groupBy none. Keys: column or tag IDs, priority or none, or overdue, past-events, date:YYYY-MM-DD, none for schedule groups. Multi-tag items count in each tag.",
+    ),
 });
 export type ItemListResult = z.infer<typeof ItemListResultSchema>;
 

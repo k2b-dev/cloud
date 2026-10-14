@@ -1,3 +1,4 @@
+import { dates } from "@k2b/stdlib";
 import { announce, Button, ButtonLink, Chat, NoticeCard, useLocale } from "@k2b/ui";
 import {
   type Accessor,
@@ -17,7 +18,7 @@ import {
 import { markdown } from "../../shared";
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
-import { toolOutcome, toolSubject } from "./action-sentences";
+import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
 import {
   type AiApprovalDecision,
   ApprovalBlockView,
@@ -144,7 +145,7 @@ const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean
   if (name === "code_present") return withTarget(t.stepPreparingView);
   if (isCardToolName(name)) return t.stepPreparingCard;
   if (isChartToolName(name)) return t.stepPreparingChart;
-  if (["code_write", "code_create", "code_update", "code_fork", "code_remove", "code_restore"].includes(name))
+  if (["code_write", "code_import", "code_create", "code_update", "code_fork", "code_remove", "code_restore"].includes(name))
     return withTarget(t.stepWritingCode);
   if (["code_run", "code_action", "code_sql"].includes(name)) return withTarget(t.stepRunningCode);
   if (name === "code_check") return t.stepCheckingApp;
@@ -525,10 +526,11 @@ type ReceiptState = Exclude<AiTurnActionState, "open" | "interaction">;
  */
 function AiReceipt(props: { block: ToolBlock; state: ReceiptState; stopped: boolean }) {
   const locale = useLocale();
+  const timeZone = useReaderTimeZone();
   const t = () => aiChatMessages(locale());
   const block = () => props.block;
   const subject = () => {
-    const sentence = toolSubject(block(), locale());
+    const sentence = toolSubject(block(), locale(), timeZone);
     if (sentence) return sentence;
     const title = block().presentation?.title ?? displayToolName(block().name, locale());
     const target = toolTarget(block());
@@ -536,22 +538,26 @@ function AiReceipt(props: { block: ToolBlock; state: ReceiptState; stopped: bool
   };
   const capabilityAction = () => block().presentation?.kind === "capability";
   const links = () => (props.state === "done" ? resultLinks(block()) : []);
-  const label = () => {
+  const outcomeLabel = () => {
     const state = props.state;
     if (state === "running") return t().receiptRunning({ title: subject() });
     if (state === "done") {
       // A tool that is not a Cloud action has no effect of its own to report; the receipt records the decision.
       if (!capabilityAction()) return t().receiptApproved({ title: subject() });
-      return toolOutcome(block(), "done", locale()) || resultSummary(block()) || t().receiptDone({ title: subject() });
+      return toolOutcome(block(), "done", locale(), timeZone) || resultSummary(block()) || t().receiptDone({ title: subject() });
     }
-    if (state === "rejected") return toolOutcome(block(), "rejected", locale()) ?? t().receiptRejected({ title: subject() });
+    if (state === "rejected") return toolOutcome(block(), "rejected", locale(), timeZone) ?? t().receiptRejected({ title: subject() });
     if (state === "failed") return t().receiptFailed({ title: subject() });
-    const notRun = toolOutcome(block(), "notRun", locale());
+    const notRun = toolOutcome(block(), "notRun", locale(), timeZone);
     return notRun
       ? t().receiptNotRunSentence({ sentence: notRun, stopped: props.stopped })
       : t().receiptNotRun({ title: subject(), stopped: props.stopped });
   };
   const declined = () => props.state === "rejected" || props.state === "not_run";
+  const label = () => {
+    const at = block().at;
+    return at && props.state !== "running" ? `${outcomeLabel()} · ${dates.formatTime(at, { locale: locale(), timeZone })}` : outcomeLabel();
+  };
   return (
     <Chat.Activity
       class="ai-turn-receipt"
@@ -567,6 +573,7 @@ function AiReceipt(props: { block: ToolBlock; state: ReceiptState; stopped: bool
 
 function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; turnId: string; phase: AiTurnPhase }) {
   const locale = useLocale();
+  const timeZone = useReaderTimeZone();
   let row!: HTMLDivElement;
   // Set while focus is in this place, including after the focused control disappeared with the decided card.
   let focusedHere = false;
@@ -597,7 +604,10 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
       if (next !== "open" || previous === "open" || !isLive(props.phase) || current?.block.status !== "awaiting_approval") return;
       announce(
         aiChatMessages(locale()).approvalNeeded({
-          title: toolSubject(current.block, locale()) ?? current.block.presentation?.title ?? displayToolName(current.block.name, locale()),
+          title:
+            toolSubject(current.block, locale(), timeZone) ??
+            current.block.presentation?.title ??
+            displayToolName(current.block.name, locale()),
         }),
       );
     }),
@@ -691,14 +701,18 @@ function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean }) 
 }
 
 /**
- * Place 3. Live it is a status that switches in this same element; it keeps its height until the turn ends. A status
- * is not read token by token: screen readers hear each status once it is complete, and that the answer is ready.
+ * Place 3. Live it is a status that switches in this same element; it keeps its height until the turn ends. Once a step
+ * started after it, it reads quietly like the texts in the expanded work; a trailing text may still be the answer and
+ * keeps answer typography. A status is not read token by token: screen readers hear each status once it is complete,
+ * and that the answer is ready.
  */
 function AiTurnText(props: {
   blocks: Accessor<Extract<AiTurnBlock, { kind: "text" }>[]>;
   live: Accessor<boolean>;
   /** The turn has work steps, so its live text is a status rather than the answer itself. */
   folding: Accessor<boolean>;
+  /** A step started after the text, so it can no longer be the answer: it reads quietly. */
+  quiet: Accessor<boolean>;
   /** An earlier segment of a split turn: it stops being live while the turn goes on. */
   earlier: Accessor<boolean>;
 }) {
@@ -712,6 +726,7 @@ function AiTurnText(props: {
   );
   const html = createMemo(() => markdown.renderSync(source(), { locale: locale() }));
   const shownId = createMemo(() => props.blocks()[0]?.id);
+  const quiet = createMemo(() => props.quiet());
   const [minHeight, setMinHeight] = createSignal<number | null>(null);
   let element!: HTMLDivElement;
   let lastHeight = 0;
@@ -723,14 +738,21 @@ function AiTurnText(props: {
     observer.observe(element);
     onCleanup(() => observer.disconnect());
   });
+  /** The quiet text's height in answer typography, measured in place before the browser paints. */
+  const answerHeight = () => {
+    element.classList.remove("ai-turn__text--status");
+    const height = element.offsetHeight;
+    element.classList.add("ai-turn__text--status");
+    return height;
+  };
+  // A new status keeps the height of the one before it. A quiet status keeps the height it has as the answer, also when
+  // it first shows quietly after a reload, so nothing below moves when it is replaced or becomes the answer again.
   createEffect(
-    on(
-      shownId,
-      () => {
-        if (props.live() && lastHeight > 0) setMinHeight((current) => Math.max(current ?? 0, lastHeight));
-      },
-      { defer: true },
-    ),
+    on([shownId, quiet], ([id, isQuiet], previous) => {
+      if (!props.live()) return;
+      const height = Math.max(previous && previous[0] !== id ? lastHeight : 0, isQuiet ? answerHeight() : 0);
+      if (height > 0) setMinHeight((current) => Math.max(current ?? 0, height));
+    }),
   );
   createEffect(() => {
     if (!props.live()) setMinHeight(null);
@@ -751,6 +773,7 @@ function AiTurnText(props: {
     <div
       ref={element}
       class="ai-turn__text"
+      classList={{ "ai-turn__text--status": quiet() }}
       aria-live={status() ? "off" : undefined}
       style={minHeight() ? { "min-height": `${minHeight()}px` } : undefined}
     >
@@ -807,7 +830,13 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
         </Show>
         <For each={resultIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => actions().has(id)} />}</For>
         <Show when={layout().text.length > 0}>
-          <AiTurnText blocks={() => layout().text} live={live} folding={() => layout().steps > 0} earlier={() => props.segment().earlier} />
+          <AiTurnText
+            blocks={() => layout().text}
+            live={live}
+            folding={() => layout().steps > 0}
+            quiet={() => layout().textIsStatus}
+            earlier={() => props.segment().earlier}
+          />
         </Show>
         <For each={actionIds()}>
           {(id) => <AiTurnActionView action={() => actions().get(id)} turnId={props.segment().turnId} phase={props.segment().phase} />}

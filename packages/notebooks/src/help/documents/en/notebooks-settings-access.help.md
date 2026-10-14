@@ -65,13 +65,13 @@ Notebooks saves the change immediately.
 
 The setting covers only deleting and locking whole notes. People and agents with **Edit** access still edit notes as before, including removing text. The version history keeps earlier versions.
 
-For these people, **Delete** and **Lock note** in the note menu stay visible but are turned off. They explain that in this notebook, only people with **Manage** access can delete or lock notes. The API, `cld notebooks rm`, and `cld notebooks lock` refuse with the same reason. A locked note keeps its versions readable. You can no longer edit it or restore it from a version.
+For these people, **Delete** and **Lock note** in the note menu stay visible but are turned off. They explain that in this notebook, only people with **Manage** access can delete or lock notes. The API, `cld notebooks rm`, and `cld notebooks lock` refuse with the same reason. A locked note keeps its versions readable. You cannot edit it or restore a version in place. You can restore a version as a copy.
 
 ## Find the right settings tab {icon="settings"}
 
 :::reference
 - **Notebook → General:** Name, icon, description, start page, and the Liquid template for the H1 of empty new notes. Check the footer, then save or discard your changes.
-- **Notebook → View & behavior:** People with **Manage** access choose the shared default view. This browser stores your sidebar layout and your Tab key choice, and they apply immediately.
+- **Notebook → View & behavior:** People with **Manage** access choose the shared default view. Under **Only for you**, this browser stores your view preferences, and they apply immediately: **Full width** on large screens and the Tab key choice.
 - **Sharing → Access:** Requires **Manage** access. Change who has access, and choose who can delete and lock notes. Changes save immediately.
 - **Sharing → API keys:** Requires **Manage** access. API keys for integrations that work only with this notebook. Changes save immediately, and Notebooks shows a new key only once.
 - **Data → Export & snapshots:** Requires **Manage** access. Portable ZIP exports, the S3 snapshot setup, manual uploads, and recent snapshot runs. Save the snapshot setup with the footer.

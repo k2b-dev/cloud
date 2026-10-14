@@ -1,4 +1,4 @@
-import { ResourceShortIdSchema } from "../contracts";
+import { type MailFocusView, mailFocusViewSchema, ResourceShortIdSchema } from "../contracts";
 import { activityPublic, publicResources } from "../service";
 import type { MailAutomationAccessData } from "../service/automation-workspace";
 import type { MailFocusItem as InternalMailFocusItem, MailFocusMailboxCounts } from "../service/focus";
@@ -68,18 +68,23 @@ export const projectSsrFocusItems = async (items: InternalMailFocusItem[], loadP
   return projectSsrPaths(items, paths, loadPublicIds);
 };
 
-export const projectSsrFocusPage = async <T extends { items: InternalMailFocusItem[]; mailboxCounts: MailFocusMailboxCounts[] }>(
-  page: T,
+/** The first page of every focus view and their shared counts, as the overview receives them. */
+export const projectSsrFocusOverview = async <
+  T extends { pages: Record<MailFocusView, { items: InternalMailFocusItem[] }>; mailboxCounts: MailFocusMailboxCounts[] },
+>(
+  overview: T,
   loadPublicIds?: LoadPublicIds,
 ): Promise<T> => {
   const paths: Path[] = [];
-  page.items.forEach((item, index) => {
-    add(paths, "conversations", ["items", index, "id"], item.id);
-    add(paths, "mailboxes", ["items", index, "mailboxId"], item.mailboxId);
-    add(paths, "folders", ["items", index, "sourceFolderId"], item.sourceFolderId);
-  });
-  page.mailboxCounts.forEach((counts, index) => add(paths, "mailboxes", ["mailboxCounts", index, "mailboxId"], counts.mailboxId));
-  return projectSsrPaths(page, paths, loadPublicIds);
+  for (const view of mailFocusViewSchema.options) {
+    overview.pages[view].items.forEach((item, index) => {
+      add(paths, "conversations", ["pages", view, "items", index, "id"], item.id);
+      add(paths, "mailboxes", ["pages", view, "items", index, "mailboxId"], item.mailboxId);
+      add(paths, "folders", ["pages", view, "items", index, "sourceFolderId"], item.sourceFolderId);
+    });
+  }
+  overview.mailboxCounts.forEach((counts, index) => add(paths, "mailboxes", ["mailboxCounts", index, "mailboxId"], counts.mailboxId));
+  return projectSsrPaths(overview, paths, loadPublicIds);
 };
 
 export const projectMailConversationDetail = async (
@@ -310,7 +315,15 @@ export const projectAutomationWorkspace = async <T extends MailAutomationAccessD
   return projected;
 };
 
-export const projectComposeData = async <T extends { mailbox: { id: string }; identities: Array<{ id: string }>; draft?: unknown }>(
+export const projectComposeData = async <
+  T extends {
+    mailbox: { id: string };
+    identities: Array<{ id: string }>;
+    signatures?: Array<{ id: string }>;
+    personalSignatureDefaults?: Array<{ senderIdentityId: string; templateId: string }>;
+    draft?: unknown;
+  },
+>(
   data: T,
   loadPublicIds?: LoadPublicIds,
 ): Promise<T> => {
@@ -322,9 +335,15 @@ export const projectComposeData = async <T extends { mailbox: { id: string }; id
     add(paths, "folders", ["identities", index, "sentFolderId"], value.sentFolderId);
     add(paths, "folders", ["identities", index, "draftsFolderId"], value.draftsFolderId);
   });
+  addResourceList(paths, "composeTemplates", ["signatures"], data.signatures ?? []);
+  data.personalSignatureDefaults?.forEach((entry, index) => {
+    add(paths, "senderIdentities", ["personalSignatureDefaults", index, "senderIdentityId"], entry.senderIdentityId);
+    add(paths, "composeTemplates", ["personalSignatureDefaults", index, "templateId"], entry.templateId);
+  });
   if (data.draft && typeof data.draft === "object") {
     const draft = data.draft as Record<string, unknown>;
     add(paths, "drafts", ["draft", "id"], draft.id);
+    add(paths, "composeTemplates", ["draft", "signatureTemplateId"], draft.signatureTemplateId);
     add(paths, "conversations", ["draft", "conversationId"], draft.conversationId);
     add(paths, "messages", ["draft", "derivedFromMessageId"], draft.derivedFromMessageId);
     add(paths, "senderIdentities", ["draft", "senderIdentityId"], draft.senderIdentityId);

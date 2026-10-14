@@ -1,12 +1,46 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 
+test("the public launcher opens once during loading and can open again afterwards", async () => {
+  const dom = createDomTestHarness();
+  const reload = await import("../browser/reload");
+  const surface = await import("./launchpad-surface");
+  const { openAppLaunchpad, setAppLaunchpadContext } = await import("./app-launchpad");
+  const pending = Promise.withResolvers<void>();
+  const load = spyOn(reload, "importOnDemand").mockImplementation(async (loader) => {
+    await pending.promise;
+    return loader();
+  });
+  const open = spyOn(surface, "openLaunchpadSurface").mockImplementation(() => {});
+  setAppLaunchpadContext([{ id: "mail", label: "Mail", href: "/app/mail", iconClass: "ti ti-mail" }]);
+  let first: ReturnType<typeof openAppLaunchpad>;
+  try {
+    first = openAppLaunchpad();
+    // A second click through the global entry point arrives while the first load runs.
+    window.cloud?.openAppLaunchpad?.();
+    await Bun.sleep(10);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(open).not.toHaveBeenCalled();
+    pending.resolve();
+    await first;
+    expect(open).toHaveBeenCalledTimes(1);
+    await openAppLaunchpad();
+    expect(open).toHaveBeenCalledTimes(2);
+  } finally {
+    pending.resolve();
+    await first;
+    load.mockRestore();
+    open.mockRestore();
+    dom.cleanup();
+  }
+});
+
 test("the public mobile launcher keeps profile actions and filters apps without nesting a panel", async () => {
   const dom = createDomTestHarness();
   dom.window.innerWidth = 390;
-  const { default: AppLaunchpad } = await import("./AppLaunchpad.island");
+  const { AppLaunchpadButton: AppLaunchpad } = await import("./app-launchpad");
   const dispose = render(
     () =>
       createComponent(AppLaunchpad, {
@@ -22,7 +56,7 @@ test("the public mobile launcher keeps profile actions and filters apps without 
   );
   try {
     dom.root.querySelector<HTMLButtonElement>("button")!.click();
-    await Bun.sleep(20);
+    for (let attempt = 0; !document.querySelector("dialog .cloud-mobile-profile") && attempt < 100; attempt += 1) await Bun.sleep(10);
     expect(document.querySelector("dialog .cloud-mobile-profile")).not.toBeNull();
     expect(document.querySelector("dialog .launchpad-panel")).toBeNull();
     expect(document.querySelectorAll('dialog a[href="/me"]')).toHaveLength(1);
@@ -39,6 +73,35 @@ test("the public mobile launcher keeps profile actions and filters apps without 
     window.dispatchEvent(new Event("pagehide"));
     await Bun.sleep(20);
     dispose();
+    dom.cleanup();
+  }
+});
+
+test("opening without arguments reads the shared shell payload and validates the mobile App action", async () => {
+  const dom = createDomTestHarness();
+  dom.window.innerWidth = 390;
+  const { openAppLaunchpad } = await import("./app-launchpad");
+  const script = dom.document.createElement("script");
+  script.id = "cloud-shell-data";
+  script.type = "application/json";
+  script.textContent = JSON.stringify({
+    apps: [{ id: "mail", label: "Mail", href: "/app/mail", iconClass: "ti ti-mail", match: "/app/mail", defaultVisible: true }],
+    legalLinks: [],
+    profile: { name: "Test user", appHref: "/unexpected" },
+    theme: "light",
+    searchLinks: {},
+  });
+  dom.document.body.append(script);
+  try {
+    openAppLaunchpad();
+    expect(window.__cloudAppLaunchpad?.apps[0]?.id).toBe("mail");
+    expect(window.__cloudAppLaunchpad?.profile).toEqual({ name: "Test user", theme: "light" });
+    for (let attempt = 0; !document.querySelector("dialog .cloud-mobile-profile") && attempt < 100; attempt += 1) await Bun.sleep(10);
+    expect(document.querySelector('dialog a[href="/app/mail"]')).not.toBeNull();
+    expect(document.querySelector('dialog a[href="/unexpected"]')).toBeNull();
+  } finally {
+    window.dispatchEvent(new Event("pagehide"));
+    await Bun.sleep(20);
     dom.cleanup();
   }
 });

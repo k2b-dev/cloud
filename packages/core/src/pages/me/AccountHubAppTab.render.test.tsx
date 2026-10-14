@@ -62,7 +62,7 @@ describe("account App tab", () => {
     expect(shown).toContain('href="/me/app"');
     expect(shown).toMatch(/href="\/me\/app"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/me\/app"/);
     expect(render(true, "de")).toContain(">App<");
-    expect(render(false)).not.toContain("/me/app");
+    expect(render(false)).not.toContain('href="/me/app"');
   });
 
   test("availability follows the registered shell", () => {

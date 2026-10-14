@@ -1,12 +1,12 @@
 import { toast } from "@k2b/ui";
-import { resolveCommand } from "../capabilities/client";
-import { type CommandOptions, CommandOptionsSchema, clearCommand, readCommand } from "../contracts/commands";
+import type { CommandOptions } from "../contracts/commands";
 import {
   type ContextAwareCommand,
   collectContextAwareCommands,
   requestCommandHandling,
   requestContextCommandExecution,
 } from "./command-bridge";
+import { importOnDemand } from "./reload";
 import { resourceSearchMessages } from "./resource-search-messages";
 import { requestGlobalSearch } from "./search-bridge";
 
@@ -16,17 +16,26 @@ export { registerCommandHandler, registerContextAwareCommand } from "./command-b
 
 /** Opens locally only when a mounted owner explicitly accepts; otherwise follows the app's URL. */
 export const openCommand = async (command: string, input: unknown = {}, options: CommandOptions = {}): Promise<void> => {
-  const parsedOptions = CommandOptionsSchema.parse(options);
+  const modules = await importOnDemand(() => Promise.all([import("../contracts/commands"), import("../capabilities/client")]));
+  if (!modules) return;
+  const [contracts, capabilities] = modules;
+  const parsedOptions = contracts.CommandOptionsSchema.parse(options);
   const handled = requestCommandHandling({ command, input, options: parsedOptions });
   if (handled) return handled;
-  const result = await resolveCommand(command, input, parsedOptions);
+  const result = await capabilities.resolveCommand(command, input, parsedOptions);
   if (!result.ok) throw new Error(result.error.message);
   window.location.assign(result.data.href);
 };
 
 /** Call after this page's handlers have mounted. Each entry is consumed, including invalid links. */
 export const consumeCommandLink = async (): Promise<void> => {
+  const command = new URL(window.location.href).searchParams.get("command");
+  if (!command) return;
+  const contracts = await importOnDemand(() => import("../contracts/commands"));
+  if (!contracts) return;
   const url = new URL(window.location.href);
+  if (url.searchParams.get("command") !== command) return;
+  const { clearCommand, readCommand } = contracts;
   const messages = resourceSearchMessages.resolve([document.documentElement.lang]).t;
   let target: ReturnType<typeof readCommand>;
   try {

@@ -25,15 +25,23 @@ named `help`.
 
 ## Select a locale
 
-`cld` resolves one locale per invocation. Pass `--locale <BCP-47-tag>` before
-the module name, or set `CLD_LOCALE`; the explicit flag wins and the
-deterministic default is `en`. Regional tags use normal ancestor fallback, so
-`de-CH` uses German CLI text when no Swiss German message exists.
+`cld` resolves one locale per invocation: `--locale <BCP-47-tag>` wins over
+`CLD_LOCALE`, then the first non-empty POSIX variable `LC_ALL`, `LC_MESSAGES`,
+or `LANG`. POSIX values such as `de_DE.UTF-8` become `de-DE`; charset and
+modifier suffixes are dropped. `C`, `C.*`, `POSIX`, and invalid POSIX tags
+provide no usable locale, even when a lower-priority variable has one.
+Invalid explicit tags still produce an error. Regional tags use normal
+ancestor fallback, so `de-CH` uses German CLI text when no Swiss German
+message exists.
 
 The resolved tag is available as `ctx.options.locale` and is sent as
-`Accept-Language` with every authenticated application request. This keeps
-server-owned API messages aligned with the CLI without process-global locale
-state. The same requests carry the machine's IANA timezone (`TZ` overrides it)
+`Accept-Language` with every authenticated application request. Without a
+usable locale, `ctx.options.locale` is undefined and CLI text falls back to
+English; requests omit `Accept-Language`, so the operator default `app.locale`
+applies. This keeps server-owned API messages aligned with the request locale
+without process-global locale state.
+
+The same requests carry the machine's IANA timezone (`TZ` overrides it)
 in the `cloud.timezone` cookie that browsers send, so `getTimeZone(c)` and
 day-based filters such as "due today" use the local day. A machine without a
 configured timezone, such as most containers and CI runners, sends `UTC`
@@ -172,6 +180,52 @@ then skips profile and token requirements for that command while every other
 command in the module keeps its normal Cloud gate. An offline command must not
 call `ctx.fetch()`.
 
+### Declare short names
+
+A module may declare one `alias` for the whole module and `shortcuts` for
+individual command paths:
+
+```ts
+export default defineCliCommands({
+  name: "inventory",
+  alias: "inv",
+  shortcuts: { stock: "items list" },
+  summary: "Manage inventory items.",
+  commands: [
+    command("items list", { summary: "List inventory items", run: listItems }),
+  ],
+});
+```
+
+`cld inv items list` runs `cld inventory items list`. `cld stock` runs
+`cld inventory items list`; additional arguments and flags follow that path.
+
+Alias and shortcut names must match `CLOUD_CLI_MODULE_NAME`
+(`^[a-z][a-z0-9-]*$`). They must differ from the module name and from each
+other. Shortcut targets are non-empty, space-separated command paths relative
+to the module. `defineCliCommands()` normalizes whitespace and requires an
+exact command with its own handler. A generated group alone, an unknown path,
+preset flags, and preset arguments are invalid.
+
+Core commands take precedence, followed by modules with exactly the requested
+name, then short names. Names of package plugins and modules the profile's
+Cloud serves are reserved, including modules the profile has not installed.
+`cld` resolves short names from saved metadata without contacting the Cloud.
+The served names are the list `cld` saw the last time it listed the Cloud's
+plugins during `cld login`, `cld plugins list`, `install`, or `update`.
+Until a profile has such a list, its short names are inactive. A module the
+Cloud starts serving later takes its name back at the next of these commands.
+Until then, a short name with that name still runs its plugin.
+
+If more than one installed module claims a name, or the name collides with a
+core command or module, the short name is inactive for every claimant. The last
+installed plugin never wins a conflict. `cld help` and `cld plugins list`,
+`install`, and `update` warn about inactive names on stderr. Installing a
+package plugin also warns when it makes a short name inactive.
+
+Agents and scripts should use full module names: a short name may be inactive
+on another profile.
+
 ## Define arguments and flags
 
 Arguments are positional and read in declaration order.
@@ -192,6 +246,9 @@ Flags are named and typed:
 | `flag.enum(values)` | One allowed value or `undefined` | `required`, `default` |
 | `flag.stringList()` | `string[]` | `separator`, `default` |
 | `flag.input()` | Input descriptor | Direct value, file, or stdin |
+
+Command help marks flags declared with `required: true` and no `default` as
+`Required.`
 
 Every flag also accepts `name`, `aliases`, `description`, and `valueLabel`.
 Object keys use kebab case by default, so `perPage` becomes `--per-page`.
@@ -306,6 +363,7 @@ cld inventory items list --jsonl
 | `jsonLine()` | One compact JSON value |
 | `table()` | Text table |
 | `getDefault()` / `setDefault()` | Profile-scoped application defaults |
+| `openUrl?()` | Open an http(s) link in the user's browser; resolves false when the host cannot, so print the link too; absent in hosts without a browser |
 | `profiles?.saveClientCredentials()` | Store an OAuth client ID and secret as a client-credentials profile; absent in hosts without profiles |
 
 `readJson()` accepts native fetch responses and typed Hono client responses.
@@ -315,6 +373,9 @@ It requires `json()`, `text()`, `ok`, `status`, and `statusText`.
 as `cld admin agents create`, hands the secret to `saveClientCredentials()`
 and never prints it; the host stores it with the same protection as a refresh
 token. Fail before any remote call when the capability is missing.
+
+`openUrl` is optional; always print the link so it remains usable when the
+capability is absent or returns false.
 
 Use this context. Do not read CLI token or profile files from an application
 module.
@@ -724,6 +785,13 @@ skips the offer. A command whose plugin is not installed fails with a hint to
 run `cld plugins install <name>`. `cld help` lists the modules installed for
 the current profile.
 
+Short names need both the profile's plugin lock and its saved list of served
+modules. `cld plugins install` or `cld plugins update` saves the lock. The served
+list is saved when `cld login`, `cld plugins list`, `install`, or `update`
+successfully lists the Cloud's plugins. `cld help` shows active
+aliases beside module names and lists command shortcuts. Package plugins do
+not get short names.
+
 `cld <module> reference [file]` prints a served plugin's skill references:
 `index.md` by default, or one of the further files it links to. Agents read
 them before using an unfamiliar module.
@@ -809,7 +877,12 @@ that a profile locks cannot share a name; remove one before you install the
 other.
 
 `cld plugins list` shows the profile (`*` for package plugins), name, app,
-installed and available version, status, and source:
+installed and available version, status, and source. The SHORT NAMES column
+shows the alias and shortcuts; `(inactive)` marks a name with a conflict or
+without a served list. JSON rows include `alias` (a string or null), `shortcuts`
+(an object, empty when none), and `inactive` (a list of names). Package plugin
+rows and uninstalled rows have `alias: null`, `shortcuts: {}`, and `inactive: []`.
+The status values are:
 
 | Status | Meaning |
 | --- | --- |

@@ -15,21 +15,26 @@ import type {
   CloudCliTableColumn,
 } from "@k2b/cloud/cli";
 import { CLOUD_CLI_MODULE_NAME, localizeCloudCliText, resolveCloudCliLocale } from "@k2b/cloud/cli";
+import { i18n } from "@k2b/stdlib";
 import type { Hono } from "hono";
 import { hc } from "hono/client";
-import { configPath, envLacksLocalBrowser, envLocale, envServer, envToken } from "./config";
+import { configPath, envLacksLocalBrowser, envLocale, envServer, envToken, posixLocale } from "./config";
+import { loginPageResponse } from "./login-page";
 import {
   collectPluginGarbage,
   downloadPlugin,
   fetchAvailablePlugins,
   fetchPluginManifest,
   hasStoredPlugin,
+  type InactiveShortName,
   type LockedPlugin,
   loadStoredPlugin,
   type PluginLock,
   placePlugin,
   readPluginLock,
+  readServedPlugins,
   readStoredReference,
+  resolveShortNames,
 } from "./plugin-store";
 import {
   commitPlugin,
@@ -38,6 +43,7 @@ import {
   loadPlugins,
   PluginError,
   type PluginInfo,
+  pluginIds,
   pluginsDirectory,
   removePlugin,
   stagePlugin,
@@ -103,6 +109,8 @@ type CloudCliProfile = TokenProviderConfig & {
   clientCredentials?: ClientCredentialsConfig;
   /** Plugins served by this profile's Cloud, locked to one stored version each. */
   plugins?: PluginLock;
+  /** Names the Cloud served when cld last listed its plugins. Short names never take them; without the list, none is active. */
+  servedPlugins?: string[];
 };
 
 type CloudCliConfig = {
@@ -126,7 +134,10 @@ type GlobalArgs = {
   fd0?: string;
   fd0Scope?: string;
   output: "text" | "json" | "jsonl";
+  /** Locale for human text; English when nothing was requested. */
   locale: string;
+  /** Locale sent as `Accept-Language`; absent when neither a flag, `CLD_LOCALE`, nor the POSIX environment names one. */
+  requestLocale?: string;
   /** `--help` or `-h` before the command: print its help instead of running it. */
   help: boolean;
   rest: string[];
@@ -286,9 +297,9 @@ const parseGlobalArgs = (argv: string[]): GlobalArgs => {
 
   const parsed = parseArgs(global);
   const requestedLocale = takeStringFlag(parsed.flags, "locale") ?? envLocale();
-  let locale: string;
+  let requestLocale: string | undefined;
   try {
-    locale = resolveCloudCliLocale(requestedLocale);
+    requestLocale = requestedLocale === undefined ? posixLocale() : resolveCloudCliLocale(requestedLocale);
   } catch {
     throw new CliError(
       `Invalid locale "${requestedLocale}". Pass a BCP 47 language tag such as en or de-CH.`,
@@ -305,7 +316,8 @@ const parseGlobalArgs = (argv: string[]): GlobalArgs => {
     fd0: takeStringFlag(parsed.flags, "fd0"),
     fd0Scope: takeStringFlag(parsed.flags, "fd0-scope"),
     output: takeBooleanFlag(parsed.flags, "jsonl") ? "jsonl" : takeBooleanFlag(parsed.flags, "json") ? "json" : "text",
-    locale,
+    locale: requestLocale ?? "en",
+    requestLocale,
     help: takeBooleanFlag(parsed.flags, "help", "h"),
     rest,
   };
@@ -830,7 +842,7 @@ const resolveOptions = async (global: GlobalArgs, { profileOnly = false } = {}):
     token: auth.token,
     refresh: auth.refresh,
     output: global.output,
-    locale: global.locale,
+    locale: global.requestLocale,
   };
 };
 
@@ -844,7 +856,7 @@ const resolveOfflineOptions = async (global: GlobalArgs): Promise<ResolvedCliOpt
     server: server ? normalizeServer(server) : "",
     token: global.token ?? envToken() ?? profile.token ?? "",
     output: global.output,
-    locale: global.locale,
+    locale: global.requestLocale,
   };
 };
 
@@ -907,7 +919,7 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
     const headers = new Headers(pathOrUrl instanceof Request ? pathOrUrl.headers : undefined);
     new Headers(init.headers).forEach((value, name) => headers.set(name, value));
     headers.set("authorization", `Bearer ${bearerToken}`);
-    headers.set("accept-language", options.locale ?? "en");
+    if (options.locale) headers.set("accept-language", options.locale);
     const cookie = headers.get("cookie");
     headers.set("cookie", cookie ? `${cookie}; ${timeZoneCookie}` : timeZoneCookie);
     const response = await fetch(url, {
@@ -980,21 +992,44 @@ const createContext = (args: string[], flags: CloudCliFlags, options: ResolvedCl
       if (rendered) printLine(rendered);
     },
     profiles: { saveClientCredentials: saveClientCredentialsProfile },
+    openUrl: async (url) => {
+      try {
+        if (!["http:", "https:"].includes(new URL(url).protocol)) return false;
+      } catch {
+        return false;
+      }
+      if (envLacksLocalBrowser()) return false;
+      return launchBrowser(url);
+    },
   };
 };
 
 type ModuleSummary = Pick<CloudCliModule, "name" | "summary">;
 
-const moduleList = (locale: string, modules: ModuleSummary[]): string =>
-  modules.length === 0
-    ? text(
-        locale,
-        "  (none installed; `cld login` offers your Cloud's modules, `cld plugins install --all` installs them)",
-        "  (keine installiert; `cld login` bietet die Module deiner Cloud an, `cld plugins install --all` installiert sie)",
-      )
-    : modules.map((module) => `  ${module.name.padEnd(12)} ${module.summary}`).join("\n");
+const moduleList = (locale: string, modules: ModuleSummary[], shortNames: ReturnType<typeof resolveShortNames>): string => {
+  const labels = modules.map((module) => {
+    const alias = [...shortNames.active.values()].find((claim) => claim.module === module.name && claim.path.length === 0);
+    return { label: alias ? `${module.name} (${alias.name})` : module.name, summary: module.summary };
+  });
+  const width = Math.max(12, ...labels.map(({ label }) => label.length));
+  const list =
+    modules.length === 0
+      ? text(
+          locale,
+          "  (none installed; `cld login` offers your Cloud's modules, `cld plugins install --all` installs them)",
+          "  (keine installiert; `cld login` bietet die Module deiner Cloud an, `cld plugins install --all` installiert sie)",
+        )
+      : labels.map(({ label, summary }) => `  ${label.padEnd(width)} ${summary}`).join("\n");
+  const shortcuts = [...shortNames.active.values()].filter((claim) => claim.path.length > 0);
+  return (
+    list +
+    (shortcuts.length === 0
+      ? ""
+      : `\n\n${text(locale, "Shortcuts:", "Kurzbefehle:")}\n${shortcuts.map((claim) => `  ${claim.name} → ${claim.module} ${claim.path.join(" ")}`).join("\n")}`)
+  );
+};
 
-const helpText = (locale: string, pluginModules: ModuleSummary[]): string =>
+const helpText = (locale: string, pluginModules: ModuleSummary[], shortNames: ReturnType<typeof resolveShortNames>): string =>
   text(
     locale,
     `cld
@@ -1019,13 +1054,13 @@ Global options:
   --fd0 <name>            Read bearer token via fd0 get <name> --raw
   --fd0-scope <scope>     fd0 scope
   --token-command <cmd>   Read bearer token from command stdout
-  --locale <tag>          Human text locale (default: CLD_LOCALE or en)
+  --locale <tag>          Human text and request locale (default: CLD_LOCALE, then LC_ALL/LC_MESSAGES/LANG, else the Cloud default)
   --json                  Print JSON where supported
   --jsonl                 Stream one JSON event per line where supported
   -h, --help              Print the command's help instead of running it
 
 Modules (installed for the current profile; every Cloud app serves its own):
-${moduleList(locale, pluginModules)}
+${moduleList(locale, pluginModules, shortNames)}
 
 Examples:
   cld login --server http://localhost:3000
@@ -1056,13 +1091,13 @@ Globale Optionen:
   --fd0 <Name>            Bearer-Token über fd0 get <Name> --raw lesen
   --fd0-scope <Scope>     fd0-Scope
   --token-command <Befehl> Bearer-Token aus stdout eines Befehls lesen
-  --locale <Tag>          Sprache für menschenlesbaren Text (Standard: CLD_LOCALE oder en)
+  --locale <Tag>          Sprache für Text und Anfragen (Standard: CLD_LOCALE, dann LC_ALL/LC_MESSAGES/LANG, sonst der Cloud-Standard)
   --json                  JSON ausgeben, sofern unterstützt
   --jsonl                 Ein kompaktes JSON-Ereignis pro Zeile ausgeben
   -h, --help              Hilfe des Befehls ausgeben, statt ihn auszuführen
 
 Module (für das aktuelle Profil installiert; jede Cloud-App stellt ihr eigenes bereit):
-${moduleList(locale, pluginModules)}
+${moduleList(locale, pluginModules, shortNames)}
 
 Beispiele:
   cld login --server http://localhost:3000
@@ -1360,7 +1395,7 @@ const spawnSkillSync = async (executable: string, yes: boolean): Promise<string[
 /** Run one installed module with the shared context. */
 const runModule = async (module: CloudCliModule, moduleArgs: string[], global: GlobalArgs): Promise<number> => {
   if (moduleArgs[0] === "help" || moduleArgs[0] === "--help" || moduleArgs[0] === "-h") {
-    printLine(module.help?.(global.locale) ?? `${module.name}: ${module.summary}`);
+    printLine(module.help?.(global.requestLocale) ?? `${module.name}: ${module.summary}`);
     return 0;
   }
 
@@ -1477,6 +1512,54 @@ const pluginFailure = (error: unknown, action: string, germanAction: string): ne
 
 const profileLock = (config: CloudCliConfig, profileName: string): PluginLock => readPluginLock(config.profiles?.[profileName]?.plugins);
 
+/** Build the profile table from metadata only, including names not installed yet. */
+const profileShortNames = async (config: CloudCliConfig, profileName: string) => {
+  const lock = profileLock(config, profileName);
+  const served = readServedPlugins(config.profiles?.[profileName]?.servedPlugins);
+  return resolveShortNames(lock, {
+    builtIn: reservedNames,
+    modules: new Set([...Object.keys(lock), ...(await pluginIds())]),
+    served: served === undefined ? undefined : new Set(served),
+  });
+};
+
+const warnInactiveShortNames = (inactive: InactiveShortName[], locale: string): void => {
+  for (const { name, claimedBy, reason } of inactive) {
+    const modules = claimedBy.join(", ");
+    printErrorLine(
+      reason === "ambiguous"
+        ? text(
+            locale,
+            `cld: "${name}" is ambiguous (${modules}); use the full module name.`,
+            `cld: "${name}" ist mehrdeutig (${modules}); nutze den vollen Modulnamen.`,
+          )
+        : reason === "built-in"
+          ? text(
+              locale,
+              `cld: "${name}" from ${modules} is inactive: a built-in command has that name.`,
+              `cld: "${name}" von ${modules} ist inaktiv: ein eingebauter Befehl heißt so.`,
+            )
+          : reason === "unverified"
+            ? text(
+                locale,
+                `cld: "${name}" from ${modules} is inactive until cld knows which modules your Cloud serves; run \`cld plugins list\`.`,
+                `cld: "${name}" von ${modules} ist inaktiv, bis cld weiß, welche Module deine Cloud bereitstellt; führe \`cld plugins list\` aus.`,
+              )
+            : text(
+                locale,
+                `cld: "${name}" from ${modules} is inactive: a module has that name.`,
+                `cld: "${name}" von ${modules} ist inaktiv: ein Modul heißt so.`,
+              ),
+    );
+  }
+};
+
+const pluginMetadata = (module: CloudCliModule) => ({
+  summary: module.summary,
+  ...(module.alias !== undefined ? { alias: module.alias } : {}),
+  ...(module.shortcuts !== undefined ? { shortcuts: { ...module.shortcuts } } : {}),
+});
+
 /** Digests any profile still locks; everything else in the store may go. */
 const lockedDigests = (config: CloudCliConfig): Set<string> =>
   new Set(Object.keys(config.profiles ?? {}).flatMap((name) => Object.values(profileLock(config, name)).map((entry) => entry.digest)));
@@ -1494,7 +1577,8 @@ const loadInstalledModule = async (name: string, global: GlobalArgs): Promise<Cl
 /** The current profile's lock entry for `name`, if the profile installed it from its Cloud. */
 const lockedPlugin = async (name: string, global: GlobalArgs): Promise<LockedPlugin | undefined> => {
   const config = await loadConfig();
-  return profileLock(config, resolveProfileName(config, global.profile))[name];
+  const lock = profileLock(config, resolveProfileName(config, global.profile));
+  return Object.hasOwn(lock, name) ? lock[name] : undefined;
 };
 
 /** `cld <module> reference [file]`: print a served plugin's skill reference. */
@@ -1735,6 +1819,18 @@ type PluginChange = {
   message?: string;
 };
 
+/** Save the names the profile's Cloud serves now; never creates a profile. */
+const saveServedPlugins = async (profileName: string, plugins: readonly CloudCliPluginSummary[]): Promise<void> => {
+  const servedPlugins = plugins.map((plugin) => plugin.name).sort();
+  await withConfigLock(async () => {
+    const config = await loadConfig();
+    const profile = config.profiles?.[profileName];
+    if (!profile || JSON.stringify(readServedPlugins(profile.servedPlugins)) === JSON.stringify(servedPlugins)) return;
+    profile.servedPlugins = servedPlugins;
+    await saveConfig(config);
+  });
+};
+
 /**
  * Fetch, verify and lock plugins for one profile. Downloads run outside the
  * config lock; placing them in the store, updating the lock, and pruning
@@ -1747,6 +1843,9 @@ const syncProfilePlugins = async (
   locale: string,
 ): Promise<PluginChange[]> => {
   const current = profileLock(await loadConfig(), cloud.profile);
+  const servedPlugins = await fetchAvailablePlugins(cloud.fetch)
+    .then((plugins) => plugins.map((plugin) => plugin.name).sort())
+    .catch(() => undefined);
   const changes: PluginChange[] = [];
   const staged: Array<{ name: string; locked: LockedPlugin; incoming: string | null }> = [];
   for (const name of names) {
@@ -1758,6 +1857,18 @@ const syncProfilePlugins = async (
       const manifest = await fetchPluginManifest(cloud.fetch, name);
       const previous = current[name];
       if (previous?.digest === manifest.digest && (await hasStoredPlugin(manifest.digest))) {
+        const metadata = pluginMetadata(await loadStoredPlugin(name, previous));
+        if (
+          previous.summary !== metadata.summary ||
+          previous.alias !== metadata.alias ||
+          JSON.stringify(previous.shortcuts) !== JSON.stringify(metadata.shortcuts)
+        ) {
+          staged.push({
+            name,
+            incoming: null,
+            locked: { app: previous.app, version: previous.version, digest: previous.digest, ...metadata },
+          });
+        }
         changes.push({ profile: cloud.profile, name, app: manifest.app, version: manifest.version, status: "unchanged" });
         continue;
       }
@@ -1767,7 +1878,7 @@ const syncProfilePlugins = async (
       staged.push({
         name,
         incoming: download.incoming,
-        locked: { app: manifest.app, version: manifest.version, digest: manifest.digest, summary: download.module.summary },
+        locked: { app: manifest.app, version: manifest.version, digest: manifest.digest, ...pluginMetadata(download.module) },
       });
       changes.push({
         profile: cloud.profile,
@@ -1790,7 +1901,6 @@ const syncProfilePlugins = async (
       });
     }
   }
-  if (staged.length === 0) return changes;
   await withConfigLock(async () => {
     const config = await loadConfig();
     config.profiles ??= {};
@@ -1800,11 +1910,21 @@ const syncProfilePlugins = async (
       if (incoming) await placePlugin(incoming, locked.digest);
       lock[name] = locked;
     }
-    config.profiles[cloud.profile] = { ...profile, plugins: lock };
+    const snapshotChanged =
+      servedPlugins !== undefined && JSON.stringify(readServedPlugins(profile.servedPlugins)) !== JSON.stringify(servedPlugins);
+    if (staged.length === 0 && !snapshotChanged) return;
+    config.profiles[cloud.profile] = {
+      ...profile,
+      ...(staged.length > 0 ? { plugins: lock } : {}),
+      ...(servedPlugins !== undefined ? { servedPlugins } : {}),
+    };
     await saveConfig(config);
-    await collectPluginGarbage(lockedDigests(config));
-    await syncSkills(config, locale);
+    if (staged.length > 0) {
+      await collectPluginGarbage(lockedDigests(config));
+      await syncSkills(config, locale);
+    }
   });
+  warnInactiveShortNames((await profileShortNames(await loadConfig(), cloud.profile)).inactive, locale);
   return changes;
 };
 
@@ -1834,6 +1954,9 @@ const printPluginChanges = (changes: PluginChange[], output: GlobalArgs["output"
 };
 
 type PluginRow = {
+  alias: string | null;
+  shortcuts: Record<string, string>;
+  inactive: string[];
   profile: string | null;
   name: string;
   app: string | null;
@@ -1844,12 +1967,14 @@ type PluginRow = {
 };
 
 const listProfilePlugins = async (global: GlobalArgs, profileName: string, current: boolean): Promise<PluginRow[]> => {
-  const lock = profileLock(await loadConfig(), profileName);
+  const config = await loadConfig();
+  const lock = profileLock(config, profileName);
   let available: CloudCliPluginSummary[] | null = null;
   const digests = new Map<string, string>();
   try {
     const cloud = await pluginCloud(global, current ? undefined : profileName);
     available = await fetchAvailablePlugins(cloud.fetch);
+    await saveServedPlugins(profileName, available);
     await Promise.all(
       Object.keys(lock)
         .filter((name) => available?.some((plugin) => plugin.name === name))
@@ -1862,6 +1987,7 @@ const listProfilePlugins = async (global: GlobalArgs, profileName: string, curre
       printErrorLine(`cld: profile "${profileName}": ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+  const shortNames = await profileShortNames(await loadConfig(), profileName);
   const names = [...new Set([...Object.keys(lock), ...(available ?? []).map((plugin) => plugin.name)])].sort();
   return names.map((name) => {
     const locked = lock[name];
@@ -1878,6 +2004,9 @@ const listProfilePlugins = async (global: GlobalArgs, profileName: string, curre
     return {
       profile: profileName,
       name,
+      alias: locked?.alias ?? null,
+      shortcuts: locked?.shortcuts ?? {},
+      inactive: shortNames.inactive.filter((claim) => claim.claimedBy.includes(name)).map((claim) => claim.name),
       app: locked?.app ?? served?.app ?? null,
       installed: locked?.version ?? null,
       available: served?.version ?? null,
@@ -1929,6 +2058,9 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
       rows.push({
         profile: null,
         name: plugin.id,
+        alias: null,
+        shortcuts: {},
+        inactive: [],
         app: null,
         installed: plugin.version ?? null,
         available: null,
@@ -1951,6 +2083,14 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
         renderTable(rows, [
           { key: "profile", label: text(locale, "PROFILE", "PROFIL"), value: (row) => row.profile ?? "*" },
           { key: "name", label: "NAME" },
+          {
+            key: "alias",
+            label: text(locale, "SHORT NAMES", "KURZNAMEN"),
+            value: (row) =>
+              [...(row.alias ? [row.alias] : []), ...Object.keys(row.shortcuts)]
+                .map((name) => (row.inactive.includes(name) ? `${name} (${text(locale, "inactive", "inaktiv")})` : name))
+                .join(", ") || "-",
+          },
           { key: "app", label: "APP", value: (row) => row.app ?? "-" },
           { key: "installed", label: text(locale, "INSTALLED", "INSTALLIERT"), value: (row) => row.installed ?? "-" },
           { key: "available", label: text(locale, "AVAILABLE", "VERFÜGBAR"), value: (row) => row.available ?? "-" },
@@ -1960,6 +2100,8 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
       );
     }
     for (const plugin of plugins) if (plugin.status !== "ok") warnSkippedPlugin(plugin, locale);
+    const latestConfig = await loadConfig();
+    for (const profileName of profileNames) warnInactiveShortNames((await profileShortNames(latestConfig, profileName)).inactive, locale);
     return 0;
   }
 
@@ -2004,6 +2146,8 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
           ),
         );
       }
+      const latestConfig = await loadConfig();
+      warnInactiveShortNames((await profileShortNames(latestConfig, resolveProfileName(latestConfig, global.profile))).inactive, locale);
       return 0;
     } finally {
       await staged.cleanup();
@@ -2031,6 +2175,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
           .filter((name) => !lock[name] && !reservedNames.has(name))
       : targets;
     if (names.length === 0) {
+      await syncProfilePlugins(cloud, names, "install", locale);
       if (output === "text") printLine(text(locale, "All plugins are installed.", "Alle Plugins sind installiert."));
       else printJson({ plugins: [] });
       return 0;
@@ -2351,7 +2496,7 @@ const pkceChallenge = async (verifier: string): Promise<string> => {
   return base64UrlEncode(new Uint8Array(hash));
 };
 
-const openBrowser = async (url: string, locale: string): Promise<void> => {
+const launchBrowser = async (url: string): Promise<boolean> => {
   const opener =
     process.platform === "darwin"
       ? { command: "open", args: [url] }
@@ -2361,7 +2506,14 @@ const openBrowser = async (url: string, locale: string): Promise<void> => {
 
   try {
     await execFileAsync(opener.command, opener.args, { timeout: 5_000 });
+    return true;
   } catch {
+    return false;
+  }
+};
+
+const openBrowser = async (url: string, locale: string): Promise<void> => {
+  if (!(await launchBrowser(url))) {
     printLine(text(locale, `Open this URL in your browser:\n${url}`, `Öffne diese URL im Browser:\n${url}`));
   }
 };
@@ -2398,7 +2550,7 @@ const promptToOpenBrowser = async (url: string, signal: AbortSignal, locale: str
   }
 };
 
-const oauthCallbackResponse = (message: string, status = 200): Response =>
+const plainTextResponse = (message: string, status: number): Response =>
   new Response(`${message}\n`, {
     status,
     headers: {
@@ -2406,6 +2558,14 @@ const oauthCallbackResponse = (message: string, status = 200): Response =>
       "content-type": "text/plain; charset=utf-8",
     },
   });
+
+const loginPageLocale = (request: Request, locale: string): string => {
+  for (const tag of i18n.parseAcceptLanguage(request.headers.get("accept-language"))) {
+    const language = tag.split("-")[0]?.toLowerCase();
+    if (language === "en" || language === "de") return tag;
+  }
+  return locale;
+};
 
 const waitForOAuthCode = async (
   authorizationUrl: URL,
@@ -2427,70 +2587,54 @@ const waitForOAuthCode = async (
     fetch: (request) => {
       const url = new URL(request.url);
       if (url.pathname !== "/callback") {
-        return oauthCallbackResponse(
+        return plainTextResponse(
           text(locale, "This is not a Cloud CLI login callback.", "Dies ist kein Anmelde-Callback der Cloud CLI."),
           404,
         );
       }
 
+      const pageLocale = loginPageLocale(request, locale);
       const state = url.searchParams.get("state");
       if (state !== expectedState) {
-        return oauthCallbackResponse(
-          text(
-            locale,
-            "Authentication failed: the OAuth callback did not match the expected state. You may close this window.",
-            "Die Anmeldung ist fehlgeschlagen: Der OAuth-Callback entsprach nicht dem erwarteten Zustand. Du kannst dieses Fenster schließen.",
-          ),
-          400,
-        );
+        return loginPageResponse("mismatch", { locale: pageLocale });
       }
 
       if (url.searchParams.get("iss") !== expectedIssuer) {
         rejectCode(new CliError("OAuth callback did not match the expected issuer."));
-        return oauthCallbackResponse(
-          text(
-            locale,
-            "Authentication failed: the OAuth callback did not match the expected issuer. You may close this window.",
-            "Die Anmeldung ist fehlgeschlagen: Der OAuth-Callback stammte nicht vom erwarteten Aussteller. Du kannst dieses Fenster schließen.",
+        return loginPageResponse("failed", {
+          locale: pageLocale,
+          detail: text(
+            pageLocale,
+            "The callback did not come from the expected Cloud.",
+            "Der Callback kam nicht von der erwarteten Cloud.",
           ),
-          400,
-        );
+        });
       }
 
       const error = url.searchParams.get("error");
       if (error) {
         const message = url.searchParams.get("error_description") ?? error;
         rejectCode(new CliError(message));
-        return oauthCallbackResponse(
-          text(
-            locale,
-            `Authentication failed: ${message}. You may close this window.`,
-            `Die Anmeldung ist fehlgeschlagen: ${message}. Du kannst dieses Fenster schließen.`,
-          ),
-        );
+        return error === "access_denied"
+          ? loginPageResponse("denied", { locale: pageLocale })
+          : loginPageResponse("failed", { locale: pageLocale, detail: message });
       }
 
       const code = url.searchParams.get("code");
       if (!code) {
         rejectCode(new CliError("OAuth callback did not include an authorization code."));
-        return oauthCallbackResponse(
-          text(
-            locale,
-            "Authentication failed: the OAuth callback did not include an authorization code. You may close this window.",
-            "Die Anmeldung ist fehlgeschlagen: Der OAuth-Callback enthielt keinen Autorisierungscode. Du kannst dieses Fenster schließen.",
+        return loginPageResponse("failed", {
+          locale: pageLocale,
+          detail: text(
+            pageLocale,
+            "The callback did not include an authorization code.",
+            "Der Callback enthielt keinen Autorisierungscode.",
           ),
-          400,
-        );
+        });
       }
 
       resolveCode(code);
-      return oauthCallbackResponse(
-        text(
-          locale,
-          "Authentication complete. You may close this window.",
-          "Die Anmeldung ist abgeschlossen. Du kannst dieses Fenster schließen.",
-        ),
-      );
+      return loginPageResponse("success", { locale: pageLocale });
     },
   });
 
@@ -2564,10 +2708,13 @@ const oauthErrorCode = async (response: Response): Promise<{ error: string; desc
 };
 
 /** RFC 8628: show a code, then poll until the person approves it in any browser. */
-const signInWithDeviceCode = async (server: string, scope: string, locale: string): Promise<OAuthTokenResponse> => {
+const signInWithDeviceCode = async (server: string, scope: string, requestLocale?: string): Promise<OAuthTokenResponse> => {
+  const locale = requestLocale ?? "en";
+  const headers = new Headers({ "content-type": "application/x-www-form-urlencoded" });
+  if (requestLocale) headers.set("accept-language", requestLocale);
   const started = await fetchOAuth(joinUrl(server, "/oauth/device_authorization"), {
     method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded", "accept-language": locale },
+    headers,
     body: new URLSearchParams({ client_id: OAUTH_CLIENT_ID, scope }),
   });
   if (started.status === 404) {
@@ -2784,7 +2931,7 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
   const device = takeBooleanFlag(parsed.flags, "device");
 
   const token = device
-    ? await signInWithDeviceCode(normalizedServer, scope, global.locale)
+    ? await signInWithDeviceCode(normalizedServer, scope, global.requestLocale)
     : await signInWithBrowser(normalizedServer, scope, !takeBooleanFlag(parsed.flags, "no-open"), global.locale);
   const refreshToken = token.refresh_token;
   if (!refreshToken) throw new CliError("OAuth server did not issue a refresh token. Check the offline_access scope.");
@@ -2820,9 +2967,9 @@ const offerCloudPlugins = async (global: GlobalArgs, yes: boolean): Promise<void
   try {
     const cloud = await pluginCloud({ ...global, server: undefined, token: undefined }, global.profile);
     const lock = profileLock(await loadConfig(), cloud.profile);
-    const missing = (await fetchAvailablePlugins(cloud.fetch))
-      .map((plugin) => plugin.name)
-      .filter((name) => !lock[name] && !reservedNames.has(name));
+    const plugins = await fetchAvailablePlugins(cloud.fetch);
+    await saveServedPlugins(cloud.profile, plugins);
+    const missing = plugins.map((plugin) => plugin.name).filter((name) => !lock[name] && !reservedNames.has(name));
     if (missing.length === 0) return;
     const list = missing.join(", ");
     if (!yes) {
@@ -3025,13 +3172,17 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
     const { modules: pluginModules, plugins } = await loadPlugins(reservedNames);
     for (const plugin of plugins) if (plugin.status !== "ok") warnSkippedPlugin(plugin, global.locale);
     const config = await loadConfig();
-    const served = Object.entries(profileLock(config, resolveProfileName(config, global.profile)))
+    const profileName = resolveProfileName(config, global.profile);
+    const shortNames = await profileShortNames(config, profileName);
+    warnInactiveShortNames(shortNames.inactive, global.locale);
+    const served = Object.entries(profileLock(config, profileName))
       .filter(([name]) => !reservedNames.has(name))
       .map(([name, locked]) => ({ name, summary: locked.summary }));
     printLine(
       helpText(
         global.locale,
         [...served, ...pluginModules].sort((left, right) => left.name.localeCompare(right.name)),
+        shortNames,
       ),
     );
     return 0;
@@ -3050,6 +3201,28 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   }
   const module = reservedNames.has(moduleName) ? undefined : await loadInstalledModule(moduleName, global);
   if (!module) {
+    const config = await loadConfig();
+    const profileName = resolveProfileName(config, global.profile);
+    const shortNames = await profileShortNames(config, profileName);
+    const shortName = shortNames.active.get(moduleName);
+    if (shortName) {
+      const args = [...shortName.path, ...moduleArgs];
+      const locked = profileLock(config, profileName)[shortName.module];
+      if (shortName.path.length === 0 && args[0] === "reference" && locked) {
+        return runReferenceCommand(shortName.module, locked, args.slice(1));
+      }
+      const target = await loadInstalledModule(shortName.module, global);
+      if (target) return runModule(target, args, global);
+    }
+    const ambiguous = shortNames.inactive.find((claim) => claim.name === moduleName && claim.reason === "ambiguous");
+    if (ambiguous) {
+      const names = ambiguous.claimedBy.join(", ");
+      throw new CliError(
+        `\`${moduleName}\` is ambiguous: ${names}. Use the full name.`,
+        1,
+        `\`${moduleName}\` ist mehrdeutig: ${names}. Nutze den vollen Namen.`,
+      );
+    }
     if (CLOUD_CLI_MODULE_NAME.test(moduleName)) {
       throw new CliError(
         `Unknown command "${moduleName}". If your Cloud serves it, run \`cld plugins install ${moduleName}\`; \`cld plugins list\` shows what it serves.`,

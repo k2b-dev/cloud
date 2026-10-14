@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { mountAiSkillInstructionLinks } from "@k2b/cloud/ai";
 import { SKILLS } from "./skills";
 
 test("ships its Skills with every reference linked from the instructions", () => {
@@ -9,17 +10,22 @@ test("ships its Skills with every reference linked from the instructions", () =>
     "scheduled-tasks",
     "skill-creator",
   ]);
-  for (const skill of SKILLS)
-    for (const reference of skill.references) expect(skill.instructions).toContain(`/skills/${skill.name}/${reference.path}`);
+  for (const skill of SKILLS) for (const reference of skill.references) expect(skill.instructions).toContain(`](${reference.path})`);
 });
 
 test("Assistant skills retain workflow and capability guidance", async () => {
   const inputs = SKILLS;
   const codeMode = inputs.find((candidate) => candidate.name === "assistant-code-mode");
-  // A chart of known data is the chart tool, not an app; both skills give the same rule.
-  const rule = "Just data → `chart` tool; interaction → chat app (`code_present`); persistence or reuse → saved Studio App.";
-  expect(codeMode?.instructions.replace(/\s+/g, " ")).toContain(rule);
-  expect(inputs.find((candidate) => candidate.name === "assistant-data-analysis")?.instructions.replace(/\s+/g, " ")).toContain(rule);
+  // Both skills keep computed values inside the run and deliver view references.
+  for (const skill of [codeMode, inputs.find((candidate) => candidate.name === "assistant-data-analysis")]) {
+    expect(skill?.instructions).toContain("cloud.view.");
+    expect(skill?.instructions).toContain("cloud.view.explorer");
+    expect(skill?.instructions).toContain("present({path})");
+    expect(skill?.instructions).toContain("cloud.view.stats");
+    expect(skill?.instructions).toContain("cloud.view.details");
+    expect(skill?.instructions).toContain("ref`");
+    expect(skill?.instructions).toContain("Never retype run values");
+  }
   // The platform prompt requires calculate for derived numbers; the catalog must not suggest answering directly.
   expect(codeMode?.description).toContain("For plain arithmetic or date offsets, use calculate.");
   expect(codeMode?.references?.map((reference) => reference.path)).toContain("references/debugging.md");
@@ -93,11 +99,13 @@ test("Assistant skills retain workflow and capability guidance", async () => {
   }
 });
 
-test("code mode rewrites links and retains its Cloud type reference", () => {
+test("code mode mounts its links when loaded and retains its Cloud type reference", () => {
   const ASSISTANT_CODE_MODE_SKILL = SKILLS.find((skill) => skill.name === "assistant-code-mode")!;
   const contract = ASSISTANT_CODE_MODE_SKILL.references.find((reference) => reference.path === "references/cloud.md");
   expect(contract).toBeDefined();
   expect(contract!.content.match(/```ts\n/g)).toHaveLength(1);
   expect(contract!.content.match(/```/g)).toHaveLength(2);
-  expect(ASSISTANT_CODE_MODE_SKILL.instructions).toContain("/skills/assistant-code-mode/references/cloud.md");
+  expect(mountAiSkillInstructionLinks(ASSISTANT_CODE_MODE_SKILL.name, ASSISTANT_CODE_MODE_SKILL.instructions)).toContain(
+    "](/skills/assistant-code-mode/references/cloud.md)",
+  );
 });

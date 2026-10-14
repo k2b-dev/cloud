@@ -23,6 +23,7 @@ import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contrac
 import { text } from "@k2b/stdlib";
 import { z } from "zod";
 import type { CalendarInvitationImportResult, CalendarInvitationPreview, SpacesMailDestinationContext } from "./app-integration-contracts";
+import { composeFormattingMessages, describeComposeFormattingWarning, describeIgnoredMailboxCss } from "./compose-formatting-messages";
 import {
   MAIL_CONTACT_DIRECTORY_DEFAULTS,
   type MailContactDirectoryConfig,
@@ -34,6 +35,7 @@ import {
   type AttachmentLink,
   type AttachmentLinkPage,
   type CancelScheduledSendResult,
+  type ComposeFormattingWarning,
   type ComposePreview,
   type ComposeSafetyApproval,
   type ComposeSafetyReview,
@@ -43,6 +45,8 @@ import {
   type ConversationDraftSummary,
   type CreatedAttachmentLink,
   type CreateIncomingAutomation,
+  commandStateSchema,
+  composeTemplateVariables,
   createAutomaticReplyConfigurationSchema,
   createIncomingAutomationSchema,
   DEFAULT_CONVERSATION_REFERENCE_PATTERN,
@@ -50,6 +54,7 @@ import {
   type DeletedMailboxPage,
   type DeriveDraftFromMessageInput,
   type DraftAttachmentUpload,
+  type DraftEditableContentInput,
   type DraftIntent,
   type DraftLease,
   type DraftRecoveryCopy,
@@ -75,11 +80,13 @@ import {
   type MailStorageSummary,
   type MailSubscriptionPage,
   type MailSubscriptionSummary,
+  type MailSyncRunPage,
   type MailWorkflow,
   type MailWorkflowDetail,
   type MailWorkflowVersion,
   type MessageInspector,
   mailSearchExpressionSchema,
+  mailSyncRunStateSchema,
   type PlatformMailboxOperationSummary,
   type PlatformMailOperations,
   type ProviderBinding,
@@ -88,7 +95,9 @@ import {
   type RelatedMailPage,
   type SavedConversationViewFilter,
   type ScheduledSendPage,
+  SENDER_VERIFICATION_WAIT_MS,
   type SenderIdentity,
+  type SenderIdentityStatusReason,
   savedConversationViewFilterSchema,
   type UnsubscribeMailingListResult,
   type WorkflowEffectBudget,
@@ -226,6 +235,19 @@ const waitFlags = {
   }),
 };
 
+// A queued sender verification may wait this long on the server, plus a minute for the test
+// message it sends at the end, so `--wait` does not give up while the server still waits.
+const senderVerificationWaitFlags = {
+  wait: flag.boolean({ description: "Wait for a verification that waits behind running provider work" }),
+  timeoutSeconds: flag.int({
+    name: "timeout-seconds",
+    min: 1,
+    max: 3_600,
+    default: SENDER_VERIFICATION_WAIT_MS / 1_000 + 60,
+    description: "Maximum wait time in seconds",
+  }),
+};
+
 const workflowEffectBudgetFlags = {
   maxTargets: flag.int({
     name: "max-targets",
@@ -340,6 +362,37 @@ const pollUntil = async <T>(params: {
     await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, Math.max(0, deadline - Date.now()))));
   }
 };
+
+/** Why an identity cannot send; JSON output carries the stable `statusReason` code. */
+const senderIdentityReasonText: Record<SenderIdentityStatusReason, string> = {
+  sent_folder_missing: "Sent folder missing",
+  provider_rejected: "rejected by the provider",
+  verification_required: "not verified yet",
+  verification_pending: "verification waits for running provider work",
+};
+const senderIdentityStatusText = (identity: SenderIdentity): string =>
+  identity.statusReason ? `${identity.status}, ${senderIdentityReasonText[identity.statusReason]}` : identity.status;
+
+/**
+ * A verification that found provider work running waits as a durable command. With `--wait` the
+ * CLI waits for that command and reads the identity again; it fails when the verification failed.
+ */
+const settleSenderVerification = async (
+  ctx: CloudCliContext,
+  mailboxId: string,
+  identity: SenderIdentity,
+  wait: boolean | undefined,
+  timeoutSeconds: number | undefined,
+): Promise<SenderIdentity> => {
+  if (!wait || !identity.pendingVerificationCommandId) return identity;
+  await waitForCommand(ctx, mailboxId, identity.pendingVerificationCommandId, timeoutSeconds);
+  const identities = await readApi<SenderIdentity[]>(ctx, `/mailboxes/${mailboxId}/sender-identities`);
+  return identities.find((item) => item.id === identity.id) ?? identity;
+};
+
+const pendingSenderVerificationText = (identity: SenderIdentity, commandId: string): string =>
+  `Verification of ${identity.fromAddress} waits for running provider work and starts automatically (command ${commandId}). ` +
+  `Follow it with \`cld mail command wait ${commandId}\`, or pass --wait.`;
 
 const listMailboxes = (ctx: CloudCliContext): Promise<MailboxWithPermission[]> => readApi(ctx, "/mailboxes?limit=200");
 const getMailbox = (ctx: CloudCliContext, mailboxId: string, signal?: AbortSignal): Promise<Mailbox> =>
@@ -701,7 +754,18 @@ const readOptionalVcard = async (input: Parameters<typeof readCliInput>[0]): Pro
 
 const receiptSetting = (value: "on" | "off" | undefined): boolean | undefined => (value === undefined ? undefined : value === "on");
 
+const draftSignatureChoice = (flags: { signature?: string; noSignature?: boolean }) => {
+  if (flags.signature && flags.noSignature) throw new Error("Use either --signature or --no-signature.");
+  return flags.noSignature
+    ? { signatureTemplateId: null }
+    : flags.signature
+      ? { signatureTemplateId: requireMailResourceId(flags.signature, "Signature template id") }
+      : {};
+};
+
 const draftEditableContentFlags = {
+  signature: flag.string({ description: "Signature template id; omitted keeps the default or current signature" }),
+  noSignature: flag.boolean({ name: "no-signature", description: "Use no signature" }),
   identity: flag.string({ required: true, description: "Sender identity id" }),
   to: flag.stringList({ description: "Recipient; repeatable" }),
   cc: flag.stringList({ description: "Cc recipient; repeatable" }),
@@ -724,6 +788,40 @@ const draftEditableContentFlags = {
     description: "Request a read receipt; recipients may ignore the request",
   }),
 };
+
+const composeTemplateVariableWidth = Math.max(...Object.keys(composeTemplateVariables).map((name) => name.length));
+const composeTemplateHelpDescription = [
+  "Signatures are chosen per draft with --signature or --no-signature and filled at preview and send; snippets are filled when inserted.",
+  "Variables:",
+  ...Object.entries(composeTemplateVariables).map(
+    ([name, description]) => `  ${name.padEnd(composeTemplateVariableWidth)}  ${description}`,
+  ),
+  'To separate list items such as message.to, use join: {{ message.to | join: ", " }}',
+].join("\n");
+
+const composeDraftExample = {
+  senderIdentityId: "Ident1",
+  to: [{ name: null, address: "recipient@example.com" }],
+  cc: [],
+  bcc: [],
+  subject: "Example",
+  body: "Hello",
+  format: "markdown",
+} satisfies DraftEditableContentInput;
+
+const composeDraftHelpDescription = [
+  "Signatures are chosen per draft with signatureTemplateId (null for none); snippet rendering and suggestions return only body snippets.",
+  "Draft JSON:",
+  "  senderIdentityId is required: a verified sender identity ID from cld mail identity list.",
+  '  to, cc, and bcc are arrays of { "address": string, "name"?: string|null } objects, not plain strings; name is optional; default [].',
+  '  subject and body are strings; default "".',
+  "  format is markdown or plain; default markdown.",
+  "  priority (low, normal, or high), requestDeliveryReceipt, and requestReadReceipt are optional; defaults: normal, false, false.",
+  "Example draft.json:",
+  ...JSON.stringify(composeDraftExample, null, 2)
+    .split("\n")
+    .map((line) => `  ${line}`),
+].join("\n");
 
 const composeDraftInputFlag = flag.input({
   required: true,
@@ -761,6 +859,8 @@ const readDraftEditableContent = async (flags: {
   priority?: MailPriority;
   deliveryReceipt?: "on" | "off";
   readReceipt?: "on" | "off";
+  signature?: string;
+  noSignature?: boolean;
 }) => {
   if (!flags.identity) throw new Error("Missing sender identity.");
   const senderIdentityId = requireMailResourceId(flags.identity, "Sender identity id");
@@ -770,6 +870,7 @@ const readDraftEditableContent = async (flags: {
   });
   return {
     senderIdentityId,
+    ...draftSignatureChoice(flags),
     to: parseAddresses(flags.to),
     cc: parseAddresses(flags.cc),
     bcc: parseAddresses(flags.bcc),
@@ -814,6 +915,13 @@ const readComposeDraftInput = async (input: Parameters<typeof readCliInput>[0]) 
 
 const createDraft = async (ctx: CloudCliContext, mailboxId: string, flags: Parameters<typeof readDraftContent>[0]): Promise<MailDraft> =>
   readApi(ctx, `/mailboxes/${mailboxId}/drafts`, jsonRequest("POST", await readDraftContent(flags)));
+
+/** Tells what formatting email leaves out of a message. JSON output carries the same list as `formattingWarnings`. */
+const printFormattingWarnings = (ctx: CloudCliContext, warnings: ComposeFormattingWarning[] | undefined) => {
+  if (!warnings?.length) return;
+  ctx.error(composeFormattingMessages.resolve([ctx.options.locale ?? "en"]).t.title);
+  for (const warning of warnings) ctx.error(`  - ${describeComposeFormattingWarning(warning, ctx.options.locale)}`);
+};
 
 const reviewDraftSafety = async (
   ctx: CloudCliContext,
@@ -2412,6 +2520,10 @@ const everydayCommands = (t: Translate) => {
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
         ...mailboxOption,
+        signature: flag.string({
+          description: t({ en: "Signature template ID instead of the default", de: "Signaturvorlagen-ID statt der Standardsignatur" }),
+        }),
+        noSignature: flag.boolean({ name: "no-signature", description: t({ en: "Send without a signature", de: "Ohne Signatur senden" }) }),
         all: flag.boolean({ description: t({ en: "Reply to all recipients", de: "Allen Empfängern antworten" }) }),
         message: flag.string({
           description: t({
@@ -2439,6 +2551,7 @@ const everydayCommands = (t: Translate) => {
           `/mailboxes/${mailbox.id}/drafts`,
           jsonRequest("POST", {
             senderIdentityId,
+            ...draftSignatureChoice(flags),
             to: [],
             cc: [],
             bcc: [],
@@ -2451,6 +2564,7 @@ const everydayCommands = (t: Translate) => {
           }),
         );
         if (printStructured(ctx, draft)) return;
+        printFormattingWarnings(ctx, draft.formattingWarnings);
         ctx.print(
           t({
             en: `Created reply draft ${draft.id} to ${draft.to.map((address) => address.address).join(", ")}. Send it with \`cld mail send ${draft.id}\`.`,
@@ -2468,6 +2582,10 @@ const everydayCommands = (t: Translate) => {
       args: { conversation: arg.required({ description: t({ en: "Conversation ID", de: "Unterhaltungs-ID" }) }) },
       flags: {
         ...mailboxOption,
+        signature: flag.string({
+          description: t({ en: "Signature template ID instead of the default", de: "Signaturvorlagen-ID statt der Standardsignatur" }),
+        }),
+        noSignature: flag.boolean({ name: "no-signature", description: t({ en: "Send without a signature", de: "Ohne Signatur senden" }) }),
         to: flag.stringList({ description: t({ en: "Recipient; repeatable", de: "Empfänger; wiederholbar" }) }),
         cc: flag.stringList({ description: t({ en: "Cc recipient; repeatable", de: "Cc-Empfänger; wiederholbar" }) }),
         message: flag.string({
@@ -2502,6 +2620,7 @@ const everydayCommands = (t: Translate) => {
           `/mailboxes/${mailbox.id}/drafts`,
           jsonRequest("POST", {
             senderIdentityId,
+            ...draftSignatureChoice(flags),
             to: parseAddresses(flags.to),
             cc: parseAddresses(flags.cc),
             bcc: [],
@@ -2514,6 +2633,7 @@ const everydayCommands = (t: Translate) => {
           }),
         );
         if (printStructured(ctx, draft)) return;
+        printFormattingWarnings(ctx, draft.formattingWarnings);
         ctx.print(
           t({
             en: `Created forward draft ${draft.id}. Send it with \`cld mail send ${draft.id}\`.`,
@@ -3104,19 +3224,28 @@ const specialistCommands = {
     }),
     command("compose template create", {
       summary: "Create a private or mailbox compose template",
+      description: composeTemplateHelpDescription,
+      examples: [
+        "printf 'Best regards\\n{{ actor.display_name }}\\n{{ mailbox.name }}\\n' > signature.md",
+        'cld mail compose template create --kind signature --scope mailbox --name "Team signature" --shortcut sig --body-file signature.md',
+      ],
       flags: {
         ...mailboxFlag,
-        kind: flag.enum(["signature", "snippet"] as const, { required: true }),
+        kind: flag.enum(["signature", "snippet"] as const, { required: true, description: "Template kind" }),
         scope: flag.enum(["private", "mailbox"] as const, {
           default: "private",
         }),
-        name: flag.string({ required: true }),
-        shortcut: flag.string({ required: true }),
+        name: flag.string({ required: true, description: "Template name" }),
+        shortcut: flag.string({
+          required: true,
+          description:
+            "Slash command for a snippet, for example meeting for /meeting, or a short unique name for a signature; lowercase letters, digits and underscores, starting with a letter, at most 40 characters",
+        }),
         body: flag.input({
           required: true,
           stdinName: "body-stdin",
           fileName: "body-file",
-          description: "Markdown and Liquid template source",
+          description: "Markdown with Liquid variables; see below",
         }),
       },
       run: async ({ ctx, flags }) => {
@@ -3137,11 +3266,15 @@ const specialistCommands = {
           }),
         );
         if (printStructured(ctx, template)) return;
-        ctx.print(`Created ${template.kind} ${template.name} as /${template.shortcut} (${template.id}).`);
+        ctx.print(
+          `Created ${template.kind} ${template.name} as ${template.kind === "snippet" ? "/" : ""}${template.shortcut} (${template.id}).`,
+        );
+        printFormattingWarnings(ctx, template.formattingWarnings);
       },
     }),
     command("compose template update", {
       summary: "Update a compose template at an expected revision",
+      description: composeTemplateHelpDescription,
       args: {
         templateId: arg.required({ description: "Compose template id" }),
       },
@@ -3180,6 +3313,7 @@ const specialistCommands = {
         );
         if (printStructured(ctx, template)) return;
         ctx.print(`Updated ${template.name} to revision ${template.revision}.`);
+        printFormattingWarnings(ctx, template.formattingWarnings);
       },
     }),
     command("compose template archive", {
@@ -3209,7 +3343,9 @@ const specialistCommands = {
       },
     }),
     command("compose snippet render", {
-      summary: "Render a visible signature or snippet for a draft",
+      summary: "Render a visible snippet for a draft",
+      description: composeDraftHelpDescription,
+      examples: ["cld mail compose snippet render Templ1 --draft-file draft.json"],
       args: {
         templateId: arg.required({ description: "Compose template id" }),
       },
@@ -3236,7 +3372,9 @@ const specialistCommands = {
       },
     }),
     command("compose suggestions", {
-      summary: "List rendered signatures and snippets matching a shortcut or name",
+      summary: "List rendered snippets matching a shortcut or name",
+      description: composeDraftHelpDescription,
+      examples: ["cld mail compose suggestions --draft-file draft.json"],
       args: {
         query: arg.optional({
           description: "Shortcut or template name fragment; omit to list all suggestions",
@@ -3348,6 +3486,8 @@ const specialistCommands = {
         const style = await readApi<MailboxComposeStyle>(ctx, `/mailboxes/${mailbox.id}/compose-style`);
         if (printStructured(ctx, style)) return;
         ctx.print(style.customCss);
+        const ignored = describeIgnoredMailboxCss(style.formattingWarnings, ctx.options.locale);
+        if (ignored) ctx.error(ignored);
       },
     }),
     command("compose style set", {
@@ -3358,7 +3498,7 @@ const specialistCommands = {
           required: true,
           stdinName: "css-stdin",
           fileName: "css-file",
-          description: "Validated mailbox email CSS",
+          description: "Validated mailbox email CSS; its rules win over the built-in design for the elements they select",
         }),
       },
       run: async ({ ctx, flags }) => {
@@ -3378,6 +3518,8 @@ const specialistCommands = {
     }),
     command("compose preview", {
       summary: "Render a draft payload through the canonical email pipeline",
+      description: composeDraftHelpDescription,
+      examples: ["cld mail compose preview --draft-file draft.json"],
       flags: {
         ...mailboxFlag,
         draft: composeDraftInputFlag,
@@ -3397,6 +3539,7 @@ const specialistCommands = {
         );
         if (printStructured(ctx, preview)) return;
         ctx.print(preview.html);
+        printFormattingWarnings(ctx, preview.formattingWarnings);
       },
     }),
     command("status", {
@@ -3415,7 +3558,7 @@ const specialistCommands = {
             `Folders: ${health.discovery.activeFolders} active, ${health.discovery.missingFolders} missing, ${health.discovery.ambiguousFolders} ambiguous`,
           );
           ctx.print(
-            `Sync: ${health.sync.lastAt ? `last completed ${health.sync.lastAt}` : "never completed"}, ${health.sync.runningRuns} running, ${health.sync.failedRuns} failed; hydration ${health.hydration.pending} pending/${health.hydration.failed} failed`,
+            `Sync: ${health.sync.lastAt ? `last completed ${health.sync.lastAt}` : "never completed"}, ${health.sync.runningRuns} running, ${health.sync.failedRuns} failed in the last 24 hours; hydration ${health.hydration.pending} pending/${health.hydration.failed} failed`,
           );
           ctx.print(`Commands: ${health.commands.maintenanceQueued} maintenance pending; search ${health.search.configuredBackend}`);
         }
@@ -4185,6 +4328,42 @@ const specialistCommands = {
         const result = flags.wait ? await waitForCommand(ctx, mailbox.id, command.id, flags.timeoutSeconds) : command;
         if (printStructured(ctx, result)) return;
         printSyncRequest(ctx, "Folder sync", result);
+      },
+    }),
+    command("sync runs", {
+      summary: "List recent sync runs with their folder and error code",
+      description:
+        "Lists the sync runs Mail keeps for 30 days, newest first. Each attempt to sync a folder batch is one run, also one that a retry completed afterwards.",
+      examples: ["cld mail sync runs --state failed", "cld --json mail sync runs --state failed --limit 100"],
+      flags: {
+        ...mailboxFlag,
+        state: flag.enum(mailSyncRunStateSchema.options, { description: "Only runs in this state" }),
+        limit: flag.int({ min: 1, max: 100, default: 50 }),
+        cursor: flag.string({ description: "Opaque cursor returned by a previous page" }),
+      },
+      run: async ({ ctx, flags }) => {
+        const mailbox = await resolveMailbox(ctx, flags.mailbox);
+        const query = new URLSearchParams({ limit: String(flags.limit ?? 50) });
+        if (flags.state) query.set("state", flags.state);
+        if (flags.cursor) query.set("cursor", flags.cursor);
+        const page = await readApi<MailSyncRunPage>(ctx, `/mailboxes/${mailbox.id}/sync-runs?${query}`);
+        printTable(
+          ctx,
+          page,
+          page.items.map((run) => ({
+            started: run.startedAt,
+            state: run.state,
+            folder: run.folderPath ?? "-",
+            error: run.errorCode ?? "-",
+          })),
+          [
+            { key: "started", label: "STARTED" },
+            { key: "state", label: "STATE" },
+            { key: "folder", label: "FOLDER" },
+            { key: "error", label: "ERROR" },
+          ],
+        );
+        if (ctx.options.output === "text" && page.nextCursor) ctx.print(`Next cursor: ${page.nextCursor}`);
       },
     }),
     command("rediscover", {
@@ -5843,6 +6022,7 @@ const specialistCommands = {
               .join(", "),
             transport: identity.transport.mode,
             status: identity.status,
+            reason: identity.statusReason ? senderIdentityReasonText[identity.statusReason] : "",
             automation: identity.authenticationPolicy.automation === "mailbox" ? "enabled" : "disabled",
             default: identity.isDefault ? "yes" : "",
             id: identity.id,
@@ -5858,6 +6038,7 @@ const specialistCommands = {
             { key: "receipts", label: "RECEIPTS" },
             { key: "transport", label: "SMTP" },
             { key: "status", label: "STATUS" },
+            { key: "reason", label: "REASON" },
             { key: "automation", label: "AUTOMATIC REPLIES" },
             { key: "default", label: "DEFAULT" },
             { key: "id", label: "IDENTITY ID" },
@@ -5895,7 +6076,7 @@ const specialistCommands = {
         }),
         sentFolder: flag.string({
           name: "sent-folder",
-          description: "Canonical Sent folder id",
+          description: "Sent folder id; default the mailbox's discovered Sent folder",
         }),
         default: flag.boolean({ description: "Set as default identity" }),
         automation: flag.enum(["mailbox", "disabled"] as const, {
@@ -5928,7 +6109,7 @@ const specialistCommands = {
           }),
         );
         if (printStructured(ctx, identity)) return;
-        ctx.print(`Created unverified identity ${identity.label} (${identity.id}).`);
+        ctx.print(`Created identity ${identity.label} (${identity.id}): ${senderIdentityStatusText(identity)}.`);
       },
     }),
     command("identity setup-default", {
@@ -5944,10 +6125,11 @@ const specialistCommands = {
           name: "provider-saves-sent",
           description: "Provider automatically stores submitted messages in Sent",
         }),
+        ...senderVerificationWaitFlags,
       },
       run: async ({ ctx, args, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const identity = await readApi<SenderIdentity>(
+        const requested = await readApi<SenderIdentity>(
           ctx,
           `/mailboxes/${mailbox.id}/sender-identities/default/setup`,
           jsonRequest("POST", {
@@ -5957,8 +6139,11 @@ const specialistCommands = {
             savesSentAutomatically: flags.providerSavesSent,
           }),
         );
+        const identity = await settleSenderVerification(ctx, mailbox.id, requested, flags.wait, flags.timeoutSeconds);
         if (printStructured(ctx, identity)) return;
-        ctx.print(`Default identity ${identity.label} is ${identity.status}.`);
+        if (identity.pendingVerificationCommandId)
+          ctx.print(pendingSenderVerificationText(identity, identity.pendingVerificationCommandId));
+        else ctx.print(`Default identity ${identity.label} is ${senderIdentityStatusText(identity)}.`);
       },
     }),
     command("identity configure", {
@@ -6073,7 +6258,7 @@ const specialistCommands = {
           jsonRequest("PATCH", update),
         );
         if (printStructured(ctx, identity)) return;
-        ctx.print(`Updated ${identity.label} (${identity.status}).`);
+        ctx.print(`Updated ${identity.label} (${senderIdentityStatusText(identity)}).`);
       },
     }),
     command("identity transport set", {
@@ -6176,10 +6361,11 @@ const specialistCommands = {
           name: "provider-saves-sent",
           description: "Provider automatically stores submitted mail in Sent",
         }),
+        ...senderVerificationWaitFlags,
       },
       run: async ({ ctx, args, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const identity = await readApi<SenderIdentity>(
+        const requested = await readApi<SenderIdentity>(
           ctx,
           `/mailboxes/${mailbox.id}/sender-identities/${requireMailResourceId(args.identityId, "Sender identity id")}/verify`,
           jsonRequest("POST", {
@@ -6188,8 +6374,12 @@ const specialistCommands = {
             savesSentAutomatically: flags.providerSavesSent,
           }),
         );
+        const identity = await settleSenderVerification(ctx, mailbox.id, requested, flags.wait, flags.timeoutSeconds);
         if (printStructured(ctx, identity)) return;
-        ctx.print(`Verified ${identity.fromAddress}.`);
+        if (identity.pendingVerificationCommandId)
+          ctx.print(pendingSenderVerificationText(identity, identity.pendingVerificationCommandId));
+        else if (identity.status === "verified") ctx.print(`Verified ${identity.fromAddress}.`);
+        else ctx.print(`${identity.fromAddress} is ${senderIdentityStatusText(identity)}.`);
       },
     }),
     command("draft list", {
@@ -6232,6 +6422,7 @@ const specialistCommands = {
         {
           ctx.print(`${draft.subject || "[No subject]"} (${draft.id})`);
           ctx.print(`State: ${draft.state}; revision ${draft.revision}; ${draft.attachments.length} attachment(s)`);
+          ctx.print(`Signature: ${draft.signatureTemplateId ?? "none"}`);
           ctx.print("");
           ctx.print(draft.body);
         }
@@ -6319,6 +6510,7 @@ const specialistCommands = {
         const draft = await createDraft(ctx, mailbox.id, flags);
         if (printStructured(ctx, draft)) return;
         ctx.print(`Created draft ${draft.id} (revision ${draft.revision}).`);
+        printFormattingWarnings(ctx, draft.formattingWarnings);
       },
     }),
     command("draft update", {
@@ -6346,6 +6538,7 @@ const specialistCommands = {
         );
         if (printStructured(ctx, draft)) return;
         ctx.print(`Updated draft ${draft.id} to revision ${draft.revision}.`);
+        printFormattingWarnings(ctx, draft.formattingWarnings);
       },
     }),
     command("draft recovery list", {
@@ -6988,6 +7181,39 @@ const specialistCommands = {
         );
       },
     }),
+    command("sender move", {
+      summary: "Move matching inbound mail to Archive, Trash, or a folder",
+      flags: {
+        ...mailboxFlag,
+        match: flag.enum(["sender", "domain"] as const, { required: true, description: "Match one sender address or domain" }),
+        value: flag.string({ required: true, description: "Sender email address or complete domain" }),
+        destination: flag.enum(["archive", "trash"] as const, { description: "Destination role; choose this or --folder" }),
+        folder: flag.string({ description: "Destination folder name or ID; choose this or --destination" }),
+        yes: confirmFlag("Confirm moving matching mail"),
+      },
+      run: async ({ ctx, flags }) => {
+        if (!flags.yes) throw new Error("Pass --yes to move matching messages.");
+        if ((flags.destination !== undefined) === (flags.folder !== undefined))
+          throw new Error("Choose exactly one of --destination or --folder.");
+        if (!flags.match || !flags.value) throw new Error("Missing required sender match flags.");
+        const t: Translate = (text) => localizeCloudCliText(ctx.options.locale, text);
+        const scope = flags.folder ? await resolveFolderArg(ctx, flags.folder, flags.mailbox, t) : null;
+        const mailbox = scope?.mailbox ?? (await resolveMailbox(ctx, flags.mailbox));
+        const result = await readApi<MailingListDispositionResult>(
+          ctx,
+          `/mailboxes/${mailbox.id}/senders/disposition`,
+          jsonRequest("POST", {
+            match: flags.match,
+            value: flags.value,
+            ...(scope ? { folderId: scope.folder.id } : { destination: flags.destination }),
+            idempotencyKey: crypto.randomUUID(),
+          }),
+        );
+        if (printStructured(ctx, result)) return;
+        ctx.print(`Queued ${result.commandCount} move command(s) for ${flags.value}.`);
+        if (result.truncated) ctx.print("More than 500 placements matched. Run the command again after these commands complete.");
+      },
+    }),
     command("automation create", {
       summary: "Create a guided Mail, AI, or Spaces incoming automation from JSON or YAML",
       flags: {
@@ -7067,6 +7293,9 @@ const specialistCommands = {
       flags: {
         ...mailboxFlag,
         revision: flag.int({ required: true, min: 1, description: "Expected current revision" }),
+        "retry-failed": flag.boolean({
+          description: "Re-run only messages whose latest run of this automation version failed or was canceled",
+        }),
         yes: confirmFlag("Confirm starting the incoming-automation backfill"),
       },
       run: async ({ ctx, args, flags }) => {
@@ -7085,9 +7314,16 @@ const specialistCommands = {
           jsonRequest("POST", {
             operationId: crypto.randomUUID(),
             expectedRevision: flags.revision,
+            ...(flags["retry-failed"] ? { retryFailed: true } : {}),
           }),
         );
         if (printStructured(ctx, result)) return;
+        if (result.retryFailed) {
+          ctx.print(
+            `Started retry backfill ${result.operationId} for ${result.candidateCount} message${result.candidateCount === 1 ? "" : "s"} whose last run failed or was canceled.`,
+          );
+          return;
+        }
         ctx.print(
           `Started backfill ${result.operationId} for ${result.candidateCount} candidate message${result.candidateCount === 1 ? "" : "s"}.`,
         );
@@ -7107,6 +7343,14 @@ const specialistCommands = {
           `/mailboxes/${mailbox.id}/incoming-automations/${requireMailResourceId(args.automationId, "Incoming automation id")}/backfills/${args.operationId}`,
         );
         if (printStructured(ctx, result)) return;
+        if (result.retryFailed) {
+          ctx.print(
+            `${result.state}: ${result.newlyAcceptedCount}/${result.candidateCount} re-run, ${result.remainingCount} remaining${
+              result.state === "limited" ? "; run another retry backfill to continue" : ""
+            }${result.lastError ? ` · ${result.lastError}` : ""}`,
+          );
+          return;
+        }
         ctx.print(
           `${result.state}: ${result.alreadyAcceptedCount + result.newlyAcceptedCount}/${result.candidateCount} accepted, ${
             result.remainingCount
@@ -7429,11 +7673,19 @@ const specialistCommands = {
       summary: "List recent durable commands",
       flags: {
         ...mailboxFlag,
+        state: flag.enum(commandStateSchema.options, {
+          description: "Only commands in this state",
+        }),
+        before: flag.string({ description: "Page before this command UUID" }),
         limit: flag.int({ min: 1, max: 100, default: 100 }),
       },
       run: async ({ ctx, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
-        const commands = await readApi<MailCommand[]>(ctx, `/mailboxes/${mailbox.id}/commands?limit=${flags.limit ?? 100}`);
+        const limit = flags.limit ?? 100;
+        const query = new URLSearchParams({ limit: String(limit) });
+        if (flags.state) query.set("state", flags.state);
+        if (flags.before) query.set("before", flags.before);
+        const commands = await readApi<MailCommand[]>(ctx, `/mailboxes/${mailbox.id}/commands?${query}`);
         printTable(
           ctx,
           commands,
@@ -7443,6 +7695,7 @@ const specialistCommands = {
             state: item.state,
             attempt: item.attempt,
             id: item.id,
+            error: text.truncate((item.lastError ?? "").replace(/\s+/g, " ").trim(), 80),
           })),
           [
             { key: "created", label: "CREATED" },
@@ -7450,8 +7703,12 @@ const specialistCommands = {
             { key: "state", label: "STATE" },
             { key: "attempt", label: "ATTEMPT" },
             { key: "id", label: "COMMAND ID" },
+            { key: "error", label: "ERROR" },
           ],
         );
+        const last = commands.at(-1);
+        if (ctx.options.output === "text" && commands.length === limit && last)
+          ctx.print(`Next page: --before ${last.id}${flags.state ? ` --state ${flags.state}` : ""}`);
       },
     }),
     command("command get", {

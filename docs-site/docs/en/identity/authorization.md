@@ -153,7 +153,8 @@ To decide one resource for many subjects, for example the readers of a
 [live channel](/en/docs/automation/live-updates), use
 `getEffectivePermissions({ accessIds, subjects })`. It returns one permission
 per subject, in the same order, with one query instead of one per subject, by
-the same rules.
+the same rules. `accessIds` accepts an array or a Bun `SQLQuery` selecting one
+uuid column, so large grant sets can stay in the database.
 
 ## Check inside the service
 

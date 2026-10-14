@@ -1,4 +1,5 @@
 import { parseDocument, stringify } from "yaml";
+import { AI_SKILL_FILE_MOUNT } from "./file-mount";
 
 export const AI_SKILL_NAME_MAX_CHARS = 64;
 export const AI_SKILL_DESCRIPTION_MAX_CHARS = 1024;
@@ -26,7 +27,11 @@ export type AiSkillDocument = {
   extraFrontmatter: AiSkillExtraFrontmatter;
 };
 
-const OPTIONAL_FRONTMATTER_FIELDS = new Set(["license", "compatibility", "metadata", "allowed-tools"]);
+export const isAiSkillManualOnly = (extraFrontmatter: AiSkillExtraFrontmatter): boolean =>
+  extraFrontmatter["disable-model-invocation"] === true;
+
+export const mountAiSkillInstructionLinks = (name: string, instructions: string): string =>
+  instructions.replace(/\]\((references\/[a-z0-9][a-z0-9._-]*\.md)\)/g, (_, path: string) => `](${AI_SKILL_FILE_MOUNT}/${name}/${path})`);
 
 const assertJsonValue = (value: unknown, path: string): void => {
   if (value === null || typeof value === "string" || typeof value === "boolean") return;
@@ -35,7 +40,7 @@ const assertJsonValue = (value: unknown, path: string): void => {
     value.forEach((item, index) => assertJsonValue(item, `${path}[${index}]`));
     return;
   }
-  if (typeof value === "object") {
+  if (typeof value === "object" && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)) {
     for (const [key, child] of Object.entries(value)) assertJsonValue(child, `${path}.${key}`);
     return;
   }
@@ -73,8 +78,8 @@ export const validateAiSkillInstructions = (value: string): string => {
 
 export const validateAiSkillExtraFrontmatter = (value: AiSkillExtraFrontmatter = {}): AiSkillExtraFrontmatter => {
   for (const key of Object.keys(value)) {
-    if (!OPTIONAL_FRONTMATTER_FIELDS.has(key)) {
-      throw new Error(`Unsupported SKILL.md frontmatter field "${key}".`);
+    if (key === "name" || key === "description") {
+      throw new Error(`SKILL.md frontmatter field "${key}" must not appear in extraFrontmatter; it would collide on export.`);
     }
   }
   assertJsonValue(value, "Skill frontmatter");
@@ -109,7 +114,8 @@ export const validateAiSkillReferences = (references: readonly AiSkillReferenceI
   });
 };
 
-export const parseAiSkillMarkdown = (source: string): AiSkillDocument => {
+/** Split SKILL.md into its frontmatter fields and body without validating either; local clients apply their own rules. */
+export const splitAiSkillMarkdown = (source: string): { fields: Record<string, unknown>; body: string } => {
   const normalized = source.replace(/\r\n/g, "\n");
   if (!normalized.startsWith("---\n")) throw new Error("SKILL.md must start with YAML frontmatter.");
   const end = normalized.indexOf("\n---\n", 4);
@@ -120,7 +126,11 @@ export const parseAiSkillMarkdown = (source: string): AiSkillDocument => {
   if (!frontmatter || typeof frontmatter !== "object" || Array.isArray(frontmatter)) {
     throw new Error("SKILL.md frontmatter must be a YAML object.");
   }
-  const fields = { ...(frontmatter as Record<string, unknown>) };
+  return { fields: { ...(frontmatter as Record<string, unknown>) }, body: normalized.slice(end + 5) };
+};
+
+export const parseAiSkillMarkdown = (source: string): AiSkillDocument => {
+  const { fields, body } = splitAiSkillMarkdown(source);
   if (typeof fields.name !== "string") throw new Error("SKILL.md frontmatter requires a string name.");
   if (typeof fields.description !== "string") throw new Error("SKILL.md frontmatter requires a string description.");
   const name = validateAiSkillName(fields.name);
@@ -130,7 +140,7 @@ export const parseAiSkillMarkdown = (source: string): AiSkillDocument => {
   return {
     name,
     description,
-    instructions: validateAiSkillInstructions(normalized.slice(end + 5)),
+    instructions: validateAiSkillInstructions(body),
     extraFrontmatter: validateAiSkillExtraFrontmatter(fields),
   };
 };

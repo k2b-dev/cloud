@@ -7,10 +7,12 @@ import { DatePicker, DateTimePicker } from "../inputs/DatePicker";
 import { ImageInput } from "../inputs/FileInputs";
 import { NumberInput } from "../inputs/NumberInput";
 import { Select } from "../inputs/Select";
+import { resolveSelectMessages } from "../inputs/select-messages";
 import { TagsInput } from "../inputs/TagsInput";
 import { TextInput } from "../inputs/TextInput";
 import { resolveUiMessages } from "../intl/messages";
 import { dialogCore, type OpenDialogOptions } from "./dialog-core";
+import { resolvePromptMessages } from "./prompt-messages";
 
 export interface DialogOptions {
   signal?: AbortSignal;
@@ -171,6 +173,7 @@ const isEmpty = (value: unknown): boolean =>
 
 export const createFormState = <T extends Record<string, FieldSchema>>(schema: T) => {
   const messages = resolveUiMessages();
+  const promptMessages = resolvePromptMessages();
   const [values, setValues] = createStore<Record<string, PromptFormValue>>({});
   const [errors, setErrors] = createStore<Record<string, string | undefined>>({});
   // Errors appear with the first submit and then follow every change. Before that, a check that fails mid-input,
@@ -191,12 +194,12 @@ export const createFormState = <T extends Record<string, FieldSchema>>(schema: T
       if (customError) return customError;
     }
     if (field.type === "text" && typeof value === "string" && value.length > 0) {
-      if (field.minLength !== undefined && value.length < field.minLength) return messages.minCharacters({ count: field.minLength });
-      if (field.maxLength !== undefined && value.length > field.maxLength) return messages.maxCharacters({ count: field.maxLength });
+      if (field.minLength !== undefined && value.length < field.minLength) return promptMessages.minCharacters({ count: field.minLength });
+      if (field.maxLength !== undefined && value.length > field.maxLength) return promptMessages.maxCharacters({ count: field.maxLength });
     }
     if (field.type === "tags" && Array.isArray(value) && value.length > 0) {
-      if (field.minTags !== undefined && value.length < field.minTags) return messages.minTags({ count: field.minTags });
-      if (field.maxTags !== undefined && value.length > field.maxTags) return messages.maxTags({ count: field.maxTags });
+      if (field.minTags !== undefined && value.length < field.minTags) return promptMessages.minTags({ count: field.minTags });
+      if (field.maxTags !== undefined && value.length > field.maxTags) return promptMessages.maxTags({ count: field.maxTags });
     }
     return null;
   };
@@ -477,14 +480,14 @@ const openSearchPrompt = <T extends unknown = unknown>(resolver: CloudSearchReso
       const searchError = createMemo(() => {
         const error = searchMutation.error();
         if (!error || error.name === "AbortError") return null;
-        return error.message || resolveUiMessages().searchFailed;
+        return error.message || resolvePromptMessages().searchFailed;
       });
       const shouldShowResults = createMemo(() => {
         if (query().trim().length < minQueryLength) return false;
         return hasLoaded() || searchError() !== null || items().length > 0;
       });
       const emptyStateText = createMemo(() => {
-        if (!hasLoaded()) return options?.emptyText ?? resolveUiMessages().typeToSearch;
+        if (!hasLoaded()) return options?.emptyText ?? resolveSelectMessages().typeToSearch;
         return options?.noResultsText ?? resolveUiMessages().noResults;
       });
       const { debouncedFn: debounceSearch, cancel: cancelDebounce } = timed.debounce((nextQuery: string) => {
@@ -740,7 +743,7 @@ export const prompts = {
                   {options?.cancelText || resolveUiMessages().cancel}
                 </button>
                 <button type="button" class="k2b-button" data-variant={options?.variant ?? "primary"} onClick={() => close(true)}>
-                  {options?.confirmText || resolveUiMessages().confirm}
+                  {options?.confirmText || resolvePromptMessages().confirm}
                 </button>
               </footer>
             </div>
@@ -748,7 +751,7 @@ export const prompts = {
         }
 
         // The catalog owns word order; the slot marks where the verbatim phrase is rendered as code.
-        const [labelBefore, labelAfter] = resolveUiMessages().typeToConfirm({ phrase: PHRASE_SLOT }).split(PHRASE_SLOT);
+        const [labelBefore, labelAfter] = resolvePromptMessages().typeToConfirm({ phrase: PHRASE_SLOT }).split(PHRASE_SLOT);
         const [confirmationValue, setConfirmationValue] = createSignal("");
         const canConfirm = () => confirmationValue() === confirmationPhrase;
         const submit = (event: SubmitEvent) => {
@@ -786,7 +789,7 @@ export const prompts = {
                 {options?.cancelText || resolveUiMessages().cancel}
               </button>
               <button type="submit" class="k2b-button" data-variant={options?.variant ?? "primary"} disabled={!canConfirm()}>
-                {options?.confirmText || resolveUiMessages().confirm}
+                {options?.confirmText || resolvePromptMessages().confirm}
               </button>
             </footer>
           </form>
@@ -799,7 +802,7 @@ export const prompts = {
         signal: options?.signal,
         cancelBehavior: options?.cancelBehavior,
         history: options?.history,
-        ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().confirmation,
+        ariaLabel: options?.ariaLabel ?? options?.title ?? resolvePromptMessages().confirmation,
       },
     );
   },
@@ -813,7 +816,7 @@ export const prompts = {
       contentClassName: contentClass(),
       signal: config.signal,
       cancelBehavior: config.cancelBehavior,
-      ariaLabel: config.ariaLabel ?? config.title ?? resolveUiMessages().form,
+      ariaLabel: config.ariaLabel ?? config.title ?? resolvePromptMessages().form,
     })) ?? null,
 
   dialog: <T extends unknown = unknown>(

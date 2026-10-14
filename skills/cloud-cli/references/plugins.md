@@ -16,6 +16,10 @@ cld help
 
 `cld plugins list` shows, per profile, each plugin's app, installed and available version, status, and source. `available` means the Cloud serves it and it is not installed; `update available` means the Cloud serves another version; `not served` means the Cloud no longer serves an installed plugin; `unknown` means the Cloud could not be reached. Package plugins show profile `*` and `ok`, `shadowed`, `incompatible`, or `error`. `cld help` lists the modules that are installed for the current profile.
 
+The SHORT NAMES column shows aliases and shortcuts, with `(inactive)` for conflicts or a missing served list; JSON rows include `alias` (string or null), `shortcuts` (object, empty when none), and `inactive` (list of names). `cld plugins list` also refreshes the saved list of served modules, so a short name stops taking the name of a module the Cloud started serving.
+
+`cld help` shows active short names such as `assistant (ai)` and lists command shortcuts. Agents use the full module name in commands they run or write down.
+
 ## Install, update, and remove
 
 ```bash

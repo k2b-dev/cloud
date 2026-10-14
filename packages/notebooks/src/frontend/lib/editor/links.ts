@@ -13,6 +13,7 @@ import { anchorHash, parseNoteLink } from "../../../lib/heading-anchors";
 import { openAttachmentById } from "../attachment-preview";
 import { navigateToNotebookNote } from "../soft-navigation";
 import { type CursorZoneState, cursorZoneStateField, selectionIntersectsRange } from "./_lib/cursor-zone-field";
+import { makeOpener } from "./_lib/link-opener";
 import { buildAttachmentContentUrl, extractAttachmentId, isSafeMarkdownUrl } from "./attachment-url";
 
 type LinkData = {
@@ -25,28 +26,6 @@ type LinkData = {
   /** Set if the link is an `attach://<shortId>` reference to a non-image blob. */
   attachmentId: string | null;
   notebookId: string;
-};
-
-/** The element opens its link on click and, where the editor is read-only, from the keyboard as a link. */
-const makeOpener = (el: HTMLElement, view: EditorView, open: () => void) => {
-  el.classList.add("cm-link-open");
-  el.setAttribute("role", "link");
-  if (view.state.readOnly) el.tabIndex = 0;
-  el.onmousedown = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-  el.onclick = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    open();
-  };
-  el.onkeydown = (e) => {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    e.stopPropagation();
-    open();
-  };
 };
 
 class LinkWidget extends WidgetType {
@@ -85,9 +64,8 @@ class LinkWidget extends WidgetType {
     }
 
     // Web and mail links read like rendered ones: prose text with a thin
-    // accent underline. Clicking a web link's text positions the cursor for
-    // editing and its small ↗ opens it in a new tab; a mail link has no arrow,
-    // so its text opens it.
+    // accent underline. CodeMirror handles caret placement and selection on
+    // web link text; the ↗ opens it. Mail link text opens the link.
     const container = document.createElement("span");
     container.className = "cm-link-widget";
     const open = () => window.open(url, "_blank", "noopener,noreferrer");
@@ -117,10 +95,11 @@ class LinkWidget extends WidgetType {
   }
 
   override ignoreEvent(event: Event) {
-    // Pills, mail labels and the ↗ act on their own and keep the editor's
-    // cursor; a web link's text passes its events to CodeMirror, which then
-    // positions the cursor for editing.
-    return (event.target as HTMLElement).closest(".cm-link-open") !== null;
+    // Pills, mail labels and the ↗ open on click and keep the editor's
+    // cursor; a press on them still starts a drag selection. A web link's
+    // text passes its events to CodeMirror, which then positions the cursor
+    // for editing.
+    return event.type !== "mousedown" && event.target instanceof Element && event.target.closest(".cm-link-open") !== null;
   }
 }
 
@@ -185,22 +164,5 @@ export const linksExtension = (notebookId: string): Extension => {
     },
   });
 
-  const eventHandlers = EditorView.domEventHandlers({
-    mousedown(event, view) {
-      const target = event.target as HTMLElement;
-      // Pills, mail labels and the ↗ act through their own handlers. Bail out
-      // so CodeMirror doesn't reposition the cursor.
-      if (target.closest(".cm-link-open")) return true;
-      if (target.closest(".cm-link-label")) {
-        const pos = view.posAtDOM(target);
-        if (pos !== null) {
-          view.dispatch({ selection: { anchor: pos } });
-          return true;
-        }
-      }
-      return false;
-    },
-  });
-
-  return [stateField, theme, eventHandlers];
+  return [stateField, theme];
 };

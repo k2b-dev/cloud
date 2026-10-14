@@ -7,6 +7,7 @@ Read this reference when configuring managed automatic replies, conversation ref
 | Need | Use |
 | --- | --- |
 | Out-of-office or receipt acknowledgement | `automatic-reply ...` |
+| Clean up existing mail from one sender or domain | `sender preview`, `sender move` |
 | Guided sender, content, or attachment routing plus Mail and AI actions | `automation ...` |
 | Permanent human-facing conversation ids | `reference ...` plus `ensureConversationReference` |
 | Conditional routing, tagging, assignment, drafts, sends, or notifications | `workflow ...` |
@@ -152,22 +153,38 @@ Use `mode: matching` with a condition set for sender, domain, subject, body, or 
 The incoming-automation file is strict: unknown fields are rejected. An invalid definition names each field by its path, for example `scope.conditions.items: Required. Expected a list.` The CLI checks the file before sending it. The API answers `400` with code `BAD_INPUT`, a summary `message`, and `issues: [{ field, code, message }]` in the request locale. `name` accepts 1–120 characters and new definitions default to `enabled: false` when the field is omitted.
 
 - `scope.mode: all` needs no conditions. `scope.mode: matching` requires a `conditions` object with `mode: all|any` and an `items` list of 1–8 unique conditions, for example `conditions: { mode: all, items: [{ field: sender_address, operator: is, value: user@example.com }] }`.
-- Condition fields are `sender_address`, `sender_domain`, `subject`, `body_text`, and `attachment_presence`. Sender address and domain use only `operator: is`; subject and body accept `is`, `contains`, `starts_with`, or `ends_with`; attachment presence uses `is` with a boolean `value`. Address values accept 1–320 characters, domains 1–253, and subject or body values 1–1,000.
+- Condition fields are `sender_address`, `sender_domain`, `subject`, `body_text`, and `attachment_presence`. Sender address and domain accept `operator: is` or `is_not`; subject and body accept `is`, `contains`, `not_contains`, `starts_with`, or `ends_with`; attachment presence uses `is` with a boolean `value`. Address values accept 1–320 characters, domains 1–253, and subject or body values 1–1,000.
+- Use `is_not` to exclude an address or domain and `not_contains` to exclude text. For example, combine a subject `contains` condition with a sender-domain `is_not` condition in `mode: all`. Negated sender conditions alone do not make junk or trash safe: `all` needs at least one positive external sender condition, and `any` needs every condition to be a positive external sender condition.
 - Step kinds are `mail_action`, `ai_generate_text`, `ai_classify`, `ai_classify_many`, `ai_extract_event`, `link_space_item`, `create_space_event`, `create_reply_draft`, `add_comment`, `set_summary`, and `if`. Every step has a unique UUID in `id`.
 - Direct `mail_action` values are `junk`, `trash`, `mark_read`, `add_keyword`, `move_to_folder`, `add_local_tag`, `assign_user`, and `set_status`. Catalog-backed actions use `folderId`, `tagId`, or `userId`; `move_to_folder.folderId` and `add_local_tag.tagId` also accept an exact folder or tag name and are saved as the ID, while a name shared by several folders or tags needs the ID; status accepts `needs_action`, `waiting`, or `done`. `add_keyword.keyword` accepts 1–100 characters and must use valid provider-keyword syntax.
 - `ai_generate_text` takes `instructions` of 1–4,000 characters and `maxOutputChars` of 200–10,000. Classification takes 2–10 choices with case-insensitively unique names; a choice `name` accepts 1–80 characters and its `description` 1–500. `ai_classify_many.maxChoices` is from 1 to the number of choices.
 - `ai_extract_event` takes 1–4,000 characters of `instructions` and an explicit IANA `timeZone`. It returns strict event data with a `ready` guard. `create_space_event` accepts either that earlier `sourceStepId` or explicit `title`, ISO `startsAt`, ISO `endsAt`, optional `description` and `location`, and `allDay`; AI ambiguity stops creation. `link_space_item` takes one writable Spaces `itemId`, while destinations use `spaceId` and `columnId`.
 - A text consumer uses `body: { kind: custom, value: ... }` with 1–50,000 characters or `body: { kind: step_output, sourceStepId: ... }`. Only an earlier text-producing AI step is valid, and a multi-choice result is not a text source. `create_reply_draft` additionally requires a catalog `senderIdentityId`.
 - An `if` condition references an earlier AI `sourceStepId`: use `equals` for generated text or single classification and `includes` for multi-classification. Its `value` accepts 1–500 characters and must name a declared choice for classification. Both `then` and `else` are step arrays of at most 12 items.
-- A definition starts with 1–20 top-level steps, contains at most 40 steps across branches, has at most 4 branch levels, and makes at most 10 AI calls. One reachable path may contain only one provider message action, one assignment, one status change, and one summary replacement; it cannot add the same local tag twice. Consecutive `if` steps are on the same path because both can match; put mutually exclusive actions in the `then` and `else` branches of one `if`. `set_status` is a local status change, not a provider message action, so it can share a path with `mark_read`.
+- A definition starts with 1–20 top-level steps, contains at most 40 steps across branches, has at most 4 branch levels, and makes at most 10 AI calls. One reachable path may change flags and keywords before at most one placement (`junk`, `trash`, or `move_to_folder`); put `mark_read` and `add_keyword` before that placement. Repeated flag or keyword actions are allowed. No provider message change may follow the placement. A path may contain one assignment, one status change, and one summary replacement; it cannot add the same local tag twice. Consecutive `if` steps are on the same path because both can match; put mutually exclusive actions in the `then` and `else` branches of one `if`. `set_status` is a local status change, not a provider message action, so it can share a path with `mark_read`.
 
-Automations apply to incoming mail only; Cloud rejects a mailbox's own active identities. Destructive flows must restrict every possible match to an external sender or domain and reject configured internal domains, subdomains, and unsafe parent domains. `automation get` exposes the exact generated workflow YAML.
+Automations apply to incoming mail only; positive sender-address conditions cannot target a mailbox's own active identities. Negated sender conditions can exclude those identities. Destructive flows must restrict every possible match to an external sender or domain and reject configured internal domains, subdomains, and unsafe parent domains. `automation get` exposes the exact generated workflow YAML.
 
-Preview sender-scoped work before changing existing messages:
+Preview sender-scoped work before changing existing messages. Sender moves and incoming automations compare only the first From address. Sender moves require one; an automation's `is_not` sender condition also matches a message without a From address, while `is` does not:
+
+```bash
+cld --json mail sender preview --match domain --value example.com
+cld --json mail sender move --match domain --value example.com --destination archive --yes
+cld --json mail sender move --match sender --value news@example.com --folder Projects --yes
+```
+
+`sender move` requires mailbox-wide write access and `--yes`. Choose exactly one of `--destination archive|trash` or `--folder <name-or-id>`. Addresses must be valid and domains complete; the mailbox's own active sender identities are rejected and their mail is excluded from domain matches. Disabled identities and aliases not configured in Cloud count as external senders.
+
+Moves select live synchronized copies in active folders. They skip the destination and folders whose provider or configured role is Sent, Drafts, Trash, or Junk. Kept conversations are not moved to a folder whose provider or configured role is Trash, Junk, or Drafts; Archive and other folders remain allowed. Preview counts matching incoming copies before these cleanup exclusions, so its count can exceed the queued count.
+
+Each call queues at most 500 move commands and returns `{ commandCount, truncated }`. If `truncated` is true, wait for those commands to complete, then rerun the command; a rerun before then queues the same copies again. The idempotency key deduplicates each copy, not the request: replaying a key after its moves ran selects again and queues the next matching batch with a new count. Most providers get one move per live copy. On Gmail, where folders are labels of one message, Mail queues at most one move per message, from its Inbox copy. Only for a Trash or Junk destination does a message without an Inbox copy move from its All Mail copy, and only when All Mail is visible over IMAP. Other labels are never sources, and a message with a live Sent, Drafts, Trash, or Junk copy or a `\Sent` or `\Draft` label is skipped. So Archive (All Mail) removes only the Inbox label, a folder move replaces the Inbox label with the folder label and leaves archived mail alone, and Trash or Junk takes the whole message once, including archived mail.
+
+To apply a saved automation to existing mail:
 
 ```bash
 cld --json mail sender preview --match sender --value news@example.com
 cld --json mail automation backfill start <automation-id> --revision <revision> --yes
+cld --json mail automation backfill start <automation-id> --revision <revision> --retry-failed --yes
 cld --json mail automation backfill status <automation-id> <operation-id>
 cld --json mail automation backfill cancel <automation-id> <operation-id> --yes
 ```
@@ -183,9 +200,15 @@ Backfill `state` is `queued`, `running`, or `waiting` while active, then one of 
 
 `candidateCount` and `alreadyAcceptedCount` are fixed when the backfill starts, and `newlyAcceptedCount` never decreases. "Accepted" means the message was handed to the workflow runtime, not that its actions already ran; the Mail **Automations > Activity** view shows execution.
 
+`--retry-failed` re-runs messages that a backfill would otherwise skip: matching messages whose latest run of the current automation version ended `failed` or `canceled` before the retry started, whether that run came from new mail or an earlier backfill. It never repeats `succeeded`, `needs_attention`, or still active runs; a run that fails later is left for the next retry backfill. A retry backfill has the same permission, revision, AI, and 100-message limits as a normal one, and the response reports `retryFailed: true`. Its `candidateCount` is the number of such messages at start, `alreadyAcceptedCount` is `0`, `newlyAcceptedCount` counts messages it re-ran, and `remainingCount` counts the rest; start another retry backfill while the state is `limited`. Each message runs at most once per retry operation, so replaying the same request emits nothing new; a later retry operation re-runs a message whose retry failed again.
+
+A retry runs the whole flow again, including steps that succeeded before the failure. Steps that set a state (mail actions, assignment, status, tags, summary, Spaces links) set the same state again. Steps that create something on every run would create it a second time, so `--retry-failed` refuses flows with `add_comment`, `create_reply_draft`, or `create_space_event` steps. A run that moved its message before it failed is not retried, because the message is no longer where that run found it.
+
+To repair failed runs, for example moves lost to a provider error, run `--retry-failed` alone, repeat it while the state is `limited`, and check **Automations > Activity** for the results. A normal backfill is for messages that arrived before the automation was active: it hands over every matching message that no earlier backfill of this version handed over, including messages the automation already processed on arrival, so their steps run again.
+
 AI flows intentionally process only future mail. Cancel an active backfill before editing, disabling, or deleting its automation. Mutations require the revision shown by `automation get`; they refuse stale state instead of silently adopting the latest revision.
 
-Spaces actions use an encrypted, revocable delegation created for the configuring user. Current Mail and Spaces permissions are rechecked when a run executes. Event creation is idempotent across retries. Removing all Spaces steps or deleting the automation revokes the delegation. Use `set_status: done` to complete a conversation; `needs_action` or `waiting` reopens it, while a verified new inbound message already reopens a completed conversation automatically.
+Spaces actions use an encrypted, revocable delegation created for the configuring user. Current Mail and Spaces permissions are rechecked when a run executes. Event creation is idempotent across step retries within one run. Removing all Spaces steps or deleting the automation revokes the delegation. `done` is a local collaboration state and does not mark messages read; unread counts follow the provider `seen` flag, so add `mark_read` or workflow `addFlag` with `flag: seen` to clear unread counts. Use `set_status: done` to complete a conversation; `needs_action` or `waiting` reopens it, while a verified new inbound message already reopens a completed conversation automatically.
 
 ## Configure conversation references
 
@@ -280,7 +303,7 @@ Activation reconciles schedules into the shared scheduler. Every delivered slot 
 
 Mail exposes two input types:
 
-- `mailMessage`: `id`, `conversationId`, `subject`, `sender`, `recipients`, `body`, `bodyText`, `bodyHtml`, `attachments`, `hasAttachments`, `folderId`, `flags`, `keywords`, `direction`, `internalDate`, and `receivedAt`.
+- `mailMessage`: `id`, `conversationId`, `subject`, `sender`, `fromAddress`, `fromDomain`, `recipients`, `body`, `bodyText`, `bodyHtml`, `attachments`, `hasAttachments`, `folderId`, `flags`, `keywords`, `direction`, `internalDate`, and `receivedAt`.
 - Mail resource fields in workflow inputs and outputs use stable six-character Mail IDs; provider references and database UUIDs are not part of that workflow vocabulary.
 - `mailConversation`: `id`, `subject`, `summary`, `summaryRevision`, `assigneeUserIds`, `workStatus`, and `latestMessageAt`.
 
@@ -294,7 +317,28 @@ Conditions are recursive and contain exactly one operator:
 - `exists` accepts one reference such as `inputs.conversation.summary`.
 - `all` and `any` contain one or more conditions; `not` contains one condition.
 
-Steps may use `if`/`then`/`else` and `switch`/`cases`/`default`. The shared parser understands `forEach`, but the Mail binder rejects it because each Mail event starts one durable workflow run.
+Steps may use `if`/`then`/`else`. A switch uses `switch: <expression>`, `cases:` as a non-empty list of `{ when: <value>, do: [steps] }` entries, and an optional `default: [steps]`:
+
+```yaml
+inputs:
+  message:
+    type: mailMessage
+    required: true
+triggers:
+  messageReceived:
+    with:
+      message: "${{ trigger.message }}"
+steps:
+  - switch: "${{ inputs.message.fromDomain }}"
+    cases:
+      - when: example.com
+        do:
+          - addFlag: { message: inputs.message, flag: seen }
+    default:
+      - succeed: { message: No matching domain }
+```
+
+The shared parser understands `forEach`, but the Mail binder rejects it because each Mail event starts one durable workflow run.
 
 ## Use the complete action vocabulary
 
@@ -492,7 +536,7 @@ Cancellation does not undo completed effects. If an external effect has an uncer
 
 ## Understand budgets, permissions, and recovery
 
-Every saved version carries limits for targets, moves, copies, sends, drafts, flag changes, notifications, keyword changes, collaboration changes, and AI calls. Defaults are 1,000 for targets, moves, copies, sends, drafts, and notifications; 2,000 for flag, keyword, and collaboration changes; and 10 for AI calls.
+Every saved version carries limits for targets, moves, copies, sends, drafts, flag changes, notifications, keyword changes, collaboration changes, and AI calls. These effect budgets, including `maxAiCalls`, apply per workflow run, not across the version's lifetime; fan-out children share their root run's budget. Defaults are 1,000 for targets, moves, copies, sends, drafts, and notifications; 2,000 for flag, keyword, and collaboration changes; and 10 for AI calls.
 
 The accepted maximum is 50,000 for targets, moves, copies, sends, drafts, and notifications; 100,000 for flag, keyword, and collaboration changes; and 1,000 for AI calls. `maxTargets` must be at least 1; every other budget may be `0` to forbid that effect.
 
@@ -500,7 +544,7 @@ Creating versions and activating or deactivating workflows requires mailbox `adm
 
 Runs use the active version's mailbox-owned authority, so removing the activating administrator's later personal access does not silently disable approved automation. Deactivation or replacement prevents new runs. Runs already accepted retain their pinned version and authority; cancel them centrally to stop unfinished work.
 
-Provider actions create idempotent Mail commands. A step may wait for a command or message hydration. Durable outcomes survive retries; lease generations fence stale workers; dependency completion wakes waiting runs. Ambiguous provider outcomes become `needs_attention` rather than being blindly repeated.
+Provider actions create idempotent Mail commands. On one message, any number of flag or keyword changes may precede one move, copy, archive, trash, or junk action; no provider action may follow that placement. The first action checks the frozen provider state; later actions account for this run's confirmed changes and still reject other flag or keyword drift. Two incoming automations that both change the same message on the provider can still conflict: a flag change by one can make the other's move fail with `REMOTE_STATE_CHANGED`, and a move by one can make the other's later flag change fail. Put such changes in one automation. A step may wait for a command or message hydration. Durable outcomes survive retries; lease generations fence stale workers; dependency completion wakes waiting runs. Ambiguous provider outcomes become `needs_attention` rather than being blindly repeated.
 
 A step that waits for its command is checked again every 30 seconds. The check runs the step under a new execution generation, and the step keeps waiting for the command it already created. When the command finishes, the step takes its result, also when its move already took the message out of the folder where the step found it. A command is cancelled with `WORKFLOW_CANCELED` only when its run was canceled or has ended, or when its step finished without it. If the provider change may already have started, the command becomes `needs_attention` instead.
 
@@ -544,6 +588,7 @@ The Mail API manages definitions and activations only. Runtime observability and
 | Area | Commands |
 | --- | --- |
 | Automatic replies | `automatic-reply list|create|update` |
+| Sender cleanup | `sender preview`, `sender move` |
 | Incoming automations | `automation catalog|list|get|create|update|delete`, `automation backfill start|status|cancel` |
 | References | `reference config show|set`, `reference list|ensure|find` |
 | Workflow lifecycle | `workflow list|get|validate|create|update|export|activate|deactivate`, `workflow version list|get|create|restore` |

@@ -36,3 +36,14 @@ export function pathCrumbs(path: string) {
   const parts = path.split("/").filter(Boolean);
   return parts.map((name, index) => ({ name, path: parts.slice(0, index + 1).join("/") }));
 }
+
+/**
+ * Files starts at all storage when there is more than one storage and the address names no non-empty storage,
+ * folder or file, no search after trimming, and no trash, shares, recent or favorites view. Unknown views and
+ * edit without a file are ignored, matching the normalized snapshot address. A single storage opens inside it.
+ */
+export const showsOverview = (params: URLSearchParams, storageCount: number) =>
+  storageCount > 1 &&
+  !["base", "path", "file"].some((key) => params.get(key)) &&
+  !params.get("q")?.trim() &&
+  !["trash", "shares", "recent", "favorites"].includes(params.get("view") ?? "");

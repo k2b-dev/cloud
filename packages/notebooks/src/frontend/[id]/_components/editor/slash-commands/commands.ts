@@ -1,8 +1,17 @@
 import { startCompletion } from "@codemirror/autocomplete";
 import { crypto as stdCrypto } from "@k2b/stdlib";
+import { setListKind } from "../../../../lib/editor/list-commands";
 import { openNoteSearchPrompt } from "../../search/openNoteSearchPrompt";
 import { openAttachmentPicker } from "../AttachmentPicker";
-import { insertAtCursor, insertCallout, insertCodeBlock, insertDataBlock, insertLink, insertTable, setHeading } from "../editor-actions";
+import {
+  insertAtCursor,
+  insertCallout,
+  insertCodeBlock,
+  insertDataBlock,
+  insertLink,
+  insertTable,
+  setHeadingLevel,
+} from "../editor-actions";
 import type { SlashCommand } from "./types";
 
 // =============================================================================
@@ -81,7 +90,7 @@ export const slashCommands: SlashCommand[] = [
     icon: "ti-h-1",
     section: "Formatting",
     aliases: ["heading1", "title"],
-    run: (view) => setHeading(view, 1),
+    run: (view) => setHeadingLevel(view, 1),
   },
   {
     name: "h2",
@@ -89,7 +98,7 @@ export const slashCommands: SlashCommand[] = [
     icon: "ti-h-2",
     section: "Formatting",
     aliases: ["heading2", "subtitle"],
-    run: (view) => setHeading(view, 2),
+    run: (view) => setHeadingLevel(view, 2),
   },
   {
     name: "h3",
@@ -97,7 +106,7 @@ export const slashCommands: SlashCommand[] = [
     icon: "ti-h-3",
     section: "Formatting",
     aliases: ["heading3"],
-    run: (view) => setHeading(view, 3),
+    run: (view) => setHeadingLevel(view, 3),
   },
   {
     name: "h4",
@@ -105,7 +114,7 @@ export const slashCommands: SlashCommand[] = [
     icon: "ti-h-4",
     section: "Formatting",
     aliases: ["heading4"],
-    run: (view) => setHeading(view, 4),
+    run: (view) => setHeadingLevel(view, 4),
   },
   {
     name: "h5",
@@ -113,7 +122,7 @@ export const slashCommands: SlashCommand[] = [
     icon: "ti-h-5",
     section: "Formatting",
     aliases: ["heading5"],
-    run: (view) => setHeading(view, 5),
+    run: (view) => setHeadingLevel(view, 5),
   },
   {
     name: "h6",
@@ -121,7 +130,7 @@ export const slashCommands: SlashCommand[] = [
     icon: "ti-h-6",
     section: "Formatting",
     aliases: ["heading6"],
-    run: (view) => setHeading(view, 6),
+    run: (view) => setHeadingLevel(view, 6),
   },
   {
     name: "quote",
@@ -141,16 +150,8 @@ export const slashCommands: SlashCommand[] = [
     run: (view) => insertAtCursor(view, "---\n"),
   },
 
-  // ── Lists ────────────────────────────────────────────────
-  //
-  // All three list commands support a count suffix — `/list5` spawns
-  // five empty bullets, `/todo3` three checkboxes, `/numbered7` a
-  // 1.-through-7. ordered list. Without the suffix they behave like
-  // before: insert a single prefix at the cursor.
-  //
-  // We clamp the count to a sensible upper bound (50) to defend
-  // against `/list9999` slowing the editor down. Lists of more than
-  // ~20 items via a slash command are rare in practice anyway.
+  // ── Lists ───────────────────────────────────────────────
+  // Share kind conversion with keys and the toolbar; /nameN adds empty siblings after the subtree.
   {
     name: "list",
     label: "Bullet list",
@@ -159,13 +160,9 @@ export const slashCommands: SlashCommand[] = [
     description: "Bullet list — /listN for N empty items",
     aliases: ["bullet", "ul", "unordered"],
     params: /^(\d+)$/,
-    run: (view, ctx, params) => {
-      if (params) {
-        const n = Math.max(1, Math.min(50, Number.parseInt(params[1]!, 10)));
-        insertAtCursor(view, Array.from({ length: n }, () => "- ").join("\n"));
-      } else {
-        insertAtCursor(view, "- ");
-      }
+    run: (view, _ctx, params) => {
+      const n = params ? Math.max(1, Math.min(50, Number.parseInt(params[1]!, 10))) : 1;
+      setListKind("bullet", n)(view);
     },
   },
   {
@@ -177,12 +174,8 @@ export const slashCommands: SlashCommand[] = [
     aliases: ["ol", "ordered", "enumerate"],
     params: /^(\d+)$/,
     run: (view, _ctx, params) => {
-      if (params) {
-        const n = Math.max(1, Math.min(50, Number.parseInt(params[1]!, 10)));
-        insertAtCursor(view, Array.from({ length: n }, (_, i) => `${i + 1}. `).join("\n"));
-      } else {
-        insertAtCursor(view, "1. ");
-      }
+      const n = params ? Math.max(1, Math.min(50, Number.parseInt(params[1]!, 10))) : 1;
+      setListKind("ordered", n)(view);
     },
   },
   {
@@ -194,12 +187,8 @@ export const slashCommands: SlashCommand[] = [
     aliases: ["checkbox", "task", "tasks"],
     params: /^(\d+)$/,
     run: (view, _ctx, params) => {
-      if (params) {
-        const n = Math.max(1, Math.min(50, Number.parseInt(params[1]!, 10)));
-        insertAtCursor(view, Array.from({ length: n }, () => "- [ ] ").join("\n"));
-      } else {
-        insertAtCursor(view, "- [ ] ");
-      }
+      const n = params ? Math.max(1, Math.min(50, Number.parseInt(params[1]!, 10))) : 1;
+      setListKind("task", n)(view);
     },
   },
 

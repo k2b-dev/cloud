@@ -2,7 +2,6 @@ import { LocaleProvider, MobileShell, TabBar, type TabBarItem } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { PWA_SCOPE } from "../contracts/pwa";
 import { getLocale } from "../server/locale";
-import { readThemeFromCookieHeader } from "../shared/theme";
 import { visiblePwaParts } from "./app-navigation";
 import type { LayoutContext } from "./layout-context";
 import PwaRuntime from "./PwaRuntime.island";
@@ -37,7 +36,6 @@ export default function PwaLayout(props: PwaLayoutProps) {
   const user = c.get("user");
   const cloud = c.get("settings")?.app?.name || "Cloud";
   const page = c.get("page");
-  page.theme = readThemeFromCookieHeader(c.req.raw.headers.get("Cookie"));
   page.title = props.title;
   page.pwa = { name: cloud };
   // No app page may be framed, and none leaks its address to another site.

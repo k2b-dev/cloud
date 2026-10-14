@@ -12,6 +12,7 @@ import type { CalendarItem, SpaceItem, SpaceTag } from "@/contracts";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
 import type { CalendarTray } from "../workspace/workspace-types";
 import { type CalendarFilter, parseCalendarRoute } from "./filter";
+import { calendarWindow } from "./range";
 
 // Where the tray sits below the day, that the day never moves for it, and how focus moves through it are layout and
 // interaction questions, so the calendar route renders on the server and then runs its real island bundle in a real
@@ -145,6 +146,7 @@ const serverBody = (options: { canWrite: boolean; items: CalendarItem[]; tray: C
         tags,
         initialState: {
           ...route,
+          range: calendarWindow(route.view === "year" ? "month" : route.view, new Date(route.date), dateConfig),
           items: route.view === "day" ? itemsOn(options.items, route.date) : options.items,
           weather: {},
           tray: trayFor(options.tray, route.view, route.filter),
@@ -196,6 +198,7 @@ beforeAll(async () => {
         const body = {
           kind: "calendar",
           ...route,
+          range: calendarWindow(route.view === "year" ? "month" : route.view, new Date(route.date), dateConfig),
           items: route.view === "day" ? itemsOn(data?.items ?? [], route.date) : (data?.items ?? []),
           weather: {},
           tray: trayFor(data?.tray ?? emptyTray(), route.view, route.filter),
@@ -295,7 +298,7 @@ const rounded = async (page: Page, selector: string) => {
   if (!found) throw new Error(`${selector} is not on screen`);
   return { x: Math.round(found.x), y: Math.round(found.y), width: Math.round(found.width), height: Math.round(found.height) };
 };
-const DAY = ".k2b-calendar-time-grid__scroll";
+const DAY = ".k2b-calendar-days__scroll";
 const TRAY = "[data-spaces-task-tray]";
 /** Resolves once the server has seen a view request that `match` accepts. */
 const requested = async (match: (href: string) => boolean) => {
@@ -415,19 +418,25 @@ describe(`Spaces task tray in ${browserName}`, () => {
       loading.open();
       await page.locator(`${TRAY}:not([aria-busy])`).getByText("Vertrag Stadtwerke gegenzeichnen").waitFor();
 
-      // The next day: until it is in, the row links to no day the page has not reached.
+      // A day beyond the loaded ones, through Go to: until it is in, the row links to no day the page has not reached.
       loading = gate();
       viewRequests.splice(0);
-      await page.locator(".k2b-calendar-header__nav-button").nth(1).click();
-      await requested((href) => href.includes("cd=2026-10-09"));
+      await page.evaluate(() => {
+        const detail = { commands: [] as Array<{ id: string; action: () => void }> };
+        window.dispatchEvent(new CustomEvent("cloud.command.collect", { detail }));
+        detail.commands.find((command) => command.id === "calendar.goto")?.action();
+      });
+      await page.getByRole("textbox", { name: "Gehe zu" }).fill("1.12.");
+      await page.getByRole("textbox", { name: "Gehe zu" }).press("Enter");
+      await requested((href) => href.includes("cd=2026-12-01"));
       await page.locator(`${TRAY}[aria-busy="true"]`).waitFor({ timeout: 5000 });
       expect(await page.locator(`${TRAY} a`).count()).toBe(0);
       loading.open();
-      await page.waitForURL(/cd=2026-10-09/);
+      await page.waitForURL(/cd=2026-12-01/);
       const opened = nextDetail(page);
       await page.getByRole("link", { name: /Feedback zu Wireframes/ }).click();
       const href = await opened;
-      expect(href).toContain("cd=2026-10-09");
+      expect(href).toContain("cd=2026-12-01");
       expect(href).toContain("cpriority=urgent");
       expect(href).toContain("item=Late02");
     } finally {
@@ -618,14 +627,19 @@ describe(`Spaces task tray in ${browserName}`, () => {
     await page.context().close();
   }, 60_000);
 
-  test("fits Today, the four views, and New event in one header row on a phone and tablets", async () => {
+  test("fits Today, the four views, and New event in one header row on tablets, and in two rows on a phone", async () => {
     for (const view of [phone, tablet, { width: 1366, height: 1024, touch: true }, desktop]) {
       const page = await open(view);
-      const oneRow = await page.locator(".k2b-calendar-header__actions a, .k2b-calendar-header__actions button").evaluateAll((elements) => {
-        const boxes = elements.map((element) => element.getBoundingClientRect());
-        return boxes.length >= 6 && Math.max(...boxes.map((rect) => rect.top)) < Math.min(...boxes.map((rect) => rect.bottom));
+      const rows = await page.locator(".k2b-calendar-header__actions a, .k2b-calendar-header__actions button").evaluateAll((elements) => {
+        // The shortcuts button only shows where a keyboard is likely.
+        const boxes = (list: Element[]) => list.map((element) => element.getBoundingClientRect()).filter((rect) => rect.width > 0);
+        const oneRow = (rects: DOMRect[]) => Math.max(...rects.map((rect) => rect.top)) < Math.min(...rects.map((rect) => rect.bottom));
+        const views = boxes(elements.filter((element) => element.getAttribute("role") === "radio"));
+        const others = boxes(elements.filter((element) => element.getAttribute("role") !== "radio"));
+        return { count: views.length + others.length, all: oneRow([...views, ...others]), views: oneRow(views), others: oneRow(others) };
       });
-      expect(oneRow).toBe(true);
+      // A phone keeps Today and New event beside the title and puts the views in the row below.
+      expect(rows).toEqual({ count: view === desktop ? 7 : 6, all: view !== phone, views: true, others: true });
       await page.context().close();
     }
   }, 90_000);

@@ -9,7 +9,7 @@
 .k2b-ui .k2b-panel-dialog-frame.spaces-item-create-dialog:has(.spaces-item-form[data-presentation="full"]) { width: min(96vw, 64rem); }
 @media (prefers-reduced-motion: reduce) { .k2b-ui .k2b-panel-dialog-frame.spaces-item-create-dialog { transition: none; } }
 
-.k2b-ui .spaces-overview-workspace { border-color: transparent; border-radius: 0; background: var(--ui-surface); box-shadow: none; }
+.k2b-ui .spaces-overview-workspace { background: var(--ui-surface); }
 .k2b-ui .spaces-overview-main { box-shadow: none; padding: clamp(1rem, 3vw, 2.5rem); overflow-y: auto; background: var(--ui-surface); }
 /* The overview is deliberately not a Space: one page title, one scope chip,
    one list. Spaces live in the sidebar and open their own workspace. */
@@ -51,13 +51,10 @@
 .k2b-ui .spaces-overview-mobile-activity { display: none !important; }
 .dark .spaces-overview-work-copy strong, .dark .spaces-overview-activity-meta strong { color: var(--color-zinc-50); }
 .dark .spaces-overview-activity-description { color: var(--color-zinc-300); }
-@media (min-width: 48rem) and (max-width: 63.999rem) {
-  .k2b-ui .spaces-overview-workspace .k2b-app-workspace__content { flex-direction: row; }
-  .k2b-ui .spaces-overview-workspace .spaces-overview-main { display: flex !important; }
-  .k2b-ui .spaces-overview-workspace .spaces-overview-activity { display: flex !important; width: 20rem; flex: 0 0 20rem; }
-}
 @media (max-width: 47.999rem) {
   .k2b-ui .spaces-overview-workspace .spaces-overview-main { display: flex !important; }
+  /* The activity column stays open but hidden here, so Main drops the space it would leave for a phone sheet. */
+  .k2b-ui .spaces-overview-workspace .spaces-overview-main::after { content: none !important; }
   .k2b-ui .spaces-overview-workspace .spaces-overview-activity { display: none !important; }
   .k2b-ui .spaces-overview-mobile-activity { display: inline-flex !important; }
   .spaces-overview-work-row { grid-template-columns: auto minmax(0, 1fr) auto; }
@@ -87,7 +84,7 @@
 .spaces-dependency--footer { display: block; }
 .k2b-ui .spaces-dependency__remove { flex: none; margin-inline-end: -.25rem; color: var(--k2b-text-muted); }
 .k2b-ui .spaces-dependency__remove:not(:disabled):hover { color: var(--k2b-danger-text); background: transparent; }
-@media (hover: hover) and (pointer: fine) {
+@media (any-hover: hover) {
   .k2b-ui .spaces-dependency__remove { opacity: 0; transition: opacity 120ms ease-out; }
   .k2b-ui .spaces-dependency:hover .spaces-dependency__remove, .k2b-ui .spaces-dependency:focus-within .spaces-dependency__remove { opacity: 1; }
 }

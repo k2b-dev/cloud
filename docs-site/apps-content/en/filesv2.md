@@ -31,14 +31,27 @@ README if that scan is incomplete. The file remains in the normal listing;
 when the description overflows, a fade and **Show all** action appear at the bottom.
 The action opens its full preview with normal-sized headings.
 
-Open `/app/filesv2` to choose an accessible home or group directory from the
-workspace sidebar. Your home directory is listed as **My files** with its
+Open `/app/filesv2` to start at **All storage**: one tile per storage location
+you can reach, with its name, kind, and source, followed by your recently opened
+files. A storage location that is not usable stays a tile and shows its status.
+Recent loads on its own below the tiles; if it fails, only that section shows
+the error and **Try again**, and the tiles stay usable. Open a tile to work in
+that location; you create and upload there. The overview offers no create
+action, and a file dropped on it is refused rather than uploaded or opened by
+the browser. If you can reach exactly one storage location,
+Files opens directly inside it and shows no overview. The overview is navigation
+only: it lists the same storage locations as `cld filesv2 ls` without a folder,
+and the service checks access on every request as before. Only the plain address
+changed: links with `?base=…`, `/ref/…`, trash and share links, and CLI addresses
+such as `me:/…` behave as before.
+Your home directory is listed as **Personal** with its
 technical name as secondary text; group directories carry the group's name.
 Breadcrumbs, the details panel, Recent, Favorites, and your share list use
 the same labels, while the API and CLI keep the technical `name`. Only
 storage areas that apply to your account provider are listed or reported:
 a local account never sees FreeIPA storage and a FreeIPA account never sees
-local Cloud storage. On mobile, the Cloud menu contains the same storage choices.
+local Cloud storage. With more than one storage location, the sidebar and the phone
+navigation menu start with **All storage**, followed by the same storage choices.
 Switching storage, opening folders, and changing pages update the workspace
 without reloading the whole page. Navigation and pagination stay in the URL,
 so reloads and browser Back and Forward preserve your location.
@@ -52,8 +65,14 @@ The sidebar is a folder tree per storage location; its footer offers **Search**
 **Shares**. After every navigation exactly the current path is
 expanded; the tree holds only storage locations and folders. The list is a flat striped list;
 folders open on click (the opened folder's icon becomes a spinner, a leading
-`..` row goes up), files open the details panel, and every row ends with an
-info button. The root folder of each storage location ends with a **Trash** row
+**Parent folder** row names the folder above and goes up; the header shows
+the current folder's name alone, with no back link at any depth, and Backspace
+in the list or Alt+↑ go up too), files open the details panel, and every row ends with an
+info button. With more than one storage location, the root folder of each one
+starts with an **All storage** row that leads back to the overview; Backspace
+and Alt+↑ follow it too, also in Tree view and search results, which hide the
+row. Items cannot be moved onto that row; files dropped on it from your computer
+upload into the storage root, as anywhere else in the list. The root folder of each storage location ends with a **Trash** row
 that opens its trash. **List**, **Grid**, and **Tree** views and the grid tile size are remembered
 per storage location in a cookie. Tree shows the storage from its root with the current
 folder highlighted; clicking a folder name makes it current, clicking its icon
@@ -69,13 +88,13 @@ URL. The **Sort and filter** icon button beside search groups **Sort by**,
 filter all entries, files, or folders. The default is name ascending, with folders
 before files. **Group folders** is on by default; turn it off to sort files
 and folders together. Grouping and sorting are remembered per storage location;
-reset restores name ascending, all types, and grouping. The `..` row stays above
-the entries regardless of grouping, sorting, or type filter. Sorting and filtering
+reset restores name ascending, all types, and grouping. The **Parent folder** row stays above
+the entries regardless of grouping, sorting, or type filter and cannot be selected. Sorting and filtering
 apply before pagination. With grouping on, all folder pages come before file
 pages; each group uses the selected order. These options stay in the URL.
 An expired or invalidated cursor restarts at the first page with a notice.
 Entries can be dragged onto folders or the
-`..` row to move them (resting on a folder opens or expands it), and marked as
+**Parent folder** row to move them (resting on a folder opens or expands it), and marked as
 favorites. **Recent** and **Favorites** open compact sidebar menus on desktop
 and dialogs from mobile navigation. Recent shows the latest entries with relative
 times; favorites are alphabetical. Entries are checked against current access
@@ -684,7 +703,7 @@ Files declares `fileProvider: { list: "provider.list", read: "content.read",
 save: "provider.save" }` in its capability manifest:
 
 - `provider.list` shows a person's usable storage bases as the root, under the
-  names Files shows, such as **My files**. While storage cannot be reached,
+  names Files shows, such as **Personal**. While storage cannot be reached,
   the root fails with `unavailable` (503), even if other bases work, so an
   outage never looks like missing storage. Inside a base it lists readable
   folders first, then files, filtered by name inside the folder. A folder is

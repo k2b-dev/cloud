@@ -2,7 +2,94 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applyTestRuntimeEnv, dotenvLeak, infraMappings, noEnvFile, testRuntimeEnv } from "./test-infra-env";
+import { workspaceRoot } from "../workspace";
+import {
+  applyTestRuntimeEnv,
+  dotenvLeak,
+  expandTestDatabaseUrl,
+  infraMappings,
+  noEnvFile,
+  readTestTarget,
+  testRuntimeEnv,
+} from "./test-infra-env";
+
+describe("checkout test database", () => {
+  test("expands the database target and every runtime alias to the same checkout database", () => {
+    const env = { CLOUD_TEST_DATABASE_URL: " postgres://user:pass@localhost:5432/cloud_{checkout}_test " };
+    const target = readTestTarget(env, "database");
+    expect(target).toMatch(/^postgres:\/\/user:pass@localhost:5432\/cloud_[a-z0-9_]+_test$/);
+    expect(target).toBe(expandTestDatabaseUrl(env.CLOUD_TEST_DATABASE_URL.trim(), workspaceRoot));
+    const runtime = testRuntimeEnv(env);
+    expect(runtime.DATABASE_URL).toBe(target);
+    expect(runtime.POSTGRES_URL).toBe(target);
+    expect(runtime.PGURL).toBe(target);
+  });
+
+  test("uses the checkout directory name and preserves connection options", () => {
+    expect(
+      expandTestDatabaseUrl("postgres://user:p%40ss@localhost:5432/cloud_{checkout}_test?sslmode=require#tag", "/repos/Feature-843"),
+    ).toBe("postgres://user:p%40ss@localhost:5432/cloud_feature_843_test?sslmode=require#tag");
+  });
+
+  test("lowercases, collapses punctuation, and trims separators", () => {
+    expect(expandTestDatabaseUrl("postgres://localhost/cloud_{checkout}_test", "/repos/__Feature .. X--Ä 2___")).toBe(
+      "postgres://localhost/cloud_feature_x_2_test",
+    );
+    expect(expandTestDatabaseUrl("postgres://localhost/cloud_{checkout}_test", "/repos/---")).toBe(
+      "postgres://localhost/cloud_checkout_test",
+    );
+  });
+
+  test("caps the full database identifier while preserving the template and _test suffix", () => {
+    const template = "postgres://localhost/cloud_{checkout}_test";
+    const root = `/repos/${"a".repeat(100)}`;
+    const expanded = expandTestDatabaseUrl(template, root);
+    expect(new URL(expanded).pathname.slice(1)).toBe(`cloud_${"a".repeat(52)}_test`);
+    expect(expandTestDatabaseUrl(template, root)).toBe(expanded);
+    expect(expandTestDatabaseUrl(expanded, root)).toBe(expanded);
+    expect(new URL(expandTestDatabaseUrl(template, `/repos/${"a".repeat(51)}--branch`)).pathname.slice(1)).toBe(
+      `cloud_${"a".repeat(51)}_test`,
+    );
+  });
+
+  test("budgets for every placeholder and UTF-8 bytes in the fixed name", () => {
+    const root = `/repos/${"a".repeat(100)}`;
+    const name = decodeURIComponent(
+      new URL(expandTestDatabaseUrl("postgres://localhost/ä_{checkout}_{checkout}_test", root)).pathname.slice(1),
+    );
+    expect(name).toBe(`ä_${"a".repeat(27)}_${"a".repeat(27)}_test`);
+    expect(Buffer.byteLength(name)).toBe(63);
+    expect(() => expandTestDatabaseUrl(`postgres://localhost/${"x".repeat(58)}{checkout}_test`, root)).toThrow("63-byte");
+  });
+
+  test("keeps percent-encoded characters in the database name encoded", () => {
+    expect(expandTestDatabaseUrl("postgres://localhost/cloud_%25_{checkout}_test", "/repos/branch")).toBe(
+      "postgres://localhost/cloud_%25_branch_test",
+    );
+    const expanded = expandTestDatabaseUrl("postgres://localhost/cloud_%2520_{checkout}_test", "/repos/branch");
+    expect(decodeURIComponent(new URL(expanded).pathname.slice(1))).toBe("cloud_%20_branch_test");
+  });
+
+  test("does not expand placeholders in credentials or query parameters", () => {
+    const target = "postgres://{checkout}:pass@localhost/cloud_test?application_name={checkout}";
+    expect(expandTestDatabaseUrl(target, "/repos/branch")).toBe(target);
+  });
+
+  test("keeps application_name on an alias already bound to the expanded database", () => {
+    const template = "postgres://localhost/cloud_{checkout}_test";
+    const expanded = expandTestDatabaseUrl(template);
+    const named = `${expanded}?application_name=worker`;
+    expect(testRuntimeEnv({ CLOUD_TEST_DATABASE_URL: template, DATABASE_URL: named }).DATABASE_URL).toBe(named);
+  });
+
+  test("leaves targets without a database placeholder unchanged", () => {
+    const target = "postgres://user:pass@localhost:5432/cloud_test?application_name=runner";
+    expect(readTestTarget({ CLOUD_TEST_DATABASE_URL: ` ${target} ` }, "database")).toBe(target);
+    expect(readTestTarget({ CLOUD_TEST_DATABASE_URL: " " }, "database")).toBeUndefined();
+    const other = "https://localhost/{checkout}";
+    expect(readTestTarget({ CLOUD_TEST_FILEGATE_URL: other }, "filegate")).toBe(other);
+  });
+});
 
 describe("test runtime aliases", () => {
   test("map every configured CLOUD_TEST_* target to its runtime variables", () => {

@@ -3,6 +3,7 @@ import { fromBase64Strict } from "@k2b/stdlib";
 import type { TopicInventoryEntry } from "@k2b/sync";
 import * as Y from "yjs";
 import { notebooksYjs } from "../lib/yjs";
+import type { NoteVersionContributorInput } from "./notes";
 
 /** One document log for every note; the note id is the Sync tenant. */
 export const YJS_TOPIC_ID = "cloud:notebooks:yjs";
@@ -169,14 +170,21 @@ export const replayYjsTopicToCursor = async (config: {
   targetCursor: string;
   doc: Y.Doc;
   signal?: AbortSignal;
-}): Promise<void> => {
+}): Promise<NoteVersionContributorInput[]> => {
+  const contributors = new Map<string, NoteVersionContributorInput>();
   const topic = createYjsTopic();
   const after = config.after ?? topic.cursorAt(0);
-  if (compareStreamCursor(after, config.targetCursor) >= 0) return;
+  if (compareStreamCursor(after, config.targetCursor) >= 0) return [];
   let reachedTarget = false;
   for await (const event of topic.replay({ tenantId: config.noteId, after, until: config.targetCursor, signal: config.signal })) {
     applyYjsTopicEvent(config.doc, event, config.noteId);
+    if (event.data.actor)
+      contributors.set(`${event.data.actor.kind}:${event.data.actor.id}`, {
+        ...event.data.actor,
+        lastContributedAt: event.publishedAt,
+      });
     reachedTarget = event.cursor === config.targetCursor;
   }
   if (!reachedTarget) throw new Error(`Target cursor "${config.targetCursor}" was not reached during replay`);
+  return [...contributors.values()];
 };

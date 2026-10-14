@@ -8,6 +8,11 @@ const mailDraftJournalSchema = z.object({
   content: draftEditableContentInputSchema,
 });
 
+export const serializeMailDraftContent = (content: DraftEditableContent): string => {
+  const { signatureTemplateId, ...rest } = content;
+  return JSON.stringify({ ...rest, signatureTemplateId: signatureTemplateId ?? null });
+};
+
 type DraftJournalStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export const readMailDraftJournal = (storage: DraftJournalStorage, key: string): MailDraftJournal | null => {
@@ -28,7 +33,7 @@ export const advanceMailDraftJournalAfterSave = (config: {
   savedContent: DraftEditableContent;
 }): boolean => {
   const journal = readMailDraftJournal(config.storage, config.key);
-  if (!journal || JSON.stringify(journal.content) === JSON.stringify(config.savedContent)) {
+  if (!journal || serializeMailDraftContent(journal.content) === serializeMailDraftContent(config.savedContent)) {
     config.storage.removeItem(config.key);
     return false;
   }

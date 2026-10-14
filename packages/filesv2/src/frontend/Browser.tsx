@@ -1,3 +1,4 @@
+import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { PageTrail } from "@k2b/cloud/ssr/islands";
 import { downloadArchive } from "@k2b/filegate/utils";
 import { navigate as commitHistory, type LinkNavigateEvent } from "@k2b/ssr/nav";
@@ -99,6 +100,7 @@ export default function Browser(props: {
   onRetry?: () => void;
   onOpenDirectory?: (path: string) => void;
   onOpenTrash?: () => void;
+  onOpenOverview?: () => void;
   onSearch?: (query: string | null) => void;
   onBrowseChange?: (options: BrowseOptions) => void;
   onChanged?: (selectPath?: string | null) => void | Promise<void>;
@@ -1110,14 +1112,61 @@ export default function Browser(props: {
   const goUp = () => {
     setOpening("up");
     selection.clear();
-    props.onOpenDirectory?.(parentPath(folder()));
+    if (folder()) props.onOpenDirectory?.(parentPath(folder()));
+    else props.onOpenOverview?.();
   };
   const openTrash = () => {
     setOpening("trash");
     props.onOpenTrash?.();
   };
-  const virtualBefore = (): VirtualRow[] =>
-    folder() && !searching() && view().view !== "tree" ? [{ key: "up", label: "..", icon: "ti ti-folder-up", onClick: goUp }] : [];
+  const parentName = () => folderLabel(parentPath(folder()));
+  const up = () => {
+    if (folder())
+      return {
+        label: b().parentRow,
+        detail: parentName(),
+        ariaLabel: b().parentFolderUp(parentName()),
+        icon: "ti ti-folder-up",
+        action: goUp,
+      };
+    if (props.onOpenOverview) return { label: b().allStorage, ariaLabel: b().allStorageUp, icon: "ti ti-layout-grid", action: goUp };
+    return null;
+  };
+  // Alt+↑ follows the same way up as the listing; the shell offers no way up for a folder (see `filesTitle`).
+  createEffect(() => {
+    const target = up();
+    if (!target) return;
+    onCleanup(
+      registerContextAwareCommand({
+        id: "filesv2.parent-folder",
+        title: target.label,
+        description: target.ariaLabel,
+        icon: target.icon,
+        shortcut: "alt+arrowup",
+        action: target.action,
+      }),
+    );
+  });
+  // Backspace does the same while the listing has the focus, never while someone types.
+  const upOnBackspace = (event: KeyboardEvent) => {
+    if (event.key !== "Backspace" || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.defaultPrevented) return;
+    const target = up();
+    if (!target || !(event.target instanceof Element) || !event.target.closest(".filesv2-browser__collection")) return;
+    if (event.target.closest("input,textarea,select,[contenteditable]")) return;
+    event.preventDefault();
+    target.action();
+  };
+  let surface!: HTMLDivElement;
+  onMount(() => {
+    surface.addEventListener("keydown", upOnBackspace);
+    onCleanup(() => surface.removeEventListener("keydown", upOnBackspace));
+  });
+  const virtualBefore = (): VirtualRow[] => {
+    const target = up();
+    return target && !searching() && view().view !== "tree"
+      ? [{ key: "up", label: target.label, detail: target.detail, ariaLabel: target.ariaLabel, icon: target.icon, onClick: target.action }]
+      : [];
+  };
   const virtualAfter = (): VirtualRow[] =>
     !folder() && !searching() && props.onOpenTrash
       ? [{ key: "trash", label: b().trashTitle, icon: "ti ti-trash", onClick: openTrash }]
@@ -1169,19 +1218,24 @@ export default function Browser(props: {
     toggle: b().toggleFolder,
     select: b().selectEntry,
     more: b().more,
-    up: b().parentFolderUp,
   });
+  const closeInspector = () => {
+    const focused = selection.focused();
+    selection.clear();
+    if (focused) selection.focus(focused);
+  };
+
   return (
     <>
       <AppWorkspace.Main scroll={false} class="filesv2-browser" aria-busy={props.pending}>
-        <div class="filesv2-browser__surface">
+        <div ref={surface} class="filesv2-browser__surface">
           <FileDropTarget
             label={b().dropInto({ name: folderLabel(folder()) })}
             disabled={searching() || !canCreate()}
             onDrop={(files, { dataTransfer }) => dropFiles(files, dataTransfer, folder())}
           />
           <header class="filesv2-browser__header">
-            {/* The folder's title with its path; Files draws this header itself, so it holds the shell's trail. */}
+            {/* The folder's name alone at every depth; Files draws this header itself, so it holds the shell's title. */}
             <PageTrail />
             <div class="flex items-center gap-2">
               <input
@@ -1387,7 +1441,7 @@ export default function Browser(props: {
             </InlineGuidance>
           </Show>
           <Show
-            when={props.directory.items.length || (!searching() && (folder() || props.onOpenTrash))}
+            when={props.directory.items.length || (!searching() && (folder() || props.onOpenTrash || props.onOpenOverview))}
             fallback={
               <Placeholder
                 class="flex-1"
@@ -1487,9 +1541,11 @@ export default function Browser(props: {
                         );
                       }}
                       renderLabel={(row) => <span title={virtualOf(row) ? undefined : row.name}>{row.name}</span>}
-                      renderMeta={(row) =>
-                        searching() && !virtualOf(row) ? <span title={parentOf(row.path)}>{parentOf(row.path)}</span> : null
-                      }
+                      renderMeta={(row) => {
+                        const virtual = virtualOf(row);
+                        if (virtual) return virtual.detail ?? null;
+                        return searching() ? <span title={parentOf(row.path)}>{parentOf(row.path)}</span> : null;
+                      }}
                     />
                     <Show when={!props.directory.items.length}>
                       <Placeholder class="mx-2" icon="ti ti-folder" title={b().emptyTitle} description={b().emptyDescription} />
@@ -1531,7 +1587,7 @@ export default function Browser(props: {
           </nav>
         </div>
       </AppWorkspace.Main>
-      <AppWorkspace.Detail id="filesv2-inspector" open={detailOpen()} width="md">
+      <AppWorkspace.Detail id="filesv2-inspector" open={detailOpen()} onClose={closeInspector} width="md">
         <Show when={detailOpen()}>
           <FileInspector
             base={props.directory.base}
@@ -1540,11 +1596,7 @@ export default function Browser(props: {
             selected={selected()}
             initial={props.detail}
             busy={busy()}
-            onClose={() => {
-              const focused = selection.focused();
-              selection.clear();
-              if (focused) selection.focus(focused);
-            }}
+            onClose={closeInspector}
             onOpen={open}
             onPreview={preview}
             editable={editable}

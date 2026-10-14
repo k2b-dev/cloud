@@ -62,6 +62,9 @@
   --k2b-action: var(--k2b-accent-700);
   --k2b-action-hover: var(--k2b-accent-800);
   --k2b-app-workspace-active: var(--k2b-action);
+  /* Neutral and translucent, so sidebar hover shows on any sidebar surface and
+     never sits in the platform blue beside an app's accent. */
+  --k2b-app-workspace-hover: color-mix(in srgb, var(--k2b-text) 5%, transparent);
   /* Underline and arrow of web and mail links in content. An optional host
      hook, as for the workspace accent; Cloud maps it to the app accent. */
   --k2b-link-accent: var(--k2b-action);
@@ -939,9 +942,12 @@
   cursor: pointer;
 }
 
+/* Sidebar hover is neutral and translucent, like the switcher head above the
+   rows: it shows on any sidebar surface and never competes with the app's
+   accent on the current row. */
 .k2b-ui .k2b-app-workspace__sidebar-item:hover {
   color: var(--k2b-text);
-  background: var(--k2b-hover);
+  background: var(--k2b-app-workspace-hover);
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item:focus-visible {
@@ -1005,8 +1011,8 @@
 }
 
 .k2b-ui .k2b-app-workspace__nav-tree-toggle:hover {
-  color: var(--k2b-action);
-  background: var(--k2b-hover);
+  color: var(--k2b-text);
+  background: var(--k2b-app-workspace-hover);
 }
 
 .k2b-ui .k2b-app-workspace__nav-tree-toggle > i {
@@ -1026,7 +1032,7 @@
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item.is-active:hover {
-  background: var(--k2b-hover);
+  background: var(--k2b-app-workspace-hover);
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item:disabled {
@@ -1040,49 +1046,71 @@
   text-align: center;
 }
 
-/* Cloud: `.sidebar-item-label` clips, `.sidebar-item-label-text` is an
-   inline-block at `max-content` that the marquee translates. `text-overflow`
-   on the outer span cannot apply to an inline-block child, so it is dropped —
-   the animation, not an ellipsis, is how a long label is read in full. */
+/* A row's label takes up to two balanced lines and ends with an ellipsis after
+   them, so names that share a beginning stay apart without hover or motion. A
+   hidden copy of a plain-text label at the weight of the current row sizes it,
+   so selecting a row never wraps it onto another line. `data-lines="1"` keeps
+   one line with an ellipsis instead. */
 .k2b-ui .k2b-app-workspace__sidebar-item-label {
   @apply min-w-0 flex-1;
+  display: grid;
+  text-align: start;
+}
+
+.k2b-ui .k2b-app-workspace__sidebar-item-label-text,
+.k2b-ui .k2b-app-workspace__sidebar-item-label[data-label]::after {
+  display: -webkit-box;
+  grid-area: 1 / 1;
+  align-self: center;
   overflow: hidden;
-  text-align: left;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
-.k2b-ui .k2b-app-workspace__sidebar-item-label-text {
-  display: inline-block;
-  min-width: max-content;
-  transform: translateX(0);
+.k2b-ui .k2b-app-workspace__sidebar-item-label[data-label]::after {
+  content: attr(data-label) / "";
+  font-weight: 600;
+  visibility: hidden;
 }
 
-@keyframes k2b-sidebar-label-marquee {
-  0%,
-  15% {
-    transform: translateX(0);
-  }
-  85%,
-  100% {
-    transform: translateX(calc(-1 * var(--k2b-sidebar-label-overflow, 0px)));
-  }
-}
-
-/* `data-overflow` is written by `installAppWorkspaceController` once it has
-   measured the label, so a label that fits never animates. */
-.k2b-ui .k2b-app-workspace__sidebar-item-label[data-overflow="true"][data-marquee="true"]:hover .k2b-app-workspace__sidebar-item-label-text,
+/* A status changes its marks while the row is on screen, so a row with one
+   keeps one line from its first paint, also while the status shows nothing:
+   a new count or mention never re-wraps its label. Other metadata must keep
+   its width while the row is shown. */
 .k2b-ui
-  .k2b-app-workspace__sidebar-item:focus-within
-  .k2b-app-workspace__sidebar-item-label[data-overflow="true"][data-marquee="true"]
-  .k2b-app-workspace__sidebar-item-label-text {
-  animation: k2b-sidebar-label-marquee 4s ease-in-out 0.2s infinite alternate;
+  .k2b-app-workspace__sidebar-item-label:is(
+    [data-lines="1"],
+    :has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status),
+    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
+  ) {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .k2b-ui .k2b-app-workspace__sidebar-item-label-text {
-    animation: none !important;
-    transform: none !important;
-  }
+.k2b-ui
+  .k2b-app-workspace__sidebar-item-label:is(
+    [data-lines="1"],
+    :has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status),
+    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
+  )::after {
+  display: none;
+}
+
+/* `text-wrap: balance` above would turn wrapping back on. */
+.k2b-ui
+  .k2b-app-workspace__sidebar-item-label:is(
+    [data-lines="1"],
+    :has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status),
+    .k2b-app-workspace__sidebar-item-copy:has(~ .k2b-app-workspace__sidebar-item-meta .k2b-app-workspace__sidebar-status) > *
+  )
+  > .k2b-app-workspace__sidebar-item-label-text {
+  display: inline;
+  white-space: nowrap;
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-item-meta {
@@ -1106,6 +1134,12 @@
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
+}
+
+/* A status with nothing to show still marks its row as live, which keeps the
+   label on one line, but its slot takes no space while it is all the slot holds. */
+.k2b-ui .k2b-app-workspace__sidebar-item-meta:has(> .k2b-app-workspace__sidebar-status:only-child:empty) {
+  display: none;
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-status-muted,
@@ -1149,6 +1183,12 @@
 .k2b-ui .k2b-app-workspace__sidebar-status-count[data-mention="true"] {
   color: #ffffff;
   background: var(--k2b-action-solid);
+}
+
+/* A waiting count that dropped to zero stays in place, muted, until the row goes away on the next navigation. */
+.k2b-ui .k2b-app-workspace__sidebar-status[data-waiting="zero"] .k2b-app-workspace__sidebar-status-count {
+  color: var(--k2b-text-muted);
+  background: color-mix(in srgb, var(--k2b-text) 5%, transparent);
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-status-dot {
@@ -1503,7 +1543,7 @@
   font-size: 0.8125rem;
 }
 
-.k2b-ui .k2b-button:not(:disabled):hover {
+.k2b-ui .k2b-button:not(:disabled, [aria-disabled="true"]):hover {
   background: var(--k2b-action-solid-hover);
 }
 
@@ -1527,11 +1567,11 @@
   outline-offset: min(var(--k2b-focus-offset), calc(var(--k2b-focus-offset) * 2));
 }
 
-.k2b-ui .k2b-button:not(:disabled):active {
+.k2b-ui .k2b-button:not(:disabled, [aria-disabled="true"]):active {
   scale: 0.98;
 }
 
-.k2b-ui .k2b-button:disabled {
+.k2b-ui .k2b-button:is(:disabled, [aria-disabled="true"]) {
   opacity: 0.4;
   cursor: not-allowed;
   box-shadow: none;
@@ -1544,7 +1584,7 @@
   background: var(--k2b-surface);
 }
 
-.k2b-ui .k2b-button[data-variant="secondary"]:not(:disabled):hover {
+.k2b-ui .k2b-button[data-variant="secondary"]:not(:disabled, [aria-disabled="true"]):hover {
   color: var(--k2b-text);
   background: var(--k2b-hover);
 }
@@ -1554,7 +1594,7 @@
   background: transparent;
 }
 
-.k2b-ui .k2b-button[data-variant="ghost"]:not(:disabled):hover {
+.k2b-ui .k2b-button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):hover {
   color: var(--k2b-text);
   background: var(--k2b-hover);
 }
@@ -1566,7 +1606,7 @@
   background: transparent;
 }
 
-.k2b-ui .k2b-button[data-variant="text"]:not(:disabled):hover {
+.k2b-ui .k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
   color: var(--k2b-text);
   background: transparent;
 }
@@ -1576,7 +1616,7 @@
   background: var(--k2b-field-surface, var(--k2b-surface-muted));
 }
 
-.k2b-ui .k2b-button[data-variant="subtle"]:not(:disabled):hover {
+.k2b-ui .k2b-button[data-variant="subtle"]:not(:disabled, [aria-disabled="true"]):hover {
   color: var(--k2b-text);
   background: var(--k2b-hover);
 }
@@ -1592,7 +1632,7 @@
   width: 2.25rem;
 }
 
-.k2b-ui .k2b-button[data-variant="input"]:not(:disabled):hover {
+.k2b-ui .k2b-button[data-variant="input"]:not(:disabled, [aria-disabled="true"]):hover {
   border-color: var(--k2b-border);
   color: var(--k2b-text);
   background: var(--k2b-field-hover, var(--k2b-hover));
@@ -1609,7 +1649,7 @@
   background: var(--k2b-danger-600);
 }
 
-.k2b-ui .k2b-button[data-variant="danger"]:not(:disabled):hover {
+.k2b-ui .k2b-button[data-variant="danger"]:not(:disabled, [aria-disabled="true"]):hover {
   background: color-mix(in srgb, var(--k2b-danger-600) 86%, #000000);
 }
 
@@ -1618,7 +1658,7 @@
   background: var(--k2b-warning-500);
 }
 
-.k2b-ui .k2b-button[data-variant="warning"]:not(:disabled):hover {
+.k2b-ui .k2b-button[data-variant="warning"]:not(:disabled, [aria-disabled="true"]):hover {
   background: color-mix(in srgb, var(--k2b-warning-500) 86%, #000000);
 }
 
@@ -1626,7 +1666,7 @@
   background: var(--k2b-success-600);
 }
 
-.k2b-ui .k2b-button[data-variant="success"]:not(:disabled):hover {
+.k2b-ui .k2b-button[data-variant="success"]:not(:disabled, [aria-disabled="true"]):hover {
   background: color-mix(in srgb, var(--k2b-success-600) 86%, #000000);
 }
 
@@ -1636,7 +1676,7 @@
   background: var(--k2b-ai-solid);
 }
 
-.k2b-ui .k2b-button[data-variant="ai"]:not(:disabled):hover {
+.k2b-ui .k2b-button[data-variant="ai"]:not(:disabled, [aria-disabled="true"]):hover {
   border-color: var(--k2b-ai-solid-hover);
   color: var(--k2b-ai-on-solid);
   background: var(--k2b-ai-solid-hover);
@@ -1716,7 +1756,7 @@
   transition: scale 100ms ease-out;
 }
 
-.k2b-ui .k2b-split-button > .k2b-button:not(:disabled):active {
+.k2b-ui .k2b-split-button > .k2b-button:not(:disabled, [aria-disabled="true"]):active {
   scale: none;
 }
 
@@ -1745,7 +1785,7 @@
     transition: none;
   }
 
-  .k2b-ui .k2b-button:not(:disabled):active,
+  .k2b-ui .k2b-button:not(:disabled, [aria-disabled="true"]):active,
   .k2b-ui .k2b-dropdown.k2b-split-button:has(> .k2b-split-button__primary:not(:disabled):active) {
     scale: none;
   }
@@ -3101,14 +3141,15 @@
   margin-bottom: 0;
 }
 
-@media (hover: hover) and (pointer: fine) {
+@media (any-hover: hover) {
   .k2b-ui .k2b-discussion__item-actions[data-visibility="progressive"] {
     opacity: 0;
     transition: opacity 120ms ease-out;
   }
 
   .k2b-ui .k2b-discussion__item:hover .k2b-discussion__item-actions[data-visibility="progressive"],
-  .k2b-ui .k2b-discussion__item:focus-within .k2b-discussion__item-actions[data-visibility="progressive"] {
+  .k2b-ui .k2b-discussion__item:focus-within .k2b-discussion__item-actions[data-visibility="progressive"],
+  .k2b-ui .k2b-discussion__item-actions[data-visibility="progressive"]:has([aria-expanded="true"]) {
     opacity: 1;
   }
 }
@@ -3142,9 +3183,9 @@
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
 }
 
-.k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="ghost"]:not(:disabled):hover,
-.k2b-ui .k2b-detail-panel__section-actions .k2b-button[data-variant="ghost"]:not(:disabled):hover,
-.k2b-ui .k2b-discussion__actions .k2b-button[data-variant="ghost"]:not(:disabled):hover {
+.k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):hover,
+.k2b-ui .k2b-detail-panel__section-actions .k2b-button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):hover,
+.k2b-ui .k2b-discussion__actions .k2b-button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):hover {
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 9%, transparent);
 }
@@ -3187,13 +3228,13 @@
   gap: 0.5rem;
 }
 
-.k2b-ui .k2b-button.k2b-detail-panel__section-summary:not(:disabled):hover {
+.k2b-ui .k2b-button.k2b-detail-panel__section-summary:not(:disabled, [aria-disabled="true"]):hover {
   background: transparent;
 }
 
 .k2b-ui .k2b-detail-panel__section-summary:not(:disabled):hover .k2b-detail-panel__section-title,
 .k2b-ui .k2b-detail-panel__section-summary:not(:disabled):hover .k2b-detail-panel__section-toggle,
-.k2b-ui .k2b-button.k2b-detail-panel__section-toggle:not(:disabled):hover {
+.k2b-ui .k2b-button.k2b-detail-panel__section-toggle:not(:disabled, [aria-disabled="true"]):hover {
   color: var(--k2b-text);
 }
 
@@ -3220,7 +3261,7 @@
   font-size: 0.75rem;
 }
 
-.k2b-ui .k2b-button.k2b-detail-panel__section-toggle:not(:disabled):hover {
+.k2b-ui .k2b-button.k2b-detail-panel__section-toggle:not(:disabled, [aria-disabled="true"]):hover {
   background: transparent;
 }
 
@@ -3244,7 +3285,7 @@
   background: transparent;
 }
 
-.k2b-ui .k2b-button.k2b-detail-panel__action:not(:disabled):hover,
+.k2b-ui .k2b-button.k2b-detail-panel__action:not(:disabled, [aria-disabled="true"]):hover,
 .k2b-ui .k2b-button.k2b-detail-panel__action:focus-visible {
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
   background: transparent;
@@ -3274,20 +3315,20 @@
   background: transparent;
 }
 
-.k2b-ui .k2b-button.k2b-detail-panel__action-menu-trigger:not(:disabled):hover,
+.k2b-ui .k2b-button.k2b-detail-panel__action-menu-trigger:not(:disabled, [aria-disabled="true"]):hover,
 .k2b-ui .k2b-button.k2b-detail-panel__action-menu-trigger:focus-visible,
-.k2b-ui .k2b-button.k2b-detail-panel__action-secondary:not(:disabled):hover,
+.k2b-ui .k2b-button.k2b-detail-panel__action-secondary:not(:disabled, [aria-disabled="true"]):hover,
 .k2b-ui .k2b-button.k2b-detail-panel__action-secondary:focus-visible {
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
   background: transparent;
 }
 
-.k2b-ui .k2b-button.k2b-detail-panel__action-secondary[data-tone="danger"]:not(:disabled):hover,
+.k2b-ui .k2b-button.k2b-detail-panel__action-secondary[data-tone="danger"]:not(:disabled, [aria-disabled="true"]):hover,
 .k2b-ui .k2b-button.k2b-detail-panel__action-secondary[data-tone="danger"]:focus-visible {
   color: var(--k2b-danger-text);
 }
 
-@media (hover: hover) and (pointer: fine) {
+@media (any-hover: hover) {
   .k2b-ui .k2b-detail-panel__action-secondary,
   .k2b-ui .k2b-detail-panel__action-menu-trigger {
     opacity: 0;
@@ -3861,11 +3902,13 @@
     align-items: center;
   }
 
-  .k2b-ui .k2b-app-workspace__sidebar-section {
+  /* Only the sidebar's strip drops section headers; a section in the content area, such as a phone's list page,
+     keeps its title and actions. */
+  .k2b-ui .k2b-app-workspace__sidebar .k2b-app-workspace__sidebar-section {
     flex-direction: row;
   }
 
-  .k2b-ui .k2b-app-workspace__sidebar-section-header {
+  .k2b-ui .k2b-app-workspace__sidebar .k2b-app-workspace__sidebar-section-header {
     display: none;
   }
 }
@@ -4402,7 +4445,11 @@
   padding-inline-end: 0.125rem;
 }
 
-@media (hover: hover) and (pointer: fine) {
+/* Row actions: once any pointer can hover, such as a mouse on a tablet whose
+   primary pointer is the finger, a row shows its hover actions only while it is
+   hovered, focused, current, or has its menu open. The current row keeps them,
+   so a finger still reaches them; a touch-only screen shows them on every row. */
+@media (any-hover: hover) {
   .k2b-ui .k2b-app-workspace__sidebar-section-actions {
     opacity: 0;
     pointer-events: none;
@@ -4415,34 +4462,96 @@
     pointer-events: auto;
   }
 
-  .k2b-ui .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"],
-  .k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
-    display: none;
+  /* Hidden metadata keeps its box, so revealing it never narrows the label
+     onto another line. */
+  .k2b-ui .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
+    visibility: hidden;
   }
 
-  .k2b-ui
-    .k2b-app-workspace__sidebar-item:is(:hover, :focus-within)
-    :is(.k2b-app-workspace__sidebar-item-meta[data-visibility="hover"], .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]) {
-    display: inline-flex;
+  /* Hidden hover actions keep their box, so revealing them moves nothing, and
+     stay out of the tab order and the accessibility tree until they show. */
+  .k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
+    visibility: hidden;
+  }
+
+  .k2b-ui .k2b-app-workspace__sidebar-item:is(:hover, :focus-within) .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
+    visibility: visible;
+  }
+
+  .k2b-ui .k2b-app-workspace__sidebar-item:is(:hover, :focus-within, .is-active, :has(> [aria-current="page"])) .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
+    visibility: visible;
   }
 
   /* Roving focus rests on the tree node, which also contains its children's
      rows: the node reveals only its own row, and not while focus is in a
-     child. Focus within, rather than on, the node keeps the actions rendered
+     child. Focus within, rather than on, the node keeps the actions shown
      while Tab moves from the node into them; the browser drops focus aimed at
      a trigger hidden at that moment. */
   .k2b-ui
     .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
     > .k2b-app-workspace__nav-tree-row
-    :is(.k2b-app-workspace__sidebar-item-meta[data-visibility="hover"], .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]) {
-    display: inline-flex;
+    .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
+    visibility: visible;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
+    > .k2b-app-workspace__nav-tree-row
+    .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
+    visibility: visible;
   }
 
   /* A menu opened from hover actions renders in the top layer, outside the
      row's hover and focus. Its trigger stays until the menu closes; hiding it
      would stop rendering the menu while the pointer travels into it. */
   .k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:has([aria-haspopup][aria-expanded="true"]) {
-    display: inline-flex;
+    visibility: visible;
+  }
+
+  /* Hover actions that end the row overlay its trailing edge, before a tree
+     row's chevron: they take no width from the label, and while they show,
+     the text under them fades as it does under a single hover action. */
+  .k2b-ui .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child) {
+    position: relative;
+  }
+
+  .k2b-ui .k2b-app-workspace__sidebar-item > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+  }
+
+  /* The chevron is 1.5rem wide and the row ends 0.125rem after it. */
+  .k2b-ui
+    .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-main > .k2b-app-workspace__nav-tree-toggle)
+    > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child {
+    inset-inline-end: 1.625rem;
+  }
+
+  .k2b-ui
+    :is(
+      .k2b-app-workspace__sidebar-item:is(:hover, :focus-within, .is-active, :has(> [aria-current="page"])),
+      .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
+        > .k2b-app-workspace__nav-tree-row,
+      .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions [aria-haspopup][aria-expanded="true"])
+    ):not([data-variant="object"]:has(.k2b-app-workspace__sidebar-item-meta)):has(
+      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child
+    )
+    > .k2b-app-workspace__sidebar-item-main {
+    --k2b-sidebar-item-fade-inset: 2.5rem;
+  }
+
+  .k2b-ui
+    :is(
+      .k2b-app-workspace__sidebar-item:is(:hover, :focus-within, .is-active, :has(> [aria-current="page"])),
+      .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
+        > .k2b-app-workspace__nav-tree-row,
+      .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions [aria-haspopup][aria-expanded="true"])
+    ):not([data-variant="object"]:has(.k2b-app-workspace__sidebar-item-meta)):has(
+      > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:last-child > :nth-child(2)
+    )
+    > .k2b-app-workspace__sidebar-item-main {
+    --k2b-sidebar-item-fade-inset: 4.25rem;
   }
 
   /* Hover actions and the row chevron overlay the row's trailing edge:
@@ -4481,7 +4590,7 @@
   }
 
   .k2b-ui
-    .k2b-app-workspace__sidebar-item:where(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open))
+    .k2b-app-workspace__sidebar-item:where(:hover, :focus-within, .is-active, :has(> [aria-current="page"]), :has(.k2b-app-workspace__sidebar-preview:popover-open))
     > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"] {
     opacity: 1;
     pointer-events: auto;
@@ -4491,7 +4600,7 @@
     .k2b-app-workspace__sidebar-item:not(
       [data-has-actions="true"],
       :has(> .k2b-app-workspace__sidebar-item-action:not([data-visibility="hover"]))
-    ):where(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open)):has(
+    ):where(:hover, :focus-within, .is-active, :has(> [aria-current="page"]), :has(.k2b-app-workspace__sidebar-preview:popover-open)):has(
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
     )
     > .k2b-app-workspace__sidebar-item-main {
@@ -4502,7 +4611,7 @@
     .k2b-app-workspace__sidebar-item:not(
       [data-has-actions="true"],
       :has(> .k2b-app-workspace__sidebar-item-action:not([data-visibility="hover"]))
-    ):where(:hover, :focus-within, :has(.k2b-app-workspace__sidebar-preview:popover-open)):has(
+    ):where(:hover, :focus-within, .is-active, :has(> [aria-current="page"]), :has(.k2b-app-workspace__sidebar-preview:popover-open)):has(
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
     ):has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger])
     > .k2b-app-workspace__sidebar-item-main {
@@ -4559,14 +4668,6 @@
     );
   }
 
-  /* The fading end is padding, which the label text runs into but the
-     marquee measures without, so the text ends where it is fully visible. */
-  .k2b-ui
-    .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-action[data-visibility="hover"])
-    .k2b-app-workspace__sidebar-item-label[data-marquee="true"] {
-    padding-inline-end: var(--k2b-sidebar-item-fade-inset, 0px);
-  }
-
   /* Object rows keep their trailing count column in place: revealed actions
      overlay the counts instead of pushing them toward the title. */
   .k2b-ui
@@ -4587,7 +4688,7 @@
   .k2b-ui
     .k2b-app-workspace__sidebar-item[data-variant="object"]:has(
       > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]
-    ):is(:hover, :focus-within)
+    ):is(:hover, :focus-within, .is-active, :has(> [aria-current="page"]))
     .k2b-app-workspace__sidebar-item-meta {
     opacity: 0;
   }
@@ -4660,8 +4761,8 @@
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-icon-action:hover {
-  color: var(--k2b-app-workspace-active);
-  background: var(--k2b-hover);
+  color: var(--k2b-text);
+  background: var(--k2b-app-workspace-hover);
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-icon-action.is-active {
@@ -4670,7 +4771,8 @@
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-icon-action.is-active:hover {
-  background: var(--k2b-hover);
+  color: var(--k2b-app-workspace-active);
+  background: var(--k2b-app-workspace-hover);
 }
 
 /* The collapsed rail exists only beside the work area from 64 rem. Narrower,
@@ -6960,6 +7062,11 @@
   @apply max-w-[260px];
 }
 
+/* Keep dates, amounts, and codes intact while headers can still wrap. */
+.k2b-ui .k2b-data-table td[data-nowrap="true"] {
+  white-space: nowrap;
+}
+
 .k2b-ui .k2b-data-table :is(th, td)[data-align="center"] {
   @apply text-center;
 }
@@ -7019,6 +7126,16 @@
 
 .k2b-ui .k2b-data-table__sort:hover {
   color: var(--k2b-text);
+}
+
+/* A client-sorted header is a button that reads like the header link. */
+.k2b-ui button.k2b-data-table__sort {
+  @apply w-full cursor-pointer border-0 bg-transparent p-0;
+}
+
+.k2b-ui .k2b-data-table__sort:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 1px);
 }
 
 .k2b-ui .k2b-data-table__header-line {
@@ -9590,6 +9707,19 @@
   padding: 0.40625rem 0.25rem 0.40625rem 0.875rem;
 }
 
+/* The field is one line until text arrives, so a placeholder longer than a narrow phone's field ends in an ellipsis
+   instead of wrapping into a second, cut-off line. Typed text still wraps. Chromium ignores text-overflow on
+   ::placeholder and inherits it from the field instead. */
+.k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__input textarea,
+.k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__input textarea::placeholder {
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__input textarea::placeholder {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 /* A hidden copy of the field measures the text, so the field itself never collapses to be measured. */
 .k2b-ui .k2b-chat-composer .k2b-chat-composer__input textarea.k2b-chat-composer__measure {
   position: absolute;
@@ -10708,6 +10838,20 @@
   flex: 1;
 }
 
+/* A pressed toggle swaps only colour and background, so state changes never move or resize it. */
+.k2b-ui .k2b-toolbar .k2b-button[aria-pressed="true"],
+.k2b-ui .k2b-toolbar .k2b-button[aria-pressed="true"]:hover:not(:disabled) {
+  color: var(--k2b-action);
+  background: var(--k2b-selected);
+}
+@media (forced-colors: active) {
+  .k2b-ui .k2b-toolbar .k2b-button[aria-pressed="true"] {
+    forced-color-adjust: none;
+    color: HighlightText;
+    background: Highlight;
+  }
+}
+
 .k2b-ui .k2b-tag-editor {
   display: flex;
   min-width: 0;
@@ -10880,7 +11024,7 @@
   max-width: 100%;
 }
 
-@media (hover: hover) and (pointer: fine) {
+@media (any-hover: hover) {
   .k2b-ui .k2b-description-list[data-action-visibility="progressive"] .k2b-description-list__action {
     opacity: 0;
   }
@@ -10889,7 +11033,8 @@
   .k2b-ui
     .k2b-description-list[data-action-visibility="progressive"]
     .k2b-description-list__item:focus-within
-    .k2b-description-list__action {
+    .k2b-description-list__action,
+  .k2b-ui .k2b-description-list[data-action-visibility="progressive"] .k2b-description-list__action:has([aria-expanded="true"]) {
     opacity: 1;
   }
 }
@@ -10944,13 +11089,25 @@
   font-weight: 500;
 }
 
+/* Progressive actions in an application's own rows, cards, and list items: a
+   `k2b-progressive-action` inside a `k2b-progressive-row` follows the same rule
+   as the row actions of the components. Do not nest progressive rows. */
+@media (any-hover: hover) {
+  .k2b-ui .k2b-progressive-action { opacity:0; transition:opacity 120ms ease-out; }
+  .k2b-ui .k2b-progressive-row:is(:hover, :focus-within) .k2b-progressive-action,
+  .k2b-ui .k2b-progressive-action:is(:focus-within, :has([aria-expanded="true"])) { opacity:1; }
+}
+
 /* Tab controls keep overflow separate from fixed actions. */
 .k2b-ui .k2b-tabs__bar { display:flex; min-width:0; align-items:center; gap:.25rem; }
 .k2b-ui .k2b-tabs__item { display:flex; flex:none; align-items:center; min-width:0; }
 .k2b-ui .k2b-tabs__trailing { flex:none; }
-.k2b-ui .k2b-tabs__list .k2b-tabs__close { padding:.25rem; min-height:1.5rem; border:0; margin:0; opacity:0; }
-.k2b-ui .k2b-tabs__item:hover .k2b-tabs__close, .k2b-ui .k2b-tabs__item:focus-within .k2b-tabs__close { opacity:1; }
-@media (hover:none) { .k2b-ui .k2b-tabs__list .k2b-tabs__close { opacity:1; } }
+.k2b-ui .k2b-tabs__list .k2b-tabs__close { padding:.25rem; min-height:1.5rem; border:0; margin:0; }
+/* Like row actions: hidden only once any pointer can hover, and the selected tab keeps its close button for a finger. */
+@media (any-hover: hover) {
+  .k2b-ui .k2b-tabs__list .k2b-tabs__close { opacity:0; }
+  .k2b-ui .k2b-tabs__item:is(:hover, :focus-within, :has(> [aria-selected="true"])) .k2b-tabs__close { opacity:1; }
+}
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__list { padding-bottom:0; border:0; box-shadow:none; }
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item { border-radius:.75rem; padding-right:.25rem; background:var(--k2b-surface-canvas); }
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item:hover,
@@ -10961,15 +11118,39 @@
 .k2b-ui .k2b-tabs[data-orientation="vertical"] .k2b-tabs__bar { flex-direction:column; }
 
 /* Optional chart exploration surface; the viewport never changes size on load. */
-.k2b-ui .k2b-chart-explorer { display: grid; gap: 0.75rem; min-width: 0; }
+.k2b-ui .k2b-chart-explorer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; min-width: 0; }
 .k2b-ui .k2b-chart-explorer__header,
 .k2b-ui .k2b-chart-explorer__legend,
 .k2b-ui .k2b-chart-explorer__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .k2b-ui .k2b-chart-explorer__header { justify-content: space-between; }
-.k2b-ui .k2b-chart-explorer__header h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+.k2b-ui .k2b-chart-explorer__title { margin: 0; font-size: 1rem; font-weight: 600; }
+.k2b-ui .k2b-chart-explorer__legend:has(> .k2b-chart-explorer__pin) { flex-wrap: nowrap; }
+/* Labels come from data: the series filter keeps one line and truncates, and next to the pin it takes at most half
+   the row. FilterChip renders its chip inside a dropdown wrapper. */
+.k2b-ui .k2b-chart-explorer__legend > .k2b-dropdown { flex: none; min-width: 0; max-width: 100%; }
+.k2b-ui .k2b-chart-explorer__legend:has(> .k2b-chart-explorer__pin) > .k2b-dropdown { max-width: 50%; }
+.k2b-ui .k2b-chart-explorer__legend .k2b-filter-chip { min-width: 0; max-width: 100%; }
+.k2b-ui .k2b-chart-explorer__legend .k2b-filter-chip > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The pin stands as tall as the series chip next to it, so the row looks like one set of controls. */
+.k2b-ui .k2b-chart-explorer__pin { min-width: 0; min-height: 2.25rem; flex: 0 1 auto; }
+.k2b-ui .k2b-chart-explorer__pin span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .k2b-ui .k2b-chart-explorer__status { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .8rem; }
 .k2b-ui .k2b-chart-explorer__viewport { min-width: 0; overflow: auto; }
 .k2b-ui .k2b-chart-explorer__viewport > .k2b-table-shell { height: 100%; }
+/* A capped table keeps its note inside the viewport, so switching views never changes the block's height. */
+.k2b-ui .k2b-chart-explorer__viewport[data-capped] { display: flex; flex-direction: column; gap: .5rem; }
+.k2b-ui .k2b-chart-explorer__viewport[data-capped] > .k2b-table-shell { flex: 1 1 0; min-height: 0; height: auto; }
+.k2b-ui .k2b-chart-explorer__note { flex: none; margin: 0; color: var(--k2b-text-muted); font-size: .75rem; line-height: 1rem; }
+/* A legend takes its rows from the chart, never from the page: the viewport keeps its height. The chart keeps most of
+   it however many names there are; a longer legend scrolls in the rest. */
+.k2b-ui .k2b-chart-explorer__viewport[data-legend] { display: flex; flex-direction: column; gap: .5rem; }
+.k2b-ui .k2b-chart-explorer__viewport[data-legend] > .k2b-chart { flex: 1 1 0; min-height: 60%; }
+.k2b-ui .k2b-chart-legend { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-content: flex-start; gap: .25rem .875rem; min-height: 0; overflow-y: auto; margin: 0; padding: 0; list-style: none; color: var(--k2b-text-muted); font-size: .75rem; line-height: 1rem; }
+.k2b-ui .k2b-chart-legend li { display: inline-flex; align-items: center; gap: .375rem; min-width: 0; overflow-wrap: anywhere; }
+.k2b-ui .k2b-chart-legend__swatch { flex: none; width: .625rem; height: .625rem; border-radius: 2px; background: var(--k2b-chart-legend-color); }
+.k2b-ui .k2b-chart-legend__swatch[data-style] { width: 1rem; height: 0; border-radius: 0; background: none; border-top: 2px var(--k2b-chart-legend-style, dashed) var(--k2b-chart-legend-color); }
+.k2b-ui .k2b-chart-legend__swatch[data-style="dotted"] { --k2b-chart-legend-style: dotted; }
+.k2b-ui .k2b-chart-legend__swatch[data-reference]:not([data-style]) { background: none; box-shadow: inset 0 0 0 1.5px var(--k2b-chart-legend-color); }
 .k2b-ui .k2b-chart-explorer__details:empty { display: none; }
 .k2b-ui .k2b-chart-explorer__detail-paper { padding: .75rem 1rem; }
 .k2b-ui .k2b-chart-explorer__detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; color: var(--k2b-text-muted); font-size: .75rem; }
@@ -10992,9 +11173,15 @@
 .k2b-ui .k2b-chart [data-selected] > .stdlib-chart-series-7 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c8) 72%, var(--k2b-chart-highlight-mix)); }
 
 /* Reveal the full dimension scale without moving the chart or filter controls. */
-.k2b-ui .k2b-chart-explorer__dimension { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) max-content; gap: .75rem; align-items: end; }
+/* Step names and the step label come from data: each keeps one line and truncates, so neither changes the row's
+   height, and the step name keeps the width of the longest one, so the slider never resizes while stepping. */
+.k2b-ui .k2b-chart-explorer__dimension { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) fit-content(min(40%, 10rem)); gap: .75rem; align-items: end; }
+.k2b-ui .k2b-chart-explorer__dimension > .k2b-field { min-width: 0; }
+.k2b-ui .k2b-chart-explorer__dimension .k2b-field__label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k2b-ui .k2b-chart-explorer__dimension .k2b-slider { min-height: 1.125rem; }
-.k2b-ui .k2b-chart-explorer__dimension-value { min-width: 3.5rem; color: var(--k2b-text-muted); font-family: var(--k2b-font-mono); font-size: .75rem; text-align: right; }
+.k2b-ui .k2b-chart-explorer__dimension-value { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 3.5rem; overflow: hidden; color: var(--k2b-text-muted); font-family: var(--k2b-font-mono); font-size: .75rem; text-align: right; }
+.k2b-ui .k2b-chart-explorer__dimension-value > span { grid-area: 1 / 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-chart-explorer__dimension-value > [aria-hidden] { visibility: hidden; }
 .k2b-ui .k2b-chart-explorer__steps { position: absolute; grid-column: 1 / 2; inset: 100% 0 auto; z-index: 30; display: flex; flex-wrap: wrap; justify-content: space-between; gap: .125rem; padding: .25rem; border: 1px solid color-mix(in srgb, var(--k2b-border) 70%, transparent); border-radius: .375rem; background: var(--k2b-surface-canvas); color: var(--k2b-text-muted); box-shadow: 0 2px 6px #00000008; visibility: hidden; pointer-events: none; font-size: .625rem; }
 .k2b-ui .k2b-chart-explorer__steps span { padding: .0625rem .1875rem; white-space: nowrap; }
 .k2b-ui .k2b-chart-explorer__steps [data-current="true"] { background: var(--k2b-surface-muted); color: var(--k2b-text); border-radius: .1875rem; font-weight: 500; }
@@ -11171,7 +11358,7 @@
   background: transparent;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:hover {
-  background: var(--k2b-hover);
+  background: var(--k2b-app-workspace-hover);
 }
 .k2b-ui[data-theme="dark"] .k2b-app-workspace__sidebar-item[data-variant="card"]:not(.is-active):not(:hover),
 .k2b-ui.k2b-dark .k2b-app-workspace__sidebar-item[data-variant="card"]:not(.is-active):not(:hover),
@@ -11201,8 +11388,8 @@
   .k2b-ui [data-scroll-fade], .k2b-ui [data-scroll-fade][data-scroll-fade-axis="horizontal"] { mask-image: none; }
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"].is-active {
-  background: var(--k2b-hover);
-  border-color: color-mix(in srgb, var(--k2b-action) 25%, var(--k2b-border));
+  background: var(--k2b-app-workspace-hover);
+  border-color: color-mix(in srgb, var(--k2b-app-workspace-active) 25%, var(--k2b-border));
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:not(.has-action),
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"] .k2b-app-workspace__sidebar-item-main {
@@ -11281,15 +11468,6 @@
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
-.k2b-ui .k2b-app-workspace__sidebar-item-label[data-marquee="false"] {
-  text-overflow: ellipsis;
-}
-.k2b-ui .k2b-app-workspace__sidebar-item-label[data-marquee="false"] .k2b-app-workspace__sidebar-item-label-text {
-  display: inline;
-  min-width: 0;
-  transform: none;
-  animation: none;
-}
 
 /* The fixed-width scroll track occupies the existing right inset, even without overflow. */
 .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body {
@@ -11301,6 +11479,14 @@
 }
 .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body::-webkit-scrollbar {
   width: 0.5rem;
+}
+/* Browsers that ignore that width and draw an overlay scrollbar of no width
+   would let rows run into the right inset, so the body's content stops at the
+   sidebar's own content edge (its container, see layout-parity.css): rows end
+   the same inset from the right as they start from the left. */
+.k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body > *,
+.k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body > :is(solid-island, solid-client) > * {
+  max-width: 100cqi;
 }
 .k2b-ui .k2b-app-workspace__sidebar-item[data-variant="card"]:has(> .k2b-app-workspace__sidebar-item-main:focus-visible),
 .k2b-ui .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger="true"]):has(> :is(.k2b-app-workspace__sidebar-item-main, .k2b-app-workspace__sidebar-preview-trigger):focus-visible) {

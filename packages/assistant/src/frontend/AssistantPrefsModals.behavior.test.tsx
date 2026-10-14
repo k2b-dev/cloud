@@ -126,3 +126,66 @@ test("searching personalization keeps the field, its focus and the previous resu
     dom.cleanup();
   }
 });
+
+test("API access appears only while the operator offers the OpenAI-compatible API", async () => {
+  const dom = createDomTestHarness();
+  dom.root.className = "k2b-ui";
+  const { dialogCore } = await import("@k2b/ui");
+  const { openAssistantPrefsModal } = await import("./AssistantPrefsModals");
+  const prefs: AiUserPrefs = {
+    userId: "user",
+    memoryEnabled: true,
+    memoryLearningEnabled: true,
+    lastModelId: "",
+    updatedAt: new Date(0).toISOString(),
+  };
+  const model = (id: string, capabilities: string[]) => ({
+    id,
+    label: `${id} label`,
+    provider: "openai",
+    model: id,
+    capabilities,
+    dataBoundary: "private",
+  });
+  let enabled = true;
+  const getPrefs = spyOn(assistantApi, "getPrefs").mockResolvedValue(prefs);
+  const listMemories = spyOn(assistantApi, "listMemories").mockResolvedValue([]);
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async (input: string | URL | Request) =>
+        String(input instanceof Request ? input.url : input).includes("/ai/status")
+          ? Response.json({
+              openaiApi: { enabled },
+              models: [model("flash", ["streaming", "tools"]), model("whisper", ["transcription"])],
+            })
+          : Response.json([]),
+      { preconnect: globalThis.fetch.preconnect },
+    ),
+  );
+  const tabLabels = () => Array.from(dom.document.querySelectorAll('[role="tab"]'), (tab) => tab.textContent?.trim());
+  try {
+    const dialog = openAssistantPrefsModal("api-access");
+    await tick();
+    expect(tabLabels()).toContain("API access");
+    const text = dom.document.body.textContent ?? "";
+    expect(text).toContain(`${globalThis.location.origin}/api/ai/openai/v1`);
+    expect(text).toContain("flash");
+    expect(text).not.toContain("whisper");
+    expect(dom.document.querySelector('a[href="/me/developer"]')).not.toBeNull();
+    dialogCore.close();
+    await dialog;
+
+    enabled = false;
+    const hidden = openAssistantPrefsModal();
+    await tick();
+    expect(tabLabels()).not.toContain("API access");
+    dialogCore.close();
+    await hidden;
+  } finally {
+    while (dialogCore.isOpen()) dialogCore.close();
+    getPrefs.mockRestore();
+    listMemories.mockRestore();
+    fetchMock.mockRestore();
+    dom.cleanup();
+  }
+});

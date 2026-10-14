@@ -1,7 +1,8 @@
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { announce } from "../feedback/announce";
-import { resolveUiMessages, useUiMessages } from "../intl/messages";
+import { useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
+import { resolvePdfMessages, usePdfMessages } from "./pdf-messages";
 
 export type PdfPreviewRequest = () => Promise<Response | Blob>;
 
@@ -33,11 +34,12 @@ const readErrorMessage = async (response: Response): Promise<string> => {
   } catch {
     // Fall through to the HTTP status fallback.
   }
-  return resolveUiMessages().pdfPreviewHttpError({ status: response.status });
+  return resolvePdfMessages().pdfPreviewHttpError({ status: response.status });
 };
 
 export default function PdfPreview(props: PdfPreviewProps) {
   const messages = useUiMessages();
+  const pdfMessages = usePdfMessages();
   const [url, setUrl] = createSignal<string | null>(null);
   // An automatic preview starts loading once mounted. The server and the page before hydration already show that
   // state, so they offer neither a retry nor an invitation to render while nothing has failed.
@@ -113,8 +115,8 @@ export default function PdfPreview(props: PdfPreviewProps) {
       if (previousUrl) URL.revokeObjectURL(previousUrl);
       // The loading status turns into the missing-viewer hint in place and stops being a live region, so say it here.
       if (!inlineViewer()) {
-        announce(messages().pdfPreviewNoViewer);
-        announce(messages().pdfPreviewNoViewerDescription);
+        announce(pdfMessages().pdfPreviewNoViewer);
+        announce(pdfMessages().pdfPreviewNoViewerDescription);
       }
       // The shown document removes the retry action; keep keyboard focus in the actions instead of the page, or, when
       // the host shows only the content, in the viewer, which hands it on to the document once the frame has loaded it.
@@ -145,8 +147,8 @@ export default function PdfPreview(props: PdfPreviewProps) {
     setTabBlocked(!tab);
     if (!tab) return;
     tab.opener = null;
-    tab.document.title = props.title ?? messages().pdfPreview;
-    tab.document.body.textContent = messages().pdfPreviewRendering;
+    tab.document.title = props.title ?? pdfMessages().pdfPreview;
+    tab.document.body.textContent = pdfMessages().pdfPreviewRendering;
     setOpening(true);
     setError(null);
     try {
@@ -184,7 +186,7 @@ export default function PdfPreview(props: PdfPreviewProps) {
             disabled={loading() || opening() || props.disabled?.()}
           >
             <i class={opening() ? "ti ti-loader-2 k2b-spin" : "ti ti-external-link"} aria-hidden="true" />
-            {props.openButtonLabel ?? messages().openPreview}
+            {props.openButtonLabel ?? pdfMessages().openPreview}
           </button>
         }
       >
@@ -200,7 +202,7 @@ export default function PdfPreview(props: PdfPreviewProps) {
             rel="noopener"
           >
             <i class="ti ti-external-link" aria-hidden="true" />
-            {props.openButtonLabel ?? messages().openPreview}
+            {props.openButtonLabel ?? pdfMessages().openPreview}
           </a>
         )}
       </Show>
@@ -228,12 +230,12 @@ export default function PdfPreview(props: PdfPreviewProps) {
           disabled={loading() || opening() || props.disabled?.()}
         >
           <i class={loading() ? "ti ti-loader-2 k2b-spin" : "ti ti-file-type-pdf"} aria-hidden="true" />
-          {props.buttonLabel ?? messages().previewPdf}
+          {props.buttonLabel ?? pdfMessages().previewPdf}
         </button>
       </Show>
       <Show when={tabBlocked()}>
         <span role="alert" class="k2b-content-pdf-preview__notice">
-          {messages().pdfPreviewTabBlocked}
+          {pdfMessages().pdfPreviewTabBlocked}
         </span>
       </Show>
     </div>
@@ -262,7 +264,7 @@ export default function PdfPreview(props: PdfPreviewProps) {
             // Out of reach while the loading state covers it, so keyboard focus never lands on an invisible frame.
             inert={!drawn()}
             src={currentUrl()}
-            title={props.title ?? messages().pdfPreview}
+            title={props.title ?? pdfMessages().pdfPreview}
             onLoad={() => {
               const waiting = document.activeElement === viewer;
               setDrawn(true);
@@ -280,12 +282,12 @@ export default function PdfPreview(props: PdfPreviewProps) {
                 class="k2b-content-pdf-preview__placeholder"
                 state={state() === "loading" ? "loading" : "empty"}
                 icon={state() === "loading" ? undefined : "ti ti-file-type-pdf"}
-                title={state() === "loading" ? messages().loading : state() === "no-viewer" ? messages().pdfPreviewNoViewer : undefined}
+                title={state() === "loading" ? messages().loading : state() === "no-viewer" ? pdfMessages().pdfPreviewNoViewer : undefined}
                 description={
                   state() === "idle"
-                    ? (props.emptyText ?? messages().renderPdfPreview)
+                    ? (props.emptyText ?? pdfMessages().renderPdfPreview)
                     : state() === "no-viewer"
-                      ? messages().pdfPreviewNoViewerDescription
+                      ? pdfMessages().pdfPreviewNoViewerDescription
                       : undefined
                 }
               />

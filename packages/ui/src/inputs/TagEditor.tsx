@@ -4,6 +4,7 @@ import { useUiMessages } from "../intl/messages";
 import { Tag } from "../surfaces/Tag";
 import { ColorInput } from "./ChoiceInputs";
 import { TextInput } from "./TextInput";
+import { useTagMessages } from "./tag-messages";
 
 export type TagEditorItem = {
   id: string;
@@ -116,14 +117,15 @@ function EditorForm(props: EditorFormProps): JSX.Element {
 /** Controlled tag manager. Persistence, authorization, confirmation, and toasts stay with the consumer. */
 export function TagEditor<T extends TagEditorItem = TagEditorItem>(props: TagEditorProps<T>): JSX.Element {
   const messages = useUiMessages();
+  const tagMessages = useTagMessages();
   const [mode, setMode] = createSignal<"create" | string | null>(null);
   const [busyId, setBusyId] = createSignal<string | null>(null);
   const [rowError, setRowError] = createSignal<{ id: string; message: string }>();
   const labels = (): TagEditorLabels => ({
-    create: messages().addTag,
-    empty: messages().noTagsYet,
+    create: tagMessages().addTag,
+    empty: tagMessages().noTagsYet,
     name: messages().name,
-    namePlaceholder: messages().tagName,
+    namePlaceholder: tagMessages().tagName,
     color: messages().color,
     save: messages().save,
     cancel: messages().cancel,
@@ -140,7 +142,7 @@ export function TagEditor<T extends TagEditorItem = TagEditorItem>(props: TagEdi
       await action();
       setMode(null);
     } catch (cause) {
-      setRowError({ id, message: cause instanceof Error ? cause.message : messages().tagActionFailed });
+      setRowError({ id, message: cause instanceof Error ? cause.message : tagMessages().tagActionFailed });
       throw cause;
     } finally {
       setBusyId(null);
@@ -194,7 +196,7 @@ export function TagEditor<T extends TagEditorItem = TagEditorItem>(props: TagEdi
                     labels={labels()}
                     defaultColor={defaultColor()}
                     busy={busyId() === item.id}
-                    saveError={messages().tagCouldNotBeSaved}
+                    saveError={tagMessages().tagCouldNotBeSaved}
                     onCancel={() => setMode(null)}
                     onDirtyChange={props.onDirtyChange}
                     onSave={(value) => run(item.id, () => props.onUpdate?.(item, value))}
@@ -228,7 +230,7 @@ export function TagEditor<T extends TagEditorItem = TagEditorItem>(props: TagEdi
               labels={labels()}
               defaultColor={defaultColor()}
               busy={busyId() === "create"}
-              saveError={messages().tagCouldNotBeSaved}
+              saveError={tagMessages().tagCouldNotBeSaved}
               onCancel={() => setMode(null)}
               onDirtyChange={props.onDirtyChange}
               onSave={(value) => run("create", () => create()(value))}

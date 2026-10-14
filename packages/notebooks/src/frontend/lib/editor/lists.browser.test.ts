@@ -1,15 +1,27 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type Browser, type BrowserContextOptions, type Page, devices as playwrightDevices } from "playwright";
 import { browserName, launchBrowser } from "../../../../../ui/test/browser";
+import type { ListMeasurements } from "./lists.browser-harness";
 
 // Where a click leaves the note depends on real focus, selection, and scrolling, so this runs in a real browser.
 type Measure = { scrollTop: number; windowScroll: number; lineTop: number; text: string; head: number };
 type Harness = {
+  loadDocument: (markdown: string) => void;
+  placeCaret: (head: number) => void;
+  readEditor: () => { doc: string; head: number };
+  measureLists: () => ListMeasurements;
+  placeCaretOnLine: (line: number) => void;
   scrollToMiddle: (task: string) => void;
   measure: (task: string) => Measure;
   placeCursor: (task: string) => void;
   settle: () => Promise<void>;
 };
+
+declare global {
+  interface Window {
+    harness: Harness;
+  }
+}
 
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
@@ -143,6 +155,164 @@ describe.each(Object.entries(devices))("ticking a checklist box in the note edit
       const typed = await measure(page, "Task 2!");
       expect(typed.lineTop).toBeGreaterThanOrEqual(0);
       expect(typed.lineTop).toBeLessThan(device.viewport!.height);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+});
+
+const loadDocument = (page: Page, markdown: string) =>
+  page.evaluate(async (markdown) => {
+    window.harness.loadDocument(markdown);
+    await window.harness.settle();
+  }, markdown);
+
+const measureLists = (page: Page) =>
+  page.evaluate(async () => {
+    await window.harness.settle();
+    return window.harness.measureLists();
+  });
+
+const caretOnLine = (page: Page, line: number) =>
+  page.evaluate(async (line) => {
+    window.harness.placeCaretOnLine(line);
+    await window.harness.settle();
+  }, line);
+
+const closeTo = (actual: number, expected: number, tolerance = 0.5) => expect(Math.abs(actual - expected)).toBeLessThanOrEqual(tolerance);
+
+describe.each(Object.entries(devices))("Markdown list structure in the note editor (%s)", (name, device) => {
+  test("aligns every marker kind by structural depth and centers each ancestor guide", async () => {
+    const page = await open(device);
+    try {
+      await loadDocument(
+        page,
+        [
+          "- bullet zero",
+          "  - bullet one",
+          "    - bullet two",
+          "",
+          "1. ordered zero",
+          "   1. ordered one",
+          "      1. ordered two",
+          "",
+          "- [ ] task zero",
+          "    - [x] task one",
+          "        - [X] task two",
+          "",
+          "10. wide zero",
+          "    - wide child",
+        ].join("\n"),
+      );
+      const { lines } = await measureLists(page);
+      expect(lines.map(({ depth }) => depth)).toEqual([0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1]);
+      const step = name === "desktop" ? 26 : 22;
+      const base = lines[0]!.textX;
+      for (const line of lines) {
+        closeTo(line.textX, base + step * line.depth);
+        expect(line.guides).toHaveLength(line.depth);
+        line.guides.forEach((guide, level) => closeTo(guide.x, base - step / 2 + level * step));
+      }
+      // Four source spaces under `10.` are one ancestor, not two.
+      expect(lines.at(-1)!.guides).toHaveLength(1);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("hangs wrapped text exactly under its first character", async () => {
+    const page = await open(device);
+    try {
+      await loadDocument(page, `- root\n  - ${"wrapped words ".repeat(40)}`);
+      const line = (await measureLists(page)).lines[1]!;
+      expect(line.depth).toBe(1);
+      expect(line.wrappedX).not.toBeNull();
+      closeTo(line.wrappedX!, line.textX, 1);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("numbers items from the CommonMark start and cycles ordered ancestors", async () => {
+    const page = await open(device);
+    try {
+      await loadDocument(
+        page,
+        "1. a\n1. b\n1. c\n\nParagraph separates lists.\n\n3. start\n7. next\n   1. alpha\n      1. roman\n         1. decimal\n      1. roman again\n   1. alpha again" +
+          "\n\nParagraph separates lists.\n\n3. [ ] First\n7. Second",
+      );
+      const { lines } = await measureLists(page);
+      expect(lines.map(({ label }) => label)).toEqual(["1.", "2.", "3.", "3.", "4.", "a.", "i.", "1.", "ii.", "b.", "3.", "4."]);
+      // A numbered checklist item shows its number and then its box, as Book does, and its text follows both.
+      const [first, second] = lines.slice(-2);
+      expect(first!.checkbox).toBe(true);
+      expect(second!.checkbox).toBe(false);
+      closeTo(first!.textX, second!.textX + (name === "desktop" ? 26 : 22));
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("strengthens only the selected parent guide without changing layout", async () => {
+    const page = await open(device);
+    try {
+      await loadDocument(page, "- root\n  - child\n    - grandchild\n  - sibling\n- outside\n  - other");
+      await caretOnLine(page, 1);
+      const before = await measureLists(page);
+      for (const line of before.lines) for (const guide of line.guides) closeTo(guide.opacity, 0.14, 0.01);
+      await caretOnLine(page, 2);
+      const after = await measureLists(page);
+      expect(after.contentHeight).toBe(before.contentHeight);
+      expect(after.lines.map(({ box }) => box)).toEqual(before.lines.map(({ box }) => box));
+      for (const line of after.lines) {
+        line.guides.forEach((guide, level) => closeTo(guide.opacity, line.line >= 2 && line.line <= 4 && level === 0 ? 0.38 : 0.14, 0.01));
+      }
+      expect(after.lines.map(({ guides }) => guides.map(({ x }) => x))).toEqual(before.lines.map(({ guides }) => guides.map(({ x }) => x)));
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+});
+
+describe.each(Object.entries(devices))("list typing keys (%s)", (_name, device) => {
+  /** Presses a key and waits for its result: on iOS, CodeMirror lets Enter and Backspace reach the page first and
+   *  runs the key binding afterwards, up to 250 ms later when the press changed nothing in the page. */
+  const pressFor = async (page: Page, key: "Enter" | "Backspace", doc: string) => {
+    await page.keyboard.press(key);
+    await page.waitForFunction((doc) => window.harness.readEditor().doc === doc, doc, { timeout: 2_000 }).catch(() => {});
+    return page.evaluate(() => window.harness.readEditor());
+  };
+
+  test("Enter continues a tight list, then ends it on the empty item", async () => {
+    const page = await open(device);
+    try {
+      await loadDocument(page, "1. a");
+      await page.evaluate(() => window.harness.placeCaret(4));
+      expect(await pressFor(page, "Enter", "1. a\n2. ")).toEqual({ doc: "1. a\n2. ", head: 8 });
+      expect(await pressFor(page, "Enter", "1. a\n\n")).toEqual({ doc: "1. a\n\n", head: 6 });
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("Enter at an item's text start adds an empty item above and keeps the caret on the text", async () => {
+    const page = await open(device);
+    try {
+      await loadDocument(page, "- a\n- b");
+      await page.evaluate(() => window.harness.placeCaret(6));
+      expect(await pressFor(page, "Enter", "- a\n- \n- b")).toEqual({ doc: "- a\n- \n- b", head: 9 });
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("Backspace at an item's text start lifts a nested item, then makes it normal text", async () => {
+    const page = await open(device);
+    try {
+      await loadDocument(page, "- a\n  - b");
+      await page.evaluate(() => window.harness.placeCaret(8));
+      expect(await pressFor(page, "Backspace", "- a\n- b")).toEqual({ doc: "- a\n- b", head: 6 });
+      expect(await pressFor(page, "Backspace", "- a\n\nb")).toEqual({ doc: "- a\n\nb", head: 5 });
     } finally {
       await page.context().close();
     }

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { markComposeTemplateSegment } from "./compose-renderer";
 import type { ComposeSafetySource } from "./compose-safety";
 import { evaluateComposeSafety } from "./compose-safety";
+
+const markComposeTemplateSegment = (source: string): string => `\u2063${source}\u2064`;
 
 const source = (overrides: Partial<ComposeSafetySource> = {}): ComposeSafetySource => ({
   draftId: "00000000-0000-4000-8000-000000000001",
@@ -72,6 +73,13 @@ describe("compose safety", () => {
     const review = evaluateComposeSafety(source({ body: "[https://example.org](https://lookalike.example/login)" }));
     expect(review.warnings.map((warning) => warning.id)).toContain("suspicious_link");
     expect(evaluateComposeSafety(source({ body: "[Project](https://example.org/project)" })).warnings).toHaveLength(0);
+  });
+
+  test("treats phone links like mail links", () => {
+    expect(evaluateComposeSafety(source({ body: "Call [+49 731 000000](tel:+49731000000)." })).warnings).toHaveLength(0);
+    expect(evaluateComposeSafety(source({ body: "[Call us](javascript:alert(1))" })).warnings.map((warning) => warning.id)).toContain(
+      "suspicious_link",
+    );
   });
 
   test("warns about template text that no longer sits inside a rendered segment", () => {

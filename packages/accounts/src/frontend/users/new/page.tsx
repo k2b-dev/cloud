@@ -65,7 +65,13 @@ export default ssr<AuthContext>(async (c) => {
         { title: t.newUser },
       ]}
     >
-      <AccountsWorkspace active="users" isAdmin={true} pendingRequests={pendingRequestsPage.total} scrollPreserveKey="accounts-user-new">
+      <AccountsWorkspace
+        active="users"
+        ancestor
+        isAdmin={true}
+        pendingRequests={pendingRequestsPage.total}
+        scrollPreserveKey="accounts-user-new"
+      >
         <div class="max-w-2xl mx-auto w-full">
           {accountRequest && (
             <NoticeCard tone="info" class="mb-4" bodyClass="flex flex-col gap-3">

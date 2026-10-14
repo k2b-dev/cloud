@@ -1,10 +1,8 @@
 import { sql } from "bun";
-import type { ConversationView } from "../contracts";
+
+export { FOLLOW_UP_VIEWS } from "../folder-display-rules";
 
 type SqlFragment = Bun.SQL.Query<unknown>;
-
-/** The views of open or postponed work; they leave out conversations that are only in Trash or Junk. */
-export const FOLLOW_UP_VIEWS: readonly ConversationView[] = ["needs_action", "mine", "unassigned", "waiting", "snoozed"];
 
 /** Whether a folder has one of these roles, by its configured role or else the provider's, as the folder list shows it. */
 const hasFolderRole = (folderId: SqlFragment, roles: readonly string[]): SqlFragment => sql`EXISTS (
@@ -26,6 +24,9 @@ export const isSentFolder = (folderId: SqlFragment): SqlFragment => hasFolderRol
 
 /** Whether a folder is the mailbox's Inbox. */
 export const isInboxFolder = (folderId: SqlFragment): SqlFragment => hasFolderRole(folderId, ["inbox"]);
+
+/** Whether a folder is the provider's All Mail collection. */
+export const isAllMailFolder = (folderId: SqlFragment): SqlFragment => hasFolderRole(folderId, ["all"]);
 
 /**
  * Whether one message, joined with one of its live placements or with none (`placement` is null),

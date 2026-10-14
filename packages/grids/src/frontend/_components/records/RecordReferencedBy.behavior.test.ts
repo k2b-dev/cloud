@@ -12,7 +12,7 @@ describe("record reverse relations interaction", () => {
   test("retries failures, appends five-item cursor pages and retains native keyboard links", async () => {
     const { createDomTestHarness } = await import("../../../../../ui/test/dom");
     const dom = createDomTestHarness();
-    const { default: RecordReferencedBy } = await import("./RecordReferencedBy.island");
+    const { default: RecordReferencedBy } = await import("./RecordReferencedBy");
     const requests: string[] = [];
     const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(

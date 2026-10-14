@@ -296,6 +296,13 @@ export const CORE_SETTINGS = {
     placeholder: "Keep answers concise. The current user is {{ user.displayName }} and today is {{ today }}.",
     templateVars: ["user.displayName", "user.uid", "user.mail", "appId", "now", "today", "time"],
   },
+  "ai.local_client_instructions": {
+    kind: "text",
+    label: "Instructions for local clients",
+    default: "",
+    description:
+      "Added to turns from local clients such as cld after the organization instructions. Leave empty to use the built-in text, which improves with each release.",
+  },
   "ai.compaction_instructions": {
     kind: "text",
     label: "Additional Compaction Instructions",
@@ -327,6 +334,26 @@ export const CORE_SETTINGS = {
     default: "",
     description: "Firecrawl API key used by Cloud AI web_search and web_extract tools.",
     placeholder: "fc-...",
+  },
+  "ai.openai_api_enabled": {
+    kind: "boolean",
+    label: "OpenAI-compatible API",
+    default: false,
+    description:
+      "Let people create API keys with the access “AI models only” and call the Assistant models they may use. Checked on every request: turning this off stops existing keys too. Models without reference prices have no usage limit; only the rate limit and the concurrent request limit protect them.",
+  },
+  // Default 4: one process runs at most 8 chat turns at once (AI_TURN_WORKER_CONCURRENCY in ai/runtime.ts), and this
+  // synchronous API bypasses that queue, so one person may hold at most half of it. Typical clients need 1-2 (one
+  // request after another plus a connection test); 4 leaves room for a second client without letting a script in a
+  // loop crowd out everyone else. Operators with more provider capacity raise it.
+  "ai.openai_api_max_concurrent_requests": {
+    kind: "number",
+    label: "OpenAI API concurrent requests per person",
+    integer: true,
+    min: 1,
+    max: 64,
+    default: 4,
+    description: "Maximum simultaneous OpenAI-compatible API requests per person across all Cloud instances.",
   },
   // ── PDF rendering ─────────────────────────────────────────────────────
   "gotenberg.url": {

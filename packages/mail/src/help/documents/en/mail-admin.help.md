@@ -94,7 +94,7 @@ If the provider does not store sent messages, no copy exists.
 
 Mail adds the default Cc and Bcc recipients when a person starts a new message, reply, or forward with that identity. Mail removes duplicates and addresses that are already in To, Cc, or Bcc. Automatic replies and workflow messages do not get these defaults, and the writer can remove them before sending.
 
-Mail inserts a mailbox signature into new messages, replies, and forwards. Changing the identity later does not change an edited draft. A personal signature override comes first.
+New messages, replies, and forwards start with the sender's default signature, separate from the text. A personal default takes precedence over the mailbox default. Switching the sender in the composer switches to that sender's default signature.
 
 In **Settings → General**, you can list trusted internal email domains and choose when Mail warns about many recipients. Mail warns about external recipients only when at least one internal domain is set. These settings guide the final send review. They do not block legitimate delivery and do not change recipients automatically.
 
@@ -111,6 +111,17 @@ An identity normally uses the mailbox's SMTP server. Set up a custom SMTP server
 Two identities can share the same From address on purpose. Mail keeps their labels, recipient defaults, signatures, Reply-to values, delivery options, transports, folder mappings, and verification states separate. When a reply matches exactly one identity, Mail selects it automatically. If several matching identities are equally valid, the writer must choose one.
 
 Verify every identity: choose the connected account and a recipient for a real verification message. When the identity is ready to send, the provider accepted this test with the exact From address and the advanced delivery settings of the identity. IMAP folder access alone does not prove that the provider allows these sending settings.
+
+A new identity uses the Sent and Drafts folders that Mail found for the mailbox. You can choose other folders under **Advanced delivery**. If an identity has no Sent folder when you verify it, Mail uses the mailbox's Sent folder. Creating or verifying an identity never replaces a folder that is already set. **Set up sending** differs: it sets the identity of the account's address to the mailbox's current Sent and Drafts folders.
+
+An identity that is not ready to send shows the reason as its status:
+
+- **Sent folder missing:** Choose **Choose Sent folder**, save the identity, and verify it. If the provider stores sent mail itself, verify it with **Provider saves sent mail automatically** turned on instead.
+- **Rejected by the provider:** Check the From address and the advanced delivery settings, then verify again.
+- **Not verified:** Choose **Verify** and send the test message.
+- **Verification waiting:** Mail is synchronizing the mailbox. Mail sends the test message automatically when the synchronization lets it. If this does not happen in 10 minutes, verify the identity again.
+
+When a mailbox has no identity that is ready to send, **Compose**, **Reply**, and **Forward** show the same reason. People with **Manage** access can open the sender settings from there.
 
 **Allow automatic replies** is separate from verification. Automatic replies can use only an identity that is ready to send and has this option turned on. Turning it on sends nothing by itself. An automatic reply or workflow that is turned on is still required.
 
@@ -241,7 +252,11 @@ Each list offers only capabilities that match the contract for contact directori
 
 In **Settings → Writing**, create private or mailbox signatures and snippets. Set the mailbox default signature in **Accounts & identities → Sending identities**. A personal default of a collaborator in **Writing** comes first.
 
-Markdown messages always get the built-in readable email design. **Email design** adds checked mailbox CSS for company branding. It does not replace the safe base design. Check the result in the **Preview** of the composer before you rely on a CSS change.
+Markdown messages always get the built-in readable email design. **Email design** adds checked mailbox CSS for company branding. It does not replace the safe base design. Check the result in the **Preview** of the composer before you rely on a CSS change. The built-in design gives quotes a gray line on the left and code blocks a light background; change them with `blockquote { … }` or `pre { … }`. A `p { … }` rule also reaches quoted paragraphs; style those with `blockquote p { … }`.
+
+The mailbox CSS comes after the built-in design. Each of its rules wins over the built-in design for the elements it selects. For example, `a { color: #262626; }` changes the color of every link. Use `.mail-content` for the whole message, for example `.mail-content { font-size: 16px; }`. Use `.mail-signature` for the signature, for example `.mail-signature { color: #52525b; }`. Selectors can use the elements that email keeps and the `.mail-content` and `.mail-signature` classes. Other classes, IDs, pseudo-classes such as `:hover`, `@` rules, and `!important` are not accepted. Values cannot load images, for example with `url()` or `image-set()`, and cannot contain backslash escapes or `&`. A quoted value, such as a font name, must end on the same line and cannot contain the other kind of quote.
+
+Mail checks the CSS when you save it. If a saved design contains a value that a later Cloud version no longer accepts, the mailbox keeps sending. Mail leaves out only those values and keeps the rest of the design. If Mail cannot read the saved design at all, it uses the built-in design until the design is fixed. **Settings → Writing** shows which values are left out, and the composer **Preview** lists them below the message. Remove or replace them in the design. Saving still needs CSS that passes the check. For a very long message, Mail uses the built-in design if the mailbox design would make the message too complex to render. The composer **Preview** shows this.
 
 ## Configure automatic responses and references {icon="settings"}
 

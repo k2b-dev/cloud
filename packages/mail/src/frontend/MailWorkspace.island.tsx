@@ -4,15 +4,14 @@ import type { CloudTheme } from "@k2b/cloud/shared";
 import { documentNavigate, type LinkNavigateEvent, listenPopState, navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { AppWorkspace, announce, openSpotlightSearch, Placeholder, prompts, toast, useLocale } from "@k2b/ui";
-import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
-import { createStore, reconcile } from "solid-js/store";
+import { AppWorkspace, announce, openSpotlightSearch, Placeholder, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
+import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
-import type { MailContactDirectory } from "../contact-directory-settings";
-import { isAggregatedListing } from "../folder-display-rules";
+import type { MailContactDirectory } from "../contact-directory";
+import { isAggregatedListing, mailRowLeavesListing } from "../folder-display-rules";
 import { mailFolderPaths } from "../folder-tree";
-import { MailLiveEventSchema } from "../live-events";
-import { resolveMailSearchRoute } from "../search-state";
+import { parseMailLiveEvent } from "../live-event";
 import type { ConversationCollaboration, MailActivityEvent } from "../service/collaboration";
 import type { ConversationLocalTags } from "../service/local-tags";
 import type { ConversationPresenceSnapshot } from "../service/presence";
@@ -27,6 +26,7 @@ import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
 import MailSidebar from "./_components/MailSidebar";
 import { createMailActionOutcomes, type MailActionCommand, type MailActionFailureReport } from "./_components/mail-action-outcomes";
+import { createMailActionQueue } from "./_components/mail-action-queue";
 import {
   buildMailActionInput,
   MAIL_ACTION_MISSING_DESTINATION,
@@ -61,14 +61,21 @@ import {
   type PendingMailListState,
   reconcileMailListOptimisticState,
 } from "./_components/mail-list-optimistic";
+import {
+  MAIL_ROW_LEAVE_MS,
+  type MailListRemoval,
+  mailListRowKey,
+  projectMailCounts,
+  projectMailList,
+} from "./_components/mail-list-projection";
 import { buildMailListHref, isMailWorkspaceUrl, mailRouteUrl, resolveMailWorkspaceUrl } from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";
 import {
   decideMailAutoReadIntent,
-  type MailWorkspaceActionExecution,
   type MailWorkspaceActionOptions,
   type MailWorkspaceActionRunnerHost,
+  mailOptimisticFields,
   runMailWorkspaceAction,
 } from "./_components/mail-workspace-action-runner";
 import { type MailWorkspacePreferences, updateMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
@@ -107,7 +114,8 @@ function MailWorkspaceView(props: {
   dateConfig: DateContext;
   initialPreferences: MailWorkspacePreferences;
   initialUserPreferences: MailUserPreferences;
-  initialTheme: CloudTheme;
+  /** `null` under Automatic: only the browser knows the device scheme, and it is read on mount. */
+  initialTheme: CloudTheme | null;
   calendarIntegrationAvailable: boolean;
 }) {
   const locale = useLocale();
@@ -120,7 +128,7 @@ function MailWorkspaceView(props: {
   const [listCollapsed, setListCollapsed] = createSignal(props.initialPreferences.listCollapsed);
   const [detailsOpen, setDetailsOpen] = createSignal(props.initialPreferences.detailsOpen);
   const [toolbarActions, setToolbarActions] = createSignal(props.initialPreferences.toolbarActions);
-  const [theme, setTheme] = createSignal(props.initialTheme);
+  const [theme, setTheme] = createSignal<CloudTheme | null>(props.initialTheme);
   const [presence, setPresence] = createSignal<ConversationPresenceSnapshot>({
     participants: [],
   });
@@ -128,7 +136,7 @@ function MailWorkspaceView(props: {
   const [detailsOpening, setDetailsOpening] = createSignal(false);
   const [managementOpening, setManagementOpening] = createSignal<"health" | "links" | "remote-content" | "subscriptions" | null>(null);
   const [liveUnavailable, setLiveUnavailable] = createSignal(false);
-  const activeSearch = createMemo(() => resolveMailSearchRoute(mailRouteUrl(requestPath())));
+  const activeSearch = () => data.search;
   const activeTagId = createMemo(() => {
     const expression = activeSearch().expression;
     return expression?.type === "local_tag_id" ? expression.tagId : null;
@@ -162,12 +170,42 @@ function MailWorkspaceView(props: {
   };
   let preferenceTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingPreferences: Partial<MailWorkspacePreferences> = {};
-  let actionMutationLoading = () => false;
+  const actionQueue = createMailActionQueue();
+  onMount(() => {
+    const flushActions = () => actionQueue.flush();
+    window.addEventListener("pagehide", flushActions);
+    onCleanup(() => window.removeEventListener("pagehide", flushActions));
+  });
+  const [actionsUnsent, setActionsUnsent] = createSignal(false);
+  onCleanup(actionQueue.onChange(() => setActionsUnsent(actionQueue.size() > 0)));
   let structureMutationLoading = () => false;
-  const actionPending = () => structureMutationLoading() || actionMutationLoading();
+  const structurePending = () => structureMutationLoading() || actionsUnsent();
+  const [removals, setRemovals] = createSignal<readonly MailListRemoval[]>([]);
+  const removalOwners = new WeakMap<MailListRemoval, symbol>();
+  const releasesOnNextSnapshot = new Set<() => void>();
+  const leaveTimers = new Set<ReturnType<typeof setTimeout>>();
+  const undoNotices = new Set<ToastHandle>();
+  const [snapshotItems, setSnapshotItems] = createSignal<readonly MailListItem[]>(structuredClone(props.data.listItems));
+  const listView = createMemo(() => projectMailList({ items: data.listItems, removals: removals(), scope: mailListScope(requestPath()) }));
+  const selectableRows = () => listView().items.filter((item) => !listView().leavingKeys.has(mailListRowKey(item)));
+  const listCounts = createMemo(() =>
+    projectMailCounts({
+      folders: data.folders,
+      viewCounts: data.viewCounts,
+      activeView: data.activeView,
+      listMode: data.listMode,
+      now: Date.now(),
+      currentUserId: props.currentUserId,
+      items: snapshotItems(),
+      shown: data.listItems,
+      removals: removals(),
+      scope: mailListScope(requestPath()),
+    }),
+  );
   let disposed = false;
   const focusFrames = new Set<number>();
   let pendingListState = new Map<string, PendingMailListState>();
+  const pendingActionOwners = new Map<string, Partial<Record<MailListOptimisticField, symbol>>>();
   const selectedConversationId = createMemo(() => data.selectedConversationId);
   const selectedConversationIds = createMemo(() => conversationSelection().ids);
   const canWrite = createMemo(() => rank(data.permission) >= 2);
@@ -360,13 +398,18 @@ function MailWorkspaceView(props: {
     batch(() => {
       committedRouteSource = first.source;
       setRequestPath(target.href);
+      const rawItems = new Map(pages.flatMap((page) => page.snapshot.listItems.map((item) => [mailListRowKey(item), item] as const)));
+      setSnapshotItems([...rawItems.values()]);
       setData(reconcile(next));
+      const releases = [...releasesOnNextSnapshot];
+      releasesOnNextSnapshot.clear();
+      for (const release of releases) release();
       setConversationSelection((current) =>
         scopeChanged
           ? emptyMailConversationSelection()
           : pruneMailConversationSelection(
               current,
-              new Set(next.listItems.flatMap((item) => (item.conversationId ? [item.conversationId] : []))),
+              new Set(untrack(selectableRows).flatMap((item) => (item.conversationId ? [item.conversationId] : []))),
             ),
       );
       if (scopeChanged) setSelectionMode(false);
@@ -670,7 +713,7 @@ function MailWorkspaceView(props: {
       { mailbox: mailboxId },
       {
         cursor: props.data.initialLiveCursor,
-        parse: (data) => MailLiveEventSchema.parse(data),
+        parse: (data) => parseMailLiveEvent(data),
         apply: (events) => refreshLiveData(events.map((event) => event.data.conversationId)),
         resync: () => refreshLiveData(null),
         revoked: () => void documentNavigate("/app/mail", { replace: true }),
@@ -707,11 +750,16 @@ function MailWorkspaceView(props: {
     workspaceTransition = null;
     for (const frame of focusFrames) cancelAnimationFrame(frame);
     focusFrames.clear();
+    for (const timer of leaveTimers) clearTimeout(timer);
+    for (const notice of undoNotices) notice.dismiss();
+    setRemovals([]);
+    releasesOnNextSnapshot.clear();
+    actionUiController.abort();
   });
 
   const hasSelection = createMemo(() => Boolean(data.selectedConversationId || data.selectedMessageId));
   const selectedListItem = createMemo(() =>
-    data.listItems.find((item) =>
+    selectableRows().find((item) =>
       item.selectionKind === "message" ? item.id === data.selectedMessageId : item.conversationId === data.selectedConversationId,
     ),
   );
@@ -788,18 +836,17 @@ function MailWorkspaceView(props: {
     }
   };
 
-  const focusConversation = (conversationId: string, target: "reader" | "row") => {
-    const frame = requestAnimationFrame(() => {
-      focusFrames.delete(frame);
-      if (disposed) return;
-      const element =
-        target === "reader"
-          ? document.querySelector<HTMLElement>("[data-mail-reader-heading]")
-          : document.querySelector<HTMLElement>(`[data-conversation-id="${CSS.escape(conversationId)}"] .mail-list-row`);
-      element?.focus({ preventScroll: true });
-      if (target === "row") element?.scrollIntoView({ block: "nearest" });
-    });
-    focusFrames.add(frame);
+  const focusConversation = (rowKey: string | null, target: "reader" | "row") => {
+    if (disposed) return;
+    const selector = rowKey?.startsWith("message:")
+      ? `[data-message-id="${CSS.escape(rowKey.slice("message:".length))}"] .mail-list-row`
+      : `[data-conversation-id="${CSS.escape(rowKey ?? "")}"] .mail-list-row`;
+    const element =
+      target === "reader"
+        ? document.querySelector<HTMLElement>("[data-mail-reader-heading]")
+        : document.querySelector<HTMLElement>(rowKey ? selector : "[data-mail-list-heading]");
+    element?.focus({ preventScroll: true });
+    if (target === "row") element?.scrollIntoView({ block: "nearest" });
   };
 
   const applyConversationRoute = async (
@@ -823,9 +870,20 @@ function MailWorkspaceView(props: {
 
   const requireWorkspaceReconcile = () => requireMailWorkspaceRefresh(() => replaceWorkspaceRoute(requestPath()), t().refreshMailboxFailed);
 
-  const reconcileWorkspace = async () => {
-    const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
+  const reconcileWorkspaceForActions = async (): Promise<boolean> => {
+    let fresh = false;
+    const refreshError = await captureMailWorkspaceRefreshError(() =>
+      requireMailWorkspaceRefresh(async () => {
+        const result = await replaceWorkspaceRoute(requestPath());
+        fresh = result === "applied";
+        return result;
+      }, t().refreshMailboxFailed),
+    );
     if (refreshError) toast.error(refreshError.message);
+    return fresh;
+  };
+  const reconcileWorkspace = async (): Promise<void> => {
+    await reconcileWorkspaceForActions();
   };
 
   /**
@@ -871,7 +929,7 @@ function MailWorkspaceView(props: {
     await requireWorkspaceReconcile();
   };
 
-  const orderedConversationIds = () => data.listItems.flatMap((item) => (item.conversationId ? [item.conversationId] : []));
+  const orderedConversationIds = () => selectableRows().flatMap((item) => (item.conversationId ? [item.conversationId] : []));
 
   const toggleConversationSelection = (item: MailListItem, range: boolean) => {
     if (!canWrite() || !item.conversationId) return;
@@ -905,7 +963,7 @@ function MailWorkspaceView(props: {
   const actionTargets = (actionId: MailActionId): MailBulkTarget[] => {
     const selectedIds = selectedConversationIds();
     if (selectedIds.size > 0)
-      return data.listItems.flatMap((item) => {
+      return selectableRows().flatMap((item) => {
         if (!item.conversationId || !selectedIds.has(item.conversationId)) return [];
         const target = actionTargetForItem(item, actionId);
         return target ? [target] : [];
@@ -970,7 +1028,7 @@ function MailWorkspaceView(props: {
   type ConversationTarget = { conversationId: string; revision: number; subject: string; participantSummary: string };
   const chooseConversationTarget = async (excludedConversationId: string): Promise<ConversationTarget | null> => {
     const loadedTargets = () =>
-      data.listItems
+      selectableRows()
         .filter((item) => item.conversationId && item.conversationId !== excludedConversationId)
         .map((item) => ({
           conversationId: item.conversationId!,
@@ -1077,7 +1135,7 @@ function MailWorkspaceView(props: {
       }),
   });
   const mergeConversation = (source: { conversationId: string; revision: number; subject: string }) => {
-    if (!canWrite() || actionPending() || disposed) return Promise.resolve();
+    if (!canWrite() || structurePending() || disposed) return Promise.resolve();
     return mergeConversationMutation.mutate(source);
   };
 
@@ -1136,7 +1194,7 @@ function MailWorkspaceView(props: {
   const reassignMessage = (messageId: string) => {
     const sourceConversationId = data.selectedConversationId;
     const sourceRevision = selectedConversationRevision();
-    if (!canWrite() || actionPending() || !sourceConversationId || !sourceRevision) return Promise.resolve();
+    if (!canWrite() || structurePending() || !sourceConversationId || !sourceRevision) return Promise.resolve();
     return reassignMessageMutation.mutate({ messageId, sourceConversationId, sourceRevision });
   };
 
@@ -1184,7 +1242,7 @@ function MailWorkspaceView(props: {
     const revision = selectedConversationRevision();
     if (
       !canWrite() ||
-      actionPending() ||
+      structurePending() ||
       !conversationId ||
       !revision ||
       (selectedListItem()?.messageCount ?? data.detailMessages.length) <= 1
@@ -1234,7 +1292,7 @@ function MailWorkspaceView(props: {
   });
   const setConversationKept = (keep: boolean) => {
     const conversationId = data.selectedConversationId;
-    if (!conversationId || disposed || actionPending() || (keep ? !canWrite() : !canAdmin())) return Promise.resolve();
+    if (!conversationId || disposed || structurePending() || (keep ? !canWrite() : !canAdmin())) return Promise.resolve();
     return keepMutation.mutate({ conversationId, keep });
   };
 
@@ -1328,136 +1386,337 @@ function MailWorkspaceView(props: {
     if (outcomePollTimer) clearTimeout(outcomePollTimer);
   });
 
-  const actionHost = {
-    resolveTargets: actionTargets,
-    chooseDestinationFolder,
-    roleDestinationFolderId: (nextActionId) => mailRoleDestinationFolderId(nextActionId, data.folders),
-    applyOptimistic: (nextActionId, targets) => {
-      if (nextActionId === "mark_read" || nextActionId === "mark_unread") {
-        for (const target of targets) setTargetListState(target, { unread: nextActionId === "mark_unread" });
-      }
-      if (nextActionId === "flag" || nextActionId === "unflag") {
-        for (const target of targets) setTargetListState(target, { flagged: nextActionId === "flag" });
-      }
-    },
-    clearOptimistic: (targets, fields) => {
-      for (const target of targets) {
-        for (const key of target.messageIds?.map(mailListMessagePendingKey) ?? [target.conversationId])
-          clearPendingListState(key, [...fields]);
-      }
-    },
-    submit: async ({ actionId: nextActionId, target, sourceFolderId, destinationFolderId, correlationId, idempotencyKey, signal }) => {
-      const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].actions.$post(
-        {
-          param: { mailboxId, conversationId: target.conversationId },
-          json: buildMailActionInput({
-            actionId: nextActionId,
-            sourceFolderId,
-            messageIds: target.messageIds,
-            destinationFolderId,
-            correlationId,
-            idempotencyKey,
-          }),
-        },
-        { init: { signal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, t().actionFailed));
-      return (await response.json()).commands;
-    },
-    followOutcomes: (params) => {
-      const report = actionOutcomes.follow(params);
-      if (report) showActionFailures(report);
-      if (actionOutcomes.hasPending()) scheduleActionOutcomePoll(true);
-    },
-    pruneSelection: (succeeded) => {
-      const current = conversationSelection();
-      const ids = new Set([...current.ids].filter((id) => !succeeded.has(id)));
-      setConversationSelection({
-        ids,
-        anchorId: current.anchorId && !succeeded.has(current.anchorId) ? current.anchorId : null,
-      });
-      if (ids.size === 0) setSelectionMode(false);
-    },
-    // In a message list, moving another message of the open conversation leaves the open message where it is.
-    removesActiveConversation: (nextActionId, succeeded) =>
-      ["archive", "junk", "not_spam", "trash", "move"].includes(nextActionId) &&
-      succeeded.some(
-        (target) =>
-          target.conversationId === data.selectedConversationId &&
-          (!target.messageIds || !data.selectedMessageId || target.messageIds.includes(data.selectedMessageId)),
-      ),
-    refreshAfterSuccess: async ({ removesActiveConversation, succeededConversationIds }) => {
-      const focusAfterRemoval = removesActiveConversation
-        ? findMailFocusAfterRemoval({
-            orderedConversationIds: orderedConversationIds(),
-            activeConversationId: data.selectedConversationId,
-            removedConversationIds: succeededConversationIds,
-          })
-        : null;
-      const refreshError = await captureMailWorkspaceRefreshError(() =>
-        removesActiveConversation
-          ? requireMailWorkspaceRefresh(
-              () => transitionWorkspaceHref(buildMailListHref(mailRouteUrl(requestPath())), true),
-              t().actionRefreshFailed,
-            )
-          : requireWorkspaceReconcile(),
-      );
-      if (!disposed && focusAfterRemoval && !refreshError) focusConversation(focusAfterRemoval, "row");
-      if (refreshError) reportRefreshFailure(refreshError, t().actionQueuedRefreshFailed);
-    },
-    reconcile: reconcileWorkspace,
-    showMissingTarget: async () => {
-      await prompts.error(t().chooseFolderFirstBody, {
-        title: t().chooseFolderFirst,
-      });
-    },
-    showNothingToMove: () => toast(t().nothingToMoveBody, { title: t().nothingToMove }),
-    showSuccess: (_nextActionId, targetCount, successCount) =>
-      toast.success(targetCount === 1 ? t().actionQueued : t().actionQueuedFor({ count: successCount })),
-    showFailures: async (failures, targetCount) => {
-      const failureMessage = (message: string) => {
-        if (message === MAIL_BULK_NO_PROVIDER_PLACEMENT) return t().noProviderPlacement;
-        if (message === MAIL_BULK_QUEUE_FAILED) return t().actionCouldNotBeQueued;
-        if (message === MAIL_ACTION_MISSING_DESTINATION) return t().chooseDestinationBeforeMoving;
-        return message;
-      };
-      await prompts.error(
-        failures
-          .slice(0, 5)
-          .map(
-            (failure) =>
-              `${failure.label}: ${failureMessage(failure.message)}${failure.submittedPlacements > 0 ? ` (${t().somePlacementsQueued})` : ""}`,
-          )
-          .join("\n"),
-        { title: t().conversationsFailed({ failed: failures.length, total: targetCount }) },
-      );
-    },
-    showError: async (error) => {
-      const message = error instanceof Error ? error.message : "";
-      toast.error(
-        message === MAIL_ACTION_MISSING_DESTINATION ? t().chooseDestinationBeforeMoving : message || t().updateConversationsFailed,
-      );
-    },
-  } satisfies MailWorkspaceActionRunnerHost;
-  const actionMutation = mutation.create<
-    void,
-    {
-      actionId: MailActionId;
-      options: MailWorkspaceActionOptions;
-      execution: MailWorkspaceActionExecution;
+  const actionUiController = new AbortController();
+  // A reload that a newer one replaces resolves before its snapshot arrives, and a row released on it would show again.
+  // Actions that settle together share one reload, and those that settle during it share the next.
+  let actionReconcile: Promise<boolean> | null = null;
+  let nextActionReconcile: Promise<boolean> | null = null;
+  let actionReconcileStarted = false;
+  const reconcileAfterAction = (): Promise<boolean> => {
+    if (disposed) return Promise.resolve(false);
+    if (!actionReconcile) {
+      actionReconcile = Promise.resolve()
+        .then(() => {
+          actionReconcileStarted = true;
+          return reconcileWorkspaceForActions();
+        })
+        .finally(() => {
+          actionReconcile = null;
+          actionReconcileStarted = false;
+        });
+      return actionReconcile;
     }
-  >({
-    mutation: ({ actionId, options, execution }, { abortSignal }) =>
-      runMailWorkspaceAction(actionId, options, actionHost, abortSignal, execution),
-  });
-  actionMutationLoading = actionMutation.loading;
-  const runAction = (actionId: MailActionId, options: MailWorkspaceActionOptions = {}) => {
-    if (!canWrite() || actionPending() || disposed) return Promise.resolve();
-    return actionMutation.mutate({
-      actionId,
-      options,
-      execution: { correlationId: crypto.randomUUID(), idempotencyKeys: new Map() },
+    if (!actionReconcileStarted) return actionReconcile;
+    nextActionReconcile ??= actionReconcile.then(() => {
+      nextActionReconcile = null;
+      return reconcileAfterAction();
     });
+    return nextActionReconcile;
+  };
+  const createActionHost = (invocationActionId: MailActionId): MailWorkspaceActionRunnerHost => {
+    const owner = Symbol("mail-action");
+    const savedRemovals = new Map<string, MailListRemoval>();
+    const owns = (removal: MailListRemoval, target: MailBulkTarget) =>
+      removalOwners.get(removal) === owner &&
+      removal.conversationId === target.conversationId &&
+      (!target.messageIds || target.messageIds.includes(removal.item.id));
+    const release = (target: MailBulkTarget) => {
+      if (disposed) return;
+      setRemovals((current) => current.filter((removal) => !owns(removal, target)));
+      for (const key of target.messageIds?.map(mailListMessagePendingKey) ?? [target.conversationId]) {
+        const owners = pendingActionOwners.get(key);
+        if (!owners) continue;
+        for (const field of mailOptimisticFields(invocationActionId)) if (owners[field] === owner) delete owners[field];
+        if (Object.keys(owners).length === 0) pendingActionOwners.delete(key);
+      }
+    };
+    return {
+      queue: actionQueue,
+      releaseOnNextSnapshot: (target, wanted) => {
+        if (disposed) return;
+        releasesOnNextSnapshot.add(() => {
+          if (wanted()) release(target);
+        });
+      },
+      resolveTargets: actionTargets,
+      chooseDestinationFolder,
+      roleDestinationFolderId: (nextActionId) => mailRoleDestinationFolderId(nextActionId, data.folders),
+      applyOptimistic: (nextActionId, targets, destinationFolderId) => {
+        if (disposed) return;
+        let projectedFocus: string | null | undefined;
+        batch(() => {
+          for (const target of targets) {
+            for (const key of target.messageIds?.map(mailListMessagePendingKey) ?? [target.conversationId]) {
+              const owners = pendingActionOwners.get(key) ?? {};
+              for (const field of mailOptimisticFields(nextActionId)) owners[field] = owner;
+              if (Object.keys(owners).length > 0) pendingActionOwners.set(key, owners);
+            }
+          }
+          if (nextActionId === "mark_read" || nextActionId === "mark_unread") {
+            for (const target of targets) setTargetListState(target, { unread: nextActionId === "mark_unread" });
+            return;
+          }
+          if (nextActionId === "flag" || nextActionId === "unflag") {
+            for (const target of targets) setTargetListState(target, { flagged: nextActionId === "flag" });
+            return;
+          }
+          const rows = selectableRows();
+          const scope = mailListScope(requestPath());
+          const added = rows.flatMap((item, index): MailListRemoval[] => {
+            const target = targets.find(
+              (target) => target.conversationId === item.conversationId && (!target.messageIds || target.messageIds.includes(item.id)),
+            );
+            if (
+              !target ||
+              !mailRowLeavesListing({
+                item,
+                sourceFolderIds: target.sourceFolderIds,
+                destinationFolderId,
+                folders: data.folders,
+                viewFolderId: data.folderId,
+                activeView: data.activeView,
+                hasSearch: !!data.query || data.search.expression !== null,
+                hasSavedView: !!data.savedViewId,
+                scheduledMode: data.scheduledMode,
+              })
+            )
+              return [];
+            const removal: MailListRemoval = {
+              rowKey: mailListRowKey(item),
+              conversationId: target.conversationId,
+              scope,
+              item: structuredClone(unwrap(item)),
+              before: rows.slice(0, index).map(mailListRowKey),
+              sourceFolderIds: target.sourceFolderIds,
+              destinationFolderId,
+              phase: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "hidden" : "leaving",
+            };
+            removalOwners.set(removal, owner);
+            return [removal];
+          });
+          for (const removal of added) savedRemovals.set(`${removal.scope}:${removal.rowKey}`, removal);
+          const keys = new Set(added.map((removal) => removal.rowKey));
+          const focused = rows.find((item) => {
+            const selector =
+              item.selectionKind === "message"
+                ? `[data-message-id="${CSS.escape(item.id)}"]`
+                : `[data-conversation-id="${CSS.escape(item.conversationId ?? "")}"]`;
+            return document.querySelector(selector)?.contains(document.activeElement);
+          });
+          const open = rows.find((item) =>
+            item.selectionKind === "message" ? item.id === data.selectedMessageId : item.conversationId === data.selectedConversationId,
+          );
+          const focusKey =
+            focused && keys.has(mailListRowKey(focused))
+              ? mailListRowKey(focused)
+              : open && keys.has(mailListRowKey(open))
+                ? mailListRowKey(open)
+                : null;
+          const nextFocus = focusKey
+            ? findMailFocusAfterRemoval({ orderedRowKeys: rows.map(mailListRowKey), activeRowKey: focusKey, removedRowKeys: keys })
+            : null;
+          if (focusKey) projectedFocus = nextFocus;
+          setRemovals((current) => [...current, ...added]);
+          setConversationSelection((current) =>
+            pruneMailConversationSelection(
+              current,
+              new Set(
+                rows
+                  .filter((item) => !keys.has(mailListRowKey(item)))
+                  .flatMap((item) => (item.conversationId ? [item.conversationId] : [])),
+              ),
+            ),
+          );
+          if (conversationSelection().ids.size === 0) setSelectionMode(false);
+          if (open && keys.has(mailListRowKey(open))) {
+            setData({ selectedConversationId: null, selectedMessageId: null });
+            void transitionWorkspaceHref(buildMailListHref(mailRouteUrl(requestPath())), true);
+          }
+          if (added.some((removal) => removal.phase === "leaving")) {
+            const timer = setTimeout(() => {
+              leaveTimers.delete(timer);
+              if (disposed) return;
+              setRemovals((current) =>
+                current.map((removal) => {
+                  if (removalOwners.get(removal) !== owner || removal.phase !== "leaving") return removal;
+                  const next = { ...removal, phase: "hidden" as const };
+                  removalOwners.set(next, owner);
+                  return next;
+                }),
+              );
+            }, MAIL_ROW_LEAVE_MS);
+            leaveTimers.add(timer);
+          }
+        });
+        if (projectedFocus !== undefined) focusConversation(projectedFocus, "row");
+      },
+      restore: (target) => {
+        if (disposed) return;
+        batch(() => {
+          const fields = mailOptimisticFields(invocationActionId);
+          const restoredFields = new Map<string, MailListOptimisticField[]>();
+          for (const key of target.messageIds?.map(mailListMessagePendingKey) ?? [target.conversationId]) {
+            const owners = pendingActionOwners.get(key);
+            const ownedFields = fields.filter((field) => owners?.[field] === owner);
+            restoredFields.set(key, ownedFields);
+            clearPendingListState(key, ownedFields);
+            for (const field of ownedFields) if (owners) delete owners[field];
+            if (owners && Object.keys(owners).length === 0) pendingActionOwners.delete(key);
+          }
+          release(target);
+          const original = new Map(snapshotItems().map((item) => [mailListRowKey(item), item]));
+          setData("listItems", (items) =>
+            items.map((item) => {
+              if (item.conversationId !== target.conversationId || (target.messageIds && !target.messageIds.includes(item.id))) return item;
+              const row = original.get(mailListRowKey(item));
+              const ownedFields =
+                restoredFields.get(item.selectionKind === "message" && target.messageIds ? mailListRowKey(item) : target.conversationId) ??
+                [];
+              return !row
+                ? item
+                : {
+                    ...item,
+                    ...(ownedFields.includes("unread") ? { unread: row.unread } : {}),
+                    ...(ownedFields.includes("flagged") ? { flagged: row.flagged } : {}),
+                  };
+            }),
+          );
+        });
+      },
+      hold: (target) => {
+        if (disposed) return;
+        setRemovals((current) => [
+          ...current.filter((removal) => !owns(removal, target)),
+          ...[...savedRemovals.values()]
+            .filter(
+              (removal) =>
+                removal.conversationId === target.conversationId && (!target.messageIds || target.messageIds.includes(removal.item.id)),
+            )
+            .map((removal) => {
+              const next = { ...removal, phase: "held" as const };
+              removalOwners.set(next, owner);
+              return next;
+            }),
+        ]);
+      },
+      release,
+      offerUndo: ({ actionId, targets, destinationFolderId, undo }) => {
+        if (disposed) return;
+        const messageRows = targets.every((target) => target.messageIds);
+        const count = messageRows ? targets.reduce((count, target) => count + (target.messageIds?.length ?? 0), 0) : targets.length;
+        const folder = data.folders.find((folder) => folder.id === destinationFolderId)?.name ?? "";
+        const notice = toast.success(t().actionMoved({ actionId, count, messages: messageRows, folder }), {
+          action: {
+            label: t().undo,
+            onClick: () => {
+              notice.dismiss();
+              undoNotices.delete(notice);
+              void undo();
+            },
+          },
+        });
+        undoNotices.add(notice);
+        // The toast rail shows at most three notices; an older one is already gone and needs no dismissal on cleanup.
+        for (const older of undoNotices) {
+          if (undoNotices.size <= 3) break;
+          undoNotices.delete(older);
+        }
+      },
+      announce: (actionId, targets) => {
+        if (disposed) return;
+        const count = targets.reduce((count, target) => count + (target.messageIds?.length ?? 1), 0);
+        announce(
+          actionId === "undo"
+            ? t().undone
+            : t().actionAnnouncement({ actionId, count, messages: targets.every((target) => target.messageIds) }),
+        );
+      },
+      submit: async ({ actionId: nextActionId, target, sourceFolderId, destinationFolderId, correlationId, idempotencyKey }) => {
+        const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].actions.$post(
+          {
+            param: { mailboxId, conversationId: target.conversationId },
+            json: buildMailActionInput({
+              actionId: nextActionId,
+              sourceFolderId,
+              messageIds: target.messageIds,
+              destinationFolderId,
+              correlationId,
+              idempotencyKey,
+            }),
+          },
+          { init: { keepalive: true } },
+        );
+        if (!response.ok) throw new Error(await readApiError(response, t().actionFailed));
+        return (await response.json()).commands;
+      },
+      submitUndo: async ({ target, commandIds }) => {
+        const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].actions.undo.$post(
+          {
+            param: { mailboxId, conversationId: target.conversationId },
+            json: { commandIds },
+          },
+          { init: { keepalive: true } },
+        );
+        if (!response.ok) throw new Error(await readApiError(response, t().undoFailed));
+        return (await response.json()).commands;
+      },
+      followOutcomes: ({ target, commands, ...params }) => {
+        if (disposed) return () => {};
+        const key = Symbol("followed-action");
+        const report = actionOutcomes.follow({ ...params, key, conversations: [{ ...target, commands }] });
+        if (report) showActionFailures(report);
+        if (actionOutcomes.hasPending()) scheduleActionOutcomePoll(true);
+        return () => actionOutcomes.stop(key, target.conversationId);
+      },
+      reconcile: reconcileAfterAction,
+      showMissingTarget: async () => {
+        if (!disposed) await prompts.error(t().chooseFolderFirstBody, { title: t().chooseFolderFirst });
+      },
+      showNothingToMove: () => {
+        if (!disposed) toast(t().nothingToMoveBody, { title: t().nothingToMove });
+      },
+      showFailures: (failures, { targetCount, retry }) => {
+        const failureMessage = (message: string) =>
+          message === MAIL_BULK_NO_PROVIDER_PLACEMENT
+            ? t().noProviderPlacement
+            : message === MAIL_BULK_QUEUE_FAILED
+              ? t().actionCouldNotBeQueued
+              : message === MAIL_ACTION_MISSING_DESTINATION
+                ? t().chooseDestinationBeforeMoving
+                : message;
+        retryToast(
+          failures
+            .slice(0, 5)
+            .map(
+              (failure) =>
+                `${failure.label}: ${failureMessage(failure.message)}${failure.submittedPlacements > 0 ? ` (${t().somePlacementsQueued})` : ""}`,
+            )
+            .join("\n"),
+          {
+            title: t().conversationsFailed({ failed: failures.length, total: targetCount }),
+            retryLabel: t().tryAgain,
+            retry: () => (!disposed && canWrite() && !structureMutationLoading() ? retry() : undefined),
+          },
+        );
+      },
+      showUndoFailed: (targets, destinationFolderId) => {
+        if (disposed) return;
+        const folder = data.folders.find((folder) => folder.id === destinationFolderId)?.name ?? null;
+        const first = targets[0];
+        if (!first) return;
+        toast.error(
+          `${t().undoNotMoved({ label: first.label, folder })}${targets.length > 1 ? ` (${t().moreNotApplied({ count: targets.length - 1 })})` : ""}`,
+          { title: t().undoFailed },
+        );
+      },
+      showError: (error) => {
+        if (!disposed) toast.error(error instanceof Error ? error.message : t().updateConversationsFailed);
+      },
+    };
+  };
+  const runAction = (actionId: MailActionId, options: MailWorkspaceActionOptions = {}) => {
+    if (!canWrite() || structureMutationLoading() || disposed) return Promise.resolve();
+    return runMailWorkspaceAction(actionId, options, createActionHost(actionId), actionUiController.signal);
   };
 
   const addTagsMutation = mutation.create<void, string[]>({
@@ -1502,7 +1761,7 @@ function MailWorkspaceView(props: {
   });
   const addTagsToSelection = () => {
     const conversationIds = [...selectedConversationIds()];
-    if (!canWrite() || actionPending() || conversationIds.length === 0) return Promise.resolve();
+    if (!canWrite() || structurePending() || conversationIds.length === 0) return Promise.resolve();
     return addTagsMutation.mutate(conversationIds);
   };
 
@@ -1534,7 +1793,7 @@ function MailWorkspaceView(props: {
     },
   });
   const manageConversationTags = (item: MailListItem) => {
-    if (!canWrite() || actionPending() || !item.conversationId) return Promise.resolve();
+    if (!canWrite() || structurePending() || !item.conversationId) return Promise.resolve();
     return manageConversationTagsMutation.mutate(item);
   };
 
@@ -1570,7 +1829,7 @@ function MailWorkspaceView(props: {
   });
   const assignSelection = () => {
     const conversationIds = [...selectedConversationIds()];
-    if (!canWrite() || actionPending() || conversationIds.length === 0) return Promise.resolve();
+    if (!canWrite() || structurePending() || conversationIds.length === 0) return Promise.resolve();
     return assignSelectionMutation.mutate(conversationIds);
   };
 
@@ -1583,7 +1842,6 @@ function MailWorkspaceView(props: {
     addTagsMutation.loading() ||
     manageConversationTagsMutation.loading();
   onCleanup(() => {
-    actionMutation.abort();
     mergeConversationMutation.abort();
     reassignMessageMutation.abort();
     splitMessageMutation.abort();
@@ -1595,7 +1853,7 @@ function MailWorkspaceView(props: {
   let consumedOpenIntent = -1;
   createEffect(() => {
     const intent = conversationOpenIntent();
-    const pending = actionPending();
+    const pending = structureMutationLoading();
     const item = selectedListItem();
     const conversationId = item?.conversationId ?? data.selectedConversationId;
     const target = conversationId ? (item ? actionTargetForItem(item, "mark_read") : actionTargets("mark_read")[0]) : undefined;
@@ -1629,11 +1887,15 @@ function MailWorkspaceView(props: {
   return (
     <AppWorkspace mobileSurface="flush" class="mail-workspace">
       <MailSidebar
+        canCreate={Boolean(props.currentUserId)}
+        currentUserEmail={props.currentUserEmail}
+        contactDirectory={props.contactDirectory}
         mailboxId={data.mailbox.id}
         mailboxName={data.mailbox.name}
+        mailboxAddress={data.receivingAddress ?? undefined}
         syncEnabled={data.mailbox.syncEnabled}
         needsConnection={mailboxNeedsConnection(data.mailbox.health)}
-        folders={data.folders}
+        folders={listCounts().folders}
         localTags={data.localTags}
         savedViews={data.savedViews}
         scheduledMode={data.scheduledMode}
@@ -1643,7 +1905,7 @@ function MailWorkspaceView(props: {
         activeSavedViewId={data.savedViewId}
         activeTagId={activeTagId()}
         searchActive={activeSearch().expression !== null}
-        viewCounts={data.viewCounts}
+        viewCounts={listCounts().viewCounts}
         canWrite={canWrite()}
         canAdmin={canAdmin()}
         assignedOnly={assignedOnly()}
@@ -1659,7 +1921,7 @@ function MailWorkspaceView(props: {
         onMoveConversation={(input) => {
           // The dragged row, not the first row of its conversation: in a message list, rows of one
           // conversation can sit in different folders.
-          const item = data.listItems.find((candidate) => candidate.id === input.itemId);
+          const item = selectableRows().find((candidate) => candidate.id === input.itemId);
           const target = item ? actionTargetForItem(item, "move") : null;
           return runAction("move", { targets: target ? [target] : [], destinationFolderId: input.destinationFolderId });
         }}
@@ -1685,8 +1947,10 @@ function MailWorkspaceView(props: {
                     mailboxId={data.mailbox.id}
                     requestUrl={requestPath()}
                     query={data.query}
+                    search={data.search}
                     title={data.listTitle}
-                    items={data.listItems}
+                    items={listView().items}
+                    leavingKeys={listView().leavingKeys}
                     error={data.listError}
                     selectedConversationId={data.selectedConversationId}
                     selectedMessageId={data.selectedMessageId}
@@ -1746,6 +2010,7 @@ function MailWorkspaceView(props: {
                   canAdmin={canAdmin()}
                   mailboxWide={!assignedOnly()}
                   identities={data.identities}
+                  onOpenDeliverySettings={() => void openSettings("delivery")}
                   selectionKey={data.selectedMessageId ?? data.selectedConversationId}
                   selectedConversationId={data.selectedConversationId}
                   selectedMessageId={data.selectedMessageId}
@@ -1755,12 +2020,12 @@ function MailWorkspaceView(props: {
                   keep={data.keep}
                   reference={data.selectedReference}
                   subject={data.selectedSubject}
-                  messages={data.detailMessages}
+                  messages={hasSelection() ? data.detailMessages : []}
                   activity={conversationActivity()}
                   conversationSummary={data.conversationSummary}
                   conversationDrafts={data.conversationDrafts}
-                  totalMessageCount={selectedListItem()?.messageCount ?? data.detailMessages.length}
-                  error={data.detailError}
+                  totalMessageCount={hasSelection() ? (selectedListItem()?.messageCount ?? data.detailMessages.length) : 0}
+                  error={hasSelection() ? data.detailError : null}
                   dateConfig={props.dateConfig}
                   readingFormat={userPreferences().readingFormat}
                   theme={theme()}
@@ -1771,7 +2036,8 @@ function MailWorkspaceView(props: {
                   onRestoreList={() => setCollapsed(false)}
                   onToggleDetails={() => canShowDetails() && setDetailsVisible(!detailsOpen())}
                   onToolbarActionsChange={updateToolbarActions}
-                  actionPending={actionPending()}
+                  actionPending={structureMutationLoading()}
+                  structurePending={structurePending()}
                   onAction={runAction}
                   onOpenHref={openWorkspaceHref}
                   onManageTags={() => {
@@ -1832,7 +2098,13 @@ function MailWorkspaceView(props: {
             </Show>
           </Show>
         </AppWorkspace.Main>
-        <AppWorkspace.Detail id="mail-context" open={detailsOpen() && canShowDetails()} width="lg" maxWidth={520}>
+        <AppWorkspace.Detail
+          id="mail-context"
+          open={detailsOpen() && canShowDetails()}
+          onClose={() => setDetailsVisible(false)}
+          width="lg"
+          maxWidth={520}
+        >
           <Show
             when={data.selectedConversationId && data.collaborationState && data.conversationLocalTags}
             fallback={

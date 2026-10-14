@@ -6,6 +6,7 @@ import * as ai from "@k2b/cloud/ai";
 import * as live from "@k2b/cloud/ai/live";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
+import * as server from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import * as rail from "@k2b/cloud/services/rail-snapshot";
 import { createConfig } from "@k2b/ssr";
@@ -72,6 +73,7 @@ beforeEach(() => {
     }),
   );
   spies.push(spyOn(ai, "listAssistantAiModels").mockResolvedValue([]));
+  spies.push(spyOn(server, "loadPendingApprovals").mockResolvedValue({ items: [], nextCursor: null, count: 0, elsewhere: 0 }));
   spies.push(
     spyOn(ai.aiUserPrefs, "get").mockResolvedValue({
       userId: user.id,
@@ -85,7 +87,7 @@ beforeEach(() => {
   spies.push(spyOn(services, "get").mockResolvedValue("https://cloud.example.test"));
 });
 
-const request = () => {
+const request = (href = "https://cloud.example.test/app/assistant?project=project123") => {
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
   app.use("*", async (c, next) => {
     c.set("actor", { kind: "user", user });
@@ -94,7 +96,7 @@ const request = () => {
     await next();
   });
   app.get("/app/assistant", ...handler);
-  return app.request("https://cloud.example.test/app/assistant?project=project123");
+  return app.request(href);
 };
 
 test("missing or revoked selected project returns opaque HTML404 despite a stale sidebar", async () => {
@@ -146,4 +148,65 @@ test("authorized project omitted by sidebar cap remains in the rendered workspac
   expect(html).toContain(project.name);
   expect(html).toContain(project.shortId);
   expect(html).not.toContain(project.id);
+});
+
+const chat = {
+  id: "chat1",
+  shortId: "chat1",
+  title: "Offer Q4",
+  titleSource: "default",
+  description: "",
+  descriptionSource: "default",
+  keywords: [],
+  pinnedAt: null,
+  done: null,
+  isDone: false,
+  lastUsedAt: "2026-10-08T09:00:00.000Z",
+  archivedAt: null,
+  runStatus: "idle",
+  runError: null,
+  unreadCompletion: false,
+  projectId: null,
+  draft: { content: [], revision: 0, updatedAt: null },
+  createdByUserId: user.id,
+  createdAt: "2026-10-08T09:00:00.000Z",
+  updatedAt: "2026-10-08T09:00:00.000Z",
+} satisfies ai.AiConversation;
+const approval = {
+  id: "33333333-3333-4333-8333-333333333333",
+  app: { id: "mail", name: "Mail", icon: "ti ti-mail" },
+  action: "draft.send",
+  assurance: "confirm" as const,
+  sentence: "Mail: Send the Q4 offer",
+  review: null,
+  requester: { kind: "chat" as const, appId: "assistant", title: "Offer Q4", href: "/app/assistant?conversation=chat1" },
+  remember: { chat: false, always: false, website: false },
+  createdAt: "2026-10-08T09:00:00.000Z",
+  expiresAt: "2026-10-09T09:00:00.000Z",
+};
+
+test("?approvals=1 renders the approvals view without selecting a chat, and the row only while something waits", async () => {
+  spies.push(spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({ projects: [], doneCount: 0, conversations: [chat] }));
+  const lookup = spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(null);
+  spies.push(lookup);
+  const pending = spyOn(server, "loadPendingApprovals").mockResolvedValue({ items: [approval], nextCursor: null, count: 1, elsewhere: 0 });
+  spies.push(pending);
+  const response = await request("https://cloud.example.test/app/assistant?approvals=1");
+  expect(response.status).toBe(200);
+  const html = await response.text();
+  expect(pending).toHaveBeenCalledWith(expect.anything(), { app: "assistant" });
+  // The view replaces the chat: no chat is loaded, so the first open chat is not selected behind it.
+  expect(lookup).not.toHaveBeenCalled();
+  expect(html).toContain("What the Assistant wants to do for you.");
+  expect(html).toContain("Send the Q4 offer");
+  expect(html).toContain('href="/app/assistant?approvals=1"');
+  expect(html).toMatch(
+    /href="\/app\/assistant\?approvals=1"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/app\/assistant\?approvals=1"/,
+  );
+
+  // Nothing waits: a chat page has no Approvals row.
+  pending.mockResolvedValue({ items: [], nextCursor: null, count: 0, elsewhere: 0 });
+  const plain = await (await request("https://cloud.example.test/app/assistant")).text();
+  expect(plain).not.toContain('href="/app/assistant?approvals=1"');
+  expect(plain).not.toContain("What the Assistant wants to do for you.");
 });

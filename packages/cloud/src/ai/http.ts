@@ -6,6 +6,7 @@ import { type AuthContext, err, fail, respond } from "../server";
 import { aiAttachmentMarker } from "./attachments";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
+import { AI_LOCAL_TOOL_NAMES, AiLocalClientSchema, AiLocalContextSchema } from "./local-tool-contracts";
 import { AiQuotaError } from "./quotas";
 import { AiResourceMarkerSchema } from "./resource-markers";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
@@ -120,7 +121,10 @@ export const AiUserContentPartSchema = z.union([
 
 export type AiTurnContentPart = z.infer<typeof AiUserContentPartSchema>;
 
-export const AiClientToolIdSchema = z.enum(["local_bash", ...CODE_RUNTIME_TOOL_NAMES] satisfies [AiClientToolId, ...AiClientToolId[]]);
+export const AiClientToolIdSchema = z.enum(["local_bash", ...AI_LOCAL_TOOL_NAMES, ...CODE_RUNTIME_TOOL_NAMES] satisfies [
+  AiClientToolId,
+  ...AiClientToolId[],
+]);
 
 // Names use aiCapabilityToolName's provider grammar and 64-character limit. The 64-item cap matches allowedTools, with headroom
 // for retired and not-yet-known names; 64 names × 64 ASCII characters bounds advertised name text to 4 KiB.
@@ -157,12 +161,21 @@ export const AiTurnInputSchema = z
 
 export type AiTurnInput = z.infer<typeof AiTurnInputSchema>;
 
-export const AiSubmitConversationDraftInputSchema = z.object({
-  queueId: z.uuid().optional(),
-  draftRevision: z.number().int().min(1),
-  modelProfileId: z.string().trim().min(1).optional(),
-  clientToolIds: AiClientToolIdsSchema.optional(),
-});
+export const AiSubmitConversationDraftInputSchema = z
+  .object({
+    queueId: z.uuid().optional(),
+    draftRevision: z.number().int().min(1),
+    modelProfileId: z.string().trim().min(1).optional(),
+    clientToolIds: AiClientToolIdsSchema.optional(),
+    /** Set by a local client such as cld; the web never sends it. */
+    client: AiLocalClientSchema.optional(),
+    /** AGENTS.md files and local Skills a local client found; only valid together with client. */
+    localContext: AiLocalContextSchema.optional(),
+  })
+  .refine((input) => !input.localContext || Boolean(input.client), {
+    message: "Local context requires a local client.",
+    path: ["localContext"],
+  });
 
 export const AiSteerInputSchema = z.object({
   message: z.string().trim().min(1).max(20000),
@@ -187,6 +200,13 @@ export const AiMessageRetryInputSchema = z
       .max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1)
       .optional(),
     modelProfileId: z.string().trim().min(1).optional(),
+    clientToolIds: AiClientToolIdsSchema.optional(),
+    client: AiLocalClientSchema.optional(),
+    localContext: AiLocalContextSchema.omit({ selectedSkills: true }).optional(),
+  })
+  .refine((input) => !input.localContext || Boolean(input.client), {
+    message: "Local context requires a local client.",
+    path: ["localContext"],
   })
   .refine(
     (input) =>
@@ -272,13 +292,18 @@ export const toAiErrorResponse = (c: Context<AuthContext>, error: unknown) => {
   return respond(c, fail(err.internal(message)));
 };
 
-export const toAiActionFailureResponse = (c: Context<AuthContext>, result: { ok: false; status: 400 | 404 | 409; message: string }) => {
+export const toAiActionFailureResponse = (
+  c: Context<AuthContext>,
+  result: { ok: false; status: 400 | 403 | 404 | 409; message: string },
+) => {
   const failure =
     result.status === 400
       ? err.badInput(result.message)
-      : result.status === 404
-        ? // err.notFound appends " not found" to its subject — the runtime message is already complete.
-          { code: "NOT_FOUND" as const, message: result.message, status: 404 as const }
-        : conflict(result.message);
+      : result.status === 403
+        ? err.forbidden(result.message)
+        : result.status === 404
+          ? // err.notFound appends " not found" to its subject — the runtime message is already complete.
+            { code: "NOT_FOUND" as const, message: result.message, status: 404 as const }
+          : conflict(result.message);
   return respond(c, fail(failure));
 };

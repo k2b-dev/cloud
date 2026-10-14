@@ -323,6 +323,7 @@ export const mailRemainingMessages = i18n.define({
       messageBody: "Message body",
       hasAttachments: "Has attachments",
       hasNoAttachments: "Has no attachments",
+      notSender: ({ value }: { value: string }) => `Not from ${value}`,
       conditionLabel: ({ index }: { index: number }) => `Condition ${index}`,
       operator: "Operator",
       value: "Value",
@@ -339,9 +340,11 @@ export const mailRemainingMessages = i18n.define({
       textOperator: ({ operator }: { operator: string }) =>
         ({
           is: "is",
+          is_not: "is not",
           words: "contains all words",
           phrase: "contains phrase",
           contains: "contains",
+          not_contains: "does not contain",
           exact: "matches exactly",
           starts_with: "starts with",
           ends_with: "ends with",
@@ -785,6 +788,15 @@ export const mailRemainingMessages = i18n.define({
       completedNew: ({ count }: { count: number | string }) => `Completed · ${count} new`,
       limitedNew: ({ count, remaining }: { count: number | string; remaining: number | string }) =>
         `Limit reached · ${count} new, ${remaining} left`,
+      retryProgress: ({ accepted, total }: { accepted: number | string; total: number | string }) => `Retry · ${accepted}/${total}`,
+      retryCompleted: ({ count }: { count: number | string }) => `Completed · ${count} retried`,
+      retryLimited: ({ count, remaining }: { count: number | string; remaining: number | string }) =>
+        `Limit reached · ${count} retried, ${remaining} left`,
+      retryFailedMessages: "Retry failed messages",
+      retryFailedTitle: "Retry failed messages?",
+      retryFailedConfirmation:
+        "Messages whose last run of this automation failed or was canceled run again, at most 100 at a time. Completed effects remain if a later step fails.",
+      startRetry: "Start retry",
       failed: "Failed",
       canceled: "Canceled",
       editAutomation: "Edit automation",
@@ -1133,6 +1145,7 @@ export const mailRemainingMessages = i18n.define({
       messageBody: "Nachrichteninhalt",
       hasAttachments: "Mit Anhängen",
       hasNoAttachments: "Ohne Anhänge",
+      notSender: ({ value }) => `Nicht von ${value}`,
       conditionLabel: ({ index }) => `Bedingung ${index}`,
       operator: "Operator",
       value: "Wert",
@@ -1149,9 +1162,11 @@ export const mailRemainingMessages = i18n.define({
       textOperator: ({ operator }) =>
         ({
           is: "ist",
+          is_not: "ist nicht",
           words: "enthält alle Wörter",
           phrase: "enthält Wortgruppe",
           contains: "enthält",
+          not_contains: "enthält nicht",
           exact: "stimmt exakt überein mit",
           starts_with: "beginnt mit",
           ends_with: "endet mit",
@@ -1603,6 +1618,14 @@ export const mailRemainingMessages = i18n.define({
       backfillProgress: ({ accepted, total }) => `Nachträgliche Verarbeitung · ${accepted}/${total}`,
       completedNew: ({ count }) => `Abgeschlossen · ${count} neu`,
       limitedNew: ({ count, remaining }) => `Limit erreicht · ${count} neu, ${remaining} offen`,
+      retryProgress: ({ accepted, total }) => `Wiederholung · ${accepted}/${total}`,
+      retryCompleted: ({ count }) => `Abgeschlossen · ${count} wiederholt`,
+      retryLimited: ({ count, remaining }) => `Limit erreicht · ${count} wiederholt, ${remaining} offen`,
+      retryFailedMessages: "Fehlgeschlagene Nachrichten wiederholen",
+      retryFailedTitle: "Fehlgeschlagene Nachrichten wiederholen?",
+      retryFailedConfirmation:
+        "Nachrichten, deren letzter Lauf dieser Automatisierung fehlgeschlagen ist oder abgebrochen wurde, laufen erneut, höchstens 100 auf einmal. Bereits abgeschlossene Aktionen bleiben bestehen, wenn ein späterer Schritt fehlschlägt.",
+      startRetry: "Wiederholung starten",
       failed: "Fehlgeschlagen",
       canceled: "Abgebrochen",
       editAutomation: "Automatisierung bearbeiten",

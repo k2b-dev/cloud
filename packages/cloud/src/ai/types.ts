@@ -15,6 +15,7 @@ import type { z } from "zod";
 import type { CapabilitySentenceField } from "../_internal/capability-sentences";
 import type { CapabilityActionReview, CapabilityActionSentences, CloudResourceRef } from "../contracts/capabilities";
 import type { RequestActor } from "../server";
+import type { AiLocalClient, AiLocalContext, AiLocalToolName } from "./local-tool-contracts";
 import type { AiTurnBlock } from "./protocol";
 
 export const AI_MODEL_CAPABILITIES = ["streaming", "tools", "vision", "transcription"] as const;
@@ -84,6 +85,7 @@ export type AiSettingsState =
       defaultModelId: string;
       visionModelId?: string;
       globalInstructions: string;
+      localClientInstructions: string;
       compactionInstructions: string;
       maxToolResultChars: number;
       firecrawlConfigured: boolean;
@@ -95,6 +97,7 @@ export type AiSettingsState =
       defaultModelId: string;
       visionModelId?: string;
       globalInstructions: string;
+      localClientInstructions: string;
       compactionInstructions: string;
       maxToolResultChars: number;
       firecrawlConfigured: boolean;
@@ -447,6 +450,7 @@ export type AiTurnAbortRequest =
     };
 
 export type AiPendingTurnActionRecord = {
+  approvalId?: string;
   turnId: string;
   conversationId: string;
   callId: string;
@@ -470,6 +474,7 @@ export type AiTurnToolSource = { kind: "none" } | { kind: "default"; appTools?: 
 
 export type AiClientToolId =
   | "local_bash"
+  | AiLocalToolName
   | "code_run"
   | "code_action"
   | "code_inspect"
@@ -641,6 +646,8 @@ export type AiChatTurnRunConfig = {
   /** Whether this turn's materialized tools can inspect referenced images. */
   canInspectAttachedImages?: boolean;
   clientToolIds?: AiClientToolId[];
+  client?: AiLocalClient;
+  localContext?: AiLocalContext;
   toolSource?: AiTurnToolSource;
   toolApprovalContext?: {
     actorUserId: string;
@@ -986,6 +993,7 @@ export type AiConversationService = {
   savePendingTurnAction(input: AiPendingTurnActionRecord): Promise<void>;
   listPendingTurnActions(input: { conversationId: string; turnId: string }): Promise<AiPendingTurnAction[]>;
   getPendingTurnAction(input: { conversationId: string; turnId: string; callId: string }): Promise<AiPendingTurnActionRecord | null>;
+  findPendingTurnActionByApproval(input: { approvalId: string; ownerUserId: string }): Promise<AiPendingTurnActionRecord | null>;
   listPendingActionRecords(input: { conversationId: string; turnId: string }): Promise<AiPendingTurnActionRecord[]>;
   listResolvedPendingActions(input: { conversationId: string; turnId: string }): Promise<AiPendingTurnActionRecord[]>;
   resolvePendingTurnAction(input: {
@@ -994,6 +1002,7 @@ export type AiConversationService = {
     callId: string;
     event: InboundEvent;
   }): Promise<AiPendingTurnActionRecord | null>;
+  markPendingTurnActionConsumedInline(input: { conversationId: string; turnId: string; callId: string }): Promise<void>;
   clearPendingTurnActions(input: { conversationId: string; turnId: string }): Promise<void>;
   enqueueTurnSteer(input: {
     conversationId: string;
@@ -1095,6 +1104,7 @@ export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends 
           conversationId?: string;
           turnId?: string;
           attachedFilePaths?: ReadonlySet<string>;
+          localToolsEnabled?: boolean;
           allowedDataBoundaries?: AiDataBoundary[];
           projectFiles?: AiProjectFileToolSource;
           skillFiles?: AiSkillFileToolSource;
@@ -1105,6 +1115,8 @@ export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends 
           reportProgress?: (message: string) => Promise<void>;
           /** Asks like `requestApproval`, and lets the person remember the approval of `target`. */
           requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+          /** Relays a decision for an effect another platform component consumes and executes. */
+          requestRelayedApproval?: (message: string, options: { approvalId?: string; target?: AiApprovalTarget }) => Promise<boolean>;
           /** Shows requests a website approval let through as they go out, so the chat keeps them whatever the outcome. */
           reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
         },

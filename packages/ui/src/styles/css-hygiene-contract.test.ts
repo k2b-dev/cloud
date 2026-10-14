@@ -11,6 +11,51 @@ const styleSources = shippedStyleFiles(stylesDir).map((file) => ({
 const shippedCss = styleSources.map(({ source }) => source).join("\n");
 
 describe("@k2b/ui stylesheet hygiene", () => {
+  test("hides row actions only while some pointer can hover and keeps the current row's actions", () => {
+    const rules = readShippedCssRules(stylesDir);
+    const hoverPointer = "@media (any-hover: hover)";
+    for (const [selector, property, value] of [
+      [".k2b-ui .k2b-app-workspace__sidebar-section-actions", "opacity", "0"],
+      ['.k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]', "visibility", "hidden"],
+      ['.k2b-ui .k2b-app-workspace__sidebar-item > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]', "opacity", "0"],
+      [".k2b-ui .k2b-detail-panel__action-secondary", "opacity", "0"],
+      [".k2b-ui .k2b-detail-panel__action-menu-trigger", "opacity", "0"],
+      ['.k2b-ui .k2b-discussion__item-actions[data-visibility="progressive"]', "opacity", "0"],
+      ['.k2b-ui .k2b-description-list[data-action-visibility="progressive"] .k2b-description-list__action', "opacity", "0"],
+      [".k2b-ui .k2b-tabs__list .k2b-tabs__close", "opacity", "0"],
+      [".k2b-ui .k2b-progressive-action", "opacity", "0"],
+    ] as const) {
+      const rule = rules.find((candidate) => candidate.selector === selector && candidate.context === hoverPointer);
+      expect(rule, selector).toBeDefined();
+      expect(cssDeclarations(rule!.body).get(property)).toEqual([value]);
+    }
+
+    const rowAction =
+      /sidebar-section-actions|sidebar-item-actions|sidebar-item-action\[|detail-panel__action-secondary|detail-panel__action-menu-trigger|discussion__item-actions|description-list__action|tabs__close|progressive-action/;
+    // A primary-pointer query misses a tablet with a mouse, whether it hides or shows the actions.
+    const primaryPointer = /\((?:hover:\s*(?:hover|none)|pointer:\s*(?:fine|coarse))\)/;
+    expect(rules.filter((rule) => rowAction.test(rule.selector) && primaryPointer.test(rule.context))).toEqual([]);
+    // Hiding anywhere else would hide the actions on touch-only screens too.
+    expect(
+      rules.filter((rule) => {
+        if (!rowAction.test(rule.selector) || rule.context.startsWith(hoverPointer)) return false;
+        const declarations = cssDeclarations(rule.body);
+        return declarations.get("opacity")?.includes("0") || declarations.get("visibility")?.includes("hidden");
+      }),
+    ).toEqual([]);
+
+    const reveal = rules.find(
+      (rule) =>
+        rule.context === hoverPointer &&
+        rule.selector.endsWith(' .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]') &&
+        rule.selector.includes(".k2b-app-workspace__sidebar-item:is("),
+    );
+    expect(reveal).toBeDefined();
+    expect(reveal!.selector).toContain(".is-active");
+    expect(reveal!.selector).toContain(':has(> [aria-current="page"])');
+    expect(cssDeclarations(reveal!.body).get("visibility")).toEqual(["visible"]);
+  });
+
   test("keeps inspector and navigation section labels quiet and sentence-case", () => {
     const rules = readShippedCssRules(stylesDir);
     const declarations = (selector: string) => {

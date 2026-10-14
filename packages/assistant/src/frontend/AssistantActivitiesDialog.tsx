@@ -1,10 +1,12 @@
 import type { AiChatTaskOccurrenceView, AiChatTaskView, AiStoredMessage } from "@k2b/cloud/ai";
+import { conversationFileSource } from "@k2b/cloud/ai/solid";
 import { AiChatActionsProvider, createAiChatTimeline } from "@k2b/cloud/ai/ui";
 import { navigateTo } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import { Button, Chat, MarkdownView, NoticeCard, Placeholder, prompts, renderSafeMarkdown, StatusBadge, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { openAssistantCloudReference } from "./AssistantContextContent";
 import { formatAssistantTaskSchedule, occurrencePresentation, openAssistantTask } from "./AssistantTasksDialog";
 import { type AssistantLiveHub, AssistantLiveProvider, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
 import { assistantConversationHref } from "./assistant-navigation";
@@ -82,7 +84,13 @@ function AssistantTaskRun(props: { taskId: string; occurrenceId: string; transcr
             <Show
               when={!props.transcript}
               fallback={
-                <AiChatActionsProvider actions={{}}>
+                // Presented views and files load from the task's chat with the viewer's access, as in the chat itself.
+                <AiChatActionsProvider
+                  actions={{
+                    fileUrl: conversationFileSource("/api/ai", value().task.chatId).downloadHref,
+                    onOpenReference: (title, ref) => void openAssistantCloudReference(title, ref),
+                  }}
+                >
                   <RunTranscript messages={value().messages} />
                 </AiChatActionsProvider>
               }

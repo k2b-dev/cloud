@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
-import { FileProviderError, type FileProviderSource } from "./file-providers";
+import { FileProviderError } from "./file-provider-error";
+import type { FileProviderSource } from "./file-providers";
 
 /** The catalog refuses the caller, such as a visitor of a public page or a session that has just expired. */
 const refused = (error: unknown) => error instanceof FileProviderError && (error.status === 401 || error.status === 403);

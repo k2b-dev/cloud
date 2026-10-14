@@ -35,6 +35,47 @@ const createContext = (args: string[], flags: CloudCliFlags = {}) => {
 };
 
 describe("CLI command builder", () => {
+  test("preserves aliases and normalizes exact shortcut command paths", () => {
+    const mod = defineCliCommands({
+      name: "inventory",
+      summary: "Inventory",
+      alias: "inv",
+      shortcuts: { stock: "  items   list\t" },
+      commands: [command("items list", { summary: "List", run: () => 0 })],
+    });
+    expect(mod.alias).toBe("inv");
+    expect(mod.shortcuts).toEqual({ stock: "items list" });
+    const plain = defineCliCommands({ name: "inventory", summary: "Inventory", commands: [] });
+    expect(Object.hasOwn(plain, "alias")).toBe(false);
+    expect(Object.hasOwn(plain, "shortcuts")).toBe(false);
+  });
+
+  test("allows a shortcut to a group only when the group has its own command", () => {
+    const mod = defineCliCommands({
+      name: "inventory",
+      summary: "Inventory",
+      shortcuts: { stock: "items" },
+      commands: [command("items", { summary: "Items", run: () => 0 }), command("items list", { summary: "List", run: () => 0 })],
+    });
+    expect(mod.shortcuts).toEqual({ stock: "items" });
+  });
+
+  test("rejects invalid or repeated short names and non-command targets", () => {
+    const config = { name: "inventory", summary: "Inventory", commands: [command("items list", { summary: "List", run: () => 0 })] };
+    for (const alias of ["", "Inv", "1inv", "inv_name", "inventory"]) {
+      expect(() => defineCliCommands({ ...config, alias })).toThrow("CLI alias");
+    }
+    for (const name of ["", "Stock", "1stock", "stock_name", "inventory", "inv"]) {
+      expect(() => defineCliCommands({ ...config, alias: "inv", shortcuts: { [name]: "items list" } })).toThrow("CLI shortcuts");
+    }
+    for (const target of ["", "  ", "items list --json", "-h"]) {
+      expect(() => defineCliCommands({ ...config, shortcuts: { stock: target } })).toThrow("CLI shortcuts");
+    }
+    for (const target of ["items", "unknown", "items list extra"]) {
+      expect(() => defineCliCommands({ ...config, shortcuts: { stock: target } })).toThrow("Unknown CLI shortcut command path");
+    }
+  });
+
   test("lets one command in a Cloud-backed module run offline", () => {
     const mod = defineCliCommands({
       name: "inventory",
@@ -184,7 +225,13 @@ describe("CLI command builder", () => {
       commands: [
         command("logs list", {
           summary: "List logs",
-          flags: { search: flag.string({ aliases: ["q"], description: "Free-text search" }) },
+          flags: {
+            search: flag.string({ aliases: ["q"], description: "Free-text search" }),
+            name: flag.string({ required: true, description: "Log name" }),
+            kind: flag.enum(["live", "archived"] as const, { required: true, default: "live", description: "Log kind" }),
+            count: flag.int({ required: true, description: "Log count" }),
+            body: flag.input({ required: true, description: "Log body" }),
+          },
           examples: ["cld admin logs list --search timeout"],
           run: () => undefined,
         }),
@@ -210,6 +257,19 @@ describe("CLI command builder", () => {
     const output = commandHelp.lines.join("\n");
     expect(output).toContain("cld admin logs list");
     expect(output).toContain("--search <value>, -q");
+    for (const [name, description] of [
+      ["name", "Log name. Required."],
+      ["kind", "Log kind. Default: live. Values: live, archived."],
+      ["count", "Log count. Required."],
+      ["body", "Log body. Required."],
+    ]) {
+      const line = output.split("\n").find((line) => line.trimStart().startsWith(`--${name} `));
+      expect(line).toContain(description);
+      if (name === "kind") expect(line).not.toContain("Required.");
+    }
+    const optionalLine = output.split("\n").find((line) => line.trimStart().startsWith("--search "));
+    expect(optionalLine?.trim().replace(/^--search <value>, -q\s+/, "")).toBe("Free-text search");
+    expect(optionalLine).not.toContain("Required.");
     expect(output).toContain("cld admin logs list --search timeout");
   });
 

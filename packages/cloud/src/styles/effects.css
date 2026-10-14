@@ -60,18 +60,35 @@
 
 .k2b-ui .ai-turn-steps__text {
   padding-block: 0.25rem;
+}
+
+/* A live status in place 3 reads like those texts. It keeps the place's line height, so a status and the text that
+   replaces it line up, and the same text never grows when it turns quiet. */
+.k2b-ui :is(.ai-turn-steps__text, .ai-turn__text--status) {
   color: var(--k2b-text-muted);
+}
+
+.k2b-ui :is(.ai-turn-steps__text, .ai-turn__text--status) .assistant-markdown-block,
+.k2b-ui :is(.ai-turn-steps__text, .ai-turn__text--status) .assistant-markdown-block :where(h1, h2, h3, h4, h5, h6) {
+  color: inherit;
+  font-size: 0.75rem;
 }
 
 .k2b-ui .ai-turn-steps__text .assistant-markdown-block,
 .k2b-ui .ai-turn-steps__text .assistant-markdown-block :where(h1, h2, h3, h4, h5, h6) {
-  color: inherit;
-  font-size: 0.75rem;
   line-height: 1.55;
 }
 
-.k2b-ui .ai-turn-steps__text .assistant-markdown-block :where(p, ul, ol, pre, blockquote) {
+.k2b-ui :is(.ai-turn-steps__text, .ai-turn__text--status) .assistant-markdown-block :where(p, ul, ol, pre, blockquote) {
   margin-block: 0.375rem;
+}
+
+.k2b-ui .ai-turn__text--status .assistant-markdown-block > :where(:first-child) {
+  margin-top: 0;
+}
+
+.k2b-ui .ai-turn__text--status .assistant-markdown-block > :where(:last-child) {
+  margin-bottom: 0;
 }
 
 .k2b-ui .ai-turn-steps__thought {
@@ -328,12 +345,22 @@
   background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 10%, var(--ui-surface-muted));
 }
 
+/* The reader's layout steps follow its own width: a dialog, a full page, or
+   an app's embedded reader, never the window. */
+.help-article {
+  container: help-article / inline-size;
+}
+
+.help-article-toc[data-empty] {
+  visibility: hidden;
+}
+
 .help-article-layout {
   display: grid;
   grid-template-columns: minmax(10rem, 13rem) minmax(0, 52rem);
   justify-content: center;
   align-items: start;
-  gap: clamp(2rem, 4vw, 4rem);
+  gap: clamp(2rem, 4cqi, 4rem);
 }
 
 .help-article-copy {
@@ -875,7 +902,7 @@
   border: 0;
 }
 
-@media (max-width: 72rem) {
+@container help-article (max-width: 56rem) {
   .help-article-layout {
     grid-template-columns: 3.25rem minmax(0, 52rem);
     gap: 2rem;
@@ -902,7 +929,7 @@
   }
 }
 
-@media (max-width: 48rem) {
+@container help-article (max-width: 40rem) {
   .help-article-layout {
     grid-template-columns: minmax(0, 1fr);
     gap: 1.5rem;

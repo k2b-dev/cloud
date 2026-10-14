@@ -1,14 +1,14 @@
 ---
-title: Islands and hydration
-navTitle: Islands and hydration
+title: Islands
+navTitle: Islands
 section: Frontend
 order: 840
 description: Add browser interactivity to server-rendered pages without turning the whole page into a client application.
 tags: [islands, hydration, solidjs]
-updated: 2026-10-09
+updated: 2026-10-12
 ---
 
-# Islands and hydration
+# Islands
 
 Use an island for the smallest part of a server-rendered page that needs
 browser state.
@@ -18,13 +18,35 @@ browser state.
 | File | Behavior |
 | --- | --- |
 | `*.tsx` | Server-only component |
-| `*.island.tsx` | Server-rendered and hydrated in the browser |
+| `*.island.tsx` | Server-rendered, then rendered again in the browser |
 | `*.client.tsx` | Browser-only wrapper with no server body |
 
 An island or client component uses a default export. Import it by its full file
 path so the SSR plugin can discover the suffix.
 
 Do not re-export islands through a barrel.
+
+## Know how an island mounts
+
+The server renders each island's HTML into the page, so the first paint is
+complete. When the island's code has loaded, the browser removes that HTML and
+renders the component again from its serialized props. The browser does not
+hydrate the server HTML; it replaces it. A later release of the island runtime
+may hydrate islands instead.
+
+This has two consequences:
+
+- State that exists only in the server HTML inside an island is lost when the
+  island mounts: a value typed into an input, focus, a text selection, or a
+  scroll position. Keep islands small so that they mount soon after the page
+  appears. Do not rely on input made before mount; derive the island's initial
+  state from its props or the URL.
+- The server and the browser must render the same markup from the same props.
+  When they differ, the page moves as the island mounts. Do not read
+  browser-only values such as the window width, `localStorage`, or the
+  browser's clock during the first render. Pass the server's value as a prop,
+  for example the server's render time, or read the value in `onMount` and
+  reserve its space in the server markup.
 
 ## Cross the prop boundary
 
@@ -38,8 +60,9 @@ export default function ItemActions(props: {
 }
 ```
 
-Props are serialized with Seroval. Pass data such as strings, arrays, plain
-objects, dates, maps, and sets.
+Props travel as Seroval JSON data, and the browser never evaluates them. Island
+props do not need `'unsafe-eval'`. Pass strings, arrays, plain objects, dates,
+maps, and sets.
 
 Do not pass functions, event handlers, Solid signals, DOM nodes, or arbitrary
 class instances.
@@ -80,6 +103,12 @@ Do not import `@k2b/cloud/server`, `/services`, `/ssr`, or a domain
 service that imports Bun SQL.
 
 ## Keep the first load small
+
+Validators are large. Import schema-free values such as paths, limits, and
+messages from their named module instead of a contract barrel such as
+`@k2b/cloud/contracts`. Parse untrusted data with the schema in the code path
+that receives it on demand. Cloud's own file, command, and live helpers keep
+Zod out of the first load.
 
 Every static import of an island downloads and runs before the island mounts,
 on every page that renders it. Load code that only an action needs, such as a
@@ -129,22 +158,50 @@ Render the initial answer on the server. The island starts from serialized
 state and enhances it.
 
 When the island must reload that answer, pass both the snapshot and its exact
-source through the query's `initial` option. A matching source avoids an
-unnecessary hydration request. See
+source through the query's `initial` option. A matching source avoids a
+second request for the same data when the island mounts. See
 [Server-backed state](/en/docs/frontend/server-backed-island-state).
 
-Do not hydrate the entire page to avoid designing the boundary. Large islands
-increase bundle size and make server and browser ownership unclear.
-
-Do not nest an island import inside another island or client component.
+Do not make the entire page one island to avoid designing the boundary.
+Large islands increase bundle size and make server and browser ownership
+unclear.
 
 See [Browser clients and mutations](/en/docs/frontend/browser-clients-and-mutations)
 for typed calls and writes from an island.
 
+## Do not nest islands
+
+An island or client module must never import another island or client module.
+This includes direct imports, imports through plain modules, named imports,
+and dynamic `import()` with a literal path. An island must also not import
+itself back through plain modules. Type-only imports are fine. The build fails
+in dev and production and names both files. The build cannot see an
+`import()` whose path is computed at runtime, so do not use one for an island.
+
+Each island file is its own browser entry with its own mount and error
+boundary; imported into another island, it would render as a plain component.
+A lazy import also loses its own mount, prop serialization, and error boundary,
+so lazy-load a plain component module instead.
+
+Move the shared component into a plain `.tsx` module and import it from both
+files. Keep the island file as a thin default re-export:
+
+```tsx
+// InventoryFilter.tsx
+export default function InventoryFilter(props: { initialQuery: string }) {
+  return <input name="query" value={props.initialQuery} />;
+}
+```
+
+```tsx
+// InventoryFilter.island.tsx
+export { default } from "./InventoryFilter";
+```
+
 ## Load media only in the browser
 
-An island shows its server HTML until it mounts. Then it renders its own DOM
-in that place, so the server elements are discarded. A server-rendered
+An island discards its server HTML when it mounts (see
+[Know how an island mounts](#know-how-an-island-mounts)). A server-rendered
 `<video>` or `<audio>` with a `src` starts loading, is cut off when the island
 mounts, and loads again. In WebKit on Linux, which plays media through
 GStreamer, stopping a media element while it loads can freeze the page for

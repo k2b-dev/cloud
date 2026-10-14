@@ -456,7 +456,7 @@ const ToolbarDemo = () => (
   <DemoCard
     id="toolbar"
     chip={{ kind: "component", name: "Toolbar", from: "@k2b/ui" }}
-    description="A semantic action row with named groups, separators, a flexible spacer, and optional wrapping. Buttons retain their own keyboard behavior."
+    description="A semantic action row with named groups, separators, a flexible spacer, and optional wrapping. One Tab stop, orientation-aware arrow keys, and Home/End navigate rendered controls."
     code={`<Toolbar label="Document actions" wrap>
   <Toolbar.Group label="History">
     <IconButton size="xs" label="Undo"><i class="ti ti-arrow-back-up" /></IconButton>

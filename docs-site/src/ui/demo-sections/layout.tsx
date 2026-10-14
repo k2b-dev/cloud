@@ -166,7 +166,7 @@ const WorkspaceDemo = () => {
                   />
                   <AppWorkspace.NavTree.Item id="maintenance" label="Maintenance" icon="ti ti-tool" meta={4} />
                 </AppWorkspace.NavTree.Item>
-                <AppWorkspace.NavTree.Item id="activity" label="Activity" icon="ti ti-history" />
+                <AppWorkspace.NavTree.Item id="activity" label="Activity" description="Updated 2 min ago" icon="ti ti-history" />
                 <AppWorkspace.NavTree.Item id="tags" label="Tags" icon="ti ti-tags">
                   <For each={tags()}>
                     {(tag) => <AppWorkspace.NavTree.Item id={tag.id} label={tag.label} icon="ti ti-tag" meta={tag.meta} movable />}
@@ -181,7 +181,7 @@ const WorkspaceDemo = () => {
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
-        <AppWorkspace.Main mobilePane="main">
+        <AppWorkspace.Main mobilePane="main" class="p-2">
           <div class="ui-demo-pane">
             <div class="ui-workspace-demo__body">
               <strong>{activeView() === "activity" ? "Recent activity" : `Inventory · ${activeView()}`}</strong>
@@ -215,7 +215,7 @@ const WorkspaceDemo = () => {
             <div class="ui-demo-pane">Main 2</div>
           </AppWorkspace.MainPane>
         </AppWorkspace.Main>
-        <AppWorkspace.Detail id="record" open={detailOpen()} width="sm">
+        <AppWorkspace.Detail id="record" open={detailOpen()} onClose={() => setDetailOpen(false)} width="sm">
           <div class="ui-demo-pane">Selected item</div>
         </AppWorkspace.Detail>
       </AppWorkspace.Content>
@@ -259,16 +259,16 @@ const [navigationHidden, setNavigationHidden] = createSignal(false);
           <AppWorkspace.NavTree.Item id="available" label="Available" meta={8} />
           <AppWorkspace.NavTree.Item id="maintenance" label="Maintenance" meta={4} />
         </AppWorkspace.NavTree.Item>
-        <AppWorkspace.NavTree.Item id="activity" label="Activity" icon="ti ti-history" />
+        <AppWorkspace.NavTree.Item id="activity" label="Activity" description="Updated 2 min ago" icon="ti ti-history" />
       </AppWorkspace.NavTree>
     </AppWorkspace.SidebarSection>
   </AppWorkspace.Sidebar>
   <AppWorkspace.Content>
-    <AppWorkspace.Main>
+    <AppWorkspace.Main class="p-2">
       <AppWorkspace.MainPane id="main-2" label="Main 2" open={paneOpen()}>…</AppWorkspace.MainPane>
       …
     </AppWorkspace.Main>
-    <AppWorkspace.Detail id="record" open={detailOpen()} width="sm">…</AppWorkspace.Detail>
+    <AppWorkspace.Detail id="record" open={detailOpen()} onClose={() => setDetailOpen(false)} width="sm">…</AppWorkspace.Detail>
   </AppWorkspace.Content>
   <AppWorkspace.BottomDrawer id="events" open={drawerOpen()} height="sm">…</AppWorkspace.BottomDrawer>
 </AppWorkspace>`}

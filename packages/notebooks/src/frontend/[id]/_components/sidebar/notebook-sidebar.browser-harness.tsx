@@ -1,57 +1,52 @@
 import { AppWorkspace, createNavigation, LocaleProvider, Navigation, type NavigationItem } from "@k2b/ui";
 import { render } from "solid-js/web";
-import { handleSoftNoteNavigationRequests } from "../../../lib/soft-navigation";
+import { handleSoftNoteNavigationRequests, requestSoftNoteNavigation } from "../../../lib/soft-navigation";
 import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
-import NotebookNavigatorPane from "./NotebookNavigatorPane.island";
 import NotebookSidebar from "./NotebookSidebar.island";
 import type { NotebookContext } from "./types";
 
 /**
- * The real notebook sidebar and note list in the workspace layout of the notebook page. The editor is a stand-in that
- * applies every soft navigation, as the real one does, and records where it went.
+ * The real notebook sidebar in the workspace layout of the notebook page. The editor is a stand-in that takes clicks
+ * on note links and applies every soft navigation, as the real one does, and records where it went.
  */
 declare global {
   interface Window {
     mountNotebookSidebar: (ctx: NotebookContext, locale: string) => void;
     /** Renders the phone menu from the items the sidebar hands to Cloud's header, like the Cloud layout does. */
     mountPhoneMenu: (locale: string, live?: boolean) => void;
+    /** Whether a selection closed the phone menu, as Cloud's menu closes before it runs one. */
+    phoneMenuClosed: boolean;
     openedNotes: string[];
   }
 }
 
 window.openedNotes = [];
+document.addEventListener("click", (event) => {
+  const anchor = (event.target as Element | null)?.closest<HTMLAnchorElement>('a[href*="/notes/"]');
+  if (!anchor || event.defaultPrevented || event.button !== 0) return;
+  event.preventDefault();
+  void requestSoftNoteNavigation(anchor.getAttribute("href")!);
+});
 
 window.mountNotebookSidebar = (ctx, locale) => {
   const host = document.getElementById("root");
   if (!host) throw new Error("Missing harness root");
   document.documentElement.lang = locale;
-  handleSoftNoteNavigationRequests(async (href) => {
+  // In the editor's order: the note applies and announces itself, and only then does the history show its address.
+  handleSoftNoteNavigationRequests(async (href, { push }) => {
     const noteId = /\/notes\/(\w+)/u.exec(href)?.[1];
     window.openedNotes.push(href);
-    window.history.pushState({}, "", href);
-    window.dispatchEvent(new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, { detail: { noteId } }));
+    window.dispatchEvent(new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, { detail: { noteId, href } }));
+    if (push) window.history.pushState({}, "", href);
     return { kind: "applied", href };
   });
   render(
     () => (
       <LocaleProvider locale={locale}>
-        <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
+        <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
           <NotebookSidebar ctx={ctx} />
           <AppWorkspace.Content>
             <AppWorkspace.Main scroll={false}>
-              {ctx.settings.sidebarMode === "navigator" && (
-                <AppWorkspace.MainPane
-                  id="notebook-notes"
-                  label="Notes"
-                  surface="navigation"
-                  defaultSize={336}
-                  minSize={280}
-                  maxSize={520}
-                  scroll={false}
-                >
-                  <NotebookNavigatorPane ctx={ctx} />
-                </AppWorkspace.MainPane>
-              )}
               <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col" />
             </AppWorkspace.Main>
           </AppWorkspace.Content>
@@ -70,10 +65,18 @@ window.mountPhoneMenu = (locale, live = false) => {
   if (!host) throw new Error("Missing phone menu root");
   const navigation =
     live && window.__cloudWorkspaceNavigation ? window.__cloudWorkspaceNavigation.navigation : createNavigation({ items: () => items });
-  render(
+  window.phoneMenuClosed = false;
+  const close = render(
     () => (
       <LocaleProvider locale={locale}>
-        <Navigation navigation={navigation} label={label} />
+        <Navigation
+          navigation={navigation}
+          label={label}
+          beforeSelect={() => {
+            window.phoneMenuClosed = true;
+            close();
+          }}
+        />
       </LocaleProvider>
     ),
     host,

@@ -226,7 +226,7 @@ export default function TaskAttachmentsSection(props: {
               <For each={media()}>
                 {(attachment) => (
                   <div
-                    class="group relative overflow-hidden rounded-[var(--ui-radius-control)] bg-[var(--k2b-surface-muted)] shadow-xs ring-1 ring-[var(--k2b-border)]"
+                    class="k2b-progressive-row relative overflow-hidden rounded-[var(--ui-radius-control)] bg-[var(--k2b-surface-muted)] shadow-xs ring-1 ring-[var(--k2b-border)]"
                     style="width:5rem;height:5rem;min-width:5rem;min-height:5rem;flex:0 0 5rem"
                   >
                     <Show
@@ -273,7 +273,7 @@ export default function TaskAttachmentsSection(props: {
                       </button>
                     </Show>
                     <Show when={props.canWrite}>
-                      <div class="absolute right-1 top-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+                      <div class="k2b-progressive-action absolute right-1 top-1">
                         <Tooltip.Anchor content={t.deleteAttachment}>
                           <IconButton
                             label={t.deleteAttachmentNamed({ filename: attachment.filename })}

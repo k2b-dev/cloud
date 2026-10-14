@@ -28,6 +28,7 @@ const Reply = z.object({
     approvals: z.array(
       z.object({
         id: z.uuid(),
+        approvalId: z.uuid().optional(),
         message: z.string(),
         decision: z.boolean().nullable(),
         /** What the person may remember: the website or Action, derived by the host from the stored request. */
@@ -47,7 +48,8 @@ type Context = ToolContext & {
   locale?: string;
   timeZone?: string;
   reportProgress?: (message: string) => Promise<void>;
-  requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+  /** Relays a decision; the managed host consumes the linked platform approval before execution. */
+  requestRelayedApproval?: (message: string, options: { approvalId?: string; target?: AiApprovalTarget }) => Promise<boolean>;
   reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
 };
 
@@ -155,7 +157,7 @@ export const runManagedCodeTool =
     };
     return waitForManagedCodeCall(
       request,
-      runConfig.background ? { ...context, requestApproval: backgroundApproval, requestApprovalFor: backgroundApproval } : context,
+      runConfig.background ? { ...context, requestApproval: backgroundApproval, requestRelayedApproval: backgroundApproval } : context,
     );
   };
 
@@ -169,7 +171,8 @@ export async function waitForManagedCodeCall(
   context: Pick<ToolContext, "signal" | "requestApproval"> & {
     locale?: string;
     reportProgress?: (message: string) => Promise<void>;
-    requestApprovalFor?: (message: string, target: AiApprovalTarget) => Promise<boolean>;
+    /** Relays a decision; the managed host consumes the linked platform approval before execution. */
+    requestRelayedApproval?: (message: string, options: { approvalId?: string; target?: AiApprovalTarget }) => Promise<boolean>;
     reportWebsiteReceipts?: (receipts: AiWebsiteReceipt[]) => Promise<void>;
   },
 ): Promise<z.infer<ReturnType<typeof z.json>>> {
@@ -205,10 +208,11 @@ export async function waitForManagedCodeCall(
     // Skipping already resolved reviews would shift Nessi's child action IDs.
     for (const approval of state.approvals) {
       if (seen.has(approval.id)) continue;
-      const approved =
-        approval.remember && context.requestApprovalFor
-          ? await context.requestApprovalFor(approval.message, approval.remember)
-          : await context.requestApproval(approval.message);
+      if (!context.requestRelayedApproval) throw new Error("Managed code approval requires a relay context");
+      const approved = await context.requestRelayedApproval(approval.message, {
+        approvalId: approval.approvalId,
+        target: approval.remember,
+      });
       seen.add(approval.id);
       if (approval.decision === null) await request({ decision: { id: approval.id, approved }, receiptsAfter });
     }

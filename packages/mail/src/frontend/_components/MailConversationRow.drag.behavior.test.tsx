@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
 import type { MailFolderView } from "../../service/messages";
 import type { MailListItem } from "./mail-navigation";
 
@@ -75,6 +76,8 @@ if (!isServer) {
       () => (
         <>
           <MailSidebar
+            currentUserEmail={null}
+            contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
             mailboxId="Box001"
             mailboxName="Support"
             syncEnabled={true}

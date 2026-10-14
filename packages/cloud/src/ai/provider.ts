@@ -1,9 +1,17 @@
 import type { Provider, ReasoningEffort } from "@k2b/nessi/ai";
-import { anthropic, gemini, mistral, ollama, openAICompatible, openai, openrouter } from "@k2b/nessi/ai";
+import { anthropic, completeFromStream, gemini, mistral, ollama, openAICompatible, openai, openrouter } from "@k2b/nessi/ai";
 import type { AiModelProfile } from "./types";
 
-/** Bound provider stalls while allowing long-context requests up to 60s to begin streaming. */
-const PROVIDER_TIMEOUTS = { firstByteMs: 60_000, idleMs: 60_000 } as const;
+/** Bound the first response chunk and every gap between chunks to 60s, for chat and complete() calls. */
+export const PROVIDER_TIMEOUTS = { firstByteMs: 60_000, idleMs: 60_000 } as const;
+
+// Native complete() receives headers only after the whole answer, so until then Nessi can bound it only by total time
+// (totalMs), which cuts off slow healthy answers or detects a stall late. Streaming bounds the first response chunk and
+// every gap between chunks, as for chat. Any body chunk counts, including SSE keep-alive comments.
+export const completeThroughStream = (provider: Provider): Provider => ({
+  ...provider,
+  complete: (request) => completeFromStream(provider, request),
+});
 
 /**
  * Reasoning for structured tasks and compaction: the requests every provider accepted before Nessi 0.17. A global
@@ -31,6 +39,10 @@ const commonOptions = (profile: AiModelProfile, apiKey?: string) => ({
 
 export const createAiProvider = (profile: AiModelProfile, apiKey?: string, headers?: Record<string, string>): Provider => {
   if (profile.capabilities.includes("transcription")) throw new Error("Transcription profiles cannot be used for chat generation.");
+  return completeThroughStream(createAdapter(profile, apiKey, headers));
+};
+
+const createAdapter = (profile: AiModelProfile, apiKey?: string, headers?: Record<string, string>): Provider => {
   switch (profile.provider) {
     case "openai":
       return openai(profile.model, commonOptions(profile, apiKey));
@@ -39,7 +51,8 @@ export const createAiProvider = (profile: AiModelProfile, apiKey?: string, heade
     case "anthropic":
       return anthropic(profile.model, commonOptions(profile, apiKey));
     case "mistral":
-      return mistral(profile.model, commonOptions(profile, apiKey));
+      // Mistral requires nine alphanumeric characters; map stored and other providers' ids at the transport boundary.
+      return mistral(profile.model, { ...commonOptions(profile, apiKey), normalizeToolCallIds: "strict9" });
     case "gemini":
       return gemini(profile.model, commonOptions(profile, apiKey));
     case "ollama":

@@ -17,6 +17,7 @@ import {
   startNotificationRuntime,
   stopNotificationRuntime,
 } from "@k2b/cloud/services";
+import { appApproval } from "@k2b/cloud/services/app-approval";
 import { drain as drainDeferredAuthRequests } from "@k2b/cloud/services/auth-flows/deferred";
 import { initializeIdentityAuthority, startIdentityKeyMaintenance } from "@k2b/cloud/services/identity";
 import { startOutgoingMailRuntime, stopOutgoingMailRuntime } from "@k2b/cloud/services/outgoing-mail/runtime";
@@ -134,6 +135,13 @@ export const startCoreServices = async (
     await browserNotifications.start();
     await aiNotifications.start();
     stopCloudAiRuntime = startAiRuntime({
+      onApprovalRequested: async ({ approvalId }) => {
+        const [notice] = await Promise.allSettled([
+          aiNotifications.notifyApprovalWaiting(approvalId),
+          appApproval.wakeForAction(approvalId),
+        ]);
+        if (notice.status === "rejected") throw notice.reason;
+      },
       onTurnFinalized: async ({ turnId, status, kind }) => {
         const task = await aiChatTasks.finalizeTurn({ turnId, status }).catch(() => null);
         await Promise.allSettled([

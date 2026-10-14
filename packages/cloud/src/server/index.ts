@@ -1,4 +1,5 @@
 export { buildMetadata } from "../_internal/build-metadata";
+export { loadPendingApprovals } from "../api/approvals-loader";
 export { expectUserBackedActor, getUserBackedActor, isAppSessionActor, userFromActor } from "./actor";
 export type { ApiErrorBody, ApiErrorResponse, ApiErrorStatus } from "./api";
 export { api, respond, respondMessage } from "./api";
@@ -39,6 +40,7 @@ export {
   validator,
 } from "./middleware";
 export { RateLimitError, type RateLimiter, type RateLimiterConfig, type RateLimitResult, ratelimit } from "./ratelimit";
+export { REQUEST_IDLE_TIMEOUT_MAX_SECONDS, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "./request-timeout";
 export type {
   AccessEntry,
   AccessPrincipalColumns,

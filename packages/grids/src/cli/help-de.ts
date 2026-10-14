@@ -25,11 +25,11 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Approve and permanently finalize the Record": "Genehmigen und den Datensatz dauerhaft finalisieren",
   "Artifact key from documents get": "Artefaktschlüssel aus documents get",
   "Audit answers as JSON keyed by audit-question id": "Audit-Antworten als JSON, geschlüsselt nach Audit-Fragen-ID",
-  "Base description": "Beschreibung der Basis",
-  "Base name": "Name der Basis",
-  "Base public ID": "Öffentliche ID der Basis",
-  "Base public id": "Öffentliche ID der Basis",
-  "Base public id or exact name": "Öffentliche ID oder exakter Name der Basis",
+  "Base description": "Beschreibung der Base",
+  "Base name": "Name der Base",
+  "Base public ID": "Öffentliche ID der Base",
+  "Base public id": "Öffentliche ID der Base",
+  "Base public id or exact name": "Öffentliche ID oder exakter Name der Base",
   "Browse a Combined table's published audit trail": "Den veröffentlichten Änderungsverlauf einer kombinierten Tabelle durchsuchen",
   "Browse generated documents as list rows or year/month folders":
     "Erzeugte Dokumente als Listenzeilen oder in Jahr/Monat-Ordnern durchsuchen",
@@ -56,8 +56,8 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Confirm the exact inspected financial export and resume its workflow":
     "Den exakt geprüften Finanzexport bestätigen und seinen Workflow fortsetzen",
   "Confirm this financial export": "Diesen Finanzexport bestätigen",
-  "Create a Grids base": "Eine Grids-Basis erstellen",
-  "Create a base from a built-in template": "Eine Basis aus einer integrierten Vorlage erstellen",
+  "Create a Grids base": "Eine Grids-Base erstellen",
+  "Create a base from a built-in template": "Eine Base aus einer integrierten Vorlage erstellen",
   "Create a blank App draft": "Einen leeren App-Entwurf erstellen",
   "Create a custom form": "Ein eigenes Formular erstellen",
   "Create a direct Grids resource grant": "Eine direkte Freigabe für eine Grids-Ressource erstellen",
@@ -86,7 +86,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Create with a public submit token": "Mit öffentlichem Übermittlungstoken erstellen",
   "Create without a public submit token": "Ohne öffentliches Übermittlungstoken erstellen",
   "Create, inspect, and invoke workflow launchers": "Workflow-Ausführungsoptionen erstellen, prüfen und aufrufen",
-  "Create, inspect, and manage Grids bases": "Grids-Basen erstellen, prüfen und verwalten",
+  "Create, inspect, and manage Grids bases": "Grids-Bases erstellen, prüfen und verwalten",
   "Create, inspect, and manage saved views": "Gespeicherte Ansichten erstellen, prüfen und verwalten",
   "Create, inspect, and manage table fields": "Tabellenfelder erstellen, prüfen und verwalten",
   "Create, inspect, and manage tables": "Tabellen erstellen, prüfen und verwalten",
@@ -99,11 +99,11 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Current file public id": "Öffentliche ID der aktuellen Datei",
   "Current formula field public id or exact name": "Öffentliche ID oder exakter Name des aktuellen Formelfelds",
   "Deactivate the form": "Formular deaktivieren",
-  "Delete a Grids base": "Eine Grids-Basis löschen",
+  "Delete a Grids base": "Eine Grids-Base löschen",
   "Delete a document template": "Eine Dokumentvorlage löschen",
   "Delete a field": "Ein Feld löschen",
   "Delete a form": "Ein Formular löschen",
-  "Delete a record comment as its author or a Base moderator": "Einen Datensatzkommentar als Autor oder Moderator der Basis löschen",
+  "Delete a record comment as its author or a base moderator": "Einen Datensatzkommentar als Autor oder Moderator der Base löschen",
   "Delete a table": "Eine Tabelle löschen",
   "Delete a view": "Eine Ansicht löschen",
   "Delete a workflow": "Einen Workflow löschen",
@@ -112,7 +112,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Delete an App and remove its live route": "Eine App löschen und ihre Live-Route entfernen",
   "Delete the comment": "Den Kommentar löschen",
   "Delete this App": "Diese App löschen",
-  "Delete this Grids base": "Diese Grids-Basis löschen",
+  "Delete this Grids base": "Diese Grids-Base löschen",
   "Delete this comment": "Diesen Kommentar löschen",
   "Delete this document template": "Diese Dokumentvorlage löschen",
   "Delete this email template": "Diese E-Mail-Vorlage löschen",
@@ -157,7 +157,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Download the exact completed evidence TAR without rendering again":
     "Das exakte fertige Nachweis-TAR herunterladen, ohne es erneut zu rendern",
   "Downloaded Grids evidence TAR": "Heruntergeladenes Grids-Nachweis-TAR",
-  "Edit a record comment as its author or a Base moderator": "Einen Datensatzkommentar als Autor oder Moderator der Basis bearbeiten",
+  "Edit a record comment as its author or a base moderator": "Einen Datensatzkommentar als Autor oder Moderator der Base bearbeiten",
   "Email HTML Liquid template": "Liquid-Vorlage für den HTML-Inhalt der E-Mail",
   "Email subject Liquid template": "Liquid-Vorlage für den E-Mail-Betreff",
   "Email template public id or exact name": "Öffentliche ID oder exakter Name der E-Mail-Vorlage",
@@ -172,7 +172,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Events in one page (default: 50)": "Ereignisse auf einer Seite (Standard: 50)",
   "Events per page (default: 50)": "Ereignisse pro Seite (Standard: 50)",
   "Evidence export public ID": "Öffentliche ID des Nachweisexports",
-  "Exact Base name": "Exakter Name der Basis",
+  "Exact base name": "Exakter Name der Base",
   "Exact operational failure UUID returned by record-events failures": "Exakte UUID des Betriebsfehlers aus record-events failures",
   "Exclusive ISO timestamp": "ISO-Zeitstempel (exklusiv)",
   "Execute a GQL query": "Eine GQL-Abfrage ausführen",
@@ -234,7 +234,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Generate, browse, and manage stored documents": "Gespeicherte Dokumente erzeugen, durchsuchen und verwalten",
   "Generated document tag. Repeatable.": "Tag des erzeugten Dokuments. Wiederholbar.",
   "Grids App YAML or JSON definition": "YAML- oder JSON-Definition der Grids App",
-  "Grids base public id or exact name": "Öffentliche ID oder exakter Name der Grids-Basis",
+  "Grids base public id or exact name": "Öffentliche ID oder exakter Name der Grids-Base",
   "Grids' view of the run: which workflow and revision, what asked for it, and how it ended. `cld admin workflows show <run-id>` adds the kernel's side — the event that caused it, its effect budget, and any child runs.":
     "Die Sicht von Grids auf den Lauf: welcher Workflow und welche Revision, was ihn angefordert hat und wie er endete. `cld admin workflows show <run-id>` ergänzt die Seite des Kernels – das auslösende Ereignis, sein Effektbudget und etwaige Kindläufe.",
   "Group id or exact name": "Gruppen-ID oder exakter Name",
@@ -247,7 +247,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Independently upsert a bounded batch by external identity":
     "Einen begrenzten Stapel unabhängig anhand externer Identität anlegen oder aktualisieren",
   "Inspect and control workflow runs": "Workflow-Läufe prüfen und steuern",
-  "Inspect and instantiate built-in base templates": "Integrierte Basisvorlagen prüfen und instanziieren",
+  "Inspect and instantiate built-in base templates": "Integrierte Base-Vorlagen prüfen und instanziieren",
   "Inspect and replay delivery failures as platform administrator": "Zustellfehler als Plattformadministrator prüfen und erneut einspielen",
   "Inspect available evidence and estimate an export without creating it":
     "Verfügbare Nachweise prüfen und einen Export abschätzen, ohne ihn zu erstellen",
@@ -256,8 +256,8 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
     "Den vollständigen normalisierten Finanzexport prüfen, der auf Bestätigung wartet",
   "Invoke a scanner, bulk, record, or customApp launcher": "Eine Ausführungsoption vom Typ scanner, bulk, record oder customApp aufrufen",
   "Invoke a workflow directly through the API": "Einen Workflow direkt über die API aufrufen",
-  "Irreversible. Pass the exact Base name through --confirm. Eligibility and holds are rechecked before every File.":
-    "Unumkehrbar. Übergib den exakten Namen der Basis mit --confirm. Eignung und Sperren werden vor jeder Datei erneut geprüft.",
+  "Irreversible. Pass the exact base name through --confirm. Eligibility and holds are rechecked before every File.":
+    "Unumkehrbar. Übergib den exakten Namen der Base mit --confirm. Eignung und Sperren werden vor jeder Datei erneut geprüft.",
   "Irreversibly enable durable history and capture its baseline":
     "Dauerhaften Verlauf unumkehrbar aktivieren und seine Ausgangsbasis erfassen",
   "Items per page": "Einträge pro Seite",
@@ -270,17 +270,16 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Liquid footer HTML": "Liquid-HTML für die Fußzeile",
   "Liquid header HTML": "Liquid-HTML für die Kopfzeile",
   "List 100 retained delivery failures as a platform administrator": "100 aufbewahrte Zustellfehler als Plattformadministrator auflisten",
-  "List Apps in a base": "Apps einer Basis auflisten",
+  "List Apps in a base": "Apps einer Base auflisten",
   "List Combined tables that publish a stored source table":
     "Kombinierte Tabellen auflisten, die eine gespeicherte Quelltabelle veröffentlichen",
-  "List Grids bases": "Grids-Basen auflisten",
+  "List Grids bases": "Grids-Bases auflisten",
   "List all Grids field types and their record payload shape": "Alle Grids-Feldtypen und die Form ihrer Datensatz-Payload auflisten",
   "List and download unreferenced Files under a retention floor":
     "Nicht referenzierte Dateien unter einer Mindestaufbewahrung auflisten und herunterladen",
-  "List built-in Grids base templates": "Integrierte Grids-Basisvorlagen auflisten",
+  "List built-in Grids base templates": "Integrierte Grids-Base-Vorlagen auflisten",
   "List custom forms for a table": "Eigene Formulare einer Tabelle auflisten",
-  "List deleted resources that can be restored in a base":
-    "Gelöschte Ressourcen einer Basis auflisten, die wiederhergestellt werden können",
+  "List deleted resources that can be restored in a base": "Gelöschte Ressourcen einer Base auflisten, die wiederhergestellt werden können",
   "List direct grants for a Grids resource": "Direkte Freigaben einer Grids-Ressource auflisten",
   "List document templates for a table": "Dokumentvorlagen einer Tabelle auflisten",
   "List documents generated by a workflow run": "Von einem Workflow-Lauf erzeugte Dokumente auflisten",
@@ -297,23 +296,23 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "List public links for a generated document": "Öffentliche Links eines erzeugten Dokuments auflisten",
   "List readable live records referencing one record": "Lesbare aktive Datensätze auflisten, die auf einen Datensatz verweisen",
   "List records in a table": "Datensätze einer Tabelle auflisten",
-  "List retained evidence export requests in a Base": "Aufbewahrte Anfragen für Nachweisexporte einer Basis auflisten",
+  "List retained evidence export requests in a base": "Aufbewahrte Anfragen für Nachweisexporte einer Base auflisten",
   "List revisions older than this revision": "Revisionen auflisten, die älter als diese Revision sind",
   "List source tables you may publish into a Combined table":
     "Quelltabellen auflisten, die du in eine kombinierte Tabelle veröffentlichen darfst",
-  "List tables in a base": "Tabellen einer Basis auflisten",
+  "List tables in a base": "Tabellen einer Base auflisten",
   "List the files packaged in a ZIP Document": "Die in einem ZIP-Dokument verpackten Dateien auflisten",
   "List the frozen record associations of a Document": "Die eingefrorenen Datensatzzuordnungen eines Dokuments auflisten",
   "List trashed Records under a retention floor": "Datensätze im Papierkorb unter einer Mindestaufbewahrung auflisten",
   "List unreferenced Files under a retention floor": "Nicht referenzierte Dateien unter einer Mindestaufbewahrung auflisten",
   "List views for a table": "Ansichten einer Tabelle auflisten",
-  "List workflow email deliveries visible on a base": "In einer Basis sichtbare E-Mail-Zustellungen von Workflows auflisten",
-  "List workflow email templates for a base": "E-Mail-Vorlagen für Workflows einer Basis auflisten",
+  "List workflow email deliveries visible on a base": "In einer Base sichtbare E-Mail-Zustellungen von Workflows auflisten",
+  "List workflow email templates for a base": "E-Mail-Vorlagen für Workflows einer Base auflisten",
   "List workflow run steps": "Schritte eines Workflow-Laufs auflisten",
-  "List workflow runs visible on a base": "In einer Basis sichtbare Workflow-Läufe auflisten",
-  "List workflows visible on a base": "In einer Basis sichtbare Workflows auflisten",
+  "List workflow runs visible on a base": "In einer Base sichtbare Workflow-Läufe auflisten",
+  "List workflows visible on a base": "In einer Base sichtbare Workflows auflisten",
   "List, create, and release preservation holds": "Erhaltungssperren auflisten, erstellen und aufheben",
-  "List, search, filter and sort all Documents of a Base": "Alle Dokumente einer Basis auflisten, durchsuchen, filtern und sortieren",
+  "List, search, filter and sort all Documents of a base": "Alle Dokumente einer Base auflisten, durchsuchen, filtern und sortieren",
   "Lists lifecycle events from the active Combined publication. Only canonical fields, declared audit answers, and safe source labels are returned.":
     "Listet Lebenszyklusereignisse aus der aktiven Veröffentlichung der kombinierten Tabelle auf. Zurückgegeben werden nur kanonische Felder, deklarierte Audit-Antworten und sichere Quellbezeichnungen.",
   "Local PDF output path": "Lokaler Ausgabepfad für das PDF",
@@ -324,7 +323,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Make the view personal": "Ansicht persönlich machen",
   "Make the view shared": "Ansicht teilen",
   "Manage Grids bases, schema, records, forms, Apps, views, GQL, documents, templates, and workflows through the Grids HTTP API.":
-    "Grids-Basen, Schema, Datensätze, Formulare, Apps, Ansichten, GQL, Dokumente, Vorlagen und Workflows über die Grids-HTTP-API verwalten.",
+    "Grids-Bases, Schema, Datensätze, Formulare, Apps, Ansichten, GQL, Dokumente, Vorlagen und Workflows über die Grids-HTTP-API verwalten.",
   "Manage direct access to Grids resources": "Direkten Zugriff auf Grids-Ressourcen verwalten",
   "Mark field optional": "Feld als optional markieren",
   "Mark field required": "Feld als Pflichtfeld markieren",
@@ -342,7 +341,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Minimum retention days": "Mindestaufbewahrung in Tagen",
   "Move a record to trash": "Einen Datensatz in den Papierkorb verschieben",
   "Move this record to trash": "Diesen Datensatz in den Papierkorb verschieben",
-  "Name for the new base": "Name der neuen Basis",
+  "Name for the new base": "Name der neuen Base",
   "Only Records in this Finalization state": "Nur Datensätze in diesem Finalisierungsstatus",
   "Only deleted records": "Nur gelöschte Datensätze",
   "Opaque nextCursor": "Opaker nextCursor",
@@ -352,7 +351,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Optional context for the approver": "Optionaler Kontext für die genehmigende Person",
   "Optional decision comment": "Optionaler Kommentar zur Entscheidung",
   "Optional generated filename override": "Optionaler Ersatz für den erzeugten Dateinamen",
-  "Optional leading base followed by command arguments.": "Optionale vorangestellte Basis, gefolgt von Befehlsargumenten.",
+  "Optional leading base followed by command arguments.": "Optionale vorangestellte Base, gefolgt von Befehlsargumenten.",
   "Optional link comment": "Optionaler Kommentar zum Link",
   "Output PDF path": "Ausgabepfad für das PDF",
   "Output file path": "Ausgabedateipfad",
@@ -385,7 +384,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Permission to grant": "Zu gewährende Berechtigung",
   "Permission to set": "Zu setzende Berechtigung",
   "Preview a GQL query with a smaller row cap": "Eine GQL-Abfrage mit kleinerer Zeilenobergrenze in der Vorschau anzeigen",
-  "Preview a retention floor for a Grids base": "Vorschau einer Mindestaufbewahrung für eine Grids-Basis anzeigen",
+  "Preview a retention floor for a Grids base": "Vorschau einer Mindestaufbewahrung für eine Grids-Base anzeigen",
   "Preview active entry points affected by a record change policy":
     "Vorschau der aktiven Einstiegspunkte anzeigen, die von einer Änderungsrichtlinie für Datensätze betroffen sind",
   "Preview bounded controlled File destruction": "Vorschau einer begrenzten kontrollierten Vernichtung von Dateien anzeigen",
@@ -398,23 +397,23 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Publish a valid Combined table draft": "Einen gültigen Entwurf einer kombinierten Tabelle veröffentlichen",
   "Publish the current validated App draft": "Den aktuellen validierten App-Entwurf veröffentlichen",
   "Publish this App": "Diese App veröffentlichen",
-  "Published App public ID from its URL; no Base access required":
-    "Öffentliche ID der veröffentlichten App aus ihrer URL; kein Zugriff auf die Basis erforderlich",
+  "Published App public ID from its URL; no base access required":
+    "Öffentliche ID der veröffentlichten App aus ihrer URL; kein Zugriff auf die Base erforderlich",
   "Published Combined table public id": "Öffentliche ID der veröffentlichten kombinierten Tabelle",
   "Raw Grids access is granted on a base. Published Grids Apps have their own read access.":
-    "Direkter Grids-Zugriff wird auf einer Basis gewährt. Veröffentlichte Grids Apps haben einen eigenen Lesezugriff.",
+    "Direkter Grids-Zugriff wird auf einer Base gewährt. Veröffentlichte Grids Apps haben einen eigenen Lesezugriff.",
   "Read an evidence export status, hashes and coverage": "Status, Hashes und Abdeckung eines Nachweisexports lesen",
   "Read and interact with published Grids Apps": "Veröffentlichte Grids Apps lesen und mit ihnen interagieren",
   "Read and manage comments in published Apps": "Kommentare in veröffentlichten Apps lesen und verwalten",
   "Read and manage record discussion": "Diskussion zu Datensätzen lesen und verwalten",
-  "Read and replace shared base navigation groups": "Geteilte Navigationsgruppen einer Basis lesen und ersetzen",
+  "Read and replace shared base navigation groups": "Geteilte Navigationsgruppen einer Base lesen und ersetzen",
   "Read one bounded page of record comments and current permissions":
     "Eine begrenzte Seite mit Datensatzkommentaren und aktuellen Berechtigungen lesen",
   "Read one bounded records block page within its published scope":
     "Eine begrenzte Seite eines Datensatzblocks innerhalb seines veröffentlichten Bereichs lesen",
   "Read run status in the exact original published page/action scope":
     "Laufstatus im exakten ursprünglichen veröffentlichten Seiten- oder Aktionsbereich lesen",
-  "Read shared navigation groups and their revision (base admin)": "Geteilte Navigationsgruppen und ihre Revision lesen (Basis-Admin)",
+  "Read shared navigation groups and their revision (base admin)": "Geteilte Navigationsgruppen und ihre Revision lesen (Base-Admin)",
   "Reads the TAR locally without extracting or uploading it. Matching hashes prove byte agreement and declared coverage, not compliance, authorship, custody, or legal validity.":
     "Liest das TAR lokal, ohne es zu entpacken oder hochzuladen. Übereinstimmende Hashes belegen Byte-Gleichheit und die deklarierte Abdeckung, nicht Compliance, Urheberschaft, Verwahrung oder Rechtsgültigkeit.",
   "Record as <base>:<table>/<record id> or a record ID, or [base] <table> <record>; then command arguments.":
@@ -436,7 +435,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Remove the live App snapshot while keeping its draft": "Den Live-Snapshot der App entfernen und ihren Entwurf behalten",
   "Remove the public submit token": "Öffentliches Übermittlungstoken entfernen",
   "Remove the retention floor": "Mindestaufbewahrung entfernen",
-  "Remove the retention floor from a Grids base": "Mindestaufbewahrung einer Grids-Basis entfernen",
+  "Remove the retention floor from a Grids base": "Mindestaufbewahrung einer Grids-Base entfernen",
   "Remove this attachment from the current record": "Diesen Anhang aus dem aktuellen Datensatz entfernen",
   "Removing the floor may allow future controlled destruction earlier. It does not delete anything now.":
     "Das Entfernen der Mindestaufbewahrung kann künftige kontrollierte Vernichtung früher erlauben. Es löscht jetzt nichts.",
@@ -458,8 +457,8 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
     "Eine aufbewahrte, gestoppte Zustellung als Plattformadministrator erneut einspielen",
   "Replay the retained event": "Das aufbewahrte Ereignis erneut einspielen",
   "Request Four-eyes Finalization for one exact Record version": "Vier-Augen-Finalisierung für eine exakte Datensatzversion anfordern",
-  "Request an evidence export using the Base administrator permission":
-    "Einen Nachweisexport mit der Administratorberechtigung der Basis anfordern",
+  "Request an evidence export using the base administrator permission":
+    "Einen Nachweisexport mit der Administratorberechtigung der Base anfordern",
   "Request cancellation of an evidence export": "Abbruch eines Nachweisexports anfordern",
   "Request inline disposition": "Inline-Disposition anfordern",
   "Request, approve, and reject Four-eyes record Finalization":
@@ -471,30 +470,30 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Required stable retry key": "Erforderlicher stabiler Wiederholungsschlüssel",
   "Requires --yes only when shortening an existing floor. Saving never deletes Records or Files or starts cleanup.":
     "Erfordert --yes nur beim Verkürzen einer bestehenden Mindestaufbewahrung. Speichern löscht nie Datensätze oder Dateien und startet keine Bereinigung.",
-  "Requires Base admin access and a File public id from `bases retention files list`.":
-    "Erfordert Admin-Zugriff auf die Basis und eine öffentliche Datei-ID aus `bases retention files list`.",
-  "Requires Base admin access. Preview never deletes data and returns at most 100 exact eligible File candidates.":
-    "Erfordert Admin-Zugriff auf die Basis. Die Vorschau löscht nie Daten und liefert höchstens 100 exakte zulässige Dateikandidaten.",
-  "Requires Base admin access. Search, status filtering, and pagination run on the server.":
-    "Erfordert Admin-Zugriff auf die Basis. Suche, Statusfilter und Seitennavigation laufen auf dem Server.",
-  "Requires Base admin access. Search, status, scope, table filtering, and pagination run on the server.":
-    "Erfordert Admin-Zugriff auf die Basis. Suche, Filter nach Status, Bereich und Tabelle sowie Seitennavigation laufen auf dem Server.",
-  "Requires Base admin access. The hold blocks future controlled destruction only in its selected scope.":
-    "Erfordert Admin-Zugriff auf die Basis. Die Sperre blockiert künftige kontrollierte Vernichtung nur in ihrem gewählten Bereich.",
+  "Requires base admin access and a File public id from `bases retention files list`.":
+    "Erfordert Admin-Zugriff auf die Base und eine öffentliche Datei-ID aus `bases retention files list`.",
+  "Requires base admin access. Preview never deletes data and returns at most 100 exact eligible File candidates.":
+    "Erfordert Admin-Zugriff auf die Base. Die Vorschau löscht nie Daten und liefert höchstens 100 exakte zulässige Dateikandidaten.",
+  "Requires base admin access. Search, status filtering, and pagination run on the server.":
+    "Erfordert Admin-Zugriff auf die Base. Suche, Statusfilter und Seitennavigation laufen auf dem Server.",
+  "Requires base admin access. Search, status, scope, table filtering, and pagination run on the server.":
+    "Erfordert Admin-Zugriff auf die Base. Suche, Filter nach Status, Bereich und Tabelle sowie Seitennavigation laufen auf dem Server.",
+  "Requires base admin access. The hold blocks future controlled destruction only in its selected scope.":
+    "Erfordert Admin-Zugriff auf die Base. Die Sperre blockiert künftige kontrollierte Vernichtung nur in ihrem gewählten Bereich.",
   "Requires admin access to the source base. The result includes the exact mapped field scope and revocation status.":
-    "Erfordert Admin-Zugriff auf die Quellbasis. Das Ergebnis enthält den exakten zugeordneten Feldumfang und den Widerrufsstatus.",
+    "Erfordert Admin-Zugriff auf die Quell-Base. Das Ergebnis enthält den exakten zugeordneten Feldumfang und den Widerrufsstatus.",
   "Requires base admin access. Parent tables contain their own deleted fields and forms, so nested items are not duplicated.":
-    "Erfordert Admin-Zugriff auf die Basis. Übergeordnete Tabellen enthalten ihre eigenen gelöschten Felder und Formulare, daher werden verschachtelte Elemente nicht doppelt aufgeführt.",
+    "Erfordert Admin-Zugriff auf die Base. Übergeordnete Tabellen enthalten ihre eigenen gelöschten Felder und Formulare, daher werden verschachtelte Elemente nicht doppelt aufgeführt.",
   "Requires base admin access. The floor preserves trashed Records and newly unreferenced Files without deleting data.":
-    "Erfordert Admin-Zugriff auf die Basis. Die Mindestaufbewahrung bewahrt Datensätze im Papierkorb und neu nicht referenzierte Dateien auf, ohne Daten zu löschen.",
+    "Erfordert Admin-Zugriff auf die Base. Die Mindestaufbewahrung bewahrt Datensätze im Papierkorb und neu nicht referenzierte Dateien auf, ohne Daten zu löschen.",
   "Requires only admin access to the source base; target-table is the Combined table public id shown by the publications command.":
-    "Erfordert nur Admin-Zugriff auf die Quellbasis; target-table ist die öffentliche ID der kombinierten Tabelle, die der Befehl publications anzeigt.",
+    "Erfordert nur Admin-Zugriff auf die Quell-Base; target-table ist die öffentliche ID der kombinierten Tabelle, die der Befehl publications anzeigt.",
   "Requires the hash returned by preview-export and --yes. Never fetches a new preview hash implicitly. An explicit query limit is part of the confirmed selection.":
     "Erfordert den von preview-export gelieferten Hash und --yes. Holt nie implizit einen neuen Vorschau-Hash. Ein ausdrückliches Abfragelimit ist Teil der bestätigten Auswahl.",
   "Resource type followed by refs, e.g. base Bookshop or app Bookshop Catalog.":
     "Ressourcentyp, gefolgt von Referenzen, z. B. base Bookshop oder app Bookshop Catalog.",
   "Resource type followed by resource refs.": "Ressourcentyp, gefolgt von Ressourcenreferenzen.",
-  "Restore a deleted Grids base": "Eine gelöschte Grids-Basis wiederherstellen",
+  "Restore a deleted Grids base": "Eine gelöschte Grids-Base wiederherstellen",
   "Restore a deleted field by public id": "Ein gelöschtes Feld anhand der öffentlichen ID wiederherstellen",
   "Restore a deleted form by public id": "Ein gelöschtes Formular anhand der öffentlichen ID wiederherstellen",
   "Restore a deleted table by public id": "Eine gelöschte Tabelle anhand der öffentlichen ID wiederherstellen",
@@ -504,7 +503,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Restore the live App definition as the current draft": "Die Live-Definition der App als aktuellen Entwurf wiederherstellen",
   "Restore this workflow revision": "Diese Workflow-Revision wiederherstellen",
   "Resume cursor from the previous page": "Fortsetzungs-Cursor der vorherigen Seite",
-  "Resume recent Record changes in a Base": "Jüngste Datensatzänderungen einer Basis fortsetzen",
+  "Resume recent Record changes in a base": "Jüngste Datensatzänderungen einer Base fortsetzen",
   "Retention floor status": "Status der Mindestaufbewahrung",
   "Retry a failed evidence export": "Einen fehlgeschlagenen Nachweisexport erneut versuchen",
   "Return full templates; requires table admin access": "Vollständige Vorlagen zurückgeben; erfordert Admin-Zugriff auf die Tabelle",
@@ -537,7 +536,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Run state": "Laufstatus",
   "Run this action": "Diese Aktion ausführen",
   "Runs of this base's workflows, newest first. --status takes run states only — a run succeeds where a step completes, so see `workflow-runs steps` for the step vocabulary. Use `cld admin workflows` for the kernel-wide view across every app, the event that caused a run, and its effect budget.":
-    "Läufe der Workflows dieser Basis, neueste zuerst. --status akzeptiert nur Laufstatus – ein Lauf ist erfolgreich, wo ein Schritt abgeschlossen ist; das Vokabular der Schritte zeigt `workflow-runs steps`. Nutze `cld admin workflows` für die Kernel-weite Sicht über alle Apps, das Ereignis, das einen Lauf ausgelöst hat, und sein Effektbudget.",
+    "Läufe der Workflows dieser Base, neueste zuerst. --status akzeptiert nur Laufstatus – ein Lauf ist erfolgreich, wo ein Schritt abgeschlossen ist; das Vokabular der Schritte zeigt `workflow-runs steps`. Nutze `cld admin workflows` für die Kernel-weite Sicht über alle Apps, das Ereignis, das einen Lauf ausgelöst hat, und sein Effektbudget.",
   "SHA-256 returned by the reviewed preview": "SHA-256 aus der geprüften Vorschau",
   "Safety cap for --all (default: 10000)": "Sicherheitsobergrenze für --all (Standard: 10000)",
   "Sample records are included by default. Pass --empty to create the complete template without sample records.":
@@ -546,26 +545,26 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Scan using operationId, expectedRevision, scannedText and prompt inputs":
     "Mit operationId, expectedRevision, scannedText und Prompt-Eingaben scannen",
   "Search Record id, Table id, or Table name": "Datensatz-ID, Tabellen-ID oder Tabellenname durchsuchen",
-  "Search bases": "Basen durchsuchen",
+  "Search bases": "Bases durchsuchen",
   "Search displayed fields": "Angezeigte Felder durchsuchen",
   "Search filename or File public id": "Dateiname oder öffentliche Datei-ID durchsuchen",
   "Search filename, document number, or tags": "Dateiname, Dokumentnummer oder Tags durchsuchen",
   "Search generated document filename, number, or tags": "Dateiname, Nummer oder Tags erzeugter Dokumente durchsuchen",
   "Search reason, Table name, creator, or hold ID": "Grund, Tabellenname, Ersteller oder Sperren-ID durchsuchen",
-  "Search source bases and tables": "Quellbasen und -tabellen durchsuchen",
+  "Search source bases and tables": "Quell-Bases und -tabellen durchsuchen",
   "Search text; exact names are safest for grant/set commands.": "Suchtext; für die Befehle grant/set sind exakte Namen am sichersten.",
   "Search users, groups, and service accounts for grants": "Personen, Gruppen und Dienstkonten für Freigaben suchen",
   "Service account id or exact name": "Dienstkonto-ID oder exakter Name",
-  "Service account id or exact name; Base grants only": "Dienstkonto-ID oder exakter Name; nur für Freigaben auf Basen",
-  "Set the default Grids base": "Standard-Grids-Basis festlegen",
-  "Set the retention floor for a Grids base": "Mindestaufbewahrung für eine Grids-Basis festlegen",
+  "Service account id or exact name; base grants only": "Dienstkonto-ID oder exakter Name; nur für Freigaben auf Bases",
+  "Set the default Grids base": "Standard-Grids-Base festlegen",
+  "Set the retention floor for a Grids base": "Mindestaufbewahrung für eine Grids-Base festlegen",
   "Set where a table's record changes may start": "Festlegen, wo Datensatzänderungen einer Tabelle beginnen dürfen",
   "Shorten the existing retention floor": "Bestehende Mindestaufbewahrung verkürzen",
   "Show Grids Query Language syntax, refs, and examples": "Syntax, Referenzen und Beispiele der Grids Query Language anzeigen",
   "Show Grids formula syntax and function reference": "Syntax und Funktionsreferenz der Grids-Formeln anzeigen",
   "Show Grids resource access levels": "Zugriffsstufen für Grids-Ressourcen anzeigen",
   "Show a Document and its artifacts": "Ein Dokument und seine Artefakte anzeigen",
-  "Show a Grids base": "Eine Grids-Basis anzeigen",
+  "Show a Grids base": "Eine Grids-Base anzeigen",
   "Show a document template": "Eine Dokumentvorlage anzeigen",
   "Show a field": "Ein Feld anzeigen",
   "Show a form": "Ein Formular anzeigen",
@@ -586,11 +585,11 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Show one record snapshot": "Einen Datensatz-Snapshot anzeigen",
   "Show record audit entries": "Audit-Einträge eines Datensatzes anzeigen",
   "Show the JSON payload shape for records in a table": "Die JSON-Payload-Form für Datensätze einer Tabelle anzeigen",
-  "Show the default Grids base": "Standard-Grids-Basis anzeigen",
+  "Show the default Grids base": "Standard-Grids-Base anzeigen",
   "Show the deterministic changes for a Grids App definition": "Die deterministischen Änderungen einer Grids-App-Definition anzeigen",
   "Show the draft and published revision of a Combined table": "Entwurf und veröffentlichte Revision einer kombinierten Tabelle anzeigen",
   "Show the plan without changing the draft": "Plan anzeigen, ohne den Entwurf zu ändern",
-  "Show the retention floor for a Grids base": "Mindestaufbewahrung einer Grids-Basis anzeigen",
+  "Show the retention floor for a Grids base": "Mindestaufbewahrung einer Grids-Base anzeigen",
   "Show the strict Grids App definition reference": "Die strikte Referenz für Grids-App-Definitionen anzeigen",
   "Show the virtual default form for a table": "Das virtuelle Standardformular einer Tabelle anzeigen",
   "Show where a table's record changes may start": "Anzeigen, wo Datensatzänderungen einer Tabelle beginnen dürfen",
@@ -614,7 +613,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   "Submit the discovered form values": "Die ermittelten Formularwerte absenden",
   "Submit this form": "Dieses Formular absenden",
   "Table as <base>:<table>, or an optional leading base and the table ID or name; then command arguments.":
-    "Tabelle als <basis>:<tabelle> oder eine optionale vorangestellte Basis und die Tabellen-ID oder den Tabellennamen; danach Befehlsargumente.",
+    "Tabelle als <basis>:<tabelle> oder eine optionale vorangestellte Base und die Tabellen-ID oder den Tabellennamen; danach Befehlsargumente.",
   "Table description": "Beschreibung der Tabelle",
   "Table icon class": "Icon-Klasse der Tabelle",
   "Table kind: stored or federated (Combined table)": "Tabellenart: stored oder federated (kombinierte Tabelle)",
@@ -643,7 +642,7 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
     "Dies ist die kompakte CLI-Referenz. Für ein berechtigungssicheres, basisspezifisches Assistenten-Paket nutze `cld grids gql skill` und `cld grids gql context`.",
   "UTF-16 caret offset": "UTF-16-Offset der Einfügemarke",
   "Unpublish this App": "Veröffentlichung dieser App aufheben",
-  "Update a Grids base": "Eine Grids-Basis aktualisieren",
+  "Update a Grids base": "Eine Grids-Base aktualisieren",
   "Update a document template": "Eine Dokumentvorlage aktualisieren",
   "Update a field": "Ein Feld aktualisieren",
   "Update a form": "Ein Formular aktualisieren",
@@ -661,8 +660,8 @@ export const GRIDS_CLI_HELP_DE: Readonly<Record<string, string>> = {
   'Use exact names or public ids: {"sources":[{"base":"East","table":"Items","mappings":[{"target":"Name","source":"Title"},{"target":"Status","source":"State","options":{"In stock":"Available"}}]}]}.':
     'Verwende exakte Namen oder öffentliche IDs: {"sources":[{"base":"East","table":"Items","mappings":[{"target":"Name","source":"Title"},{"target":"Status","source":"State","options":{"In stock":"Available"}}]}]}.',
   "Use field as record label": "Feld als Datensatzbezeichnung verwenden",
-  "Use the new base as default": "Neue Basis als Standard verwenden",
-  "Use the new base as the default Grids base": "Neue Basis als Standard-Grids-Basis verwenden",
+  "Use the new base as default": "Neue Base als Standard verwenden",
+  "Use the new base as the default Grids base": "Neue Base als Standard-Grids-Base verwenden",
   "Use this before creating fields or writing record JSON. Machine-readable output is available with --json.":
     "Nutze dies, bevor du Felder erstellst oder Datensatz-JSON schreibst. Maschinenlesbare Ausgabe gibt es mit --json.",
   "Use this before creating or updating document templates from an agent.":

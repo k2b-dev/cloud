@@ -36,7 +36,7 @@ For example, if `Name01` is the real ID of a text field:
 {"items":[{"Name01":"First item"},{"Name01":"Second item"}]}
 ```
 
-Required fields, uniqueness, defaults, the mutation policy, and access to the Base still apply. Upload attachments separately with the file operations. Combined tables are read-only and cannot receive imports.
+Required fields, uniqueness, defaults, the mutation policy, and access to the base still apply. Upload attachments separately with the file operations. Combined tables are read-only and cannot receive imports.
 
 ## Connect an external system {icon="plug"}
 

@@ -20,6 +20,8 @@ import {
   type CloudCliModule,
   type CloudCliPluginManifest,
   type CloudCliPluginSummary,
+  isCloudCliAlias,
+  isCloudCliShortcuts,
   parseCloudCliPluginManifest,
   sha512Hex,
   validateCloudCliModule,
@@ -27,7 +29,14 @@ import {
 import { PluginError, pluginsDirectory } from "./plugins";
 
 /** One locked plugin of a profile. `summary` lets `cld help` list it without loading it. */
-export type LockedPlugin = { app: string; version: string; digest: string; summary: string };
+export type LockedPlugin = {
+  app: string;
+  version: string;
+  digest: string;
+  summary: string;
+  alias?: string;
+  shortcuts?: Record<string, string>;
+};
 export type PluginLock = Record<string, LockedPlugin>;
 
 type CloudFetch = (path: string, init?: RequestInit) => Promise<Response>;
@@ -246,8 +255,60 @@ export const readPluginLock = (value: unknown): PluginLock => {
         version: entry.version,
         digest: entry.digest,
         summary: typeof entry.summary === "string" ? entry.summary : "",
+        ...(isCloudCliAlias(entry.alias, name) ? { alias: entry.alias } : {}),
+        ...(isCloudCliShortcuts(entry.shortcuts, name, typeof entry.alias === "string" ? entry.alias : undefined)
+          ? { shortcuts: entry.shortcuts }
+          : {}),
       };
     }
   }
   return lock;
+};
+
+/** Read a complete list of served module names; malformed snapshots count as missing. */
+export const readServedPlugins = (value: unknown): string[] | undefined =>
+  Array.isArray(value) && value.every((name): name is string => typeof name === "string" && CLOUD_CLI_MODULE_NAME.test(name))
+    ? value
+    : undefined;
+
+/** A module alias has an empty path; a shortcut supplies a whole command path. */
+export type PluginShortName = { name: string; module: string; path: string[] };
+/** All modules claiming an unavailable name and the reason it is inactive. */
+export type InactiveShortName = { name: string; claimedBy: string[]; reason: "ambiguous" | "built-in" | "module" | "unverified" };
+
+/** Resolve claims offline; built-ins, modules and conflicts win, and missing served names keep remaining claims inactive. */
+export const resolveShortNames = (
+  lock: PluginLock,
+  taken: { builtIn: ReadonlySet<string>; modules: ReadonlySet<string>; served: ReadonlySet<string> | undefined },
+): { active: Map<string, PluginShortName>; inactive: InactiveShortName[] } => {
+  const claims = new Map<string, PluginShortName[]>();
+  for (const [module, entry] of Object.entries(lock)) {
+    if (taken.builtIn.has(module)) continue;
+    const names = [
+      ...(entry.alias ? [{ name: entry.alias, module, path: [] }] : []),
+      ...Object.entries(entry.shortcuts ?? {}).map(([name, target]) => ({ name, module, path: target.trim().split(/\s+/) })),
+    ];
+    for (const claim of names) {
+      const list = claims.get(claim.name) ?? [];
+      list.push(claim);
+      claims.set(claim.name, list);
+    }
+  }
+  const active = new Map<string, PluginShortName>();
+  const inactive: InactiveShortName[] = [];
+  for (const [name, list] of [...claims].sort(([left], [right]) => left.localeCompare(right))) {
+    const claimedBy = [...new Set(list.map((claim) => claim.module))].sort();
+    const reason = taken.builtIn.has(name)
+      ? "built-in"
+      : taken.modules.has(name) || taken.served?.has(name)
+        ? "module"
+        : claimedBy.length > 1
+          ? "ambiguous"
+          : taken.served === undefined
+            ? "unverified"
+            : undefined;
+    if (reason) inactive.push({ name, claimedBy, reason });
+    else if (list[0]) active.set(name, list[0]);
+  }
+  return { active, inactive };
 };

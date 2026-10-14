@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { inheritPresentationMode, requestedPresentationMode, withPresentationMode } from "./presentation-url";
 
-test("mode URLs preserve navigator filters and heading anchors", () => {
+test("mode URLs preserve sidebar filters and heading anchors", () => {
   expect(withPresentationMode("/app/notebooks/book01/notes/note01?view=tag&tag=wiki#intro", "book")).toBe(
     "/app/notebooks/book01/notes/note01?view=tag&tag=wiki&mode=book#intro",
   );

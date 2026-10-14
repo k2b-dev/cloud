@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildEchoPlugin } from "../test/fixtures/build-plugin";
@@ -64,7 +64,18 @@ test("profiles lock their own verified plugin versions and share identical ones"
   const listed = await cli.run(["plugins", "list", "--json"]);
   expect(listed.exitCode, listed.stderr).toBe(0);
   expect(JSON.parse(listed.stdout).plugins).toEqual([
-    { profile: "a", name: "echo", app: "echo-app", installed: null, available: "1.0.0", status: "available", source: "cloud" },
+    {
+      profile: "a",
+      name: "echo",
+      app: "echo-app",
+      installed: null,
+      available: "1.0.0",
+      status: "available",
+      source: "cloud",
+      alias: null,
+      shortcuts: {},
+      inactive: [],
+    },
   ]);
 
   const installed = await cli.run(["plugins", "install", "echo"]);
@@ -319,4 +330,278 @@ test("a config from before skill targets is asked once on sync; a recorded empty
   expect(declined.exitCode).toBe(1);
   expect((await cli.config()).skills).toEqual({ targets: [] });
   expect(await readdir(defaultTarget)).toEqual([]);
+}, 30_000);
+
+test("profile short names run the installed module and appear in help and plugin lists", async () => {
+  const plugin = await servedEchoPlugin("1.0.0", "short-names", { name: "echo", alias: "e", shortcuts: { me: "whoami" } });
+  const cloud: PluginCloudState = { plugins: [plugin], authorizations: [] };
+  const cli = await setup({ a: cloud, b: { plugins: [], authorizations: [] } });
+  const installed = await cli.run(["plugins", "install", "echo"]);
+  expect(installed.exitCode, installed.stderr).toBe(0);
+  const profile = (await cli.config()).profiles.a;
+  expect(profile.plugins.echo).toMatchObject({ alias: "e", shortcuts: { me: "whoami" } });
+  expect(profile.servedPlugins).toEqual(["echo"]);
+  for (const args of [["e", "whoami"], ["me"]]) {
+    const result = await cli.run(["--json", ...args]);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ authorization: "Bearer token-a", profile: "a" });
+  }
+  const aliasHelp = await cli.run(["e", "--help"]);
+  expect(aliasHelp.exitCode, aliasHelp.stderr).toBe(0);
+  expect(aliasHelp.stdout).toContain("whoami");
+  expect(aliasHelp.stdout).toBe((await cli.run(["echo", "--help"])).stdout);
+  expect((await cli.run(["e", "reference"])).stdout).toBe("# Echo 1.0.0\n");
+  const shortcutReference = await cli.run(["me", "reference"]);
+  expect(shortcutReference.exitCode).toBe(1);
+  expect(shortcutReference.stderr).toContain("Unexpected argument: reference.");
+  const help = await cli.run(["help"]);
+  expect(help.stderr).toBe("");
+  expect(help.stdout).toContain("echo (e)");
+  expect(help.stdout).toContain("Shortcuts:\n  me → echo whoami");
+  expect((await cli.run(["--locale", "de", "help"])).stdout).toContain("Kurzbefehle:");
+  const listed = await cli.run(["plugins", "list", "--json"]);
+  expect(JSON.parse(listed.stdout).plugins[0]).toMatchObject({ alias: "e", shortcuts: { me: "whoami" }, inactive: [] });
+  expect((await cli.run(["plugins", "list"])).stdout).toContain("SHORT NAMES");
+  expect((await cli.run(["--locale", "de", "plugins", "list"])).stdout).toContain("KURZNAMEN");
+  expect((await cli.run(["--profile", "b", "e", "whoami"])).stderr).toContain('Unknown command "e"');
+
+  // Updating the identical stored bundle fills metadata missing from an older lock.
+  const old = await cli.config();
+  delete old.profiles.a.plugins.echo.alias;
+  delete old.profiles.a.plugins.echo.shortcuts;
+  old.profiles.a.plugins.echo.summary = "Old summary";
+  delete old.profiles.a.servedPlugins;
+  await writeFile(join(cli.dir, "config.json"), JSON.stringify(old));
+  const updated = await cli.run(["plugins", "update", "--json"]);
+  expect(updated.exitCode, updated.stderr).toBe(0);
+  expect(JSON.parse(updated.stdout).plugins[0].status).toBe("unchanged");
+  expect((await cli.config()).profiles.a).toEqual(profile);
+}, 30_000);
+
+test("conflicting short names are inactive for every claimant with localized diagnostics", async () => {
+  const plugins = [
+    await servedEchoPlugin("1.0.0", "first", { name: "echo", alias: "e" }),
+    await servedEchoPlugin("1.0.0", "second", { name: "foo", alias: "e" }),
+  ];
+  const cli = await setup({ a: { plugins, authorizations: [] } });
+  const warning = 'cld: "e" is ambiguous (echo, foo); use the full module name.';
+  expect((await cli.run(["plugins", "install", "--all"])).stderr).toContain(warning);
+  expect((await cli.run(["plugins", "install", "--all"])).stderr).toContain(warning);
+  const ambiguous = await cli.run(["e", "whoami"]);
+  expect(ambiguous.exitCode).toBe(1);
+  expect(ambiguous.stderr.trim()).toBe("`e` is ambiguous: echo, foo. Use the full name.");
+  expect((await cli.run(["--locale", "de", "e", "whoami"])).stderr.trim()).toBe("`e` ist mehrdeutig: echo, foo. Nutze den vollen Namen.");
+  const help = await cli.run(["help"]);
+  expect(help.stderr.trim()).toBe(warning);
+  expect(help.stdout).not.toContain("echo (e)");
+  expect((await cli.run(["--locale", "de", "help"])).stderr).toContain('"e" ist mehrdeutig (echo, foo)');
+  const list = await cli.run(["plugins", "list"]);
+  expect(list.stderr.trim()).toBe(warning);
+  expect(list.stdout).toContain("e (inactive)");
+  expect((await cli.run(["--locale", "de", "plugins", "list"])).stdout).toContain("e (inaktiv)");
+  const json = await cli.run(["plugins", "list", "--json"]);
+  expect(JSON.parse(json.stdout).plugins.map((row: { inactive: string[] }) => row.inactive)).toEqual([["e"], ["e"]]);
+  expect((await cli.run(["plugins", "update"])).stderr.trim()).toBe(warning);
+}, 30_000);
+
+test("served but uninstalled module names stay reserved offline and snapshots refresh with no staged plugins", async () => {
+  const cloud: PluginCloudState = {
+    plugins: [
+      await servedEchoPlugin("1.0.0", "alias", { name: "echo", alias: "mail" }),
+      await servedEchoPlugin("1.0.0", "mail", { name: "mail" }),
+    ],
+    authorizations: [],
+  };
+  const cli = await setup({ a: cloud });
+  const installed = await cli.run(["plugins", "install", "echo"]);
+  expect(installed.stderr).toContain('"mail" from echo is inactive: a module has that name.');
+  expect((await cli.config()).profiles.a.servedPlugins).toEqual(["echo", "mail"]);
+  const before = cloud.authorizations.length;
+  const result = await cli.run(["mail", "whoami"]);
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain('Unknown command "mail"');
+  expect(result.stderr).toContain("cld plugins install mail");
+  expect(cloud.authorizations.length).toBe(before);
+
+  cloud.plugins = [cloud.plugins[0]!];
+  expect((await cli.run(["plugins", "update"])).exitCode).toBe(0);
+  expect((await cli.config()).profiles.a.servedPlugins).toEqual(["echo"]);
+  expect((await cli.run(["mail", "whoami"])).exitCode).toBe(0);
+  // A failed list preserves the snapshot without failing an otherwise valid install/update.
+  const old = await cli.config();
+  old.profiles.a.servedPlugins = ["echo", "mail"];
+  await writeFile(join(cli.dir, "config.json"), JSON.stringify(old));
+  cloud.listStatus = 403;
+  expect((await cli.run(["plugins", "update"])).exitCode).toBe(0);
+  expect((await cli.config()).profiles.a.servedPlugins).toEqual(["echo", "mail"]);
+}, 30_000);
+
+test("missing served snapshots keep short names inactive until a successful list", async () => {
+  const echo = await servedEchoPlugin("1.0.0", "unverified", { name: "echo", alias: "mail" });
+  const cloud: PluginCloudState = {
+    plugins: [echo, await servedEchoPlugin("1.0.0", "mail", { name: "mail" })],
+    authorizations: [],
+    listStatus: 503,
+  };
+  const cli = await setup({ a: cloud });
+  const installed = await cli.run(["plugins", "install", "echo"]);
+  expect(installed.exitCode, installed.stderr).toBe(0);
+  expect((await cli.config()).profiles.a.servedPlugins).toBeUndefined();
+  const before = cloud.authorizations.length;
+  const blocked = await cli.run(["mail", "whoami"]);
+  expect(blocked.exitCode).toBe(1);
+  expect(blocked.stderr).toContain('Unknown command "mail"');
+  expect(blocked.stderr).toContain("cld plugins install mail");
+  const help = await cli.run(["help"]);
+  expect(help.exitCode, help.stderr).toBe(0);
+  expect(help.stderr).toContain(
+    'cld: "mail" from echo is inactive until cld knows which modules your Cloud serves; run `cld plugins list`.',
+  );
+  expect(cloud.authorizations.length).toBe(before);
+
+  cloud.listStatus = undefined;
+  const listed = await cli.run(["plugins", "list", "--json"]);
+  expect(listed.exitCode, listed.stderr).toBe(0);
+  expect((await cli.config()).profiles.a.servedPlugins).toEqual(["echo", "mail"]);
+  expect(JSON.parse(listed.stdout).plugins.find((row: { name: string }) => row.name === "echo")).toMatchObject({ inactive: ["mail"] });
+
+  cloud.plugins = [echo];
+  expect((await cli.run(["plugins", "list"])).exitCode).toBe(0);
+  expect((await cli.config()).profiles.a.servedPlugins).toEqual(["echo"]);
+  expect((await cli.run(["mail", "whoami"])).exitCode).toBe(0);
+}, 30_000);
+
+test("listing refreshes stale served names before rendering short names and warnings", async () => {
+  const echo = await servedEchoPlugin("1.0.0", "stale", { name: "echo", alias: "mail" });
+  const cloud: PluginCloudState = { plugins: [echo], authorizations: [] };
+  const cli = await setup({ a: cloud });
+  expect((await cli.run(["plugins", "install", "echo"])).exitCode).toBe(0);
+  expect((await cli.config()).profiles.a.servedPlugins).toEqual(["echo"]);
+  expect((await cli.run(["mail", "whoami"])).exitCode).toBe(0);
+
+  cloud.plugins.push(await servedEchoPlugin("1.0.0", "mail", { name: "mail" }));
+  const listed = await cli.run(["plugins", "list"]);
+  expect(listed.exitCode, listed.stderr).toBe(0);
+  expect(listed.stdout).toContain("mail (inactive)");
+  expect(listed.stderr).toContain('"mail" from echo is inactive: a module has that name.');
+  expect((await cli.config()).profiles.a.servedPlugins).toEqual(["echo", "mail"]);
+  const json = await cli.run(["plugins", "list", "--json"]);
+  expect(json.exitCode, json.stderr).toBe(0);
+  expect(JSON.parse(json.stdout).plugins.find((row: { name: string }) => row.name === "echo")).toMatchObject({ inactive: ["mail"] });
+  const before = cloud.authorizations.length;
+  const blocked = await cli.run(["mail", "whoami"]);
+  expect(blocked.exitCode).toBe(1);
+  expect(blocked.stderr).toContain('Unknown command "mail"');
+  expect(blocked.stderr).toContain("cld plugins install mail");
+  expect(cloud.authorizations.length).toBe(before);
+}, 30_000);
+
+test("malformed served snapshots count as missing without crashing help", async () => {
+  const cloud: PluginCloudState = {
+    plugins: [await servedEchoPlugin("1.0.0", "malformed", { name: "echo", alias: "e" })],
+    authorizations: [],
+  };
+  const cli = await setup({ a: cloud });
+  expect((await cli.run(["plugins", "install", "echo"])).exitCode).toBe(0);
+  for (const value of [5, "e"]) {
+    const config = await cli.config();
+    config.profiles.a.servedPlugins = value;
+    await writeFile(join(cli.dir, "config.json"), JSON.stringify(config));
+    const before = cloud.authorizations.length;
+    const help = await cli.run(["help"]);
+    expect(help.exitCode, help.stderr).toBe(0);
+    expect(help.stderr).toContain('"e" from echo is inactive until cld knows which modules your Cloud serves');
+    const german = await cli.run(["--locale", "de", "help"]);
+    expect(german.exitCode, german.stderr).toBe(0);
+    expect(german.stderr).toContain(
+      'cld: "e" von echo ist inaktiv, bis cld weiß, welche Module deine Cloud bereitstellt; führe `cld plugins list` aus.',
+    );
+    const blocked = await cli.run(["e", "whoami"]);
+    expect(blocked.exitCode).toBe(1);
+    expect(blocked.stderr).toContain('Unknown command "e"');
+    expect(cloud.authorizations.length).toBe(before);
+  }
+}, 30_000);
+
+test("installing a package plugin warns when its ID takes a shortcut's name", async () => {
+  const cloud: PluginCloudState = {
+    plugins: [await servedEchoPlugin("1.0.0", "package-warning", { name: "echo", shortcuts: { me: "whoami" } })],
+    authorizations: [],
+  };
+  const cli = await setup({ a: cloud });
+  expect((await cli.run(["plugins", "install", "echo"])).exitCode).toBe(0);
+  expect((await cli.run(["me"])).exitCode).toBe(0);
+  const directory = join(cli.dir, "package-me");
+  await mkdir(directory);
+  await writeFile(
+    join(directory, "package.json"),
+    JSON.stringify({ name: "test-package-me", version: "1.0.0", cld: { apiVersion: 1, entry: "cli.js" } }),
+  );
+  await writeFile(
+    join(directory, "cli.js"),
+    `export default {
+    name: "me", summary: "Package fixture", requiresCloud: false,
+    run: (ctx) => { ctx.print("package me"); return 0; },
+  };`,
+  );
+  const installed = await cli.run(["plugins", "install", directory, "--yes"]);
+  expect(installed.exitCode, installed.stderr).toBe(0);
+  expect(installed.stdout).toContain('Installed plugin "me"');
+  expect(installed.stderr).toContain('"me" from echo is inactive: a module has that name.');
+  expect((await cli.run(["me"])).stdout).toBe("package me\n");
+}, 30_000);
+
+test("built-ins and package module names win, while package short-name declarations are ignored", async () => {
+  const cloud: PluginCloudState = {
+    plugins: [
+      await servedEchoPlugin("1.0.0", "reserved", { name: "echo", alias: "constructor", shortcuts: { e: "whoami", help: "whoami" } }),
+    ],
+    authorizations: [],
+  };
+  const cli = await setup({ a: cloud });
+  const installed = await cli.run(["plugins", "install", "echo"]);
+  expect(installed.exitCode, installed.stderr).toBe(0);
+  expect(installed.stderr).toContain('"help" from echo is inactive: a built-in command has that name.');
+  expect((await cli.run(["constructor", "whoami"])).exitCode).toBe(0);
+  expect((await cli.run(["e"])).exitCode).toBe(0);
+
+  const directory = join(cli.dir, "cloud", "cld", "plugins", "e");
+  await mkdir(directory, { recursive: true });
+  await writeFile(
+    join(directory, "package.json"),
+    JSON.stringify({ name: "test-package-e", version: "1.0.0", cld: { apiVersion: 1, entry: "cli.js" } }),
+  );
+  await writeFile(
+    join(directory, "cli.js"),
+    `export default {
+    name: "e", summary: "Package fixture", alias: "pkg", shortcuts: { pack: "run" }, requiresCloud: false,
+    help: () => "Package e help", run: (ctx) => { ctx.print("package " + ctx.args.join(" ")); return 0; },
+  };`,
+  );
+  expect((await cli.run(["e", "anything"])).stdout).toBe("package anything\n");
+  expect((await cli.run(["e", "--help"])).stdout).toBe("Package e help\n");
+  const help = await cli.run(["help"]);
+  expect(help.stderr).toContain('"e" from echo is inactive: a module has that name.');
+  expect(help.stderr).toContain('"help" from echo is inactive: a built-in command has that name.');
+  const germanHelp = await cli.run(["--locale", "de", "help"]);
+  expect(germanHelp.stderr).toContain('"e" von echo ist inaktiv: ein Modul heißt so.');
+  expect(germanHelp.stderr).toContain('"help" von echo ist inaktiv: ein eingebauter Befehl heißt so.');
+  const before = cloud.authorizations.length;
+  for (const name of ["pkg", "pack"]) {
+    expect((await cli.run([name])).stderr).toContain(`Unknown command "${name}"`);
+  }
+  expect(cloud.authorizations.length).toBe(before);
+  const listed = await cli.run(["plugins", "list", "--json"]);
+  expect(JSON.parse(listed.stdout).plugins).toContainEqual({
+    profile: null,
+    name: "e",
+    app: null,
+    installed: "1.0.0",
+    available: null,
+    status: "ok",
+    source: "manual",
+    alias: null,
+    shortcuts: {},
+    inactive: [],
+  });
 }, 30_000);

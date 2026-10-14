@@ -1,8 +1,24 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
-import { type MailboxHealth, type MailboxOperationalHealth, mailboxOperationalHealthSchema, type SearchBackend } from "../contracts";
+import { z } from "zod";
+import {
+  type MailboxHealth,
+  type MailboxOperationalHealth,
+  type MailSyncRunPage,
+  type MailSyncRunState,
+  mailboxOperationalHealthSchema,
+  mailSyncRunPageSchema,
+  type SearchBackend,
+} from "../contracts";
+import { mailFolderPaths } from "../folder-tree";
 import { requireMailboxPermission } from "./access";
 import type { MailRequestContext } from "./auth";
+
+/**
+ * Mailbox status counts failed sync runs of this window. Every failed batch attempt is a run, also
+ * one that a retry completes, so only a recent window says whether synchronization fails now.
+ */
+export const SYNC_RUN_STATUS_WINDOW_HOURS = 24;
 
 const toIso = (value: Date | string | null): string | null =>
   value ? (value instanceof Date ? value : new Date(value)).toISOString() : null;
@@ -129,7 +145,10 @@ export const getMailboxOperationalHealth = async (
         FROM mail.sync_runs run
         JOIN mail.remote_resources resource ON resource.id = run.remote_resource_id
         WHERE resource.mailbox_id = ${mailboxId}::uuid
-          AND (run.state = 'running' OR (run.state = 'failed' AND run.started_at > now() - interval '24 hours'))
+          AND (
+            run.state = 'running'
+            OR (run.state = 'failed' AND run.started_at > now() - ${SYNC_RUN_STATUS_WINDOW_HOURS}::int * interval '1 hour')
+          )
         GROUP BY run.state
       `;
       const folderStates = await tx<{ state: string; count: number }[]>`
@@ -236,5 +255,117 @@ export const getMailboxOperationalHealth = async (
     return value ? ok(value) : fail(err.notFound("Mailbox"));
   } catch {
     return fail(err.internal("Failed to load mailbox operational health"));
+  }
+};
+
+const syncRunCursorSchema = z
+  .object({
+    version: z.literal(1),
+    startedAt: z.string().datetime(),
+    id: z.string().uuid(),
+  })
+  .strict();
+type SyncRunCursor = z.infer<typeof syncRunCursorSchema>;
+
+const encodeSyncRunCursor = (cursor: SyncRunCursor): string => Buffer.from(JSON.stringify(cursor)).toString("base64url");
+
+const decodeSyncRunCursor = (value: string | undefined): Result<SyncRunCursor | null> => {
+  if (!value) return ok(null);
+  try {
+    const parsed = syncRunCursorSchema.safeParse(JSON.parse(Buffer.from(value, "base64url").toString("utf8")));
+    return parsed.success ? ok(parsed.data) : fail(err.badInput("Invalid sync run cursor"));
+  } catch {
+    return fail(err.badInput("Invalid sync run cursor"));
+  }
+};
+
+/**
+ * The mailbox's retained sync runs, newest first, with the folder and error code of each. Mail keeps
+ * finished runs for the runtime-history retention, so this reaches back as far as status can explain.
+ */
+export const listMailboxSyncRuns = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  state?: MailSyncRunState;
+  cursor?: string;
+  limit?: number;
+}): Promise<Result<MailSyncRunPage>> => {
+  const access = await requireMailboxPermission(params.context, params.mailboxId, "read");
+  if (!access.ok) return access;
+  const cursor = decodeSyncRunCursor(params.cursor);
+  if (!cursor.ok) return cursor;
+  const limit = Math.min(Math.max(Math.floor(params.limit ?? 50), 1), 100);
+  // Completed runs fill a page within minutes of history. Every other state is rare and is read
+  // through sync_runs_resource_not_completed_idx, whose predicate the literal comparison proves.
+  const stateFilter = !params.state
+    ? sql``
+    : params.state === "completed"
+      ? sql`AND run.state = 'completed'`
+      : sql`AND run.state <> 'completed' AND run.state = ${params.state}`;
+  const cursorFilter = cursor.data
+    ? sql`AND (run.started_at, run.id) < (${cursor.data.startedAt}::timestamptz, ${cursor.data.id}::uuid)`
+    : sql``;
+  try {
+    const rows = await sql<
+      {
+        id: string;
+        kind: string;
+        state: MailSyncRunState;
+        error_code: string | null;
+        started_at: Date | string;
+        finished_at: Date | string | null;
+        cursor_started_at: string;
+        folder_id: string | null;
+      }[]
+    >`
+      SELECT
+        run.id,
+        run.kind,
+        run.state,
+        run.error_code,
+        run.started_at,
+        run.finished_at,
+        to_char(run.started_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_started_at,
+        run.stats ->> 'folderId' AS folder_id
+      FROM mail.sync_runs run
+      -- One remote resource per mailbox; comparing its id lets the newest-first index order the page.
+      WHERE run.remote_resource_id = (SELECT id FROM mail.remote_resources WHERE mailbox_id = ${params.mailboxId}::uuid)
+        ${stateFilter}
+        ${cursorFilter}
+      ORDER BY run.started_at DESC, run.id DESC
+      LIMIT ${limit + 1}
+    `;
+    const page = rows.slice(0, limit);
+    const folders = page.some((row) => row.folder_id)
+      ? await sql<{ id: string; short_id: string; parent_id: string | null; name: string }[]>`
+          SELECT folder.id, folder.short_id, folder.parent_id, folder.name
+          FROM mail.folders folder
+          JOIN mail.remote_resources resource ON resource.id = folder.remote_resource_id
+          WHERE resource.mailbox_id = ${params.mailboxId}::uuid
+        `
+      : [];
+    const folderById = new Map(folders.map((folder) => [folder.id, folder]));
+    const folderPaths = mailFolderPaths(folders.map((folder) => ({ id: folder.id, parentId: folder.parent_id, name: folder.name })));
+    const last = page.at(-1);
+    return ok(
+      mailSyncRunPageSchema.parse({
+        items: page.map((row) => {
+          const folder = row.folder_id ? folderById.get(row.folder_id) : undefined;
+          return {
+            kind: row.kind,
+            state: row.state,
+            folderId: folder?.short_id ?? null,
+            folderPath: folder ? (folderPaths.get(folder.id) ?? folder.name) : null,
+            errorCode: row.error_code,
+            startedAt: toIso(row.started_at),
+            finishedAt: toIso(row.finished_at),
+          };
+        }),
+        nextCursor:
+          rows.length > limit && last ? encodeSyncRunCursor({ version: 1, startedAt: last.cursor_started_at, id: last.id }) : null,
+      }),
+    );
+  } catch {
+    return fail(err.internal("Failed to load mailbox sync runs"));
   }
 };

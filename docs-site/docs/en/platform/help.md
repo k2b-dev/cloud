@@ -188,6 +188,8 @@ anchor inside a link's text stays text. A Notebooks `note://` or `attach://`
 link renders as its text, because only Notebooks resolves it.
 Pass `{ links: "plain" }` when the HTML is read outside Cloud, for example in
 email. Each link then renders as an ordinary anchor around its text instead.
+Plain output also renders a code block, fenced or indented and including a
+Mermaid fence, as its source in a `pre`, without the language label or diagram.
 Email drops the screen-reader styling, so an
 untitled callout shows its type name there as text. HTML that Cloud renders
 without one reader's locale, such as notification batches, announcements, and
@@ -319,6 +321,21 @@ The full-page routes come from the application's `basePath`. Applications do
 not repeat that path in their Help declaration. Core owns search and article
 transport and the shared reader; the derived application routes forward to
 that reader while the application remains the content owner.
+
+Full-page Help renders in the owning application's frame. The rail marks that
+app, its canvas and accent apply, and the title row leads back to the app.
+Third-party applications use the same frame.
+
+Links to another article or section of the same app's Help open inside the
+reader without reloading: `/app/<id>/help/<documentId>`,
+`/help/apps/<id>/<documentId>`, or `#section`. On the full page, the address
+updates and the browser's Back button returns to the previous article. Back to
+the topic list keeps the typed search, and an address with an unknown article
+shows the topic list. The phone menu or a dialog that closes does not move the
+open article. Other links navigate normally.
+
+The reader adapts to its own width in a dialog, on the full page, or inside an
+application's embedded reader.
 
 SSR loads the current application's localized article metadata from Postgres.
 The browser receives this manifest and loads article bodies on demand. An

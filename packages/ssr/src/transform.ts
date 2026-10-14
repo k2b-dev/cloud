@@ -1,6 +1,6 @@
 /**
  * Babel transform for SSR - wraps island/client components in custom elements
- * with serialized props. Handles both SSR (server) and DOM (client) modes.
+ * with Seroval JSON props. Handles both SSR (server) and DOM (client) modes.
  */
 import { types as t, transformAsync } from "@babel/core";
 // @ts-ignore - no types are available for this package
@@ -39,17 +39,14 @@ const getComponentType = (path: string): ComponentType | null =>
   path.includes(".island") ? "island" : path.includes(".client") ? "client" : null;
 
 const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean) => {
-  const parentType = getComponentType(filename);
-
   return {
     visitor: {
       Program(programPath: any) {
         const componentImports = new Map<string, { path: string; type: ComponentType; id: string }>();
 
-        // Inject seroval serialize helper at the top
+        // Import Seroval toJSON under an alias so application imports do not collide
         programPath.node.body.unshift(
-          t.importDeclaration([t.importSpecifier(t.identifier("serialize"), t.identifier("serialize"))], t.stringLiteral("seroval")),
-          t.variableDeclaration("const", [t.variableDeclarator(t.identifier("__seroval_serialize"), t.identifier("serialize"))]),
+          t.importDeclaration([t.importSpecifier(t.identifier("__seroval_toJSON"), t.identifier("toJSON"))], t.stringLiteral("seroval")),
         );
 
         programPath.traverse({
@@ -57,10 +54,6 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
             const source: string = path.node.source.value;
             const type = getComponentType(source);
             if (!type) return;
-
-            if (parentType) {
-              console.warn(`[ssr] Warning: ${parentType} imports ${type} (${source}) - nested islands/clients are not supported`);
-            }
 
             const spec = path.node.specifiers.find((s: any) => s.type === "ImportDefaultSpecifier");
             if (!spec) return;
@@ -98,7 +91,12 @@ const componentWrapperPlugin = (filename: string, rootDir: string, dev: boolean)
 
             const attrs = [
               attr("data-id", component.id),
-              attr("data-props", t.callExpression(t.identifier("__seroval_serialize"), [props])),
+              attr(
+                "data-props",
+                t.callExpression(t.memberExpression(t.identifier("JSON"), t.identifier("stringify")), [
+                  t.callExpression(t.identifier("__seroval_toJSON"), [props]),
+                ]),
+              ),
             ];
 
             // Add file attribute in dev mode

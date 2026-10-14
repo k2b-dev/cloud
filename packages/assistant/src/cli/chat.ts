@@ -1,3 +1,4 @@
+import { release as osRelease, type as osType } from "node:os";
 import { basename } from "node:path";
 import type {
   AiConversation,
@@ -599,8 +600,18 @@ export const assistantManagementCommands = [
   }),
   command("prefs system-prompt", {
     summary: "Preview the effective system prompt for a new chat",
-    async run({ ctx }) {
-      const result = await readApi<{ prompt: string; renderedAt: string }>(ctx, "/prefs/system-prompt");
+    flags: { local: flag.boolean({ description: "Include this computer's local client context" }) },
+    async run({ ctx, flags }) {
+      const query = flags.local
+        ? `?${new URLSearchParams({
+            clientKind: "cli",
+            cwd: process.cwd(),
+            os: `${osType()} ${osRelease()}`,
+            shell: "/bin/bash",
+            localTools: (await ctx.getDefault("assistant.localTools")) === "off" ? "off" : "ask",
+          })}`
+        : "";
+      const result = await readApi<{ prompt: string; renderedAt: string }>(ctx, `/prefs/system-prompt${query}`);
       printValue(ctx, result, result.prompt);
     },
   }),

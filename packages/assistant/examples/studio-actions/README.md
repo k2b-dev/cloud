@@ -5,10 +5,10 @@ folder contains a complete source bundle and an `app.actions.json` manifest.
 They need no package imports. The integration suite executes their published
 handlers in the real isolated runtime against disposable storage.
 
-To install an example, create a private App and save the folder's files together
-with `code_write` using its current `expectedRevision`. Only the dashboard has an
-`index.html` interface; for the other Apps, which deliberately have none, set
-`entry:"main.js"`.
+To install an example, create a private App and save each of the folder's files
+with one `code_write` call at a time, passing each returned revision as the next
+`expectedRevision`. Only the dashboard has an `index.html` interface; for the
+other Apps, which deliberately have none, set `entry:"main.js"`.
 For the importer and invoice matcher, `setup.json` contains `code_database`
 tool inputs, not runtime source. List tables first, then pass each missing
 schema definition with the new App's `id` while holding Manage. Normal users

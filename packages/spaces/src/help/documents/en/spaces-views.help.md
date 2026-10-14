@@ -2,7 +2,7 @@
 id: spaces-views
 title: Use views and filters
 icon: ti ti-filter
-description: Choose between the Overview, Table, Kanban, and Calendar views, filter the items, and plan in the day and month views.
+description: Choose between the List, Table, Kanban, and Calendar views, filter the items, and plan in the day and month views.
 order: 110
 ---
 
@@ -11,13 +11,13 @@ Views show the same items in the shape that fits the current job. A good view re
 ## Choose a view {icon="layout-list"}
 
 :::reference
-- **Overview:** Best for quick triage, personal work queues, and short operational lists.
+- **List:** Best for quick triage, personal work queues, and short operational lists.
 - **Table:** Best when people compare assignees, deadlines, status, priority, and tags across many items.
 - **Kanban:** Best when the status flow matters and people need to see work move from left to right.
 - **Calendar:** Best for events, deadlines, planning windows, and work that is mainly time-based.
 :::
 
-## Check tasks off in the Overview {icon="checkbox"}
+## Check tasks off in the List {icon="checkbox"}
 
 :::reference
 - **Tick a task:** Select the box in front of the task. Under the pointer or with keyboard focus, an open box shows a faint check first. When you tick it, the box fills at once and the title is struck through.
@@ -30,8 +30,8 @@ Views show the same items in the shape that fits the current job. A good view re
 ## Work with overdue and undated tasks in the day view {icon="calendar-due"}
 
 :::reference
-- **What it shows:** In the **Day** view of the calendar, a row below the day shows two kinds of open tasks. First, tasks whose deadline passed before today, most recent first. Second, tasks assigned to you without a deadline, most urgent first. Each part shows up to five tasks. **Show all** opens the **Overview** view with all of them.
-- **Work with it:** Select a task to open it. If you can edit the Space, you can also check the task off. It stays in the row for a moment, then the row closes the gap. The confirmation offers **Undo**. A task that open tasks still block shows a lock instead of a checkbox.
+- **What it shows:** In the **Day** view of the calendar, a row below the day shows two kinds of open tasks. First, tasks whose deadline passed before today, most recent first. Second, tasks assigned to you without a deadline, most urgent first. Each part shows up to five tasks. **Show all** opens the **List** view with all of them.
+- **Work with it:** Select a task to open it. If you can edit the Space, you can also check the task off. It stays in the row for a moment, then the row closes the gap. The confirmation offers **Undo**. Drag a task into free time of the day to plan it there. A task that open tasks still block shows a lock instead of a checkbox.
 - **Layout:** The row keeps its place and size whatever it holds, so the day above never moves. While another day or filter loads, the row stays empty until its tasks are in. When more tasks exist than fit, the row scrolls sideways. A screen reader and **Tab** reach the row right after the day, as on screen. When you check a task off with the keyboard, focus moves to the next task in the row.
 - **Filters:** The scope, priority, status, and tag filters of the calendar apply to the row. When a filter leaves the row empty, the row says so. While the scope shows only events, the row is hidden.
 - **Old links:** Spaces no longer has a calendar timeline. A saved link to the timeline opens the month that contains its day.
@@ -42,6 +42,7 @@ Views show the same items in the shape that fits the current job. A good view re
 :::reference
 - **Search:** Use search when you remember a word in the title, the notes, or the visible item details.
 - **Chips:** Use filter chips for explicit state such as type, status, activity, assignee, priority, deadline, tags, Kanban column, sort, or grouping.
+- **Groups:** In the **Overview**, a group continues on the next page, and the number next to it counts all its matching items, also those on other pages. Inside a group, the items follow the sort. A task with several tags shows under each of its tags. The **Table** does not group, so its rows follow only the sort.
 - **Inactive work:** The activity filter finds open tasks whose latest activity is at least 30 days old. Comments and checklist changes count as activity. Spaces never moves or closes the task automatically.
 - **URL state:** Search and filters live in the URL, so shared links and reloads keep the same view.
 :::
@@ -50,6 +51,7 @@ Views show the same items in the shape that fits the current job. A good view re
 
 :::reference
 - **Filters:** The toolbar above the board searches and filters every column by assignment, priority, deadline, activity, and tags. **Assigned to me** shows only your work. While a filter is active, each column shows how many of its items match, for example **2/7**. A new task that does not match the filter only raises the count of its column until you clear the filter. Filters stay in the URL, as in the other views. They never change the board for anyone else.
+- **Move a card:** With **Edit** access, drag a card by its grip with a mouse or pen. On a touch screen, press and hold the card until it lifts, then drag it. A quick swipe still scrolls the board. With the keyboard, focus the grip and press **Space** to pick the card up. Use **Up** and **Down** to choose its place in the column and **Left** and **Right** to choose another status; the line on the board shows where it lands. Press **Space** again to drop it or **Escape** to cancel. Automatic columns are skipped.
 - **Fold a column:** Use the fold button in a column header to shrink a column that you do not need now. The column becomes a narrow strip with its name and count. Select the strip to open the column again. You can still drop a card on a folded column; the card lands at the top. This browser remembers folded columns for this Space and only for you.
 - **Keyboard shortcuts:** The keyboard button at the end of the toolbar opens a list of the shortcuts of the board.
 - **Activity:** When you drag a card into a done status, the activity shows the task as completed. When you drag it back to an open status, the activity shows it as reopened.
@@ -61,13 +63,29 @@ Views show the same items in the shape that fits the current job. A good view re
 ## Plan in the month view {icon="calendar-month"}
 
 :::reference
-- **Toolbar:** In every calendar view, the filters **Scope**, **Priority**, **Status**, and **Tags** and the number of shown entries sit right after the month name. When the calendar is narrower, the filters show only their icons or move to a row of their own.
-- **Select days:** Choose a day to select it. This never leaves the month. To select several days, drag across them with a mouse, or hold **Shift** while you choose days or use the arrow keys. On a phone, touching a day selects that one day. The arrow keys move the selection, **Page Up** and **Page Down** change the month, and **Esc** clears the selection.
-- **Create on the selection:** After you choose a day with the mouse, a small **New entry** form waits beside the day. The focus stays on the day: start typing, or press **Tab** to fill in the form. After a drag across days, a double-click, **Enter**, or **N**, the form opens ready for the title. On a phone, touch the selected day a second time to open it. Choose **Event**, **All day**, or **Task**; the line beside it says when. **Enter** creates the entry, and **With details** opens the full form. Press **Esc** or choose a place outside the form to cancel. A drag over several days, or **New event** in the menu of several days, creates one all-day event over all of them. **New event** in the toolbar opens the full form for the selected days.
+- **Scroll through weeks:** Scroll up or down through the week rows. The weekday names stay on top, and the title follows the month in the center. Use the previous and next arrows to move one month with the week containing its first day on top. Choose **Today** to return to today's month.
+- **Toolbar:** In every calendar view, the filters **Scope**, **Priority**, **Status**, and **Tags** and the number of shown entries sit right after the month name. In the month view, the number counts entries on the visible days, including dimmed days from other months. When the calendar is narrower, the filters show only their icons or move to a row of their own.
+- **Select days:** Choose a day to select it. Scrolling keeps your selection. To select several days, drag across them with a mouse, or hold **Shift** while you choose days or use the arrow keys. On a phone, touching a day selects that one day. The arrow keys move the selection, **Page Up** and **Page Down** move one month with its first week on top, and **Esc** clears the selection.
+- **Create on the selection:** After you choose a day with the mouse, a small **New entry** form waits beside the day. The focus stays on the day: start typing, or press **Tab** to fill in the form. After a drag across days, a double-click, **Enter**, or **N**, the form opens ready for the title. On a phone, touch the selected day a second time to open it. Choose **Event**, **All day**, or **Task**; the line beside it says when. **Enter** creates the entry, and **With details** opens the full form. Press **Esc** or choose a place outside the form to cancel. A drag over several days, or **New event** in the menu of several days, creates one all-day event over all of them. **New event** in the toolbar opens the full form for the selected days. Without a selection, it uses the day you opened the month at when that day lies in the month in the center, otherwise today when today lies there, otherwise that month's first day.
 - **Menu:** Right-click, long-press on a phone, or press **Shift+F10** on a day or on the selected days. The menu offers **New event**, **New all-day event**, and **New task with deadline** for those days, then **Open day** and **Open week**.
 - **Open a day or a week:** Select a day and choose **Day** or **Week** in the view switcher. Or use **Open day** in the menu or in the day list. Or choose a week number.
 - **Long events:** An event over several days is one bar per week row, with its title. Where a week row cuts the event off, its end is torn. When there is room, the bar says where the event continues, for example **until 13** or **from 7**. The next row continues the event. When you point at one part, the other parts are highlighted.
 - **Full days:** Each day shows as many entries as fit its height. **+N more** counts the rest and opens the whole day. **Space** on a selected day does the same.
+:::
+
+## Plan in the day and week views {icon="calendar-time"}
+
+:::reference
+- **Day start:** A day runs from 06:00 to 06:00 of the next day. The night after 22:00 belongs to the day before. So an event from 23:00 to 01:30 stays with its evening. An event from 05:30 to 06:30 shows in both days: at the end of the night before and at the top of its day.
+- **Nights:** A night without entries is one slim row. A night with an entry is open at half height. In the week view, the nights of all days open together when one of them holds an entry. Choose the night bar or the moon to fold or open the night.
+- **Day view:** The days run down the page in one scroll. Each day keeps its heading at the top while it is in view. Empty days merge into one **Nothing planned** row. Choose the row to show the days. The view slows down at each day start. When you stop close to a day start, the view moves to it. More days load as you scroll.
+- **Week view:** The days run sideways in one strip: seven on a wide screen, three on a phone. Scroll sideways with a trackpad, with **Shift** and the mouse wheel, or with a finger. The strip stops at a day start. The arrows move by whole weeks. **Today** goes back to this week. A reload or a shared link opens the week of the day in the link, on a phone that day.
+- **Entries:** An event is a band as long as the event. The running event fills up and shows the time left, for example **27 min left**. A task with a deadline is a dashed line with its checkbox. Tasks due at about the same time sit side by side. If you can edit the Space, check the task off there, or press **Space** on it. Drag the line to move the deadline to another time. An event over several days is a bar in the all-day row. Where the week cuts the bar off, its end is torn. When there is room, the bar says where the event continues, for example **from 20** or **until 27**.
+- **Free time:** A gap of an hour or more shows its length, for example **1 hr free**. Choose a gap to create an event there. In the week view, free time shows when you point at a day or select it. Drag across empty time to create an event of that length.
+- **Plan a task:** Drag a task from the row below the day view into free time. The gap shows **fits** or how much time is missing. On a phone, touch and hold the task first. The task gets the time where you drop it and leaves the row. It keeps its deadline, also when you move it later.
+- **Today:** The arrow on **Today** points to today. When today is on the screen, a dot shows instead.
+- **Keyboard shortcuts:** **H** shows today. **J** and **K** move forward and back, and so do the right and left arrow keys. **1** to **4** choose the view, and **G** opens **Go to**. **Go to** takes a date, a weekday such as **Friday**, a month, or a week number. **N** creates an event, and **Shift+N** creates a task. The keyboard button in the toolbar lists the shortcuts, and Cloud Help lists them too. In the month, a letter that you type on a selected day starts the title of a new entry instead.
+- **Count:** The number next to the filters counts the entries of the days that you see.
 :::
 
 ## Choose the calendar colors {icon="palette"}

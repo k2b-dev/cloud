@@ -39,6 +39,21 @@
     background: color-mix(in srgb, var(--app-accent) 16%, var(--ui-surface));
   }
 
+  /* A row an action takes out of the list closes its gap from its measured height, so the rows below slide up
+     instead of jumping; the list drops the row when the collapse ends. It keeps no hover or focus meanwhile. */
+  .mail-list-entry[data-leaving] {
+    align-items: flex-start;
+    overflow: hidden;
+    content-visibility: visible;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .mail-list-entry[data-leaving] {
+      animation: mail-list-row-leave 160ms ease-in forwards;
+    }
+  }
+
   .mail-list-checkbox {
     flex: 0 0 auto;
   }
@@ -172,10 +187,7 @@
   }
 
   .k2b-ui .mail-focus-workspace {
-    border-color: transparent;
-    border-radius: 0;
     background: var(--ui-surface);
-    box-shadow: none;
   }
 
   .k2b-ui .mail-focus-main {
@@ -184,8 +196,8 @@
     background: var(--ui-surface);
   }
 
-  /* The overview is deliberately not a mailbox: one page title, one scope
-     chip, one list. Objects live in the sidebar and open their own workspace. */
+  /* The overview is deliberately not a mailbox: one page title, the views,
+     one list. Objects live in the sidebar and open their own workspace. */
   .mail-overview-page {
     display: flex;
     min-width: 0;
@@ -423,11 +435,35 @@
   .mail-focus-chevron {
     align-self: center;
     color: var(--color-zinc-400);
-    transition: transform 120ms ease;
   }
 
-  .mail-focus-row:hover .mail-focus-chevron {
-    transform: translateX(0.125rem);
+  /* Loading rows have the layout of the rows they stand for, so the list keeps its size when the
+     rows arrive. They appear only once a read takes a moment, so a fast one never flashes them. */
+  .mail-focus-skeleton > .mail-focus-row {
+    animation: mail-focus-skeleton-appear 150ms ease-out 300ms both;
+  }
+
+  .mail-focus-skeleton > .mail-focus-row:hover {
+    background: none;
+  }
+
+  /* A line of text, not a flex row of icons, so the line keeps the height of the text it stands for. */
+  .mail-focus-skeleton .mail-focus-meta > span {
+    display: block;
+  }
+
+  .mail-focus-skeleton-shape {
+    display: inline-block;
+    height: 0.75em;
+    border-radius: 0.25rem;
+    vertical-align: middle;
+    background: var(--k2b-surface-muted);
+  }
+
+  .mail-focus-skeleton .mail-focus-avatar.mail-focus-skeleton-shape {
+    height: 2.75rem;
+    border-radius: 999px;
+    background: var(--k2b-surface-muted);
   }
 
   .dark :is(.mail-focus-sender, .mail-focus-subject) {
@@ -459,6 +495,10 @@
 
     .mail-focus-avatar {
       width: 2.375rem;
+      height: 2.375rem;
+    }
+
+    .mail-focus-skeleton .mail-focus-avatar.mail-focus-skeleton-shape {
       height: 2.375rem;
     }
 
@@ -502,6 +542,25 @@
     font-size: 0.75rem;
     font-weight: 400;
     color: var(--color-zinc-500);
+  }
+
+  /* The row actions (k2b-progressive-action) cover the time: a touch-only
+     screen always shows them, and once any pointer can hover they show only
+     on the hovered or focused row and while their menu is open. */
+  .mail-list-entry:focus-within .mail-list-time {
+    opacity: 0;
+  }
+
+  @media (any-hover: none) {
+    .mail-list-time {
+      opacity: 0;
+    }
+  }
+
+  @media (any-hover: hover) {
+    .mail-list-entry:is(:hover, :has(.k2b-progressive-action [aria-expanded="true"])) .mail-list-time {
+      opacity: 0;
+    }
   }
 
   .mail-list-meta-icons {
@@ -937,8 +996,27 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .k2b-ui .mail-quick-look__placeholder {
+  .k2b-ui .mail-quick-look__placeholder,
+  .k2b-ui .mail-focus-skeleton-shape {
     animation: mail-quick-look-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+/* The end state takes the list's 0.125rem row gap along, so nothing moves when the row is dropped. */
+@keyframes mail-list-row-leave {
+  from {
+    height: var(--mail-row-height);
+  }
+  to {
+    height: 0;
+    margin-bottom: -0.125rem;
+    opacity: 0;
+  }
+}
+
+@keyframes mail-focus-skeleton-appear {
+  from {
+    opacity: 0;
   }
 }
 

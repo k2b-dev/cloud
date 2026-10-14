@@ -20,6 +20,38 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: Calendar } = await import("./index");
 
 describe("Spaces calendar toolbar", () => {
+  for (const [locale, title, first] of [
+    ["en", "October 2026", "Nov 1"],
+    ["de", "Oktober 2026", "1. Nov"],
+  ] as const) {
+    test(`month renders the continuous first week and month boundaries in ${locale}`, () => {
+      const html = renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(Calendar, {
+              spaceId: "Space1",
+              view: "month",
+              date: new Date("2026-10-09T12:00:00Z"),
+              range: { from: "2026-08-30T22:00:00Z", to: "2026-12-20T23:00:00Z" },
+              items: [],
+              columns: [],
+              tags: [],
+              filter: defaultCalendarFilter,
+              baseUrl: "/app/spaces/Space1",
+              dateConfig: { locale, timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+              canWrite: true,
+            });
+          },
+        }),
+      );
+      expect(html).toContain(title);
+      expect(html).toContain('data-continuous="true"');
+      expect(html.match(/data-week-key="([^"]+)"/)?.[1]).toBe("2026-09-28");
+      expect(html).toContain(`>${first}</span>`);
+    });
+  }
+
   test("uses an input button for New event", () => {
     const html = renderToString(() =>
       createComponent(Calendar, {
@@ -64,11 +96,12 @@ describe("Spaces calendar toolbar", () => {
       }),
     );
 
-    expect(html).toMatch(/class="k2b-calendar-time-grid__slot\s*"/);
-    expect(html).toContain('data-interactive="true"');
+    // The day the reader opened shows its hours even when nothing is planned, with free time to create in.
+    expect(html).toContain('data-calendar-body="2026-08-16"');
+    expect(html).toMatch(/class="k2b-calendar-gap__button"[^>]*aria-label="16 hrs free, 06:00 to 22:00\. Create event 09:00–10:00"/);
   });
 
-  test("passes the bounded description preview to large timed event cards", () => {
+  test("shows a band's title and time in the day view, and leaves the description to the detail", () => {
     const item: CalendarItem = {
       id: "Event1",
       spaceId: "Space1",
@@ -106,7 +139,10 @@ describe("Spaces calendar toolbar", () => {
       }),
     );
 
-    expect(html).toMatch(/<span class="mt-1 line-clamp-2[^"]*">Walk through the new workspace flow\.<\/span>/);
+    // The day view's band shows its title and time; the description waits in the detail.
+    expect(html).toContain("Customer demo");
+    expect(html).toContain("09:00–10:30");
+    expect(html).not.toContain("Walk through the new workspace flow.");
   });
 });
 
@@ -149,8 +185,8 @@ const items: CalendarItem[] = [
     tags: [fair, press],
     assignees: [robin],
   }),
-  base({ id: "Task01", title: "Send the press kit", deadline: "2026-08-12T00:00:00.000Z", priority: "urgent", tags: [press] }),
-  base({ id: "Task02", title: "Count the chairs", deadline: "2026-08-12T00:00:00.000Z", priority: "low", columnId: "Col002" }),
+  base({ id: "Task01", title: "Send the press kit", deadline: "2026-08-12T16:00:00.000Z", priority: "urgent", tags: [press] }),
+  base({ id: "Task02", title: "Count the chairs", deadline: "2026-08-12T17:00:00.000Z", priority: "low", columnId: "Col002" }),
 ];
 const renderView = (view: CalendarView, locale: "en" | "de", colorBy: CalendarColorBy = "tag") =>
   renderToString(() =>
@@ -181,6 +217,42 @@ const chip = (html: string, title: string) => {
   return match[0];
 };
 
+describe("Spaces calendar month toolbar", () => {
+  test("counts only the entries of the month it names, not those on the padding days, in English and German", () => {
+    const monthItems = [
+      base({ id: "Event1", startsAt: "2026-09-29T10:00:00+02:00", endsAt: "2026-09-29T11:00:00+02:00" }),
+      base({ id: "Event2", startsAt: "2026-09-30T23:30:00+02:00", endsAt: "2026-09-30T23:59:00+02:00" }),
+      base({ id: "Event3", startsAt: "2026-10-31T23:30:00+01:00", endsAt: "2026-11-01T00:30:00+01:00" }),
+      base({ id: "Event4", allDay: true, startsAt: "2026-09-29T22:00:00.000Z", endsAt: "2026-10-02T22:00:00.000Z" }),
+      base({ id: "Event5", allDay: true, startsAt: "2026-10-31T23:00:00.000Z", endsAt: "2026-11-01T23:00:00.000Z" }),
+      base({ id: "Task01", deadline: "2026-10-14T22:00:00.000Z" }),
+    ];
+    for (const locale of ["en", "de"] as const) {
+      const html = renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(Calendar, {
+              spaceId: "Space1",
+              items: monthItems,
+              columns,
+              tags: [],
+              filter: defaultCalendarFilter,
+              view: "month",
+              date: new Date("2026-10-14T22:00:00.000Z"),
+              baseUrl: "/app/spaces/Space1",
+              dateConfig: { locale, timeZone: "Europe/Berlin", weekStartsOn: 1 },
+              canWrite: false,
+            });
+          },
+        }),
+      );
+      expect(html).toContain(locale === "de" ? "3 angezeigt" : "3 shown");
+      expect(html).not.toContain(locale === "de" ? "6 angezeigt" : "6 shown");
+    }
+  });
+});
+
 describe("Spaces calendar colors", () => {
   for (const locale of ["en", "de"] as const) {
     for (const view of ["day", "week", "month"] as const) {
@@ -197,18 +269,22 @@ describe("Spaces calendar colors", () => {
           /data-spaces-calendar-dots[^>]*>(?:<!--[^>]*-->)*<span class="size-1\.5 rounded-full" style="background-color:#ec4899"/,
         );
         expect(event).not.toContain("ti-checkbox");
-        // A task takes its tag's color too, as a checkbox marker instead of a band.
+        // A task takes its tag's color too, as a marker instead of a band: in the month with a checkbox in its content,
+        // in the day and week views as a dashed line whose real checkbox the calendar draws.
         expect(urgent).toContain('data-display="marker"');
         expect(urgent).toContain("--k2b-calendar-accent:#ec4899");
-        expect(urgent).toContain("ti ti-checkbox");
+        if (view === "month") expect(urgent).toContain("ti ti-checkbox");
+        else expect(html).toContain(`aria-label="${locale === "de" ? "Erledigt" : "Done"}: Send the press kit"`);
         expect(urgent).toContain(`title="${locale === "de" ? "Dringend" : "Urgent"}"`);
         // Marker and flag are visual only; the accessible name says what they show.
+        // In the day and week views a deadline is a moment and names its one time.
+        const at = (time: string) => (view === "month" ? "" : `, ${time}`);
         expect(urgent).toContain(
           locale === "de"
-            ? 'aria-label="Send the press kit, Fälligkeitsdatum, Priorität: Dringend"'
-            : 'aria-label="Send the press kit, Deadline, Priority: Urgent"',
+            ? `aria-label="Send the press kit${at("16:00")}, Fälligkeitsdatum, Priorität: Dringend"`
+            : `aria-label="Send the press kit${at("16:00")}, Deadline, Priority: Urgent"`,
         );
-        expect(calm).toContain(`aria-label="Count the chairs, ${locale === "de" ? "Fälligkeitsdatum" : "Deadline"}"`);
+        expect(calm).toContain(`aria-label="Count the chairs${at("17:00")}, ${locale === "de" ? "Fälligkeitsdatum" : "Deadline"}"`);
         expect(event).toContain(
           locale === "de" ? 'aria-label="Stand meeting, 09:00 bis 10:00"' : 'aria-label="Stand meeting, 09:00 to 10:00"',
         );

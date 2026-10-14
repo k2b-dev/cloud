@@ -43,6 +43,7 @@ import {
   WIDE_VIEWPORT_QUERY,
 } from "../schedule-url";
 import { reconcileChangedSettings } from "../settings-contract";
+import { createVenueSwitcher } from "./venue-switcher";
 import { CalendarSubscriptionDialog } from "./venue-workspace/calendar-subscription";
 import { openVenuePublicDisplayDialog } from "./venue-workspace/public-display";
 import { PublicPageEditor } from "./venue-workspace/public-page-editor";
@@ -493,15 +494,17 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     closeSheet();
   });
 
+  // Every signed-in user can create a venue; SSR provides the user ID.
+  const switcher = createVenueSwitcher(venue, Boolean(props.userId));
   /**
    * One fixed set of entries per role, however many sections the Venue has: Take shift for staff who can take
    * shifts, the views, the public page (a view for admins, its link dialog for everyone else), and Settings for
    * admins only, last.
    */
   const navigation = createNavigation({
+    switcher,
     items: () => [
       ...(canJoinShifts() ? [{ id: "signup", label: t().signUp, icon: "ti ti-user-plus", action: "signup" }] : []),
-      { id: "all", label: t().allVenues, icon: "ti ti-layout-grid", href: "/app/venue" },
       ...views().map((item) => ({
         id: item.id,
         label: item.label,
@@ -524,13 +527,13 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
       <WorkspaceNavigationProvider navigation={navigation} label={venue().name} />
       <AppWorkspace.Sidebar collapsible>
         <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarSwitcher {...switcher()} />
           <div class="flex flex-col gap-3">
-            <AppWorkspace.SidebarIconGrid columns={2} sidebarMode="expanded">
-              <Show when={canJoinShifts()}>
+            <Show when={canJoinShifts()}>
+              <AppWorkspace.SidebarIconGrid columns={2} sidebarMode="expanded">
                 <AppWorkspace.SidebarIconAction icon="ti ti-user-plus" label={t().signUpForShift} tone="success" onClick={openSignup} />
-              </Show>
-              <AppWorkspace.SidebarIconAction href="/app/venue" navigation="document" icon="ti ti-layout-grid" label={t().allVenues} />
-            </AppWorkspace.SidebarIconGrid>
+              </AppWorkspace.SidebarIconGrid>
+            </Show>
 
             <AppWorkspace.SidebarSection title={t().workspace} sidebarMode="expanded">
               <For each={views()}>
@@ -552,7 +555,6 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
             <Show when={canJoinShifts()}>
               <AppWorkspace.SidebarIconAction icon="ti ti-user-plus" label={t().signUpForShift} tone="success" onClick={openSignup} />
             </Show>
-            <AppWorkspace.SidebarIconAction href="/app/venue" navigation="document" icon="ti ti-layout-grid" label={t().allVenues} />
             <For each={views()}>
               {(item) => (
                 <AppWorkspace.SidebarIconAction
@@ -1034,9 +1036,10 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
             </div>
           </div>
         </AppWorkspace.Main>
-        {/* From 1024 px the detail sits next to the calendar; below, CSS hides it and a bottom sheet shows the same detail. */}
+        {/* From 1024 px the detail floats beside the calendar; below, CSS hides it and a bottom sheet shows the same detail. */}
         <AppWorkspace.Detail
           id="venue-shift-detail"
+          onClose={clearSelection}
           open={selection() !== null && wide()}
           width="md"
           resizable={false}

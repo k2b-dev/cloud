@@ -5,6 +5,7 @@ import { PWA_AUTH_PATH, PWA_SCOPE } from "../contracts/pwa";
 import { getLocale } from "../server/locale";
 import { preloadLayoutAnnouncements } from "../server/middleware/settings";
 import { createLoginRedirectUrl } from "../shared/redirect";
+import { readThemePreferenceFromCookieHeader } from "../shared/theme";
 import type { PageOptions } from "./define-app";
 
 export type PageErrorOptions = {
@@ -21,7 +22,10 @@ export type PageErrorStatus = ClientErrorStatusCode | ServerErrorStatusCode;
 export const createPageResponses = (html: HtmlFn<PageOptions>) => {
   const error = async (c: Context, status: PageErrorStatus, options: PageErrorOptions = {}): Promise<Response> => {
     // Auth middleware may reject before ssr() initializes page metadata.
-    c.set("page", { lang: getLocale(c) });
+    c.set("page", {
+      lang: getLocale(c),
+      themePreference: readThemePreferenceFromCookieHeader(c.req.header("Cookie")),
+    });
     c.header("Cache-Control", "private, no-store");
     if (options.layout !== "pwa") await preloadLayoutAnnouncements(c);
     // Load JSX only after the application's SSR plugin has been installed.

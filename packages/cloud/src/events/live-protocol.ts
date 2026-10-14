@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export type { LiveServerMessage } from "./live-server-message";
+
 /** Messages a live socket accepts: subscriptions only. Writes go over HTTP. */
 export const LiveClientMessageSchema = z.discriminatedUnion("t", [
   z
@@ -28,4 +30,3 @@ export const LiveServerMessageSchema = z.discriminatedUnion("t", [
   z.object({ t: z.literal("revoked"), id: z.string(), code: z.enum(["not_found", "access_denied"]) }),
   z.object({ t: z.literal("error"), code: z.string(), message: z.string() }),
 ]);
-export type LiveServerMessage = z.infer<typeof LiveServerMessageSchema>;

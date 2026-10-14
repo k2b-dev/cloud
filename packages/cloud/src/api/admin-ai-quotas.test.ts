@@ -86,6 +86,7 @@ test("new scopes require active billable chat models while existing scopes stay 
     enabled: true,
     defaultModelId: "paid",
     globalInstructions: "",
+    localClientInstructions: "",
     compactionInstructions: "",
     maxToolResultChars: 1000,
     firecrawlConfigured: false,

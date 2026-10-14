@@ -6,7 +6,7 @@ import { capabilityApprovalReason, capabilityApprovalReasonLabel } from "../../_
 import type { CapabilityActionReview } from "../../contracts/capabilities";
 import { markdown } from "../../shared";
 import type { AiTurnBlock } from "../protocol";
-import { toolOutcome, toolSubject } from "./action-sentences";
+import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
 import { hasCapabilityTable } from "./capability-result";
 import { CapabilityTablePreview } from "./capability-table";
@@ -197,6 +197,7 @@ export type AiApprovalDecision = { callId: string; approved: boolean };
 export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onDecided?: (decision: AiApprovalDecision) => void }) {
   const actions = useAiChatActions();
   const locale = useLocale();
+  const timeZone = useReaderTimeZone();
   const t = () => aiChatMessages(locale());
   const request = () => ({ turnId: props.turnId, callId: props.block.callId, name: props.block.name });
   const pending = () => props.block.status === "awaiting_approval";
@@ -221,7 +222,8 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
     void approval.mutate(input);
   };
   // The heading says what will happen in the owning app's words; the app or the assistant name stays beside it.
-  const title = () => toolSubject(props.block, locale()) ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale());
+  const title = () =>
+    toolSubject(props.block, locale(), timeZone) ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale());
   const ownerName = () => props.block.presentation?.appName ?? t().assistant;
   const capability = () => props.block.presentation?.kind === "capability";
   // The model's own reason, labelled as such, only where Cloud offered it; it adds to the app's sentence and never replaces it.
@@ -545,12 +547,13 @@ function CapabilityToolView(props: { block: ToolBlock }) {
 
 function RejectedToolView(props: { block: ToolBlock }) {
   const locale = useLocale();
+  const timeZone = useReaderTimeZone();
   const presentation = () => props.block.presentation;
-  const title = () => toolSubject(props.block, locale()) ?? presentation()?.title ?? displayToolName(props.block.name, locale());
+  const title = () => toolSubject(props.block, locale(), timeZone) ?? presentation()?.title ?? displayToolName(props.block.name, locale());
   return (
     <Chat.Activity
       icon={aiToolIcon(props.block.name, presentation()?.appIcon)}
-      label={toolOutcome(props.block, "rejected", locale()) ?? aiChatMessages(locale()).toolRejected({ title: title() })}
+      label={toolOutcome(props.block, "rejected", locale(), timeZone) ?? aiChatMessages(locale()).toolRejected({ title: title() })}
       accent={presentation()?.appAccent}
     />
   );
@@ -823,6 +826,7 @@ function StepImage(props: { path: string; src: string; description: string }) {
  */
 export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
   const locale = useLocale();
+  const timeZone = useReaderTimeZone();
   const t = () => aiChatMessages(locale());
   const args = () => (isRecord(props.block.args) ? props.block.args : {});
   /**
@@ -833,11 +837,11 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
     const status = props.block.status;
     const outcome =
       status === "completed" && !props.block.isError
-        ? toolOutcome(props.block, "done", locale())
+        ? toolOutcome(props.block, "done", locale(), timeZone)
         : status === "rejected"
-          ? toolOutcome(props.block, "rejected", locale())
+          ? toolOutcome(props.block, "rejected", locale(), timeZone)
           : null;
-    return outcome ?? toolSubject(props.block, locale());
+    return outcome ?? toolSubject(props.block, locale(), timeZone);
   };
   const detail = () =>
     sentence() ? undefined : [args().path, args().name, args().query, args().title].find((value) => typeof value === "string");

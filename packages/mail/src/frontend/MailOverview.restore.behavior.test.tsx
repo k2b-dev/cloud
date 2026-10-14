@@ -4,6 +4,13 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 
+const emptyPage = { items: [], nextCursor: null };
+const emptyFocus = {
+  pages: { mine: emptyPage, unassigned: emptyPage, waiting: emptyPage, all: emptyPage },
+  counts: { mine: 0, unassigned: 0, waiting: 0, all: 0 },
+  mailboxCounts: [],
+};
+
 // A tab opened before a release asks for a health dialog chunk that the release removed.
 mock.module("./_components/MailboxHealthDialog", () => {
   throw new TypeError("Failed to fetch dynamically imported module: /_ssr/1/chunk-old.js");
@@ -43,7 +50,7 @@ test.skipIf(isServer)("a restored mailbox still opens when its health dialog can
         contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
         dateConfig: { locale: "en", timeZone: "UTC" },
         initialFocusError: null,
-        initialFocus: { items: [], counts: { mine: 0, unassigned: 0, waiting: 0, all: 0 }, mailboxCounts: [], nextCursor: null },
+        initialFocus: emptyFocus,
       }),
     dom.root,
   );

@@ -3,6 +3,7 @@ id: mail-compose
 title: E-Mails verfassen und senden
 icon: ti ti-pencil
 description: Nachrichten verfassen, Entwürfe wiederherstellen, Vorlagen nutzen, Dateien anhängen und die Zustellung steuern.
+updated: 2026-10-11
 order: 30
 ---
 
@@ -21,6 +22,8 @@ Wähle **Mit KI schreiben**, um den aktuellen Mail-Entwurf zu speichern und in e
 Für eindeutige Empfänger kann Mail auch die passenden Kontakte anhängen, die du im Kontaktverzeichnis lesen kannst. Standardmäßig ist das Contacts. Ein fehlendes oder nicht verfügbares Kontaktverzeichnis blockiert den Chat nicht.
 
 Der Assistant-Chat kopiert die Nachricht nicht in einen separaten Mail-Entwurf und erhält keinen zusätzlichen Zugriff auf das Postfach. Mail prüft deinen aktuellen Zugriff jedes Mal, wenn Assistant den Entwurf liest oder ändert. Assistant zeigt das Ändern oder Senden von E-Mails als Aktionsprüfung. Das Senden braucht weiterhin deine ausdrückliche Zustimmung und die normale letzte Prüfung von Mail. Um den aktuellen Stand im Editor direkt zu prüfen, kehre über den Entwurfslink zu Mail zurück.
+
+Wenn der Assistent diesen Entwurf senden möchte, zeigt eine Leiste über dem Entwurf die wartende Anfrage. Prüfe die Anfrage dort. Du kannst sie freigeben oder ablehnen, ohne zum Chat zurückzukehren.
 
 ## Cloud Mail für E-Mail-Links verwenden {icon="link"}
 
@@ -54,6 +57,8 @@ Ein E-Mail-Link kann An, Cc, Bcc, Betreff und einen Text ohne Formatierung ausf�
 :::
 
 Mail sendet Markdown als lesbares HTML mit dem E-Mail-Design des Postfachs und einer Textalternative. Nur Text sendet keine HTML-Alternative. Kann die **Vorschau** die Nachricht nicht zeigen, etwa weil sie zu lang ist, nennt sie den Grund und bietet **Erneut versuchen** an. Du kannst die verfügbaren Bereiche anordnen. Mail hält das Layout passend, wenn ein anderer Entwurf andere Bereiche anbietet.
+
+Markdown kann auch einfaches HTML enthalten. Die E-Mail behält die Elemente `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1` bis `h3`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul` und die Tabellenelemente. Andere Elemente wie `small` entfernt sie, ihr Text bleibt erhalten. Außerdem entfernt sie `class`, Inline-`style` und die meisten anderen Attribute. Links können Webseiten, E-Mail-Adressen (`mailto:`) und Telefonnummern öffnen, zum Beispiel `[+49 731 000000](tel:+49731000000)`. Die E-Mail zeigt keine Bilder oder Trennlinien. Sie zeigt Markdown-Zitate mit einer Linie links. Codeblöcke behalten ihre Zeilenumbrüche, aber nicht ihre Sprachbezeichnung. Entfernt Mail HTML oder ein Bild, listet die **Vorschau** es unter der Nachricht auf. Die **Vorschau** listet auch Werte des E-Mail-Designs des Postfachs auf, die E-Mails ignorieren. Bei einer sehr langen Nachricht verwendet Mail das eingebaute Design, wenn das E-Mail-Design des Postfachs die Darstellung zu komplex machen würde. Das siehst du in der **Vorschau**, und die Nachricht wird trotzdem gesendet. Das Aussehen aller Nachrichten ändert, wer das Postfach verwaltet, im E-Mail-Design des Postfachs. Inline-Stile können das nicht.
 
 Der Verlauf lädt erst, wenn du ihn öffnest. Mail klappt zuerst die neueste Nachricht auf. Du kannst mehrere Nachrichten unabhängig auf- und zuklappen, und Mail lädt frühere Zusammenfassungen seitenweise. Eine vollständige Nachricht lädt Mail erst, wenn du sie aufklappst. Links und Anhänge haben denselben Sicherheitsschutz wie in der Leseansicht.
 
@@ -100,14 +105,44 @@ Plant, sendet oder verwirft eine andere Sitzung den Entwurf, lädt jeder geöffn
 
 ## Signaturen und Textbausteine verwenden {icon="pencil"}
 
-Tippe im Text `/`, um verfügbare Signaturen und Textbausteine zu suchen. Mail fügt die gewählte Vorlage in den Entwurf ein, wo du sie bearbeiten oder entfernen kannst.
+Die Aktionsleiste unten im Editor hat eine Schaltfläche **Signatur** zwischen **Mit KI schreiben** und **Optionen**, wenn eine Signatur verfügbar ist. Sie zeigt deine aktuelle Signatur. Auf schmalen Bildschirmen zeigt sie nur das Signatursymbol. Neue Nachrichten, Antworten und Weiterleitungen beginnen mit der Standardsignatur der Absenderidentität. Ein persönlicher Standard hat Vorrang vor dem Standard des Postfachs für diese Absenderidentität. Wähle eine andere Signatur oder **Keine Signatur**. Wechselst du die Absenderidentität, wechselt die Signatur zu deren Standard.
+
+Signaturen bleiben vom bearbeitbaren Text getrennt. Die Vorschau und die gesendete Nachricht zeigen die Signatur nach deinem Text. Schreibst du über einer zitierten Antwort oder einer weitergeleiteten Nachricht, steht die Signatur zwischen deinem Text und dieser Nachricht. Die Kopie im Entwürfe-Ordner des Anbieters enthält nur deinen Text. Sendest du den Entwurf aus einem anderen E-Mail-Programm, füge die Signatur dort selbst hinzu. Öffnest du einen älteren Entwurf, dessen Signatur noch im Text steht, verschiebt Mail die Signatur in die Signaturauswahl.
+
+Tippe im Text `/`, um ausschließlich Textbausteine zu suchen. Mail fügt den gewählten Textbaustein in den Text ein, wo du ihn bearbeiten oder entfernen kannst.
 
 - **Textbaustein:** Fügt wiederverwendbaren Text mit bereits eingesetzten Werten ein. Werte wie `{{ actor.email }}` erscheinen als normaler Text. In Markdown-Nachrichten setzt Mail nur vor Zeichen einen Backslash, die sonst die Formatierung ändern würden, zum Beispiel `\*`.
-- **Signatur:** Behält ihre sicheren Liquid-Variablen bis zur Vorschau und zum Senden. Werte wie `{{ sender.display_name }}` oder `{{ mailbox.name }}` werden erst bei der Zustellung eingesetzt.
+- **Signatur:** Behält ihre sicheren Liquid-Variablen bis zur Vorschau und zum Senden.
 - **Privat:** Nur die Person, der die Vorlage gehört, sieht sie.
 - **Postfach:** Die Vorlage ist mit anderen im Team geteilt.
 
-Hat eine bestätigte Absenderidentität eine Standardsignatur, fügt Mail sie automatisch in neue Nachrichten, Antworten und Weiterleitungen ein. In einer Antwort oder Weiterleitung setzt Mail die Signatur vor den zitierten Verlauf. Ein persönlicher Standard ersetzt für diese Absenderidentität den Standard des Postfachs. Den eingefügten Quelltext kannst du weiter bearbeiten. Signaturen sind weder Pflicht noch gesperrt. Löschst du nur einen Teil einer Signatur, erkennt Mail den Rest vielleicht nicht mehr als Signatur. Mail versendet den Rest dann so, wie er dasteht, und warnt dich vor dem Senden vor den Platzhaltern darin.
+Nutze diese Liquid-Variablen in deiner Vorlage:
+
+| Variable | Wert |
+| --- | --- |
+| `actor.display_name` | Name der Person, die die Vorschau öffnet, die Nachricht sendet oder den Textbaustein einfügt. Ein benutzergebundenes Dienstkonto nutzt den Namen seines Benutzers, ein anderes Dienstkonto seinen eigenen Namen, andere Automationen „Mailbox automation“. |
+| `actor.email` | E-Mail-Adresse der Person aus `actor.display_name`. Leer, wenn es keine gibt. |
+| `sender.display_name` | Anzeigename der Absenderidentität. Ohne Namen erscheint ihre E-Mail-Adresse. |
+| `sender.email` | Von-Adresse der Absenderidentität. |
+| `sender.reply_to` | Antwortadresse der Absenderidentität. Leer, wenn keine gesetzt ist. |
+| `mailbox.name` | Name des Postfachs. |
+| `mailbox.description` | Beschreibung des Postfachs. Leer, wenn keine gesetzt ist. |
+| `message.subject` | Betreff des Entwurfs. |
+| `message.to` | Liste der An-Adressen. |
+| `message.cc` | Liste der Cc-Adressen. |
+
+Schreibe zum Beispiel diese Signatur:
+
+```liquid
+Viele Grüße
+{{ actor.display_name }}
+{{ mailbox.name }}
+```
+
+Trenne die Adressen in `message.to` und `message.cc` mit `join`:
+`{{ message.to | join: ", " }}`.
+
+Mail warnt dich vor dem Senden vor Platzhaltern, die im Text stehen bleiben und unverändert versendet würden.
 
 Mit Zugriff **Verwalten** änderst du Vorlagen und Standards unter **Einstellungen → Schreiben**. Wähle dort **Design bearbeiten**, um den CSS-Editor des Postfachs zu öffnen. Seine Vorschau aktualisiert sich aus dem aktuellen, nicht gespeicherten CSS. Die **Vorschau** im Editor nutzt dieselbe Darstellung wie die Zustellung.
 

@@ -4,13 +4,24 @@ Minimal SSR + islands framework for SolidJS on Bun.
 
 ## Overview
 
-This library renders Solid components on the server and hydrates only interactive islands on the client.
+This library renders Solid components on the server and renders only interactive islands again on the client.
 
 It uses file conventions:
 
-- `*.island.tsx`: SSR + hydrated on the client
+- `*.island.tsx`: SSR, then client re-rendered
 - `*.client.tsx`: client-only (no SSR HTML content)
 - `*.tsx`: server-only output
+
+Islands are not hydrated. When an island's code loads, the client clears the
+island's server HTML and renders the component again from its props, which the
+server writes as Seroval JSON data. Props are never evaluated, so pages work
+under a Content Security Policy without `'unsafe-eval'`. Two consequences of
+re-rendering follow:
+
+- state that exists only in the server HTML inside an island, such as a typed
+  input value, focus, or a scroll position, is replaced on mount;
+- server and client must render the same markup from the same props, or the
+  page shifts when the island mounts.
 
 ## Size & Philosophy
 
@@ -29,8 +40,8 @@ The browser receives only:
 
 - your island bundles
 - Solid runtime from your app dependencies
-- `seroval` deserialize runtime
-- a tiny hydration import snippet
+- Seroval `fromJSON` runtime (props are JSON data)
+- a tiny island loader snippet
 
 Framework overhead in the browser is intentionally small.
 
@@ -41,7 +52,7 @@ What is intentionally not included:
 - no CSS-in-JS abstraction
 - no build tool wrapper around Bun
 
-Use the libraries you already prefer. This package only handles SSR and islands hydration.
+Use the libraries you already prefer. This package only handles SSR and islands.
 The optional `@k2b/ssr/nav` subpath provides progressive anchor
 enhancement for islands, but it still does not add route matching, loaders, or
 SPA routing.
@@ -268,9 +279,10 @@ their scroll position across enhanced navigation.
 
 Every island and client component instance is mounted inside its own error
 boundary. No setup is needed. If a component throws while it mounts, while its
-props are deserialized, or later in a reactive update, only that instance is
+props are parsed, or later in a reactive update, only that instance is
 replaced with a fallback. Other instances and other islands keep working, also
-when they are updated by the same signal write.
+when they are updated by the same signal write. Malformed `data-props` also
+ends in the fallback.
 
 The default fallback is plain, unstyled markup:
 
@@ -426,7 +438,7 @@ const docsApp = new Hono()
 export default new Hono().route("/docs", docsApp);
 ```
 
-With this setup, hydration chunks and dev endpoints are served from `/docs/_ssr/...`.
+With this setup, island chunks and dev endpoints are served from `/docs/_ssr/...`.
 
 ## Build for production
 
@@ -476,7 +488,8 @@ per-tab connections as a compatibility fallback.
 
 - islands must use default export
 - props must be serializable via `seroval`; do not pass functions, callbacks, event handlers, Solid signals/stores, DOM nodes, or class instances as island/client props
-- nested island/client imports are not supported
+- island/client modules must not import other island/client modules, directly, through plain modules, as named imports, or with a literal dynamic `import()`; an island must also not import itself back through plain modules. The build fails in dev and production. A computed `import()` path is not detected. Type-only imports are fine.
+- move shared components into plain `.tsx` modules and import them from both files; keep each island/client entry as a thin re-export, such as `export { default } from "./Inner";`
 
 ## Development
 

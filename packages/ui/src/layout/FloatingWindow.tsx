@@ -4,8 +4,8 @@ import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
 import { RenderErrorBoundary } from "../internal/render-error";
 import { suppressTextSelection } from "../internal/text-selection";
-import { useUiMessages } from "../intl/messages";
 import { FLOATING_WINDOW_VIEWPORT_GAP, type FloatingWindowRect, fitFloatingWindowRect } from "./floating-window-geometry";
+import { useFloatingWindowMessages } from "./floating-window-messages";
 
 export { type FloatingWindowRect, fitFloatingWindowRect } from "./floating-window-geometry";
 
@@ -55,7 +55,7 @@ const isTopLayer = (owner: LayerOwner) => activeLayers.at(-1) === owner;
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), Math.max(min, max));
 
 export default function FloatingWindow(props: FloatingWindowProps): JSX.Element {
-  const messages = useUiMessages();
+  const floatingWindowMessages = useFloatingWindowMessages();
   const minWidth = () => props.minWidth ?? 360;
   const minHeight = () => props.minHeight ?? 320;
   const [mobile, setMobile] = createSignal(false);
@@ -232,12 +232,12 @@ export default function FloatingWindow(props: FloatingWindowProps): JSX.Element 
           type="button"
           data-window-move
           class="k2b-floating-window__title"
-          aria-label={messages().moveWindow({ title: props.title })}
+          aria-label={floatingWindowMessages().moveWindow({ title: props.title })}
           onKeyDown={(event) => arrows(event, moveBy)}
         >
           <span id={titleId}>{props.title}</span>
         </button>
-        <button type="button" class="k2b-icon-button" aria-label={messages().closeWindow} onClick={close}>
+        <button type="button" class="k2b-icon-button" aria-label={floatingWindowMessages().closeWindow} onClick={close}>
           <i class="ti ti-x" aria-hidden="true" />
         </button>
       </header>
@@ -250,7 +250,7 @@ export default function FloatingWindow(props: FloatingWindowProps): JSX.Element 
               class="k2b-floating-window__resize"
               data-edge={edge}
               style={{ cursor }}
-              aria-label={messages().resizeWindow}
+              aria-label={floatingWindowMessages().resizeWindow}
               onPointerDown={(event) => beginResize(edge, event)}
               onKeyDown={(event) => arrows(event, (x, y) => resizeBy(edge, x, y))}
             />

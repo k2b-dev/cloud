@@ -3,6 +3,7 @@ import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { futureLibrary } from "../../test/future-capability-manifest";
 import { defineCapabilities } from "../contracts/capabilities";
+import type { AppRegistryEntry } from "../contracts/registry";
 import { capabilityHash, compileCapabilities, resolveCapabilityManifestPresentation } from "./capabilities";
 import { type AppRegistrySnapshot, dashboardWidgetsOf, requireUsableAppRegistry, resolveLiveCapabilityRegistryEntry } from "./registry";
 
@@ -273,4 +274,85 @@ describe("dashboardWidgetsOf", () => {
     });
     expect(dashboardWidgetsOf([broken])[0]!.presentation?.defaultZone).toBeUndefined();
   });
+});
+
+test("registry settings resolve labels and options, falling back or dropping invalid declarations", () => {
+  const app: AppRegistryEntry = {
+    ...liveApp,
+    widgets: [
+      {
+        id: "stock",
+        path: "/stock",
+        settings: {
+          mode: {
+            kind: "choice",
+            label: "Mode",
+            options: [
+              { label: "All", value: "all" },
+              { label: "Low", value: "low" },
+            ],
+            default: "all",
+          },
+          text: { kind: "text", label: "Text", placeholder: "Search" },
+        },
+      },
+    ],
+    presentation: {
+      baseLocale: "en",
+      translations: {
+        de: {
+          widgets: {
+            stock: {
+              settings: {
+                mode: { label: "Modus", options: { all: "Alle", low: "Wenig" } },
+                text: { label: "Text DE", placeholder: "Suchen" },
+              },
+            },
+          },
+        },
+        "de-CH": { widgets: { stock: { settings: { mode: { options: { low: "Knapp" } } } } } },
+        fr: { widgets: { stock: { settings: { mode: { label: " " } } } } },
+      },
+    },
+  };
+  expect(dashboardWidgetsOf([app], "de-CH")[0]?.settings).toEqual({
+    mode: {
+      kind: "choice",
+      label: "Modus",
+      options: [
+        { label: "Alle", value: "all" },
+        { label: "Knapp", value: "low" },
+      ],
+      default: "all",
+    },
+    text: { kind: "text", label: "Text DE", placeholder: "Suchen" },
+  });
+  expect(dashboardWidgetsOf([app], "fr")[0]?.settings).toEqual(app.widgets?.[0]?.settings);
+  const repaired: AppRegistryEntry = {
+    ...app,
+    widgets: [
+      {
+        id: "stock",
+        path: "/stock",
+        settings: {
+          mode: { kind: "choice", label: "", options: [{ label: "All", value: "all" }] },
+        },
+      },
+    ],
+  };
+  expect(dashboardWidgetsOf([repaired], "de")[0]?.settings?.mode?.label).toBe("Modus");
+  for (const settings of [
+    null,
+    { field: null },
+    { field: { kind: "unknown", label: "Field" } },
+    { field: { kind: "resource", label: "Space" } },
+    { toString: { kind: "text", label: "Text" } },
+  ]) {
+    const broken = {
+      ...app,
+      widgets: [Object.defineProperty({ id: "stock", path: "/stock" }, "settings", { value: settings, enumerable: true })],
+    };
+    expect(dashboardWidgetsOf([broken])[0]).not.toHaveProperty("settings");
+    expect(dashboardWidgetsOf([broken], "de-CH")[0]).not.toHaveProperty("settings");
+  }
 });

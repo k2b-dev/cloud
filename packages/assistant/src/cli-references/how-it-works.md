@@ -25,8 +25,9 @@ In short:
 
 The Assistant is each user's personal Cloud agent. Every chat belongs to one
 user. Chats in a Project stay private to the person who started them. The agent
-runs in Cloud, not on your machine; local shell access exists only in an
-interactive `cld assistant --allow-bash` session.
+runs in Cloud, not on your machine; local file and shell access exists only in an
+interactive `cld assistant` session in local tools mode `ask`, the default.
+Use `--no-bash` or `/permissions off` to stop offering local tools.
 
 It works with two kinds of tools:
 
@@ -37,6 +38,90 @@ It works with two kinds of tools:
   installed app publishes. The Assistant finds and loads them while it works,
   so a new app is usable without any Assistant setup. List them with
   `cld capabilities catalog --json`.
+
+## Work in a local folder
+
+Start `cld ai` in the folder you want to read or organize. The default `ask`
+mode lists, reads, uploads, and creates ordinary files there without questions.
+Appending, replacing, moving, Bash commands, protected paths, and other folders
+ask first. Writing, downloading, or moving to `AGENTS.md` or anything under a
+`.agents` folder also asks, even for a new file, because it becomes
+instructions for the assistant; reading these files stays free. **Enter =
+No**; only typed `y` or `yes` approves. Local approvals are never remembered.
+`/permissions off` refuses every local tool, including pending calls from
+resumed turns. Print mode sends no local context.
+
+`local_list` finds files with case-insensitive globs and paginated results.
+`local_read` returns numbered text pages; PDFs, images, office documents, and
+spreadsheets are uploaded so Cloud tools can read them. `local_upload` copies
+selected files into the chat, retaining local parent folders by default.
+A local folder named `project` or `skills` lands below `/local/`, because
+Cloud reserves those chat folders: `project/Rechnung.pdf` goes to
+`/local/project/`.
+Uploads remain there until the chat is deleted. `local_download` saves a chat
+file, and `local_write` creates, appends, or replaces text. Creating never
+replaces a file that appears meanwhile. Replacement reviews the current size
+and modification time, then writes a temporary file before replacing the old
+one. `local_move` reviews the whole batch, stays inside the start folder, and
+reports conflicts and partial progress. No tool deletes local files; Bash can
+delete them only after its command is approved. Every local tool except Bash
+stops after 120 seconds of work; time spent on a question does not count.
+
+Paths are checked by real target, including symlinks; new files are checked by
+their parent. Starting in home or above asks for every file access and refuses
+moves. Protected paths include `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`,
+`id_rsa*`, `id_ed25519*`, `.npmrc`, `.netrc`, `.git-credentials`, `.ssh/`,
+`.gnupg/`, `.aws/`, and `.git/`. cld's own configuration is always refused.
+Folder walks never descend into those four protected directories or follow
+symlinked folders.
+
+cld rereads AGENTS.md between the nearest Git root and the start folder on
+every send. Without Git, only the start folder is used. The exact uppercase
+filename matters. AGENTS.md files whose real targets leave the project root,
+or whose given paths or targets are protected, are skipped and reported even
+after trust. Instructions go root first, closest last; the 32 KiB budget favors
+the closest files and marks shortened content. Project Skills are found
+in `.agents/skills/<name>/SKILL.md` along that path; global Skills come from
+`~/.agents/skills`. Closer project Skills win, then global, then Cloud.
+
+Project instructions load only after a trust question. **Trust this folder**
+stores the root realpath in the current profile's `assistant.trustedFolders`
+default on this device. **Only this session** loads without saving; Enter keeps
+project instructions and Skills out for the session. Global Skills never ask.
+Trust does not approve commands or changes. Instructions can steer what the
+assistant does with your Cloud data, so review them before trusting a folder.
+
+`/skills` shows origins, hidden duplicates, and problems. `/<skill>` selects
+one for your next message; `/<skill> <text>` sends it immediately. Up to four
+local Skills can be selected; selections clear after sending. A Skill marked
+`disable-model-invocation: true` starts only through its slash command.
+Manual-only entries count toward the 64 local Skills sent to Cloud and hide
+same-named Cloud Skills, but never appear in the model's catalog. SKILL.md files
+larger than the public Skill limits allow are skipped before reading.
+`load_local_skill` loads an invocable Skill's body and lists supporting paths.
+Trusted Skill folders and cld's session folder are free read roots. The Skill
+`cloud-cli` is hidden because cld reaches Cloud through its own tools.
+
+Working plans print a checklist on stderr: `[x]` complete, `[>]` in progress,
+`[ ]` pending; cancelled items are omitted. Bash output above 64 KiB combined
+is saved in a private, lazily created temporary session folder. Its result
+includes the first and last output segments and the full-output path; the
+terminal still shows all captured output. The folder (0700) and output files
+(0600) are removed when the session ends.
+
+### What leaves your computer
+
+| Content | Destination |
+| --- | --- |
+| Messages and `@` or `/attach` files | Your Cloud chat and the model when read |
+| Tool arguments and results, including local text and Bash output | Your Cloud chat and the model |
+| Uploaded files | Cloud chat storage, available to its tools and model |
+| Trusted AGENTS.md, Skill names/descriptions, and loaded or selected Skill text | Cloud and the model |
+| Workspace path, OS, shell | Cloud and the model on each interactive send |
+
+The [CLI reference](index.md) describes each tool and its limits. Use
+`cld assistant prefs system-prompt --local` to preview the local client prompt
+with this profile's default tools mode.
 
 ## Whose permissions it uses
 
@@ -169,7 +254,14 @@ an explicit invocation and never asks.
 | `web_extract` or `fetch_file` for an address the chat did not supply | Asks, like an HTTP request; an address from the user, a search result, or a read page's links never asks |
 | Studio App sharing, unpublishing, deletion, data clearing, and file copies, including into a Project | Asks for every call with a fresh review |
 | Capability calls from a shared Studio App the user does not manage | Asks for every call, reads included |
-| `local_bash` in `cld assistant --allow-bash` | The terminal asks `Run? [y/N]` for every command; Enter denies |
+| Ordinary local list, read, upload, and create inside the start folder | Never, except protected files or starting in home or above |
+| Local append, replace, move, or access outside the folder | Asks in the terminal; Enter denies |
+| `local_bash` in interactive `cld assistant` mode `ask` | The terminal asks `Run? [y/N]` for every command; Enter denies |
+
+Interactive cld offers numbered **Approve once**, **Approve for this chat**,
+and **Always approve** choices where allowed; Enter rejects. A one-time-only
+approval uses `y/N`. Typed-ahead or pasted input never answers an approval.
+Local Bash approval is never remembered and is never available in print mode.
 
 Read `approval` and `destructive` for each Action in
 `cld capabilities catalog --json`; a missing `approval` field means it asks
@@ -181,8 +273,10 @@ A remembered approval applies to the same user, Action, and app-owned scope,
 and a chat approval only in its chat until the chat is deleted. Users review
 and revoke approvals that apply everywhere under **Assistant settings >
 Approvals**, and those of one chat under **Secrets & approvals** in the chat.
-There is no `cld` command to list or revoke them. Approval confirms intent; the
-app still checks permissions afterward.
+In cld, use `/approvals` or `cld assistant approvals list|revoke`; `list --chat
+<chat-id>` lists only that chat's approvals. These lists also include website
+approvals saved in the web. Approval confirms intent; the app still checks
+permissions afterward.
 
 A website allowed for a chat lets Code Mode read that exact origin with GET or
 HEAD, without a body and with at most the harmless headers listed above,
@@ -280,7 +374,8 @@ Commands:
   They belong to the signed-in user, so add them only for that user. Unless the
   user turned learning off (`personalization configure`), the Assistant also
   learns memories from completed turns in their own chats, Project chats
-  included.
+  included. It learns only about the user, not about other people or sensitive
+  categories, and leaves Project facts in the Project.
 - Knowledge: `cld assistant projects knowledge add "<project>" "<title>" --content-file text.md`.
 
 ## Files
@@ -314,5 +409,19 @@ and copying into a Project needs Project `write`.
 - Use apps that publish no capabilities, or Actions an app does not offer.
 - Approve its own Actions. Scheduled runs cannot ask for approval at all.
 - Run a shell or reach your machine, except through
-  `cld assistant --allow-bash` with a `y/N` prompt for every command.
+  interactive `cld assistant` in `ask` mode with a `y/N` prompt for every command.
+  `--no-bash` or `/permissions` turns local tools off.
 - Treat retrieved content, knowledge, files, or memories as instructions.
+
+## Use Assistant in an editor
+
+Run `cld assistant acp` or `cld acp` as an ACP agent in T3 Code or Zed. The
+editor uses your Cloud login, models, limits, personalization, Projects,
+Skills, and tools, with the same local folder rules as the terminal. Chats stay
+in Cloud and can continue on the web. Sending, deleting, sharing, and inviting
+wait for confirmation in Cloud; the editor shows the link and can only reject
+these requests. Approvals remembered through the editor last at most for the
+chat.
+
+See [Assistant in editors](https://cloud.k2b.dev/en/docs/ai/editors) for setup
+and supported commands.

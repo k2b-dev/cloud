@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-10-10
+updated: 2026-10-12
 ---
 
 # Layout and navigation
@@ -22,8 +22,8 @@ owns the geometry inside it.
 ## Know the shell at each width
 
 The shell has three forms. They are CSS on the same server-rendered markup, so
-a page arrives in its final form and nothing moves when it hydrates or when
-people navigate.
+a page arrives in its final form and nothing moves when its islands mount or
+when people navigate.
 
 | Width | Signed-in pages | Anonymous pages |
 | --- | --- | --- |
@@ -38,6 +38,15 @@ the app bar shows the app background, and the app area is one opaque surface.
 Global announcements and account notices stay above the app as a strip across
 the app area; from 768 to 1535 px it has no radius or border.
 
+The installed app on a tablet reports safe areas, such as the status bar and
+the home indicator. From 768 to 1535 px the app bar and the app area still
+reach the window's edges. The app bar fills those areas with the app
+background, and the app area fills them with its surface. Their content stays
+inside the safe areas: a regular page scrolls to its end above the home
+indicator, and `AppWorkspace` keeps the content of its sidebar, panes, and
+drawer above it. Below 768 px the whole canvas keeps the safe areas as padding,
+because it is one flat surface there.
+
 Applications need no changes for any of this. `AppWorkspace` adds its compact
 navigation between 768 and 1023 px on its own; see
 [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation).
@@ -46,6 +55,21 @@ breadcrumb header; see [Show the way up](#show-the-way-up).
 A regular page, without `fullWidth` or `fullPage`, owns its inset: from 768 px
 no header sits above a signed-in page, so give the content its own padding, as
 `AppOverview` does.
+
+`AppWorkspace.Detail` occupies a full-height column beside the workspace head
+and panes from 768 px. Below 768 px it is a half or full sheet at the window’s
+bottom edge. A closable panel on a coarse pointer from 768 to 1023 px overlays
+Main as a drawer. Pass its existing close action as `onClose` in an island or
+client component, or mark a server-rendered panel’s close control with
+`data-workspace-detail-close`. Use `scrollClass="k2b-detail-trail"` on
+DataTable, and `k2b-detail-trail` on a board’s horizontal scroller: beside
+the panel the table keeps its column widths, and under a tablet drawer both
+get the drawer’s width as space at their end. The trail is the clipping scroll
+viewport and carries the surface radius. Put it directly in Main’s content box
+with `scroll={false}` on Main and no vertical scroller around it; a reserved
+scrollbar gutter would widen the gap before the panel beyond
+`--k2b-workspace-detail-inset`.
+See [Add contextual detail](/en/docs/frontend/application-shells#add-contextual-detail).
 
 ## Render the application layout
 
@@ -163,6 +187,21 @@ import { PageTrail } from "@k2b/cloud/ssr/islands";
 </header>
 ```
 
+From 1024 px, when a visible, non-collapsed workspace sidebar marks the exact
+current page with `aria-current="page"`, the workspace shows no title row and
+no back link. `AppWorkspace.SidebarItem active` renders that attribute. The
+page title stays the document title, and a visually hidden `h1` on a page
+that has no `h1` of its own in Main. Pages
+deeper than the sidebar lists keep their back link, as do compact layouts
+from 768 to 1023 px and phones. Alt+Up still goes to the parent.
+
+Name the page in its content: Grids names the table in its search field with
+text such as "Search Devices…"; Spaces names the space above its views in
+the sidebar; a note in Notebooks has its own first heading. The sidebar also
+names the page. Mark the exact current page with `active`; on
+a page deeper than the sidebar lists, mark the containing item with
+`active="ancestor"` so it stays highlighted and the page keeps its back link.
+
 The links keep the parent's `href` from the title array, so a new tab, a
 copied link, and a reload lead to the page itself. A plain click returns to
 the page as this tab left it: Cloud remembers each page's last URL and scroll
@@ -211,6 +250,13 @@ onCleanup(stop);
 Do not add a back button of your own for a page the title array already
 leads up to. Keep buttons that do something else, such as leaving an editor.
 
+An app whose content already holds the way up, as the Files listing does with
+its parent row, passes only its root and the current page for those pages.
+The shell then draws no back link there at any depth. The app registers its
+own context command for `Alt+↑` with `registerContextAwareCommand` from
+`@k2b/cloud/browser/commands`, because **One level up** is offered only on a
+page with a level above.
+
 ## Render anonymous application pages
 
 `Layout` uses the same application shell for authenticated and anonymous
@@ -249,12 +295,13 @@ footer that holds the legal links of all running applications and the
 language and theme settings for visitors. The legal links come from the
 runtime registry, so they appear when the router installs
 `middleware.runtime()`. The language control shows the current language and
-switches between English and German; the theme control names the mode it
-switches to. Below the `md` breakpoint both controls are compact: the language
-control shows the language code, such as `DE`, and the theme control only its
-icon, while the full names remain their accessible labels and fill the
-language menu. Where the legal links and the controls do not fit one row, the
-controls move to a second row below the links. On touch screens, every footer
+switches between English and German. The theme menu offers **Light**,
+**Dark**, and **Automatic** and names the current choice. Below the `md`
+breakpoint both controls are compact: the language control shows the
+language code, such as `DE`, and the theme control only its icon. The full
+names remain their accessible labels and fill the menus. Where the legal
+links and the controls do not fit one row, the controls move to a second row
+below the links. On touch screens, every footer
 control is at least 44 px tall, and no control covers another.
 
 The page content and the footer share one column that is at least one
@@ -549,10 +596,30 @@ still enforce their own permissions. Omit `section` for an independent group.
 ## Use anchors for navigation
 
 Navigation controls start as anchors with an `href`. A link must work before
-hydration and support open-in-new-tab.
+the page's islands mount and support open-in-new-tab.
 
 Use enhanced navigation only inside an island that also updates its own state.
 See [URL state and navigation](/en/docs/frontend/url-state-and-navigation).
+
+## Show the container an app works in
+
+Use `AppWorkspace.SidebarSwitcher` when the app works inside one container
+chosen from several: a notebook, space, mailbox, base, or venue. Put it first
+in `SidebarDesktop`, above the navigation for that container. It replaces
+app-made **All …** sidebar rows with one head and a panel of containers and
+actions. Offer **New …** only to people who may create, and **All …** as a
+link to the overview.
+
+Filters, projects, and lists that are ordinary sidebar destinations remain
+rows. Apps without a current container need no switcher.
+
+Load options on demand through `onLoad`, leaving `options` undefined while
+waiting; ignore repeated calls during a request and pass `error` when it fails.
+Pass the same props to `createNavigation({ items, switcher: () => switcher })`
+and register that navigation with `WorkspaceNavigationProvider` so phones get
+the same head in the host menu. See the
+[Switcher example and API](/en/ui/layout/workspace#switcher) for placement,
+search, and keyboard behavior.
 
 ## Mobile workspace menu
 

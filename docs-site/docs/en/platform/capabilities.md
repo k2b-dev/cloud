@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # App capabilities
@@ -691,6 +691,9 @@ Cloud rejects this policy on `openWorld` Actions, on `destructive` Actions, and
 on Actions without a `review`. It does not weaken app-side authorization, input validation, audit,
 or concurrency checks, all of which still run for every invocation.
 
+People decide [Action approvals](/en/docs/identity/approvals) in the chat,
+an app, or Cloud's approval lists.
+
 Use remembered approval only for bounded, repeatable changes where future
 calls of the same Action are an understandable extension of the user's choice,
 such as editing a draft, marking a conversation, or updating a task. Do not use
@@ -832,6 +835,14 @@ A successful review is presentation, not permission or proof of user intent.
 The Action still revalidates its input, authorization, version or revision,
 and domain invariants in `run`. If reviewed state changes before execution,
 fail the Action rather than applying a different effect.
+
+Cloud reviews an approved call again directly before it runs and compares the
+result with the review the person approved; see
+[Action approvals](/en/docs/identity/approvals). Return the same review for the
+same input and unchanged state: no current time, counters, or random values.
+Otherwise every approval of the Action asks again. The repeated review protects
+only what it shows, so an Action that refers to changeable state, such as a
+draft, also carries the expected revision in its input.
 
 ## Write valid contracts
 

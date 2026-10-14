@@ -75,6 +75,36 @@ describe("plugin manifest", () => {
     expect(() => validatePluginModule({ ...plain, run: undefined })).toThrow("run function");
     expect(() => validatePluginModule({ ...plain, booleanFlags: [1] })).toThrow("booleanFlags");
   });
+  test("validates alias and shortcut metadata structurally", () => {
+    const plain = { name: "inventory", summary: "Inventory", run: () => 0 };
+    const valid = { ...plain, alias: "inv", shortcuts: { stock: "items list" } };
+    expect(validatePluginModule(valid)).toBe(valid);
+    for (const alias of [null, 1, "", "Inv", "inventory", "inv_name"]) {
+      expect(() => validatePluginModule({ ...plain, alias })).toThrow("alias");
+    }
+    for (const shortcuts of [
+      null,
+      [],
+      "stock",
+      new Map(),
+      new Date(),
+      { Stock: "items list" },
+      { "1stock": "items list" },
+      { stock_name: "items list" },
+      { inventory: "items list" },
+      { inv: "items list" },
+      { stock: null },
+      { stock: 1 },
+      { stock: "" },
+      { stock: "  " },
+      { stock: "items --json" },
+      { stock: "-h" },
+    ]) {
+      expect(() => validatePluginModule({ ...plain, alias: "inv", shortcuts })).toThrow("shortcuts");
+    }
+    // The loader cannot inspect a module's private tree, so it accepts a syntactically valid path.
+    expect(validatePluginModule({ ...plain, shortcuts: { stock: "unknown path" } }).shortcuts).toEqual({ stock: "unknown path" });
+  });
 });
 
 describe("plugin loading", () => {
@@ -200,7 +230,15 @@ describe("cld plugins command", () => {
   const runCli = async (args: string[], configHome: string) => {
     const child = Bun.spawn([process.execPath, "run", "packages/cloud-cli/src/index.ts", ...args], {
       cwd: join(import.meta.dir, "../../.."),
-      env: { ...process.env, XDG_CONFIG_HOME: configHome, CLD_CONFIG: join(configHome, "config.json") },
+      env: {
+        ...process.env,
+        CLD_LOCALE: "",
+        LC_ALL: "",
+        LC_MESSAGES: "",
+        LANG: "C",
+        XDG_CONFIG_HOME: configHome,
+        CLD_CONFIG: join(configHome, "config.json"),
+      },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",

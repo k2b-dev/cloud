@@ -3,6 +3,7 @@ id: assistant-workflow
 title: Chats & Actions
 icon: ti ti-messages
 description: Find chats, manage metadata, retry, continue in a new chat, compact, stop, and handle actions.
+updated: 2026-10-11
 order: 110
 ---
 
@@ -47,7 +48,9 @@ Chats automatically move to **Done** after seven days without use. Sending a mes
 :::
 
 :::info Approvals and client actions
-Some turns can request an approval or a frontend tool result. Answer those prompts in the message list to let the turn continue. Bounded, repeatable Actions offer **Approve for this chat** and **Always approve** in the approval button menu; a chat approval ends when you delete the chat. Deletion, sending, sharing, and other consequential Actions continue to ask every time. When code reads a website, the menu offers **Allow this website for this chat**: later reads from exactly that website no longer ask, and each one shows its full address with a **Revoke** button. Approvals of this kind are listed under **Secrets & approvals** in the chat's context.
+Decide an approval in its chat card or open **Approvals** above **Studio** for the waiting requests. You can also use **My account → Approvals**. For turns started outside a signed-in browser session, the **Pending approvals** notification opens that account list.
+
+Some turns can request an approval or a frontend tool result. Answer those prompts in the message list to let the turn continue. An approval applies once, to exactly what the prompt shows. If that changes before the Action runs, for example because a draft has another recipient, Assistant asks again. Bounded, repeatable Actions offer **Approve for this chat** and **Always approve** in the approval button menu; a chat approval ends when you delete the chat. Deletion, sending, sharing, and other consequential Actions continue to ask every time. When code reads a website, the menu offers **Allow this website for this chat**: later reads from exactly that website no longer ask, and each one shows its full address with a **Revoke** button. Approvals of this kind are listed under **Secrets & approvals** in the chat's context.
 :::
 
 ## Conversation-aware Assistant {icon="message-forward"}

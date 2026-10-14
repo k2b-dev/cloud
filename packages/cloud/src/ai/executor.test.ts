@@ -1,5 +1,15 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import type { NessiLoop, OutboundEvent } from "@k2b/nessi";
+import {
+  type Message,
+  memoryStore,
+  type NessiLoop,
+  nessi,
+  type OutboundEvent,
+  type Provider,
+  type ProviderRequest,
+  type ToolCallBlock,
+  type ToolStreamIssue,
+} from "@k2b/nessi";
 import type { CapabilityActionReview } from "../contracts/capabilities";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
@@ -9,14 +19,379 @@ import {
   parseAiWebsiteApprovalScope,
 } from "./approvals";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
-import { type AiTurnBlock, messageBlockId, streamBlockId, toolBlockId } from "./protocol";
+import {
+  buildMalformedToolCallRepairText,
+  countMalformedToolCallRepairs,
+  createMalformedToolCallRepair,
+  isMalformedToolCallId,
+  malformedToolCallMessage,
+  withMalformedToolCallRepair,
+  withMalformedToolCallResults,
+} from "./malformed-tool-call-repair";
+import { type AiTurnBlock, buildBlocksFromMessages, messageBlockId, streamBlockId, toolBlockId } from "./protocol";
 import { aiConversations } from "./store";
 import * as stream from "./stream";
+import { aiToolAudit } from "./tool-audit";
 import { prepareAiTools } from "./tools";
+import * as turnTiming from "./turn-timing";
+import type { AiPendingTurnActionRecord, AiStoredMessage, AiTurnSteer } from "./types";
 
 const { createEventMapper, rebuildAttemptBaseline, rebuildBlocksFromMessages } = __aiExecutorTest;
 
 const turn = { agentId: "cloud", loopId: "turn-1", turnId: "turn-1:turn:0", turnIndex: 0 };
+
+describe("malformed tool call steering", () => {
+  const at = "2026-10-11T00:00:00.000Z";
+  const issue: ToolStreamIssue = {
+    kind: "malformed_tool_call",
+    reason: "invalid_tool_arguments",
+    callId: "bad-call",
+    name: "code_run",
+    message: "Invalid JSON",
+  };
+  const userSteer = (id: string): AiTurnSteer => ({
+    id,
+    conversationId: "chat",
+    turnId: "turn",
+    seq: 1,
+    clientRequestId: id,
+    text: `User steer ${id}`,
+    status: "consumed",
+    messageId: null,
+    createdAt: new Date(0).toISOString(),
+    consumedAt: null,
+  });
+
+  const run = async (
+    malformedResponses: number,
+    withUserSteers = false,
+    options: {
+      previousMessages?: Message[];
+      overflow?: boolean;
+      issue?: ToolStreamIssue;
+      providerFailure?: boolean;
+      validCall?: boolean;
+    } = {},
+  ) => {
+    const appliedSteers: (AiTurnSteer | null)[] = [];
+    const shownSteers: AiTurnSteer[] = [];
+    const requests: ProviderRequest[] = [];
+    let steeringReads = 0;
+    let userPolicyResets = 0;
+    const mapper = createEventMapper(1, []);
+    const liveBlocks: AiTurnBlock[] = [];
+    const store = memoryStore();
+    await store.append({ role: "user", content: [{ type: "text", text: "Run" }] });
+    for (const message of options.previousMessages ?? []) await store.append(message);
+    const repair = createMalformedToolCallRepair(countMalformedToolCallRepairs(await store.load()));
+    let repairAttempts = 0;
+    let compactions = 0;
+    const takeSteering = repair.takeSteering;
+    repair.takeSteering = () => {
+      const text = takeSteering();
+      if (text) repairAttempts++;
+      return text;
+    };
+    const steering = __aiExecutorTest.createChatSteering({
+      repair,
+      appliedSteers,
+      takePendingSteers: async () => {
+        steeringReads++;
+        // A real steer is returned alongside the repair, then another while its events are still in flight.
+        const steers = withUserSteers && (steeringReads === 2 || steeringReads === 3) ? [userSteer(String(steeringReads))] : [];
+        for (const steer of steers) await store.append({ role: "user", content: [{ type: "text", text: steer.text }] });
+        return steers;
+      },
+      noteSteering: () => {
+        userPolicyResets++;
+      },
+    });
+    const provider: Provider = {
+      name: "fixture",
+      family: "openai-compatible",
+      model: "fixture",
+      capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
+      complete: async () => {
+        throw new Error("Unexpected completion");
+      },
+      async *stream(request) {
+        requests.push(request);
+        if (options.overflow && requests.length === 2) {
+          yield { type: "issue", issue: { kind: "provider_error", message: "Context full", retryable: false, contextOverflow: true } };
+          return;
+        }
+        if (requests.length <= malformedResponses) {
+          if (options.providerFailure) {
+            yield { type: "block_start", blockId: "partial", index: 0, kind: "text" };
+            yield { type: "block_end", blockId: "partial", index: 0, block: { type: "text", text: "Partial" } };
+          }
+          yield { type: "issue", issue: options.issue ?? issue };
+          if (options.validCall) {
+            yield { type: "block_start", blockId: "valid", index: 0, kind: "tool_call", callId: "valid-call", name: "missing_tool" };
+            yield { type: "block_delta", blockId: "valid", index: 0, delta: "{}" };
+            yield {
+              type: "block_end",
+              blockId: "valid",
+              index: 0,
+              block: { type: "tool_call", id: "valid-call", name: "missing_tool", args: {} },
+            };
+          }
+          if (options.providerFailure) {
+            yield { type: "issue", issue: { kind: "provider_error", message: "Disconnected", retryable: false } };
+            return;
+          }
+        } else {
+          yield { type: "block_start", blockId: "answer", index: 0, kind: "text" };
+          yield { type: "block_end", blockId: "answer", index: 0, block: { type: "text", text: "Done" } };
+        }
+        yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
+      },
+    };
+    const loop = nessi({
+      loopId: "turn",
+      agentId: "cloud",
+      input: "Run",
+      systemPrompt: "",
+      provider: withMalformedToolCallRepair(provider, repair),
+      // Cloud's session store persists input/real steering elsewhere and ignores nessi-appended user messages.
+      store: withMalformedToolCallResults(
+        {
+          load: store.load,
+          append: async (message, opts) => {
+            if (message.role !== "user") {
+              await store.append(message, opts);
+              for (const op of mapper.storedMessage(message, at)) {
+                if (op.type === "block_set") liveBlocks.push(op.block);
+              }
+            }
+          },
+        },
+        repair,
+      ),
+      compact: options.overflow
+        ? ({ force }) => {
+            if (!force) return null;
+            compactions++;
+            return Promise.resolve();
+          }
+        : undefined,
+      steering,
+      coalesce: { ms: 25, maxChars: 512 },
+      maxTurns: 5,
+    });
+    const executor = new AiTurnExecutor({ leaseOwner: "worker", heartbeatMs: 1000, enqueueContinuation: async () => {} });
+    executor["startHeartbeat"] = () => () => {};
+    const pipeline = new __aiExecutorTest.StreamPipeline({
+      conversationId: "chat",
+      turnId: "turn",
+      attempt: 1,
+      startSeq: 0,
+      leaseOwner: "worker",
+      seedBlocks: [],
+      allowRememberedApprovals: false,
+    });
+    pipeline.apply = async (event) => {
+      for (const mapped of mapper.translate(event)) {
+        if (mapped.type === "block_set") liveBlocks.push(mapped.block);
+      }
+    };
+    pipeline.applySteer = async (steer) => {
+      shownSteers.push(steer);
+    };
+    pipeline.flush = async () => {};
+    pipeline.timing.event = async () => {
+      await Bun.sleep(1);
+    };
+    const timing = spyOn(turnTiming, "withDurableTurnTiming").mockImplementation(async (_turnId, aggregate) => aggregate);
+    const aggregate = spyOn(aiConversations, "setLatestAssistantLoopAggregate").mockImplementation(async () => {});
+    try {
+      const outcome = await executor["driveChatLoop"]({
+        loop,
+        pipeline,
+        conversationId: "chat",
+        turnId: "turn",
+        abortController: new AbortController(),
+        prepared: prepareAiTools({ tools: [] }),
+        allowRememberedApprovals: false,
+        rememberableCapabilityApprovals: new Map(),
+        capabilityActionReviews: new Map(),
+        approvalTargets: new Map(),
+        linkedApprovals: new Map(),
+        appliedSteers,
+        noteToolRound: () => {},
+        noteToolCall: () => {},
+        failureReason: { current: null },
+      });
+      return {
+        outcome,
+        requests,
+        shownSteers,
+        appliedSteers,
+        userPolicyResets,
+        steeringReads,
+        repairAttempts,
+        compactions,
+        messages: (await store.load()).map((row) => ({ ...row, createdAt: at })),
+        liveBlocks,
+      };
+    } finally {
+      timing.mockRestore();
+      aggregate.mockRestore();
+    }
+  };
+
+  test("a malformed issue before a valid call keeps live and history tool steps in the same order", async () => {
+    const result = await run(1, false, { validCall: true });
+    const liveIds = [...new Set(result.liveBlocks.filter((block) => block.kind === "tool").map((block) => block.id))];
+    const historyIds = buildBlocksFromMessages(result.messages)
+      .filter((block) => block.kind === "tool")
+      .map((block) => block.id);
+    expect(liveIds).toEqual(historyIds);
+    expect(liveIds[0]).toBe(toolBlockId("valid-call"));
+    expect(liveIds).toHaveLength(2);
+  });
+
+  test("a dropped malformed call sends repair guidance to the next model request", async () => {
+    const result = await run(1);
+    expect(result.outcome).toMatchObject({ kind: "finished", status: "completed", failure: null });
+    expect(result.requests).toHaveLength(2);
+    expect(result.requests[1]?.messages).toContainEqual({
+      role: "tool_result",
+      callId: expect.stringMatching(/^malformed_[0-9a-f]{24}$/),
+      name: "code_run",
+      result: buildMalformedToolCallRepairText(issue),
+      isError: true,
+    });
+    const assistant = result.requests[1]?.messages[1];
+    const toolResult = result.requests[1]?.messages[2];
+    expect(assistant).toMatchObject({
+      role: "assistant",
+      content: [{ type: "tool_call", id: expect.stringMatching(/^malformed_[0-9a-f]{24}$/), name: "code_run", args: {} }],
+    });
+    if (assistant?.role !== "assistant" || toolResult?.role !== "tool_result") throw new Error("Missing durable repair");
+    expect(assistant.content[0]).toMatchObject({ id: toolResult.callId });
+    expect(toolResult.callId).not.toBe(issue.callId);
+    expect(result.requests[1]?.messages.filter((message) => message.role === "user")).toEqual([
+      { role: "user", content: [{ type: "text", text: "Run" }] },
+    ]);
+    expect(result.userPolicyResets).toBe(0);
+    expect(result.shownSteers).toEqual([]);
+    expect(result.appliedSteers).toEqual([]);
+  });
+
+  test("context overflow retries with the durable repair and spends only one repair attempt", async () => {
+    const result = await run(1, false, { overflow: true });
+    expect(result.outcome).toMatchObject({ kind: "finished", status: "completed", failure: null });
+    expect(result.requests).toHaveLength(3);
+    expect(result.compactions).toBe(1);
+    expect(result.repairAttempts).toBe(1);
+    expect(result.requests[2]?.messages).toEqual(result.requests[1]?.messages);
+    expect(result.requests[2]?.messages[2]).toMatchObject({
+      role: "tool_result",
+      result: buildMalformedToolCallRepairText(issue),
+      isError: true,
+    });
+    expect(countMalformedToolCallRepairs(result.messages)).toBe(1);
+  });
+
+  test("resume keeps the repair budget from two stored malformed responses", async () => {
+    const previousMessages: Message[] = [
+      { role: "assistant", content: [{ type: "tool_call", id: `malformed_${"a".repeat(24)}`, name: "code_run", args: {} }] },
+      {
+        role: "tool_result",
+        callId: `malformed_${"a".repeat(24)}`,
+        name: "code_run",
+        result: buildMalformedToolCallRepairText(issue),
+        isError: true,
+      },
+      { role: "assistant", content: [{ type: "tool_call", id: "ordinary", name: "code_run", args: {} }] },
+      { role: "tool_result", callId: "ordinary", name: "code_run", result: "Done" },
+      { role: "assistant", content: [{ type: "tool_call", id: `malformed_${"b".repeat(24)}`, name: "code_run", args: {} }] },
+      {
+        role: "tool_result",
+        callId: `malformed_${"b".repeat(24)}`,
+        name: "code_run",
+        result: buildMalformedToolCallRepairText(issue),
+        isError: true,
+      },
+    ];
+    const result = await run(1, false, { previousMessages });
+    expect(countMalformedToolCallRepairs(previousMessages.map((message) => ({ message })))).toBe(2);
+    expect(result.requests).toHaveLength(1);
+    expect(result.repairAttempts).toBe(0);
+    expect(result.outcome).toMatchObject({ kind: "finished", status: "failed", failure: { error: { code: "failed" } } });
+  });
+
+  test("stored history preserves the live failed step, including a safe tool name", async () => {
+    for (const name of ["code_run", "notes__action__create", "invalid.tool", undefined]) {
+      const result = await run(1, false, { issue: { ...issue, name } });
+      const live = result.liveBlocks.find((block) => block.kind === "tool" && isMalformedToolCallId(block.callId));
+      const history = buildBlocksFromMessages(result.messages).find(
+        (block) => block.kind === "tool" && isMalformedToolCallId(block.callId),
+      );
+      if (live?.kind !== "tool" || history?.kind !== "tool") throw new Error("Missing failed step");
+      expect(live).toEqual(history);
+      expect(live.at).toBe(at);
+      expect(live.args).toEqual({});
+      expect(history.result).toBe(buildMalformedToolCallRepairText({ ...issue, name }));
+      const expectedName = name === "code_run" ? "code_run" : name === "notes__action__create" ? "notes.create" : "unknown_tool";
+      expect(live.name).toBe(expectedName);
+      expect(history.name).toBe(expectedName);
+    }
+  });
+
+  test("a partial assistant response keeps malformed calls and error results on provider failure", async () => {
+    const result = await run(1, false, { providerFailure: true });
+    expect(result.outcome).toMatchObject({ kind: "finished", status: "failed" });
+    expect(result.messages[1]?.message).toMatchObject({
+      role: "assistant",
+      stopReason: "error",
+      content: [
+        { type: "text", text: "Partial" },
+        { type: "tool_call", id: expect.stringMatching(/^malformed_[0-9a-f]{24}$/), args: {} },
+      ],
+    });
+    expect(result.messages[2]?.message).toMatchObject({
+      role: "tool_result",
+      result: buildMalformedToolCallRepairText(issue),
+      isError: true,
+    });
+  });
+
+  test("an ordinary provider stop completes without repair guidance", async () => {
+    const result = await run(0);
+    expect(result.outcome).toMatchObject({ kind: "finished", status: "completed", failure: null });
+    expect(result.requests).toHaveLength(1);
+  });
+
+  test("two repairs may succeed, while a third malformed response fails visibly with its reason", async () => {
+    expect((await run(2)).outcome).toMatchObject({ kind: "finished", status: "completed" });
+    const result = await run(3);
+    expect(result.requests).toHaveLength(3);
+    // Since nessi 0.17.1 continues after a malformed response itself, steering is read only before each provider turn,
+    // no longer again after the response; the exhausted repair then fails before the fourth read.
+    expect(result.steeringReads).toBe(3);
+    expect(result.outcome).toMatchObject({
+      kind: "finished",
+      status: "failed",
+      failure: { error: { code: "failed" }, detail: malformedToolCallMessage(issue) },
+    });
+  });
+
+  test("repair acknowledgements never consume real user steers or reset their policy", async () => {
+    const result = await run(1, true);
+    expect(result.outcome).toMatchObject({ kind: "finished", status: "completed" });
+    expect(result.shownSteers).toEqual([userSteer("2"), userSteer("3")]);
+    expect(result.userPolicyResets).toBe(2);
+    expect(result.appliedSteers).toEqual([]);
+  });
+
+  test("real user steering does not renew the repair budget", async () => {
+    const result = await run(3, true);
+    expect(result.requests).toHaveLength(3);
+    expect(result.outcome).toMatchObject({ kind: "finished", status: "failed", failure: { error: { code: "failed" } } });
+  });
+});
 
 test("website approvals apply only to a turn a person started in a signed-in session", () => {
   const mandate = { id: crypto.randomUUID(), revision: 1 };
@@ -47,6 +422,56 @@ test("remembered approvals reject mandate-backed chats even when kind is omitted
 });
 
 describe("nessi block event mapping", () => {
+  test.each(["completed", "failed", "rejected"] as const)("timestamps the %s outcome, not running or waiting", (status) => {
+    const mapper = createEventMapper(1, []);
+    const tool = { ...turn, callId: "call-time", name: "send", args: {} };
+    const started = mapper.translate({ ...tool, type: "tool_execution_start" });
+    expect(started[0]).toMatchObject({ block: { status: "running", at: undefined } });
+    const waiting = mapper.translate({ ...tool, type: "tool_action_request", kind: "approval", message: "Send?" });
+    expect(waiting[0]).toMatchObject({ block: { status: "awaiting_approval", at: undefined } });
+    if (status === "rejected") mapper.setRejectedCallIds(new Set([tool.callId]));
+    const before = Date.now();
+    const [done] = mapper.translate({ ...tool, type: "tool_execution_end", result: {}, isError: status !== "completed" });
+    if (done?.type !== "block_set" || done.block.kind !== "tool") throw new Error("Expected tool block");
+    expect(done.block.status).toBe(status);
+    const outcomeTime = Date.parse(done.block.at ?? "");
+    expect(outcomeTime).toBeGreaterThanOrEqual(before);
+    expect(outcomeTime).toBeLessThanOrEqual(Date.now());
+    // A later patch without an outcome keeps the recorded time.
+    const resumed = mapper.translate({
+      ...tool,
+      type: "block_end",
+      blockId: "block-time",
+      index: 0,
+      block: { type: "tool_call", id: tool.callId, name: tool.name, args: {} },
+    });
+    expect(resumed[0]).toMatchObject({ block: { at: done.block.at } });
+  });
+
+  test("a malformed call shows as a failed tool step once its error result is saved", () => {
+    const mapper = createEventMapper(1, []);
+    const issue: ToolStreamIssue = {
+      kind: "malformed_tool_call",
+      reason: "invalid_tool_arguments",
+      callId: "bad-call",
+      name: "code_run",
+      message: "Invalid JSON",
+      argsText: "huge arguments".repeat(10_000),
+    };
+    const event: OutboundEvent = { ...turn, type: "issue", issue };
+    expect(mapper.translate(event)).toEqual([]);
+    const callId = `malformed_${"a".repeat(24)}`;
+    const result = buildMalformedToolCallRepairText(issue);
+    const at = "2026-10-11T00:00:00.000Z";
+    expect(mapper.storedMessage({ role: "tool_result", callId, name: "code_run", result, isError: true }, at)).toMatchObject([
+      {
+        type: "block_set",
+        block: { id: toolBlockId(callId), callId, name: "code_run", args: {}, status: "failed", at, result, isError: true },
+      },
+    ]);
+    expect(mapper.storedMessage({ role: "tool_result", callId: "ordinary", name: "code_run", result }, at)).toEqual([]);
+    expect(mapper.translate({ ...event, issue: { kind: "runtime_error", message: "Other issue", retryable: false } })).toEqual([]);
+  });
   test("text blocks map to attempt+turn scoped ids across start, delta, end", () => {
     const mapper = createEventMapper(2, []);
     const id = streamBlockId(2, 0, "block-0");
@@ -403,7 +828,11 @@ describe("nessi block event mapping", () => {
             content: [{ type: "tool_call", id: "editor", name: "text_editor", args: { content: "Draft" } }],
           },
         },
-        { seq: 2, message: { role: "tool_result", callId: "editor", name: "text_editor", result: persistedResult } },
+        {
+          seq: 2,
+          createdAt: "2026-10-07T10:23:45.000Z",
+          message: { role: "tool_result", callId: "editor", name: "text_editor", result: persistedResult },
+        },
       ] as never,
       pendingRecords: [],
       resolvedRecords: [
@@ -417,7 +846,13 @@ describe("nessi block event mapping", () => {
       turnSteers: [],
     });
 
-    expect(blocks[0]).toMatchObject({ kind: "tool", callId: "editor", status: "completed", result: persistedResult });
+    expect(blocks[0]).toMatchObject({
+      kind: "tool",
+      callId: "editor",
+      status: "completed",
+      result: persistedResult,
+      at: "2026-10-07T10:23:45.000Z",
+    });
   });
 
   test("capability presentation follows a live call through completion", () => {
@@ -491,7 +926,10 @@ describe("nessi block event mapping", () => {
       type: "issue",
       issue: { kind: "timeout", scope: "tool", message: "Tool timed out", retryable: false, callId: "call-2", name: "web_extract" },
     } as OutboundEvent);
-    expect(ops[0]).toMatchObject({ type: "block_set", block: { id: toolBlockId("call-2"), status: "failed", isError: true } });
+    expect(ops[0]).toMatchObject({
+      type: "block_set",
+      block: { id: toolBlockId("call-2"), status: "failed", isError: true, at: expect.any(String) },
+    });
 
     // Issues for completed tools or without callId are ignored.
     const ignored = mapper.translate({
@@ -738,7 +1176,24 @@ describe("saved live state", () => {
 
       // Changes inside the interval are saved when it ends, although nothing follows them.
       await pipeline.applyCompaction("running");
-      await pipeline.emitMessage({ id: "m1" } as Parameters<typeof pipeline.emitMessage>[0]);
+      await pipeline.emitMessage({
+        id: "m1",
+        shortId: "m1",
+        conversationId: "chat",
+        seq: 1,
+        kind: "message",
+        message: { role: "assistant", content: [] },
+        loopId: "turn",
+        modelProfileId: null,
+        providerModel: null,
+        usage: null,
+        stopReason: null,
+        loopAggregate: null,
+        loopDoneReason: null,
+        compactedAt: null,
+        meta: null,
+        createdAt: new Date(0).toISOString(),
+      });
       expect(saved).toEqual([1]);
       await Bun.sleep(stream.AI_LIVE_SNAPSHOT_INTERVAL_MS + 200);
       expect(saved).toEqual([1, 3]);
@@ -788,6 +1243,50 @@ describe("saved live state", () => {
       publish.mockRestore();
     }
   });
+});
+
+test("turn policy ignores malformed-only rounds and counts mixed rounds by their ordinary calls", () => {
+  const malformed = { type: "tool_call", id: `malformed_${"a".repeat(24)}`, name: "send", args: {} } satisfies ToolCallBlock;
+  const entry: AiStoredMessage = {
+    id: "m",
+    shortId: "m",
+    conversationId: "c",
+    seq: 1,
+    kind: "message",
+    message: { role: "assistant", stopReason: "stop", content: [malformed] },
+    loopId: "t",
+    modelProfileId: null,
+    providerModel: null,
+    usage: null,
+    stopReason: "stop",
+    loopAggregate: null,
+    loopDoneReason: null,
+    compactedAt: null,
+    meta: null,
+    createdAt: new Date(0).toISOString(),
+  };
+  const malformedResult: AiStoredMessage = {
+    ...entry,
+    seq: 2,
+    message: { role: "tool_result", callId: malformed.id, name: "send", result: "Failed", isError: true },
+  };
+  expect(__aiExecutorTest.toolRoundState([entry])).toEqual({ issued: 0, completed: 0 });
+  expect(__aiExecutorTest.toolRoundState([entry, malformedResult])).toEqual({ issued: 0, completed: 0 });
+  const mixed: AiStoredMessage = {
+    ...entry,
+    message: {
+      role: "assistant",
+      stopReason: "tool_use",
+      content: [malformed, { type: "tool_call", id: "ordinary", name: "send", args: {} }],
+    },
+  };
+  const ordinaryResult: AiStoredMessage = {
+    ...entry,
+    seq: 3,
+    message: { role: "tool_result", callId: "ordinary", name: "send", result: "Done" },
+  };
+  expect(__aiExecutorTest.toolRoundState([mixed, malformedResult])).toEqual({ issued: 1, completed: 0 });
+  expect(__aiExecutorTest.toolRoundState([mixed, ordinaryResult])).toEqual({ issued: 1, completed: 1 });
 });
 
 for (const stopReason of ["error", "interrupted", "aborted"] as const)
@@ -875,6 +1374,7 @@ for (const stopReason of ["tool_use", "error", "interrupted", "aborted"] as cons
       rememberableCapabilityApprovals: new Map<string, string>(),
       capabilityActionReviews: new Map<string, CapabilityActionReview>(),
       approvalTargets: new Map(),
+      linkedApprovals: new Map(),
       appliedSteers: [],
       noteToolRound: () => {
         rounds++;
@@ -889,3 +1389,130 @@ for (const stopReason of ["tool_use", "error", "interrupted", "aborted"] as cons
     await executor["driveChatLoop"](input);
     expect(rounds).toBe(0);
   });
+
+test.each(["fast", "late", "interaction", "code_open", "abort"] as const)("%s client result uses the correct lease path", async (mode) => {
+  const signal = new AbortController();
+  const name = mode === "interaction" ? "survey" : mode === "code_open" ? "code_open" : "local_list";
+  const event: Extract<OutboundEvent, { type: "tool_action_request" }> = {
+    ...turn,
+    type: "tool_action_request",
+    kind: "client_tool",
+    callId: "local-1",
+    name,
+    args: { path: "." },
+  };
+  const pending: AiPendingTurnActionRecord = {
+    conversationId: "chat-1",
+    turnId: "turn-1",
+    callId: "local-1",
+    kind: "client_tool",
+    status: "pending",
+    name,
+    args: event.args,
+    approvalScope: name,
+    allowAlways: false,
+    allowChat: false,
+    frontendMode: mode === "interaction" ? "client_interaction" : "client",
+    resolvedEvent: null,
+  };
+  const resolved: AiPendingTurnActionRecord = {
+    ...pending,
+    status: "resolved",
+    resolvedEvent: { type: "tool_result", callId: "local-1", result: { status: "completed", path: "/work", entries: [], nextAfter: null } },
+  };
+  const config = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "List files" });
+  const save = spyOn(aiConversations, "savePendingTurnAction").mockResolvedValue(undefined);
+  const get = spyOn(aiConversations, "getPendingTurnAction").mockResolvedValue(mode === "fast" ? resolved : pending);
+  const markInline = spyOn(aiConversations, "markPendingTurnActionConsumedInline").mockResolvedValue(undefined);
+  const suspend = spyOn(aiConversations, "suspendTurn").mockResolvedValue(true);
+  const audit = spyOn(aiToolAudit, "noteToolCall").mockResolvedValue(undefined);
+  const pipeline = new __aiExecutorTest.StreamPipeline({
+    conversationId: "chat-1",
+    turnId: "turn-1",
+    attempt: 1,
+    startSeq: 0,
+    leaseOwner: "test",
+    seedBlocks: [],
+    allowRememberedApprovals: false,
+  });
+  const apply = spyOn(pipeline, "apply").mockResolvedValue(undefined);
+  const flush = spyOn(pipeline, "flush").mockResolvedValue(undefined);
+  const loop = nessi({
+    provider: {
+      name: "mock",
+      family: "openai-compatible",
+      model: "mock",
+      contextWindow: 8000,
+      capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: false },
+      stream: async function* () {
+        throw new Error("Model must not run in this test");
+      },
+      complete: async () => {
+        throw new Error("Model must not run in this test");
+      },
+    },
+    store: memoryStore(),
+    tools: [],
+    input: "List files",
+    systemPrompt: "test",
+  });
+  const push = spyOn(loop, "push");
+  const heartbeatMs = mode === "abort" ? 2000 : 40;
+  const executor = new AiTurnExecutor({ leaseOwner: "test", heartbeatMs, enqueueContinuation: async () => {} });
+  const timer = mode === "abort" ? setTimeout(() => signal.abort(), 5) : undefined;
+  const started = performance.now();
+  try {
+    expect(
+      await executor["handleActionRequest"]({
+        event,
+        loop,
+        pipeline,
+        conversationId: "chat-1",
+        turnId: "turn-1",
+        prepared: {
+          tools: [],
+          canonicalNames: new Map(),
+          approvalPolicies: new Map([[name, "never"]]),
+          frontendModes: new Map([[name, mode === "interaction" ? "client_interaction" : "client"]]),
+        },
+        allowRememberedApprovals: false,
+        rememberableCapabilityApprovals: new Map(),
+        capabilityActionReviews: new Map(),
+        approvalTargets: new Map(),
+        linkedApprovals: new Map(),
+        signal: signal.signal,
+      }),
+    ).toBe(mode !== "fast");
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(apply).toHaveBeenCalledWith(event);
+    if (mode === "fast") {
+      expect(flush).toHaveBeenCalledTimes(1);
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(push).toHaveBeenCalledWith(resolved.resolvedEvent!);
+      expect(markInline).toHaveBeenCalledTimes(1);
+      expect(markInline).toHaveBeenCalledWith({ conversationId: "chat-1", turnId: "turn-1", callId: event.callId });
+      expect(push.mock.invocationCallOrder[0]).toBeGreaterThan(markInline.mock.invocationCallOrder[0]!);
+      expect(suspend).not.toHaveBeenCalled();
+      expect(get.mock.invocationCallOrder[0]).toBeGreaterThan(flush.mock.invocationCallOrder[0]!);
+    } else {
+      expect(suspend).toHaveBeenCalledTimes(1);
+      expect(push).not.toHaveBeenCalled();
+      expect(markInline).not.toHaveBeenCalled();
+      if (mode === "interaction" || mode === "code_open") expect(get).not.toHaveBeenCalled();
+      if (mode === "late") expect(get).toHaveBeenCalled();
+      if (mode === "abort") expect(performance.now() - started).toBeLessThan(heartbeatMs / 2);
+    }
+  } finally {
+    clearTimeout(timer);
+    loop.abort();
+    config.mockRestore();
+    save.mockRestore();
+    get.mockRestore();
+    markInline.mockRestore();
+    suspend.mockRestore();
+    audit.mockRestore();
+    apply.mockRestore();
+    flush.mockRestore();
+    push.mockRestore();
+  }
+});

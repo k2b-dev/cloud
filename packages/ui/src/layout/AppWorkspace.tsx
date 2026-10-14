@@ -14,9 +14,15 @@ import {
   Show,
   useContext,
 } from "solid-js";
+import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
-import { useUiMessages } from "../intl/messages";
-import { APP_WORKSPACE_SIDEBAR_HIDE_EVENT, installAppWorkspaceController } from "./app-workspace-controller";
+import {
+  APP_WORKSPACE_DETAIL_CLOSE_EVENT,
+  APP_WORKSPACE_DETAIL_STEP_EVENT,
+  APP_WORKSPACE_SIDEBAR_HIDE_EVENT,
+  type AppWorkspaceDetailStep,
+  installAppWorkspaceController,
+} from "./app-workspace-controller";
 import {
   APP_WORKSPACE_DETAIL_DEFAULT,
   APP_WORKSPACE_DETAIL_MAX,
@@ -38,8 +44,10 @@ import {
 import { PageTitle, usePageTrail } from "./PageTitle";
 import type { ScrollAreaProps } from "./ScrollArea";
 import { SidebarItemPreview } from "./SidebarItemPreview";
+import { AppWorkspaceSidebarSwitcher, type AppWorkspaceSidebarSwitcherProps } from "./SidebarSwitcher";
 import { createScrollFade } from "./scroll-fade";
 import { assertStableUiId, assertUniqueStableUiIds } from "./stable-id";
+import { useWorkspaceMessages } from "./workspace-messages";
 
 const ResizeContext = createContext(true);
 /** The enclosing workspace: its head names the sidebar, and a nested workspace leaves the page title to it. */
@@ -102,7 +110,7 @@ type ResizeHandleProps = {
 };
 
 function ResizeHandle(props: ResizeHandleProps): JSX.Element {
-  const messages = useUiMessages();
+  const workspaceMessages = useWorkspaceMessages();
   return (
     <button
       type="button"
@@ -111,12 +119,12 @@ function ResizeHandle(props: ResizeHandleProps): JSX.Element {
       aria-label={
         props.label ??
         (props.kind === "sidebar"
-          ? messages().resizeNavigation
+          ? workspaceMessages().resizeNavigation
           : props.kind === "pane"
-            ? messages().resizeWorkspacePane
+            ? workspaceMessages().resizeWorkspacePane
             : props.kind === "detail"
-              ? messages().resizeDetailPanel
-              : messages().resizeBottomDrawer)
+              ? workspaceMessages().resizeDetailPanel
+              : workspaceMessages().resizeBottomDrawer)
       }
       aria-controls={props.controls}
       aria-orientation={props.kind === "drawer" ? "horizontal" : "vertical"}
@@ -142,6 +150,8 @@ export type AppWorkspaceProps = {
   class?: string;
   /** A host with its own phone chrome can use the full canvas below 48rem (768 px). */
   mobileSurface?: "contained" | "flush";
+  /** Draws no frame: no border, corner radius, or shadow, for an overview that is the page itself. */
+  flat?: boolean;
   resizable?: boolean;
   /**
    * Restores a persisted layout when the workspace mounts. Persistence itself
@@ -200,6 +210,23 @@ export type AppWorkspaceDetailProps = {
   resizable?: boolean;
   minWidth?: number;
   maxWidth?: number;
+  /**
+   * Closes the panel: Escape, a swipe on a touch screen, and dragging the
+   * phone sheet down call it. A panel rendered on the server only marks its
+   * own close button or link with `data-workspace-detail-close` instead, and
+   * those gestures click it. Without either, they leave the panel open, and on
+   * a touch tablet in portrait the panel makes room beside `Main` instead of
+   * overlaying it as a drawer.
+   */
+  onClose?: () => void;
+  /**
+   * Shows the previous (`-1`) or next (`1`) item; J and K call it while the
+   * panel is open. Return the Main element that now shows the selection,
+   * usually its link: Escape and F6 then go there, and the workspace reveals
+   * it beside the panel or above the phone sheet. Returning nothing keeps the
+   * previous item.
+   */
+  onStep?: (direction: 1 | -1) => HTMLElement | null | undefined | void;
 };
 export type AppWorkspaceBottomDrawerHeight = "sm" | "md" | "lg";
 export type AppWorkspaceBottomDrawerProps = {
@@ -295,7 +322,12 @@ export type AppWorkspaceSidebarItemProps = {
   scroll?: NavigationScrollMode;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   onClick?: (event: MouseEvent) => void;
-  active?: boolean;
+  /**
+   * Marks the current page (`aria-current="page"`). On a page deeper than the
+   * sidebar lists, pass `"ancestor"` for the item that contains it: it keeps
+   * the highlight, and the page keeps its back link.
+   */
+  active?: boolean | "ancestor";
   activeClass?: string;
   disabled?: boolean;
   icon?: string;
@@ -331,7 +363,11 @@ export type AppWorkspaceSidebarIconActionProps = {
   sidebarMode?: AppWorkspaceSidebarVisibility;
 };
 export type AppWorkspaceSidebarItemIconProps = { icon?: string; children?: JSX.Element };
-export type AppWorkspaceSidebarItemLabelProps = { children: JSX.Element; marquee?: boolean };
+export type AppWorkspaceSidebarItemLabelProps = {
+  children: JSX.Element;
+  /** False keeps one line with an ellipsis; rows wrap long labels onto a second line by default. */
+  marquee?: boolean;
+};
 export type AppWorkspaceSidebarItemMetaProps = {
   children: JSX.Element;
   visibility?: AppWorkspaceSidebarAccessoryVisibility;
@@ -366,6 +402,12 @@ export type AppWorkspaceSidebarItemStatusProps = {
   mention?: boolean;
   /** Shows a muted bell. */
   muted?: boolean;
+  /**
+   * Items that wait for the person, such as requests to approve, in the unread slot instead of `unread`. `label` is
+   * the phrase a screen reader hears, for example "3 waiting". `0` stays as a muted count, for a count that dropped
+   * to zero while the row is still shown; leave the prop out when nothing waits.
+   */
+  waiting?: { count: number; label: string };
 };
 export type AppWorkspaceNavTreeProps = {
   children: JSX.Element;
@@ -398,6 +440,8 @@ export type AppWorkspaceNavTreeMove = {
 export type AppWorkspaceNavTreeItemProps = {
   id: string;
   label: JSX.Element;
+  /** Passive second line under the label, such as a date; keep controls in actions. */
+  description?: JSX.Element;
   children?: JSX.Element;
   href?: string;
   /** Document navigation by default; opt into enhanced navigation only when the owning island applies the target state. */
@@ -569,19 +613,52 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
 }
 
 function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
+  const workspaceMessages = useWorkspaceMessages();
   const rootResizable = useContext(ResizeContext);
   const panelId = () => assertStableUiId(props.id, "AppWorkspace.Detail id");
   const domId = () => `k2b-workspace-detail-${panelId()}`;
   const variable = () => appWorkspacePanelVariable("detail", panelId());
-  // Cloud's `detailDefaultWidth`. These feed `aria-valuenow` and the
+  // Start widths of 20, 26, 30, and 34 rem. They feed `aria-valuenow` and the
   // `var(…, Npx)` first-paint fallback, so they are behaviour, not taste.
-  const widths = { sm: 288, md: 384, lg: 480, xl: 544 };
+  const widths = { sm: 320, md: 416, lg: 480, xl: 544 };
   const defaultWidth = () => widths[props.width ?? "md"] ?? APP_WORKSPACE_DETAIL_DEFAULT;
   const minWidth = () => props.minWidth ?? APP_WORKSPACE_DETAIL_MIN;
   const maxWidth = () => Math.max(minWidth(), props.maxWidth ?? APP_WORKSPACE_DETAIL_MAX);
   const resizable = () => props.resizable ?? rootResizable;
+  const size = () => (resizable() ? `var(${variable()}, ${defaultWidth()}px)` : `${defaultWidth()}px`);
+  const sizeStyle = () => ({
+    "--k2b-workspace-panel-size": size(),
+    "--k2b-workspace-panel-min": `${minWidth()}px`,
+    "--k2b-workspace-panel-max": `${maxWidth()}px`,
+  });
+  // An open panel takes a column at the workspace's end, sized in CSS alone,
+  // so a server-rendered page arrives in its final geometry. The workspace
+  // cannot read the panel's own variables, so this rule hands the open
+  // panel's size to its workspace.
+  const workspaceRule = () => {
+    const open = `#${domId()}:not([hidden])`;
+    return `.k2b-app-workspace:has(> .k2b-app-workspace__content > ${open}, > .k2b-app-workspace__content > :is(solid-island, solid-client) > ${open}){--k2b-detail-size:${size()};--k2b-detail-min:${minWidth()}px;--k2b-detail-max:${maxWidth()}px}`;
+  };
+  let aside: HTMLElement | undefined;
+  onMount(() => {
+    const close = () => props.onClose?.();
+    const isStep = (detail: unknown): detail is AppWorkspaceDetailStep =>
+      typeof detail === "object" && detail !== null && "direction" in detail && (detail.direction === 1 || detail.direction === -1);
+    const step = (event: Event) => {
+      if (!(event instanceof CustomEvent) || !isStep(event.detail)) return;
+      const item = props.onStep?.(event.detail.direction);
+      if (item instanceof HTMLElement) event.detail.item = item;
+    };
+    aside?.addEventListener(APP_WORKSPACE_DETAIL_CLOSE_EVENT, close);
+    aside?.addEventListener(APP_WORKSPACE_DETAIL_STEP_EVENT, step);
+    onCleanup(() => {
+      aside?.removeEventListener(APP_WORKSPACE_DETAIL_CLOSE_EVENT, close);
+      aside?.removeEventListener(APP_WORKSPACE_DETAIL_STEP_EVENT, step);
+    });
+  });
   return (
     <>
+      <style innerHTML={workspaceRule()} />
       <Show when={resizable()}>
         <ResizeHandle
           kind="detail"
@@ -591,23 +668,30 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
           defaultSize={defaultWidth()}
           minSize={minWidth()}
           maxSize={maxWidth()}
-          shadow
-          style={{ "--k2b-workspace-panel-size": `var(${variable()}, ${defaultWidth()}px)` }}
+          style={sizeStyle()}
         />
       </Show>
       <aside
+        ref={aside}
         id={domId()}
         class={`k2b-app-workspace__detail ${props.class ?? ""}`}
         data-width={props.width ?? "md"}
         data-workspace-panel-id={panelId()}
         data-workspace-resizable={resizable() ? "true" : "false"}
+        data-workspace-detail-closable={props.onClose ? "true" : undefined}
+        data-workspace-detail-steppable={props.onStep ? "true" : undefined}
         hidden={!props.open}
-        style={{
-          "--k2b-workspace-panel-size": `var(${variable()}, ${defaultWidth()}px)`,
-          "--k2b-workspace-panel-min": `${minWidth()}px`,
-          "view-transition-name": props.viewTransitionName,
-        }}
+        style={{ ...sizeStyle(), "view-transition-name": props.viewTransitionName }}
       >
+        {/* Only the phone sheet shows the grabber: a tap switches between half and full height. */}
+        <button
+          type="button"
+          class="k2b-app-workspace__detail-grabber"
+          aria-label={workspaceMessages().detailFullHeight}
+          aria-pressed="false"
+        >
+          <span aria-hidden="true" />
+        </button>
         {props.children}
       </aside>
     </>
@@ -720,8 +804,9 @@ const AppWorkspaceSidebarDesktop = (props: { children: JSX.Element }): JSX.Eleme
 // hydrates. Islands load asynchronously and server-only sidebars never mount,
 // so `onMount` would be too late or never run. The memory is one
 // `sessionStorage` entry per path segment and sidebar position and ends with
-// the tab. A stored offset is applied first; the current item is then kept in
-// view, which is a no-op when the offset already shows it. The frame callback
+// the tab. A stored offset is applied first; the current item, or on a deeper
+// page the item that contains it, is then kept in view, which is a no-op when
+// the offset already shows it. The frame callback
 // repeats the restore once the whole document is parsed, because content that
 // follows the sidebar can still change its height before the first paint.
 const SIDEBAR_SCROLL_MEMORY_SCRIPT = [
@@ -731,7 +816,7 @@ const SIDEBAR_SCROLL_MEMORY_SCRIPT = [
   'var key="k2b-sidebar-scroll:"+location.pathname.split("/")[1]+":"+document.querySelectorAll(".k2b-app-workspace__sidebar-body").length;',
   "var restore=function(){",
   "var stored=storage.getItem(key);if(stored!==null)body.scrollTop=Number(stored);",
-  'var current=body.querySelector(\'[aria-current="page"]\');if(current)current.scrollIntoView({block:"nearest"});',
+  'var current=body.querySelector(\'[aria-current="page"]\')||body.querySelector(\'[aria-current="true"]\');if(current)current.scrollIntoView({block:"nearest"});',
   "};",
   "restore();requestAnimationFrame(restore);",
   "var frame=0;",
@@ -839,30 +924,40 @@ const AppWorkspaceSidebarItemActions = (props: AppWorkspaceSidebarItemActionsPro
   </div>
 );
 const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps): JSX.Element => {
-  const messages = useUiMessages();
-  const count = () => (typeof props.unread === "number" && props.unread >= 1 ? Math.floor(props.unread) : 0);
-  const dot = () => props.unread === true;
+  const workspaceMessages = useWorkspaceMessages();
+  const waiting = () => (props.waiting && Number.isFinite(props.waiting.count) ? Math.max(0, Math.floor(props.waiting.count)) : null);
+  const count = () => waiting() ?? (typeof props.unread === "number" && props.unread >= 1 ? Math.floor(props.unread) : 0);
+  const dot = () => waiting() === null && props.unread === true;
   // The marks are decorative; the row's accessible name gets one phrase instead,
   // which says no more than the "99+" a capped count shows.
   const description = () =>
     [
-      count() > 99
-        ? messages().sidebarUnreadMany
-        : count()
-          ? messages().sidebarUnread({ count: count() })
-          : dot()
-            ? messages().sidebarNewActivity
-            : "",
-      props.mention ? messages().sidebarMentioned : "",
-      props.muted ? messages().sidebarMuted : "",
+      waiting() !== null
+        ? (props.waiting?.label ?? "")
+        : count() > 99
+          ? workspaceMessages().sidebarUnreadMany
+          : count()
+            ? workspaceMessages().sidebarUnread({ count: count() })
+            : dot()
+              ? workspaceMessages().sidebarNewActivity
+              : "",
+      props.mention ? workspaceMessages().sidebarMentioned : "",
+      props.muted ? workspaceMessages().sidebarMuted : "",
     ]
       .filter(Boolean)
       .join(", ");
   // The unread slot stays reserved at the end, and the marks that change most
   // often sit outermost, so new activity or a mention never moves another mark.
+  // The element itself stays when there is nothing to show: empty, it takes no
+  // space, and it still keeps the row's label on one line, so the first count
+  // never re-wraps the label and moves the rows below.
   return (
-    <Show when={description()}>
-      <span class="k2b-app-workspace__sidebar-status" data-unread={count() ? "count" : dot() ? "dot" : undefined}>
+    <span
+      class="k2b-app-workspace__sidebar-status"
+      data-unread={waiting() !== null ? undefined : count() ? "count" : dot() ? "dot" : undefined}
+      data-waiting={waiting() === null ? undefined : waiting() ? "count" : "zero"}
+    >
+      <Show when={description()}>
         <Show when={props.mention}>
           <span class="k2b-app-workspace__sidebar-status-mention" aria-hidden="true">
             @
@@ -875,7 +970,7 @@ const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps
         </Show>
         <span class="k2b-app-workspace__sidebar-status-unread" aria-hidden="true">
           <Show
-            when={count()}
+            when={count() || waiting() === 0}
             fallback={
               <Show when={dot()}>
                 <span class="k2b-app-workspace__sidebar-status-dot" />
@@ -888,8 +983,8 @@ const AppWorkspaceSidebarItemStatus = (props: AppWorkspaceSidebarItemStatusProps
           </Show>
         </span>
         <span class="k2b-sr-only">, {description()}</span>
-      </span>
-    </Show>
+      </Show>
+    </span>
   );
 };
 
@@ -903,7 +998,7 @@ type AppWorkspaceSidebarRowProps = {
   scroll?: NavigationScrollMode;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   onClick?: (event: MouseEvent) => void;
-  active?: boolean;
+  active?: boolean | "ancestor";
   activeClass?: string;
   disabled?: boolean;
   tone?: AppWorkspaceSidebarItemTone;
@@ -935,7 +1030,7 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
     },
     ...data(),
   });
-  const current = () => (props.active ? ("page" as const) : undefined);
+  const current = (): "page" | "true" | undefined => (props.active === "ancestor" ? "true" : props.active ? "page" : undefined);
 
   const Control = (control: { grouped: boolean }) => {
     const attrs = () => (control.grouped ? { class: "k2b-app-workspace__sidebar-item-main" } : common());
@@ -983,7 +1078,7 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
 }
 
 function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Element {
-  const messages = useUiMessages();
+  const workspaceMessages = useWorkspaceMessages();
   const resolved = children(() => props.children);
   const resolvedActions = children(() => props.actions);
   const values = createMemo(() => flatten(resolved()));
@@ -1014,10 +1109,11 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
   );
   const legacy = createMemo(() => values().filter((value) => !sidebarItemSlot(value)));
   const label = () => labelSlot()?.children ?? (legacy().length === 1 ? legacy()[0] : legacy());
+  const oneLine = () => !(labelSlot()?.marquee ?? (props.variant ?? "row") === "row");
   const icon = () => iconSlot()?.icon ?? props.icon;
   const iconContent = () => iconSlot()?.children;
-  // Resolved first, so a component that renders nothing, such as a status with
-  // nothing to show, leaves no empty slot in the browser either.
+  // Resolved first, so metadata that renders nothing leaves no empty slot. An
+  // empty status still renders its element; the stylesheet hides that slot.
   const meta = children(() => metaSlot()?.children ?? props.meta);
   const hasMeta = () => meta.toArray().some(Boolean);
   const metaId = createUniqueId();
@@ -1032,8 +1128,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
           {iconContent() ?? <i class={iconClass(icon())} />}
         </span>
       </Show>
-      {/* The inner text span is what the marquee translates; the controller
-          measures its `scrollWidth` against the clipping outer span. */}
+      {/* Plain labels reserve the selected text weight so selection keeps their line count. */}
       <span class="k2b-app-workspace__sidebar-item-copy">
         <Show when={props.context || props.contextMeta}>
           <span class="k2b-app-workspace__sidebar-item-context">
@@ -1045,7 +1140,8 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
         </Show>
         <span
           class="k2b-app-workspace__sidebar-item-label"
-          data-marquee={(labelSlot()?.marquee ?? (props.variant ?? "row") === "row") ? "true" : "false"}
+          data-lines={oneLine() ? "1" : undefined}
+          data-label={!oneLine() && typeof label() === "string" ? label() : undefined}
         >
           <span class="k2b-app-workspace__sidebar-item-label-text">{label() as JSX.Element}</span>
         </span>
@@ -1065,7 +1161,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
     </>
   );
   const singleAction = () => {
-    const label = () => actionSlot()?.label ?? props.actionLabel ?? messages().rowAction;
+    const label = () => actionSlot()?.label ?? props.actionLabel ?? workspaceMessages().rowAction;
     const select = (event: MouseEvent) => {
       event.stopPropagation();
       if (actionSlot()?.disabled) {
@@ -1375,9 +1471,21 @@ const AppWorkspaceNavTree = ((props: AppWorkspaceNavTreeProps) => {
                 <i class={iconClass(rowIcon())} />
               </span>
             </Show>
-            <span class="k2b-app-workspace__sidebar-item-label">
-              <span class="k2b-app-workspace__sidebar-item-label-text">{item.label}</span>
-            </span>
+            <Show
+              when={item.description !== undefined}
+              fallback={
+                <span class="k2b-app-workspace__sidebar-item-label" data-label={typeof item.label === "string" ? item.label : undefined}>
+                  <span class="k2b-app-workspace__sidebar-item-label-text">{item.label}</span>
+                </span>
+              }
+            >
+              <span class="k2b-app-workspace__sidebar-item-copy">
+                <span class="k2b-app-workspace__sidebar-item-label" data-label={typeof item.label === "string" ? item.label : undefined}>
+                  <span class="k2b-app-workspace__sidebar-item-label-text">{item.label}</span>
+                </span>
+                <span class="k2b-app-workspace__sidebar-item-description">{item.description}</span>
+              </span>
+            </Show>
             <Show when={item.meta !== undefined}>
               <span
                 class={`k2b-app-workspace__sidebar-item-meta ${hasChildren() ? "" : "k2b-app-workspace__nav-tree-leaf-meta"}`}
@@ -1594,6 +1702,7 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
   BottomDrawer: (props: AppWorkspaceBottomDrawerProps) => JSX.Element;
   Sidebar: (props: AppWorkspaceSidebarProps) => JSX.Element;
   SidebarDesktop: (props: { children: JSX.Element }) => JSX.Element;
+  SidebarSwitcher: (props: AppWorkspaceSidebarSwitcherProps) => JSX.Element;
   SidebarSection: (props: AppWorkspaceSidebarSectionProps) => JSX.Element;
   SidebarBody: (props: AppWorkspaceSidebarBodyProps) => JSX.Element;
   SidebarFooter: (props: AppWorkspaceSidebarContentProps) => JSX.Element;
@@ -1611,14 +1720,17 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
 
 /**
  * The row above the work area. From 48 to 64 rem it holds the button that
- * opens the overlay sidebar. On a page with a page above it, at every width,
- * it shows the host's page title with the way up (see `PageTitle`); the
- * page's own `PageTitle` takes its place. It is one fixed height and draws no
- * line; CSS decides when it shows, so the server-rendered page already has
- * its final geometry.
+ * opens the overlay sidebar. On a page with a page above it, it shows the
+ * host's page title with the way up (see `PageTitle`); the page's own
+ * `PageTitle` takes its place. The visible title is no heading, because many
+ * pages render their own `h1`. From 64 rem a sidebar that marks the current
+ * page names it already: the row hides, and only on a page without its own
+ * `h1` its heading stays for assistive technology. It is one fixed height
+ * and draws no line; CSS decides when it shows, so the server-rendered page
+ * already has its final geometry.
  */
 function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean }): JSX.Element {
-  const messages = useUiMessages();
+  const messages = useWorkspaceMessages();
   // A nested workspace is part of a page that already shows its title.
   const trail = props.nested ? () => undefined : usePageTrail();
   return (
@@ -1632,7 +1744,17 @@ function AppWorkspaceHead(props: { sidebarId: () => string; nested: boolean }): 
       >
         <i class="ti ti-layout-sidebar" aria-hidden="true" />
       </IconButton>
-      <Show when={trail()}>{(current) => <PageTitle trail={current()} as="p" fallback />}</Show>
+      <Show when={trail()}>
+        {(current) => (
+          <>
+            <PageTitle trail={current()} as="p" fallback />
+            {/* A head that never hydrates follows a new trail through `followPageTrail`. */}
+            <h1 class="k2b-app-workspace__head-heading" data-k2b-page-trail-title="" data-k2b-server={isServer ? "" : undefined}>
+              {current().title}
+            </h1>
+          </>
+        )}
+      </Show>
     </div>
   );
 }
@@ -1669,6 +1791,7 @@ const AppWorkspace = ((props: AppWorkspaceProps) => {
           class={`k2b-app-workspace ${props.class ?? ""}`}
           data-k2b-app-workspace
           data-mobile-surface={props.mobileSurface}
+          data-flat={props.flat ? "true" : undefined}
           data-sidebar-collapsed={
             initialLayoutState()?.sidebarCollapsed === undefined ? undefined : String(initialLayoutState()?.sidebarCollapsed)
           }
@@ -1693,6 +1816,7 @@ AppWorkspace.Detail = AppWorkspaceDetail;
 AppWorkspace.BottomDrawer = AppWorkspaceBottomDrawer;
 AppWorkspace.Sidebar = AppWorkspaceSidebar;
 AppWorkspace.SidebarDesktop = AppWorkspaceSidebarDesktop;
+AppWorkspace.SidebarSwitcher = AppWorkspaceSidebarSwitcher;
 AppWorkspace.SidebarSection = AppWorkspaceSidebarSection;
 AppWorkspace.SidebarBody = AppWorkspaceSidebarBody;
 AppWorkspace.SidebarFooter = AppWorkspaceSidebarFooter;

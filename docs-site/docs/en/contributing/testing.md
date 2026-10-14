@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Testing
@@ -169,7 +169,7 @@ waits. It is a race, not a slowdown: in CI, the other tests of the suite ran
 at their usual speed around the one that hung. An island that discards a
 server-rendered `<video src>` when it mounts stops it this way, so media gets
 its source only in the browser, as
-[Islands and hydration](/en/docs/frontend/islands-and-hydration#load-media-only-in-the-browser)
+[Islands](/en/docs/frontend/islands-and-hydration#load-media-only-in-the-browser)
 describes. This deadlock made the Spaces item detail video test time out in
 CI.
 
@@ -183,7 +183,7 @@ When that fails, the error reports whether the page's main thread still
 answers a short probe, the status of each island module, page errors, failed
 requests, and how busy the host's CPUs were, how much time the hypervisor took
 from them, and how often a task waited for one. A main thread that answers
-while an island module is missing, answered with an error, or did not hydrate
+while an island module is missing, answered with an error, or did not mount
 points to a product or test bug. A main thread that does not answer is blocked
 by a script, a media deadlock, or, on saturated CPUs only, load. Its
 backtrace shows which. While the page hangs, print the main thread of every
@@ -291,7 +291,7 @@ Integration tests gate themselves on `CLOUD_TEST_*` variables through
 
 | Variable | Example |
 | --- | --- |
-| `CLOUD_TEST_DATABASE_URL` | `postgres://postgres:postgres@127.0.0.1:5432/cloud_test` |
+| `CLOUD_TEST_DATABASE_URL` | `postgres://postgres:postgres@127.0.0.1:5432/cloud_{checkout}_test` |
 | `CLOUD_TEST_NATS_SERVERS` | `nats://127.0.0.1:4222` |
 | `CLOUD_TEST_NATS_CREDS_FILE` | `/path/to/cloud/.local/nats/test.creds` (absolute path) |
 | `CLOUD_TEST_VALKEY_URL` | `redis://127.0.0.1:6380` (no database index) |
@@ -346,12 +346,26 @@ like `.env` exists there. Start a direct run from that directory with
 `BUN_OPTIONS=--no-env-file bun test …`: unlike `bun --no-env-file test`, the
 variable also reaches the Bun processes that tests and package scripts start.
 
-The database name must end in `_test`. Integration tests create and delete
-rows; the fixture refuses any other name. Never point them at the development
-database.
+Use `{checkout}` in the database name to give each worktree its own test
+database. It expands to the checkout directory's name in lowercase, with
+non-alphanumeric characters replaced by underscores, repeated underscores
+collapsed, and leading and trailing underscores removed. The slug is shortened
+so the full PostgreSQL database name fits within 63 bytes. For example,
+`cloud_{checkout}_test` becomes `cloud_fix_cache_test` in a checkout named
+`fix-cache`. A URL without the token keeps its existing database name.
 
-Every suite shares the test database, and it keeps what earlier runs left
-behind. A test that asserts on a database-wide listing with a limit, such as
+The expanded database name must end in `_test`. Integration tests create and
+delete rows; the fixture refuses any other name. Never point them at the
+development database. `bun run test --integration` connects to the `postgres`
+maintenance database on the same server and creates the target database if
+missing, before probing it and running migrations. The configured PostgreSQL
+role needs permission to create databases when the target does not exist.
+
+Use the token when running tests from several worktrees: migrations are
+forward-only, so sharing a database lets one branch's schema changes leak into
+another branch's tests. Every suite in a checkout shares its target database,
+and it keeps what earlier runs left behind. A test that asserts on a
+database-wide listing with a limit, such as
 the oldest candidates of a background job, runs in a private database from
 `useFreshDatabase()` in `scripts/fixtures/test-infra`.
 
@@ -378,7 +392,7 @@ the fixture refuses one. In CI, the gate's Valkey serves only the tests, so it
 stays on `6379`.
 
 ```bash
-CLOUD_TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/cloud_test \
+CLOUD_TEST_DATABASE_URL='postgres://postgres:postgres@127.0.0.1:5432/cloud_{checkout}_test' \
 CLOUD_TEST_NATS_SERVERS=nats://127.0.0.1:4222 \
 CLOUD_TEST_NATS_CREDS_FILE=/path/to/cloud/.local/nats/test.creds \
 CLOUD_TEST_VALKEY_URL=redis://127.0.0.1:6380 \
@@ -481,6 +495,14 @@ Gotenberg. Path-filtered jobs, such as the Grids certification, the WebKit
 browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
+
+The standalone `cld` test compiles the release target. On Linux x64, Bun
+downloads that target's runtime into its install cache on first use. The
+`unit` job and the nightly `ubuntu-next` job fetch it in a named step before
+the tests, so the download runs outside the test's 60 s budget. When the test
+fails or comes within five seconds of its timeout, it prints a trace of every
+step and child process: pid, duration, exit status, output sizes, whether each
+stream ended, and the last output. This shows which step stalled.
 
 Locally, run the typecheck and the focused tests of each package you touched,
 for example:
@@ -628,9 +650,10 @@ browser tests or a shared input such as `packages/cloud` or `scripts/` changed.
 The nightly workflow repeats the integration suites against PostgreSQL 15, the
 oldest supported version, and runs the longer acceptance checks that are too
 slow for every pull request. Its `browser-smoke` job builds the Core, gateway,
-Grids, and Mail images, boots them against fresh infrastructure, and runs the
-Grids and Mail browser smokes against that stack. It runs independently of the
-Assistant browser suites, so a failure in one does not hide the other's result.
+Accounts, Grids, Mail, and Chat images, boots them against fresh infrastructure,
+and runs the Grids, Mail, and Chat browser smokes against that stack. It runs
+independently of the Assistant browser suites, so a failure in one does not hide
+the other's result.
 
 ### Read slow statements from a CI run
 

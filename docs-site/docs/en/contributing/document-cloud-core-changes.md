@@ -5,7 +5,7 @@ section: Contributing
 order: 1300
 description: Keep developer docs, UI examples, and the Fibel-backed Cloud skill aligned with core changes.
 tags: [contributing, documentation, maintenance]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Document Cloud core changes
@@ -146,7 +146,7 @@ UI context should also state:
 - when to use and avoid the component;
 - who owns its state;
 - its important properties and callbacks;
-- relevant accessibility, SSR, and hydration behavior;
+- relevant accessibility, SSR, and browser mount behavior;
 - the exact TSX rendered by the live example.
 
 ## Update agent knowledge

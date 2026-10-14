@@ -12,7 +12,7 @@ import MailOverview from "./MailOverview.island";
 import { mailPageMessages } from "./pages-messages";
 import {
   projectMailConversationDetail,
-  projectSsrFocusPage,
+  projectSsrFocusOverview,
   projectSsrMailboxList,
   resolveSsrMailboxId,
   resolveSsrMailboxResourceId,
@@ -89,11 +89,10 @@ export default ssr<AuthContext>(async (c) => {
     })(),
     publicMailboxesPromise,
     preferencesPromise,
-    (async () => focus.listFocusConversations({ context, view, excludedMailboxIds: (await preferencesPromise).hiddenMailboxIds }))(),
+    // Every view's first page, so switching views shows rows at once while the island refreshes them.
+    (async () => focus.listFocusOverview({ context, excludedMailboxIds: (await preferencesPromise).hiddenMailboxIds }))(),
   ]);
-  const initialFocus = focusResult.ok
-    ? await projectSsrFocusPage(focusResult.data)
-    : { items: [], counts: { mine: 0, unassigned: 0, waiting: 0, all: 0 }, mailboxCounts: [], nextCursor: null };
+  const initialFocus = focusResult.ok ? await projectSsrFocusOverview(focusResult.data) : null;
   return () => (
     <Layout c={c} title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbMail }]}>
       <MailOverview

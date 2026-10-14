@@ -1,22 +1,14 @@
-import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { mutation as mutations, timed } from "@k2b/stdlib/solid";
+import { timed } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
-  Button,
   ButtonLink,
-  CheckboxCard,
-  confirmDiscardIfDirty,
   Dropdown,
-  dialogCore,
-  InlineGuidance,
   LinkCard,
   Pagination,
-  PanelDialog,
   PanelHeader,
   Paper,
   Placeholder,
-  panelDialogOptions,
   prompts,
   Tag,
   TextInput,
@@ -26,6 +18,7 @@ import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicBase } from "../../../api/public-dto";
 import { errorMessage } from "../utils/api-helpers";
+import { openCreateBase } from "./create-base-dialog";
 import { overviewMessages } from "./messages";
 
 type TemplateSummary = {
@@ -127,97 +120,7 @@ export default function BasesOverview(props: Props) {
     setIsCreating(true);
     setCreatingTemplateId(template?.id ?? null);
     try {
-      const base = await dialogCore.open<PublicBase>((close, context) => {
-        const initialName = template?.name ?? "";
-        const [name, setName] = createSignal(initialName);
-        const [description, setDescription] = createSignal("");
-        const [sampleData, setSampleData] = createSignal(true);
-        const [submitted, setSubmitted] = createSignal(false);
-        const save = mutations.create<PublicBase, void>({
-          mutation: async () => {
-            const response = template
-              ? await apiClient.templates[":templateId"].$post({
-                  param: { templateId: template.id },
-                  json: { name: name().trim(), withSampleData: sampleData() },
-                })
-              : await apiClient.bases.$post({ json: { name: name().trim(), description: description().trim() || null } });
-            if (!response.ok) throw new Error(await errorMessage(response, template ? t.createFromTemplateFailed : t.createBaseFailed));
-            return response.json();
-          },
-          onSuccess: close,
-        });
-        const dismiss = async () => {
-          if (!save.loading() && (await confirmDiscardIfDirty(name() !== initialName || description().length > 0 || !sampleData())))
-            close();
-        };
-        context.setDismissHandler(dismiss);
-        return (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              setSubmitted(true);
-              if (name().trim() && !save.loading()) void save.mutate();
-            }}
-          >
-            <PanelDialog>
-              <PanelDialog.Header
-                title={template ? t.createTemplate({ name: template.name }) : t.newBase}
-                icon={template?.icon ?? "ti ti-database-plus"}
-                close={dismiss}
-                closeDisabled={save.loading()}
-              />
-              <PanelDialog.Body>
-                <div class="flex flex-col gap-4">
-                  <Show when={save.error()}>{(error) => <InlineGuidance tone="danger">{error().message}</InlineGuidance>}</Show>
-                  <TextInput
-                    label={t.name}
-                    description={template ? t.renameTemplateDescription : undefined}
-                    value={name}
-                    onValueChange={setName}
-                    placeholder={t.baseNameExample}
-                    required
-                    error={submitted() && !name().trim() ? t.requiredName : undefined}
-                    disabled={save.loading()}
-                  />
-                  <Show
-                    when={template}
-                    fallback={
-                      <TextInput
-                        label={t.description}
-                        value={description}
-                        onValueChange={setDescription}
-                        multiline
-                        placeholder={t.optional}
-                        disabled={save.loading()}
-                      />
-                    }
-                  >
-                    <CheckboxCard
-                      label={t.includeSampleData}
-                      description={t.includeSampleDataDescription}
-                      value={sampleData}
-                      onValueChange={setSampleData}
-                      disabled={save.loading()}
-                    />
-                  </Show>
-                </div>
-              </PanelDialog.Body>
-              <PanelDialog.Footer>
-                <span />
-                <div class="flex gap-2">
-                  <Button type="button" variant="secondary" onClick={dismiss} disabled={save.loading()}>
-                    {t.cancel}
-                  </Button>
-                  <Button type="submit" loading={save.loading()}>
-                    {t.createBase}
-                  </Button>
-                </div>
-              </PanelDialog.Footer>
-            </PanelDialog>
-          </form>
-        );
-      }, panelDialogOptions);
-      if (base) navigateTo(`/app/grids/${base.id}`);
+      await openCreateBase(t, template);
     } finally {
       setIsCreating(false);
       setCreatingTemplateId(null);
@@ -441,7 +344,7 @@ export default function BasesOverview(props: Props) {
   );
 
   return (
-    <AppWorkspace mobileSurface="flush" class="grids-overview-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
+    <AppWorkspace mobileSurface="flush" flat class="grids-overview-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
       <h1 class="sr-only">Grids</h1>
       <AppWorkspace.Sidebar label={t.bases} mobile="stacked" resizable={false}>
         <AppWorkspace.SidebarDesktop>

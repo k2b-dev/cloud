@@ -5,6 +5,8 @@ import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { withPresentationMode } from "../../../../lib/presentation-url";
 import { attachmentFromContentUrl } from "../../../lib/editor/attachment-url";
+import { notebookWorkspaceMessages } from "../../messages";
+import { followFullWidth } from "../full-width";
 import { NAVIGATION_VISIBILITY_EVENT, NAVIGATION_VISIBILITY_WILL_CHANGE_EVENT } from "../sidebar/navigation-visibility";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
 import { keepBookReadingPosition } from "./book-reading-position";
@@ -27,6 +29,7 @@ const SCROLL_KEY = "notebooksBookScroll";
 export default function BookController(props: Props) {
   const locale = useLocale();
   const t = () => bookMessages.resolve([locale()]).t;
+  const workspaceText = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const initialHref = withPresentationMode(props.initial.href, "book");
   const [source, setSource] = createSignal(initialHref);
   const initial: { source: string; snapshot: BookSnapshot } = {
@@ -148,6 +151,13 @@ export default function BookController(props: Props) {
     mounted = true;
     article = document.getElementById("notebook-book-content");
     scrollContainer = article?.closest<HTMLElement>(".notebook-book-main") ?? null;
+    if (scrollContainer) {
+      followFullWidth(
+        scrollContainer,
+        () => (article && scrollContainer ? keepBookReadingPosition(article, scrollContainer) : null),
+        workspaceText,
+      );
+    }
     const previousScrollRestoration = history.scrollRestoration;
     history.scrollRestoration = "manual";
     history.replaceState(history.state, "", `${initialHref}${window.location.hash}`);

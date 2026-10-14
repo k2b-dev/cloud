@@ -17,6 +17,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: LayoutHeader } = await import("./LayoutHeader");
+const { ShellDataProvider } = await import("./shell-data");
 
 let browser: Browser;
 let css: string;
@@ -32,18 +33,22 @@ afterAll(async () => {
 
 const header = (authenticated: boolean) =>
   renderToString(() =>
-    createComponent(LayoutHeader, {
-      authenticated,
-      appLabel: "Files",
-      breadcrumbs: [{ title: "Files", href: "/app/files" }],
-      homeLabel: "Home",
-      launchpadApps: [],
-      legalLinks: [],
-      openAppsLabel: "Open apps",
-      profileName: "Demo User",
-      searchHelpApps: [],
-      signInLabel: "Sign in",
-      theme: "light",
+    createComponent(ShellDataProvider, {
+      data: {
+        apps: [],
+        legalLinks: [],
+        profile: authenticated ? { name: "Demo User" } : undefined,
+        theme: "light",
+        searchLinks: {},
+      },
+      get children() {
+        return createComponent(LayoutHeader, {
+          authenticated,
+          title: "Files",
+          launchpad: true,
+          breadcrumbs: authenticated ? undefined : [{ title: "Files", href: "/app/files" }],
+        });
+      },
     }),
   );
 

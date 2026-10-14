@@ -235,7 +235,7 @@ export default function FormulaReferenceWindow(props: { tableName: string; field
   ];
 
   return (
-    <main class="flex h-screen overflow-hidden bg-[var(--ui-canvas)] p-[var(--ui-space-shell)]">
+    <main class="flex h-dvh overflow-hidden bg-[var(--ui-canvas)] p-[var(--ui-space-shell)]">
       <div class="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-[var(--ui-space-section)]">
         <header class="flex flex-wrap items-start justify-between gap-[var(--ui-space-section)]">
           <div>

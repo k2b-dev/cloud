@@ -248,7 +248,12 @@ export const ServiceAccountCredentialSchema = z.object({
 });
 export type ServiceAccountCredential = z.infer<typeof ServiceAccountCredentialSchema>;
 
+export const AI_INFERENCE_SCOPE = "ai:inference" as const;
+
+export const isModelsOnlyApiKey = (credential: { scopes: readonly string[] }): boolean => credential.scopes.includes(AI_INFERENCE_SCOPE);
+
 export const CreateUserApiKeySchema = z.object({
+  access: z.enum(["full", "models"]).optional(),
   name: z.string().trim().min(1).max(120),
   expiresAt: z.string().datetime().nullable().optional(),
 });

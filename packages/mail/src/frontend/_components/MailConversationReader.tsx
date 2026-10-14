@@ -1,4 +1,5 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { CloudTheme } from "@k2b/cloud/shared";
 import { documentNavigate, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
@@ -23,7 +24,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import { mailCommandMessages } from "../../commands";
+import { mailCommandMessages } from "../../command-messages";
 import type {
   ConversationDraftSummary,
   DeriveDraftFromMessageInput,
@@ -54,10 +55,10 @@ import { initialConversationMessageId, isNearConversationStart, newestFirstMessa
 import { buildMailConversationTimeline } from "./mail-conversation-timeline";
 import { getMailConversationToolbarSections, type MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
-import { storeMailDraftSeed } from "./mail-draft-seed-store";
 import { createRetryToasts } from "./mail-feedback";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
+import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "./mail-sender-identity-status";
 import type { MailReadingFormat } from "./mail-user-preferences";
 import { captureMailWorkspaceRefreshError } from "./mail-workspace-refresh";
 
@@ -88,6 +89,8 @@ export default function MailConversationReader(props: {
   /** False for a person who sees only the conversations assigned to them: no merging or splitting. */
   mailboxWide: boolean;
   identities: SenderIdentity[];
+  /** Opens the mailbox's sender settings for a person who can administer it. */
+  onOpenDeliverySettings: () => void;
   selectionKey: string | null;
   selectedConversationId: string | null;
   selectedMessageId: string | null;
@@ -106,7 +109,8 @@ export default function MailConversationReader(props: {
   error: string | null;
   dateConfig: DateContext;
   readingFormat: MailReadingFormat;
-  theme: CloudTheme;
+  /** `null` while the browser has not yet resolved Automatic for this island. */
+  theme: CloudTheme | null;
   calendarIntegrationAvailable: boolean;
   listCollapsed: boolean;
   detailsOpen: boolean;
@@ -115,6 +119,7 @@ export default function MailConversationReader(props: {
   onToggleDetails: () => void;
   onToolbarActionsChange: (actions: MailConversationToolbarActionId[]) => void;
   actionPending: boolean;
+  structurePending: boolean;
   onAction: (actionId: MailActionId, options?: { silent?: boolean }) => void | Promise<void>;
   onOpenHref: (href: string, replace?: boolean) => void | Promise<void>;
   onManageTags: () => void | Promise<void>;
@@ -302,9 +307,11 @@ export default function MailConversationReader(props: {
     documentNavigate(mailDraftHref(props.mailboxId, draftId, props.requestUrl));
   };
 
-  const openDraftSeed = (seed: MailDraftSeed) => {
+  const openDraftSeed = async (seed: MailDraftSeed, stillCurrent: () => boolean) => {
+    const store = await importOnDemand(() => import("./mail-draft-seed-store"));
+    if (!store || disposed || !stillCurrent()) return;
     try {
-      storeMailDraftSeed(localStorage, seed);
+      store.storeMailDraftSeed(localStorage, seed);
     } catch {
       void prompts.error(t().localDraftFailed, {
         title: t().startMessageFailed,
@@ -438,17 +445,26 @@ export default function MailConversationReader(props: {
       return response.json();
     },
     onSuccess: (seed, lookup) => {
-      if (lookup && isCurrentLookup(lookup)) openDraftSeed(seed);
+      if (lookup && isCurrentLookup(lookup)) void openDraftSeed(seed, () => isCurrentLookup(lookup));
     },
     onError: (error) => prompts.error(error.message, { title: t().startMessageFailed }),
   });
+
+  /** Names why no verified sender can send, and lets a mailbox admin open the setting that fixes it. */
+  const explainSenderUnavailable = async () => {
+    const status = mailSenderIdentityStatusMessages.resolve([locale()]).t;
+    const detail = senderUnavailableDetail(props.identities, locale());
+    if (!props.canAdmin) return void (await prompts.error(`${detail} ${status.askAdmin}`, { title: status.cannotSend }));
+    const open = await prompts.confirm(detail, { title: status.cannotSend, confirmText: status.openSenderSettings });
+    if (open) props.onOpenDeliverySettings();
+  };
 
   const chooseReplyIdentity = async (lookup: DraftLookup): Promise<string | null> => {
     const identities = props.identities.filter((identity) => identity.status === "verified");
     const derived = deriveReplyIdentityId(lookup.request.message, identities);
     if (derived) return derived;
     if (identities.length === 0) {
-      await prompts.error(t().verifiedSenderRequired);
+      await explainSenderUnavailable();
       return null;
     }
     const selected = await prompts.dialog<string | null>(
@@ -524,7 +540,7 @@ export default function MailConversationReader(props: {
     },
     onSuccess: (seed, context) => {
       if (context && props.messages.some((message) => message.id === context.message.id)) {
-        openDraftSeed(seed);
+        void openDraftSeed(seed, () => props.messages.some((message) => message.id === context.message.id));
       }
     },
     onError: (error) => prompts.error(error.message),
@@ -545,7 +561,7 @@ export default function MailConversationReader(props: {
     const selectionKey = props.selectionKey;
     const identities = props.identities.filter((identity) => identity.status === "verified");
     const defaultIdentity = identities.find((identity) => identity.isDefault) ?? identities[0];
-    if (!defaultIdentity) return prompts.error(t().verifiedSenderReuseRequired);
+    if (!defaultIdentity) return explainSenderUnavailable();
     const choice = await prompts.dialog<Omit<DeriveDraftFromMessageInput, "idempotencyKey">>(
       (close) => {
         const [senderIdentityId, setSenderIdentityId] = createSignal(defaultIdentity.id);
@@ -741,11 +757,11 @@ export default function MailConversationReader(props: {
   const keepAction = (): { label: string; icon: string; description?: string; disabled: boolean; action: () => void } | null => {
     if (props.keep) {
       return props.canAdmin
-        ? { label: t().stopKeeping, icon: "ti ti-lock-open", disabled: props.actionPending, action: () => void props.onStopKeeping() }
+        ? { label: t().stopKeeping, icon: "ti ti-lock-open", disabled: props.structurePending, action: () => void props.onStopKeeping() }
         : { label: t().kept, icon: "ti ti-lock", description: t().keptOnlyManagers, disabled: true, action: () => undefined };
     }
     return props.canWrite
-      ? { label: t().keep, icon: "ti ti-lock", disabled: props.actionPending, action: () => void props.onKeep() }
+      ? { label: t().keep, icon: "ti ti-lock", disabled: props.structurePending, action: () => void props.onKeep() }
       : null;
   };
 
@@ -828,7 +844,7 @@ export default function MailConversationReader(props: {
         id,
         label: t().splitLatest,
         icon: "ti ti-arrows-split-2",
-        disabled: props.actionPending,
+        disabled: props.structurePending,
         action: () => void props.onSplitMessage(message.id),
       };
     }
@@ -842,7 +858,7 @@ export default function MailConversationReader(props: {
         id,
         label: t().tags,
         icon: "ti ti-tags",
-        disabled: props.actionPending,
+        disabled: props.structurePending,
         action: () => void props.onManageTags(),
       };
     }
@@ -852,7 +868,7 @@ export default function MailConversationReader(props: {
         id,
         label: t().mergeWithConversation,
         icon: "ti ti-git-merge",
-        disabled: props.actionPending,
+        disabled: props.structurePending,
         action: () => void props.onMergeConversation(),
       };
     }
@@ -907,6 +923,7 @@ export default function MailConversationReader(props: {
     return {
       label: localizedActionLabel(actionId),
       icon: getMailAction(actionId).icon,
+      disabled: props.actionPending,
       action: () => props.onAction(actionId),
       ...(actionId === "trash" ? { variant: "danger" as const } : {}),
     };
@@ -918,7 +935,7 @@ export default function MailConversationReader(props: {
     return [
       keep.disabled && keep.description
         ? { label: keep.label, icon: keep.icon, description: keep.description, disabled: true }
-        : { label: keep.label, icon: keep.icon, action: keep.action },
+        : { label: keep.label, icon: keep.icon, disabled: keep.disabled, action: keep.action },
     ];
   };
 
@@ -957,6 +974,7 @@ export default function MailConversationReader(props: {
           {
             label: localizedActionLabel("archive"),
             icon: getMailAction("archive").icon,
+            disabled: props.actionPending,
             action: () => props.onAction("archive"),
           },
           organizeItem(props.inJunk ? "not_spam" : "junk"),
@@ -964,6 +982,7 @@ export default function MailConversationReader(props: {
           {
             label: localizedActionLabel("move"),
             icon: getMailAction("move").icon,
+            disabled: props.actionPending,
             action: () => props.onAction("move"),
           },
         ],
@@ -974,16 +993,19 @@ export default function MailConversationReader(props: {
           {
             label: localizedActionLabel(props.unread ? "mark_read" : "mark_unread"),
             icon: getMailAction(props.unread ? "mark_read" : "mark_unread").icon,
+            disabled: props.actionPending,
             action: () => props.onAction(props.unread ? "mark_read" : "mark_unread"),
           },
           {
             label: localizedActionLabel(props.flagged ? "unflag" : "flag"),
             icon: getMailAction(props.flagged ? "unflag" : "flag").icon,
+            disabled: props.actionPending,
             action: () => props.onAction(props.flagged ? "unflag" : "flag"),
           },
           {
             label: t().tags,
             icon: "ti ti-tags",
+            disabled: props.structurePending,
             action: props.onManageTags,
           },
         ],
@@ -1002,6 +1024,7 @@ export default function MailConversationReader(props: {
                 {
                   label: t().mergeWithConversation,
                   icon: "ti ti-git-merge",
+                  disabled: props.structurePending,
                   action: props.onMergeConversation,
                 },
               ]
@@ -1012,6 +1035,7 @@ export default function MailConversationReader(props: {
                 {
                   label: t().splitLatest,
                   icon: "ti ti-arrows-split-2",
+                  disabled: props.structurePending,
                   action: () => {
                     const message = latestMessage();
                     if (message) void props.onSplitMessage(message.id);

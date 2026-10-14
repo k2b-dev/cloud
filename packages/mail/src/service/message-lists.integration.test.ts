@@ -5,7 +5,7 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
-import { createMailbox } from "./mailboxes";
+import { createMailbox, listMailboxes } from "./mailboxes";
 import { searchMessages } from "./search";
 import { loadMailboxPageData, resolveWorkspaceRequest } from "./workspace";
 
@@ -287,6 +287,12 @@ suite("mail message lists", () => {
       return page.data;
     };
     const conversations = await load("conversations");
+    const listed = await listMailboxes(context);
+    if (!listed.ok) throw new Error(listed.error.message);
+    expect(conversations.receivingAddress).toBe("team@example.test");
+    const listedMailbox = listed.data.find((mailbox) => mailbox.id === mailboxId);
+    if (!listedMailbox) throw new Error("Created mailbox is missing from the list");
+    expect(conversations.receivingAddress).toBe(listedMailbox.receivingAddress);
     expect(conversations.viewCounts.send_problems).toBe(1);
     expect(conversations.listItems.map((item) => item.conversationId)).toEqual([conversationId]);
     const messageList = await load("messages");

@@ -21,6 +21,7 @@ export function testIdentity(id: string): ArtifactIdentity & { user: User } {
     managesGroupIds: [],
   };
   return {
+    credentialKind: "session",
     actor: { kind: "user", user },
     accessSubject: { type: "user", userId: id },
     user,

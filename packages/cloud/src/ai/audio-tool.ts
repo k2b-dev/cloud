@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { aiChatAccessSubject, resolveAssistantAudioModel } from "./assistant-models";
+import { aiMissingChatFileError } from "./file-error";
 import { aiProjectFilePathFromMount } from "./file-mount";
 import { aiFileStore, normalizeAiFilePath } from "./files-store";
 import { defineAiTool } from "./tools";
@@ -43,7 +44,7 @@ export const createCloudAiTranscribeAudioTool = (options: { resolveModel?: () =>
       projectPath !== null
         ? await ctx.projectFiles?.read(projectPath)
         : (snapshot ?? (await aiFileStore.read({ conversationId: ctx.conversationId, path })));
-    if (!stored) throw new Error(`No such audio file: ${path}`);
+    if (!stored) throw aiMissingChatFileError(path, projectPath === null && ctx.localToolsEnabled, `No such audio file: ${path}`);
     const result = await runAiTranscription({
       task: "transcribe-audio",
       file: new Blob([new Uint8Array(stored.bytes)]),

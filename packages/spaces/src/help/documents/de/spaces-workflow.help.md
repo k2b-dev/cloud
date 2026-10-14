@@ -76,7 +76,7 @@ Unter **Blockiert durch** steht jede blockierende Aufgabe mit Titel und Stand: e
 ## Den Tag abarbeiten {icon="route"}
 
 :::steps
-1. **Passende Ansicht öffnen:** Beginne mit **Übersicht**, **Tabelle**, **Kanban**, **Kalender** oder dem Filterzustand, der zur aktuellen Arbeit passt.
+1. **Passende Ansicht öffnen:** Beginne mit **Liste**, **Tabelle**, **Kanban**, **Kalender** oder dem Filterzustand, der zur aktuellen Arbeit passt.
 2. **Zuerst den Status aktualisieren:** Der Status zeigt allen, was sich geändert hat, bevor sie den Eintrag öffnen.
 3. **Blockierende Aufgaben prüfen:** Ändert sich die vorausgehende Arbeit, schließe aktive blockierende Aufgaben ab oder entferne die Abhängigkeit. Abgeschlossene blockierende Aufgaben bleiben als Kontext sichtbar.
 4. **Kontext ergänzen:** Nutze Kommentare für Diskussionen. Nutze Notizen für aktuelle Anweisungen oder dauerhaften Kontext.
@@ -87,9 +87,11 @@ Du kannst einen eigenen Kommentar bis zu zehn Minuten nach dem Veröffentlichen 
 
 ## Schnell mit der Tastatur arbeiten {icon="keyboard"}
 
+- Wenn ein Eintrag geöffnet ist, drücke **J** für den nächsten und **K** für den vorherigen Eintrag in Liste, Tabelle und Kanban.
 - Drücke **Cmd/Strg+Alt+N**, um eine Aufgabe oder in der Kalenderansicht einen Termin zu erstellen.
 - Drücke **Cmd/Strg+Umschalt+K**, um den aktuellen Space zu durchsuchen.
 - Fokussiere in Kanban das Board und wechsle mit den Pfeiltasten zwischen Karten. Die Tastatur-Schaltfläche über dem Board listet diese Kürzel.
+- Um eine Karte zu verschieben, fokussiere ihren Griff, drücke die **Leertaste** und nutze die Pfeiltasten. Drücke die **Leertaste**, um sie abzulegen, oder **Escape**, um abzubrechen.
 - Drücke die **Eingabetaste**, um die fokussierte Karte zu öffnen, **M**, um sie dir zuzuweisen, oder **D**, um sie zu erledigen.
 
 Während du in einem Feld oder Editor schreibst, bleiben diese Einzeltasten-Kürzel inaktiv. Die Cloud-Suche und die Layout-Hilfe zeigen die verfügbaren Aktionen und ihre Kürzel ebenfalls.

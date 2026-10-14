@@ -11,7 +11,7 @@ import {
   type ScheduledSendPage,
   type SenderIdentity,
 } from "../contracts";
-import { isAggregatedListing } from "../folder-display-rules";
+import { isAggregatedListing, mailListingExcludesTrashAndJunk } from "../folder-display-rules";
 import {
   MAIL_SEARCH_MATCHES_NOTHING,
   MAIL_SEARCH_PARAMETER,
@@ -31,7 +31,6 @@ import type { ConversationContentSummary } from "./conversation-summary";
 import * as conversationSummaries from "./conversation-summary";
 import * as drafts from "./drafts";
 import { localizeMailError } from "./error-messages";
-import { FOLLOW_UP_VIEWS } from "./follow-up-scope";
 import { mailLive } from "./live";
 import type { ConversationLocalTags, LocalTag } from "./local-tags";
 import * as localTags from "./local-tags";
@@ -139,6 +138,7 @@ const optionalUuidSearchParam = (url: URL, name: string): string | null => {
 };
 
 export type MailboxPageData = {
+  receivingAddress: string | null;
   mailbox: Mailbox;
   permission: "read" | "write" | "admin";
   access: { scope: "mailbox" | "assigned"; permission: "read" | "write" | "admin" };
@@ -160,6 +160,8 @@ export type MailboxPageData = {
   folderId: string | null;
   viewCounts: ConversationViewCounts;
   query: string;
+  /** The search of the public request URL, with public folder and tag IDs; the browser reads it instead of parsing the URL. */
+  search: ResolvedMailSearchRoute;
   selectedConversationId: string | null;
   selectedMessageId: string | null;
   listItems: MailListItem[];
@@ -569,7 +571,7 @@ const loadListItems = async (params: {
 };
 
 /** A workspace URL after its public IDs were resolved: resource parameters and search conditions carry internal IDs. */
-export type MailWorkspaceRequest = { requestUrl: URL; search: ResolvedMailSearchRoute };
+export type MailWorkspaceRequest = { requestUrl: URL; search: ResolvedMailSearchRoute; publicSearch: ResolvedMailSearchRoute };
 
 /**
  * Resolves the public IDs of a browser workspace URL once, for the SSR page and the workspace-route API alike.
@@ -602,7 +604,7 @@ export const resolveWorkspaceRequest = async (publicUrl: URL, mailboxId: string)
   }
   requestUrl.searchParams.delete(MAIL_SEARCH_PARAMETER);
   const search = resolveMailSearchRoute(publicUrl);
-  if (!search.expression) return { requestUrl, search };
+  if (!search.expression) return { requestUrl, search, publicSearch: search };
   const references = mailSearchReferences(search.expression);
   const [folders, tags] = await Promise.all([
     publicResources.resolveExistingMailboxPublicIds(
@@ -621,7 +623,7 @@ export const resolveWorkspaceRequest = async (publicUrl: URL, mailboxId: string)
     if (!id) return MAIL_SEARCH_MATCHES_NOTHING;
     return reference.type === "folder_id" ? { ...reference, folderId: id } : { ...reference, tagId: id };
   });
-  return { requestUrl, search: { ...search, expression } };
+  return { requestUrl, search: { ...search, expression }, publicSearch: search };
 };
 
 export const loadMailboxPageData = async (params: {
@@ -629,6 +631,7 @@ export const loadMailboxPageData = async (params: {
   mailboxId: string;
   requestUrl: URL;
   search: ResolvedMailSearchRoute;
+  publicSearch: ResolvedMailSearchRoute;
   listMode?: MailListMode;
   locale?: string | null;
 }): Promise<Result<MailboxPageData>> => {
@@ -647,25 +650,34 @@ export const loadMailboxPageData = async (params: {
     });
   }
 
-  const [mailboxResult, folderResult, identityResult, viewCountsResult, savedViewResult, localTagResult, scheduledCountResult] =
-    await Promise.all([
-      mailboxes.getMailbox(params.context, params.mailboxId),
-      messages.listFolders(params.context, params.mailboxId),
-      senderIdentities.listSenderIdentities(params.context, params.mailboxId),
-      messages.getConversationViewCounts({
-        context: params.context,
-        mailboxId: params.mailboxId,
-      }),
-      savedViews.listSavedConversationViews({
-        context: params.context,
-        mailboxId: params.mailboxId,
-      }),
-      localTags.listLocalTags(params.context, params.mailboxId),
-      scheduledSends.countScheduledSends({
-        context: params.context,
-        mailboxId: params.mailboxId,
-      }),
-    ]);
+  const [
+    mailboxResult,
+    folderResult,
+    identityResult,
+    viewCountsResult,
+    savedViewResult,
+    localTagResult,
+    scheduledCountResult,
+    receivingAddress,
+  ] = await Promise.all([
+    mailboxes.getMailbox(params.context, params.mailboxId),
+    messages.listFolders(params.context, params.mailboxId),
+    senderIdentities.listSenderIdentities(params.context, params.mailboxId),
+    messages.getConversationViewCounts({
+      context: params.context,
+      mailboxId: params.mailboxId,
+    }),
+    savedViews.listSavedConversationViews({
+      context: params.context,
+      mailboxId: params.mailboxId,
+    }),
+    localTags.listLocalTags(params.context, params.mailboxId),
+    scheduledSends.countScheduledSends({
+      context: params.context,
+      mailboxId: params.mailboxId,
+    }),
+    mailboxes.getMailboxReceivingAddress(params.mailboxId),
+  ]);
   if (!mailboxResult.ok) return fail(mailboxResult.error);
 
   const parsedView = conversationViewSchema.safeParse(params.requestUrl.searchParams.get("view") ?? undefined);
@@ -683,7 +695,6 @@ export const loadMailboxPageData = async (params: {
   const folders = folderResult.ok ? folderResult.data : [];
   const activeSavedView = savedViewResult.ok ? (savedViewResult.data.find((view) => view.id === savedViewId) ?? null) : null;
   const listMode = params.listMode ?? "conversations";
-  const defaultAllMail = !scheduledMode && !searchExpression && !folderId && !activeView && !activeSavedView;
   const activeFolder = folders.find((folder) => folder.id === folderId);
   const draftsMode =
     !scheduledMode &&
@@ -691,10 +702,15 @@ export const loadMailboxPageData = async (params: {
     !resolvedSearch.error &&
     !!activeFolder &&
     messages.isEffectiveDraftsFolder(activeFolder, folders);
-  const excludedFolderIds =
-    defaultAllMail || (!searchExpression && activeView && FOLLOW_UP_VIEWS.includes(activeView))
-      ? folders.filter((folder) => folder.role === "trash" || folder.role === "junk").map((folder) => folder.id)
-      : [];
+  const excludedFolderIds = mailListingExcludesTrashAndJunk({
+    viewFolderId: folderId,
+    activeView,
+    hasSearch: !!searchExpression,
+    hasSavedView: !!activeSavedView,
+    scheduledMode,
+  })
+    ? folders.filter((folder) => folder.role === "trash" || folder.role === "junk").map((folder) => folder.id)
+    : [];
   const [list, scheduledPageResult, draftsPageResult] = await Promise.all([
     scheduledMode || draftsMode
       ? Promise.resolve({ items: [], nextCursor: null, error: null })
@@ -748,6 +764,7 @@ export const loadMailboxPageData = async (params: {
 
   return ok({
     mailbox: mailboxResult.data,
+    receivingAddress,
     permission: permission.data.permission,
     access: { scope: permission.data.scope, permission: permission.data.permission },
     initialLiveCursor,
@@ -769,6 +786,7 @@ export const loadMailboxPageData = async (params: {
     folderId,
     viewCounts: viewCountsResult.ok ? viewCountsResult.data : EMPTY_VIEW_COUNTS,
     query,
+    search: params.publicSearch,
     selectedConversationId,
     selectedMessageId,
     listItems: list.items,

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createSignal } from "solid-js";
-import { render } from "solid-js/web";
+import { delegateEvents, render } from "solid-js/web";
 import { createNavigation, type NavigationItem } from "../src/layout/navigation-model";
 import { createDomTestHarness } from "./dom";
 
@@ -153,6 +153,53 @@ test("inline actions run their action after host dismissal and never navigate", 
       { id: "open", label: "Open", icon: "ti ti-external-link", href: "/open" },
     ];
     expect(inline).toHaveLength(1);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test("an action that keeps the menu open runs without host dismissal; every other action still waits for it", async () => {
+  const dom = createDomTestHarness();
+  // Each test has a document of its own; the rows' click handler is delegated to the document.
+  delegateEvents(["click"], dom.document);
+  const { default: Navigation } = await import("../src/layout/Navigation");
+  const events: string[] = [];
+  const nav = createNavigation({
+    items: () => [
+      { id: "favorites", label: "Favorites", action: "filter", keepOpen: true },
+      { id: "new", label: "New note", action: "new" },
+    ],
+    onAction: (action) => {
+      events.push(action);
+    },
+  });
+  const dispose = render(
+    () => (
+      <Navigation
+        navigation={nav}
+        label="Notebook"
+        beforeSelect={() => {
+          events.push("closed");
+        }}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    const [filter, create] = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button"));
+    filter!.click();
+    await Bun.sleep(0);
+    expect(events).toEqual(["filter"]);
+    create!.click();
+    await Bun.sleep(0);
+    expect(events).toEqual(["filter", "closed", "new"]);
+    // A link always lets the host close the menu first.
+    const link: NavigationItem[] = [
+      // @ts-expect-error Only an action can keep the menu open.
+      { id: "open", label: "Open", href: "/open", keepOpen: true },
+    ];
+    expect(link).toHaveLength(1);
   } finally {
     dispose();
     dom.cleanup();

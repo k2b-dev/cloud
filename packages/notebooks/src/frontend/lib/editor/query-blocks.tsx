@@ -7,7 +7,12 @@ import { type Accessor, createEffect, createMemo, createSignal, onCleanup } from
 import { render } from "solid-js/web";
 import { extractNotebookDirectiveRanges } from "../../../lib/query-blocks";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../../[id]/_components/sidebar/workspace-events";
-import { blockWidgetLineNavigationExtension, refreshMarkdownDecorationsEffect, selectionIntersectsRange } from "./_lib/cursor-zone-field";
+import {
+  blockWidgetLineNavigationExtension,
+  holdsDecorations,
+  refreshMarkdownDecorationsEffect,
+  selectionIntersectsRange,
+} from "./_lib/cursor-zone-field";
 import { queryBlockMessages } from "./query-block-messages";
 
 export type BlockPreviewResult = {
@@ -128,7 +133,15 @@ class QueryBlockWidget extends WidgetType {
     return true;
   }
   override get estimatedHeight() {
-    return 120;
+    // Query tables have 14px / 21px text, 16px cell padding and row dividers;
+    // controls, widget padding/border and table spacing add 65px.
+    // The truncated count paragraph inherits 16px / 1.6 text (25.6px) in
+    // `.cm-query-block-preview.notebook-book-content` and 1rem block margins
+    // from app.css. Its top margin collapses with the table's bottom margin,
+    // so it adds one line plus one 16px margin: 41.6px.
+    const rows = this.snapshot.failed ? 0 : (this.html?.match(/<tr(?:\s|>)/g)?.length ?? 0);
+    const countHeight = this.html?.includes('<p class="notebook-book-empty">') ? 41.6 : 0;
+    return rows ? rows * 38 + 65 + countHeight : 120;
   }
 }
 
@@ -202,6 +215,7 @@ export function createQueryBlockPreviews(options: {
       const effect = tr.effects.find((effect) => effect.is(previewEffect));
       if (effect?.is(previewEffect)) return build(tr.state, effect.value);
       if (tr.docChanged || tr.effects.some((effect) => effect.is(refreshMarkdownDecorationsEffect))) return build(tr.state, value.snapshot);
+      if (holdsDecorations(tr)) return value;
       if (
         tr.selection &&
         value.ranges.some(

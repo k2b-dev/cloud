@@ -32,6 +32,7 @@ export function isFailedTool(tool: Tool): boolean {
 
 const HOUSEKEEPING_TOOLS = new Set([
   "load_skill",
+  "load_local_skill",
   "search_skills",
   "load_tools",
   "search_tools",

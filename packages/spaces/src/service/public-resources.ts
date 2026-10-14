@@ -2,6 +2,8 @@ import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type {
   CalendarItem,
+  ItemGroupBy,
+  ItemListResult,
   OverlapItem,
   SpaceColumn,
   SpaceComment,
@@ -221,6 +223,17 @@ export const projectSpaceDetail = async (detail: SpaceDetail): Promise<SpaceDeta
   ]);
   if (!space) throw new Error("Missing public ID for Space");
   return { ...space, columns, virtualColumns: detail.virtualColumns, tags, templates };
+};
+
+/** Project full-result group IDs too, including groups absent from the current page. */
+export const projectItemListResult = async (result: ItemListResult, groupBy: ItemGroupBy): Promise<ItemListResult> => {
+  let groupCounts = result.groupCounts;
+  if (groupCounts && (groupBy === "column" || groupBy === "tag")) {
+    const keys = Object.keys(groupCounts).filter((key) => key !== "none");
+    const ids = await shortIds(groupBy === "column" ? "columns" : "tags", keys);
+    groupCounts = Object.fromEntries(Object.entries(groupCounts).map(([key, count]) => [key === "none" ? key : required(ids, key), count]));
+  }
+  return { ...result, items: await projectItems(result.items), ...(groupCounts ? { groupCounts } : {}) };
 };
 
 export const projectItems = async <T extends SpaceItem>(items: T[]): Promise<T[]> => {
@@ -459,6 +472,7 @@ export const spacesPublicResources = {
   projectTemplates,
   projectSpaceDetail,
   projectItems,
+  projectItemListResult,
   projectItemReferences,
   projectTaskDependencies,
   projectTaskDependents,

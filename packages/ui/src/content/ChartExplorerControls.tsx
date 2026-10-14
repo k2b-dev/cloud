@@ -5,6 +5,7 @@ import { Paper } from "../surfaces/Paper";
 import { StatusBadge } from "../surfaces/StatusBadge";
 import { ChartFilterControls, type ChartFilterControlsProps } from "./ChartFilterControls";
 import type { ChartExplorerCharts, ChartExplorerController } from "./chart-explorer";
+import { useChartMessages } from "./chart-messages";
 
 export type ChartExplorerControlsProps<C extends ChartExplorerCharts> = {
   explorer: ChartExplorerController<C>;
@@ -16,6 +17,7 @@ export type ChartExplorerControlsProps<C extends ChartExplorerCharts> = {
 
 export function ChartExplorerControls<C extends ChartExplorerCharts>(props: ChartExplorerControlsProps<C>) {
   const messages = useUiMessages();
+  const chartMessages = useChartMessages();
   const label = (key: string | undefined) => props.steps?.find((step) => step.key === key)?.label ?? key ?? "";
   return (
     <Paper class="k2b-chart-group-controls">
@@ -28,14 +30,14 @@ export function ChartExplorerControls<C extends ChartExplorerCharts>(props: Char
             role="status"
             title={
               props.explorer.loading()
-                ? `${messages().loading} · ${messages().chartPreviousData}: ${label(props.explorer.snapshot().request.step)}`
+                ? `${messages().loading} · ${chartMessages().chartPreviousData}: ${label(props.explorer.snapshot().request.step)}`
                 : undefined
             }
           >
             <Show when={props.explorer.loading()}>
               <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
               <span class="k2b-sr-only">
-                {messages().loading} · {messages().chartPreviousData}: {label(props.explorer.snapshot().request.step)}
+                {messages().loading} · {chartMessages().chartPreviousData}: {label(props.explorer.snapshot().request.step)}
               </span>
             </Show>
           </span>
@@ -46,9 +48,9 @@ export function ChartExplorerControls<C extends ChartExplorerCharts>(props: Char
                   size="sm"
                   variant="secondary"
                   onClick={() => void props.explorer.clearReference()}
-                  aria-label={`${messages().chartRemoveComparison}: ${label(reference())}`}
+                  aria-label={`${chartMessages().chartRemoveComparison}: ${label(reference())}`}
                 >
-                  {messages().chartReference}: {label(reference())} <i class="ti ti-x" aria-hidden="true" />
+                  {chartMessages().chartReference}: {label(reference())} <i class="ti ti-x" aria-hidden="true" />
                 </Button>
               )}
             </Show>
@@ -62,7 +64,7 @@ export function ChartExplorerControls<C extends ChartExplorerCharts>(props: Char
               }
               onClick={() => void props.explorer.pinReference()}
             >
-              {messages().chartPinReference}
+              {chartMessages().chartPinReference}
             </Button>
           </Show>
         </div>
@@ -85,7 +87,7 @@ export function ChartExplorerControls<C extends ChartExplorerCharts>(props: Char
               icon={null}
               label={
                 <>
-                  <span aria-hidden="true">●</span> {messages().chartCurrent}: {label(props.explorer.snapshot().request.step)}
+                  <span aria-hidden="true">●</span> {chartMessages().chartCurrent}: {label(props.explorer.snapshot().request.step)}
                 </>
               }
             />
@@ -94,7 +96,7 @@ export function ChartExplorerControls<C extends ChartExplorerCharts>(props: Char
               icon={null}
               label={
                 <>
-                  <span aria-hidden="true">○</span> {messages().chartReference}: {label(reference())}
+                  <span aria-hidden="true">○</span> {chartMessages().chartReference}: {label(reference())}
                 </>
               }
             />

@@ -61,6 +61,8 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * older Mail image, which records no version for them, still starts on it.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
+    REFERENCES mail.compose_templates(id) ON DELETE SET NULL`.simple();
   await tx`
     CREATE TABLE IF NOT EXISTS mail.conversation_keeps (
       conversation_id uuid PRIMARY KEY REFERENCES mail.conversations(id) ON DELETE CASCADE,
@@ -141,6 +143,7 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     $$
   `.simple();
   await addCommandQueuePosition(tx);
+  await addSenderVerificationCommands(tx);
   await addConversationAssignees(tx);
   await addAssignedOnlyMailboxAccess(tx);
   await writeLiveUpdatesToPlatformOutbox(tx);
@@ -152,6 +155,32 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     CREATE INDEX IF NOT EXISTS outbox_sent_copy_pending_idx ON mail.outbox_submissions USING btree (id)
     WHERE sent_copy_pending
   `.simple();
+  // An incoming message whose first copy is in All Mail waits for its first copy in another folder,
+  // which receives it for automations. Like the claim index, the column is only added when missing,
+  // so a start does not wait for the table lock that a running BM25 build holds.
+  const [receiptPending] = await tx<{ present: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'mail' AND table_name = 'message_contents' AND column_name = 'receipt_pending'
+    ) AS present
+  `;
+  if (!receiptPending?.present) {
+    await tx`ALTER TABLE mail.message_contents ADD COLUMN IF NOT EXISTS receipt_pending boolean DEFAULT false NOT NULL`.simple();
+  }
+  // A mailbox completes thousands of sync runs a day and keeps them for 30 days. Listing its rare
+  // failed, cancelled, superseded, or running runs seeks here instead of reading every completed one.
+  // Building it reads the table once, on the first start after the update; later starts skip the
+  // statement, so they do not wait for the table lock that the build takes.
+  const [syncRunStateIndex] = await tx<{ present: boolean }[]>`
+    SELECT to_regclass('mail.sync_runs_resource_not_completed_idx') IS NOT NULL AS present
+  `;
+  if (!syncRunStateIndex?.present) {
+    await tx`
+      CREATE INDEX IF NOT EXISTS sync_runs_resource_not_completed_idx
+      ON mail.sync_runs USING btree (remote_resource_id, state, started_at DESC, id DESC)
+      WHERE state <> 'completed'
+    `.simple();
+  }
 };
 
 /**
@@ -293,6 +322,29 @@ const addCommandQueuePosition = async (tx: SqlClient): Promise<void> => {
   await tx`ALTER TABLE mail.commands ADD COLUMN queue_position bigint NOT NULL DEFAULT 0`.simple();
   await tx`ALTER SEQUENCE mail.commands_queue_position_seq OWNED BY mail.commands.queue_position`.simple();
   await tx`ALTER TABLE mail.commands ALTER COLUMN queue_position SET DEFAULT nextval('mail.commands_queue_position_seq')`.simple();
+};
+
+/**
+ * A sender verification that finds provider work running waits as a `verify_sender_identity`
+ * command. The kind check is replaced only on the first start after the update. Every stored
+ * command passed the previous, narrower check, so the new one skips reading the table.
+ */
+const addSenderVerificationCommands = async (tx: SqlClient): Promise<void> => {
+  const [current] = await tx<{ allows: boolean }[]>`
+    SELECT pg_get_constraintdef(oid) LIKE '%verify_sender_identity%' AS allows
+    FROM pg_constraint
+    WHERE conrelid = 'mail.commands'::regclass AND conname = 'commands_kind_check'
+  `;
+  if (current?.allows) return;
+  await tx`ALTER TABLE mail.commands DROP CONSTRAINT IF EXISTS commands_kind_check`.simple();
+  await tx`
+    ALTER TABLE mail.commands ADD CONSTRAINT commands_kind_check CHECK (kind = ANY (ARRAY[
+      'set_flags', 'change_message_state', 'move', 'copy', 'delete', 'create_folder', 'rename_folder', 'delete_folder',
+      'set_folder_subscription', 'send', 'sync_mailbox', 'sync_folder', 'discover_folders', 'verify_binding', 'rebuild_folder',
+      'hydrate_missing', 'rebuild_search', 'rebuild_threads', 'reconcile_effect', 'retry_command', 'cancel_command',
+      'verify_sender_identity'
+    ])) NOT VALID
+  `.simple();
 };
 
 /** The SQLSTATE of a database error: Bun reports it as `errno`, other drivers as `code`. */

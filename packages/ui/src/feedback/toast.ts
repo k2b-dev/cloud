@@ -1,6 +1,7 @@
 import { getK2bPortalRoot } from "../internal/portal";
 import { resolveUiMessages } from "../intl/messages";
 import { announce, ensureLiveRegions } from "./announce";
+import { resolveToastMessages } from "./toast-messages";
 
 export type ToastVariant = "default" | "success" | "error";
 
@@ -159,7 +160,7 @@ const ensureContainer = (): HTMLElement | null => {
   container.setAttribute(CONTAINER_ATTRIBUTE, "");
   container.setAttribute("popover", "manual");
   container.setAttribute("role", "region");
-  container.setAttribute("aria-label", resolveUiMessages().notifications);
+  container.setAttribute("aria-label", resolveToastMessages().notifications);
   // Keep the source rail geometry inline: it must defeat UA popover defaults
   // even when a consumer has not loaded the optional package stylesheet yet.
   // The stylesheet only moves the rail to the top edge, and to the full width
@@ -307,7 +308,7 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     const noop = () => {};
     return { dismiss: noop, update: noop };
   }
-  const messages = resolveUiMessages();
+  const toastMessages = resolveToastMessages();
   const doc = initialContainer.ownerDocument;
   // Focus returns here when a focused toast closes and no other toast can take it.
   const opener =
@@ -356,7 +357,7 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   const closeButton = doc.createElement("button");
   closeButton.type = "button";
   closeButton.className = "k2b-toast__close";
-  closeButton.setAttribute("aria-label", options?.dismissLabel ?? messages.dismissNotification);
+  closeButton.setAttribute("aria-label", options?.dismissLabel ?? toastMessages.dismissNotification);
   const closeIcon = doc.createElement("i");
   closeIcon.className = "ti ti-x";
   closeIcon.setAttribute("aria-hidden", "true");

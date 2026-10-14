@@ -1,11 +1,11 @@
 ---
 id: grids-build-base
-title: Build a Base
+title: Build a base
 icon: ti ti-route
-description: Turn a real process into a small, useful Grids Base.
+description: Turn a real process into a small, useful Grids base.
 order: 106
 ---
-Start from the work that people must complete, not from a list of every Grids feature. A good first Base makes one process easier with a few clear tables and views.
+Start from the work that people must complete, not from a list of every Grids feature. A good first base makes one process easier with a few clear tables and views.
 
 ## Describe the work first {icon="square-plus"}
 
@@ -33,21 +33,21 @@ Do not add a Grids App that only repeats the table. Do not add a workflow for a 
 | A role-specific operating page | A Grids App |
 | A printable or shareable PDF | A document template |
 | A repeatable multi-step action | A workflow |
-| One governed read-only table across Bases | A Combined table |
+| One governed read-only table across bases | A Combined table |
 
-## Configure the Base for the work {icon="settings"}
+## Configure the base for the work {icon="settings"}
 
-Open **Base settings** in **Edit mode** for settings that apply to the whole Base:
+Open **base settings** in **Edit mode** for settings that apply to the whole base:
 
 :::reference
-- **General:** Keep the Base name and description clear in the Grids overview.
+- **General:** Keep the base name and description clear in the Grids overview.
 - **Documents:** Store the business identity, address, contact, payment, and footer values. PDF and email templates use them.
-- **Access:** Control who can use the complete raw Base workspace.
+- **Access:** Control who can use the complete raw base workspace.
 - **Trash:** List the deleted tables, fields, and forms that you can still restore.
-- **Danger zone:** Move the complete Base out of active use. An administrator can restore it.
+- **Danger zone:** Move the complete base out of active use. An administrator can restore it.
 :::
 
-Use a Grids App when people need a narrower operating page than direct access to the complete Base.
+Use a Grids App when people need a narrower operating page than direct access to the complete base.
 
 ## Example: equipment loans {icon="point"}
 
@@ -64,10 +64,10 @@ Then create:
 
 The result stays clear because each feature has one job and all features use the same records.
 
-## Test the Base before you expand it {icon="point"}
+## Test the base before you expand it {icon="point"}
 
-Use the Base for real work. Check that people recognize records, understand status values, find the right view, and know what they can change. If the model is unclear with a small sample, more automation only hides the problem.
+Use the base for real work. Check that people recognize records, understand status values, find the right view, and know what they can change. If the model is unclear with a small sample, more automation only hides the problem.
 
 :::note Use a template as a starting point
-A Grids template can create a complete example Base. Treat it as an editable working example: rename its resources, inspect the sample records, and remove what your process does not need.
+A Grids template can create a complete example base. Treat it as an editable working example: rename its resources, inspect the sample records, and remove what your process does not need.
 :::

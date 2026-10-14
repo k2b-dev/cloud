@@ -7,7 +7,7 @@ describe("Mail SSR island entries", () => {
 
     for (const file of files) {
       const source = await Bun.file(`${import.meta.dir}/${file}`).text();
-      if (!/\bexport\s+default\b/u.test(source)) missing.push(file);
+      if (!/\bexport\s+(?:default\b|\{\s*default\s*\}\s*from\b)/u.test(source)) missing.push(file);
     }
 
     expect(files.length).toBeGreaterThan(0);

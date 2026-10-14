@@ -20,11 +20,14 @@ import type { Backlink } from "../../../../service/links";
 import { editor } from "../../../lib/editor";
 import { extractAttachmentIds } from "../../../lib/editor/attachment-url";
 import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
+import { listCommandsExtension } from "../../../lib/editor/list-commands";
 import { queryBlockMessages } from "../../../lib/editor/query-block-messages";
 import { createQueryBlockPreviews } from "../../../lib/editor/query-blocks";
+import { remoteCursors } from "../../../lib/editor/remote-cursors";
 import { pressMissedEditor } from "../../../lib/editor/surface-press";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
 import { getNotebookPresenceColor, yjs } from "../../../lib/yjs";
+import { isolateYjsHistory } from "../../../lib/yjs/history";
 import { notebookWorkspaceMessages } from "../../messages";
 import {
   ATTACHMENTS_UPDATE_EVENT,
@@ -46,6 +49,7 @@ import {
 } from "../detail/events";
 import { extractTaskProgress } from "../detail/tasks";
 import { extractTocFromMarkdown } from "../detail/toc";
+import { followFullWidth } from "../full-width";
 import { writeSettings } from "../settings/NotebookSettingsStore";
 import {
   NAVIGATION_FOCUS_EVENT,
@@ -56,9 +60,11 @@ import { dispatchWorkspaceEvent } from "../sidebar/workspace-events";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOversizeImage, uploadAndInsert } from "./attachments-client";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
+import { caretFormat, sameCaretFormat } from "./editor-actions";
 import { createLinkedHeadingJump, type LinkedHeading } from "./linked-heading";
 import { createNoteNavigationCoordinator, headingFromHash, resolveSameNotebookNoteTarget } from "./note-navigation";
-import { keepReadingPosition } from "./reading-position";
+import { NOTE_PREVIEW_ID } from "./note-preview";
+import { keepReadingPosition, previewReadingPosition, type ReadingPosition, scrollToReadingPosition } from "./reading-position";
 import { slashCommandsExtension } from "./slash-commands";
 import { createTabKeyPreference } from "./tab-key-preference";
 
@@ -121,6 +127,9 @@ export default function NoteEditor(props: Props) {
     ...initialEditorProps,
     onWorkspaceCursorChange: setLastWorkspaceCursor,
   });
+  // Read before anything mounts: the first editor opens where the reader scrolled the server preview.
+  const preview = document.getElementById(NOTE_PREVIEW_ID);
+  let previewPosition = preview ? previewReadingPosition(preview) : null;
   const [routeSource, setRouteSource] = createSignal(initialHref);
   const [failedSource, setFailedSource] = createSignal<string | null>(null);
   const initialHeading = headingFromHash(window.location.hash);
@@ -215,7 +224,7 @@ export default function NoteEditor(props: Props) {
           ],
           title: loaded.props.noteTitle,
         });
-        window.dispatchEvent(new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, { detail: loaded.eventDetail }));
+        window.dispatchEvent(new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, { detail: { ...loaded.eventDetail, href: loaded.href } }));
       });
       if (applied) return;
     }
@@ -238,6 +247,8 @@ export default function NoteEditor(props: Props) {
   };
 
   onMount(() => {
+    // Solid creates the editor and removes the preview in the same flush, before the next frame.
+    document.getElementById(NOTE_PREVIEW_ID)?.remove();
     const onClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const anchor = (event.target as Element | null)?.closest("a[href]");
@@ -297,7 +308,11 @@ export default function NoteEditor(props: Props) {
   return (
     <div class="relative flex-1 min-w-0 flex flex-col overflow-hidden">
       <Show when={current()} keyed>
-        {(note) => <EditorInstance {...note} linkedHeading={linkedHeading} />}
+        {(note) => {
+          const startPosition = previewPosition;
+          previewPosition = null;
+          return <EditorInstance {...note} linkedHeading={linkedHeading} startPosition={startPosition} />;
+        }}
       </Show>
       <Show when={showRouteLoading()}>
         <div class="pointer-events-none absolute inset-0 z-30 flex items-start justify-center pt-4" aria-live="polite" aria-busy="true">
@@ -311,7 +326,9 @@ export default function NoteEditor(props: Props) {
   );
 }
 
-function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<LinkedHeading | null> }) {
+function EditorInstance(
+  props: EditorInstanceProps & { linkedHeading: Accessor<LinkedHeading | null>; startPosition: ReadingPosition | null },
+) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const [connected, setConnected] = createSignal(false);
@@ -370,7 +387,9 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
 
   const undoManager = props.readOnly ? null : new Y.UndoManager(ytext);
   if (!props.readOnly && undoManager) {
-    addExtension(() => yCollab(ytext, awareness, { undoManager }));
+    addExtension(() => yCollab(ytext, null, { undoManager }));
+    addExtension(() => isolateYjsHistory(undoManager));
+    addExtension(() => remoteCursors(ytext, awareness));
     addExtension(() => keymap.of(yUndoManagerKeymap));
   }
 
@@ -436,18 +455,30 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
   addExtension(() => (props.readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []));
   // Tab indents unless the person prefers focus movement; Esc, then Tab always leaves the editor.
   addExtension(tabKeys.extension);
+  // List keys work whatever the Tab preference; toolbar formats follow the caret.
+  const [format, setFormat] = createSignal(caretFormat(EditorState.create()), { equals: sameCaretFormat });
+  addExtension(() =>
+    props.readOnly
+      ? []
+      : [
+          listCommandsExtension(),
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged || update.selectionSet) setFormat(caretFormat(update.state));
+          }),
+        ],
+  );
+
+  createEffect(() => {
+    const view = editorView();
+    if (view) setFormat(caretFormat(view.state));
+  });
 
   addExtension(() => {
     if (richMode()) return isDark() ? editor.customDarkInit() : editor.customLightInit();
     return isDark() ? editor.rawDarkInit() : editor.rawLightInit();
   });
 
-  addExtension(
-    EditorView.theme({
-      ".cm-editor": { minHeight: "100%" },
-      ".cm-scroller": { width: "100%", minHeight: "100%", padding: "1rem" },
-    }),
-  );
+  addExtension(editor.noteScrollerTheme);
 
   addExtension(() => (richMode() ? [] : lineNumbers()));
 
@@ -675,14 +706,14 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
     view.focus();
   };
 
-  const focusEditor = (attempts = 0, target: "start" | "end" = "start"): boolean => {
+  const focusEditor = (attempts = 0, target: "start" | "end" = "start", scroll = true): boolean => {
     if (disposed) return false;
     const view = editorView();
     if (!view) {
       if (attempts < 8) {
         const frame = requestAnimationFrame(() => {
           pendingFocusFrames.delete(frame);
-          focusEditor(attempts + 1, target);
+          focusEditor(attempts + 1, target, scroll);
         });
         pendingFocusFrames.add(frame);
       }
@@ -692,7 +723,7 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
     const at = target === "end" ? view.state.doc.length : 0;
     view.dispatch({
       selection: { anchor: at },
-      scrollIntoView: true,
+      scrollIntoView: scroll,
     });
     view.focus();
     return true;
@@ -772,9 +803,18 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
     writeSettings(props.notebookId, { lastNoteId: props.noteId });
     provider?.connect();
     const opensHeading = linkedHeadingJump.open();
+    const startPosition = props.startPosition;
+    if (startPosition) {
+      // The editor view arrives later in this flush; the microtask still runs before the next paint.
+      queueMicrotask(() => {
+        const view = editorView();
+        if (view && scrollPort) scrollToReadingPosition(view, scrollPort, startPosition);
+      });
+    }
     if (!props.readOnly) {
       if (consumeInitialTitleSelection(props.noteId)) selectInitialTitle();
-      else if (!opensHeading) focusEditor();
+      // A reader who scrolled the preview keeps reading there; the caret still starts the note.
+      else if (!opensHeading) focusEditor(0, "start", !startPosition);
       scheduleCursorIdleHide();
     }
     // First emit so the panel reflects the current doc immediately on mount,
@@ -808,6 +848,17 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
       window.removeEventListener(NAVIGATION_VISIBILITY_EVENT, onNavigationChanged);
       window.removeEventListener(NAVIGATION_FOCUS_EVENT, onNavigationFocusLost);
     });
+
+    if (scrollPort) {
+      followFullWidth(
+        scrollPort,
+        () => {
+          const view = editorView();
+          return view && scrollPort ? keepReadingPosition(view, scrollPort) : null;
+        },
+        t,
+      );
+    }
 
     window.addEventListener(TOC_SCROLL_EVENT, onScrollToHeading);
     window.addEventListener(NAMED_BLOCK_SCROLL_EVENT, onScrollToNamedBlock);
@@ -907,6 +958,9 @@ function EditorInstance(props: EditorInstanceProps & { linkedHeading: Accessor<L
           notebookId={props.notebookId}
           noteId={props.noteId}
           initialPanelOpen={props.initialPanelOpen}
+          format={format()}
+          onUndo={() => undoManager?.undo()}
+          onRedo={() => undoManager?.redo()}
         />
       </Show>
     </div>

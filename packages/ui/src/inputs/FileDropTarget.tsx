@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, type JSX, onCleanup, onMount } from "solid-js";
 import { useLocale } from "../intl/locale";
-import { useUiMessages } from "../intl/messages";
 import { FILE_DROP_DEFAULT_REGION, type FileDropOptions, type FileDropTargetEntry, fileDropEngine, liveDocument } from "./file-drop";
+import { useFileDropMessages } from "./file-drop-messages";
 
 export type { FileDropDetails, FileDropOptions, FileDropRejection } from "./file-drop";
 
@@ -22,12 +22,18 @@ type Rect = { top: number; left: number; width: number; height: number; radius: 
  * elements dragged within the page never show it. Keep a visible upload button for keyboard and touch users.
  */
 export function FileDropTarget(props: FileDropTargetProps): JSX.Element {
-  const messages = useUiMessages();
+  const fileDropMessages = useFileDropMessages();
   const locale = useLocale();
   let overlay: HTMLDivElement | undefined;
   const [rect, setRect] = createSignal<Rect>();
   const region = () => props.for ?? overlay?.parentElement?.closest(FILE_DROP_DEFAULT_REGION) ?? overlay?.ownerDocument.documentElement;
-  const entry: FileDropTargetEntry = { options: props, messages, locale, region, host: () => overlay?.parentElement ?? undefined };
+  const entry: FileDropTargetEntry = {
+    options: props,
+    messages: fileDropMessages,
+    locale,
+    region,
+    host: () => overlay?.parentElement ?? undefined,
+  };
   const [engine, setEngine] = createSignal<ReturnType<typeof fileDropEngine>>();
 
   onMount(() => {
@@ -46,7 +52,7 @@ export function FileDropTarget(props: FileDropTargetProps): JSX.Element {
   const state = () => (hover() ? (hover()!.invalid ? "invalid" : "over") : "available");
   const sentence = () => {
     const current = hover();
-    if (current?.invalid) return messages().fileTypeNotAccepted;
+    if (current?.invalid) return fileDropMessages().fileTypeNotAccepted;
     return current ? current.entry.options.label : props.label;
   };
 
@@ -125,10 +131,10 @@ export function FileDropTarget(props: FileDropTargetProps): JSX.Element {
  * sentence. Calling the ref again with new options replaces them.
  */
 export function fileDropTarget(options: FileDropOptions): (element: Element) => void {
-  const messages = useUiMessages();
+  const fileDropMessages = useFileDropMessages();
   const locale = useLocale();
   return (element) => {
-    const entry = { options, messages, locale };
+    const entry = { options, messages: fileDropMessages, locale };
     // A ref runs before its element is inserted; registering after insertion finds the document it ends up in.
     queueMicrotask(() => fileDropEngine(liveDocument(element)).setTarget(element, entry));
   };

@@ -228,6 +228,82 @@ type ChartOptions =
   | (ChartBase & { kind: "histogram"; data: number[]; bins?: number; xAxis?: AxisOptions; yAxis?: AxisOptions })
   | (ChartBase & { kind: "gauge"; value: number; min?: number; max?: number; label?: string; unit?: string })
   | (ChartBase & { kind: "sparkline"; data: number[]; area?: boolean });
+// boxplot, heatmap, barGauge, stat, declarative formats, references and thresholds: charts.md.
+
+// ---------------------------------------------------------------- views (script runs only)
+
+type ChartKind = "bar" | "line" | "scatter" | "pie" | "donut" | "histogram" | "gauge" | "sparkline" | "boxplot" | "heatmap" | "barGauge" | "stat";
+type ViewRef = { path: string; title: string; subtitle?: string } & (
+  | { view: "chart"; kind: ChartKind }
+  | { view: "group"; linkX: boolean; layout: "stack" | "grid"; charts: { kind: ChartKind; title: string; subtitle?: string }[] }
+  | { view: "table"; rows: number; columns: number; footer: boolean }
+  | { view: "explorer"; rows: number; columns: number; views: { id: string; label: string; kind: "bar" | "line" | "scatter" | "heatmap" }[]; step: boolean; filter: boolean; compare: boolean }
+  | { view: "stats"; items: { label: string; sparkline: boolean; sub: boolean; delta: boolean }[] }
+  | { view: "details"; items: number; fields: { label: string; ref: boolean; chars: number }[] }
+);
+type ViewBase = { title: string; subtitle?: string };
+type ViewAxis = { label?: string; domain?: [number, number]; ticks?: number; scale?: "linear" | "log" };
+type ViewPoint = { x: number | string; y: number };
+type ViewRows = Record<string, unknown>[];
+type ViewBar = ViewBase & { kind: "bar"; yAxis?: ViewAxis; colorByBar?: boolean; showValues?: boolean; legend?: boolean };
+type ViewSlices = ViewBase & { kind: "pie" | "donut"; legend?: boolean; showLabels?: boolean };
+type ViewLines = ViewBase & { kind: "line"; xAxis?: ViewAxis; yAxis?: ViewAxis; legend?: boolean; area?: boolean; smooth?: boolean };
+type ViewScatter = ViewBase & { kind: "scatter"; xAxis?: ViewAxis; yAxis?: ViewAxis; legend?: boolean };
+type ViewSparkline = ViewBase & { kind: "sparkline"; area?: boolean };
+type ViewHistogram = ViewBase & { kind: "histogram"; bins?: number | number[] };
+type ViewChartSpec =
+  | ((ViewBar | ViewSlices) & ({ data: ChartItem[] } | { rows: ViewRows; x: string; y: string }))
+  | ((ViewLines | ViewScatter) & (
+      | { series: { label?: string; data: ViewPoint[] }[] }
+      | { rows: ViewRows; x: string; y: string | string[]; series?: string }
+    ))
+  | (ViewSparkline & ({ data: number[] } | { rows: ViewRows; y: string }))
+  | (ViewHistogram & ({ data: number[] } | { rows: ViewRows; value: string }))
+  | (ViewBase & { kind: "gauge"; value: number; min?: number; max?: number; label?: string; unit?: string });
+// boxplot, heatmap, barGauge, stat, formats, references, thresholds and series style/role: views.md.
+type ViewGroupSpec = ViewBase & { charts: ViewChartSpec[]; linkX?: boolean; layout?: "stack" | "grid" };
+type ViewFormat = { unit?: string; decimals?: number; compact?: boolean } & (
+  | { style: "currency"; currency: string }
+  | { style?: "number" | "percent"; currency?: never }
+);
+type ViewColumn = { id: string; label?: string; type?: "text" | "number" | "date" | "datetime" | "ref"; format?: ViewFormat };
+type ViewTableSpec = ViewBase & {
+  rows: ViewRows;
+  columns?: (string | ViewColumn)[];
+  footer?: Record<string, unknown>;
+  sort?: { column: string; direction: "asc" | "desc" };
+};
+type ViewExplorerChart = { id: string; label: string } & (
+  | { kind: "bar"; x: string; y: string }
+  | { kind: "line" | "scatter"; x: string; y: string | string[]; series?: string }
+  | { kind: "heatmap"; x: string; y: string; value: string }
+);
+type ViewExplorerSpec = ViewBase & {
+  rows: ViewRows;
+  columns?: (string | ViewColumn)[];
+  views: ViewExplorerChart[];
+  controls?: { filter?: string; step?: string; compare?: boolean };
+};
+type ViewReference = { type: string; id: string; title?: string };
+type ViewStatsSpec = ViewBase & { items: {
+  label: string; value: number | string; format?: ViewFormat; sub?: string;
+  delta?: number; better?: "up" | "down"; sparkline?: number[];
+}[] };
+type ViewDetailsSpec = ViewBase & { items: {
+  label: string; value?: string | number | Date | null | ViewReference;
+  type?: "text" | "number" | "date" | "datetime" | "ref"; format?: ViewFormat;
+}[] };
+/** Script runs only; HTML apps draw with cloud.chart(). Server validates every saved spec. */
+interface CloudView {
+  chart(spec: ViewChartSpec): Promise<ViewRef>;
+  /** 2..6 related charts under one heading. */
+  group(spec: ViewGroupSpec): Promise<ViewRef>;
+  table(spec: ViewTableSpec): Promise<ViewRef>;
+  stats(spec: ViewStatsSpec): Promise<ViewRef>;
+  details(spec: ViewDetailsSpec): Promise<ViewRef>;
+  /** One dataset with local filtering, steps and comparison; see views.md. */
+  explorer(spec: ViewExplorerSpec): Promise<ViewRef>;
+}
 
 // ---------------------------------------------------------------- money
 
@@ -373,6 +449,8 @@ interface Cloud {
   html(strings: TemplateStringsArray, ...values: unknown[]): Html;
   /** Chart markup in Cloud colors for innerHTML, cloud.html or PDF HTML. */
   chart(options: ChartOptions): Html;
+  /** Script runs only: validated, file-backed charts, groups, tables, stats, details and explorers shown with present({path}). */
+  view: CloudView;
   money: CloudMoney;
   pdf: CloudPdf;
   sheet: CloudSheet;
@@ -389,7 +467,7 @@ type RunFile = { path: string; size: number; type: string; file(): Promise<File>
 /**
  * Script mode (one-off scripts and app actions): a JS module whose default
  * export receives the JSON input and returns JSON. Logs come from `console.*`,
- * files from `cloud.download`.
+ * files from `cloud.download`, view references from `cloud.view.*`.
  */
 type Script = (
   input: Json | null,

@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import type { ChartExplorerProps, ChartLegendEntry } from "./ChartExplorer";
+import type { DataTableProps } from "./DataTable";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-chart-explorer-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -50,7 +52,47 @@ describe("SSR chart exploration", () => {
     expect(html).toContain('aria-label="Copy data"');
     expect(html).toContain("data-selected");
     expect(html).toContain("--k2b-chart-selection-color:");
+    expect(html).toMatch(/<h3 [^>]*class="k2b-chart-explorer__title ?"[^>]*>Queues<\/h3>/);
   });
+  test("a chart below another heading takes the next heading level", () => {
+    const html = renderToString(() =>
+      createComponent(ChartExplorer, {
+        title: "Queues",
+        headingLevel: 4 as const,
+        data: { chart: chart(), rows },
+        columns: [{ id: "label", label: "Queue", value: (row: (typeof rows)[number]) => row.label }],
+      }),
+    );
+    expect(html).toMatch(/<h4 [^>]*class="k2b-chart-explorer__title ?"[^>]*>Queues<\/h4>/);
+    expect(html).not.toContain("<h3");
+  });
+});
+
+test("a legend wraps below the chart inside the fixed viewport and leaves with the table", () => {
+  const legend: ChartLegendEntry[] = [
+    { label: "Frontend & <api>", color: 0 },
+    { label: "Last year", color: 9, style: "dashed", reference: true },
+  ];
+  const render = (view: "chart" | "table") =>
+    renderToString(() =>
+      createComponent(ChartExplorer, {
+        title: "Latency",
+        view,
+        height: "12rem",
+        data: { chart: chart(), rows },
+        columns: [{ id: "label", label: "Queue", value: (row: (typeof rows)[number]) => row.label }],
+        legend,
+      }),
+    );
+  const html = render("chart");
+  expect(html).toContain('data-legend="true"');
+  expect(html).toContain("height:12rem");
+  expect(html).toContain('aria-label="Legend"');
+  expect(html).toContain("Frontend &amp; &lt;api>");
+  // Palette indices wrap like the renderer's eight series colors.
+  expect(html).toContain("var(--stdlib-chart-c2)");
+  expect(html).toContain('data-style="dashed"');
+  expect(render("table")).not.toContain("k2b-chart-legend");
 });
 
 test("reference glyphs and linked controls are present in the server output", async () => {
@@ -132,4 +174,111 @@ test("sortable table headers use the DataTable markers and accessible sort state
   expect(headers[1]).toContain('class="k2b-data-table__sort-icon ti ti-arrow-down"');
   expect(headers[1]).not.toContain("data-active");
   expect(html).not.toMatch(/[↑↓↕]/);
+});
+
+test("empty explorers retain the header and height with caller-owned feedback", () => {
+  const html = renderToString(() =>
+    createComponent(ChartExplorer, {
+      title: "Loading results",
+      height: "18rem",
+      empty: "View unavailable",
+      data: { chart: { kind: "bar", svg: "", width: 480, height: 280, marks: [], stretch: true }, rows: [] },
+      columns: [{ id: "n", label: "Count", value: () => "" }],
+    } satisfies ChartExplorerProps<{ key: string }>),
+  );
+  expect(html).toContain("Loading results");
+  expect(html).toContain("View unavailable");
+  expect(html).toContain("height:18rem");
+});
+
+test("caller controls render between the explorer header and its viewport", () => {
+  const html = renderToString(() =>
+    createComponent(ChartExplorer, {
+      title: "Queues",
+      data: { chart: chart(), rows },
+      columns: [{ id: "label", label: "Queue", value: (row: (typeof rows)[number]) => row.label }],
+      controls: "Reserved explorer controls",
+    }),
+  );
+  const controls = html.indexOf("Reserved explorer controls");
+  expect(controls).toBeGreaterThan(html.indexOf("</header>"));
+  expect(controls).toBeLessThan(html.indexOf('class="k2b-chart-explorer__viewport"'));
+});
+
+test("seriesLabel names the filter chip while omitted labels retain Series visibility", async () => {
+  const { ChartFilterControls } = await import("./ChartFilterControls");
+  const render = (seriesLabel?: string) =>
+    renderToString(() =>
+      createComponent(ChartFilterControls, {
+        request: {},
+        displayedRequest: {},
+        series: [{ key: "north", label: "North", color: "red" }],
+        seriesLabel,
+        onRequest: () => {},
+      }),
+    );
+  expect(render("Region")).toContain('aria-label="Region"');
+  expect(render("Region")).not.toContain("Series visibility");
+  expect(render()).toContain('aria-label="Series visibility"');
+});
+
+test("DataTable renders keyboard-accessible client sort buttons and retains server sort links", async () => {
+  const { default: DataTable } = await import("./DataTable");
+  const table = (links: boolean) =>
+    renderToString(() =>
+      createComponent(DataTable, {
+        rows: [{ id: "1", n: 1 }],
+        columns: [{ id: "n", header: "Count", value: "n", sortable: true }],
+        sort: { key: "n", direction: "asc" },
+        onSortChange: () => {},
+        ...(links ? { sortHref: () => "?sort=n" } : {}),
+      } satisfies DataTableProps<{ id: string; n: number }>),
+    );
+  expect(table(false)).toContain('<button type="button" class="k2b-data-table__header-content k2b-data-table__sort"');
+  expect(table(false)).toContain('aria-sort="ascending"');
+  expect(table(true)).toContain('<a href="?sort=n"');
+  expect(table(true)).not.toContain('<button type="button" class="k2b-data-table__header-content');
+});
+
+test("filter controls place the comparison pin between the series chip and status, with an accessible removal label", async () => {
+  const { ChartFilterControls } = await import("./ChartFilterControls");
+  const render = (referenceStep?: string, disabled = false, step: string | null = "2026") =>
+    renderToString(() =>
+      createComponent(ChartFilterControls, {
+        request: { step: step ?? undefined, referenceStep, visibleKeys: ["north"] },
+        displayedRequest: {},
+        steps: [
+          { key: "2025", label: "Previous year" },
+          { key: "2026", label: "Current year" },
+        ],
+        series: [{ key: "north", label: "North", color: "red" }],
+        compare: true,
+        disabled,
+        onRequest: () => {},
+      }),
+    );
+  const html = render();
+  expect(html).toContain("k2b-chart-explorer__pin");
+  expect(html).toContain('data-variant="secondary"');
+  expect(html).toContain("ti ti-pin");
+  expect(html).toContain("<span>Pin as reference</span>");
+  expect(html.indexOf("k2b-chart-explorer__pin")).toBeGreaterThan(html.indexOf("k2b-filter-chip"));
+  expect(html.indexOf("k2b-chart-explorer__pin")).toBeLessThan(html.indexOf("k2b-chart-explorer__status"));
+  const pinned = render("2025");
+  expect(pinned).toContain("<span>Reference: Previous year</span>");
+  expect(pinned).toContain('aria-label="Remove comparison: Previous year"');
+  expect(pinned).toContain("ti ti-x");
+  expect(pinned).not.toContain("ti ti-pin");
+  expect(render(undefined, true)).toMatch(/<button[^>]*k2b-chart-explorer__pin[^>]*disabled/);
+  expect(render(undefined, false, null)).toMatch(/<button[^>]*k2b-chart-explorer__pin[^>]*disabled/);
+});
+
+test("filter controls omit the comparison pin without steps or opt-in", async () => {
+  const { ChartFilterControls } = await import("./ChartFilterControls");
+  for (const options of [{ compare: true }, { compare: true, steps: [] }, { steps: [{ key: "year", label: "Year" }] }]) {
+    const html = renderToString(() =>
+      createComponent(ChartFilterControls, { request: { step: "year" }, displayedRequest: {}, onRequest: () => {}, ...options }),
+    );
+    expect(html).not.toContain("k2b-chart-explorer__pin");
+  }
 });

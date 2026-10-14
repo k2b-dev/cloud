@@ -24,6 +24,7 @@ import type { DiscoveredMailConfiguration } from "../../service/onboarding-disco
 import { isProviderBusy, readApiError, readApiFailure } from "./api-response";
 import { connectionEditorDialogOptions, type ProviderSettingsProps } from "./mail-provider-settings-shared";
 import { deriveDefaultSenderSetupState } from "./mail-provider-setup";
+import { senderIdentityReasonCopy } from "./mail-sender-identity-status";
 import { mailSettingsMessages } from "./mail-settings-messages";
 
 type SendingSetupIssue = { reason: string; busy: boolean };
@@ -224,7 +225,9 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
     const binding = await bindingResponse.json();
     if (!setupSenderAfterAttach) return { senderCreated: false, setupError: null, sendingIssue: null };
     try {
-      await requestDefaultSenderSetup(binding.id, abortSignal);
+      const identity = await requestDefaultSenderSetup(binding.id, abortSignal);
+      // A verification that waits behind the first synchronization runs on its own; the settings show it.
+      if (identity.pendingVerificationCommandId) return { senderCreated: false, setupError: null, sendingIssue: null };
       return { senderCreated: true, setupError: null, sendingIssue: null };
     } catch (error) {
       // Receiving is connected at this point; only the sender step failed and can be retried on its own.
@@ -339,7 +342,8 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
     mutation: (bindingId, { abortSignal }) => requestDefaultSenderSetup(bindingId, abortSignal),
     onSuccess: (identity) => {
       setSendingIssue(null);
-      toast.success(messages().readyToSend({ address: identity.fromAddress }));
+      if (identity.pendingVerificationCommandId) toast(messages().verificationQueued);
+      else toast.success(messages().readyToSend({ address: identity.fromAddress }));
       props.onWorkspaceChange();
       void props.onReload();
     },
@@ -598,7 +602,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
         }
       >
         {(connection) => (
-          <div class="group flex min-h-14 items-center gap-3 rounded-[var(--ui-radius-control)] px-2 py-2 hover:bg-[var(--ui-hover)]">
+          <div class="k2b-progressive-row flex min-h-14 items-center gap-3 rounded-[var(--ui-radius-control)] px-2 py-2 hover:bg-[var(--ui-hover)]">
             <span class="thumbnail flex h-9 w-9 shrink-0 items-center justify-center">
               <i class="ti ti-server text-secondary" aria-hidden="true" />
             </span>
@@ -657,7 +661,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                 iconOnly
                 type="button"
                 variant="ghost"
-                class="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                class="k2b-progressive-action"
                 label={messages().connectedAccountActions}
                 disabled={props.reloading || revoke.loading()}
               >
@@ -666,6 +670,14 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
             </Dropdown.Root>
           </div>
         )}
+      </Show>
+      <Show when={senderSetupState().kind === "verification-pending"}>
+        <NoticeCard
+          tone="info"
+          role="status"
+          title={senderIdentityReasonCopy("verification_pending", locale()).label}
+          detail={senderIdentityReasonCopy("verification_pending", locale()).hint}
+        />
       </Show>
       <Show
         when={visibleSendingIssue()}

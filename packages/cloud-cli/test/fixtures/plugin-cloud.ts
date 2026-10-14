@@ -1,19 +1,31 @@
 import { join } from "node:path";
-import { CLOUD_CLI_API_VERSION, type CloudCliPluginManifest, cloudCliPluginDigest, sha512Hex } from "@k2b/cloud/cli";
+import { CLOUD_CLI_API_VERSION, type CloudCliModule, type CloudCliPluginManifest, cloudCliPluginDigest, sha512Hex } from "@k2b/cloud/cli";
 
 export type ServedPlugin = { manifest: CloudCliPluginManifest; files: Map<string, Uint8Array<ArrayBuffer>> };
 
-let echoBundle: Uint8Array | undefined;
+const echoBundles = new Map<string, Uint8Array>();
 
 /**
  * The echo fixture as a Cloud application serves it. `variant` changes the
  * bundle bytes, so each variant is a different plugin version.
  */
-export const servedEchoPlugin = async (version: string, variant = version): Promise<ServedPlugin> => {
+export const servedEchoPlugin = async (
+  version: string,
+  variant = version,
+  config: Pick<CloudCliModule, "name" | "alias" | "shortcuts"> = { name: "echo" },
+): Promise<ServedPlugin> => {
+  const key = JSON.stringify(config);
+  let echoBundle = echoBundles.get(key);
   if (!echoBundle) {
-    const result = await Bun.build({ entrypoints: [join(import.meta.dir, "echo-plugin", "src", "cli.ts")], target: "bun", format: "esm" });
+    const result = await Bun.build({
+      entrypoints: [join(import.meta.dir, "served-echo.ts")],
+      target: "bun",
+      format: "esm",
+      define: { ECHO_CONFIG: key },
+    });
     if (!result.success) throw new AggregateError(result.logs, "Failed to build the echo plugin fixture.");
     echoBundle = new Uint8Array(await result.outputs[0]!.arrayBuffer());
+    echoBundles.set(key, echoBundle);
   }
   const encoder = new TextEncoder();
   const files = new Map<string, Uint8Array<ArrayBuffer>>([
@@ -24,7 +36,7 @@ export const servedEchoPlugin = async (version: string, variant = version): Prom
   return {
     manifest: {
       apiVersion: CLOUD_CLI_API_VERSION,
-      name: "echo",
+      name: config.name,
       app: "echo-app",
       version,
       entry: "cli.js",
@@ -39,6 +51,8 @@ export type PluginCloudState = {
   plugins: ServedPlugin[];
   /** Status for every plugin route instead of content, e.g. 403. */
   status?: number;
+  /** Status for the served-name listing only, leaving manifests and files available. */
+  listStatus?: number;
   /** Bytes sent instead of a file's content, keyed by path. */
   tampered?: Map<string, Uint8Array<ArrayBuffer>>;
   authorizations: string[];
@@ -72,6 +86,7 @@ export const startPluginCloud = (state: PluginCloudState) =>
       if (!authorization) return Response.json({ message: "Authentication required" }, { status: 401 });
       if (state.status) return Response.json({ message: "denied" }, { status: state.status });
       if (pathname === "/cli/plugins") {
+        if (state.listStatus) return new Response(null, { status: state.listStatus });
         return Response.json({
           plugins: state.plugins.map(({ manifest }) => ({ name: manifest.name, app: manifest.app, version: manifest.version })),
         });

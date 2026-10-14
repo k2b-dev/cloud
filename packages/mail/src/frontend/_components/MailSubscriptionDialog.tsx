@@ -27,7 +27,7 @@ import type {
   MailSubscriptionSummary,
   UnsubscribeMailingListResult,
 } from "../../contracts";
-import { MailLiveEventSchema } from "../../live-events";
+import { parseMailLiveEvent } from "../../live-event";
 import { assertCursorProgress } from "../pagination";
 import { readApiError } from "./api-response";
 import { mailSettingsMessages } from "./mail-settings-messages";
@@ -87,7 +87,7 @@ function MailSubscriptionDialog(props: {
     { mailbox: props.mailboxId },
     {
       cursor: props.liveCursor,
-      parse: (data) => MailLiveEventSchema.parse(data),
+      parse: (data) => parseMailLiveEvent(data),
       apply: () => subscriptions.invalidate(),
       resync: () => subscriptions.invalidate(),
       revoked: () => void documentNavigate("/app/mail", { replace: true }),

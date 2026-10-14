@@ -103,7 +103,7 @@ describe("DetailPanel", () => {
     const bodyRule = css.match(/\.k2b-ui \.k2b-detail-panel__body \{([^}]*)\}/)?.[1];
     const workspaceDetailRule = layoutCss.match(/\.k2b-ui \.k2b-app-workspace__detail \{([^}]*)\}/)?.[1];
 
-    expect(workspaceDetailRule).toContain("--k2b-detail-panel-scroll-inset: 0.75rem");
+    expect(workspaceDetailRule).toContain("--k2b-detail-panel-scroll-inset: 1rem");
     expect(panelRule).toContain("width: calc(100% + var(--k2b-detail-panel-scroll-inset, 0rem))");
     expect(panelRule).toContain("margin-inline-end: calc(-1 * var(--k2b-detail-panel-scroll-inset, 0rem))");
     expect(headerRule).toContain("padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem)");
@@ -246,27 +246,30 @@ describe("DetailPanel", () => {
     const actionRule = css.match(/\.k2b-ui \.k2b-button\.k2b-detail-panel__action \{([^}]*)\}/)?.[1] ?? "";
     expect(actionRule).toContain("color: var(--k2b-text-muted);");
     expect(actionRule).toContain("background: transparent;");
-    const actionHoverRule = css.match(/\.k2b-ui \.k2b-button\.k2b-detail-panel__action:not\(:disabled\):hover,[^{]+\{([^}]*)\}/)?.[1] ?? "";
+    const actionHoverRule =
+      css.match(/\.k2b-ui \.k2b-button\.k2b-detail-panel__action:not\(:disabled, \[aria-disabled="true"\]\):hover,[^{]+\{([^}]*)\}/)?.[1] ??
+      "";
     expect(actionHoverRule).toContain("color: var(--k2b-detail-panel-accent, var(--k2b-action));");
     expect(actionHoverRule).toContain("background: transparent;");
     const menuHoverRule =
-      css.match(/\.k2b-ui \.k2b-button\.k2b-detail-panel__action-menu-trigger:not\(:disabled\):hover,[^{]+\{([^}]*)\}/)?.[1] ?? "";
+      css.match(
+        /\.k2b-ui \.k2b-button\.k2b-detail-panel__action-menu-trigger:not\(:disabled, \[aria-disabled="true"\]\):hover,[^{]+\{([^}]*)\}/,
+      )?.[1] ?? "";
     expect(menuHoverRule).toContain("color: var(--k2b-detail-panel-accent, var(--k2b-action));");
     expect(menuHoverRule).toContain("background: transparent;");
-    expect(css).toMatch(/@media \(hover: hover\) and \(pointer: fine\)[\s\S]*\.k2b-detail-panel__action-menu-trigger \{[^}]*opacity: 0/);
+    expect(css).toMatch(/@media \(any-hover: hover\)[\s\S]*\.k2b-detail-panel__action-menu-trigger \{[^}]*opacity: 0/);
     expect(css).toContain(".k2b-detail-panel__action-row:focus-within .k2b-detail-panel__action-menu-trigger");
     expect(css).toContain('.k2b-detail-panel__action-menu-trigger[aria-expanded="true"]');
     // The secondary action shares the progressive reveal; touch devices without hover always see it.
-    const fineHidden =
-      css.match(/@media \(hover: hover\) and \(pointer: fine\) \{\s*\.k2b-ui \.k2b-detail-panel__action-secondary,[^{]+\{([^}]*)\}/)?.[1] ??
-      "";
-    expect(fineHidden).toContain("opacity: 0;");
+    const hoverHidden =
+      css.match(/@media \(any-hover: hover\) \{\s*\.k2b-ui \.k2b-detail-panel__action-secondary,[^{]+\{([^}]*)\}/)?.[1] ?? "";
+    expect(hoverHidden).toContain("opacity: 0;");
     expect(css).toContain(".k2b-detail-panel__action-row:hover .k2b-detail-panel__action-secondary");
     expect(css).toContain(".k2b-detail-panel__action-row:focus-within .k2b-detail-panel__action-secondary");
     expect(css).not.toMatch(/\.k2b-detail-panel__action-secondary[^{]*\{[^}]*transform/);
     const dangerRule =
       css.match(
-        /\.k2b-ui \.k2b-button\.k2b-detail-panel__action-secondary\[data-tone="danger"\]:not\(:disabled\):hover,[^{]+\{([^}]*)\}/,
+        /\.k2b-ui \.k2b-button\.k2b-detail-panel__action-secondary\[data-tone="danger"\]:not\(:disabled, \[aria-disabled="true"\]\):hover,[^{]+\{([^}]*)\}/,
       )?.[1] ?? "";
     expect(dangerRule).toContain("color: var(--k2b-danger-text);");
     const leadingRule = css.match(/\.k2b-ui \.k2b-detail-panel__action-leading \{([^}]*)\}/)?.[1] ?? "";

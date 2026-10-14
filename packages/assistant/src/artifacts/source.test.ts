@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
 import { artifactCodeHandlers } from "./code-tools";
-import { sourceDiagnostics } from "./source";
+import { lineCount, sourceDiagnostics, sourceManifest } from "./source";
 
 test("direct source tools require revisions for atomic writes", () => {
   expect(Object.keys(artifactCodeHandlers).sort()).toEqual(Object.keys(CODE_SOURCE_TOOLS).sort());
@@ -9,7 +9,8 @@ test("direct source tools require revisions for atomic writes", () => {
     CODE_SOURCE_TOOLS.code_write.input.parse({
       id: "aBc234",
       expectedRevision: 1,
-      files: [{ path: "main.ts", content: "export default !!!" }],
+      path: "main.ts",
+      content: "export default !!!",
     }),
   ).toBeDefined();
 });
@@ -32,3 +33,31 @@ test("an invalid steps.json is reported while the app is written", async () => {
   files[1] = { path: "steps.json", content: JSON.stringify([{ action: "click", target: { role: "button", name: "Add" } }]) };
   expect(await sourceDiagnostics({ entry: "index.html", files })).toEqual([]);
 });
+
+for (const [content, lines] of [
+  ["", 0],
+  ["a", 1],
+  ["a\n", 1],
+  ["a\nb", 2],
+  ["<!doctype html>\n<html>\n</html>\n", 3],
+] as const)
+  test(`source manifest counts ${lines} lines in ${JSON.stringify(content)}`, () => {
+    expect(lineCount(content)).toBe(lines);
+    const manifest = sourceManifest({
+      kind: "app",
+      id: "aBc234",
+      revision: 1,
+      sourceRevision: 1,
+      updatedAt: "2026-10-10",
+      publishedRevision: null,
+      forkedFromId: null,
+      forkedFromRevision: null,
+      icon: "",
+      publishedVersion: null,
+      title: "Lines",
+      description: "",
+      permission: "admin",
+      source: { entry: "index.html", files: [{ path: "index.html", content }] },
+    });
+    expect(manifest.files).toEqual([{ path: "index.html", lines, length: content.length }]);
+  });

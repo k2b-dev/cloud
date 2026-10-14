@@ -31,6 +31,7 @@ const MAILBOX_ID = "Box001";
 const now = "2026-10-03T10:00:00.000Z";
 
 const data: MailboxPageData = {
+  receivingAddress: null,
   mailbox: {
     id: MAILBOX_ID,
     name: "Support",
@@ -64,6 +65,7 @@ const data: MailboxPageData = {
   folderId: null,
   viewCounts: { needs_action: 0, mine: 0, unassigned: 0, waiting: 0, done: 0, snoozed: 0, send_problems: 0, recently_active: 0, kept: 0 },
   query: "",
+  search: { query: "", expression: null, sort: "relevance", error: null },
   selectedConversationId: null,
   selectedMessageId: null,
   listItems: [],

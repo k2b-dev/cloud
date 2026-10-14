@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { AI_SKILL_CATALOG_MAX_CHARS, aiSkillCatalogChars, selectAiSkillCatalog } from "./skill-catalog";
+import { AI_SKILL_CATALOG_MAX_CHARS, aiSkillCatalogChars, mergeAiSkillCatalog, selectAiSkillCatalog } from "./skill-catalog";
 
 describe("Assistant Skill catalog", () => {
   test("keeps a fitting catalog complete and in source order", () => {
@@ -23,4 +23,50 @@ describe("Assistant Skill catalog", () => {
     expect(selected.skills.some((skill) => skill.description.endsWith("…"))).toBeFalse();
     expect(aiSkillCatalogChars(selected.skills)).toBeLessThanOrEqual(AI_SKILL_CATALOG_MAX_CHARS);
   });
+});
+
+test("local Skills hide Cloud names and share the catalog budget including markers", () => {
+  const local = Array.from({ length: 12 }, (_, index) => ({
+    name: `workflow-${index}`,
+    description: "Local workflow. ".repeat(30),
+    source: "local" as const,
+  }));
+  const merged = mergeAiSkillCatalog(
+    [
+      { name: "workflow-0", description: "Hidden Cloud rules." },
+      { name: "cloud-mail", description: "Email." },
+    ],
+    local,
+  );
+  expect(merged.filter((skill) => skill.name === "workflow-0")).toEqual([local[0]!]);
+  const selected = selectAiSkillCatalog(merged, 16_000, "workflow");
+  expect(selected.omitted).toBeGreaterThan(0);
+  expect(selected.skills.some((skill) => skill.source === "local")).toBeTrue();
+  expect(aiSkillCatalogChars(selected.skills)).toBeLessThanOrEqual(16_000 * 0.02 * 4);
+  expect(aiSkillCatalogChars([{ name: "invoice", description: "Read", source: "local" }])).toBe("- invoice [local]: Read".length);
+});
+
+test("manual-only local Skills shadow Cloud names without entering the model catalog", () => {
+  const local = { name: "notes", description: "Local notes.", source: "local" as const };
+  const cloud = { name: "cloud-mail", description: "Email." };
+  expect(
+    mergeAiSkillCatalog(
+      [{ name: "invoice", description: "Cloud invoices." }, cloud],
+      [{ name: "invoice", description: "Manual invoice workflow.", source: "local", manualOnly: true }, local],
+    ),
+  ).toEqual([cloud, local]);
+  expect(mergeAiSkillCatalog([], [{ name: "manual", description: "Manual workflow.", source: "local", manualOnly: true }])).toEqual([]);
+});
+
+test("manual-only Cloud and local Skills are hidden, and local names still shadow Cloud", () => {
+  expect(
+    mergeAiSkillCatalog(
+      [
+        { name: "cloud-only", description: "Cloud", manualOnly: true },
+        { name: "shared", description: "Cloud" },
+        { name: "automatic", description: "Automatic", manualOnly: false },
+      ],
+      [{ name: "shared", description: "Local", source: "local", manualOnly: true }],
+    ),
+  ).toEqual([{ name: "automatic", description: "Automatic", manualOnly: false }]);
 });

@@ -100,7 +100,12 @@ function fixtures(permission: PermissionLevel, defaultPresentationMode: Presenta
   return { backlinks, comments, graph, versions };
 }
 
-async function requestPageData(mode?: string, path = "/app/notebooks/book01/notes/note01", actorUser: User = user) {
+async function requestPageData(
+  mode?: string,
+  path = "/app/notebooks/book01/notes/note01",
+  actorUser: User = user,
+  preferences: Record<string, unknown> = {},
+) {
   const app = new Hono<AuthContext & { Variables: { page: { title?: string } } }>();
   let result: Awaited<ReturnType<typeof loadNotebookPageData>> | undefined;
   for (const route of ["/app/notebooks/:id", "/app/notebooks/:id/notes/:noteId"]) {
@@ -111,7 +116,7 @@ async function requestPageData(mode?: string, path = "/app/notebooks/book01/note
     });
   }
   const response = await app.request(`https://cloud.example.test${path}${mode ? `?mode=${mode}` : ""}`, {
-    headers: { "Accept-Language": "de" },
+    headers: { "Accept-Language": "de", cookie: `settings-app-notebooks=${encodeURIComponent(JSON.stringify(preferences))}` },
   });
   expect(response.status).toBe(204);
   if (!result) throw new Error("Expected page data");
@@ -125,6 +130,14 @@ async function load(mode?: string, path?: string) {
 }
 
 describe("notebook page presentation authorization", () => {
+  test("the initial context reads the personal full-width cookie", async () => {
+    fixtures("write");
+    for (const preferences of [{}, { fullWidth: true }]) {
+      const data = await requestPageData("write", undefined, user, preferences);
+      if (data.kind !== "ok") throw new Error("Expected page data");
+      expect(data.ctx.fullWidth).toBe(preferences.fullWidth === true);
+    }
+  });
   test("Book notes render inside the normal Cloud workspace shell", async () => {
     fixtures("read");
     track(stubRailSnapshot());
@@ -142,7 +155,7 @@ describe("notebook page presentation authorization", () => {
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain('data-layout-authenticated="true"');
-    expect(html).toContain("AppWorkspaceController");
+    expect(html).toContain("ShellRuntime");
     expect(html).toContain("layout-content-main");
     expect(html).toContain("notebook-book-workspace");
     expect(html).toContain("<strong>handbook</strong>");

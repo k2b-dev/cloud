@@ -8,7 +8,7 @@ import type { RecordDisplayConfig } from "../../../contracts";
 import type { CustomAppBlock } from "../../../custom-apps/contracts";
 import { chartDataFromPreview, metricCellsFromPreview } from "../../../service/custom-app-insights";
 import CustomAppChart from "../../custom-app/Chart";
-import RecordsTable from "../../custom-app/RecordsTable.island";
+import RecordsTable from "../../custom-app/RecordsTable";
 import { formatCustomAppValue } from "../../custom-app/value-format";
 import FormSubmit from "../forms/PublicFormSubmit";
 import { errorMessage } from "../utils/api-helpers";
@@ -261,7 +261,7 @@ export default function CustomAppBlockPreview(props: {
         <Placeholder
           align="left"
           title={text({ value: "Form unavailable" })}
-          description={text({ value: "Choose an active Form in this Base." })}
+          description={text({ value: "Choose an active Form in this base." })}
         />
       }
     >

@@ -53,7 +53,7 @@ export const overviewMessages = i18n.define({
       nothingToday: "Nothing due today",
       nothingUpcoming: "No upcoming work",
       allCaughtUp: "You are all caught up.",
-      allSpaces: "All Spaces",
+      allSpaces: "All spaces",
       openItemCount: ({ count }: { count: number }) => `${count} open ${count === 1 ? "item" : "items"}`,
       search: "Search",
       myWork: "My work",

@@ -5,6 +5,7 @@ import { CloudError, guarded } from "./errors";
 import { createHttp } from "./http";
 import { boundMoney, chart, html } from "./lib";
 import { createPdf } from "./pdf";
+import { createViews } from "./views";
 
 type Rpc = (method: string, args?: unknown[], signal?: AbortSignal) => Promise<unknown>;
 export type RuntimeContext = { locale: string; timeZone: string; user: { id: string; name: string } | null };
@@ -14,7 +15,7 @@ type LazyModules = {
   finance: typeof import("./finance-chunk");
   "pdf-read": typeof import("./pdf-reader");
 };
-export function createCloud(rpc: Rpc, context: RuntimeContext) {
+export function createCloud(rpc: Rpc, context: RuntimeContext, script = false) {
   const chunks = new Map<keyof LazyModules, Promise<unknown>>();
   async function load<K extends keyof LazyModules>(name: K): Promise<LazyModules[K]> {
     let pending = chunks.get(name);
@@ -110,8 +111,9 @@ export function createCloud(rpc: Rpc, context: RuntimeContext) {
       },
     },
     download: createDownload(rpc),
+    view: createViews(rpc, context, script),
     html,
-    chart: (options: Parameters<typeof chart>[0]) => chart(options, context.locale),
+    chart: (options: Parameters<typeof chart>[0]) => chart(options, context.locale, context.timeZone),
     money: boundMoney(context.locale),
     pdf: { ...createPdf(rpc), read: async (file: Blob) => (await load("pdf-read")).read(file) },
     sheet: {

@@ -1,4 +1,4 @@
-import { type LiveServerMessage, LiveServerMessageSchema } from "../events/live-protocol";
+import { type LiveServerMessage, parseLiveServerMessage } from "../events/live-server-message";
 import { createLiveWebSocket, type LiveWebSocket } from "./live-websocket";
 
 export type LiveSubscriptionHandlers<T> = {
@@ -41,8 +41,7 @@ const shared = new Map<string, Shared>();
 
 const parseMessage = (raw: string): LiveServerMessage | null => {
   try {
-    const parsed = LiveServerMessageSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : null;
+    return parseLiveServerMessage(JSON.parse(raw));
   } catch {
     return null;
   }

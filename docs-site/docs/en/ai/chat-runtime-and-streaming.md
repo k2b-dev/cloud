@@ -122,7 +122,17 @@ The structured composer draft contains text, exact stored-file versions, and
 zero or more Cloud resource refs. Save it with `PUT
 /api/ai/conversations/:id/draft` and an `expectedRevision`. Identical autosaves
 are idempotent; stale writes return a conflict. Submit a turn with the returned
-`draftRevision`. The transaction consumes and clears exactly that revision, so
+`draftRevision`. Local clients may also send `client` (kind `cli` or `acp`,
+optional name, workspace `cwd`, OS, shell and local tools mode) and
+`localContext` (AGENTS.md instructions, local Skill catalog and explicitly
+selected local Skills). `localContext` without `client` returns HTTP 400.
+Both are stored in `run_config`, alongside `clientToolIds`, and preserved by
+queued messages. A message retry uses only the `client`, `localContext` and
+`clientToolIds` its request carries, so a retry from the web gets no local
+client context or local tools; it keeps the original non-local `clientToolIds`
+when the request sends none, and the original selected local Skills when a
+local client retries. Background and mandate runs do not
+receive local client context. The transaction consumes and clears exactly that revision, so
 text and attachments cannot drift between save and send.
 
 Pass `skills: ["cloud-grids"]` to attach enabled, readable Skills by exact name
@@ -188,10 +198,11 @@ durable turn action. Feedback asks the model for a replacement draft instead of
 accepting the current source. Neither result saves a domain resource or
 approves a later Capability Action such as updating or sending mail.
 
-An interactive Assistant CLI turn may additionally request the fixed
-`local_bash` client tool. It is not part of the default set: Cloud persists and
-streams its calls but has no shell executor, and browser clients neither opt in
-nor register a handler. See the local CLI boundary in
+An interactive local client may additionally request the built-in local file,
+Skill and Bash tools. They are offered only when the turn declares their
+names in `clientToolIds`; browser clients do not opt in. Cloud persists and
+streams the calls and validates their results, while the local client owns
+execution and path rules. See the local CLI boundary in
 [Tools and approvals](/en/docs/ai/tools-and-approvals#run-an-optional-tool-in-a-local-cli).
 
 Personal conversations expose the compact tool discovery and loading tools.
@@ -253,6 +264,15 @@ single user request grows too large, it can summarize completed model rounds
 inside that first loop. The newest two model rounds stay intact, and a tool call
 is never archived separately from its pending result. Archived messages remain
 available in the conversation history.
+
+Compaction streams the summary from the model provider, so the provider's
+first-byte and idle timeouts of 60 seconds each apply: the model must start
+answering within 60 seconds and must not pause for longer than 60 seconds. A
+slow model that keeps answering is not cut off. A timed-out `/compact` fails
+with reason `model_unavailable` and leaves the context as it was. When the
+automatic compaction before a model call times out, the turn continues with the
+full context. When the provider already rejected the context as too large, a
+failed compaction ends the turn.
 
 For a compact diagnostic of one owned chat, including its ordered tool calls,
 arguments, results, model profiles, errors, usage, and timing without the
@@ -375,6 +395,23 @@ approval, and frontend-tool actions. Do not put conversation and Project lists,
 metadata, Sources, files, scheduled tasks, Project context, or access changes
 into turn events. Those are durable server projections and refresh through
 [Realtime UI](/en/docs/frontend/realtime-ui).
+
+For the local client tools (`local_bash`, `local_list`, `local_read`,
+`local_upload`, `local_download`, `local_write`, `local_move`, and
+`load_local_skill`), the executor publishes and flushes the request
+immediately, then polls for a result every 10 ms for up to half a heartbeat
+interval (1.5 seconds in production). A result within that window continues in
+the same lease, without another claim or rebuilding the turn, and does not
+count as a resumed attempt. Otherwise the turn suspends and enqueues a
+continuation as before, including when the result arrives as the wait ends.
+Other client tools such as `code_open` and `code_secret`, human interactions
+such as `survey` and `text_editor`, and all approvals suspend immediately.
+
+`POST /conversations/:id/turns/:turnId/actions/:callId` validates results of
+the local client tools against their declared output schema. Invalid output
+returns HTTP 400 naming the tool and first issue; the action remains pending.
+The route limits the JSON body to two fully escaped 512 KiB Bash streams plus
+a 64 KiB envelope. Other client tools keep their existing result contract.
 
 Action responses are idempotent. Retrying the same response is safe and
 re-enqueues its continuation; a conflicting response for an already resolved
@@ -643,6 +680,22 @@ and one approved request outweighs a later one that expired. Live
 finish, without rendering a second copy of the active response.
 
 ### Failed turns
+
+When a model sends a tool call that Cloud cannot use, for example arguments
+that are not valid JSON, the chat keeps it as a failed tool step. Its error
+result asks the model to re-send the call with its exact tool name and complete,
+valid, properly escaped JSON arguments. The step appears when Cloud saves the
+response, after the other steps of that response, and stays in the same place
+after reload and in history. A provider failure keeps a partial response that
+has content, and its failed step, in history. A response that is never saved,
+for example an attempt that exceeded the context window and that compaction
+retries, or an empty response after a provider failure, shows no such step.
+Cloud never runs a malformed call, also
+when a run stopped before it saved the error result. Cloud allows at most two
+repairs per turn, also across approvals, resumes, and compaction. If the model
+sends another malformed call, the turn fails with reason `failed` and keeps the
+completed steps. Repairs do not count as tool rounds, do not acknowledge user
+steering, and do not reset its loop checks.
 
 Truncated streams and provider failures end with `loop_end` reason `error`.
 A provider that stops an answer itself ends the turn as failed with

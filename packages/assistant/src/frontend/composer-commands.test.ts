@@ -57,6 +57,7 @@ test("Skills are explicit stable references; disabled Skills are excluded", asyn
     enabled: true,
     revision: 1,
     source: null,
+    manualOnly: false,
     referenceCount: 0,
     createdAt: "",
     updatedAt: "",

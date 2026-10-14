@@ -34,6 +34,9 @@ declare global {
     mountMailList: (options: MailListHarnessOptions) => void;
     /** Replaces the list items like a live list update: rows keep their identity by id. */
     setMailItems: (items: MailListItem[]) => void;
+    /** Marks rows as leaving, as the workspace does while an action takes them out of the list. */
+    setMailLeaving: (keys: string[]) => void;
+    mailItems: () => MailListItem[];
     mailNavigations: string[];
     folderHintDismissed: boolean;
   }
@@ -89,6 +92,9 @@ window.mountMailList = (options) => {
   const [list, setList] = createStore({ items: options.items });
   const [hintFolders, setHintFolders] = createSignal(options.folderOnlyHints ?? []);
   window.setMailItems = (items) => setList("items", reconcile(items));
+  const [leaving, setLeaving] = createSignal<ReadonlySet<string>>(new Set());
+  window.setMailLeaving = (keys) => setLeaving(new Set(keys));
+  window.mailItems = () => [...list.items];
   const [selected, setSelected] = createSignal(options.selectedConversationId);
   const [detail, setDetail] = createStore(
     detailFor(
@@ -162,8 +168,10 @@ window.mountMailList = (options) => {
                   mailboxId="Box001"
                   requestUrl={requestUrl()}
                   query=""
+                  search={{ query: "", expression: null, sort: "relevance", error: null }}
                   title="Inbox"
                   items={list.items}
+                  leavingKeys={leaving()}
                   error={null}
                   selectedConversationId={selected()}
                   selectedMessageId={null}
@@ -227,6 +235,7 @@ window.mountMailList = (options) => {
                     canAdmin={false}
                     mailboxWide
                     identities={[]}
+                    onOpenDeliverySettings={noop}
                     selectionKey={detail.selectedConversationId}
                     selectedConversationId={detail.selectedConversationId}
                     selectedMessageId={null}
@@ -253,6 +262,7 @@ window.mountMailList = (options) => {
                     onToggleDetails={noop}
                     onToolbarActionsChange={noop}
                     actionPending={false}
+                    structurePending={false}
                     onAction={noop}
                     onOpenHref={noop}
                     onManageTags={noop}

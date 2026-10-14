@@ -267,7 +267,7 @@ describe("the pairing dialog in a browser", () => {
   const api = "/api/auth/pwa/v1/pairings";
 
   // One frame for the whole pairing: no step scrolls its body or changes the frame's height, in English and German,
-  // on a computer, in a narrow window with a mouse, and on phones, which get the link instead of the QR code.
+  // on a computer, in a narrow window with a mouse, and on phones. Every one of them shows the QR code.
   test("fits every step without scrolling and keeps one height", async () => {
     const results = [];
     for (const view of [desktop, { ...phone, touch: false }, phone, { width: 320, height: 568, touch: true }])
@@ -277,6 +277,7 @@ describe("the pairing dialog in a browser", () => {
         const started = new Promise<void>((resolve) => {
           release = resolve;
         });
+        let claimed = false;
         let confirmations = 0;
         const codes: string[] = [];
         const context = await browser.newContext({
@@ -313,10 +314,10 @@ describe("the pairing dialog in a browser", () => {
           if (!post && pathname === `${api}/${PAIRING}`)
             return route.fulfill({
               json: {
-                state: "claimed",
+                state: claimed ? "claimed" : "pending",
                 claimUntil: new Date(Date.now() + 300_000).toISOString(),
                 expiresAt: new Date(Date.now() + 600_000).toISOString(),
-                device: { name: "Jonas' iPhone 15 Pro", platform: "ios" },
+                device: claimed ? { name: "Jonas' iPhone 15 Pro", platform: "ios" } : null,
                 attemptsLeft: 3 - confirmations,
               },
             });
@@ -362,8 +363,15 @@ describe("the pairing dialog in a browser", () => {
           await tab.getByRole("button", { name: t.pwaPair }).click();
           await measure("starting", t.pwaPreparing);
           release();
-          await measure("link", view.touch ? t.pwaCopyOnPhone : t.pwaScanOrCopy);
+          await measure("link", t.pwaScanOrCopy);
+          // The whole code is on the screen at its full size, also on the smallest phone.
+          const qr = await tab.locator("dialog img").evaluate((image) => {
+            const box = image.getBoundingClientRect();
+            const body = image.closest(".k2b-panel-dialog__body")!.getBoundingClientRect();
+            return { width: box.width, height: box.height, inside: box.top >= body.top && box.bottom <= body.bottom };
+          });
           // The tab keeps the pairing; a reload resumes it and reads at once, and the phone has claimed it meanwhile.
+          claimed = true;
           await tab.reload();
           await measure("code", t.pwaClaimed({ name: "Jonas' iPhone 15 Pro" }));
           await enter("111111");
@@ -378,6 +386,7 @@ describe("the pairing dialog in a browser", () => {
           // Each Enter sent its whole code once.
           expect(codes).toEqual(["111111", "222222", "333333"]);
           results.push({
+            qr,
             width: view.width,
             touch: view.touch,
             lang,
@@ -390,6 +399,11 @@ describe("the pairing dialog in a browser", () => {
           await context.close();
         }
       }
-    expect(results.filter((result) => result.overflow.length || result.heights !== 1)).toEqual([]);
+    expect(
+      results.filter(
+        (result) =>
+          result.overflow.length || result.heights !== 1 || result.qr.width !== 224 || result.qr.height !== 224 || !result.qr.inside,
+      ),
+    ).toEqual([]);
   }, 120_000);
 });

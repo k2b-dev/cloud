@@ -4,8 +4,9 @@ import { ButtonLink, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, onMount, Show } from "solid-js";
 import type { MailContactDirectory } from "../../contact-directory-settings";
 import type { MailDraftSeed, SenderIdentity } from "../../contracts";
-import MailComposerPage from "./MailComposerPage.island";
+import MailComposerPage from "./MailComposerPage";
 import { mailComposerMessages } from "./mail-composer-messages";
+import type { MailComposerSignatures } from "./mail-composer-signature";
 import { readMailDraftSeed } from "./mail-draft-seed-store";
 
 export default function MailDraftSeedComposerPage(props: {
@@ -13,11 +14,14 @@ export default function MailDraftSeedComposerPage(props: {
   currentActor: { kind: "user" | "service_account"; id: string };
   seedId: string;
   identities: SenderIdentity[];
+  signatures: MailComposerSignatures;
   initialPanes: PanesLayout;
   returnHref: string;
   popout?: boolean;
   dateConfig: DateContext;
   canShareAttachments: boolean;
+  canManageMailbox: boolean;
+  currentUserEmail: string | null;
   calendarIntegrationAvailable: boolean;
   contactDirectory: MailContactDirectory;
 }) {
@@ -54,12 +58,15 @@ export default function MailDraftSeedComposerPage(props: {
             mailboxId={props.mailboxId}
             currentActor={props.currentActor}
             identities={props.identities}
+            signatures={props.signatures}
             initialSeed={value()}
             initialPanes={props.initialPanes}
             returnHref={props.returnHref}
             popout={props.popout}
             dateConfig={props.dateConfig}
             canShareAttachments={props.canShareAttachments}
+            canManageMailbox={props.canManageMailbox}
+            currentUserEmail={props.currentUserEmail}
             contactDirectory={props.contactDirectory}
             calendarIntegrationAvailable={props.calendarIntegrationAvailable}
           />

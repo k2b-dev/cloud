@@ -11,6 +11,7 @@ export function backgroundCodeRouteAllowed(path: string, method: string): boolea
     return (
       [
         "/runtime/compile",
+        "/runtime/views",
         "/runtime/check/start",
         "/runtime/check/discard",
         "/runtime/check/record",

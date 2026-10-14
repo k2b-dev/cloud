@@ -1,10 +1,23 @@
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
-import { type ConversationTriageInput, MAX_CONVERSATION_ACTION_MESSAGES, type MailCommand } from "../contracts";
+import {
+  type ActorRef,
+  type CommandState,
+  type ConversationTriageInput,
+  type ConversationTriageUndoInput,
+  type ConversationTriageUndoOutcome,
+  type ConversationTriageUndoResult,
+  conversationTriageUndoInputSchema,
+  MAX_CONVERSATION_ACTION_MESSAGES,
+  type MailCommand,
+  type MailCommandOutcome,
+} from "../contracts";
 import { requireMailboxAccess, requireVisibleConversation, requireVisibleMessages } from "./access";
-import type { MailRequestContext } from "./auth";
-import { createActorCommands } from "./commands";
+import { actorRefFromRequest, type MailRequestContext } from "./auth";
+import { commandTargetVisibleTo } from "./command-authorization";
+import { notifyCommandState, recordCommandState } from "./command-runtime";
+import { commandActorMatches, createActorCommands } from "./commands";
 import { isKeepProtectedDestination, isKeptConversation, keepError } from "./conversation-keep-rules";
 import { resolveMailExecution } from "./execution";
 import { resolveRoleFolder } from "./folders";
@@ -220,4 +233,205 @@ export const createConversationTriageCommands = async (params: {
   if (!commands.ok) return commands;
   if (copies.length > 0) mailLive.wake();
   return ok({ correlationId, commands: commands.data });
+};
+
+type TriageUndoCommand = {
+  id: string;
+  mailbox_id: string;
+  state: CommandState;
+  actor_kind: ActorRef["kind"];
+  actor_id: string | null;
+  correlation_id: string | null;
+  transport_metadata: Record<string, unknown> | string;
+  provider_effect_started_at: Date | string | null;
+  message_id: string;
+  source_folder_id: string;
+  destination_folder_id: string;
+};
+
+export const undoConversationTriageCommands = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  conversationId: string;
+  input: ConversationTriageUndoInput;
+}): Promise<Result<ConversationTriageUndoResult>> => {
+  const permission = await requireMailboxAccess(params.context, params.mailboxId, "write");
+  if (!permission.ok) return permission;
+  const visible = await requireVisibleConversation(permission.data, params.conversationId);
+  if (!visible.ok) return visible;
+  const input = conversationTriageUndoInputSchema.safeParse(params.input);
+  if (!input.success) return fail(err.badInput("Invalid command IDs"));
+  const ids = [...new Set(input.data.commandIds)];
+  const actor = actorRefFromRequest(params.context);
+  const prepared = await sql.begin(async (tx) => {
+    // Lock in a stable order, like the runtime claim, and authorize the whole request before cancelling anything.
+    const commands = await tx<TriageUndoCommand[]>`
+      SELECT c.id, c.mailbox_id, c.state, c.actor_kind, c.actor_id, c.correlation_id,
+        c.transport_metadata, c.provider_effect_started_at, ref.message_id,
+        c.target ->> 'sourceFolderId' AS source_folder_id,
+        c.target ->> 'destinationFolderId' AS destination_folder_id
+      FROM mail.commands c
+      JOIN mail.remote_message_refs ref ON ref.id = (c.target ->> 'remoteMessageRefId')::uuid
+      JOIN mail.conversation_messages link ON link.message_id = ref.message_id
+      JOIN mail.conversations conversation ON conversation.id = link.conversation_id
+      WHERE c.id = ANY(${toPgUuidArray(ids)}::uuid[])
+        AND c.mailbox_id = ${params.mailboxId}::uuid AND c.kind = 'move'
+        AND conversation.id = ${params.conversationId}::uuid
+        AND conversation.mailbox_id = ${params.mailboxId}::uuid
+        AND ${commandTargetVisibleTo(permission.data, sql`c.kind`, sql`c.target`, params.mailboxId, sql`c.id`)}
+      ORDER BY c.id
+      FOR UPDATE OF c
+    `;
+    if (commands.length !== ids.length || commands.some((command) => !commandActorMatches(command, actor))) {
+      return fail(err.notFound("Mail command"));
+    }
+    const outcomes = new Map<string, ConversationTriageUndoOutcome>();
+    for (const command of commands) {
+      let outcome: ConversationTriageUndoOutcome["outcome"];
+      if (command.state === "queued" && command.provider_effect_started_at === null) {
+        await tx`
+          UPDATE mail.commands
+          SET state = 'cancelled', finished_at = now(), last_error_code = 'UNDONE',
+            last_error_message = 'The action was undone before it ran', updated_at = now()
+          WHERE id = ${command.id}::uuid AND state = 'queued' AND provider_effect_started_at IS NULL
+        `;
+        await recordCommandState(tx, command, "cancelled", "UNDONE");
+        outcome = "cancelled";
+      } else if (command.state === "failed" || command.state === "cancelled") {
+        outcome = "not_applied";
+      } else if (command.state === "needs_attention") {
+        outcome = "unavailable";
+      } else {
+        outcome = "pending";
+      }
+      outcomes.set(command.id, { id: command.id, outcome, inverse: null });
+    }
+    return ok({ commands, outcomes });
+  });
+  if (!prepared.ok) return prepared;
+  const { commands, outcomes } = prepared.data;
+  for (const command of commands) {
+    if (outcomes.get(command.id)?.outcome === "cancelled") await notifyCommandState(command, "cancelled");
+  }
+
+  const reversible = commands.filter((command) => command.state === "confirmed" || command.state === "reconciled");
+  // A completed inverse may already have removed its source placement. Read replays before resolving a new provider copy.
+  const replays = reversible.length
+    ? await sql<
+        (MailCommandOutcome & {
+          idempotency_key: string;
+          actor_kind: ActorRef["kind"];
+          actor_id: string | null;
+          kind: string;
+          message_id: string | null;
+          source_folder_id: string | null;
+          destination_folder_id: string | null;
+        })[]
+      >`
+        SELECT c.id, c.state, c.last_error_code AS code, c.idempotency_key, c.actor_kind, c.actor_id, c.kind,
+          ref.message_id, c.target ->> 'sourceFolderId' AS source_folder_id,
+          c.target ->> 'destinationFolderId' AS destination_folder_id
+        FROM mail.commands c
+        LEFT JOIN mail.remote_message_refs ref ON ref.id = (c.target ->> 'remoteMessageRefId')::uuid
+        WHERE c.mailbox_id = ${params.mailboxId}::uuid
+          AND c.idempotency_key = ANY(${toPgTextArray(reversible.map((command) => `undo:${command.id}`))}::text[])
+          AND ${commandTargetVisibleTo(permission.data, sql`c.kind`, sql`c.target`, params.mailboxId, sql`c.id`)}
+      `
+    : [];
+  const replayByKey = new Map(replays.map((command) => [command.idempotency_key, command]));
+  const candidates = reversible.length
+    ? await sql<{ command_id: string; ref_id: string; projected: boolean }[]>`
+        SELECT original.id AS command_id, ref.id AS ref_id,
+          (ref.connector_ref ->> 'source' = 'command'
+            AND ref.connector_ref ->> 'commandId' = original.id::text) IS TRUE AS projected
+        FROM mail.commands original
+        JOIN mail.remote_message_refs ref
+          ON ref.message_id = (SELECT source.message_id FROM mail.remote_message_refs source
+            WHERE source.id = (original.target ->> 'remoteMessageRefId')::uuid)
+          AND ref.folder_id = (original.target ->> 'destinationFolderId')::uuid
+        JOIN mail.message_placements placement ON placement.remote_message_ref_id = ref.id
+        WHERE original.id = ANY(${toPgUuidArray(reversible.map((command) => command.id))}::uuid[])
+          AND ref.stale_at IS NULL AND placement.deleted_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM mail.commands other
+            WHERE other.mailbox_id = ${params.mailboxId}::uuid AND other.kind = 'move'
+              AND other.id <> original.id
+              AND other.target ->> 'remoteMessageRefId' = ref.id::text
+              AND (other.state NOT IN ('confirmed', 'reconciled', 'failed', 'cancelled', 'needs_attention')
+                OR other.idempotency_key LIKE 'undo:%')
+          )
+        ORDER BY projected DESC, placement.updated_at DESC, ref.id
+      `
+    : [];
+  const assignedRefs = new Set<string>();
+  // Reserve command-created copies first so a fallback for another move cannot take them.
+  const pinnedRefs = new Map<string, string>();
+  for (const command of reversible) {
+    if (replayByKey.has(`undo:${command.id}`)) continue;
+    const candidate = candidates.find(
+      (candidate) => candidate.command_id === command.id && candidate.projected && !assignedRefs.has(candidate.ref_id),
+    );
+    if (!candidate) continue;
+    pinnedRefs.set(command.id, candidate.ref_id);
+    assignedRefs.add(candidate.ref_id);
+  }
+  const inverseIds: string[] = [];
+  for (const command of reversible) {
+    const outcome = outcomes.get(command.id)!;
+    const idempotencyKey = `undo:${command.id}`;
+    const replay = replayByKey.get(idempotencyKey);
+    if (replay) {
+      outcome.outcome =
+        commandActorMatches(replay, actor) &&
+        replay.kind === "move" &&
+        replay.message_id === command.message_id &&
+        replay.source_folder_id === command.destination_folder_id &&
+        replay.destination_folder_id === command.source_folder_id
+          ? "reversed"
+          : "unavailable";
+      if (outcome.outcome === "reversed") outcome.inverse = { id: replay.id, state: replay.state, code: replay.code };
+      continue;
+    }
+    const refId =
+      pinnedRefs.get(command.id) ??
+      candidates.find((candidate) => candidate.command_id === command.id && !assignedRefs.has(candidate.ref_id))?.ref_id;
+    if (!refId) continue;
+    assignedRefs.add(refId);
+    const inverse = await createActorCommands({
+      context: params.context,
+      mailboxId: params.mailboxId,
+      inputs: [
+        {
+          kind: "move",
+          messageId: command.message_id,
+          remoteMessageRefId: refId,
+          sourceFolderId: command.destination_folder_id,
+          destinationFolderId: command.source_folder_id,
+          idempotencyKey,
+          correlationId: command.correlation_id ?? undefined,
+        },
+      ],
+    });
+    if (!inverse.ok) {
+      outcome.outcome =
+        inverse.error.code === "NOT_FOUND" && inverse.error.message === err.notFound("Message placement").message
+          ? "pending"
+          : "unavailable";
+      continue;
+    }
+    const created = inverse.data[0]!;
+    outcome.outcome = "reversed";
+    outcome.inverse = { id: created.id, state: created.state, code: null };
+    inverseIds.push(created.id);
+  }
+  if (inverseIds.length > 0) {
+    const inverseOutcomes = await sql<MailCommandOutcome[]>`
+      SELECT id, state, last_error_code AS code FROM mail.commands WHERE id = ANY(${toPgUuidArray(inverseIds)}::uuid[])
+    `;
+    const inverseById = new Map(inverseOutcomes.map((command) => [command.id, command]));
+    for (const outcome of outcomes.values()) {
+      if (outcome.inverse && inverseById.has(outcome.inverse.id)) outcome.inverse = inverseById.get(outcome.inverse.id)!;
+    }
+  }
+  return ok({ commands: input.data.commandIds.map((id) => outcomes.get(id)!) });
 };

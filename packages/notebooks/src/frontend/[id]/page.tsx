@@ -9,10 +9,10 @@ import BookSurface from "./_components/book/BookSurface";
 import FloatingEditButton from "./_components/book/FloatingEditButton.island";
 import NotebookDetailPanel from "./_components/detail/NotebookDetailPanel.island";
 import NoteEditor from "./_components/editor/NoteEditor.client";
+import NotePreview from "./_components/editor/NotePreview";
 import NotebookGraph from "./_components/graph/NotebookGraph.island";
 import NotebookCommands from "./_components/NotebookCommands.island";
 import RememberNotebook from "./_components/RememberNotebook.island";
-import NotebookNavigatorPane from "./_components/sidebar/NotebookNavigatorPane.island";
 import NotebookSidebar from "./_components/sidebar/NotebookSidebar.island";
 import WorkspaceEventBridge from "./_components/sidebar/WorkspaceEventBridge.island";
 import VersionHistory from "./_components/versions/VersionHistory.island";
@@ -35,8 +35,10 @@ export default ssr<AuthContext>(async (c) => {
       <Layout c={c} fullPage fullWidth title={data.notebook.name}>
         <RememberNotebook notebookId={data.notebook.id} />
         <BookSurface
+          userId={data.ctx.userId}
           notebookId={data.notebook.id}
           notebookName={data.notebook.name}
+          notebookIcon={data.notebook.icon}
           selectedNoteId={data.selectedNote?.id ?? null}
           tree={data.bookTree}
           tags={data.ctx.tags}
@@ -49,6 +51,7 @@ export default ssr<AuthContext>(async (c) => {
           appUrl={data.appUrl}
           cursor={data.ctx.workspaceCursor}
           navigationHidden={data.ctx.navigationHidden}
+          fullWidth={data.ctx.fullWidth}
         />
       </Layout>
     );
@@ -93,7 +96,7 @@ export default ssr<AuthContext>(async (c) => {
     >
       <link rel="stylesheet" href={katexStylesHref} />
       <RememberNotebook notebookId={notebook.id} />
-      <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
+      <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
         <NotebookCommands
           notebookId={notebook.id}
           notebookName={notebook.name}
@@ -109,19 +112,6 @@ export default ssr<AuthContext>(async (c) => {
 
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={false}>
-            {ctx.settings.sidebarMode === "navigator" && (
-              <AppWorkspace.MainPane
-                id="notebook-notes"
-                label={t.noteList}
-                surface="navigation"
-                defaultSize={336}
-                minSize={280}
-                maxSize={520}
-                scroll={false}
-              >
-                <NotebookNavigatorPane ctx={ctx} />
-              </AppWorkspace.MainPane>
-            )}
             {isVersionsMode && selectedNoteId ? (
               <VersionHistory
                 notebookId={notebook.id}
@@ -136,7 +126,7 @@ export default ssr<AuthContext>(async (c) => {
             ) : isGraphMode && graph ? (
               <NotebookGraph notebookId={notebook.id} selectedNoteId={selectedNoteId} graph={graph} />
             ) : selectedNote ? (
-              <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col">
+              <div class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col" data-full-width={ctx.fullWidth ? "" : undefined}>
                 {readonlyMode && (
                   <FloatingEditButton href={currentHref} mode="readonly" locked={!!selectedNote.lockedAt} canWrite={canWrite} />
                 )}
@@ -152,7 +142,7 @@ export default ssr<AuthContext>(async (c) => {
                   userId={user.id}
                   displayName={user.displayName}
                   initialSnapshot={selectedNote.yjsSnapshot}
-                  initialContent={selectedNote.contentMd}
+                  initialContent={readonlyMode && !selectedNote.yjsSnapshot ? selectedNote.contentMd : null}
                   initialPanelOpen={detailPanelOpen}
                   initialRichMode={ctx.settings.richMode}
                   readOnly={readonlyMode}
@@ -173,6 +163,11 @@ export default ssr<AuthContext>(async (c) => {
                     namedBlocks,
                   }}
                 />
+                <NotePreview
+                  text={selectedNote.yjsSnapshot || readonlyMode ? (selectedNote.contentMd ?? "") : ""}
+                  mode={ctx.settings.richMode}
+                  historyIncomplete={selectedNote.historyIncomplete}
+                />
               </div>
             ) : (
               <Placeholder
@@ -188,6 +183,7 @@ export default ssr<AuthContext>(async (c) => {
             <NotebookDetailPanel
               mode={readonlyMode ? "read" : "edit"}
               initiallyOpen={readonlyMode ? true : detailPanelOpen}
+              fullWidth={ctx.fullWidth}
               tocItems={tocItems}
               taskProgress={selectedRouteState?.taskProgress ?? { done: 0, total: 0 }}
               attachments={panelAttachments}

@@ -16,7 +16,7 @@ import { EditorState } from "@codemirror/state";
 import { drawSelection, EditorView, lineNumbers } from "@codemirror/view";
 import { markdownExtension } from "./markdown";
 import { tablesExtension } from "./tables";
-import { customLightInit, rawLightInit } from "./theme";
+import { customLightInit, rawLightInit, noteScrollerTheme } from "./theme";
 
 const doc = [
   "Für die nächsten Wochen planen wir drei feste Formate.",
@@ -30,12 +30,10 @@ const doc = [
   "",
   "Danach folgt die Abstimmung.",
 ].join("\\n");
-// The note editor's scroller inset (NoteEditor.client.tsx).
-const scroller = EditorView.theme({ ".cm-editor": { minHeight: "100%" }, ".cm-scroller": { width: "100%", minHeight: "100%", padding: "1rem" } });
 const editor = (id, extensions) =>
   new EditorView({
     parent: document.getElementById(id),
-    state: EditorState.create({ doc, selection: { anchor: doc.length }, extensions: [markdownExtension(), drawSelection(), EditorView.lineWrapping, scroller, ...extensions] }),
+    state: EditorState.create({ doc, selection: { anchor: doc.length }, extensions: [markdownExtension(), drawSelection(), EditorView.lineWrapping, noteScrollerTheme, ...extensions] }),
   });
 window.rich = editor("rich", [tablesExtension("ABC123"), customLightInit()]);
 editor("raw", [rawLightInit(), lineNumbers()]);
@@ -72,6 +70,27 @@ editor("raw", [rawLightInit(), lineNumbers()]);
 afterAll(async () => {
   await browser?.close();
   server?.stop(true);
+});
+
+test("clicking a table cell opens its source at the table start", async () => {
+  const page = await browser.newPage({ viewport: { width: 720, height: 900 } });
+  try {
+    await page.goto(server.url.href);
+    await page.locator("#rich .cm-table-widget td").first().click();
+    expect(await page.locator("#rich .cm-table-widget").count()).toBe(0);
+    const result = await page.evaluate(() => {
+      const view = (window as unknown as { rich: import("@codemirror/view").EditorView }).rich;
+      return {
+        anchor: view.state.selection.main.anchor,
+        tableStart: view.state.doc.toString().indexOf("| Format"),
+        focused: view.hasFocus,
+      };
+    });
+    expect(result.anchor).toBe(result.tableStart);
+    expect(result.focused).toBe(true);
+  } finally {
+    await page.close();
+  }
 });
 
 test("the editor table widget bleeds like the Book: flush text, one width for lines and bands, nothing clipped", async () => {
@@ -114,8 +133,8 @@ test("the editor table widget bleeds like the Book: flush text, one width for li
           flush: round(text(cells[0]!).left - prose.left),
           layout: cells.map((cell) => {
             const rect = cell.getBoundingClientRect();
-            // Page coordinates: hovering may scroll the page into view.
-            return [rect.x + window.scrollX, rect.y + window.scrollY, rect.width, rect.height];
+            // Hover may scroll the page or wrap; record layout in the wrap's content coordinates.
+            return [rect.x - box.x + wrap.scrollLeft, rect.y - box.y + wrap.scrollTop, rect.width, rect.height];
           }),
         };
       });

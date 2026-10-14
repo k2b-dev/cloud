@@ -10,7 +10,7 @@ import { browserMessages } from "./browser-messages";
 import { browseOptions, parsePreferences, viewFor } from "./browser-preferences";
 import { filesMessages } from "./messages";
 import { snapshotTitle } from "./trail";
-import { filesUrl } from "./urls";
+import { filesUrl, showsOverview } from "./urls";
 import Workspace from "./Workspace.island";
 import type { WorkspaceSnapshot } from "./workspace-state";
 
@@ -45,8 +45,10 @@ export default ssr<AuthContext>(async (c) => {
   };
   try {
     initial.bases = await filesService.bases(actor);
-    const selected =
-      requestedBase && view !== "shares"
+    const overview = showsOverview(source.searchParams, initial.bases.items.length);
+    const selected = overview
+      ? undefined
+      : requestedBase && view !== "shares"
         ? initial.bases.items.find((base) => base.id === requestedBase)
         : (initial.bases.items.find((base) => base.status === "existing") ?? initial.bases.items[0]);
     if (requestedBase && !selected && view !== "shares") throw new FilesError("not_found", 404);

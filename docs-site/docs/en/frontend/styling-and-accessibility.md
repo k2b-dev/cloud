@@ -5,7 +5,7 @@ section: Frontend
 order: 890
 description: Apply Cloud's visual and interaction rules without forking shared primitives.
 tags: [css, accessibility, themes, design]
-updated: 2026-09-29
+updated: 2026-10-12
 ---
 
 # Styling and accessibility
@@ -289,8 +289,17 @@ loading, error, and dark treatments.
   `k2b-focus-inset` to your own element that clips focusable content with
   `overflow`. Never add padding or margins so that a ring fits. See
   [Focus rings](/en/ui/focus).
-- Keep progressive actions discoverable by keyboard focus and touch when they
-  are hidden at rest on fine pointers.
+- With a mouse or trackpad, including a tablet with a mouse, keep progressive
+  actions hidden until their row is hovered, keyboard-focused, or has its menu
+  open. AppWorkspace sidebar actions also appear on the current row, and a
+  tab's close control on the selected tab. Touch-only screens always show
+  them. In your own rows, add `k2b-progressive-row` to the row and
+  `k2b-progressive-action` to the action instead of writing the rule; see
+  [Getting started](/en/ui/getting-started). Custom CSS hides them under
+  `@media (any-hover: hover)`, never `(hover: hover)`, `(hover: none)`, or
+  `(pointer: fine)`, and not with Tailwind's `hover:` or `group-hover:`
+  variants, which carry `(hover: hover)`: a tablet's primary pointer stays the
+  finger when a mouse is attached.
 - Use `InlineGuidance` for a short local hint, action error, or loading message
   while the affected content remains visible. Use its `loading` prop for inline
   progress rather than assembling a spinner and text.
@@ -360,6 +369,26 @@ animations respect reduced-motion preferences; see the
 
 Do not add `aria-grabbed` as a substitute for keyboard-operable movement and
 clear announcements.
+
+## Follow the person's theme
+
+People choose **Light**, **Dark**, or **Automatic**. Automatic is the default
+and follows the device's appearance. Cloud sets the `<html>` class to the
+resolved `light` or `dark` before the first paint. Browser code reads that
+class and observes class changes to follow live updates.
+
+On the server, `readThemeFromCookieHeader()` from `@k2b/cloud/shared` returns
+the resolved theme. For Automatic, it is only a best-effort hint: the head
+script reports the device's scheme in the `color-scheme` cookie on each page
+load and on each change, so the value can be stale when the device switched
+while no Cloud page was open, and it is `light` before the first report.
+`readThemePreferenceFromCookieHeader()` returns the choice itself: `light`,
+`dark`, or `system`. When server-rendered markup depends on the theme, read
+the preference: for `system`, render both variants and let the `<html>` class
+show one, or decide in the browser. When server work such as rendering a chart
+must match exactly, send the `<html>` class with the request. Set `page.theme`
+to fix a public display to one theme. Never read `prefers-color-scheme` in
+application CSS.
 
 ## Verify both themes and interaction modes
 

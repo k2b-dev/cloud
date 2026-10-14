@@ -51,11 +51,17 @@ const routeContext = (state: OkWorkspaceState, initialDetail: SpaceItemDetail | 
   };
 };
 
-export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateConfig?: DateContext; mailIntegrationAvailable: boolean }) {
+export default function SpacesWorkspace(props: {
+  userId?: string;
+  state: OkWorkspaceState;
+  dateConfig?: DateContext;
+  mailIntegrationAvailable: boolean;
+}) {
   const state = props.state;
   const initialDetail: SpaceItemDetail | null = state.selectedItemDetail;
   const route = routeContext(state, initialDetail, props.dateConfig);
   const sidebarContext: SpaceContext = {
+    userId: props.userId,
     space: state.space,
     columns: state.space.columns,
     tags: state.space.tags,
@@ -130,6 +136,7 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
                   view: state.calendarView,
                   date: state.calendarDate,
                   filter: state.calendarFilter,
+                  range: state.calendarRange,
                   items: state.calendarItems,
                   weather: state.calendarWeather,
                   tray: state.calendarTray,
@@ -143,6 +150,7 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
           </AppWorkspace.Main>
 
           <ItemDetailRoute
+            steppable={state.currentView !== "calendar"}
             spaceId={state.space.id}
             initialSource={route.initialHref}
             currentUserId={state.currentUserId}

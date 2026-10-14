@@ -150,6 +150,8 @@ cld --json mail forward <conversation-id> --to colleague@example.com --body "FYI
 cld --json mail send <draft-id> --wait
 ```
 
+`reply` and `forward` accept `--signature <template-id>` or `--no-signature` to choose the signature separately from the body.
+
 Both use the conversation's latest message unless `--message` names another, and the mailbox's verified default identity unless `--identity` names another. `reply --all` replies to all recipients. See [Mail compose and drafts](compose.md) for new messages, attachments, scheduling, and safety review.
 
 ## Discuss a conversation
@@ -341,6 +343,23 @@ cld --json mail identity configure \
 cld --json mail identity configure <identity-id> --vcard-file ./support.vcf
 cld --json mail identity list
 cld --json mail identity disable <identity-id> --yes
+```
+
+A new identity takes the Sent and Drafts folders that discovery found for the mailbox, unless `--sent-folder` names another one. When verification needs a Sent folder and the identity has none, Mail takes the mailbox's Sent folder too. Neither replaces a folder that is already set. `identity setup-default` differs: it sets the identity of the provider address to the mailbox's current Sent and Drafts folders.
+
+`identity list` shows in `REASON` why an identity cannot send yet. With `--json`, `statusReason` carries the same reason as a stable code, and is `null` for a verified identity:
+
+| `statusReason` | Meaning | Fix |
+| --- | --- | --- |
+| `sent_folder_missing` | No Sent folder is set, and the provider was not verified as saving sent mail itself. | `identity configure <identity-id> --sent-folder <folder-id>`, or verify with `--provider-saves-sent`. |
+| `provider_rejected` | The provider refused the last verification message. | Check the From address and delivery settings, then verify again. |
+| `verification_required` | The identity is configured and waits for verification. | `identity verify <identity-id> <binding-id> --recipient <address>` |
+| `verification_pending` | A verification waits for running provider work, such as a sync, and starts automatically. | Wait, or follow `pendingVerificationCommandId` with `command wait <command-id>`. |
+
+Verification sends its test message through the mailbox's provider connection, so it never runs at the same time as a folder sync or other provider work of the mailbox. When such work is running, `identity verify` and `identity setup-default` do not fail. The verification waits as a durable `verify_sender_identity` command and takes its turn before later syncs. The response names the command in `pendingVerificationCommandId`, and an identity that is not verified yet reports `verification_pending` until the command ended; a verified identity that you verify again stays ready meanwhile. A response with a status code of 200 therefore does not always mean that the identity is verified: check `pendingVerificationCommandId`, or pass `--wait` to wait for the command. The wait can take minutes on a large mailbox; `--timeout-seconds` bounds it and for these two commands defaults to 660 seconds, the server's 10-minute limit plus a minute for the test message. A verification that cannot start within 10 minutes fails with `SENDER_VERIFICATION_TIMEOUT` and leaves the identity unchanged; verify again. While a verification waits, the same request joins it, and a request with another binding or recipient fails with `CONFLICT`. The command's payload holds the recipient, the Sent setting, and the message language, and the audit entry of a queued verification names the person who asked for it.
+
+```bash
+cld --json mail identity verify <identity-id> <binding-id> --recipient support@example.com --wait
 ```
 
 The identity label is internal. Recipients see the display name and From address. Multiple identities may use the same From address while keeping separate Reply-to, default Cc/Bcc, format, priority, receipt requests, contact card, signature, transport, folder mappings, and verification. Recipient defaults apply only when a person creates a draft; workflows and automatic replies keep their recipients explicit. `--clear-vcard`, `--clear-default-bcc`, and the other `--clear-*` flags remove optional defaults.
@@ -551,6 +570,8 @@ cld --json mail subscription dispose news.example.org \
   --destination archive \
   --yes
 ```
+
+It selects copies like `sender move` (see the automation reference): it skips the destination, Sent, Drafts, Trash, and Junk, does not move kept conversations to Trash, and moves each Gmail message once.
 
 If `truncated` is true, wait for the queued commands to finish and repeat the command. Unsubscribing does not delete existing mail, and moving existing messages does not unsubscribe.
 

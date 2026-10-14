@@ -5,19 +5,16 @@ const composeRenderMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      mailboxStyle:
-        "The email design of this mailbox is no longer valid. Someone with Manage access can fix it with Edit design in Settings → Writing.",
       tooLarge: "This message is too large to render safely. Shorten it and try again.",
       tooManyLines: ({ limit }: { limit: number }) =>
         `A Markdown message may have at most ${limit.toLocaleString("en")} lines. Shorten it and try again.`,
       tooComplex: "This message is too complex to render safely. Shorten it or simplify its formatting.",
       tooManySignatures: ({ limit }: { limit: number }) => `A message may contain at most ${limit} signatures. Remove some and try again.`,
-      signatureFailed: "A signature in this message could not be filled in. Remove it, or check it in Settings → Writing.",
+      signatureFailed:
+        "The signature of this message could not be filled in. Choose another signature or none, or check it in Settings → Writing.",
       conversionFailed: "This message could not be converted to email. Check its formatting and try again.",
     },
     de: {
-      mailboxStyle:
-        "Das E-Mail-Design dieses Postfachs ist nicht mehr gültig. Jemand mit Zugriff „Verwalten“ kann es unter Einstellungen → Schreiben mit „Design bearbeiten“ korrigieren.",
       tooLarge: "Diese Nachricht ist zu groß, um sie sicher darzustellen. Kürze sie und versuche es erneut.",
       tooManyLines: ({ limit }) =>
         `Eine Markdown-Nachricht darf höchstens ${limit.toLocaleString("de")} Zeilen haben. Kürze sie und versuche es erneut.`,
@@ -25,7 +22,7 @@ const composeRenderMessages = i18n.define({
       tooManySignatures: ({ limit }) =>
         `Eine Nachricht darf höchstens ${limit} Signaturen enthalten. Entferne einige und versuche es erneut.`,
       signatureFailed:
-        "Eine Signatur in dieser Nachricht konnte nicht ausgefüllt werden. Entferne sie oder prüfe sie unter Einstellungen → Schreiben.",
+        "Die Signatur dieser Nachricht konnte nicht ausgefüllt werden. Wähle eine andere oder keine Signatur, oder prüfe sie unter Einstellungen → Schreiben.",
       conversionFailed: "Diese Nachricht konnte nicht in eine E-Mail umgewandelt werden. Prüfe die Formatierung und versuche es erneut.",
     },
   },

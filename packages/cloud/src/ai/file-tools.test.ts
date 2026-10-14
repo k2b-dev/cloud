@@ -1,13 +1,15 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   CloudAiReadFileOutputSchema,
   createCloudAiListFilesTool,
+  createCloudAiPresentTool,
   createCloudAiReadFileTool,
   createCloudAiWriteFileTool,
   evaluateAiDate,
   evaluateAiMath,
 } from "./file-tools";
-import { aiFileStore } from "./files-store";
+import { type AiFileStat, aiFileStore } from "./files-store";
+import { createCloudAiViewImageTool } from "./vision-tool";
 
 const bytes = (value: string): Uint8Array => new TextEncoder().encode(value);
 
@@ -33,7 +35,34 @@ const projectFiles = {
 };
 
 const toolContext = {
-  actor: { kind: "user" as const, user: { id: "user-1" } },
+  actor: {
+    kind: "user" as const,
+    user: {
+      id: "user-1",
+      uid: "test",
+      roles: [],
+      provider: "local" as const,
+      profile: "user" as const,
+      givenname: "Test",
+      sn: "User",
+      displayName: "Test User",
+      mail: null,
+      avatarHash: null,
+      ipa: null,
+      accountExpires: null,
+      lastLoginLocal: null,
+      memberofGroup: [],
+      memberofGroupIds: [],
+      manages: [],
+      managesGroupIds: [],
+    },
+  },
+  requestApproval: async () => {
+    throw new Error("Unexpected approval");
+  },
+  requestClientTool: async () => {
+    throw new Error("Unexpected client tool");
+  },
   conversationId: "conversation-1",
   projectFiles,
   signal: new AbortController().signal,
@@ -336,4 +365,104 @@ describe("AI calculate tool", () => {
     expect(evaluateAiDate("today", "Europe/Copenhagen", new Date("2026-03-01T01:00:00Z"))).toBe("2026-03-01");
     expect(() => evaluateAiDate("03/01/2026 + 1 day")).toThrow("ISO date");
   });
+});
+
+test("model writes cannot overwrite or append to the views namespace", async () => {
+  const write = createCloudAiWriteFileTool();
+  if (write.location !== "server") throw new Error("Expected server tool");
+  for (const mode of ["overwrite", "append"] as const)
+    for (const path of ["/views", "/views/result.view.json", "views/result.txt"]) {
+      await expect(write.run({ path, mode, content: "{}" }, toolContext)).rejects.toThrow(
+        "The /views folder holds views that code runs create with cloud.view.*; choose another path.",
+      );
+    }
+});
+
+test("present adds only summaries of valid assistant view files", async () => {
+  const present = createCloudAiPresentTool();
+  expect(present.def.description).toContain("shows inline as its chart, group, table, stats or details view");
+  if (present.location !== "server") throw new Error("Expected server tool");
+  const valid = { view: "table", title: "Rows", columns: [{ id: "n", type: "number" }], rows: [{ n: 42 }] };
+  for (const [path, origin, content, size, summary] of [
+    ["/views/a.view.json", "assistant", JSON.stringify(valid), 100, true],
+    ["/views/a.view.json", "user", JSON.stringify(valid), 100, false],
+    ["/other/a.view.json", "assistant", JSON.stringify(valid), 100, false],
+    ["/views/a.json", "assistant", JSON.stringify(valid), 100, false],
+    ["/views/a.view.json", "assistant", "{", 1, false],
+    ["/views/a.view.json", "assistant", JSON.stringify({ ...valid, rows: [{ n: "bad" }] }), 100, false],
+    ["/views/a.view.json", "assistant", JSON.stringify(valid), 1024 * 1024 + 1, false],
+  ] as const) {
+    const stat = { path, origin, size, mediaType: "application/json", version: 1, updatedAt: "" };
+    const statSpy = spyOn(aiFileStore, "stat").mockResolvedValue(stat);
+    const readSpy = spyOn(aiFileStore, "read").mockResolvedValue({ ...stat, bytes: bytes(content) });
+    try {
+      const result = await present.run({ path }, toolContext);
+      if (summary) expect(result).toMatchObject({ view: { view: "table", title: "Rows", rows: 1, columns: 1, footer: false } });
+      else expect(result).not.toHaveProperty("view");
+      expect(JSON.stringify(result)).not.toContain("42");
+    } finally {
+      statSpy.mockRestore();
+      readSpy.mockRestore();
+    }
+  }
+});
+
+test("missing chat paths guide local clients to upload before read_file and view_image", async () => {
+  const stat = spyOn(aiFileStore, "readSliceWithStat").mockResolvedValue(null);
+  const read = spyOn(aiFileStore, "read").mockResolvedValue(null);
+  try {
+    for (const tool of [createCloudAiReadFileTool(), createCloudAiViewImageTool()]) {
+      if (tool.location !== "server") throw new Error("Expected server tool");
+      const input = { path: "/local.txt", offset: 0, length: 1024 };
+      await expect(tool.run(input, { ...toolContext, localToolsEnabled: true })).rejects.toThrow(
+        "No such file: /local.txt This is a chat path. Upload local files with local_upload first.",
+      );
+      await expect(tool.run(input, toolContext)).rejects.toThrow(/^No such file: \/local.txt$/);
+    }
+  } finally {
+    stat.mockRestore();
+    read.mockRestore();
+  }
+});
+
+test("present revalidates explorer files and returns control flags without dataset values", async () => {
+  const present = createCloudAiPresentTool();
+  if (present.location !== "server") throw new Error("Expected server tool");
+  const path = "/views/inventory-12345678.view.json";
+  const view = {
+    view: "explorer",
+    title: "Inventory",
+    columns: [
+      { id: "product", type: "text" },
+      { id: "stock", type: "number" },
+    ],
+    rows: [{ product: "A", stock: 42 }],
+    views: [{ id: "stock", label: "Stock", kind: "bar", x: "product", y: "stock" }],
+    controls: { filter: "product" },
+  };
+  const stat: AiFileStat = { path, origin: "assistant", size: 500, mediaType: "application/json", version: 1, updatedAt: "" };
+  const statSpy = spyOn(aiFileStore, "stat").mockResolvedValue(stat);
+  const readSpy = spyOn(aiFileStore, "read");
+  try {
+    readSpy.mockResolvedValue({ ...stat, bytes: bytes(JSON.stringify(view)) });
+    const result = await present.run({ path }, toolContext);
+    expect(result).toMatchObject({
+      view: {
+        view: "explorer",
+        title: "Inventory",
+        rows: 1,
+        columns: 2,
+        views: [{ id: "stock", label: "Stock", kind: "bar" }],
+        step: false,
+        filter: true,
+        compare: false,
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("42");
+    readSpy.mockResolvedValue({ ...stat, bytes: bytes(JSON.stringify({ ...view, controls: { filter: "missing" } })) });
+    expect(await present.run({ path }, toolContext)).not.toHaveProperty("view");
+  } finally {
+    statSpy.mockRestore();
+    readSpy.mockRestore();
+  }
 });

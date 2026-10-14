@@ -8,6 +8,8 @@ import type {
 } from "@k2b/cloud/workflows";
 import { z } from "zod";
 import { contactResolveMatchSchema, normalizedContactEmailSchema } from "./app-integration-contracts";
+import { MAX_COMMAND_OUTCOME_IDS, MAX_CONVERSATION_ACTION_MESSAGES } from "./command-outcomes";
+import { RESOURCE_SHORT_ID_PATTERN } from "./resource-short-id";
 
 export const DEFAULT_CONVERSATION_REFERENCE_PATTERN = "REF-{{ short_id }}";
 /** Upper bound for one multi-conversation request; the list selection shares it. */
@@ -20,10 +22,7 @@ export const MAIL_CONVERSATION_ASSIGNEE_LIMIT = 20;
  */
 export const MAX_MAILBOX_PREFERENCES = 200;
 
-export const ResourceShortIdSchema = z
-  .string()
-  .regex(/^[0-9A-Za-z]{6}$/)
-  .describe("Stable 6-character resource ID");
+export const ResourceShortIdSchema = z.string().regex(RESOURCE_SHORT_ID_PATTERN).describe("Stable 6-character resource ID");
 
 export const messageInspectorHeaderSchema = z
   .object({
@@ -205,6 +204,20 @@ export const mailingListDispositionInputSchema = z
   })
   .strict();
 export type MailingListDispositionInput = z.infer<typeof mailingListDispositionInputSchema>;
+
+export const senderDispositionInputSchema = z
+  .object({
+    match: z.enum(["sender", "domain"]),
+    value: z.string().trim().min(1).max(320),
+    destination: z.enum(["archive", "trash"]).optional(),
+    folderId: ResourceShortIdSchema.optional(),
+    idempotencyKey: z.string().uuid(),
+  })
+  .strict()
+  .refine((input) => (input.destination !== undefined) !== (input.folderId !== undefined), {
+    message: "Choose exactly one destination or folderId",
+  });
+export type SenderDispositionInput = z.infer<typeof senderDispositionInputSchema>;
 
 export const mailingListDispositionResultSchema = z
   .object({
@@ -591,6 +604,31 @@ export const mailboxOperationalHealthSchema = z.object({
   }),
 });
 export type MailboxOperationalHealth = z.infer<typeof mailboxOperationalHealthSchema>;
+
+export const mailSyncRunStateSchema = z.enum(["running", "completed", "failed", "cancelled", "stale_fence"]);
+export type MailSyncRunState = z.infer<typeof mailSyncRunStateSchema>;
+
+/** One attempt to synchronize a folder batch, as an operator needs it to tell retries from a real problem. */
+export const mailSyncRunSchema = z
+  .object({
+    kind: z.string(),
+    state: mailSyncRunStateSchema,
+    folderId: ResourceShortIdSchema.nullable(),
+    folderPath: z.string().nullable(),
+    errorCode: z.string().nullable(),
+    startedAt: z.string().datetime(),
+    finishedAt: z.string().datetime().nullable(),
+  })
+  .strict();
+export type MailSyncRun = z.infer<typeof mailSyncRunSchema>;
+
+export const mailSyncRunPageSchema = z
+  .object({
+    items: z.array(mailSyncRunSchema),
+    nextCursor: z.string().nullable(),
+  })
+  .strict();
+export type MailSyncRunPage = z.infer<typeof mailSyncRunPageSchema>;
 
 export const attachmentLinkSchema = z.object({
   id: z.string().uuid(),
@@ -1137,6 +1175,7 @@ export const commandKindSchema = z.enum([
   "reconcile_effect",
   "retry_command",
   "cancel_command",
+  "verify_sender_identity",
 ]);
 export type CommandKind = z.infer<typeof commandKindSchema>;
 
@@ -1235,8 +1274,7 @@ export const messageStateChangeSchema = z
   });
 export type MessageStateChange = z.infer<typeof messageStateChangeSchema>;
 
-/** The most provider messages one conversation action may change. */
-export const MAX_CONVERSATION_ACTION_MESSAGES = 500;
+export { MAX_CONVERSATION_ACTION_MESSAGES } from "./command-outcomes";
 
 const conversationTriageMessageIdsSchema = z
   .array(ResourceShortIdSchema)
@@ -1275,6 +1313,11 @@ export const conversationTriageInputSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 export type ConversationTriageInput = z.infer<typeof conversationTriageInputSchema>;
+
+export const conversationTriageUndoInputSchema = z
+  .object({ commandIds: z.array(z.uuid()).min(1).max(MAX_CONVERSATION_ACTION_MESSAGES) })
+  .strict();
+export type ConversationTriageUndoInput = z.infer<typeof conversationTriageUndoInputSchema>;
 
 export const actorCommandInputSchema = z.discriminatedUnion("kind", [
   actorCommandBaseSchema.extend({
@@ -1419,8 +1462,7 @@ export const mailCommandSchema = z.object({
 });
 export type MailCommand = z.infer<typeof mailCommandSchema>;
 
-/** At most this many commands per outcome request, the same ceiling as one page of a Mail list. */
-export const MAX_COMMAND_OUTCOME_IDS = 100;
+export { MAX_COMMAND_OUTCOME_IDS } from "./command-outcomes";
 export const mailCommandOutcomesInputSchema = z.object({ commandIds: z.array(z.uuid()).min(1).max(MAX_COMMAND_OUTCOME_IDS) }).strict();
 export const mailCommandOutcomeSchema = z.object({
   id: z.uuid(),
@@ -1429,6 +1471,16 @@ export const mailCommandOutcomeSchema = z.object({
   code: z.string().nullable(),
 });
 export type MailCommandOutcome = z.infer<typeof mailCommandOutcomeSchema>;
+
+export const conversationTriageUndoOutcomeSchema = z.object({
+  id: z.uuid(),
+  outcome: z.enum(["cancelled", "reversed", "pending", "not_applied", "unavailable"]),
+  /** Only a reversed action has an inverse command for the client to follow. */
+  inverse: mailCommandOutcomeSchema.nullable(),
+});
+export type ConversationTriageUndoOutcome = z.infer<typeof conversationTriageUndoOutcomeSchema>;
+export const conversationTriageUndoResultSchema = z.object({ commands: z.array(conversationTriageUndoOutcomeSchema) });
+export type ConversationTriageUndoResult = z.infer<typeof conversationTriageUndoResultSchema>;
 
 export const operatorActionKindSchema = z.enum([
   "sync_mailbox",
@@ -2123,15 +2175,6 @@ export const automaticReplyPreviewInputSchema = z
   });
 export type AutomaticReplyPreviewInput = z.infer<typeof automaticReplyPreviewInputSchema>;
 
-export const automaticReplyPreviewSchema = z
-  .object({
-    subject: z.string(),
-    html: z.string(),
-    text: z.string(),
-  })
-  .strict();
-export type AutomaticReplyPreview = z.infer<typeof automaticReplyPreviewSchema>;
-
 export const createAutomaticReplySetupSchema = z
   .object({
     automaticReply: createAutomaticReplyConfigurationSchema,
@@ -2172,14 +2215,14 @@ export type SenderMatchKind = z.infer<typeof senderMatchKindSchema>;
 export const mailAutomationMatchModeSchema = z.enum(["all", "any"]);
 export type MailAutomationMatchMode = z.infer<typeof mailAutomationMatchModeSchema>;
 
-export const mailAutomationTextOperatorSchema = z.enum(["is", "contains", "starts_with", "ends_with"]);
+export const mailAutomationTextOperatorSchema = z.enum(["is", "contains", "not_contains", "starts_with", "ends_with"]);
 export type MailAutomationTextOperator = z.infer<typeof mailAutomationTextOperatorSchema>;
 
 const mailAutomationTextValueSchema = z.string().trim().min(1).max(1_000);
 
 export const mailAutomationConditionSchema = z.discriminatedUnion("field", [
-  z.object({ field: z.literal("sender_address"), operator: z.literal("is"), value: z.string().trim().min(1).max(320) }).strict(),
-  z.object({ field: z.literal("sender_domain"), operator: z.literal("is"), value: z.string().trim().min(1).max(253) }).strict(),
+  z.object({ field: z.literal("sender_address"), operator: z.enum(["is", "is_not"]), value: z.string().trim().min(1).max(320) }).strict(),
+  z.object({ field: z.literal("sender_domain"), operator: z.enum(["is", "is_not"]), value: z.string().trim().min(1).max(253) }).strict(),
   z.object({ field: z.literal("subject"), operator: mailAutomationTextOperatorSchema, value: mailAutomationTextValueSchema }).strict(),
   z.object({ field: z.literal("body_text"), operator: mailAutomationTextOperatorSchema, value: mailAutomationTextValueSchema }).strict(),
   z.object({ field: z.literal("attachment_presence"), operator: z.literal("is"), value: z.boolean() }).strict(),
@@ -2508,9 +2551,9 @@ const addAutomationStepIssues = (steps: MailAutomationStep[], context: z.Refinem
   };
   visit(steps, new Map(), ["steps"], 0);
 
-  type ActionState = { providerMutation: boolean; assigned: boolean; statusSet: boolean; summarySet: boolean; tagIds: Set<string> };
+  type ActionState = { placed: boolean; assigned: boolean; statusSet: boolean; summarySet: boolean; tagIds: Set<string> };
   const actionStateKey = (state: ActionState): string =>
-    `${state.providerMutation}:${state.assigned}:${state.statusSet}:${state.summarySet}:${[...state.tagIds].sort().join(",")}`;
+    `${state.placed}:${state.assigned}:${state.statusSet}:${state.summarySet}:${[...state.tagIds].sort().join(",")}`;
   const uniqueStates = (states: ActionState[]): ActionState[] => [
     ...new Map(states.map((state) => [actionStateKey(state), state])).values(),
   ];
@@ -2521,11 +2564,10 @@ const addAutomationStepIssues = (steps: MailAutomationStep[], context: z.Refinem
       if (step.kind === "mail_action") {
         const providerMutation = ["junk", "trash", "mark_read", "add_keyword", "move_to_folder"].includes(step.action.kind);
         for (const state of states) {
-          if (providerMutation && state.providerMutation) {
+          if (providerMutation && state.placed) {
             context.addIssue({
               code: "custom",
-              message:
-                "Another step on this path already changes the message on the provider; keep one, or put them in the then and else branches of one if",
+              message: "Put Mark as read and keyword changes before moving the message; one reachable path can move only once",
               path: [...stepPath, "action"],
             });
           }
@@ -2545,7 +2587,7 @@ const addAutomationStepIssues = (steps: MailAutomationStep[], context: z.Refinem
         }
         states = uniqueStates(
           states.map((state) => ({
-            providerMutation: state.providerMutation || providerMutation,
+            placed: state.placed || ["junk", "trash", "move_to_folder"].includes(step.action.kind),
             assigned: state.assigned || step.action.kind === "assign_user",
             statusSet: state.statusSet || step.action.kind === "set_status",
             summarySet: state.summarySet,
@@ -2574,11 +2616,7 @@ const addAutomationStepIssues = (steps: MailAutomationStep[], context: z.Refinem
     });
     return states;
   };
-  validateActionPaths(
-    steps,
-    [{ providerMutation: false, assigned: false, statusSet: false, summarySet: false, tagIds: new Set() }],
-    ["steps"],
-  );
+  validateActionPaths(steps, [{ placed: false, assigned: false, statusSet: false, summarySet: false, tagIds: new Set() }], ["steps"]);
 
   if (total > 40) context.addIssue({ code: "custom", message: "An automation can have at most 40 steps", path: ["steps"] });
   if (aiCalls > 10) context.addIssue({ code: "custom", message: "An automation can make at most 10 AI calls", path: ["steps"] });
@@ -2660,6 +2698,7 @@ export const startIncomingAutomationBackfillInputSchema = z
   .object({
     operationId: z.string().uuid(),
     expectedRevision: z.number().int().positive(),
+    retryFailed: z.boolean().optional(),
   })
   .strict();
 export type StartIncomingAutomationBackfillInput = z.infer<typeof startIncomingAutomationBackfillInputSchema>;
@@ -2669,11 +2708,20 @@ export const incomingAutomationBackfillSchema = z
     operationId: z.string().uuid(),
     automationId: ResourceShortIdSchema,
     workflowVersionId: z.string().uuid(),
+    retryFailed: z.boolean(),
     /** `limited`: the run applied its per-run limit and `remainingCount` candidates still need another backfill. */
     state: z.enum(["queued", "running", "waiting", "completed", "limited", "failed", "canceled"]),
+    /**
+     * Frozen at start: matching messages up to the cutoff. Retry candidates are messages whose latest
+     * run of this version ended failed or canceled before the backfill started; runs that fail later
+     * are left for the next retry backfill.
+     */
     candidateCount: z.number().int().nonnegative(),
+    /** Candidates already handed over at start; frozen and always zero in retry mode. */
     alreadyAcceptedCount: z.number().int().nonnegative(),
+    /** Messages this operation handed over (re-ran in retry mode); never decreases. */
     newlyAcceptedCount: z.number().int().nonnegative(),
+    /** Candidates this operation has not handed over yet. */
     remainingCount: z.number().int().nonnegative(),
     failureCount: z.number().int().nonnegative(),
     lastError: z.string().nullable(),
@@ -2760,6 +2808,47 @@ export const conversationPresenceLeaveSchema = z.object({ peerId: z.string().uui
 
 export const draftLeaseTokenSchema = z.object({ token: z.string().uuid() }).strict();
 
+/** At most this many distinct removals are reported; a longer list adds nothing for the author. */
+export const MAX_COMPOSE_FORMATTING_WARNINGS = 20;
+
+/**
+ * Formatting the email renderer leaves out: unsupported HTML elements, attributes or links in a Markdown
+ * message, or parts of a stored mailbox design that no longer pass the CSS check.
+ */
+export const composeFormattingWarningSchema = z.discriminatedUnion("code", [
+  z
+    .object({
+      code: z.enum(["unsupported_element", "unsupported_attribute", "unsupported_link"]),
+      element: z.string().max(64).describe("HTML element name, such as small or span."),
+      attribute: z.string().max(64).optional().describe("Removed attribute, such as class or style, for unsupported_attribute."),
+    })
+    .strict(),
+  z
+    .object({
+      code: z.literal("ignored_mailbox_css"),
+      property: z
+        .string()
+        .max(64)
+        .optional()
+        .describe(
+          "CSS property of the mailbox email design whose value email ignores, such as font-family, or an at-rule such as @media. Absent when the whole design is ignored.",
+        ),
+    })
+    .strict(),
+]);
+export type ComposeFormattingWarning = z.infer<typeof composeFormattingWarningSchema>;
+export const composeFormattingWarningsSchema = z.array(composeFormattingWarningSchema).max(MAX_COMPOSE_FORMATTING_WARNINGS);
+
+export const automaticReplyPreviewSchema = z
+  .object({
+    subject: z.string(),
+    html: z.string(),
+    text: z.string(),
+    formattingWarnings: composeFormattingWarningsSchema,
+  })
+  .strict();
+export type AutomaticReplyPreview = z.infer<typeof automaticReplyPreviewSchema>;
+
 export const composeTemplateKindSchema = z.enum(["signature", "snippet"]);
 export type ComposeTemplateKind = z.infer<typeof composeTemplateKindSchema>;
 
@@ -2772,6 +2861,21 @@ export const composeTemplateShortcutSchema = z
   .min(1)
   .max(40)
   .regex(/^[a-z][a-z0-9_]*$/, "Shortcut must start with a letter and use lowercase letters, numbers, or underscores");
+
+/** The validator, CLI help, and documentation tests read this list. */
+export const composeTemplateVariables = {
+  "actor.display_name":
+    'Name of the person who previews or sends the message, or inserts the snippet; a user-bound service account uses the name of its user, another service account its own name, other automations "Mailbox automation"',
+  "actor.email": "Email address of the person in actor.display_name; empty when there is none",
+  "sender.display_name": "Display name of the sender identity, or its address when it has no name",
+  "sender.email": "From address of the sender identity",
+  "sender.reply_to": "Reply-To address of the sender identity; empty when not set",
+  "mailbox.name": "Mailbox name",
+  "mailbox.description": "Mailbox description; empty when not set",
+  "message.subject": "Subject of the draft",
+  "message.to": "List of To addresses",
+  "message.cc": "List of Cc addresses",
+} as const satisfies Record<string, string>;
 
 export const composeTemplateSchema = z.object({
   id: ResourceShortIdSchema,
@@ -2786,6 +2890,8 @@ export const composeTemplateSchema = z.object({
   archivedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  /** Returned by create and update only. */
+  formattingWarnings: composeFormattingWarningsSchema.optional(),
 });
 export type ComposeTemplate = z.infer<typeof composeTemplateSchema>;
 
@@ -2837,6 +2943,7 @@ export const setComposeSignatureDefaultInputSchema = z
 export type SetComposeSignatureDefaultInput = z.infer<typeof setComposeSignatureDefaultInputSchema>;
 
 export const mailboxComposeStyleSchema = z.object({
+  formattingWarnings: composeFormattingWarningsSchema,
   mailboxId: ResourceShortIdSchema,
   customCss: z.string(),
   revision: z.number().int().positive(),
@@ -2922,6 +3029,29 @@ export const senderIdentityTransportSchema = z.object({
 });
 export type SenderIdentityTransport = z.infer<typeof senderIdentityTransportSchema>;
 
+/**
+ * Why a sender identity cannot send yet, as a stable code that clients translate; `null` once it is verified.
+ * `sent_folder_missing`: no Sent folder is set and the provider was not verified as saving sent mail itself.
+ * `provider_rejected`: the provider refused the last verification message.
+ * `verification_required`: the identity is configured and waits for a verification message.
+ * `verification_pending`: a verification waits until provider work on the mailbox, such as a sync, lets it run.
+ * A verified identity that is verified again keeps `null`; `pendingVerificationCommandId` names its waiting verification.
+ */
+export const senderIdentityStatusReasonSchema = z.enum([
+  "sent_folder_missing",
+  "provider_rejected",
+  "verification_required",
+  "verification_pending",
+]);
+export type SenderIdentityStatusReason = z.infer<typeof senderIdentityStatusReasonSchema>;
+
+/**
+ * How long a sender verification may wait behind provider work before it fails with
+ * `SENDER_VERIFICATION_TIMEOUT`: as long as a requested folder sync counts, which outlasts a long
+ * sync batch and a few retries. Clients that wait for a queued verification wait as long.
+ */
+export const SENDER_VERIFICATION_WAIT_MS = 10 * 60_000;
+
 export const senderIdentitySchema = z.object({
   id: ResourceShortIdSchema,
   mailboxId: ResourceShortIdSchema,
@@ -2944,6 +3074,9 @@ export const senderIdentitySchema = z.object({
   draftsFolderId: ResourceShortIdSchema.nullable(),
   isDefault: z.boolean(),
   status: z.enum(["unverified", "verified", "rejected", "disabled"]),
+  statusReason: senderIdentityStatusReasonSchema.nullable(),
+  /** The `verify_sender_identity` command that waits behind provider work for this identity, or `null`. */
+  pendingVerificationCommandId: z.string().uuid().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -3063,7 +3196,9 @@ export const draftSchema = z.object({
   revision: z.number().int().positive(),
   state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
   deliveryClass: draftDeliveryClassSchema,
-  initialSignatureSource: z.string().nullable().optional(),
+  signatureTemplateId: ResourceShortIdSchema.nullable(),
+  /** Returned by create and update only. */
+  formattingWarnings: composeFormattingWarningsSchema.optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -3133,6 +3268,11 @@ export type CancelScheduledSendResult = z.infer<typeof cancelScheduledSendResult
 export const draftEditableContentInputSchema = z
   .object({
     senderIdentityId: ResourceShortIdSchema.describe("Verified sender-identity ID."),
+    signatureTemplateId: ResourceShortIdSchema.nullable()
+      .optional()
+      .describe(
+        "Signature template shown after the body, or null for none. On create, omit it to use the sender's default signature; on update, omit it to keep the current choice.",
+      ),
     to: z.array(mailAddressSchema).max(200).default([]).describe("Primary recipients."),
     cc: z.array(mailAddressSchema).max(200).default([]).describe("Carbon-copy recipients."),
     bcc: z.array(mailAddressSchema).max(200).default([]).describe("Blind-carbon-copy recipients."),
@@ -3222,7 +3362,6 @@ export const mailDraftSeedSchema = z
     derivationKind: draftDerivationKindSchema.nullable(),
     content: draftEditableContentInputSchema,
     attachments: z.array(draftAttachmentSchema),
-    initialSignatureSource: z.string().nullable(),
     origin: draftSeedOriginSchema,
     createdAt: z.string().datetime(),
   })
@@ -3271,6 +3410,7 @@ export type ComposePreviewInput = z.input<typeof composePreviewInputSchema>;
 export const composePreviewSchema = z.object({
   html: z.string(),
   text: z.string(),
+  formattingWarnings: composeFormattingWarningsSchema,
 });
 export type ComposePreview = z.infer<typeof composePreviewSchema>;
 

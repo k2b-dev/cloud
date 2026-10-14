@@ -25,6 +25,7 @@ import { requireMailboxPermission } from "./access";
 import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext } from "./auth";
 import { cancelPendingAutomaticRepliesInTransaction } from "./automatic-reply";
 import { requireAutomaticReplyManagementPermission } from "./automatic-reply-access";
+import { previewFormattingWarnings } from "./compose-renderer";
 import { renderComposeDraft } from "./compose-templates";
 import {
   type ConversationReferenceConfiguration,
@@ -217,6 +218,7 @@ export const previewAutomaticReply = async (params: {
     subject: subject.data,
     html: rendered.data.html ?? `<pre>${escapePreviewHtml(rendered.data.text)}</pre>`,
     text: rendered.data.text,
+    formattingWarnings: previewFormattingWarnings(rendered.data.formattingWarnings, input.body, input.format),
   });
 };
 

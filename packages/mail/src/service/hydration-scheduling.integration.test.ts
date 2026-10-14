@@ -287,7 +287,7 @@ suite("mail body hydration scheduling", () => {
                 },
               })
             : Readable.from([source]);
-          await consume({ ...request, expectedSize: Buffer.byteLength(source), stream });
+          if ((await consume({ ...request, expectedSize: Buffer.byteLength(source), stream })) === "stop") break;
         }
       }),
     );

@@ -1,6 +1,7 @@
 import { CapabilitySemanticLinkSchema, CloudResourceViewSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import {
+  composeFormattingWarningsSchema,
   composeSafetyApprovalSchema,
   composeSafetyReviewSchema,
   draftEditableContentInputSchema,
@@ -610,6 +611,7 @@ const DraftAttachmentDataSchema = z
 export const DraftDataSchema = z
   .object({
     id: ResourceShortIdSchema,
+    signatureTemplateId: ResourceShortIdSchema.nullable(),
     mailboxId: ResourceShortIdSchema,
     conversationId: ResourceShortIdSchema.nullable(),
     intent: z.enum(["new", "reply", "reply_all", "forward"]),
@@ -659,6 +661,7 @@ export const DraftListDataSchema = z.array(DraftSummaryDataSchema).max(100);
 export const DraftMutationDataSchema = z
   .object({
     id: ResourceShortIdSchema,
+    signatureTemplateId: ResourceShortIdSchema.nullable(),
     conversationId: ResourceShortIdSchema.nullable(),
     attachments: z
       .array(
@@ -675,6 +678,9 @@ export const DraftMutationDataSchema = z
     attachmentsTruncated: z.boolean(),
     revision: z.number().int().positive(),
     state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
+    formattingWarnings: composeFormattingWarningsSchema
+      .optional()
+      .describe("HTML in the Markdown body that email removes: unsupported elements, attributes such as class or style, and links."),
   })
   .strict();
 export const DraftListInputSchema = z.object({ mailboxId: MailboxIdInputSchema, ...PageInputShape }).strict();
@@ -698,6 +704,7 @@ export const DraftCreateInputSchema = z
   .object({
     mailboxId: MailboxIdInputSchema,
     senderIdentityId: ResourceShortIdSchema.describe("Verified sender-identity ID."),
+    signatureTemplateId: draftEditableContentInputSchema.shape.signatureTemplateId,
     to: z.array(mailAddressSchema).max(200).default([]).describe("Primary recipients."),
     cc: z.array(mailAddressSchema).max(200).default([]).describe("Carbon-copy recipients."),
     bcc: z.array(mailAddressSchema).max(200).default([]).describe("Blind-carbon-copy recipients."),
@@ -734,6 +741,7 @@ export const DraftPatchInputSchema = z
     patch: z
       .object({
         senderIdentityId: ResourceShortIdSchema.optional().describe("Replacement verified sender identity."),
+        signatureTemplateId: draftEditableContentInputSchema.shape.signatureTemplateId,
         to: z.array(mailAddressSchema).max(200).optional().describe("Replace all primary recipients; [] clears them."),
         cc: z.array(mailAddressSchema).max(200).optional().describe("Replace all carbon-copy recipients."),
         bcc: z.array(mailAddressSchema).max(200).optional().describe("Replace all blind-copy recipients."),

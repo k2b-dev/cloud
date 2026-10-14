@@ -201,3 +201,18 @@ describe("account category administration", () => {
     expect(authMessages.check()).toEqual([]);
   });
 });
+
+test("AI settings show local client instructions and the shipped text in English and German", () => {
+  for (const locale of ["en", "de"]) {
+    const html = render(true, locale, undefined, undefined, "ai");
+    const label = locale === "en" ? "Instructions for local clients" : "Anweisungen für lokale Clients";
+    expect(html).toContain(label);
+    expect(html).toContain(locale === "en" ? "Show built-in text" : "Mitgelieferten Text anzeigen");
+    expect(html).toContain(locale === "en" ? "your text replaces it completely" : "dein Text ersetzt ihn vollständig");
+    const platformPrompt = html.indexOf(locale === "en" ? "Show the built-in platform prompt" : "Integrierten Plattform-Prompt anzeigen");
+    expect(platformPrompt).toBeGreaterThan(-1);
+    expect(html.indexOf(label)).toBeGreaterThan(platformPrompt);
+    expect(CORE_SETTINGS["ai.local_client_instructions"].kind).toBe("text");
+    expect(CORE_SETTINGS["ai.local_client_instructions"].default).toBe("");
+  }
+});

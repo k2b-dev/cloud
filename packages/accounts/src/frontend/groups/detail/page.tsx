@@ -241,6 +241,7 @@ export default ssr<AuthContext>(async (c) => {
     >
       <AccountsWorkspace
         active="groups"
+        ancestor
         isAdmin={isAdmin}
         pendingRequests={pendingRequestsPage.total}
         scrollPreserveKey="accounts-group-detail"

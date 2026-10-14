@@ -13,3 +13,10 @@ export const closesCodeFence = (line: string, fence: MarkdownCodeFence): boolean
 };
 
 export const isIndentedCodeLine = (line: string): boolean => /^(?: {4}| {0,3}\t)/.test(line);
+
+/** Widget fences use the complete info string, without language aliases. */
+export const codeFenceLanguage = (line: string): string =>
+  line
+    .replace(/^(```|~~~)/, "")
+    .trim()
+    .toLowerCase();

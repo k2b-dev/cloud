@@ -375,7 +375,7 @@ export default function AssistantProjectView(props: Props) {
           </header>
 
           <div class="mx-auto mt-auto flex w-full max-w-4xl flex-col gap-3 pt-16">
-            <section class="flex min-h-0 flex-col gap-2" aria-labelledby="project-chats-heading">
+            <section class="assistant-project-chats flex min-h-0 flex-col gap-2" aria-labelledby="project-chats-heading">
               <header class="flex min-h-8 items-center justify-between gap-3 px-1">
                 <div class="flex min-w-0 items-baseline gap-2">
                   <h2 id="project-chats-heading" class="text-xs font-medium text-dimmed">
@@ -408,7 +408,7 @@ export default function AssistantProjectView(props: Props) {
                 <div class="flex flex-col gap-0.5">
                   <For each={chatItems()}>
                     {(chat: AiConversation) => (
-                      <div class="group flex min-w-0 items-center gap-1 rounded-lg transition-colors hover:bg-[var(--ui-surface-subtle)] focus-within:bg-[var(--ui-surface-subtle)]">
+                      <div class="k2b-progressive-row flex min-w-0 items-center gap-1 rounded-lg transition-colors hover:bg-[var(--ui-surface-subtle)] focus-within:bg-[var(--ui-surface-subtle)]">
                         <Link
                           href={assistantConversationHref("/app/assistant", chat.id)}
                           class="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 focus-visible:outline focus-visible:outline-2"
@@ -420,7 +420,7 @@ export default function AssistantProjectView(props: Props) {
                           <Format.RelativeTime class="shrink-0 text-xs text-dimmed" value={chat.updatedAt} />
                         </Link>
                         <IconButton
-                          class="mr-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                          class="k2b-progressive-action mr-1"
                           size="xs"
                           variant="subtle"
                           label={copy().editNamed({ name: chat.title })}

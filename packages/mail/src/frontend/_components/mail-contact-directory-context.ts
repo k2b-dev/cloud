@@ -1,5 +1,5 @@
 import { createContext, useContext } from "solid-js";
-import { DEFAULT_MAIL_CONTACT_DIRECTORY, type MailContactDirectory } from "../../contact-directory-settings";
+import { DEFAULT_MAIL_CONTACT_DIRECTORY, type MailContactDirectory } from "../../contact-directory";
 
 /**
  * The resolved contact-directory mapping for Mail islands. SSR pages resolve it

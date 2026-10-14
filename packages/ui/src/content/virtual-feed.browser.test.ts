@@ -43,6 +43,7 @@ const [items, setItems] = createSignal(all.slice(first, next));
 let controller;
 // Window errors, such as a ResizeObserver loop that left notifications undelivered.
 window.errors = [];
+window.visibleChanges = [];
 window.addEventListener("error", (event) => window.errors.push(event.message));
 // Loads wait 150 ms, or with the manual option until the test calls feed.release(), so busy states can be asserted.
 let gates = [];
@@ -83,6 +84,7 @@ const list = () =>
     getKey: (item) => item.id,
     estimateSize: (item) => (32 + (item.image ? 180 : item.lines * 20)) * (options.estimateScale ?? 1),
     label: "Activity",
+    onVisibleChange: (visible) => window.visibleChanges.push(visible ? { first: visible.first.seq, last: visible.last.seq } : null),
     itemLabel: (item) => "Entry " + item.seq,
     get hasOlder() {
       return first > 0;
@@ -455,6 +457,7 @@ declare const feed: Feed;
 declare const person: Person;
 declare const writes: number[][];
 declare const errors: string[];
+declare const visibleChanges: Array<{ first: number; last: number } | null>;
 
 const open = async (
   options: {
@@ -1867,4 +1870,88 @@ describe(`VirtualFeed keeps the reader's place under real scroll event orders in
     expect(Math.abs((await fromBottom(page, watch)) - before)).toBeLessThanOrEqual(1);
     await close(page);
   }, 30_000);
+});
+
+const visibleGeometry = (page: Page) =>
+  page.evaluate(() => {
+    const viewport = feed.viewport();
+    const rect = viewport.getBoundingClientRect();
+    const top = rect.top + viewport.clientTop;
+    const bottom = top + viewport.clientHeight;
+    const visible = [...viewport.querySelectorAll<HTMLElement>(".k2b-virtual-feed__item")].filter((node) => {
+      const item = node.getBoundingClientRect();
+      return (
+        (item.top > top - 1 && item.bottom < bottom + 1) ||
+        (item.height > viewport.clientHeight && item.top <= top && item.bottom >= bottom)
+      );
+    });
+    const first = visible[0]?.dataset.key;
+    const last = visible.at(-1)?.dataset.key;
+    return first && last ? { first: Number(first.slice(1)), last: Number(last.slice(1)) } : null;
+  });
+
+test("visible callback reports fully visible first and last items on mount at the end", async () => {
+  const page = await open({ count: 30 });
+  expect(await page.evaluate(() => visibleChanges.at(-1))).toEqual(await visibleGeometry(page));
+  expect(await page.evaluate(() => visibleChanges.at(-1)?.last)).toBe(29);
+  await close(page);
+});
+
+test("visible callback follows scrolling up and reports null when the feed becomes empty", async () => {
+  const page = await open({ count: 100 });
+  const end = await page.evaluate(() => visibleChanges.at(-1));
+  await page.evaluate(() => person.by(-400));
+  await frames(page, 4);
+  const seen = await page.evaluate(() => visibleChanges.at(-1));
+  expect(seen).toEqual(await visibleGeometry(page));
+  expect(seen?.last).toBeLessThan(end!.last);
+  await page.evaluate(() => feed.show(0, 0));
+  await frames(page, 4);
+  expect(await page.evaluate(() => visibleChanges.at(-1))).toBeNull();
+  await close(page);
+});
+
+test("visible callback waits for measurement after a scroll beyond overscan with small estimates", async () => {
+  const page = await open({ count: 1000, estimateScale: 0.25 });
+  await page.evaluate(() => feed.controller.scrollToKey("m50", { align: "start" }));
+  await frames(page, 6);
+  const before = await page.evaluate(() => {
+    const before = visibleChanges.length;
+    // Cross even the rows measured during the earlier jump, so this scroll must mount unmeasured rows.
+    person.by(8000);
+    return before;
+  });
+  await frames(page, 6);
+  const geometry = await visibleGeometry(page);
+  const changes = await page.evaluate((before) => visibleChanges.slice(before), before);
+  expect(geometry).not.toBeNull();
+  expect(changes.length).toBeGreaterThan(0);
+  for (const change of changes) if (change) expect(change.last).toBeLessThanOrEqual(geometry!.last);
+  expect(changes.at(-1)).toEqual(geometry);
+  await close(page);
+});
+
+test("an item taller than the view counts while it covers the view", async () => {
+  const page = await open({ count: 100 });
+  await page.evaluate(() => feed.controller.scrollToKey("m50", { align: "start" }));
+  await frames(page, 4);
+  await page.evaluate(() => feed.grow("m50", 1800));
+  await frames(page, 4);
+  await page.evaluate(() => feed.controller.scrollToKey("m50", { align: "center" }));
+  await frames(page, 4);
+  expect(await visibleGeometry(page)).toEqual({ first: 50, last: 50 });
+  expect(await page.evaluate(() => visibleChanges.at(-1))).toEqual({ first: 50, last: 50 });
+  await close(page);
+});
+
+test("unchanged visible keys do not repeat the callback on scroll or content updates", async () => {
+  const page = await open({ count: 30 });
+  const calls = await page.evaluate(() => visibleChanges.length);
+  await page.evaluate(() => {
+    feed.viewport().dispatchEvent(new Event("scroll"));
+    feed.bump();
+  });
+  await frames(page, 4);
+  expect(await page.evaluate(() => visibleChanges.length)).toBe(calls);
+  await close(page);
 });

@@ -35,6 +35,8 @@ describe("personal app rail", () => {
     });
     const projected = projectRailNavigation(apps, settings, "de");
     expect(projected.shortcuts.map((x) => x.label)).toEqual(["Zoo", "Details"]);
+    expect(projected.shortcuts.map((x) => x.appId)).toEqual(["z", undefined]);
+    expect(projected.apps.map((x) => x.appId)).toEqual(["a"]);
     expect(projected.apps.map((x) => x.id)).toEqual(["a"]);
     expect(projectRailNavigation(apps, { ...settings, shortcuts: [] }, "de").apps.map((x) => x.id)).toEqual(["a", "z"]);
     expect(settings.shortcuts).toHaveLength(3);
@@ -117,4 +119,19 @@ test("managed shortcuts lead personal pins without deleting them, including afte
     "personal-mail",
     "deep",
   ]);
+});
+
+test("Core Help marks only its owning app, including third-party apps", () => {
+  for (const id of ["spaces", "timetrack"]) {
+    const owner = { ...app(id, id), appId: id };
+    for (const path of [`/help/apps/${id}`, `/help/apps/${id}/start/`]) {
+      expect(railLinkActive(owner, path)).toBe(true);
+      expect(railLinkActive({ ...app("core", "Core"), match: "/help", appId: "core" }, path)).toBe(false);
+      expect(railLinkActive({ ...app("mail", "Mail"), appId: "mail" }, path)).toBe(false);
+      expect(railLinkActive({ ...owner, appId: undefined, match: path, exact: true }, path)).toBe(true);
+    }
+  }
+  const spaces = { ...app("spaces", "Spaces"), appId: "spaces" };
+  for (const path of ["/help", "/help/apps", "/help/apps/spaces/a/b", "/helpx/apps/spaces", "/app/timetrack"])
+    expect(railLinkActive(spaces, path)).toBe(false);
 });

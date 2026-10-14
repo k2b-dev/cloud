@@ -108,7 +108,7 @@ describe("Spaces overview", () => {
     expect(html).toContain("Pin Archive");
     expect(html).toContain("Search Spaces");
     expect(html).toContain("New space");
-    expect(html).toContain("All Spaces");
+    expect(html).toContain("All spaces");
     expect(html).toContain('role="radiogroup"');
     expect(html).toMatch(/role="radio"[^>]*aria-checked="true"[^>]*>(?:(?!<\/button>)[\s\S])*For me/);
     expect(html).not.toContain("spaces-overview-space-list");

@@ -6,7 +6,7 @@ import {
   projectComposeData,
   projectMailboxPageData,
   projectMailConversationDetail,
-  projectSsrFocusPage,
+  projectSsrFocusOverview,
   projectSsrMailboxList,
   projectSsrPaths,
   resolveSsrMailboxId,
@@ -21,6 +21,7 @@ const ids = {
   automation: "00000000-0000-4000-8000-000000000005",
   folder: "00000000-0000-4000-8000-000000000006",
   childFolder: "00000000-0000-4000-8000-000000000007",
+  signature: "00000000-0000-4000-8000-000000000008",
 };
 const shorts = new Map([
   [ids.mailbox, "Box001"],
@@ -30,6 +31,7 @@ const shorts = new Map([
   [ids.automation, "Auto01"],
   [ids.folder, "Fold01"],
   [ids.childFolder, "Fold02"],
+  [ids.signature, "Sign01"],
 ]);
 const loadIds = async (_table: string, values: Array<string | null | undefined>) =>
   new Map(values.flatMap((id) => (id && shorts.has(id) ? [[id, shorts.get(id)!] as const] : [])));
@@ -57,38 +59,42 @@ describe("Mail SSR public boundary", () => {
     expect(composeMailboxes).toEqual([{ id: "Box001", name: "Inbox" }]);
   });
 
-  test("projects focus rows and mailbox counters through the same public boundary", async () => {
-    const page = await projectSsrFocusPage(
+  test("projects the focus rows of every view and the mailbox counters through the same public boundary", async () => {
+    const row = {
+      id: ids.conversation,
+      mailboxId: ids.mailbox,
+      mailboxName: "Support",
+      subject: "Release update",
+      participantSummary: "Ada",
+      latestMessageAt: "2026-08-19T10:00:00.000Z",
+      workStatus: "needs_action" as const,
+      assigneeUserIds: [],
+      revision: 1,
+      sourceFolderId: ids.folder,
+      unread: true,
+      flagged: false,
+      hasAttachments: false,
+      preview: "Ready to ship",
+    };
+    const overview = await projectSsrFocusOverview(
       {
-        items: [
-          {
-            id: ids.conversation,
-            mailboxId: ids.mailbox,
-            mailboxName: "Support",
-            subject: "Release update",
-            participantSummary: "Ada",
-            latestMessageAt: "2026-08-19T10:00:00.000Z",
-            workStatus: "needs_action" as const,
-            assigneeUserIds: [],
-            revision: 1,
-            sourceFolderId: ids.folder,
-            unread: true,
-            flagged: false,
-            hasAttachments: false,
-            preview: "Ready to ship",
-          },
-        ],
+        pages: {
+          mine: { items: [], nextCursor: null },
+          unassigned: { items: [row], nextCursor: null },
+          waiting: { items: [], nextCursor: null },
+          all: { items: [row], nextCursor: null },
+        },
         counts: { mine: 0, unassigned: 1, waiting: 0, all: 1 },
         mailboxCounts: [{ mailboxId: ids.mailbox, unread: 1, needsAction: 1 }],
-        nextCursor: null,
       },
       loadIds,
     );
 
-    expect(page.items[0]).toMatchObject({ id: "Conv01", mailboxId: "Box001" });
-    expect(page.mailboxCounts).toEqual([{ mailboxId: "Box001", unread: 1, needsAction: 1 }]);
-    expect(JSON.stringify(page)).not.toContain(ids.mailbox);
-    expect(JSON.stringify(page)).not.toContain(ids.folder);
+    expect(overview.pages.unassigned.items[0]).toMatchObject({ id: "Conv01", mailboxId: "Box001" });
+    expect(overview.pages.all.items[0]).toMatchObject({ id: "Conv01", mailboxId: "Box001" });
+    expect(overview.mailboxCounts).toEqual([{ mailboxId: "Box001", unread: 1, needsAction: 1 }]);
+    expect(JSON.stringify(overview)).not.toContain(ids.mailbox);
+    expect(JSON.stringify(overview)).not.toContain(ids.folder);
   });
 
   test("loads distinct public-ID tables concurrently", async () => {
@@ -133,6 +139,7 @@ describe("Mail SSR public boundary", () => {
         { id: ids.folder, parentId: null, displayInheritedFromFolderId: null },
         { id: ids.childFolder, parentId: ids.folder, displayInheritedFromFolderId: ids.folder },
       ],
+      receivingAddress: "incoming@example.test",
       identities: [],
       savedViewId: null,
       savedViews: [],
@@ -166,9 +173,12 @@ describe("Mail SSR public boundary", () => {
         },
       ],
       scheduledPage: null,
+      search: { query: "", expression: { type: "local_tag_id", tagId: "Tag001" }, sort: "newest", error: null },
     } as unknown as MailboxPageData;
     const projected = await projectMailboxPageData(data, loadIds);
+    expect(projected.search).toEqual(data.search);
     expect(projected.mailbox.id).toBe("Box001");
+    expect(projected.receivingAddress).toBe("incoming@example.test");
     expect(projected.selectedConversationId).toBe("Conv01");
     // A subfolder names the parent whose display it inherits by the same public ID as its parent.
     expect(projected.folders[1]).toMatchObject({ id: "Fold02", parentId: "Fold01", displayInheritedFromFolderId: "Fold01" });
@@ -239,8 +249,11 @@ describe("Mail SSR public boundary", () => {
     const data = {
       mailbox: { id: ids.mailbox },
       identities: [],
+      signatures: [{ id: ids.signature, name: "Support" }],
+      personalSignatureDefaults: [{ senderIdentityId: ids.folder, templateId: ids.signature }],
       draft: {
         id: ids.draft,
+        signatureTemplateId: ids.signature,
         conversationId: ids.conversation,
         derivedFromMessageId: null,
         senderIdentityId: null,
@@ -250,7 +263,9 @@ describe("Mail SSR public boundary", () => {
     const projected = await projectComposeData(data, loadIds);
     expect(projected).toMatchObject({
       mailbox: { id: "Box001" },
-      draft: { id: "Draft1", conversationId: "Conv01", attachments: [{ id: "Attach" }] },
+      signatures: [{ id: "Sign01", name: "Support" }],
+      personalSignatureDefaults: [{ senderIdentityId: "Fold01", templateId: "Sign01" }],
+      draft: { id: "Draft1", signatureTemplateId: "Sign01", conversationId: "Conv01", attachments: [{ id: "Attach" }] },
     });
   });
 });

@@ -6,6 +6,7 @@ import type { SpaceUserSettings, ViewType } from "../settings/SpaceSettingsStore
  * Bundles all common props to reduce prop drilling.
  */
 export type SpaceContext = {
+  userId?: string;
   /** The space detail object */
   space: SpaceDetail;
   /** Columns of the space */

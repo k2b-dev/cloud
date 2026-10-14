@@ -59,7 +59,7 @@ export const recordDiscussionCommands = [
     },
   }),
   command("records comments update", {
-    summary: "Edit a record comment as its author or a Base moderator",
+    summary: "Edit a record comment as its author or a base moderator",
     args: commentArgs,
     flags: { body: bodyFlag },
     async run({ ctx, args, flags }) {
@@ -69,7 +69,7 @@ export const recordDiscussionCommands = [
     },
   }),
   command("records comments delete", {
-    summary: "Delete a record comment as its author or a Base moderator",
+    summary: "Delete a record comment as its author or a base moderator",
     args: commentArgs,
     flags: { yes: confirmFlag("Delete the comment") },
     async run({ ctx, args, flags }) {

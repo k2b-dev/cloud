@@ -4,13 +4,19 @@ import { FilterChip } from "../actions/FilterChip";
 import { Slider } from "../inputs/ChoiceInputs";
 import { useUiMessages } from "../intl/messages";
 import type { ChartExplorerRequest } from "./chart-explorer";
+import { useChartMessages } from "./chart-messages";
 
 export type ChartFilterControlsProps = {
   request: ChartExplorerRequest;
   displayedRequest: ChartExplorerRequest;
   steps?: readonly { key: string; label: string }[];
-  series?: readonly { key: string; label: string; color: string }[];
+  /** Series to filter; `color` shows a swatch and belongs only to series the chart colors that way. */
+  series?: readonly { key: string; label: string; color?: string }[];
   dimensionLabel?: string;
+  /** Label of the series filter, such as the column the series come from; defaults to the inherited series label. */
+  seriesLabel?: string;
+  /** Offer pinning the current step as a reference for comparison. */
+  compare?: boolean;
   disabled?: boolean;
   failed?: boolean;
   onRequest: (request: ChartExplorerRequest) => void;
@@ -29,10 +35,14 @@ export function ChartFilterControls(props: ChartFilterControlsProps) {
   validateOptions();
   createEffect(validateOptions);
   const messages = useUiMessages();
+  const chartMessages = useChartMessages();
   const id = `k2b-chart-controls-${createUniqueId()}`;
   const [keyboardSteps, setKeyboardSteps] = createSignal(false);
   let pointerFocus = false;
   const stepLabel = (key: string | undefined) => props.steps?.find((step) => step.key === key)?.label ?? key ?? "";
+  // The step name reserves the width of the longest one, so stepping never resizes the slider under the finger.
+  const widestStep = () =>
+    props.steps?.reduce((widest, step) => ([...step.label].length > [...widest].length ? step.label : widest), "") ?? "";
   return (
     <>
       <Show when={props.steps?.length}>
@@ -74,8 +84,9 @@ export function ChartFilterControls(props: ChartFilterControlsProps) {
               if (step) props.onRequest({ ...props.request, step: step.key });
             }}
           />
-          <output class="k2b-chart-explorer__dimension-value" for={`${id}-dimension`}>
-            {stepLabel(props.request.step)}
+          <output class="k2b-chart-explorer__dimension-value" for={`${id}-dimension`} title={stepLabel(props.request.step)}>
+            <span aria-hidden="true">{widestStep()}</span>
+            <span>{stepLabel(props.request.step)}</span>
           </output>
           <div id={`${id}-steps`} class="k2b-chart-explorer__steps">
             <For each={props.steps}>
@@ -87,7 +98,7 @@ export function ChartFilterControls(props: ChartFilterControlsProps) {
       <div class="k2b-chart-explorer__legend">
         <Show when={props.series?.length}>
           <FilterChip
-            label={messages().chartSeries}
+            label={props.seriesLabel ?? chartMessages().chartSeries}
             icon="ti ti-chart-dots"
             disabled={props.disabled}
             value={props.request.visibleKeys ?? props.series?.map((item) => item.key) ?? []}
@@ -99,6 +110,36 @@ export function ChartFilterControls(props: ChartFilterControlsProps) {
             onValueChange={(visibleKeys) => props.onRequest({ ...props.request, visibleKeys })}
           />
         </Show>
+        <Show when={props.compare && props.steps?.length}>
+          <Button
+            variant="secondary"
+            class="k2b-chart-explorer__pin"
+            disabled={props.disabled || (props.request.referenceStep === undefined && props.request.step === undefined)}
+            aria-label={
+              props.request.referenceStep === undefined
+                ? undefined
+                : `${chartMessages().chartRemoveComparison}: ${stepLabel(props.request.referenceStep)}`
+            }
+            onClick={() =>
+              props.onRequest({
+                ...props.request,
+                referenceStep: props.request.referenceStep === undefined ? props.request.step : undefined,
+              })
+            }
+          >
+            <Show when={props.request.referenceStep === undefined}>
+              <i class="ti ti-pin" aria-hidden="true" />
+            </Show>
+            <span>
+              {props.request.referenceStep === undefined
+                ? chartMessages().chartPinReference
+                : `${chartMessages().chartReference}: ${stepLabel(props.request.referenceStep)}`}
+            </span>
+            <Show when={props.request.referenceStep !== undefined}>
+              <i class="ti ti-x" aria-hidden="true" />
+            </Show>
+          </Button>
+        </Show>
         <div class="k2b-chart-explorer__status" role="status">
           <Show when={props.failed}>
             {messages().couldNotLoadData}{" "}
@@ -107,7 +148,7 @@ export function ChartFilterControls(props: ChartFilterControlsProps) {
             </Button>
           </Show>
           <Show when={props.failed}>
-            · {messages().chartPreviousData}
+            · {chartMessages().chartPreviousData}
             <Show when={props.steps?.length}>: {stepLabel(props.displayedRequest.step)}</Show>
           </Show>
         </div>

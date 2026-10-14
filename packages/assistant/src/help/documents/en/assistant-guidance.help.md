@@ -27,10 +27,11 @@ Assistant works best when the request states the outcome, the relevant context, 
 
 ## Personalization {icon="point"}
 
-- **Personalization** stores facts, preferences, and Cloud workflow defaults you can review, edit, pin, or forget. Manually added entries start pinned, and Assistant keeps a small relevant set in context instead of loading an unbounded history.
-- **Learn from chats** is on for anyone who has not chosen. If you used Assistant before learning became the default, your earlier setting stays, usually off. Learning only considers private-chat turns that finish while it is on, each once, and switching it off takes effect right away. Explicit user text can update durable facts and preferences; three successful uses of the same Cloud capability and resource can establish a workflow default. Attached content and raw tool output are excluded, while the final Assistant message is context only. Background learning may merge, replace, or retire only its own unpinned entries. Archived and deleted chats are excluded; archiving stops pending learning, and restoring a chat allows learning only from turns that finish after restore.
+- **Personalization** stores facts, preferences, and Cloud workflow defaults you can review, edit, pin, or forget. Manually added entries start pinned, and Assistant keeps a small relevant set in context instead of loading an unbounded history. Assistant uses an entry only when it changes the answer, and the current message wins over an older entry.
+- **Learn from chats** is on for anyone who has not chosen. If you used Assistant before learning became the default, your earlier setting stays, usually off. Learning considers turns from your own chats, including Project chats, that finish while it is on, each once, and switching it off takes effect right away. It learns only about you, never facts or opinions about other people; a person may appear only in a rule you state, such as "send invoices to Anna". It skips sensitive details such as health, religion, or political views unless you explicitly ask to remember exactly that; Project knowledge stays in the Project. Explicit user text can update durable facts and preferences; three successful uses of the same Cloud capability and resource can establish a workflow default. Attached content and raw tool output are excluded, while the final Assistant message is context only. Background learning may merge, replace, or retire only its own unpinned entries. Archived and deleted chats are excluded; archiving stops pending learning, and restoring a chat allows learning only from turns that finish after restore.
 - **System prompt** shows the complete prompt a new chat would receive, including active personalization and organization rules.
 - **Approvals** lists Actions you accepted with **Always approve** and websites you allowed for a Studio app. Revoke an entry there whenever Assistant should ask again. Approvals for one chat are listed under **Secrets & approvals** in that chat.
+- **API access** appears when your administrator offers the OpenAI-compatible API. It shows the base URL and the model IDs for apps such as a dictation app. Such an app uses only the models and your usage limits. It gets no chats, files, or personalization. Create its key in your profile with the access **AI models only**.
 - **Chat context** is still the best place for project-specific facts, source material, and one-off constraints.
 
 ## Shared Skills {icon="sparkles"}
@@ -55,10 +56,11 @@ Skills and Projects require sign-in. Share them with users, groups, service acco
 5. **Try realistic requests:** Check that Assistant loads the Skill for relevant requests and ignores it otherwise. Refine the description when selection is too broad or too narrow.
 :::
 
-- Import a bare `SKILL.md`, or use a ZIP when the Skill has references. Scripts and assets are not supported.
+- Import a bare `SKILL.md`, or use a ZIP when the Skill has references. ZIP import keeps `SKILL.md` and supported Markdown files directly in `references/`, and lists skipped files such as scripts and assets. Cloud does not run scripts.
 - Use Cloud access to share a Skill. Readers can use and export it, writers can edit it, and admins can also manage access or delete it.
 - Skills you can read start enabled for you. Turn off **Enabled for me** when you do not want Assistant to use a shared Skill; this does not change anyone else's access.
-- Assistant sees the names and descriptions of your enabled Skills. It loads a relevant Skill before applying its instructions and reads references only when needed.
+- Set `disable-model-invocation: true` in `SKILL.md`, or turn on **Start only when selected** in the editor, to start a Skill only when someone selects it with `/`.
+- Assistant sees the names and descriptions of your enabled Skills that can start automatically. It loads a relevant Skill before applying its instructions and reads references only when needed.
 - A Skill loaded for an in-progress turn stays on that revision. New turns use later edits, while revoked access takes effect immediately.
 
 :::warning Review consequential output

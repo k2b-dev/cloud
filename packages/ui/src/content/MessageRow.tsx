@@ -3,6 +3,7 @@ import type { Token, Tokens } from "marked";
 import { type Accessor, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { copyText } from "../actions/CopyButton";
+import { type ChatMessages, useChatMessages } from "../chat/chat-messages";
 import { announce } from "../feedback/announce";
 import { useLocale } from "../intl/locale";
 import { type UiMessages, useUiMessages } from "../intl/messages";
@@ -373,7 +374,13 @@ function AttachmentTarget(
  * Renders the safe Markdown of `MarkdownView` with line breaks kept, absolute links only, and a copy control above
  * every code block, and counts the fewest lines it takes. An edited message that does not collapse ends with the marker.
  */
-const renderMessage = (text: string, locale: string, messages: UiMessages, edited: boolean): { html: string; lines: number } => {
+const renderMessage = (
+  text: string,
+  locale: string,
+  messages: UiMessages,
+  chatMessages: ChatMessages,
+  edited: boolean,
+): { html: string; lines: number } => {
   const renderer = createSafeRenderer({ allowImages: false, linkProtocols: LINK_PROTOCOLS, linkTarget: "_blank", locale });
   const renderLink = renderer.link.bind(renderer);
   renderer.link = (token: Tokens.Link) => (isAbsoluteUrl(token.href) ? renderLink(token) : renderer.parser.parseInline(token.tokens));
@@ -397,7 +404,7 @@ const renderMessage = (text: string, locale: string, messages: UiMessages, edite
   // A collapsed message would hide the end of its text, so its marker sits next to "Show more" instead.
   if (!edited || lines > COLLAPSE_LINES) return { html, lines };
   // The marker ends the last paragraph, so it takes no line of its own there.
-  const marker = `<span class="k2b-message-row__edited">${escapeHtml(messages.messageEdited)}</span>`;
+  const marker = `<span class="k2b-message-row__edited">${escapeHtml(chatMessages.messageEdited)}</span>`;
   const end = html.trimEnd();
   return { html: end.endsWith("</p>") ? `${end.slice(0, -4)} ${marker}</p>` : `${html}<p>${marker}</p>`, lines };
 };
@@ -409,10 +416,11 @@ const renderMessage = (text: string, locale: string, messages: UiMessages, edite
  */
 export function MessageRow(props: MessageRowProps): JSX.Element {
   const messages = useUiMessages();
+  const chatMessages = useChatMessages();
   const locale = useLocale();
   const textId = `k2b-message-${createUniqueId()}`;
   const [expanded, setExpanded] = createSignal(false);
-  const rendered = createMemo(() => renderMessage(props.text, locale(), messages(), Boolean(props.edited)));
+  const rendered = createMemo(() => renderMessage(props.text, locale(), messages(), chatMessages(), Boolean(props.edited)));
   const collapsible = () => rendered().lines > COLLAPSE_LINES;
   const collapsed = () => collapsible() && !expanded();
   const groupStart = () => props.groupStart ?? true;
@@ -478,7 +486,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
     <>
       <i class="ti ti-arrow-back-up" aria-hidden="true" />
       <span class="k2b-message-row__quote-text">
-        <span class="k2b-sr-only">{messages().messageReplyTo} </span>
+        <span class="k2b-sr-only">{chatMessages().messageReplyTo} </span>
         <span class="k2b-message-row__quote-author">{value.author}</span> {value.text}
       </span>
     </>
@@ -488,8 +496,8 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
   const mediaLabel = (item: MessageRowMedia, more: number) =>
     [
       item.alt,
-      item.kind === "video" ? [messages().messageVideo, item.duration].filter(Boolean).join(" ") : "",
-      more > 0 ? messages().messageMoreAttachments({ count: more }) : "",
+      item.kind === "video" ? [chatMessages().messageVideo, item.duration].filter(Boolean).join(" ") : "",
+      more > 0 ? chatMessages().messageMoreAttachments({ count: more }) : "",
     ]
       .filter(Boolean)
       .join(", ");
@@ -497,7 +505,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
   /** A toggle button, or with no `onToggleReaction` a labelled image that also says whether the reader reacted. */
   const reactionChip = (key: string, reaction: Accessor<MessageRowReaction>) => {
     const label = (own: boolean) =>
-      messages().messageReaction({ emoji: reaction().emoji, count: reaction().count, names: reaction().label, own });
+      chatMessages().messageReaction({ emoji: reaction().emoji, count: reaction().count, names: reaction().label, own });
     return (
       <Show
         when={props.onToggleReaction}
@@ -612,7 +620,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
         <Show when={content() && props.forwarded}>
           <div class="k2b-message-row__marker">
             <i class="ti ti-arrow-forward-up" aria-hidden="true" />
-            <span>{messages().messageForwarded}</span>
+            <span>{chatMessages().messageForwarded}</span>
           </div>
         </Show>
         <Show when={content() && props.quote}>
@@ -637,7 +645,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
               fallback={
                 <span class="k2b-message-row__deleted">
                   <i class="ti ti-message-off" aria-hidden="true" />
-                  {messages().messageDeleted}
+                  {chatMessages().messageDeleted}
                 </span>
               }
             >
@@ -674,10 +682,10 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
                       aria-controls={textId}
                       onClick={() => setExpanded((value) => !value)}
                     >
-                      {expanded() ? messages().messageShowLess : messages().messageShowMore}
+                      {expanded() ? chatMessages().messageShowLess : chatMessages().messageShowMore}
                     </Button>
                     <Show when={props.edited}>
-                      <span class="k2b-message-row__edited">{messages().messageEdited}</span>
+                      <span class="k2b-message-row__edited">{chatMessages().messageEdited}</span>
                     </Show>
                   </div>
                 </Show>
@@ -689,14 +697,14 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
         <Show when={content() && props.edited && !hasBubble()}>
           <div class="k2b-message-row__marker">
             <i class="ti ti-pencil" aria-hidden="true" />
-            <span class="k2b-message-row__edited">{messages().messageEdited}</span>
+            <span class="k2b-message-row__edited">{chatMessages().messageEdited}</span>
           </div>
         </Show>
         <Show when={media().length > 0}>
           <div
             class="k2b-message-row__media"
             role="group"
-            aria-label={messages().attachments}
+            aria-label={chatMessages().attachments}
             data-count={Math.min(media().length, MEDIA_SHOWN)}
             style={media().length === 1 ? { width: mediaWidth(media()[0]!) } : undefined}
           >
@@ -742,11 +750,11 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
                   </For>
                 </span>
               </Show>
-              <span class="k2b-message-row__thread-count">{messages().messageReplies({ count: thread().count })}</span>
+              <span class="k2b-message-row__thread-count">{chatMessages().messageReplies({ count: thread().count })}</span>
               <Show when={thread().lastReply}>
                 {(time) => (
                   <time class="k2b-message-row__thread-time" datetime={dateTimeOf(thread().lastReplyDateTime)}>
-                    {messages().messageLastReply({ time: time() })}
+                    {chatMessages().messageLastReply({ time: time() })}
                   </time>
                 )}
               </Show>
@@ -760,7 +768,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
                 <div
                   class="k2b-message-row__reactions"
                   role="group"
-                  aria-label={messages().messageReactions}
+                  aria-label={chatMessages().messageReactions}
                   data-empty={list().length === 0 ? "" : undefined}
                 >
                   <Show when={list().length > 0}>
@@ -779,7 +787,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
                   <Show when={props.onAddReaction}>
                     {(add) => (
                       <IconButton
-                        label={messages().messageAddReaction}
+                        label={chatMessages().messageAddReaction}
                         size="xs"
                         class="k2b-message-row__react"
                         onClick={(event) => add()(event.currentTarget)}
@@ -799,15 +807,15 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
                     <>
                       <Show when={props.status === "pending"}>
                         <i class="ti ti-clock" aria-hidden="true" />
-                        <span>{messages().sending}</span>
+                        <span>{chatMessages().sending}</span>
                       </Show>
                       <Show when={props.status === "failed"}>
                         <i class="ti ti-alert-circle" aria-hidden="true" />
-                        <span>{messages().messageNotSent}</span>
+                        <span>{chatMessages().messageNotSent}</span>
                         <Show when={props.onRetry}>
                           {(retry) => (
                             <Button variant="text" size="xs" onClick={() => retry()()}>
-                              {messages().messageRetry}
+                              {chatMessages().messageRetry}
                             </Button>
                           )}
                         </Show>
@@ -818,7 +826,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
                           fallback={
                             <Show when={props.status === "sent"}>
                               <i class="ti ti-check" aria-hidden="true" />
-                              <span class="k2b-sr-only">{messages().messageSent}</span>
+                              <span class="k2b-sr-only">{chatMessages().messageSent}</span>
                             </Show>
                           }
                         >
@@ -840,7 +848,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
                       <Show when={progress().onStop}>
                         {(stop) => (
                           <Button variant="text" size="xs" onClick={() => stop()()}>
-                            {messages().messageStop}
+                            {chatMessages().messageStop}
                           </Button>
                         )}
                       </Show>
@@ -853,7 +861,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
         </Show>
       </div>
       <Show when={(props.actions?.length ?? 0) > 0}>
-        <div class="k2b-message-row__actions" role="group" aria-label={messages().messageActions}>
+        <div class="k2b-message-row__actions" role="group" aria-label={chatMessages().messageActions}>
           <For each={props.actions}>
             {(action) => (
               <IconButton label={action.label} size="sm" disabled={action.disabled} onClick={() => action.onSelect()}>

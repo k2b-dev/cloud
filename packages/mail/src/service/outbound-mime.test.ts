@@ -4,6 +4,29 @@ import { simpleParser } from "mailparser";
 import { buildMimeSource, buildMimeStream, measureMimeStream, outboundDraftSnapshotSchema, outboundRecipients } from "./outbound-mime";
 
 describe("outbound MIME", () => {
+  test("keeps Markdown quotes and code blocks in the HTML fallback (#932)", async () => {
+    const snapshot = outboundDraftSnapshotSchema.parse({
+      revision: 1,
+      from: { name: "Support", address: "support@example.com" },
+      replyTo: null,
+      envelopeFrom: null,
+      to: [{ name: null, address: "alice@example.com" }],
+      cc: [],
+      bcc: [],
+      subject: "Quoted code",
+      body: "> quoted line\n> second\n\n```ts\nconst a = 1;\nconst b = 2;\n```",
+      format: "markdown",
+    });
+    const parsed = await simpleParser(
+      await buildMimeSource({ snapshot, messageId: "<quoted-code@example.com>", date: new Date("2026-01-02T03:04:05.000Z") }),
+    );
+
+    expect(parsed.html).toContain("<blockquote>\n<p>quoted line<br />second</p>\n</blockquote>");
+    expect(parsed.html).toContain("<pre>const a = 1;\nconst b = 2;</pre>");
+    expect(parsed.html).not.toContain("<span>ts</span>");
+    expect(parsed.html).not.toContain(">ts<");
+  });
+
   test("builds a stable threaded multipart message without exposing Bcc", async () => {
     const snapshot = outboundDraftSnapshotSchema.parse({
       revision: 3,

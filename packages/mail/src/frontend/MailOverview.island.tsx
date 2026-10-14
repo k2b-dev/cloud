@@ -11,7 +11,6 @@ import {
   Placeholder,
   prompts,
   SegmentedControl,
-  Tag,
   toast,
   useLocale,
 } from "@k2b/ui";
@@ -28,6 +27,7 @@ import {
 } from "../contracts";
 import type { MailConversationDetailData } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
+import { createMailboxCreation } from "./_components/create-mailbox-dialog";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { mailboxOverviewSubtitle } from "./_components/mail-health-presentation";
@@ -36,11 +36,19 @@ import { assertCursorProgress } from "./pagination";
 
 type MailboxWithPermission = Mailbox & { permission: "read" | "write" | "admin"; receivingAddress: string | null };
 type MailFocusSelection = { mailboxId: string; conversationId: string };
-type FocusSource = { view: MailFocusView; excludedMailboxIds: string[] };
+/** The first page of every view and the counts they share, as the server renders the overview. */
+type MailFocusOverview = {
+  pages: Record<MailFocusView, Pick<MailFocusPage, "items" | "nextCursor">>;
+  counts: MailFocusPage["counts"];
+  mailboxCounts: MailFocusPage["mailboxCounts"];
+};
 type MailboxOverviewItem = { id: string; href: string; name: string; subtitle: string };
+/** A Focus page and the hidden mailboxes it leaves out. */
+type MailFocusViewPage = MailFocusPage & { excludedMailboxIds: string[] };
 
 /** The object list needs room for a title and an address; the overview does not resize. */
 const OVERVIEW_LAYOUT = { version: 2 as const, sidebarWidth: 304 };
+const FOCUS_PAGE_SIZE = 50;
 
 const primaryParticipant = (summary: string, fallback: string): string => summary.split(/\s[·,]\s/u)[0]?.trim() || fallback;
 const participantInitials = (summary: string): string => {
@@ -61,12 +69,12 @@ const avatarTone = (summary: string): string =>
   String([...primaryParticipant(summary, "")].reduce((total, character) => total + character.codePointAt(0)!, 0) % 5);
 
 /** Follow-up dialogs load with the action that opens them, not with the overview. */
-type SettingsDialog = typeof import("./_components/MailboxSettingsDialog");
 type HealthDialog = typeof import("./_components/MailboxHealthDialog");
 
 function MailOverviewView(props: {
   mailboxes: MailboxWithPermission[];
-  initialFocus: MailFocusPage;
+  /** Null when the server could not read Focus; `initialFocusError` then says why. */
+  initialFocus: MailFocusOverview | null;
   initialFocusError: string | null;
   initialView: MailFocusView;
   initialSelection: MailFocusSelection | null;
@@ -86,36 +94,77 @@ function MailOverviewView(props: {
   const [mailboxAnnouncement, setMailboxAnnouncement] = createSignal("");
   const [initialFocusError, setInitialFocusError] = createSignal(props.initialFocusError);
   const mailboxIsHidden = (mailboxId: string) => hiddenMailboxIds().includes(mailboxId);
+  // Counts are the same in every view's page, so the newest page any view loaded supplies them.
+  const [latestCounts, setLatestCounts] = createSignal({
+    counts: props.initialFocus?.counts ?? { mine: 0, unassigned: 0, waiting: 0, all: 0 },
+    mailboxCounts: props.initialFocus?.mailboxCounts ?? [],
+  });
+  // Each view keeps its own pages. The server renders the first page of every view, so switching
+  // shows rows at once; the view then refreshes them in place. Only the shown view loads.
   // Focus leaves out every stored hidden mailbox, as on the server, including one beyond the
   // listed mailboxes; the server ignores IDs of mailboxes that are gone or unreadable.
-  const focusSource = (): FocusSource => ({ view: view(), excludedMailboxIds: hiddenMailboxIds() });
-  const focusResults = queries.createInfinite<FocusSource, MailFocusPage, string>({
-    source: focusSource,
-    isSameSource: (left, right) => left.view === right.view && left.excludedMailboxIds.join() === right.excludedMailboxIds.join(),
-    initial: { source: focusSource(), pages: [props.initialFocus] },
-    loadPage: async (source, { cursor, abortSignal }) => {
-      const excludeMailboxIds = source.excludedMailboxIds.join(",") || undefined;
-      const response = await apiClient.overview.conversations.$get(
-        { query: { view: source.view, limit: "50", cursor, excludeMailboxIds } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadFocus));
-      const page = await response.json();
-      assertCursorProgress(cursor, page.nextCursor, "mail-focus");
-      setInitialFocusError(null);
-      return page;
-    },
-    getNextCursor: (page) => page.nextCursor,
-  });
+  const createFocusQuery = (focusView: MailFocusView) =>
+    queries.createInfinite<string[], MailFocusViewPage, string>({
+      source: hiddenMailboxIds,
+      isSameSource: (left, right) => left.join() === right.join(),
+      enabled: () => view() === focusView && !initialFocusError(),
+      initial: props.initialFocus
+        ? {
+            source: props.initialHiddenMailboxIds,
+            pages: [
+              {
+                ...props.initialFocus.pages[focusView],
+                counts: props.initialFocus.counts,
+                mailboxCounts: props.initialFocus.mailboxCounts,
+                excludedMailboxIds: props.initialHiddenMailboxIds,
+              },
+            ],
+          }
+        : undefined,
+      loadPage: async (excludedMailboxIds, { cursor, abortSignal }) => {
+        const response = await apiClient.overview.conversations.$get(
+          {
+            query: {
+              view: focusView,
+              limit: String(FOCUS_PAGE_SIZE),
+              cursor,
+              excludeMailboxIds: excludedMailboxIds.join(",") || undefined,
+            },
+          },
+          { init: { signal: abortSignal } },
+        );
+        if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadFocus));
+        const page = await response.json();
+        // A response that arrived as its view was left or its mailboxes changed is no longer current.
+        abortSignal.throwIfAborted();
+        assertCursorProgress(cursor, page.nextCursor, "mail-focus");
+        setInitialFocusError(null);
+        setLatestCounts({ counts: page.counts, mailboxCounts: page.mailboxCounts });
+        return { ...page, excludedMailboxIds };
+      },
+      getNextCursor: (page) => page.nextCursor,
+    });
+  const focusQueries: Record<MailFocusView, ReturnType<typeof createFocusQuery>> = {
+    mine: createFocusQuery("mine"),
+    unassigned: createFocusQuery("unassigned"),
+    waiting: createFocusQuery("waiting"),
+    all: createFocusQuery("all"),
+  };
+  const focusResults = () => focusQueries[view()];
+  /** Shows a view: its rows at once when it has any, refreshed in place. */
+  const showView = (next: MailFocusView) => {
+    setView(next);
+    if (focusQueries[next].pages().length > 0) void focusQueries[next].invalidate().catch(() => undefined);
+  };
   // Rows of a mailbox hidden a moment ago leave before the refreshed page arrives.
   const focusItems = createMemo(() =>
-    focusResults
+    focusResults()
       .pages()
       .flatMap((page) => page.items)
       .filter((item) => !mailboxIsHidden(item.mailboxId)),
   );
-  const counts = () => focusResults.pages()[0]?.counts ?? props.initialFocus.counts;
-  const mailboxCounts = () => focusResults.pages()[0]?.mailboxCounts ?? props.initialFocus.mailboxCounts;
+  const counts = () => latestCounts().counts;
+  const mailboxCounts = () => latestCounts().mailboxCounts;
   const mailboxCountsById = createMemo(() => new Map(mailboxCounts().map((item) => [item.mailboxId, item])));
   // Counts stay out of the items: a refreshed Focus page then updates the rows in place
   // instead of recreating them, which would drop keyboard focus.
@@ -224,10 +273,6 @@ function MailOverviewView(props: {
   };
   /** False where the person sees only the conversations assigned to them. */
   const mailboxWide = (mailboxId: string) => props.mailboxes.find((mailbox) => mailbox.id === mailboxId)?.accessScope !== "assigned";
-  const focusScope = () => {
-    const hidden = hiddenMailboxItems().length;
-    return hidden > 0 ? messages().allMailboxesExceptHidden({ count: hidden }) : messages().allMailboxes;
-  };
   const focusDescription = () => {
     const count = counts()[view()];
     if (view() === "mine") return messages().focusDescriptionMine({ count });
@@ -246,10 +291,27 @@ function MailOverviewView(props: {
       {label} <span class="mail-focus-tab-count">{count}</span>
     </>
   );
-  const focusError = () => focusResults.error()?.message ?? initialFocusError();
+  // As many loading rows as the view will show, up to one page. A view expected to be empty gets one
+  // row in a box of the empty state's height.
+  const expectedRows = () => Math.min(counts()[view()], FOCUS_PAGE_SIZE);
+  const skeletonRows = () => Array.from({ length: expectedRows() || 1 });
+  const focusError = () => focusResults().error()?.message ?? initialFocusError();
+  // The empty state is the answer of a finished read for the mailboxes shown now. While the view
+  // refreshes, that answer stays only as long as the counts agree; after a mailbox was hidden or
+  // shown, or when the count says the view has rows, the view shows its rows loading instead.
+  const focusEmpty = () => {
+    const results = focusResults();
+    const page = results.pages()[0];
+    if (!page || page.excludedMailboxIds.join() !== hiddenMailboxIds().join()) return false;
+    return counts()[view()] === 0 || !(results.stale() || results.refreshing());
+  };
   const [selection, setSelection] = createSignal<MailFocusSelection | null>(props.initialSelection);
   const [wideLayout, setWideLayout] = createSignal(false);
   const detailOpen = () => wideLayout() && selection() !== null;
+  const closeDetail = () => {
+    setSelection(null);
+    updateSelectionUrl(null);
+  };
   const selectionSource = () => {
     const current = selection();
     return current ? `${current.mailboxId}/${current.conversationId}` : null;
@@ -294,8 +356,8 @@ function MailOverviewView(props: {
   };
 
   const selectView = (next: MailFocusView) => {
-    setView(next);
     setInitialFocusError(null);
+    showView(next);
     setSelection(null);
     const url = new URL(window.location.href);
     if (next === "mine") url.searchParams.delete("view");
@@ -307,7 +369,7 @@ function MailOverviewView(props: {
 
   const retryFocus = () => {
     setInitialFocusError(null);
-    void focusResults.refresh();
+    void focusResults().refresh();
   };
 
   const [deletedOpen, setDeletedOpen] = createSignal(false);
@@ -329,50 +391,7 @@ function MailOverviewView(props: {
     return [...merged.values()];
   });
 
-  const createMailbox = mutations.create<{ mailbox: Mailbox; settings?: SettingsDialog } | null, void>({
-    mutation: async (_input, { abortSignal }) => {
-      const values = await prompts.form({
-        title: messages().newMailbox,
-        icon: "ti ti-mail-plus",
-        fields: {
-          name: { type: "text", label: messages().name, description: messages().nameDescription, required: true },
-          description: {
-            type: "text",
-            label: messages().description,
-            description: messages().descriptionDescription,
-            multiline: true,
-            lines: 3,
-          },
-        },
-        confirmText: messages().createMailbox,
-      });
-      if (!values || abortSignal.aborted) return null;
-      // The follow-up dialog loads during the request, behind the same pending state. Without its code, for example
-      // in a tab opened before a release, the new mailbox still opens and its settings stay one click away.
-      const settings = import("./_components/MailboxSettingsDialog").catch(() => undefined);
-      const response = await apiClient.mailboxes.$post(
-        { json: { name: values.name, description: values.description || null } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) throw new Error(await readApiError(response, messages().failedCreateMailbox));
-      return { mailbox: await response.json(), settings: await settings };
-    },
-    onSuccess: (created) => {
-      if (!created) return;
-      const { mailbox, settings } = created;
-      toast.success(messages().mailboxCreated);
-      if (!settings) return navigateTo(`/app/mail/${mailbox.id}`);
-      void settings
-        .openMailboxSettingsDialog({
-          mailboxId: mailbox.id,
-          currentUserEmail: props.currentUserEmail,
-          contactDirectory: props.contactDirectory,
-          initialTab: "delivery",
-        })
-        .then((result) => navigateTo(result.deleted ? "/app/mail" : `/app/mail/${mailbox.id}`));
-    },
-    onError: (error) => prompts.error(error.message),
-  });
+  const createMailbox = createMailboxCreation(props, messages);
 
   const restoreMailbox = mutations.create<{ mailbox: Mailbox; health?: HealthDialog } | null, string>({
     mutation: async (mailboxId, { abortSignal }) => {
@@ -405,7 +424,7 @@ function MailOverviewView(props: {
     media.addEventListener("change", updateWideLayout);
     const stop = listenPopState(({ url }) => {
       const parsed = url.searchParams.get("view");
-      setView(parsed === "unassigned" || parsed === "waiting" || parsed === "all" ? parsed : "mine");
+      showView(parsed === "unassigned" || parsed === "waiting" || parsed === "all" ? parsed : "mine");
       const mailboxId = url.searchParams.get("mailbox");
       const conversationId = url.searchParams.get("conversation");
       setSelection(mailboxId && conversationId ? { mailboxId, conversationId } : null);
@@ -416,7 +435,6 @@ function MailOverviewView(props: {
     });
   });
   onCleanup(() => {
-    createMailbox.abort();
     restoreMailbox.abort();
   });
 
@@ -509,22 +527,53 @@ function MailOverviewView(props: {
           />
         )}
       </Show>
-      <Show when={!focusError() && focusItems().length === 0}>
+      {/* A view without a finished read shows its rows still loading, never the empty state. */}
+      <Show when={!focusError() && focusItems().length === 0 && !focusEmpty()}>
+        <div class="mail-focus-list mail-focus-skeleton" classList={{ "min-h-56": expectedRows() === 0 }} role="status" aria-busy="true">
+          <span class="sr-only">{messages().loadingFocus}</span>
+          <For each={skeletonRows()}>
+            {() => (
+              <div class="mail-focus-row" aria-hidden="true">
+                <span class="mail-focus-unread-slot" />
+                <span class="mail-focus-avatar mail-focus-skeleton-shape" />
+                <span class="mail-focus-copy">
+                  <span class="mail-focus-sender">
+                    <span class="mail-focus-skeleton-shape" style={{ width: "8rem" }} />
+                  </span>
+                  <span class="mail-focus-subject">
+                    <span class="mail-focus-skeleton-shape" style={{ width: "60%" }} />
+                  </span>
+                  <span class="mail-focus-preview">
+                    <span class="mail-focus-skeleton-shape" style={{ width: "85%" }} />
+                  </span>
+                  <span class="mail-focus-meta">
+                    <span>
+                      <span class="mail-focus-skeleton-shape" style={{ width: "10rem" }} />
+                    </span>
+                  </span>
+                </span>
+                <span class="mail-focus-time">
+                  <span class="mail-focus-skeleton-shape" style={{ width: "3rem" }} />
+                </span>
+                <span class="mail-focus-chevron" />
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
+      <Show when={!focusError() && focusItems().length === 0 && focusEmpty()}>
         <Placeholder
-          state={focusResults.loading() ? "loading" : "empty"}
           title={
-            focusResults.loading()
-              ? messages().loadingFocus
-              : view() === "mine"
-                ? messages().nothingForMe
-                : view() === "unassigned"
-                  ? messages().nothingUnassigned
-                  : view() === "waiting"
-                    ? messages().nothingWaiting
-                    : messages().nothingActive
+            view() === "mine"
+              ? messages().nothingForMe
+              : view() === "unassigned"
+                ? messages().nothingUnassigned
+                : view() === "waiting"
+                  ? messages().nothingWaiting
+                  : messages().nothingActive
           }
-          description={focusResults.loading() ? messages().loadingFocusDescription : messages().noMatchingConversations}
-          icon={focusResults.loading() ? undefined : "ti ti-circle-check"}
+          description={messages().noMatchingConversations}
+          icon="ti ti-circle-check"
           class="min-h-56"
         />
       </Show>
@@ -584,15 +633,15 @@ function MailOverviewView(props: {
               </a>
             )}
           </For>
-          <Show when={focusResults.hasMore()}>
+          <Show when={focusResults().hasMore()}>
             <Button
               variant="secondary"
               size="sm"
               class="self-center"
-              disabled={focusResults.loadingMore()}
-              onClick={() => void focusResults.loadMore()}
+              disabled={focusResults().loadingMore()}
+              onClick={() => void focusResults().loadMore()}
             >
-              <i class={focusResults.loadingMore() ? "ti ti-loader-2 animate-spin" : "ti ti-chevron-down"} aria-hidden="true" />{" "}
+              <i class={focusResults().loadingMore() ? "ti ti-loader-2 animate-spin" : "ti ti-chevron-down"} aria-hidden="true" />{" "}
               {messages().loadMore}
             </Button>
           </Show>
@@ -602,7 +651,7 @@ function MailOverviewView(props: {
   );
 
   return (
-    <AppWorkspace mobileSurface="flush" class="mail-focus-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
+    <AppWorkspace mobileSurface="flush" flat class="mail-focus-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
       <h1 class="sr-only">Mail</h1>
       <AppWorkspace.Sidebar label={messages().mailboxes} mobile="stacked" resizable={false}>
         <AppWorkspace.SidebarDesktop>
@@ -695,13 +744,13 @@ function MailOverviewView(props: {
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
-        <AppWorkspace.Main class="mail-focus-main" width="content" aria-busy={focusResults.loading() || focusResults.refreshing()}>
+        <AppWorkspace.Main class="mail-focus-main" width="content" aria-busy={focusResults().loading() || focusResults().refreshing()}>
           <div class="mail-overview-page">
             <PanelHeader
               as="h2"
               size="lg"
               title={messages().focus}
-              subtitle={`${focusDescription()} · ${focusScope()}`}
+              subtitle={focusDescription()}
               actions={
                 <ButtonLink href="/app/mail/compose" class="mail-compose-action">
                   <i class="ti ti-pencil" aria-hidden="true" /> {messages().compose}
@@ -717,15 +766,12 @@ function MailOverviewView(props: {
                 onValueChange={selectView}
                 options={focusViewOptions()}
               />
-              <Tag icon="ti ti-inbox" size="lg" class="mail-overview-scope">
-                {focusScope()}
-              </Tag>
             </div>
             <Paper class="mail-overview-list">{focusPanel()}</Paper>
           </div>
         </AppWorkspace.Main>
 
-        <AppWorkspace.Detail id="mail-focus-detail" open={detailOpen()} width="lg" resizable={false}>
+        <AppWorkspace.Detail id="mail-focus-detail" open={detailOpen()} onClose={closeDetail} width="lg" resizable={false}>
           <Show
             when={selection()}
             fallback={
@@ -792,12 +838,9 @@ function MailOverviewView(props: {
                       subject={detail().selectedSubject}
                       requestUrl={`/app/mail?${new URLSearchParams({ view: view(), mailbox: selected().mailboxId, conversation: selected().conversationId })}`}
                       dateConfig={props.dateConfig}
-                      onCollaborationChange={() => void focusResults.invalidate()}
+                      onCollaborationChange={() => void focusResults().invalidate()}
                       onConversationTagsChange={() => undefined}
-                      onClose={() => {
-                        setSelection(null);
-                        updateSelectionUrl(null);
-                      }}
+                      onClose={closeDetail}
                       onOpenHref={(href) => navigateTo(href)}
                       onReconcile={() => detailResult.refresh()}
                     />

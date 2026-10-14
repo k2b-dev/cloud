@@ -32,6 +32,8 @@ const app = defineApp({
 });
 
 type LayoutContextArg = Parameters<typeof Layout>[0]["c"];
+/** The markup a browser keeps when the islands mount and render again. */
+const withoutIslands = (html: string) => html.replace(/<solid-island\b[\s\S]*?<\/solid-island>/g, "");
 type MinimalLayoutContextArg = Parameters<typeof MinimalLayout>[0]["c"];
 const legalApp = {
   id: "legal-probe",
@@ -228,7 +230,7 @@ describe("Cloud layouts SSR", () => {
     expect(html).toContain('href="/auth/login"');
     expect(html).toContain("Anmelden");
     expect(html).toContain("Darstellung und Sprache");
-    expect(html).toContain("Heller Modus");
+    expect(html).toContain("Automatisch");
     expect(html).toContain("English");
     expect(html).not.toContain("layout-rail-navigation");
     expect(html).not.toContain('data-layout-authenticated="true"');
@@ -242,6 +244,10 @@ describe("Cloud layouts SSR", () => {
     expect(header).not.toContain("md:hidden");
     expect(html).toContain('<div class="hidden min-w-0 items-center lg:flex">');
     expect(html).toContain('<div class="flex items-center gap-1 lg:hidden">');
+    // Home and Sign in stay server markup, so focus on them survives the shell's mount.
+    const chrome = withoutIslands(html).match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
+    expect(chrome).toContain('href="/"');
+    expect(chrome).toContain('href="/auth/login"');
   });
 
   test("signed-in pages trade the header for the rail from md and publish the page trail", async () => {
@@ -261,6 +267,10 @@ describe("Cloud layouts SSR", () => {
     expect(html).not.toContain("hidden min-w-0 items-center lg:flex");
     expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
     expect(html).toContain('class="layout-rail hidden w-10 shrink-0 flex-col md:flex"');
+    // The rail's Home link and the phone header's Home link stay server markup.
+    const chrome = withoutIslands(html);
+    expect(chrome).toMatch(/<aside class="layout-rail[^"]*"><div class="layout-rail-logo[^"]*"><a href="\/" aria-label="Home">/);
+    expect(chrome.match(/<header[\s\S]*?<\/header>/)?.[0]).toContain('href="/"');
     // The page trail travels as JSON that cannot end its script element or carry markup.
     const source = html.match(/<script type="application\/json" data-k2b-page-trail>([^<]*)<\/script>/)?.[1] ?? "";
     expect(source).toContain("\\u003cnotes>");
@@ -286,8 +296,8 @@ describe("Cloud layouts SSR", () => {
     const embedded = (id: string) => JSON.parse(html.match(new RegExp(`<script id="${id}" type="application/json">(.*?)</script>`))![1]!);
     const badges = (apps: { id: string; badge?: string }[]) => Object.fromEntries(apps.map((entry) => [entry.id, entry.badge ?? null]));
     const expected = { "chat-probe": "/api/chat-probe/badge", "mail-probe": null };
-    expect(badges(embedded("cloud-rail-data").apps)).toEqual(expected);
-    expect(badges(embedded("cloud-app-launchpad-data").apps)).toEqual(expected);
+    expect(badges(embedded("cloud-shell-data").apps)).toEqual(expected);
+    expect(html.match(/id="cloud-shell-data"/g)).toHaveLength(1);
     expect(html).toContain('aria-label="Chat probe"');
     expect(html).not.toContain("cloud-app-badge");
   });
@@ -303,7 +313,7 @@ describe("Cloud layouts SSR", () => {
       expect(html).toContain(">Imprint</a>");
       expect(html).toContain('aria-label="Language: English"');
       expect(html).toContain('aria-haspopup="menu"');
-      expect(html).toContain("Dark mode");
+      expect(html).toContain("Appearance: Automatic");
       expect(html).not.toContain("Appearance and language");
       expect(html).not.toContain("cloud-app-canvas");
       expect(html).not.toContain("layout-header");
@@ -320,7 +330,7 @@ describe("Cloud layouts SSR", () => {
     expect(html).toContain('aria-label="Rechtliches"');
     expect(html).toContain(">Impressum</a>");
     expect(html).toContain('aria-label="Sprache: Deutsch"');
-    expect(html).toContain("Heller Modus");
+    expect(html).toContain("Automatisch");
   });
 
   test("an explicit language choice outranks the browser language on anonymous pages", async () => {

@@ -40,12 +40,16 @@ test("tool names have the same keys in every locale", () => {
 test("every built-in tool has a name in English and German", () => {
   const { names, unread } = builtinTools();
   expect(unread).toEqual([]);
-  expect(names).toEqual(expect.arrayContaining(["code_check", "view_image", "code_write", "memory", "search_tools"]));
+  expect(names).toEqual(expect.arrayContaining(["code_check", "view_image", "code_write", "code_import", "memory", "search_tools"]));
   const missing = names.filter((name) => !aiBuiltinToolName(name, "en") || !aiBuiltinToolName(name, "de"));
   expect(missing).toEqual([]);
 });
 
 test("shows built-in tools by their localized name and other tools by their name in words", () => {
+  expect(displayToolName("code_write", "en")).toBe("Save app file");
+  expect(displayToolName("code_write", "de")).toBe("App-Datei speichern");
+  expect(displayToolName("code_import", "en")).toBe("Import app files");
+  expect(displayToolName("code_import", "de")).toBe("App-Dateien importieren");
   expect(displayToolName("code_check", "en")).toBe("App check");
   expect(displayToolName("code_check", "de")).toBe("App-Prüfung");
   expect(displayToolName("view_image", "de-AT")).toBe("Bild ansehen");

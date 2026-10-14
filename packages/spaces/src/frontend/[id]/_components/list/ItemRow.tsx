@@ -3,6 +3,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Checkbox, Tag } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { INACTIVE_ITEM_DAYS, type SpaceColumn, type SpaceItem, type SpaceTag } from "@/contracts";
+import { isTaskOverdue } from "@/task-overdue";
 import { shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
 import type { RetryToast } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
@@ -145,7 +146,7 @@ export default function ItemRow(props: ItemRowProps) {
   const isEvent = () => !!(props.item.startsAt && props.item.endsAt);
   const priority = () => (props.item.priority ? PRIORITY_STYLES[props.item.priority] : null);
   const status = () => props.columns.find((column) => column.id === props.item.columnId) ?? null;
-  const isOverdue = () => props.item.deadline && new Date(props.item.deadline) < new Date() && !isCompleted();
+  const isOverdue = (): boolean => !isCompleted() && isTaskOverdue(props.item, props.dateConfig);
   const schedule = () => (isEvent() ? props.item.startsAt : props.item.deadline) ?? null;
   const eventTime = () => {
     if (!isEvent()) return null;
@@ -175,6 +176,7 @@ export default function ItemRow(props: ItemRowProps) {
     <div
       ref={row}
       data-space-list-row
+      data-collapsing={collapsing() ? "true" : undefined}
       class={`grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ${
         collapsing() ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr]"
       }`}
@@ -203,6 +205,7 @@ export default function ItemRow(props: ItemRowProps) {
           <a
             href={itemUrl()}
             class="focus-ui relative flex min-w-0 flex-1 items-center gap-3 rounded-[var(--ui-radius-control)]"
+            data-spaces-item-link
             aria-current={isSelectedLocal() ? "true" : undefined}
             onClick={(event) => {
               if (!shouldHandleDetailClick(event, event.currentTarget)) return;
@@ -248,7 +251,7 @@ export default function ItemRow(props: ItemRowProps) {
                   <Show when={props.item.activeBlockerCount > 0}>
                     <span class="inline-flex shrink-0 items-center gap-1 text-amber-700 dark:text-amber-300">
                       <i class="ti ti-lock" aria-hidden="true" />
-                      Blocked by {props.item.activeBlockerCount}
+                      {t.blockedByCount({ count: props.item.activeBlockerCount })}
                     </span>
                   </Show>
                   <Show when={isInactiveTask(props.item)}>

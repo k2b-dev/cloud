@@ -1,13 +1,15 @@
 ---
 name: assistant-code-mode
-description: Inspect and transform unfamiliar data, analyze files, compare results across Cloud apps, or build and improve HTML and agent-only Apps in Assistant Studio. Use for quick code experiments, data analysis, file generation, resource SQL queries, interactive charts and small apps shown in chat, and combining discovered Cloud capabilities. For plain arithmetic or date offsets, use calculate. To only show data as a chart, use the chart tool.
+description: Build apps and work with data in code. Use whenever the person asks for an app, calculator, converter, timer, form, tracker or any other tool they will interact with (always a saved Studio App), and for data analysis, file transformation and generation, resource SQL queries, quick code experiments and combining discovered Cloud capabilities. For plain arithmetic or date offsets, use calculate. A few values that did not come from code use the chart tool; computed charts, tables and one-off dashboards use cloud.view.*; a dashboard to keep, reload or share is a Studio App.
 ---
 # Assistant code mode
 
-Choose the smallest useful result: one-off answer, exported file, an app shown
-in this chat, or a reusable Studio App. An App has an HTML interface, agent
-actions, or both; persistence is optional. One-off scripts stay in their chat
-and cannot be shared. Reuse an existing Cloud feature when it fits. For a
+Choose the smallest useful result: a one-off answer, a view, an exported file,
+or a Studio App. A tool the person will use, such as a calculator or a form,
+is a Studio App, even when it keeps no data; views show a result, and an
+explorer view adds filters and comparison. An App has an HTML interface,
+agent actions, or both; persistence is optional. One-off scripts stay in their
+chat and cannot be shared. Reuse an existing Cloud feature when it fits. For a
 quick reading of an uploaded PDF or Office document, `read_file` can return
 Markdown; use code for exact cells, calculations, original PDF text or positions.
 
@@ -16,12 +18,82 @@ There are two kinds of code:
 - **Scripts** have no interface: analysis, reports, PDFs, app actions and
   scheduled runs. One JavaScript module, run with `code_run`.
 - **HTML apps** are interfaces: `index.html` plus optional `style.css` and
-  `app.js`, shown with `code_open` or `code_present`. Read
-  [HTML apps](references/apps.md) before writing one. Write `steps.json`, run
+  `app.js`, shown with `code_open` or `code_present`. For a small app follow
+  the fast path below; otherwise read [HTML apps](references/apps.md) before
+  writing one. Write `steps.json`, run
   `code_check`, fix its errors and layout warnings, look at every screenshot
   and PDF with `view_image` and the report's review prompt, fix and check again
   before `code_open`, `code_present` or `code_publish`. The check uses throwaway
   data; scripts still use real data.
+
+## Build an app the person asked for
+
+An app, calculator, converter, timer, form, tracker or any other tool the
+person will use is a saved Studio App: it appears in their Studio Apps, and
+they can reopen, change and share it. Never answer such a request with a view
+or a one-off chat card. A question for one value, such as a tip or a unit
+conversion, gets the answer instead of an app.
+
+First decide which kind it is:
+
+- A **small tool** has one screen and keeps at most the person's own settings
+  or history, such as a calculator, unit converter, tip calculator or timer.
+  Build it in one pass, as below.
+- Any other app collects records, involves several people, creates a PDF or
+  reads uploaded files, such as a form, list, tracker or generator. A form
+  always stores what is submitted, and records that several people add or see
+  go into a table: create it with `code_database` and write rows with
+  `cloud.db`, never `cloud.kv.user`, which only the person who entered them
+  sees. First read [HTML apps](references/apps.md),
+  [Source workflow](references/source-workflow.md), the closest complete
+  [example](references/examples.md) and the references it uses, such as
+  [Database](references/database.md) or [PDF generation](references/pdf.md).
+  Then create it with its first `html` and `steps`, and fix and check again
+  until the check passes.
+
+A small tool in one pass:
+
+1. Load `code_create`, `code_write`, `code_check` and `code_open` with one
+   `load_tools` call if they are not loaded yet. Read no references, write no
+   plan and run no exploratory code.
+2. Call `code_create({title, icon, html, steps})` once with the complete app:
+   one `index.html` with its script in `<script type="module">` and its CSS in
+   `<style>`, plus its `steps.json`.
+3. Call `code_check({id})`, then `view_image` with the report's
+   `review.prompt` for every path in `review.paths`, all in one turn. Fix
+   errors and defects that break use, such as a wrong result or a clipped
+   control, with one `code_write` and check again. Never change a passing app
+   for matters of taste.
+4. As soon as a check passes and its screenshots show no such defect, call
+   `code_open({id})`; use `code_present({id})` instead when the person asks
+   to see the app in the chat. Then say in one or two sentences what the app
+   does. Where `code_open` is unavailable, such as in a background run, say
+   that the app is saved in Studio under its title.
+
+The single file follows these rules:
+
+- Start with one `<h1>`. Cloud styles plain semantic HTML (headings, forms,
+  buttons, tables, `output`) in light and dark with enough contrast. Write
+  little CSS: no text or background colors of your own, borders, cards or
+  shadows; use tokens such as `var(--k2b-text-muted)` where you must. Use
+  `class="row"` or `class="grid"` for layout and `class="primary"` for the
+  main button.
+- A layout of your own, such as a keypad grid, sets `gap` and
+  `> * { margin: 0 }`; otherwise Cloud's spacing between siblings shifts the
+  second item of a row.
+- No inline handlers (`onclick="…"`), `alert`, `confirm`, `prompt`,
+  `localStorage`, `fetch`, CDN scripts or `<link>`. Use `addEventListener`,
+  and `await cloud.kv.user.get/set` for what the person keeps, such as
+  settings or a history.
+- Every button that does not submit a form has `type="button"`; a form
+  handles `submit`. Give every control a visible label or `aria-label`.
+- Format numbers with `Intl.NumberFormat(cloud.locale)`; write all visible
+  text in the person's language.
+- `steps.json` holds 1 to 20 main-flow steps that end in the typical used
+  state, such as `[{"action":"click","target":{"role":"button","name":"7"}},
+  {"action":"click","target":{"role":"button","name":"+"}}]`. Actions are
+  `click`, `check`, `uncheck`, `fill`, `select`, `press`, `upload` and
+  `reload`; targets are `{role,name}`, `{label}` or `{text}`.
 
 ## Start from the contract
 
@@ -31,9 +103,10 @@ code. Discover other Cloud operations before using `cloud.capabilities.run`.
 
 Read [cloud contract](references/cloud.md) first: it is the complete runtime contract.
 One frozen global `cloud` supplies storage, data, AI, HTTP, files, document
-helpers, money, and charts, the same in scripts and apps. Only relative source
-imports are supported, and there is no native networking. Discover external
-capability and HTTP contracts separately.
+helpers, money, and charts, the same in scripts and apps; only `cloud.view`
+works in script runs alone. Only relative source imports are supported, and
+there is no native networking. Discover external capability and HTTP contracts
+separately.
 
 Inspect supplied data before joining, filtering or calculating: column names,
 types, units, date ranges and missing values. Ask only for decisions or inputs
@@ -76,7 +149,8 @@ supported surface; links within references add related workflows when needed.
 | Parse a CAMT bank report | [Bank reports](references/camt.md) |
 | Calculate, create or read electronic invoices/XML/PDF attachments | [Electronic invoices](references/einvoice.md) |
 | Interfaces: files, styles without CSS, sandbox rules, dialogs | [HTML apps](references/apps.md) |
-| Show an interactive app in this chat | [Chat apps](references/chat.md) |
+| Show an app in this chat | [Chat apps](references/chat.md) |
+| Computed charts and tables | [Views in the chat](references/views.md) |
 | Chart types, series and axes | [Charts](references/charts.md) |
 | Long processing, progress, cancellation | [Script context](references/runtime.md) |
 | Persist personal/shared JSON or shared files | [Storage](references/storage.md) |
@@ -94,28 +168,49 @@ supported surface; links within references add related workflows when needed.
 | Unfamiliar inputs or cross-app investigation | [Investigation](references/investigation.md) |
 | Complete app and script starters | [Examples](references/examples.md) |
 
-For a new app, read Source workflow and the closest complete example before
-writing source, plus only the API references it uses. For analytical reports or
-dashboards, also load `assistant-data-analysis` for metrics and source validation.
+For a new app beyond the small-app fast path, read Source workflow and the
+closest complete example before writing source, plus only the API references it
+uses. For analytical reports or dashboards, also load `assistant-data-analysis`
+for metrics and source validation.
 
 ## Choose the delivery
 
-Just data → `chart` tool; interaction → chat app (`code_present`); persistence
-or reuse → saved Studio App. When the person only needs to see numbers as a
-chart, compute them (with `code_run` if needed) and pass them to the `chart`
-tool: Cloud draws it in the chat with a data table, no app files or
-`code_check`. It takes the options of `cloud.chart()` as plain data.
+Choose by where the values came from:
 
-For a calculator, a filterable chart, a report or small dashboard in this
-conversation, compute and check the numbers with `code_run`, then show an HTML
-app with `code_present({title, files})`. Read [Chat apps](references/chat.md).
-A successful run is visible to the agent only; present it before saying the
-user can see it. No saved App or chat file is necessary.
+1. A few values already in the conversation, a web page or a small capability
+   result, without a run → `chart` tool.
+2. Numbers from code (files, CSV, Cloud data or capability results read with
+   `cloud.capabilities.run`) → `cloud.view.chart`, `cloud.view.group`,
+   `cloud.view.table`, `cloud.view.stats`, `cloud.view.details` or
+   `cloud.view.explorer` in the run, then `present({path})` per view. Never retype run values into tool
+   arguments, app data or Markdown; an app's data module is the file the run
+   wrote, copied with `code_file_copy` or `code_import`. If a view is missing, rerun with
+   `cloud.view.*`. Return only key figures the answer text mentions.
+3. 1..6 comparable key figures → `cloud.view.stats` above charts, instead of
+   several cards or stat charts. One record with exact fields, such as a checked
+   invoice → `cloud.view.details`. Cloud objects found by a script → table `ref`
+   columns instead of Markdown links. More records → `cloud.view.table`.
+4. Filtering, steps and comparison over a computed dataset → `cloud.view.explorer`;
+   no app. For categorical CSV or spreadsheet analyses where the reader will
+   compare and filter (status per category, price against stock), deliver
+   `cloud.view.stats` key figures plus an explorer over the rows instead of
+   isolated single-distribution charts or an offer to build a filter app.
+   A one-off dashboard of an upload is these views too.
+5. Anything the person interacts with beyond an explorer (inputs, what-if,
+   own layout, forms), and kept data, live loading, reuse, sharing or actions
+   → Studio App; see "Build an app the person asked for".
+6. A file as the result → `cloud.download`, `code_export`, `present`.
 
-Use a Studio App when the user needs an independently accessible, reusable
-application: `code_create`, `code_write`, then `code_open` beside the chat or
-`code_present({id})` in it. Use `cloud.download`, `code_export`, and `present`
-when the requested result is a file. These are separate delivery choices.
+A successful run is visible to the agent only; present its views or files
+before saying the person can see them. Put related measures in a group; use
+`linkX` for line charts over the same kind of x. There is no second y axis:
+keep different units in separate charts. Read [Views in the chat](references/views.md).
+
+For a Studio App: `code_create` with the first `html` and `steps`, one
+`code_write` per further file, then `code_open` beside the chat or
+`code_present({id})` in it. Send the writes one at a time, pass each returned
+revision as the next `expectedRevision`, and check that each file's `lines`
+matches what you wrote.
 
 ## Verify and deliver
 
@@ -126,11 +221,12 @@ source does not verify behavior. If `work.status` is `running`, wait with
 `outputTruncated` are not successful complete results.
 
 Apps do not run in `code_run`; `code_check` renders them on desktop and phone.
-Put calculations into a script first and check them there. Read the diagnostics
-of `code_write`, which also validate `steps.json`, and the errors and warnings of
-`code_check` and `code_present`, which reject CDN imports, inline handlers,
-`alert`, `localStorage`, native `fetch` and missing files. When you deliver an
-app, say what the person should look at.
+Put calculations over real data into a script first and check them there. Read
+the diagnostics of `code_create` and `code_write`, which also validate
+`steps.json`, and the errors and warnings of `code_check` and `code_present`,
+which reject CDN imports, inline handlers, `alert`, `localStorage`, native
+`fetch` and missing files. When you deliver an app, say what the person should
+look at.
 
 For a CSV, call `await cloud.download("result.csv", await cloud.sheet.toCsv(rows))` inside code;
 for a spreadsheet, `await cloud.download("result.ods", await cloud.sheet.toOds(sheets))`.

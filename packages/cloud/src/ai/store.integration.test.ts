@@ -4,6 +4,7 @@ import { sql } from "bun";
 import { collectPages, descending } from "../../../../scripts/fixtures/stable-paging";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
+import { approvalArgsDigest, approvalReviewDigest, approvals } from "../services/approvals";
 import { toPgTextArray } from "../services/postgres";
 import { session as authSession } from "../services/session";
 import { createTestSession } from "../services/session/session.test-fixture";
@@ -55,6 +56,126 @@ const runConfig = { kind: "chat" as const, input: "hi", toolSource: { kind: "non
 suite("AI conversation store integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
+  });
+  test("backfills legacy pending approvals with canonical digests and the original deadline", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Legacy chat" });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "mock",
+        runConfig,
+        userMessage: userMessage("Run"),
+      });
+      const args = { z: "last", a: { second: 2, first: 1 } },
+        review = { message: "Write this item?" };
+      await aiConversations.savePendingTurnAction({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId: "legacy",
+        kind: "custom_approval",
+        status: "pending",
+        name: "demo.item.write",
+        args,
+        review,
+        message: "Write item?",
+        approvalScope: "one",
+        allowAlways: false,
+        allowChat: true,
+        resolvedEvent: null,
+      });
+      await sql`UPDATE ai.turns SET status='waiting_for_action',deadline=now()+interval '1 hour' WHERE id=${turn.id}::uuid`;
+      await migrateCloudAi();
+      const pending = await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "legacy" });
+      expect(pending?.approvalId).toBeDefined();
+      const record = await approvals.get(pending!.approvalId!);
+      // The first message titles the chat; the request keeps the title the chat has when the migration runs.
+      const current = await aiConversations.getConversation({ conversationId: chat.id });
+      expect(record).toMatchObject({
+        appId: "demo",
+        action: "item.write",
+        assurance: "standard",
+        requesterRef: `${turn.id}/legacy`,
+        requesterTitle: current?.title,
+        subjectId: userId,
+        approverUserId: userId,
+        argsDigest: approvalArgsDigest(args),
+        reviewDigest: approvalReviewDigest(review),
+      });
+      const [deadline] = await sql<{ deadline: Date }[]>`SELECT deadline FROM ai.turns WHERE id=${turn.id}::uuid`;
+      expect(record!.expiresAt).toEqual(deadline!.deadline);
+      await migrateCloudAi();
+      expect((await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "legacy" }))?.approvalId).toBe(
+        record!.id,
+      );
+      await aiConversations.clearPendingTurnActions({ conversationId: chat.id, turnId: turn.id });
+      expect(await approvals.get(record!.id)).toMatchObject({ status: "cancelled" });
+    } finally {
+      await cleanupFixture({ userId, conversationIds: [chat.id] });
+    }
+  });
+  test("ending a turn cancels its open and unused approvals but keeps used ones and a linked Studio decision", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Approvals" });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelProfileId: "mock",
+        runConfig,
+        userMessage: userMessage("Run"),
+      });
+      const ask = async (callId: string, requester: { kind: "assistant_turn" | "studio_app"; ref: string }, decided: boolean) => {
+        const record = await approvals.request({
+          appId: "demo",
+          action: "write",
+          requester: { ...requester, appId: "assistant" },
+          subjectId: userId,
+          approverUserId: userId,
+          assurance: "confirm",
+          sentence: "Write?",
+          input: { callId },
+          expiresInMs: 60_000,
+        });
+        if (!record.ok) throw new Error("Expected a new approval request");
+        if (decided) await approvals.decide(record.id, { approved: true }, { userId, via: "web_session" });
+        await aiConversations.savePendingTurnAction({
+          approvalId: record.id,
+          conversationId: chat.id,
+          turnId: turn.id,
+          callId,
+          kind: "custom_approval",
+          status: decided ? "resolved" : "pending",
+          name: "demo.write",
+          args: { callId },
+          approvalScope: "demo.write",
+          allowAlways: false,
+          resolvedEvent: decided ? { type: "approval_response", callId, approved: true } : null,
+        });
+        return record.id;
+      };
+      const open = await ask("open", { kind: "assistant_turn", ref: `${turn.id}/open` }, false);
+      const unused = await ask("unused", { kind: "assistant_turn", ref: `${turn.id}/unused` }, true);
+      const used = await ask("used", { kind: "assistant_turn", ref: `${turn.id}/used` }, true);
+      expect(
+        await approvals.consume(used, {
+          input: { callId: "used" },
+          review: null,
+          requester: { kind: "assistant_turn", ref: `${turn.id}/used` },
+        }),
+      ).toEqual({ ok: true });
+      const linked = await ask("linked", { kind: "studio_app", ref: crypto.randomUUID() }, true);
+      expect(await aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, status: "aborted" })).not.toBe("lost");
+      expect(await Promise.all([open, unused, used, linked].map(async (id) => (await approvals.get(id))?.status))).toEqual([
+        "cancelled",
+        "cancelled",
+        "consumed",
+        "approved",
+      ]);
+    } finally {
+      await sql`DELETE FROM audit.events WHERE actor_user_id=${userId}::uuid AND target_type='approval_request'`;
+      await sql`DELETE FROM approvals.requests WHERE approver_user_id=${userId}::uuid`;
+      await cleanupFixture({ userId, conversationIds: [chat.id] });
+    }
   });
   test("a metadata-renamed title survives the first message while create-time placeholders get the snapshot", async () => {
     const userId = await insertUser();
@@ -1220,6 +1341,112 @@ suite("AI conversation store integration", () => {
           runBudgetMs: 60_000,
         }),
       ).toBeNull();
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+    }
+  });
+
+  test.each(["running", "waiting_for_action"] as const)("inline results do not raise the %s turn recovery allowance", async (status) => {
+    const userId = await insertUser();
+    const conversationIds: string[] = [];
+    try {
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      conversationIds.push(conversation.id);
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: "test-model",
+        runConfig,
+        userMessage: userMessage("List local files"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "worker-inline",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 1,
+        runBudgetMs: 600_000,
+      });
+      expect(claim?.turn.attempt).toBe(1);
+      await aiConversations.savePendingTurnAction({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        callId: "inline-list",
+        kind: "client_tool",
+        status: "pending",
+        name: "local_list",
+        args: { path: "." },
+        approvalScope: "local_list",
+        allowAlways: false,
+        frontendMode: "client",
+        resolvedEvent: null,
+      });
+      await aiConversations.resolvePendingTurnAction({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        callId: "inline-list",
+        event: { type: "tool_result", callId: "inline-list", result: { status: "completed", path: ".", entries: [], nextAfter: null } },
+      });
+      await aiConversations.markPendingTurnActionConsumedInline({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        callId: "inline-list",
+      });
+      // Inline consumption must retain the durable result for replay after a crash.
+      expect(await aiConversations.listResolvedPendingActions({ conversationId: conversation.id, turnId: turn.id })).toMatchObject([
+        { callId: "inline-list", status: "resolved", resolvedEvent: { type: "tool_result" } },
+      ]);
+      if (status === "waiting_for_action") {
+        // A later client action suspends normally and needs one continuation claim.
+        await aiConversations.savePendingTurnAction({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          callId: "code-open",
+          kind: "client_tool",
+          status: "pending",
+          name: "code_open",
+          args: {},
+          approvalScope: "code_open",
+          allowAlways: false,
+          frontendMode: "client",
+          resolvedEvent: null,
+        });
+        expect(
+          await aiConversations.suspendTurn({
+            conversationId: conversation.id,
+            turnId: turn.id,
+            leaseOwner: "worker-inline",
+            blocks: [{ id: "code-open", kind: "tool", callId: "code-open", name: "code_open", status: "awaiting_client" }],
+            seq: 1,
+            waitingBudgetMs: 600_000,
+          }),
+        ).toBe(true);
+        await aiConversations.resolvePendingTurnAction({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          callId: "code-open",
+          event: { type: "tool_result", callId: "code-open", result: { failed: true, error: "Cancelled" } },
+        });
+        // One real attempt plus one normal action continuation exhausts maxAttempts=1.
+        await sql`UPDATE ai.turns SET attempt = 2 WHERE id = ${turn.id}`;
+      } else {
+        await sql`UPDATE ai.turns SET lease_expires_at = now() - interval '1 second' WHERE id = ${turn.id}`;
+      }
+      expect(
+        await aiConversations.claimTurn({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          leaseOwner: "worker-recovery",
+          leaseMs: 30_000,
+          from: status === "running" ? "queue" : "waiting",
+          maxAttempts: 1,
+          runBudgetMs: 600_000,
+        }),
+      ).toBeNull();
+      const sweep = await aiConversations.sweepTurns({ maxAttempts: 1 });
+      expect(sweep.failed.some((entry) => entry.turnId === turn.id)).toBe(true);
+      expect(sweep.requeued.some((entry) => entry.turnId === turn.id)).toBe(false);
+      expect(await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id })).toMatchObject({ status: "failed" });
     } finally {
       await cleanupFixture({ userId, conversationIds });
     }

@@ -2261,7 +2261,7 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "Lock note",
-      description: `Lock a note permanently. Locked notes cannot be edited or restored from versions. This action cannot be undone. Requires write permission, or admin permission when the notebook's \`noteDeletePermission\` is \`admin\`; that case returns 403 with code \`${NOTE_LOCK_ADMIN_ONLY}\`.`,
+      description: `Lock a note permanently. Locked notes cannot be edited or restored in place. Their versions can still be restored as copies. This action cannot be undone. Requires write permission, or admin permission when the notebook's \`noteDeletePermission\` is \`admin\`; that case returns 403 with code \`${NOTE_LOCK_ADMIN_ONLY}\`.`,
       ...requiresAuth,
       responses: {
         200: jsonResponse(NoteSchema, "Locked note"),
@@ -2442,7 +2442,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "Restore note from snapshot",
-      description: "Restore snapshot data into an empty target note (used by Restore as New Note).",
+      description:
+        "Restore snapshot data into an empty target note, as used by the CLI’s `versions restore --into`. To restore a saved version in place or as a new note, use the `versions/:versionId/restore` or `versions/:versionId/copy` route.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(NoteSchema, "Restored note"),
@@ -2471,6 +2472,74 @@ const app = new Hono<AuthContext>()
           getLocale(c),
         ),
       );
+    },
+  )
+
+  .post(
+    "/:id/notes/:noteId/versions/:versionId/restore",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Restore a version as the current note content",
+      description:
+        "Make this version the current content as an ordinary edit through the live document. The previous live content is kept as a version first. Restore previousVersionId through this same route to undo the change.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(
+          z.object({ note: NoteSchema, changed: z.boolean(), previousVersionId: z.string().nullable(), versionId: z.string().nullable() }),
+          "Restored note and undo version",
+        ),
+        403: jsonResponse(ErrorResponseSchema, "No write access or note is locked"),
+        404: jsonResponse(ErrorResponseSchema, "Note or version not found"),
+        409: jsonResponse(ErrorResponseSchema, "Note stream conflict, or another restore of this note is still running"),
+      },
+    }),
+    async (c) => {
+      const { notebook, user, error } = await checkNotebookAccess(c, c.req.param("id")!, "write");
+      if (error) return error;
+      const noteCheck = await requireNoteInNotebook(notebook!.id, c.req.param("noteId")!, getLocale(c));
+      if (!noteCheck.ok) return respond(c, noteCheck);
+      const result = await notebooksService.note.versions.restoreInPlace({
+        noteId: noteCheck.data.id,
+        versionId: c.req.param("versionId")!,
+        createdBy: user?.id ?? null,
+        actor: getNotebookActivityActor(c),
+      });
+      if (!result.ok) {
+        if (result.error === "Version not found") return respond(c, fail(notFoundMessage(messages(c).versionNotFound)));
+        return respond(c, localizeMutationResult(result, getLocale(c)));
+      }
+      const [note] = await toPublicNotes([result.data.note], notebook!.shortId);
+      return respond(c, ok({ ...result.data, note: note! }));
+    },
+  )
+  .post(
+    "/:id/notes/:noteId/versions/:versionId/copy",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Restore a version as a new note",
+      description:
+        "Create a new note with exactly the version's content, directly after the original under the same parent. The original stays unchanged. A locked source note is allowed. Requires write access.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(NoteSchema, "Created note"),
+        403: jsonResponse(ErrorResponseSchema, "No write access"),
+        404: jsonResponse(ErrorResponseSchema, "Note or version not found"),
+      },
+    }),
+    async (c) => {
+      const { notebook, user, error } = await checkNotebookAccess(c, c.req.param("id")!, "write");
+      if (error) return error;
+      const noteCheck = await requireNoteInNotebook(notebook!.id, c.req.param("noteId")!, getLocale(c));
+      if (!noteCheck.ok) return respond(c, noteCheck);
+      const result = await notebooksService.note.versions.restoreAsCopy({
+        noteId: noteCheck.data.id,
+        versionId: c.req.param("versionId")!,
+        creatorId: user?.id ?? null,
+        actor: getNotebookActivityActor(c),
+        locale: getLocale(c),
+      });
+      if (!result.ok && result.error === "Version not found") return respond(c, fail(notFoundMessage(messages(c).versionNotFound)));
+      return respond(c, toPublicNoteResult(Promise.resolve(result), notebook!.shortId, getLocale(c)));
     },
   )
 

@@ -674,10 +674,7 @@
 }
 
 .k2b-ui .grids-overview-workspace {
-  border-color: transparent;
-  border-radius: 0;
   background: var(--ui-surface);
-  box-shadow: none;
 }
 
 .k2b-ui .grids-overview-main {

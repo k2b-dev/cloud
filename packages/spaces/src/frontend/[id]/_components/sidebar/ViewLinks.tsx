@@ -16,7 +16,7 @@ export function createSpaceViews(props: Omit<Props, "variant">) {
   const [query, setQuery] = createSignal(props.query);
   const path = `/app/spaces/${props.spaceId}`;
   const views: Array<{ id: ViewType; label: string; icon: string }> = [
-    { id: "list", label: t.overview, icon: "ti-home" },
+    { id: "list", label: t.list, icon: "ti-layout-list" },
     { id: "table", label: t.table, icon: "ti-table" },
     { id: "kanban", label: t.kanban, icon: "ti-layout-kanban" },
     { id: "calendar", label: t.calendar, icon: "ti-calendar" },

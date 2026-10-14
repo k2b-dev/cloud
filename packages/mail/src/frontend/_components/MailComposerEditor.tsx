@@ -12,6 +12,7 @@ import {
 import type { Accessor, JSX } from "solid-js";
 import { createMemo, Show } from "solid-js";
 import type { ComposePreview } from "../../contracts";
+import MailFormattingWarnings from "./MailFormattingWarnings";
 import { mailComposerMessages } from "./mail-composer-messages";
 
 export default function MailComposerEditor(props: {
@@ -77,12 +78,15 @@ export default function MailComposerEditor(props: {
             fallback={<Placeholder state="loading" variant="panel" class="h-full min-h-72" title={t().preparingPreview} />}
           >
             {(value) => (
-              <iframe
-                class="h-full min-h-72 w-full border-0 bg-white"
-                sandbox=""
-                srcdoc={`<style>body{margin:0}</style>${value().html}`}
-                title={t().emailPreview}
-              />
+              <div class="flex h-full min-h-72 flex-col">
+                <iframe
+                  class="min-h-0 w-full flex-1 border-0 bg-white"
+                  sandbox=""
+                  srcdoc={`<style>body{margin:0}</style>${value().html}`}
+                  title={t().emailPreview}
+                />
+                <MailFormattingWarnings warnings={value().formattingWarnings} />
+              </div>
             )}
           </Show>
         }

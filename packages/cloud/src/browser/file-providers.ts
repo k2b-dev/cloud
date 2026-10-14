@@ -15,6 +15,9 @@ import {
   fileProviderIssues,
 } from "../contracts/file-provider";
 import { LOCALE_HEADER } from "../shared/locale";
+import { FileProviderError } from "./file-provider-error";
+
+export { FileProviderError } from "./file-provider-error";
 
 /** One live application whose catalog manifest offers files, reduced to what choosing a file needs. */
 export type FileProviderSource = {
@@ -30,18 +33,6 @@ export type FileProviderSource = {
 };
 
 export type FileProviderCaller = Pick<CapabilityHttpOptions, "fetch" | "baseUrl"> & { locale: string };
-
-/** A provider failure the chooser explains; `status` 0 means the browser is offline. */
-export class FileProviderError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly status: number,
-  ) {
-    super(message);
-    this.name = "FileProviderError";
-  }
-}
 
 /** The page size the chooser asks for; the contract allows 1 to 100. */
 export const FILE_PROVIDER_PAGE_SIZE = 50;

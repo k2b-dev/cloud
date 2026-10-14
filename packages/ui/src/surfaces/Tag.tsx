@@ -1,6 +1,6 @@
 import { type JSX, Show } from "solid-js";
+import { useTagMessages } from "../inputs/tag-messages";
 import { colorTintStyle } from "../internal/color";
-import { useUiMessages } from "../intl/messages";
 
 export type TagSize = "sm" | "md" | "lg";
 
@@ -18,7 +18,7 @@ export type TagProps = {
 
 /** Compact label presentation with optional color, icon, and remove action. */
 export function Tag(props: TagProps): JSX.Element {
-  const messages = useUiMessages();
+  const tagMessages = useTagMessages();
   const hasIconSlot = () => props.selected !== undefined || Boolean(props.icon);
   const icon = () => (props.selected ? "ti ti-check" : (props.icon ?? "ti ti-check"));
 
@@ -38,7 +38,7 @@ export function Tag(props: TagProps): JSX.Element {
           <button
             type="button"
             class="k2b-tag__remove"
-            aria-label={props.removeLabel ?? messages().removeTag}
+            aria-label={props.removeLabel ?? tagMessages().removeTag}
             disabled={props.disabled}
             onClick={remove()}
           >

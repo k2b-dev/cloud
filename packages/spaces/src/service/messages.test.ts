@@ -6,6 +6,8 @@ describe("Spaces messages", () => {
   test("keeps catalogs complete and falls back from regional German locales", () => {
     expect(checkSpacesMessages()).toEqual([]);
     expect(spacesMessages("de-CH").widgetTitle).toBe("Heute");
+    expect(spacesMessages("de-CH").widgetSpaceTitle({ space: "Team" })).toBe("Heute · Team");
+    expect(spacesMessages("en").widgetSpaceTitle({ space: "Team" })).toBe("Today · Team");
     expect(spacesMessages("de-CH").starterInProgress).toBe("In Arbeit");
     expect(spacesMessages("fr").widgetTitle).toBe("Today");
   });

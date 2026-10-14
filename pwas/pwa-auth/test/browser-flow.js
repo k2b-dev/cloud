@@ -1,30 +1,9 @@
 async function _run(page) {
-  const fillAppPin = async (target, value) => {
-    await target.waitForFunction(() => !document.querySelector("dialog input:disabled, dialog input[readonly]"));
-    const digits = target.getByRole("group", { name: "App PIN", exact: true }).locator("input");
-    if (await digits.count()) {
-      for (let i = 0; i < value.length; i++) await digits.nth(i).fill(value[i]);
-    } else await target.getByLabel("App PIN", { exact: true }).fill(value);
-  };
-
   const context = await page
     .context()
     .browser()
     .newContext({ locale: "en", viewport: { width: 390, height: 844 } });
   const p = await context.newPage();
-  const unlock = async (target, dialog = false) => {
-    if (!dialog) {
-      await target.getByRole("button", { name: "Unlock", exact: true }).waitFor();
-      const intro = target.getByRole("button", { name: "Continue in browser", exact: true });
-      if (await intro.isVisible()) {
-        await intro.click();
-        await target.waitForFunction(() => !history.state?.k2bDialog);
-      }
-      if (!(await target.getByRole("dialog").count())) await target.getByRole("button", { name: "Unlock", exact: true }).click();
-    }
-    await fillAppPin(target, "012345");
-    if (!dialog) await target.waitForFunction(() => !history.state?.k2bDialog);
-  };
   const events = [];
   let intentionallyDropped = false;
   let navigatingDuringPairing = false;
@@ -57,9 +36,6 @@ async function _run(page) {
     const first = await post(a, "pair");
     await p.goto(first.link);
     if (p.url().includes("#")) throw new Error("Pairing fragment retained");
-    await fillAppPin(p, "012345");
-    await p.getByLabel("Repeat PIN", { exact: true }).fill("012345");
-    await p.getByRole("button", { name: "Save protection", exact: true }).click();
     await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
     step = "first-fill";
     await p.getByRole("dialog").locator("input").nth(0).fill("Personal Cloud", { timeout: 5000 });
@@ -81,7 +57,8 @@ async function _run(page) {
     step = "second-pair";
     const second = await post(b, "pair");
     await p.getByRole("button", { name: "Menu", exact: true }).click();
-    await p.getByRole("menuitem", { name: "Add Cloud", exact: true }).click();
+    await p.getByRole("menuitem", { name: "Manage accounts", exact: true }).click();
+    await p.getByRole("button", { name: "Add Cloud", exact: true }).click();
     await p.getByRole("dialog").locator("input").nth(0).fill(second.link);
     await p.getByRole("button", { name: "Continue", exact: true }).click();
     await p.getByRole("dialog").locator("input").nth(0).fill("Work Cloud");
@@ -93,7 +70,6 @@ async function _run(page) {
     navigatingDuringPairing = true;
     await p.goto("http://localhost:4178/");
     await p.goto(second.link);
-    await unlock(p, true);
     await p.getByRole("heading", { name: "Add Cloud", exact: true }).waitFor();
     await p.getByRole("dialog").locator("input").nth(0).fill("Temporary label");
     await p.getByRole("button", { name: "Trust Cloud and pair" }).click();
@@ -105,7 +81,7 @@ async function _run(page) {
     await p.reload();
     const dismiss = p.getByRole("button", { name: "Continue in browser", exact: true });
     if (await dismiss.isVisible()) await dismiss.click();
-    await unlock(p);
+    await p.getByRole("heading", { name: "Personal Cloud", exact: true }).waitFor();
     const keys = await p.evaluate(async () => {
       const db = await new Promise((resolve, reject) => {
         const r = indexedDB.open("cloud-login", 2);
@@ -155,7 +131,6 @@ async function _run(page) {
     await p.getByRole("button", { name: "Close", exact: true }).click();
     const other = await context.newPage();
     await other.goto("http://localhost:4178/");
-    await unlock(other);
     await other.locator(".auth-comparison").filter({ hasText: lost.comparison }).waitFor();
     await other.getByRole("button", { name: "Approve sign-in", exact: true }).click();
     await other.getByRole("alert").waitFor();

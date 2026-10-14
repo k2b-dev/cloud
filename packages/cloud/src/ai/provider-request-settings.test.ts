@@ -28,11 +28,12 @@ const completion = (provider: AiProviderId, text = '{"answer":"ok"}') => {
   return { choices: [{ message: { content: text }, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1 } };
 };
 const streaming = (provider: AiProviderId) => {
+  const text = JSON.stringify('{"answer":"ok"}');
   if (provider === "anthropic")
-    return 'event: content_block_start\ndata: {"index":0,"content_block":{"type":"text","text":""}}\n\nevent: content_block_delta\ndata: {"index":0,"delta":{"type":"text_delta","text":"ok"}}\n\nevent: content_block_stop\ndata: {"index":0}\n\nevent: message_delta\ndata: {"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}\n\nevent: message_stop\ndata: {}\n\n';
-  if (provider === "gemini") return `data: ${JSON.stringify(completion(provider, "ok"))}\n\n`;
-  if (provider === "ollama") return `${JSON.stringify(completion(provider, "ok"))}\n`;
-  return 'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n';
+    return `event: content_block_start\ndata: {"index":0,"content_block":{"type":"text","text":""}}\n\nevent: content_block_delta\ndata: {"index":0,"delta":{"type":"text_delta","text":${text}}}\n\nevent: content_block_stop\ndata: {"index":0}\n\nevent: message_delta\ndata: {"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}\n\nevent: message_stop\ndata: {}\n\n`;
+  if (provider === "gemini") return `data: ${JSON.stringify(completion(provider))}\n\n`;
+  if (provider === "ollama") return `${JSON.stringify(completion(provider))}\n`;
+  return `data: {"choices":[{"delta":{"content":${text}}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\ndata: [DONE]\n\n`;
 };
 const expectedThinking = (provider: AiProviderId, disabled = false) => {
   if (provider === "anthropic") return disabled ? {} : { thinking: { type: "adaptive" }, output_config: { effort: "medium" } };
@@ -46,12 +47,12 @@ const expectedThinking = (provider: AiProviderId, disabled = false) => {
 
 for (const providerId of providers)
   test(`${providerId}: loop thinking level, all-call extra parameters and preserved structured/compaction reasoning`, async () => {
-    const requests: { body: Record<string, unknown>; headers: Headers }[] = [];
+    const requests: { body: Record<string, unknown>; headers: Headers; url: string }[] = [];
     server = Bun.serve({
       port: 0,
       fetch: async (request) => {
         const body = z.record(z.string(), z.unknown()).parse(await request.json());
-        requests.push({ body, headers: request.headers });
+        requests.push({ body, headers: request.headers, url: request.url });
         const isStream = body.stream === true || request.url.includes("streamGenerateContent");
         return isStream
           ? new Response(streaming(providerId), {
@@ -117,6 +118,33 @@ for (const providerId of providers)
       reasoningEffort: taskReasoningEffort(counted),
     });
     expect(requests[1]!.body).toMatchObject({ ...expectedThinking(providerId, true), custom: { feature: true } });
+    if (rawProvider.capabilities.structuredOutput === true) {
+      switch (providerId) {
+        case "openai":
+        case "openrouter":
+        case "mistral":
+          expect(requests[1]!.body).toHaveProperty("response_format.type", "json_schema");
+          expect(requests[1]!.body).toHaveProperty("response_format.json_schema.schema.properties.answer.type", "string");
+          break;
+        case "vllm":
+          expect(requests[1]!.body).toHaveProperty("structured_outputs.json.properties.answer.type", "string");
+          break;
+        case "anthropic":
+          expect(requests[1]!.body).toHaveProperty("output_config.format.schema.properties.answer.type", "string");
+          break;
+        case "gemini":
+          expect(requests[1]!.body).toHaveProperty("generationConfig.responseJsonSchema.properties.answer.type", "string");
+          break;
+        case "ollama":
+          expect(requests[1]!.body).toHaveProperty("format.properties.answer.type", "string");
+          break;
+        case "openai-compatible":
+          throw new Error("The generic adapter should not advertise native structured output");
+      }
+    } else {
+      expect(requests[1]!.body).not.toHaveProperty("response_format");
+      expect(requests[1]!.body).not.toHaveProperty("structured_outputs");
+    }
 
     const compactMessages = spyOn(aiConversations, "compactMessages").mockResolvedValue(undefined);
     const recordStructuredRun = spyOn(structuredRuns, "safelyRecordStructuredRun").mockResolvedValue(undefined);
@@ -149,6 +177,8 @@ for (const providerId of providers)
     expect(requests).toHaveLength(3);
     expect(requests[2]!.body).toMatchObject({ ...expectedThinking(providerId, true), custom: { feature: true } });
     for (const request of [requests[1]!, requests[2]!]) {
+      if (providerId === "gemini") expect(request.url).toContain("streamGenerateContent");
+      else expect(request.body.stream).toBe(true);
       if (providerId === "anthropic" || providerId === "mistral" || providerId === "ollama")
         for (const key of ["thinking", "reasoning_effort", "think", "reasoning"]) expect(request.body[key]).toBeUndefined();
       if (providerId === "openai" || providerId === "vllm" || providerId === "openai-compatible")

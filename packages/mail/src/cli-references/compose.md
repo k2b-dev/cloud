@@ -30,11 +30,52 @@ cld mail compose template archive <template-id> --revision <revision> --yes
 
 Template bodies use Markdown and Liquid. Presets are application behavior, not persisted template kinds.
 
-Compose rendering needs the same editable draft context as the Mail composer. Store it as JSON so recipients, sending identity, subject, format, and body remain explicit:
+| Variable | Value |
+| --- | --- |
+| `actor.display_name` | Name of the person who previews or sends the message, or inserts the snippet; a user-bound service account uses the name of its user, another service account its own name, other automations "Mailbox automation" |
+| `actor.email` | Email address of the person in actor.display_name; empty when there is none |
+| `sender.display_name` | Display name of the sender identity, or its address when it has no name |
+| `sender.email` | From address of the sender identity |
+| `sender.reply_to` | Reply-To address of the sender identity; empty when not set |
+| `mailbox.name` | Mailbox name |
+| `mailbox.description` | Mailbox description; empty when not set |
+| `message.subject` | Subject of the draft |
+| `message.to` | List of To addresses |
+| `message.cc` | List of Cc addresses |
+
+For example, use this signature:
+
+```liquid
+Best regards
+{{ actor.display_name }}
+{{ mailbox.name }}
+```
+
+Mail fills in snippet values when you insert the snippet. Signatures keep their
+Liquid variables until preview and send. To separate the addresses in
+`message.to` and `message.cc`, use `join`: `{{ message.to | join: ", " }}`.
+
+`--shortcut` is required when you create a template. It names the slash command,
+for example `meeting` for `/meeting` on a snippet. Signatures are selected
+separately and do not appear in slash suggestions. Use lowercase letters, digits,
+and underscores,
+start with a letter, and use at most 40 characters. An unknown variable fails
+validation with an error that lists the available variables.
+`cld mail compose template create --help` lists them too.
+
+Compose rendering needs the same editable draft context as the Mail composer.
+`senderIdentityId` is required. Use a verified sender identity ID from
+`cld mail identity list`. The other fields are optional: `to`, `cc`, and `bcc`
+default to empty arrays; `subject` and `body` default to empty strings; `format`
+defaults to `markdown` and also accepts `plain`. Recipient arrays hold objects
+with `address` (a string) and an optional `name` (a string or null).
+`priority` defaults to `normal` and also accepts `low` and `high`.
+`requestDeliveryReceipt` and `requestReadReceipt` default to `false`.
+Store the draft as JSON:
 
 ```json
 {
-  "senderIdentityId": "<identity-id>",
+  "senderIdentityId": "Ident1",
   "to": [{ "name": null, "address": "recipient@example.com" }],
   "cc": [],
   "bcc": [],
@@ -52,7 +93,25 @@ cld --json mail compose suggestions meet --draft-file draft.json
 cld --json mail compose preview --draft-file draft.json
 ```
 
+`compose snippet render` accepts snippets only and refuses signatures. To preview a signature, set `signatureTemplateId` in the draft JSON; pass `null` for none.
+
 Pass `--conversation <conversation-id>` when the compose context belongs to an existing conversation. `compose suggestions` accepts an empty query when its optional positional argument is omitted.
+
+Markdown bodies may contain simple HTML. Email keeps `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1`–`h3`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul`, and the table elements, and links to `http:`, `https:`, `mailto:`, and `tel:` addresses. A `tel:` address must hold a phone number, such as `tel:+49-731-000000`. Markdown quotes and code blocks are kept, code blocks without their language label. Everything else is removed; text stays. Markdown images are removed too and reported as `img`. `compose preview`, `compose template create|update`, `draft create|update`, `reply`, and `forward` report what was removed in `formattingWarnings`:
+
+```json
+{
+  "formattingWarnings": [
+    { "code": "unsupported_element", "element": "small" },
+    { "code": "unsupported_attribute", "element": "span", "attribute": "class" },
+    { "code": "unsupported_link", "element": "a" }
+  ]
+}
+```
+
+`compose preview` and `compose style get` also report `ignored_mailbox_css` when email ignores parts of the stored mailbox design. Its optional `property` names the CSS property, such as `font-family`, or an at-rule, such as `@media`. Without `property`, Mail ignores the whole custom design and uses the built-in design. This happens when Mail cannot read the stored design or when the design would make this message too complex to render. Preview lists design warnings before body warnings. Messages still send.
+
+The list holds at most 20 distinct entries. The write still succeeds; rewrite the body in plain Markdown or move styling to the mailbox CSS. Without `--json`, the CLI prints the same list on stderr.
 
 Set or clear a personal default signature for an identity and manage the validated mailbox CSS:
 
@@ -64,9 +123,13 @@ cld --json mail compose style get
 cld --json mail compose style set --css-file mail.css
 ```
 
+Mailbox CSS rules apply after the built-in design and win for the elements they select: `a { color: #262626; }` restyles every link, and `.mail-content { font-size: 16px; }` styles the whole message. Use `.mail-signature { color: #52525b; }` to style the signature. Selectors may use the elements that email keeps and the `.mail-content` and `.mail-signature` classes; other classes, IDs, pseudo-classes, at-rules, and `!important` are rejected, and so are values that load an image, such as `url()` or `image-set()`, backslash escapes, `&`, and quoted values that span lines or contain the other kind of quote.
+
+Saving CSS with `compose style set` stays strict. Remove or replace rejected values before saving. A stored design that no longer passes the check keeps its safe parts when rendering, in `.mail-content` and `.mail-signature` rules alike.
+
 Mailbox administrators assign the mailbox default with `cld mail identity add --default-signature <template-id>` or `cld mail identity configure <identity-id> --default-signature <template-id>`. Clear it with `--clear-default-signature`. A personal default takes precedence.
 
-The editable draft retains Liquid placeholders. Preview and delivery materialize the final identity-aware output. Defaults are inserted when a new draft is created; changing identity configuration later never rewrites an edited draft.
+The signature stays outside the editable body. Preview and delivery show it after the body, with Liquid values filled in for the current context. When the body ends with a quoted reply under an attribution line such as `… Ada wrote:`, or contains a forwarded message, the signature goes before that history. Changing identity configuration later never rewrites an edited draft.
 
 ## Create and update shared drafts
 
@@ -88,6 +151,12 @@ cld --json mail draft update <draft-id> \
   --body-file body.md \
   --format markdown
 ```
+
+`draft create|update`, `reply`, and `forward` accept `--signature <template-id>`
+or `--no-signature`. Use only one of these flags. Without either flag, creation
+uses the sender's default signature, with a personal default taking precedence
+over the mailbox default; update keeps the current choice. Keep signatures out
+of `--body` and `--body-file`.
 
 Use `--format plain` when the message must remain plaintext. Plain messages do not use the Markdown HTML rendering path.
 

@@ -784,8 +784,43 @@
 
 /* --------------------------------------------------------- app workspace */
 
+/* The room an open detail panel takes beside the work area, and the width
+   `Main` keeps beside it. They are typed so that a closing panel can hold
+   them while it slides out (see the motion block); every workspace sets
+   both, so a nested workspace never takes its parent's. */
+@property --k2b-workspace-detail-track {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --k2b-workspace-main-keep {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+/* Typed so that it resolves where the tablet drawer sets it: in container
+   units of its own workspace, not of a container inside `Main`. */
+@property --k2b-detail-space {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 .k2b-ui .k2b-app-workspace {
   --k2b-workspace-resize-hit-size: 1.25rem;
+  /* The detail panel's distance from the workspace's edges, and its gap to a
+     surface beside it. */
+  --k2b-workspace-detail-inset: 0.5rem;
+  --k2b-workspace-detail-track: 0px;
+  --k2b-workspace-main-keep: 0px;
+  /* Space at the end of a `k2b-detail-trail` scroller under the tablet drawer. */
+  --k2b-detail-space: 0px;
+  /* Space a host keeps clear along the workspace's bottom edge, such as the
+     home indicator's safe area where the workspace meets the window's bottom. */
+  --k2b-workspace-inset-bottom: 0px;
+  --k2b-workspace-radius: var(--k2b-radius-dialog);
   position: relative;
   display: grid;
   width: 100%;
@@ -801,7 +836,7 @@
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   overflow: hidden;
   border: 1px solid transparent;
-  border-radius: var(--k2b-radius-dialog);
+  border-radius: var(--k2b-workspace-radius);
   background: var(--k2b-surface);
   box-shadow: var(--k2b-shadow-frame);
 }
@@ -812,6 +847,16 @@
   border-color: var(--k2b-border);
 }
 
+/* A flat workspace draws no frame. Its sidebar and content round their outer
+   corners with the radius token from 64 rem, so it sets the token. */
+.k2b-ui .k2b-app-workspace[data-flat="true"] {
+  --k2b-workspace-radius: 0px;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* The content area is no containing block: the detail panel inside it is
+   placed in the workspace's grid, beside the head and the content. */
 .k2b-ui .k2b-app-workspace__content {
   display: flex;
   min-width: 0;
@@ -833,8 +878,10 @@
   background: var(--k2b-surface-muted);
 }
 
+/* The container caps the body's content at the sidebar's content edge. */
 .k2b-ui .k2b-app-workspace__sidebar-desktop {
   display: none;
+  container-type: inline-size;
 }
 
 /* A row with a trailing action renders as a wrapper element, so `:disabled`
@@ -844,10 +891,9 @@
   opacity: 0.5;
 }
 
-/* Stacked layout: panes, detail and drawer span the full width until `lg`
-   gives them their own track. */
+/* Stacked layout: panes and drawer span the full width until `lg` gives them
+   their own track. */
 .k2b-ui .k2b-app-workspace__main-pane,
-.k2b-ui .k2b-app-workspace__detail,
 .k2b-ui .k2b-app-workspace__drawer {
   display: flex;
   width: 100%;
@@ -873,15 +919,6 @@
   background: var(--k2b-surface-muted);
 }
 
-.k2b-ui .k2b-app-workspace__detail {
-  --k2b-detail-panel-scroll-inset: 0.75rem;
-
-  gap: 0.75rem;
-  padding: 0.75rem;
-  border-left: 1px solid var(--k2b-border);
-  background: var(--k2b-surface-muted);
-}
-
 .k2b-ui .k2b-app-workspace__drawer {
   grid-area: drawer;
   height: var(--k2b-workspace-panel-size);
@@ -889,10 +926,48 @@
   background: var(--k2b-surface-muted);
 }
 
-.k2b-ui .k2b-app-workspace__detail[hidden],
 .k2b-ui .k2b-app-workspace__drawer[hidden],
 .k2b-ui .k2b-app-workspace__resize:has(+ [hidden]) {
   display: none;
+}
+
+/* The surfaces on the workspace's bottom edge reach it and keep their content
+   above the host's bottom inset. A transparent border fills the inset with the
+   surface's own background and leaves the padding an application gives them
+   alone. While the drawer is open, it is the surface on that edge. */
+.k2b-ui .k2b-app-workspace__sidebar,
+.k2b-ui .k2b-app-workspace__drawer,
+.k2b-ui .k2b-app-workspace__main:not(.has-panes),
+.k2b-ui .k2b-app-workspace__main.has-panes > [data-workspace-main-region] {
+  border-bottom: var(--k2b-workspace-inset-bottom) solid transparent;
+}
+
+/* The scroll fade's mask covers the border box, so a scrolling Main or pane
+   ends its bottom fade above the inset, over the content. The inset keeps the
+   fade's end, as the window edge does without an inset. */
+.k2b-ui :is(.k2b-app-workspace__main, .k2b-app-workspace__main-pane):is([data-scroll-fade="bottom"], [data-scroll-fade="both"]) {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--scroll-fade-top),
+    #000 calc(100% - var(--k2b-workspace-inset-bottom) - var(--scroll-fade-bottom)),
+    transparent calc(100% - var(--k2b-workspace-inset-bottom))
+  );
+}
+
+@media (forced-colors: active) {
+  .k2b-ui :is(.k2b-app-workspace__main, .k2b-app-workspace__main-pane)[data-scroll-fade] {
+    mask-image: none;
+  }
+}
+
+.k2b-ui
+  .k2b-app-workspace:has(
+    > .k2b-app-workspace__drawer:not([hidden]),
+    > :is(solid-island, solid-client) > .k2b-app-workspace__drawer:not([hidden])
+  )
+  .k2b-app-workspace__main {
+  --k2b-workspace-inset-bottom: 0px;
 }
 
 /* Hidden navigation takes the sidebar track and the navigation panes with it,
@@ -952,11 +1027,6 @@
 
 .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"] {
   left: var(--k2b-workspace-sidebar-width, 13rem);
-}
-
-.k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"] {
-  right: var(--k2b-workspace-panel-size);
-  transform: translateX(50%);
 }
 
 .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="drawer"] {
@@ -1053,6 +1123,384 @@
 .k2b-ui .k2b-app-workspace__resize:is(:hover, :focus-visible) > span,
 .k2b-ui .k2b-app-workspace__resize[data-workspace-resize-active="true"] > span {
   opacity: 1;
+}
+
+/* ------------------------------------------------------- floating detail */
+
+/* The detail floats over the workspace instead of taking a track in the
+   content area, and it is never modal: no scrim, nothing inert. Below 48 rem
+   it is a sheet from the window's bottom edge: a page that is not `fullPage`
+   grows with its content on a phone, so the workspace's own edge can lie far
+   below the window. From 48 rem an open panel gets a column at the
+   workspace's end and spans its full height, 0.5 rem inside the top, right,
+   and bottom edges; the head, the toolbars, and the panes sit to its left,
+   and a surface beside it ends one gap before it. `Main` keeps 20 rem, and
+   below that the panel overlaps it. On a touch screen between 48 and 64 rem,
+   a panel the person can close is a drawer over `Main` instead. */
+.k2b-ui .k2b-app-workspace__detail {
+  --k2b-detail-panel-scroll-inset: 1rem;
+  position: fixed;
+  z-index: 20;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  /* The small viewport keeps the half sheet still while a phone browser's
+     toolbars collapse and expand during a scroll. A host frame that contains
+     layout, such as a documentation demo, keeps the sheet inside itself. */
+  height: var(--k2b-workspace-detail-sheet-height, min(55svh, 55%));
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow: auto;
+  padding: 0 1rem env(safe-area-inset-bottom, 0px);
+  border-radius: var(--k2b-radius-dialog) var(--k2b-radius-dialog) 0 0;
+  color: var(--k2b-text);
+  background: var(--k2b-surface-elevated);
+  box-shadow: 0 -10px 36px rgb(9 9 11 / 0.16);
+  overscroll-behavior: contain;
+}
+
+.k2b-ui[data-theme="dark"] .k2b-app-workspace__detail,
+.k2b-ui.k2b-dark .k2b-app-workspace__detail,
+.dark .k2b-ui .k2b-app-workspace__detail {
+  box-shadow: 0 -10px 36px rgb(0 0 0 / 0.5);
+}
+
+.k2b-ui .k2b-app-workspace__detail[data-workspace-detail-sheet="full"] {
+  height: var(--k2b-workspace-detail-sheet-height, min(100dvh - 0.5rem - env(safe-area-inset-top, 0px), 100% - 0.5rem));
+}
+
+/* A closing panel stays painted while it leaves, but takes no input. */
+.k2b-ui .k2b-app-workspace__detail[hidden] {
+  display: none;
+  pointer-events: none;
+}
+
+/* The sheet's grabber spans the sheet's width: a tap switches between half
+   and full height, a drag moves the sheet, and a drag down from half height
+   closes it. The panel's header drags the sheet as well. */
+.k2b-ui .k2b-app-workspace__detail-grabber {
+  display: grid;
+  height: 1.75rem;
+  flex: 0 0 auto;
+  place-items: center;
+  margin: 0 -1rem -0.75rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.k2b-ui .k2b-app-workspace__detail-grabber > span {
+  width: 2.25rem;
+  height: 0.25rem;
+  border-radius: 999px;
+  background: var(--k2b-border-strong);
+}
+
+.k2b-ui .k2b-app-workspace__detail-grabber:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+/* The panel is the one raised surface: its summary, groups, and sections are
+   separated by space and their headings, not by boxes of their own, and they
+   start where the header's title does. */
+.k2b-ui
+  .k2b-app-workspace__detail
+  :is(
+    .k2b-detail-panel__summary,
+    .k2b-detail-panel__group,
+    .k2b-detail-panel__body > .k2b-detail-panel__section,
+    .k2b-detail-panel .k2b-discussion[data-surface="default"]
+  ) {
+  padding-inline: 0;
+  background: transparent;
+}
+
+.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__group > :is(.k2b-detail-panel__section, .k2b-discussion) {
+  padding-inline: 0;
+}
+
+/* The body's scrollbar sits on the panel's edge, and its content keeps the
+   panel's inset inside the scrollport, so overlay scrollbars never leave the
+   text against the rounded edge. */
+.k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__body {
+  padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem);
+  scrollbar-width: thin;
+}
+
+@media (max-width: 47.999rem) {
+  /* The header drags the sheet, so the browser must not claim a pan first. */
+  .k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__header {
+    touch-action: none;
+  }
+
+  /* `Main` ends with the half sheet's height of space, so its last row
+     scrolls above the sheet, whether `Main` scrolls itself or the page grows
+     with it. Its inner scrollers end where the sheet begins. The space stays
+     at full height, so nothing under the sheet moves. A `Main` with a height
+     of its own, above an open bottom drawer or in a small frame, keeps the
+     240 px the main area always reserves. */
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__detail:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+    )
+    > .k2b-app-workspace__main::after,
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__detail:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+    )
+    > :is(solid-island, solid-client)
+    > .k2b-app-workspace__main::after {
+    content: "";
+    height: 55svh;
+    max-height: calc(100% - 15rem);
+    flex: none;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__detail:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+    )
+    > .k2b-app-workspace__main,
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__detail:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+    )
+    > :is(solid-island, solid-client)
+    > .k2b-app-workspace__main {
+    scroll-padding-bottom: 55svh;
+  }
+}
+
+@media (min-width: 48rem) {
+  /* The panel's column. It is as wide as the panel and the inset to the
+     workspace's edge; the gap before the panel is the surface's own inset in
+     `Main`. The grid gives `Main` its 20 rem first. */
+  .k2b-ui .k2b-app-workspace {
+    grid-template-areas:
+      "head detail"
+      "mobile detail"
+      "content detail"
+      "drawer detail";
+    grid-template-columns: minmax(var(--k2b-workspace-main-keep), 1fr) minmax(0, var(--k2b-workspace-detail-track));
+  }
+
+  .k2b-ui
+    .k2b-app-workspace:has(
+      > .k2b-app-workspace__content > .k2b-app-workspace__detail:not([hidden]),
+      > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+    ) {
+    --k2b-workspace-detail-track: calc(
+      max(var(--k2b-detail-min), min(var(--k2b-detail-size), var(--k2b-detail-max))) + var(--k2b-workspace-detail-inset)
+    );
+    --k2b-workspace-main-keep: 20rem;
+  }
+
+  .k2b-ui .k2b-app-workspace__detail {
+    position: absolute;
+    top: var(--k2b-workspace-detail-inset);
+    right: var(--k2b-workspace-detail-inset);
+    bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
+    left: auto;
+    width: max(var(--k2b-workspace-panel-min), 100% - var(--k2b-workspace-detail-inset));
+    height: auto;
+    grid-area: detail;
+    padding-bottom: 0;
+    border-radius: var(--k2b-radius-surface);
+    box-shadow: var(--k2b-shadow-float);
+  }
+
+  .k2b-ui[data-theme="dark"] .k2b-app-workspace__detail,
+  .k2b-ui.k2b-dark .k2b-app-workspace__detail,
+  .dark .k2b-ui .k2b-app-workspace__detail {
+    box-shadow: var(--k2b-shadow-float);
+  }
+
+  .k2b-ui .k2b-app-workspace__detail-grabber {
+    display: none;
+  }
+
+  /* The handle sits on the panel's leading edge. It shows only its grip, on
+     hover, focus, or while it drags; the panel's own edge is the line. */
+  .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"] {
+    top: 1.5rem;
+    right: calc(max(var(--k2b-workspace-panel-min), 100% - var(--k2b-workspace-detail-inset)) + var(--k2b-workspace-detail-inset));
+    bottom: 1.5rem;
+    z-index: 21;
+    grid-area: detail;
+    transform: translateX(50%);
+  }
+
+  .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"]::before {
+    display: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__resize[data-app-workspace-resize="detail"] > span {
+    width: 4px;
+    height: 2.75rem;
+  }
+}
+
+/* A touch tablet in portrait: a panel the person can close is a drawer from
+   the right over `Main`, which keeps its width. A board or table under it
+   gets the drawer's width and both gaps as space at its end, so its last
+   column scrolls out from under the drawer. The space has the drawer's own
+   cap, measured against the workspace, and only `Main` gets it, not the
+   panel. A panel is closable with `onClose` or with its own close control
+   marked `data-workspace-detail-close`, which a server-rendered panel
+   carries from the first paint. */
+@media (min-width: 48rem) and (max-width: 63.999rem) and (pointer: coarse) {
+  .k2b-ui
+    .k2b-app-workspace:has(
+      > .k2b-app-workspace__content > .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden]),
+      > .k2b-app-workspace__content > .k2b-app-workspace__detail:not([hidden]) [data-workspace-detail-close],
+      > .k2b-app-workspace__content
+        > :is(solid-island, solid-client)
+        > .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden]),
+      > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden]) [data-workspace-detail-close]
+    ) {
+    --k2b-workspace-detail-track: 0px;
+    --k2b-workspace-main-keep: 0px;
+    container-type: inline-size;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__content:has(
+      > .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden]),
+      > .k2b-app-workspace__detail:not([hidden]) [data-workspace-detail-close],
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail[data-workspace-detail-closable]:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden]) [data-workspace-detail-close]
+    ) {
+    --k2b-detail-space: calc(
+      max(var(--k2b-detail-min), min(var(--k2b-detail-size), var(--k2b-detail-max), 100cqi - 21rem)) + 2 *
+        var(--k2b-workspace-detail-inset)
+    );
+  }
+
+  .k2b-ui .k2b-app-workspace__detail {
+    --k2b-detail-space: 0px;
+  }
+
+  .k2b-ui .k2b-app-workspace__detail:is([data-workspace-detail-closable], :has([data-workspace-detail-close])) {
+    width: max(
+      var(--k2b-workspace-panel-min),
+      min(var(--k2b-workspace-panel-size), var(--k2b-workspace-panel-max), 100% - 21rem)
+    );
+    grid-area: 1 / 1 / -1 / -1;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__resize[data-app-workspace-resize="detail"]:has(
+      + [data-workspace-detail-closable],
+      + .k2b-app-workspace__detail [data-workspace-detail-close]
+    ) {
+    display: none;
+  }
+}
+
+/* A horizontal scroller in `Main` marked `k2b-detail-trail`. It is the
+   viewport that clips the surface where the panel's column begins, so it
+   carries the surface's radius: a column or table cut beside the panel ends
+   in the same rounded corner as the surface's other edges. It sits in
+   `Main`'s content box, so the gap before the panel is `Main`'s own inset.
+   Under the tablet drawer it gets the drawer's space at its end, and
+   scrolling an item into view stops beside the drawer. */
+.k2b-ui .k2b-detail-trail {
+  border-radius: var(--k2b-radius-surface);
+  padding-inline-end: var(--k2b-detail-space, 0px);
+  scroll-padding-inline-end: var(--k2b-detail-space, 0px);
+}
+
+/* Inside a Paper frame the viewport sits one border inside the frame's edge,
+   so its corner follows the frame's inner curve. */
+.k2b-ui .k2b-paper .k2b-detail-trail {
+  border-radius: calc(var(--k2b-radius-surface) - 1px);
+}
+
+/* A data table keeps the width it has without the panel: its columns stay
+   where they are, and it scrolls instead. Beside the panel it adds the
+   nominal track: where `Main` is already at its 20 rem minimum and the grid
+   narrows the panel's column, the table grows by the part of the track the
+   column does not get. */
+.k2b-ui .k2b-detail-trail > .k2b-data-table {
+  width: calc(100% + var(--k2b-workspace-detail-track) + var(--k2b-detail-space, 0px));
+}
+
+/* Motion: the sheet rises in 220 ms and drops in 160 ms. From 48 rem the
+   workspace makes room at once and the panel slides in from the right edge
+   in 140 ms; closing reverses it: the panel slides out in 140 ms, and only
+   then the content takes the room back, in one step. Another item only swaps
+   the content. The controller marks a workspace after its first frame, so a
+   panel the page opens with appears without motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .k2b-ui .k2b-app-workspace[data-workspace-motion] .k2b-app-workspace__detail {
+    transition:
+      transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      height 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      display 220ms allow-discrete;
+  }
+
+  .k2b-ui .k2b-app-workspace[data-workspace-motion] .k2b-app-workspace__detail[hidden] {
+    transform: translateY(100%);
+    transition-duration: 160ms;
+    transition-timing-function: ease-in;
+  }
+
+  @starting-style {
+    .k2b-ui .k2b-app-workspace[data-workspace-motion] .k2b-app-workspace__detail:not([hidden]) {
+      transform: translateY(100%);
+    }
+  }
+}
+
+@media (min-width: 48rem) and (prefers-reduced-motion: no-preference) {
+  .k2b-ui .k2b-app-workspace[data-workspace-motion] .k2b-app-workspace__detail {
+    transition:
+      transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      display 140ms allow-discrete;
+  }
+
+  .k2b-ui .k2b-app-workspace[data-workspace-motion] .k2b-app-workspace__detail[hidden] {
+    transform: translateX(calc(100% + var(--k2b-workspace-detail-inset)));
+    transition-duration: 140ms;
+    transition-timing-function: ease-in;
+  }
+
+  @starting-style {
+    .k2b-ui .k2b-app-workspace[data-workspace-motion] .k2b-app-workspace__detail:not([hidden]) {
+      transform: translateX(calc(100% + var(--k2b-workspace-detail-inset)));
+    }
+  }
+
+  .k2b-ui .k2b-app-workspace[data-workspace-motion] {
+    transition:
+      --k2b-workspace-detail-track 0s linear 140ms,
+      --k2b-workspace-main-keep 0s linear 140ms;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace[data-workspace-motion]:has(
+      > .k2b-app-workspace__content > .k2b-app-workspace__detail:not([hidden]),
+      > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+    ) {
+    transition: none;
+  }
+}
+
+/* A drag follows the pointer without easing. */
+.k2b-ui .k2b-app-workspace .k2b-app-workspace__detail[data-workspace-detail-dragging] {
+  transition: none;
 }
 
 /* ------------------------------------------------------- floating window */
@@ -1222,10 +1670,10 @@
      direct and island-wrapped sidebars must select the same grid. */
   .k2b-ui .k2b-app-workspace:has(> .k2b-app-workspace__sidebar, > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar) {
     grid-template-areas:
-      "sidebar head"
-      "sidebar content"
-      "sidebar drawer";
-    grid-template-columns: auto minmax(0, 1fr);
+      "sidebar head detail"
+      "sidebar content detail"
+      "sidebar drawer detail";
+    grid-template-columns: auto minmax(var(--k2b-workspace-main-keep), 1fr) minmax(0, var(--k2b-workspace-detail-track));
     grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
@@ -1301,9 +1749,7 @@
     flex: 1 1 auto;
   }
 
-  .k2b-ui .k2b-app-workspace__main > .k2b-app-workspace__resize[data-app-workspace-resize="pane"],
-  .k2b-ui .k2b-app-workspace__content > .k2b-app-workspace__resize[data-app-workspace-resize="detail"],
-  .k2b-ui .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__resize[data-app-workspace-resize="detail"] {
+  .k2b-ui .k2b-app-workspace__main > .k2b-app-workspace__resize[data-app-workspace-resize="pane"] {
     position: relative;
     inset: auto;
     height: auto;
@@ -1312,38 +1758,15 @@
     transform: none;
   }
 
-  /* Cloud's `detailWidthClass` presets, then the resizable override — the
-     persisted width must win over the preset, so it is declared last at the
-     same specificity. */
-  .k2b-ui .k2b-app-workspace__detail[data-width="sm"],
-  .k2b-ui .k2b-app-workspace__detail[data-width="md"] {
-    width: 20rem;
-  }
-
-  .k2b-ui .k2b-app-workspace__detail[data-width="lg"] {
-    width: 30rem;
-  }
-
-  .k2b-ui .k2b-app-workspace__detail[data-width="xl"] {
-    width: 34rem;
-  }
-
-  /* A persisted width fits like a pane's: the main region keeps 320 px, and
-     the detail gives way down to its minimum. The controller applies the same
-     fit, so a width saved on a wider screen arrives where it stays. */
-  .k2b-ui .k2b-app-workspace__detail[data-workspace-resizable="true"] {
-    width: clamp(var(--k2b-workspace-panel-min, 0px), 100% - 320px, var(--k2b-workspace-panel-size));
-  }
-
   .k2b-ui .k2b-app-workspace__drawer[data-workspace-resizable="true"] {
     height: var(--k2b-workspace-panel-size);
   }
 }
 
 /* The head: one 46 px row above the work area, without a line under it. It
-   shows on a page with a page above it (`data-trail="up"`) at every width,
-   and from 48 to 64 rem whenever the workspace has an overlay sidebar, whose
-   button it holds. The page's own `PageTitle` replaces the head's title; the
+   shows on a page with a page above it (`data-trail="up"`), unless from
+   64 rem the sidebar marks the page (see below), and from 48 to 64 rem
+   whenever the workspace has an overlay sidebar, whose button it holds. The page's own `PageTitle` replaces the head's title; the
    head then stays only for that button. A nested workspace's head never
    carries the title. */
 .k2b-ui .k2b-app-workspace__head {
@@ -1371,6 +1794,102 @@
 
 .k2b-ui .k2b-app-workspace__head-toggle {
   display: none;
+}
+
+/* The head's heading only stands in for a title row the sidebar makes
+   redundant (see below). */
+.k2b-ui .k2b-app-workspace__head-heading {
+  display: none;
+  margin: 0;
+}
+
+@media (min-width: 64rem) {
+  /* A sidebar that marks the current page already names it, so the head
+     shows neither the title nor the way up beside it; Alt+Up still goes up.
+     On a page without its own `h1` the head's heading stays for assistive
+     technology. A collapsed sidebar shows no names and keeps the head. */
+  .k2b-ui
+    .k2b-app-workspace:not([data-sidebar-collapsed="true"]):has(
+      > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
+      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
+    )
+    > .k2b-app-workspace__head[data-trail="up"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    min-height: 0;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace:not([data-sidebar-collapsed="true"]):has(
+      > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
+      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
+    )
+    > .k2b-app-workspace__head
+    > .k2b-page-title {
+    display: none;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace:not([data-sidebar-collapsed="true"]):has(
+      > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"],
+      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden]) [aria-current="page"]
+    ):not(:has(.k2b-app-workspace__main h1))
+    > .k2b-app-workspace__head
+    > .k2b-app-workspace__head-heading {
+    display: block;
+  }
+
+  /* The workspace does not clip from here, so the detail panel's shadow shows
+     on every edge, also beyond a framed workspace. The parts that paint at the
+     workspace's corners round themselves instead. Narrower, the workspace
+     clips: the overlay sidebar slides in from its edge. */
+  .k2b-ui .k2b-app-workspace {
+    --k2b-workspace-inner-radius: max(0px, var(--k2b-workspace-radius) - 1px);
+    --k2b-workspace-start-radius: var(--k2b-workspace-inner-radius);
+    overflow: visible;
+  }
+
+  /* While the detail panel slides in or out, the workspace's end edge clips
+     it, so it never crosses a framed workspace's edge; its other shadows
+     stay. */
+  .k2b-ui .k2b-app-workspace[data-workspace-detail-sliding] {
+    clip-path: inset(-4rem 0 -4rem -4rem);
+  }
+
+  .k2b-ui
+    .k2b-app-workspace:has(
+      > .k2b-app-workspace__sidebar:not([hidden]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__sidebar:not([hidden])
+    ) {
+    --k2b-workspace-start-radius: 0px;
+  }
+
+  .k2b-ui .k2b-app-workspace__head {
+    background: transparent;
+  }
+
+  .k2b-ui .k2b-app-workspace__sidebar {
+    border-start-start-radius: var(--k2b-workspace-inner-radius);
+    border-end-start-radius: var(--k2b-workspace-inner-radius);
+  }
+
+  .k2b-ui .k2b-app-workspace__content {
+    border-start-start-radius: var(--k2b-workspace-start-radius);
+    border-start-end-radius: var(--k2b-workspace-inner-radius);
+    border-end-end-radius: var(--k2b-workspace-inner-radius);
+    border-end-start-radius: var(--k2b-workspace-start-radius);
+  }
+
+  .k2b-ui .k2b-app-workspace__drawer {
+    border-end-start-radius: var(--k2b-workspace-start-radius);
+    border-end-end-radius: var(--k2b-workspace-inner-radius);
+  }
 }
 
 /* Compact: from 48 to 64 rem the sidebar is an overlay over the work area,
@@ -1463,38 +1982,18 @@
   }
 }
 
-@media (min-width: 80rem) {
-  .k2b-ui .k2b-app-workspace__detail[data-width="sm"] {
-    width: 18rem;
-  }
-
-  .k2b-ui .k2b-app-workspace__detail[data-width="md"] {
-    width: 24rem;
-  }
-
-  .k2b-ui .k2b-app-workspace__detail[data-width="lg"] {
-    width: 34rem;
-  }
-
-  .k2b-ui .k2b-app-workspace__detail[data-width="xl"] {
-    width: 40rem;
-  }
-
-  .k2b-ui .k2b-app-workspace__detail[data-workspace-resizable="true"] {
-    width: clamp(var(--k2b-workspace-panel-min, 0px), 100% - 320px, var(--k2b-workspace-panel-size));
-  }
-}
-
 /* An opt-in stacked sidebar keeps an overview's object list above the content
    until the sidebar gets its own column at 64 rem, instead of handing it to
    the host's mobile chrome or to the compact overlay. */
 @media (max-width: 63.999rem) {
   /* A viewport cap, not a percentage: the grid row is content-sized, so a
-     percentage would be cyclic and collapse the list to one row. */
+     percentage would be cyclic and collapse the list to one row. Above the
+     content, the list is not on the bottom edge and keeps no bottom inset. */
   .k2b-ui .k2b-app-workspace__sidebar[data-mobile="stacked"]:not([hidden]) {
     display: flex;
     max-height: 50dvh;
     grid-area: mobile;
+    border-bottom-width: 0;
   }
 
   .k2b-ui .k2b-app-workspace__sidebar[data-mobile="stacked"] > .k2b-app-workspace__sidebar-desktop {
@@ -1533,20 +2032,6 @@
   .k2b-ui .k2b-app-workspace__main.has-panes > [data-workspace-main-region][data-workspace-mobile-active="true"] {
     display: flex;
     min-width: 0;
-    min-height: 0;
-    flex: 1 1 auto;
-  }
-
-  .k2b-ui
-    .k2b-app-workspace__content:has(
-      > .k2b-app-workspace__detail:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
-    )
-    > .k2b-app-workspace__main {
-    display: none;
-  }
-
-  .k2b-ui .k2b-app-workspace__detail:not([hidden]) {
     min-height: 0;
     flex: 1 1 auto;
   }
@@ -2121,6 +2606,282 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 
 @media (max-width: 47.999rem) {
   .k2b-ui .k2b-page-title__trail {
+    display: none;
+  }
+}
+
+/* Sidebar switcher: the container an app works in, at the top of its sidebar.
+   The head is one flat row like the sidebar's items: a tinted icon tile, the
+   name, an optional fact, and a chevron. It keeps one size for every name and
+   in every state, so switching containers, loading, hovering, and opening never
+   move what follows. Its panel is the
+   shared menu surface; groups are set apart by spacing, not lines. */
+/* Without specificity, so a sizing class such as `flex-1` places it in a row. */
+:where(.k2b-ui .k2b-sidebar-switcher) {
+  display: flex;
+  min-width: 0;
+  flex: none;
+}
+
+.k2b-ui .k2b-sidebar-switcher__trigger {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.25rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.375rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text);
+  background: transparent;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color 150ms ease-out;
+}
+
+/* Hover and open stay neutral like the sidebar's rows, so no platform tint
+   sits beside the app's accent. The fill is translucent, so it shows on the
+   muted desktop sidebar and on the phone menu alike. */
+.k2b-ui .k2b-sidebar-switcher__trigger:hover,
+.k2b-ui .k2b-sidebar-switcher__trigger[aria-expanded="true"] {
+  background: var(--k2b-app-workspace-hover);
+}
+
+.k2b-ui .k2b-sidebar-switcher__trigger:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 1px);
+}
+
+.k2b-ui :is(.k2b-sidebar-switcher__icon, .k2b-sidebar-switcher__option-icon) {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: var(--k2b-sidebar-switcher-color, var(--k2b-app-workspace-active));
+  background: color-mix(in srgb, var(--k2b-sidebar-switcher-color, var(--app-accent, var(--k2b-action))) 16%, transparent);
+}
+
+.k2b-ui .k2b-sidebar-switcher__icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.4375rem;
+  font-size: 0.875rem;
+}
+
+/* A second line gets a taller tile, so name and fact sit beside one block. */
+.k2b-ui .k2b-sidebar-switcher[data-description] .k2b-sidebar-switcher__icon {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+}
+
+/* Two name lines are always reserved and the text sits centred in them, so a short and a long name give the head one
+   height from the server's first paint on. */
+.k2b-ui .k2b-sidebar-switcher__copy {
+  --k2b-sidebar-switcher-line: 1.125rem;
+  display: grid;
+  min-width: 0;
+  min-height: calc(2 * var(--k2b-sidebar-switcher-line));
+  flex: 1 1 auto;
+  align-content: center;
+}
+
+/* The name takes up to two balanced lines and ends with an ellipsis after them; beside a fact it takes one, so name
+   and fact share the reserved two lines. The full name stays in the button's title and accessible name. */
+.k2b-ui .k2b-sidebar-switcher__copy > span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: var(--k2b-sidebar-switcher-line);
+  overflow-wrap: break-word;
+  text-wrap: balance;
+}
+
+.k2b-ui .k2b-sidebar-switcher[data-description] .k2b-sidebar-switcher__copy > span {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+.k2b-ui .k2b-sidebar-switcher__copy > small {
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-sidebar-switcher__chevron {
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+}
+
+.k2b-ui .k2b-sidebar-switcher__panel {
+  position: fixed;
+  z-index: 1000;
+  inset: unset;
+  display: none;
+  width: max(var(--k2b-sidebar-switcher-width, 0px), min(16rem, 100vw - 1rem));
+  max-width: calc(100vw - 1rem);
+  /* The room beside the trigger, set while open, so the panel never covers its own trigger. */
+  max-height: min(28rem, 80dvh, var(--k2b-sidebar-switcher-room, 80dvh));
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  margin: 0;
+  color: var(--k2b-text);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+}
+
+.k2b-ui .k2b-sidebar-switcher__panel:popover-open {
+  display: flex;
+}
+
+/* The panel takes focus only while its list loads; the rows show focus themselves. */
+.k2b-ui .k2b-sidebar-switcher__panel:focus {
+  outline: none;
+}
+
+/* The search field is an inset well at the top; only the list between it and the actions scrolls. */
+.k2b-ui .k2b-sidebar-switcher__search {
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-field-surface, var(--k2b-surface-muted));
+}
+
+.k2b-ui :is(.k2b-sidebar-switcher__options, .k2b-sidebar-switcher__actions) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.k2b-ui .k2b-sidebar-switcher__options {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.k2b-ui .k2b-sidebar-switcher__actions {
+  flex: none;
+  padding-top: 0.25rem;
+}
+
+.k2b-ui .k2b-sidebar-switcher__panel .k2b-dropdown__item {
+  padding-inline: 0.5rem;
+}
+
+.k2b-ui .k2b-sidebar-switcher__option-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0.3125rem;
+  font-size: 0.75rem;
+}
+
+.k2b-ui .k2b-sidebar-switcher__option[aria-current="true"] {
+  color: var(--k2b-text);
+}
+
+.k2b-ui .k2b-sidebar-switcher__option[aria-current="true"] > .k2b-dropdown__copy > span {
+  font-weight: 600;
+}
+
+/* The check marks the current container in the app's accent, like the sidebar's active row. */
+.k2b-ui .k2b-sidebar-switcher__option > .k2b-dropdown__check {
+  color: var(--k2b-app-workspace-active);
+}
+
+.k2b-ui .k2b-sidebar-switcher__actions .k2b-dropdown__item > i {
+  width: 1.25rem;
+  flex: none;
+  text-align: center;
+}
+
+.k2b-ui .k2b-sidebar-switcher__actions .k2b-dropdown__item[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-sidebar-switcher__trigger {
+    min-height: 2.75rem;
+  }
+}
+
+/* In the phone menu the switcher heads the rows and takes their size. */
+.k2b-ui .k2b-navigation > .k2b-sidebar-switcher {
+  margin-bottom: 0.5rem;
+}
+
+.k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__trigger {
+  min-height: 48px;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__copy {
+  --k2b-sidebar-switcher-line: 1.375rem;
+}
+
+.k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__copy > span {
+  font-size: 1rem;
+}
+
+.k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__copy > small {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+/* Its panel takes the phone menu's type scale and 44 px rows, like a touch menu. */
+.k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__panel .k2b-dropdown__item {
+  min-height: 2.75rem;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 1rem;
+  line-height: 1.375rem;
+}
+
+.k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__panel .k2b-dropdown__copy > small {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__actions .k2b-dropdown__item > i {
+  width: 1.5rem;
+}
+
+.k2b-ui .k2b-navigation > .k2b-sidebar-switcher .k2b-sidebar-switcher__option-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+}
+
+/* The collapsed rail shows only the icon, at the size of the rail's other actions. */
+@media (min-width: 64rem) {
+  .k2b-ui
+    .k2b-app-workspace[data-sidebar-collapsed="true"]
+    .k2b-app-workspace__sidebar[data-workspace-collapsible="true"]
+    .k2b-sidebar-switcher__trigger {
+    min-height: 2.75rem;
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace[data-sidebar-collapsed="true"]
+    .k2b-app-workspace__sidebar[data-workspace-collapsible="true"]
+    :is(.k2b-sidebar-switcher__copy, .k2b-sidebar-switcher__chevron) {
     display: none;
   }
 }

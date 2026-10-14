@@ -88,6 +88,7 @@ import {
   WormholeTransferResultSchema,
 } from "@/contracts";
 import { SpaceApiKeySchema, SpaceSettingsContextSchema } from "@/settings-context";
+import { CALENDAR_MAX_DAYS } from "../frontend/[id]/_components/calendar/range";
 import { loadSpaceSettingsContext } from "../frontend/[id]/_components/edit/settings-state";
 import { parseSpaceSettings } from "../frontend/[id]/_components/settings/SpaceSettingsStore";
 import { loadSpaceItemDetail, loadSpacesViewSnapshot } from "../frontend/[id]/_components/workspace/workspace-state";
@@ -113,6 +114,7 @@ import {
   projectCalendarItems,
   projectColumns,
   projectComments,
+  projectItemListResult,
   projectItems,
   projectOverlapItems,
   projectSpaceDetail,
@@ -181,9 +183,28 @@ const OverviewActivityQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
 });
-const WorkspaceViewQuerySchema = z.object({
-  href: z.string().min(1).max(3000),
-});
+const WorkspaceViewQuerySchema = z
+  .object({
+    href: z.string().min(1).max(3000),
+    from: z.string().datetime().optional().describe("Day, week, and month views: start of the days to load (ISO)"),
+    to: z.string().datetime().optional().describe("Day, week, and month views: end of the days to load, exclusive (ISO)"),
+    includeTray: z
+      .enum(["true", "false"])
+      .default("true")
+      .describe("Day view only: `false` leaves out the tray, such as for a week loaded while the reader scrolls"),
+  })
+  .refine((query) => (query.from === undefined) === (query.to === undefined), {
+    message: "Pass both from and to, or neither",
+    path: ["to"],
+  })
+  .refine((query) => !query.from || !query.to || Date.parse(query.to) > Date.parse(query.from), {
+    message: "End time must be after start time",
+    path: ["to"],
+  })
+  .refine((query) => !query.from || !query.to || Date.parse(query.to) - Date.parse(query.from) <= CALENDAR_MAX_DAYS * 86_400_000, {
+    message: `A range spans at most ${CALENDAR_MAX_DAYS} days`,
+    path: ["to"],
+  });
 const OverviewSearchQuerySchema = z.object({
   q: z.string().trim().min(1).max(300),
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -762,7 +783,7 @@ const app = new Hono<AuthContext>()
       tags: ["Spaces"],
       summary: "Refresh the active workspace view",
       description:
-        "Load only the permission-checked list, table, kanban, or calendar snapshot selected by a Spaces URL. A day view snapshot also carries its tray: the first overdue tasks of the Space and the first undated tasks assigned to the reader, with their totals.",
+        "Load only the permission-checked list, table, kanban, or calendar snapshot selected by a Spaces URL. A calendar snapshot names the `range` of days it loaded. The day, week, and month views may pass `from` and `to` to load other days, at most 366 of them, such as the next block while the reader scrolls. A day view snapshot also carries its tray: the first overdue tasks of the Space and the first undated tasks assigned to the reader, with their totals. Pass `includeTray=false` to load only the items of a range.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpacesViewSnapshotSchema, "Active workspace view snapshot"),
@@ -775,9 +796,13 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const userResult = requireUserBackedActor(c);
       if (!userResult.ok) return respond(c, userResult);
-      const { href } = c.req.valid("query");
+      const { href, from, to, includeTray } = c.req.valid("query");
       const target = parseSpacesWorkspaceHref(href);
       if (!target) return respond(c, fail(err.badInput("Unsupported workspace view route")));
+      // The day, week, and month views load a chosen range, also the month that a URL without a view opens. The year
+      // ignores it, and so does an old timeline link, so it opens its month as a whole.
+      const calendarView = new URL(href, "http://spaces.local").searchParams.get("cv") ?? "month";
+      const scrolling = calendarView === "day" || calendarView === "week" || calendarView === "month";
       const spaceId = await resolvePublicId("spaces", target.spaceId);
       if (!spaceId) return respond(c, fail(err.notFound("Space")));
       const snapshot = await loadSpacesViewSnapshot({
@@ -788,6 +813,8 @@ const app = new Hono<AuthContext>()
         cookieHeader: c.req.header("Cookie"),
         authorizationHeader: c.req.header("Authorization"),
         dateConfig: getDateConfig(c),
+        calendarRange: scrolling && from && to ? { from, to } : undefined,
+        includeTray: includeTray === "true",
       });
       if (snapshot.kind === "accessDenied") return respond(c, fail(err.forbidden(snapshot.message)));
       if (snapshot.kind === "notFound") return respond(c, fail(err.notFound("Space")));
@@ -2276,7 +2303,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "List items with filters",
-      description: "List items with filtering, sorting, and pagination support.",
+      description:
+        "List items with filtering, sorting, and pagination support. itemIds restricts results to up to 100 public item IDs; unknown or deleted IDs do not match.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(ItemFilterResponseSchema, "Filtered items with pagination"),
@@ -2302,8 +2330,11 @@ const app = new Hono<AuthContext>()
         currentUserId: user?.id,
         dateConfig,
       });
-      const items = await projectItems(result.items);
-      return respond(c, ok({ ...result, items: items.map((item) => ({ ...item, overdue: isTaskOverdue(item, dateConfig) })) }));
+      const publicResult = await projectItemListResult(result, filter.groupBy);
+      return respond(
+        c,
+        ok({ ...publicResult, items: publicResult.items.map((item) => ({ ...item, overdue: isTaskOverdue(item, dateConfig) })) }),
+      );
     },
   )
 

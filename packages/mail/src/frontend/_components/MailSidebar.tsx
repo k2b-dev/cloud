@@ -17,17 +17,19 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import { mailCommandMessages } from "../../commands";
+import { mailCommandMessages } from "../../command-messages";
 import type { ConversationView } from "../../contracts";
 import type { MailFolderTreeNode } from "../../folder-tree";
-import { serializeMailSearchState } from "../../search-state";
+import { mailTagSearch } from "../../search-url";
 import type { LocalTag } from "../../service/local-tags";
 import type { ConversationViewCounts, MailFolderView } from "../../service/messages";
 import type { SavedConversationView } from "../../service/saved-views";
 import { readApiError } from "./api-response";
+import type { MailboxCreationContext } from "./create-mailbox-dialog";
 import { registerMailtoHandler } from "./mail-compose-route";
 import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree, setsOnlyInFolder } from "./mail-folder-tree";
 import { mailSidebarMessages } from "./mail-sidebar-messages";
+import { createMailboxSwitcher } from "./mailbox-switcher";
 
 type MailViewItem = {
   id: ConversationView;
@@ -58,43 +60,47 @@ const folderIcon = (role: string): string =>
               ? "ti ti-archive"
               : "ti ti-folder";
 
-export default function MailSidebar(props: {
-  mailboxId: string;
-  mailboxName: string;
-  syncEnabled: boolean;
-  needsConnection: boolean;
-  folders: MailFolderView[];
-  localTags: LocalTag[];
-  savedViews: SavedConversationView[];
-  scheduledMode: boolean;
-  scheduledCount: number;
-  activeFolderId: string | null;
-  activeView: ConversationView | null;
-  activeSavedViewId: string | null;
-  activeTagId: string | null;
-  searchActive: boolean;
-  viewCounts: ConversationViewCounts;
-  canWrite: boolean;
-  canAdmin: boolean;
-  /**
-   * The person may see only the conversations assigned to them: no composing, mailbox details, tools,
-   * settings, or Unassigned view, which all need mailbox-wide access.
-   */
-  assignedOnly: boolean;
-  managementOpening: "health" | "links" | "remote-content" | "subscriptions" | null;
-  settingsOpening: boolean;
-  /** The mailbox details are loading; the details button keeps its place and shows progress. */
-  detailsOpening: boolean;
-  onOpenDetails: () => void;
-  onOpenHealth: () => void;
-  onOpenSharedLinks: () => void;
-  onOpenRemoteContent: () => void;
-  onOpenSubscriptions: () => void;
-  onOpenSettings: () => void;
-  /** Moves the conversation of the dragged list row, identified by the row's item ID. */
-  onMoveConversation: (input: { itemId: string; destinationFolderId: string }) => void | Promise<void>;
-  onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
-}) {
+export default function MailSidebar(
+  props: MailboxCreationContext & {
+    canCreate?: boolean;
+    mailboxId: string;
+    mailboxName: string;
+    mailboxAddress?: string;
+    syncEnabled: boolean;
+    needsConnection: boolean;
+    folders: MailFolderView[];
+    localTags: LocalTag[];
+    savedViews: SavedConversationView[];
+    scheduledMode: boolean;
+    scheduledCount: number;
+    activeFolderId: string | null;
+    activeView: ConversationView | null;
+    activeSavedViewId: string | null;
+    activeTagId: string | null;
+    searchActive: boolean;
+    viewCounts: ConversationViewCounts;
+    canWrite: boolean;
+    canAdmin: boolean;
+    /**
+     * The person may see only the conversations assigned to them: no composing, mailbox details, tools,
+     * settings, or Unassigned view, which all need mailbox-wide access.
+     */
+    assignedOnly: boolean;
+    managementOpening: "health" | "links" | "remote-content" | "subscriptions" | null;
+    settingsOpening: boolean;
+    /** The mailbox details are loading; the details button keeps its place and shows progress. */
+    detailsOpening: boolean;
+    onOpenDetails: () => void;
+    onOpenHealth: () => void;
+    onOpenSharedLinks: () => void;
+    onOpenRemoteContent: () => void;
+    onOpenSubscriptions: () => void;
+    onOpenSettings: () => void;
+    /** Moves the conversation of the dragged list row, identified by the row's item ID. */
+    onMoveConversation: (input: { itemId: string; destinationFolderId: string }) => void | Promise<void>;
+    onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
+  },
+) {
   const locale = useLocale();
   const messages = createMemo(() => mailSidebarMessages.resolve([locale()]).t);
   createEffect(() => {
@@ -315,12 +321,23 @@ export default function MailSidebar(props: {
     setCollapsedFolders(new Set(customFolderBranchIds().filter((id) => !expanded.has(id))));
   };
 
-  const folderNode = (node: MailFolderTreeNode<MailFolderView>, suffix: string, count: number | null = node.folder.unread) => {
+  // `count` is the folder's unread count; Drafts pass their total and Sent nothing.
+  const folderNode = (
+    node: MailFolderTreeNode<MailFolderView>,
+    suffix: string,
+    count: { unread: number } | { total: number } | null = { unread: node.folder.unread },
+  ) => {
     const folder = node.folder;
     const hasChildren = node.children.length > 0;
     // Marks where "Only in the folder" is set, not each subfolder that inherits it, like the folder settings.
     const onlyInFolder = setsOnlyInFolder(folder);
-    const unread = count !== null && count > 0;
+    const total = count && "total" in count && count.total > 0 ? count.total : null;
+    const pin = (
+      <Show when={onlyInFolder}>
+        <i class="ti ti-folder-pin me-1" data-mail-folder-only aria-hidden="true" />
+        <span class="sr-only">{messages().onlyInFolder}</span>
+      </Show>
+    );
     return (
       <AppWorkspace.NavTree.Item
         id={folder.id}
@@ -328,14 +345,18 @@ export default function MailSidebar(props: {
         href={folder.selectable ? `/app/mail/${props.mailboxId}?folder=${folder.id}` : undefined}
         icon={hasChildren ? "ti ti-folder-plus" : folderIcon(folder.role)}
         expandedIcon={hasChildren ? "ti ti-folder-open" : undefined}
+        // Unread counts change while the folder is on screen, so they use the shared
+        // status from the first paint, which keeps a long folder name on one line.
         meta={
-          onlyInFolder || unread ? (
-            <span class="inline-flex items-center gap-1 tabular-nums">
-              <Show when={onlyInFolder}>
-                <i class="ti ti-folder-pin" data-mail-folder-only aria-hidden="true" />
-                <span class="sr-only">{messages().onlyInFolder}</span>
-              </Show>
-              <Show when={unread}>{count}</Show>
+          count && "unread" in count ? (
+            <>
+              {pin}
+              <AppWorkspace.SidebarItemStatus unread={count.unread} />
+            </>
+          ) : onlyInFolder || total !== null ? (
+            <span class="inline-flex items-center tabular-nums">
+              {pin}
+              <Show when={total !== null}>{total}</Show>
             </span>
           ) : undefined
         }
@@ -393,7 +414,11 @@ export default function MailSidebar(props: {
     >
       <For each={primaryFolders().filter((folder) => folder.role === role)}>
         {(folder) =>
-          folderNode({ folder, children: [] }, suffix, role === "drafts" ? folder.total : role === "sent" ? null : folder.unread)
+          folderNode(
+            { folder, children: [] },
+            suffix,
+            role === "drafts" ? { total: folder.total } : role === "sent" ? null : { unread: folder.unread },
+          )
         }
       </For>
     </AppWorkspace.NavTree>
@@ -462,7 +487,7 @@ export default function MailSidebar(props: {
   const tagItems = (suffix: string) => (
     <For each={props.localTags}>
       {(tag) => {
-        const search = serializeMailSearchState({ expression: { type: "local_tag_id", tagId: tag.id }, sort: "newest" });
+        const search = mailTagSearch(tag.id);
         return (
           <AppWorkspace.SidebarItem
             href={`/app/mail/${props.mailboxId}?search=${encodeURIComponent(search.ok ? search.value : "")}`}
@@ -527,7 +552,13 @@ export default function MailSidebar(props: {
     action: "details",
     disabled: props.detailsOpening,
   });
+  const switcher = createMailboxSwitcher(
+    () => ({ id: props.mailboxId, name: props.mailboxName, address: props.mailboxAddress }),
+    Boolean(props.canCreate),
+    props,
+  );
   const navigation = createNavigation({
+    switcher,
     items: () => [
       // Like the desktop sidebar, the details sit beside Compose; readers, who cannot compose, get them as their own row,
       // named like the button that takes Compose's place on desktop.
@@ -544,7 +575,6 @@ export default function MailSidebar(props: {
                 }
               : details(messages().aboutMailbox),
           ]),
-      { id: "mailboxes", label: messages().allMailboxes, icon: "ti ti-switch-horizontal", href: "/app/mail" },
       { id: "follow-up", label: messages().followUp, children: views(followUpViewItems()) },
       { id: "assignment", label: messages().assignment, children: views(assignmentViewItems()) },
       {
@@ -584,7 +614,7 @@ export default function MailSidebar(props: {
               id: "tags",
               label: messages().tags,
               children: props.localTags.map((tag) => {
-                const search = serializeMailSearchState({ expression: { type: "local_tag_id", tagId: tag.id }, sort: "newest" });
+                const search = mailTagSearch(tag.id);
                 return {
                   ...link(
                     `tag:${tag.id}`,
@@ -657,6 +687,7 @@ export default function MailSidebar(props: {
       <WorkspaceNavigationProvider navigation={navigation} label={props.mailboxName} />
       <AppWorkspace.Sidebar class="mail-workspace-navigation">
         <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarSwitcher {...switcher()} />
           <div class="mail-sidebar-actions mx-2 mt-2 flex items-center gap-2">
             {/* SSR knows the permission, so this slot never changes shape after hydration. While the details load, only
                 the icon changes: the button keeps its size and focus. */}
@@ -725,9 +756,6 @@ export default function MailSidebar(props: {
             )}
           </AppWorkspace.SidebarBody>
           <AppWorkspace.SidebarFooter class="flex flex-col gap-1">
-            <AppWorkspace.SidebarItem href="/app/mail" icon="ti ti-switch-horizontal" navigation="document">
-              {messages().allMailboxes}
-            </AppWorkspace.SidebarItem>
             <Show when={!props.assignedOnly}>
               {mailboxTools()}
               <AppWorkspace.SidebarItem

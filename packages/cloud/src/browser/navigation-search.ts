@@ -5,7 +5,10 @@ import type { AppMeta } from "../contracts/app";
 /** UI-only rows. The synthetic ref is a row key, never a readable resource. */
 export type NavigationSearchItem = SearchItem & { keywords?: readonly string[] };
 
-export const navigationSearchItems = (apps: readonly AppMeta[], visibleAppIds: readonly string[]): NavigationSearchItem[] => {
+export const navigationSearchItems = (
+  apps: readonly Pick<AppMeta, "id" | "name" | "icon" | "searchLinks">[],
+  visibleAppIds: readonly string[],
+): NavigationSearchItem[] => {
   const visible = new Set(visibleAppIds);
   return apps
     .filter((app) => visible.has(app.id))

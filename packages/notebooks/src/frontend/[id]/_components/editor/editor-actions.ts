@@ -1,6 +1,14 @@
+import { isolateHistory } from "@codemirror/commands";
+import { ensureSyntaxTree } from "@codemirror/language";
+import { type ChangeSet, type ChangeSpec, EditorSelection, type EditorState, type SelectionRange } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { prompts } from "@k2b/ui";
+import type { SyntaxNode, Tree } from "@lezer/common";
+import { MARK_REGEX, TAG_REGEX } from "../../../lib/editor/_lib/inline-syntax";
+import { inCode } from "../../../lib/editor/_lib/list-item-line";
+import { excludedSpans } from "../../../lib/editor/_lib/list-structure";
 import { buildDataBlockTemplate, dataBlockRefSelection } from "../../../lib/editor/data-block-template";
+import { listIndentAvailability, listKindAt } from "../../../lib/editor/list-commands";
 import { notebookWorkspaceMessages } from "../../messages";
 import { openNoteLinkPrompt } from "../search/openNoteSearchPrompt";
 
@@ -17,106 +25,333 @@ import { openNoteLinkPrompt } from "../search/openNoteSearchPrompt";
 // Inline marks
 // ==========================
 
-/**
- * Toggle a markdown wrap mark (e.g. `**`, `_`, `~~`, `` ` ``) around the
- * current selection. Detects an already-wrapped selection (inside or outside
- * the marks) and unwraps in that case.
- */
-export const wrapSelection = (view: EditorView, mark: string): void => {
-  const { from, to } = view.state.selection.main;
-  const selected = view.state.sliceDoc(from, to);
-  const markLen = mark.length;
+export type InlineMark = "bold" | "italic" | "strikethrough" | "highlight" | "code";
 
-  // Case 1: selected text itself starts and ends with the mark → unwrap inside
-  if (selected.startsWith(mark) && selected.endsWith(mark) && selected.length >= markLen * 2) {
-    view.dispatch({ changes: { from, to, insert: selected.slice(markLen, -markLen) } });
-    view.focus();
-    return;
+const inlineMarks = {
+  bold: { node: "StrongEmphasis", delimiter: "**" },
+  italic: { node: "Emphasis", delimiter: "*" },
+  strikethrough: { node: "Strikethrough", delimiter: "~~" },
+  highlight: { node: "Highlight", delimiter: "==" },
+  code: { node: "InlineCode", delimiter: "`" },
+};
+
+/** Same parse budget as the list commands; a range that cannot be parsed in time is left alone. */
+const PARSE_BUDGET_MS = 50;
+const parsedTree = (state: EditorState, pos: number) => ensureSyntaxTree(state, state.doc.lineAt(pos).to, PARSE_BUDGET_MS);
+const delimiterMarks = new Set(["EmphasisMark", "StrikethroughMark", "CodeMark"]);
+
+/** True when `pos` sits inside a `#tag` or right before its `#`, where a mark would break the tag. */
+const breaksTag = (state: EditorState, pos: number, opening: boolean) => {
+  const line = state.doc.lineAt(pos);
+  for (const match of line.text.matchAll(TAG_REGEX)) {
+    const start = line.from + match.index + match[1]!.length;
+    const end = start + 1 + match[2]!.length;
+    if ((opening ? start <= pos : start < pos) && pos < end) return true;
   }
+  return false;
+};
 
-  // Case 2: marks exist around the selection in the document → unwrap outside
-  const before = view.state.sliceDoc(Math.max(0, from - markLen), from);
-  const after = view.state.sliceDoc(to, to + markLen);
-  if (before === mark && after === mark) {
-    view.dispatch({
-      changes: { from: from - markLen, to: to + markLen, insert: selected },
-      selection: { anchor: from - markLen, head: to - markLen },
-    });
-    view.focus();
-    return;
-  }
+const trimmedRange = (state: EditorState) => {
+  const selection = state.selection.main;
+  const selected = state.sliceDoc(selection.from, selection.to);
+  const from = selection.from + selected.length - selected.trimStart().length;
+  return { from, to: from + selected.trim().length };
+};
 
-  // Default: wrap selection
-  view.dispatch({
-    changes: { from, to, insert: `${mark}${selected}${mark}` },
-    selection: { anchor: from + markLen, head: to + markLen },
+const highlightCodeOverlap = (tree: Tree, from: number, to: number) => {
+  let blocked = false;
+  tree.iterate({
+    from,
+    to,
+    enter(node) {
+      if (["InlineCode", "FencedCode", "CodeBlock", "URL"].includes(node.name) && node.from < to && node.to > from) blocked = true;
+    },
   });
-  view.focus();
+  return blocked;
+};
+const highlightBlocked = (state: EditorState, tree: Tree, from: number, to: number) =>
+  highlightCodeOverlap(tree, from, to) || breaksTag(state, from, true) || breaksTag(state, to, false);
+
+const markSpans = (state: EditorState, tree: Tree, mark: InlineMark, from: number, to: number) => {
+  const found: { from: number; to: number; opening: { from: number; to: number }; closing: { from: number; to: number } }[] = [];
+  if (mark === "highlight") {
+    for (let number = state.doc.lineAt(from).number; number <= state.doc.lineAt(to).number; number++) {
+      const line = state.doc.line(number);
+      for (const match of line.text.matchAll(MARK_REGEX)) {
+        const start = line.from + match.index;
+        const end = start + match[0].length;
+        if (
+          start <= to &&
+          end >= from &&
+          !highlightCodeOverlap(tree, start, start + 2) &&
+          !highlightCodeOverlap(tree, end - 2, end) &&
+          !breaksTag(state, start, true) &&
+          !breaksTag(state, end, false)
+        )
+          found.push({ from: start, to: end, opening: { from: start, to: start + 2 }, closing: { from: end - 2, to: end } });
+      }
+    }
+  } else {
+    tree.iterate({
+      from,
+      to,
+      enter: ({ name, node }) => {
+        if (name === inlineMarks[mark].node && node.firstChild && node.lastChild)
+          found.push({ from: node.from, to: node.to, opening: node.firstChild, closing: node.lastChild });
+      },
+    });
+  }
+  return found;
+};
+
+const containingMark = (state: EditorState, tree: Tree, mark: InlineMark, from: number, to: number) =>
+  markSpans(state, tree, mark, from, to).findLast((span) => span.opening.to <= from && to <= span.closing.from);
+
+const headingNodeAt = (state: EditorState, tree: Tree) => {
+  const line = state.doc.lineAt(state.selection.main.head);
+  let heading: SyntaxNode | undefined;
+  tree.iterate({
+    from: line.from,
+    to: line.to,
+    enter(node) {
+      if (/^(?:ATXHeading[1-6]|SetextHeading[12])$/.test(node.name)) heading = node.node;
+    },
+  });
+  return heading;
+};
+const headingAt = (state: EditorState, tree: Tree) => Number(headingNodeAt(state, tree)?.name.at(-1) ?? 0);
+
+export type CaretFormat = ReturnType<typeof caretFormat>;
+
+/** Lets a signal skip updates while the caret moves within the same formats. */
+export const sameCaretFormat = (a: CaretFormat, b: CaretFormat) =>
+  a.bold === b.bold &&
+  a.italic === b.italic &&
+  a.strikethrough === b.strikethrough &&
+  a.highlight === b.highlight &&
+  a.list === b.list &&
+  a.heading === b.heading &&
+  a.indent === b.indent &&
+  a.outdent === b.outdent;
+
+/**
+ * Formats at the selection. A mark counts when its toggle would remove it; list is the kind shared by every
+ * selected line. The list toggle only turns top-level items without children back into text.
+ */
+export const caretFormat = (state: EditorState) => {
+  const inactive = {
+    bold: false,
+    italic: false,
+    strikethrough: false,
+    highlight: false,
+    list: null,
+    heading: 0,
+    indent: false,
+    outdent: false,
+  };
+  const { from, to } = trimmedRange(state);
+  const tree = parsedTree(state, Math.max(to, ...state.selection.ranges.map((range) => range.to)));
+  if (!tree) return inactive;
+  const pressed = (mark: InlineMark) => (state.selection.main.empty || from < to) && !!containingMark(state, tree, mark, from, to);
+  return {
+    bold: pressed("bold"),
+    italic: pressed("italic"),
+    strikethrough: pressed("strikethrough"),
+    highlight: pressed("highlight"),
+    list: listKindAt(state),
+    heading: headingAt(state, tree),
+    ...listIndentAvailability(state),
+  };
+};
+
+/**
+ * Toggle an inline Markdown mark on the selection, or on the word at the
+ * caret. Whitespace at the selection edges stays outside the mark.
+ *
+ * - Inside a span of the same kind (also `_x_` or `__x__`), the span's marks
+ *   are removed. A selection strictly inside the span's text is split out of
+ *   it instead, so only the selected part loses the mark. A caret on the
+ *   span's marks next to a word formats that word instead.
+ * - Otherwise the mark wraps the range and absorbs same-kind spans it
+ *   overlaps or touches.
+ *
+ * Highlight uses the same single-line `==text==` syntax as the preview.
+ * Every inserted mark must parse as Markdown markup (or match MARK_REGEX); otherwise nothing
+ * changes. This covers code, link targets, ranges that cross blocks or other
+ * spans, and runs that CommonMark cannot close. The command also does
+ * nothing inside a `#tag` or before the syntax tree covers the range. Only
+ * the marks change, in one transaction that is its own undo step, so a
+ * peer's concurrent edit inside the text survives.
+ */
+export const toggleInlineMark = (view: EditorView, mark: InlineMark): void => {
+  const { state } = view;
+  const selection = state.selection.main;
+  let { from, to } = trimmedRange(state);
+  if (!selection.empty && from === to) return;
+  const tree = parsedTree(state, to);
+  if (!tree || (mark === "highlight" && state.doc.lineAt(from).number !== state.doc.lineAt(to).number)) return;
+  const { node: nodeType, delimiter } = inlineMarks[mark];
+  const spans = (from: number, to: number) => markSpans(state, tree, mark, from, to);
+  const edits: ChangeSpec[] = [];
+  const inserts: { at: number; text: string }[] = [];
+  const removeMarks = ({ opening, closing }: { opening: { from: number; to: number }; closing: { from: number; to: number } }) => {
+    edits.push({ from: opening.from, to: opening.to }, { from: closing.from, to: closing.to });
+  };
+  const insert = (at: number, text: string) => {
+    edits.push({ from: at, insert: text });
+    inserts.push({ at, text });
+  };
+
+  /** Dispatch unless an inserted delimiter stays literal text, or a wrap does not produce a span. */
+  const apply = (selectionAfter: (changes: ChangeSet) => SelectionRange, wrapped?: { from: number; to: number }) => {
+    const changes = state.changes(edits);
+    if (inserts.length > 0) {
+      const next = state.update({ changes }).state;
+      const placed = inserts.map(({ at, text }) => ({ from: changes.mapPos(at, -1), to: changes.mapPos(at, -1) + text.length }));
+      const nextTree = parsedTree(next, Math.max(...placed.map((range) => range.to)));
+      if (!nextTree) return;
+      const marks: { from: number; to: number }[] = [];
+      const nodes: { from: number; to: number }[] = [];
+      if (mark === "highlight") {
+        for (const span of markSpans(
+          next,
+          nextTree,
+          mark,
+          Math.min(...placed.map((range) => range.from)),
+          Math.max(...placed.map((range) => range.to)),
+        )) {
+          marks.push(span.opening, span.closing);
+          nodes.push(span);
+        }
+      }
+      nextTree.iterate({
+        from: Math.min(...placed.map((range) => range.from)),
+        to: Math.max(...placed.map((range) => range.to)),
+        enter: (node) => {
+          if (delimiterMarks.has(node.name)) marks.push({ from: node.from, to: node.to });
+          if (node.name === nodeType) nodes.push({ from: node.from, to: node.to });
+        },
+      });
+      const isMarkup = (pos: number) => marks.some((range) => range.from <= pos && pos < range.to);
+      for (const range of placed) {
+        for (let pos = range.from; pos < range.to; pos++) if (!isMarkup(pos)) return;
+      }
+      if (wrapped) {
+        const a = changes.mapPos(wrapped.from, -1);
+        const b = changes.mapPos(wrapped.to, 1);
+        const span = nodes.some((node) =>
+          mark === "highlight"
+            ? node.from === a && node.to === b
+            : a <= node.from && node.to <= b && node.from <= a + delimiter.length && node.to >= b - delimiter.length,
+        );
+        if (!span) return;
+      }
+    }
+    view.dispatch({ changes, selection: selectionAfter(changes), annotations: isolateHistory.of("full") });
+    view.focus();
+  };
+  const mapSelection = (changes: ChangeSet) =>
+    EditorSelection.range(changes.mapPos(selection.anchor, 1), changes.mapPos(selection.head, 1));
+
+  // Spans are visited outside in, so the last containing one is the innermost.
+  const containing = spans(from, to).findLast((span) => span.from <= from && to <= span.to);
+  const word = selection.empty ? state.wordAt(selection.head) : null;
+  if (containing) {
+    const { opening, closing } = containing;
+    if (!selection.empty && (from > opening.to || to < closing.from)) {
+      // Split the selected text out of the span; an empty side drops its mark.
+      const text = state.sliceDoc(opening.from, opening.to);
+      const before = state.sliceDoc(opening.to, Math.max(opening.to, from)).trimEnd();
+      const after = state.sliceDoc(Math.min(to, closing.from), closing.from);
+      if (before) insert(opening.to + before.length, text);
+      else edits.push({ from: opening.from, to: opening.to });
+      if (after.trim()) insert(closing.from - after.trimStart().length, text);
+      else edits.push({ from: closing.from, to: closing.to });
+      const forward = selection.anchor <= selection.head;
+      return apply((changes) => {
+        const start = changes.mapPos(from, 1);
+        const end = changes.mapPos(to, -1);
+        return forward ? EditorSelection.range(start, end) : EditorSelection.range(end, start);
+      });
+    }
+    const caretOnMarksNextToWord = word && (from < opening.to || to > closing.from);
+    if (!caretOnMarksNextToWord) {
+      removeMarks(containing);
+      return apply(mapSelection);
+    }
+  }
+
+  if (selection.empty) {
+    if (!word) return;
+    ({ from, to } = word);
+  }
+  for (const node of spans(from, to)) {
+    removeMarks(node);
+    from = Math.min(from, node.from);
+    to = Math.max(to, node.to);
+  }
+  if (breaksTag(state, from, true) || breaksTag(state, to, false)) return;
+  if (mark === "highlight" && highlightBlocked(state, tree, from, to)) return;
+  insert(from, delimiter);
+  insert(to, delimiter);
+  apply(
+    (changes) => {
+      const start = changes.mapPos(from, -1) + delimiter.length;
+      const end = changes.mapPos(to, 1) - delimiter.length;
+      if (selection.empty) return EditorSelection.cursor(Math.max(start, Math.min(end, changes.mapPos(selection.head, 1))));
+      return selection.anchor <= selection.head ? EditorSelection.range(start, end) : EditorSelection.range(end, start);
+    },
+    { from, to },
+  );
 };
 
 // ==========================
 // Headings
 // ==========================
 
-const HEADING_PREFIX_REGEX = /^(#{1,6})\s/;
+type HeadingLevel = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 /**
- * Cycle the current line's heading level (no heading → H1 → H2 → H3 → H4 →
- * no heading). Used by the toolbar's heading button.
+ * Make the caret's line a heading of `level`, or normal text for 0. The `#` marks go after quote and list markers,
+ * so the line stays in its quote or list, and the caret stays in the text. Code and data blocks stay unchanged.
  */
-export const cycleHeading = (view: EditorView): void => {
-  const { from } = view.state.selection.main;
-  const line = view.state.doc.lineAt(from);
-  const match = line.text.match(/^(#{1,4})\s/);
-
-  if (match) {
-    const level = match[1]!.length;
-    const replacement = level < 4 ? "#".repeat(level + 1) + " " : "";
-    view.dispatch({ changes: { from: line.from, to: line.from + level + 1, insert: replacement } });
-  } else {
-    view.dispatch({ changes: { from: line.from, to: line.from, insert: "# " } });
-  }
+export const setHeadingLevel = (view: EditorView, level: HeadingLevel): void => {
+  const { state } = view;
+  const line = state.doc.lineAt(state.selection.main.head);
+  const tree = parsedTree(state, line.to);
+  if (!tree) return;
+  const node = headingNodeAt(state, tree);
+  const setext = node?.name.startsWith("SetextHeading") ? node : undefined;
+  const content = setext ? state.doc.lineAt(setext.from) : line;
+  const underline = setext?.getChild("HeaderMark");
+  if (setext && (!underline || state.doc.lineAt(underline.from).number !== content.number + 1)) return;
+  const leading = /^[ \t]*(?:(?:>[ \t]*|(?:[-+*]|\d{1,9}[.)])[ \t]+)[ \t]*)*/.exec(content.text)![0];
+  if (/(?:[-+*]|\d{1,9}[.)])[ \t]+$/.test(leading) && /^\[[ xX]\](?:[ \t]+|$)/.test(content.text.slice(leading.length))) return;
+  const from = content.from + leading.length;
+  if (inCode(tree, from) || excludedSpans(state).some((span) => from >= span.from && from < span.to)) return;
+  const heading = /^(#{1,6})(?:[ \t]+|$)/.exec(content.text.slice(leading.length));
+  const prefix = level ? `${"#".repeat(level)} ` : "";
+  const changes = state.changes(
+    underline
+      ? level
+        ? [
+            { from, insert: prefix },
+            { from: content.to, to: state.doc.lineAt(underline.to).to },
+          ]
+        : { from: underline.from, to: state.doc.lineAt(underline.to).to }
+      : { from, to: from + (heading?.[0].length ?? 0), insert: prefix },
+  );
+  let selection = state.selection.map(changes, 1);
+  if (setext && state.selection.main.empty && state.selection.main.head > content.to)
+    selection = selection.replaceRange(EditorSelection.cursor(changes.mapPos(content.to, 1)));
+  view.dispatch({ changes, selection, annotations: isolateHistory.of("full") });
   view.focus();
 };
 
-/**
- * Set the current line's heading to a specific level (1–6). Replaces any
- * existing heading prefix; inserts at line start otherwise. Used by slash
- * commands where the user picked a specific level (`/h1`, `/h2`, …).
- */
-export const setHeading = (view: EditorView, level: number): void => {
-  const { from } = view.state.selection.main;
-  const line = view.state.doc.lineAt(from);
-  const prefix = `${"#".repeat(level)} `;
-  const match = line.text.match(HEADING_PREFIX_REGEX);
-  const replaceTo = match ? line.from + match[0].length : line.from;
-
-  view.dispatch({
-    changes: { from: line.from, to: replaceTo, insert: prefix },
-    selection: { anchor: line.from + prefix.length },
-  });
-  view.focus();
-};
-
-// ==========================
-// Line prefixes (lists, quotes)
-// ==========================
-
-/**
- * Insert a per-line prefix (`- `, `1. `, `- [ ] `, `> `) at the current
- * line start. Existing line content is preserved; cursor stays where it was
- * (CodeMirror remaps it through the change).
- *
- * Toolbar-oriented: the user clicked while editing mid-line and wants the
- * caret to remain on the same word. For empty-line cases (slash commands)
- * use `insertAtCursor` instead, which explicitly advances the caret past
- * the inserted text.
- */
-export const insertLinePrefix = (view: EditorView, prefix: string): void => {
-  const { from } = view.state.selection.main;
-  const line = view.state.doc.lineAt(from);
-  view.dispatch({ changes: { from: line.from, to: line.from, insert: prefix } });
-  view.focus();
+/** The heading shortcuts: the line's own level again turns it back into normal text. */
+export const toggleHeadingLevel = (view: EditorView, level: HeadingLevel): void => {
+  const tree = parsedTree(view.state, view.state.selection.main.head);
+  if (tree) setHeadingLevel(view, headingAt(view.state, tree) === level ? 0 : level);
 };
 
 /**

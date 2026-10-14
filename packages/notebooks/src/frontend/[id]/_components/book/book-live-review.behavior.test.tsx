@@ -61,6 +61,7 @@ describe("independent Book live metadata regression", () => {
         createComponent(Navigator, {
           notebookId: "book01",
           notebookName: "Handbook",
+          notebookIcon: null,
           selectedNoteId: "note03",
           tree: [{ id: "note03", title: "Deleted", children: [] }],
           tags: [{ tag: "obsolete", count: 1 }],
@@ -91,9 +92,7 @@ describe("independent Book live metadata regression", () => {
       () =>
         createComponent(NoteTree, {
           notebookId: "book01",
-          notebookName: "Handbook",
           selectedNoteId: "note01",
-          canWrite: false,
           presentationMode,
           tree: [
             {
@@ -121,35 +120,6 @@ describe("independent Book live metadata regression", () => {
         `/app/notebooks/book01/notes/note02?mode=${presentationMode}`,
       );
     } finally {
-      dispose();
-      dom.cleanup();
-    }
-  });
-
-  test.each(["write", "readonly"] as const)("tag modal retains explicit %s presentation", async (presentationMode) => {
-    const dom = createDomTestHarness();
-    dom.root.className = "k2b-ui";
-    const { default: TagsButton } = await import("../sidebar/TagsButton");
-    const { dialogCore } = await import("../../../../../../ui/src/feedback/dialog-core");
-    const dispose = render(
-      () =>
-        createComponent(TagsButton, {
-          notebookId: "book01",
-          tags: [{ tag: "team/news", count: 2 }],
-          variant: "icon",
-          presentationMode,
-        }),
-      dom.root,
-    );
-    try {
-      dom.root.querySelector<HTMLButtonElement>("button")!.click();
-      await Bun.sleep(20);
-      expect(document.querySelector('dialog a[href*="/tags/"]')?.getAttribute("href")).toBe(
-        `/app/notebooks/book01/tags/team%2Fnews?mode=${presentationMode}`,
-      );
-    } finally {
-      dialogCore.close();
-      await Bun.sleep(220);
       dispose();
       dom.cleanup();
     }

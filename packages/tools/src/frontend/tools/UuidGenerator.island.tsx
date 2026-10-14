@@ -68,9 +68,9 @@ export default function UuidGenerator() {
           <ScrollArea class="flex min-h-0 flex-1 flex-col gap-1">
             <For each={uuids()}>
               {(uuid) => (
-                <div class="flex items-center gap-2 group">
+                <div class="k2b-progressive-row flex items-center gap-2">
                   <ToolCodeBlock class="flex-1 px-2 py-1">{uuid}</ToolCodeBlock>
-                  <CopyButton text={uuid} class="opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100 shrink-0" />
+                  <CopyButton text={uuid} class="k2b-progressive-action shrink-0" />
                 </div>
               )}
             </For>

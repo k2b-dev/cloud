@@ -9,20 +9,18 @@ import {
   drawSelection,
   dropCursor,
   EditorView,
-  highlightActiveLine,
-  highlightActiveLineGutter,
   highlightSpecialChars,
   keymap,
   rectangularSelection,
 } from "@codemirror/view";
+import { SPECIAL_CHAR_REGEX } from "./_lib/inline-syntax";
 
 /**
  * Slightly modified version of the basic extensions provided by CodeMirror.
  * @see https://github.com/codemirror/basic-setup/blob/main/src/codemirror.ts
  */
 export const basicExtensions: () => Extension = () => [
-  highlightActiveLineGutter(),
-  highlightSpecialChars(),
+  highlightSpecialChars({ specialChars: SPECIAL_CHAR_REGEX }),
   drawSelection(),
   dropCursor(),
   EditorView.lineWrapping,
@@ -34,7 +32,6 @@ export const basicExtensions: () => Extension = () => [
   closeBrackets(),
   rectangularSelection(),
   crosshairCursor(),
-  highlightActiveLine(),
   highlightSelectionMatches(),
   keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...foldKeymap, ...completionKeymap, ...lintKeymap]),
 ];

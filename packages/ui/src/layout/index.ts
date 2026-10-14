@@ -203,5 +203,11 @@ export type {
   SettingsModalTabTone,
 } from "./SettingsModal";
 export { default as SettingsModal } from "./SettingsModal";
+export {
+  APP_WORKSPACE_SWITCHER_SEARCH_FROM,
+  type AppWorkspaceSidebarSwitcherProps,
+  type AppWorkspaceSwitcherAction,
+  type AppWorkspaceSwitcherOption,
+} from "./SidebarSwitcher";
 export type { TabBarItem, TabBarProps } from "./TabBar";
 export { default as TabBar } from "./TabBar";

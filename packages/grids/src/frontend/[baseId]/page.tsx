@@ -82,7 +82,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} fullWidth title={state.title}>
-      <GridsWorkspace state={state} cloudUrl={cloudUrl} />
+      <GridsWorkspace userId={user.id} state={state} cloudUrl={cloudUrl} />
     </Layout>
   );
 });

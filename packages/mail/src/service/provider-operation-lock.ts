@@ -86,8 +86,8 @@ const BREAKER_PROBE = 2;
 // KEYS: the waiters' places, until when each counts as present, and the mailbox's breaker. ARGV:
 // waiter, head start, retry step, retry maximum, jitter, presence grace, place TTL, breaker
 // memory. Registers the waiter, keeping the better of its place from an earlier try and the new
-// one, and returns its position among the present waiters, when it should retry, and whether the
-// breaker is open, remembers a window that ended, or neither.
+// one, and returns its position among the present waiters, when it should retry, whether the
+// breaker is open, remembers a window that ended, or neither, and its place.
 const enterLeaseLineScript = `
   local time = redis.call("TIME")
   local now = (tonumber(time[1]) * 1000) + math.floor(tonumber(time[2]) / 1000)
@@ -117,7 +117,7 @@ const enterLeaseLineScript = `
   redis.call("ZADD", KEYS[2], now + retryAfter + tonumber(ARGV[6]), ARGV[1])
   redis.call("PEXPIRE", KEYS[1], placeTtl)
   redis.call("PEXPIRE", KEYS[2], placeTtl)
-  return { position, retryAfter, breaker }
+  return { position, retryAfter, breaker, redis.call("ZSCORE", KEYS[1], ARGV[1]) }
 `;
 
 // KEYS: the mailbox's breaker. ARGV: first window, longest window, jitter fraction. Doubles the
@@ -141,12 +141,28 @@ const leaseLineKeys = (resource: string): [string, string, string] => [
   `mail:provider-lease-line:{${resource}}:breaker`,
 ];
 
+/** Lines `waiter` up for the provider lease of `resource` with the script above and returns its reply. */
+const enterLeaseLine = (resource: string, waiter: string, priority: ProviderLeasePriority): Promise<unknown> =>
+  redis.send("EVAL", [
+    enterLeaseLineScript,
+    "3",
+    ...leaseLineKeys(resource),
+    waiter,
+    String(LEASE_HEAD_START_MS[priority]),
+    String(LEASE_RETRY_STEP_MS),
+    String(LEASE_RETRY_MAX_MS),
+    String(Math.floor(Math.random() * LEASE_RETRY_JITTER_MS)),
+    String(LEASE_PRESENCE_GRACE_MS),
+    String(LEASE_PLACE_TTL_MS),
+    String(BREAKER_MAX_WINDOW_MS),
+  ]);
+
 const leaveLeaseLine = async (resource: string, waiter: string): Promise<void> => {
   const [places, present] = leaseLineKeys(resource);
   await Promise.all([redis.send("ZREM", [places, waiter]), redis.send("ZREM", [present, waiter])]);
 };
 
-export type ProviderLeaseTurn = { lock: Lock; retryAfterMs: null } | { lock: null; retryAfterMs: number };
+export type ProviderLeaseTurn = { lock: Lock; place: number; retryAfterMs: null } | { lock: null; retryAfterMs: number };
 
 // The lease with which this process probes a provider that timed out, or "taking" while it asks
 // for one, and until when it counts: a holder that never released it does not block probes past
@@ -162,28 +178,20 @@ let probeLeaseUntil = 0;
  * waiter that comes back late is passed over until it returns, without losing its place. While
  * the mailbox's provider breaker is open, nobody takes the lease; after it, the waiter next in
  * line takes it once no other mailbox's probe holds this process's probe. Release the lease with
- * `releaseProviderLease`. The line and the breaker are ephemeral Valkey state: losing them only
- * loses the order and the pause, never the lease.
+ * `releaseProviderLease`, passing `next` when the job continues with another turn so it lines up
+ * before letting go. The line and the breaker are ephemeral Valkey state: losing them only
+ * loses the order and the pause, never the lease. With `keepPlace`, the waiter stays in line with
+ * its lease, for a caller in this module that needs another lock before it can use the lease and
+ * leaves the line once it holds both.
  */
 export const acquireProviderLease = async (params: {
   resource: string;
   waiter: string;
   priority: ProviderLeasePriority;
   ttlMs: number;
+  keepPlace?: boolean;
 }): Promise<ProviderLeaseTurn> => {
-  const reply: unknown = await redis.send("EVAL", [
-    enterLeaseLineScript,
-    "3",
-    ...leaseLineKeys(params.resource),
-    params.waiter,
-    String(LEASE_HEAD_START_MS[params.priority]),
-    String(LEASE_RETRY_STEP_MS),
-    String(LEASE_RETRY_MAX_MS),
-    String(Math.floor(Math.random() * LEASE_RETRY_JITTER_MS)),
-    String(LEASE_PRESENCE_GRACE_MS),
-    String(LEASE_PLACE_TTL_MS),
-    String(BREAKER_MAX_WINDOW_MS),
-  ]);
+  const reply = await enterLeaseLine(params.resource, params.waiter, params.priority);
   if (!Array.isArray(reply)) throw new Error("The provider lease line returned no position");
   const busy: ProviderLeaseTurn = { lock: null, retryAfterMs: Number(reply[1]) };
   const breaker = Number(reply[2]);
@@ -197,7 +205,7 @@ export const acquireProviderLease = async (params: {
   let lock: Lock | null = null;
   try {
     lock = await mailProviderOperationMutex().acquire({ resource: params.resource, ttlMs: params.ttlMs });
-    if (lock) await leaveLeaseLine(params.resource, params.waiter);
+    if (lock && !params.keepPlace) await leaveLeaseLine(params.resource, params.waiter);
   } catch (error) {
     if (lock) await releaseProviderLease(lock);
     lock = null;
@@ -205,11 +213,44 @@ export const acquireProviderLease = async (params: {
   } finally {
     if (probe) probeLease = lock;
   }
-  return lock ? { lock, retryAfterMs: null } : busy;
+  return lock ? { lock, place: Number(reply[3]), retryAfterMs: null } : busy;
 };
 
-/** Releases a lease from `acquireProviderLease`. A release that fails leaves the lease to expire. */
-export const releaseProviderLease = async (lock: Lock): Promise<void> => {
+// KEYS: the waiters' places and until when each counts as present. ARGV: the holder's place.
+// Reports whether a present waiter goes ahead of the holder, without changing the line.
+const providerLeaseWaitedForScript = `
+  local time = redis.call("TIME")
+  local now = (tonumber(time[1]) * 1000) + math.floor(tonumber(time[2]) / 1000)
+  for _, waiter in ipairs(redis.call("ZRANGEBYSCORE", KEYS[1], "-inf", "(" .. ARGV[1])) do
+    local presentUntil = redis.call("ZSCORE", KEYS[2], waiter)
+    if presentUntil and tonumber(presentUntil) >= now then return 1 end
+  end
+  return 0
+`;
+
+/**
+ * Answers whether a present waiter goes ahead of this lease's place in line. Work that holds
+ * the lease in units, such as body downloads, ends its turn after the current unit, so the
+ * waiter waits for one unit instead of a whole batch. Valkey errors let the turn run on:
+ * losing the line only loses the order.
+ */
+export const providerLeaseWaitedFor = async (turn: { lock: Lock; place: number }): Promise<boolean> => {
+  const [places, present] = leaseLineKeys(turn.lock.resource);
+  return redis
+    .send("EVAL", [providerLeaseWaitedForScript, "2", places, present, String(turn.place)])
+    .then((reply) => Number(reply) === 1)
+    .catch(() => false);
+};
+
+/**
+ * Releases a lease from `acquireProviderLease`. A job that continues passes `next` to line up
+ * before letting go, so a job that asks between its turns does not take the lease just because
+ * the holder was briefly out of line. It lines up anew: a command that waited longer than the
+ * head-start difference still goes first. Valkey errors lose only the order, never the release;
+ * a release that fails leaves the lease to expire.
+ */
+export const releaseProviderLease = async (lock: Lock, next?: { waiter: string; priority: ProviderLeasePriority }): Promise<void> => {
+  if (next) await enterLeaseLine(lock.resource, next.waiter, next.priority).catch(() => undefined);
   if (probeLease === lock) probeLease = null;
   await mailProviderOperationMutex()
     .release(lock)
@@ -316,6 +357,27 @@ type ProviderOperationBarrierResult<T> = { acquired: false } | { acquired: true;
 
 const mailboxProviderOperationKey = (mailboxId: string): string => `mailbox:${mailboxId}`;
 
+/** Runs `work` while it renews `locks`; a lock it cannot renew fails the work as a lost lease. */
+const withHeldProviderLocks = <T>(locks: readonly Lock[], work: (assertLeaseActive: () => Promise<void>) => Promise<T>): Promise<T> =>
+  withLeaseHeartbeat({
+    intervalMs: Math.floor(MAIL_PROVIDER_OPERATION_LEASE_MS / 3),
+    heartbeat: async () => {
+      const extended = await Promise.all(
+        locks.map((lock) =>
+          lifecycleBarrierMutex()
+            .extend(lock, { ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS })
+            .catch(() => false),
+        ),
+      );
+      if (extended.some((active) => !active)) {
+        throw Object.assign(new Error("Mailbox provider operation barrier was lost"), {
+          code: "MAIL_PROVIDER_OPERATION_LEASE_LOST",
+        });
+      }
+    },
+    work,
+  });
+
 export const withProviderOperationBarrier = async <T>(
   remoteResourceIds: readonly string[],
   work: (assertLeaseActive: () => Promise<void>) => Promise<T>,
@@ -323,25 +385,7 @@ export const withProviderOperationBarrier = async <T>(
   const locks = await acquireMailboxProviderBarrier(remoteResourceIds);
   if (!locks) return { acquired: false };
   try {
-    const value = await withLeaseHeartbeat({
-      intervalMs: Math.floor(MAIL_PROVIDER_OPERATION_LEASE_MS / 3),
-      heartbeat: async () => {
-        const extended = await Promise.all(
-          locks.map((lock) =>
-            lifecycleBarrierMutex()
-              .extend(lock, { ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS })
-              .catch(() => false),
-          ),
-        );
-        if (extended.some((active) => !active)) {
-          throw Object.assign(new Error("Mailbox provider operation barrier was lost"), {
-            code: "MAIL_PROVIDER_OPERATION_LEASE_LOST",
-          });
-        }
-      },
-      work,
-    });
-    return { acquired: true, value };
+    return { acquired: true, value: await withHeldProviderLocks(locks, work) };
   } finally {
     await releaseMailboxProviderBarrier(locks);
   }
@@ -353,3 +397,46 @@ export const withMailboxProviderOperationBarrier = async <T>(
   work: (assertLeaseActive: () => Promise<void>) => Promise<T>,
 ): Promise<ProviderOperationBarrierResult<T>> =>
   withProviderOperationBarrier([mailboxProviderOperationKey(mailboxId), ...remoteResourceIds], work);
+
+export type ProviderOperationTurn<T> = { acquired: false; retryAfterMs: number } | { acquired: true; value: T };
+
+/**
+ * Runs `work` with the same exclusivity as `withMailboxProviderOperationBarrier` on one remote
+ * mailbox, but takes its turn in the mailbox's provider lease line as a user command instead of
+ * polling past it: folder syncs that keep a large mailbox busy cannot pass it forever. Returns
+ * when to try again while it is not `waiter`'s turn; `waiter` must stay the same across tries to
+ * keep its place. The mailbox-wide key, held only by short lifecycle changes, is taken without
+ * waiting once the lease is held; `waiter` leaves the line only once it holds both, so a short
+ * lifecycle change does not cost it its place.
+ */
+export const withMailboxProviderOperationTurn = async <T>(
+  params: { mailboxId: string; remoteResourceId: string; waiter: string },
+  work: (assertLeaseActive: () => Promise<void>) => Promise<T>,
+): Promise<ProviderOperationTurn<T>> => {
+  const turn = await acquireProviderLease({
+    resource: params.remoteResourceId,
+    waiter: params.waiter,
+    priority: "command",
+    ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    keepPlace: true,
+  });
+  if (!turn.lock) return { acquired: false, retryAfterMs: turn.retryAfterMs };
+  const lease = turn.lock;
+  try {
+    const mailboxLock = await mailProviderOperationMutex().acquire({
+      resource: mailboxProviderOperationKey(params.mailboxId),
+      ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS,
+    });
+    if (!mailboxLock) return { acquired: false, retryAfterMs: LEASE_RETRY_STEP_MS };
+    try {
+      await leaveLeaseLine(params.remoteResourceId, params.waiter);
+      return { acquired: true, value: await withHeldProviderLocks([lease, mailboxLock], work) };
+    } finally {
+      await mailProviderOperationMutex()
+        .release(mailboxLock)
+        .catch(() => false);
+    }
+  } finally {
+    await releaseProviderLease(lease);
+  }
+};

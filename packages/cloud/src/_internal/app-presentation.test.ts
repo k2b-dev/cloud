@@ -51,3 +51,92 @@ describe("compileAppPresentation", () => {
     ).toThrow("1 to 80 characters");
   });
 });
+
+test("the startup presentation compiler retains and trims declared setting translations", () => {
+  const configured: AppMeta = {
+    ...app,
+    widgets: [
+      {
+        id: "stock",
+        path: "/stock",
+        settings: {
+          mode: { kind: "choice", label: "Mode", options: [{ label: "All", value: "all" }] },
+          text: { kind: "text", label: "Text" },
+        },
+      },
+    ],
+  };
+  expect(
+    compileAppPresentation(configured, {
+      baseLocale: "en",
+      translations: {
+        de: {
+          widgets: {
+            stock: {
+              settings: {
+                mode: { label: " Modus ", options: { all: " Alle " } },
+                text: { placeholder: " Suchen " },
+              },
+            },
+          },
+        },
+      },
+    }),
+  ).toEqual({
+    baseLocale: "en",
+    translations: {
+      de: {
+        widgets: {
+          stock: {
+            settings: {
+              mode: { label: "Modus", options: { all: "Alle" } },
+              text: { placeholder: "Suchen" },
+            },
+          },
+        },
+      },
+    },
+  });
+  expect(() =>
+    compileAppPresentation(configured, {
+      baseLocale: "en",
+      translations: { de: { widgets: { stock: { settings: { missing: { label: "Missing" } } } } } },
+    }),
+  ).toThrow("not declared");
+  expect(() =>
+    compileAppPresentation(configured, {
+      baseLocale: "en",
+      translations: { de: { widgets: { stock: { settings: { mode: { options: { missing: "Missing" } } } } } } },
+    }),
+  ).toThrow("unknown key");
+});
+
+test("retains translated option values that name an object prototype property", () => {
+  const configured: AppMeta = {
+    ...app,
+    widgets: [
+      {
+        id: "stock",
+        path: "/stock",
+        settings: {
+          mode: { kind: "choice", label: "Mode", options: [{ label: "Prototype", value: "__proto__" }] },
+        },
+      },
+    ],
+  };
+  const compiled = compileAppPresentation(configured, {
+    baseLocale: "en",
+    translations: {
+      de: {
+        widgets: {
+          stock: {
+            settings: {
+              mode: { options: Object.fromEntries([["__proto__", "Prototyp"]]) },
+            },
+          },
+        },
+      },
+    },
+  });
+  expect(compiled?.translations.de?.widgets?.stock?.settings?.mode?.options?.__proto__).toBe("Prototyp");
+});

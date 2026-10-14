@@ -1,8 +1,17 @@
 // Synchronous parts of `cloud.*` for scripts, actions and app frames: cloud.html,
 // cloud.chart and cloud.money. No DOM needed.
 
-import { bar, donut, gauge, histogram, line, money, pie, scatter, sparkline } from "@k2b/stdlib";
+import {
+  type CloudAiChartInput,
+  type CloudAiFormat,
+  type CloudAiNumberFormat,
+  cloudAiAppChartSchema,
+  cloudAiChartRenderOptions,
+} from "@k2b/cloud/ai/browser";
+// Named renderers, not the `charts` namespace, so app frames leave out the map and state timeline renderers.
+import { bar, barGauge, boxplot, donut, gauge, heatmap, histogram, line, money, pie, scatter, sparkline, stat } from "@k2b/stdlib";
 import { CloudError } from "./errors";
+import { normalizeChartDates } from "./views";
 
 /** Markup that `cloud.html` keeps as is. A String object, so string methods, innerHTML and `${}` all work. */
 export class Html extends String {}
@@ -25,23 +34,21 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Html 
   return new Html(out);
 }
 
-const RENDERERS = { bar, line, pie, donut, scatter, sparkline, gauge, histogram } as const;
-type Kind = keyof typeof RENDERERS;
-// Logical drawing size; the stylesheet stretches cartesian charts to the container width
-// and keeps text and markers at pixel size (same mechanism as @k2b/ui Chart).
-const SIZE: Record<Kind, [number, number]> = {
-  bar: [640, 280],
-  line: [640, 280],
-  scatter: [640, 280],
-  histogram: [640, 280],
-  sparkline: [160, 40],
-  pie: [320, 240],
-  donut: [320, 240],
-  gauge: [260, 180],
+const KEEP_ASPECT = new Set(["pie", "donut", "gauge"]);
+type ChartOptions = Record<string, unknown> & {
+  kind: string;
+  format?: CloudAiNumberFormat | ((value: number) => string);
+  xAxis?: Record<string, unknown> & { format?: CloudAiFormat | ((value: number) => string) };
+  yAxis?: Record<string, unknown> & { format?: CloudAiFormat | ((value: number) => string) };
 };
-const KEEP_ASPECT = new Set<Kind>(["pie", "donut", "gauge"]);
-
-type AnyOptions = Record<string, unknown> & { kind: string };
+type StoredChart = {
+  input: CloudAiChartInput;
+  title?: string;
+  format?: (value: number) => string;
+  xFormat?: (value: number) => string;
+  yFormat?: (value: number) => string;
+};
+const ChartSchema = /* @__PURE__ */ cloudAiAppChartSchema();
 
 function responsive(svg: string): string {
   return svg.replace("<svg ", '<svg preserveAspectRatio="none" ').replace(/<text\b[^>]*>/g, (tag) => {
@@ -54,100 +61,117 @@ function responsive(svg: string): string {
   });
 }
 
-/** Points may carry Date or ISO strings as x; they become timestamps with a locale date axis. */
-function withDates(options: AnyOptions, locale: string): AnyOptions {
-  if (options.kind !== "line" && options.kind !== "scatter") return options;
-  const series = options.series as { data: { x: unknown }[] }[] | undefined;
-  if (!Array.isArray(series)) return options;
-  const isDate = (x: unknown) => x instanceof Date || (typeof x === "string" && !Number.isNaN(Date.parse(x)));
-  if (!series.some((s) => s.data?.some((p) => isDate(p.x)))) return options;
-  const time = (x: unknown) => (x instanceof Date ? x.getTime() : typeof x === "string" ? Date.parse(x) : Number(x));
-  const day = new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit" });
-  const xAxis = (options.xAxis ?? {}) as Record<string, unknown>;
-  return {
-    ...options,
-    series: series.map((s) => ({ ...s, data: s.data.map((p) => ({ ...p, x: time(p.x) })) })),
-    xAxis: { format: (v: number) => day.format(v), ...xAxis },
-  };
-}
-
-/** Number axes default to the user's number format. */
-function withNumbers(options: AnyOptions, locale: string): AnyOptions {
-  const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
-  const axis = (key: "xAxis" | "yAxis") => {
-    const current = (options[key] ?? {}) as Record<string, unknown>;
-    return { format: (v: number) => number.format(v), ...current };
-  };
-  if (options.kind === "bar" || options.kind === "histogram") return { ...options, yAxis: axis("yAxis") };
-  if (options.kind === "line" || options.kind === "scatter") return { ...options, xAxis: axis("xAxis"), yAxis: axis("yAxis") };
-  return options;
-}
-
-// Tick labels are 11px IBM Plex Mono: about 6.7px per character.
-const CHAR = 6.7;
-
-/** stdlib reserves a fixed 40px for y tick labels and never shortens category labels; fit both to the real size. */
-function fitted(options: AnyOptions, width: number): AnyOptions {
-  if (options.padding !== undefined) return options;
-  const yAxis = options.yAxis as { format?: (v: number) => string } | undefined;
-  const values =
-    options.kind === "bar"
-      ? [0, ...((options.data as { value: number }[]) ?? []).map((d) => d.value)]
-      : options.kind === "line" || options.kind === "scatter"
-        ? ((options.series as { data: { y: number }[] }[]) ?? []).flatMap((s) => s.data.map((p) => p.y))
-        : [];
-  if (!values.length || !yAxis?.format) return options;
-  const finite = values.filter(Number.isFinite);
-  const extremes = [Math.min(...finite), Math.max(...finite)];
-  // Nice ticks can exceed the data a little; one extra digit of room covers that.
-  const longest = Math.max(...extremes.map((v) => yAxis.format!(v).length)) + 1;
-  const left = Math.max(40, Math.ceil(longest * CHAR) + 10);
-  let next: AnyOptions = { ...options, padding: { top: 16, right: 16, bottom: 32, left } };
-  if (options.kind === "bar") {
-    const data = options.data as { label: string; value: number }[];
-    const longestLabel = Math.max(1, ...data.map((d) => d.label.length));
-    const step = Math.max(1, Math.ceil(((longestLabel + 1) * CHAR * data.length) / Math.max(width - left - 16, 1)));
-    next = { ...next, data: data.map((d, i) => ({ ...d, label: i % step === 0 ? d.label : "" })) };
+/** SVG at the measured size; initial markup and redraws use the same mapping and function formats. */
+export function chartSvg(options: StoredChart, locale: string, width: number, height: number): string {
+  try {
+    const mapped = cloudAiChartRenderOptions(options.input, locale, {
+      width,
+      formats: { x: options.xFormat, y: options.yFormat, value: options.format },
+    });
+    const common = { width, height, title: options.title, subtitle: options.input.subtitle };
+    let svg: string;
+    switch (mapped.kind) {
+      case "bar":
+        svg = bar({ ...mapped, ...common });
+        break;
+      case "line":
+        svg = line({ ...mapped, ...common });
+        break;
+      case "scatter":
+        svg = scatter({ ...mapped, ...common });
+        break;
+      case "histogram":
+        svg = histogram({ ...mapped, ...common });
+        break;
+      case "boxplot":
+        svg = boxplot({ ...mapped, ...common });
+        break;
+      case "pie":
+        svg = pie({ ...mapped, ...common });
+        break;
+      case "donut":
+        svg = donut({ ...mapped, ...common });
+        break;
+      case "gauge":
+        svg = gauge({ ...mapped, ...common });
+        break;
+      case "barGauge":
+        svg = barGauge({ ...mapped, ...common });
+        break;
+      case "stat":
+        svg = stat({ ...mapped, ...common, label: options.title ?? "" });
+        break;
+      case "heatmap":
+        svg = heatmap({ ...mapped, ...common });
+        break;
+      case "sparkline":
+        svg = sparkline({ ...mapped, ...common });
+        break;
+    }
+    // stdlib embeds an unlayered <style> with fixed colors; the base stylesheet owns those rules instead.
+    svg = svg.replace(/<style>[\s\S]*?<\/style>/, "");
+    return KEEP_ASPECT.has(mapped.kind) ? svg : responsive(svg);
+  } catch (error) {
+    throw new CloudError("invalid", `cloud.chart: ${error instanceof Error ? error.message : String(error)}`);
   }
-  return next;
-}
-
-/** SVG for `options` at a logical size; used for the first markup and for redraws at the measured width. */
-export function chartSvg(options: AnyOptions, locale: string, width: number, height: number): string {
-  const kind = options.kind as Kind;
-  const prepared = fitted(withNumbers(withDates(options, locale), locale), width);
-  // stdlib embeds an unlayered <style> with fixed colors; the base stylesheet owns those rules instead.
-  const svg = (RENDERERS[kind] as (o: object) => string)({ ...prepared, width, height }).replace(/<style>[\s\S]*?<\/style>/, "");
-  return KEEP_ASPECT.has(kind) ? svg : responsive(svg);
 }
 
 /** Options of recent stretched charts by id, so an app frame can redraw them at their measured width (bounded). */
-export const chartOptions = new Map<string, AnyOptions>();
+export const chartOptions = new Map<string, StoredChart>();
 let chartSeq = 0;
 
-/** Markup of the @k2b/ui Chart component, which the base stylesheet styles in Cloud colors. */
-export function chart(options: AnyOptions, locale: string): Html {
-  const kind = options?.kind as Kind;
-  const render = RENDERERS[kind] as ((o: object) => string) | undefined;
-  if (!render)
+/** Markup of the shared Chart component, with the same contract as declarative charts. */
+export function chart(options: ChartOptions, locale: string, timeZone = "UTC"): Html {
+  const { width: logicalWidth, height: logicalHeight, ...raw } = options;
+  const stored: Omit<StoredChart, "input"> = {};
+  for (const name of ["xAxis", "yAxis"] as const) {
+    const axis = raw[name];
+    if (!axis || typeof axis !== "object" || Array.isArray(axis)) continue;
+    const { format, ...rest } = axis;
+    if (typeof format === "function") {
+      if (name === "xAxis") stored.xFormat = format;
+      else stored.yFormat = format;
+      raw[name] = rest;
+    }
+  }
+  if (typeof raw.format === "function") {
+    stored.format = raw.format;
+    delete raw.format;
+  }
+  const parsed = ChartSchema.safeParse(
+    normalizeChartDates({ ...raw, title: raw.title ?? `${options.kind} chart` }, timeZone, "cloud.chart: ", true),
+  );
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]!;
+    const path = issue.path.reduce<string>(
+      (text, part) => (typeof part === "number" ? `${text}[${part}]` : `${text}${text ? "." : ""}${String(part)}`),
+      "",
+    );
     throw new CloudError(
       "invalid",
-      `cloud.chart: unknown kind "${String(options?.kind)}"; use one of ${Object.keys(RENDERERS).join(", ")}.`,
+      issue.path[0] === "kind"
+        ? `cloud.chart: unknown kind "${String(options.kind)}"; use a supported chart kind.`
+        : `cloud.chart: ${path ? `${path}: ` : ""}${issue.message}`,
     );
-  const [width, height] = [Number(options.width) || SIZE[kind][0], Number(options.height) || SIZE[kind][1]];
-  const svg = chartSvg(options, locale, width, height);
-  const stretch = !KEEP_ASPECT.has(kind);
+  }
+  const input = parsed.data;
+  // A sparkline is an inline word-sized graphic; other charts use the shared 480 × 280 drawing.
+  const width = Number(logicalWidth) || (input.kind === "sparkline" ? 160 : 480);
+  const height = Number(logicalHeight) || (input.kind === "sparkline" ? 40 : 280);
+  const prepared = { input, ...stored, title: typeof options.title === "string" ? options.title : undefined };
+  const svg = chartSvg(prepared, locale, width, height);
+  const stretch = !KEEP_ASPECT.has(input.kind);
   const title = typeof options.title === "string" ? options.title : "";
   const subtitle = typeof options.subtitle === "string" ? options.subtitle : "";
-  const label = ` role="img" aria-label="${escape([title, subtitle].filter(Boolean).join(" — ") || `${kind} chart`)}"`;
+  const label = ` role="img" aria-label="${escape([title, subtitle].filter(Boolean).join(" — ") || `${input.kind} chart`)}"`;
   let id = "";
-  if (stretch && !options.width) {
+  if (stretch && !logicalWidth) {
     id = `c${++chartSeq}`;
-    chartOptions.set(id, options);
+    chartOptions.set(id, prepared);
     if (chartOptions.size > 200) chartOptions.delete(chartOptions.keys().next().value!);
   }
   return new Html(
-    `<div class="k2b-chart" data-chart-kind="${kind}"${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""} style="--k2b-chart-width:${width}px;--k2b-chart-height:${height}px">${svg}</div></div>`,
+    `<div class="k2b-chart" data-chart-kind="${input.kind}"${label}><div class="k2b-chart__svg"${stretch ? " data-stretch" : ""}${id ? ` data-chart-id="${id}"` : ""} style="--k2b-chart-width:${width}px;--k2b-chart-height:${height}px">${svg}</div></div>`,
   );
 }
 

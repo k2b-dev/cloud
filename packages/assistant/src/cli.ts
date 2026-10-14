@@ -1,18 +1,24 @@
 import { type CloudCliModule, defineCliCommands } from "@k2b/cloud/cli";
+import { assistantAcpCommand } from "./cli/acp";
+import { assistantApprovalCommands } from "./cli/approvals";
 import { assistantChatCommands, assistantManagementCommands } from "./cli/chat";
 import { assistantCodeCommands } from "./cli/code";
 import { CODE_HOST_COMMAND } from "./cli/code-host";
 import { assistantRootCommand } from "./cli/interactive";
 import { assistantPersonalizationCommands } from "./cli/personalization";
 import { assistantProjectCommands } from "./cli/projects";
+import { assistantSkillCommands } from "./cli/skills";
 import { assistantTaskCommands } from "./cli/tasks";
 
 const commands = defineCliCommands({
   name: "assistant",
+  alias: "ai",
+  shortcuts: { acp: "acp" },
   summary: "Chat with the Cloud Assistant and manage chats, scheduled tasks, files, personalization, and Projects.",
   groupSummaries: {
     code: "Build and manage Studio Apps and actions",
     "studio-admin": "Administer Studio resources, data and database settings",
+    approvals: "List and revoke remembered Cloud approvals",
     actions: "Review and resolve pending turn actions",
     chats: "Create, inspect, and manage Assistant chats",
     files: "Manage files in Assistant chats",
@@ -26,16 +32,20 @@ const commands = defineCliCommands({
     "projects knowledge": "Manage Project knowledge",
     "projects references": "Manage Project Cloud references",
     "projects skills": "Manage Skills linked to a Project",
+    skills: "List Cloud Skills and move them to and from Agent Skills folders",
     tasks: "Manage one-time and recurring chat tasks",
     turns: "Watch, steer, and stop Assistant turns",
   },
   commands: [
     assistantRootCommand,
+    assistantAcpCommand,
+    ...assistantApprovalCommands,
     ...assistantCodeCommands,
     ...assistantChatCommands,
     ...assistantManagementCommands,
     ...assistantPersonalizationCommands,
     ...assistantProjectCommands,
+    ...assistantSkillCommands,
     ...assistantTaskCommands,
   ],
 });

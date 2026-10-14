@@ -379,7 +379,7 @@ export const tablesRoutes = new Hono<AuthContext>()
     requirePublicIdParam("baseId", "base", "Base"),
     describeRoute({
       tags: ["Grids:Table"],
-      summary: "List Table administration summaries for a Base",
+      summary: "List Table administration summaries for a base",
       responses: {
         200: jsonResponse(PublicTableAdminOverviewPageSchema, "Table administration summaries"),
         403: jsonResponse(ErrorResponseSchema, "Forbidden"),

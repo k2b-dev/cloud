@@ -3,10 +3,15 @@ import type { Accessor } from "solid-js";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { AcquiredDraftLease, DraftEditableContent, DraftLease, MailDraft, MailDraftSeed } from "../../contracts";
-import { MailLiveEventSchema } from "../../live-events";
+import { parseMailLiveEvent } from "../../live-event";
 import { readApiError } from "./api-response";
 import { mailComposerMessages } from "./mail-composer-messages";
-import { advanceMailDraftJournalAfterSave, type MailDraftJournal, readMailDraftJournal } from "./mail-draft-journal";
+import {
+  advanceMailDraftJournalAfterSave,
+  type MailDraftJournal,
+  readMailDraftJournal,
+  serializeMailDraftContent,
+} from "./mail-draft-journal";
 import { type DraftLeaseHeartbeatResult, recoverDraftLeaseHeartbeat } from "./mail-draft-lease-recovery";
 import { isClosedMailDraft, type MailDraftLifecycleTransition, reconcileMailDraftLifecycle } from "./mail-draft-lifecycle";
 
@@ -48,6 +53,7 @@ const isAbortError = (error: unknown): boolean => error instanceof Error && erro
 
 const draftEditableContent = (draft: MailDraft): DraftEditableContent => ({
   senderIdentityId: draft.senderIdentityId,
+  signatureTemplateId: draft.signatureTemplateId,
   to: draft.to,
   cc: draft.cc,
   bcc: draft.bcc,
@@ -60,7 +66,7 @@ const draftEditableContent = (draft: MailDraft): DraftEditableContent => ({
 });
 
 export const draftSeedContentChanged = (seed: MailDraftSeed, content: DraftEditableContent): boolean =>
-  JSON.stringify(content) !== JSON.stringify(seed.content);
+  serializeMailDraftContent(content) !== serializeMailDraftContent(seed.content);
 
 export const reconcileDraftSessionAfterLiveInvalidation = async (operations: {
   refreshLifecycle: () => Promise<void>;
@@ -96,11 +102,11 @@ export const createMailDraftSession = (options: {
   let heartbeatController: AbortController | null = null;
   let heartbeatGeneration = 0;
   let initializePromise: Promise<MailDraft | null> | null = null;
-  const seedBaseline = options.initialSeed ? JSON.stringify(options.initialSeed.content) : null;
+  const seedBaseline = options.initialSeed ? serializeMailDraftContent(options.initialSeed.content) : null;
   let lastSavedContent = seedBaseline ?? "";
   const serializeMutation = createSerializedDraftMutationQueue();
 
-  const serializedContent = () => JSON.stringify(options.content());
+  const serializedContent = () => serializeMailDraftContent(options.content());
   const draftKey = (draftId: string) => journalKey(options.mailboxId, draftId);
   const stopHeartbeat = () => {
     heartbeatGeneration += 1;
@@ -316,14 +322,14 @@ export const createMailDraftSession = (options: {
     if (!currentDraft) return null;
     if (options.isDisposed()) return null;
     if (isClosedMailDraft(currentDraft)) {
-      lastSavedContent = JSON.stringify(draftEditableContent(currentDraft));
+      lastSavedContent = serializeMailDraftContent(draftEditableContent(currentDraft));
       setInitialized(true);
       applyClosedDraft(currentDraft);
       return currentDraft;
     }
     const acquired = await acquireLease(currentDraft);
     if (options.isDisposed()) return null;
-    lastSavedContent = JSON.stringify(draftEditableContent(currentDraft));
+    lastSavedContent = serializeMailDraftContent(draftEditableContent(currentDraft));
     setDraft(currentDraft);
     setInitialized(true);
     if (acquired) {
@@ -375,7 +381,7 @@ export const createMailDraftSession = (options: {
           return null;
         }
         currentDraft = await response.json();
-        lastSavedContent = JSON.stringify(draftEditableContent(currentDraft));
+        lastSavedContent = serializeMailDraftContent(draftEditableContent(currentDraft));
         setDraft(currentDraft);
         try {
           options.onMaterialized(currentDraft);
@@ -398,7 +404,7 @@ export const createMailDraftSession = (options: {
       }
       if (!currentDraft || !lease()) return null;
       const nextContent = options.content();
-      const serialized = JSON.stringify(nextContent);
+      const serialized = serializeMailDraftContent(nextContent);
       if (serialized === lastSavedContent) return currentDraft;
       setStatus("saving");
       setStatusMessage(t().savingDraft);
@@ -548,7 +554,7 @@ export const createMailDraftSession = (options: {
       { mailbox: options.mailboxId },
       {
         cursor: null,
-        parse: (data) => MailLiveEventSchema.parse(data),
+        parse: (data) => parseMailLiveEvent(data),
         apply: async (events) => {
           const conversationId = draft()?.conversationId ?? null;
           if (events.some(({ data }) => data.conversationId === null || data.conversationId === conversationId)) await reconcile();

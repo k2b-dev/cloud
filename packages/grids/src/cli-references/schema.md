@@ -132,7 +132,7 @@ cld grids tables mutation-policy set Operations:Invoices --allow form,workflow
   changes in every client, not only visible buttons.
 
 Retention floors, preservation holds, destruction, and record trash are
-separate controls. See [Bases and tables](grids.md#bases-and-tables).
+separate controls. See [bases and tables](grids.md#bases-and-tables).
 
 ## Audit questions
 
@@ -400,7 +400,7 @@ grouping, and aggregation. `ui` owns presentation, not a second query.
 | `description` | Optional, up to 2,000 characters; `null` clears it. |
 | `icon` | Optional, up to 200 characters; `null` clears it. |
 | `source` | Optional nonempty trimmed GQL, up to 20,000 characters. Create defaults to all records from its table. |
-| `shared` | Optional boolean; create defaults to a personal View owned by the signed-in user. `true` creates a shared View. Shared View authoring needs the corresponding Base permission. |
+| `shared` | Optional boolean; create defaults to a personal View owned by the signed-in user. `true` creates a shared View. Shared View authoring needs the corresponding base permission. |
 | `ui` | Optional object, default `{}`. Properties listed below. |
 | `position` | Update only, optional integer. |
 
@@ -509,7 +509,7 @@ does not change validation or submission. Its shape is
 `relationFilter` restricts selectable and submitted existing records of a relation.
 Use the [JSON filter tree](#json-filters), with target-table Field IDs,
 for example `{"fieldId":"State1","op":"equals","value":"available"}` for a text
-field. The target must be a stored table in the same Base. Filtered inputs cannot
+field. The target must be a stored table in the same base. Filtered inputs cannot
 use inline creation. The server checks the submitted selection again; this is not
 just a picker display filter. It does not grant access to target records.
 

@@ -1,8 +1,8 @@
 import { createContext, createRoot, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, useContext } from "solid-js";
 import { Dynamic, insert, isServer } from "solid-js/web";
 import { IconButtonLink } from "../actions/Button";
-import { useUiMessages } from "../intl/messages";
 import { installPageTitleController, PAGE_TITLE_CONTROLLER_ATTRIBUTE } from "./page-title-controller";
+import { useWorkspaceMessages } from "./workspace-messages";
 
 /** A page above the current one. Only pages someone can go back to are levels, so each has a link. */
 export type PageTrailLink = { title: string; href: string };
@@ -111,7 +111,7 @@ export const usePageTrail = (): (() => PageTrailState | undefined) => {
  * On phones a back arrow left of the title replaces the row above.
  */
 export function PageTitle(props: PageTitleProps): JSX.Element {
-  const messages = useUiMessages();
+  const messages = useWorkspaceMessages();
   // A title rendered on the server from the host's trail follows the host's later trails (see `followPageTrail`).
   const host = isServer ? useContext(PageTrailContext) : undefined;
   const menuId = `k2b-page-title-menu-${createUniqueId()}`;
@@ -217,7 +217,8 @@ export function PageTitle(props: PageTitleProps): JSX.Element {
 
 /**
  * Keeps server-rendered titles of the host's trail current: a workspace head
- * that never hydrates, and an app's own header title from the host's trail.
+ * that never hydrates, its heading, and an app's own header title from the
+ * host's trail.
  * When the host publishes a new trail, for example after `setPageTrail()`,
  * each such title is replaced in place by a live one with the same element,
  * class, and subtitle, and a head learns whether it now has a page above it.
@@ -236,6 +237,15 @@ export const followPageTrail = (root: ParentNode = document): (() => void) => {
       const extra = [...element.classList].filter((name) => name !== "k2b-page-title").join(" ") || undefined;
       const subtitle = element.querySelector(".k2b-page-title__subtitle");
       const subtitleNodes = subtitle ? [...subtitle.childNodes] : undefined;
+      // A link focused in the server title keeps focus in the live one: same kind, then same address.
+      const active = document.activeElement;
+      const focused =
+        active && element.contains(active)
+          ? {
+              kind: ["k2b-page-title__up", "k2b-page-title__back"].find((name) => active.classList.contains(name)),
+              href: active.getAttribute("href"),
+            }
+          : undefined;
       // The live title takes the server title's place, before whatever follows it in the row.
       const place = document.createTextNode("");
       row.insertBefore(place, element);
@@ -255,7 +265,19 @@ export const followPageTrail = (root: ParentNode = document): (() => void) => {
           return dispose;
         }),
       );
+      const upgraded = place.previousSibling;
+      if (focused && upgraded instanceof HTMLElement && upgraded.classList.contains("k2b-page-title")) {
+        const links = focused.kind ? [...upgraded.querySelectorAll<HTMLElement>(`a.${focused.kind}`)] : [];
+        const link =
+          links.find((candidate) => candidate.getAttribute("href") === focused.href) ??
+          links[0] ??
+          upgraded.querySelector<HTMLElement>("a[data-k2b-page-trail-up]");
+        link?.focus({ preventScroll: true });
+      }
     }
+    // A server-rendered workspace heading carries only the title.
+    for (const heading of root.querySelectorAll<HTMLElement>("[data-k2b-page-trail-title][data-k2b-server]"))
+      if (trail && !heading.closest("solid-island, solid-client")) heading.textContent = trail.title;
     // The row's `data-trail` decides whether it shows; it follows the depth.
     for (const row of root.querySelectorAll<HTMLElement>("[data-trail]:has(> .k2b-page-title[data-fallback])"))
       if (!row.closest("solid-island, solid-client")) row.dataset.trail = trail?.ancestors.length ? "up" : "title";

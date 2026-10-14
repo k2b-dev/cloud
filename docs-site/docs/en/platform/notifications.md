@@ -155,7 +155,9 @@ When `email()` is present, it returns:
 | `content` | No | Plain-text content |
 | `rawHtml` | No | HTML content |
 
-Cloud sanitizes the body and wraps it in the installation's HTML frame. It
+Cloud sanitizes the body and wraps it in the installation's HTML frame. The
+frame keeps quotes (`blockquote`) and preformatted blocks (`pre`); a `pre` wraps
+long lines unless its own inline style sets `white-space`. It
 also sends a plain-text part: sanitized `content` when supplied, otherwise text
 derived from `rawHtml`. Email goes through [Outgoing mail](/en/docs/platform/outgoing-mail)
 on the default sender profile as app `core`, with a stable key for each delivery.

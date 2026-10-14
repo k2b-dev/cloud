@@ -99,13 +99,15 @@ Rules:
 
 - use `export default` for islands and client components
 - props must be `seroval`-serializable
-- do not nest island/client imports inside other island/client components
+- island/client modules must not import other island/client modules, directly, through plain modules, as named imports, or with a literal dynamic `import()`; an island must also not import itself back through plain modules. The build fails and names the files; a computed `import()` path is not detected. Type-only imports are fine. Move the shared component into a plain `.tsx` module and keep the island/client file as a thin re-export: `export { default } from "./Inner";`.
 
 `seroval` supports more than JSON, including values like `Date`, `RegExp`, `Map`, and `Set`, but still excludes functions, DOM nodes, and arbitrary class instances.
 
 ## Island Prop Boundary
 
 Island and client component props cross a server-to-browser serialization boundary.
+Props travel as JSON data and are never evaluated, so island props do not need
+`'unsafe-eval'` in a Content Security Policy.
 
 Do not pass functions, callbacks, event handlers, Solid signals/stores, DOM nodes, or class instances as props to `*.island.tsx` or `*.client.tsx` components. Props are serialized with `seroval`, so these values will fail at render time.
 
@@ -197,5 +199,7 @@ Do not return an async render function. The render function is called by `render
 - treating `@k2b/ssr/nav` as a full router leads to stale server data; it only enhances anchors after client state is handled
 - using `nav.push()` without reconciling `popstate` leaves island state stale after Back/Forward; use `listenPopState()`
 - importing server-only modules into islands or client components can break browser bundling
+- a nested island/client build error means shared code belongs in a plain `.tsx` module; lazy-load that module instead of an island
 - named exports for islands/clients are not supported
+- islands are re-rendered, not hydrated: mounting replaces the server HTML inside an island, so typed input, focus, and scroll there are lost, and markup that differs between server and client shifts the page
 - calling `reset()` inside an `ssr:island-error` listener retries immediately, so a component that keeps failing loops; keep `reset` for a user action or a bounded, delayed retry

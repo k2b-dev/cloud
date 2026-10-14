@@ -235,6 +235,7 @@ export async function hostFetch(context: CodeToolContext, session: Session, path
   const router = new Hono<AuthContext>()
     .onError((error) => Response.json({ code: "CODE_HOST_REQUEST_FAILED", message: error.message }, { status: 403 }))
     .use("*", async (c, next) => {
+      c.set("credentialKind", "invocation");
       c.set("actor", context.actor);
       c.set("accessSubject", context.accessSubject);
       await next();
@@ -541,10 +542,12 @@ export const agentHost = {
     }
     if (session) session.lastUsed = Date.now();
     const rows = await sql<
-      { id: string; message: string; decision: boolean | null; remember: unknown }[]
-    >`SELECT id,message,decision,remember FROM assistant.artifact_agent_approvals
-      WHERE turn_id=${call.turnId}::uuid AND call_id=${call.callId} AND receipt IS NULL ORDER BY ordinal`;
-    const approvals = rows.map(({ id, message, decision, remember }) => ({
+      { id: string; approval_id: string | null; message: string; decision: boolean | null; remember: unknown }[]
+    >`SELECT a.id,a.message,a.decision,a.remember,c.approval_id FROM assistant.artifact_agent_approvals a
+      LEFT JOIN assistant.capability_calls c ON c.id=a.id
+      WHERE a.turn_id=${call.turnId}::uuid AND a.call_id=${call.callId} AND a.receipt IS NULL ORDER BY a.ordinal`;
+    const approvals = rows.map(({ id, approval_id, message, decision, remember }) => ({
+      approvalId: approval_id ?? undefined,
       id,
       message,
       decision,

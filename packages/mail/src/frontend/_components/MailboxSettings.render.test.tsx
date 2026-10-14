@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import type { ComposeFormattingWarning, SenderIdentity } from "../../contracts";
 import type { MailboxSettingsContext } from "../../settings-context";
 
 const root = mkdtempSync(join(tmpdir(), "mailbox-settings-render-tests-"));
@@ -16,7 +17,9 @@ const { default: MailboxSettings } = await import("./MailboxSettings.tsx");
 
 const now = "2026-08-11T10:00:00.000Z";
 const mailboxId = "00000000-0000-4000-8000-000000000001";
-const context = (permission: MailboxSettingsContext["permission"], options: { spacesCalendar?: boolean } = {}): MailboxSettingsContext => ({
+type RenderOptions = { spacesCalendar?: boolean; styleWarnings?: ComposeFormattingWarning[] };
+
+const context = (permission: MailboxSettingsContext["permission"], options: RenderOptions = {}): MailboxSettingsContext => ({
   mailbox: {
     id: mailboxId,
     name: "Support",
@@ -40,7 +43,7 @@ const context = (permission: MailboxSettingsContext["permission"], options: { sp
       : {
           templates: [],
           defaults: [],
-          style: { mailboxId, customCss: "", revision: 1, updatedAt: now },
+          style: { mailboxId, customCss: "", formattingWarnings: options.styleWarnings ?? [], revision: 1, updatedAt: now },
           identities: [],
         },
   admin: permission === "admin" ? { accessEntries: [], bindings: [], connections: [], folders: [], identities: [] } : null,
@@ -49,7 +52,7 @@ const context = (permission: MailboxSettingsContext["permission"], options: { sp
 const renderSettings = (
   permission: MailboxSettingsContext["permission"],
   initialTab?: string,
-  options?: { spacesCalendar?: boolean },
+  options?: RenderOptions,
   admin?: Partial<NonNullable<MailboxSettingsContext["admin"]>>,
 ) =>
   renderToString(() =>
@@ -94,6 +97,20 @@ describe("Mailbox settings composition", () => {
     expect(html).not.toContain("Danger zone");
   });
 
+  test("tells mailbox managers which values of the saved email design email ignores", () => {
+    expect(renderSettings("admin", "writing")).not.toContain("no longer accepts");
+    const styleWarnings: ComposeFormattingWarning[] = [
+      { code: "ignored_mailbox_css", property: "font-family" },
+      { code: "ignored_mailbox_css", property: "background" },
+    ];
+    expect(renderSettings("admin", "writing", { styleWarnings })).toContain(
+      "This design contains values that email no longer accepts: font-family, background. Messages still send without them.",
+    );
+    expect(renderSettings("admin", "writing", { styleWarnings: [{ code: "ignored_mailbox_css" }] })).toContain(
+      "Mail uses the built-in design because the mailbox email design cannot be applied.",
+    );
+  });
+
   test("keeps stable deep links and separates Calendar from the General footer", () => {
     expect(renderSettings("admin", "general")).toContain("Set the name and context collaborators see.");
     expect(renderSettings("admin", "connections")).toContain("Connected account");
@@ -110,6 +127,70 @@ describe("Mailbox settings composition", () => {
     expect(html).toContain("Connected account");
     expect(html).toContain("Sending identities");
     expect(html).toContain('class="flex flex-col gap-8"');
+  });
+
+  test("names why each sending identity cannot send and offers the fix", () => {
+    const identity = (
+      id: string,
+      status: SenderIdentity["status"],
+      statusReason: SenderIdentity["statusReason"],
+      pendingVerificationCommandId: string | null = null,
+    ): SenderIdentity => ({
+      id,
+      mailboxId,
+      label: id,
+      displayName: id,
+      fromAddress: `${id.toLowerCase()}@example.test`,
+      replyTo: null,
+      defaultCc: [],
+      defaultBcc: [],
+      defaultFormat: "markdown",
+      defaultPriority: "normal",
+      defaultDeliveryReceipt: false,
+      defaultReadReceipt: false,
+      vcard: null,
+      envelopeSender: null,
+      defaultSignatureTemplateId: null,
+      transport: {
+        mode: "mailbox",
+        host: null,
+        port: null,
+        tlsMode: null,
+        username: null,
+        secret: { kind: null, isSet: false },
+        revision: 0,
+        status: "active",
+        capabilities: { dsn: false, size: false, maxMessageBytes: null },
+        lastVerifiedAt: null,
+        lastError: null,
+      },
+      authenticationPolicy: { automation: "disabled" },
+      sentFolderId: null,
+      draftsFolderId: null,
+      isDefault: false,
+      status,
+      statusReason,
+      pendingVerificationCommandId,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const html = renderSettings("admin", "delivery", undefined, {
+      identities: [
+        identity("Missing", "unverified", "sent_folder_missing"),
+        identity("Refused", "rejected", "provider_rejected"),
+        identity("Ready", "verified", null),
+        identity("Waiting", "unverified", "verification_pending", "11111111-1111-4111-8111-111111111111"),
+      ],
+    });
+
+    expect(html).toContain("Sent folder missing");
+    expect(html).toContain("Choose Sent folder");
+    expect(html).toContain("Rejected by the provider");
+    // Verify stays next to Choose Sent folder for a provider that saves sent mail itself. A
+    // verification that waits behind synchronization keeps its button in place, disabled.
+    expect(html.match(/>Verify</g)).toHaveLength(3);
+    expect(html).toContain("Verification waiting");
+    expect(html).toContain(">Ready<");
   });
 
   test("keeps reader settings personal and hides administrator categories", () => {

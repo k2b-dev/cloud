@@ -1,42 +1,40 @@
-import type { HelpDocumentManifest, HelpDocumentPayload, HelpSearchPayload } from "@k2b/cloud/shared";
+import type { HelpDocumentManifest, HelpDocumentPayload } from "@k2b/cloud/shared";
 import { clipboard } from "@k2b/stdlib/solid";
-import { Button, IconButton, IconButtonLink, MarkdownView, NoticeCard, Placeholder, prompts, ScrollArea, useLocale } from "@k2b/ui";
+import {
+  Button,
+  IconButton,
+  IconButtonLink,
+  MarkdownView,
+  NoticeCard,
+  Placeholder,
+  prompts,
+  ScrollArea,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { COMMANDS_CHANGED, contextCommandsWithShortcuts, shortcutLabel } from "../browser/command-shortcuts";
 import { appAccentStyle } from "./app-appearance";
-import { type GlobalSearchHelpApp, openGlobalSearchHelpDialog } from "./GlobalSearchHelpDialog";
 import { helpMessages } from "./help-messages";
 import { formatHelpBundleMarkdown, formatHelpDocumentMarkdown } from "./layout-help-markdown";
 import { adjacentHelpDocuments, focusHelpArticleHeading, resetHelpArticleScroll } from "./layout-help-navigation";
+import { HELP_TOPICS_EVENT, type HelpTopic, registry } from "./layout-help-registry";
 import { searchHelpTopics } from "./layout-help-search";
-import { layoutHelpTopicHref } from "./layout-help-url";
+import { helpLinkTarget, layoutHelpTopicHref } from "./layout-help-url";
+import { readShellData, useShellData } from "./shell-data";
 
-type HelpTopicBase = {
-  id: string;
-  title: string;
-  icon?: string;
-  description?: string;
-  order?: number;
-};
-
-export type LayoutHelpDocumentsProps = {
-  documents: readonly HelpDocumentManifest[];
-  /** Canonical standalone Help route owned by the current app. */
-  pageBase: string;
-};
 export type LayoutHelpPageProps = {
   documents: readonly HelpDocumentManifest[];
   initialTopic?: string;
   includeShortcuts?: boolean;
   accent?: string;
-  /** Render inside an app-owned pane instead of occupying a standalone page. */
+  /** Render inside an app-owned pane instead of occupying a full page. */
   embedded?: boolean;
-  /** Canonical standalone Help route owned by the current app. */
+  /** Canonical full-page Help route owned by the current app. */
   pageBase?: string;
 };
 
-type HelpTopic = (HelpTopicBase & { kind: "content"; children: JSX.Element }) | (HelpDocumentManifest & { kind: "document" });
-type HelpView = "hub" | "search" | "article";
+type HelpView = "hub" | "article";
 type HelpSession = {
   view: HelpView;
   query: string;
@@ -51,23 +49,8 @@ type HelpSection = {
   title: string;
 };
 
-const HELP_TOPICS_EVENT = "cloud:layout-help-topics";
 const LAST_TOPIC_KEY = "cloud.layoutHelp.activeTopic";
 
-declare global {
-  interface Window {
-    __cloudLayoutHelpTopics?: Map<string, HelpTopic>;
-    __cloudLayoutHelpPageBase?: string;
-  }
-}
-
-const registry = () => {
-  if (typeof window === "undefined") return null;
-  window.__cloudLayoutHelpTopics ??= new Map<string, HelpTopic>();
-  return window.__cloudLayoutHelpTopics;
-};
-
-const emitTopicsChanged = () => window.dispatchEvent(new Event(HELP_TOPICS_EVENT));
 const iconClass = (icon?: string) => (icon?.startsWith("ti ") ? icon : `ti ${icon ?? "ti-circle"}`);
 const legacyTopicContent = (topic: HelpTopic) => (topic.kind === "content" ? topic.children : null);
 const sortedTopics = () =>
@@ -80,34 +63,7 @@ const mergeTopics = (registered: readonly HelpTopic[], documents: readonly HelpD
   return [...topics.values()].sort((a, b) => (a.order ?? 100) - (b.order ?? 100) || a.title.localeCompare(b.title));
 };
 
-const registerTopic = (topic: HelpTopic) => {
-  const topics = registry();
-  if (!topics) return () => {};
-  topics.set(topic.id, topic);
-  emitTopicsChanged();
-  return () => {
-    if (topics.get(topic.id) !== topic) return;
-    topics.delete(topic.id);
-    emitTopicsChanged();
-  };
-};
-
-/** Register an app's server-prepared Markdown manifest with the shared help UI. */
-export function LayoutHelpDocuments(props: LayoutHelpDocumentsProps) {
-  onMount(() => {
-    // Cleanup runs while this unmounts, when a parent `<Show>` may already have dropped the props' source.
-    const pageBase = props.pageBase;
-    window.__cloudLayoutHelpPageBase = pageBase;
-    const disposers = props.documents.map((document) => registerTopic({ ...document, kind: "document" }));
-    onCleanup(() => {
-      disposers.forEach((dispose) => dispose());
-      if (window.__cloudLayoutHelpPageBase === pageBase) delete window.__cloudLayoutHelpPageBase;
-    });
-  });
-  return null;
-}
-
-const Shortcuts = (props: { openSearchHelp: () => void }) => {
+const Shortcuts = (props: { focusSearch: () => void }) => {
   const locale = useLocale();
   const t = () => helpMessages.resolve([locale()]).t;
   const [commands, setCommands] = createSignal(contextCommandsWithShortcuts());
@@ -120,7 +76,7 @@ const Shortcuts = (props: { openSearchHelp: () => void }) => {
   return (
     <div class="flex flex-col gap-3">
       <p class="text-sm leading-relaxed text-dimmed">{t().shortcutsIntro}</p>
-      <Button size="sm" variant="secondary" class="self-start" onClick={props.openSearchHelp}>
+      <Button size="sm" variant="secondary" class="self-start" onClick={props.focusSearch}>
         <i class="ti ti-search" /> {t().searchHelp}
       </Button>
       <div class="flex flex-col gap-2">
@@ -148,7 +104,6 @@ const HelpShell = (props: {
   session: HelpSession;
   close: () => void;
   pageBase?: string;
-  searchHelpApps: GlobalSearchHelpApp[];
   documents?: readonly HelpDocumentManifest[];
   includeShortcuts?: boolean;
   accent?: string;
@@ -157,6 +112,8 @@ const HelpShell = (props: {
 }) => {
   const locale = useLocale();
   const t = () => helpMessages.resolve([locale()]).t;
+  // Links to this app's Help, by its own route or Core's `/help/apps/<id>`, open in place.
+  const appId = useShellData()?.appId;
   const [externalTopics, setExternalTopics] = createSignal(mergeTopics(sortedTopics(), props.documents));
   const [view, setView] = createSignal<HelpView>(props.session.view);
   const [query, setQuery] = createSignal(props.session.query);
@@ -177,26 +134,61 @@ const HelpShell = (props: {
   let scrollArea: HTMLDivElement | undefined;
   let articleContent: HTMLDivElement | undefined;
   let articleHeading: HTMLHeadingElement | undefined;
+  let searchInput: HTMLInputElement | undefined;
+  let resultsRegion: HTMLDivElement | undefined;
+  const [resultsMinHeight, setResultsMinHeight] = createSignal<string>();
   let pendingArticleFocus = false;
+  let pendingNavigation = false;
+  /** Where the page's own address points in this Help; a query string, such as a campaign tag, does not matter here. */
+  const currentHelpTarget = () =>
+    helpLinkTarget(`${location.pathname}${location.hash}`, location.href, { appId, pageBase: props.pageBase });
+  let pendingHash = props.syncPageUrl && typeof location !== "undefined" ? (currentHelpTarget()?.hash ?? "") : "";
+  /**
+   * The address Help shows now. The phone menu and dialogs with a history entry put a second entry on the same address
+   * and take it away again; that is not Help navigation and must not move the article or the search.
+   */
+  const pageAddress = () => `${location.pathname}${location.hash}`;
+  let shownAddress = props.syncPageUrl && typeof location !== "undefined" ? pageAddress() : "";
   let requestVersion = 0;
   let searchVersion = 0;
   let copyAllController: AbortController | undefined;
 
-  const restoreArticleScroll = () =>
+  const articleScroller = () => {
+    if (props.surface !== "page") return scrollArea;
+    for (let element = root?.parentElement; element; element = element.parentElement) {
+      if (/(auto|scroll)/.test(getComputedStyle(element).overflowY)) return element;
+    }
+    return document.scrollingElement;
+  };
+
+  const restoreArticleScroll = () => {
+    if (props.surface !== "modal" || pendingNavigation || pendingHash) return;
     requestAnimationFrame(() => {
       if (scrollArea && view() === "article") scrollArea.scrollTop = props.session.articleScrollTop;
     });
+  };
 
-  const syncActiveSection = () => {
+  const syncActiveSection = (scroller = articleScroller()) => {
     const sections = articleSections();
-    if (!scrollArea || sections.length === 0) return;
-    const readingLine = scrollArea.getBoundingClientRect().top + Math.min(160, scrollArea.clientHeight * 0.22);
+    if (!scroller || sections.length === 0) return;
+    const top = scroller === document.scrollingElement ? 0 : scroller.getBoundingClientRect().top;
+    const readingLine = top + Math.min(160, scroller.clientHeight * 0.22);
     let active = sections[0];
     for (const section of sections) {
       if (section.element.getBoundingClientRect().top <= readingLine) active = section;
       else break;
     }
     setActiveSectionId(active?.id ?? null);
+  };
+
+  const scrollToHash = (hash: string) => {
+    const heading = Array.from(
+      articleContent?.querySelectorAll<HTMLHeadingElement>("h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]") ?? [],
+    ).find((element) => element.id === hash);
+    if (!heading) return false;
+    setActiveSectionId(hash);
+    heading.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    return true;
   };
 
   const collectArticleSections = () => {
@@ -208,15 +200,25 @@ const HelpShell = (props: {
     }));
     setArticleSections(sections);
     setActiveSectionId(sections[0]?.id ?? null);
-    requestAnimationFrame(syncActiveSection);
+    const openedSection = pendingHash ? scrollToHash(pendingHash) : false;
+    pendingHash = "";
+    pendingNavigation = false;
+    if (!openedSection) syncActiveSection();
   };
 
   const openArticleSection = (section: HelpSection) => {
-    setActiveSectionId(section.id);
-    section.element.scrollIntoView({
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-      block: "start",
-    });
+    scrollToHash(section.id);
+    if (props.syncPageUrl) {
+      const url = new URL(location.href);
+      url.hash = encodeURIComponent(section.id);
+      history.replaceState(history.state, "", url);
+      shownAddress = pageAddress();
+    }
+  };
+
+  const focusSearch = () => {
+    showHub();
+    requestAnimationFrame(() => searchInput?.focus({ preventScroll: true }));
   };
 
   const shortcutsTopic = createMemo<HelpTopic>(() => ({
@@ -226,7 +228,7 @@ const HelpShell = (props: {
     description: t().shortcutsDescription,
     order: 0,
     kind: "content",
-    children: <Shortcuts openSearchHelp={() => openGlobalSearchHelpDialog(props.searchHelpApps, locale())} />,
+    children: <Shortcuts focusSearch={focusSearch} />,
   }));
   const topics = createMemo(() => (props.includeShortcuts === false ? externalTopics() : [shortcutsTopic(), ...externalTopics()]));
   const documentTopics = createMemo(() =>
@@ -265,8 +267,10 @@ const HelpShell = (props: {
             headers: { Accept: "application/json" },
           });
           if (!response.ok) throw new Error(t().searchFailed);
-          const payload = (await response.json()) as Partial<HelpSearchPayload>;
-          return Array.isArray(payload.ids) ? payload.ids.filter((id): id is string => typeof id === "string") : [];
+          const payload: unknown = await response.json();
+          return payload && typeof payload === "object" && "ids" in payload && Array.isArray(payload.ids)
+            ? payload.ids.filter((id): id is string => typeof id === "string")
+            : [];
         }),
       )
         .then((groups) => {
@@ -295,7 +299,13 @@ const HelpShell = (props: {
       setActiveSectionId(null);
       return;
     }
-    const frame = requestAnimationFrame(collectArticleSections);
+    const frame = requestAnimationFrame(() => {
+      if (pendingNavigation && !pendingHash) {
+        const scroller = articleScroller();
+        if (scroller) scroller.scrollTop = 0;
+      }
+      collectArticleSections();
+    });
     onCleanup(() => cancelAnimationFrame(frame));
   });
 
@@ -327,6 +337,35 @@ const HelpShell = (props: {
     update();
     onCleanup(() => window.removeEventListener(HELP_TOPICS_EVENT, update));
     restoreArticleScroll();
+    let scrollFrame: number | undefined;
+    const onScroll = (event: Event) => {
+      const scroller = event.target === document ? document.scrollingElement : event.target;
+      if (!(scroller instanceof Element) || !articleContent || !scroller.contains(articleContent) || view() !== "article") return;
+      if (props.surface === "modal" && scroller === scrollArea) props.session.articleScrollTop = scroller.scrollTop;
+      if (scrollFrame !== undefined) return;
+      scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = undefined;
+        syncActiveSection(scroller);
+      });
+    };
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    const onPopState = () => {
+      const address = pageAddress();
+      if (address === shownAddress) return;
+      const target = currentHelpTarget();
+      if (target?.kind !== "topic") return;
+      shownAddress = address;
+      const id = target.topicId;
+      if (id !== null && topics().some((topic) => topic.id === id)) openTopic(id, target.hash, false);
+      // The hub keeps its search, as the reader's own Back button does. An unknown topic shows the hub, as the server does.
+      else setView("hub");
+    };
+    if (props.syncPageUrl) window.addEventListener("popstate", onPopState);
+    onCleanup(() => {
+      document.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("popstate", onPopState);
+      if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame);
+    });
   });
   onCleanup(() => copyAllController?.abort());
 
@@ -337,18 +376,30 @@ const HelpShell = (props: {
 
     const response = await fetch(topic.url, { signal, headers: { Accept: "application/json" } });
     if (!response.ok) throw new Error(t().requestFailed);
-    const value = (await response.json()) as Partial<HelpDocumentPayload>;
+    const value: unknown = await response.json();
     if (
+      !value ||
+      typeof value !== "object" ||
+      !("id" in value) ||
       value.id !== topic.id ||
-      (value.locale !== undefined && typeof value.locale !== "string") ||
-      (topic.locale !== undefined && value.locale !== undefined && value.locale !== topic.locale) ||
+      !("html" in value) ||
+      !("markdown" in value) ||
+      !("title" in value) ||
+      ("locale" in value && value.locale !== undefined && typeof value.locale !== "string") ||
+      (topic.locale !== undefined && "locale" in value && value.locale !== undefined && value.locale !== topic.locale) ||
       typeof value.html !== "string" ||
       typeof value.markdown !== "string" ||
       typeof value.title !== "string"
     ) {
       throw new Error(t().invalidDocument);
     }
-    const document: HelpDocumentPayload = { ...(value as HelpDocumentPayload), locale: value.locale ?? topic.locale ?? "en" };
+    const document: HelpDocumentPayload = {
+      id: topic.id,
+      title: value.title,
+      html: value.html,
+      markdown: value.markdown,
+      locale: "locale" in value && typeof value.locale === "string" ? value.locale : (topic.locale ?? "en"),
+    };
     props.session.articleCache.set(cacheKey, document);
     return document;
   };
@@ -424,44 +475,79 @@ const HelpShell = (props: {
     }
   };
 
-  const openTopic = (id: string) => {
-    resetHelpArticleScroll(props.session, scrollArea);
-    pendingArticleFocus = true;
-    setActiveId(id);
-    setView("article");
-    if (props.syncPageUrl) {
-      if (props.pageBase) history.replaceState(history.state, "", layoutHelpTopicHref(props.pageBase, id));
+  const pushHelpUrl = (id: string | null, hash = "") => {
+    if (props.syncPageUrl && props.pageBase) {
+      history.pushState(history.state, "", layoutHelpTopicHref(props.pageBase, id) + (hash ? `#${encodeURIComponent(hash)}` : ""));
+      shownAddress = pageAddress();
     }
+  };
+  const openTopic = (id: string, hash = "", push = true) => {
+    if (push) pushHelpUrl(id, hash);
     try {
       localStorage.setItem(LAST_TOPIC_KEY, id);
     } catch {
       /* Help does not depend on storage. */
     }
-  };
-  const goBack = () => {
-    setView(query().trim() ? "search" : "hub");
-    if (props.syncPageUrl) {
-      if (props.pageBase) history.replaceState(history.state, "", layoutHelpTopicHref(props.pageBase, null));
+    // The open article does not load again: go to its section, or to its top.
+    if (view() === "article" && activeId() === id && payload()) {
+      if (!hash || !scrollToHash(hash)) resetHelpArticleScroll(props.session, articleScroller() ?? undefined);
+      return;
     }
+    resetHelpArticleScroll(props.session, articleScroller() ?? undefined);
+    pendingArticleFocus = true;
+    pendingNavigation = true;
+    pendingHash = hash;
+    setActiveId(id);
+    setView("article");
   };
-  const showHub = () => {
+  const showHub = (push = true) => {
     setQuery("");
+    setResultsMinHeight(undefined);
     setRemoteIds(null);
     setView("hub");
+    if (push) pushHelpUrl(null);
   };
+  const goBack = () => {
+    setView("hub");
+    pushHelpUrl(null);
+  };
+
+  const followHelpLink = (event: MouseEvent) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (!(event.target instanceof Element)) return;
+    const anchor = event.target.closest("a");
+    if (!anchor || !articleContent?.contains(anchor) || (anchor.target && anchor.target !== "_self") || anchor.hasAttribute("download"))
+      return;
+    const target = helpLinkTarget(anchor.getAttribute("href") ?? "", location.href, { appId, pageBase: props.pageBase });
+    if (!target) return;
+    if (target.kind === "section") {
+      if (!scrollToHash(target.hash)) return;
+      event.preventDefault();
+      if (props.syncPageUrl) {
+        const url = new URL(location.href);
+        url.hash = encodeURIComponent(target.hash);
+        history.replaceState(history.state, "", url);
+        shownAddress = pageAddress();
+      }
+    } else if (target.topicId === null) {
+      event.preventDefault();
+      showHub();
+    } else if (topics().some((topic) => topic.id === target.topicId)) {
+      event.preventDefault();
+      openTopic(target.topicId, target.hash);
+    }
+  };
+
   const modalTitle = createMemo(() => {
     if (view() === "article") return activeTopic()?.title ?? t().help;
-    if (view() === "search") return t().searchHelp;
     return t().help;
   });
   const modalDescription = createMemo(() => {
     if (view() === "article") return activeTopic()?.description ?? t().description;
-    if (view() === "search") return t().searchDescription;
     return t().description;
   });
   const modalIcon = createMemo(() => {
     if (view() === "article") return iconClass(activeTopic()?.icon);
-    if (view() === "search") return "ti ti-search";
     return "ti ti-help";
   });
 
@@ -527,14 +613,23 @@ const HelpShell = (props: {
     </Show>
   );
 
+  const ReaderContent = (content: { children: JSX.Element }) =>
+    props.surface === "page" ? (
+      <div class="p-4 sm:p-5">{content.children}</div>
+    ) : (
+      <ScrollArea ref={scrollArea} class="min-h-0 flex-1 p-4 sm:p-5">
+        {content.children}
+      </ScrollArea>
+    );
+
   return (
     <div
       ref={root}
-      class={`app-accent-scope flex min-h-0 flex-col bg-[var(--ui-surface-raised)] ${
+      class={`app-accent-scope flex min-h-0 flex-col ${props.surface === "page" ? "" : "bg-[var(--ui-surface-raised)]"} ${
         props.surface === "modal"
           ? "h-[min(48rem,var(--ui-dialog-available-height))] overflow-hidden panel-dialog-shell [box-shadow:var(--ui-shadow-float)]"
           : props.surface === "page"
-            ? "min-h-dvh"
+            ? ""
             : "h-full"
       }`}
       style={appAccentStyle(props.accent)}
@@ -542,12 +637,7 @@ const HelpShell = (props: {
       <Show when={props.surface === "modal"}>
         <header class="flex min-h-16 shrink-0 items-center gap-2 px-5 py-3">
           <Show when={view() !== "hub"}>
-            <IconButton
-              class="shrink-0"
-              label={view() === "article" ? t().backToTopics : t().backToHelp}
-              title={t().back}
-              onClick={() => (view() === "article" ? goBack() : showHub())}
-            >
+            <IconButton class="shrink-0" label={t().backToTopics} title={t().back} onClick={goBack}>
               <i class="ti ti-arrow-left" />
             </IconButton>
           </Show>
@@ -620,16 +710,7 @@ const HelpShell = (props: {
         </header>
       </Show>
 
-      <ScrollArea
-        ref={scrollArea}
-        class="min-h-0 flex-1 p-4 sm:p-5"
-        onScroll={(event) => {
-          if (view() === "article") {
-            props.session.articleScrollTop = event.currentTarget.scrollTop;
-            syncActiveSection();
-          }
-        }}
-      >
+      <ReaderContent>
         <Show when={view() === "hub"}>
           <div class="mx-auto flex max-w-3xl flex-col gap-6">
             <div class="flex flex-col items-start justify-between gap-3 sm:flex-row">
@@ -651,70 +732,70 @@ const HelpShell = (props: {
                 </p>
               )}
             </Show>
-            <label class="field flex h-11 items-center gap-2 px-3">
-              <i class="ti ti-search text-dimmed" />
-              <input
-                class="min-w-0 flex-1 bg-transparent text-sm outline-none"
-                value={query()}
-                placeholder={t().searchPlaceholder}
-                onInput={(event) => {
-                  setQuery(event.currentTarget.value);
-                  if (event.currentTarget.value.trim()) setView("search");
-                }}
-              />
-            </label>
-            <section aria-labelledby="help-start-title">
-              <h4 id="help-start-title" class="mb-2 text-xs font-semibold uppercase tracking-wide text-dimmed">
-                {t().startHere}
-              </h4>
-              <TopicList items={topics().slice(0, 5)} />
-            </section>
-            <Show when={topics().length > 5}>
-              <section aria-labelledby="help-all-title">
-                <h4 id="help-all-title" class="mb-2 text-xs font-semibold uppercase tracking-wide text-dimmed">
-                  {t().allTopics}
-                </h4>
-                <TopicList items={topics().slice(5)} />
-              </section>
-            </Show>
-          </div>
-        </Show>
-
-        <Show when={view() === "search"}>
-          <div class="mx-auto flex max-w-3xl flex-col gap-4">
-            <div class="flex items-center gap-2">
-              <Show when={props.surface !== "modal"}>
-                <IconButton label={t().backToHelp} onClick={showHub}>
-                  <i class="ti ti-arrow-left" />
-                </IconButton>
+            <TextInput
+              ref={searchInput}
+              type="search"
+              icon="ti ti-search"
+              aria-label={t().searchHelp}
+              data-help-search=""
+              value={query()}
+              placeholder={t().searchPlaceholder}
+              onValueChange={(value) => {
+                // Results replace the start lists below the field; the area keeps its height so nothing moves.
+                if (!query().trim() && value.trim()) setResultsMinHeight(`${resultsRegion?.offsetHeight ?? 0}px`);
+                if (!value.trim()) setResultsMinHeight(undefined);
+                setQuery(value);
+              }}
+            />
+            <div ref={resultsRegion} data-help-results="" class="flex flex-col gap-4" style={{ "min-height": resultsMinHeight() }}>
+              <Show
+                when={normalizedQuery()}
+                fallback={
+                  <>
+                    <section aria-labelledby="help-start-title">
+                      <h4 id="help-start-title" class="mb-2 text-xs font-semibold uppercase tracking-wide text-dimmed">
+                        {t().startHere}
+                      </h4>
+                      <TopicList items={topics().slice(0, 5)} />
+                    </section>
+                    <Show when={topics().length > 5}>
+                      <section aria-labelledby="help-all-title">
+                        <h4 id="help-all-title" class="mb-2 text-xs font-semibold uppercase tracking-wide text-dimmed">
+                          {t().allTopics}
+                        </h4>
+                        <TopicList items={topics().slice(5)} />
+                      </section>
+                    </Show>
+                  </>
+                }
+              >
+                {/* The count takes the place of the "Start here" title, so the first row stays where it was. */}
+                <section>
+                  <p class="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-dimmed" aria-live="polite">
+                    {t().results({ count: results().length })}
+                    <Show when={searching()}>
+                      <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
+                    </Show>
+                  </p>
+                  <Show
+                    when={results().length > 0}
+                    fallback={
+                      <Show when={!searching()}>
+                        <Placeholder icon="ti ti-search-off" title={t().noResults} />
+                      </Show>
+                    }
+                  >
+                    <TopicList items={results()} />
+                  </Show>
+                </section>
               </Show>
-              <label class="field flex h-11 flex-1 items-center gap-2 px-3">
-                <i class="ti ti-search text-dimmed" />
-                <input
-                  autofocus
-                  class="min-w-0 flex-1 bg-transparent text-sm outline-none"
-                  value={query()}
-                  placeholder={t().searchPlaceholder}
-                  onInput={(event) => setQuery(event.currentTarget.value)}
-                />
-              </label>
             </div>
-            <p class="flex items-center gap-1.5 text-xs text-dimmed" aria-live="polite">
-              <Show when={searching()}>
-                <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
-              </Show>
-              {t().results({ count: results().length })}
-            </p>
-            <TopicList items={results()} />
-            <Show when={results().length === 0 && !searching()}>
-              <Placeholder icon="ti ti-search-off" title={t().noResults} />
-            </Show>
           </div>
         </Show>
 
         <Show when={view() === "article" && activeTopic()}>
           {(topic) => (
-            <article class="mx-auto flex min-h-full w-full max-w-7xl flex-col">
+            <article class="help-article mx-auto flex min-h-full w-full max-w-7xl flex-col">
               <Show when={props.surface !== "modal"}>
                 <button
                   type="button"
@@ -750,54 +831,63 @@ const HelpShell = (props: {
               </Show>
               <Show when={topic().kind === "content"}>{legacyTopicContent(topic())}</Show>
               <Show when={topic().kind === "document"}>
-                <Show when={loading()}>
-                  <Placeholder state="loading" variant="panel" title={t().loading} />
-                </Show>
-                <Show when={loadError()}>
-                  {(message) => (
-                    <NoticeCard tone="danger" title={t().loadFailed} detail={message()}>
-                      <Button size="sm" variant="secondary" onClick={() => setLoadAttempt((value) => value + 1)}>
-                        {t().tryAgain}
-                      </Button>
-                    </NoticeCard>
-                  )}
-                </Show>
-                <Show when={payload()}>
-                  {(document) => (
-                    <div class="help-article-layout">
-                      <Show when={articleSections().length > 0}>
-                        <nav class="help-article-toc" aria-label={t().onThisPage}>
-                          <p class="help-article-toc-label">{t().onThisPage}</p>
-                          <ol>
-                            <For each={articleSections()}>
-                              {(section) => (
-                                <li>
-                                  <button
-                                    type="button"
-                                    aria-current={activeSectionId() === section.id ? "location" : undefined}
-                                    title={section.title}
-                                    onClick={() => openArticleSection(section)}
-                                  >
-                                    <span class="help-article-toc-icon" aria-hidden="true">
-                                      <i class={section.icon} />
-                                    </span>
-                                    <span class="help-article-toc-title">{section.title}</span>
-                                  </button>
-                                </li>
-                              )}
-                            </For>
-                          </ol>
-                        </nav>
-                      </Show>
-                      <div class="help-article-copy">
-                        <div ref={articleContent}>
-                          <MarkdownView trustedHtml={document().html} class="help-document" />
-                        </div>
-                        <TopicNavigation />
+                <div class="help-article-layout">
+                  <nav
+                    class="help-article-toc"
+                    aria-label={t().onThisPage}
+                    aria-hidden={articleSections().length === 0 ? "true" : undefined}
+                    data-empty={articleSections().length === 0 ? "" : undefined}
+                  >
+                    <p class="help-article-toc-label">{t().onThisPage}</p>
+                    <ol>
+                      <For each={articleSections()}>
+                        {(section) => (
+                          <li>
+                            <button
+                              type="button"
+                              aria-current={activeSectionId() === section.id ? "location" : undefined}
+                              title={section.title}
+                              onClick={() => openArticleSection(section)}
+                            >
+                              <span class="help-article-toc-icon" aria-hidden="true">
+                                <i class={section.icon} />
+                              </span>
+                              <span class="help-article-toc-title">{section.title}</span>
+                            </button>
+                          </li>
+                        )}
+                      </For>
+                    </ol>
+                  </nav>
+                  <div class="help-article-copy">
+                    <Show when={loading()}>
+                      <div class="min-h-[24rem]">
+                        <Placeholder state="loading" variant="panel" title={t().loading} />
                       </div>
+                    </Show>
+                    <Show when={loadError()}>
+                      {(message) => (
+                        <NoticeCard tone="danger" title={t().loadFailed} detail={message()}>
+                          <Button size="sm" variant="secondary" onClick={() => setLoadAttempt((value) => value + 1)}>
+                            {t().tryAgain}
+                          </Button>
+                        </NoticeCard>
+                      )}
+                    </Show>
+                    <div
+                      ref={(element) => {
+                        articleContent = element;
+                        element.addEventListener("click", followHelpLink);
+                        onCleanup(() => element.removeEventListener("click", followHelpLink));
+                      }}
+                    >
+                      <Show when={payload()}>{(document) => <MarkdownView trustedHtml={document().html} class="help-document" />}</Show>
                     </div>
-                  )}
-                </Show>
+                    <Show when={payload()}>
+                      <TopicNavigation />
+                    </Show>
+                  </div>
+                </div>
               </Show>
             </article>
           )}
@@ -805,7 +895,7 @@ const HelpShell = (props: {
         <span class="sr-only" aria-live="polite">
           {articleClipboard.wasCopied() ? t().articleCopiedAnnouncement : allHelpClipboard.wasCopied() ? t().allCopiedAnnouncement : ""}
         </span>
-      </ScrollArea>
+      </ReaderContent>
     </div>
   );
 };
@@ -839,7 +929,6 @@ export function LayoutHelpPage(props: LayoutHelpPageProps) {
     <HelpShell
       session={session}
       close={() => {}}
-      searchHelpApps={[]}
       documents={props.documents}
       includeShortcuts={props.includeShortcuts}
       accent={props.accent}
@@ -850,19 +939,12 @@ export function LayoutHelpPage(props: LayoutHelpPageProps) {
   );
 }
 
-export function openLayoutHelpDialog(searchHelpApps: GlobalSearchHelpApp[] = [], accent?: string) {
+/** Open the current app's Help over the page; the dialog sits outside the app canvas, so it takes the app's accent along. */
+export function openLayoutHelpDialog() {
   const session = createSession();
+  const accent = readShellData()?.accent;
   void prompts.dialog<void>(
-    (close) => (
-      <HelpShell
-        session={session}
-        close={close}
-        searchHelpApps={searchHelpApps}
-        accent={accent}
-        surface="modal"
-        pageBase={window.__cloudLayoutHelpPageBase}
-      />
-    ),
+    (close) => <HelpShell session={session} close={close} accent={accent} surface="modal" pageBase={window.__cloudLayoutHelpPageBase} />,
     { surface: "bare", header: false, size: "wide" },
   );
 }

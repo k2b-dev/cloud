@@ -282,6 +282,18 @@ describe("compaction inference accounting", () => {
     });
     expect(compactMessages).not.toHaveBeenCalled();
   });
+
+  test("an optional automatic compaction whose model call fails is skipped and the turn keeps its history", async () => {
+    const { compact, context, complete, record, compactMessages } = setup(false);
+    const error = new Error("provider unavailable");
+    complete.mockRejectedValue(error);
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    await expect(compact(context)).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith("Skipped optional AI context compaction", error);
+    expect(compactMessages).not.toHaveBeenCalled();
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", error: error.message }));
+  });
 });
 
 for (const finishReason of ["error", "interrupted", "aborted"] as const)

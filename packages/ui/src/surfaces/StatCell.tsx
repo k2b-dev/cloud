@@ -21,6 +21,11 @@ export type StatCellProps = {
   title?: string;
   trend?: readonly number[];
   size?: StatGridSize;
+  /**
+   * Wraps the label, value and support line instead of truncating them. Use it for a cell whose height nothing
+   * reserves, such as one figure on its own; cells compared in a row keep one line each.
+   */
+  wrap?: boolean;
 };
 
 function Body(props: StatCellProps): JSX.Element {
@@ -77,13 +82,19 @@ export function StatCell(props: StatCellProps): JSX.Element {
     <Show
       when={props.href}
       fallback={
-        <div class="k2b-stat-cell" data-size={size()} data-surface={surface}>
+        <div class="k2b-stat-cell" data-size={size()} data-surface={surface} data-wrap={props.wrap || undefined}>
           <Body {...props} />
         </div>
       }
     >
       {(href) => (
-        <a href={href()} class="k2b-stat-cell k2b-stat-cell--link" data-size={size()} data-surface={surface}>
+        <a
+          href={href()}
+          class="k2b-stat-cell k2b-stat-cell--link"
+          data-size={size()}
+          data-surface={surface}
+          data-wrap={props.wrap || undefined}
+        >
           <i class="ti ti-external-link k2b-stat-cell__link-icon" aria-hidden="true" />
           <Body {...props} />
         </a>

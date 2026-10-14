@@ -1,4 +1,6 @@
 import { sql } from "bun";
+import { CapabilityActionReviewSchema } from "../contracts/capabilities";
+import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
 import { migrateAiQuotas } from "./quotas-migrate";
@@ -21,6 +23,8 @@ export const migrateCloudAi = async (): Promise<void> => {
   if (!outbox?.ready) {
     throw new Error("AI live updates write to events.outbox, which does not exist. Run Core's events migration before the AI migration.");
   }
+  // Approval requests reference auth.users, so they follow the check that Core's own migrations ran.
+  await migrateApprovals();
   await sql`CREATE SCHEMA IF NOT EXISTS ai`.simple();
   console.log("  ✓ ai schema");
 
@@ -640,10 +644,12 @@ export const migrateCloudAi = async (): Promise<void> => {
     PRIMARY KEY (turn_id, request_id)
   )`.simple();
 
+  await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS approval_id UUID`.simple();
   await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS review JSONB`.simple();
   // A code run asks for its nested HTTP requests and Actions; their remembered approval names a website or Action, not the run.
   await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS remember_tool_name TEXT`.simple();
   await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS allow_chat BOOLEAN NOT NULL DEFAULT FALSE`.simple();
+  await sql`ALTER TABLE ai.pending_actions ADD COLUMN IF NOT EXISTS consumed_inline BOOLEAN NOT NULL DEFAULT FALSE`.simple();
 
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_pending_actions_turn_call
@@ -654,6 +660,12 @@ export const migrateCloudAi = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_ai_pending_actions_pending_turn
     ON ai.pending_actions(conversation_id, turn_id, created_at ASC)
     WHERE status = 'pending'
+  `.simple();
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_pending_actions_approval
+    ON ai.pending_actions(approval_id)
+    WHERE approval_id IS NOT NULL
   `.simple();
 
   await sql`
@@ -781,6 +793,7 @@ export const migrateCloudAi = async (): Promise<void> => {
     ON ai.tool_calls(conversation_id, created_at DESC)
   `.simple();
 
+  await sql`ALTER TABLE ai.tool_calls ADD COLUMN IF NOT EXISTS approval_decided_via TEXT`.simple();
   await sql`ALTER TABLE ai.tool_calls ADD COLUMN IF NOT EXISTS idempotency_key TEXT`.simple();
 
   // Capability shape, outcome, and latency belong to capabilities.executions,
@@ -1098,6 +1111,14 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`
     CREATE INDEX IF NOT EXISTS idx_ai_memories_search_document
     ON ai.memories USING GIN(search_document)
+  `.simple();
+  // Prompt relevance matches word stems. A memory's language is unknown, so it holds English and German
+  // stems (Cloud's UI languages, as in help search); search_document stays for explicit memory search.
+  // No GIN index: relevance is ranked within one user's memories, which idx_ai_memories_user_active
+  // bounds, while a global index would scan every user's matches for common words.
+  await sql`
+    ALTER TABLE ai.memories ADD COLUMN IF NOT EXISTS stem_document TSVECTOR
+    GENERATED ALWAYS AS (to_tsvector('english', content) || to_tsvector('german', content)) STORED
   `.simple();
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_memories_user_content_active
@@ -2568,5 +2589,67 @@ export const migrateCloudAi = async (): Promise<void> => {
       `  ! ${legacyPaths.files} conversation and ${legacyPaths.project_files} project file paths keep a non-NFC Unicode form because a normalized twin exists`,
     );
   }
+  await backfillApprovalRequests();
   console.log("  ✓ ai conversation tables");
+};
+
+const backfillApprovalRequests = async (): Promise<void> => {
+  const decoded = (value: unknown): unknown => (typeof value === "string" ? JSON.parse(value) : value);
+  while (true) {
+    const count = await sql.begin(async (db) => {
+      // Completed turns and ownerless chats cannot still ask a person; leave their legacy rows alone.
+      const rows = await db<
+        {
+          id: string;
+          turn_id: string;
+          call_id: string;
+          tool_name: string;
+          approval_scope: string;
+          message: string | null;
+          review: unknown;
+          args: unknown;
+          allow_always: boolean;
+          allow_chat: boolean;
+          owner: string;
+          title: string;
+          expiry: Date;
+        }[]
+      >`SELECT a.*, c.created_by_user_id AS owner, c.title,
+        COALESCE(t.deadline, a.created_at + interval '24 hours') AS expiry
+        FROM ai.pending_actions a JOIN ai.turns t ON t.id=a.turn_id JOIN ai.conversations c ON c.id=a.conversation_id
+        WHERE a.status='pending' AND a.kind IN ('approval','custom_approval') AND a.approval_id IS NULL
+          AND c.created_by_user_id IS NOT NULL AND t.status='waiting_for_action'
+          -- A running Assistant may already have asked again for this action; keep the request it saw.
+          AND NOT EXISTS (SELECT 1 FROM approvals.requests r
+            WHERE r.requester_kind='assistant_turn' AND r.requester_ref=a.turn_id::text || '/' || a.call_id)
+        ORDER BY a.created_at, a.id LIMIT 200 FOR UPDATE OF a SKIP LOCKED`;
+      for (const row of rows) {
+        const review = CapabilityActionReviewSchema.safeParse(row.review == null ? null : decoded(row.review));
+        // request computes both canonical digests; preserve the original wait deadline, including expiry.
+        const record = await approvals.request(
+          {
+            ...approvalScopeFromToolName(row.tool_name),
+            approvalScope: row.approval_scope,
+            requester: { kind: "assistant_turn", ref: `${row.turn_id}/${row.call_id}`, appId: "assistant", title: row.title },
+            subjectId: row.owner,
+            approverUserId: row.owner,
+            // Every turn that can ask allows remembering, so these flags hold what the call offers.
+            assurance: approvalAssurance(row.allow_always || row.allow_chat),
+            sentence: row.message ?? row.tool_name,
+            review: review.success ? review.data : null,
+            input: decoded(row.args),
+            expiresInMs: Math.min(APPROVAL_MAX_WAIT_MS, row.expiry.getTime() - Date.now()),
+          },
+          db,
+        );
+        if (!record.ok) continue;
+        await db`UPDATE approvals.requests SET expires_at=${row.expiry},
+          status=CASE WHEN ${row.expiry} <= now() THEN 'expired' ELSE status END
+          WHERE id=${record.id}::uuid AND status='pending'`;
+        await db`UPDATE ai.pending_actions SET approval_id=${record.id}::uuid WHERE id=${row.id}::uuid`;
+      }
+      return rows.length;
+    });
+    if (!count) return;
+  }
 };

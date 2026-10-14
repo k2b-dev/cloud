@@ -2,9 +2,9 @@ import { createMemo, type JSX, Show } from "solid-js";
 import type { ButtonSize } from "../actions/Button";
 import { Dropdown, type DropdownItem, type DropdownPosition } from "../actions/Dropdown";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
-import { useUiMessages } from "../intl/messages";
 import type { MaybeAccessor, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
+import { useSelectMessages } from "./select-messages";
 
 export type SelectChipOption<T extends string | number = string> = {
   value: T;
@@ -29,11 +29,11 @@ export type SelectChipProps<T extends string | number = string> = ValueFieldProp
 };
 
 export function SelectChip<T extends string | number = string>(props: SelectChipProps<T>): JSX.Element {
-  const messages = useUiMessages();
+  const selectMessages = useSelectMessages();
   const meta = createFieldMeta(props.id);
   const value = () => resolveMaybeAccessor(props.value)!;
   const selected = () => props.options.find((option) => option.value === value());
-  const triggerLabel = () => props["aria-label"] ?? (typeof props.label === "string" ? props.label : messages().chooseOption);
+  const triggerLabel = () => props["aria-label"] ?? (typeof props.label === "string" ? props.label : selectMessages().chooseOption);
   const items = createMemo<DropdownItem[]>(() =>
     props.options.map((option) => ({
       action: () => commitFieldValue(props, option.value),

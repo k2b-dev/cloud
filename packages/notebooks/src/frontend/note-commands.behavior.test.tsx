@@ -75,7 +75,8 @@ if (!isServer) {
     const dispose = render(() => createComponent(Owner, {}), dom.root);
     try {
       const pending = openCommand("notebooks.note.compose");
-      await Promise.resolve();
+      // openCommand loads its validators first, so the chooser opens after a few turns.
+      while (search.mock.calls.length === 0) await new Promise((resolve) => setTimeout(resolve, 0));
       dispose();
       choose({ value: "Book01", label: "Journal" });
       await pending;

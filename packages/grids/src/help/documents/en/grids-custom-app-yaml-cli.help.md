@@ -5,7 +5,7 @@ icon: ti ti-terminal-2
 description: Validate, plan, apply, export, and publish the canonical app definition.
 order: 136
 ---
-The visual builder and the CLI share one definition. YAML combines existing resources. It is not a deployment bundle for a whole Base. First create the tables, fields, views, forms, documents, and workflow launchers. Then use their canonical public resource IDs.
+The visual builder and the CLI share one definition. YAML combines existing resources. It is not a deployment bundle for a whole base. First create the tables, fields, views, forms, documents, and workflow launchers. Then use their canonical public resource IDs.
 
 ## Read the contract {icon="book-2"}
 
@@ -15,7 +15,7 @@ To start visually, run `cld grids apps create MyBase --name "Requests" --json`. 
 
 ## Use one strict root document {icon="file-code"}
 
-Replace these example resource IDs with IDs from the selected Base:
+Replace these example resource IDs with IDs from the selected base:
 
 ```yaml
 schemaVersion: 5
@@ -60,7 +60,7 @@ Each diagnostic names a path. Fix the input that owns the path. Do not weaken au
 
 ## Publish and recover {icon="rocket"}
 
-You need **Manage** access to the Base for these commands:
+You need **Manage** access to the base for these commands:
 
 ```bash
 cld grids apps export MyBase Requests --published --out app-live.yaml
@@ -74,7 +74,7 @@ cld grids apps delete MyBase Requests --yes --json
 - **publish:** Compiles again. Replaces the live snapshot only on success.
 - **restore:** Replaces the draft with the published version.
 - **unpublish:** Removes the live version.
-- **delete:** Removes the app from normal lists and removes its live route. Its Base resources stay.
+- **delete:** Removes the app from normal lists and removes its live route. Its base resources stay.
 :::
 
 :::warning Test with the real audience

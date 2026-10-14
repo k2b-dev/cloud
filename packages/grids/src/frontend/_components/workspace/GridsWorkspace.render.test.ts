@@ -67,9 +67,11 @@ describe("GridsWorkspace", () => {
       }),
     );
 
-    expect(html.match(/k2b-app-workspace__content/g)).toHaveLength(1);
+    // Count elements, not mentions: a detail panel's size rule also names the content area.
+    const contentShell = /class="[^"]*\bk2b-app-workspace__content\b/g;
+    expect(html.match(contentShell)).toHaveLength(1);
 
-    const contentClass = html.indexOf("k2b-app-workspace__content");
+    const contentClass = html.search(contentShell);
     const contentStart = html.lastIndexOf("<div", contentClass);
     const contentTagEnd = html.indexOf(">", contentClass);
     const routeIsland = html.indexOf("<solid-island", contentTagEnd);

@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-09
+updated: 2026-10-11
 ---
 
 # Mail
@@ -13,6 +13,11 @@ updated: 2026-10-09
 Mail connects email accounts and turns their messages into a shared workspace.
 It keeps portable mail state synchronized with the provider while adding team
 context such as assignments, comments, local tags, reminders, and follow-up state.
+
+Open the mailbox name in the sidebar or phone menu to switch mailboxes. The
+current mailbox and the list show the receiving address. Signed-in users can
+choose **New mailbox**; after creation, its delivery settings open before you
+enter the mailbox. If settings cannot load, the mailbox opens directly.
 
 ## Use Mail
 
@@ -33,7 +38,8 @@ context such as assignments, comments, local tags, reminders, and follow-up stat
   and follow the same upload limits as files from the device.
 - Review detected mailing lists and safely request unsubscribe or clean up existing messages when permitted.
 - Use incoming automations, automatic replies, or reviewed workflows for
-  recurring mailbox work.
+  recurring mailbox work. One incoming automation can mark mail read and then
+  move it, and its conditions can exclude senders, domains, or text.
 
 Provider folders and message flags can appear in other mail clients. Cloud-only
 collaboration fields stay in Mail.
@@ -268,6 +274,88 @@ Spaces actions, or enabling it again, requires the original author. If Cloud
 denies that change, ask the author to authorize it rather than bypassing the
 check. Cosmetic edits do not restore paused or revoked access.
 
+## Re-run failed incoming automations
+
+A backfill skips every message that an earlier backfill already handed to the
+same automation version, even when that run failed or was canceled. To run such
+messages once more, a mailbox administrator starts a retry backfill:
+
+```bash
+cld --json mail automation backfill start <automation-id> --revision <revision> --retry-failed --yes
+cld --json mail automation backfill status <automation-id> <operation-id>
+```
+
+A retry backfill takes only messages whose latest run of the current automation
+version ended `failed` or `canceled` before the retry started, whether that run
+came from new mail or from an earlier backfill. It never repeats a run that
+succeeded, needs attention, or is still running. Like a normal backfill, it
+hands over at most 100 messages: while the status says `limited`, start another
+retry backfill. Each message runs at most once per retry operation.
+
+A retry runs the whole flow again, including the steps that succeeded before
+the failure. Steps that set a state, such as moves, flags, assignment, status,
+tags, the summary, or a Spaces link, set the same state again. Steps that
+create something on every run would create it a second time, so Cloud refuses
+a retry backfill for flows that add internal comments, create reply drafts, or
+create Spaces events. A run that moved its message before it failed is not
+retried, because the message is no longer where that run found it.
+
+To repair failed runs, use retry backfills alone. A normal backfill is for
+messages that arrived before the automation was active: it hands over every
+matching message that no earlier backfill of this version handed over,
+including messages the automation already processed on arrival, so their steps
+run again. After a retry backfill, the automation menu in Mail settings offers
+**Retry failed messages** to continue with another retry. **Automations >
+Activity** shows how the new runs ended.
+
+## Write signatures and snippets
+
+The composer shows **Signature** below your text when a signature is available.
+New messages, replies, and forwards start with the sender's default; a personal
+default takes precedence over the mailbox default. Choose another signature or
+**No signature**. Switching the sender switches to that sender's default.
+
+Signatures stay separate from the editable text. Preview and the sent message
+show the signature after your text. When you write above a quoted reply or a
+forwarded message, the signature goes between your text and that message. The
+copy in the provider's Drafts folder contains only your text, so add a
+signature yourself if you send the draft from another mail program. Opening an
+older draft moves a recognized signature out of the text into the signature
+choice. Mail still warns before sending about placeholders left in the text.
+
+Use Markdown and Liquid in signatures and snippets. Type `/` to insert snippets
+only. Mail fills in snippet values when you insert them; signatures keep their
+variables until preview and send.
+
+API and Assistant clients choose the signature with `signatureTemplateId` on
+draft create, update, or patch. Pass a template ID for that signature or `null`
+for none. Omit the field to use the sender's default on create or keep the
+current choice on update or patch. Never write a signature into the body.
+
+| Variable | Value |
+| --- | --- |
+| `actor.display_name` | Name of the person who previews or sends the message, or inserts the snippet; a user-bound service account uses the name of its user, another service account its own name, other automations "Mailbox automation" |
+| `actor.email` | Email address of the person in actor.display_name; empty when there is none |
+| `sender.display_name` | Display name of the sender identity, or its address when it has no name |
+| `sender.email` | From address of the sender identity |
+| `sender.reply_to` | Reply-To address of the sender identity; empty when not set |
+| `mailbox.name` | Mailbox name |
+| `mailbox.description` | Mailbox description; empty when not set |
+| `message.subject` | Subject of the draft |
+| `message.to` | List of To addresses |
+| `message.cc` | List of Cc addresses |
+
+For example, write this signature:
+
+```liquid
+Best regards
+{{ actor.display_name }}
+{{ mailbox.name }}
+```
+
+To separate the addresses in `message.to` and `message.cc`, use `join`:
+`{{ message.to | join: ", " }}`.
+
 ## How Mail fits Cloud
 
 Mail owns mailbox synchronization, conversations, drafts, sending, and mailbox
@@ -359,6 +447,24 @@ cld mail rm <conversation-id> --yes
 `--replace` replaces them, `--remove maria` removes one, and `--to none`
 removes everyone. `cld mail conversation users` lists who can be assigned.
 
+API clients can undo the move commands returned by a conversation action with
+`POST /api/mail/mailboxes/{mailboxId}/conversations/{conversationId}/actions/undo`
+and `{ "commandIds": ["<command-uuid>"] }`. The request requires write access
+and a visible conversation, and accepts at most 500 command IDs, the bound for
+one conversation action. Every command must be a move by the requesting actor
+for a message of that conversation in that mailbox; otherwise the whole
+request is refused. Resource IDs are public short IDs; command IDs remain UUIDs.
+
+Results follow the requested order. `cancelled` means the queued move was
+stopped before it ran; `reversed` includes an inverse command's `id`, `state`,
+and `code` to follow through command outcomes. Repeating a reversal returns
+the same inverse command. `pending` means the original move is still unsettled
+or its destination copy is not visible yet; ask again later. `not_applied`
+means the original move failed or was cancelled. `unavailable` means Mail
+cannot safely reverse it, for example because it needs attention or current
+folder rights or keep rules refuse the inverse. Each inverse is queued
+independently, so one refusal does not prevent the others.
+
 `reply` and `forward` create a draft from a conversation's latest message, and
 `send` sends a draft:
 
@@ -403,6 +509,10 @@ Run `cld mail help` for mailbox, conversation, message, collaboration,
 provider, automation, and workflow commands. Run `cld mail <command> --help` before a
 mutation or delivery operation to read its current fields and safety checks.
 
+To clean up existing mail from one sender or domain, check the count with `cld mail sender preview --match domain --value example.com`, then run `cld mail sender move --match domain --value example.com --destination archive --yes`. Use `--destination trash` or `--folder <name-or-id>` for other targets and `--match sender` for one address. Moving needs write access. Like incoming automations, it matches the first From address and never the mailbox's own sender addresses. It leaves mail in Sent, Drafts, Trash, and Junk where it is, and it does not move kept conversations to Trash. On Gmail, it moves each message once from the Inbox, so Archive removes only the Inbox label and a folder replaces it with that label; only Trash and Junk also take archived mail from All Mail. Each call queues at most 500 moves; when the result says `truncated`, run it again after those commands finish.
+
+To find commands that did not complete, run `cld mail command list --state failed` or `--state needs_attention`. A full page ends with the `--before` value for the next page. Mailbox admins resolve an unclear provider result with `cld mail operator run reconcile --command <id>`; `operator run retry` repeats only failed maintenance reads, not moves or sends.
+
 ## Agent-oriented capabilities
 
 Use `mailbox.browse` to select a mailbox: it returns permissions and unread/needs-action
@@ -423,6 +533,23 @@ arrays replace the entire corresponding list. `draft.read.editableSnapshotComple
 must be true before using that response for a complete `draft.update` replacement.
 Both mutations require the current revision; sending still requires the existing
 send-safety review and approval.
+
+## Check failed synchronization
+
+`cld mail status` counts the sync runs that failed in the last 24 hours. Each
+attempt to sync a batch of one folder is a run, so a failure that a retry
+completed still counts. List the failed runs of the last 30 days, newest first,
+with their folder and error code; the ones that started in the last 24 hours
+make up that number:
+
+```bash
+cld mail sync runs --state failed
+```
+
+Mail keeps finished sync runs for 30 days and returns up to 100 per page; the
+command needs read access to the whole mailbox. See
+`cld mail reference operations.md` for the states and how to tell retries from
+a lasting problem.
 
 ## Search in large mailboxes
 

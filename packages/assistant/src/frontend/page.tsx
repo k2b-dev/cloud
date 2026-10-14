@@ -9,7 +9,7 @@ import {
 } from "@k2b/cloud/ai";
 import { aiLive } from "@k2b/cloud/ai/live";
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale, getTimeZone, loadPendingApprovals } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
@@ -29,15 +29,18 @@ export default ssr<AuthContext>(async (c) => {
   const requestedConversationId = url.searchParams.get("conversation") ?? undefined;
   const requestedProjectId = url.searchParams.get("project") ?? undefined;
   const initialArtifactPath = url.searchParams.get("artifact");
+  const approvalsOpen = url.searchParams.get("approvals") === "1" && !requestedConversationId && !requestedProjectId;
   const subject = { type: "user" as const, userId: user.id };
   const initialLiveCursor = await aiLive.cursor();
-  const [status, models, prefs, sidebar, appUrl, initialQuotas] = await Promise.all([
+  const [status, models, prefs, sidebar, appUrl, initialQuotas, approvals] = await Promise.all([
     assistantAiSettingsState(subject),
     listAssistantAiModels(subject),
     aiUserPrefs.get(user.id),
     loadAssistantSidebarSnapshot(user.id),
     coreSettings.get<string>("app.url"),
     getAiChatQuotas(subject).catch(() => null),
+    // Also without the view: the sidebar shows its Approvals row from the first paint, so it never pushes Studio away.
+    loadPendingApprovals(c, { app: "assistant" }),
   ]);
   const { conversations } = sidebar;
   const activeProjectRecord = requestedProjectId ? await aiProjects.getByShortId(requestedProjectId, subject) : null;
@@ -60,9 +63,10 @@ export default ssr<AuthContext>(async (c) => {
     ? await loadAssistantProjectContextSnapshot({ actor: c.get("actor"), accessSubject: subject }, activeProject.id)
     : null;
 
-  const selectedConversationId = activeProject
-    ? null
-    : (requestedConversationId ?? conversations.find((conversation) => !conversation.isDone)?.shortId ?? null);
+  const selectedConversationId =
+    activeProject || approvalsOpen
+      ? null
+      : (requestedConversationId ?? conversations.find((conversation) => !conversation.isDone)?.shortId ?? null);
   const resolvedActiveConversation = selectedConversationId
     ? await aiConversations.getConversationByShortId({ shortId: selectedConversationId, ownerUserId: user.id })
     : null;
@@ -134,6 +138,7 @@ export default ssr<AuthContext>(async (c) => {
             : null
         }
         initialProjectContext={projectContext}
+        approvals={{ page: approvals, open: approvalsOpen }}
       />
     </Layout>
   );

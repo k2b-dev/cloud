@@ -168,6 +168,27 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(link).not.toContain("k2b-link-card__meta");
   });
 
+  test("enhanced LinkCard navigation preserves the document anchor markup", () => {
+    const props = {
+      href: "/storage",
+      title: "Personal",
+      description: "Only you",
+      icon: "ti ti-home",
+      color: "cyan" as const,
+      meta: "Missing",
+    };
+    const document = renderToString(() => createComponent(LinkCard, props));
+    const enhanced = renderToString(() => createComponent(LinkCard, { ...props, navigation: "enhanced", onNavigate: () => {} }));
+    const attributes = (html: string) =>
+      (html.match(/^<a([^>]*)>/)?.[1]?.match(/[\w-]+="[^"]*"/g) ?? []).filter((attribute) => !attribute.startsWith("data-hk=")).sort();
+    expect(attributes(enhanced)).toEqual(attributes(document));
+    expect(enhanced.slice(enhanced.indexOf(">"))).toBe(document.slice(document.indexOf(">")));
+    expect(enhanced).toMatch(/class="k2b-paper k2b-link-card\s*"/);
+    expect(enhanced).toContain('data-interactive="true"');
+    expect(enhanced).toContain('data-color="cyan"');
+    expect(renderToString(() => createComponent(LinkCard, { ...props, navigation: "enhanced" }))).toBe(document);
+  });
+
   test("lets a LinkCard follow the app accent and carry one trailing fact", () => {
     const link = renderToString(() =>
       createComponent(LinkCard, {
@@ -397,6 +418,22 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(html).toContain('class="k2b-stat-cell__label" data-size="sm"');
     // Cloud scales the sub line with the cell, so the rule must key off the cell.
     expect(parityCss).toContain('.k2b-ui .k2b-stat-cell[data-size="sm"] .k2b-stat-cell__sub');
+  });
+
+  test("lets a stat cell on its own wrap its text instead of truncating it", () => {
+    const cell = (wrap?: boolean) =>
+      renderToString(() =>
+        createComponent(StatGrid, {
+          columns: 1,
+          get children() {
+            return createComponent(StatCell, { label: "Deploys", value: "All checks passed", sub: "Compared with last week", wrap });
+          },
+        }),
+      );
+
+    expect(cell(true)).toContain('class="k2b-stat-cell" data-size="md" data-surface="white" data-wrap="true"');
+    expect(cell()).not.toContain("data-wrap");
+    expect(parityCss).toContain(".k2b-ui .k2b-stat-cell[data-wrap] .k2b-stat-cell__support { flex-wrap: wrap; }");
   });
 
   test("ships focus, responsive, dark, and reduced-motion parity hooks", () => {

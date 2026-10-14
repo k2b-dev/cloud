@@ -32,4 +32,6 @@ A notebook is a shared workspace. A note is a Markdown source document in it. Na
 
 **View** access always opens Book. With **Edit** or **Manage** access, you can switch views. People with **Manage** access choose the shared default view in the settings. A view in the URL comes before the default. Locked notes open in **Read-only** instead of **Write**.
 
+In **Write**, a colored cursor shows where another person is working. Their name sits as a small flag on top of the cursor. It shows while they type or move the cursor. After a few seconds without activity, only a dot stays at the top of the cursor. With a mouse or trackpad, point at the dot to see the name again.
+
 Keep important information visible in the Markdown. Queries read saved note data. They do not run code, change pages, or create hidden state.

@@ -868,13 +868,15 @@ export default function QueryReferenceWindow(props: Props) {
   };
 
   return (
-    <AppWorkspace class="h-screen">
-      <ReferenceSidebar activeTab={activeTab()} baseId={props.baseId} baseName={props.baseName} />
-      <AppWorkspace.Content>
-        <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scroll={false}>
-          <div class="flex min-h-0 flex-1 flex-col overflow-auto">{content()}</div>
-        </AppWorkspace.Main>
-      </AppWorkspace.Content>
-    </AppWorkspace>
+    <div class="h-dvh">
+      <AppWorkspace>
+        <ReferenceSidebar activeTab={activeTab()} baseId={props.baseId} baseName={props.baseName} />
+        <AppWorkspace.Content>
+          <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scroll={false}>
+            <div class="flex min-h-0 flex-1 flex-col overflow-auto">{content()}</div>
+          </AppWorkspace.Main>
+        </AppWorkspace.Content>
+      </AppWorkspace>
+    </div>
   );
 }

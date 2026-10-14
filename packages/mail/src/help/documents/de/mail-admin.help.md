@@ -94,7 +94,7 @@ Speichert der Anbieter gesendete Nachrichten nicht, gibt es keine Kopie.
 
 Mail fügt die Standard-Empfänger für Cc und Bcc hinzu, wenn jemand mit dieser Absenderidentität eine neue Nachricht, Antwort oder Weiterleitung beginnt. Mail entfernt Duplikate und Adressen, die schon unter An, Cc oder Bcc stehen. Automatische Antworten und Workflow-Nachrichten bekommen diese Standards nicht, und die schreibende Person kann sie vor dem Senden entfernen.
 
-Mail fügt eine Postfachsignatur in neue Nachrichten, Antworten und Weiterleitungen ein. Wechselst du später die Absenderidentität, ändert das einen bearbeiteten Entwurf nicht. Eine persönliche Signatur hat Vorrang.
+Neue Nachrichten, Antworten und Weiterleitungen beginnen mit der Standardsignatur der Absenderidentität, getrennt vom Text. Ein persönlicher Standard hat Vorrang vor dem Standard des Postfachs. Wechselst du die Absenderidentität im Editor, wechselt die Signatur zu deren Standard.
 
 Unter **Einstellungen → Allgemein** trägst du vertrauenswürdige interne E-Mail-Domains ein und legst fest, ab wann Mail vor vielen Empfängern warnt. Vor externen Empfängern warnt Mail nur, wenn mindestens eine interne Domain eingetragen ist. Diese Einstellungen leiten die letzte Prüfung vor dem Versand. Sie blockieren keine legitime Zustellung und ändern keine Empfänger automatisch.
 
@@ -111,6 +111,17 @@ Eine Absenderidentität nutzt normalerweise den SMTP-Server des Postfachs. Richt
 Zwei Absenderidentitäten können bewusst dieselbe Absenderadresse nutzen. Mail hält ihre Bezeichnungen, Standard-Empfänger, Signaturen, Antwortadressen, Zustelloptionen, Transporte, Ordnerzuordnungen und Prüfstatus getrennt. Passt eine Antwort genau zu einer Absenderidentität, wählt Mail sie automatisch. Sind mehrere passende Absenderidentitäten gleich gültig, muss die schreibende Person eine wählen.
 
 Prüfe jede Absenderidentität: Wähle das verbundene Konto und einen Empfänger für eine echte Prüfnachricht. Ist die Absenderidentität für den Versand bereit, hat der Anbieter diesen Test mit der genauen Absenderadresse und den erweiterten Zustelleinstellungen angenommen. IMAP-Zugriff auf Ordner allein beweist nicht, dass der Anbieter diese Versandeinstellungen erlaubt.
+
+Eine neue Absenderidentität nutzt die Ordner für Gesendet und Entwürfe, die Mail für das Postfach gefunden hat. Andere Ordner wählst du unter **Erweiterte Zustellung**. Hat eine Absenderidentität beim Bestätigen keinen Ordner für gesendete E-Mails, nutzt Mail den Ordner Gesendet des Postfachs. Beim Anlegen und Bestätigen ersetzt Mail nie einen bereits gesetzten Ordner. **Versand einrichten** ist anders: Es setzt für die Absenderidentität der Kontoadresse die aktuellen Ordner Gesendet und Entwürfe des Postfachs.
+
+Eine Absenderidentität, die nicht für den Versand bereit ist, zeigt den Grund als Status:
+
+- **Ordner für gesendete E-Mails fehlt:** Wähle **Ordner für gesendete E-Mails wählen**, speichere die Absenderidentität und bestätige sie. Speichert der Anbieter gesendete E-Mails selbst, bestätige sie stattdessen mit eingeschaltetem **Anbieter speichert gesendete E-Mails automatisch**.
+- **Vom Anbieter abgelehnt:** Prüfe die Absenderadresse und die erweiterten Zustelleinstellungen und bestätige die Absenderidentität erneut.
+- **Nicht bestätigt:** Wähle **Bestätigen** und sende die Testnachricht.
+- **Bestätigung wartet:** Mail synchronisiert das Postfach. Mail sendet die Testnachricht automatisch, sobald die Synchronisierung es zulässt. Geschieht das nicht innerhalb von 10 Minuten, bestätige die Absenderidentität erneut.
+
+Hat ein Postfach keine Absenderidentität, die für den Versand bereit ist, zeigen **Verfassen**, **Antworten** und **Weiterleiten** denselben Grund. Personen mit Zugriff **Verwalten** öffnen dort direkt die Absendereinstellungen.
 
 **Für automatische Antworten zulassen** ist von der Prüfung getrennt. Automatische Antworten können nur eine Absenderidentität nutzen, die für den Versand bereit ist und bei der diese Option eingeschaltet ist. Das Einschalten sendet allein nichts. Es braucht zusätzlich eine eingeschaltete automatische Antwort oder einen Workflow.
 
@@ -241,7 +252,11 @@ Jede Liste bietet nur Capabilities an, die zum Vertrag für Kontaktverzeichnisse
 
 Erstelle unter **Einstellungen → Schreiben** private Signaturen und Textbausteine oder solche für das Postfach. Lege die Standardsignatur des Postfachs unter **Konten und Identitäten → Absenderidentitäten** fest. Ein persönlicher Standard einer Person unter **Schreiben** hat Vorrang.
 
-Markdown-Nachrichten bekommen immer das eingebaute lesbare E-Mail-Design. **E-Mail-Design** ergänzt geprüftes CSS des Postfachs für das Firmendesign. Es ersetzt nicht das sichere Grunddesign. Prüfe das Ergebnis in der **Vorschau** des Editors, bevor du dich auf eine CSS-Änderung verlässt.
+Markdown-Nachrichten bekommen immer das eingebaute lesbare E-Mail-Design. **E-Mail-Design** ergänzt geprüftes CSS des Postfachs für das Firmendesign. Es ersetzt nicht das sichere Grunddesign. Prüfe das Ergebnis in der **Vorschau** des Editors, bevor du dich auf eine CSS-Änderung verlässt. Das eingebaute Design gibt Zitaten eine graue Linie links und Codeblöcken einen hellen Hintergrund; mit `blockquote { … }` oder `pre { … }` änderst du sie. Eine Regel für `p { … }` gilt auch für zitierte Absätze; diese gestaltest du mit `blockquote p { … }`.
+
+Das CSS des Postfachs folgt auf das eingebaute Design. Jede seiner Regeln setzt sich für die Elemente, die sie auswählt, gegen das eingebaute Design durch. So ändert etwa `a { color: #262626; }` die Farbe aller Links. Für die ganze Nachricht nutzt du `.mail-content`, zum Beispiel `.mail-content { font-size: 16px; }`. Für die Signatur nutzt du `.mail-signature`, zum Beispiel `.mail-signature { color: #52525b; }`. Selektoren können die Elemente nutzen, die die E-Mail behält, und die Klassen `.mail-content` und `.mail-signature`. Andere Klassen, IDs, Pseudoklassen wie `:hover`, `@`-Regeln und `!important` werden nicht angenommen. Werte können keine Bilder laden, etwa mit `url()` oder `image-set()`, und weder Backslash-Escapes noch `&` enthalten. Ein Wert in Anführungszeichen, etwa ein Schriftname, muss in derselben Zeile enden und darf die jeweils andere Art von Anführungszeichen nicht enthalten.
+
+Mail prüft das CSS beim Speichern. Enthält ein gespeichertes Design einen Wert, den eine spätere Cloud-Version nicht mehr zulässt, sendet das Postfach weiter. Mail lässt nur diese Werte weg und behält den Rest des Designs. Kann Mail das gespeicherte Design gar nicht lesen, verwendet Mail das eingebaute Design, bis das Design korrigiert ist. **Einstellungen → Schreiben** zeigt, welche Werte wegfallen. Die **Vorschau** im Editor listet sie unter der Nachricht auf. Entferne oder ersetze sie im Design. Zum Speichern muss das CSS weiterhin die Prüfung bestehen. Bei einer sehr langen Nachricht verwendet Mail das eingebaute Design, wenn das Design des Postfachs die Darstellung zu komplex machen würde. Das siehst du in der **Vorschau** im Editor.
 
 ## Automatische Antworten und Referenzen einrichten {icon="settings"}
 

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 describe("record durable history UI contract", () => {
   test("loads bounded versions lazily and keeps historical files on the permission-aware record route", async () => {
-    const source = await Bun.file(new URL("./RecordVersions.island.tsx", import.meta.url)).text();
+    const source = await Bun.file(new URL("./RecordVersions.tsx", import.meta.url)).text();
     expect(source).toContain("query.createInfinite");
     expect(source).toContain("RECORD_VERSION_PAGE_SIZE = 5");
     expect(source).toContain("title={t().durableHistory}");

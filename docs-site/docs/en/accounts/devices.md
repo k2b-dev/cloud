@@ -125,22 +125,27 @@ recovery. A synced passkey is not a backup of the authenticator's local vault.
 Open **App** in your profile menu (`/me/app`). The page lists your paired
 phones with their platform and last use, and marks the phone you are using.
 
-1. Choose **Pair a phone**. A dialog opens with a QR code and a link that
-   works for five minutes. On a phone, the dialog offers **Copy link** instead
-   of the QR code.
+1. Choose **Pair a phone**. A dialog opens with a QR code and shows how long
+   the code still works: five minutes. **Copy link** copies the same link, for
+   example when you pair the phone you are reading this on.
 2. In the app, tap **Scan code**, or copy the link and tap **Paste link**.
    Without the app, scanning the code with the phone's camera opens the page
    that shows how to install it; on the phone itself, choose **Install the
    app**. On Android, install it from Chrome. In Samsung Internet, the page
    offers **Open in Chrome** instead, because Android may block an app
    installed from there as built for an older Android version.
-3. The app shows a six-digit code. Enter it in the dialog and choose **Pair**.
-   The third wrong code ends the pairing; start again for a new one.
+3. As soon as the app scans the code or receives the pasted link, the dialog
+   moves to code entry on its own. The app shows a six-digit code. Enter it in
+   the dialog and choose **Pair**. The third wrong code ends the pairing; start
+   again for a new one.
 4. The app finishes on its own, and the phone appears in the list.
 
-Closing the dialog before you confirm the code cancels the pairing, so its
-link stops working. Pairing needs a sign-in from the last ten minutes; if
-asked, choose **Confirm it's you**, and the dialog opens again after sign-in.
+The QR code and the link only start the pairing. A photographed code or a
+forwarded link pairs nothing by itself: only the browser that opened the
+dialog can confirm the six-digit code, and the link works once. Closing the
+dialog before you confirm the code cancels the pairing, so its link stops
+working. Pairing needs a sign-in from the last ten minutes; if asked, choose
+**Confirm it's you**, and the dialog opens again after sign-in.
 To remove a phone, choose **Remove** in its row. The app on that phone is
 signed out at once.
 

@@ -18,7 +18,9 @@ import { DescriptionList, DetailPanel, NumberInput } from "@k2b/ui";
 
 Place it inside `AppWorkspace.Detail` for persistent selection context, or in
 another host when the same inspector content is reused. The host owns opening,
-closing, sizing, and persistence. The application owns data, permissions,
+closing, sizing, and persistence. AppWorkspace.Detail is a raised floating
+surface. Its sections and groups have no boxes of their own. The application
+owns data, permissions,
 mutations, and which sections are present.
 
 `DetailPanel.Header` keeps identity and actions in one compact region. Pass
@@ -45,10 +47,9 @@ scrollbars keeps the panel at the trailing edge. Do not add a second
 full-height scroller inside it.
 
 Use `DetailPanel.Summary` once, directly below the header, when the selected
-item has a primary set of facts or controls. Summary and grouped sections share
-the same normal surface, while their structure still distinguishes the
-primary overview from related context. Do not repeat the summary for every
-group.
+item has a primary set of facts or controls. In other hosts, the summary keeps
+its own surface. Inside the floating workspace, it shares the panel surface
+and aligns with the header title. Do not repeat the summary for every group.
 
 The panel uses `--k2b-detail-panel-accent` for restrained identity and action
 accents, with the portable UI accent as its fallback. Text actions in section
@@ -83,13 +84,14 @@ The content owns its layout: wrap form controls in a column with a gap.
 
 Use `DetailPanel.Group` when one or more sections form one stable context, such
 as a company and its contacts or a document and its derived metadata. Merge
-adjacent sections when they belong to that same context. The group owns the
-same quiet surface as the summary, without a border or lines between its
-sections: spacing and the section headings separate them. Pass `label` when the
+adjacent sections when they belong to that same context. Outside a floating
+workspace, the group owns the same quiet surface as the
+summary. Inside it, the group is transparent. Spacing and section headings
+separate its sections without borders or lines. Pass `label` when the
 shared context benefits from an accessible group name.
 
-Every section in the body has one flat frame. A section placed directly in
-`DetailPanel.Body` is a group of one: it gets the group surface and inset, so
+A section placed directly in `DetailPanel.Body` is a group of one. It follows
+the group’s surface and inset in its host, so
 its icon, title, count, and content start in the same columns as every grouped
 section. A [`Discussion`](/en/ui/layout/discussion) inside the panel does the
 same. Do not wrap a standalone section in a group only to frame it, and do not
@@ -127,10 +129,11 @@ color; the row and optional Dots menu trigger stay transparent. When a
 destination has secondary actions, pass declarative
 `menuItems` together with the required accessible `menuLabel`. The primary link
 and the Dots trigger render as sibling controls, so the whole main row remains
-a native destination without nesting a button inside the link. On fine-pointer
-devices the Dots trigger appears on row hover, keyboard focus, or while its menu
-is open; it remains visible on touch devices. Do not use it for static key-value
-data, comments, history, or form fields. Stacked action rows sit flush, so on
+a native destination without nesting a button inside the link. With a mouse or
+trackpad, including a tablet with a mouse, the Dots trigger stays hidden until
+the row is hovered, keyboard-focused, or its menu is open. Touch-only screens
+always show it. Do not use it for static key-value data, comments, history, or
+form fields. Stacked action rows sit flush, so on
 touch devices each row is at least 44 px (2.75rem) tall, including its
 secondary and Dots buttons, and its tap area keeps the row height instead of
 reaching into the neighbouring row. This follows the device, not the input in
@@ -142,9 +145,9 @@ as deleting an attachment, pass `secondaryAction` with an `icon`, an accessible
 `label`, and `onClick`. Name the label after the row, such as
 `Delete budget.xlsx`, so repeated buttons stay distinguishable. It renders as a
 sibling icon button at the end of the row, before an optional Dots trigger, and
-follows the same reveal: hover or keyboard focus on fine pointers, always
-visible on touch devices. Set `variant: "danger"` for a destructive command;
-hover and focus then use the danger text color. The button only reports the
+appears on row hover or keyboard focus with any pointer that can hover.
+Touch-only screens always show it. Set `variant: "danger"` for a destructive
+command; hover and focus then use the danger text color. The button only reports the
 click. The application confirms destructive work, performs it, and refreshes
 the list. When that removes the focused row, the application moves focus to
 the row that takes its place. Keep further commands in `menuItems`.
@@ -271,14 +274,14 @@ state and remain mounted when the section closes.
 ## Example
 
 ```tsx
-<AppWorkspace.Detail id="item" open={selectedId() !== null} width="md">
+<AppWorkspace.Detail id="item" open={selectedId() !== null} onClose={closeDetails} width="md">
   <DetailPanel>
     <DetailPanel.Header
       icon="ti ti-building-warehouse"
       title="Studio shelf"
       subtitle="Locations · version 2"
       primaryActions={<Toolbar label="Location actions"><Button size="xs">Edit</Button></Toolbar>}
-      actions={<IconButton label="Close details"><i class="ti ti-x" aria-hidden="true" /></IconButton>}
+      actions={<IconButton label="Close details" onClick={closeDetails}><i class="ti ti-x" aria-hidden="true" /></IconButton>}
     />
     <DetailPanel.Body scrollPreserveKey="location-detail">
       <DetailPanel.Summary title="Overview">

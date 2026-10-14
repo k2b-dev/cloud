@@ -2,7 +2,7 @@ import type { EditorState, Extension, Range } from "@codemirror/state";
 import { RangeSet } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { type MarkdownInfoBlockType, NOTICE_CARD_CLASSES, renderMarkdownInfoBlock, scanMarkdownInfoBlock } from "@k2b/ui";
-import { literalMarkdownLines } from "../../../lib/markdown-context";
+import { literalMarkdownLines, NOTEBOOK_DIRECTIVE_START } from "../../../lib/markdown-context";
 import {
   blockWidgetLineNavigationExtension,
   type CursorZoneState,
@@ -84,9 +84,10 @@ class InfoBlockWidget extends WidgetType {
   }
 
   override get estimatedHeight() {
-    // One 22px line per title and body source line plus the card's padding and border.
+    // At 16px / 26px, count each title and unwrapped body line, plus 32px padding, 2px border and a 4px title gap.
+    // A wrapped line measures taller; CodeMirror corrects the height once the notice renders.
     const lines = this.blockData.content.split("\n").length + (this.blockData.title ? 1 : 0);
-    return lines * 22 + 34;
+    return lines * 26 + 34 + (this.blockData.title ? 4 : 0);
   }
 }
 
@@ -102,7 +103,7 @@ const findInfoBlocks = (state: EditorState, locale: string): CursorZoneState => 
 
   for (let number = 1; number <= state.doc.lines; number++) {
     const opener = state.doc.line(number);
-    if (!/^ {0,3}:::/.test(opener.text) || literal.has(number - 1)) continue;
+    if (!NOTEBOOK_DIRECTIVE_START.test(opener.text) || literal.has(number - 1)) continue;
     const notice = scanMarkdownInfoBlock(text.slice(opener.from));
     if (!notice?.closed) continue;
     const blockLines = text
@@ -143,6 +144,11 @@ export const infoBlocksExtension = (locale: string): Extension => {
       display: "block",
       margin: "0 !important",
       lineHeight: "1",
+    },
+    // Notices read at the note's text size, as in the Book.
+    ".cm-notice-card-widget .k2b-notice-card": {
+      fontSize: "inherit",
+      lineHeight: "1.625",
     },
   });
 

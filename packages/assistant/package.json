@@ -14,6 +14,7 @@
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "1.7.0",
     "@k2b/cloud": "workspace:*",
     "@k2b/rsql": "1.0.0",
     "@k2b/ssr": "workspace:*",

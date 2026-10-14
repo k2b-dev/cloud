@@ -2,8 +2,9 @@ import { documentNavigate, Link } from "@k2b/ssr/nav";
 import { createSignal, createUniqueId, For, Show } from "solid-js";
 import { IconButton } from "../actions/Button";
 import { Dropdown } from "../actions/Dropdown";
-import { useUiMessages } from "../intl/messages";
 import type { NavigationController, NavigationItem } from "./navigation-model";
+import { AppWorkspaceSidebarSwitcher } from "./SidebarSwitcher";
+import { useWorkspaceMessages } from "./workspace-messages";
 
 export type NavigationProps = {
   navigation: NavigationController;
@@ -16,11 +17,12 @@ export type NavigationProps = {
 const iconAccessibility = (label: string | undefined) => (label ? { role: "img" as const, "aria-label": label } : { "aria-hidden": true });
 
 export default function Navigation(props: NavigationProps) {
-  const messages = useUiMessages();
+  const workspaceMessages = useWorkspaceMessages();
   const [expanded, setExpanded] = createSignal<Record<string, boolean>>({});
   const ready = async () => (await props.beforeSelect?.()) !== false;
-  const activate = async (id: string) => {
-    if (await ready()) await props.navigation.activate(id);
+  /** `keepOpen` changes only what the menu shows, so the host does not dismiss it first. */
+  const activate = async (id: string, keepOpen = false) => {
+    if (keepOpen || (await ready())) await props.navigation.activate(id);
   };
   const Rows = (rows: { items: readonly NavigationItem[]; disabled?: boolean; labelledBy?: string }) => (
     <ul class="k2b-navigation__list" aria-labelledby={rows.labelledBy}>
@@ -81,7 +83,7 @@ export default function Navigation(props: NavigationProps) {
                           class="k2b-navigation__control"
                           disabled={disabled()}
                           aria-expanded={!item().action ? open() : undefined}
-                          onClick={() => (item().action ? void activate(id) : toggle())}
+                          onClick={() => (item().action ? void activate(id, item().keepOpen) : toggle())}
                         >
                           {content()}
                           <Show when={!item().action && item().children?.length}>
@@ -167,7 +169,7 @@ export default function Navigation(props: NavigationProps) {
                           },
                         }))}
                       >
-                        <Dropdown.Trigger iconOnly label={`${item().label}: ${messages().rowAction}`} variant="ghost">
+                        <Dropdown.Trigger iconOnly label={`${item().label}: ${workspaceMessages().rowAction}`} variant="ghost">
                           <i class="ti ti-dots" aria-hidden="true" />
                         </Dropdown.Trigger>
                       </Dropdown.Root>
@@ -195,6 +197,9 @@ export default function Navigation(props: NavigationProps) {
   );
   return (
     <nav class="k2b-navigation" aria-label={props.label}>
+      <Show when={props.navigation.switcher?.()}>
+        {(switcher) => <AppWorkspaceSidebarSwitcher {...switcher()} beforeSelect={props.beforeSelect} />}
+      </Show>
       <Rows items={props.navigation.items()} />
     </nav>
   );

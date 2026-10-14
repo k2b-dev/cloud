@@ -27,6 +27,9 @@ const load = async () => {
   try {
     return {
       Workspace: (await import("../src/frontend/Workspace.island")).default,
+      ui: await import("@k2b/ui"),
+      derivePageTrail: (await import("@k2b/cloud/ssr/page-trail")).derivePageTrail,
+      snapshotTitle: (await import("../src/frontend/trail")).snapshotTitle,
       PAGE_UP_EVENT: (await import("@k2b/cloud/ssr/layout-runtime")).PAGE_UP_EVENT,
     };
   } finally {
@@ -75,6 +78,88 @@ describe("Filesv2 progressive navigation", () => {
     };
     return { controller, requests, dispose };
   };
+
+  for (const path of ["", "A", "A/B", "A/B/C", "A/B/C/D"]) {
+    test(`folder depth ${path ? path.split("/").length : 0} has no shell way up before or after in-place navigation`, async () => {
+      const dom = createDomTestHarness();
+      const { Workspace, ui, derivePageTrail, snapshotTitle } = modules!;
+      const base = {
+        id: "home",
+        name: "Alice",
+        area: "cloud" as const,
+        kind: "users" as const,
+        status: "existing" as const,
+        reason: null,
+        indexEnabled: false,
+        versioningEnabled: false,
+      };
+      const bases = { items: [base], issues: [], editor: null };
+      const directory = (path: string) => ({ base, path, items: [], next: null });
+      const source = `/app/filesv2?base=home${path ? `&path=${encodeURIComponent(path)}` : ""}`;
+      const snapshot = { ...initial, source, bases, selectedId: base.id, directory: directory(path) };
+      dom.window.history.replaceState(null, "", source);
+      // Seed the real SSR trail; layout.update must publish subsequent trails, without a fixed provider masking them.
+      dom.root.classList.add("cloud-app-canvas");
+      dom.root.setAttribute("data-app-base", "/app/filesv2");
+      ui.setPageTrail(
+        derivePageTrail(
+          snapshotTitle(snapshot, "Files", { personal: "Personal", allStorage: "All storage" }, "en"),
+          "/app/filesv2",
+          "Files",
+        ),
+      );
+      const dispose = render(() => createComponent(Workspace, { initial: snapshot, cloudUrl: "https://cloud.test" }), dom.root);
+      cleanup = () => {
+        dispose();
+        dom.cleanup();
+      };
+      const assertTitle = (current: string) => {
+        expect(ui.readPageTrail()).toEqual({ title: current.split("/").at(-1) || "Personal", ancestors: [] });
+        for (const selector of [
+          "[data-k2b-page-trail-up]",
+          "[data-k2b-page-trail-link]",
+          ".k2b-page-title__back",
+          ".k2b-page-title__trail",
+        ]) {
+          expect(dom.document.querySelector(selector)).toBeNull();
+        }
+        // The shared head also carries a CSS-hidden fallback h1; the app has exactly one content heading.
+        const headings = dom.document.querySelectorAll("h1:not(.k2b-app-workspace__head-heading)");
+        expect(headings).toHaveLength(1);
+        expect(headings[0]!.textContent).toBe(current.split("/").at(-1) || "Personal");
+      };
+      const assertSidebarStates = async (current: string) => {
+        const root = dom.root.querySelector<HTMLElement>("[data-k2b-app-workspace]")!;
+        const handle = root.querySelector<HTMLButtonElement>('[data-app-workspace-resize="sidebar"]')!;
+        const key = (key: string) =>
+          handle.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+        key("Home");
+        key("ArrowRight");
+        await flush();
+        expect(root.dataset.sidebarCollapsed).not.toBe("true");
+        assertTitle(current);
+        key("Home");
+        key("ArrowLeft");
+        await flush();
+        expect(root.dataset.sidebarCollapsed).toBe("true");
+        assertTitle(current);
+      };
+      await flush();
+      await assertSidebarStates(path);
+      const destination = path ? path.split("/").slice(0, -1).join("/") : "A";
+      dom.window.history.replaceState(null, "", `/app/filesv2?base=home${destination ? `&path=${encodeURIComponent(destination)}` : ""}`);
+      dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+      for (let round = 0; round < 5; round++) {
+        await flush();
+        for (const request of apiRequests.splice(0)) {
+          const requestedPath = (request.input as { query?: { path?: string } } | undefined)?.query?.path ?? "";
+          request.resolve(Response.json(request.kind === "bases" ? bases : directory(requestedPath)));
+        }
+      }
+      await flush();
+      await assertSidebarStates(destination);
+    });
+  }
 
   test("SSR snapshot suppresses initial fetch; history commits only after its matching snapshot", async () => {
     const { controller, requests } = setup();
@@ -205,6 +290,185 @@ describe("Filesv2 progressive navigation", () => {
     await pending;
     expect(requests[0]!.signal.aborted).toBe(true);
   });
+  test("the plain Files address opens the single storage listing before and after workspace navigation", async () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", "/app/filesv2");
+    const { Workspace } = modules!;
+    const base = {
+      id: "home",
+      name: "Alice",
+      area: "cloud" as const,
+      kind: "users" as const,
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: false,
+      versioningEnabled: false,
+    };
+    const bases = { items: [base], issues: [], editor: null };
+    const directory = { base, path: "", items: [], next: null };
+    const dispose = render(
+      () =>
+        createComponent(Workspace, {
+          initial: { ...initial, source: "/app/filesv2", bases, selectedId: base.id, directory },
+          cloudUrl: "https://cloud.test",
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    const assertListing = () => {
+      expect(dom.root.querySelectorAll('.k2b-app-workspace__sidebar-body a[href="/app/filesv2"]').length).toBe(0);
+      expect(dom.root.querySelectorAll(".filesv2-list__row--up").length).toBe(0);
+      expect(dom.root.querySelectorAll(".k2b-link-card").length).toBe(0);
+      expect(dom.root.querySelectorAll(".filesv2-browser__header").length).toBe(1);
+      expect(dom.root.textContent).not.toContain("All storage");
+    };
+    await flush();
+    for (const request of apiRequests) {
+      expect(request.kind).toBe("entries");
+      request.resolve(Response.json(directory));
+    }
+    await flush();
+    apiRequests.length = 0;
+    assertListing();
+    dom.root.querySelector<HTMLAnchorElement>('[role="tree"] a[href="/app/filesv2?base=home"]')!.click();
+    await flush();
+    expect(apiRequests[0]!.kind).toBe("bases");
+    apiRequests[0]!.resolve(Response.json(bases));
+    await flush();
+    expect(apiRequests[1]!.kind).toBe("entries");
+    apiRequests[1]!.resolve(Response.json(directory));
+    await flush();
+    assertListing();
+    dom.window.history.replaceState(null, "", "/app/filesv2");
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await flush();
+    expect(apiRequests[2]!.kind).toBe("bases");
+    apiRequests[2]!.resolve(Response.json(bases));
+    await flush();
+    expect(apiRequests[3]!.kind).toBe("entries");
+    apiRequests[3]!.resolve(Response.json(directory));
+    await flush();
+    expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "entries", "bases", "entries"]);
+    assertListing();
+  });
+
+  test("overview navigation loads no directory, Recent loads itself, and failed tile navigation offers retry", async () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", initial.source);
+    const { Workspace } = modules!;
+    const base = {
+      id: "home",
+      name: "Alice",
+      area: "cloud" as const,
+      kind: "users" as const,
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: false,
+      versioningEnabled: false,
+    };
+    const missing = { ...base, id: "missing", name: "Missing group", kind: "groups" as const, status: "missing" as const };
+    const bases = { items: [base, missing], issues: [], editor: null };
+    const directory = { base, path: "", items: [], next: null };
+    const dispose = render(
+      () => createComponent(Workspace, { initial: { ...initial, bases, selectedId: base.id, directory }, cloudUrl: "https://cloud.test" }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    await flush();
+    for (const request of apiRequests) request.resolve(Response.json(directory));
+    await flush();
+    apiRequests.length = 0;
+    dom.root.querySelector<HTMLAnchorElement>('.k2b-app-workspace__sidebar-body a[href="/app/filesv2"]')!.click();
+    await flush();
+    expect(apiRequests[0]!.kind).toBe("bases");
+    apiRequests[0]!.resolve(Response.json(bases));
+    await flush();
+    expect(apiRequests[1]!.kind).toBe("recent");
+    apiRequests[1]!.resolve(Response.json([]));
+    await flush();
+    expect(apiRequests).toHaveLength(2);
+    expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/filesv2");
+    expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
+    expect(dom.root.querySelector(".filesv2-browser__header")).toBeNull();
+    const search = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Search all storage"),
+    )!;
+    search.click();
+    expect(searches).toEqual([{ query: "", scope: { appId: "filesv2", tag: "file", label: "Files", icon: "ti ti-folders" } }]);
+    dom.root.querySelector<HTMLAnchorElement>('.k2b-link-card[href="/app/filesv2?base=home"]')!.click();
+    await flush();
+    apiRequests[2]!.resolve(Response.json(bases));
+    await flush();
+    expect(apiRequests[3]!.kind).toBe("entries");
+    apiRequests[3]!.resolve(Response.json({ code: "unavailable", message: "Storage unavailable" }, { status: 503 }));
+    await flush();
+    expect(dom.window.location.search).toBe("");
+    expect(dom.root.querySelector(".k2b-link-card")).toBeNull();
+    const error = dom.root.querySelector(".k2b-app-workspace__main .k2b-placeholder")!;
+    expect(error.textContent).toContain("Storage unavailable");
+    expect(error.querySelector("a")!.getAttribute("href")).toBe("/app/filesv2?base=home");
+    error.querySelector<HTMLAnchorElement>("a")!.click();
+    await flush();
+    const pending = (kind: string) => apiRequests.find((request, index) => index > 3 && request.kind === kind)!;
+    pending("bases").resolve(Response.json(bases));
+    await flush();
+    pending("entries").resolve(Response.json(directory));
+    await flush();
+    expect(dom.window.location.search).toBe("?base=home");
+    expect(dom.root.querySelector(".filesv2-list__row--up")!.textContent).toContain("All storage");
+  });
+
+  test("a failing Recent stays inside the overview; tiles and the way into storage keep working", async () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", "/app/filesv2");
+    const { Workspace } = modules!;
+    const base = {
+      id: "home",
+      name: "Alice",
+      area: "cloud" as const,
+      kind: "users" as const,
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: false,
+      versioningEnabled: false,
+    };
+    const group = { ...base, id: "ipa", name: "Team", area: "freeipa" as const, kind: "groups" as const };
+    const bases = { items: [base, group], issues: [{ area: "freeipa" as const, code: "unavailable" }], editor: null };
+    const dispose = render(
+      () => createComponent(Workspace, { initial: { ...initial, source: "/app/filesv2", bases }, cloudUrl: "https://cloud.test" }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    await flush();
+    // The tiles come from the bases alone; Recent asks for itself once the overview is on screen.
+    expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
+    expect(apiRequests.map((request) => request.kind)).toEqual(["recent"]);
+    expect(dom.root.querySelector('.filesv2-overview section .k2b-placeholder[data-state="loading"]')).not.toBeNull();
+    apiRequests[0]!.resolve(Response.json({ code: "unavailable", message: "Storage unavailable" }, { status: 503 }));
+    await flush();
+    expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
+    const section = dom.root.querySelector(".filesv2-overview section")!;
+    expect(section.querySelector('.k2b-placeholder[data-state="error"]')).not.toBeNull();
+    const retry = [...section.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Try again"))!;
+    retry.click();
+    await flush();
+    expect(apiRequests[1]!.kind).toBe("recent");
+    apiRequests[1]!.resolve(Response.json([]));
+    await flush();
+    expect(section.querySelector('.k2b-placeholder[data-state="error"]')).toBeNull();
+    expect(section.textContent).toContain("Files you open or download appear here.");
+    expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
+  });
+
   test("workspace sidebar and folders enhance real hrefs; popstate reloads the matching view", async () => {
     const dom = createDomTestHarness();
     dom.window.history.replaceState(null, "", initial.source);
@@ -238,14 +502,14 @@ describe("Filesv2 progressive navigation", () => {
       [...dom.root.querySelectorAll<HTMLAnchorElement>("a")].find(
         (entry) => entry.textContent?.includes(text) || entry.getAttribute("aria-label")?.includes(text),
       )!;
-    // The personal base reads "My files" and keeps its technical name as meta and tooltip; groups keep their name.
-    const home = link("My files");
+    // The personal base reads "Personal" and keeps its technical name as meta and tooltip; groups keep their name.
+    const home = link("Personal");
     expect(home.getAttribute("href")).toBe("/app/filesv2?base=home");
     expect(
       home.closest(".k2b-app-workspace__sidebar-item, [role=treeitem]")?.querySelector(".k2b-app-workspace__sidebar-item-meta")
         ?.textContent,
     ).toBe("Alice");
-    expect(home.closest("[title]")?.getAttribute("title")).toBe("My files · Alice (Cloud)");
+    expect(home.closest("[title]")?.getAttribute("title")).toBe("Personal · Alice (Cloud)");
     expect(link("Alice")).toBe(home);
     // Search is an ordinary footer item with a visible label, directly above Recent; the icon grid is gone.
     expect(dom.root.querySelector(".k2b-app-workspace__sidebar-icon-grid")).toBeNull();
@@ -347,7 +611,7 @@ describe("Filesv2 progressive navigation", () => {
       expect(apiRequests.at(-1)!.input).toEqual({ param: { baseId }, query: { after: undefined } });
       apiRequests.at(-1)!.resolve(Response.json({ entries: [], next: null }));
       await flush();
-      expect(dom.root.querySelector("h1")?.textContent).toBe("Trash");
+      expect(dom.root.querySelector("h1:not(.k2b-app-workspace__head-heading)")?.textContent).toBe("Trash");
       expect(dom.root.textContent).toContain("The trash is empty.");
       // The trash belongs to its storage root, which stays the highlighted tree node.
       expect(selectedNode()).toBe(JSON.stringify([baseId, null, ""]));
@@ -502,7 +766,7 @@ describe("Filesv2 progressive navigation", () => {
     await flush();
     const entries = [...dom.root.querySelectorAll<HTMLButtonElement>("button")];
     expect(entries).toHaveLength(2);
-    expect(entries[0]!.textContent).toContain("My files / new/Notes");
+    expect(entries[0]!.textContent).toContain("Personal / new/Notes");
     expect(entries[0]!.textContent).not.toContain("Home /");
     expect(entries[0]!.querySelector("time")).not.toBeNull();
     entries[0]!.click();
@@ -620,7 +884,7 @@ describe("Filesv2 progressive navigation", () => {
     expect(apiRequests[1]!.kind).toBe("shares");
     apiRequests[1]!.resolve(Response.json({ items: [], next: null }));
     await flush();
-    expect(dom.root.querySelector("h1")?.textContent).toBe("Shares");
+    expect(dom.root.querySelector("h1:not(.k2b-app-workspace__head-heading)")?.textContent).toBe("Shares");
     expect(dom.root.textContent).not.toContain("This directory is missing");
   });
 

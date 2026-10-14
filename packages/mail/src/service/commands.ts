@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   type ActorCommandInput,
   type ActorRef,
+  type CommandState,
   type ComposeSafetyApproval,
   draftEditableContentInputSchema,
   type MailCommand,
@@ -34,9 +35,17 @@ import { OUTBOX_DISPATCH_GRACE_SECONDS } from "./outbound-delivery";
 import { materializeOutboundMessage, type OutboundMessageProjection } from "./outbound-message-projection";
 import { measureMimeStream, outboundDraftSnapshotSchema } from "./outbound-mime";
 import { activeSmtpMessageLimit, assertProviderMessageSize, loadBindingProviderLimits } from "./provider-limits";
+import {
+  queuedSenderVerificationPayloadSchema,
+  queuedSenderVerificationTargetSchema,
+  type SenderVerificationRequest,
+} from "./sender-verification";
 
 const log = logger("mail:commands");
-const internalDraftEditableContentInputSchema = draftEditableContentInputSchema.extend({ senderIdentityId: z.string().uuid() });
+const internalDraftEditableContentInputSchema = draftEditableContentInputSchema.extend({
+  senderIdentityId: z.string().uuid(),
+  signatureTemplateId: z.string().uuid().nullable().optional(),
+});
 
 type DbCommand = {
   id: string;
@@ -183,6 +192,7 @@ type DraftForOutbox = {
   intent: "new" | "reply" | "reply_all" | "forward";
   display_name: string;
   sender_identity_id: string;
+  signature_template_id: string | null;
   from_address: string;
   reply_to: string | null;
   envelope_sender: string | null;
@@ -202,7 +212,7 @@ const actorDatabaseId = (actor: ActorRef): string | null => {
   return null;
 };
 
-const commandActorMatches = (command: DbCommand, actor: ActorRef): boolean =>
+export const commandActorMatches = (command: Pick<DbCommand, "actor_kind" | "actor_id">, actor: ActorRef): boolean =>
   command.actor_kind === actor.kind && command.actor_id === actorDatabaseId(actor);
 
 /**
@@ -494,6 +504,7 @@ const createSendOutbox = async (params: {
       d.subject,
       d.body_markdown,
       d.body_format,
+      d.signature_template_id,
       d.priority,
       d.request_delivery_receipt,
       d.request_read_receipt,
@@ -557,6 +568,7 @@ const createSendOutbox = async (params: {
   if (!safety.ok) throw Object.assign(new Error(safety.error.message), safety.error);
   const content = internalDraftEditableContentInputSchema.safeParse({
     senderIdentityId: draft.sender_identity_id,
+    signatureTemplateId: draft.signature_template_id,
     to: draft.to_addresses,
     cc: draft.cc_addresses,
     bcc: draft.bcc_addresses,
@@ -1259,6 +1271,120 @@ export const createMaintenanceCommand = async (params: {
   }
 };
 
+/**
+ * Queues a sender verification that found provider work running as a durable
+ * `verify_sender_identity` command, which runs once the mailbox's provider lease line lets it.
+ * An identity waits with one verification at a time: the same request joins it, another one
+ * conflicts until it ended.
+ */
+export const queueSenderVerification = async (params: {
+  context: MailRequestContext;
+  request: SenderVerificationRequest;
+}): Promise<Result<MailCommand>> => {
+  const { request } = params;
+  const actor = actorRefFromRequest(params.context);
+  const credential = durableCredentialSnapshot(params.context);
+  if (!credential) return fail(err.forbidden("Durable Mail work requires a current service credential"));
+  const target = queuedSenderVerificationTargetSchema.parse({ senderIdentityId: request.senderIdentityId, bindingId: request.bindingId });
+  const payload = queuedSenderVerificationPayloadSchema.parse({
+    verificationRecipient: request.verificationRecipient,
+    savesSentAutomatically: request.savesSentAutomatically,
+    locale: request.locale,
+  });
+  const requestHash = sha256Json({
+    kind: "verify_sender_identity",
+    target,
+    payload: { verificationRecipient: payload.verificationRecipient, savesSentAutomatically: payload.savesSentAutomatically },
+  });
+  try {
+    const result = await sql.begin(async (tx) => {
+      const [mailbox] = await tx<{ id: string }[]>`
+        SELECT id FROM mail.mailboxes WHERE id = ${request.mailboxId}::uuid AND deleted_at IS NULL FOR UPDATE
+      `;
+      if (!mailbox) return fail(err.notFound("Mailbox"));
+      const permission = await requireMailboxPermission(params.context, request.mailboxId, "admin", tx);
+      if (!permission.ok) return permission;
+      const [identity] = await tx<{ id: string }[]>`
+        SELECT id FROM mail.sender_identities
+        WHERE id = ${request.senderIdentityId}::uuid AND mailbox_id = ${request.mailboxId}::uuid AND status <> 'disabled'
+        FOR UPDATE
+      `;
+      if (!identity) return fail(err.notFound("Sender identity or provider binding"));
+      const [pending] = await tx<DbCommand[]>`
+        SELECT ${commandColumns}
+        FROM mail.commands c
+        WHERE c.mailbox_id = ${request.mailboxId}::uuid
+          AND c.kind = 'verify_sender_identity'
+          AND c.state IN ('queued', 'executing')
+          AND c.target ->> 'senderIdentityId' = ${request.senderIdentityId}
+        ORDER BY c.created_at DESC, c.id DESC
+        LIMIT 1
+      `;
+      if (pending) {
+        return pending.request_hash === requestHash
+          ? ok({ command: mapCommand(pending), created: false })
+          : fail(err.conflict("A verification of this sender identity is already waiting; try again once it ended"));
+      }
+      const [row] = await tx<DbCommand[]>`
+        INSERT INTO mail.commands AS c (
+          mailbox_id, kind, actor_kind, actor_id, delegated_user_id, idempotency_key,
+          request_hash, correlation_id, target, payload, transport_metadata,
+          initiator_actor_kind, initiator_actor_id,
+          access_subject_kind, access_subject_id, credential_scopes, credential_id, credential_expires_at
+        )
+        VALUES (
+          ${request.mailboxId}::uuid,
+          'verify_sender_identity',
+          ${actor.kind},
+          ${actorDatabaseId(actor)}::uuid,
+          ${actor.kind === "service_account" ? actor.delegatedUserId : null}::uuid,
+          ${`sender-verification:${crypto.randomUUID()}`},
+          ${requestHash},
+          NULL,
+          ${target}::jsonb,
+          ${payload}::jsonb,
+          '{}'::jsonb,
+          ${actor.kind},
+          ${actorDatabaseId(actor)}::uuid,
+          ${params.context.accessSubject.type},
+          ${accessSubjectDatabaseId(params.context)}::uuid,
+          ${toPgTextArray(credential.scopes)}::text[],
+          ${credential.credentialId}::uuid,
+          ${credential.credentialExpiresAt}::timestamptz
+        )
+        RETURNING ${commandColumns}
+      `;
+      if (!row) throw new Error("Sender verification command insert returned no row");
+      await tx`
+        INSERT INTO mail.activity_events (
+          mailbox_id, command_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata
+        )
+        VALUES (
+          ${request.mailboxId}::uuid,
+          ${row.id}::uuid,
+          ${actor.kind},
+          ${actorDatabaseId(actor)}::uuid,
+          'command.verify_sender_identity',
+          'requested',
+          'command',
+          ${row.id}::uuid,
+          ${{ correlationId: null }}::jsonb
+        )
+      `;
+      return ok({ command: mapCommand(row), created: true });
+    });
+    if (!result.ok) return result;
+    if (result.data.created) {
+      mailLive.wake();
+      await enqueueMailCommand(result.data.command.id, "verify_sender_identity").catch(() => undefined);
+    }
+    return ok(result.data.command);
+  } catch (error) {
+    if (isServiceError(error)) return fail(error);
+    return fail(err.internal("Failed to queue sender verification"));
+  }
+};
+
 export const createMailCommand = (params: {
   context: MailRequestContext;
   mailboxId: string;
@@ -1321,17 +1447,38 @@ export const getCommandOutcomes = async (
   return ok(rows.map((row) => ({ id: row.id, state: row.state, code: row.last_error_code })));
 };
 
-export const listCommands = async (context: MailRequestContext, mailboxId: string, limit = 50): Promise<Result<MailCommand[]>> => {
+export const listCommands = async (
+  context: MailRequestContext,
+  mailboxId: string,
+  query: { limit?: number; state?: CommandState; before?: string } = {},
+): Promise<Result<MailCommand[]>> => {
   const access = await requireMailboxAccess(context, mailboxId, "read");
   if (!access.ok) return access;
   const execution = await resolveMailExecution({ mailboxId, operation: "actorRead", context, conversationScoped: true });
   if (!execution.ok) return execution;
-  const boundedLimit = Math.min(Math.max(Math.floor(limit), 1), 100);
+  if (query.before !== undefined) {
+    if (!z.string().uuid().safeParse(query.before).success) return fail(err.badInput("Invalid mail command cursor"));
+    const [anchor] = await sql<{ id: string }[]>`
+      SELECT c.id FROM mail.commands c
+      WHERE c.mailbox_id = ${mailboxId}::uuid AND c.id = ${query.before}::uuid
+        AND ${commandVisibleTo(access.data, mailboxId)}
+    `;
+    if (!anchor) return fail(err.notFound("Mail command"));
+  }
+  const boundedLimit = Math.min(Math.max(Math.floor(query.limit ?? 50), 1), 100);
   const rows = await sql<DbCommand[]>`
     SELECT ${commandColumns}
     FROM mail.commands c
     WHERE c.mailbox_id = ${mailboxId}::uuid
       AND ${commandVisibleTo(access.data, mailboxId)}
+      AND ${query.state ? sql`c.state = ${query.state}` : sql`TRUE`}
+      AND ${
+        query.before
+          ? sql`(c.created_at, c.id) < (
+        SELECT anchor.created_at, anchor.id FROM mail.commands anchor WHERE anchor.id = ${query.before}::uuid
+      )`
+          : sql`TRUE`
+      }
     ORDER BY c.created_at DESC, c.id DESC
     LIMIT ${boundedLimit}
   `;

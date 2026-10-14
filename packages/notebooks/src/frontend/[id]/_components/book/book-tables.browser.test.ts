@@ -101,8 +101,8 @@ const measure = (page: Page, index: number) =>
       flush: [round(text(header[0]!).left - prose.left), round(prose.right - text(header[header.length - 1]!).right)],
       layout: cells.map((cell) => {
         const rect = cell.getBoundingClientRect();
-        // Page coordinates: hovering may scroll the page into view.
-        return [rect.x + window.scrollX, rect.y + window.scrollY, rect.width, rect.height];
+        // Hover may scroll the page or wrap; record layout in the wrap's content coordinates.
+        return [rect.x - box.x + wrap.scrollLeft, rect.y - box.y + wrap.scrollTop, rect.width, rect.height];
       }),
     };
   }, index);

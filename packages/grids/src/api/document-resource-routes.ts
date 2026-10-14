@@ -59,7 +59,7 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
       "/by-base/:baseId/browse",
       describeRoute({
         tags: ["Grids:Document"],
-        summary: "Browse Documents by template and year, or search, filter and sort the Base catalog",
+        summary: "Browse Documents by template and year, or search, filter and sort the base catalog",
         responses: {
           200: jsonResponse(PublicDocumentBrowseResponseSchema, "Document browser page"),
           403: jsonResponse(ErrorResponseSchema, "Forbidden"),
@@ -90,7 +90,7 @@ export const createDocumentResourceRoutes = (deps: { requireAuthenticated?: Midd
       "/by-base/:baseId",
       describeRoute({
         tags: ["Grids:Document"],
-        summary: "List, search, filter and sort Documents for a Base",
+        summary: "List, search, filter and sort Documents for a base",
         responses: {
           200: jsonResponse(PublicDocumentListSchema, "Documents"),
           403: jsonResponse(ErrorResponseSchema, "Forbidden"),

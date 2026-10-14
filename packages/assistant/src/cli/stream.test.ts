@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AiConversation, AiStoredMessage, AiStreamSseEvent, AiTurnBlock } from "@k2b/cloud/ai";
 import type { CloudCliContext, CloudCliOutputMode } from "@k2b/cloud/cli";
-import { type AssistantTurnOutput, createAssistantTurnOutput, streamAssistantTurn } from "./stream";
+import { type AssistantClientTools, type AssistantTurnOutput, createAssistantTurnOutput, streamAssistantTurn } from "./stream";
 
 const conversation: AiConversation = {
   id: "chat",
@@ -88,6 +88,8 @@ const run = async (
   approveTools?: string[],
   turnOutput?: AssistantTurnOutput,
   locale?: string,
+  viewFile?: Response,
+  clientTools?: AssistantClientTools,
 ) => {
   const chunks: string[] = [],
     errors: string[] = [],
@@ -95,6 +97,7 @@ const run = async (
     requests: unknown[] = [],
     printed: string[] = [],
     tables: { rows: unknown; columns: unknown }[] = [];
+  const ordered: string[] = [];
   const ctx: CloudCliContext = {
     args: [],
     flags: {},
@@ -105,6 +108,7 @@ const run = async (
       throw new Error("Unused");
     },
     fetch: async (path, init) => {
+      if (path.includes("/files/content?")) return viewFile?.clone() ?? new Response(null, { status: 404 });
       if (init?.method === "POST") {
         requests.push({ path, body: JSON.parse(String(init.body)) });
         return Response.json({});
@@ -115,9 +119,11 @@ const run = async (
     },
     readJson: (response) => response.json(),
     print: (value) => {
+      ordered.push(`print:${value ?? ""}`);
       printed.push(value ?? "");
     },
     write: async (value) => {
+      ordered.push(`write:${value}`);
       chunks.push(value);
     },
     error: (value) => {
@@ -128,6 +134,7 @@ const run = async (
       lines.push(value);
     },
     table: (rows, columns) => {
+      ordered.push("table");
       tables.push({ rows, columns });
     },
   };
@@ -136,10 +143,11 @@ const run = async (
     conversationId: "chat",
     turnId: "turn",
     approveTools,
+    clientTools,
     output: turnOutput,
     signal: AbortSignal.timeout(4000),
   });
-  return { text: chunks.join(""), chunks, errors, lines, requests, printed, tables, result };
+  return { text: chunks.join(""), chunks, errors, lines, requests, printed, tables, ordered, result };
 };
 
 describe("Assistant CLI stream", () => {
@@ -470,4 +478,564 @@ describe("Assistant CLI stream", () => {
       { path: "/api/ai/conversations/chat/turns/turn/actions/call", body: { type: "approval_response", approved: true } },
     ]);
   });
+});
+
+test("streamed Cloud links are rewritten across deltas and reconnects only in text output", async () => {
+  const text = "[Mail](/app/mail/x) [Other](//external.test/x)";
+  const events = () => [
+    [delta("link", "[Mail]"), delta("link", "(")],
+    [
+      state([{ id: "saved", kind: "text", text: "[Mail](" }]),
+      delta("saved", "/"),
+      delta("saved", "app/mail/x) [Other](//external.test/x)"),
+      finished([text]),
+    ],
+  ];
+  const reply = await run(events());
+  expect(reply.text).toBe("[Mail](http://example.test/app/mail/x) [Other](//external.test/x)\n");
+  expect(reply.result.text).toBe(text);
+  expect((await run(events(), "json")).text).toBe("");
+  const jsonl = await run(events(), "jsonl");
+  expect(textDeltas(jsonl.lines).join("")).not.toContain("http://example.test");
+  expect(jsonl.result.text).toBe(text);
+});
+
+test("stream finish flushes incomplete link delimiters", async () => {
+  expect((await run([[delta("link", "[Mail]("), finished(["[Mail]("])]])).text).toBe("[Mail](\n");
+});
+
+test("link delimiters flush before approval pauses the turn", async () => {
+  const output = createAssistantTurnOutput();
+  const approval: AiTurnBlock = { id: "tool", kind: "tool", callId: "call", name: "mail.draft.send", status: "awaiting_approval" };
+  const first = await run([[delta("link", "[Mail]("), { ...wire(), type: "block_set", block: approval }]], "text", undefined, output);
+  const second = await run([[state([{ id: "saved", kind: "text", text: "[Mail](" }]), finished([])]], "text", undefined, output);
+  expect(first.text).toBe("[Mail](\n");
+  expect(second.text).toBe("");
+});
+
+test("finishing without new text has no delimiter left after approval", async () => {
+  const output = createAssistantTurnOutput();
+  const approval: AiTurnBlock = { id: "tool", kind: "tool", callId: "call", name: "mail.draft.send", status: "awaiting_approval" };
+  const first = await run([[delta("link", "[Mail]"), { ...wire(), type: "block_set", block: approval }]], "text", undefined, output);
+  const second = await run([[finished([])]], "text", undefined, output);
+  expect(first.text).toBe("[Mail]\n");
+  expect(second.text).toBe("");
+});
+
+test("held text delimiters print before a completed capability table", async () => {
+  const text = "I will create the task [Belege prüfen]";
+  const block: AiTurnBlock = {
+    id: "tool",
+    kind: "tool",
+    callId: "call",
+    name: "spaces.task.create",
+    status: "completed",
+    result: {
+      data: [{ title: "Belege prüfen" }],
+      presentation: { kind: "table", rowsPath: [], columns: [{ path: ["title"], label: "Title" }] },
+    },
+  };
+  const reply = await run([[delta("text", text), { ...wire(), type: "block_set", block }, finished([text])]]);
+  expect(reply.tables).toHaveLength(1);
+  expect(reply.ordered).toEqual(["write:I will create the task [Belege prüfen", "write:]", "print:", "table", "print:", "write:\n"]);
+});
+
+test("a presented view prints its validated table and footer once in stream order", async () => {
+  const path = "/views/monthly-12345678.view.json";
+  const block: AiTurnBlock = {
+    id: "tool-view",
+    kind: "tool",
+    callId: "view",
+    name: "present",
+    args: { path },
+    status: "completed",
+    result: {
+      path,
+      size: 100,
+      mediaType: "application/json",
+      view: { view: "table", title: "Monthly", rows: 101, columns: 2, footer: false },
+    },
+  };
+  const view = {
+    view: "table",
+    title: "Monthly",
+    subtitle: "EUR",
+    columns: [
+      { id: "name", label: "Month", type: "text" },
+      { id: "n", type: "number" },
+    ],
+    rows: Array.from({ length: 101 }, (_, i) => ({ name: i === 0 ? "January\x1b[31m" : String(i), n: i })),
+    footer: { name: "Total", n: 5050 },
+  };
+  const output = await run(
+    [[{ ...wire(), type: "block_set", block }, { ...wire(), type: "block_set", block }, delta("final", "Done."), finished(["Done."])]],
+    "text",
+    undefined,
+    undefined,
+    "en-US",
+    Response.json(view, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } }),
+  );
+  expect(output.tables).toHaveLength(1);
+  expect(output.tables[0]?.rows).toHaveLength(101);
+  expect(JSON.stringify(output.tables[0]?.rows)).toContain("January");
+  expect(JSON.stringify(output.tables[0]?.rows)).not.toContain("\x1b");
+  expect(output.printed).toContain("Monthly");
+  expect(output.printed).toContain("EUR");
+  expect(output.printed).toContain("Showing 100 of 101 rows; Copy data in the web chat copies all of them.");
+  expect(JSON.stringify(output.tables)).toContain("Total");
+  expect(output.chunks.join("")).toContain("Done.");
+});
+
+test("invalid and missing presented views print the unavailable line", async () => {
+  const path = "/views/missing-12345678.view.json";
+  const block: AiTurnBlock = {
+    id: "tool-view",
+    kind: "tool",
+    callId: "view",
+    name: "present",
+    args: { path },
+    status: "completed",
+    result: { path, view: { view: "table", title: "Missing", rows: 0, columns: 1, footer: false } },
+  };
+  for (const response of [
+    new Response(null, { status: 404 }),
+    Response.json({ view: "table", title: "Bad", columns: [], rows: [] }, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } }),
+    Response.json(
+      { view: "table", title: "User file", columns: [{ id: "n", type: "number" }], rows: [] },
+      { headers: { "X-Cloud-Ai-File-Origin": "user" } },
+    ),
+  ]) {
+    const output = await run([[{ ...wire(), type: "block_set", block }, finished([])]], "text", undefined, undefined, "en-US", response);
+    expect(output.printed).toContain(`View unavailable: ${path}`);
+    expect(output.tables).toHaveLength(0);
+  }
+});
+
+test("a presented chart uses the same table as the chart tool", async () => {
+  const path = "/views/sales-12345678.view.json";
+  const block: AiTurnBlock = {
+    id: "tool-view",
+    kind: "tool",
+    callId: "view",
+    name: "present",
+    args: { path },
+    status: "completed",
+    result: { path, view: { view: "chart", kind: "bar", title: "Sales" } },
+  };
+  const output = await run(
+    [[{ ...wire(), type: "block_set", block }, finished([])]],
+    "text",
+    undefined,
+    undefined,
+    "en-US",
+    Response.json(
+      { view: "chart", kind: "bar", title: "Sales", data: [{ label: "North", value: 12 }] },
+      { headers: { "X-Cloud-Ai-File-Origin": "assistant" } },
+    ),
+  );
+  expect(output.tables).toEqual([
+    {
+      rows: [{ label: "North", value: "12" }],
+      columns: [
+        { key: "label", label: "Category" },
+        { key: "value", label: "Value" },
+      ],
+    },
+  ]);
+});
+
+test.each(["chart", "present"] as const)("a %s group prints titles and every chart table once with the existing row cap", async (name) => {
+  const charts = [
+    {
+      kind: "bar",
+      title: "Counts",
+      subtitle: "First measure",
+      data: Array.from({ length: 101 }, (_, i) => ({ label: `C${i}`, value: i })),
+    },
+    { kind: "stat", title: "Rate", value: 0.21, format: { style: "percent" } },
+  ];
+  const path = "/views/group-12345678.view.json";
+  const args = { title: "Measures", subtitle: "Source", charts };
+  const view = { ...args, view: "group" };
+  const block: AiTurnBlock = {
+    id: "group",
+    kind: "tool",
+    callId: "group",
+    name,
+    status: "completed",
+    args: name === "chart" ? args : { path },
+    result:
+      name === "chart"
+        ? { displayed: true }
+        : {
+            path,
+            view: {
+              view: "group",
+              title: "Measures",
+              subtitle: "Source",
+              linkX: false,
+              layout: "stack",
+              charts: [
+                { kind: "bar", title: "Counts", subtitle: "First measure" },
+                { kind: "stat", title: "Rate" },
+              ],
+            },
+          },
+  };
+  const output = await run(
+    [[{ ...wire(), type: "block_set", block }, { ...wire(), type: "block_set", block }, finished([])]],
+    "text",
+    undefined,
+    undefined,
+    "en",
+    Response.json(view, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } }),
+  );
+  expect(output.tables).toHaveLength(2);
+  expect(output.tables[0]?.rows).toHaveLength(100);
+  expect(output.tables[1]?.rows).toEqual([{ value: "21%" }]);
+  expect(output.printed.filter(Boolean)).toEqual([
+    "Measures",
+    "Source",
+    "Counts",
+    "First measure",
+    name === "present"
+      ? "Showing 100 of 101 rows; Copy data in the web chat copies all of them."
+      : "Showing 100 of 101 values; the web chat shows all of them.",
+    "Rate",
+  ]);
+  expect(output.ordered.filter((entry) => entry === "table")).toHaveLength(2);
+});
+
+test("presented stats, details and reference tables print shared text in stream order", async () => {
+  const { cloudAiViewSummary } = await import("@k2b/cloud/ai/browser");
+  const ref = { type: "spaces.item", id: "task-1", title: "Check invoice" };
+  const views = [
+    {
+      view: "stats",
+      title: "Overview",
+      subtitle: "This month",
+      items: [
+        {
+          label: "Amount\x1b[31m",
+          value: 12.5,
+          format: { style: "currency", currency: "EUR", decimals: 2 },
+          delta: 2.5,
+          better: "up",
+          sub: "Month",
+          sparkline: [10, 12.5],
+        },
+        { label: "State", value: "OK" },
+      ],
+    },
+    {
+      view: "details",
+      title: "Record",
+      subtitle: "Checked",
+      items: [
+        { label: "Task", type: "ref", value: ref },
+        { label: "Id", type: "ref", value: { type: ref.type, id: "task-2" } },
+        { label: "Amount", type: "number", value: 12.5 },
+        { label: "Empty", type: "text", value: null },
+      ],
+    },
+    {
+      view: "table",
+      title: "Tasks",
+      columns: [{ id: "task", label: "Task", type: "ref" }],
+      rows: [{ task: ref }, { task: { type: ref.type, id: "task-2" } }, { task: null }],
+      footer: { task: ref },
+      sort: { column: "task", direction: "asc" },
+    },
+  ] satisfies import("@k2b/cloud/ai/browser").CloudAiView[];
+  const expected = [
+    {
+      rows: [
+        { label: "Amount\\u001b[31m", value: "€12.50 (+€2.50) · Month" },
+        { label: "State", value: "OK" },
+      ],
+      columns: [
+        { key: "label", label: "Field" },
+        { key: "value", label: "Value" },
+      ],
+    },
+    {
+      rows: [
+        { label: "Task", value: "Check invoice (spaces.item:task-1)" },
+        { label: "Id", value: "task-2 (spaces.item:task-2)" },
+        { label: "Amount", value: "12.5" },
+        { label: "Empty", value: "" },
+      ],
+      columns: [
+        { key: "label", label: "Field" },
+        { key: "value", label: "Value" },
+      ],
+    },
+    {
+      rows: [
+        { task: "Check invoice (spaces.item:task-1)" },
+        { task: "task-2 (spaces.item:task-2)" },
+        { task: "" },
+        { task: "Check invoice (spaces.item:task-1)" },
+      ],
+      columns: [{ key: "task", label: "Task" }],
+    },
+  ];
+  for (const [index, view] of views.entries()) {
+    const path = `/views/w1-${index}.view.json`;
+    const block: AiTurnBlock = {
+      id: "w1",
+      kind: "tool",
+      name: "present",
+      callId: "w1",
+      args: { path },
+      status: "completed",
+      result: { path, view: cloudAiViewSummary(view) },
+    };
+    const output = await run(
+      [[{ ...wire(), type: "block_set", block }, { ...wire(), type: "block_set", block }, finished([])]],
+      "text",
+      undefined,
+      undefined,
+      "en-US",
+      Response.json(view, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } }),
+    );
+    const table = expected[index];
+    if (!table) throw new Error("Missing expected table");
+    expect(output.tables).toEqual([table]);
+    expect(output.printed).toContain(view.title);
+    if (view.subtitle) expect(output.printed).toContain(view.subtitle);
+    expect(output.ordered.indexOf(`print:${view.title}`)).toBeLessThan(output.ordered.indexOf("table"));
+    expect(JSON.stringify(output.tables)).not.toContain("\x1b");
+  }
+});
+
+test("stats and details summaries reject a different saved view kind", async () => {
+  const { cloudAiViewSummary } = await import("@k2b/cloud/ai/browser");
+  const stats = {
+    view: "stats",
+    title: "Stats",
+    items: [{ label: "Count", value: 12 }],
+  } satisfies import("@k2b/cloud/ai/browser").CloudAiStatsView;
+  const details = {
+    view: "details",
+    title: "Details",
+    items: [{ label: "Count", type: "number", value: 12 }],
+  } satisfies import("@k2b/cloud/ai/browser").CloudAiDetailsView;
+  for (const [summary, view] of [
+    [stats, details],
+    [details, stats],
+  ]) {
+    if (!summary || !view) throw new Error("Missing test view");
+    const path = "/views/mismatch-w1.view.json";
+    const block: AiTurnBlock = {
+      id: "w1",
+      kind: "tool",
+      callId: "w1",
+      name: "present",
+      args: { path },
+      status: "completed",
+      result: { path, view: cloudAiViewSummary(summary) },
+    };
+    const output = await run(
+      [[{ ...wire(), type: "block_set", block }, finished([])]],
+      "text",
+      undefined,
+      undefined,
+      "en-US",
+      Response.json(view, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } }),
+    );
+    expect(output.tables).toHaveLength(0);
+    expect(output.printed).toContain(`View unavailable: ${path}`);
+  }
+});
+
+test("inline local tools run once across duplicate state snapshots and finish on the same stream", async () => {
+  let count = 0;
+  const tool: Extract<AiTurnBlock, { kind: "tool" }> = {
+    id: "tool",
+    kind: "tool",
+    name: "local_read",
+    callId: "read",
+    args: { path: "notes.md" },
+    status: "awaiting_client",
+  };
+  const completed = await run(
+    [[state([tool]), state([tool]), finished(["Read it."])]],
+    "text",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      names: new Set(["local_read"]),
+      run: async (call, signal) => {
+        expect(call.args).toEqual({ path: "notes.md" });
+        expect(signal.aborted).toBeFalse();
+        count++;
+        return { status: "completed", content: "notes" };
+      },
+    },
+  );
+  expect(count).toBe(1);
+  expect(completed.result.status).toBe("completed");
+  expect(completed.text).toBe("Read it.\n");
+  expect(completed.errors).toEqual(["local_read: running notes.md"]);
+  expect(completed.requests).toEqual([
+    {
+      path: "/api/ai/conversations/chat/turns/turn/actions/read",
+      body: { type: "tool_result", result: { status: "completed", content: "notes" } },
+    },
+  ]);
+});
+
+test.each(["local_read", "local_bash"])("inline %s errors become the tool's failure result", async (name) => {
+  const tool: Extract<AiTurnBlock, { kind: "tool" }> = {
+    id: "tool",
+    kind: "tool",
+    name,
+    callId: "call",
+    args: {},
+    status: "awaiting_client",
+  };
+  const output = await run([[state([tool]), finished([])]], "text", undefined, undefined, undefined, undefined, {
+    names: new Set([name]),
+    run: async () => {
+      throw new Error("Cannot read");
+    },
+  });
+  expect(output.requests).toMatchObject([
+    {
+      body: {
+        type: "tool_result",
+        result:
+          name === "local_bash"
+            ? { status: "failed", exitCode: null, stdout: "", stderr: "Cannot read", truncated: false }
+            : { status: "failed", error: "Cannot read" },
+      },
+    },
+  ]);
+});
+
+test("local running lines show short targets and escape untrusted filenames", async () => {
+  const tools = [
+    ["local_read", { path: "notes\u001b.md" }, "notes\\u001b.md"],
+    ["local_list", { pattern: "2026-09/**/*.pdf" }, "2026-09/**/*.pdf"],
+    ["local_list", { path: "2026-09", pattern: "*.pdf" }, "2026-09/*.pdf"],
+    ["local_upload", { paths: ["a", "b"] }, "2 files"],
+    ["local_upload", { paths: ["a"] }, "1 file"],
+    ["local_download", { to: "report.csv" }, "report.csv"],
+    ["local_write", { path: "notes.md", mode: "append" }, "notes.md (append)"],
+    ["local_move", { moves: [{}, {}, {}] }, "3 moves"],
+    ["load_local_skill", { name: "finance" }, "finance"],
+  ] as const;
+  const blocks = (status: "running" | "awaiting_client"): AiTurnBlock[] =>
+    tools.map(([name, args], index) => ({
+      id: `block-${index}`,
+      kind: "tool",
+      callId: `call-${index}`,
+      name,
+      args: status === "running" ? {} : args,
+      status,
+    }));
+  const output = await run(
+    [[state(blocks("running")), state(blocks("awaiting_client")), finished([])]],
+    "text",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      names: new Set(tools.map(([name]) => name)),
+      run: async () => ({ status: "completed" }),
+    },
+  );
+  expect(output.errors).toEqual(tools.map(([name, , target]) => `${name}: running ${target}`));
+});
+
+test("completed todo_write prints one escaped checklist, omitting cancelled items", async () => {
+  const tool: Extract<AiTurnBlock, { kind: "tool" }> = {
+    id: "plan",
+    kind: "tool",
+    callId: "plan",
+    name: "todo_write",
+    status: "completed",
+    args: {
+      todos: [
+        { id: "one", content: "Done", status: "completed" },
+        { id: "two", content: "Working\u001b", status: "in_progress" },
+        { id: "three", content: "Next", status: "pending" },
+        { id: "four", content: "Cancelled", status: "cancelled" },
+      ],
+    },
+  };
+  const output = await run([[state([tool]), state([tool]), finished([])]]);
+  expect(output.errors).toEqual(["Plan", "  [x] Done", "  [>] Working\\u001b", "  [ ] Next", "todo_write: completed"]);
+});
+
+test("a resumed attempt that replays a finished call as running prints its status once", async () => {
+  const tool = (status: "running" | "completed"): AiTurnBlock => ({
+    id: "move",
+    kind: "tool",
+    callId: "move",
+    name: "local_move",
+    args: { moves: [] },
+    status,
+    ...(status === "completed" ? { result: { status: "completed", moved: [], conflicts: [] } } : {}),
+  });
+  const output = await run([[state([tool("completed")]), state([tool("running")]), state([tool("completed")]), finished([])]]);
+  expect(output.errors).toEqual(["local_move: completed"]);
+});
+
+test("a presented explorer prints only its last-step rows with table formatting", async () => {
+  const path = "/views/inventory-12345678.view.json";
+  const block: AiTurnBlock = {
+    id: "explorer",
+    kind: "tool",
+    callId: "explorer",
+    name: "present",
+    args: { path },
+    status: "completed",
+    result: {
+      path,
+      view: {
+        view: "explorer",
+        title: "Inventory",
+        rows: 2,
+        columns: 4,
+        views: [{ id: "price", label: "Price", kind: "bar" }],
+        step: true,
+        filter: false,
+        compare: false,
+      },
+    },
+  };
+  const view = {
+    view: "explorer",
+    title: "Inventory",
+    subtitle: "Snapshot",
+    columns: [
+      { id: "product", type: "text" },
+      { id: "item", label: "Item", type: "ref" },
+      { id: "year", type: "text" },
+      { id: "price", label: "Price", type: "number", format: { style: "currency", currency: "EUR" } },
+    ],
+    rows: [
+      { product: "Old", year: "2025", price: 1, item: { type: "spaces.item", id: "old", title: "Old item" } },
+      { product: "New", year: "2026", price: 2, item: { type: "spaces.item", id: "new", title: "New item" } },
+    ],
+    views: [{ id: "price", label: "Price", kind: "bar", x: "product", y: "price" }],
+    controls: { step: "year" },
+  };
+  const output = await run(
+    [[{ ...wire(), type: "block_set", block }, finished([])]],
+    "text",
+    undefined,
+    undefined,
+    "de-DE",
+    Response.json(view, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } }),
+  );
+  expect(output.printed).toContain("Inventory");
+  expect(output.printed).toContain("Snapshot");
+  expect(output.tables).toHaveLength(1);
+  expect(output.tables[0]?.rows).toEqual([{ product: "New", item: "New item (spaces.item:new)", year: "2026", price: "2,00 €" }]);
 });

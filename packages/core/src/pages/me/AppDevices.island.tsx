@@ -62,8 +62,9 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
   const [busy, setBusy] = createSignal(false);
   const [removing, setRemoving] = createSignal<string>();
   const [now, setNow] = createSignal(Date.now());
-  // Decided when the dialog opens, so its body never swaps after the first paint.
-  const [showQr, setShowQr] = createSignal(true);
+  // A phone or tablet can install the app itself. Decided when the dialog opens, so its body never swaps after the
+  // first paint.
+  const [touch, setTouch] = createSignal(false);
   const storageKey = `cloud.pwa-pairing:${props.userId}`;
   let stop = () => {};
   let stopCompletion = () => {};
@@ -132,8 +133,11 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
     );
   };
 
-  /** `resumed`: read at once after a reload instead of one poll interval later. */
-  const watch = (id: string, expiresAt: string, resumed = false) => {
+  /**
+   * Reads at once and then without a gap: the server holds a pending read until the phone claims the link, so the
+   * dialog moves on to the code as soon as the phone scanned it.
+   */
+  const watch = (id: string, expiresAt: string) => {
     stop();
     stop = pollApproval(
       async (signal) => {
@@ -172,7 +176,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
         return true;
       },
       PWA_LIMITS.pollSeconds,
-      { immediate: resumed },
+      { immediate: true },
     );
   };
 
@@ -301,8 +305,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
   /** Opens the dialog; `resume` continues a pairing this tab started before a reload. */
   const open = (resume?: z.infer<typeof ResumeSchema>) => {
     if (closeDialog || disposed) return;
-    const qrCode = window.matchMedia("(pointer: fine)").matches;
-    setShowQr(qrCode);
+    setTouch(!window.matchMedia("(pointer: fine)").matches);
     setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 1000);
     void dialogCore
@@ -314,8 +317,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
         },
         {
           ...panelDialogFixedOptions,
-          // Without the QR code the tallest step is the code entry, so the frame is shorter.
-          panelClassName: `${panelDialogFixedOptions.panelClassName} app-pairing-dialog${qrCode ? "" : " is-copy-only"}`,
+          panelClassName: `${panelDialogFixedOptions.panelClassName} app-pairing-dialog`,
           // The step owns focus, also when the first answer arrives before the dialog's first frame.
           initialFocus: focusTarget,
         },
@@ -338,7 +340,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
       });
     if (resume) {
       setPairing({ kind: "waiting", id: resume.id, expiresAt: resume.expiresAt, link: null, claimUntil: null, status: null });
-      watch(resume.id, resume.expiresAt, true);
+      watch(resume.id, resume.expiresAt);
     } else void start();
   };
 
@@ -408,7 +410,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
       if (!closeDialog || current === previous) return;
       const result = outcome();
       if (current === "code") announce(t().pwaClaimed({ name: waiting()?.status?.device?.name ?? "" }));
-      else if (current === "link") announce(showQr() ? t().pwaScanOrCopy : t().pwaCopyOnPhone);
+      else if (current === "link") announce(t().pwaScanOrCopy);
       else if (result) announce(current === "done" ? `${result.text} ${t().pwaPaired}` : result.text);
       queueMicrotask(() => focusTarget()?.focus());
     }),
@@ -431,8 +433,9 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
             <Match when={step() === "link" && waiting()}>
               {(current) => (
                 <>
-                  <p class={text}>{showQr() ? t().pwaScanOrCopy : t().pwaCopyOnPhone}</p>
-                  <Show when={showQr() && current().link}>
+                  <p class={text}>{t().pwaScanOrCopy}</p>
+                  {/* Every screen shows the code: a touch screen is as often a tablet or a laptop as the phone to pair. */}
+                  <Show when={current().link}>
                     {(link) => (
                       <img
                         class="size-56 max-w-full self-center rounded-[var(--ui-radius-control)] bg-white p-2"
@@ -442,25 +445,16 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
                     )}
                   </Show>
                   <Show when={current().claimUntil}>
-                    {(until) => (
-                      <p class={`${secondary} tabular-nums ${showQr() ? "text-center" : ""}`}>
-                        {t().pwaLinkValid({ time: remaining(until()) })}
-                      </p>
-                    )}
+                    {(until) => <p class={`${secondary} text-center tabular-nums`}>{t().pwaLinkValid({ time: remaining(until()) })}</p>}
                   </Show>
-                  <Show
-                    when={showQr()}
-                    fallback={
-                      <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-                        <p class={secondary}>{t().pwaNoAppOnPhone}</p>
-                        <ButtonLink href="/pwa/" variant="secondary" size="sm">
-                          <i class="ti ti-download" aria-hidden="true" />
-                          {t().pwaInstall}
-                        </ButtonLink>
-                      </div>
-                    }
-                  >
-                    <p class={secondary}>{t().pwaNoAppYet}</p>
+                  <Show when={touch()} fallback={<p class={secondary}>{t().pwaNoAppYet}</p>}>
+                    <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                      <p class={secondary}>{t().pwaNoAppOnPhone}</p>
+                      <ButtonLink href="/pwa/" variant="secondary" size="sm">
+                        <i class="ti ti-download" aria-hidden="true" />
+                        {t().pwaInstall}
+                      </ButtonLink>
+                    </div>
                   </Show>
                 </>
               )}
@@ -513,7 +507,7 @@ export default function AppDevices(props: { userId: string; initial: PwaDeviceVi
               <Button variant="ghost" onClick={requestClose}>
                 {t().pwaCancel}
               </Button>
-              <Button data-pairing-focus variant={showQr() ? "secondary" : "primary"} onClick={copy}>
+              <Button data-pairing-focus variant={touch() ? "primary" : "secondary"} onClick={copy}>
                 <i class="ti ti-copy" aria-hidden="true" />
                 {t().pwaCopyLink}
               </Button>

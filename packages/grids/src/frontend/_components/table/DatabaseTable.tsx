@@ -74,6 +74,7 @@ type Props = {
   loadingMore?: boolean;
   onLoadMore?: () => void;
   scrollPreserveKey?: string;
+  scrollClass?: string;
   dateConfig?: DateContext;
   class?: string;
   adminMode?: boolean;
@@ -92,6 +93,9 @@ const isComputedColumn = (column: ColumnSpec): column is Extract<ColumnSpec, { k
   "kind" in column && column.kind === "computed";
 
 const columnId = (column: ColumnSpec): string => (isComputedColumn(column) ? column.id : column.fieldId);
+
+// Single-value types and number/date formats stay on one line; everything else falls back to DataTable's value-based default.
+const NOWRAP_FIELD_TYPES = new Set(["number", "percent", "duration", "date", "id", "created_at", "updated_at"]);
 
 const BULK_SELECTION_COLUMN_ID = "__bulk_selection";
 
@@ -158,6 +162,14 @@ export default function DatabaseTable(props: Props) {
 
   const displayFormat = (field: Field) => fieldDisplayFormat(field, columnFormat(field.id));
 
+  const columnNowrap = (field: Field): true | undefined => {
+    if (NOWRAP_FIELD_TYPES.has(effectiveDisplayField(field, props.fieldsByTable).type)) return true;
+    const format = displayFormat(field);
+    if (format?.kind === "date" || format?.kind === "decimal" || format?.kind === "percent") return true;
+    if (field.type === "rollup" && (field.config.agg === "count" || field.config.agg === "sum" || field.config.agg === "avg")) return true;
+    return undefined;
+  };
+
   const columnLabel = (fieldId: string, fallback: string) => {
     if (!props.viewColumns) return fallback;
     const column = props.viewColumns.find((c) => columnId(c) === fieldId);
@@ -222,6 +234,7 @@ export default function DatabaseTable(props: Props) {
         subtitle:
           props.showColumnSubtitles === false ? undefined : computed ? t().computed : fieldTypeLabel(field.type, locale()).toLowerCase(),
         value: (record) => record.data[field.id],
+        nowrap: columnNowrap(field),
         headerClass: computed ? "bg-[var(--ui-selected)]" : undefined,
       };
     });
@@ -298,6 +311,7 @@ export default function DatabaseTable(props: Props) {
         columns={columns()}
         class={shellClass()}
         scrollPreserveKey={props.scrollPreserveKey}
+        scrollClass={props.scrollClass}
         getRowId={(record) => record.id}
         selectedRowId={props.selectedId}
         onRowClick={props.onRecordClick}

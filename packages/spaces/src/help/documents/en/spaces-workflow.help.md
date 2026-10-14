@@ -76,7 +76,7 @@ Under **Blocked by**, every blocking task shows its title and state: a lock for 
 ## Work through the day {icon="route"}
 
 :::steps
-1. **Open the right view:** Start from **Overview**, **Table**, **Kanban**, **Calendar**, or the filter state that fits the current work.
+1. **Open the right view:** Start from **List**, **Table**, **Kanban**, **Calendar**, or the filter state that fits the current work.
 2. **Update the status first:** The status tells everyone what changed before they open the item.
 3. **Check blockers:** When prerequisite work changes, finish or remove the active blockers. Completed blockers stay visible for context.
 4. **Add context:** Use comments for discussion. Use notes for current instructions or lasting context.
@@ -87,9 +87,11 @@ You can edit or delete your own comment for 10 minutes after you post it. Commen
 
 ## Work quickly with the keyboard {icon="keyboard"}
 
+- With an item open, press **J** for the next and **K** for the previous item in List, Table, and Kanban.
 - Press **Cmd/Ctrl+Alt+N** to create a task, or an event in the calendar view.
 - Press **Cmd/Ctrl+Shift+K** to search the current Space.
 - In Kanban, focus the board and use the arrow keys to move between cards. The keyboard button above the board lists these shortcuts.
+- To move a card, focus its grip, press **Space**, use the arrow keys, and press **Space** to drop it or **Escape** to cancel.
 - Press **Enter** to open the focused card, **M** to assign it to yourself, or **D** to complete it.
 
 These single-key shortcuts stay inactive while you type in a field or editor. Cloud search and the layout help also show the available actions and their shortcuts.

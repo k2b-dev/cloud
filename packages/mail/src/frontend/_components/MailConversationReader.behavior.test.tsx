@@ -2,6 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { type ComponentProps, createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import type { MailDraftSeed, SenderIdentity } from "../../contracts";
 import type { MessageDetail } from "../../service/messages";
 import type MailConversationReaderComponent from "./MailConversationReader";
 
@@ -64,6 +65,7 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   canAdmin: false,
   mailboxWide: true,
   identities: [],
+  onOpenDeliverySettings: () => undefined,
   selectionKey: "Conv01",
   selectedConversationId: "Conv01",
   selectedMessageId: null,
@@ -90,6 +92,7 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   onToggleDetails: () => undefined,
   onToolbarActionsChange: () => undefined,
   actionPending: false,
+  structurePending: false,
   onAction: () => undefined,
   onOpenHref: () => undefined,
   onManageTags: () => undefined,
@@ -371,6 +374,310 @@ test.skipIf(isServer)("the reader follows every switch to another conversation a
         `Msg00${index}`,
       ]);
     }
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("a reply without a verified sender names the reason and leads admins to the sender settings", async () => {
+  const dom = createDomTestHarness();
+  const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
+  const { prompts } = await import("@k2b/ui");
+  const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
+  const error = spyOn(prompts, "error").mockResolvedValue(undefined);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(async () => Response.json([]), { preconnect: originalFetch.preconnect });
+  const identity: SenderIdentity = {
+    id: "Send01",
+    mailboxId: "Box001",
+    label: "Support",
+    displayName: "Support",
+    fromAddress: "support@example.com",
+    replyTo: null,
+    defaultCc: [],
+    defaultBcc: [],
+    defaultFormat: "markdown",
+    defaultPriority: "normal",
+    defaultDeliveryReceipt: false,
+    defaultReadReceipt: false,
+    vcard: null,
+    envelopeSender: null,
+    defaultSignatureTemplateId: null,
+    transport: {
+      mode: "mailbox",
+      host: null,
+      port: null,
+      tlsMode: null,
+      username: null,
+      secret: { kind: null, isSet: false },
+      revision: 0,
+      status: "active",
+      capabilities: { dsn: false, size: false, maxMessageBytes: null },
+      lastVerifiedAt: null,
+      lastError: null,
+    },
+    authenticationPolicy: { automation: "mailbox" },
+    sentFolderId: null,
+    draftsFolderId: null,
+    isDefault: true,
+    status: "unverified",
+    statusReason: "sent_folder_missing",
+    pendingVerificationCommandId: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const { MailConversationReader } = modules!;
+  let opened = 0;
+  const [canAdmin, setCanAdmin] = createSignal(true);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        identities: [identity],
+        get canAdmin() {
+          return canAdmin();
+        },
+        onOpenDeliverySettings: () => {
+          opened += 1;
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const reply = async () => {
+      const action = collectContextAwareCommands().find((command) => command.id.endsWith(".reply"))?.action;
+      if (typeof action !== "function") throw new Error("The reader registers no Reply command");
+      await action();
+    };
+    await waitFor(() => collectContextAwareCommands().some((command) => command.id.endsWith(".reply")));
+    await reply();
+    await waitFor(() => opened === 1);
+    expect(String(confirm.mock.calls[0]?.[0])).toContain("Support: Sent folder missing.");
+    expect(confirm.mock.calls[0]?.[1]).toMatchObject({ title: "This mailbox cannot send yet", confirmText: "Open sender settings" });
+
+    setCanAdmin(false);
+    await reply();
+    await waitFor(() => error.mock.calls.length === 1);
+    expect(String(error.mock.calls[0]?.[0])).toContain("Sent folder missing");
+    expect(String(error.mock.calls[0]?.[0])).toContain("Manage access");
+    expect(opened).toBe(1);
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    confirm.mockRestore();
+    error.mockRestore();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("changing the conversation during the seed-store import drops the stale reply", async () => {
+  const dom = createDomTestHarness();
+  const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+  const { collectContextAwareCommands } = await import("@k2b/cloud/browser/testing");
+  const reload = await import("@k2b/cloud/browser/reload");
+  const nav = await import("@k2b/ssr/nav");
+  const store = await import("./mail-draft-seed-store");
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let imported = false;
+  const load = spyOn(reload, "importOnDemand").mockImplementation(async (loader) => {
+    await pending;
+    const module = await loader();
+    imported = true;
+    return module;
+  });
+  const navigate = spyOn(nav, "documentNavigate").mockImplementation(() => {});
+  const storing = spyOn(store, "storeMailDraftSeed").mockImplementation(() => {});
+  const identity: SenderIdentity = {
+    id: "Send01",
+    mailboxId: "Box001",
+    label: "Support",
+    displayName: "Support",
+    fromAddress: "support@example.com",
+    replyTo: null,
+    defaultCc: [],
+    defaultBcc: [],
+    defaultFormat: "markdown",
+    defaultPriority: "normal",
+    defaultDeliveryReceipt: false,
+    defaultReadReceipt: false,
+    vcard: null,
+    envelopeSender: null,
+    defaultSignatureTemplateId: null,
+    transport: {
+      mode: "mailbox",
+      host: null,
+      port: null,
+      tlsMode: null,
+      username: null,
+      secret: { kind: null, isSet: false },
+      revision: 0,
+      status: "active",
+      capabilities: { dsn: false, size: false, maxMessageBytes: null },
+      lastVerifiedAt: null,
+      lastError: null,
+    },
+    authenticationPolicy: { automation: "mailbox" },
+    sentFolderId: null,
+    draftsFolderId: null,
+    isDefault: true,
+    status: "verified",
+    statusReason: null,
+    pendingVerificationCommandId: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const seed: MailDraftSeed = {
+    id: "20000000-0000-4000-8000-000000000002",
+    mailboxId: "Box001",
+    conversationId: "Conv01",
+    intent: "reply",
+    sourceMessageId: "Msg001",
+    derivedFromMessageId: null,
+    derivationKind: null,
+    content: {
+      senderIdentityId: "Send01",
+      to: [],
+      cc: [],
+      bcc: [],
+      subject: "Re: Quarterly review",
+      body: "",
+      format: "markdown",
+      priority: "normal",
+      requestDeliveryReceipt: false,
+      requestReadReceipt: false,
+    },
+    attachments: [],
+    origin: { kind: "compose", input: { senderIdentityId: "Send01", to: [], cc: [], bcc: [], subject: "Re: Quarterly review", body: "" } },
+    createdAt: now,
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => Response.json(init?.method === "POST" ? seed : []),
+    { preconnect: originalFetch.preconnect },
+  );
+  const [conversationId, setConversationId] = createSignal("Conv01");
+  const { MailConversationReader } = modules!;
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        identities: [identity],
+        get selectionKey() {
+          return conversationId();
+        },
+        get selectedConversationId() {
+          return conversationId();
+        },
+        get messages() {
+          return [
+            { ...envelopeOnly, id: conversationId() === "Conv01" ? "Msg001" : "Msg002", hydrationStatus: "complete", plainText: "Hello" },
+          ];
+        },
+      }),
+    dom.root,
+  );
+  try {
+    await waitFor(() => collectContextAwareCommands().some((command) => command.id.endsWith(".reply")));
+    const action = collectContextAwareCommands().find((command) => command.id.endsWith(".reply"))?.action;
+    if (typeof action !== "function") throw new Error("The reader registers no Reply command");
+    await action();
+    await waitFor(() => load.mock.calls.length === 1);
+    expect(storing).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    setConversationId("Conv02");
+    release();
+    await waitFor(() => imported);
+    await Bun.sleep(0);
+    expect(storing).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+  } finally {
+    release();
+    dispose();
+    globalThis.fetch = originalFetch;
+    load.mockRestore();
+    navigate.mockRestore();
+    storing.mockRestore();
+    if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
+    else Reflect.deleteProperty(globalThis, "localStorage");
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("under Automatic both bodies render until the theme is known, and the shown one stays mounted", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const both: MessageDetail = {
+    ...envelopeOnly,
+    hydrationStatus: "complete",
+    contentType: "multipart/alternative",
+    plainText: "Plain numbers.",
+    sanitizedHtml: "<p>HTML numbers.</p>",
+  };
+  const [theme, setTheme] = createSignal<"light" | "dark" | null>(null);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        messages: [both],
+        get theme() {
+          return theme();
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const variant = (format: "html" | "plain") =>
+      dom.root.querySelector<HTMLElement>(`[data-mail-message-id="Msg001"] [data-mail-body-format="${format}"]`);
+    await waitFor(() => variant("plain") !== null);
+    // The <html> class picks one before the first paint: light shows HTML, dark shows plain text.
+    expect(variant("html")?.className).toBe("contents dark:hidden");
+    expect(variant("plain")?.className).toBe("hidden dark:contents");
+
+    const plain = variant("plain");
+    setTheme("dark");
+    await waitFor(() => variant("html") === null);
+    expect(variant("plain")).toBe(plain);
+    expect(variant("plain")?.className).toBe("contents");
+
+    // A later live switch swaps the format as before.
+    setTheme("light");
+    await waitFor(() => variant("plain") === null);
+    expect(variant("html")?.className).toBe("contents");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("queued actions keep triage available while structure controls wait", () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        canWrite: true,
+        actionPending: false,
+        structurePending: true,
+        toolbarActions: ["trash", "keep", "tags"],
+      }),
+    dom.root,
+  );
+  try {
+    const button = (label: string) => dom.root.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+    expect(button("Move to Trash")?.disabled).toBe(false);
+    expect(button("Keep")?.disabled).toBe(true);
+    expect(button("Tags")?.disabled).toBe(true);
+    const menuItem = (label: string) =>
+      [...dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent?.trim() === label);
+    expect(menuItem("Move to Trash")?.disabled).toBe(false);
+    expect(menuItem("Keep")?.disabled).toBe(true);
+    expect(menuItem("Tags")?.disabled).toBe(true);
   } finally {
     dispose();
     dom.cleanup();

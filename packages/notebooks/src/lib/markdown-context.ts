@@ -2,6 +2,8 @@ import { scanMarkdownInfoBlock } from "@k2b/ui";
 import { Lexer, Tokenizer } from "marked";
 import { isIndentedCodeLine, openingCodeFence } from "./markdown-fences";
 
+export const NOTEBOOK_DIRECTIVE_START = /^ {0,3}:::/;
+
 const NOTEBOOK_DIRECTIVE = /^ {0,3}:::(?:query|toc|data)[ \t]*$/;
 const lineEnd = (source: string, from: number): number => {
   const end = source.indexOf("\n", from);
@@ -50,7 +52,7 @@ export const literalMarkdownLines = (source: string): ReadonlySet<number> => {
   while (offset < normalized.length) {
     const end = lineEnd(normalized, offset);
     const line = normalized.slice(offset, end);
-    const directive = /^ {0,3}:::/.test(line) ? directiveLength(normalized.slice(offset)) : null;
+    const directive = NOTEBOOK_DIRECTIVE_START.test(line) ? directiveLength(normalized.slice(offset)) : null;
     const token =
       directive === null && /^(?:[ \t]|[-+*\d><`~])/.test(line) ? container(normalized.slice(offset), line, tokenizer) : undefined;
     const length = directive ?? token?.raw.length;

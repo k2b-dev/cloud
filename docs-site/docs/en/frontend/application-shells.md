@@ -5,7 +5,7 @@ section: Frontend
 order: 830
 description: Choose the shared shell that matches an application's information structure.
 tags: [shells, workspace, ui]
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Application shells
@@ -82,11 +82,54 @@ Selection belongs in the URL. The server must be able to render the same
 detail after reload. See
 [URL state and navigation](/en/docs/frontend/url-state-and-navigation).
 
-`AppWorkspace.Content` is the required flex row for `Main` and `Detail`.
+`AppWorkspace.Content` hosts Main and floating Detail. Detail must be a direct
+child, possibly through a Solid island wrapper.
 Keep geometry IDs stable. Do not add another grid or resize handle.
 
 From 768 px, signed-in layouts expose Help and Search through the app bar.
 Their header controls exist only on phones.
+
+## Add contextual detail
+
+Below 768 px, Detail is a sheet over the lower 55% of the window, also on pages
+without `fullPage` that grow with their content. Main’s rows scroll above it;
+the grabber switches to full height. From 768 px, it occupies a full-height
+column beside the head and panes, with a 0.5 rem inset at the workspace's top,
+right, and bottom. Main keeps at least 320 px. Give Main 0.5 rem padding so
+its surfaces end one gap before the panel with their own rounded corners.
+From 1024 px the workspace lets the panel's shadow extend beyond its edges.
+On coarse pointers from 768 to 1023 px, a closable detail overlays Main as a
+drawer. The host’s app card from 1536 px surrounds this same workspace geometry.
+
+In an island or client component, pass `onClose` the panel’s existing close or
+deselect action. Escape and dismissal gestures then use that action too.
+`onStep` steps through the items for J and K; return the Main element that
+shows the new item so Escape, F6 and the reveal follow it. A detail that
+the page renders on the server only cannot pass a function; mark the panel’s
+own close button or link with `data-workspace-detail-close`, and Escape and
+the gestures click it. Omit both for permanent context. The application still
+owns `open` and URL selection. The panel’s Escape, J, K, and F6 run after the
+page’s own keyboard handlers, so a handler that uses one of these keys for
+local state calls `preventDefault()`.
+
+Opening reserves the column immediately, then slides the panel in. Closing
+slides it out over 140 ms with the column still reserved, then returns the
+room in one step. The initial server-rendered panel appears without motion;
+reduced motion makes opening and closing instant.
+
+For DataTable, pass `scrollClass="k2b-detail-trail"` to keep column widths
+while the scroller narrows beside the panel. Closing returns the full width
+without extra space. The trail is the clipping scroll viewport and carries
+`--k2b-radius-surface`, one border less inside a Paper frame. Put it directly in Main's content box with
+`scroll={false}` on Main and no vertical scroller around it; a reserved
+scrollbar gutter would widen the gap before the panel beyond
+`--k2b-workspace-detail-inset`. Mark a board's horizontal scroller with
+`k2b-detail-trail` as well: under the tablet drawer, the marked scroller gets
+the drawer's width as space at its end, so its last column scrolls out from
+under the drawer.
+The week and day views of `Calendar` mark themselves.
+See [AppWorkspace](/en/ui/layout/workspace#floating-detail) for focus, keyboard
+shortcuts, gestures, motion, and sizing.
 
 ## Choose a dialog
 
@@ -117,7 +160,7 @@ names and descriptions. Signed-in users also find their profile, theme, language
 sign-out actions there; the mobile header has no separate profile menu.
 From 768 px the app bar replaces the header, and `AppWorkspace` shows its own
 navigation. Between 768 and 1023 px, a tablet range, the workspace keeps its
-list and detail side by side, and its sidebar is an overlay: the head at the
+list panes side by side, and its sidebar is an overlay: the head at the
 top of the workspace holds the button that opens it and the page title.
 The overlay closes with Escape, a tap beside it, or a choice in the
 navigation, and focus returns to the button. A `mobile="stacked"` overview
@@ -154,16 +197,28 @@ const navigation = createNavigation({
 
 Keep permission filtering, labels, counts, URLs, and actions application-owned.
 The provider emits an SSR snapshot, binds handlers on mount, and unregisters on
-cleanup. Links remain usable before the application island loads. Until the
-owner is ready, action-only entries, also in `actions`, and every inline action
+cleanup. When navigation has a `switcher`, the snapshot also carries its
+presentation: current ID, name, optional fact, icon, optional color, and purpose
+label. The phone menu therefore shows the same head before hydration, with
+**Loading...** in its panel until the island supplies options and handlers;
+registering the owner adds no second head or space. The menu opens outside the
+app canvas, so Cloud gives it the current app's accent: its active row, the
+switcher icon, and the check on the current container look as they do in the
+sidebar. Links remain usable before
+the application island loads. Until the owner is ready, action-only entries, also in `actions`, and every inline action
 remain disabled, and `expanded` items only set where their disclosure starts,
 then toggle locally. Do not register embedded
 inspectors, reference windows, or builder previews as the Cloud workspace.
 They keep local content controls.
 
 Cloud closes its menu and removes its temporary history entry before running a
-selection. Back, Escape, backdrop, the close button, and a handle drag dismiss
-the menu. Changing to desktop also closes it. The menu renders its rows anew
+selection. An action with `keepOpen: true` runs while the menu stays open; use
+it for a filter or a sort order that changes only the menu's own rows. An
+address change it makes with `history.replaceState` belongs to the menu's
+temporary entry: keep `history.state` as it is, and expect the earlier address
+to return when the menu closes without a selection. Back, Escape, backdrop, the
+close button, and a handle drag dismiss the menu. Changing to desktop also
+closes it. The menu renders its rows anew
 each time it opens; keep folds between openings with `expanded` items and an
 `onExpandedChange` handler on the controller. App-to-app navigation replaces
 the registered owner; an old island cannot unregister the new owner's menu.

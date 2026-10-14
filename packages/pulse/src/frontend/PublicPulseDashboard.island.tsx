@@ -122,7 +122,7 @@ export default function PublicPulseDashboard(props: Props) {
       </Show>
       <main
         class={`bg-zinc-50 px-4 py-6 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50 sm:px-6 lg:px-8 ${
-          props.displayHeight === "full" ? "h-screen overflow-hidden" : "min-h-screen overflow-auto"
+          props.displayHeight === "full" ? "h-dvh overflow-hidden" : "min-h-dvh overflow-auto"
         }`}
       >
         <style>{`

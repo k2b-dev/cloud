@@ -2,11 +2,53 @@
 
 Use `cld assistant` for interactive access to the user's personal Cloud agent and for chat automation. Assistant is the CLI and GUI surface for personal conversations stored by Cloud AI Core; chats started from Mail or another application appear in the same history. The root command starts or continues a chat, while named management commands inspect chat state and files, resolve pending actions, manage personalization, and manage Projects.
 
+`cld ai` is a short form of `cld assistant` for people typing in a terminal; agents keep using `cld assistant`.
+
 Before you configure the Assistant for someone, read
 [How the Assistant works](how-it-works.md) (`cld assistant reference how-it-works.md`).
 It explains whose permissions the Assistant uses, what Projects share and
 whether it is live, which Actions need approval, how scheduled tasks are
 authorized, and when to use instructions, Skills, memories, or knowledge.
+
+## Move Skills between Cloud and folders
+
+```bash
+cld assistant skills list [--search <text>]
+cld assistant skills push <dir> [--force]
+cld assistant skills pull <name-or-id> [dir] [--force]
+```
+
+Push creates or updates the Cloud Skill with the folder's exact name, even when
+it is disabled for you. Unchanged content sends no update. If the Cloud Skill
+differs, push lists what would change and refuses to overwrite it. Pull first
+to keep Cloud changes, or use `--force` to replace it with the folder's content.
+Read-only Skills cannot be changed; removed references are reported.
+Symlinked Skill folders work too; links inside them must stay within the folder.
+
+Cloud keeps `SKILL.md`, all extra frontmatter, and Markdown files directly in
+`references/` with lowercase names (`a-z`, `0-9`, `.`, `_`, `-`). Push lists
+skipped scripts, assets, agent settings, and other files. Cloud does not run
+scripts.
+
+Pull defaults to `.agents/skills/<name>` in the current folder. Existing files
+cause an error before anything is written. Use `--force` to replace `SKILL.md`
+and its references; other files, including scripts and old references, stay.
+
+A Cloud-only Skill such as `assistant-code-mode` teaches Cloud tools. Pulling
+it into a local folder gives other agents instructions for tools they may not
+have.
+
+## Assistant in editors
+
+`cld assistant acp` (shortcut `cld acp`) runs Assistant as an ACP v1 agent over
+stdin and stdout for editors such as T3 Code and Zed. It uses the signed-in
+Cloud profile and the editor's project folder. Chats stay in Cloud.
+Sending, deleting, sharing, and inviting wait for confirmation in Cloud; the
+editor shows the chat link and can only reject these requests. Remembered
+editor approvals last at most for the chat.
+
+See [Assistant in editors](https://cloud.k2b.dev/en/docs/ai/editors) for setup,
+commands, forms, and session behavior.
 
 ## Interactive and print modes
 
@@ -18,21 +60,198 @@ cld assistant "Summarize my open work"
 cld assistant --chat <chat-id>
 ```
 
-The startup line shows the effective model. New chats print their stable resume command, and the CLI repeats it when the session ends. Blue `Info:` messages confirm non-error state changes. The interactive commands are deliberately small: `/help`, `/exit`, `/attach`, `/files`, and `/model`. Run `/model` without an argument to choose from the visible options by number. A selected model remains active for the session.
+The session works in the folder where you start `cld ai`. Startup shows the
+model, folder, local tools mode, loaded AGENTS.md files, and local Skill counts:
 
-Enable local computer access explicitly:
-
-```bash
-cld assistant --allow-bash
+```text
+Info: Local tools: ask · <folder> · AGENTS.md: 2 files · Skills: 3 project, 12 global
+Info: Reads and creates files here freely; asks before commands, changing or moving files, and other folders. What it reads is stored in this chat and sent to the model. /permissions to change.
 ```
 
-This adds the predefined `local_bash` client tool only to turns from that
-interactive session. The CLI prints the exact command and startup directory and
-asks `Run? [y/N]` before every execution: `y` or `yes` runs it, Enter, `n`, or
-`no` denies it, and any other answer asks again. It runs `/bin/bash` as the current OS user with closed stdin, a fixed timeout,
-and bounded stdout/stderr. Tool calls and results are stored in Cloud and remain
-visible in web chat history. The web app cannot execute them. Do not use this mode for untrusted prompts without
-reviewing each command carefully.
+Starting in your home folder, `/`, or an ancestor of home asks for every file
+access. `off` shows one local tools line. Declined folder instructions appear
+as `AGENTS.md: not loaded`; a budget cut appears as `shortened`. New chats print
+their resume command, and the CLI repeats it when the session ends. Blue `Info:`
+messages confirm state changes.
+
+| Command | Use |
+| --- | --- |
+| `/help` | Show the command list |
+| `/new` | Forget the open chat; the next message starts one, keeping the model, Project, tools mode, and queued local files |
+| `/resume [chat-id]` | Choose a recent chat or open its ID; attach to an active turn |
+| `/project [project-id\|none]` | Choose an accessible Project, or remove it from the open chat |
+| `/model [id\|default]` | Choose a model for this session |
+| `/retry [retry\|details\|concise]` | Answer the last user message again, more fully, or more briefly |
+| `/attach <path>` | Queue a local file for the next message |
+| `/skills` | List local and enabled Cloud Skills, their origins, hidden entries, and discovery problems |
+| `/<skill>` | Select a Skill for the next message; add text to send it immediately |
+| `/files` | List files stored in this chat |
+| `/web` | Print the Assistant URL and open it when a browser is available |
+| `/status` | Show the profile, chat, model, Project, tools mode, start folder, AGENTS.md, and Skill counts |
+| `/usage` | Show usage percentages, reset dates, and models with no limit |
+| `/permissions [ask\|off]` | Change local tools mode; the picker can also save the profile default |
+| `/approvals [approval-id]` | List remembered Cloud approvals and revoke one by number or ID |
+| `/exit` | End the session |
+
+Choice commands accept the value directly or show a numbered list. Enter
+cancels, `0` selects the neutral value where available, and `[current]` marks
+the current choice. `/attach` requires a path. An unknown command prints a
+hint and is not sent to the model. An absolute path such as `/etc/hosts is
+broken` remains an ordinary message.
+
+Interactive sessions offer local tools in `ask` mode by default. Use
+`--no-bash` for `off` in this session, `--allow-bash` for `ask` even when the
+profile default is `off`, or `/permissions` to change the mode. The flags
+cannot be combined. `/permissions ask|off` changes only this session; the
+numbered picker can save the profile default. Saving `off` stores
+`assistant.localTools`; saving `ask` removes it. In `off`, pending local calls
+are denied too, including calls from a chat opened with `--chat` or `/resume`.
+A retry retains its original tool set, but the current session still enforces
+`off`. Print mode offers no local tools or folder context.
+
+### Local files and questions
+
+| Tool | What it does |
+| --- | --- |
+| `local_list` | List a folder, optionally recursively or with a case-insensitive glob; return sorted pages of up to 1,000 entries |
+| `local_read` | Read numbered text lines in byte-bounded pages; upload PDFs, images, office documents, and spreadsheets for Cloud tools to read |
+| `local_upload` | Upload up to 64 files sequentially; keep workspace-relative parent folders unless a chat directory is specified |
+| `local_download` | Save a chat file locally; create a new file exclusively or replace an existing file after review |
+| `local_write` | Create, append to, or replace UTF-8 text, up to 100 KiB per call |
+| `local_move` | Review and move up to 64 files or folders within the workspace; report conflicts and any partial progress |
+| `load_local_skill` | Load a trusted local Skill's instructions and list its supporting file paths |
+| `local_bash` | Run a reviewed Bash command as your OS user, in the start folder |
+
+Inside the start folder, listing, reading, uploading, and creating ordinary
+files never ask. Appending, replacing, moving, and every Bash command ask.
+Writing, downloading, or moving to `AGENTS.md` or anything under a `.agents`
+folder also asks, even for a new file, because it becomes instructions for the
+assistant. The check ignores case and follows symlinks; reading these files
+stays free.
+File questions explain when a path is outside the folder, may contain secrets,
+or is subject to the home-folder rule. Uploads ask once for the files that
+need permission; free files can still upload if you decline that subset.
+Moves ask once with aligned source and destination names. Conflicts stop the
+batch before the question; an error during execution reports what already moved.
+Every local tool except Bash stops after 120 seconds of work; time spent on a
+question does not count. An upload batch that runs out of time still reports
+the files it uploaded.
+
+Questions appear in the terminal with `[y/N]`. **Enter = No**; only typed `y`
+or `yes` approves. Pasted or typed-ahead text cannot approve. Replacing a file
+shows its size, modification time, and the new size. New files never replace a
+file that appears meanwhile. Missing parent folders are created only inside
+the workspace. Moves stay inside the workspace and are refused when you start
+in home or above. There is no delete tool; deleting through Bash still asks.
+
+Path rules follow real paths: symlinks count by their targets, and new files
+count by their existing parent. Protected names ask even through an otherwise
+ordinary alias: `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `id_rsa*`,
+`id_ed25519*`, `.npmrc`, `.netrc`, `.git-credentials`, `.ssh/`, `.gnupg/`,
+`.aws/`, and `.git/`. Folder walks show these directories but do not descend
+into them or follow symlinked folders. cld's configuration is always refused.
+Trusted Skill folders and the session folder can be read freely; they grant no
+free write or upload access outside the workspace.
+
+Uploaded files stay as chat files until the chat is deleted. Outside files go
+to the chat root by default. A local folder named `project` or `skills` lands
+below `/local/`, because Cloud reserves those chat folders: `project/Rechnung.pdf`
+uploads to `/local/project/`. Use the returned chat path: Cloud may change a
+filename to avoid a collision. CSV remains text; other binary files need
+`local_upload` when a Cloud tool can read them.
+
+Before Bash, cld shows the exact command and folder, then asks `Run? [y/N]`.
+Approval is never remembered. Bash has closed stdin, a 120-second deadline,
+and captured output bounded to 512 KiB per stream. It receives no `CLD_*`
+environment variables; other variables stay available. The terminal shows the
+captured output. Above 64 KiB combined, the tool result carries the start and
+end of each stream and a path to the full captured output. cld creates a private
+session folder under the system temporary directory only when needed (0700,
+output files 0600); it is removed when the interactive session ends.
+
+### Folder instructions and Skills
+
+cld finds the nearest Git root above the start folder: a `.git` file, or a
+`.git` folder with `HEAD`. Without one, the start folder is the root. It reads exact-name `AGENTS.md` files from
+that root down to the start folder, root first and closest last, on every send.
+AGENTS.md targets outside the real project root or on protected paths are
+skipped and reported under **Problems**, even in a trusted folder.
+The 32 KiB budget favors the closest instructions; shortened text is marked
+and farther files are dropped.
+
+Project Skills live in `.agents/skills/<name>/SKILL.md` along the same path;
+global Skills live in `~/.agents/skills/<name>/SKILL.md`. Closer project Skills
+win over farther ones, then global Skills, then Cloud Skills of the same name.
+Aliases to the same real Skill folder are listed once. Unknown frontmatter is
+accepted; `allowed-tools` grants nothing. Invalid Skills and shortened
+descriptions appear under **Problems**. SKILL.md files larger than the public
+Skill limits allow are skipped before reading. At most 64 local Skills,
+including manual-only entries, are sent to Cloud per turn. `cloud-cli` is hidden
+because cld already reaches Cloud through its own tools.
+
+Before loading project AGENTS.md or Skills, cld asks you to trust the folder:
+**Trust this folder** saves the root's real path in `assistant.trustedFolders`,
+a JSON array in this device's cld profile defaults; **Only this session** does
+not save it. Enter declines loading for the session. Global Skills do not ask.
+The decision lasts for the session; file contents are reread on every send.
+Trust allows instructions to steer work with your Cloud data; it does not
+approve changes or commands.
+
+`/skills` lists local and enabled Cloud Skills with origins, hidden duplicates,
+and discovery problems. `/<name>` selects a Skill for your next message;
+`/<name> <message>` selects and sends immediately. Up to four local Skills can
+be selected together, and selections clear after sending. Built-in commands
+win over Skill names. `disable-model-invocation: true` Skills are selectable
+only through `/<name>`; they are excluded from the model's catalog. These
+entries still hide same-named Cloud Skills for the turn. Local
+Skills cannot be selected when local tools are off. Tab completes Skill names.
+
+When the assistant writes a working plan, text output prints a checklist on
+stderr: `[x]` completed, `[>]` in progress, and `[ ]` pending. Cancelled items
+are omitted. The checklist appears in interactive and print mode.
+
+### What leaves your computer
+
+| Content | Where it goes |
+| --- | --- |
+| Messages and `@` or `/attach` files | The Cloud chat; the model receives message text and files it reads |
+| Tool arguments and results | The Cloud chat and the model, including local text and Bash output |
+| Uploaded files | Chat storage in Cloud; model or Cloud tools can read them |
+| Trusted AGENTS.md, Skill names/descriptions, and selected or loaded Skill text | Cloud and the model with the turn or tool result |
+| Workspace path, OS, and shell | Cloud and the model with every interactive message |
+
+Preview the prompt for this computer with
+`cld assistant prefs system-prompt --local`; it uses the profile's default
+local tools mode, including its **Local client** section.
+
+Cloud approvals use numbered choices: **Approve once**, **Approve for this
+chat**, and **Always approve**, where the action permits them. Enter rejects.
+When only one-time approval is available, the prompt is `Approve? [y/N]`.
+Websites are never remembered from cld; website approvals saved in the web can
+still be listed and revoked with `/approvals`.
+
+A pasted block is one multi-line message; Enter sends it. A `\` at the end of
+a typed line continues the message on the next line. Input typed while a turn
+runs or while an editor is open is ignored, so it never answers the next
+question. Pasted input never answers an approval, a numbered choice, or a
+confirmation; survey answers accept pasted text.
+
+At the prompt, Ctrl+C clears typed input and ends the session when the prompt
+is empty. During a turn, Ctrl+C stops the turn, also while it waits for your
+answer or runs Bash. At other questions, such as a numbered list, Ctrl+C
+cancels the question and keeps the session open.
+
+Mention `@path` to attach a local file like `/attach`; its bytes are stored as a
+chat file in Cloud, and the message text stays unchanged. Each `@` file that
+is attached prints an `Info: Attached:` line. Write a space in an `@` path as
+`\ `, for example `@Rechnung\ März.pdf`; Tab completion inserts it this way.
+Paths inside the start folder attach without a question, except protected
+files such as `.env`, keys, and `.git/`, also when such a name is a link to
+another file. Files outside that folder ask first. Starting in your home folder
+or above asks for every file. cld's own configuration is refused. `--attach`
+paths follow the same rules when the session starts. Tab completes slash
+commands and `@` paths. Relative Cloud links in answers print as absolute links
+to the selected server.
 
 Use `--print` or `-p` to stream one response and exit:
 
@@ -51,20 +270,21 @@ reference IDs are scoped to their Project.
 
 Studio app and saved-script commands use the resource UUID returned by
 `assistant code list` or `assistant code create`. These are separate from the
-short chat and Project IDs above.
+short chat and Project IDs above. Remembered approval IDs are also UUIDs;
+use the exact ID from `assistant approvals list` when revoking one.
 
 Useful options:
 
 - `--title <title>` names a newly created chat and preserves that title through the first message and automatic enrichment. `chats create --title <title>` does the same. The CLI trims the title and checks the 1 to 120 character limit before creating anything. The exact title `New chat` matches the default placeholder and keeps automatic naming.
 - `--model <profile-id>` selects a model from `cld assistant models`.
 - `--project <project-id>` creates the new chat in an accessible Project.
-- Repeat `--attach <local-file>` for local images or documents. This flag does not accept a Cloud resource ID.
+- Repeat `--attach <local-file>` for local images or documents. This flag does not accept a Cloud resource ID and refuses cld's own configuration.
 - `--detach` submits the turn and returns its ID without waiting in print mode.
 - Repeat `--approve <exact-tool-name>` in print mode to approve only those tools for that turn. There is deliberately no approve-all flag.
 
 Print mode writes assistant text and capability result tables to stdout and tool progress to stderr. Text output shows control and bidirectional formatting characters escaped, such as `\u001b`, so model text cannot restyle or hide later output; `--json` and `--jsonl` keep the text unchanged. Separate non-blank text blocks have a blank line between them, including in the final JSON result. Reconnects and interactive approvals continue with only new text and do not repeat unchanged tool progress; `turns watch` behaves the same way. Tool progress and `--approve` use canonical capability IDs such as `spaces.task.create`. JSONL `text_delta` events carry each block's new text once under the block ID that first carried it, without separators. `turn_finished` carries the complete text, also when the turn ended during a reconnect. Tables show up to 100 returned rows, shorten long cells for display, and include supplied result links. A notice identifies additional rows or pages. Use `--json` for complete returned cell values: it waits and prints one final aggregate without terminal tables. `--jsonl` emits versioned stream events such as text deltas, tool state changes, attention requests, provider retries, and turn completion. While a model call waits for its retry, print mode writes `model: reconnecting` to stderr. Each file the assistant delivers is named there with its chat path, such as `present: completed /sales-report.pdf`; download it with `cld assistant files download`. Structured output, detached submission, and piped input require `--print`.
-`--allow-bash` is deliberately rejected with `--print`, structured output, and
-detached execution.
+`--allow-bash` and `--no-bash` are rejected with `--print`, including structured
+output and detached execution. These modes offer no local tools.
 
 The web composer and CLI share one durable conversation draft. Before a CLI turn in an existing chat, the CLI refuses to replace a non-empty unsent web draft. Send or clear that draft in Assistant, then retry the CLI command. This prevents a terminal turn from silently overwriting text, files, or Cloud resources prepared in another tab.
 
@@ -77,6 +297,18 @@ cld assistant actions reject <chat-id> <turn-id> <call-id>
 cld assistant actions submit <chat-id> <turn-id> <call-id> --result-file result.json
 cld assistant turns watch <chat-id> <turn-id>
 ```
+
+List and revoke remembered Cloud approvals without a REPL:
+
+```bash
+cld assistant approvals list
+cld assistant approvals list --chat <chat-id>
+cld assistant approvals revoke <approval-id>
+```
+
+Without `--chat`, the list contains approvals that apply everywhere; with it,
+only approvals limited to that chat. Lists support `--json` and `--jsonl`.
+Revoking needs no `--yes`: the Assistant asks again on the next matching call.
 
 ## Code Mode and Studio
 
@@ -104,7 +336,7 @@ Streaming reconnects after transport interruptions and periodically reconciles
 the saved turn state. This keeps a missed completion event from leaving the CLI
 waiting indefinitely; it does not restart completed tool calls.
 Code has no Node/Bun environment, shell access, credentials, or unrestricted
-network access. This is separate from `--allow-bash`.
+network access. This is separate from local tools in `ask` mode.
 
 ```bash
 cld assistant code list --json
@@ -179,9 +411,9 @@ read/run/storage/database commands and copying published source. A Project chat
 is not required; editing and management rights remain separate.
 
 Normal capability approvals also apply inside scripts. Interactive Assistant
-sessions show the review and ask `Approve? [y/N]`, or `[y/N/a=always]` when the
-approval can be remembered. An HTTP request from Code Mode shows its method,
-URL, headers, and body preview in that review. For a
+sessions show the review and numbered approval choices when approval can be
+remembered; one-time approvals ask `Approve? [y/N]`. An HTTP request from Code
+Mode shows its method, URL, headers, and body preview in that review. For a
 direct run or print-mode turn, repeat `--approve <exact-capability-name>` only for operations
 the user authorized. There is no approve-all option.
 
@@ -332,7 +564,7 @@ cld assistant personalization forget <memory-id> --yes
 
 `--content` also accepts `--content-file` and `--stdin`. Forgetting an entry requires `--yes`.
 
-Personalization use and learning from chats are separate settings. Learning is on for users who have not chosen; a setting stored before learning became the default stays as it was, and `--learning` stores a new choice. Learning considers only private-chat turns that finish while it is on, and only genuine user-authored text, not attached Cloud resources, files, tool results, scheduled prompts, inter-chat deliveries, or Assistant output. Archived and deleted chats are excluded; after a chat is restored, learning considers only turns that finish later.
+Personalization use and learning from chats are separate settings. Learning is on for users who have not chosen; a setting stored before learning became the default stays as it was, and `--learning` stores a new choice. Learning considers turns from the user's own chats, Project chats included, that finish while it is on, and only genuine user-authored text, not attached Cloud resources, files, tool results, scheduled prompts, inter-chat deliveries, or Assistant output. It keeps only information about the user, never facts about other people, and leaves Project facts in the Project. It skips sensitive categories such as health, religion, or political views unless the user explicitly asks to remember exactly that. Archived and deleted chats are excluded; after a chat is restored, learning considers only turns that finish later.
 
 ```bash
 cld assistant personalization status

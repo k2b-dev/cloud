@@ -1,4 +1,4 @@
-import { expect, jest, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import type { AiConversation } from "@k2b/cloud/ai";
 import { createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
@@ -18,6 +18,11 @@ const load = async () => {
   }
 };
 const { AssistantSidebar, createAssistantLiveHub } = await load();
+
+// The sidebar switches to the browser clock after mount, so the age sections must not depend on the day the suite runs.
+const renderedAt = "2026-10-08T10:00:00.000Z";
+beforeEach(() => setSystemTime(new Date(renderedAt)));
+afterEach(() => setSystemTime());
 
 const conversation = (id: string, title: string, projectId: string | null): AiConversation => ({
   id,
@@ -64,7 +69,7 @@ test("chat clicks select immediately while loading, preserve native modifiers an
     () => (
       <AssistantSidebar
         timeZone="UTC"
-        renderedAt="2026-10-08T10:00:00.000Z"
+        renderedAt={renderedAt}
         conversations={() => [conversation("first", "First", null), conversation("second", "Second", null)]}
         activeConversationId={selected}
         activeProjectId={project()}
@@ -144,7 +149,7 @@ test("footer project popup and mobile group share search and creation; pinned ch
     () => (
       <AssistantSidebar
         timeZone="UTC"
-        renderedAt="2026-10-08T10:00:00.000Z"
+        renderedAt={renderedAt}
         projects={[project]}
         live={live}
         onCreateProject={() => {
@@ -244,7 +249,7 @@ test("Done keeps its row through live updates, confirms success, then fades with
     () => (
       <AssistantSidebar
         timeZone="UTC"
-        renderedAt="2026-10-08T10:00:00.000Z"
+        renderedAt={renderedAt}
         conversations={items}
         live={live}
         onConversationUpdated={(item) => setItems([item])}
@@ -291,7 +296,7 @@ test("failed Done request leaves the chat available and clears its pending feedb
     () => (
       <AssistantSidebar
         timeZone="UTC"
-        renderedAt="2026-10-08T10:00:00.000Z"
+        renderedAt={renderedAt}
         conversations={() => [conversation("fail", "Keep this", null)]}
         live={live}
       />
@@ -309,6 +314,123 @@ test("failed Done request leaves the chat available and clears its pending feedb
   } finally {
     dispose();
     save.mockRestore();
+    dom.cleanup();
+  }
+});
+
+// Before any test reads live counts: the browser keeps the last read count for the whole page.
+test("the server's approvals count renders the row from the first paint", async () => {
+  const dom = createDomTestHarness();
+  const live = createAssistantLiveHub();
+  const dispose = render(
+    () => (
+      <AssistantSidebar
+        timeZone="UTC"
+        renderedAt={renderedAt}
+        conversations={() => [conversation("first", "First", null)]}
+        pendingApprovals={3}
+        live={live}
+      />
+    ),
+    dom.root,
+  );
+  try {
+    const row = dom.root.querySelector<HTMLAnchorElement>('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?approvals=1"]');
+    expect(row?.querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent).toBe("3");
+    expect(row?.textContent).toContain("3 waiting");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test("the Approvals row sits above Studio while something waits and changes only on navigation", async () => {
+  const dom = createDomTestHarness();
+  const { readWorkspaceNavigation } = await import("@k2b/cloud/browser/testing");
+  const { refreshAppBadges } = await import("@k2b/cloud/browser/app-badges");
+  const { watchAppBadges } = await import("@k2b/cloud/ssr/app-badges");
+  let counts = { total: 0, apps: {} as Record<string, number> };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = Object.assign(async () => Response.json(counts), { preconnect: originalFetch.preconnect });
+  const settle = async () => {
+    for (let attempt = 0; attempt < 5; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+  const live = createAssistantLiveHub();
+  const [pending, setPending] = createSignal(0);
+  const [selected, setSelected] = createSignal("first");
+  let opened = 0;
+  const dispose = render(
+    () => (
+      <AssistantSidebar
+        timeZone="UTC"
+        renderedAt={renderedAt}
+        conversations={() => [conversation("first", "First", null), conversation("second", "Second", null)]}
+        activeConversationId={selected}
+        pendingApprovals={pending()}
+        onOpenApprovals={() => {
+          opened++;
+        }}
+        live={live}
+      />
+    ),
+    dom.root,
+  );
+  delegateEvents(["click"]);
+  const footer = () => dom.root.querySelector<HTMLElement>('footer[data-sidebar-mode="expanded"]')!;
+  const row = () => footer().querySelector<HTMLAnchorElement>('a[href="/app/assistant?approvals=1"]');
+  const mobileIds = () =>
+    readWorkspaceNavigation()!
+      .navigation.items()
+      .map((item) => item.id);
+  const stopBadges = watchAppBadges([]);
+  try {
+    // Rendered with nothing open: no row, on the desktop or on the phone.
+    await settle();
+    expect(row()).toBeNull();
+    expect(mobileIds()).not.toContain("approvals");
+    // A request that arrives while the person reads does not slide a row under the pointer.
+    counts = { total: 2, apps: { assistant: 2 } };
+    refreshAppBadges();
+    await settle();
+    expect(row()).toBeNull();
+    setSelected("second");
+    expect(row()).not.toBeNull();
+    const labels = Array.from(footer().querySelectorAll(".k2b-app-workspace__sidebar-item-label-text")).map((label) => label.textContent);
+    expect(labels.indexOf("Approvals")).toBeGreaterThanOrEqual(0);
+    expect(labels.indexOf("Approvals")).toBeLessThan(labels.indexOf("Studio"));
+    expect(row()!.querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent).toBe("2");
+    const ids = mobileIds();
+    expect(ids.indexOf("approvals")).toBeLessThan(ids.indexOf("apps"));
+    expect(
+      readWorkspaceNavigation()!
+        .navigation.items()
+        .find((item) => item.id === "approvals")?.badge,
+    ).toBe(2);
+    // The last request decided elsewhere: the row stays with a muted 0 until the person navigates.
+    counts = { total: 0, apps: {} };
+    refreshAppBadges();
+    await settle();
+    expect(row()).not.toBeNull();
+    expect(row()!.querySelector('[data-waiting="zero"] .k2b-app-workspace__sidebar-status-count')?.textContent).toBe("0");
+    // Modified clicks keep the link's own behavior, such as a new tab; a plain click opens the view in place.
+    for (const modifier of ["metaKey", "ctrlKey", "shiftKey", "altKey"]) {
+      const event = new MouseEvent("click", { bubbles: true, cancelable: true, [modifier]: true });
+      row()!.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(opened).toBe(0);
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    row()!.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true);
+    expect(opened).toBe(1);
+    // Navigation removes it; once the browser has read a count, that count wins over the rendered one.
+    setPending(1);
+    setSelected("first");
+    expect(row()).toBeNull();
+  } finally {
+    stopBadges();
+    globalThis.fetch = originalFetch;
+    dispose();
     dom.cleanup();
   }
 });

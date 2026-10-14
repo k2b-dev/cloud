@@ -5,10 +5,34 @@ section: Work
 order: 100
 description: A personal AI workspace for conversations, files, Projects, and reusable preferences.
 tags: [assistant, ai, chats]
-updated: 2026-10-09
+updated: 2026-10-12
 ---
 
 # Assistant
+
+## Work with a local folder in cld
+
+Start `cld ai` in the folder you want to work with: Assistant can list, read,
+upload, and create ordinary files there freely. Use `/permissions off` to stop
+local tools; Enter means No at approval questions. AGENTS.md and project Skills
+load after you trust the folder; `/skills` lists local and Cloud Skills, and
+`/<skill>` selects one for your next message. Local results and uploaded files
+go to this Cloud chat and can be sent to the model.
+
+cld asks before:
+
+- Running a Bash command.
+- Appending, replacing, or moving files.
+- Accessing protected files or files outside the start folder.
+- Every file access when started in your home folder or above.
+
+## Use Assistant in an editor
+
+Run `cld acp` to use Assistant in editors such as T3 Code and Zed with your
+Cloud login and the editor's project folder. Chats stay in Cloud and can
+continue on the web. Sending, deleting, sharing, and inviting wait for your
+confirmation in Cloud; the editor shows the chat link. See
+[Assistant in editors](/en/docs/ai/editors) for installation and setup.
 
 ## Background tasks
 
@@ -379,19 +403,24 @@ messages confirm non-error state changes such as attachments, model selection,
 and stopped turns. Run `/model` without an argument to select an available
 model by number. The model remains active for the session.
 
-Use `cld assistant --allow-bash` when the Assistant must work on the computer
-running the CLI. This exposes a local Bash tool only for that interactive
-session. Every requested command is shown and requires a fresh `y`; Enter
-denies it. Commands run with the current OS user's permissions in the CLI's
-startup directory, and their bounded output is stored in the chat and sent to
-the model. The web app can display these calls later but cannot run them.
+Interactive `cld assistant` offers local tools by default in `ask` mode.
+Use `--no-bash` or `/permissions off` to stop offering them; `--allow-bash`
+selects `ask` for this session even when the profile default is `off`.
+`/permissions` can save the profile default: only `off` is stored, and saving
+`ask` removes it. Every local Bash command is shown and needs a fresh `y`;
+Enter denies. Bash runs as your OS user in the start folder without `CLD_*`
+environment variables. Other variables stay available. Commands and output go
+to this chat and the model. The web app shows the history but cannot run Bash.
+Local Bash is never approved non-interactively and is never remembered.
 
-Every approval in the interactive CLI asks in one shape, such as
-`Approve? [y/N]`: `y` or `yes` approves once, and Enter, `n`, or `no` denies.
-Answers ignore case, and any other answer asks again. The CLI offers `a` or
-`always` for **Always approve** only when the pending Capability Action
-supports remembered approval. Print mode never creates a
-remembered approval, and local Bash always requires a fresh confirmation.
+Cloud approvals use numbered **Approve once**, **Approve for this chat**, and
+**Always approve** choices where allowed; Enter rejects. When only one-time
+approval is possible, `Approve? [y/N]` accepts `y` or `yes` and rejects Enter,
+`n`, or `no`. Typed-ahead or pasted input never answers an approval. Websites
+cannot be remembered from cld. Use `/approvals` or `cld assistant approvals
+list|revoke` to review and revoke remembered Cloud approvals, including
+websites saved in the web. `list --chat <chat-id>` lists only that chat's
+approvals. Print mode never creates a remembered approval.
 
 Start with these read-only checks before choosing a model or continuing a chat:
 
@@ -601,11 +630,12 @@ call that the app did not handle also shows a notice outside the app. Cloud
 words every message outside the app itself, from the failure's code; text from
 the app appears only in the console.
 
-`code_write` reports static problems in an app's JavaScript and CSS, and
-`code_present` refuses an app with errors such as CDN scripts, missing imports
-or inline handlers. Apps do not run in `code_run`. Before an agent opens,
-presents or publishes an app, `code_check` renders it on desktop and phone,
-replays its main flow on throwaway data and returns screenshots and findings.
+`code_write` saves one file per call and reports static problems in an app's
+JavaScript and CSS, and `code_present` refuses an app with errors such as CDN
+scripts, missing imports or inline handlers. Apps do not run in `code_run`.
+Before an agent opens, presents or publishes an app, `code_check` renders it on
+desktop and phone, replays its main flow on throwaway data and returns
+screenshots and findings.
 
 ### Store data and combine Cloud actions
 
@@ -904,10 +934,10 @@ overwrite newer data.
 
 Use `assistant code files`, `assistant code file-stat`, and
 `assistant code file-copy --yes` with JSON input files for the same CLI flow.
-`code_write` also accepts `{path,fromFile:reference}` for reviewed UTF-8 source
-imports. This replaces the former chat-only `fromChatFile` input. Imported data
-becomes source and can be published; ordinary runtime data belongs in shared
-files or the database instead.
+`code_import` copies `files: [{path,fromFile:reference}]` as UTF-8 source after
+one review for the whole batch. Imported data becomes source and can be
+published; ordinary runtime data belongs in shared files or the database
+instead.
 
 ### Reusable action examples
 
@@ -926,6 +956,7 @@ suite runs their published handlers in the isolated Studio runtime.
 | Find Apps, inspect source and revisions | `code_list`, `code_read`, `code_history` |
 | Change working title, description or icon; make a private copy | `code_update`, `code_fork` |
 | Create, edit or remove source files | `code_create`, `code_write`, `code_remove` |
+| Import exact files as source | Reviewed `code_import` |
 | Run scripts and actions, inspect, export results or stop | `code_run`, `code_action`, `code_inspect`, `code_export`, `code_stop` |
 | Open an app, show it in chat, publish, withdraw or restore a publication | `code_open`, `code_present`, `code_publish`, `code_unpublish`, `code_restore` |
 | Read and change grants | `code_access_read`, reviewed `code_access_change` |
@@ -994,12 +1025,17 @@ Cmd/Ctrl+Shift+K searches the open chat, falling back to all chats outside a cha
 
 ### Apps in chat
 
+When you ask for an app, a calculator, a converter, a form or another tool to
+work with, Assistant builds a Studio App: it appears in **Studio**, and you can
+reopen, change and share it. Charts, tables and explorers of a one-off result
+stay in the chat as views.
+
 `code_present` shows an HTML app as a card in the conversation. It takes either
-one-off files, which are stored with the chat and have no database, `cloud.kv`
-or `cloud.files`, or a saved Studio app, which the card runs with its current
-source and data under the viewer's access. Presenting creates no Studio App and
-no chat file. Before anything is saved, the call checks the files and refuses
-static errors.
+a saved Studio app, which the card runs with its current source and data under
+the viewer's access, or one-off files for a quick preview you asked not to keep;
+those are stored with the chat and have no database, `cloud.kv` or
+`cloud.files`. Presenting creates no Studio App and no chat file. Before
+anything is saved, the call checks the files and refuses static errors.
 
 The card shows the app's title, **Studio app**, and its actions. It keeps a
 fixed height, 45% of the viewport and at most 600 pixels, from the moment the

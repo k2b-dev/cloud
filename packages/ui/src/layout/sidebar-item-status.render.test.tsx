@@ -35,9 +35,13 @@ const render = (status: AppWorkspaceSidebarItemStatusProps, locale = "en") =>
 const text = (html: string, className: string) => html.match(new RegExp(`class="${className}"[^>]*>([^<]*)<`))?.[1]?.trim();
 
 describe("AppWorkspace.SidebarItemStatus", () => {
-  test("renders nothing without unread items, a mention, or muting", () => {
+  test("renders an empty status without unread items, a mention, or muting", () => {
+    // The empty element keeps the row's label on one line before the first count arrives.
     for (const status of [{}, { unread: 0 }, { unread: false }, { unread: -2 }, { unread: Number.NaN }]) {
-      expect(render(status)).not.toContain("k2b-app-workspace__sidebar-item-meta");
+      const html = render(status);
+      expect(html).toMatch(/<span class="k2b-app-workspace__sidebar-status"[^>]*>(?:<!--[^>]*-->)*<\/span>/);
+      expect(html).not.toContain("data-unread");
+      expect(html).not.toContain("k2b-sr-only");
     }
   });
 
@@ -69,6 +73,20 @@ describe("AppWorkspace.SidebarItemStatus", () => {
     expect(text(html, "k2b-app-workspace__sidebar-status-mention")).toBe("@");
     expect(html).toContain('data-mention="true"');
     expect(html).toContain(", 2 unread, mentions you");
+  });
+
+  test("shows waiting items with their own phrase and keeps a muted zero", () => {
+    const html = render({ waiting: { count: 3, label: "3 waiting" } });
+    expect(html).toContain('data-waiting="count"');
+    expect(html).not.toContain("data-unread=");
+    expect(text(html, "k2b-app-workspace__sidebar-status-count")).toBe("3");
+    expect(html).toContain(", 3 waiting");
+    expect(html).not.toContain(" unread");
+
+    const zero = render({ waiting: { count: 0, label: "Nothing waiting" } });
+    expect(zero).toContain('data-waiting="zero"');
+    expect(text(zero, "k2b-app-workspace__sidebar-status-count")).toBe("0");
+    expect(zero).toContain(", Nothing waiting");
   });
 
   test("keeps the unread slot without unread items", () => {

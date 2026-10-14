@@ -121,8 +121,12 @@ const offlineDocument = async (): Promise<string> => {
       var language = (preferred || navigator.language || "en").slice(0, 2).toLowerCase() === "de" ? "de" : "en";
       document.documentElement.lang = language;
       document.querySelectorAll("section[lang]").forEach(function (section) { section.hidden = section.lang !== language; });
-      document.querySelector('meta[name="theme-color"]').content =
-        document.documentElement.classList.contains("dark") ? "${PWA_CANVAS_COLORS.dark}" : "${PWA_CANVAS_COLORS.light}";
+      function updateThemeColor() {
+        document.querySelector('meta[name="theme-color"]').content =
+          document.documentElement.classList.contains("dark") ? "${PWA_CANVAS_COLORS.dark}" : "${PWA_CANVAS_COLORS.light}";
+      }
+      updateThemeColor();
+      window.addEventListener("cloud:theme-preference", updateThemeColor);
     })();
   </script>
 </body>

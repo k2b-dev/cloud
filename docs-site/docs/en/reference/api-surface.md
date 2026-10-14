@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-10
+updated: 2026-10-12
 ---
 
 # API surface
@@ -91,11 +91,38 @@ operation, and schema hash. The middleware verifies the invocation and resolves
 current authority into the request context; the handler must still authorize
 access to its domain resources. It does not replace operation idempotency.
 
-A dashboard widget handler reads the size the board asks for with
-`getWidgetRequest(c)` from the same barrel; see
+A dashboard widget handler reads the size and validated settings the board
+asks for with `getWidgetRequest(c)` from the same barrel; see
 [Dashboard widgets](/en/docs/platform/dashboard-widgets).
 
+`loadPendingApprovals(c, query)` loads an approval page during SSR from this
+entry point. Pass it as `initial` to the shared `Approvals` component.
+See [Show approvals in your app](/en/docs/identity/approvals#show-approvals-in-your-app).
+
+For a slow handler, `setRequestTimeout`, `REQUEST_IDLE_TIMEOUT_SECONDS`, and
+`REQUEST_IDLE_TIMEOUT_MAX_SECONDS` control the bounded request idle timer;
+see [Answer slow requests](/en/docs/server/http#answer-slow-requests).
+
 See [Server APIs](/en/docs/server) for the request path.
+
+The widget setting types `WidgetSettingField`, `WidgetSettingsDeclaration`,
+`WidgetSettingValue`, and `WidgetSettings`, and the limits
+`WIDGET_SETTINGS_MAX_FIELDS`, `WIDGET_SETTING_MAX_OPTIONS`,
+`WIDGET_SETTING_TEXT_MAX_LENGTH`, `WIDGET_SETTING_NAME_MAX_LENGTH`,
+`WIDGET_ID_MAX_LENGTH`, `WIDGET_KEY_MAX_LENGTH`, `WIDGET_REQUEST_MAX_ENTRIES`,
+`WIDGET_REQUEST_MAX_ID_LENGTH`, and `WIDGET_REQUEST_MAX_BYTES` come from
+`@k2b/cloud/contracts`; `@k2b/cloud/browser/widgets` re-exports the types. See
+[Declare settings](/en/docs/platform/dashboard-widgets#declare-settings).
+
+### Core approval routes
+
+| Route | Use | Guide |
+| --- | --- | --- |
+| `GET /api/approvals` | List the person's waiting requests; filter by `app` and `link`; paginate with `cursor` | [Approval routes](/en/docs/identity/approvals#approval-routes) |
+| `GET /api/approvals/counts` | Read total and per-app open counts | [Approval routes](/en/docs/identity/approvals#approval-routes) |
+| `POST /api/approvals/:id/decision` | Approve or reject a request and continue its chat | [Approval routes](/en/docs/identity/approvals#approval-routes) |
+
+These routes require a user-backed actor.
 
 ## Use platform services
 
@@ -143,8 +170,10 @@ and `accountCategoryLabel`. See
 
 The contracts barrel also exports the versioned app-approval input schemas,
 signing-message helpers and protocol limits for independent authenticator
-clients. `appApproval` in the services barrel is a Core-owned maintainer service,
-not general application authentication. Use the
+clients. Action approval schemas, `APP_ACTION_LIMITS`, and the Action digest
+helpers support the signed `inbox`, `action`, and `act` commands.
+`appApproval` in the services barrel is a Core-owned maintainer service, not
+general application authentication. Use the
 [app approval HTTP contract](/en/docs/operations/app-approval) for external clients.
 
 ## Share types with the browser
@@ -184,12 +213,51 @@ inferring support from autocomplete.
 | `@k2b/cloud/shared` | Cloud-specific helpers named by feature guides | Generic utility re-exports are compatibility-only |
 | `@k2b/cloud/cli` | APIs for application CLI modules | Built-in account, application, and admin modules are platform-owned |
 
+For theme-aware server work, `readThemeFromCookieHeader()` returns a resolved
+`CloudTheme` (`light` or `dark`); for Automatic it is a best-effort hint that
+can be stale. `readThemePreferenceFromCookieHeader()`
+returns a `CloudThemePreference` (`light`, `dark`, or `system`). Both readers
+and types come from `@k2b/cloud/shared`. See
+[Follow the person's theme](/en/docs/frontend/styling-and-accessibility#follow-the-persons-theme).
+
 `@k2b/cloud/config` exports `env.APP_SECRET`, `env.PORT`,
 `env.IS_DEVELOPMENT`, and `env.ADMIN_LOGIN_TOKEN`. The
 [runtime configuration guide](/en/docs/operations/runtime-configuration)
 documents all process variables; that larger list is not the shape of `env`.
 
 ## Specialized entry points
+
+View readers and types are exported from `@k2b/cloud/ai/browser` and
+`@k2b/cloud/ai`: `CloudAiChartView`, `CloudAiGroupView`, `CloudAiTableView`,
+`CloudAiExplorerView`, `CloudAiExplorerRequest`,
+`CloudAiStatsView`, `CloudAiDetailsView`, `CloudAiViewReference`,
+`CloudAiView`, `CloudAiViewSummary`, `CloudAiViewSummarySchema`,
+`parseCloudAiView`, `checkCloudAiView`, `cloudAiViewSummary`, `cloudAiViewTable`,
+`cloudAiStatsTiles`, `cloudAiDetailsRows`,
+`cloudAiTableTsv`, `isAiViewFile`, `isAiViewPath`, `parseCloudAiChartToolView`,
+`cloudAiExplorerControls` and `cloudAiExplorerState`,
+plus the view directory, suffix, byte and table limits. Both entry points expose
+`CLOUD_AI_STATS_MAX_ITEMS` (6), `CLOUD_AI_GROUP_MAX_CHARTS` (6), `CLOUD_AI_VIEW_MAX_MARKS` (3,840),
+`CLOUD_AI_CHART_MAX_SERIES` (8), `CLOUD_AI_CHART_MAX_VALUES` (480),
+`CloudAiChartInput`, `CloudAiChartInputSchema`, `parseCloudAiChartInput`,
+`cloudAiChartSchema`, `cloudAiAppChartSchema`, `cloudAiNumberFormatSchema`,
+`cloudAiFormatSchema` and `CloudAiNumberFormat`, `CloudAiDateFormat`,
+`CloudAiFormat`. `cloudAiAppChartSchema` reads the same chart input for apps
+without the chat's size and fit limits; missing or non-finite data values
+become `NaN`, which the renderer leaves out.
+Server integrations save run results with `createAiConversationView` and receive
+`AiViewInvalidError` for invalid specs. See
+[Tools and approvals](/en/docs/ai/tools-and-approvals) for validation and groups.
+
+Custom chart hosts use browser exports `cloudAiChartRenderOptions`,
+`cloudAiChartLegend`, `cloudAiChartRows`, `cloudAiChartTable`, `cloudAiChartMarkKey`,
+`cloudAiChartReferenceMark`, `cloudAiChartXValueFormat`, `cloudAiNumberFormatters`,
+`cloudAiChartMarks` and `chartDrawingIssue`, with `CloudAiChartColumn`,
+`CloudAiChartRow` and `CloudAiChartTable`. These map validated chart input to
+rendering, legend, comparison marks and locale-formatted rows. `ChartExplorer`
+from `@k2b/ui` accepts `legend` entries typed as `ChartLegendEntry`
+(`{label, color, style?, reference?}`) for a wrapping legend inside its fixed
+height; see [Chart presentation and controls](/en/ui/content/charts#chart-presentation-and-controls).
 
 `@k2b/cloud/ai` exposes `AiTaskRequestSchema`, `AiTaskRequest`,
 `AiTaskRequestInput`, and `executeAiTask` for bounded text generation,
@@ -199,7 +267,7 @@ for execution, model access, and usage accounting.
 
 | Entry point | Status | Use | Guide |
 | --- | --- | --- | --- |
-| `@k2b/cloud/ai/browser` | Supported, client | Launch Assistant drafts; use SSE parsing, attachment helpers, and client-tool input schemas in browser or CLI clients | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
+| `@k2b/cloud/ai/browser` | Supported, client | Launch Assistant drafts; use SSE parsing, attachment helpers, and client-tool input and output schemas in browser or CLI clients | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/solid` | Supported, browser | AI chat controller over the conversation SSE stream | [Chat interface](/en/docs/ai/chat-interface) |
 | `@k2b/cloud/ai/tools` | Advanced, server-only | Mount Cloud's standard agent-tool factories, including document-aware `read_file` and conversation-file `markdown_to_pdf` and `html_to_pdf` | [Files and Projects](/en/docs/ai/files-projects-and-personalization) |
 | `@k2b/cloud/ai/ui` | Supported, SolidJS | Shared AI chat components | [Chat interface](/en/docs/ai/chat-interface) |
@@ -208,9 +276,11 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/ai/runtime` | Platform-owned, server-only | Core-owned conversation runtime and turn submission | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/admin` | Platform-owned, server-only | AI usage accounting, model access, and masked request-header names for administration | [Models and providers](/en/docs/ai/models-and-providers), [Observability](/en/docs/operations/observability) |
 | `@k2b/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
+| `@k2b/cloud/approvals/ui` | Supported, SolidJS | `Approvals`, `ApprovalsNavStatus`, and `approvalNavCount` for open Action requests | [Action approvals](/en/docs/identity/approvals#show-approvals-in-your-app) |
 | `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls | [Resource API keys](/en/docs/identity/resource-api-keys) |
 | `@k2b/cloud/browser/live` | Supported, browser | `liveConnection` for an application's live channels; `createLiveWebSocket` transport for other sockets | [Realtime UI](/en/docs/frontend/realtime-ui) |
 | `@k2b/cloud/events` | Supported, server-only | `defineLive`: live updates written in the transaction that makes the change; `routes(channels)` serves them over one socket per application with access checked at delivery | [Live updates](/en/docs/automation/live-updates) |
+| `@k2b/cloud/events/testing` | Supported, tests only | Real live engine, limits and types; memory topic with publish and trim controls; outbox startup for integration tests | [Test channels](/en/docs/automation/live-updates#test-channels) |
 | `@k2b/cloud/browser/app-badges` | Supported, browser | `refreshAppBadges` reads the app bar's badge counts again after a change | [Layout and navigation](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
 | `@k2b/cloud/browser/app-approval` | Supported, browser | Authenticator namespace for pairing links, device keys and signed API calls | [App approval](/en/docs/operations/app-approval) |
 | `@k2b/cloud/browser/mermaid` | Supported, browser | Mermaid configuration that follows Cloud's light and dark colors | [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#render-mermaid-diagrams-with-cloud-colors) |
@@ -275,8 +345,9 @@ exports behind it are `Preview`. Their guides say so at the top.
 
 | Entry point | Status | Meaning |
 | --- | --- | --- |
-| `@k2b/cloud/api` | Platform-owned | Builds the Core platform router |
+| `@k2b/cloud/api` | Platform-owned | Builds the Core platform router, including `createAiOpenAiRoutes` for Core’s models-only [OpenAI-compatible API](/en/docs/ai/openai-compatible-api) |
 | `@k2b/cloud/services/help` | Platform-owned | Core Help migration and shared publication/read service |
+| `@k2b/cloud/services/approvals` | Platform-owned | Platform requests, decisions, consumption, lists, and counts; see [Action approvals](/en/docs/identity/approvals) |
 | `@k2b/cloud/ssr/help` | Supported, server-only | Request-scoped Help metadata for specialized embedded readers |
 | Registry, heartbeat, and runtime helpers from `@k2b/cloud` | Platform-owned | Gateway, Core, and platform composition |
 | `@k2b/cloud/services/*` | Advanced | Deep service exports; prefer the barrel |
@@ -345,3 +416,7 @@ The standalone UI exports `createNavigation`, `Navigation`, `NavigationItem`,
 [Commands](/en/docs/platform/capabilities#open-an-interactive-flow-with-commands)
 and context actions in the global palette. `@k2b/cloud/capabilities` exports
 `resolveCommand` for authenticated HTTP clients that need an entry URL.
+
+`@k2b/cloud/contracts` also exports `isCommandPath` to check Cloud paths.
+Import it from `@k2b/cloud/contracts/command-path` to use the check without
+loading validators.

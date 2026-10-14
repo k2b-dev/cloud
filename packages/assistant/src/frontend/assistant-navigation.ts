@@ -20,6 +20,7 @@ export const assistantConversationHref = (currentHref: string, conversationId: s
   if (conversationId) url.searchParams.set("conversation", conversationId);
   else url.searchParams.delete("conversation");
   url.searchParams.delete("project");
+  url.searchParams.delete("approvals");
   url.searchParams.delete("q");
   if (previousConversationId !== conversationId) {
     url.searchParams.delete("artifact");
@@ -34,6 +35,7 @@ export const assistantProjectHref = (currentHref: string, projectId: string): st
   url.searchParams.delete("message");
   url.searchParams.delete("artifact");
   url.searchParams.set("project", projectId);
+  url.searchParams.delete("approvals");
   url.searchParams.delete("q");
   return relativeHref(url);
 };
@@ -65,3 +67,8 @@ export const assistantMessageSeqFromHref = (href: string): number | null => {
   const seq = Number(value);
   return Number.isSafeInteger(seq) ? seq : null;
 };
+
+/** The Assistant's approvals view: `?approvals=1`, without a chat or project, so reload and Back keep it. */
+export const ASSISTANT_APPROVALS_HREF = "/app/assistant?approvals=1";
+
+export const assistantApprovalsOpenFromHref = (href: string): boolean => new URL(href, URL_BASE).searchParams.get("approvals") === "1";

@@ -105,11 +105,19 @@ export const validateMailLiquidTemplate = (
       if (options.allowedVariables) {
         const allowed = new Set(options.allowedVariables);
         const unsupported = variables.find((variable) => !allowed.has(variable));
-        if (unsupported) return fail(err.badInput(`Mail template variable "${unsupported}" is not available here`));
-      } else {
+        if (unsupported)
+          return fail(
+            err.badInput(
+              `Mail template variable "${unsupported}" is not available here. Available: ${options.allowedVariables.join(", ")}.`,
+            ),
+          );
+      } else if (options.allowedRoots) {
         const allowed = new Set(options.allowedRoots);
         const unsupported = variables.find((variable) => !allowed.has(variable.split(".", 1)[0] ?? ""));
-        if (unsupported) return fail(err.badInput(`Mail template variable "${unsupported}" is not available here`));
+        if (unsupported)
+          return fail(
+            err.badInput(`Mail template variable "${unsupported}" is not available here. Available: ${options.allowedRoots.join(", ")}.`),
+          );
       }
     } catch (error) {
       return fail(err.badInput(error instanceof Error ? error.message : "Mail template variables could not be inspected"));

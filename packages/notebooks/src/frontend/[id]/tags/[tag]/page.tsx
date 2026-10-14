@@ -19,11 +19,12 @@ import { ssr } from "../../../../config";
 import { orderBookTree } from "../../../../lib/book-tree";
 import { resolvePresentationMode } from "../../../../lib/presentation-mode";
 import { requestedPresentationMode, withPresentationMode } from "../../../../lib/presentation-url";
+import { parseSidebarFilter } from "../../../../lib/sidebar-filter";
 import { buildNoteUrl, buildTagPageUrl } from "../../../params";
 import BookSurface from "../../_components/book/BookSurface";
 import BookTagContent from "../../_components/book/BookTagContent";
 import RememberNotebook from "../../_components/RememberNotebook.island";
-import { parseNavigationHidden, parseSettings } from "../../_components/settings/NotebookSettingsStore";
+import { parseFullWidth, parseNavigationHidden, parseSettings } from "../../_components/settings/NotebookSettingsStore";
 import NotebookSidebar from "../../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../../_components/sidebar/types";
 import WorkspaceEventBridge from "../../_components/sidebar/WorkspaceEventBridge.island";
@@ -108,13 +109,14 @@ export default ssr<AuthContext>(async (c) => {
     userId: user.id,
     settings,
     navigationHidden: parseNavigationHidden(cookieHeader),
+    fullWidth: parseFullWidth(cookieHeader),
     permission,
     attachmentCount,
     favoriteNoteIds: favoriteRows.map((row) => row.noteId),
     tags,
     workspaceCursor,
     dateConfig: getDateConfig(c),
-    navigatorQuery: {},
+    sidebarFilter: parseSidebarFilter(new URL(c.req.url).searchParams),
     presentationMode: requestedPresentationMode(new URL(c.req.url).searchParams),
   };
 
@@ -136,8 +138,10 @@ export default ssr<AuthContext>(async (c) => {
       <Layout c={c} fullPage fullWidth title={notebook.name}>
         <RememberNotebook notebookId={notebook.shortId} />
         <BookSurface
+          userId={ctx.userId}
           notebookId={notebook.shortId}
           notebookName={notebook.name}
+          notebookIcon={notebook.icon}
           selectedNoteId={null}
           tree={orderBookTree(publicTree, { id: (node) => node.id, homeId: publicNotebook.homepageNoteId, locale })}
           tags={tags}
@@ -151,13 +155,14 @@ export default ssr<AuthContext>(async (c) => {
           appUrl={appUrl}
           cursor={workspaceCursor}
           navigationHidden={ctx.navigationHidden}
+          fullWidth={ctx.fullWidth}
         />
       </Layout>
     );
   }
 
   const Content = () => (
-    <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
+    <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
       <WorkspaceEventBridge notebookId={notebook.shortId} appUrl={appUrl} initialCursor={workspaceCursor} />
       <NotebookSidebar ctx={ctx} />
       <AppWorkspace.Content>

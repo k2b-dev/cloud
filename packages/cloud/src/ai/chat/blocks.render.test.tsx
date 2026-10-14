@@ -15,6 +15,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
+const { AiReaderTimeZoneProvider } = await import("./action-sentences");
 const { AiTurnBlockView } = await import("./blocks");
 const { AiChatActionsProvider } = await import("./message-actions");
 const { createAiChatTimeline } = await import("./presentation");
@@ -450,12 +451,13 @@ describe("capability tool presentation", () => {
       kind: "tool",
       callId: "load-1",
       name: "load_tools",
-      args: { names: ["code_run", "code_open", "spaces.create", "mail.old", "made_up"] },
+      args: { names: ["code_run", "code_open", "spaces.create", "mail.old", "made_up", "assistant-data-analysis"] },
       status: "completed",
       result: {
         loaded: [{ name: "code_run", call: "code_run" }],
         alreadyLoaded: [],
         unavailable: [
+          { name: "assistant-data-analysis", reason: "skill" },
           { name: "code_open", reason: "not_offered_in_turn" },
           { name: "spaces.create", reason: "not_allowed" },
           { name: "mail.old", reason: "app_offline" },
@@ -475,8 +477,18 @@ describe("capability tool presentation", () => {
       }),
     );
 
+    const english = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "en",
+        get children() {
+          return createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" });
+        },
+      }),
+    );
+    expect(english).toContain("A skill, not a tool");
+
     expect(html).toContain("1 geladen");
-    for (const label of ["Hier nicht verfügbar", "Nicht erlaubt", "App nicht erreichbar", "Nicht gefunden"]) {
+    for (const label of ["Ein Skill, kein Werkzeug", "Hier nicht verfügbar", "Nicht erlaubt", "App nicht erreichbar", "Nicht gefunden"]) {
       expect(html).toContain(label);
     }
   });
@@ -616,6 +628,27 @@ describe("capability tool presentation", () => {
     expect(html).toContain('download="testdatei.md"');
     expect(html).toContain('<span class="underline-offset-2 group-hover:underline">Download</span>');
     expect(html).not.toMatch(/<a[^>]*hover:underline/);
+  });
+
+  test("a card is one stat tile; its tone colors nothing and its trend stays neutral", () => {
+    const block: AiTurnBlock = {
+      id: "card",
+      kind: "tool",
+      callId: "card-1",
+      name: "card",
+      args: { title: "Uptime", value: "99.98 %", caption: "Last 30 days", tone: "red", trendValue: "+0.4 %", trendDirection: "up" },
+      status: "completed",
+      result: { displayed: true },
+    };
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block, turnId: "turn-1" }));
+    expect(html).toContain("k2b-stat-cell");
+    expect(html).toContain("99.98 %");
+    expect(html).toContain("Last 30 days");
+    expect(html).toMatch(/k2b-stat-cell__accent"[^>]*data-tone="zinc"/);
+    expect(html).toContain("ti-trending-up");
+    expect(html).not.toMatch(/bg-red-|border-red-/);
+    // A card stands alone, so its text wraps instead of hiding behind an ellipsis.
+    expect(html).toMatch(/class="k2b-stat-cell"[^>]*data-wrap="true"/);
   });
 
   test("folds intermediate text and tools into one work line while results and the final text stay visible", () => {
@@ -1525,28 +1558,36 @@ describe("assistant activity width", () => {
 });
 
 describe("turn places in the reader's language", () => {
-  const renderPlaces = (blocks: AiTurnBlock[], options: { locale?: string; phase?: AiTurnPhase; workedMs?: number } = {}) => {
+  const renderPlaces = (
+    blocks: AiTurnBlock[],
+    options: { locale?: string; phase?: AiTurnPhase; workedMs?: number; timeZone?: string } = {},
+  ) => {
     const phase = options.phase ?? "completed";
     return renderToString(() =>
       createComponent(LocaleProvider, {
         locale: options.locale ?? "en",
         get children() {
-          return createComponent(AiTurnView, {
-            segment: () => ({
-              id: "ai-turn:turn-1:start",
-              turnId: "turn-1",
-              phase,
-              layout: layoutAiTurn(blocks, { phase }),
-              earlier: false,
-              duration: () => (options.workedMs === undefined ? null : { workedMs: options.workedMs, waitingMs: null }),
-            }),
-            disclosureState: createAiToolDisclosureState(),
+          return createComponent(AiReaderTimeZoneProvider, {
+            value: options.timeZone,
+            get children() {
+              return createComponent(AiTurnView, {
+                segment: () => ({
+                  id: "ai-turn:turn-1:start",
+                  turnId: "turn-1",
+                  phase,
+                  layout: layoutAiTurn(blocks, { phase }),
+                  earlier: false,
+                  duration: () => (options.workedMs === undefined ? null : { workedMs: options.workedMs, waitingMs: null }),
+                }),
+                disclosureState: createAiToolDisclosureState(),
+              });
+            },
           });
         },
       }),
     );
   };
-  const mail = (result: unknown): AiTurnBlock => ({
+  const mail = (result: unknown): Extract<AiTurnBlock, { kind: "tool" }> => ({
     id: "tool-send",
     kind: "tool",
     callId: "send",
@@ -1567,6 +1608,62 @@ describe("turn places in the reader's language", () => {
     presentation: { kind: "table", rowsPath: ["rows"], columns: [{ path: ["name"], label: "Name" }] },
     summary,
     links: [{ rel: "open", href: "/app/grids/query?id=q1" }],
+  });
+
+  test.each(["en", "de"])("receipt outcome times stay on one line in %s, absent while running or unavailable", (locale) => {
+    const at = "2026-10-07T10:23:45.000Z";
+    const receipt = { ...mail({ summary: "Sent email" }), approved: true };
+    for (const status of ["completed", "failed", "rejected"] as const) {
+      const html = renderPlaces([{ ...receipt, status, at }], { locale, timeZone: "Europe/Berlin" });
+      expect(html).toContain(" · 12:23</strong>");
+      expect(html.match(/class="[^"]*ai-turn-receipt[^"]*"/g)).toHaveLength(1);
+    }
+    // Outside a browser and without a reader time zone, the time stays in UTC.
+    expect(renderPlaces([{ ...receipt, at }], { locale })).toContain(" · 10:23</strong>");
+    expect(renderPlaces([receipt], { locale, timeZone: "Europe/Berlin" })).not.toContain(" · 12:23");
+    const running = renderPlaces([{ ...receipt, status: "running", at }], { locale, phase: "running", timeZone: "Europe/Berlin" });
+    expect(running).toContain(locale === "de" ? "Wird ausgeführt" : "Running");
+    expect(running).not.toContain(" · 12:23");
+  });
+
+  test("server-rendered history shows the receipt time in the reader's time zone", () => {
+    const stored = (seq: number, message: AiStoredMessage["message"], meta: AiStoredMessage["meta"] = null): AiStoredMessage => ({
+      id: `stored-${seq}`,
+      shortId: `stored${seq}`,
+      conversationId: "chat",
+      seq,
+      kind: "message",
+      message,
+      loopId: "turn-1",
+      modelProfileId: null,
+      providerModel: null,
+      usage: null,
+      stopReason: null,
+      loopAggregate: null,
+      loopDoneReason: null,
+      compactedAt: null,
+      meta,
+      createdAt: "2026-10-07T10:23:45.000Z",
+    });
+    const messages = [
+      stored(1, { role: "assistant", content: [{ type: "tool_call", id: "send", name: "send_email", args: {} }] }),
+      stored(
+        2,
+        { role: "tool_result", callId: "send", name: "send_email", result: {}, isError: false },
+        { toolOutcomes: { send: "approved" } },
+      ),
+      stored(3, { role: "assistant", content: [{ type: "text", text: "Done." }] }),
+    ];
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "en",
+        get children() {
+          const items = createAiChatTimeline({ messages: () => messages, activeTurn: () => null, timeZone: "Europe/Berlin" })();
+          return createComponent(Chat.Timeline, { items, scrollFade: false });
+        },
+      }),
+    );
+    expect(html).toContain(" · 12:23</strong>");
   });
 
   test("labels receipt links without a title in the reader's language", () => {
@@ -1756,7 +1853,7 @@ describe("Studio check steps", () => {
   });
 
   test("names every Studio step in the reader's language", () => {
-    const blocks: AiTurnBlock[] = ["code_write", "code_check", "code_present"].map((name) => ({
+    const blocks: AiTurnBlock[] = ["code_write", "code_import", "code_check", "code_present"].map((name) => ({
       id: `tool-${name}`,
       kind: "tool",
       callId: name,
@@ -1766,7 +1863,8 @@ describe("Studio check steps", () => {
       result: {},
     }));
     const german = renderExpanded([...blocks, viewed("/checks/abc/desktop.png")], { locale: "de", open: ["group:tool-code_write"] });
-    for (const label of ["App-Dateien speichern", "App-Prüfung", "App im Chat zeigen", "Bild ansehen"]) expect(german).toContain(label);
+    for (const label of ["App-Datei speichern", "App-Dateien importieren", "App-Prüfung", "App im Chat zeigen", "Bild ansehen"])
+      expect(german).toContain(label);
     expect(german).not.toMatch(/Code write|Code check|Code present|View image/);
   });
 
@@ -1832,4 +1930,217 @@ describe("Studio check steps", () => {
     const failed = viewed("/checks/abc/desktop.png", "image/png", "failed");
     expect(renderExpanded([failed], { open: [failed.id] })).not.toContain("ai-step-image");
   });
+});
+
+test("presented views reserve inline frames and escape summary text", () => {
+  for (const view of [
+    { view: "chart", kind: "bar", title: '<img src=x onerror="bad()">', subtitle: "Orders" },
+    { view: "table", title: '<img src=x onerror="bad()">', rows: 12, columns: 2, footer: false },
+  ]) {
+    const path = "/views/result-12345678.view.json";
+    const block: AiTurnBlock = {
+      id: "view",
+      kind: "tool",
+      name: "present",
+      callId: "view",
+      args: { path },
+      status: "completed",
+      result: { path, view },
+    };
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block, turnId: "turn" }));
+    expect(html).toContain('data-view-path="/views/result-12345678.view.json"');
+    expect(html).toContain("Loading");
+    expect(html).toContain("&lt;img");
+    expect(html).not.toContain("<img src=x");
+    expect(html).not.toContain("Download");
+    expect(html).toContain("height:");
+  }
+});
+
+test("a presented explorer reserves its title, control rows and 18rem viewport before loading its file", () => {
+  for (const controls of [
+    { step: true, filter: true, compare: true },
+    { step: true, filter: false, compare: false },
+    { step: false, filter: true, compare: false },
+    { step: true, filter: false, compare: true },
+    { step: false, filter: false, compare: false },
+  ]) {
+    const path = "/views/explorer-12345678.view.json";
+    const block: AiTurnBlock = {
+      id: "explorer",
+      kind: "tool",
+      name: "present",
+      callId: "explorer",
+      args: { path },
+      status: "completed",
+      result: {
+        path,
+        view: {
+          view: "explorer",
+          title: "Offers by region",
+          rows: 72,
+          columns: 5,
+          views: [{ id: "offers", label: "Offers", kind: "line" }],
+          ...controls,
+        },
+      },
+    };
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block, turnId: "turn" }));
+    expect(html).toContain(`data-view-path="${path}"`);
+    expect(html).toContain(">Offers by region</h3>");
+    expect(html).toContain("Loading");
+    expect(html).toMatch(/class="k2b-chart-explorer__viewport"[^>]*style="height:18rem"/);
+    expect(html.includes("k2b-chart-explorer__legend")).toBe(controls.step || controls.filter);
+    expect(html.includes('type="range"')).toBe(controls.step);
+    expect(html.includes("k2b-filter-chip ")).toBe(controls.filter);
+    expect(html.includes("ti ti-pin")).toBe(controls.compare);
+    if (controls.step || controls.filter) {
+      expect(html.indexOf("k2b-chart-explorer__legend")).toBeGreaterThan(html.indexOf("</header>"));
+      expect(html.indexOf("k2b-chart-explorer__legend")).toBeLessThan(html.indexOf("k2b-chart-explorer__viewport"));
+    }
+    expect(html).not.toContain("data-chart-datum");
+  }
+});
+
+test("present without a valid view reference stays a file chip", () => {
+  for (const result of [
+    { path: "/views/result.view.json", size: 10 },
+    { path: "/views/result.json", view: { view: "table", title: "Rows", rows: 0, columns: 1, footer: false } },
+    { path: "/elsewhere/result.view.json", view: { view: "table", title: "Rows", rows: 0, columns: 1, footer: false } },
+    { path: "/views/result.view.json", view: { view: "table", title: "Rows", rows: 0, columns: 0, footer: false } },
+  ]) {
+    const block: AiTurnBlock = {
+      id: "file",
+      kind: "tool",
+      name: "present",
+      callId: "file",
+      args: { path: result.path },
+      status: "completed",
+      result,
+    };
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block, turnId: "turn" }));
+    expect(html).not.toContain("data-view-path");
+    expect(html).toContain(result.path);
+  }
+});
+
+test("a running view present leaves the result slot empty until its summary sizes the view", () => {
+  const running = (path: string): AiTurnBlock => ({
+    id: path,
+    kind: "tool",
+    name: "present",
+    callId: path,
+    args: { path },
+    status: "running",
+  });
+  const view = renderToString(() =>
+    createComponent(AiTurnBlockView, { block: running("/views/result-12345678.view.json"), turnId: "turn" }),
+  );
+  expect(view).not.toContain("Preparing file");
+  expect(view).not.toContain("data-view-path");
+  // Ordinary files keep their one-line activity, which the file chip replaces at the same height.
+  const file = renderToString(() => createComponent(AiTurnBlockView, { block: running("/report.pdf"), turnId: "turn" }));
+  expect(file).toContain("Preparing file");
+});
+
+test("view references stay plain text without a host action", async () => {
+  const { ReferenceText } = await import("./reference-text");
+  const html = renderToString(() => createComponent(ReferenceText, { text: "Product", reference: { type: "spaces.item", id: "product" } }));
+  expect(html).toBe("Product");
+});
+
+test("an empty explorer keeps the summary's slider, filter and comparison rows", async () => {
+  const { CloudExplorerView } = await import("./explorer-block");
+  const { cloudAiViewSummary, parseCloudAiView } = await import("../view-block");
+  const input = parseCloudAiView({
+    view: "explorer",
+    title: "Empty dataset",
+    columns: [
+      { id: "x", type: "number" },
+      { id: "y", type: "number" },
+      { id: "year", type: "text" },
+      { id: "region", type: "text" },
+    ],
+    rows: [],
+    views: [{ id: "trend", label: "Trend", kind: "line", x: "x", y: "y" }],
+    controls: { step: "year", filter: "region", compare: true },
+  });
+  if (!input) throw new Error("Invalid empty explorer");
+  const summary = cloudAiViewSummary(input);
+  if (summary.view !== "explorer" || input.view !== "explorer") throw new Error("Expected explorer");
+  for (const value of [undefined, input]) {
+    const html = renderToString(() => createComponent(CloudExplorerView, { summary, input: value }));
+    expect(html).toContain('type="range"');
+    expect(html).toContain("k2b-filter-chip");
+    expect(html).toContain("k2b-chart-explorer__pin");
+    expect(html).toMatch(/<button[^>]*k2b-chart-explorer__pin[^>]*disabled/);
+  }
+});
+
+test("an explorer view without a drawable value in the shown rows says so in the reader's language", async () => {
+  const { CloudExplorerView } = await import("./explorer-block");
+  const { cloudAiViewSummary, parseCloudAiView } = await import("../view-block");
+  const { LocaleProvider } = await import("@k2b/ui");
+  // The last step, shown first, has rows but no y value to plot.
+  const input = parseCloudAiView({
+    view: "explorer",
+    title: "Sparse dataset",
+    columns: [
+      { id: "year", type: "text" },
+      { id: "x", type: "number" },
+      { id: "y", type: "number" },
+    ],
+    rows: [
+      { year: "2025", x: 1, y: 5 },
+      { year: "2025", x: 2, y: 6 },
+      { year: "2026", x: 1, y: null },
+      { year: "2026", x: 2, y: null },
+    ],
+    views: [{ id: "trend", label: "Trend", kind: "scatter", x: "x", y: "y" }],
+    controls: { step: "year" },
+  });
+  if (!input || input.view !== "explorer") throw new Error("Invalid sparse explorer");
+  const summary = cloudAiViewSummary(input);
+  if (summary.view !== "explorer") throw new Error("Expected explorer");
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(CloudExplorerView, { summary, input });
+      },
+    }),
+  );
+  expect(html).toContain("Diese Ansicht lässt sich für diese Auswahl nicht zeichnen.");
+  expect(html).not.toContain("data-chart-datum");
+});
+
+test("the series filter shows chart colors only when the shown view colors its series by the filter column", async () => {
+  const { CloudExplorerView } = await import("./explorer-block");
+  const { cloudAiViewSummary, parseCloudAiView } = await import("../view-block");
+  const swatches = (views: unknown[]) => {
+    const input = parseCloudAiView({
+      view: "explorer",
+      title: "Offers",
+      columns: [
+        { id: "region", type: "text" },
+        { id: "month", type: "number" },
+        { id: "count", type: "number" },
+      ],
+      rows: [
+        { region: "North", month: 1, count: 3 },
+        { region: "North", month: 2, count: 4 },
+        { region: "South", month: 1, count: 5 },
+        { region: "South", month: 2, count: 6 },
+      ],
+      views,
+      controls: { filter: "region" },
+    });
+    if (!input || input.view !== "explorer") throw new Error("Invalid explorer");
+    const summary = cloudAiViewSummary(input);
+    if (summary.view !== "explorer") throw new Error("Expected explorer");
+    return renderToString(() => createComponent(CloudExplorerView, { summary, input })).split("k2b-dropdown__color").length - 1;
+  };
+  expect(swatches([{ id: "trend", label: "Trend", kind: "line", x: "month", y: "count", series: "region" }])).toBe(2);
+  // Without a series column every line is one region mix, so a region color would describe nothing the chart draws.
+  expect(swatches([{ id: "trend", label: "Trend", kind: "line", x: "month", y: "count" }])).toBe(0);
 });

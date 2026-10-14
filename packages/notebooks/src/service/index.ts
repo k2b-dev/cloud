@@ -196,6 +196,8 @@ export const notebooksService = {
       getSnapshot: notes.getVersionSnapshot,
       getWithContent: notes.getVersionWithContent,
       restore: notes.restoreFromSnapshot,
+      restoreInPlace: notes.restoreInPlace,
+      restoreAsCopy: notes.restoreAsCopy,
     },
     copyToNotebook: notes.copyToNotebook,
     search: search.searchInNotebook,

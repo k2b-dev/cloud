@@ -5,7 +5,8 @@
 The application owns the content and which regions are open.
 
 The frame owns its surface hierarchy: `Main` uses the base surface, while the
-navigation, contextual details, and bottom drawer use the subtle surface.
+navigation and bottom drawer use the subtle surface. Detail is a raised floating
+surface.
 Applications should keep region wrappers transparent and add cards or panels
 only where the content needs another visual level.
 
@@ -28,9 +29,10 @@ import {
 ## Compose the regions
 
 `AppWorkspace.Content` is required. Put `Main` first and each `Detail` after it
-inside `Content`. Put `BottomDrawer` at the workspace root.
+as direct children of `Content`, possibly through a Solid island wrapper. The
+floating geometry depends on that placement. Put `BottomDrawer` at the workspace root.
 
-`Main` adds no padding. Pass an application class through `class` when the workspace needs an inset. Omit it for edge-to-edge tables, editors, canvases, or `Panes`. Set `width="content"` on an overview or reading page: each direct child then becomes one centered column with the shared 72 rem page width on large screens and full width below, while the detail panel keeps its own track. `Main` is the default scroll owner and reserves a stable scrollbar gutter. Pass `scrollPreserveKey` when enhanced navigation should restore its position.
+`Main` adds no padding. Pass an application class through `class` when the workspace needs an inset. Omit it for edge-to-edge tables, editors, canvases, or `Panes`. Set `width="content"` on an overview or reading page: each direct child then becomes one centered column with the shared 72 rem page width on large screens and full width below, while the detail panel occupies its own full-height column at the workspace's end. `Main` is the default scroll owner and reserves a stable scrollbar gutter. Pass `scrollPreserveKey` when enhanced navigation should restore its position.
 
 `Main` and `MainPane` show subtle 16 px overflow hints by default when they
 own scrolling. Set `scrollFade={false}` to opt out. A split `Main` wrapper
@@ -52,6 +54,101 @@ An open `MainPane` keeps its content mounted when layout state, mobile selection
 `Detail` and `BottomDrawer` remain mounted while closed. Their `open` property
 controls visibility, so local state and SSR DOM identity remain stable.
 
+A host that places the workspace on the window's bottom edge sets
+`--k2b-workspace-inset-bottom` on it, for example to
+`env(safe-area-inset-bottom, 0px)` in an installed app on a tablet. The default
+is 0. The surfaces on that edge still reach it and fill the inset with their
+own background: the sidebar, `Main` or each of its panes, and an open
+`BottomDrawer`. Their content ends above the inset, so the last row clears the
+home indicator. A scrolling `Main` or pane fades its last rows above the
+inset, and the inset keeps the end of that fade. A floating `Detail` keeps its 0.5 rem inset above it. Cloud
+sets the property on the outermost workspace of its tablet and laptop shell, so
+applications need nothing.
+
+## Floating detail
+
+Pass `onClose` when the application can close or deselect the detail. Escape,
+a downward phone drag, and a rightward touch-tablet swipe call the same action
+as the panel’s close button. A panel rendered on the server only cannot pass a
+function: mark its own close button or link with `data-workspace-detail-close`
+instead, and the same gestures click it. Without either, the panel stays open
+and reflows Main on touch tablets too. `onStep` receives `1` for J and `-1`
+for K; the application chooses the next selection. Return the Main element
+that now shows it, usually the item's link. The workspace remembers it like
+an Enter selection: Escape and F6 go there, and it is revealed beside the
+panel or drawer or above the phone sheet, instantly under reduced motion.
+Focus moves to it from the previous item or elsewhere in Main, or to the
+panel title from inside the panel. Returning nothing keeps the previous item.
+Neither callback owns the `open` state.
+
+Below 48 rem, the half sheet covers the lower 55% of the window, on pages that
+grow with their content as well as on full pages. A frame that embeds a
+workspace in a longer page, such as a demo, sets `contain: layout` to keep the
+sheet inside the frame. Main ends with the same
+height of space, so its last row scrolls above the sheet, and opening scrolls
+the selected row above it. A Main with a height of its own keeps the 240 px
+the main area reserves. Tap the grabber to switch between half and full
+height. Drag the grabber or header up to expand, or down to return to half
+height; pulling down from half closes a closable sheet. Pull downward from
+content at the top of its scrollport to lower the sheet. A drag or swipe never
+starts on a field, slider, editable text, canvas, draggable element, or an
+element whose `touch-action` keeps that direction for itself. An open panel
+adds that space to Main even when the application hides it with its own CSS,
+so keep `open` false while the panel should not show.
+
+From 48 rem, Detail occupies a column at the workspace's end, beside the
+head and all panes, with a 0.5 rem inset on the top, right, and bottom. Main
+keeps at least 20 rem. Give Main 0.5 rem padding so its surfaces end one gap
+(`--k2b-workspace-detail-inset`) before the panel. From 64 rem the workspace
+allows the panel's shadow beyond its edges; sidebar, content, and bottom
+drawer round their own outer corners. On touch tablets from 48 to 64 rem, a
+closable panel overlays Main as a drawer instead.
+
+Use `scrollClass="k2b-detail-trail"` on DataTable to keep the columns at their
+width without the panel. The scroller narrows beside Detail and scrolls the
+same table. Where Main is already at its 20 rem minimum, the panel's column
+narrows, and the table grows by the part of the panel's width the column does
+not get. Boards and calendars narrow with Main and keep their own scroll
+content. Mark a board's horizontal scroller with `k2b-detail-trail` too:
+under the tablet drawer, which leaves Main its width, a marked scroller gets
+the drawer's width as space at its end, so its last column scrolls out from
+under the drawer. A marked scroller inside the panel gets no space. The
+week and day views of `Calendar` mark their own scroller: without `dayHours`
+the hour scroller, which the day and all-day rows above it follow, and with
+`dayHours` the strip or stream of days.
+
+The trail is the scroll viewport that clips the surface beside the panel, and
+it carries `--k2b-radius-surface`: a column or table cut at the panel ends in
+the same rounded corner as the surface's other edges. Inside a Paper frame,
+its radius is one border smaller, so the corner follows the frame's inner
+curve. Put the trail directly
+in Main's content box, with `scroll={false}` on Main and no vertical scroller
+around it. A reserved scrollbar gutter would widen the gap before the panel.
+
+Escape closes a closable panel. J and K step a steppable panel. F6 switches
+focus between Main’s remembered item and the panel title, with or without
+Shift. These shortcuts leave text entry, menus, dialogs, popovers, and popup
+buttons to their own keyboard behavior. They run after the page’s own
+keyboard handlers: a handler that uses one of these keys for local state, such
+as cancelling a crop, calls `preventDefault()` and the panel stays open. An
+overlay sidebar handles Escape first.
+
+Opening from Enter or Space moves focus to the title, also when the title
+appears only after the content loads. Enter or Space on another item while the
+panel is open moves focus to the new title. A phone sheet also focuses its
+title after a pointer selection; wider pointer opens keep focus on the item.
+Focus stays where it is when the person moves it first. The controller keeps
+the selected row at its vertical position through reflow and reveals a freshly
+selected item beside the panel; in a table it reveals the clicked cell, also
+in a row wider than its scroller. Closing returns focus to the remembered
+item when focus was in the panel.
+
+The first server-rendered or newly inserted panel appears without motion.
+After two animation frames, opening reserves the column immediately and slides
+the panel in. Closing slides the panel out over 140 ms while the column stays
+reserved, then gives the room back in one step. Reduced motion makes opening,
+closing, and item reveal immediate. Dragging tracks the pointer without easing.
+
 ## Navigation
 
 `Sidebar` with `SidebarDesktop` supplies the workspace navigation. Its form
@@ -59,9 +156,10 @@ follows the viewport width:
 
 | Width | Navigation | Work area |
 | --- | --- | --- |
-| Below 48 rem (768 px) | Hidden; the host renders its mobile navigation | One pane at a time; an open `Detail` replaces `Main` |
-| 48 to 64 rem (768 to 1023 px) | An overlay that a button in the head opens; a `mobile="stacked"` sidebar stays above the content | Panes side by side, `Detail` beside `Main` |
-| From 64 rem (1024 px) | A column beside the work area | Panes side by side, `Detail` beside `Main` |
+| Below 48 rem (768 px) | Hidden; the host renders its mobile navigation | One pane at a time; Detail is a sheet over the lower 55% of the window, and Main scrolls its rows above it; full height covers Main |
+| 48 to 64 rem (768 to 1023 px) | An overlay that a button in the head opens; a `mobile="stacked"` sidebar stays above the content | Panes side by side; Detail floats with reflow, or overlays Main as a closable drawer on coarse pointers |
+| From 64 rem (1024 px) | A column beside the work area | Panes side by side; Detail spans the workspace height with an 8 px inset and Main makes room |
+| From 96 rem (1536 px) | Same navigation | Same workspace geometry inside the host’s app card |
 
 Below 48 rem the host renders its mobile navigation using
 [createNavigation and Navigation](/en/ui/layout/navigation), usually inside a
@@ -96,7 +194,13 @@ draws no line; only its place separates it from the content. It shows:
 - at every width, when the host's page trail has a page above the current one.
   It then holds a [PageTitle](/en/ui/layout/page-title) with the way up: from
   48 rem `‹ Parent` or a path above the title, below 48 rem a back arrow left
-  of it.
+  of it. The title is the page's `h1`. From 64 rem, a visible, non-collapsed
+  sidebar with `[aria-current="page"]` hides the title row and its back link;
+  the `h1` remains visually hidden for assistive technology. Mark the exact
+  current page with `SidebarItem active`; on a page deeper than the sidebar
+  lists, mark the containing item with `active="ancestor"` so it stays
+  highlighted and the page keeps its back link. Compact layouts keep the way
+  up. A host's Alt+Up shortcut still reads the trail.
 
 The title comes from the host's page trail: a host renders
 `PageTrailProvider` around the page during server rendering and calls
@@ -112,6 +216,10 @@ new trail once the host runs `followPageTrail()`; Cloud's `Layout` does.
 Set `mobileSurface="flush"` on an outer workspace when the host supplies the
 phone chrome. This removes its exterior border, radius, shadow, and background
 below 48 rem. Embedded workspaces keep the default contained surface.
+
+Set `flat` on a workspace that is the page itself, such as an app's overview.
+It draws no border, corner radius, or shadow at any width, and its sidebar and
+content keep square outer corners.
 
 Sidebar links use document navigation by default. Set `navigation="enhanced"`
 only inside an island that loads and applies the target state before committing
@@ -178,7 +286,12 @@ surfaces in dark themes.
 On hover-capable fine pointers, `SidebarBody` keeps its scrollbar thumb hidden
 until the sidebar is hovered or contains keyboard focus. Its scrollbar geometry
 does not change. Touch, coarse-pointer, and forced-color environments retain
-their normal visible scrollbar treatment.
+their normal visible scrollbar treatment. Rows keep the same inset on the
+right as on the left: the narrow scrollbar track sits in the sidebar's right
+inset, and a browser with overlay scrollbars draws its scrollbar over that
+inset. A browser that ignores the narrow track width and draws a wider classic
+scrollbar, such as Firefox on Windows, leaves a right inset as wide as its
+scrollbar.
 
 The sidebar compound members cover these jobs:
 
@@ -188,7 +301,9 @@ The sidebar compound members cover these jobs:
   `SidebarItemStatus`, `SidebarItemAction`, and `SidebarItemActions` compose a
   navigation row;
 - `NavTree` and `NavTree.Item` compose nested folder, mailbox, category, or tag
-  navigation with automatic indentation and keyboard interaction;
+  navigation with automatic indentation and keyboard interaction. A flat
+  `NavTree` also serves a filtered list with the same rows and keys; an item's
+  `description` adds a passive second line, such as a date and tags;
 - `SidebarIconGrid` and `SidebarIconAction` provide compact icon-only actions.
 
 Desktop sidebars are action-first: begin with primary actions or navigation,
@@ -200,18 +315,28 @@ needs a compact header action such as creating a resource. The section owns
 the header alignment; the control still owns its accessible name and action
 behavior. Section headers and their actions are hidden with the compact rail
 and mobile section layout, so expose an equivalent reachable action in those
-compositions. On hover-capable fine pointers, section actions remain quiet
-until the header is hovered or contains keyboard focus. They remain visible on
-touch and coarse-pointer devices. An open dropdown keeps its section action
-visible and interactive until the menu closes.
+compositions. A `SidebarSection` in the content area, such as a list page
+that replaces the sidebar on a phone, keeps its header and actions at every
+width. With a mouse or trackpad, including a tablet with a mouse,
+section actions stay hidden until the header is hovered or contains keyboard
+focus. Touch-only screens always show them. An open dropdown keeps its section
+action visible and interactive until the menu closes.
 
 Section titles are quiet sentence-case labels. Keep them short and let the
 navigation rows carry the stronger visual emphasis.
 
 Active rows use the workspace accent color and a stronger text weight without
-a persistent fill. Hover retains its quiet background, and keyboard focus keeps
-the shared focus ring. Standalone themes can override
-`--k2b-app-workspace-active`; Cloud maps it to the current application accent.
+a persistent fill. Hover uses one quiet neutral fill, `--k2b-app-workspace-hover`,
+on rows, cards, tree toggles, icon actions, and the switcher head, so no
+platform blue sits beside the accent; an active card keeps that fill with an
+accent-tinted border. Keyboard focus keeps the shared focus ring. Standalone
+themes can override `--k2b-app-workspace-active` and
+`--k2b-app-workspace-hover`; Cloud maps the active color to the current
+application accent.
+
+Mark the exact current page with `active`; on a page deeper than the sidebar
+lists, use `active="ancestor"` on the containing item to keep its highlight and
+the page's back link.
 
 ```tsx
 <AppWorkspace.SidebarSection
@@ -226,6 +351,94 @@ the shared focus ring. Standalone themes can override
 </AppWorkspace.SidebarSection>
 ```
 
+### Switcher
+
+`AppWorkspace.SidebarSwitcher` heads the sidebar with the container the app
+works in: its icon, name, an optional fact, and a chevron. Use it for a notebook,
+space, mailbox, base, or venue chosen from several containers. Ordinary filters
+and lists remain sidebar rows; an app without a current container needs no
+switcher.
+
+Put it first in `SidebarDesktop`, before `SidebarBody`. Beside another button,
+place both in a row and give the switcher `class="flex-1"`. Its panel lists the
+containers as links, marks the current one with a check, and offers search from
+8 options (`APP_WORKSPACE_SWITCHER_SEARCH_FROM`). Search matches names and
+descriptions without regard to case. Supply **New …** only when the person may
+create a container; **All …** leads to the overview. The component adds no
+actions of its own.
+
+The panel opens below the trigger, or above it when it would not fit below at
+its tallest (28 rem, at most 80% of the viewport) and there is more room above,
+for example low in the phone menu. It keeps that side while it is open, so
+loading options, an error, or a narrowed search never flip it; only a viewport
+resize chooses again. Above the trigger, its bottom edge stays beside the
+trigger and it does not shrink while open, so the search field stays where the
+person types. It never covers its trigger: it takes at most the room on its side
+and scrolls its option list.
+In a collapsed rail from 64 rem, the trigger shows only its icon and the panel
+opens to the side. On phones, pass the same props through
+`createNavigation({ items, switcher: () => switcher })` so the host menu shows
+the same head. `Navigation` hands its `beforeSelect` to the switcher: a plain
+click on a container or an action first lets the host menu finish closing, and
+`false` cancels the choice. Modified clicks, such as opening a new tab, stay
+native links. The panel is at least as wide as the trigger and 16 rem where
+space allows, and stays within the viewport with an 8 px inset, also when
+options, an error, or search arrive after it opened.
+
+Leave `options` undefined until they load. `onLoad` asks for them on pointer
+entry, focus, and opening; ignore repeated calls while a request runs. The
+panel shows **Loading...** and holds focus while waiting. Set `error` after a
+failed request to show its message and a retry button that calls `onLoad`.
+The head always reserves two name lines and centres its text in them, so a
+short and a long name give it the same height from the server's first paint
+on. Switching containers, hover, opening, loading, and arriving options keep the
+trigger and the rows below it in place. The name takes up to two balanced lines
+and ends with an ellipsis when it overflows; beside the optional fact it takes
+one line, and the fact takes the second. The check on the current container
+uses the app's workspace accent, like the sidebar's active row. Hover and open
+use a neutral fill, and sidebar rows use the same neutral fill on hover.
+
+Enter, Space, or ArrowDown opens at the current option, or at search when
+present. On touch, search waits for a tap so the keyboard does not cover the
+list. ArrowUp on the closed trigger opens at the last row. In the panel, arrow
+keys move between search, options, retry, and actions and wrap; Home and End
+jump to the ends except while editing search. Enter in search follows the
+first result. Typing a letter on a row moves it into search. Escape closes
+only the panel and returns focus to the trigger, leaving a compact sidebar
+overlay open; Tab out and an outside press close it too. Choosing the current
+container closes without navigation.
+
+The full container name stays in the trigger's `title` and accessible name.
+Its description combines the optional fact and `switchLabel`, which also names
+the dialog.
+`aria-expanded` and `aria-controls` connect trigger and panel; the current link
+has `aria-current="true"`. Loading, errors, and empty results are status text.
+The UI locale supplies search, loading, empty, and retry messages; the app
+supplies container names and the purpose label.
+
+```tsx
+const switcher = {
+  currentId: notebook.id,
+  label: notebook.name,
+  icon: "ti ti-notebook",
+  switchLabel: "Switch notebook",
+  get options() { return notebooks(); },
+  onLoad: loadNotebooks,
+  actions: [
+    ...(mayCreate ? [{ id: "new", label: "New notebook", icon: "ti ti-plus", action: createNotebook }] : []),
+    { id: "all", label: "All notebooks", icon: "ti ti-layout-grid", href: "/app/notebooks" },
+  ],
+};
+const navigation = createNavigation({ items, switcher: () => switcher });
+
+<AppWorkspace.Sidebar collapsible>
+  <AppWorkspace.SidebarDesktop>
+    <AppWorkspace.SidebarSwitcher {...switcher} />
+    <AppWorkspace.SidebarBody>{/* notebook navigation */}</AppWorkspace.SidebarBody>
+  </AppWorkspace.SidebarDesktop>
+</AppWorkspace.Sidebar>
+```
+
 ### Row metadata and actions
 
 Use `SidebarItemMeta` for passive trailing information such as counts and
@@ -235,15 +448,21 @@ the controls remain siblings of the row link or button instead of invalid
 nested interactive content.
 
 Set `visibility="hover"` on metadata or actions only when the information is
-optional. On fine pointers it stays hidden until its own row is hovered
-or keyboard-focused; in a `NavTree`, parent and child rows reveal theirs
-independently. A hover `SidebarItemAction` overlays the end of the row when it
-appears, so the label keeps its width and the text or metadata under the
-button fades out. A long label that scrolls on hover stops before the faded
-end. In a row that also shows an always-visible action or a
+optional. With any pointer that can hover, such as a mouse or trackpad,
+including a tablet with a mouse, actions stay hidden until their own row is
+hovered, keyboard-focused, current, or has its menu open. Optional metadata
+appears on row hover or keyboard focus. In a `NavTree`, parent and child rows
+reveal theirs independently. A hover `SidebarItemAction` overlays the end of
+the row when it appears, so the label keeps its width and the text or metadata under the
+button fades out. In a row that also shows an always-visible action or a
 `SidebarItemActions` group, the hover action keeps its own slot after them
-instead. Hidden metadata and `SidebarItemActions` take no space until
-revealed. Everything remains visible on touch devices. Actions also stay
+instead. A hover `SidebarItemActions` group that ends the row overlays its end
+the same way, before the chevron of a `NavTree` row, so revealing it moves
+nothing in the row; the fade covers one or two controls. Hidden metadata keeps
+its space, so revealing it moves nothing. Hidden actions are out of the tab order until their
+row shows them. The current row always shows its actions, so they stay in
+the tab order, also in a `NavTree` while focus is on another item. Touch-only
+screens always show them. Actions also stay
 visible while a menu or other popup they opened is open, so the pointer can
 leave the row to reach it. Keep errors, unread counts, and other important
 state visible with the default `"always"` value.
@@ -288,7 +507,12 @@ Put `SidebarItemStatus` in `meta`, `SidebarItemMeta`, or a `NavTree.Item`
   attention, such as in a muted conversation or a channel that notifies only
   on mentions; the label keeps its regular weight;
 - `mention` adds "@" and accents the count;
-- `muted` adds a muted bell.
+- `muted` adds a muted bell;
+- `waiting={{ count, label }}` shows how many items wait for the person, such
+  as requests to approve, in the same slot instead of `unread`. `label` is the
+  phrase screen readers hear, for example "3 waiting". The label keeps its
+  regular weight, and `0` stays as a muted count for a count that dropped to
+  zero while the row is still shown.
 
 Each mark has a fixed width and fits the label line, so the row keeps its
 height in every state. Whenever the status shows anything, it reserves the
@@ -303,8 +527,9 @@ inherited locale. Above 99 the phrase says "more than 99 unread", like the
 badge, so an application can pass a capped count such as 100. A row whose
 preview opens from the whole row (`trigger: "row"`) is named by the preview
 label and keeps the phrase as its description. Without unread items, a
-mention, or muting, the component renders nothing, and a `SidebarItem` shows
-no meta slot. The collapsed rail shows only row icons, so the marks hide there
+mention, or muting, the status shows nothing and takes no space, but it keeps
+the row's label on one line. Render it from the row's first paint, also at
+zero, so the first count never changes the row's height. The collapsed rail shows only row icons, so the marks hide there
 with the label. The application decides which state applies, for example
 whether a muted conversation shows a count or only a dot.
 
@@ -391,7 +616,7 @@ const [expanded, setExpanded] = createSignal<readonly string[]>(["mail"]);
 
 ```ts
 type AppWorkspaceProps = {
-  mobileSurface?: "contained" | "flush";
+  mobileSurface?: "contained" | "flush"; flat?: boolean;
   children: JSX.Element; class?: string; resizable?: boolean;
   layoutState?: () => AppWorkspaceLayoutState | null | undefined;
   onLayoutChange?: (state: AppWorkspaceLayoutState) => void; controller?: false;
@@ -418,6 +643,7 @@ type AppWorkspaceMainPaneProps = {
 type AppWorkspaceDetailProps = {
   children: JSX.Element; open: boolean; id: string; class?: string; width?: AppWorkspaceDetailWidth;
   viewTransitionName?: string; resizable?: boolean; minWidth?: number; maxWidth?: number;
+  onClose?: () => void; onStep?: (direction: 1 | -1) => HTMLElement | null | undefined | void;
 };
 
 type AppWorkspaceBottomDrawerProps = {
@@ -425,6 +651,29 @@ type AppWorkspaceBottomDrawerProps = {
   minHeight?: number; maxHeight?: number; viewTransitionName?: string; resizable?: boolean;
 };
 
+```
+
+### SidebarSwitcher
+
+`AppWorkspace.SidebarSwitcher` takes `AppWorkspaceSidebarSwitcherProps`.
+
+```ts
+type AppWorkspaceSidebarSwitcherProps = {
+  currentId: string; label: string; description?: string; icon: string; color?: string;
+  switchLabel: string; options?: readonly AppWorkspaceSwitcherOption[];
+  error?: string; onLoad?: () => void; actions?: readonly AppWorkspaceSwitcherAction[];
+  beforeSelect?: () => boolean | void | Promise<boolean | void>; class?: string;
+};
+
+type AppWorkspaceSwitcherOption = {
+  id: string; label: string; description?: string; icon?: string; color?: string; href: string;
+};
+
+type AppWorkspaceSwitcherAction = {
+  id: string; label: string; icon: string; disabled?: boolean;
+} & ({ href: string; action?: never } | { action: () => void; href?: never });
+
+const APP_WORKSPACE_SWITCHER_SEARCH_FROM = 8;
 ```
 
 ### Sidebar
@@ -452,7 +701,7 @@ type AppWorkspaceSidebarItemProps = {
   description?: JSX.Element; preview?: { label: string; content: JSX.Element | ((close: () => void) => JSX.Element); trigger?: "action" | "row"; align?: "center" | "end"; viewportSize?: "compact"; onOpenChange?: (open: boolean) => void };
   children: JSX.Element; href?: string; navigation?: "enhanced" | "document"; replace?: boolean;
   scroll?: NavigationScrollMode; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
-  onClick?: (event: MouseEvent) => void; active?: boolean; activeClass?: string; disabled?: boolean;
+  onClick?: (event: MouseEvent) => void; active?: boolean | "ancestor"; activeClass?: string; disabled?: boolean;
   icon?: string; meta?: JSX.Element; metaVisibility?: AppWorkspaceSidebarAccessoryVisibility;
   actions?: JSX.Element; tone?: AppWorkspaceSidebarItemTone; title?: string; viewTransitionName?: string;
   class?: string; depth?: number; actionIcon?: string; actionLabel?: string;
@@ -473,7 +722,11 @@ type AppWorkspaceSidebarIconActionProps = {
 
 type AppWorkspaceSidebarItemIconProps = { icon?: string; children?: JSX.Element };
 
-type AppWorkspaceSidebarItemLabelProps = { children: JSX.Element; marquee?: boolean };
+type AppWorkspaceSidebarItemLabelProps = {
+  children: JSX.Element;
+  /** False keeps one line with an ellipsis; rows wrap long labels onto a second line by default. */
+  marquee?: boolean;
+};
 
 type AppWorkspaceSidebarItemMetaProps = {
   children: JSX.Element; visibility?: AppWorkspaceSidebarAccessoryVisibility;
@@ -507,7 +760,8 @@ type AppWorkspaceNavTreeProps = {
 type AppWorkspaceNavTreeMove = { id: string; parentId: string | null; beforeId: string | null; afterId: string | null };
 
 type AppWorkspaceNavTreeItemProps = {
-  id: string; label: JSX.Element; children?: JSX.Element; href?: string; navigation?: "enhanced" | "document";
+  id: string; label: JSX.Element; description?: JSX.Element; children?: JSX.Element; href?: string;
+  navigation?: "enhanced" | "document";
   replace?: boolean; scroll?: NavigationScrollMode;
   onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>; onSelect?: (event: MouseEvent) => void;
   disabled?: boolean; icon?: string; iconLabel?: string; expandedIcon?: string; meta?: JSX.Element;
@@ -553,10 +807,10 @@ The prop names map to compound members (`AppWorkspaceMainPaneProps` → `AppWork
 | --- | --- | --- | --- |
 | Sidebar | 208 | 176 | 360 |
 | MainPane | 320 | 240 | 640 |
-| Detail | 384 | 288 | 640 |
+| Detail | 416 | 320 | 640 |
 | BottomDrawer | 240 | 160 | 560 |
 
-The main area reserves 320px width / 240px height; the available container may reduce maxima. Collapsed sidebar width is 64px; the collapse threshold is 128px. A sidebar with `onHiddenChange` hides below half its minimum width. Detail widths `sm/md/lg/xl` are 288/384/480/544px (default md); Drawer heights `sm/md/lg` are 192/240/320px (default md). Restored geometry takes precedence. `resizable` defaults on; `collapsible` is opt-in. `Main.scroll` and `MainPane.scroll` default on.
+The main area reserves 320px width / 240px height; the available container may reduce maxima. Collapsed sidebar width is 64px; the collapse threshold is 128px. A sidebar with `onHiddenChange` hides below half its minimum width. Detail widths `sm/md/lg/xl` are 320/416/480/544px (default md); Drawer heights `sm/md/lg` are 192/240/320px (default md). Restored geometry takes precedence. `resizable` defaults on; `collapsible` is opt-in. `Main.scroll` and `MainPane.scroll` default on.
 
 `LinkNavigateEvent` and `NavigationScrollMode` use [navigation conventions](/en/ui/getting-started#icons-tones-and-navigation). `navigation` defaults to `"document"`. Event callbacks do not load data automatically.
 
@@ -715,6 +969,7 @@ The package exports parse, normalize, serialize, and style helpers for layout st
     <AppWorkspace.Detail
       id="item"
       open={selectedId() !== null}
+      onClose={closeDetails}
       width="lg"
     >
       <ItemDetail id={selectedId()} />
@@ -734,9 +989,11 @@ Main-pane borders separate adjacent regions from 48 rem. The last visible pane
 has no outer border, and single-pane phone layouts do not retain split borders.
 A side pane keeps its size while the main region keeps 320 px and gives way
 down to its minimum; the stylesheet applies the same fit as the controller, so
-a server-rendered split arrives at its final widths. A resizable `Detail` fits
-the same way into the content area beside `Main`, so a width saved on a wider
-screen arrives at the width it keeps on a narrower one.
+a server-rendered split arrives at its final widths. Detail floats within
+Content. Its width fits while Main keeps 320 px and the two 8 px gaps. If both
+minimum widths cannot fit, the panel overlaps Main.
+Double-click the detail resize handle to clear its saved width and return to
+its preset.
 
 ### Live rows and detail previews
 
@@ -839,8 +1096,16 @@ needed to tell items apart. A plain row with a section heading is calmer and
 usually enough; Assistant lists its chats as rows under day headings with one
 status icon in `meta`. `context` holds a project or category; `contextMeta` holds a short time
 or secondary value. Both accept reactive JSX. Keep commands in actions or the
-preview. Cards truncate titles with an ellipsis by default. Set
-`SidebarItemLabel marquee={false}` for the same truncation in ordinary rows.
+preview. Rows wrap a long label onto up to two balanced lines ending in an
+ellipsis. A selected row keeps its line count when its label is plain text; a
+label built from elements, such as `<strong>`, gets no such reservation.
+A row whose metadata holds a `SidebarItemStatus` keeps one line from its first
+paint, also while the status shows nothing, so a new count never re-wraps the
+label and moves the rows below. Any other metadata must keep its width while
+the row is shown: put unread counts in `SidebarItemStatus` and render it at
+zero too, and keep rows with other changing metadata on one line.
+`SidebarItemLabel marquee={false}` keeps one line with an ellipsis, as cards
+and object rows do by default.
 Completed work can retain `variant="row"` without context or description.
 
 Card context headers keep their width when trailing actions appear; only the title area yields space. Use `Format.RelativeTime` for relative timestamps. The desktop scroll track occupies the existing right inset and keeps its gutter when content fits, without adding space on the left. Keyboard focus on the main card action outlines the complete card.
@@ -856,10 +1121,12 @@ quiet meta line with at most one secondary fact, and `SidebarItemMeta` stacks
 trailing counts at the end of the row. Keep counts tabular and put their
 accessible wording in visually hidden text. The count column keeps a minimum
 width, so counts line up across rows. When an object row has trailing counts,
-`SidebarItemActions visibility="hover"` overlays that column on fine pointers
-instead of pushing it toward the title. The counts stay in the accessibility
-tree while hidden. Omit the leading icon when every object would show the same
-one. Object rows truncate their title instead of scrolling it.
+`SidebarItemActions visibility="hover"` overlays that column with a mouse or
+trackpad, including a tablet with a mouse, instead of pushing it toward the
+title. It appears when the row is hovered, keyboard-focused, current, or has
+its menu open. Touch-only screens always show the actions. The counts stay in
+the accessibility tree while hidden. Omit the leading icon when every object would show the same
+one. Object rows keep their title on one line with an ellipsis.
 
 ```tsx
 <AppWorkspace.SidebarItem variant="object" href="/app/mail/support" description="support@example.test">

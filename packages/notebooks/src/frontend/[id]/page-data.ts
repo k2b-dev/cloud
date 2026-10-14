@@ -5,15 +5,15 @@ import type { Context } from "hono";
 import { toPublicNotebook, toPublicNoteComment } from "@/api/public-resources";
 import { orderBookTree } from "@/lib/book-tree";
 import { extractNamedBlockSummaries } from "@/lib/named-blocks";
-import { parseNavigatorQuery } from "@/lib/navigator-url";
 import { type PresentationMode, resolvePresentationMode } from "@/lib/presentation-mode";
 import { requestedPresentationMode } from "@/lib/presentation-url";
+import { parseSidebarFilter } from "@/lib/sidebar-filter";
 import { notebooksService } from "@/service";
 import { loadBookNote } from "@/service/book";
 import { loadSelectedNoteRouteState, type SelectedNoteRouteState } from "@/service/route-state";
 import { buildNoteUrl } from "../params";
 import { extractTocFromMarkdown } from "./_components/detail/toc";
-import { parseDetailPanelOpen, parseNavigationHidden, parseSettings } from "./_components/settings/NotebookSettingsStore";
+import { parseDetailPanelOpen, parseFullWidth, parseNavigationHidden, parseSettings } from "./_components/settings/NotebookSettingsStore";
 import type { NotebookContext } from "./_components/sidebar/types";
 
 type SelectedNote = SelectedNoteRouteState["note"];
@@ -151,13 +151,14 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     userId: user.id,
     settings,
     navigationHidden: parseNavigationHidden(cookieHeader),
+    fullWidth: parseFullWidth(cookieHeader),
     permission,
     attachmentCount,
     favoriteNoteIds: favoriteRows.map((row) => row.noteId),
     tags,
     workspaceCursor,
     dateConfig: getDateConfig(c),
-    navigatorQuery: parseNavigatorQuery(new URL(c.req.url).searchParams),
+    sidebarFilter: parseSidebarFilter(new URL(c.req.url).searchParams),
     presentationMode: requestedPresentationMode(new URL(c.req.url).searchParams),
   };
 

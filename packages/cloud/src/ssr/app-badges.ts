@@ -1,5 +1,7 @@
 import { createSignal } from "solid-js";
 import { APP_BADGES_REFRESH_EVENT } from "../browser/app-badges";
+import { APPROVAL_COUNTS_PATH } from "../contracts/approval-paths";
+import type { ApprovalCounts } from "../contracts/approvals";
 
 /**
  * Shortest time between two scheduled reads in one tab, and the longest one
@@ -13,8 +15,20 @@ export const APP_BADGE_INTERVAL_MS = 60_000;
 // count. Only the browser ever writes it; server renders always see no badge.
 const [counts, setCounts] = createSignal<ReadonlyMap<string, number>>(new Map());
 
-/** The count for a declared `nav.badge` endpoint; 0 until the browser has read it. */
-export const appBadgeCount = (endpoint: string | undefined): number => (endpoint ? (counts().get(endpoint) ?? 0) : 0);
+const [approvalCounts, setApprovalCounts] = createSignal<ApprovalCounts | null>(null);
+
+/** Retain an SSR count until the first browser read; a failed read still resolves to zero. */
+export const liveApprovalCount = (appId?: string): number | null => {
+  const current = approvalCounts();
+  if (!current) return null;
+  if (appId === undefined) return current.total;
+  return Object.hasOwn(current.apps, appId) ? (current.apps[appId] ?? 0) : 0;
+};
+export const approvalCount = (appId?: string): number => liveApprovalCount(appId) ?? 0;
+
+/** Endpoint and approval counts for one app; 0 until the browser has read them. */
+export const appBadgeCount = (input: { endpoint?: string; appId?: string }): number =>
+  (input.endpoint ? (counts().get(input.endpoint) ?? 0) : 0) + (input.appId ? approvalCount(input.appId) : 0);
 
 /** A positive safe integer from an `AppNavBadge` body, else 0. */
 export const parseAppBadge = (body: unknown): number => {
@@ -33,6 +47,33 @@ const readBadge = async (endpoint: string, signal: AbortSignal): Promise<number>
   }
 };
 
+const isCount = (value: unknown, minimum: number): value is number =>
+  typeof value === "number" && Number.isSafeInteger(value) && value >= minimum;
+
+/** What `ApprovalCountsSchema` accepts from a JSON body, without loading validators into the shell; a test compares both. */
+export const parseApprovalCounts = (body: unknown): ApprovalCounts | null => {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
+  if (Object.keys(body).length !== 2 || !("total" in body) || !("apps" in body)) return null;
+  const { total, apps } = body;
+  if (!isCount(total, 0) || typeof apps !== "object" || apps === null || Array.isArray(apps)) return null;
+  // Like Zod's record, ignore a `__proto__` key that JSON.parse keeps as an own property.
+  const entries = Object.entries(apps).filter(([app]) => app !== "__proto__");
+  return entries.every(([, count]) => isCount(count, 1)) ? { total, apps: Object.fromEntries(entries) } : null;
+};
+
+const readApprovalCounts = async (signal: AbortSignal): Promise<ApprovalCounts> => {
+  try {
+    const response = await fetch(APPROVAL_COUNTS_PATH, { credentials: "same-origin", headers: { accept: "application/json" }, signal });
+    if (response.status === 200) {
+      const parsed = parseApprovalCounts(await response.json());
+      if (parsed) return parsed;
+    }
+  } catch {
+    // A failing read clears approval counts just like an app badge.
+  }
+  return { total: 0, apps: {} };
+};
+
 let watching = false;
 
 /**
@@ -45,8 +86,8 @@ let watching = false;
  * read still running after the interval gives up. Returns a disposer.
  */
 export const watchAppBadges = (endpoints: readonly string[]): (() => void) => {
-  const unique = [...new Set(endpoints)];
-  if (typeof window === "undefined" || unique.length === 0 || watching) return () => {};
+  const unique = [...new Set([...endpoints, APPROVAL_COUNTS_PATH])];
+  if (typeof window === "undefined" || watching) return () => {};
   watching = true;
   const stopped = new AbortController();
   // Endpoints with a read in flight, mapped to whether one more read waits for it.
@@ -60,9 +101,12 @@ export const watchAppBadges = (endpoints: readonly string[]): (() => void) => {
       return;
     }
     running.set(endpoint, false);
-    void readBadge(endpoint, AbortSignal.any([stopped.signal, AbortSignal.timeout(APP_BADGE_INTERVAL_MS)])).then((count) => {
+    const signal = AbortSignal.any([stopped.signal, AbortSignal.timeout(APP_BADGE_INTERVAL_MS)]);
+    const result = endpoint === APPROVAL_COUNTS_PATH ? readApprovalCounts(signal) : readBadge(endpoint, signal);
+    void result.then((count) => {
       if (stopped.signal.aborted) return;
-      setCounts((previous) => new Map(previous).set(endpoint, count));
+      if (typeof count === "number") setCounts((previous) => new Map(previous).set(endpoint, count));
+      else setApprovalCounts(count);
       const queued = running.get(endpoint);
       running.delete(endpoint);
       if (queued && document.visibilityState !== "hidden") read(endpoint);

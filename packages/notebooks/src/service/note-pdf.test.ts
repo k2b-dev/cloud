@@ -9,6 +9,17 @@ const build = (markdown: string, extra: Partial<Parameters<typeof buildNotePdfHt
   buildNotePdfHtml({ markdown, notebookShortId: "ABC123", locale: "en", ...extra });
 
 describe("note PDF HTML", () => {
+  test("prints the editor and Book's ordered-label cycle and nested lists", () => {
+    const html = build("3. root\n   1. alpha\n      1. roman\n         1. decimal");
+    expect(html).toContain("ol ol { list-style-type: lower-alpha; }");
+    expect(html).toContain("ol ol ol { list-style-type: lower-roman; }");
+    expect(html).toContain("ol ol ol ol { list-style-type: decimal; }");
+    expect(html).toContain('<ol start="3">');
+    expect(html.match(/<ol(?: [^>]*)?>/g)).toHaveLength(4);
+    expect(html).toMatch(/<li>alpha[\s\S]*<ol>[\s\S]*<li>roman/);
+    expect(html).toContain(".notebook-book-toc ol { padding-left: 0; list-style: none; }");
+  });
+
   test("renders every notice kind like the reader instead of printing its directive", () => {
     const html = build(["# Trip plan", ...NOTICES.map((kind) => `:::${kind}\nPack the **${kind}** kit.\n:::`)].join("\n\n"), {
       templateId: "report",

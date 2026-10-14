@@ -57,6 +57,213 @@ describe("chart explorer presentation", () => {
   ];
   const button = (text: string) =>
     Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent?.trim() === text)!;
+  const openSwitcher = async () => {
+    dom.root.querySelector<HTMLButtonElement>('[aria-label="Chart view"]')!.click();
+    await tick();
+    return Array.from(dom.document.querySelectorAll<HTMLButtonElement>(".k2b-select-chip__option"));
+  };
+  test("shared filter controls pin the requested step and clear it without losing filters", async () => {
+    const { ChartFilterControls } = await import("../src/content/ChartFilterControls");
+    const [request, setRequest] = createSignal<import("../src/content/chart-explorer").ChartExplorerRequest>({
+      step: "2026",
+      visibleKeys: ["north"],
+    });
+    const dispose = render(
+      () =>
+        createComponent(ChartFilterControls, {
+          get request() {
+            return request();
+          },
+          displayedRequest: { step: "2025" },
+          steps: [
+            { key: "2025", label: "Previous year" },
+            { key: "2026", label: "Current year" },
+          ],
+          compare: true,
+          onRequest: setRequest,
+        }),
+      dom.root,
+    );
+    try {
+      button("Pin as reference").click();
+      await tick();
+      expect(request()).toEqual({ step: "2026", referenceStep: "2026", visibleKeys: ["north"] });
+      expect(button("Reference: Current year").getAttribute("aria-label")).toBe("Remove comparison: Current year");
+      setRequest({ ...request(), step: "2025" });
+      await tick();
+      button("Reference: Current year").click();
+      await tick();
+      expect(request()).toEqual({ step: "2025", referenceStep: undefined, visibleKeys: ["north"] });
+      expect(button("Pin as reference")).toBeDefined();
+    } finally {
+      dispose();
+    }
+  });
+  test("the switcher lists every chart and keeps a chart named table distinct from the table entry", async () => {
+    const choices = [
+      { id: "offers", label: "Offers" },
+      { id: "median", label: "Median price" },
+      { id: "table", label: "Trend named table" },
+    ];
+    const charts: string[] = [];
+    const views: string[] = [];
+    const [chart, setChart] = createSignal("offers");
+    const dispose = render(
+      () =>
+        createComponent(Explorer<Row>, {
+          title: "Queues",
+          data: data(),
+          columns,
+          charts: choices,
+          get chart() {
+            return chart();
+          },
+          defaultView: "table",
+          onChartChange: (id) => {
+            charts.push(id);
+            setChart(id);
+          },
+          onViewChange: (view) => views.push(view),
+        }),
+      dom.root,
+    );
+    try {
+      for (const choice of choices) {
+        const options = await openSwitcher();
+        expect(options.map((option) => option.textContent?.trim())).toEqual([...choices.map((choice) => choice.label), "Table"]);
+        options.find((option) => option.textContent?.trim() === choice.label)!.click();
+        await tick();
+        expect(charts.at(-1)).toBe(choice.id);
+        expect(views.at(-1)).toBe("chart");
+        expect(dom.root.querySelector("table")).toBeNull();
+        expect(dom.root.querySelector('[aria-label="Chart view"]')?.textContent).toContain(choice.label);
+      }
+      const options = await openSwitcher();
+      options.find((option) => option.textContent?.trim() === "Table")!.click();
+      await tick();
+      expect(charts).toEqual(["offers", "median", "table"]);
+      expect(views).toEqual(["chart", "chart", "chart", "table"]);
+      expect(dom.root.querySelector("table")).not.toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+  test("without charts the switcher still offers Diagram and Table", async () => {
+    const views: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Explorer<Row>, {
+          title: "Queues",
+          data: data(),
+          columns,
+          onViewChange: (view) => views.push(view),
+        }),
+      dom.root,
+    );
+    try {
+      const options = await openSwitcher();
+      expect(options.map((option) => option.textContent?.trim())).toEqual(["Diagram", "Table"]);
+      options[1]!.click();
+      await tick();
+      expect(dom.root.querySelector("table")).not.toBeNull();
+      (await openSwitcher())[0]!.click();
+      await tick();
+      expect(views).toEqual(["table", "chart"]);
+      expect(dom.root.querySelector("table")).toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+  test("the table cap follows sorting, names shown and total rows, and Copy data includes every sorted row", async () => {
+    const fixture = data();
+    fixture.rows = [...fixture.rows, { key: "c", label: "Third", value: 70 }, { key: "d", label: "Fourth", value: 10 }];
+    const copied: string[] = [];
+    const original = Object.getOwnPropertyDescriptor(navigator.clipboard, "writeText");
+    Object.defineProperty(navigator.clipboard, "writeText", {
+      configurable: true,
+      value: async (text: string) => {
+        copied.push(text);
+      },
+    });
+    const [cap, setCap] = createSignal(2);
+    const dispose = render(
+      () =>
+        createComponent(Explorer<Row>, {
+          title: "Queues",
+          data: fixture,
+          columns,
+          defaultView: "table",
+          defaultSort: { key: "value", direction: "asc" },
+          get tableRows() {
+            return cap();
+          },
+        }),
+      dom.root,
+    );
+    const labels = () =>
+      Array.from(dom.root.querySelectorAll("tbody .k2b-data-table__row")).map((row) => row.querySelector("td")?.textContent?.trim());
+    try {
+      expect(labels()).toEqual(["Fourth", "Exports"]);
+      const note = dom.root.querySelector(".k2b-chart-explorer__note")!;
+      expect(note.textContent).toBe("Showing 2 of 4 rows. Sort to see others; Copy data copies all of them.");
+      expect(note.closest(".k2b-chart-explorer__viewport")).not.toBeNull();
+      button("Jobs").click();
+      await tick();
+      expect(labels()).toEqual(["Third", "Imports"]);
+      dom.root.querySelector<HTMLButtonElement>('[aria-label="Copy data"]')!.click();
+      await tick();
+      expect(copied).toEqual(["Queue\tJobs\nThird\t70\nImports\t42\nExports\t28\nFourth\t10"]);
+      setCap(4);
+      await tick();
+      expect(labels()).toEqual(["Third", "Imports", "Exports", "Fourth"]);
+      expect(dom.root.querySelector(".k2b-chart-explorer__note")).toBeNull();
+    } finally {
+      dispose();
+      if (original) Object.defineProperty(navigator.clipboard, "writeText", original);
+      else Reflect.deleteProperty(navigator.clipboard, "writeText");
+    }
+  });
+  test("Copy data guards formula text and headers while preserving numeric cells and TSV quoting", async () => {
+    const fixture = data();
+    fixture.rows = [
+      { key: "a", label: "=1+1", value: -5 },
+      { key: "b", label: "-x", value: -5 },
+      { key: "c", label: "+x", value: -5 },
+      { key: "d", label: "@x", value: -5 },
+      { key: "e", label: "\tx", value: -5 },
+      { key: "f", label: "\rx", value: -5 },
+      { key: "g", label: 'a\n"b"', value: -5 },
+    ];
+    const copied: string[] = [];
+    const original = Object.getOwnPropertyDescriptor(navigator.clipboard, "writeText");
+    Object.defineProperty(navigator.clipboard, "writeText", {
+      configurable: true,
+      value: async (text: string) => {
+        copied.push(text);
+      },
+    });
+    const dispose = render(
+      () =>
+        createComponent(Explorer<Row>, {
+          title: "Copy safety",
+          data: fixture,
+          columns: [
+            { ...columns[0]!, label: "=Text" },
+            { ...columns[1]!, label: "-Number" },
+          ],
+        }),
+      dom.root,
+    );
+    try {
+      dom.root.querySelector<HTMLButtonElement>('[aria-label="Copy data"]')!.click();
+      await tick();
+      expect(copied).toEqual(['\'=Text\t\'-Number\n\'=1+1\t-5\n\'-x\t-5\n\'+x\t-5\n\'@x\t-5\n"\'\tx"\t-5\n"\'\rx"\t-5\n"a\n""b"""\t-5']);
+    } finally {
+      dispose();
+      if (original) Object.defineProperty(navigator.clipboard, "writeText", original);
+      else Reflect.deleteProperty(navigator.clipboard, "writeText");
+    }
+  });
   test("server-prepared line explorer follows a shared cursor without selecting rows", async () => {
     const { createChartCursor } = await import("../src/content/chart-cursor");
     const cursor = createChartCursor({ formatX: (x) => `Time ${x}` });
@@ -176,6 +383,46 @@ describe("chart explorer presentation", () => {
       setView("chart");
       await tick();
       expect(dom.root.querySelectorAll("[data-chart-datum][data-selected]")).toHaveLength(2);
+    } finally {
+      dispose();
+    }
+  });
+  test("a custom first cell opens its action without nesting selection buttons; the row stays keyboard-selectable", async () => {
+    const { Button } = await import("../src/actions/Button");
+    let opened = 0;
+    const selected: (string | null)[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Explorer<Row>, {
+          title: "References",
+          data: data(),
+          defaultView: "table",
+          columns: [
+            {
+              ...columns[0],
+              id: "label",
+              label: "Queue",
+              value: (row: Row) => row.label,
+              render: (row: Row) => createComponent(Button, { onClick: () => opened++, children: row.label }),
+            },
+            { id: "value", label: "Jobs", value: (row: Row) => String(row.value) },
+          ],
+          onSelectedKeyChange: (key) => selected.push(key),
+        }),
+      dom.root,
+    );
+    try {
+      expect(dom.root.querySelector("button button") === null).toBe(true);
+      button("Imports").click();
+      await tick();
+      expect(opened).toBe(1);
+      expect(selected).toEqual([]);
+      const row = dom.root.querySelector<HTMLTableRowElement>("tbody tr");
+      if (!row) throw new Error("Missing table row");
+      expect(row.tabIndex).toBe(0);
+      row.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      await tick();
+      expect(selected).toEqual(["a"]);
     } finally {
       dispose();
     }

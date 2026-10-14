@@ -4,3 +4,111 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* One open chat: header, history, and composer in one flat column. The composer caps its growth at a third of it. */
+.chat-conversation {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  container-type: size;
+  background: var(--k2b-surface);
+}
+.chat-conversation__header {
+  display: flex;
+  align-items: center;
+  min-height: 2.875rem;
+  padding: 0.25rem 0.75rem;
+}
+/* The list is its own page below 64 rem; from 64 rem the sidebar beside the chat holds it. */
+.chat-conversation__back {
+  display: flex;
+  flex: none;
+  margin-inline-end: 0.25rem;
+}
+.chat-conversation__back i {
+  font-size: 1.25rem;
+}
+@media (min-width: 64rem) {
+  .chat-conversation__back {
+    display: none;
+  }
+}
+.chat-conversation__feed {
+  flex: 1;
+  min-height: 0;
+}
+.chat-conversation__composer {
+  padding: 0.25rem 0.75rem 0.75rem;
+}
+
+/* A phone shows the chat as its own screen over the visible part of the page, so the keyboard never hides the composer. */
+@media (max-width: 47.999rem) {
+  .chat-conversation {
+    /* follow-viewport.ts replaces both with the visual viewport's once the chat runs in the browser. */
+    --chat-viewport-top: 0px;
+    --chat-viewport-height: 100dvh;
+    position: fixed;
+    z-index: 25;
+    inset-inline: 0;
+    top: var(--chat-viewport-top);
+    height: var(--chat-viewport-height);
+    padding-top: env(safe-area-inset-top);
+    padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+  }
+  .chat-conversation__header {
+    padding-inline: 0.25rem;
+  }
+  .chat-conversation__composer {
+    padding: 0.25rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom));
+  }
+  .chat-conversation[data-keyboard] .chat-conversation__composer {
+    padding-bottom: 0.5rem;
+  }
+}
+
+/* Below 64 rem the list of chats is its own page; from 64 rem the sidebar holds it and the work area asks for a chat. */
+.chat-list-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+.chat-select {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+}
+@media (min-width: 64rem) {
+  .chat-list-page {
+    display: none;
+  }
+  .chat-select {
+    display: flex;
+  }
+}
+.chat-list__preview {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The time sits on the title line and the unread count below it on the preview line. Both lines always exist, so a
+   count that comes or goes never moves the time or changes the row. */
+.chat-list__meta {
+  display: grid;
+  grid-template-rows: 1.125rem 1.125rem;
+  row-gap: 0.2rem;
+  align-items: center;
+  justify-items: end;
+}
+.chat-list__time {
+  grid-row: 1;
+  font-variant-numeric: tabular-nums;
+}
+.chat-list__unread {
+  display: flex;
+  grid-row: 2;
+}

@@ -241,11 +241,15 @@ export interface MailConnector {
     maxUid: number,
     signal?: AbortSignal,
   ): Promise<number>;
+  /**
+   * Streams the requested sources in request order. `consume` resolves "stop" to end the batch
+   * before the next source is requested; the remaining requests are not fetched.
+   */
   downloadSourceBatch(
     config: ProviderConnectionInput,
     folderPath: string,
     requests: SourceDownloadRequest[],
-    consume: (source: SourceDownload) => Promise<void>,
+    consume: (source: SourceDownload) => Promise<void | "stop">,
     signal?: AbortSignal,
   ): Promise<void>;
   send(config: ProviderConnectionInput, request: SendRequest): Promise<SendResult>;

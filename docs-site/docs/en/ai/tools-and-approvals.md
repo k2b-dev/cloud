@@ -5,7 +5,7 @@ section: AI
 order: 1040
 description: Let models request application actions while keeping authorization and approval explicit.
 tags: [ai, tools, approvals]
-updated: 2026-10-09
+updated: 2026-10-12
 ---
 
 # Tools and approvals
@@ -62,7 +62,7 @@ grant domain permission.
 | Builder | Execution |
 | --- | --- |
 | `.server(run)` | Cloud runs the implementation |
-| `.client()` | Browser handles the call |
+| `.client()` | A connected client handles the call |
 | `.clientView()` | Cloud answers the call itself; the chat only shows it |
 | `.clientInteraction()` | Browser handles an interactive action |
 
@@ -75,20 +75,39 @@ the action requires browser state or direct user interaction.
 
 ### Run an optional tool in a local CLI
 
-The interactive Assistant CLI may opt one turn into the predefined
-`local_bash` client tool with `cld assistant --allow-bash`. AI Core persists
-the tool call and its result, but it never executes the command. The CLI shows
-the exact command and asks for confirmation before starting `/bin/bash` as the
-current OS user in the CLI's startup directory.
+Local clients such as interactive `cld assistant` declare the tools they can
+run through `clientToolIds`. Cloud declares their input and output schemas,
+persists requests and results, and validates each result before continuing.
+The client executes them, enforces workspace path rules, and asks the user
+when a path or operation requires a decision. Cloud never reads the local
+filesystem or executes a local command itself.
 
-The Assistant web app does not advertise or execute this tool. It still shows
-persisted local Bash calls and results in conversation history. A pending call
-is read-only there and can be continued only by an opted-in local CLI.
+| Tool | Purpose |
+| --- | --- |
+| `local_list` | List local files and folders, optionally by glob, in pages; unreadable subfolders are skipped and named |
+| `local_read` | Read local text with line numbers; upload documents and images for Cloud tools |
+| `local_upload` | Upload local files into this chat and return chat paths |
+| `local_download` | Save a chat file to a new or replaced local file |
+| `local_write` | Create, append to, or replace a local text file |
+| `local_move` | Move or rename local files and folders without overwriting |
+| `load_local_skill` | Load a local Skill's instructions, directory and file list |
+| `local_bash` | Run a command as the user's OS account in the workspace |
 
-Local command output is stored with the conversation and sent to the selected
-model. Treat retrieved mail, webpages, files, and tool output as untrusted:
-`--allow-bash` exposes the tool for the session, but never approves an
-individual command. There is no remembered or non-interactive Bash approval.
+Local tool decisions are never remembered as Cloud approvals. The client
+controls its questions; a completed call does not prove the user saw it.
+Calls and results become chat history and are sent to the model. Retrieved
+files and ordinary tool output remain untrusted data. Upload local files with
+`local_upload` before using a chat path with `read_file`, `view_image`, or Code
+Mode. The web app displays local tool history but does not offer or execute
+these tools. See [cld assistant](/en/apps/cld/assistant) for local tools modes,
+path rules and terminal questions.
+
+Cloud approvals in cld use numbered **Approve once**, **Approve for this
+chat**, and **Always approve** choices where allowed; Enter rejects. When only
+one-time approval is available, the prompt uses `y/N`. Typed-ahead or pasted input never answers these questions.
+Websites cannot be remembered from cld. `/approvals` and `cld assistant
+approvals list|revoke` list and revoke remembered approvals, including websites
+saved in the web; `list --chat <chat-id>` selects approvals limited to that chat.
 
 ## Set the approval policy
 
@@ -146,38 +165,210 @@ as with surveys, the long-form text editor, charts, or presented files. Keep
 operation details and arguments in the tool description and schema; the hint
 does not replace either.
 
-The built-in `chart` tool is a `clientView()` that shows one chart in the chat
-from data the model already has. Its input is the plain-data form of
-`cloud.chart()` in Studio code: `bar`, `line` (with `area` to fill it),
-`scatter`, `pie`, `donut`, `histogram`, `gauge`, or `sparkline`, with `title`
-and an optional `subtitle`, but without `width`, `height`, or `format`
-functions. Model providers accept only an object at the root of a tool schema,
-so `CloudAiChartInputSchema` describes every kind as one object whose fields
-name the kinds they belong to, and checks the rules of the chosen kind after
-that. A chart holds at most 8 series, one per palette color, and at most 480
-values per list, one per unit of the 480-unit drawing. `x` is a number, a date
-`YYYY-MM-DD`, or a local date and time `YYYY-MM-DDTHH:mm` or
-`YYYY-MM-DDTHH:mm:ss` without an offset, written in the user's time zone.
+The built-in `card` tool shows one highlight figure the model already has as
+one stat tile, the same look as a stats view. `tone` is accepted but not shown,
+and the trend stays neutral because a card does not say whether up is better.
+Its title, value, caption and trend wrap instead of being cut off; the tool
+asks for a short value of about 20 characters and a one-line caption.
+Several figures computed in `code_run` belong in `cloud.view.stats` in that
+run, followed by `present({path})`.
 
-The schema checks these bounds first: input outside them fails before anything
-is computed or drawn. It then rejects input that would not draw as written: a date that does not exist, such as February 30; a line with
-fewer than two points in a series; values at or below zero on a `log` axis,
-which the chart would leave out; values outside an axis `domain`; values that
-differ too little for their size to label an axis, such as 1e17 and 1e17 + 16;
-pie slices that add up to zero; or a pie whose legend leaves too little room
-for it. The model gets the reason, and the chat never shows a broken chart or a
-table that hides a value. `parseCloudAiChartInput()` reads the arguments of a
-call as one typed chart without drawing it.
+The built-in `chart` tool is a `clientView()` for a few values the model already
+has that did not come from a code run. It shares the chart contract of
+`cloud.chart()` in Studio code, without `width`, `height`, or format functions.
+Set exactly one of `kind` or `charts` at the tool's flat root, with `title` and
+optional `subtitle` (unit, period or source).
 
-Cloud answers a chart call itself, without a browser and also in background and
-scheduled runs, whose transcript shows the chart later. The call goes from
-running to completed without an open request in between. The chat draws it
-with the `@k2b/ui` chart renderer that `cloud.chart()` uses. The chart has no
-code, sandbox, state, or actions. The reader can switch it to a data table that
-shows and copies every value as given, and axis labels show fractional values
-exactly. When a chart needs filters or buttons, Assistant shows an app in the
-chat with `code_present` instead; data that must be kept or an app that is used
-again becomes a saved Studio App.
+| Kind | Data and options |
+| --- | --- |
+| `bar` | `data: [{label, value}]`; `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
+| `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]`; `xAxis`, `yAxis`, `legend`, `references`. Line also accepts `area`, `smooth` and series `style`. |
+| `pie`, `donut` | `data: [{label, value}]`; `legend`, `showLabels`, `format` |
+| `histogram` | `data: number[]`; `bins` (count or ascending edges), `references` |
+| `gauge` | `value`; `min`, `max`, `label`, `unit`, `format`, `thresholds` |
+| `sparkline` | `data: number[]`; `area` |
+| `boxplot` | `data: [{label, values: number[]}]`; `yAxis`, `references` |
+| `heatmap` | `data: [{x, y, value}]`, with text categories and each x/y pair once; at most 17 rows (y categories), and column labels that fit a phone-wide chart; `min`, `max`, `showValues`, `format` |
+| `barGauge` | 1..8 `data` items `{label, value, min?, max?}`; labels at most 10 characters. Optional shared `min`, `max`, `unit`, `format`, `thresholds`. |
+| `stat` | `value`; `format`, `unit`, `delta` (change in the value's units), `better: "up" | "down"`, `sparkline: number[]` |
+
+Axes accept `label`, `domain: [min, max]`, `ticks` (2..12), `scale: "linear" |
+"log"` and `format`. Number formats are `{style?: "number" | "percent" |
+"currency", currency?, unit?, decimals?, compact?}`. Currency requires an
+uppercase three-letter code exactly when style is currency; percent takes
+fractions, decimals is 0..10, and unit is a suffix of at most 12 characters.
+Date x axes take `{date: "day" | "minute" | "second"}`. With `showValues` on
+bars, y ticks use the value format. Pie and donut slices show shares, so their
+format applies to the values in tooltips and the data table.
+
+`references` holds at most 8 `{value, axis?, label?}` lines, defaulting to y.
+Only line, scatter and histogram accept x references. Reference values match
+the axis type; automatic domains include them, and explicit domains must contain
+them. Gauge and barGauge `thresholds` hold 1..8 `{value, label?}` bounds in
+strictly ascending order within every effective min..max range (defaults 0..100).
+Cloud uses palette colors for bands. Line series `style` is `solid`, `dashed` or
+`dotted`; `role: "reference"` defaults a line to dashed unless style is set,
+and makes scatter points hollow in chat. For stat, `better` lets the host choose
+the change color; absent `better` or a zero change is neutral.
+
+A group takes `charts` (2..6 complete chart specs), optional `linkX` and
+`layout: "stack" | "grid"` (default stack). `linkX` requires line charts whose
+x values are all numbers or all dates. There is no second y axis; use a group
+for related measures with different units. Groups are separate charts, not
+grouped or stacked bars; neither bar mode is supported
+([upstream issue](https://github.com/k2b-dev/stdlib/issues/5)). See
+[Chat interface](/en/docs/ai/chat-interface) for layout and cursor behavior.
+
+Limits are 8 series and 480 values per series or ordinary data list. Boxplots
+allow up to 480 groups; their observations count toward the 3,840-mark budget.
+Heatmaps allow up to 3,840 cells. Each chart and each group has a total budget of
+3,840 input marks, including boxplot observations and a stat's headline plus
+sparkline. A line or sparkline needs at least two points; scatter needs one.
+x values are finite numbers or `YYYY-MM-DD[THH:mm[:ss]]`, wall-clock time without
+an offset. All series in a chart use the same x type.
+
+The schema checks bounds before computing or drawing. It rejects nonexistent
+dates, values at or below zero on a log axis, values outside an explicit domain,
+values too close for their size to label an axis, zero-total pies and legends
+that leave too little room for a pie. Heatmap column labels must fit a phone-wide
+chart; validation names the allowed length or asks for fewer columns. The model
+gets the reason. `parseCloudAiChartInput()` reads one chart without drawing;
+`parseCloudAiChartToolView()` reads either a chart or a group.
+
+Cloud answers chart calls without a browser, also in background and scheduled
+runs. The transcript shows them later. Readers can switch each chart to its
+data table and use Copy data. Filters, steps and comparison over computed rows
+use `cloud.view.explorer` in `code_run`. Anything else the person interacts
+with, such as a calculator, converter, timer or form, is a saved Studio App
+created with `code_create`, even when it keeps no data.
+
+Computed results stay in `code_run`: the script calls `cloud.view.chart`,
+`cloud.view.group`, `cloud.view.table`, `cloud.view.stats`,
+`cloud.view.details` or `cloud.view.explorer`, then the model calls `present({path})`
+for each view the person should see. It never retypes run values into chart
+arguments, app data or Markdown. A missing view requires another run with
+`cloud.view.*`.
+
+Views are declarative JSON chat files under `/views/*.view.json`, validated on
+every server write. Chart views use the contract above; group views are
+`{view: "group", title, subtitle?, charts, linkX?, layout?}`. Code runs may use
+rows convenience forms for chart specs, including each chart in a group.
+Tables have unique typed columns, rows, an optional footer and initial sort;
+number columns use the same number formats. A `ref` column holds Cloud
+references or null; every other column requires its declared scalar type.
+Stats show 1..6 comparable key figures above charts, instead of several card
+calls or stat charts. Details show 1..100 exact fields of one record, such as a
+checked invoice, as read-only rows. Views contain no markup or functions;
+labels and cells render as text. Limits are 3,840 table rows, 100 columns and
+1 MiB per view; views and downloads share 64 outputs per run. Model write tools
+reject `/views` paths. Users retain file editing, download, rename and deletion
+rights.
+
+A saved stats view is `{view: "stats", title, subtitle?, items}`. Each item has
+`label` and `value` (a finite number, or short text for a state such as `"OK"`),
+optional number `format`, `sub`, finite `delta`, `better: "up" | "down"`, and
+`sparkline` (2..480 finite numbers, oldest first). Format and delta require a
+numeric value; better requires delta. Delta is in the value's units. The host
+chooses improvement colors from better; no direction or zero stays neutral.
+Titles are trimmed to 1..160 characters, subtitles to 1..300, and item labels,
+text values and sub to 1..80. Stats do not convert Dates.
+
+A saved details view is `{view: "details", title, subtitle?, items}`. Each field
+has `{label, type, value, format?}`; labels may repeat. Types are `text`,
+`number`, `date`, `datetime` and `ref`, exactly as for table cells. Null is
+always allowed; format belongs only to number fields. In scripts, an omitted
+type becomes number for a finite number, datetime for a Date, ref for a Cloud
+reference, or text for a string or null/undefined. Dates become wall-clock text
+in the run's time zone; explicit date keeps that zone's calendar day. Saved
+files require types. Labels, title and subtitle use the same bounds as stats.
+
+Reference cells and details fields contain only `{type, id, title?}`, derived
+from the platform resource reference contract: a namespaced capability type,
+an ID of 1..512 characters, and an optional title of 1..500. Copy
+`{...item.ref, title: item.title}` from a capability result; never build links.
+The runtime strips every other key, including URLs, while saved references
+with extra keys fail validation. Tables infer ref when every non-null cell,
+footer included, is reference-like; explicit ref also works. Other objects
+remain errors. Views never carry an href or URL for opening a reference.
+
+The host displays `title ?? id` and opens the reference on click after a
+confirmation, through the owning app's reader with the viewer's current access.
+A view grants no access. Table sorting and Copy data use that visible text;
+the CLI adds `(type:id)`. Stats and details print a Field/Value table in the
+CLI, using the same locale formatting as the web host.
+
+Explorers store one dataset as `{view: "explorer", title, subtitle?, columns,
+rows, views, controls?}`. Columns and cells follow the table contract. Reference columns are allowed in
+the table but cannot be encoded as x, y, series, value, filter or step.
+`views` holds 1..6 strict chart mappings, each with a unique `id` (1..40
+characters) and switcher `label` (1..80): bar (`x`, numeric `y`), line/scatter
+(numeric or date/datetime `x`, numeric `y` or 1..8 unique y columns, optional
+`series` with a single y), or heatmap (`x`, `y`, numeric `value`). All references
+name existing column ids. `controls` is `{filter?, step?, compare?}`: filter and
+series columns have at most 8 distinct values, step at most 480; all need
+non-null cells in every row. Comparison needs a step and only line/scatter views.
+Titles and subtitles use the table bounds; explorers allow at most 3,840 rows,
+100 columns and 3,840 marks per view (rows × y columns), within the file limit.
+Each view draws at most 480 bars per step (in total without a step) and 480
+points per series per step.
+
+Bars need one row per displayed x label per step, heatmaps one per displayed
+x/y pair per step. Scripts aggregate to that grain before saving. Labels use
+the table's localized cell text. Numeric axes and heatmap color bounds cover
+the entire dataset, so filters and steps never rescale them; date x axes follow
+the shown points. Validation checks axis precision without drawing, including
+each date-axis step, and heatmap label fit over the union of steps. Strict
+objects reject extra view, mapping or control keys.
+
+Explorer filtering, stepping, pinned comparison, shared row selection and table
+sorting happen locally and reset on reload. Hidden series retain their colors;
+comparison lines are dashed and scatter points hollow. The table and **Copy
+data** use the current state's rows, including the pinned step. The last
+first-seen step opens initially, with every filter value visible. No saved
+executable code or additional browser requests are needed for these interactions.
+
+`present` returns a summary without values and renders an assistant-owned view
+inline. A group summary lists each chart's kind and title to reserve its frame
+while loading. Stats summaries include each label and booleans for sparkline,
+sub and delta, so the host reserves the exact tile height without values.
+Details summaries carry the field count and, for the first twelve fields, each
+label, whether the value is a reference, and the length of its English display
+text. The host sizes the record from a hidden copy of these fields with stand-in
+text, so values that wrap on a phone keep their room; it shows at most twelve
+one-line rows before the record scrolls. Explorer summaries list view ids,
+labels and kinds, plus the `step`, `filter` and `compare` flags: step reserves
+a slider row, filter or compare a controls row. Every reader validates the current
+file; a file whose headings, stats parts or details sizes no longer match its
+summary, including changed explorer mappings or control flags, and invalid or
+missing files, show unavailable. Only assistant files below `/views/` ending in
+`.view.json` qualify. HTML apps cannot save views; they draw with `cloud.chart()`.
+
+The pure readers in `@k2b/cloud/ai/browser` are `parseCloudAiView`,
+`checkCloudAiView`, `cloudAiViewSummary`, `cloudAiViewTable`, `cloudAiStatsTiles`,
+`cloudAiDetailsRows`, `cloudAiTableTsv`,
+`isAiViewFile`, `isAiViewPath`, `parseCloudAiChartToolView`,
+`cloudAiExplorerControls` and `cloudAiExplorerState`. Parsing checks
+schema and data without drawing; checking also verifies chart drawing for
+writes; explorers check data and stepping without drawing on both write and read.
+`cloudAiExplorerControls` returns localized filter and step choices in dataset
+order and the initial request. `cloudAiExplorerState` projects chart inputs,
+mark-to-dataset-row indexes and visible legends for a requested step, filter
+keys and reference step. Table formatting uses the reader's locale; TSV quotes cells and guards
+text against spreadsheet formulas. Table row keys are original row indices even
+after sorting; hosts obtain a ref from `view.rows[Number(row.key)][column.id]`.
+`cloudAiStatsTiles` returns formatted values and signed delta text, direction
+and better/worse/neutral tone. `cloudAiDetailsRows` returns formatted text and
+optional refs, with empty text for null. The view types, including
+`CloudAiGroupView`, `CloudAiExplorerView`, `CloudAiExplorerRequest`, `CloudAiStatsView`, `CloudAiDetailsView` and `CloudAiViewReference`,
+and these helpers are also exported from `@k2b/cloud/ai`, alongside
+`createAiConversationView` and `AiViewInvalidError`. The writer checks conversation
+ownership and archival, uses a title slug and deterministic run/index hash, and
+preserves artifact retry and conflict semantics. Validation reports the issue;
+field errors include paths; chart errors identify `charts[i]` in groups and
+`views[i]` in explorers.
+`CLOUD_AI_VIEW_DIRECTORY`, `CLOUD_AI_VIEW_SUFFIX`, `CLOUD_AI_VIEW_MAX_BYTES`,
+`CLOUD_AI_TABLE_MAX_ROWS`, `CLOUD_AI_TABLE_MAX_COLUMNS`, `CLOUD_AI_VIEW_MAX_MARKS`,
+`CLOUD_AI_GROUP_MAX_CHARTS` and `CLOUD_AI_STATS_MAX_ITEMS` export the bounds.
 
 The built-in `text_editor` is a `clientInteraction()` for one complete
 plain-text or Markdown draft of at most 20,000 characters. It is appropriate
@@ -210,6 +401,10 @@ Download failures appear as a short category such as **File not found**,
 **Authorization required**, or **File server error**, followed by an actionable
 explanation; the activity disclosure retains the requested URL and full tool
 response for diagnosis.
+
+Clients that collect surveys or drafts can validate their results with
+`CloudAiSurveyOutputSchema` and `CloudAiTextEditorOutputSchema` from
+`@k2b/cloud/ai/browser` before submitting them.
 
 ## Search product Help
 
@@ -252,12 +447,14 @@ Tool-capable personal chats keep three bounded discovery tools available:
   | Reason | Meaning |
   | --- | --- |
   | `unknown` | No tool has this exact name, or it names an optional built-in that is off, such as `memory` while memory is disabled |
+  | `skill` | The name is an Assistant Skill this turn can load; `load_skill` loads it, not `load_tools` |
   | `not_offered_in_turn` | The tool exists, but this turn's client or task does not provide it, or the turn offers no app operations |
   | `not_allowed` | The conversation's fixed tool scope or task grants exclude it |
   | `app_offline` | The operation was loaded earlier, or the registry cannot be read, and its app is not in the live registry now |
 
-  The model looks up an unknown name once with `search_tools` and does not
-  search for or retry the other three in the same turn;
+  The model looks up an unknown name once with `search_tools`, loads a skill
+  with `load_skill`, and does not search for or retry the other three in the
+  same turn;
 - `list_apps` returns a bounded map of exact app IDs to their live descriptions
   when the owning app is unclear.
 
@@ -346,6 +543,13 @@ not application authorization. After approval, the owning app validates the
 same arguments and checks current resource access and domain invariants before
 performing the Action.
 
+Each question is one platform [approval request](/en/docs/identity/approvals)
+with the arguments and the review the person saw. Directly before the Action
+runs, AI Core reviews the call again and uses the approval once. When the
+review changed in the meantime, the turn asks again with the current review
+instead of running the Action. When a restart interrupted the Action after its
+approval was used, the call ends with an error instead of running again.
+
 ### Show an optional Action review
 
 An Action may publish the fixed optional
@@ -360,6 +564,8 @@ The app name, icon, Action title, and risk treatment continue to come from the
 live registry and manifest. Once presented, the resolved review is stored with
 the pending action and active-turn snapshot; reconnecting or reopening the chat
 must render that same snapshot rather than recomputing or degrading it.
+Execution is different: after approval, AI Core resolves the review once more
+and runs the Action only when it equals the snapshot; otherwise it asks again.
 
 If no review is advertised, the approval shows the validated Action arguments.
 If an advertised review fails, Cloud does not silently fall back to the weaker
@@ -371,7 +577,24 @@ an app-owned safety workflow. For example, a domain fingerprint or optimistic
 revision required by an Action remains part of the Action input and is enforced
 again by the owning app.
 
+### Approvals from an editor
+
+[Assistant in editors](/en/docs/ai/editors) offers approval once or for the
+current chat for requests that can be remembered. An editor may approve these
+automatically. Actions that cannot be undone or reach other people, such as
+sending mail, deleting, sharing, or inviting, wait for confirmation in Cloud;
+the editor shows the link and can only reject them. Use `/approvals` in the
+editor to revoke remembered choices.
+
 ## Handle approval in the UI
+
+The Assistant's **Approvals** row above **Studio** opens a view of waiting
+requests. **My account → Approvals** lists requests across apps.
+A **Pending approvals** notification opens that list for requests from turns
+started outside a signed-in browser session.
+An ACP editor bridge can reject `confirm` requests but cannot approve them.
+See [Action approvals](/en/docs/identity/approvals) for the lists, notification
+rules, and decision channels.
 
 The stream exposes pending actions. The shared controller provides:
 

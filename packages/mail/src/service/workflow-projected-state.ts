@@ -1,11 +1,61 @@
 import type { WorkflowBoundPlan, WorkflowJsonValue, WorkflowStepOutcome } from "@k2b/cloud/workflows";
-import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
+import type { WorkflowActionStep, WorkflowExecuteActionContext, WorkflowExecuteActionHandler } from "@k2b/cloud/workflows/runtime";
 import type { FrozenMailWorkflowSource } from "./workflow-data";
 
-export type MailWorkflowProjectedObject = Record<string, WorkflowJsonValue>;
+export type MailWorkflowMessageStateTransition = {
+  field: "flags" | "keywords";
+  add: boolean;
+  value: string;
+};
+
+// Run-local history also records writes that later return to the frozen state.
+// Symbol metadata is not a workflow input or a persisted provider field.
+const messageStateTransitions = Symbol("mail.messageStateTransitions");
+export type MailWorkflowProjectedObject = Record<string, WorkflowJsonValue> & {
+  [messageStateTransitions]?: MailWorkflowMessageStateTransition[];
+};
+export const mailWorkflowMessageStateTransitions = (message: MailWorkflowProjectedObject): readonly MailWorkflowMessageStateTransition[] =>
+  message[messageStateTransitions] ?? [];
+
+const recordMessageStateTransition = (message: MailWorkflowProjectedObject, transition: MailWorkflowMessageStateTransition): void => {
+  message[messageStateTransitions] ??= [];
+  message[messageStateTransitions].push(transition);
+};
 
 export const isMailWorkflowProjectedObject = (value: WorkflowJsonValue | undefined): value is MailWorkflowProjectedObject =>
   value !== null && typeof value === "object" && !Array.isArray(value);
+
+// A journaled snapshot of a projected object has its id and its fields. An object built from
+// the id alone was a separate value in the live run and stays one.
+const isSnapshotOf = (
+  value: MailWorkflowProjectedObject,
+  canonical: WorkflowJsonValue | undefined,
+): canonical is MailWorkflowProjectedObject => {
+  if (!isMailWorkflowProjectedObject(canonical) || typeof canonical.id !== "string" || value.id !== canonical.id) return false;
+  const keys = Object.keys(canonical);
+  return keys.length === Object.keys(value).length && keys.every((key) => Object.hasOwn(value, key));
+};
+
+/** Restore journaled aliases as canonical projections so later actions and conditions share state and provider history. */
+export const rebindMailWorkflowRestoredOutput = (handler: WorkflowExecuteActionHandler): WorkflowExecuteActionHandler => ({
+  ...handler,
+  restoreCompleted: (ctx, step, outcome) => {
+    const source = ctx.invocation.context?.source;
+    const message = isMailWorkflowProjectedObject(source) ? source.message : undefined;
+    const conversation = isMailWorkflowProjectedObject(source) ? source.conversation : undefined;
+    const rebind = (value: WorkflowJsonValue): WorkflowJsonValue => {
+      if (Array.isArray(value)) return value.map(rebind);
+      if (!isMailWorkflowProjectedObject(value) || Object.getPrototypeOf(value) !== Object.prototype) return value;
+      if (isSnapshotOf(value, message)) return message;
+      if (isSnapshotOf(value, conversation)) return conversation;
+      return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, rebind(nested)]));
+    };
+    return handler.restoreCompleted?.(ctx, step, {
+      ...outcome,
+      ...(outcome.output !== undefined ? { output: rebind(outcome.output) } : {}),
+    });
+  },
+});
 
 export const createMailWorkflowProjectedState = (
   plan: WorkflowBoundPlan,
@@ -49,10 +99,12 @@ export const applyMailMessageTransition = (
   const index = current.findIndex((item) => item.toLocaleLowerCase("und") === value.toLocaleLowerCase("und"));
   if ((action === "addKeyword" || action === "addFlag") && index < 0) {
     message[field] = [...current, value].sort((left, right) => left.localeCompare(right, "und"));
+    recordMessageStateTransition(message, { field, add: true, value });
     return true;
   }
   if ((action === "removeKeyword" || action === "removeFlag") && index >= 0) {
     message[field] = current.filter((_, itemIndex) => itemIndex !== index);
+    recordMessageStateTransition(message, { field, add: false, value });
     return true;
   }
   return false;

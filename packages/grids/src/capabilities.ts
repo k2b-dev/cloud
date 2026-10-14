@@ -313,7 +313,7 @@ export const dailyCapabilities = defineCapabilities({
     "workflow.record-actions": {
       title: "Find record workflow actions",
       description:
-        "Discover configured correction/cancellation Draft actions in a Base from base.list. Pages may be empty after permission/revision filtering; follow nextOffset. Use the returned table with GQL to find a finalized original, then workflow.record-action.",
+        "Discover configured correction/cancellation Draft actions in a base from base.list. Pages may be empty after permission/revision filtering; follow nextOffset. Use the returned table with GQL to find a finalized original, then workflow.record-action.",
       input: z.object({ baseId: ShortIdSchema.describe("Base public ID from base.list."), ...pageInput }).strict(),
       data: z.object({ items: z.array(actionData), nextOffset: z.number().nullable() }).strict(),
       openWorld: false,
@@ -351,7 +351,7 @@ export const dailyCapabilities = defineCapabilities({
     "workflow.run.read": {
       title: "Read workflow run status",
       description:
-        "Read the current status of a grids.workflow-run ref returned by workflow.record-action. Requires Base read access; no raw inputs, results or internal event payloads are returned.",
+        "Read the current status of a grids.workflow-run ref returned by workflow.record-action. Requires base read access; no raw inputs, results or internal event payloads are returned.",
       input: readInput,
       data: runData,
       openWorld: false,
@@ -1468,10 +1468,10 @@ export const gridsCapabilities = defineCapabilities({
   presentation: gridsCapabilityPresentation,
   types: {
     ...dailyCapabilities.types,
-    base: { title: "Grids Base", description: "A permission-scoped Grids workspace.", icon: "ti ti-table", reader: "base.read" },
+    base: { title: "Grids base", description: "A permission-scoped Grids workspace.", icon: "ti ti-table", reader: "base.read" },
     table: {
       title: "Grids Table",
-      description: "A readable stored or Combined table in a Base.",
+      description: "A readable stored or Combined table in a base.",
       icon: "ti ti-table-column",
       reader: "table.read",
     },
@@ -1486,26 +1486,26 @@ export const gridsCapabilities = defineCapabilities({
   queries: {
     ...dailyCapabilities.queries,
     "base.search": {
-      title: "Search Grids Bases",
+      title: "Search Grids bases",
       description:
-        "Find an accessible Grids Base by name, description, or short ID when its ID is unknown. Use returned grids.base refs with base.read or their IDs with gql.context and GQL queries.",
+        "Find an accessible Grids base by name, description, or short ID when its ID is unknown. Use returned grids.base refs with base.read or their IDs with gql.context and GQL queries.",
       input: UniversalSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
-      universalSearch: { tags: [{ tag: "grid", title: "Grids", description: "Show Grids Bases only.", aliases: ["grids"] }] },
+      universalSearch: { tags: [{ tag: "grid", title: "Grids", description: "Show Grids bases only.", aliases: ["grids"] }] },
       run: runBaseSearch,
     },
     "base.list": {
-      title: "List Grids Bases",
+      title: "List Grids bases",
       description:
-        "Normal entry for Base-scoped Grids work. List accessible Bases and use returned grids.base refs or IDs with base.read, gql.context, gql.preview, gql.execute, or gql.view.execute.",
+        "Normal entry for base-scoped Grids work. List accessible bases and use returned grids.base refs or IDs with base.read, gql.context, gql.preview, gql.execute, or gql.view.execute.",
       input: BaseListInputSchema,
       data: BaseListDataSchema,
       openWorld: false,
       run: runBaseList,
     },
     "base.read": {
-      title: "Read Grids Base",
+      title: "Read Grids base",
       description: "Read one grids.base ref returned by base.list or base.search.",
       input: BaseReadInputSchema,
       data: BaseCapabilityDataSchema,
@@ -1514,7 +1514,7 @@ export const gridsCapabilities = defineCapabilities({
     },
     "table.read": {
       title: "Read Grids Table",
-      description: "Read one grids.table ref returned by gql.context kind tables, including its Base context and effective permission.",
+      description: "Read one grids.table ref returned by gql.context kind tables, including its base context and effective permission.",
       input: TableReadInputSchema,
       data: TableCapabilityDataSchema,
       openWorld: false,
@@ -1579,7 +1579,7 @@ export const gridsCapabilities = defineCapabilities({
     "view.create": {
       title: "Save Grids query as View",
       description:
-        "Save a reviewed GQL query as a new personal or shared View. Requires Base admin access. Does not change tables or records. Never retry an uncertain result; inspect existing Views first.",
+        "Save a reviewed GQL query as a new personal or shared View. Requires base admin access. Does not change tables or records. Never retry an uncertain result; inspect existing Views first.",
       input: ViewCreateInputSchema,
       data: ViewCapabilityDataSchema,
       openWorld: false,
