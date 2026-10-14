@@ -1,4 +1,5 @@
 import type { JSX } from "solid-js";
+import { Kbd } from "../content/Kbd";
 import type { PromptSearchInput, PromptSearchItem, PromptSearchOptions } from "../feedback/prompts";
 import { prompts } from "../feedback/prompts";
 import { resolveUiMessages, useUiMessages } from "../intl/messages";
@@ -17,6 +18,8 @@ export type SpotlightButtonProps = {
   label?: string;
   title?: string;
   icon?: string;
+  /** Shortcut such as "mod+k"; takes precedence over shortcutLabel. */
+  shortcut?: string;
   shortcutLabel?: string | false;
   ariaLabel?: string;
   disabled?: boolean;
@@ -45,7 +48,7 @@ export function SpotlightButton(props: SpotlightButtonProps): JSX.Element {
   const variant = () => props.variant ?? "default";
   const label = () => props.label ?? messages().searchLabel;
   const icon = () => props.icon ?? "ti ti-search";
-  const shortcut = () => props.shortcutLabel;
+  const shortcut = () => props.shortcut ?? props.shortcutLabel;
   const title = () => props.title ?? label();
   const showsShortcut = () => Boolean(shortcut()) && ["chip", "sidebar"].includes(variant());
 
@@ -61,7 +64,14 @@ export function SpotlightButton(props: SpotlightButtonProps): JSX.Element {
     >
       <i class={icon()} aria-hidden="true" />
       <span class="k2b-spotlight-button__label">{label()}</span>
-      {showsShortcut() && <kbd>{shortcut()}</kbd>}
+      {showsShortcut() &&
+        (props.shortcut !== undefined ? (
+          <Kbd keys={props.shortcut} />
+        ) : (
+          <kbd class="k2b-kbd">
+            <kbd class="k2b-kbd__key">{props.shortcutLabel}</kbd>
+          </kbd>
+        ))}
     </button>
   );
 }

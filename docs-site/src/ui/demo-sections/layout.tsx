@@ -41,6 +41,7 @@ import {
   SettingsSection,
   StatusBadge,
   Switch,
+  TableOfContents,
   Tag,
   TextInput,
   Toolbar,
@@ -1666,7 +1667,60 @@ export const PaginationDemo = () => (
   </DemoCard>
 );
 
+const TableOfContentsDemo = () => {
+  const [root, setRoot] = createSignal<HTMLElement>();
+  const items = [
+    { id: "toc-demo-sharing", label: "Sharing" },
+    { id: "toc-demo-access", label: "Access" },
+    { id: "toc-demo-links", label: "Links" },
+  ];
+  return (
+    <div ref={setRoot} style={{ height: "16rem", overflow: "auto", display: "grid", "grid-template-columns": "8rem 1fr", gap: "1rem" }}>
+      <TableOfContents items={items} scrollRoot={root} sticky />
+      <article>
+        <section style={{ "min-height": "14rem" }}>
+          <h2 id="toc-demo-sharing">Sharing</h2>
+          <p>Select Share to invite another reader.</p>
+        </section>
+        <section style={{ "min-height": "14rem" }}>
+          <h2 id="toc-demo-access">Access</h2>
+          <p>Choose who can read the document.</p>
+        </section>
+        <section style={{ "min-height": "7rem" }}>
+          <h2 id="toc-demo-links">Links</h2>
+          <p>Copy the link.</p>
+        </section>
+      </article>
+    </div>
+  );
+};
+
 const demos: DemoSection = {
+  "table-of-contents": () => (
+    <DemoGrid>
+      <DemoCard
+        id="table-of-contents"
+        chip={{ kind: "component", name: "TableOfContents", from: "@k2b/ui" }}
+        description="Section links follow this small scroll container. The navigation stays in view."
+        code={`const [root, setRoot] = createSignal<HTMLElement>();
+const items = [
+  { id: "toc-demo-sharing", label: "Sharing" },
+  { id: "toc-demo-access", label: "Access" },
+  { id: "toc-demo-links", label: "Links" },
+];
+<div ref={setRoot} style={{ height: "16rem", overflow: "auto", display: "grid", "grid-template-columns": "8rem 1fr", gap: "1rem" }}>
+  <TableOfContents items={items} scrollRoot={root} sticky />
+  <article>
+    <section style={{ "min-height": "14rem" }}><h2 id="toc-demo-sharing">Sharing</h2><p>Select Share to invite another reader.</p></section>
+    <section style={{ "min-height": "14rem" }}><h2 id="toc-demo-access">Access</h2><p>Choose who can read the document.</p></section>
+    <section style={{ "min-height": "7rem" }}><h2 id="toc-demo-links">Links</h2><p>Copy the link.</p></section>
+  </article>
+</div>`}
+      >
+        <TableOfContentsDemo />
+      </DemoCard>
+    </DemoGrid>
+  ),
   "bottom-sheet": () => <BottomSheetDemo />,
   navigation: () => <NavigationDemo />,
   workspace: () => (

@@ -56,7 +56,7 @@ class InfoBlockWidget extends WidgetType {
       event.stopPropagation();
     };
 
-    // The shared info block, as in Book; the editor preview renders inline formatting only.
+    // The shared callout with its type icon and tone colour, as in Book; the editor preview renders inline formatting only.
     container.innerHTML = renderMarkdownInfoBlock({
       type: this.blockData.type,
       title: this.blockData.title,
@@ -85,7 +85,7 @@ class InfoBlockWidget extends WidgetType {
 
   override get estimatedHeight() {
     // At 16px / 26px, count each title and unwrapped body line, plus 32px padding, 2px border and a 4px title gap.
-    // A wrapped line measures taller; CodeMirror corrects the height once the notice renders.
+    // The icon sits beside the text and adds no height. A wrapped line measures taller; CodeMirror corrects the height once the notice renders.
     const lines = this.blockData.content.split("\n").length + (this.blockData.title ? 1 : 0);
     return lines * 26 + 34 + (this.blockData.title ? 4 : 0);
   }
@@ -133,7 +133,7 @@ const findInfoBlocks = (state: EditorState, locale: string): CursorZoneState => 
   return { decorations: set, atomicDecorations: set, ranges };
 };
 
-/** `locale` names an untitled notice's type for screen readers; the rendered block shows it as the tone tint. */
+/** `locale` names an untitled notice's type for screen readers; sighted readers see its type icon and tone tint. */
 export const infoBlocksExtension = (locale: string): Extension => {
   // Container context anywhere above a notice decides whether it renders, so
   // every document change rescans, like the query and table-of-contents blocks.

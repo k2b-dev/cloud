@@ -26,6 +26,39 @@ const TONES = {
   danger: "danger",
 } as const satisfies Record<string, NoticeTone>;
 
+// Tabler outline paths (@tabler/icons 3.48.0), without the transparent canvas path.
+const ICON_PATHS = {
+  note: ["M13 20l7 -7", "M13 20v-6a1 1 0 0 1 1 -1h6v-7a2 2 0 0 0 -2 -2h-12a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7"],
+  info: ["M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0", "M12 9h.01", "M11 12h1v4h1"],
+  success: ["M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0", "M9 12l2 2l4 -4"],
+  warning: [
+    "M12 9v4",
+    "M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0",
+    "M12 16h.01",
+  ],
+  danger: [
+    "M12.802 2.165l5.575 2.389c.48 .206 .863 .589 1.07 1.07l2.388 5.574c.22 .512 .22 1.092 0 1.604l-2.389 5.575c-.206 .48 -.589 .863 -1.07 1.07l-5.574 2.388c-.512 .22 -1.092 .22 -1.604 0l-5.575 -2.389a2.036 2.036 0 0 1 -1.07 -1.07l-2.388 -5.574a2.036 2.036 0 0 1 0 -1.604l2.389 -5.575c.206 -.48 .589 -.863 1.07 -1.07l5.574 -2.388a2.036 2.036 0 0 1 1.604 0",
+    "M12 8v4",
+    "M12 16h.01",
+  ],
+} as const;
+
+export const MARKDOWN_CALLOUT_CLASSES = { root: "k2b-callout", icon: "k2b-callout__icon" } as const;
+
+/** Fixed attributes for decorative callout icons, including hosts with their own sanitizer. */
+export const MARKDOWN_CALLOUT_ICON_ATTRIBUTES = {
+  class: MARKDOWN_CALLOUT_CLASSES.icon,
+  "aria-hidden": "true",
+  width: "20",
+  height: "20",
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  "stroke-width": "2",
+  "stroke-linecap": "round",
+  "stroke-linejoin": "round",
+} as const;
+
 export type MarkdownInfoBlockType = keyof typeof TONES;
 
 export type MarkdownInfoBlock = {
@@ -238,14 +271,17 @@ const renderBlock = (input: Omit<MarkdownInfoBlockRenderInput, "locale">, messag
   const name = input.title
     ? `<p class="${NOTICE_CARD_CLASSES.title}">${escapeHtml(input.title)}</p>`
     : `<span class="k2b-sr-only">${escapeHtml(LABELS[input.type](messages))}: </span>`;
-  return `<aside class="${NOTICE_CARD_CLASSES.root}" data-tone="${TONES[input.type]}" role="note">${name}<div class="${NOTICE_CARD_CLASSES.body}">${input.bodyHtml}</div></aside>`;
+  const icon = `<svg ${Object.entries(MARKDOWN_CALLOUT_ICON_ATTRIBUTES)
+    .map(([name, value]) => `${name}="${value}"`)
+    .join(" ")}>${ICON_PATHS[input.type].map((d) => `<path d="${d}"></path>`).join("")}</svg>`;
+  return `<aside class="${NOTICE_CARD_CLASSES.root} ${MARKDOWN_CALLOUT_CLASSES.root}" data-tone="${TONES[input.type]}" role="note">${icon}${name}<div class="${NOTICE_CARD_CLASSES.body}">${input.bodyHtml}</div></aside>`;
 };
 
 /**
- * Renders an info block as the calm `NoticeCard`: the tone tints the surface,
- * the text stays neutral, and there is no icon. A title is the visible heading
- * and names the block; without one, the localized type name is announced to
- * screen readers only.
+ * Renders a callout on a tinted surface without a border. The decorative icon
+ * and title use the tone colour; body text stays neutral. A title is the
+ * visible heading and names the block; without one, screen readers hear the
+ * localized type name.
  */
 export const renderMarkdownInfoBlock = (input: MarkdownInfoBlockRenderInput): string =>
   renderBlock(input, resolveMarkdownInfoBlockMessages(input.locale));

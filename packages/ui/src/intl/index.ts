@@ -14,3 +14,6 @@ export type {
 export { Format } from "./Format";
 export type { LocaleProviderProps } from "./locale";
 export { LocaleProvider, useLocale } from "./locale";
+
+export type { FormattedShortcut, KeyboardPlatform, ShortcutFormatOptions, ShortcutKey } from "./shortcut";
+export { formatShortcut, keyboardPlatform } from "./shortcut";

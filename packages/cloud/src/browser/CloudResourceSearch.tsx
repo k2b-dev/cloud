@@ -1,9 +1,8 @@
 import { timed } from "@k2b/stdlib/solid";
-import { announce, Button, IconButton, ScrollArea, useLocale } from "@k2b/ui";
+import { announce, Button, IconButton, Kbd, ScrollArea, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { SearchApp, SearchItem } from "../api/search/schemas";
 import type { CloudResourceRef } from "../contracts";
-import { shortcutLabel } from "./command-shortcuts";
 import { matchNavigationSearchItems, type NavigationSearchItem } from "./navigation-search";
 import { cloudResourceSearchUrl, filterCloudResourceSearchItems } from "./resource-search";
 import { commitTypedTags, matchingSearchTags, searchTags, tagAtCursor } from "./resource-search-input";
@@ -668,9 +667,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                             <span>{item.title}</span>
                             <small>{item.preview ?? item.appName}</small>
                           </span>
-                          <Show when={commandFor(item)?.shortcut}>
-                            {(shortcut) => <kbd class="shrink-0 text-xs text-dimmed">{shortcutLabel(shortcut())}</kbd>}
-                          </Show>
+                          <Show when={commandFor(item)?.shortcut}>{(shortcut) => <Kbd keys={shortcut()} />}</Show>
                           <Show when={props.selectionMode && selectedKey() === itemKey(item)}>
                             <i class="ti ti-check" aria-hidden="true" />
                           </Show>
@@ -792,7 +789,9 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                     (!activeItem() || !commandFor(activeItem()!) || isLinkableCommand(commandFor(activeItem()!)!))
                   }
                 >
-                  <span>⌘/Ctrl ↵ {t().newTab}</span>
+                  <span>
+                    <Kbd keys="mod+enter" /> {t().newTab}
+                  </span>
                 </Show>
               </div>
             }

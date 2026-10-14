@@ -46,3 +46,10 @@ Every variant retains an accessible label. The component does not register or as
 ## Runtime
 
 The button renders during SSR; opening and resolving the prompt require hydration.
+
+## Shortcut caps
+
+Pass `shortcut="mod+k"` to `SpotlightButton` for shared platform and locale aware
+caps in the `chip` and `sidebar` variants. `shortcutLabel` still accepts a
+ready-made label, or `false` to hide it. `shortcut` takes precedence when both
+are supplied.

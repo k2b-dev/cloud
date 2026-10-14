@@ -82,6 +82,10 @@ export {
   formatFileViewSize,
   getFileViewPreviewKind,
 } from "./FileView";
+export type { KbdProps } from "./Kbd";
+export { Kbd } from "./Kbd";
+export type { LabelChipProps } from "./LabelChip";
+export { LabelChip } from "./LabelChip";
 export type { LightboxAction, LightboxImage } from "./Lightbox";
 export { default as Lightbox } from "./Lightbox";
 export type { LogTableEntry } from "./LogEntriesTable";
@@ -104,6 +108,8 @@ export type {
 } from "./MessageRow";
 export { MessageRow, MessageSystemRow, startsMessageGroup } from "./MessageRow";
 export {
+  MARKDOWN_CALLOUT_CLASSES,
+  MARKDOWN_CALLOUT_ICON_ATTRIBUTES,
   type MarkdownInfoBlock,
   type MarkdownInfoBlockRenderInput,
   type MarkdownInfoBlockType,
@@ -128,6 +134,8 @@ export type { PdfPreviewProps, PdfPreviewRequest } from "./PdfPreview";
 export { default as PdfPreview } from "./PdfPreview";
 export type { RangeOption, RangePickerProps } from "./RangePicker";
 export { default as RangePicker } from "./RangePicker";
+export type { StepsProps } from "./Steps";
+export { Steps } from "./Steps";
 export type { StructuredDataPreviewMode, StructuredDataPreviewProps, StructuredDataValue } from "./StructuredDataPreview";
 export { default as StructuredDataPreview, isStructuredDataValue } from "./StructuredDataPreview";
 export type { TimelineColor, TimelineController, TimelineItem, TimelineProps } from "./Timeline";

@@ -29,6 +29,7 @@ suiteFor("gotenberg")("note PDF export in Gotenberg", () => {
         templateId,
         customCss: templateId ? undefined : "body { font: 10pt sans-serif; }",
       });
+      expect(html.match(/<svg class="k2b-callout__icon" aria-hidden="true"/g)).toHaveLength(5);
       const pdf = (await renderHtmlToPdfWithConfig({ html, title: "Hiking weekend" }, config)).pdf;
       const text = await pdfText(pdf);
       expect(text).not.toContain(":::");
