@@ -597,7 +597,12 @@ const runSmoke = async (fixture: Fixture) => {
     ok("mailbox tools consolidate sync and automation navigation on desktop and mobile");
 
     const healthNotice = page.locator('[data-mailbox-health="degraded"]');
-    await healthNotice.getByText("Mail is taking longer to connect.", { exact: false }).waitFor();
+    await healthNotice.getByText("Mail is taking longer to connect", { exact: true }).waitFor();
+    await healthNotice
+      .getByText("The saved account is valid, but the latest synchronization timed out. Mail will retry automatically.", {
+        exact: true,
+      })
+      .waitFor();
     if (await healthNotice.getByText("Check its provider settings.", { exact: false }).isVisible()) {
       fail("degraded mailbox health still points users at valid provider settings");
     }
@@ -879,7 +884,8 @@ const runSmoke = async (fixture: Fixture) => {
       "recovered composer returns to the conversation",
     );
     ok("local draft recovery survives a page lifecycle");
-    await page.getByText(fixture.subject, { exact: true }).first().waitFor();
+    // The mailbox name equals the subject, and the workspace keeps that name as a hidden page title for assistive technology.
+    await page.locator("[data-mail-reader-heading]").filter({ hasText: fixture.subject }).waitFor();
 
     await page.getByRole("button", { name: "Reply, draft available", exact: true }).click();
     await continueDraft(page);
