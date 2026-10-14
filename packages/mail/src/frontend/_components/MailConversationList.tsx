@@ -40,8 +40,8 @@ import { type MailActionId, spamActionForConversation } from "./mail-actions";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { mailboxHealthPresentation } from "./mail-health-presentation";
-import { buildMailListHref, buildMailSelectionHref, type MailListItem, mailRouteUrl } from "./mail-navigation";
 import { mailListRowKey } from "./mail-list-projection";
+import { buildMailListHref, buildMailSelectionHref, type MailListItem, mailRouteUrl } from "./mail-navigation";
 import { createMailQuickLookLoader } from "./mail-quick-look";
 import { summarizeMailSearchExpression } from "./mail-search-builder-model";
 

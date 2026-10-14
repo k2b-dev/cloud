@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ConversationViewCounts } from "../../service/messages";
-import { mailTestFolder, mailTestRow } from "./mail-list-test-fixtures";
 import { type MailListRemoval, mailListRowKey, mailRemovalCoversRow, projectMailCounts, projectMailList } from "./mail-list-projection";
+import { mailTestFolder, mailTestRow } from "./mail-list-test-fixtures";
 
 const items = [mailTestRow("one"), mailTestRow("two"), mailTestRow("three")];
 const removal = (index: number, phase: MailListRemoval["phase"]): MailListRemoval => ({

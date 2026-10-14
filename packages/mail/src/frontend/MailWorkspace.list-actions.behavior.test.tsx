@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
-import { conversationTriageInputSchema, conversationTriageUndoInputSchema, type ConversationTriageInput } from "../contracts";
+import { type ConversationTriageInput, conversationTriageInputSchema, conversationTriageUndoInputSchema } from "../contracts";
 import type { MailboxPageData } from "../service/workspace";
-import { mailTestFolder, mailTestRow as fixtureMailRow } from "./_components/mail-list-test-fixtures";
 import { MAIL_BULK_CONCURRENCY } from "./_components/mail-bulk-actions";
 import { MAIL_ROW_LEAVE_MS } from "./_components/mail-list-projection";
+import { mailTestRow as fixtureMailRow, mailTestFolder } from "./_components/mail-list-test-fixtures";
 
 const mailTestRow = (id: string) =>
   fixtureMailRow(id, { activeFolderIds: ["Inbox1"], unreadFolderIds: ["Inbox1"], sourceFolderId: "Inbox1" });

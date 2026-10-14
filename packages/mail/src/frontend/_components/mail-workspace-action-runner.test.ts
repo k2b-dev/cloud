@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { MailActionId } from "./mail-actions";
 import { createMailActionQueue } from "./mail-action-queue";
+import type { MailActionId } from "./mail-actions";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, type MailBulkTarget } from "./mail-bulk-actions";
 import {
   decideMailAutoReadIntent,

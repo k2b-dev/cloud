@@ -4,7 +4,7 @@ import type { CloudTheme } from "@k2b/cloud/shared";
 import { documentNavigate, type LinkNavigateEvent, listenPopState, navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { AppWorkspace, announce, openSpotlightSearch, Placeholder, prompts, toast, type ToastHandle, useLocale } from "@k2b/ui";
+import { AppWorkspace, announce, openSpotlightSearch, Placeholder, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, Show, untrack } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { apiClient } from "../api/client";
@@ -25,15 +25,8 @@ import MailDraftsView from "./_components/MailDraftsView";
 import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
 import MailSidebar from "./_components/MailSidebar";
-import { createMailActionQueue } from "./_components/mail-action-queue";
-import {
-  MAIL_ROW_LEAVE_MS,
-  type MailListRemoval,
-  mailListRowKey,
-  projectMailCounts,
-  projectMailList,
-} from "./_components/mail-list-projection";
 import { createMailActionOutcomes, type MailActionCommand, type MailActionFailureReport } from "./_components/mail-action-outcomes";
+import { createMailActionQueue } from "./_components/mail-action-queue";
 import {
   buildMailActionInput,
   MAIL_ACTION_MISSING_DESTINATION,
@@ -68,6 +61,13 @@ import {
   type PendingMailListState,
   reconcileMailListOptimisticState,
 } from "./_components/mail-list-optimistic";
+import {
+  MAIL_ROW_LEAVE_MS,
+  type MailListRemoval,
+  mailListRowKey,
+  projectMailCounts,
+  projectMailList,
+} from "./_components/mail-list-projection";
 import { buildMailListHref, isMailWorkspaceUrl, mailRouteUrl, resolveMailWorkspaceUrl } from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";

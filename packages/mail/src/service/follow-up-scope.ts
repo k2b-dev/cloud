@@ -1,4 +1,5 @@
 import { sql } from "bun";
+
 export { FOLLOW_UP_VIEWS } from "../folder-display-rules";
 
 type SqlFragment = Bun.SQL.Query<unknown>;
