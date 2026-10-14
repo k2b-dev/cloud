@@ -5,7 +5,7 @@ section: Frontend
 order: 890
 description: Apply Cloud's visual and interaction rules without forking shared primitives.
 tags: [css, accessibility, themes, design]
-updated: 2026-10-12
+updated: 2026-10-14
 ---
 
 # Styling and accessibility
@@ -39,12 +39,19 @@ Apply these rules in order:
 5. Design loading, empty, error, hover, focus, selected, disabled, mobile, and
    dark states as part of the same component contract.
 
+Keep screens clean and flat. Put the most important value first, use one type
+scale per page, and leave out data the person does not need at that moment. Do
+not place a box inside a box. A flat screen lets the content carry the
+hierarchy, so a person finds the value they came for without reading the
+frame around it. Flatness never justifies weaker usability, contrast, or
+keyboard behavior: check those again after you remove decoration.
+
 ## Group content without decorative lines
 
-Do not use horizontal lines to group ordinary application content. This
-includes `<hr>`, `divide-y`, full-width `border-t` or `border-b`,
-pseudo-element rules, and inset-shadow hairlines. Making a line thinner,
-lighter, shorter, or more transparent does not change its role.
+Do not use lines to group ordinary application content. This includes
+`<hr>`, `divide-y`, full-width `border-t` or `border-b`, pseudo-element rules,
+and inset-shadow hairlines. Making a line thinner, lighter, shorter, or more
+transparent does not change its role.
 
 Do not add these separators between list rows, cards, settings, detail
 sections, menu items, form sections, metadata groups, empty states, or
@@ -52,11 +59,28 @@ pagination. Use whitespace, alignment, a quiet shared surface, or a short
 semantic section label. Prefer one clear group over nested papers; do not
 replace a removed line with a box or hover fill around every row.
 
+Do not draw a line between the header, content, and footer of an app-owned
+surface, such as a dialog, panel, card, or page section. Spacing and type
+already show where the header ends.
+
+Do not draw vertical or horizontal borders between workspace regions either:
+not between sidebar, list, and detail, not under header rows, and not at the
+edge between the app rail and the application. Panes separate only through the
+surface steps and spacing that `AppWorkspace` and `Panes` already provide.
+A line between regions splits one workbench into separate boxes and competes
+with the content for attention.
+
+To verify, look at the changed screen in light and dark mode and search the
+diff for `border-t`, `border-b`, `border-l`, `border-r`, `divide-`, and `<hr>`
+in app-owned markup.
+
 Boundaries are valid when they explain how a shared component operates:
 
 - `DataTable` may expose row and column structure.
 - A compound control may separate functional parts.
 - A resizable layout may expose an interactive separator.
+- The app bar separates its shortcuts from the ordinary apps with one group
+  divider.
 
 The shared table, control, or layout primitive owns those boundaries. App code
 must not invent an exception. If content needs explicit row boundaries to be
@@ -218,8 +242,14 @@ On Safari, diagrams need Safari 17.4 or later.
 
 - Use one surface to group related content; do not stack papers to manufacture
   hierarchy.
-- Keep in-flow surfaces quiet. Reserve stronger shadows for dialogs, popovers,
-  menus, and other floating layers.
+- Take depth from the shared surface. An in-flow surface gets its depth from
+  the surface step and inset shading of the shared component, such as the
+  quiet well of an input, never from an outer shadow, a nested border, or a
+  box inside a box. Floating layers, such as dialogs, popovers, menus, and
+  toasts, keep their soft outer shadow, because they sit above the page and
+  must read as separate from it. A shared frame that owns its shadow, such as
+  the workspace card or an `elevated` `Paper`, keeps it; app code does not add
+  one.
 - Keep one visible dialog frame. With `PanelDialog`, the header and footer stay
   fixed while `PanelDialog.Body` owns scrolling.
 - Inputs are quiet wells with a clear focus state, not permanently emphasized
@@ -232,6 +262,48 @@ drawer are sibling regions inside that frame, not adjacent cards. Use
 `AppWorkspace.Detail`, `AppWorkspace.MainPane`, `AppWorkspace.BottomDrawer`,
 and `Panes` for their documented roles instead of recreating their geometry.
 See [Application shells](/en/docs/frontend/application-shells).
+
+## Keep the layout still
+
+A Cloud screen has no layout shift: a state change never moves or resizes the
+content around it. This applies to focus, hover, pressed, and selected states;
+loading and async results; validation messages; unsaved-changes and save bars;
+badges and counts; fonts and icons that load late; and scrollbars that appear
+or disappear. Content that jumps makes a person lose their place and can turn
+a click into a click on the wrong target.
+
+- Reserve the space for a state before it appears, for example the row for a
+  validation message, the size of a loading result, or the slot of a badge.
+- Draw focus with an outline or an inset ring, not with a border or added
+  padding. Shared components already do this; see
+  [Focus rings](/en/ui/focus).
+- Change the color of an existing border, never its width.
+- Never fix clipping with margins or padding. Use `k2b-focus-inset` or the
+  shared component that owns the clipping region.
+- For scrollbars, follow [Keep dynamic scroll regions stable](#keep-dynamic-scroll-regions-stable).
+
+To verify, compare the bounding boxes of the changed element and its neighbors
+before and after each state change, at desktop width and at phone width. A
+browser test can read them with `getBoundingClientRect()` and expect them to be
+equal. The test "Aa adds one row above the field; … never move the field, a
+control, or the newest message" in
+`packages/ui/src/chat/chat-composer.browser.test.ts` shows the pattern: it
+toggles each state at 720 px and 360 px and checks that the field, every
+control, and the newest message keep their position.
+
+## Respond to hover without movement
+
+Hover and focus change only colors, focus rings, and borders where a
+component owns them.
+Do not translate, scale, or lift an element on hover, and do not grow its
+shadow. Movement under the pointer makes a target harder to hit and draws
+attention away from the content. This is the general form of the rule that
+[cards](/en/ui/surfaces/cards) and
+[file drop targets](/en/ui/input/file-drop-target) already follow.
+
+To verify, hover and focus the element and compare its bounding box with the
+resting state. Search the changed CSS for `translate`, `scale`, and
+`box-shadow` inside `:hover` or `:focus` rules.
 
 ## Keep dynamic scroll regions stable
 
@@ -328,17 +400,25 @@ on the button; progress with a known completion percentage belongs in a progress
 indicator. Keep retry actions beside the feedback and preserve existing content
 when a refresh fails.
 
-## Compose responsive layouts
+## Treat phones as first-class
+
+Design and verify every screen at phone width with touch, in WebKit as well as
+Chromium. A phone is a full Cloud client, not a fallback, and every browser on
+iOS runs WebKit, so a screen checked only in a desktop Chromium is not checked.
 
 Use `Layout`, `AppWorkspace`, dialogs, and shared sidebars for responsive
-geometry.
+geometry. Content must not depend on pointer hover. Dialogs must fit the
+viewport and keep their primary actions reachable.
 
-Test narrow and wide viewports. Content must not depend on pointer hover.
-Dialogs must fit the viewport and keep their primary actions reachable.
+A phone layout is a composed state, not a squeezed desktop layout. Move
+navigation and details into their shared mobile behavior, keep touch targets
+usable, and contain table overflow inside the table region. A standalone page
+shows its one card flat on phones; see
+[Layout and navigation](/en/docs/frontend/layout-and-navigation#show-the-pages-one-card-flat-on-phones).
 
-Mobile is a composed state, not a squeezed desktop layout. Move navigation and
-details into their shared mobile behavior, keep touch targets usable, and
-contain table overflow inside the table region.
+To verify, run the browser tests in both engines as described in
+[Test in Chromium and WebKit](/en/docs/contributing/testing#test-in-chromium-and-webkit),
+and check the primary flow at phone width with touch input.
 
 ## Preserve keyboard and screen reader access
 
@@ -404,9 +484,19 @@ verification pass.
 
 Before accepting a component or screen, verify:
 
+- [The layout stays still](#keep-the-layout-still): focus, hover, loading,
+  async results, validation, save bars, and badges move or resize nothing.
+- [Hover and focus change only colors](#respond-to-hover-without-movement), not
+  position, size, or shadow.
 - Hierarchy works without decorative color or separator lines.
 - Lists, settings, forms, details, and pagination use spacing or shared
   surfaces instead of `<hr>`, `divide-y`, or app-owned hairlines.
+- [No lines separate](#group-content-without-decorative-lines) header,
+  content, and footer, or the regions of a workspace.
+- [In-flow surfaces take depth](#choose-surfaces-deliberately) from the shared
+  surface, without outer shadows, nested borders, or a box inside a box.
+- [The screen is clean and flat](#build-hierarchy-before-decoration): the most
+  important value comes first, and data the person does not need is left out.
 - The closest shared primitive owns geometry and interaction behavior.
 - App identity, action, status, selection, and data colors remain independent.
 - App-owned CSS uses semantic host tokens and does not copy a shared component.
@@ -415,5 +505,7 @@ Before accepting a component or screen, verify:
 - Progressive disclosure works with pointer, keyboard, and touch.
 - Height-constrained dynamic content keeps a stable width as overflow changes.
 - Desktop and mobile layouts avoid page-level overflow.
+- [Phone width works with touch](#treat-phones-as-first-class) in WebKit and
+  Chromium.
 - Light and dark modes preserve the same hierarchy.
 - Icon-only actions have accessible names and useful focus treatment.
