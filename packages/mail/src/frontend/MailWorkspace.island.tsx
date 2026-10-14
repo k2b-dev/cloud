@@ -1,7 +1,15 @@
 import { liveConnection } from "@k2b/cloud/browser/live";
 import { importOnDemand, reloadOnce } from "@k2b/cloud/browser/reload";
 import type { CloudTheme } from "@k2b/cloud/shared";
-import { documentNavigate, type LinkNavigateEvent, listenPopState, navigate } from "@k2b/ssr/nav";
+import {
+  captureScroll,
+  documentNavigate,
+  type LinkNavigateEvent,
+  listenPopState,
+  navigate,
+  restoreScroll,
+  type ScrollSnapshot,
+} from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
 import { AppWorkspace, announce, openSpotlightSearch, Placeholder, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
@@ -68,7 +76,14 @@ import {
   projectMailCounts,
   projectMailList,
 } from "./_components/mail-list-projection";
-import { buildMailListHref, isMailWorkspaceUrl, mailRouteUrl, resolveMailWorkspaceUrl } from "./_components/mail-navigation";
+import {
+  buildMailListHref,
+  buildMailSearchClearHref,
+  isMailWorkspaceUrl,
+  MAIL_SEARCH_FROM_PARAMETER,
+  mailRouteUrl,
+  resolveMailWorkspaceUrl,
+} from "./_components/mail-navigation";
 import { createMailPresenceSession } from "./_components/mail-presence-session";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";
 import {
@@ -186,6 +201,23 @@ function MailWorkspaceView(props: {
   const leaveTimers = new Set<ReturnType<typeof setTimeout>>();
   const undoNotices = new Set<ToastHandle>();
   const [snapshotItems, setSnapshotItems] = createSignal<readonly MailListItem[]>(structuredClone(props.data.listItems));
+  // Keep the starting list position only until the search returns or another view is chosen.
+  let searchStart: { scope: string; scroll: ScrollSnapshot } | null = null;
+  const captureSearchStart = (href: string) => {
+    const target = mailRouteUrl(href);
+    if (target.searchParams.has(MAIL_SEARCH_FROM_PARAMETER) && !mailRouteUrl(requestPath()).searchParams.has(MAIL_SEARCH_FROM_PARAMETER)) {
+      searchStart = {
+        scope: mailListScope(buildMailSearchClearHref(target)),
+        scroll: captureScroll(`[data-scroll-preserve="mail-list-${mailboxId}"]`),
+      };
+    }
+  };
+  const searchScrollSnapshot = (href: string): ScrollSnapshot | undefined => {
+    if (mailRouteUrl(href).searchParams.has(MAIL_SEARCH_FROM_PARAMETER)) return;
+    const snapshot = mailListScope(href) === searchStart?.scope ? searchStart.scroll : undefined;
+    searchStart = null;
+    return snapshot;
+  };
   const listView = createMemo(() => projectMailList({ items: data.listItems, removals: removals(), scope: mailListScope(requestPath()) }));
   const selectableRows = () => listView().items.filter((item) => !listView().leavingKeys.has(mailListRowKey(item)));
   const listCounts = createMemo(() =>
@@ -430,8 +462,9 @@ function MailWorkspaceView(props: {
   });
 
   const navigateWorkspace = async (nav: LinkNavigateEvent) => {
+    captureSearchStart(nav.href);
     const result = await replaceWorkspaceRoute(nav.href);
-    if (result === "applied") nav.push(undefined, { scroll: "preserve" });
+    if (result === "applied") nav.push(undefined, { scroll: "preserve", scrollSnapshot: searchScrollSnapshot(nav.href) });
     else if (result === "failed") toast.error(t().openViewFailed);
   };
 
@@ -445,10 +478,11 @@ function MailWorkspaceView(props: {
   };
 
   const transitionWorkspaceHref = async (href: string, replace = false): Promise<MailWorkspaceRefreshResult> => {
+    captureSearchStart(href);
     const result = await replaceWorkspaceRoute(href);
     if (result === "applied") {
       if (data.selectedConversationId) setConversationOpenIntent((intent) => intent + 1);
-      navigate(href, { replace, scroll: "preserve" });
+      navigate(href, { replace, scroll: "preserve", scrollSnapshot: searchScrollSnapshot(href) });
     }
     return result;
   };
@@ -730,7 +764,13 @@ function MailWorkspaceView(props: {
         return;
       }
       void (async () => {
-        const result = await replaceWorkspaceRoute(`${url.pathname}${url.search}`);
+        const href = `${url.pathname}${url.search}`;
+        captureSearchStart(href);
+        const result = await replaceWorkspaceRoute(href);
+        if (!disposed && result === "applied") {
+          const snapshot = searchScrollSnapshot(href);
+          if (snapshot) restoreScroll(snapshot);
+        }
         if (!disposed && result === "failed") {
           navigate(requestPath(), { replace: true, scroll: "preserve", viewTransition: false });
           toast.error(t().restoreViewFailed);

@@ -176,6 +176,7 @@ const load = async (
     sidebarCollapsed?: boolean;
     folderOnlyHints?: MailFolderView[];
     reader?: boolean;
+    requestUrl?: string;
     items?: MailListItem[];
     toolbarActions?: MailListHarnessOptions["toolbarActions"];
     deletedOnServer?: boolean;
@@ -212,6 +213,7 @@ const load = async (
     sidebarCollapsed: options.sidebarCollapsed,
     folderOnlyHints: options.folderOnlyHints,
     reader: options.reader,
+    requestUrl: options.requestUrl,
     toolbarActions: options.toolbarActions,
     deletedOnServer: options.deletedOnServer,
   } satisfies MailListHarnessOptions);
@@ -1156,4 +1158,41 @@ describe("Mail rows that an action takes out of the list", () => {
       await close(page);
     }
   }, 30_000);
+});
+
+describe("Mail search returns to the view it started from", () => {
+  for (const [device, context] of [
+    ["desktop", { viewport: { width: 1366, height: 900 } }],
+    ["phone", { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }],
+  ] satisfies [string, BrowserContextOptions][]) {
+    for (const method of ["button", "Backspace", "Escape"]) {
+      test(`${device}: clear with ${method} restores the view without moving the search field`, async () => {
+        const origin = "/app/mail/Box001?view=needs_action";
+        const page = await load({ context, requestUrl: origin });
+        try {
+          // The field's frame: the input inside it makes room for the clear button, the frame must not move.
+          const selector = 'form[role="search"] .k2b-input-shell';
+          const field = page.locator('input[name="q"]');
+          const before = await box(page, selector);
+          await field.click();
+          await page.keyboard.type("invoice");
+          await page.clock.runFor(350);
+          expect(await page.evaluate(() => location.search)).toBe("?searchFrom=view%3Dneeds_action&q=invoice");
+          expect(await box(page, selector)).toEqual(before);
+          if (method === "button") await page.locator('form[role="search"] button[aria-label="Clear"]').click();
+          else if (method === "Backspace") {
+            await field.press("ControlOrMeta+a");
+            await page.keyboard.press("Backspace");
+          } else await page.keyboard.press("Escape");
+          await page.clock.runFor(350);
+          expect(await page.evaluate(() => location.pathname + location.search)).toBe(origin);
+          expect(await field.inputValue()).toBe("");
+          expect(await box(page, selector)).toEqual(before);
+          expect(page.errors).toEqual([]);
+        } finally {
+          await close(page);
+        }
+      }, 30_000);
+    }
+  }
 });

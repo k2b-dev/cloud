@@ -3,6 +3,18 @@ import type { MailListItem } from "../../service/workspace";
 
 export type { MailListItem } from "../../service/workspace";
 
+export const MAIL_SEARCH_FROM_PARAMETER = "searchFrom";
+const mailViewParameters = ["view", "folder", "savedView", "scheduled", "search", "conversation", "message"];
+
+const pickMailViewParameters = (parameters: URLSearchParams): URLSearchParams => {
+  const result = new URLSearchParams();
+  for (const parameter of mailViewParameters) {
+    const value = parameters.get(parameter);
+    if (value !== null) result.set(parameter, value);
+  }
+  return result;
+};
+
 export const isMailWorkspaceUrl = (url: URL, mailboxId: string, origin: string): boolean =>
   url.origin === origin && url.pathname === `/app/mail/${mailboxId}`;
 
@@ -21,6 +33,7 @@ export const buildMailListHref = (requestUrl: URL, clearSearch = false): string 
   next.searchParams.delete("message");
   if (clearSearch) {
     for (const parameter of [
+      MAIL_SEARCH_FROM_PARAMETER,
       "q",
       "qFields",
       "from",
@@ -42,6 +55,26 @@ export const buildMailListHref = (requestUrl: URL, clearSearch = false): string 
     }
   }
   return `${next.pathname}${next.search}`;
+};
+
+/** Starts or refines a mailbox-wide search while keeping its original view and selection. */
+export const buildMailSearchHref = (requestUrl: URL, search: Record<string, string>): string => {
+  const next = new URL(buildMailListHref(requestUrl, true), requestUrl.origin);
+  for (const parameter of mailViewParameters) next.searchParams.delete(parameter);
+  next.searchParams.set(
+    MAIL_SEARCH_FROM_PARAMETER,
+    requestUrl.searchParams.get(MAIL_SEARCH_FROM_PARAMETER) ?? pickMailViewParameters(requestUrl.searchParams).toString(),
+  );
+  for (const [parameter, value] of Object.entries(search)) next.searchParams.set(parameter, value);
+  return `${next.pathname}${next.search}`;
+};
+
+/** Returns to the search's original view, or clears older links without an origin. */
+export const buildMailSearchClearHref = (requestUrl: URL): string => {
+  const origin = requestUrl.searchParams.get(MAIL_SEARCH_FROM_PARAMETER);
+  if (origin === null) return buildMailListHref(requestUrl, true);
+  const parameters = pickMailViewParameters(new URLSearchParams(origin)).toString();
+  return `${requestUrl.pathname}${parameters ? `?${parameters}` : ""}`;
 };
 
 export const buildMailSelectionHref = (requestUrl: URL, item: MailListItem): string => {
@@ -80,17 +113,13 @@ export const senderDomainFromAddress = (address: string): string | null => {
 export const buildExactSenderSearchHref = (requestUrl: URL, address: string): string | null => {
   const serialized = mailExactAddressSearch("from", address);
   if (!serialized.ok) return null;
-  const next = new URL(buildMailListHref(requestUrl, true), requestUrl.origin);
-  next.searchParams.set("search", serialized.value);
-  return `${next.pathname}${next.search}`;
+  return buildMailSearchHref(requestUrl, { search: serialized.value });
 };
 
 export const buildExactParticipantSearchHref = (requestUrl: URL, address: string): string | null => {
   const serialized = mailExactAddressSearch("participants", address);
   if (!serialized.ok) return null;
-  const next = new URL(buildMailListHref(requestUrl, true), requestUrl.origin);
-  next.searchParams.set("search", serialized.value);
-  return `${next.pathname}${next.search}`;
+  return buildMailSearchHref(requestUrl, { search: serialized.value });
 };
 
 export const isMailListItemActive = (
