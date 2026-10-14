@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, jest, mock, spyOn, test } from "bun:test";
-import { assertResourceOpenLink, compileCapabilityManifest, withResourceOpenLinkAssertions } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
@@ -60,8 +60,6 @@ import {
   search,
   triage,
 } from "./service";
-
-withResourceOpenLinkAssertions("mail", mailCapabilities);
 
 const mailboxId = "MbA123";
 const conversationId = "CvB234";

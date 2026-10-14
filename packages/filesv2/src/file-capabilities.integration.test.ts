@@ -1,5 +1,4 @@
 import { expect, mock } from "bun:test";
-import { withResourceOpenLinkAssertions } from "@k2b/cloud/capabilities/testing";
 import { CAPABILITY_MAX_RESULT_BYTES, type CapabilityExecutionContext, type CapabilityResult } from "@k2b/cloud/contracts";
 import { sql } from "bun";
 import { requireInfra, testFor } from "../../../scripts/fixtures/test-infra";
@@ -32,7 +31,6 @@ mock.module("./service", () => ({
   },
 }));
 const { filesCapabilities } = await import("./capabilities");
-withResourceOpenLinkAssertions("filesv2", filesCapabilities);
 const user = {
   id: "11111111-1111-4111-8111-111111111111",
   uid: "alice",

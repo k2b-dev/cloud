@@ -47,7 +47,17 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
   let home = "";
   let serverUrl = "";
   let cleanup: () => Promise<void> = async () => undefined;
-  const ids = { mailbox: "", inbox: "", archive: "", projects: "", year: "", yearArchive: "", rootArchive: "", lowerArchive: "" };
+  const ids = {
+    mailbox: "",
+    identity: "",
+    inbox: "",
+    archive: "",
+    projects: "",
+    year: "",
+    yearArchive: "",
+    rootArchive: "",
+    lowerArchive: "",
+  };
   const conversations: string[] = [];
   const internal = { mailbox: "", twin: "", conversations: [] as string[] };
 
@@ -177,10 +187,12 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
       rootArchive: rootArchive.short_id,
       lowerArchive: lowerArchive.short_id,
     });
-    await sql`
+    const [identity] = await sql<{ short_id: string }[]>`
       INSERT INTO mail.sender_identities (short_id, mailbox_id, display_name, from_address, label, is_default, status)
       VALUES (${newShortId()}, ${internal.mailbox}::uuid, 'Support', 'support@example.test', 'Support', true, 'verified')
+      RETURNING short_id
     `;
+    ids.identity = identity!.short_id;
 
     for (const [index, subject] of ["Invoice question", "Delivery date", "Contract renewal"].entries()) {
       const [message] = await sql<{ id: string }[]>`
@@ -331,6 +343,8 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
         "create",
         "--mailbox",
         ids.mailbox,
+        "--identity",
+        ids.identity,
         "--to",
         "ada@customer.test",
         "--subject",

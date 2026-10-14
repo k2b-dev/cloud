@@ -254,7 +254,7 @@ if (process.env.CONTACTS_CLI_CHILD !== "1") {
 
       const out = join(home, "customers.vcf");
       expect(await cldJson<unknown>(["contacts", "export", customers.name, "--out", out])).toEqual({
-        book: { id: customers.id, name: customers.name },
+        book: { id: customers.id, name: customers.name, permalink: `${serverUrl}/open/contacts.book/~${customers.id}` },
         format: "vcf",
         output: out,
       });

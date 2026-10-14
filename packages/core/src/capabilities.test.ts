@@ -12,7 +12,7 @@ import {
   aiConversations,
   aiSkills,
 } from "@k2b/cloud/ai";
-import { assertResourceOpenLink, compileCapabilityManifest, withResourceOpenLinkAssertions } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   CapabilityActionReviewSchema,
@@ -26,8 +26,6 @@ import { accessRevision } from "@k2b/cloud/server";
 import { accountsAppService, audit } from "@k2b/cloud/services";
 import * as taskRuntime from "./ai-chat-tasks-runtime";
 import { aiCapabilities } from "./capabilities";
-
-withResourceOpenLinkAssertions("core", aiCapabilities);
 
 const user: User = {
   id: "11111111-1111-4111-8111-111111111111",

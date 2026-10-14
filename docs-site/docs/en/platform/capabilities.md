@@ -517,33 +517,15 @@ See [CLI modules](/en/docs/platform/cli-modules).
 
 ### Test resource links
 
-Apply the resource contract to every Query and Action in the provider's behavior
-suite, before running its fixtures:
+Give every Type with a page a reader. In the provider's tests, call each reader
+for a caller of every access level that may read the resource. Check its
+top-level destination with `assertResourceOpenLink(result)` from
+`@k2b/cloud/capabilities/testing`.
 
-```ts
-import { withResourceOpenLinkAssertions } from "@k2b/cloud/capabilities/testing";
-
-withResourceOpenLinkAssertions("inventory", capabilities);
-```
-
-The guard checks every successful resource-bearing invocation, including
-Actions, lists, multiple refs and nested resources. Each readable resource must
-have an `open` link in its enclosing result or its list entry; data without
-resources and Types deliberately declared without readers are exempt. A missing
-or invalid destination fails the test. Use `assertResourceOpenLinks(result,
-manifest)` for individual fixtures, and `assertResourceOpenLink(result)` to
-check a canonical reader's required top-level destination.
-
-Application authors must supply success fixtures for every resource-returning
-operation and every declared reader, including empty and populated lists,
-multiple-resource results, and the relevant read, write and denied permission
-cases. Check a reader's single top-level `open` destination and absence of an
-`edit` link when write access is denied; a denied read must return no link.
-Test Core's prefixed route and exact sign-in return URL separately from the
-owning app's destination page and its access checks.
-The guard checks invoked operations; it does not create fixtures or
-replace authorization integration tests. When an Action removes a resource or
-revokes its access, omit that resource's ref and link from the result.
+A reader must return a page that caller may open: Mail drafts open the composer
+for writers and the read view for readers. A denied read returns no link.
+Actions that remove a resource or the caller's access to it do not name it in
+`refs`.
 
 Older owning-app readers that return only `edit` remain usable: Core accepts a
 validated `edit` destination during rollout when no `open` is supplied. Readers

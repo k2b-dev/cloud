@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { assertResourceOpenLink, compileCapabilityManifest, withResourceOpenLinkAssertions } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   type CapabilityExecutionContext,
@@ -13,8 +13,6 @@ import { venueCapabilities } from "./capabilities";
 import { VenueListDataSchema } from "./capability-contracts";
 import { newShortId } from "./lib/short-id";
 import { venueService } from "./service";
-
-withResourceOpenLinkAssertions("venue", venueCapabilities);
 
 const testUser = (id: string, suffix: string): User => ({
   id,

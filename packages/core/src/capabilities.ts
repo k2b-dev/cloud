@@ -762,7 +762,6 @@ export const aiCapabilities = defineCapabilities({
             ref: { type: "core.ai.skill" as const, id: skill.shortId },
           })),
           refs: page.map((skill) => ({ type: "core.ai.skill", id: skill.shortId })),
-          links: [{ rel: "open", href: "/app/assistant" }],
           page: capabilityPage(offset + input.limit < matches.length ? String(offset + input.limit) : undefined),
         });
       },
@@ -818,7 +817,6 @@ export const aiCapabilities = defineCapabilities({
         return ok({
           data: items.map((task) => ({ ...taskData(task), ref: { type: "core.ai.task" as const, id: task.shortId } })),
           refs: items.map((task) => taskReference(task, context.locale)),
-          links: [{ rel: "open", href: "/app/assistant" }],
           page: capabilityPage(tasks.length > input.limit ? String(offset + input.limit) : undefined),
         });
       },
@@ -1015,7 +1013,6 @@ export const aiCapabilities = defineCapabilities({
             chat: { id: resource.chat.shortId, title: resource.chat.title, updatedAt: resource.chat.updatedAt },
           })),
           refs: page.resources.map((resource) => resource.ref),
-          links: [{ rel: "open", href: "/app/assistant" }],
           page: capabilityPage(page.nextCursor),
         });
       },
