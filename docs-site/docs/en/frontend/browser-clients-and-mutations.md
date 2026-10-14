@@ -5,7 +5,7 @@ section: Frontend
 order: 850
 description: Call typed application APIs and handle user-initiated writes consistently.
 tags: [browser, api, mutations]
-updated: 2026-10-08
+updated: 2026-10-14
 ---
 
 # Browser clients and mutations
@@ -102,14 +102,26 @@ in `try`/`catch` only when the caller must react to such an error.
 
 ## Add optimistic state carefully
 
-`onBefore` may return context used by success, error, abort, and finally hooks.
-Use it to capture the previous UI state before an optimistic change.
+Every action answers at once, with an optimistic update or a pending state on
+the acted element. [Show mutation state](/en/docs/frontend/forms-prompts-and-feedback#show-mutation-state)
+decides which one an action gets and when it offers Undo. This section covers
+the mechanics.
 
-Restore that state on error and abort. Do not optimistically grant permission,
-expose new data, or pretend an irreversible action completed.
+`onBefore` may return context used by success, error, abort, and finally hooks.
+Use it to capture the previous UI state, such as a removed row and its
+position, before the optimistic change.
+
+Restore that state on error and abort, in the same place, so the item returns
+where the person left it. Do not optimistically grant permission, expose new
+data, or pretend an irreversible action completed.
+
+Undo either cancels a request that has not been sent yet or sends a request
+that reverses the change on the server. It restores the captured state at
+once, so keep that context until the Undo notice closes.
 
 The server remains authoritative. Reconcile the returned resource or reload
-the affected server-backed view after success.
+the affected server-backed view after success. If that refresh fails, keep
+the optimistic result; the write already succeeded.
 
 ## Separate query and mutation state
 

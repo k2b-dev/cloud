@@ -11,10 +11,11 @@ Use a toast after a non-blocking action when the user can continue without respo
 | Outcome | Feedback |
 | --- | --- |
 | Success that shows where the user acted: a ticked item that stays in view, a new comment, a card dropped in place, a saved field | No visible message; the changed screen is the confirmation. When the focused control does not say what changed, because a shortcut acted, the control was busy, or it was replaced, call `announce` with the result. |
-| Success whose effect is not on screen: sent, moved elsewhere, an item the active filter now hides, a card a shortcut moved to another column, created outside the current view, finished in the background | `toast.success`, with an Undo action when the operation can be undone. |
+| An optimistic, reversible change that takes the item out of view where the user acted: deleted to Trash, archived, moved to another folder | `toast.success` with an Undo action as soon as the item leaves, before the server answers. If the server refuses the change or it fails later, the item returns in its place and `toast.error` names the reason, with a Retry action. A hard delete gets no Undo: `prompts.confirm` first, then a pending row until the server answers. |
+| Success whose effect is not on screen: sent, moved elsewhere, an item the active filter now hides, a card a shortcut moved to another column, created outside the current view, finished in the background | `toast.success`, with an Undo action when the server can reverse the operation. |
 | A single action failed and the user can try again: a toggle, a move, a save, a refresh after a saved change | `toast.error` that names what failed, with a Retry action when repeating the same request is safe. |
 | Input that blocks a form or composer, or a failed save from a dialog | An inline error next to the field or in the dialog, such as the field's `error` state or `InlineGuidance`. The dialog stays open until the server answers, so the input stays. |
-| A destructive action, or a failure that cannot be recovered and needs a decision | A dialog: `prompts.confirm` before the action, `prompts.error` when the user must read the failure before continuing. |
+| A destructive action that cannot be undone, or a failure that cannot be recovered and needs a decision | A dialog: `prompts.confirm` before the action, `prompts.error` when the user must read the failure before continuing. |
 
 Toasts confirm only what the user cannot see. A toast for every visible change teaches people to ignore the rail, including its errors. An error dialog for a one-click action interrupts more than the failure deserves: the toast names it and offers the retry. "Visible" includes screen readers: a change that only the screen shows still needs a polite announcement when focus is elsewhere.
 
@@ -142,7 +143,7 @@ announce("Assigned to you");
 | --- | --- | --- | --- |
 | `politeness` | `"polite" \| "assertive"` | `"polite"` | `polite` waits until the screen reader is idle; `assertive` interrupts it. |
 
-Announce an outcome only after the server has confirmed it, and only once. When the screen shows the change only after a follow-up refresh, announce it when that refresh succeeds; when the refresh fails, the error toast says that the change was saved, so skip the announcement. A failure that the user must act on belongs in an error toast, which is already announced assertively with the error word, or in an inline error with `role="alert"`, such as a field's `error` or the `Discussion.Composer` reason. Calling `announce` as well would read it twice. Reserve `assertive` for the rare outcome that must interrupt and has no visible counterpart.
+Announce an optimistic, reversible change when the screen shows it, and an irreversible outcome only after the server has confirmed it. Announce each outcome once. When the screen shows the change only after a follow-up refresh, announce it when that refresh succeeds; when the refresh fails, the error toast says that the change was saved, so skip the announcement. A failure that the user must act on belongs in an error toast, which is already announced assertively with the error word, or in an inline error with `role="alert"`, such as a field's `error` or the `Discussion.Composer` reason. Calling `announce` as well would read it twice. Reserve `assertive` for the rare outcome that must interrupt and has no visible counterpart.
 
 The message is the app's own localized text and names the outcome ("Comment deleted"), like a toast message. `announce` and every toast write to one pair of live regions per document, polite and assertive, so neither creates a second region. Each message is its own line, so the same message twice is read twice. While a modal dialog is open, the browser makes the regions inert like the rest of the page, so report work inside a dialog in the dialog itself. Calls without `document`, including during SSR, do nothing.
 
@@ -190,7 +191,7 @@ build their own light-dismiss surfaces. It returns `false` on the server.
 
 Use `action.href` for navigation or `action.onClick` for an application callback, such as undo or cancellation. Supply exactly one behavior. The action is a text button at the end of the message line, before the close button; when the message needs the whole line, the action moves to the end of the next one. Keep its label short. Callback actions do not dismiss automatically and return `void`; the application handles any asynchronous work and its errors.
 
-Do not place a destructive action in a toast. Ask for confirmation before the operation.
+Do not place a destructive action in a toast. Undo is not destructive: it puts back what the action changed. Offer it only when the server can really reverse the operation, because the item still exists or the request has not been sent yet. An action that cannot be reversed, such as a hard delete, asks for confirmation before it starts and offers no Undo. [Show mutation state](/en/docs/frontend/forms-prompts-and-feedback#show-mutation-state) holds the rule.
 
 ## Accessibility
 
