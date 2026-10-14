@@ -539,10 +539,7 @@ export const fileActions = {
     }),
     async (input, c) => {
       successfulEntry(c, await filesService.remove(readActor(c), { baseId: input.baseId, paths: [input.path] }));
-      return {
-        data: { baseId: input.baseId },
-        summary: filesCapabilityMessages(c.locale).movedToTrash,
-      };
+      return { data: { baseId: input.baseId }, summary: filesCapabilityMessages(c.locale).movedToTrash };
     },
   ),
   "trash.restore": action(

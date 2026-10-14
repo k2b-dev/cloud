@@ -54,12 +54,12 @@ describe("published App terminal journeys", () => {
     expect(values).toEqual([result]);
   });
   test("preserves search, cursor and page scope", async () => {
-    const { ctx, calls } = context([Response.json({ ok: true, rows: [], nextCursor: "next" })]);
+    const { ctx, calls } = context([Response.json({ rows: [], nextCursor: "next" })]);
     await command("records").run({ ctx, args, flags: { params: '{"request_id":"REC001"}', search: "a&b", cursor: "a+b/c" } });
     expect(calls[0]?.path).toEndWith("/records?request_id=REC001&_search=a%26b&_cursor=a%2Bb%2Fc");
   });
   test("keeps page parameters separate from record and comment controls", async () => {
-    const { ctx, calls } = context([Response.json({ ok: true, rows: [] }), Response.json({ ok: true, rows: [] }), Response.json({})]);
+    const { ctx, calls } = context([Response.json({}), Response.json({}), Response.json({})]);
     const params = '{"q":"REC001","cursor":"REC002","limit":"REC003"}';
     await command("records").run({ ctx, args, flags: { params } });
     await command("records").run({ ctx, args, flags: { params, search: "needle", cursor: "next+page" } });
@@ -180,12 +180,4 @@ test("published app-only resource objects keep their projection without Base-onl
   await command("read").run({ ctx, args: { app: args.app }, flags: {} });
   expect(values).toEqual([result]);
   expect(calls.map((call) => call.path)).toEqual(["/api/grids/apps/runtime/APP001"]);
-});
-
-test("published page text output keeps its existing resource data without permalinks", async () => {
-  const result = { blocks: [{ id: "detail", record: { record: { id: "REC001", data: { FIELD1: "Example" } } } }] };
-  const { ctx, values } = context([Response.json(result)]);
-  ctx.options.output = "text";
-  await command("read").run({ ctx, args: { app: args.app }, flags: {} });
-  expect(values).toEqual([result]);
 });

@@ -2,10 +2,7 @@ import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
 import { z } from "zod";
-import type { projectCustomAppRuntimePage } from "../api/custom-app-runtime-dto";
-import type { PublicGridRecord } from "../api/public-dto";
 import { ShortIdSchema } from "../contracts";
-import type { CustomAppRecordsSuccess } from "../frontend/custom-app/RecordsTable";
 import { requirePublicId } from "./resources";
 import { JSON_BODY_INPUT, jsonRequest, printCliStructured, queryString, readApi, readJsonInput, writeApiFile } from "./runtime";
 
@@ -28,10 +25,7 @@ export const publishedAppCommands = [
     args: appArg,
     flags: { ...paramsFlag, page: flag.string({ description: "Page ID; defaults to the published home page" }) },
     async run({ ctx, args, flags }) {
-      const result = await readApi<ReturnType<typeof projectCustomAppRuntimePage>>(
-        ctx,
-        `${path({ ...args, page: flags.page })}${queryString(params(flags.params))}`,
-      );
+      const result = await readApi<unknown>(ctx, `${path({ ...args, page: flags.page })}${queryString(params(flags.params))}`);
       if (!printCliStructured(ctx, result)) ctx.json(result);
     },
   }),
@@ -44,7 +38,7 @@ export const publishedAppCommands = [
       cursor: flag.string({ description: "Opaque nextCursor" }),
     },
     async run({ ctx, args, flags }) {
-      const result = await readApi<CustomAppRecordsSuccess>(
+      const result = await readApi<unknown>(
         ctx,
         `${path(args, ["records"])}${queryString({ ...params(flags.params), _search: flags.search, _cursor: flags.cursor })}`,
       );
@@ -65,7 +59,7 @@ export const publishedAppCommands = [
       async run({ ctx, args, flags }) {
         if (!flags.yes) throw new Error("Pass --yes to execute the published operation.");
         const body = await readJsonInput(flags.body, "operation body");
-        const result = await readApi<PublicGridRecord | { recordId: string } | { runId: string } | { status: string }>(
+        const result = await readApi<unknown>(
           ctx,
           `${path(args, [endpoint])}${queryString(params(flags.params))}`,
           jsonRequest(method, body),
@@ -80,7 +74,7 @@ export const publishedAppCommands = [
     flags: { body: JSON_BODY_INPUT, yes: confirmFlag("Submit this form") },
     async run({ ctx, args, flags }) {
       if (!flags.yes) throw new Error("Pass --yes to submit the form.");
-      const result = await readApi<{ recordId: string; navigateTo?: string }>(
+      const result = await readApi<unknown>(
         ctx,
         path(args, ["sidebar", "forms", args.action, "submit"]),
         jsonRequest("POST", await readJsonInput(flags.body, "form values")),
@@ -95,7 +89,7 @@ export const publishedAppCommands = [
       flags: { ...paramsFlag, body: JSON_BODY_INPUT, yes: confirmFlag("Run this action") },
       async run({ ctx, args, flags }) {
         if (!flags.yes) throw new Error("Pass --yes to run the action.");
-        const result = await readApi<{ runId: string; status: string } | { status: string }>(
+        const result = await readApi<unknown>(
           ctx,
           `${path(args, [kind === "action" ? "actions" : "row-actions", args.action])}${queryString(params(flags.params))}`,
           jsonRequest("POST", await readJsonInput(flags.body, "operationId and, for row actions, rowId/search/cursor")),
@@ -110,7 +104,7 @@ export const publishedAppCommands = [
     flags: { ...paramsFlag, action: flag.string({ description: "Action ID; omit for a scanner run" }) },
     async run({ ctx, args, flags }) {
       const tail = flags.action ? ["actions", flags.action, "runs", args.run] : ["scanner", "runs", args.run];
-      const result = await readApi<{ status: string }>(ctx, `${path(args, tail)}${queryString(params(flags.params))}`);
+      const result = await readApi<unknown>(ctx, `${path(args, tail)}${queryString(params(flags.params))}`);
       if (!printCliStructured(ctx, result)) ctx.json(result);
     },
   }),
