@@ -6,7 +6,7 @@ description: Ablagen öffnen, Dokumente bearbeiten, Vorlagen nutzen und Dateien 
 order: 100
 ---
 
-Die Dateien-App zeigt deine zugänglichen Cloud- und FreeIPA-Verzeichnisse in einer Oberfläche. Die Kennzeichnung neben dem Namen einer Ablage zeigt ihre Herkunft.
+Dateien öffnet mit **Alle Ablagen**: eine Kachel für jede Ablage, die du erreichst, darunter deine zuletzt geöffneten Dateien. Öffne eine Kachel, um in dieser Ablage zu arbeiten. Dort legst du Ordner an und lädst Dateien hoch; die Übersicht bietet keine Aktion zum Anlegen. Hast du nur eine Ablage, öffnet Dateien direkt in ihr. Die Beschriftung neben dem Ablagenamen nennt die Herkunft.
 
 ## Ordnerbeschreibungen und Vorschauen {icon="file-description"}
 
@@ -20,7 +20,7 @@ Das Detailpanel zeigt fünf Textzeilen oder fünf CSV-Datensätze plus Kopfzeile
 
 ## Zurechtfinden {icon="folders"}
 
-Die Seitenleiste zeigt deine Ablagen mit ihren Ordnern als Baum. Deine eigene Ablage erscheint als **Meine Dateien** mit deinem Benutzernamen darunter; Gruppenablagen tragen den Gruppennamen. Der aktuelle Ordner ist hervorgehoben, und ein Ordner, den du öffnest, zeigt statt seines Symbols kurz einen Ladekreis. Ein Klick auf einen Ordner in der Liste öffnet ihn. Die erste Zeile, **Übergeordneter Ordner**, nennt den Ordner darüber und führt dorthin; einen Zurück-Pfeil gibt es in Dateien nicht. Die Überschrift über der Liste nennt den aktuellen Ordner, der Baum in der Seitenleiste zeigt, wo er liegt. Mit der Tastatur drückst du die Rücktaste, solange die Liste den Fokus hat, oder überall auf der Seite Alt+↑ (⌥↑ auf einem Mac). Ein Klick auf eine Datei öffnet rechts das Detailpanel, für Ordner nutzt du dafür den kleinen Info-Button am Zeilenende. Das X schließt das Panel und hebt die Auswahl auf.
+Die Seitenleiste zeigt deine Ablagen mit ihren Ordnern als Baum. Deine eigene Ablage erscheint als **Persönlich** mit deinem Benutzernamen darunter; Gruppenablagen tragen den Gruppennamen. Der aktuelle Ordner ist hervorgehoben, und ein Ordner, den du öffnest, zeigt statt seines Symbols kurz einen Ladekreis. Ein Klick auf einen Ordner in der Liste öffnet ihn. Auf der obersten Ebene einer Ablage führt die erste Zeile **Alle Ablagen** zurück zur Übersicht, wenn du mehrere Ablagen hast. Innerhalb von Ordnern nennt **Übergeordneter Ordner** den Ordner darüber und führt dorthin. Einen Zurück-Pfeil gibt es in Dateien nicht. Auf dem Smartphone enthält das Navigationsmenü bei mehreren Ablagen ebenfalls **Alle Ablagen**. Die Überschrift über der Liste nennt den aktuellen Ordner, der Baum in der Seitenleiste zeigt, wo er liegt. Mit der Tastatur drückst du die Rücktaste, solange die Liste den Fokus hat, oder überall auf der Seite Alt+↑ (⌥↑ auf einem Mac). Ein Klick auf eine Datei öffnet rechts das Detailpanel, für Ordner nutzt du dafür den kleinen Info-Button am Zeilenende. Das X schließt das Panel und hebt die Auswahl auf.
 
 Über der Liste wählst du **Liste**, **Grid** oder **Baum**. Der Baum zeigt die ganze Ablage ab ihrer Wurzel mit hervorgehobenem aktuellen Ordner; ein Klick auf einen Ordnernamen macht ihn zum aktuellen Ordner, ein Klick auf sein Symbol klappt auf oder zu, mehrere gleichzeitig. Neue Einträge und Uploads landen immer im aktuellen Ordner, den jeder Namensdialog anzeigt. Im Grid erscheint zusätzlich die Kachelgröße. Ansicht und Größe merkt sich der Browser pro Ablage. **Nächste Seite** und **Erste Seite** blättern in großen Ordnern; Ablage, Ordner, Seite und eine einzeln ausgewählte Datei bleiben in der Adresse, sodass du neu laden oder ein Lesezeichen setzen kannst.
 

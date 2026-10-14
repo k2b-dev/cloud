@@ -100,6 +100,7 @@ export default function Browser(props: {
   onRetry?: () => void;
   onOpenDirectory?: (path: string) => void;
   onOpenTrash?: () => void;
+  onOpenOverview?: () => void;
   onSearch?: (query: string | null) => void;
   onBrowseChange?: (options: BrowseOptions) => void;
   onChanged?: (selectPath?: string | null) => void | Promise<void>;
@@ -1111,53 +1112,61 @@ export default function Browser(props: {
   const goUp = () => {
     setOpening("up");
     selection.clear();
-    props.onOpenDirectory?.(parentPath(folder()));
+    if (folder()) props.onOpenDirectory?.(parentPath(folder()));
+    else props.onOpenOverview?.();
   };
   const openTrash = () => {
     setOpening("trash");
     props.onOpenTrash?.();
   };
   const parentName = () => folderLabel(parentPath(folder()));
-  // Alt+↑ goes to the parent folder from anywhere on the page; the shell offers no way up for a folder (see `filesTitle`).
+  const up = () => {
+    if (folder())
+      return {
+        label: b().parentRow,
+        detail: parentName(),
+        ariaLabel: b().parentFolderUp(parentName()),
+        icon: "ti ti-folder-up",
+        action: goUp,
+      };
+    if (props.onOpenOverview) return { label: b().allStorage, ariaLabel: b().allStorageUp, icon: "ti ti-layout-grid", action: goUp };
+    return null;
+  };
+  // Alt+↑ follows the same way up as the listing; the shell offers no way up for a folder (see `filesTitle`).
   createEffect(() => {
-    if (!folder()) return;
+    const target = up();
+    if (!target) return;
     onCleanup(
       registerContextAwareCommand({
         id: "filesv2.parent-folder",
-        title: b().parentRow,
-        description: b().parentFolderUp(parentName()),
-        icon: "ti ti-folder-up",
+        title: target.label,
+        description: target.ariaLabel,
+        icon: target.icon,
         shortcut: "alt+arrowup",
-        action: goUp,
+        action: target.action,
       }),
     );
   });
   // Backspace does the same while the listing has the focus, never while someone types.
   const upOnBackspace = (event: KeyboardEvent) => {
     if (event.key !== "Backspace" || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.defaultPrevented) return;
-    if (!folder() || !(event.target instanceof Element) || !event.target.closest(".filesv2-browser__collection")) return;
+    const target = up();
+    if (!target || !(event.target instanceof Element) || !event.target.closest(".filesv2-browser__collection")) return;
     if (event.target.closest("input,textarea,select,[contenteditable]")) return;
     event.preventDefault();
-    goUp();
+    target.action();
   };
   let surface!: HTMLDivElement;
   onMount(() => {
     surface.addEventListener("keydown", upOnBackspace);
     onCleanup(() => surface.removeEventListener("keydown", upOnBackspace));
   });
-  const virtualBefore = (): VirtualRow[] =>
-    folder() && !searching() && view().view !== "tree"
-      ? [
-          {
-            key: "up",
-            label: b().parentRow,
-            detail: parentName(),
-            ariaLabel: b().parentFolderUp(parentName()),
-            icon: "ti ti-folder-up",
-            onClick: goUp,
-          },
-        ]
+  const virtualBefore = (): VirtualRow[] => {
+    const target = up();
+    return target && !searching() && view().view !== "tree"
+      ? [{ key: "up", label: target.label, detail: target.detail, ariaLabel: target.ariaLabel, icon: target.icon, onClick: target.action }]
       : [];
+  };
   const virtualAfter = (): VirtualRow[] =>
     !folder() && !searching() && props.onOpenTrash
       ? [{ key: "trash", label: b().trashTitle, icon: "ti ti-trash", onClick: openTrash }]
@@ -1432,7 +1441,7 @@ export default function Browser(props: {
             </InlineGuidance>
           </Show>
           <Show
-            when={props.directory.items.length || (!searching() && (folder() || props.onOpenTrash))}
+            when={props.directory.items.length || (!searching() && (folder() || props.onOpenTrash || props.onOpenOverview))}
             fallback={
               <Placeholder
                 class="flex-1"
