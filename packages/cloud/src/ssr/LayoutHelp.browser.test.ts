@@ -177,7 +177,8 @@ test("on a phone the table of contents is an On this page menu under the head th
     expect(await page.locator(".layout-content-main").evaluate((element) => getComputedStyle(element).overflowY)).toBe("visible");
     await page.evaluate(() => window.scrollTo(0, 2000));
     await page.waitForFunction(() => document.querySelector('.help-article-aside a[aria-current="location"]')?.textContent !== "Section 0");
-    await trigger.click();
+    // Open the menu where the reader is: a pointer click would first scroll the trigger back into view.
+    await trigger.dispatchEvent("click");
     const items = page.getByRole("menuitemradio");
     expect(await items.allTextContents()).toEqual(Array.from({ length: 8 }, (_, index) => `Section ${index}`));
     expect(await page.getByRole("menuitemradio", { name: "Section 0" }).getAttribute("aria-checked")).toBe("false");
