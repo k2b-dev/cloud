@@ -1,11 +1,6 @@
-import { MAX_CONVERSATION_ACTION_MESSAGES } from "../../command-outcomes";
+import { MAIL_ACTION_OUTCOME_TTL_MS, MAX_CONVERSATION_ACTION_MESSAGES } from "../../command-outcomes";
 import type { ConversationTriageUndoOutcome } from "../../contracts";
-import {
-  MAIL_ACTION_OUTCOME_TTL_MS,
-  type MailActionCommand,
-  type MailActionQueuedCommand,
-  type MailActionSettlement,
-} from "./mail-action-outcomes";
+import type { MailActionCommand, MailActionQueuedCommand, MailActionSettlement } from "./mail-action-outcomes";
 import type { MailActionQueue } from "./mail-action-queue";
 import type { MailActionId } from "./mail-actions";
 import { MAIL_BULK_NO_PROVIDER_PLACEMENT, MAIL_BULK_QUEUE_FAILED, type MailBulkTarget } from "./mail-bulk-actions";

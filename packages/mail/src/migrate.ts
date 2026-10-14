@@ -143,6 +143,7 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     $$
   `.simple();
   await addCommandQueuePosition(tx);
+  await addCommandUndoRequests(tx);
   await addSenderVerificationCommands(tx);
   await addConversationAssignees(tx);
   await addAssignedOnlyMailboxAccess(tx);
@@ -181,6 +182,24 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       WHERE state <> 'completed'
     `.simple();
   }
+};
+
+/** Accepted Undo requests survive the client and wait for the original move's destination copy. */
+const addCommandUndoRequests = async (tx: SqlClient): Promise<void> => {
+  await tx`
+    CREATE TABLE IF NOT EXISTS mail.command_undo_requests (
+      command_id uuid PRIMARY KEY REFERENCES mail.commands(id) ON DELETE CASCADE,
+      requested_at timestamptz NOT NULL DEFAULT now(),
+      -- NULL while the original command or its destination copy is still pending.
+      outcome text CONSTRAINT command_undo_requests_outcome_check CHECK (outcome IN ('reversed', 'not_applied', 'unavailable')),
+      inverse_command_id uuid REFERENCES mail.commands(id) ON DELETE SET NULL,
+      CONSTRAINT command_undo_requests_inverse_check CHECK (inverse_command_id IS NULL OR outcome = 'reversed')
+    )
+  `.simple();
+  await tx`
+    CREATE INDEX IF NOT EXISTS command_undo_requests_pending_idx
+    ON mail.command_undo_requests (requested_at, command_id) WHERE outcome IS NULL
+  `.simple();
 };
 
 /**

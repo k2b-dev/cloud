@@ -443,6 +443,36 @@ describe("Mail list actions", () => {
     await settle();
     expect(rowIds()).toEqual(["one", "two", "three"]);
   });
+  test("Undo after send announces Undone only after pending resolves to a queued inverse", async () => {
+    const reversed = deferred<Response>();
+    const polled = deferred<void>();
+    undoResponse = async () => {
+      if (undoRequests.length === 1) return Response.json({ commands: [{ id: commandId(1), outcome: "pending", inverse: null }] });
+      polled.resolve();
+      return reversed.promise;
+    };
+    // Screen-reader announcements land in the live region after a short delay.
+    const announced = async () => {
+      await Bun.sleep(150);
+      return dom.document.querySelector("[data-k2b-live]")?.textContent ?? "";
+    };
+    mount();
+    await menuAction("two", "Move to Trash");
+    await settle();
+    toastAction("Undo").click();
+    await settle();
+    expect(undoRequests).toEqual([[commandId(1)]]);
+    expect(await announced()).not.toContain("Undone");
+    // The runner's first poll waits a real second; hold its answer.
+    await polled.promise;
+    expect(undoRequests).toEqual([[commandId(1)], [commandId(1)]]);
+    expect(await announced()).not.toContain("Undone");
+    reversed.resolve(
+      Response.json({ commands: [{ id: commandId(1), outcome: "reversed", inverse: { id: commandId(2), state: "queued", code: null } }] }),
+    );
+    await settle();
+    expect(await announced()).toContain("Undone");
+  });
   test("bulk Delete projects all three, ends selection, and one Undo restores their order", async () => {
     const hold = deferred<Response>();
     actionResponse = () => hold.promise;

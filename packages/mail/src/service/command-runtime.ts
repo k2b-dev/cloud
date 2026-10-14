@@ -10,6 +10,7 @@ import type { CommandState, MailCommand, RemoteMessagePrecondition } from "../co
 import { remoteMessagePreconditionSchema } from "../contracts";
 import { rediscoverProviderBinding } from "./bindings";
 import { commandStillAuthorized } from "./command-authorization";
+import { resolveUndoRequests } from "./command-undo";
 import { imapSmtpConnector, type RemoteMessageSet, type RemoteMessageState, type RemoteMutationTarget } from "./connectors";
 import type { SmtpConnectionConfig } from "./connectors/contract";
 import { checkCommandKeepProtection, keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
@@ -4033,15 +4034,20 @@ const runMailboxCommandTurn = async (mailboxId: string, jobHeartbeat?: () => Pro
   if (!next) return { retryAfterMs: null };
   if (next.wait_ms > 0) return { retryAfterMs: Math.min(next.wait_ms, MAILBOX_COMMAND_POLL_MS) };
   const moveSet = await pendingMoveSet(mailboxId, next.id);
-  if (moveSet.length > 1) return { retryAfterMs: (await runMoveSet(moveSet, jobHeartbeat)).busyRetryAfterMs ?? 0 };
-  const run = await executeMutationCommandWithHeartbeat(
-    next.id,
-    jobHeartbeat &&
-      (async (fence) => {
-        await jobHeartbeat();
-        await heartbeatCommandFence(fence);
-      }),
-  );
+  const run =
+    moveSet.length > 1
+      ? await runMoveSet(moveSet, jobHeartbeat)
+      : await executeMutationCommandWithHeartbeat(
+          next.id,
+          jobHeartbeat &&
+            (async (fence) => {
+              await jobHeartbeat();
+              await heartbeatCommandFence(fence);
+            }),
+        );
+  await finishUndoRequests({ mailboxId }).catch((error) => {
+    log.warn("Recorded Undo waits for the commands-due retry", { mailboxId, code: normalizeCode(error, "UNDO_RESOLUTION_FAILED") });
+  });
   return { retryAfterMs: run?.busyRetryAfterMs ?? 0 };
 };
 
@@ -4194,9 +4200,22 @@ export const enqueueMailCommand = async (commandId: string, kind: MailCommand["k
   }
 };
 
+export const finishUndoRequests = async (filter: { mailboxId?: string; commandIds?: string[] }): Promise<void> => {
+  const inverseIds = await resolveUndoRequests(filter);
+  if (inverseIds.length === 0) return;
+  mailLive.wake();
+  const mailboxes = await sql<{ mailbox_id: string }[]>`
+    SELECT DISTINCT mailbox_id FROM mail.commands WHERE id = ANY(${toPgUuidArray(inverseIds)}::uuid[])
+  `;
+  for (const mailbox of mailboxes) await submitMailboxCommandsJob(mailbox.mailbox_id);
+};
+
 const submitDueCommands = async (): Promise<{ mailboxes: number; maintenance: number; outbox: number; recovered: number }> => {
   const recovered = await recoverStaleExecutions();
   const maintenance = await submitDueMaintenanceCommands();
+  await finishUndoRequests({}).catch((error) => {
+    log.warn("Recorded Undo requests wait for the next commands-due run", { code: normalizeCode(error, "UNDO_RESOLUTION_FAILED") });
+  });
   const mailboxes = await sql<{ mailbox_id: string }[]>`
     SELECT mailbox_id
     FROM mail.commands

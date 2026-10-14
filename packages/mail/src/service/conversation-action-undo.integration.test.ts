@@ -1,14 +1,17 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { encryptSecret, toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { MAIL_ACTION_OUTCOME_TTL_MS } from "../command-outcomes";
 import type { CommandState } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
-import { executeMutationCommand } from "./command-runtime";
+import { executeMutationCommand, finishUndoRequests, runMailboxCommandsJob } from "./command-runtime";
+import { recordUndoRequests } from "./command-undo";
 import { createActorCommands } from "./commands";
+import { imapSmtpConnector } from "./connectors";
 import { keepConversation } from "./conversation-keeps";
 import { createMailbox } from "./mailboxes";
 import { createConversationTriageCommands, undoConversationTriageCommands } from "./triage";
@@ -228,6 +231,176 @@ suite("mail conversation action undo", () => {
     return result.data.commands[0]!;
   };
 
+  const undoRecords = (row: Fixture) => sql<{ outcome: string | null; inverse_command_id: string | null }[]>`
+    SELECT outcome, inverse_command_id FROM mail.command_undo_requests WHERE command_id = ${row.commandId}::uuid
+  `;
+  const inverseCommands = (row: Fixture) => sql<{ id: string }[]>`
+    SELECT id FROM mail.commands WHERE mailbox_id = ${mailboxId}::uuid AND idempotency_key = ${`undo:${row.commandId}`}
+  `;
+
+  test("the runtime turn finishes an Undo requested while the provider is moving the message", async () => {
+    const row = await fixture();
+    const [message] = await sql<{ message_id: string }[]>`SELECT message_id FROM mail.message_contents WHERE id = ${row.messageId}::uuid`;
+    const destinationUid = nextUid++;
+    let moved = false;
+    await sql`UPDATE mail.provider_bindings SET capabilities = '{"move": true}'::jsonb WHERE id = ${bindingId}::uuid`;
+    const session = spyOn(imapSmtpConnector, "withSession").mockImplementation(async (config, work) => work(config));
+    const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue({
+      uidValidity: "1",
+      uidNext: destinationUid,
+      highestModseq: null,
+      messages: 0,
+    });
+    const states = spyOn(imapSmtpConnector, "getMessageStates").mockImplementation(
+      async (_, messages) =>
+        new Map(
+          moved
+            ? []
+            : messages.uids.map(
+                (uid) =>
+                  [
+                    uid,
+                    {
+                      exists: true,
+                      flags: ["\\Seen"],
+                      keywords: [],
+                      messageId: message!.message_id,
+                      modseq: "1",
+                    },
+                  ] as const,
+              ),
+        ),
+    );
+    const move = spyOn(imapSmtpConnector, "moveMessages").mockImplementation(async (_, messages) => {
+      expect((await snapshot(row.commandId)).state).toBe("executing");
+      expect(await outcome(row)).toEqual({ id: row.commandId, outcome: "pending", inverse: null });
+      expect(await undoRecords(row)).toEqual([{ outcome: null, inverse_command_id: null }]);
+      moved = true;
+      return { completed: true, destinationUidValidity: "1", destinationUids: new Map(messages.uids.map((uid) => [uid, destinationUid])) };
+    });
+    try {
+      await runMailboxCommandsJob({ input: { mailboxId }, heartbeat: async () => {}, resubmit: () => {} });
+      expect(move).toHaveBeenCalledTimes(1);
+      expect((await snapshot(row.commandId)).state).toBe("confirmed");
+      const inverses = await inverseCommands(row);
+      expect(inverses).toHaveLength(1);
+      const [copy] = await sql<{ id: string }[]>`
+        SELECT id FROM mail.remote_message_refs WHERE connector_ref ->> 'commandId' = ${row.commandId}
+      `;
+      expect(copy).toBeDefined();
+      expect(await snapshot(inverses[0]!.id)).toMatchObject({ state: "queued", target: { remoteMessageRefId: copy!.id } });
+      expect(await undoRecords(row)).toEqual([{ outcome: "reversed", inverse_command_id: inverses[0]!.id }]);
+    } finally {
+      move.mockRestore();
+      states.mockRestore();
+      status.mockRestore();
+      session.mockRestore();
+      await sql`UPDATE mail.provider_bindings SET capabilities = '{}'::jsonb WHERE id = ${bindingId}::uuid`;
+    }
+  });
+
+  test("finishes a recorded executing Undo without another client request and pins the command-created copy", async () => {
+    const row = await fixture("executing");
+    expect(await outcome(row)).toEqual({ id: row.commandId, outcome: "pending", inverse: null });
+    expect(await undoRecords(row)).toEqual([{ outcome: null, inverse_command_id: null }]);
+    const refId = await destinationCopy(row);
+    await sql`UPDATE mail.remote_message_refs SET connector_ref = ${{ source: "command", commandId: row.commandId }}::jsonb WHERE id = ${refId}::uuid`;
+    await sql`UPDATE mail.message_placements SET updated_at = now() - interval '1 hour' WHERE remote_message_ref_id = ${refId}::uuid`;
+    await addCopy({ messageId: row.messageId, folderId: archiveId, uid: nextUid++, flags: [] });
+    await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now(), updated_at = now() WHERE id = ${row.commandId}::uuid`;
+    await finishUndoRequests({ mailboxId });
+    const inverses = await inverseCommands(row);
+    expect(inverses).toHaveLength(1);
+    expect(await snapshot(inverses[0]!.id)).toMatchObject({ state: "queued", target: { remoteMessageRefId: refId } });
+    expect(await outcome(row)).toEqual({
+      id: row.commandId,
+      outcome: "reversed",
+      inverse: { id: inverses[0]!.id, state: "queued", code: null },
+    });
+    expect(await inverseCommands(row)).toEqual(inverses);
+  });
+
+  test("a recorded Undo resolves not_applied when the executing original fails or is cancelled", async () => {
+    for (const state of ["failed", "cancelled"]) {
+      const row = await fixture("executing");
+      expect((await outcome(row)).outcome).toBe("pending");
+      await sql`UPDATE mail.commands SET state = ${state}, finished_at = now() WHERE id = ${row.commandId}::uuid`;
+      await finishUndoRequests({ mailboxId });
+      expect(await undoRecords(row)).toEqual([{ outcome: "not_applied", inverse_command_id: null }]);
+      expect(await inverseCommands(row)).toEqual([]);
+      expect((await outcome(row)).outcome).toBe("not_applied");
+    }
+  });
+
+  test("concurrent Undo clients and a resolver create one record and one inverse", async () => {
+    const row = await fixture("confirmed");
+    await destinationCopy(row);
+    await sql.begin((tx) => recordUndoRequests(tx, [row.commandId]));
+    const [first, second] = await Promise.all([outcome(row), outcome(row), finishUndoRequests({ mailboxId })]);
+    expect(first).toEqual(second);
+    expect(first.outcome).toBe("reversed");
+    expect(await undoRecords(row)).toEqual([{ outcome: "reversed", inverse_command_id: first.inverse!.id }]);
+    expect(await inverseCommands(row)).toEqual([{ id: first.inverse!.id }]);
+  });
+
+  test("the sweep recovers a recorded Undo after the original already settled", async () => {
+    const row = await fixture("confirmed");
+    await destinationCopy(row);
+    await sql.begin((tx) => recordUndoRequests(tx, [row.commandId]));
+    await finishUndoRequests({});
+    const inverses = await inverseCommands(row);
+    expect(inverses).toHaveLength(1);
+    expect(await undoRecords(row)).toEqual([{ outcome: "reversed", inverse_command_id: inverses[0]!.id }]);
+  });
+
+  test("the sweep waits for a synced destination copy and resolves it after the copy appears", async () => {
+    const row = await fixture("confirmed");
+    expect((await outcome(row)).outcome).toBe("pending");
+    await finishUndoRequests({});
+    expect(await undoRecords(row)).toEqual([{ outcome: null, inverse_command_id: null }]);
+    expect(await inverseCommands(row)).toEqual([]);
+    await destinationCopy(row);
+    await finishUndoRequests({});
+    expect(await undoRecords(row)).toEqual([{ outcome: "reversed", inverse_command_id: (await inverseCommands(row))[0]!.id }]);
+  });
+
+  test("the sweep stops waiting for a copy 15 minutes after settlement, not after the Undo request", async () => {
+    const row = await fixture("executing");
+    expect((await outcome(row)).outcome).toBe("pending");
+    await sql`UPDATE mail.command_undo_requests SET requested_at = now() - interval '1 hour' WHERE command_id = ${row.commandId}::uuid`;
+    await finishUndoRequests({});
+    expect(await undoRecords(row)).toEqual([{ outcome: null, inverse_command_id: null }]);
+    await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now(), updated_at = now() WHERE id = ${row.commandId}::uuid`;
+    await finishUndoRequests({});
+    expect(await undoRecords(row)).toEqual([{ outcome: null, inverse_command_id: null }]);
+    await sql`UPDATE mail.commands SET finished_at = now() - make_interval(secs => ${(MAIL_ACTION_OUTCOME_TTL_MS + 1_000) / 1_000})
+      WHERE id = ${row.commandId}::uuid`;
+    await finishUndoRequests({});
+    expect(await undoRecords(row)).toEqual([{ outcome: "unavailable", inverse_command_id: null }]);
+    expect(await inverseCommands(row)).toEqual([]);
+    expect((await outcome(row)).outcome).toBe("unavailable");
+  });
+
+  test("refuses a recorded inverse when write access was revoked before settlement", async () => {
+    const row = await fixture("executing");
+    expect((await outcome(row)).outcome).toBe("pending");
+    await destinationCopy(row);
+    await sql`UPDATE mail.commands SET state = 'confirmed', finished_at = now() WHERE id = ${row.commandId}::uuid`;
+    const grants = await sql<{ id: string; permission: string }[]>`
+      SELECT a.id, a.permission FROM auth.access a JOIN mail.mailbox_access ma ON ma.access_id = a.id
+      WHERE ma.mailbox_id = ${mailboxId}::uuid AND a.user_id = ${userId}::uuid
+    `;
+    expect(grants.length).toBeGreaterThan(0);
+    try {
+      for (const grant of grants) await sql`UPDATE auth.access SET permission = 'read' WHERE id = ${grant.id}::uuid`;
+      await finishUndoRequests({ mailboxId });
+      expect(await undoRecords(row)).toEqual([{ outcome: "unavailable", inverse_command_id: null }]);
+      expect(await inverseCommands(row)).toEqual([]);
+    } finally {
+      for (const grant of grants) await sql`UPDATE auth.access SET permission = ${grant.permission} WHERE id = ${grant.id}::uuid`;
+    }
+  });
+
   test("cancels a queued move without changing its placement and prevents a later runtime claim", async () => {
     const row = await fixture();
     const placement = (await sql`SELECT * FROM mail.message_placements WHERE remote_message_ref_id = ${row.refId}::uuid`)[0];
@@ -271,6 +444,35 @@ suite("mail conversation action undo", () => {
       await sql<{ id: string }[]>`SELECT id FROM mail.commands WHERE mailbox_id = ${mailboxId}::uuid
       AND idempotency_key = ${`undo:${row.commandId}`}`,
     ).toEqual([{ id: first.inverse!.id }]);
+  });
+
+  test("a server-created inverse replays through the public actor command path", async () => {
+    const row = await fixture("confirmed");
+    const refId = await destinationCopy(row);
+    const first = await outcome(row);
+    expect(first.outcome).toBe("reversed");
+    const replay = await createActorCommands({
+      context,
+      mailboxId,
+      inputs: [
+        {
+          kind: "move",
+          messageId: row.messageId,
+          remoteMessageRefId: refId,
+          sourceFolderId: archiveId,
+          destinationFolderId: inboxId,
+          idempotencyKey: `undo:${row.commandId}`,
+        },
+      ],
+    });
+    if (!replay.ok) throw new Error(replay.error.message);
+    expect(replay.data.map((command) => command.id)).toEqual([first.inverse!.id]);
+    expect(await inverseCommands(row)).toEqual([{ id: first.inverse!.id }]);
+    const events = await sql<{ metadata: { undoOf: string; correlationId: string } }[]>`
+      SELECT metadata FROM mail.activity_events WHERE command_id = ${first.inverse!.id}::uuid AND action = 'command.move'
+    `;
+    expect(events).toHaveLength(1);
+    expect(events[0]!.metadata).toMatchObject({ undoOf: row.commandId, correlationId: row.correlationId });
   });
 
   test("pins two inverses of one message to distinct moved copies, including separate Undo requests", async () => {
@@ -384,13 +586,14 @@ suite("mail conversation action undo", () => {
     });
   });
 
-  test("answers pending for an executing move and writes nothing", async () => {
+  test("records Undo for an executing move without changing the original", async () => {
     const row = await fixture("executing");
     const before = await snapshot(row.commandId);
     const events = await sql`SELECT * FROM mail.activity_events WHERE command_id = ${row.commandId}::uuid`;
     expect(await outcome(row)).toEqual({ id: row.commandId, outcome: "pending", inverse: null });
     expect(await snapshot(row.commandId)).toEqual(before);
     expect(await sql`SELECT * FROM mail.activity_events WHERE command_id = ${row.commandId}::uuid`).toEqual(events);
+    expect(await undoRecords(row)).toEqual([{ outcome: null, inverse_command_id: null }]);
   });
 
   test("answers pending for an ambiguous move without changing it", async () => {
