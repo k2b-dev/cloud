@@ -22,7 +22,7 @@ const headingTitleTokens = (token: Tokens.Heading): Token[] => {
 };
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
-const DIRECTIVE_OPENER = /^ {0,3}:::[a-z]+\b/i;
+const DIRECTIVE_OPENER = /^ {0,3}:::(?:steps|reference|compare|details|note|info|success|warning|danger)\b/i;
 const DIRECTIVE_CLOSER = /^ {0,3}:::[ \t]*$/;
 const CALLOUT_OPENER = /^ {0,3}:::(?:note|info|success|warning|danger)\b/i;
 
@@ -42,7 +42,7 @@ const detailsBlock = (source: string): { raw: string; title: string; body: strin
     const text = line.replace(/\r?\n$/, "");
     const marker = FENCE.exec(text);
     if (fence) {
-      if (marker && marker[1]![0] === fence[0] && marker[1]!.length >= fence.length && !marker[2]!.trim()) fence = undefined;
+      if (marker && marker[1]![0] === fence[0] && marker[1]!.length >= fence.length && /^[ \t]*$/.test(marker[2]!)) fence = undefined;
     } else if (marker && !(marker[1]![0] === "`" && marker[2]!.includes("`"))) fence = marker[1];
     else if (DIRECTIVE_CLOSER.test(text)) {
       if (!inner)

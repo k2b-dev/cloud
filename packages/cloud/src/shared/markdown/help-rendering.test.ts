@@ -185,3 +185,17 @@ test("native disclosure markup is allowed only by the Help profile", () => {
   expect(renderHelpMarkdown(source)).toContain('<details data-surface="plain">');
   expect(renderHelpMarkdown(source)).not.toContain(" open");
 });
+
+test("a non-breaking space does not close a code fence inside details", () => {
+  const html = renderHelpMarkdown(":::details Example\n```md\n```\u00a0\n:::\n```\nAfter.\n:::");
+  expect(html.match(/<details /g)).toHaveLength(1);
+  expect(html).toContain("```\u00a0\n:::</code>");
+  expect(html).toContain("<p>After.</p>\n</div></details>");
+});
+
+test("unknown directives inside details remain literal body text", () => {
+  const html = renderHelpMarkdown(":::details Title\n:::timeline\nText\n:::");
+  expect(html.match(/<details /g)).toHaveLength(1);
+  expect(html).toContain(":::timeline");
+  expect(html).toContain("Text");
+});

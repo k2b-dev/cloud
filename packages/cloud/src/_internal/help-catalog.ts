@@ -22,11 +22,15 @@ export const helpAgentMarkdown = (article: Pick<HelpArticle, "markdown" | "local
     for (const child of children) {
       let start = raw.indexOf(child.raw, offset);
       let source = child.raw;
+      if (start < 0 && child.raw.includes("|")) {
+        source = child.raw.replaceAll("|", "\\|");
+        start = raw.indexOf(source, offset);
+      }
       // Marked removes quote markers and list indentation from child block sources.
       if (start < 0 && child.raw.includes("\n")) {
         const pattern = child.raw
           .split("\n")
-          .map((line) => line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+          .map((line, index) => (index > 0 ? line.replace(/^[ \t]+/, "") : line).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
           .join("\\r?\\n[ \\t>]*");
         const match = new RegExp(pattern).exec(raw.slice(offset));
         if (match) {
@@ -34,7 +38,7 @@ export const helpAgentMarkdown = (article: Pick<HelpArticle, "markdown" | "local
           source = match[0];
         }
       }
-      if (start < 0) continue;
+      if (start < 0) break;
       result += raw.slice(offset, start) + rewrite(child, source);
       offset = start + source.length;
     }

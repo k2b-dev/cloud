@@ -167,7 +167,27 @@ export const defineHelp = (
         throw new Error(`Help locale "${locale}" document "${document.id}" must not reference itself in next`);
       if (document.next) validate(document.next, "next");
       for (const reference of document.related) validate(reference, "related");
+      const unreadableLink = () =>
+        new Error(
+          `Help document "${document.id}" has a help: link that agents cannot read in locale "${locale}"; write it inline as [text](help:id)`,
+        );
       walkHelpTokens(lexHelpMarkdown(document.markdown, locale), (token) => {
+        if (
+          (token.type === "link" && token.href.startsWith("help:") && !token.raw.startsWith("[")) ||
+          (token.type === "image" && token.href.startsWith("help:")) ||
+          (token.type === "html" && /[\w:-]+\s*=\s*(?:"[^"]*help:[^"]*"|'[^']*help:[^']*'|[^\s>"']*help:[^\s>"']*)/i.test(token.raw))
+        )
+          throw unreadableLink();
+        if ((token.type === "paragraph" || token.type === "text") && token.tokens?.length) {
+          let prose = token.raw;
+          // Keep line positions while excluding multiline code spans from the author contract.
+          walkHelpTokens(token.tokens, (child) => {
+            if (child.type === "codespan") prose = prose.replaceAll(child.raw, child.raw.replace(/[^\r\n]/g, "x"));
+          });
+          if (/^ {0,3}:::details\b/m.test(prose)) {
+            throw new Error(`Help document "${document.id}" has a :::details block without a title or closing ::: in locale "${locale}"`);
+          }
+        }
         if (token.type === "link" && token.href.startsWith("help:")) validate(token.href.slice(5), "help:");
         // Callouts do not render inside details, and a warning must stay where the reader sees it.
         if (token.type === "helpDetails" && token.callout === true) {
@@ -179,17 +199,17 @@ export const defineHelp = (
           throw new Error(`Help document "${document.id}" has an invalid key shortcut "${token.keys}" in locale "${locale}"`);
         }
       });
-      // Agents never see a help: target: a link form the agent text cannot convert, such as a reference
-      // definition, fails here instead of reaching them with an unchecked address.
+      // Unconverted Help syntax and targets fail here instead of reaching agents.
       const agentTokens = lexHelpMarkdown(helpAgentMarkdown({ markdown: document.markdown, locale, appId: "", links: {} }), locale);
-      let unconverted = Object.values(agentTokens.links).some((link) => link.href.startsWith("help:"));
+      let unconvertedLink = Object.values(agentTokens.links).some((link) => link.href.startsWith("help:"));
+      let unconvertedSyntax = false;
       walkHelpTokens(agentTokens, (token) => {
-        if (token.type === "link" && token.href.startsWith("help:")) unconverted = true;
+        if (token.type === "link" && token.href.startsWith("help:")) unconvertedLink = true;
+        if (token.type === "helpKbd" || token.type === "helpLabel" || token.type === "helpDetails") unconvertedSyntax = true;
       });
-      if (unconverted) {
-        throw new Error(
-          `Help document "${document.id}" has a help: link that agents cannot read in locale "${locale}"; write it inline as [text](help:id)`,
-        );
+      if (unconvertedLink) throw unreadableLink();
+      if (unconvertedSyntax) {
+        throw new Error(`Help document "${document.id}" has Help syntax that agents cannot read in locale "${locale}"`);
       }
     }
   }

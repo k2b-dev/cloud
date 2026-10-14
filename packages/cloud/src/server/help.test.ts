@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { helpAgentMarkdown } from "../_internal/help-catalog";
 import { compileHelp } from "../_internal/help";
 import { session } from "../services/session";
 import { buildProjectedUser } from "../services/session/user";
@@ -81,6 +82,68 @@ const helpSource = (id: string, metadata = "", body = "## Plain heading\nRead th
   `---\nid: ${id}\ntitle: ${id}\n${metadata}---\n${body}`;
 
 describe("Help author contract", () => {
+  test("rejects details without a title or closing line in every locale, outside code", () => {
+    for (const body of [":::details Title\nBody", ":::details\nBody\n:::", "   :::details Title\nBody", ":::details X\n".repeat(40)]) {
+      expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).toThrow(
+        'Help document "start" has a :::details block without a title or closing ::: in locale "en"',
+      );
+      expect(() => defineHelp({ baseLocale: "en", documents: { en: [helpSource("start")], de: [helpSource("start", "", body)] } })).toThrow(
+        'Help document "start" has a :::details block without a title or closing ::: in locale "de"',
+      );
+    }
+    expect(() =>
+      defineHelp({
+        documents: [
+          helpSource(
+            "start",
+            "",
+            "```md\n:::details\n```\n\n    :::details\n\n`:::details`\n\n`example\n:::details\nexample`\n\n:kbd[esc]:::details literal\n\n**Bold**:::details literal",
+          ),
+        ],
+      }),
+    ).not.toThrow();
+  });
+  test("rejects Help autolinks, images and HTML attributes before they reach agents", () => {
+    for (const body of [
+      "<help:hidden/private>",
+      "![x](help:hidden/private)",
+      '<a href="help:hidden/private">x</a>',
+      '<div data-target="help:hidden/private">x</div>',
+      "Read <a href='help:hidden/private'>x</a>.",
+      "<a href=help:hidden/private>x</a>",
+    ]) {
+      expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).toThrow(
+        'Help document "start" has a help: link that agents cannot read in locale "en"; write it inline as [text](help:id)',
+      );
+    }
+    expect(() => defineHelp({ documents: [helpSource("start", "", '`<a href="help:hidden/private">x</a>`')] })).not.toThrow();
+  });
+  test("escaped pipes in table Help links start and convert", () => {
+    const body = "| a |\n| --- |\n| [x\\|y](help:hidden/private) |";
+    const definition = defineHelp({ documents: [helpSource("start", "", body)] });
+    expect(helpAgentMarkdown({ markdown: definition.getMarkdown("start") ?? "", locale: "en", appId: "example", links: {} })).toBe(
+      "| a |\n| --- |\n| x\\|y |",
+    );
+  });
+  test("tab-indented list continuations start and convert both Help links", () => {
+    const body = "- [x](help:a)\n\t[y](help:a)";
+    const definition = defineHelp({ documents: [helpSource("a", "", body)] });
+    expect(helpAgentMarkdown({ markdown: definition.getMarkdown("a") ?? "", locale: "en", appId: "example", links: {} })).toBe("- x\n\ty");
+  });
+  for (const [name, body] of [
+    ["keyboard shortcut", "first\r:kbd[esc]"],
+    ["label", 'first\r**Label**{icon="eye"}'],
+    ["details", "first\r:::details Title\nBody\n:::"],
+  ]) {
+    test(`rejects an unconverted ${name} in agent text in every locale`, () => {
+      expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).toThrow(
+        'Help document "start" has Help syntax that agents cannot read in locale "en"',
+      );
+      expect(() => defineHelp({ baseLocale: "en", documents: { en: [helpSource("start")], de: [helpSource("start", "", body)] } })).toThrow(
+        'Help document "start" has Help syntax that agents cannot read in locale "de"',
+      );
+    });
+  }
   test("old frontmatter defines and compiles with defaults and optional H2 icons", () => {
     const definition = defineHelp({ documents: [source] });
     expect(definition.documents[0]).toMatchObject({ kind: "task", related: [] });
@@ -154,7 +217,7 @@ describe("Help author contract", () => {
       "has a callout inside details",
     );
     // Agents never receive a help: target that their text form could not convert.
-    for (const body of ["[Read][r]\n\n[r]: help:hidden/private", "| a |\n| --- |\n| [x\\|y](help:hidden/private) |"])
+    for (const body of ["[Read][r]\n\n[r]: help:hidden/private"])
       expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).toThrow("has a help: link that agents cannot read");
     // A malformed target is an author error, not a link that quietly turns into text.
     expect(() => defineHelp({ documents: [helpSource("start", "", "[Read](help:Start_Page)")] })).toThrow(

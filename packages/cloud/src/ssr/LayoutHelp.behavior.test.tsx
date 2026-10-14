@@ -22,7 +22,12 @@ const until = async (condition: () => boolean) => {
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
-  const setup = async (surface: "modal" | "page" | "embedded", initialTopic?: string, path = "/help/apps/spaces/first") => {
+  const setup = async (
+    surface: "modal" | "page" | "embedded",
+    initialTopic?: string,
+    path = "/help/apps/spaces/first",
+    articleHtml = html,
+  ) => {
     const dom = createDomTestHarness();
     Object.assign(dom.window.happyDOM.settings.navigation, {
       disableMainFrameNavigation: true,
@@ -52,7 +57,7 @@ else {
             locale: "en",
             title: `Article ${id}`,
             markdown: "Steps",
-            html,
+            html: articleHtml,
             kind: "task",
             needs: "edit",
             next: link("spaces", "second"),
@@ -110,6 +115,26 @@ else {
       },
     };
   };
+
+  test("same-article section links open every enclosing details element", async () => {
+    const reader = await setup(
+      "page",
+      "first",
+      "/help/apps/spaces/first",
+      '<a href="#hidden">Hidden section</a><details><summary>Outer</summary><details><summary>Inner</summary><h2 id="hidden">Hidden</h2></details></details>',
+    );
+    try {
+      await until(() => !!reader.dom.document.querySelector(".help-document a"));
+      const details = [...reader.dom.document.querySelectorAll<HTMLDetailsElement>(".help-document details")];
+      expect(details).toHaveLength(2);
+      expect(details.every((element) => !element.open)).toBe(true);
+      expect(reader.clickLink("Hidden section").defaultPrevented).toBe(true);
+      await until(() => details.every((element) => element.open));
+      expect(details.map((element) => element.open)).toEqual([true, true]);
+    } finally {
+      await reader.cleanup();
+    }
+  });
 
   for (const surface of ["modal", "page", "embedded"] as const) {
     test(`${surface}: same-app article and section links stay in Help; modified and external links keep native behavior`, async () => {

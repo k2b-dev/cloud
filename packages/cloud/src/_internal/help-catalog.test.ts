@@ -110,3 +110,17 @@ test("agent conversion preserves CRLF source and code", () => {
     "## Keys\r\n\r\nPress Ctrl+K (⌘K on Mac).\r\nprivate\r\n\r\n```md\r\n:kbd[mod+k]\r\n```\r\n",
   );
 });
+
+test("agent table rewriting preserves escaped pipes in code and converts the following shortcut", () => {
+  const source = "| A | B |\n|---|---|\n| `a\\| :kbd[esc]` | :kbd[esc] |";
+  expect(helpAgentMarkdown(agentArticle(source))).toBe("| A | B |\n|---|---|\n| `a\\| :kbd[esc]` | Escape |");
+});
+
+test("agent rewriting converts tab-indented list continuations", () => {
+  expect(helpAgentMarkdown(agentArticle("- [x](help:hidden/private)\n\t[y](help:hidden/private)"))).toBe("- x\n\ty");
+});
+
+test("agent rewriting leaves the rest of a container unchanged after an unlocatable child", () => {
+  const source = "first\r:::details Title\nBody\n:::\n\n:kbd[esc]";
+  expect(helpAgentMarkdown(agentArticle(source))).toBe(source);
+});
