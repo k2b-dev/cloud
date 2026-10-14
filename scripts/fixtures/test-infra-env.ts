@@ -53,6 +53,9 @@ export const expandTestDatabaseUrl = (url: string, checkoutRoot = join(import.me
   return parsed.toString();
 };
 
+export const hasIntegrationTarget = (env: Record<string, string | undefined> = process.env): boolean =>
+  Object.entries(env).some(([key, value]) => key.startsWith("CLOUD_TEST_") && Boolean(value?.trim()));
+
 export const readTestTarget = (env: Record<string, string | undefined>, kind: InfraKind): string | undefined => {
   const target = env[infraMappings[kind].test]?.trim() || undefined;
   return kind === "database" && target ? expandTestDatabaseUrl(target) : target;

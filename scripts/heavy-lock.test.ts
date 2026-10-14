@@ -32,30 +32,59 @@ describe("heavy-run slots", () => {
     expect(slotLock(2, "/isolated")).toBe("/isolated/cloud-heavy-run.2.lock");
   });
 
-  test("takes the first free slot and stops probing", () => {
+  test("takes the highest free slot and stops probing", () => {
     const probed: number[] = [];
     expect(
-      chooseSlot(4, 7, (slot) => {
-        probed.push(slot);
-        return slot >= 1;
-      }),
-    ).toEqual({ slot: 1, wait: false });
-    expect(probed).toEqual([0, 1]);
-    expect(chooseSlot(3, 7, () => true)).toEqual({ slot: 0, wait: false });
+      chooseSlot(
+        4,
+        7,
+        (slot) => {
+          probed.push(slot);
+          return slot >= 1;
+        },
+        false,
+      ),
+    ).toEqual({ slot: 3, wait: false });
+    expect(probed).toEqual([3]);
+    expect(chooseSlot(3, 7, () => true, false)).toEqual({ slot: 2, wait: false });
+    expect(chooseSlot(3, 7, (slot) => slot === 0, false)).toEqual({ slot: 0, wait: false });
   });
 
   test("spreads waiters over busy slots by pid", () => {
     for (const pid of [6, 7, 8, 19]) {
       const probed: number[] = [];
       expect(
-        chooseSlot(3, pid, (slot) => {
-          probed.push(slot);
-          return false;
-        }),
+        chooseSlot(
+          3,
+          pid,
+          (slot) => {
+            probed.push(slot);
+            return false;
+          },
+          false,
+        ),
       ).toEqual({ slot: pid % 3, wait: true });
-      expect(probed).toEqual([0, 1, 2]);
+      expect(probed).toEqual([2, 1, 0]);
     }
-    expect(chooseSlot(1, 17, () => false)).toEqual({ slot: 0, wait: true });
+    expect(chooseSlot(1, 17, () => false, false)).toEqual({ slot: 0, wait: true });
+  });
+
+  test("pins runs sharing test targets to slot zero and probes only that slot", () => {
+    for (const free of [true, false]) {
+      const probed: number[] = [];
+      expect(
+        chooseSlot(
+          4,
+          7,
+          (slot) => {
+            probed.push(slot);
+            return slot === 0 ? free : true;
+          },
+          true,
+        ),
+      ).toEqual({ slot: 0, wait: !free });
+      expect(probed).toEqual([0]);
+    }
   });
 });
 
@@ -91,6 +120,7 @@ describe("heavy command processes", () => {
     env = { ...process.env, TMPDIR: dir, CLOUD_HEAVY_SLOTS: "2" };
     delete env.CI;
     delete env.CLOUD_HEAVY_LOCK;
+    for (const key of Object.keys(env)) if (key.startsWith("CLOUD_TEST_")) delete env[key];
   });
 
   afterEach(async () => {
@@ -146,11 +176,58 @@ describe("heavy command processes", () => {
     30_000,
   );
 
-  test.skipIf(!Bun.which("flock"))("preserves the command's exit code and marks children as held", async () => {
-    expect(await start(["sh", "-c", "exit 3"]).exited).toBe(3);
-    expect(await start(["sh", "-c", 'test "$CLOUD_HEAVY_LOCK" = held']).exited).toBe(0);
-    expect(existsSync(slotLock(0, dir))).toBeTrue();
-  });
+  test.skipIf(!Bun.which("flock"))(
+    "serializes integration runs while a non-integration run uses the other slot",
+    async () => {
+      const deadline = performance.now() + 20_000;
+      const release = join(dir, "release");
+      const aStarted = join(dir, "a.started");
+      const aFinished = join(dir, "a.finished");
+      const bStarted = join(dir, "b.started");
+      const cStarted = join(dir, "c.started");
+      const targets = { CLOUD_TEST_VALKEY_URL: "redis://127.0.0.1:1" };
+      const a = start(
+        ["sh", "-c", 'touch "$0"; while [ ! -e "$1" ]; do sleep 0.05; done; touch "$2"', aStarted, release, aFinished],
+        targets,
+      );
+      await waitFor(() => existsSync(aStarted), deadline);
+      const b = start(["sh", "-c", 'test -e "$1" && touch "$0"', bStarted, aFinished], targets);
+      let stderr = "";
+      const output = (async () => {
+        const decoder = new TextDecoder();
+        for await (const chunk of b.stderr) stderr += decoder.decode(chunk, { stream: true });
+      })();
+      await waitFor(() => stderr.includes("Waiting for the first slot because integration runs share test targets"), deadline);
+      expect(existsSync(bStarted)).toBeFalse();
+
+      const c = start(["sh", "-c", 'touch "$0"', cStarted]);
+      await waitFor(() => c.exitCode !== null, deadline);
+      expect(await c.exited).toBe(0);
+      expect(existsSync(cStarted)).toBeTrue();
+      expect(existsSync(slotLock(1, dir))).toBeTrue();
+      expect(a.exitCode).toBeNull();
+      expect(b.exitCode).toBeNull();
+      expect(existsSync(bStarted)).toBeFalse();
+      expect(existsSync(aFinished)).toBeFalse();
+
+      writeFileSync(release, "");
+      await waitFor(() => [a, b].every((child) => child.exitCode !== null), deadline);
+      expect(await Promise.all([a.exited, b.exited])).toEqual([0, 0]);
+      await output;
+      expect(existsSync(bStarted)).toBeTrue();
+    },
+    30_000,
+  );
+
+  test.skipIf(!Bun.which("flock"))(
+    "preserves the command's exit code and marks children as held",
+    async () => {
+      expect(await start(["sh", "-c", "exit 3"]).exited).toBe(3);
+      expect(await start(["sh", "-c", 'test "$CLOUD_HEAVY_LOCK" = held']).exited).toBe(0);
+      expect(existsSync(slotLock(1, dir))).toBeTrue();
+    },
+    30_000,
+  );
 
   test("bypasses slots in CI, when held, or without flock, preserving the environment", async () => {
     for (const overrides of [{ CI: "1" }, { CLOUD_HEAVY_LOCK: "held" }, { PATH: dir }]) {
@@ -163,7 +240,28 @@ describe("heavy command processes", () => {
       ).toBe(0);
     }
     expect(readdirSync(dir)).toEqual([]);
-  });
+  }, 30_000);
+
+  test("refuses a dotenv leak when started without --no-env-file", () => {
+    writeFileSync(join(dir, ".env"), "HEAVY_LEAK=leaked\n");
+    const child = Bun.spawnSync([process.execPath, heavy, "sh", "-c", 'test -z "$HEAVY_LEAK"'], {
+      cwd: dir,
+      env,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(child.exitCode).toBe(2);
+    expect(child.stderr.toString()).toContain("--no-env-file");
+    expect(child.stderr.toString()).toContain(join(dir, ".env"));
+  }, 30_000);
+
+  test("returns shell exit codes for a missing command and a signal on the bypass path", async () => {
+    const missing = start(["cloud-heavy-missing-command"], { CI: "1" });
+    const stderr = new Response(missing.stderr).text();
+    expect(await missing.exited).toBe(127);
+    expect(await stderr).toBe("heavy.ts: command not found: cloud-heavy-missing-command\n");
+    expect(await start(["sh", "-c", "kill -TERM $$"], { CI: "1" }).exited).toBe(143);
+  }, 30_000);
 });
 
 test("heavy command help and missing arguments", () => {

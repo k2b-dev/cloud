@@ -57,29 +57,33 @@ texts to German readers.
 
 Set `CLOUD_HEAVY_SLOTS=<n>` in your shell profile to allow n heavy runs at
 once. Use about one slot per 16 GiB of memory and per 6 CPU cores, whichever
-gives fewer: 1 on a 16 GiB laptop, 2 at 32 GiB and 12 cores, or 3 at 64 GiB and
+gives fewer: 1 on a 16 GiB laptop, 2 at 32 GiB and 12 cores, or 4 at 64 GiB and
 24 cores. The typecheck rule divides the machine's memory by the slot count,
 still budgeting about 8 GiB per parallel type checker. More slots mean fewer
 type checkers per run.
 
-Run other heavy commands through `bun scripts/heavy.ts <command>`: browser
-test files, `docker build`, performance scripts, or integration files run by
-hand. The helper takes a slot the same way and marks the command with
-`CLOUD_HEAVY_LOCK=held`, so a nested `bun run check` or `bun run test` does not
-wait again:
+Run other heavy commands through
+`bun --no-env-file scripts/heavy.ts <command>`: browser test files,
+`docker build`, performance scripts, or integration files run by hand. The
+flag keeps the checkout's `.env` away from the command, and the helper
+refuses to start without it. The helper takes a slot the same way and marks
+the command with `CLOUD_HEAVY_LOCK=held`, so a nested `bun run check` or
+`bun run test` does not wait again:
 
 ```bash
-bun scripts/heavy.ts docker build -f packages/mail/Dockerfile .
-bun scripts/heavy.ts bun test packages/ui/test/browser/foo.browser.test.ts
+bun --no-env-file scripts/heavy.ts docker build -f packages/mail/Dockerfile .
+bun --no-env-file scripts/heavy.ts bun test <file>.browser.test.ts
 ```
 
 The older form
 `flock /tmp/cloud-heavy-run.lock env CLOUD_HEAVY_LOCK=held <command>` still
-works and occupies the first slot on hosts whose temp directory is `/tmp`.
+works and occupies the first slot on hosts whose temp directory is `/tmp`,
+so it also waits for integration runs.
 
-Parallel integration runs need separate test targets per checkout, including
-their own `_test` database. Slots therefore help across checkouts, not for two
-integration runs of the same checkout.
+A run whose environment sets a `CLOUD_TEST_*` target always takes the first
+slot. Integration runs stay one at a time on the machine even with several
+slots, because checkouts share the Valkey and Filegate test targets. Other
+runs take the first slot only when every other slot is busy.
 
 ## Write behavior tests
 
