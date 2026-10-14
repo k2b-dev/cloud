@@ -1,4 +1,4 @@
-import { Avatar, Dropdown, SegmentedControl } from "@k2b/ui";
+import { Avatar, Dropdown } from "@k2b/ui";
 import type { CloudThemePreference } from "../shared/theme";
 import { createProfileActions } from "./profile-actions";
 
@@ -26,15 +26,10 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
         {avatar()}
       </button>
       <div class="layout-profile-preferences__panel dropdown-menu-surface">
-        <div class="layout-profile-preferences__appearance">
-          <SegmentedControl
-            size="sm"
-            ariaLabel={preferences.messages().appearance}
-            options={preferences.themeOptions().map(({ value, label }) => ({ value, label }))}
-            value={preferences.theme}
-            onValueChange={preferences.setTheme}
-          />
-        </div>
+        <button type="button" class="menu-item" aria-label={preferences.themeCycleLabel()} onClick={preferences.cycleTheme}>
+          <i class={preferences.themeOption(preferences.theme()).icon} aria-hidden="true" />
+          <span>{preferences.themeOption(preferences.theme()).label}</span>
+        </button>
         <button type="button" class="menu-item" onClick={preferences.toggleLanguage}>
           <i class="ti ti-language" aria-hidden="true" />
           <span>{preferences.languageLabel()}</span>
@@ -71,6 +66,9 @@ export default function ProfilePreferences(props: ProfilePreferencesProps) {
           {avatar()}
         </Dropdown.Trigger>
       </Dropdown.Root>
+      <span class="sr-only" aria-live="polite">
+        {preferences.themeAnnouncement()}
+      </span>
     </div>
   );
 }

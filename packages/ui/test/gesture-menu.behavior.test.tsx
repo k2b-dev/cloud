@@ -1,5 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
+import type { DropdownAction } from "../src/actions/Dropdown";
 import type { GestureMenuItem } from "../src/actions/GestureMenu";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
 
@@ -486,6 +488,65 @@ else
       await back;
       expect(location.pathname).toBe("/");
       expect(marker()).toBeUndefined();
+    });
+
+    test("a sheet action that stays open runs synchronously and updates its getters in the same row", async () => {
+      const { dialogCore } = await import("../src/feedback/dialog-core");
+      const marker = () => (history.state as { k2bDialog?: number } | null)?.k2bDialog;
+      const settings = [
+        ["System", "ti ti-device-laptop"],
+        ["Light", "ti ti-sun-high"],
+        ["Dark", "ti ti-moon"],
+      ] as const;
+      const [setting, setSetting] = createSignal(0);
+      const view = await mount({
+        items: (calls) => {
+          const item: DropdownAction = {
+            get label() {
+              return settings[setting()]![0];
+            },
+            get ariaLabel() {
+              return `Appearance: ${settings[setting()]![0]}`;
+            },
+            get icon() {
+              return settings[setting()]![1];
+            },
+            closeOnSelect: false,
+            action: () => {
+              calls.copy++;
+              setSetting((current) => (current + 1) % settings.length);
+            },
+          };
+          return [item];
+        },
+      });
+      view.pointer("pointerdown", view.text, 120, 40);
+      await settle(LONG_PRESS);
+      view.pointer("pointerup", view.text, 120, 40);
+      const sheet = view.sheet()!;
+      const row = sheet.querySelector<HTMLElement>("[role='menuitem']")!;
+      const sheetMarker = marker();
+      expect(sheetMarker).toBeDefined();
+      expect(row.textContent).toBe("System");
+      expect(row.getAttribute("aria-label")).toBe("Appearance: System");
+      expect(row.querySelector("i")?.className).toBe("ti ti-device-laptop");
+      for (const [index, [label, icon]] of settings.entries()) {
+        if (index === 0) continue;
+        row.click();
+        expect(view.calls.copy).toBe(index);
+        expect(dialogCore.isOpen()).toBe(true);
+        expect(marker()).toBe(sheetMarker);
+        expect(view.sheet()).toBe(sheet);
+        expect(sheet.querySelector("[role='menuitem']")).toBe(row);
+        expect(row.textContent).toBe(label);
+        expect(row.getAttribute("aria-label")).toBe(`Appearance: ${label}`);
+        expect(row.querySelector("i")?.className).toBe(icon);
+      }
+      await settle(50);
+      expect(view.calls.copy).toBe(2);
+      expect(dialogCore.isOpen()).toBe(true);
+      expect(marker()).toBe(sheetMarker);
+      expect(view.sheet()).toBe(sheet);
     });
 
     test("the sheet speaks the locale the element inherits", async () => {
