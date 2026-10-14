@@ -28,8 +28,8 @@ Der Kontobereich bündelt lokale Cloud-Daten, optionale FreeIPA-Daten und die Ak
 
 ## Darstellung wählen {icon="palette"}
 
-Das Profilmenü zeigt deine aktuelle Darstellung als einen Eintrag. Jeder
-Klick wechselt zur nächsten: **Automatisch**, **Hell**, **Dunkel**, dann
+Das Profilmenü zeigt deine aktuelle Darstellung als einen Eintrag. Wähle
+ihn, um zur nächsten zu wechseln: **Automatisch**, **Hell**, **Dunkel**, dann
 wieder **Automatisch**. Das Menü bleibt offen. Automatisch ist die
 Standardeinstellung. Sie folgt der hellen oder dunklen Einstellung deines
 Geräts.
