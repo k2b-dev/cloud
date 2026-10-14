@@ -38,5 +38,5 @@ Du kannst in einem Chat, in dem du Mitglied bist, mit Zugriff **Schreiben** oder
 :::reference
 - **Wird gesendet:** Eine Uhr zeigt, dass Chat die Nachricht sendet.
 - **Gesendet:** Ein Häkchen zeigt, dass Chat die Nachricht angenommen hat.
-- **Nicht gesendet:** Chat konnte die Nachricht nicht senden. Wähle **Erneut senden**, um dieselbe Nachricht erneut zu senden, ohne eine Kopie zu erstellen.
+- **Nicht gesendet:** Chat konnte die Nachricht nicht senden. Wähle **Erneut senden**, um dieselbe Nachricht erneut zu senden, ohne eine Kopie zu erstellen. Spätere Nachrichten zeigen eine Uhr und warten, bis diese Nachricht gesendet ist. So bleibt die Reihenfolge, in der du sie geschrieben hast.
 :::

@@ -38,5 +38,5 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 :::reference
 - **Sending:** A clock means Chat is sending the message.
 - **Sent:** A check means Chat accepted the message.
-- **Not sent:** Chat could not send the message. Choose **Retry** to send the same message again without creating a copy.
+- **Not sent:** Chat could not send the message. Choose **Retry** to send the same message again without creating a copy. Later messages show a clock and wait until this message is sent. This keeps the order in which you wrote them.
 :::

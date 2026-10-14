@@ -23,6 +23,21 @@ const deferred = <T>() => {
   });
   return { promise, resolve, reject };
 };
+const fakePost = () => {
+  const calls: {
+    conversationId: string;
+    input: { clientId: string; body: string };
+    request: ReturnType<typeof deferred<typeof message>>;
+  }[] = [];
+  return {
+    calls,
+    post: (conversationId: string, input: { clientId: string; body: string }) => {
+      const request = deferred<typeof message>();
+      calls.push({ conversationId, input, request });
+      return request.promise;
+    },
+  };
+};
 
 test("send is pending immediately; a failed send retries with the same identity and body", async () => {
   const first = deferred<typeof message>(),
@@ -81,21 +96,138 @@ for (const outcome of ["success", "failure"] as const)
     expect(notified).toBe(1);
   });
 
-test("sends keep creation order per conversation and ignore forgotten pending results", async () => {
-  const pending = deferred<typeof message>();
-  let id = 0;
-  const controller = createChatSends({ post: () => pending.promise, newClientId: () => String(++id) });
-  const first = controller.send("abcdef", "First");
-  controller.send("ghijkl", "Other");
-  const second = controller.send("abcdef", "Second");
-  expect(controller.sends("abcdef")).toEqual([first, second]);
-  controller.forget(first.clientId);
-  pending.resolve(message);
-  await Bun.sleep(0);
-  expect(first.status).toBe("pending");
-  expect(controller.sends("abcdef")).toEqual([second]);
+test("sends post one at a time in creation order despite delayed responses", async () => {
+  const fake = fakePost();
+  const controller = createChatSends({ post: fake.post });
+  const entries = ["A", "B", "C"].map((body) => controller.send("abcdef", body));
+  expect(controller.sends("abcdef")).toEqual(entries);
+  expect(fake.calls.map((call) => call.input.body)).toEqual(["A"]);
+  for (let index = 0; index < entries.length; index++) {
+    fake.calls[index]!.request.resolve({ ...message, seq: index + 1, body: entries[index]!.body });
+    await Bun.sleep(0);
+    expect(entries[index]!.status).toBe("sent");
+    expect(fake.calls.map((call) => call.input.body)).toEqual(["A", "B", "C"].slice(0, index + 2));
+  }
+  expect(entries.map((entry) => entry.status)).toEqual(["sent", "sent", "sent"]);
   controller.dispose();
 });
+
+test("a failed head holds later sends until retry keeps its identity and place", async () => {
+  const fake = fakePost();
+  const controller = createChatSends({ post: fake.post });
+  const first = controller.send("abcdef", "A");
+  const second = controller.send("abcdef", "B");
+  fake.calls[0]!.request.reject(new Error("offline"));
+  await Bun.sleep(0);
+  const third = controller.send("abcdef", "C");
+  expect([first.status, second.status, third.status]).toEqual(["failed", "pending", "pending"]);
+  expect(fake.calls).toHaveLength(1);
+  controller.retry(first.clientId);
+  expect(first.status).toBe("pending");
+  expect(controller.sends("abcdef")).toEqual([first, second, third]);
+  expect(fake.calls.map((call) => call.input)).toEqual([
+    { clientId: first.clientId, body: "A" },
+    { clientId: first.clientId, body: "A" },
+  ]);
+  for (const [index, entry] of [first, second, third].entries()) {
+    fake.calls[index + 1]!.request.resolve({ ...message, seq: index + 1, body: entry.body });
+    await Bun.sleep(0);
+    expect(entry.status).toBe("sent");
+    expect(fake.calls.map((call) => call.input.body)).toEqual(["A", "A", "B", "C"].slice(0, index + 3));
+  }
+  controller.dispose();
+});
+
+test("forgetting a failed head releases the next pending send", async () => {
+  const fake = fakePost();
+  const controller = createChatSends({ post: fake.post });
+  const first = controller.send("abcdef", "A");
+  const second = controller.send("abcdef", "B");
+  fake.calls[0]!.request.reject(new Error("offline"));
+  await Bun.sleep(0);
+  expect(first.status).toBe("failed");
+  expect(second.status).toBe("pending");
+  expect(fake.calls).toHaveLength(1);
+  controller.forget(first.clientId);
+  expect(controller.sends("abcdef")).toEqual([second]);
+  expect(fake.calls.map((call) => call.input.body)).toEqual(["A", "B"]);
+  fake.calls[1]!.request.resolve({ ...message, body: "B" });
+  await Bun.sleep(0);
+  expect(second.status).toBe("sent");
+  controller.dispose();
+});
+
+for (const outcome of ["success", "failure"] as const)
+  test(`forgetting an in-flight send waits for settlement and ignores its result (${outcome})`, async () => {
+    const fake = fakePost();
+    const controller = createChatSends({ post: fake.post });
+    let notified = 0;
+    controller.subscribe(() => notified++);
+    const first = controller.send("abcdef", "A");
+    const second = controller.send("abcdef", "B");
+    controller.forget(first.clientId);
+    expect(fake.calls).toHaveLength(1);
+    expect(controller.sends("abcdef")).toEqual([second]);
+    expect(notified).toBe(3);
+    if (outcome === "success") fake.calls[0]!.request.resolve(message);
+    else fake.calls[0]!.request.reject(new Error("offline"));
+    await Bun.sleep(0);
+    expect(first).toMatchObject({ status: "pending", message: null });
+    expect(controller.sends("abcdef")).toEqual([second]);
+    expect(notified).toBe(3);
+    expect(fake.calls.map((call) => call.input.body)).toEqual(["A", "B"]);
+    fake.calls[1]!.request.resolve({ ...message, body: "B" });
+    await Bun.sleep(0);
+    expect(second.status).toBe("sent");
+    controller.dispose();
+  });
+
+test("conversations post in parallel and a failure only holds its own conversation", async () => {
+  const fake = fakePost();
+  const controller = createChatSends({ post: fake.post });
+  const first = controller.send("abcdef", "A");
+  const other = controller.send("ghijkl", "Other");
+  const second = controller.send("abcdef", "B");
+  const later = controller.send("ghijkl", "Later");
+  expect(fake.calls.map((call) => call.conversationId)).toEqual(["abcdef", "ghijkl"]);
+  fake.calls[0]!.request.reject(new Error("offline"));
+  await Bun.sleep(0);
+  fake.calls[1]!.request.resolve({ ...message, conversationId: "ghijkl", body: "Other" });
+  await Bun.sleep(0);
+  expect([first.status, second.status, other.status, later.status]).toEqual(["failed", "pending", "sent", "pending"]);
+  expect(fake.calls.map((call) => [call.conversationId, call.input.body])).toEqual([
+    ["abcdef", "A"],
+    ["ghijkl", "Other"],
+    ["ghijkl", "Later"],
+  ]);
+  fake.calls[2]!.request.resolve({ ...message, conversationId: "ghijkl", seq: 2, body: "Later" });
+  await Bun.sleep(0);
+  expect(later.status).toBe("sent");
+  controller.dispose();
+});
+
+for (const outcome of ["success", "failure"] as const)
+  test(`dispose prevents queued sends and notifications after settlement (${outcome})`, async () => {
+    const fake = fakePost();
+    const controller = createChatSends({ post: fake.post });
+    let notified = 0;
+    controller.subscribe(() => notified++);
+    const first = controller.send("abcdef", "A");
+    const second = controller.send("abcdef", "B");
+    expect(fake.calls).toHaveLength(1);
+    controller.dispose();
+    controller.send("abcdef", "C");
+    controller.retry(first.clientId);
+    controller.forget(first.clientId);
+    if (outcome === "success") fake.calls[0]!.request.resolve(message);
+    else fake.calls[0]!.request.reject(new Error("offline"));
+    await Bun.sleep(0);
+    expect(fake.calls).toHaveLength(1);
+    expect(controller.sends("abcdef")).toEqual([first, second]);
+    expect([first.status, second.status]).toEqual(["pending", "pending"]);
+    expect(first.message).toBeNull();
+    expect(notified).toBe(2);
+  });
 
 test("send API accepts 200 and 201, validates messages, and rejects every failed response", async () => {
   const original = globalThis.fetch;

@@ -252,5 +252,38 @@ describe("ChatWorkspace interactions", () => {
     expect(rows.at(-1)?.textContent).toContain("Message 109");
     expect(consoleErrors).toEqual([]);
   });
+  test("a later message waits behind a failed one and follows after retry", async () => {
+    await mount(true);
+    const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
+    field.value = "first";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    button("Send message").click();
+    await settle();
+    expect(posted).toHaveLength(1);
+    answer(Response.json({ message: "Unavailable" }, { status: 503 }));
+    await settle();
+    expect(dom.root.querySelector('[data-status="failed"]')?.textContent).toContain("Not sent");
+    field.value = "second";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    button("Send message").click();
+    await settle();
+    expect(posted).toHaveLength(1);
+    expect(dom.root.querySelector('[data-status="pending"]')?.textContent).toContain("second");
+    button("Retry").click();
+    await settle();
+    expect(posted).toHaveLength(2);
+    expect(posted[1]).toEqual({ clientId: posted[0]!.clientId, body: "first" });
+    answer(Response.json(message(1, "first"), { status: 201 }));
+    await settle();
+    expect(posted).toHaveLength(3);
+    expect(posted[2]?.body).toBe("second");
+    answer(Response.json(message(2, "second"), { status: 201 }));
+    await settle();
+    const rows = [...dom.root.querySelectorAll(".k2b-message-row")];
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.getAttribute("data-status"))).toEqual(["sent", "sent"]);
+    expect(rows[0]?.textContent).toContain("first");
+    expect(rows[1]?.textContent).toContain("second");
+  });
   // happy-dom has no viewport layout; the 120-message deep link is verified in the browser suite.
 });

@@ -23,6 +23,16 @@ export const createChatSends = (dependencies: {
   const notify = () => {
     if (!disposed) for (const listener of listeners) listener();
   };
+  // The server orders messages by arrival, so each conversation posts one send at a time in the order typed.
+  // A failed send holds back the later ones until it is retried or forgotten.
+  const posting = new Set<string>();
+  const next = (conversationId: string) => {
+    if (disposed || posting.has(conversationId)) return;
+    const head = [...entries.values()].find((entry) => entry.conversationId === conversationId && entry.status !== "sent");
+    if (head?.status !== "pending") return;
+    posting.add(conversationId);
+    void post(head);
+  };
   const post = async (entry: ChatSend) => {
     try {
       const message = await dependencies.post(entry.conversationId, { clientId: entry.clientId, body: entry.body });
@@ -32,8 +42,11 @@ export const createChatSends = (dependencies: {
     } catch {
       if (disposed || entries.get(entry.clientId) !== entry) return;
       entry.status = "failed";
+    } finally {
+      posting.delete(entry.conversationId);
+      if (!disposed && entries.get(entry.clientId) === entry) notify();
+      next(entry.conversationId);
     }
-    notify();
   };
   return {
     sends: (conversationId: string): readonly ChatSend[] =>
@@ -50,7 +63,7 @@ export const createChatSends = (dependencies: {
       if (!disposed) {
         entries.set(entry.clientId, entry);
         notify();
-        void post(entry);
+        next(conversationId);
       }
       return entry;
     },
@@ -59,10 +72,14 @@ export const createChatSends = (dependencies: {
       if (disposed || !entry || entry.status !== "failed") return;
       entry.status = "pending";
       notify();
-      void post(entry);
+      next(entry.conversationId);
     },
     forget: (clientId: string) => {
-      if (!disposed && entries.delete(clientId)) notify();
+      const entry = entries.get(clientId);
+      if (disposed || !entry) return;
+      entries.delete(clientId);
+      notify();
+      next(entry.conversationId);
     },
     subscribe: (listener: () => void) => {
       listeners.add(listener);
