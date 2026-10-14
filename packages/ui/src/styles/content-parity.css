@@ -3543,19 +3543,6 @@
   color: var(--k2b-text-secondary);
 }
 
-.k2b-ui .k2b-calendar-shortcuts__key {
-  display: inline-grid;
-  min-width: 1.375rem;
-  height: 1.375rem;
-  place-items: center;
-  padding: 0 0.375rem;
-  border-radius: 0.3125rem;
-  background: var(--k2b-surface-muted);
-  box-shadow: inset 0 -1px 0 var(--k2b-border);
-  font-family: inherit;
-  font-size: 0.75rem;
-  font-weight: 500;
-}
 
 .k2b-ui .k2b-calendar-shortcuts__or {
   align-self: center;
@@ -6138,3 +6125,63 @@
   :where(:focus-visible) {
   outline-offset: var(--k2b-focus-offset);
 }
+
+/* Key caps and label chips sit on the text baseline. Their own line height
+   stays below the tightest reading line (1.25), so they never make a line
+   taller, whatever the font's metrics are. */
+.k2b-ui .k2b-kbd,
+.k2b-ui .k2b-kbd__keys {
+  font: inherit;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-kbd__key {
+  display: inline-block;
+  min-width: 1.5em;
+  padding: 0 0.375em;
+  border-radius: 0.3125rem;
+  background: var(--k2b-surface);
+  color: var(--k2b-text);
+  font: 600 0.8125em/1.35 var(--k2b-font-sans);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  box-shadow:
+    inset 0 0 0 1px var(--k2b-border-strong),
+    inset 0 -2px 0 var(--k2b-border-strong);
+}
+
+/* On a dark panel the page surface equals the panel, so the cap takes the
+   raised surface instead of standing on its ring alone. */
+.k2b-ui[data-theme="dark"] .k2b-kbd__key,
+.k2b-ui.k2b-dark .k2b-kbd__key,
+.dark .k2b-ui .k2b-kbd__key {
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-kbd__key + .k2b-kbd__key {
+  margin-left: 0.1875rem;
+}
+
+.k2b-ui .k2b-label-chip {
+  display: inline-block;
+  padding: 0 0.4375em;
+  border-radius: 0.375rem;
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text);
+  font-size: 0.9375em;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--k2b-text) 9%, transparent);
+}
+
+.k2b-ui .k2b-label-chip > i {
+  margin-right: 0.3125em;
+  color: var(--k2b-text-secondary);
+  font-size: 1em;
+  line-height: 1;
+}
+
+.k2b-ui .k2b-steps { display: flex; flex-direction: column; gap: 0.875rem; margin: 1rem 0 1.25rem; padding: 0; list-style: none; counter-reset: k2b-step calc(var(--k2b-steps-start, 1) - 1); }
+.k2b-ui .k2b-steps > li { position: relative; min-height: 2rem; margin: 0; padding: 0.1875rem 0 0 2.875rem; counter-increment: k2b-step; }
+.k2b-ui .k2b-steps > li::before { content: counter(k2b-step); position: absolute; top: 0; left: 0; display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 999px; background: color-mix(in srgb, var(--app-accent, var(--k2b-action)) 14%, transparent); color: color-mix(in srgb, var(--app-accent, var(--k2b-action)) 70%, var(--k2b-text)); font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }

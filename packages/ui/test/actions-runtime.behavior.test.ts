@@ -332,6 +332,60 @@ describe("@k2b/ui action runtime behavior", () => {
     dom.cleanup();
   });
 
+  test("keeps an action open when requested and updates its row in place", async () => {
+    const dom = createDomTestHarness();
+    installPopoverStub();
+    const { Dropdown } = await import("../src/actions/Dropdown");
+    const [light, setLight] = createSignal(false);
+    const item = {
+      get label() {
+        return light() ? "Light" : "Automatic";
+      },
+      get icon() {
+        return light() ? "ti ti-sun-high" : "ti ti-device-laptop";
+      },
+      get ariaLabel() {
+        return light() ? "Appearance: Light. Switches to Dark." : "Appearance: Automatic. Switches to Light.";
+      },
+      closeOnSelect: false,
+      action: () => setLight(true),
+    };
+    const dispose = render(
+      () =>
+        createComponent(Dropdown.Root, {
+          items: [item, { label: "Done", action: () => {} }],
+          get children() {
+            return createComponent(Dropdown.Trigger, { label: "Preferences", children: "Open" });
+          },
+        }),
+      dom.root,
+    );
+    try {
+      const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-dropdown__trigger")!;
+      trigger.click();
+      await flush();
+      const button = dom.root.querySelector<HTMLButtonElement>("[role='menuitem']")!;
+      expect(button.textContent).toBe("Automatic");
+      expect(button.querySelector("i")?.className).toBe("ti ti-device-laptop");
+      expect(button.getAttribute("aria-label")).toBe("Appearance: Automatic. Switches to Light.");
+      button.focus();
+      button.click();
+      await flush();
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+      expect(dom.root.querySelector("[role='menuitem']")).toBe(button);
+      expect(button.textContent).toBe("Light");
+      expect(button.querySelector("i")?.className).toBe("ti ti-sun-high");
+      expect(button.getAttribute("aria-label")).toBe("Appearance: Light. Switches to Dark.");
+      expect(document.activeElement).toBe(button);
+      dom.root.querySelectorAll<HTMLButtonElement>("[role='menuitem']")[1]!.click();
+      await flush();
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("restores trigger focus when Escape closes a dropdown", async () => {
     const dom = createDomTestHarness();
     installPopoverStub();

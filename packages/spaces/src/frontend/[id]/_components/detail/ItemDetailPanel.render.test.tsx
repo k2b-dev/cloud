@@ -13,7 +13,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: ItemDetailPanel } = await import("./ItemDetailPanel");
-const { LocaleProvider } = await import("@k2b/ui");
+const { LocaleProvider, renderMarkdownInfoBlock } = await import("@k2b/ui");
 
 const spaceId = "Space1";
 const itemId = "Item01";
@@ -590,10 +590,15 @@ test("renders info blocks in descriptions, comments, and progress notes like eve
     "de",
   );
   expect(html).toContain(
-    '<aside class="k2b-notice-card" data-tone="warning" role="note"><p class="k2b-notice-card__title">Before the release</p><div class="k2b-notice-card__body"><p>Check the <strong>migration</strong>.</p>',
+    renderMarkdownInfoBlock({
+      type: "warning",
+      title: "Before the release",
+      bodyHtml: "<p>Check the <strong>migration</strong>.</p>\n",
+      locale: "de",
+    }),
   );
-  expect(html).toContain('<aside class="k2b-notice-card" data-tone="success" role="note"><span class="k2b-sr-only">Erfolg: </span>');
-  expect(html).toContain('<aside class="k2b-notice-card" data-tone="info" role="note"><span class="k2b-sr-only">Info: </span>');
+  expect(html).toContain(renderMarkdownInfoBlock({ type: "success", bodyHtml: "<p>Approved.</p>\n", locale: "de" }));
+  expect(html).toContain(renderMarkdownInfoBlock({ type: "info", bodyHtml: "<p>Tests are running.</p>\n", locale: "de" }));
   expect(html).not.toContain(":::");
 });
 

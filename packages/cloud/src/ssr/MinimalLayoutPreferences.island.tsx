@@ -3,13 +3,13 @@ import { canonicalLocale } from "../shared/locale";
 import { type ProfilePreferenceLocale, profilePreferenceLocale, setLocalePreference } from "../shared/locale-preference";
 import type { CloudThemePreference } from "../shared/theme";
 import { createPreferenceController } from "./preference-controller";
+import { ThemeCycleButton } from "./ThemeCycleButton";
 
-/** Both menus name the current choice; compact triggers keep accessible names below md. */
+/** Language opens a menu; appearance cycles in place and keeps its accessible name below md. */
 export default function MinimalLayoutPreferences(props: { initialTheme: CloudThemePreference }) {
   const locale = useLocale();
   const preferences = createPreferenceController(props.initialTheme, locale);
   const t = preferences.messages;
-  const currentTheme = () => preferences.themeOption(preferences.theme());
   const language = () => profilePreferenceLocale(locale());
   const languageName = () => (language() === "de" ? t().switchToGerman : t().switchToEnglish);
   // Keep a regional locale such as en-GB when its language is chosen again,
@@ -37,13 +37,7 @@ export default function MinimalLayoutPreferences(props: { initialTheme: CloudThe
           <i class="ti ti-chevron-down hidden md:inline" aria-hidden="true" />
         </Dropdown.Trigger>
       </Dropdown.Root>
-      <Dropdown.Root label={t().appearance} position="top-right" width="12rem" items={preferences.appearance().items}>
-        <Dropdown.Trigger label={`${t().appearance}: ${currentTheme().label}`} size="sm" tooltip={false} variant="ghost">
-          <i class={currentTheme().icon} aria-hidden="true" />
-          <span class="hidden md:inline">{currentTheme().label}</span>
-          <i class="ti ti-chevron-down hidden md:inline" aria-hidden="true" />
-        </Dropdown.Trigger>
-      </Dropdown.Root>
+      <ThemeCycleButton preferences={preferences} size="sm" variant="ghost" compact />
     </div>
   );
 }

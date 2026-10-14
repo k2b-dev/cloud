@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, IconButton, prompts } from "@k2b/ui";
+import { Button, IconButton, Kbd, prompts } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import type { SpaceColumn, SpaceItemTemplate, SpaceTag, SpaceWormhole } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
@@ -30,13 +30,13 @@ type Props = {
 function KeyboardShortcutsButton(props: { canWrite: boolean }) {
   const t = useSpaceMessages();
   const shortcuts = () => [
-    { keys: ["←", "↑", "→", "↓"], label: t.kanbanShortcutNavigate },
-    { keys: ["Enter"], label: t.kanbanShortcutOpen },
+    { keys: ["arrowleft", "arrowup", "arrowright", "arrowdown"], label: t.kanbanShortcutNavigate },
+    { keys: ["enter"], label: t.kanbanShortcutOpen },
     ...(props.canWrite
       ? [
-          { keys: ["M"], label: t.kanbanShortcutAssign },
-          { keys: ["D"], label: t.kanbanShortcutComplete },
-          { keys: [t.spaceKey, "←", "↑", "→", "↓", "Esc"], label: t.kanbanShortcutMove },
+          { keys: ["m"], label: t.kanbanShortcutAssign },
+          { keys: ["d"], label: t.kanbanShortcutComplete },
+          { keys: ["space", "arrowleft", "arrowup", "arrowright", "arrowdown", "escape"], label: t.kanbanShortcutMove },
         ]
       : []),
   ];
@@ -50,13 +50,7 @@ function KeyboardShortcutsButton(props: { canWrite: boolean }) {
               <div class="flex items-center justify-between gap-4">
                 <span>{shortcut.label}</span>
                 <span class="flex gap-1">
-                  <For each={shortcut.keys}>
-                    {(key) => (
-                      <kbd class="rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface-subtle)] px-1.5 font-mono text-xs leading-5">
-                        {key}
-                      </kbd>
-                    )}
-                  </For>
+                  <For each={shortcut.keys}>{(key) => <Kbd keys={key} />}</For>
                 </span>
               </div>
             )}

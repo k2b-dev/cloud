@@ -1,7 +1,8 @@
 import { documentNavigate } from "@k2b/ssr/nav";
-import { Button, ButtonLink, SegmentedControl } from "@k2b/ui";
+import { Button, ButtonLink } from "@k2b/ui";
 import type { CloudThemePreference } from "../shared/theme";
 import { createProfileActions } from "./profile-actions";
+import { ThemeCycleButton } from "./ThemeCycleButton";
 
 export function MobileProfileActions(props: {
   profile: { name: string; theme: CloudThemePreference; appHref?: string };
@@ -17,13 +18,7 @@ export function MobileProfileActions(props: {
   };
   return (
     <section class="cloud-mobile-profile" aria-label={preferences.messages().menuLabel}>
-      <SegmentedControl
-        class="cloud-mobile-profile__appearance"
-        ariaLabel={preferences.messages().appearance}
-        options={preferences.themeOptions()}
-        value={preferences.theme}
-        onValueChange={preferences.setTheme}
-      />
+      <ThemeCycleButton preferences={preferences} variant="ghost" />
       <ButtonLink href="/me" variant="ghost" onClick={navigate("/me")}>
         <i class="ti ti-user-circle" aria-hidden="true" />
         {preferences.messages().profileSettings}

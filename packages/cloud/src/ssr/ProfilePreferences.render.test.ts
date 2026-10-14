@@ -77,7 +77,14 @@ describe("ProfilePreferences SSR", () => {
     // The header has no avatar: from md the rail holds it, and phones reach the profile through the app menu.
     expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
     expect(html).toContain('href="/me"');
-    expect(html).toContain("Automatisch");
+    const panel = html
+      .split('class="layout-profile-preferences__panel dropdown-menu-surface"')[1]!
+      .split('class="layout-profile-preferences__dropdown"')[0]!;
+    expect(panel).toContain('aria-label="Darstellung: Dunkel. Wechselt zu Automatisch."');
+    expect(panel).toContain('class="ti ti-moon"');
+    expect(panel).toContain(">Dunkel</span>");
+    expect(panel).not.toContain('role="radiogroup"');
+    expect(panel).not.toContain("k2b-segmented-control");
     expect(html).toContain("English");
     expect(html).toContain("Profileinstellungen");
     expect(html).toContain("Abmelden");
@@ -87,6 +94,12 @@ describe("ProfilePreferences SSR", () => {
     expect(html).toContain('data-position="right-start"');
     expect(html).not.toContain(user.mail ?? "");
     expect(html).not.toContain("undefined");
+  });
+  test("defaults to Automatic without a saved choice", async () => {
+    const html = await (await server.request("/", { headers: { "Accept-Language": "de" } })).text();
+    expect(html).toContain('aria-label="Darstellung: Automatisch. Wechselt zu Hell."');
+    expect(html).toContain('class="ti ti-device-laptop"');
+    expect(html).toContain(">Automatisch</span>");
   });
 });
 

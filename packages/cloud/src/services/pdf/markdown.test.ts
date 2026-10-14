@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { renderMarkdownInfoBlock } from "@k2b/ui";
 import type { GotenbergConfig } from "./gotenberg";
 import {
   buildMarkdownPdfHtml,
@@ -106,13 +107,22 @@ describe("Markdown PDF renderer", () => {
     }
   });
 
-  test("prints info blocks as the shared notice in every preset", () => {
+  test("prints callouts with the shared icon markup in every preset", () => {
     for (const templateId of ["document", "report", "compact"] as const) {
       const html = buildMarkdownPdfHtml({ markdown: ":::warning Before printing\nCheck <the> **totals**.\n:::", templateId });
 
       expect(html).toContain(
-        '<aside class="k2b-notice-card" data-tone="warning" role="note"><p class="k2b-notice-card__title">Before printing</p><div class="k2b-notice-card__body"><p>Check &lt;the&gt; <strong>totals</strong>.</p>',
+        renderMarkdownInfoBlock({
+          type: "warning",
+          title: "Before printing",
+          bodyHtml: "<p>Check &lt;the&gt; <strong>totals</strong>.</p>\n",
+        }),
       );
+      expect(html).toContain('<svg class="k2b-callout__icon" aria-hidden="true"');
+      expect(html).toContain('<path d="M10.363 3.591l-8.106 13.534');
+      expect(html).toContain("grid-template-columns: 1.25em minmax(0, 1fr)");
+      expect(html).toContain("width: 1.25em; height: 1lh");
+      expect(html).toContain("--notice-ink: #92400e");
       expect(html).toContain('.k2b-notice-card[data-tone="warning"] { --notice-tint:');
     }
     expect(buildMarkdownPdfHtml({ markdown: ":::note\nPlain\n:::" })).toContain('<span class="k2b-sr-only">Note: </span>');

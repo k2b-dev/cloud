@@ -126,23 +126,22 @@ else {
   });
 
   test("Settings switches the appearance, which repaints the status bar, and the language, which reloads", async () => {
-    const page = mount(settings);
+    const page = mount(settings, {
+      before: (dom) => {
+        dom.document.cookie = "theme=light; path=/";
+      },
+    });
     let repaints = 0;
     page.dom.window.addEventListener("cloud:theme-preference", () => {
       repaints += 1;
     });
     try {
-      const dark = [...page.dom.document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((radio) =>
-        radio.textContent?.includes("Dark"),
-      )!;
-      dark.click();
+      const appearance = page.dom.document.querySelector<HTMLButtonElement>('button[aria-label^="Appearance:"]')!;
+      appearance.click();
       await waitFor(() => repaints === 1, "repaint");
       expect(page.dom.document.documentElement.classList.contains("dark")).toBe(true);
       expect(page.dom.document.cookie).toContain("theme=dark");
-      const automatic = [...page.dom.document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((radio) =>
-        radio.textContent?.includes("Automatic"),
-      )!;
-      automatic.click();
+      appearance.click();
       await waitFor(() => repaints === 2, "Automatic repaint");
       expect(page.dom.document.cookie).toContain("theme=system");
       expect(page.dom.document.documentElement.classList.contains("dark")).toBe(

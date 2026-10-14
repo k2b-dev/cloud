@@ -457,13 +457,19 @@ request is refused. Resource IDs are public short IDs; command IDs remain UUIDs.
 
 Results follow the requested order. `cancelled` means the queued move was
 stopped before it ran; `reversed` includes an inverse command's `id`, `state`,
-and `code` to follow through command outcomes. Repeating a reversal returns
-the same inverse command. `pending` means the original move is still unsettled
-or its destination copy is not visible yet; ask again later. `not_applied`
-means the original move failed or was cancelled. `unavailable` means Mail
-cannot safely reverse it, for example because it needs attention or current
-folder rights or keep rules refuse the inverse. Each inverse is queued
-independently, so one refusal does not prevent the others.
+and `code` to follow through command outcomes. Mail records an accepted Undo
+per command. `pending` means the server finishes it itself once the original
+move settles and its destination copy is known; the client may stop asking.
+When the provider did not report the new copy, Mail finishes after a folder
+sync, within about a minute of that copy appearing. A recorded Undo finishes
+within 15 minutes of the first request; otherwise it answers `unavailable`,
+also when the original settles later. A paused or disconnected mailbox keeps
+it `pending` within that window.
+A failed or cancelled original resolves as `not_applied`. Repeated requests
+and concurrent clients get the same single inverse. `unavailable` also means
+Mail cannot safely reverse the move, for example because it needs attention
+or current access or keep rules refuse the inverse. Each
+inverse is queued independently, so one refusal does not prevent the others.
 
 `reply` and `forward` create a draft from a conversation's latest message, and
 `send` sends a draft:

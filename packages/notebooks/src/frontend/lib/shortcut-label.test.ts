@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { ariaShortcut, shortcutLabel } from "./shortcut-label";
 
-const en = { ctrl: "Ctrl", shift: "Shift", alt: "Alt" };
-const de = { ctrl: "Strg", shift: "Umschalt", alt: "Alt" };
+const en = "en";
+const de = "de";
 
 describe("shortcut labels", () => {
   test.each(["MacIntel", "iPhone", "iPad", "iPod", "Win32", "Linux x86_64"])("uses platform key names on %s", (platform) => {
@@ -15,7 +15,8 @@ describe("shortcut labels", () => {
       expect(shortcutLabel("Mod-]", en)).toBe(apple ? "⌘]" : "Ctrl+]");
       expect(shortcutLabel("Mod-b", de)).toBe(apple ? "⌘B" : "Strg+B");
       expect(shortcutLabel("Mod-Shift-h", de)).toBe(apple ? "⇧⌘H" : "Strg+Umschalt+H");
-      expect(shortcutLabel("Mod-Shift-Alt-Ctrl-k", en)).toBe(apple ? "⌃⌥⇧⌘K" : "Ctrl+Shift+Alt+Ctrl+K");
+      expect(shortcutLabel("Mod-Shift-Alt-Ctrl-k", en)).toBe(apple ? "⌃⌥⇧⌘K" : "Ctrl+Alt+Shift+K");
+      expect(shortcutLabel("Mod--", en)).toBe(apple ? "⌘-" : "Ctrl+-");
       expect(ariaShortcut("Mod-Shift-2")).toBe(apple ? "Meta+Shift+2" : "Control+Shift+2");
       expect(ariaShortcut("Mod-Alt-k")).toBe(apple ? "Meta+Alt+K" : "Control+Alt+K");
     } finally {

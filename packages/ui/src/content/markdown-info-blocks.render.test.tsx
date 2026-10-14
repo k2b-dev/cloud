@@ -14,7 +14,9 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Lexer, Marked } = await import("marked");
 const { LocaleProvider } = await import("../intl/locale");
 const { default: MarkdownView, renderSafeMarkdown } = await import("./MarkdownView");
-const { markdownInfoBlocks, renderMarkdownInfoBlock, scanMarkdownInfoBlock } = await import("./markdown-info-blocks");
+const { MARKDOWN_CALLOUT_CLASSES, markdownInfoBlocks, renderMarkdownInfoBlock, scanMarkdownInfoBlock } = await import(
+  "./markdown-info-blocks"
+);
 
 const view = (markdown: string, locale?: string) =>
   renderToString(() =>
@@ -37,16 +39,35 @@ const types = [
 ] as const;
 
 describe("MarkdownView info blocks", () => {
-  test("every type renders as the calm NoticeCard with a localized screen-reader name", () => {
+  test("each type has its own decorative icon, tone, and localized screen-reader name", () => {
+    const icons = new Set<string>();
     for (const [type, tone, en, de] of types) {
       const source = `:::${type}\nBack up **first**.\n:::`;
-      const card = `<aside class="k2b-notice-card" data-tone="${tone}" role="note">`;
-      const body = `<div class="k2b-notice-card__body"><p>Back up <strong>first</strong>.</p>\n</div></aside>`;
-
-      expect(renderSafeMarkdown(source)).toBe(`${card}<span class="k2b-sr-only">${en}: </span>${body}`);
-      expect(view(source, "en")).toContain(`${card}<span class="k2b-sr-only">${en}: </span>${body}`);
-      expect(view(source, "de")).toContain(`${card}<span class="k2b-sr-only">${de}: </span>${body}`);
+      for (const [locale, label] of [
+        ["en", en],
+        ["de", de],
+      ] as const) {
+        const block = renderMarkdownInfoBlock({ type, bodyHtml: "<p>Back up <strong>first</strong>.</p>\n", locale });
+        expect(renderSafeMarkdown(source, { locale })).toBe(block);
+        expect(view(source, locale)).toContain(block);
+        expect(block).toStartWith(`<aside class="k2b-notice-card ${MARKDOWN_CALLOUT_CLASSES.root}" data-tone="${tone}" role="note">`);
+        expect(block.match(/<svg\b/g)).toHaveLength(1);
+        expect(block).toContain(`<svg class="${MARKDOWN_CALLOUT_CLASSES.icon}" aria-hidden="true"`);
+        expect(block).toContain(`<span class="k2b-sr-only">${label}: </span>`);
+        icons.add(block.match(/<svg[^>]*>(.*?)<\/svg>/)?.[1] ?? "");
+        const titled = renderMarkdownInfoBlock({
+          type,
+          title: "Before deleting",
+          bodyHtml: "<p>Back up <strong>first</strong>.</p>\n",
+          locale,
+        });
+        const titledSource = `:::${type} Before deleting\nBack up **first**.\n:::`;
+        expect(titled).not.toContain("k2b-sr-only");
+        expect(renderSafeMarkdown(titledSource, { locale })).toBe(titled);
+        expect(view(titledSource, locale)).toContain(titled);
+      }
     }
+    expect(icons.size).toBe(5);
   });
 
   test("a title is the visible heading and replaces the screen-reader name", () => {

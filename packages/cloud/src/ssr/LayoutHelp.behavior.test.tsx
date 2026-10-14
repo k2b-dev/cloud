@@ -142,12 +142,21 @@ else {
   for (const surface of ["modal", "page"] as const) {
     test(`${surface}: Search help in Shortcuts focuses the hub input`, async () => {
       const reader = await setup(surface, "shortcuts");
+      const { registerContextAwareCommand } = await import("../browser/command-bridge");
+      const unregister = registerContextAwareCommand({
+        id: "test.keys",
+        title: "Test shortcut",
+        description: "Test keys",
+        shortcut: "mod+k",
+        action() {},
+      });
       try {
         if (surface === "modal") {
           await until(() => !!reader.dom.document.querySelector("[data-help-search]"));
           reader.button("Shortcuts").click();
         }
         await until(() => reader.title() === "Shortcuts");
+        expect(reader.dom.document.querySelector(".k2b-kbd__key")).not.toBeNull();
         reader.button("Search help").click();
         await until(() => !!reader.dom.document.querySelector("[data-help-search]"));
         await until(() => document.activeElement === reader.dom.document.querySelector("[data-help-search]"));
@@ -155,6 +164,7 @@ else {
         expect(reader.dom.document.querySelectorAll("dialog")).toHaveLength(surface === "modal" ? 1 : 0);
         if (surface === "page") expect(location.pathname).toBe("/app/spaces/help");
       } finally {
+        unregister();
         await reader.cleanup();
       }
     });

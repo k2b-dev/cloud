@@ -10568,11 +10568,8 @@
   object-fit: cover;
 }
 
-.k2b-ui .k2b-spotlight-button kbd {
+.k2b-ui .k2b-spotlight-button > .k2b-kbd {
   margin-left: 0.25rem;
-  color: var(--k2b-text-muted);
-  font-family: var(--k2b-font-mono);
-  font-size: 0.625rem;
 }
 
 .k2b-ui .k2b-spotlight-button[data-variant="default"] {

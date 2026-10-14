@@ -32,6 +32,13 @@ when people navigate.
 | 1024 to 1535 px (laptops) | Same as above | Header with breadcrumbs, theme and language, and sign-in; cards on the app background |
 | From 1536 px | No header. The app area is a card with 8 px spacing on the app background | Same as above |
 
+Where the app area is a card, the outermost workspace is that card. It has
+rounded corners and the card's frame, also when it is `flat`. Render that
+workspace as the page's own content, not inside a wrapper element, so it fills
+the app area and its frame shows in the card spacing. A page without a
+workspace shows its content on the app background, so scroll the content in a
+`ScrollArea` and do not wrap it in an opaque surface that fills the app area.
+
 From 768 px the app bar holds Home, the apps, the app grid, search, help, and
 the profile avatar. Between the app bar and the app area there is no line:
 the app bar shows the app background, and the app area is one opaque surface.
@@ -295,14 +302,16 @@ footer that holds the legal links of all running applications and the
 language and theme settings for visitors. The legal links come from the
 runtime registry, so they appear when the router installs
 `middleware.runtime()`. The language control shows the current language and
-switches between English and German. The theme menu offers **Light**,
-**Dark**, and **Automatic** and names the current choice. Below the `md`
-breakpoint both controls are compact: the language control shows the
-language code, such as `DE`, and the theme control only its icon. The full
-names remain their accessible labels and fill the menus. Where the legal
-links and the controls do not fit one row, the controls move to a second row
-below the links. On touch screens, every footer
-control is at least 44 px tall, and no control covers another.
+switches between English and German. The theme button shows the current
+choice. Each click switches to the next: **Automatic**, **Light**, **Dark**,
+then **Automatic** again. Below the `md` breakpoint both controls are compact:
+the language control shows the language code, such as `DE`, and the theme
+control only its icon. The full
+language name remains its accessible label. The theme button's accessible
+name states the current choice and the next one. Where the legal links and
+the controls do not fit one row, the controls move to a second row below the
+links. On touch screens, every footer control is at least 44 px tall, and no
+control covers another.
 
 The page content and the footer share one column that is at least one
 viewport tall, and the content comes first. On a short page the footer sits at

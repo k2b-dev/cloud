@@ -1541,8 +1541,9 @@ describe("Spaces Kanban board in a browser", () => {
         expect(await dialog.textContent()).toContain("Open the card");
         expect((await dialog.textContent())?.includes("Assign it to you")).toBe(canWrite);
         expect((await dialog.textContent())?.includes("On its grip: pick up, move, and drop or cancel")).toBe(canWrite);
-        expect(await dialog.locator("kbd").allTextContents()).toEqual(
-          canWrite ? ["←", "↑", "→", "↓", "Enter", "M", "D", "Space", "←", "↑", "→", "↓", "Esc"] : ["←", "↑", "→", "↓", "Enter"],
+        // Each Kbd holds one visible cap per key next to its spoken name, so read the caps.
+        expect(await dialog.locator(".k2b-kbd__key").allTextContents()).toEqual(
+          canWrite ? ["←", "↑", "→", "↓", "↵", "M", "D", "Space", "←", "↑", "→", "↓", "Esc"] : ["←", "↑", "→", "↓", "↵"],
         );
         // The board's own description for screen readers names the same shortcuts.
         expect((await page.locator("#spaces-kanban-shortcuts-Space1").textContent())?.includes("M assigns")).toBe(canWrite);
