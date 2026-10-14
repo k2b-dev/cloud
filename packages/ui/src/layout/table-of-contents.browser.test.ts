@@ -59,6 +59,8 @@ afterAll(async () => {
 });
 const load = async (mode: "container" | "window", above = "") => {
   const height = mode === "container" ? 300 : 800;
+  // An earlier test's fragment would make the browser scroll the new document to that heading.
+  await page.goto("about:blank");
   await page.setContent(
     `<style>${css} body{margin:0} h2{margin:0;height:24px} #nav{position:fixed;left:700px;top:0} #controls{position:fixed;left:700px;top:200px}</style><body class="k2b-ui" data-mode="${mode}" data-changes="[]"><div id="nav"></div><div id="controls"><button id="dispose">Dispose</button><button id="switch">Window</button><button id="items">Items</button></div><div id="scroller" style="${mode === "container" ? "height:240px;overflow:auto;" : ""}">${above}<section style="height:${height}px"><h2 id="one">One</h2></section><section style="height:${height}px"><h2 id="two">Two</h2></section><section style="height:100px"><h2 id="three">Three</h2></section></div></body>`,
   );
