@@ -192,7 +192,8 @@ const HelpShell = (props: {
     ).find((element) => element.id === hash);
     if (!heading) return false;
     // A link to a heading in collapsed details opens them, and any details around them, first.
-    for (let details = heading.closest("details"); details; details = details.parentElement?.closest("details") ?? null) details.open = true;
+    for (let details = heading.closest("details"); details; details = details.parentElement?.closest("details") ?? null)
+      details.open = true;
     setActiveSectionId(hash);
     heading.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
     return true;

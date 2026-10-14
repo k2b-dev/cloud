@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { helpAgentMarkdown } from "../_internal/help-catalog";
 import { compileHelp } from "../_internal/help";
+import { helpAgentMarkdown } from "../_internal/help-catalog";
 import { session } from "../services/session";
 import { buildProjectedUser } from "../services/session/user";
 import { defineHelp, defineHelpCollection } from "./help";
