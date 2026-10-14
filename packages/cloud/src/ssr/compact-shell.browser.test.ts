@@ -20,7 +20,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 setDefaultTimeout(30_000);
 
 const { Hono } = await import("hono");
-const { AppWorkspace, Button, dropdownPosition } = await import("@k2b/ui");
+const { AppWorkspace, Button, dropdownPosition, ScrollArea } = await import("@k2b/ui");
 const { defineApp } = await import("../_internal/define-app");
 const { person } = await import("../_internal/define-app.test-fixture");
 const railSnapshot = await import("../services/rail-snapshot");
@@ -136,6 +136,46 @@ const listWorkspace = () =>
     },
   });
 
+/** A sidebar-first overview that is the page itself, as Mail and Notebooks render. Invented content. */
+const overviewWorkspace = () =>
+  createComponent(AppWorkspace, {
+    mobileSurface: "flush",
+    flat: true,
+    resizable: false,
+    get children() {
+      return [
+        createComponent(AppWorkspace.Sidebar, {
+          id: "overview-navigation",
+          label: "Mailboxes",
+          get children() {
+            return createComponent(AppWorkspace.SidebarDesktop, {
+              get children() {
+                return createComponent(AppWorkspace.SidebarBody, {
+                  get children() {
+                    return ["Personal", "Projects", "Support"].map((name) =>
+                      createComponent(AppWorkspace.SidebarItem, { href: `#${name.toLowerCase()}`, children: name }),
+                    );
+                  },
+                });
+              },
+            });
+          },
+        }),
+        createComponent(AppWorkspace.Content, {
+          get children() {
+            return createComponent(AppWorkspace.Main, {
+              get children() {
+                return Array.from({ length: 80 }, (_, index) =>
+                  createComponent(Button, { class: "overview-row", align: "start", children: `Message ${index + 1}` }),
+                );
+              },
+            });
+          },
+        }),
+      ];
+    },
+  });
+
 const server = new Hono()
   .get(
     "/app/mail/:folder",
@@ -150,6 +190,35 @@ const server = new Hono()
     ...probe.ssr((c) => {
       const folder = c.req.param("folder") ?? "inbox";
       const title = folder[0]!.toUpperCase() + folder.slice(1);
+      // `?overview=` keeps regular Layout props, including its page scroller's gutter.
+      if (c.req.query("overview"))
+        return () =>
+          createComponent(Layout, {
+            c: c as unknown as LayoutContextArg,
+            title: [{ title: "Home", href: "/" }, { title: "Mail" }],
+            get children() {
+              return overviewWorkspace();
+            },
+          });
+      // `?cards=` renders a page without a workspace that scrolls its content in a ScrollArea, as
+      // Capabilities and Weather do.
+      if (c.req.query("cards"))
+        return () =>
+          createComponent(Layout, {
+            c: c as unknown as LayoutContextArg,
+            fullWidth: true,
+            title: [{ title: "Home", href: "/" }, { title: "Capabilities" }],
+            get children() {
+              return createComponent(ScrollArea, {
+                class: "min-h-0 min-w-0 flex-1",
+                get children() {
+                  return Array.from({ length: 60 }, (_, index) =>
+                    createComponent(Button, { class: "card-row", align: "start", children: `App ${index + 1}` }),
+                  );
+                },
+              });
+            },
+          });
       // `?list=` renders the task list: `scroll` in a page that grows with its content, `page` in a full page.
       const list = c.req.query("list");
       if (list)
@@ -186,7 +255,9 @@ const server = new Hono()
         createComponent(Layout, {
           c: c as unknown as LayoutContextArg,
           title: [{ title: "Home", href: "/" }, { title: c.req.query("title") ?? "Public tools" }],
-          children: "Public content",
+          get children() {
+            return c.req.query("overview") ? overviewWorkspace() : "Public content";
+          },
         }),
     ),
   );
@@ -232,7 +303,7 @@ const laptop: Device = { name: "laptop", width: 1366, height: 900, touch: false 
 const desktop: Device = { name: "desktop", width: 1920, height: 1080, touch: false };
 const devices = [phone, ipadPortrait, ipadLandscape, laptop, desktop];
 
-type Options = { language?: "en" | "de"; theme?: "light" | "dark"; notice?: boolean };
+type Options = { language?: "en" | "de"; theme?: "light" | "dark"; notice?: boolean; style?: string };
 const html = async (path: string, options: Options = {}) => {
   const headers = {
     "Accept-Language": options.language ?? "en",
@@ -241,7 +312,7 @@ const html = async (path: string, options: Options = {}) => {
   const markup = await (await server.request(path, { headers })).text();
   return markup.replace(
     "</head>",
-    `<style>${css}</style><style>*,*::before,*::after{transition:none!important;animation:none!important}</style></head>`,
+    `<style>${css}</style><style>*,*::before,*::after{transition:none!important;animation:none!important}${options.style ?? ""}</style></head>`,
   );
 };
 
@@ -259,11 +330,13 @@ const open = async (
   path: string,
   options: Options & { attached?: boolean } = {},
 ): Promise<{ context: BrowserContext; page: Page }> => {
-  // iPads and phones report a coarse pointer without hover, as Safari does.
+  // iPads and phones report a coarse pointer without hover, as Safari does. A page set from markup has
+  // no cookies in WebKit, so the theme script follows the system scheme; it matches the requested theme.
   const context = await browser.newContext({
     viewport: { width: device.width, height: device.height },
     hasTouch: device.touch,
     isMobile: device.touch,
+    colorScheme: options.theme ?? "light",
   });
   const page = await context.newPage();
   await page.setContent(await html(path, options));
@@ -490,6 +563,314 @@ describe("signed-in shell", () => {
       } finally {
         await context.close();
       }
+    }
+  });
+});
+
+describe("the app card keeps its rounded corners", () => {
+  const pages = [
+    { name: "framed workspace", path: "/app/mail/inbox?list=scroll" },
+    { name: "flat overview", path: "/app/mail/inbox?overview=1" },
+  ];
+  type CardGeometry = {
+    box: Box;
+    railRight: number | null;
+    radii: string[];
+    expectedRadius: string;
+    shellSpacing: number;
+    shadow: string;
+    workspaceScroll: { top: number; end: number };
+    pageScroll: { height: number; clientHeight: number; width: number; clientWidth: number };
+  };
+  const cardGeometry = (page: Page): Promise<CardGeometry> =>
+    page.evaluate(async () => {
+      const workspace = document.querySelector<HTMLElement>(".layout-content-main .k2b-app-workspace")!;
+      const main = workspace.querySelector<HTMLElement>(".k2b-app-workspace__main")!;
+      const pageMain = document.querySelector<HTMLElement>(".layout-content-main")!;
+      // Resolve the host's tokens on the workspace, including var() and rem values.
+      const probe = document.createElement("span");
+      probe.style.cssText = "position:absolute;pointer-events:none;width:var(--ui-space-shell);border-radius:var(--k2b-radius-dialog)";
+      workspace.append(probe);
+      const expectedRadius = getComputedStyle(probe).borderTopLeftRadius;
+      const shellSpacing = Number.parseFloat(getComputedStyle(probe).width);
+      probe.remove();
+      const rect = workspace.getBoundingClientRect();
+      const style = getComputedStyle(workspace);
+      // The corners are sampled with the content scrolled to its end, not on the first rows.
+      main.scrollTop = main.scrollHeight;
+      await new Promise<void>((settle) => requestAnimationFrame(() => settle()));
+      return {
+        box: {
+          left: Math.round(rect.left),
+          top: Math.round(rect.top),
+          right: Math.round(rect.right),
+          bottom: Math.round(rect.bottom),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        },
+        railRight: document.querySelector(".layout-rail")?.getBoundingClientRect().right ?? null,
+        radii: [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomRightRadius, style.borderBottomLeftRadius],
+        expectedRadius,
+        shellSpacing,
+        shadow: style.boxShadow,
+        workspaceScroll: { top: main.scrollTop, end: main.scrollHeight - main.clientHeight },
+        pageScroll: {
+          height: pageMain.scrollHeight,
+          clientHeight: pageMain.clientHeight,
+          width: pageMain.scrollWidth,
+          clientWidth: pageMain.clientWidth,
+        },
+      };
+    });
+
+  /**
+   * Reads what the engine painted at the card's corners. Every part of the workspace and its text is
+   * filled red first, so a part that reaches past the rounded corner shows in the pixel one step inside
+   * the box's corner, which lies outside the card. Hit testing cannot tell this: WebKit ignores a
+   * rounded clip there.
+   */
+  const cornerPaint = async (page: Page, box: Box) => {
+    await page.addStyleTag({
+      content:
+        ".layout-content-main .k2b-app-workspace, .layout-content-main .k2b-app-workspace * { background: rgb(255 0 0) !important; color: rgb(255 0 0) !important; }",
+    });
+    const corners = [
+      { corner: "top left", x: box.left, y: box.top, dx: 1, dy: 1 },
+      { corner: "top right", x: box.right - 1, y: box.top, dx: -1, dy: 1 },
+      { corner: "bottom right", x: box.right - 1, y: box.bottom - 1, dx: -1, dy: -1 },
+      { corner: "bottom left", x: box.left, y: box.bottom - 1, dx: 1, dy: -1 },
+    ];
+    const shot = (await page.screenshot()).toString("base64");
+    return page.evaluate(
+      async ({ shot, corners }) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${shot}`;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext("2d")!;
+        context.drawImage(image, 0, 0);
+        const filled = (x: number, y: number) => {
+          const [red, green, blue] = context.getImageData(x, y, 1, 1).data;
+          return red! > 200 && green! < 60 && blue! < 60;
+        };
+        return corners.map(({ corner, x, y, dx, dy }) => ({
+          corner,
+          outside: filled(x + dx, y + dy),
+          inside: filled(x + 48 * dx, y + 48 * dy),
+        }));
+      },
+      { shot, corners },
+    );
+  };
+
+  /** Reads the RGB values the engine painted at the given viewport points. */
+  const pixels = async (page: Page, points: { x: number; y: number }[]) => {
+    const shot = (await page.screenshot()).toString("base64");
+    return page.evaluate(
+      async ({ shot, points }) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${shot}`;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext("2d")!;
+        context.drawImage(image, 0, 0);
+        return points.map(({ x, y }) => [...context.getImageData(x, y, 1, 1).data].slice(0, 3));
+      },
+      { shot, points },
+    );
+  };
+  /** The largest channel difference between two pixel lists of the same points. */
+  const difference = (a: number[][], b: number[][]) =>
+    Math.max(...a.flatMap((pixel, index) => pixel.map((channel, rgb) => Math.abs(channel - b[index]![rgb]!))));
+
+  /**
+   * Reads what the engine painted in the shell spacing below the middle of the card's bottom edge, once
+   * as served and once with the card's shadow removed. A computed `box-shadow` alone cannot tell whether
+   * a scrolling ancestor clips the shadow away.
+   */
+  const shadowPaint = async (page: Page, box: Box, shellSpacing: number) => {
+    const x = Math.round((box.left + box.right) / 2);
+    const points = Array.from({ length: Math.max(1, Math.floor(shellSpacing) - 2) }, (_, step) => ({ x, y: box.bottom + 1 + step }));
+    const painted = await pixels(page, points);
+    const unshadowed = await page.addStyleTag({ content: ".layout-content-main .k2b-app-workspace { box-shadow: none !important; }" });
+    const bare = await pixels(page, points);
+    await unshadowed.evaluate((tag) => tag.parentNode?.removeChild(tag));
+    return { painted, shadowDepth: difference(painted, bare) };
+  };
+
+  /**
+   * Reads the paint one step inside each corner of the card's box, outside its rounded edge, once as
+   * served and once with everything inside the card hidden. Unlike `cornerPaint`, it also sees paint the
+   * red fill cannot reach, such as a shadow or a scrollbar of a part inside the card.
+   */
+  const cornerLeak = async (page: Page, box: Box) => {
+    const points = [
+      { x: box.left + 1, y: box.top + 1 },
+      { x: box.right - 2, y: box.top + 1 },
+      { x: box.right - 2, y: box.bottom - 2 },
+      { x: box.left + 1, y: box.bottom - 2 },
+    ];
+    const served = await pixels(page, points);
+    const emptied = await page.addStyleTag({ content: ".layout-content-main .k2b-app-workspace > * { opacity: 0 !important; }" });
+    const empty = await pixels(page, points);
+    await emptied.evaluate((tag) => tag.parentNode?.removeChild(tag));
+    return difference(served, empty);
+  };
+
+  for (const device of [{ name: "card boundary", width: 1536, height: 900, touch: false }, desktop]) {
+    test(`${device.width}×${device.height}: flat and framed cards share their frame, spacing, and corner clipping`, async () => {
+      let framed: CardGeometry | undefined;
+      let framedShadow: number[][] | undefined;
+      for (const { name, path } of pages) {
+        const { context, page } = await open(device, path);
+        try {
+          const shape = await cardGeometry(page);
+          // The flat card paints the same shadow below its box as the framed one.
+          const shadow = await shadowPaint(page, shape.box, shape.shellSpacing);
+          expect(shadow.shadowDepth).toBeGreaterThanOrEqual(2);
+          if (framedShadow) expect(difference(shadow.painted, framedShadow)).toBeLessThanOrEqual(1);
+          else framedShadow = shadow.painted;
+          // Nothing inside the flat card paints past its rounded corners, with its content scrolled to
+          // the end. The framed fixture's open detail panel casts its shadow beyond the card on purpose.
+          if (name === "flat overview") expect(await cornerLeak(page, shape.box)).toBeLessThanOrEqual(1);
+          expect(Number.parseFloat(shape.expectedRadius)).toBeGreaterThan(0);
+          expect(shape.radii).toEqual(Array(4).fill(shape.expectedRadius));
+          for (const radius of shape.radii) expect(Number.parseFloat(radius)).toBeGreaterThan(0);
+          expect(shape.shadow).not.toBe("none");
+          expect(shape.shellSpacing).toBeGreaterThan(0);
+          expect(shape.box).toMatchObject({
+            left: shape.railRight,
+            top: shape.shellSpacing,
+            right: device.width - shape.shellSpacing,
+            bottom: device.height - shape.shellSpacing,
+          });
+          expect(shape.workspaceScroll.top).toBeGreaterThan(0);
+          expect(shape.workspaceScroll.top).toBeCloseTo(shape.workspaceScroll.end, 0);
+          for (const corner of await cornerPaint(page, shape.box))
+            expect(corner).toEqual({ corner: corner.corner, outside: false, inside: true });
+          expect(shape.pageScroll.height).toBeLessThanOrEqual(shape.pageScroll.clientHeight);
+          expect(shape.pageScroll.width).toBeLessThanOrEqual(shape.pageScroll.clientWidth);
+          if (framed) {
+            expect(shape.radii).toEqual(framed.radii);
+            expect(shape.shadow).toBe(framed.shadow);
+            expect(shape.box).toEqual(framed.box);
+          } else framed = shape;
+        } finally {
+          await context.close();
+        }
+      }
+    });
+  }
+
+  for (const device of [
+    { name: "flush boundary", width: 1535, height: 900, touch: false },
+    { name: "flush laptop", width: 1024, height: 768, touch: false },
+  ]) {
+    test(`${device.width}×${device.height}: flat and framed workspaces fill the flush app area without a frame`, async () => {
+      let framed: CardGeometry | undefined;
+      for (const { path } of pages) {
+        const { context, page } = await open(device, path);
+        try {
+          const shape = await cardGeometry(page);
+          expect(shape.radii).toEqual(Array(4).fill("0px"));
+          expect(shape.shadow).toBe("none");
+          expect(shape.box).toMatchObject({ left: shape.railRight, top: 0, right: device.width, bottom: device.height });
+          if (framed) expect(shape.box).toEqual(framed.box);
+          else framed = shape;
+        } finally {
+          await context.close();
+        }
+      }
+    });
+  }
+
+  test("phone: a flat overview keeps square corners and no shadow", async () => {
+    const { context, page } = await open(phone, "/app/mail/inbox?overview=1");
+    try {
+      const shape = await cardGeometry(page);
+      expect(shape.radii).toEqual(Array(4).fill("0px"));
+      expect(shape.shadow).toBe("none");
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("1920×1080 dark: flat and framed cards share their border and painted shadow", async () => {
+    const cards: { border: string; shadow: number[][] }[] = [];
+    for (const { path } of pages) {
+      const { context, page } = await open(desktop, path, { theme: "dark" });
+      try {
+        expect(await page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(true);
+        const shape = await cardGeometry(page);
+        const border = await page.evaluate(
+          () => getComputedStyle(document.querySelector(".layout-content-main .k2b-app-workspace")!).borderTopColor,
+        );
+        const shadow = await shadowPaint(page, shape.box, shape.shellSpacing);
+        expect(shadow.shadowDepth).toBeGreaterThanOrEqual(2);
+        if (cards[0]) expect(difference(shadow.painted, cards[0].shadow)).toBeLessThanOrEqual(1);
+        cards.push({ border, shadow: shadow.painted });
+      } finally {
+        await context.close();
+      }
+    }
+    expect(cards[0]!.border).not.toBe("rgba(0, 0, 0, 0)");
+    expect(cards[1]!.border).toBe(cards[0]!.border);
+  });
+
+  test("anonymous 1024×768: a flat workspace already has the card's radius and shadow", async () => {
+    const { context, page } = await open({ name: "anonymous laptop", width: 1024, height: 768, touch: false }, "/public?overview=1");
+    try {
+      const shape = await cardGeometry(page);
+      expect(Number.parseFloat(shape.expectedRadius)).toBeGreaterThan(0);
+      expect(shape.radii).toEqual(Array(4).fill(shape.expectedRadius));
+      expect(shape.shadow).not.toBe("none");
+      expect((await shadowPaint(page, shape.box, shape.shellSpacing)).shadowDepth).toBeGreaterThanOrEqual(2);
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe("a page that scrolls its content in a ScrollArea", () => {
+  // Phones draw overlay scrollbars; styled ones take space, as classic scrollbars do in desktop browsers.
+  // WebKit applies them only to scrollers laid out after the style, so the page loads with it. The
+  // 1024 px case shows that the styled scrollbars take space.
+  const style =
+    "*::-webkit-scrollbar { width: 12px; height: 12px; background: rgb(221 221 221); } *::-webkit-scrollbar-thumb { background: rgb(136 136 136); } * { scrollbar-width: auto !important; scrollbar-color: auto !important; } .card-row { display: flex; width: 100%; }";
+  const scrolling = (page: Page) =>
+    page.evaluate(() => {
+      const area = document.querySelector<HTMLElement>(".layout-content-main > .k2b-scroll-area")!;
+      const root = document.documentElement;
+      return {
+        areaGutter: area.offsetWidth - area.clientWidth,
+        areaScrolls: area.scrollHeight > area.clientHeight,
+        documentScrolls: root.scrollHeight > root.clientHeight,
+      };
+    });
+
+  test("600×900: the document scrolls, and the area reserves no second gutter", async () => {
+    const { context, page } = await open({ name: "narrow window", width: 600, height: 900, touch: false }, "/app/mail/inbox?cards=1", {
+      style,
+    });
+    try {
+      expect(await scrolling(page)).toEqual({ areaGutter: 0, areaScrolls: false, documentScrolls: true });
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("1024×768: the area scrolls and keeps its stable gutter", async () => {
+    const { context, page } = await open({ name: "flush laptop", width: 1024, height: 768, touch: false }, "/app/mail/inbox?cards=1", {
+      style,
+    });
+    try {
+      expect(await scrolling(page)).toEqual({ areaGutter: 12, areaScrolls: true, documentScrolls: false });
+    } finally {
+      await context.close();
     }
   });
 });
