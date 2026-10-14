@@ -34,6 +34,9 @@ down its visible box becomes active. Before the first heading reaches that
 line, the first item stays active. At the end of scrolling, a visible last
 heading becomes active. `onActiveChange` receives the new ID, or `undefined`
 when the list becomes empty, once per change.
+The active section also updates without scrolling when the scroll root, a
+direct child of it, or a heading's parent element changes size, for example
+after an image loads or a disclosure opens.
 
 `sticky` keeps the navigation in view within the caller's layout.
 Links use normal browser anchor navigation. Changing the active section does

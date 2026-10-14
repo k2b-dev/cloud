@@ -109,6 +109,7 @@ export type {
 export { MessageRow, MessageSystemRow, startsMessageGroup } from "./MessageRow";
 export {
   MARKDOWN_CALLOUT_CLASSES,
+  MARKDOWN_CALLOUT_ICON_ATTRIBUTES,
   type MarkdownInfoBlock,
   type MarkdownInfoBlockRenderInput,
   type MarkdownInfoBlockType,

@@ -3,6 +3,7 @@ import { resolveShortcutMessages } from "./shortcut-messages";
 export type KeyboardPlatform = "apple" | "other";
 /**
  * Apple keyboards name the platform modifier Command. `source` is a User-Agent or `navigator.platform` string.
+ * Without `source`, reads the runtime's navigator; server callers pass the request's User-Agent.
  * @example keyboardPlatform("MacIntel") // "apple"
  */
 export const keyboardPlatform = (source?: string): KeyboardPlatform =>
@@ -35,7 +36,7 @@ export const formatShortcut = (shortcut: string, options: ShortcutFormatOptions 
   const input = shortcut.trim().toLowerCase();
   const plus = input === "+" || input.endsWith("++");
   const parts = (plus ? input.slice(0, -1) : input).split("+");
-  const key = plus ? "+" : parts.pop();
+  const key = plus ? "+" : parts.pop() || (shortcut === " " || shortcut.endsWith("+ ") ? "space" : undefined);
   if (plus) parts.pop();
   if (
     !key ||

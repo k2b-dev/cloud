@@ -1,3 +1,4 @@
+import { markdownCalloutSanitizeOptions } from "@k2b/cloud/shared";
 import { dates, highlight, text } from "@k2b/stdlib";
 import {
   type MarkdownReference,
@@ -521,66 +522,47 @@ export const renderNotebookBook = (
   // Headings are known only now. A PDF links only to an id it has, so a heading the note lacks opens its top, as in Book.
   const headingIds = new Set(headings.map(({ id }) => id));
   for (const anchor of printAnchors) if (!headingIds.has(anchor)) html = html.replaceAll(`href="${anchorHash(anchor)}"`, 'href="#top"');
-  const sanitize = (value: string) =>
-    sanitizeHtml(value, {
-      allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "input", "time", "mark", "del", "svg", "path"],
-      allowedAttributes: {
-        "*": ["class", "id", "title", "role", "aria-hidden", "aria-label", "data-tone", "data-depth", "data-block-name"],
-        a: [
-          "href",
-          "rel",
-          { name: "data-link", multiple: false, values: ["web", "mail"] },
-          { name: "data-reference", multiple: false, values: ["pdf", "image", "design", "file", "note", "heading", "task", "page"] },
-        ],
-        img: ["src", "alt", "loading", "width", "height"],
-        input: ["type", "disabled", "checked"],
-        span: ["style"],
-        th: ["scope"],
-        time: ["datetime"],
-        ol: ["start"],
-        svg: ["aria-hidden", "class", "width", "height", "viewBox", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"],
-        path: ["d"],
-      },
-      allowedSchemes: ["http", "https", "mailto", "tel"],
-      allowedSchemesByTag: { img: ["http", "https"] },
-      allowProtocolRelative: false,
-      allowedStyles: { span: { width: [/^\d+(?:\.\d+)?%$/] } },
-      transformTags: {
-        svg: (tagName, attrs) => ({
-          tagName,
-          attribs: Object.fromEntries(
-            Object.entries(attrs)
-              .map(([name, value]) => [name === "viewbox" ? "viewBox" : name, value] as const)
-              .filter(([name]) =>
-                [
-                  "aria-hidden",
-                  "class",
-                  "width",
-                  "height",
-                  "viewBox",
-                  "fill",
-                  "stroke",
-                  "stroke-width",
-                  "stroke-linecap",
-                  "stroke-linejoin",
-                ].includes(name),
-              ),
-          ),
-        }),
-        path: (tagName, attrs) => ({ tagName, attribs: Object.fromEntries(Object.entries(attrs).filter(([name]) => name === "d")) }),
-
-        a: (_tag, attrs) => {
-          const href = attrs.href ? resolveUrl(attrs.href) : null;
-          const { href: _href, ...other } = attrs;
-          return { tagName: "a", attribs: { ...other, ...(href ? { href } : {}) } };
-        },
-        input: (_tag, attrs) => ({
-          tagName: "input",
-          attribs: { type: "checkbox", disabled: "", ...(Object.hasOwn(attrs, "checked") ? { checked: "" } : {}) },
-        }),
-      },
-    });
-  html = sanitize(html);
+  html = sanitizeNotebookBookHtml(html, resolveUrl);
   html = html.replace(new RegExp(`${prefix}MATH(\\d+)END`, "g"), (_raw, index: string) => mathSlots[Number(index)] ?? "");
-  return { html, headings, blocks: [...blockHtml].map(([line, html]) => ({ line, html: sanitize(html) })) };
+  return { html, headings, blocks: [...blockHtml].map(([line, html]) => ({ line, html: sanitizeNotebookBookHtml(html, resolveUrl) })) };
+};
+
+export const sanitizeNotebookBookHtml = (value: string, resolveUrl: (href: string) => string | null): string => {
+  const callouts = markdownCalloutSanitizeOptions();
+  return sanitizeHtml(value, {
+    ...callouts,
+    allowedTags: [...sanitizeHtml.defaults.allowedTags, "img", "input", "time", "mark", "del", ...callouts.allowedTags],
+    allowedAttributes: {
+      "*": ["class", "id", "title", "role", "aria-hidden", "aria-label", "data-tone", "data-depth", "data-block-name"],
+      a: [
+        "href",
+        "rel",
+        { name: "data-link", multiple: false, values: ["web", "mail"] },
+        { name: "data-reference", multiple: false, values: ["pdf", "image", "design", "file", "note", "heading", "task", "page"] },
+      ],
+      img: ["src", "alt", "loading", "width", "height"],
+      input: ["type", "disabled", "checked"],
+      span: ["style"],
+      th: ["scope"],
+      time: ["datetime"],
+      ol: ["start"],
+      ...callouts.allowedAttributes,
+    },
+    allowedSchemes: ["http", "https", "mailto", "tel"],
+    allowedSchemesByTag: { img: ["http", "https"] },
+    allowProtocolRelative: false,
+    allowedStyles: { span: { width: [/^\d+(?:\.\d+)?%$/] } },
+    transformTags: {
+      ...callouts.transformTags,
+      a: (_tag, attrs) => {
+        const href = attrs.href ? resolveUrl(attrs.href) : null;
+        const { href: _href, ...other } = attrs;
+        return { tagName: "a", attribs: { ...other, ...(href ? { href } : {}) } };
+      },
+      input: (_tag, attrs) => ({
+        tagName: "input",
+        attribs: { type: "checkbox", disabled: "", ...(Object.hasOwn(attrs, "checked") ? { checked: "" } : {}) },
+      }),
+    },
+  });
 };

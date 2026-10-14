@@ -56,10 +56,19 @@ export function TableOfContents(props: TableOfContentsProps): JSX.Element {
     };
     target.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule);
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(schedule);
+    // No scroll or window resize happens when the root, a block above a heading, or a heading's own section changes size.
+    const observed = new Set<Element | null | undefined>([
+      root ?? document.documentElement,
+      ...(root?.children ?? [document.body]),
+      ...ids.map((id) => document.getElementById(id)?.parentElement),
+    ]);
+    for (const element of observed) if (element) observer?.observe(element);
     untrack(update);
     onCleanup(() => {
       target.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
+      observer?.disconnect();
       if (frame !== undefined) cancelAnimationFrame(frame);
     });
   });

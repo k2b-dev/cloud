@@ -2,11 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { markdown } from "@k2b/cloud/shared";
 import { renderMarkdownInfoBlock } from "@k2b/ui";
 import type { NoteQueryResult } from "../service/note-query";
-import { renderNotebookBook } from "./book-renderer";
+import { renderNotebookBook, sanitizeNotebookBookHtml } from "./book-renderer";
 import { bookRendererMessages } from "./book-renderer-messages";
 
 const render = (markdown: string, locale = "en", queryResults?: ReadonlyMap<number, NoteQueryResult>) =>
   renderNotebookBook({ markdown, notebookId: "ABC123", locale, queryResults });
+const sanitize = (html: string) => sanitizeNotebookBookHtml(html, (href) => href);
 
 const result: NoteQueryResult = {
   columns: ["$title"],
@@ -245,6 +246,36 @@ describe("Notebook Book HTML", () => {
     expect(html).toBe(renderMarkdownInfoBlock({ type: "warning", title: "Before <deleting>", bodyHtml: "<p>Body</p>\n" }));
     expect(html).toContain('<p class="k2b-notice-card__title">Before &lt;deleting&gt;</p>');
     expect(html).not.toContain("Warnung");
+  });
+
+  test("other SVG tags and stray paths are discarded without losing their ordinary content", () => {
+    for (const attrs of ["", 'class="fixed inset-0"', 'class="k2b-callout__icon extra"', 'class=" k2b-callout__icon"']) {
+      for (const close of ["</svg>", ""]) {
+        const html = sanitize(`<svg width="2000" height="2000" ${attrs}><path d="M0 0"/>Inside <strong>bold</strong>${close} After`);
+        expect(html).not.toContain("<svg");
+        expect(html).not.toContain("<path");
+        expect(html).toContain("Inside <strong>bold</strong>");
+        expect(html).toContain("After");
+      }
+    }
+    expect(sanitize('<path d="M0 0"/> After')).not.toContain("<path");
+  });
+
+  test("forged callout SVG uses fixed attributes and keeps only paths, without foreign content", () => {
+    const html = sanitize(
+      '<p><svg class="k2b-callout__icon" width="2000" height="2000" fill="red" aria-hidden="false" viewBox="0 0 2000 2000" style="color:red" onload="alert(1)" id="smuggled" data-tone="danger">SVG text<path d="M12 9v4" style="fill:red" onclick="alert(2)" class="smuggled"/><circle cx="12" r="10"/><a href="https://example.com">SVG link</a><title>SVG name</title><g><path d="hidden"/></g><svg><path d="nested"/></svg><foreignObject><strong>Foreign text</strong></foreignObject></svg></p>',
+    );
+    expect(html.trim()).toBe(
+      '<p><svg class="k2b-callout__icon" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"></path></svg></p>',
+    );
+  });
+
+  test("a warning keeps exactly one genuine icon and its paths", () => {
+    const { html } = render(":::warning\nBody\n:::");
+    expect(html.match(/<svg\b/g)).toHaveLength(1);
+    expect(html.match(/<path\b/g)).toHaveLength(3);
+    expect(html).toContain('<path d="M12 9v4"></path>');
+    expect(html).toBe(renderMarkdownInfoBlock({ type: "warning", bodyHtml: "<p>Body</p>\n" }));
   });
 
   test("invalid and unclosed data is not silently discarded", () => {

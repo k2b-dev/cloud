@@ -172,6 +172,31 @@ test("inline chips and caps do not grow paragraphs", async () => {
     }
 });
 
+test("a key cap stands out from a surface-coloured panel in dark mode", async () => {
+  const panel = (attributes: string) => `<div ${attributes} style="background:var(--k2b-surface)"><p>${serverCaps.other}</p></div>`;
+  await page.setContent(
+    `<style>${css}</style>${panel('id="light" class="k2b-ui"')}${panel('id="theme" class="k2b-ui" data-theme="dark"')}${panel('id="class" class="k2b-ui k2b-dark"')}<div class="dark">${panel('id="ancestor" class="k2b-ui"')}</div>`,
+  );
+  const surfaces = await page.evaluate(() =>
+    Object.fromEntries(
+      [...document.querySelectorAll<HTMLElement>(".k2b-ui")].map((panel) => [
+        panel.id,
+        {
+          panel: getComputedStyle(panel).backgroundColor,
+          cap: getComputedStyle(panel.querySelector(".k2b-kbd__key")!).backgroundColor,
+          muted: getComputedStyle(panel).getPropertyValue("--k2b-surface-muted").trim(),
+        },
+      ]),
+    ),
+  );
+  expect(surfaces.light!.cap).toBe(surfaces.light!.panel);
+  for (const id of ["theme", "class", "ancestor"]) {
+    expect(surfaces[id]!.cap, id).not.toBe(surfaces[id]!.panel);
+    expect(surfaces[id]!.cap, id).toBe("rgb(32, 36, 42)");
+    expect(surfaces[id]!.muted, id).toBe("#20242a");
+  }
+});
+
 test("Steps numbers use the host accent or action token on a transparent list", async () => {
   const html = steps;
   // The render test owns li markup; these real li elements expose their pseudo-element styles.

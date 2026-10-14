@@ -6150,6 +6150,14 @@
     inset 0 -2px 0 var(--k2b-border-strong);
 }
 
+/* On a dark panel the page surface equals the panel, so the cap takes the
+   raised surface instead of standing on its ring alone. */
+.k2b-ui[data-theme="dark"] .k2b-kbd__key,
+.k2b-ui.k2b-dark .k2b-kbd__key,
+.dark .k2b-ui .k2b-kbd__key {
+  background: var(--k2b-surface-muted);
+}
+
 .k2b-ui .k2b-kbd__key + .k2b-kbd__key {
   margin-left: 0.1875rem;
 }

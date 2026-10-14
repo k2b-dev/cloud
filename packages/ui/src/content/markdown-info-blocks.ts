@@ -45,6 +45,20 @@ const ICON_PATHS = {
 
 export const MARKDOWN_CALLOUT_CLASSES = { root: "k2b-callout", icon: "k2b-callout__icon" } as const;
 
+/** Fixed attributes for decorative callout icons, including hosts with their own sanitizer. */
+export const MARKDOWN_CALLOUT_ICON_ATTRIBUTES = {
+  class: MARKDOWN_CALLOUT_CLASSES.icon,
+  "aria-hidden": "true",
+  width: "20",
+  height: "20",
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  "stroke-width": "2",
+  "stroke-linecap": "round",
+  "stroke-linejoin": "round",
+} as const;
+
 export type MarkdownInfoBlockType = keyof typeof TONES;
 
 export type MarkdownInfoBlock = {
@@ -257,7 +271,9 @@ const renderBlock = (input: Omit<MarkdownInfoBlockRenderInput, "locale">, messag
   const name = input.title
     ? `<p class="${NOTICE_CARD_CLASSES.title}">${escapeHtml(input.title)}</p>`
     : `<span class="k2b-sr-only">${escapeHtml(LABELS[input.type](messages))}: </span>`;
-  const icon = `<svg class="${MARKDOWN_CALLOUT_CLASSES.icon}" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[input.type].map((d) => `<path d="${d}"></path>`).join("")}</svg>`;
+  const icon = `<svg ${Object.entries(MARKDOWN_CALLOUT_ICON_ATTRIBUTES)
+    .map(([name, value]) => `${name}="${value}"`)
+    .join(" ")}>${ICON_PATHS[input.type].map((d) => `<path d="${d}"></path>`).join("")}</svg>`;
   return `<aside class="${NOTICE_CARD_CLASSES.root} ${MARKDOWN_CALLOUT_CLASSES.root}" data-tone="${TONES[input.type]}" role="note">${icon}${name}<div class="${NOTICE_CARD_CLASSES.body}">${input.bodyHtml}</div></aside>`;
 };
 

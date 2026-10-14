@@ -27,6 +27,7 @@ Separate modifiers with `+`, then write exactly one key. Modifiers are `mod`,
 Apple and Control elsewhere. `mod++` uses the plus key. Repeated modifiers
 collapse. Caps follow Control, Alt/Option, Shift, Meta/Command order.
 Apple labels have no separator; other labels use `+`.
+A literal space key (`" "`, `"ctrl+ "`, or `"mod+shift+ "`) formats as `space`, with the cap "Space" or "Leertaste".
 
 Invalid combinations return `{ keys: [], label: "", name: "" }`.
 `Kbd` renders nothing for them. Other key names use an initial capital.
@@ -53,11 +54,13 @@ Invalid combinations return `{ keys: [], label: "", name: "" }`.
 When the host knows the reader's platform, pass
 `platform={keyboardPlatform(request.headers.get("user-agent") ?? "")}` to
 `Kbd`. This keeps server and browser caps identical. Without `platform`,
-server markup and the first hydration pass use `other`; caps switch to the
+`Kbd` always uses `other` on the server and the first hydration pass; caps switch to the
 detected platform after mount. A client-only render detects it immediately.
 
-`keyboardPlatform()` reads `navigator.platform`, then `navigator.userAgent`.
-It returns `other` on the server. It also accepts either string explicitly.
+`keyboardPlatform()` without an argument reads the runtime's
+`navigator.platform`, then `navigator.userAgent`, including on the server.
+Server code passes the request's User-Agent to `keyboardPlatform` or an
+explicit `platform` to `formatShortcut`.
 `formatShortcut` accepts `{ platform, locale }`; omitted values use platform
 detection and the document language, or English on the server.
 `Kbd` uses the inherited `LocaleProvider` locale.

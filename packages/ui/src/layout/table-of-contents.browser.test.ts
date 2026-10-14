@@ -57,10 +57,10 @@ afterAll(async () => {
   await page?.close();
   await browser?.close();
 });
-const load = async (mode: "container" | "window") => {
+const load = async (mode: "container" | "window", above = "") => {
   const height = mode === "container" ? 300 : 800;
   await page.setContent(
-    `<style>${css} body{margin:0} h2{margin:0;height:24px} #nav{position:fixed;left:700px;top:0} #controls{position:fixed;left:700px;top:200px}</style><body class="k2b-ui" data-mode="${mode}" data-changes="[]"><div id="nav"></div><div id="controls"><button id="dispose">Dispose</button><button id="switch">Window</button><button id="items">Items</button></div><div id="scroller" style="${mode === "container" ? "height:240px;overflow:auto;" : ""}"><section style="height:${height}px"><h2 id="one">One</h2></section><section style="height:${height}px"><h2 id="two">Two</h2></section><section style="height:100px"><h2 id="three">Three</h2></section></div></body>`,
+    `<style>${css} body{margin:0} h2{margin:0;height:24px} #nav{position:fixed;left:700px;top:0} #controls{position:fixed;left:700px;top:200px}</style><body class="k2b-ui" data-mode="${mode}" data-changes="[]"><div id="nav"></div><div id="controls"><button id="dispose">Dispose</button><button id="switch">Window</button><button id="items">Items</button></div><div id="scroller" style="${mode === "container" ? "height:240px;overflow:auto;" : ""}">${above}<section style="height:${height}px"><h2 id="one">One</h2></section><section style="height:${height}px"><h2 id="two">Two</h2></section><section style="height:100px"><h2 id="three">Three</h2></section></div></body>`,
   );
   await page.addScriptTag({ content: script });
   await page.waitForSelector('body[data-ready="true"]');
@@ -123,4 +123,59 @@ test("native anchors, changed items and changed scroll roots", async () => {
   expect(await page.locator(".k2b-toc__link").textContent()).toBe("First");
   await page.click("#dispose");
   expect(await page.locator("body").getAttribute("data-listeners")).toBe("0");
+});
+
+test("growing the scroll root updates the active section without scrolling or a window resize", async () => {
+  await load("container");
+  await page.evaluate(() => {
+    document.getElementById("one")!.parentElement!.style.height = "100px";
+    document.getElementById("two")!.parentElement!.style.height = "800px";
+  });
+  await settle();
+  expect(await current()).toBe("#one");
+  await page.evaluate(() => {
+    document.getElementById("scroller")!.style.height = "600px";
+  });
+  await page.waitForSelector('.k2b-toc__link[href="#two"][aria-current="location"]');
+  expect(await current()).toBe("#two");
+  expect(await page.evaluate(() => document.getElementById("scroller")!.scrollTop)).toBe(0);
+});
+
+test("shrinking content above the headings updates the active section without scrolling", async () => {
+  await load("container");
+  await page.evaluate(() => {
+    const section = document.getElementById("one")!.parentElement!;
+    section.style.height = "auto";
+    const above = document.createElement("div");
+    above.id = "above";
+    above.style.height = "180px";
+    section.prepend(above);
+    const gap = document.createElement("div");
+    gap.style.height = "16px";
+    section.append(gap);
+    document.getElementById("two")!.parentElement!.style.height = "800px";
+  });
+  await settle();
+  expect(await current()).toBe("#one");
+  await page.evaluate(() => {
+    document.getElementById("above")!.style.height = "0px";
+  });
+  await page.waitForSelector('.k2b-toc__link[href="#two"][aria-current="location"]');
+  expect(await current()).toBe("#two");
+  expect(await page.evaluate(() => document.getElementById("scroller")!.scrollTop)).toBe(0);
+});
+
+test("a block that shrinks above every section updates the active section without scrolling", async () => {
+  await load("container", '<div id="above" style="height:180px"></div>');
+  await page.evaluate(() => {
+    document.getElementById("one")!.parentElement!.style.height = "40px";
+  });
+  await settle();
+  expect(await current()).toBe("#one");
+  await page.evaluate(() => {
+    document.getElementById("above")!.style.height = "0px";
+  });
+  await page.waitForSelector('.k2b-toc__link[href="#two"][aria-current="location"]');
+  expect(await current()).toBe("#two");
+  expect(await page.evaluate(() => document.getElementById("scroller")!.scrollTop)).toBe(0);
 });

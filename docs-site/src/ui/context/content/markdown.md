@@ -100,11 +100,12 @@ in that locale; `MarkdownView` passes the inherited render locale.
 `MARKDOWN_CALLOUT_CLASSES` exports `root: "k2b-callout"` and
 `icon: "k2b-callout__icon"`. The root also uses `NOTICE_CARD_CLASSES.root`;
 the title and body use its title and body classes. Hosts with their own
-sanitizer must allow the inline `svg` and `path` markup. For `svg`, keep only
-`aria-hidden`, `class`, `width`, `height`, `viewBox`, `fill`, `stroke`,
-`stroke-width`, `stroke-linecap`, and `stroke-linejoin`. Preserve `viewBox`
-casing and `aria-hidden="true"`. For `path`, keep only `d`. Allow no other SVG
-elements or attributes.
+sanitizer keep `svg` only when its class is exactly `k2b-callout__icon`,
+replace its attributes with `MARKDOWN_CALLOUT_ICON_ATTRIBUTES`, and keep only
+`path` children with only `d`, dropping other children and text; all other
+SVG tags and paths are discarded while ordinary content survives.
+Cloud renderers share these rules through `markdownCalloutSanitizeOptions()`
+from `@k2b/cloud/shared`, creating fresh options for each sanitization.
 
 Prose stays flat on the surrounding surface. Links follow
 [Links and references](#links-and-references). Inline code and fenced code blocks are text on a light fill

@@ -34,6 +34,21 @@ describe("shortcut formatting", () => {
     }
   });
 
+  test("server helpers use the runtime navigator unless the request platform is supplied", () => {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    try {
+      Object.defineProperty(globalThis, "navigator", { configurable: true, value: { platform: "MacIntel" } });
+      expect(keyboardPlatform()).toBe("apple");
+      expect(formatShortcut("mod+k", { locale: "en" }).label).toBe("⌘K");
+      const platform = keyboardPlatform("Mozilla/5.0 (Windows NT 10.0)");
+      expect(platform).toBe("other");
+      expect(formatShortcut("mod+k", { platform, locale: "en" }).label).toBe("Ctrl+K");
+    } finally {
+      if (previous) Object.defineProperty(globalThis, "navigator", previous);
+      else Reflect.deleteProperty(globalThis, "navigator");
+    }
+  });
+
   test("canonicalizes modifiers, duplicates, case and plus as a key", () => {
     expect(format("MeTa+SHIFT+alt+CTRL+k", "apple").label).toBe("⌃⌥⇧⌘K");
     expect(format("meta+shift+alt+ctrl+k").label).toBe("Ctrl+Alt+Shift+Meta+K");
@@ -46,8 +61,23 @@ describe("shortcut formatting", () => {
     expect(format("mod++").label).toBe("Ctrl++");
     expect(format("mod++", "apple").label).toBe("⌘+");
     expect(format("+").keys).toEqual([{ label: "+", name: "+" }]);
-    for (const input of ["", " ", "mod", "ctrl", "k+q", "unknown+k", "mod+", "mod+++", "ctrl++k"]) {
+    for (const input of ["", "  ", "\t", "ctrl+\t", "mod", "ctrl", "k+q", "unknown+k", "mod+", "mod+++", "ctrl++k"]) {
       expect(format(input), input).toEqual({ keys: [], label: "", name: "" });
+    }
+  });
+
+  test("literal space keys use localized caps while normal shortcuts still trim surrounding whitespace", () => {
+    for (const platform of ["apple", "other"] as const) {
+      for (const input of ["ctrl+ ", " ", "mod+shift+ "]) {
+        const named = input === " " ? "space" : `${input.slice(0, -1)}space`;
+        expect(format(input, platform, "en")).toEqual(format(named, platform, "en"));
+        expect(format(input, platform, "de")).toEqual(format(named, platform, "de"));
+        expect(format(input, platform, "en").keys.at(-1)).toEqual({ label: "Space", name: "Space" });
+        expect(format(input, platform, "de").keys.at(-1)).toEqual({ label: "Leertaste", name: "Leertaste" });
+      }
+      expect(format(" mod+k ", platform)).toEqual(format("mod+k", platform));
+      expect(format(" + ", platform)).toEqual(format("+", platform));
+      expect(format(" mod++ ", platform)).toEqual(format("mod++", platform));
     }
   });
 

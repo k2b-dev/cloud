@@ -8,6 +8,7 @@
 import { markdownInfoBlocks } from "@k2b/ui";
 import { Marked, type MarkedExtension } from "marked";
 import sanitizeHtml from "sanitize-html";
+import { markdownCalloutSanitizeOptions } from "./callout-sanitizer";
 import { markdownClient } from "./client";
 import { codeExtension, plainCodeExtension } from "./extensions/code";
 import { guidedHelpExtension } from "./extensions/guided-help";
@@ -74,17 +75,9 @@ export type MarkdownRenderOptions = {
 };
 
 const sanitizeRenderedHtml = (html: string): string => {
-  let svgDepth = 0;
+  const callouts = markdownCalloutSanitizeOptions();
   return sanitizeHtml(html, {
-    // SVG cannot inherit the HTML allowlist for children such as anchors.
-    onOpenTag: (tag) => {
-      if (tag === "svg") svgDepth++;
-    },
-    onCloseTag: (tag) => {
-      if (tag === "svg") svgDepth--;
-    },
-    exclusiveFilter: ({ tag }) => svgDepth > 0 && tag !== "svg" && tag !== "path",
-    textFilter: (text) => (svgDepth > 0 ? "" : text),
+    ...callouts,
     allowedTags: [
       ...sanitizeHtml.defaults.allowedTags,
       "annotation",
@@ -111,8 +104,7 @@ const sanitizeRenderedHtml = (html: string): string => {
       "mtext",
       "semantics",
       "span",
-      "svg",
-      "path",
+      ...callouts.allowedTags,
       "sub",
       "sup",
       "table",
@@ -141,34 +133,8 @@ const sanitizeRenderedHtml = (html: string): string => {
       input: ["checked", "class", "disabled", "type"],
       math: ["xmlns"],
       pre: ["class"],
-      svg: ["aria-hidden", "class", "width", "height", "viewBox", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"],
-      path: ["d"],
+      ...callouts.allowedAttributes,
       span: ["aria-hidden", "class", "style", "title"],
-    },
-    // Restore SVG casing without changing attribute normalization for ordinary HTML.
-    transformTags: {
-      svg: (tagName, attrs) => ({
-        tagName,
-        attribs: Object.fromEntries(
-          Object.entries(attrs)
-            .map(([name, value]) => [name === "viewbox" ? "viewBox" : name, value] as const)
-            .filter(([name]) =>
-              [
-                "aria-hidden",
-                "class",
-                "width",
-                "height",
-                "viewBox",
-                "fill",
-                "stroke",
-                "stroke-width",
-                "stroke-linecap",
-                "stroke-linejoin",
-              ].includes(name),
-            ),
-        ),
-      }),
-      path: (tagName, attrs) => ({ tagName, attribs: Object.fromEntries(Object.entries(attrs).filter(([name]) => name === "d")) }),
     },
     allowedSchemes: ["http", "https", "mailto", "tel", "note", "attach"],
     allowedSchemesByTag: {
