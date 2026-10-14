@@ -192,7 +192,7 @@ export const decide = async (
     if (row.status === "pending") {
       const [expired] = await tx<{ id: string }[]>`UPDATE approvals.requests SET status='expired'
         WHERE id=${id}::uuid AND status='pending'
-          AND (expires_at <= now() OR approver_auth_epoch IS NULL OR approver_auth_epoch IS DISTINCT FROM ${decider.epoch}::bigint) RETURNING id`;
+          AND (expires_at <= now() OR approver_auth_epoch IS DISTINCT FROM ${decider.epoch}::bigint) RETURNING id`;
       return { ok: false, code: expired || !rejectOnly ? "EXPIRED" : "REJECT_ONLY" };
     }
     if (
