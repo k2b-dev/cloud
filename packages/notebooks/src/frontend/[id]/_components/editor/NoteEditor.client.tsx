@@ -30,6 +30,7 @@ import { isolateYjsHistory } from "../../../lib/yjs/history";
 import { notebookWorkspaceMessages } from "../../messages";
 import {
   ATTACHMENTS_UPDATE_EVENT,
+  DETAIL_PANEL_STATE_EVENT,
   EDITOR_COPY_EVENT,
   EDITOR_DOWNLOAD_EVENT,
   EDITOR_INSERT_ATTACHMENT_EVENT,
@@ -342,7 +343,14 @@ function EditorInstance(
   const syncEnded = createSyncEnded({
     hasUnsentChanges: () => provider?.hasUnsentChanges() ?? false,
     resume: () => provider?.resume(),
+    focusEditor: () => editorView()?.focus(),
   });
+  // The sync-ended bar replaces the toolbar, so a toolbar mounted again starts from the panel's current state.
+  const [panelOpen, setPanelOpen] = createSignal(props.initialPanelOpen);
+  const onPanelState = (event: Event) => {
+    const detail: unknown = event instanceof CustomEvent ? event.detail : undefined;
+    if (detail && typeof detail === "object" && "isOpen" in detail && typeof detail.isOpen === "boolean") setPanelOpen(detail.isOpen);
+  };
   const tabKeys = createTabKeyPreference(() => !!props.readOnly || !!syncEnded.ended());
 
   const doc = new Y.Doc({ gc: true });
@@ -543,6 +551,7 @@ function EditorInstance(
           onCursorChange: props.onWorkspaceCursorChange,
         },
         onFatal: syncEnded.end,
+        onUnsentChange: syncEnded.refresh,
       });
 
   let themeObserver: MutationObserver | undefined;
@@ -825,6 +834,7 @@ function EditorInstance(
     window.addEventListener(EDITOR_DOWNLOAD_EVENT, onDownload);
     window.addEventListener(EDITOR_PDF_EVENT, onPdf);
     window.addEventListener(EDITOR_INSERT_ATTACHMENT_EVENT, onInsertAttachment);
+    window.addEventListener(DETAIL_PANEL_STATE_EVENT, onPanelState);
 
     themeObserver = new MutationObserver(() => {
       setIsDark(document.documentElement.classList.contains("dark"));
@@ -854,6 +864,7 @@ function EditorInstance(
     window.removeEventListener(EDITOR_DOWNLOAD_EVENT, onDownload);
     window.removeEventListener(EDITOR_PDF_EVENT, onPdf);
     window.removeEventListener(EDITOR_INSERT_ATTACHMENT_EVENT, onInsertAttachment);
+    window.removeEventListener(DETAIL_PANEL_STATE_EVENT, onPanelState);
     themeObserver?.disconnect();
     provider?.dispose();
     undoManager?.destroy();
@@ -863,7 +874,8 @@ function EditorInstance(
 
   return (
     <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
-      <Show when={storageExhausted()}>
+      {/* Once retries stop, the sync-ended bar owns the message; this notice promises retries. */}
+      <Show when={storageExhausted() && !syncEnded.ended()}>
         <NoticeCard role="alert" tone="danger" title={t().storageExhaustedTitle} detail={t().storageExhaustedDetail} />
       </Show>
       <Show when={historyIncomplete()}>
@@ -922,7 +934,7 @@ function EditorInstance(
               editorView={editorView()}
               notebookId={props.notebookId}
               noteId={props.noteId}
-              initialPanelOpen={props.initialPanelOpen}
+              initialPanelOpen={panelOpen()}
               format={format()}
               onUndo={() => undoManager?.undo()}
               onRedo={() => undoManager?.redo()}

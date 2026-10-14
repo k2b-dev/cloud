@@ -204,6 +204,7 @@ const taskPress = ViewPlugin.define(() => ({}), {
       if (!(event.target instanceof Element)) return;
       const checkbox = event.target.closest(".custom-list-task-marker");
       if (!checkbox || checkbox.getAttribute("type") !== "checkbox") return;
+      if (view.state.readOnly) return true;
       const line = view.state.doc.lineAt(view.posAtDOM(checkbox));
       const structure = view.state.field(listStateField).structure;
       const item = structure.items[listItemAtLine(structure, line.number)];

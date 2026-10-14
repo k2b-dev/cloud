@@ -11,7 +11,7 @@ import { notebookWorkspaceMessages } from "../../messages";
 export type SyncEnded = { code: YjsProviderError["code"]; unsent: boolean };
 export const signInCodes = new Set<YjsProviderError["code"]>(["SESSION_EXPIRED", "LOGIN_REQUIRED"]);
 
-export function createSyncEnded(opts: { hasUnsentChanges: () => boolean; resume: () => void }) {
+export function createSyncEnded(opts: { hasUnsentChanges: () => boolean; resume: () => void; focusEditor: () => void }) {
   const [ended, setEnded] = createSignal<SyncEnded | null>(null, {
     equals: (a, b) => a?.code === b?.code && a?.unsent === b?.unsent,
   });
@@ -34,8 +34,15 @@ export function createSyncEnded(opts: { hasUnsentChanges: () => boolean; resume:
     end: (error: YjsProviderError): void => {
       setEnded({ code: error.code, unsent: opts.hasUnsentChanges() });
     },
+    /** Re-reads the save state; late echoes or edits after the end can change it. */
+    refresh: (): void => {
+      setEnded((previous) => previous && { code: previous.code, unsent: opts.hasUnsentChanges() });
+    },
     ready: (): void => {
+      // The bar unmounts with its focused button, so hand focus back to the note instead of dropping it on the page.
+      const barFocused = !!document.activeElement?.closest("[data-sync-ended]");
       setEnded(null);
+      if (barFocused) opts.focusEditor();
     },
     extension: (): Extension => (ended() ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
   };
@@ -87,6 +94,36 @@ export function SyncEndedBar(props: { ended: SyncEnded; markdown: () => string; 
       return;
     refreshCurrentPath();
   };
+  // The unsent text exists only in this tab: closing it or following a link asks first, like Reload does.
+  createEffect(() => {
+    if (!props.ended.unsent) return;
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    let replaying = false;
+    const click = (event: MouseEvent) => {
+      if (replaying || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!link || link.target === "_blank" || link.hasAttribute("download") || link.getAttribute("href")?.startsWith("#")) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void prompts
+        .confirm(t().leaveUnsavedConfirm, { title: t().leaveNote, icon: "ti ti-logout", variant: "danger", confirmText: t().leaveNote })
+        .then((leave) => {
+          if (!leave || !link.isConnected) return;
+          replaying = true;
+          link.click();
+          replaying = false;
+        });
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    document.addEventListener("click", click, true);
+    onCleanup(() => {
+      window.removeEventListener("beforeunload", beforeUnload);
+      document.removeEventListener("click", click, true);
+    });
+  });
   onMount(() => {
     // Keep keyboard focus reachable when the editor stops accepting input.
     if (document.activeElement?.closest(".cm-editor") || document.activeElement === document.body) primary.focus();

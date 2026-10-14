@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { encoding } from "@k2b/stdlib";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { notebooksWorkspace } from "../../../lib/workspace-events";
@@ -440,10 +441,10 @@ const readyReplay = (socket: FakeWebSocket) => socket.message({ type: notebooksY
 const echo = (socket: FakeWebSocket, payload: string) =>
   socket.message({ type: notebooksYjs.wsType.syncPush, payload: { noteId: NOTE_ID, updates: [{ payload }] } });
 
-const localEditor = () => {
+const localEditor = (onUnsentChange?: () => void) => {
   const doc = new Y.Doc();
   const awareness = new Awareness(doc);
-  const provider = createYjsProvider({ doc, awareness, noteId: NOTE_ID, appUrl: "http://localhost" });
+  const provider = createYjsProvider({ doc, awareness, noteId: NOTE_ID, appUrl: "http://localhost", onUnsentChange });
   provider.connect();
   const socket = FakeWebSocket.instances.at(-1)!;
   socket.open();
@@ -460,6 +461,22 @@ const localEditor = () => {
 };
 
 describe("Yjs provider unconfirmed edits", () => {
+  test("notifies when a publish becomes pending and when its echo clears it", () => {
+    let notifications = 0;
+    using editor = localEditor(() => notifications++);
+    readyReplay(editor.socket);
+    notifications = 0;
+    editor.doc.getText("content").insert(0, "keep this");
+    expect(notifications).toBe(1);
+    expect(editor.provider.hasUnsentChanges()).toBe(true);
+    const payload = syncPublishes(editor.socket)[0]!;
+    echo(editor.socket, payload);
+    expect(notifications).toBe(2);
+    expect(editor.provider.hasUnsentChanges()).toBe(false);
+    echo(editor.socket, payload);
+    expect(notifications).toBe(2);
+  });
+
   test("a published edit is unsent until the server echoes its payload", () => {
     using editor = localEditor();
     readyReplay(editor.socket);
@@ -472,11 +489,12 @@ describe("Yjs provider unconfirmed edits", () => {
     expect(editor.provider.hasUnsentChanges()).toBe(false);
   });
 
-  test("a plain disconnect resends only unechoed updates in order, including after another disconnect", () => {
+  test("a plain disconnect merges only unechoed updates, including after another disconnect", () => {
     using editor = localEditor();
     readyReplay(editor.socket);
     for (const text of ["first", "second", "third"]) editor.doc.getText("content").insert(0, text);
     const payloads = syncPublishes(editor.socket);
+    const merged = encoding.toBase64(Y.mergeUpdates(payloads.slice(1).map(encoding.fromBase64)));
     const timers: Array<() => void> = [];
     const originalSetTimeout = globalThis.setTimeout;
     Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
@@ -489,15 +507,15 @@ describe("Yjs provider unconfirmed edits", () => {
       echo(next, payloads[0]!);
       expect(syncPublishes(next)).toEqual([]);
       readyReplay(next);
-      expect(syncPublishes(next)).toEqual(payloads.slice(1));
+      expect(syncPublishes(next)).toEqual([merged]);
       next.close();
       next.onclose?.({ code: 1006, reason: "" });
       timers.shift()!();
       const again = FakeWebSocket.instances.at(-1)!;
       again.open();
       readyReplay(again);
-      expect(syncPublishes(again)).toEqual(payloads.slice(1));
-      for (const payload of payloads.slice(1)) echo(again, payload);
+      expect(syncPublishes(again)).toEqual([merged]);
+      echo(again, merged);
       expect(editor.provider.hasUnsentChanges()).toBe(false);
     } finally {
       Object.assign(globalThis, { setTimeout: originalSetTimeout });
@@ -534,28 +552,101 @@ describe("Yjs provider unconfirmed edits", () => {
     expect(syncPublishes(editor.socket)).toEqual(publishes);
   });
 
-  test("a failed resend leaves every pending payload available for the next replay", () => {
+  test("a failed resend keeps the merged payload pending and retries on the next replay", () => {
     using editor = localEditor();
     readyReplay(editor.socket);
     editor.doc.getText("content").insert(0, "first");
     editor.doc.getText("content").insert(5, " second");
     const payloads = syncPublishes(editor.socket);
-    const send = editor.socket.send.bind(editor.socket);
-    editor.socket.send = (value) => {
-      send(value);
-      const message = JSON.parse(value) as { type: string };
-      if (message.type === notebooksYjs.wsType.syncPublish) editor.socket.close();
-    };
+    const merged = encoding.toBase64(Y.mergeUpdates(payloads.map(encoding.fromBase64)));
     editor.socket.open();
+    editor.socket.close();
     readyReplay(editor.socket);
-    expect(syncPublishes(editor.socket)).toEqual([...payloads, payloads[0]!]);
+    expect(syncPublishes(editor.socket)).toEqual(payloads);
     expect(editor.provider.hasUnsentChanges()).toBe(true);
-    editor.socket.send = send;
+    editor.socket.readyState = FakeWebSocket.OPEN;
+    readyReplay(editor.socket);
+    expect(syncPublishes(editor.socket)).toEqual([...payloads, merged]);
+    echo(editor.socket, merged);
+    expect(editor.provider.hasUnsentChanges()).toBe(false);
     editor.socket.open();
     readyReplay(editor.socket);
-    expect(syncPublishes(editor.socket).slice(-2)).toEqual(payloads);
-    for (const payload of payloads) echo(editor.socket, payload);
-    expect(editor.provider.hasUnsentChanges()).toBe(false);
+    expect(syncPublishes(editor.socket)).toEqual([...payloads, merged]);
+  });
+
+  test("reconnect publishes over 200 unconfirmed edits as one covering update", () => {
+    using editor = localEditor();
+    const server = new Y.Doc();
+    try {
+      server.getText("content").insert(0, "server");
+      const serverState = Y.encodeStateAsUpdate(server);
+      echo(editor.socket, encoding.toBase64(serverState));
+      readyReplay(editor.socket);
+      const text = editor.doc.getText("content");
+      for (let i = 0; i < 205; i++) text.insert(text.length, ` ${i}`);
+      expect(syncPublishes(editor.socket)).toHaveLength(205);
+
+      const timers: Array<() => void> = [];
+      const originalSetTimeout = globalThis.setTimeout;
+      Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
+      try {
+        editor.socket.close();
+        editor.socket.onclose?.({ code: 1006, reason: "" });
+        timers.shift()!();
+        const next = FakeWebSocket.instances.at(-1)!;
+        next.open();
+        expect(syncPublishes(next)).toEqual([]);
+        readyReplay(next);
+        const publishes = syncPublishes(next);
+        expect(publishes).toHaveLength(1);
+        Y.applyUpdate(server, encoding.fromBase64(publishes[0]!));
+        expect(server.getText("content").toString()).toBe(text.toString());
+        expect(editor.provider.hasUnsentChanges()).toBe(true);
+        echo(next, publishes[0]!);
+        expect(editor.provider.hasUnsentChanges()).toBe(false);
+      } finally {
+        Object.assign(globalThis, { setTimeout: originalSetTimeout });
+      }
+    } finally {
+      server.destroy();
+    }
+  });
+
+  test("local edits made while terminated remain pending and resume publishes a covering state", () => {
+    let notifications = 0;
+    using editor = localEditor(() => notifications++);
+    const server = new Y.Doc();
+    const recovered = new Y.Doc();
+    try {
+      server.getText("content").insert(0, "server");
+      const serverState = Y.encodeStateAsUpdate(server);
+      echo(editor.socket, encoding.toBase64(serverState));
+      readyReplay(editor.socket);
+      expect(editor.provider.hasUnsentChanges()).toBe(false);
+      notifications = 0;
+      editor.socket.message({ type: notebooksYjs.wsType.error, payload: { code: "SESSION_EXPIRED", message: "expired" } });
+      editor.doc.getText("content").insert(6, " local");
+      expect(editor.provider.hasUnsentChanges()).toBe(true);
+      expect(notifications).toBe(1);
+      expect(syncPublishes(editor.socket)).toEqual([]);
+
+      editor.provider.resume();
+      const next = FakeWebSocket.instances.at(-1)!;
+      next.open();
+      expect(syncPublishes(next)).toEqual([]);
+      readyReplay(next);
+      const publishes = syncPublishes(next);
+      expect(publishes).toHaveLength(1);
+      Y.applyUpdate(recovered, serverState);
+      Y.applyUpdate(recovered, encoding.fromBase64(publishes[0]!));
+      expect(recovered.getText("content").toString()).toBe("server local");
+      expect(editor.provider.hasUnsentChanges()).toBe(true);
+      echo(next, publishes[0]!);
+      expect(editor.provider.hasUnsentChanges()).toBe(false);
+    } finally {
+      server.destroy();
+      recovered.destroy();
+    }
   });
 
   test("terminal session errors retain pending edits and resume ignores all stale socket events", () => {

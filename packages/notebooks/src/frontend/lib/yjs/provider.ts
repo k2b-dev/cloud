@@ -39,6 +39,8 @@ export type YjsProviderOptions = {
   onHistoryIncomplete?: () => void;
   /** Replay reached the live tail: the note is fully connected again. */
   onReady?: () => void;
+  /** Called when hasUnsentChanges() may have changed. */
+  onUnsentChange?: () => void;
 };
 
 const WS_TYPE = notebooksYjs.wsType;
@@ -100,6 +102,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   let localStateSent = false;
   let needsFullResync = false;
   const unconfirmed = new Set<string>();
+  const pendingChanged = () => opts.onUnsentChange?.();
 
   const errorMessageByCode: Record<YjsErrorCode, string> = {
     LOGIN_REQUIRED: "Login required",
@@ -131,6 +134,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     const payload = encoding.toBase64(data);
     if (!sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload })) return false;
     unconfirmed.add(payload);
+    pendingChanged();
     return true;
   };
 
@@ -155,18 +159,24 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     if (!replayReady || localStateSent) return;
     if (needsFullResync) {
       unconfirmed.clear();
+      pendingChanged();
       const localState = Y.encodeStateAsUpdate(doc);
-      if (localState.length > 0 && !sendSyncPublish(localState)) {
-        needsFullResync = true;
-        return;
-      }
+      if (localState.length > 0 && !sendSyncPublish(localState)) return;
     } else {
-      for (const payload of unconfirmed) {
-        if (!sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload })) return;
+      if (unconfirmed.size > 1) {
+        const payload = encoding.toBase64(Y.mergeUpdates([...unconfirmed].map(encoding.fromBase64)));
+        unconfirmed.clear();
+        unconfirmed.add(payload);
+        pendingChanged();
       }
+      const [payload] = unconfirmed;
+      if (payload && !sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload })) return;
     }
     localStateSent = true;
-    needsFullResync = false;
+    if (needsFullResync) {
+      needsFullResync = false;
+      pendingChanged();
+    }
   };
 
   const terminate = (error: YjsProviderError) => {
@@ -189,13 +199,17 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   };
 
   const onDocUpdate = (update: Uint8Array, origin: unknown) => {
-    if (isDisposed || isTerminated) return;
+    if (isDisposed) return;
     if (origin === "remote") return;
-    if (!replayReady) {
+    if (isTerminated || !replayReady) {
       needsFullResync = true;
+      pendingChanged();
       return;
     }
-    if (!sendSyncPublish(update)) needsFullResync = true;
+    if (!sendSyncPublish(update)) {
+      needsFullResync = true;
+      pendingChanged();
+    }
   };
 
   const onAwarenessUpdate = ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
@@ -382,7 +396,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     if (msg.type === WS_TYPE.syncPush && payload.historyIncomplete === true) opts.onHistoryIncomplete?.();
     for (const update of payload.updates) {
       if (typeof update.payload !== "string") continue;
-      if (msg.type === WS_TYPE.syncPush) unconfirmed.delete(update.payload);
+      if (msg.type === WS_TYPE.syncPush && unconfirmed.delete(update.payload)) pendingChanged();
       try {
         if (msg.type === WS_TYPE.syncPush) {
           Y.applyUpdate(doc, encoding.fromBase64(update.payload), "remote");

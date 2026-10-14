@@ -29,7 +29,8 @@ const flush = async () => {
   await Promise.resolve();
 };
 
-const mount = ({ pending = true, locale = "en" } = {}) => {
+const mount = ({ pending: initialPending = true, locale = "en" } = {}) => {
+  let pending = initialPending;
   const dom = createDomTestHarness();
   delegateEvents(["click"], dom.document);
   const { createSyncEnded, SyncEndedBar, LocaleProvider, clipboard, prompts, toast, formattingKeymap, markdownExtension } = loaded!;
@@ -43,7 +44,7 @@ const mount = ({ pending = true, locale = "en" } = {}) => {
   let sync!: ReturnType<typeof createSyncEnded>;
   let mirror!: ReturnType<typeof createCodeMirror>;
   const dispose = render(() => {
-    sync = createSyncEnded({ hasUnsentChanges: () => pending, resume });
+    sync = createSyncEnded({ hasUnsentChanges: () => pending, resume, focusEditor: () => mirror.editorView()?.focus() });
     mirror = createCodeMirror({ value: markdown });
     mirror.createExtension(markdownExtension());
     mirror.createExtension(sync.extension);
@@ -77,6 +78,10 @@ const mount = ({ pending = true, locale = "en" } = {}) => {
     button,
     bar: () => dom.root.querySelector<HTMLElement>("[data-sync-ended]")!,
     end: (code: YjsProviderError["code"]) => sync.end({ code, message: "server reason" }),
+    setPending: (value: boolean) => {
+      pending = value;
+      sync.refresh();
+    },
     [Symbol.dispose]: () => {
       const resumed = resume.mock.calls.length;
       dispose();
@@ -211,6 +216,76 @@ describe("sync ended editor recovery", () => {
     editor.sync.ready();
     view.contentDOM.dispatchEvent(boldKey());
     expect(view.state.doc.toString()).not.toBe(markdown);
+  });
+
+  test("the save state follows late echoes and edits after the end", () => {
+    using editor = mount();
+    editor.end("BACKPRESSURE");
+    const bar = editor.bar();
+    editor.setPending(false);
+    expect(editor.bar()).toBe(bar);
+    expect(bar.textContent).toContain("All changes saved. Connection closed");
+    expect(bar.querySelector('[role="alert"]')?.getAttribute("data-tone")).toBe("warning");
+    editor.setPending(true);
+    expect(bar.textContent).toContain("Changes not saved. Connection closed");
+    editor.sync.ready();
+    editor.setPending(false);
+    expect(editor.sync.ended()).toBeNull();
+  });
+
+  test("resuming hands focus from the bar back to the note", () => {
+    using editor = mount();
+    editor.end("SESSION_EXPIRED");
+    expect(document.activeElement).toBe(editor.button("Sign in again"));
+    editor.sync.ready();
+    expect(editor.mirror.editorView()!.hasFocus).toBe(true);
+
+    const outside = document.createElement("button");
+    editor.dom.root.append(outside);
+    editor.end("SESSION_EXPIRED");
+    outside.focus();
+    editor.sync.ready();
+    expect(document.activeElement).toBe(outside);
+  });
+
+  test("leaving the note with unsent changes asks first", async () => {
+    using editor = mount();
+    const link = document.createElement("a");
+    link.href = "/app/notebooks/Book01/Other1";
+    let followed = 0;
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      followed++;
+    });
+    editor.dom.root.append(link);
+    const unload = () => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+
+    editor.end("NOTE_LOCKED");
+    expect(unload()).toBe(true);
+    link.click();
+    await flush();
+    expect(editor.confirmed).toHaveBeenCalledWith("Leave the note? Changes that are not saved will be lost.", {
+      title: "Leave",
+      icon: "ti ti-logout",
+      variant: "danger",
+      confirmText: "Leave",
+    });
+    expect(followed).toBe(0);
+    editor.confirmed.mockResolvedValue(true);
+    link.click();
+    await flush();
+    expect(followed).toBe(1);
+
+    editor.setPending(false);
+    editor.confirmed.mockClear();
+    expect(unload()).toBe(false);
+    link.click();
+    expect(followed).toBe(2);
+    expect(editor.confirmed).not.toHaveBeenCalled();
   });
 
   test("non-sign-in errors do not resume on focus", () => {

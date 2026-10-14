@@ -169,5 +169,6 @@ unavailable**, and the Notebooks logs contain
 The editor shows **Live editing is unavailable** while the broker refuses to
 store updates. It retries five times over about a minute, then keeps the text
 on screen read-only. The bar says storage is full and whether changes are saved,
-and offers **Copy text** and **Reload**. Changes typed while live editing is
-unavailable are not saved on the server.
+and offers **Copy text** and **Reload**. Changes typed during the outage are
+resent on each retry, so they are saved if the broker accepts updates again
+within that minute. After the retries stop, they stay only in the open tab.

@@ -24,6 +24,6 @@ Before you change the structure of a note, check its Markdown source and your ac
 
 **Write** synchronizes the note text with other editors. Saved changes refresh query previews and Book content. **Read-only** does not receive shared text edits. Reload it after the saved source changes.
 
-If **Write** stops syncing, for example because your session ended or the note was deleted, the note stays on screen and becomes read-only. The bar under the note says whether your changes are saved. Use **Sign in again** to continue editing after you sign in. Otherwise, use **Copy text** before you **Reload**.
+If **Write** stops syncing, for example because your session ended or the note was deleted, the note stays on screen and becomes read-only. The bar under the note says whether your changes are saved. Use **Sign in again** to continue editing after you sign in. Otherwise, use **Copy text** before you **Reload**. If changes are not saved, Notebooks asks before you leave the note.
 
 If a Book page cannot refresh, its last readable content stays visible, and you can try again. If your access ends or the page disappears, Notebooks stops showing the old content and checks the page again. Without JavaScript, reload the page to see changes.
