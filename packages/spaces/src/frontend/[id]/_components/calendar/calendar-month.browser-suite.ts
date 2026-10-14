@@ -351,31 +351,29 @@ const dayOverflow = (page: Page, key: string) =>
       label: more?.getAttribute("aria-label") ?? null,
     };
   }, key);
-/** The week heights, day widths, misplaced week keys, and track's row count against its declared weeks. */
+/** The week heights, day widths, misplaced week keys, and the continuous track's height against its declared weeks. */
 const gridShape = (page: Page) =>
   page.evaluate(() => {
     const grid = document.querySelector(".k2b-calendar-month")!;
     const weeks = Array.from(grid.querySelectorAll(".k2b-calendar-month__week"));
-    const track = grid.matches("[data-continuous]") ? grid.querySelector(".k2b-calendar-month__track")?.getBoundingClientRect() : null;
+    const track = grid.matches("[data-continuous]")
+      ? (grid.querySelector(".k2b-calendar-month__track")?.getBoundingClientRect() ?? null)
+      : null;
+    const rowHeight = Math.round(weeks[0]!.getBoundingClientRect().height);
     return {
       rows: weeks.map((row) => Math.round(row.getBoundingClientRect().height)),
       // The weekday row comes first, so the first week row is the first element with its class, not a :first-of-type.
       columns: Array.from(weeks[0]!.querySelectorAll("[role='gridcell']"), (cell) => Math.round(cell.getBoundingClientRect().width)),
-      misplaced: track
-        ? weeks
-            .filter((row) => {
-              const rect = row.getBoundingClientRect();
-              const rowHeight = Math.round(rect.height);
-              return Math.round(rect.top - track.top) !== (Number(row.getAttribute("aria-rowindex")) - 2) * rowHeight;
-            })
-            .map((row) => row.getAttribute("data-week-key"))
-        : [],
-      track: track
-        ? {
-            rows: Math.round(track.height / weeks[0]!.getBoundingClientRect().height),
-            weeks: Number(grid.getAttribute("aria-rowcount")) - 1,
-          }
-        : null,
+      // Without a continuous track no row has its place, so a missing track fails instead of passing empty.
+      misplaced: weeks
+        .filter(
+          (row) =>
+            !track ||
+            Math.round(row.getBoundingClientRect().top - track.top) !== (Number(row.getAttribute("aria-rowindex")) - 2) * rowHeight,
+        )
+        .map((row) => row.getAttribute("data-week-key")),
+      trackHeight: track ? Math.round(track.height) : null,
+      weeksHeight: (Number(grid.getAttribute("aria-rowcount")) - 1) * rowHeight,
     };
   });
 const waitFor = async (check: () => boolean, what: string) => {
@@ -1023,7 +1021,7 @@ describe(`Spaces month view in ${browserName}`, () => {
       const shape = await gridShape(page);
       expect(new Set(shape.rows).size).toBe(1);
       expect(shape.misplaced).toEqual([]);
-      expect(shape.track?.rows).toBe(shape.track?.weeks);
+      expect(shape.trackHeight).toBe(shape.weeksHeight);
       expect(shape.columns).toHaveLength(7);
 
       await page.setViewportSize({ width: 1440, height: 640 });
@@ -1037,7 +1035,7 @@ describe(`Spaces month view in ${browserName}`, () => {
       const smallShape = await gridShape(page);
       expect(new Set(smallShape.rows).size).toBe(1);
       expect(smallShape.misplaced).toEqual([]);
-      expect(smallShape.track?.rows).toBe(smallShape.track?.weeks);
+      expect(smallShape.trackHeight).toBe(smallShape.weeksHeight);
       expect(smallShape.columns).toEqual(shape.columns);
 
       await page.setViewportSize({ width: 1440, height: 1300 });
