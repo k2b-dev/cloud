@@ -1,0 +1,77 @@
+---
+title: Application conventions
+navTitle: Overview
+section: Conventions
+order: 1280
+description: Review an application with a checklist index of Cloud's public rules.
+tags: [conventions, audit, checklist, review]
+updated: 2026-10-14
+---
+
+# Application conventions
+
+This catalog is a checklist index of the public rules every Cloud application
+follows. Each row links to the canonical page that owns the rule. That page
+stays authoritative: when a row disagrees with it, the canonical page wins and
+the row is the bug.
+
+Use [Audit an application](/en/docs/conventions/audit) to check a built-in or
+third-party application and record findings.
+
+## Read a row
+
+| Column | Meaning |
+| --- | --- |
+| ID | Stable reference for a finding or review |
+| Rule | One sentence naming the required behavior |
+| Why | The consequence the rule prevents or the behavior it preserves |
+| How to check | An automated check when available, followed by a manual equivalent |
+| Canonical | The one public page that owns the rule |
+
+IDs use `PREFIX-NN`, with two digits starting at `01` in each area. Never
+renumber or reuse an ID. A dropped rule keeps its row: its Rule cell starts
+with `Retired.` and names the replacing ID.
+
+Rows apply to all applications unless the Rule cell starts with
+`Built-in apps:`. Those rows describe monorepo workflow rules that third-party
+applications do not follow. Check only rules relevant to the application's
+surfaces.
+
+## Choose an area
+
+| Prefix | Area | Page |
+| --- | --- | --- |
+| CODE | Code structure | [Code and server](/en/docs/conventions/code-and-server#code-code) |
+| SRV | Server and HTTP | [Code and server](/en/docs/conventions/code-and-server#server-and-http-srv) |
+| ACC | Identity and access | [Access and data](/en/docs/conventions/access-and-data#identity-and-access-acc) |
+| DATA | Data and effects | [Access and data](/en/docs/conventions/access-and-data#data-and-effects-data) |
+| UI | Visual UI | Not catalogued yet |
+| IX | Interaction and feedback | Not catalogued yet |
+| A11Y | Accessibility | Not catalogued yet |
+| I18N | Internationalization | Not catalogued yet |
+| DOC | Product text and Help | Not catalogued yet |
+| CLI | CLI and Assistant Skills | Not catalogued yet |
+| TEST | Testing | Not catalogued yet |
+| REL | Release and deployment | Not catalogued yet |
+
+Until those areas are catalogued, use [Frontend](/en/docs/frontend), the
+[UI catalog](/en/ui), [Build an application](/en/docs/build), and
+[Testing](/en/docs/contributing/testing) as their canonical sources.
+
+## Use the checks
+
+“How to check” names the monorepo check when one exists, such as
+`bun scripts/check.ts <rule>` or a focused test file. Each automated check is
+followed by a manual equivalent: a search pattern, a code-reading step, or an
+action in the running application. Third-party applications use those manual
+steps because they cannot run the monorepo checks.
+
+A passing machine check covers only what it inspects. Follow the manual step
+to verify the rule against the application's actual behavior.
+
+## Keep the catalog current
+
+Maintainers change the canonical page first, then its catalog row. Never
+renumber IDs; retire dropped rules instead of deleting their rows.
+`bun run --cwd docs-site check:docs` enforces ID format, uniqueness, no gaps,
+and exactly one canonical link per row.

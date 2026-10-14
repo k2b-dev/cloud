@@ -237,6 +237,19 @@
         "Delivery is idempotent through the row ID, keeps per-item order, and decides which ERP answers are final instead of retrying them forever.",
         "Verification covers a private or internal link address and a failed delivery that is retried."
       ]
+    },
+    {
+      "id": 21,
+      "prompt": "Check whether our inventory application follows Cloud's conventions and report what is wrong.",
+      "expected_output": "Reads the conventions catalog and audit procedure, checks applicable rules, records evidence by convention ID, and reports findings grouped by root cause.",
+      "files": [],
+      "expectations": [
+        "Reads Application conventions and its audit page through the documentation MCP.",
+        "Runs the named checks and tests or substitutes their manual equivalents.",
+        "Records findings with ID, location, severity, observed vs. expected, and fix.",
+        "Groups findings by root cause.",
+        "Does not report rules that do not apply to the application."
+      ]
     }
   ]
 }

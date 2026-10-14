@@ -59,3 +59,121 @@ export const headingContractErrors = (prose: string, title: string | undefined):
 
   return errors;
 };
+
+export const conventionPrefixes = ["CODE", "SRV", "ACC", "DATA", "UI", "IX", "A11Y", "I18N", "DOC", "CLI", "TEST", "REL"] as const;
+
+const conventionId = new RegExp(`^(${conventionPrefixes.join("|")})-\\d{2}$`);
+const conventionColumns = ["ID", "Rule", "Why", "How to check", "Canonical"];
+
+const tableCells = (line: string): string[] => {
+  const cells: string[] = [];
+  let cell = "";
+  let codeTicks = 0;
+  const row = line.trim();
+  for (let index = 0; index < row.length; index++) {
+    const char = row[index];
+    if (char === "\\" && !codeTicks) {
+      cell += char + (row[++index] ?? "");
+    } else if (char === "`") {
+      const ticks = row.slice(index).match(/^`+/)?.[0] ?? "`";
+      if (!codeTicks) codeTicks = ticks.length;
+      else if (codeTicks === ticks.length) codeTicks = 0;
+      cell += ticks;
+      index += ticks.length - 1;
+    } else if (char === "|" && !codeTicks) {
+      cells.push(cell.trim());
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  cells.push(cell.trim());
+  if (row.startsWith("|")) cells.shift();
+  if (cells.at(-1) === "") cells.pop();
+  return cells;
+};
+
+/** Validate catalog rows and consecutive IDs across the selected pages. */
+export const conventionCatalogErrors = (pages: readonly { file: string; prose: string }[]): string[] => {
+  const errors: string[] = [];
+  const owners = new Map<string, string>();
+  const ids = new Map<string, Set<number>>();
+
+  for (const page of pages) {
+    let inCatalog = false;
+    const lines = page.prose.split(/\r?\n/);
+    for (const [index, line] of lines.entries()) {
+      if (!line.includes("|")) {
+        inCatalog = false;
+        continue;
+      }
+      const cells = tableCells(line);
+      const location = `${page.file}:${index + 1}`;
+      if (
+        cells[0] === "ID" &&
+        lines[index + 1]?.includes("|") &&
+        tableCells(lines[index + 1] ?? "").every((cell) => /^:?-+:?$/.test(cell))
+      ) {
+        inCatalog = true;
+        if (cells.length !== conventionColumns.length || cells.some((cell, index) => cell !== conventionColumns[index])) {
+          errors.push(`${location}: convention table must use the columns ID | Rule | Why | How to check | Canonical`);
+        }
+        continue;
+      }
+      if (!inCatalog || cells.every((cell) => /^:?-+:?$/.test(cell))) continue;
+
+      const id = cells[0] ?? "";
+      if (!conventionId.test(id)) {
+        errors.push(`${location}: invalid convention ID '${id}'`);
+      } else {
+        const [prefix, number] = id.split("-");
+        const numbers = ids.get(prefix) ?? new Set<number>();
+        numbers.add(Number(number));
+        ids.set(prefix, numbers);
+      }
+      const owner = owners.get(id);
+      if (owner) errors.push(`${location}: duplicate convention ID '${id}' (first in ${owner})`);
+      else owners.set(id, location);
+
+      const links = [...(cells[4] ?? "").matchAll(/\[[^\]]+\]\(([^)\s]+)\)/g)];
+      const target = links[0]?.[1] ?? "";
+      if (
+        links.length !== 1 ||
+        !(target.startsWith("/en/docs/") || target.startsWith("/en/ui")) ||
+        target.startsWith("/en/docs/conventions")
+      ) {
+        errors.push(`${location}: convention ${id} needs exactly one canonical /en/docs or /en/ui link`);
+      }
+      for (const index of [1, 2, 3]) {
+        if (!cells[index]) errors.push(`${location}: convention ${id} has an empty '${conventionColumns[index]}' cell`);
+      }
+    }
+  }
+
+  for (const prefix of conventionPrefixes) {
+    const numbers = ids.get(prefix);
+    if (!numbers) continue;
+    for (let number = 1; number <= Math.max(numbers.size, ...numbers); number++) {
+      if (!numbers.has(number)) {
+        errors.push(
+          `convention IDs for ${prefix} skip ${prefix}-${String(number).padStart(2, "0")}; retire a rule instead of deleting its row`,
+        );
+      }
+    }
+  }
+  return errors;
+};
+
+/** Resolve a UI route and its optional heading anchor against the catalog. */
+export const uiLinkError = (href: string, uiPages: ReadonlyMap<string, ReadonlySet<string>>): string | null => {
+  if (!href.startsWith("/en/ui")) return null;
+  const [rawRoute, rawFragment] = href.split("#", 2);
+  const route = rawRoute.replace(/\/+$/, "");
+  const headings = uiPages.get(route);
+  if (!headings) return `broken UI link '${href}'`;
+  if (rawFragment !== undefined) {
+    const fragment = decodeURIComponent(rawFragment);
+    if (!headings.has(fragment)) return `missing anchor '#${fragment}' in UI page ${route}`;
+  }
+  return null;
+};

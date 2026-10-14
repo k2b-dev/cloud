@@ -19,7 +19,7 @@ views with `dayHours` read `range`, and the month always paged. A host that
 passes `range` in every view gets the scrolling month after the upgrade. To
 keep the paged month, pass `range` only in the day and week views, for example
 `range={view === "day" || view === "week" ? range : undefined}`. See
-[Calendar](/en/ui/surfaces/calendar).
+[Calendar](/en/ui/content/calendar).
 
 ## Spaces scrolling calendars load days in blocks
 

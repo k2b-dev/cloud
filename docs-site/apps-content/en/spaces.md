@@ -180,7 +180,7 @@ move, switch views, go to a date, and create in the calendar, and the left
 and right arrow keys page like **K** and **J**; the keyboard button of the
 calendar lists them. In the year view, **N** and **Shift+N** open the full
 form on the shown date.
-See [Day and week views](/en/ui/surfaces/calendar#day-and-week-views-with-dayhours)
+See [Day and week views](/en/ui/content/calendar#day-and-week-views-with-dayhours)
 for the behavior in detail.
 
 An item's **Links & resources** list holds Cloud resource references and external URLs

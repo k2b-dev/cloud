@@ -1,6 +1,7 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
-import { headingContractErrors, metadataErrors } from "./documentation-rules";
+import { catalogContextFiles, standaloneUiContextFiles } from "../src/ui/context";
+import { conventionCatalogErrors, headingContractErrors, metadataErrors, uiLinkError } from "./documentation-rules";
 import { withoutFencedCode } from "./markdown";
 
 type Page = {
@@ -9,6 +10,7 @@ type Page = {
   route: string;
   body: string;
   prose: string;
+  frontmatterLines: number;
   headings: Map<string, number>;
   meta: Record<string, string>;
 };
@@ -30,6 +32,7 @@ const allowedSections = new Set([
   "Operations",
   "Accounts & sign-in",
   "Reference",
+  "Conventions",
   "Contributing",
 ]);
 
@@ -112,10 +115,25 @@ for (const absolutePath of allFiles) {
     route: routeFor(absolutePath),
     body,
     prose,
+    frontmatterLines: source.slice(0, source.length - body.length).split("\n").length - 1,
     headings,
     meta,
   };
   pages.set(page.route, page);
+}
+
+const uiPages = new Map<string, ReadonlySet<string>>();
+const uiContextRoutes = [
+  ...Object.entries(catalogContextFiles).map(([id, file]) => ({ route: `/en/ui/${id}`, file })),
+  ...Object.keys(standaloneUiContextFiles).map((file) => ({
+    route: file === "overview.md" ? "/en/ui" : `/en/ui/${file.replace(/\.md$/, "")}`,
+    file,
+  })),
+];
+for (const { route, file } of uiContextRoutes) {
+  const prose = withoutFencedCode(await Bun.file(path.join(siteRoot, "src", "ui", "context", file)).text());
+  const headings = new Set([...prose.matchAll(/^(#{1,6})\s+(.+?)\s*#*\s*$/gm)].map((match) => slugify(match[2])));
+  uiPages.set(route, headings);
 }
 
 const selectedPages = [...pages.values()].filter((page) => {
@@ -184,6 +202,9 @@ for (const page of selectedPages) {
       errors.push(`${page.relativePath}: link text '${link[1]}' is not meaningful`);
     }
 
+    const uiError = uiLinkError(href, uiPages);
+    if (uiError) errors.push(`${page.relativePath}: ${uiError}`);
+
     if (!href.startsWith("/en/docs")) continue;
 
     const [rawTarget, rawFragment] = href.split("#", 2);
@@ -208,6 +229,15 @@ for (const page of selectedPages) {
     }
   }
 }
+
+errors.push(
+  ...conventionCatalogErrors(
+    selectedPages
+      .filter((page) => page.route.startsWith("/en/docs/conventions"))
+      // Pad the frontmatter back in so catalog findings report file line numbers.
+      .map((page) => ({ file: page.relativePath, prose: "\n".repeat(page.frontmatterLines) + page.prose })),
+  ),
+);
 
 if (errors.length > 0) {
   console.error(`Documentation check failed with ${errors.length} error(s):`);

@@ -5,7 +5,7 @@ section: Reference
 order: 1200
 description: Look up stable Cloud application contracts and compatibility information.
 tags: [reference, api, compatibility]
-updated: 2026-10-09
+updated: 2026-10-14
 ---
 
 # Reference
@@ -23,6 +23,7 @@ setting kinds, and migration paths.
 | Which setting kind should I declare? | [Settings reference](/en/docs/reference/settings-kinds-and-environment) |
 | What does this status mean? | [Vocabulary and statuses](/en/docs/reference/vocabulary-and-statuses) |
 | Which word do people read for a concept? | [Cloud glossary](/en/docs/reference/glossary) |
+| Which conventions should my application follow? | [Application conventions](/en/docs/conventions) |
 | What replaced an old API? | [Deprecations](/en/docs/reference/deprecations-and-migrations) |
 
 Feature pages remain canonical for behavior. Reference pages contain lookup
