@@ -675,11 +675,14 @@ const createMcpServer = (
         origin,
       );
     }
+    const resultFor = (value: Record<string, unknown>): CallToolResult => {
+      const result = toolResult(value, !response.ok);
+      if (origin) result.content.push(...semanticResourceLinks(value, origin));
+      return result;
+    };
     // Added hrefs are optional: they never turn a result that fits into RESPONSE_TOO_LARGE.
-    if (!fitsToolResult(toolResult(body, !response.ok))) body = providerBody;
-    const result = boundedToolResult(body, !response.ok);
-    if (origin) result.content.push(...semanticResourceLinks(body, origin));
-    return ensureBoundedToolResult(result);
+    const result = resultFor(body);
+    return ensureBoundedToolResult(fitsToolResult(result) || body === providerBody ? result : resultFor(providerBody));
   });
 
   return server;

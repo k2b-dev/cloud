@@ -1053,6 +1053,43 @@ describe("capability MCP projection", () => {
     expect(result.structuredContent).toEqual(body);
   });
 
+  test("counts semantic resource links before keeping optional hrefs", async () => {
+    // About 30 KiB of hrefs: the body alone still fits with them, but not with the 44 KiB of resource_link items.
+    const refs = Array.from({ length: 5 }, (_, index) => ({ type: "demo.item", id: `${index}-${"ü".repeat(500)}` }));
+    const links = Array.from({ length: 20 }, (_, index) => ({ rel: "open", href: `/demo/${index}/${"y".repeat(1990)}` }));
+    const body = { data: { id: "" }, refs, links };
+    const plainBytes = () =>
+      new TextEncoder().encode(
+        JSON.stringify({
+          structuredContent: body,
+          content: [
+            { type: "text", text: JSON.stringify(body) },
+            ...links.map((link) => ({ type: "resource_link", uri: `${"o".repeat(200)}${link.href}`, name: link.rel })),
+          ],
+        }),
+      ).byteLength;
+    body.data.id = "x".repeat(Math.floor((CAPABILITY_MAX_RESULT_BYTES - plainBytes() - 10_000) / 2));
+    const routes = createMcpRoutes({ getCapability: async () => app, fetch: async () => Response.json(body) });
+    const response = await rpc(routes, {
+      jsonrpc: "2.0",
+      id: 74,
+      method: "tools/call",
+      params: { name: "demo__query__get", arguments: { id: "one" } },
+    });
+    const result = z
+      .object({
+        result: z.object({
+          isError: z.boolean().optional(),
+          structuredContent: z.record(z.string(), z.unknown()),
+          content: z.array(z.object({ type: z.string() })),
+        }),
+      })
+      .parse(await response.json()).result;
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toEqual(body);
+    expect(result.content.filter((item) => item.type === "resource_link")).toHaveLength(links.length);
+  });
+
   test("preserves successful capability results when the registry goes offline during link enrichment", async () => {
     let listings = 0;
     const routes = createMcpRoutes({
