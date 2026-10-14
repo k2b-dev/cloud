@@ -290,7 +290,72 @@ describe("Filesv2 progressive navigation", () => {
     await pending;
     expect(requests[0]!.signal.aborted).toBe(true);
   });
-  test("overview navigation loads recent instead of a directory and failed tile navigation offers retry", async () => {
+  test("the plain Files address opens the single storage listing before and after workspace navigation", async () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", "/app/filesv2");
+    const { Workspace } = modules!;
+    const base = {
+      id: "home",
+      name: "Alice",
+      area: "cloud" as const,
+      kind: "users" as const,
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: false,
+      versioningEnabled: false,
+    };
+    const bases = { items: [base], issues: [], editor: null };
+    const directory = { base, path: "", items: [], next: null };
+    const dispose = render(
+      () =>
+        createComponent(Workspace, {
+          initial: { ...initial, source: "/app/filesv2", bases, selectedId: base.id, directory },
+          cloudUrl: "https://cloud.test",
+        }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    const assertListing = () => {
+      expect(dom.root.querySelectorAll('.k2b-app-workspace__sidebar-body a[href="/app/filesv2"]').length).toBe(0);
+      expect(dom.root.querySelectorAll(".filesv2-list__row--up").length).toBe(0);
+      expect(dom.root.querySelectorAll(".k2b-link-card").length).toBe(0);
+      expect(dom.root.querySelectorAll(".filesv2-browser__header").length).toBe(1);
+      expect(dom.root.textContent).not.toContain("All storage");
+    };
+    await flush();
+    for (const request of apiRequests) {
+      expect(request.kind).toBe("entries");
+      request.resolve(Response.json(directory));
+    }
+    await flush();
+    apiRequests.length = 0;
+    assertListing();
+    dom.root.querySelector<HTMLAnchorElement>('[role="tree"] a[href="/app/filesv2?base=home"]')!.click();
+    await flush();
+    expect(apiRequests[0]!.kind).toBe("bases");
+    apiRequests[0]!.resolve(Response.json(bases));
+    await flush();
+    expect(apiRequests[1]!.kind).toBe("entries");
+    apiRequests[1]!.resolve(Response.json(directory));
+    await flush();
+    assertListing();
+    dom.window.history.replaceState(null, "", "/app/filesv2");
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await flush();
+    expect(apiRequests[2]!.kind).toBe("bases");
+    apiRequests[2]!.resolve(Response.json(bases));
+    await flush();
+    expect(apiRequests[3]!.kind).toBe("entries");
+    apiRequests[3]!.resolve(Response.json(directory));
+    await flush();
+    expect(apiRequests.map((request) => request.kind)).toEqual(["bases", "entries", "bases", "entries"]);
+    assertListing();
+  });
+
+  test("overview navigation loads no directory, Recent loads itself, and failed tile navigation offers retry", async () => {
     const dom = createDomTestHarness();
     dom.window.history.replaceState(null, "", initial.source);
     const { Workspace } = modules!;
@@ -350,12 +415,58 @@ describe("Filesv2 progressive navigation", () => {
     expect(error.querySelector("a")!.getAttribute("href")).toBe("/app/filesv2?base=home");
     error.querySelector<HTMLAnchorElement>("a")!.click();
     await flush();
-    apiRequests[4]!.resolve(Response.json(bases));
+    const pending = (kind: string) => apiRequests.find((request, index) => index > 3 && request.kind === kind)!;
+    pending("bases").resolve(Response.json(bases));
     await flush();
-    apiRequests[5]!.resolve(Response.json(directory));
+    pending("entries").resolve(Response.json(directory));
     await flush();
     expect(dom.window.location.search).toBe("?base=home");
     expect(dom.root.querySelector(".filesv2-list__row--up")!.textContent).toContain("All storage");
+  });
+
+  test("a failing Recent stays inside the overview; tiles and the way into storage keep working", async () => {
+    const dom = createDomTestHarness();
+    dom.window.history.replaceState(null, "", "/app/filesv2");
+    const { Workspace } = modules!;
+    const base = {
+      id: "home",
+      name: "Alice",
+      area: "cloud" as const,
+      kind: "users" as const,
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: false,
+      versioningEnabled: false,
+    };
+    const group = { ...base, id: "ipa", name: "Team", area: "freeipa" as const, kind: "groups" as const };
+    const bases = { items: [base, group], issues: [{ area: "freeipa" as const, code: "unavailable" }], editor: null };
+    const dispose = render(
+      () => createComponent(Workspace, { initial: { ...initial, source: "/app/filesv2", bases }, cloudUrl: "https://cloud.test" }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      dom.cleanup();
+    };
+    await flush();
+    // The tiles come from the bases alone; Recent asks for itself once the overview is on screen.
+    expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
+    expect(apiRequests.map((request) => request.kind)).toEqual(["recent"]);
+    expect(dom.root.querySelector('.filesv2-overview section .k2b-placeholder[data-state="loading"]')).not.toBeNull();
+    apiRequests[0]!.resolve(Response.json({ code: "unavailable", message: "Storage unavailable" }, { status: 503 }));
+    await flush();
+    expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
+    const section = dom.root.querySelector(".filesv2-overview section")!;
+    expect(section.querySelector('.k2b-placeholder[data-state="error"]')).not.toBeNull();
+    const retry = [...section.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Try again"))!;
+    retry.click();
+    await flush();
+    expect(apiRequests[1]!.kind).toBe("recent");
+    apiRequests[1]!.resolve(Response.json([]));
+    await flush();
+    expect(section.querySelector('.k2b-placeholder[data-state="error"]')).toBeNull();
+    expect(section.textContent).toContain("Files you open or download appear here.");
+    expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
   });
 
   test("workspace sidebar and folders enhance real hrefs; popstate reloads the matching view", async () => {

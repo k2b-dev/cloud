@@ -55,10 +55,19 @@ test("a copied stable reference links through the deep link; path refs link to t
 
 test("the plain Files address shows all storage only with multiple roots", () => {
   for (const count of [0, 1, 2]) expect(showsOverview(new URLSearchParams(), count)).toBe(count > 1);
-  for (const key of ["base", "path", "file", "q", "view"]) {
+  for (const key of ["base", "path", "file", "q"]) {
     expect(showsOverview(new URLSearchParams({ [key]: "value" }), 2)).toBe(false);
     expect(showsOverview(new URLSearchParams({ [key]: "" }), 2)).toBe(true);
   }
+  expect(showsOverview(new URLSearchParams({ q: " " }), 2)).toBe(true);
+  for (const view of ["", "foo", "edit"]) {
+    expect(showsOverview(new URLSearchParams({ view }), 2)).toBe(true);
+  }
+  expect(showsOverview(new URLSearchParams({ view: "edit", file: "" }), 2)).toBe(true);
+  for (const view of ["trash", "shares", "recent", "favorites"]) {
+    expect(showsOverview(new URLSearchParams({ view }), 2)).toBe(false);
+  }
+  expect(showsOverview(new URLSearchParams({ view: "edit", file: "report.txt" }), 2)).toBe(false);
   expect(
     showsOverview(new URLSearchParams({ after: "cursor", sort: "modified", order: "desc", type: "files", groupFolders: "false" }), 2),
   ).toBe(true);

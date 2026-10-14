@@ -1129,8 +1129,7 @@ export default function Browser(props: {
         icon: "ti ti-folder-up",
         action: goUp,
       };
-    if (props.onOpenOverview && !searching() && view().view !== "tree")
-      return { label: b().allStorage, ariaLabel: b().allStorageUp, icon: "ti ti-layout-grid", action: goUp };
+    if (props.onOpenOverview) return { label: b().allStorage, ariaLabel: b().allStorageUp, icon: "ti ti-layout-grid", action: goUp };
     return null;
   };
   // Alt+↑ follows the same way up as the listing; the shell offers no way up for a folder (see `filesTitle`).

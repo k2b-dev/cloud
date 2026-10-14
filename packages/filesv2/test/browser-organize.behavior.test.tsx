@@ -193,6 +193,25 @@ describe("Filesv2 ordering and drag-and-drop", () => {
     expect(opened).toEqual(["overview", "overview", "overview"]);
   });
 
+  test("the root command leads to all storage in Tree view without a visible overview row", async () => {
+    const dom = createDomTestHarness();
+    const opened: string[] = [];
+    await mount(dom, [], { directory: { ...directory, path: "", items: [] }, onOpenOverview: () => opened.push("overview") });
+    [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((button) => button.textContent?.includes("Tree"))!.click();
+    await flush();
+    expect(dom.root.querySelector(".filesv2-list__row--up")).toBeNull();
+    expect(dom.root.textContent).not.toContain("All storage");
+    const commands: ContextAwareCommand[] = [];
+    dom.window.dispatchEvent(new dom.window.CustomEvent("cloud.command.collect", { detail: { commands } }));
+    const command = commands.find((entry) => entry.id === "filesv2.parent-folder");
+    expect(command).toBeDefined();
+    expect(command!.title).toBe("All storage");
+    const { runContextAwareCommand } = await import("@k2b/cloud/browser/commands");
+    await runContextAwareCommand(command!);
+    await flush();
+    expect(opened).toEqual(["overview"]);
+  });
+
   for (const path of ["", "A/B/C"]) {
     test(`parent keyboard command and focused-list Backspace at ${path || "storage root"}`, async () => {
       const dom = createDomTestHarness();

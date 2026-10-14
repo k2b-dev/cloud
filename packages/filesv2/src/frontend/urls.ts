@@ -38,8 +38,12 @@ export function pathCrumbs(path: string) {
 }
 
 /**
- * Files starts at the overview of all storage when the address names nothing below it (no storage, folder, file,
- * search or view) and there is more than one storage to choose from. With a single storage Files opens inside it.
+ * Files starts at all storage when there is more than one storage and the address names no non-empty storage,
+ * folder or file, no search after trimming, and no trash, shares, recent or favorites view. Unknown views and
+ * edit without a file are ignored, matching the normalized snapshot address. A single storage opens inside it.
  */
 export const showsOverview = (params: URLSearchParams, storageCount: number) =>
-  storageCount > 1 && !["base", "path", "file", "q", "view"].some((key) => params.get(key));
+  storageCount > 1 &&
+  !["base", "path", "file"].some((key) => params.get(key)) &&
+  !params.get("q")?.trim() &&
+  !["trash", "shares", "recent", "favorites"].includes(params.get("view") ?? "");

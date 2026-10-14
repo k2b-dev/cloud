@@ -74,9 +74,9 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
         const response = await apiClient.shares.$get({ query: {} }, { init: { signal } });
         if (!response.ok) throw await apiError(response);
         shares = await response.json();
-      } else if (overview || view === "recent" || view === "favorites") {
+      } else if (view === "recent" || view === "favorites") {
         const response =
-          overview || view === "recent"
+          view === "recent"
             ? await apiClient.recent.$get({}, { init: { signal } })
             : await apiClient.favorites.$get({}, { init: { signal } });
         if (!response.ok) throw await apiError(response);
@@ -687,7 +687,6 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                       <StorageOverview
                         bases={snapshot().bases.items}
                         issues={snapshot().bases.issues}
-                        recent={snapshot().marks ?? []}
                         onOpenRecent={openMarked}
                         onNavigate={onNavigate}
                       />

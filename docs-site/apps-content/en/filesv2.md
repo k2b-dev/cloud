@@ -34,8 +34,11 @@ The action opens its full preview with normal-sized headings.
 Open `/app/filesv2` to start at **All storage**: one tile per storage location
 you can reach, with its name, kind, and source, followed by your recently opened
 files. A storage location that is not usable stays a tile and shows its status.
-Open a tile to work in that location; you create and upload there, and the
-overview offers no create action. If you can reach exactly one storage location,
+Recent loads on its own below the tiles; if it fails, only that section shows
+the error and **Try again**, and the tiles stay usable. Open a tile to work in
+that location; you create and upload there. The overview offers no create
+action, and a file dropped on it is refused rather than uploaded or opened by
+the browser. If you can reach exactly one storage location,
 Files opens directly inside it and shows no overview. The overview is navigation
 only: it lists the same storage locations as `cld filesv2 ls` without a folder,
 and the service checks access on every request as before. Only the plain address
@@ -67,7 +70,9 @@ the current folder's name alone, with no back link at any depth, and Backspace
 in the list or Alt+↑ go up too), files open the details panel, and every row ends with an
 info button. With more than one storage location, the root folder of each one
 starts with an **All storage** row that leads back to the overview; Backspace
-and Alt+↑ follow it too, and nothing can be dropped on it. The root folder of each storage location ends with a **Trash** row
+and Alt+↑ follow it too, also in Tree view and search results, which hide the
+row. Items cannot be moved onto that row; files dropped on it from your computer
+upload into the storage root, as anywhere else in the list. The root folder of each storage location ends with a **Trash** row
 that opens its trash. **List**, **Grid**, and **Tree** views and the grid tile size are remembered
 per storage location in a cookie. Tree shows the storage from its root with the current
 folder highlighted; clicking a folder name makes it current, clicking its icon

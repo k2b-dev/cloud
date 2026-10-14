@@ -45,7 +45,7 @@ export default ssr<AuthContext>(async (c) => {
   };
   try {
     initial.bases = await filesService.bases(actor);
-    const overview = showsOverview(new URL(c.req.url).searchParams, initial.bases.items.length);
+    const overview = showsOverview(source.searchParams, initial.bases.items.length);
     const selected = overview
       ? undefined
       : requestedBase && view !== "shares"
@@ -57,7 +57,7 @@ export default ssr<AuthContext>(async (c) => {
     for (const [key, value] of Object.entries(browse)) source.searchParams.set(key, String(value));
     initial.source = `${source.pathname}${source.search}`;
     if (view === "shares") initial.shares = await filesService.listShares(actor);
-    else if (overview || view === "recent") initial.marks = await filesService.recent(actor);
+    else if (view === "recent") initial.marks = await filesService.recent(actor);
     else if (view === "favorites") initial.marks = await filesService.favorites(actor);
     else if (editView && selected?.status === "existing")
       initial.editor = await filesService.editor(actor, { baseId: selected.id, path: requestedFile! });
