@@ -255,8 +255,26 @@ html:has(.k2b-mobile-shell) body {
   --color-selection-fg: rgb(239 246 255);
 }
 
-@view-transition {
-  navigation: auto;
+/* @k2b/ui makes motion inside .k2b-ui instant under reduced motion; the
+   page owns its view transitions, so the same two sources stop them here. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+html[data-k2b-motion="reduced"]::view-transition-group(*),
+html[data-k2b-motion="reduced"]::view-transition-old(*),
+html[data-k2b-motion="reduced"]::view-transition-new(*) {
+  animation: none !important;
 }
 
 ::selection {
@@ -273,15 +291,6 @@ html:has(.k2b-mobile-shell) body {
 solid-client,
 solid-island {
   display: contents;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
-  }
 }
 
 /* Cloud has three shell modes. Phones, below md, get the header and no rail.

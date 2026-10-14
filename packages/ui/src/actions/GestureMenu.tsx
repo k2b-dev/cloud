@@ -2,6 +2,7 @@ import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { dialogCore } from "../feedback/dialog-core";
 import { LocaleProvider, useLocale } from "../intl/locale";
 import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";
+import { prefersReducedMotion } from "../motion";
 import { ContextMenu } from "./ContextMenu";
 import {
   type DropdownAction,
@@ -144,8 +145,6 @@ const afterClose = (items: readonly GestureMenuItem[], run: (action: () => void)
   };
   return items.map((item) => ("items" in item ? { ...item, items: item.items.map(entry) } : entry(item)));
 };
-
-const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const menuItems = (menu: HTMLElement): HTMLElement[] =>
   Array.from(menu.querySelectorAll<HTMLElement>("[role^='menuitem']:not([aria-disabled='true'])"));
@@ -339,7 +338,7 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
     const direction: SwipeDirection = dx > 0 ? "right" : "left";
     if (!action(swipeKind(direction))) return;
     clearTimeout(settleTimer);
-    reduced = reducedMotion();
+    reduced = prefersReducedMotion();
     moveSwipe(current, direction, dx);
   };
 

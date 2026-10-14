@@ -24,6 +24,20 @@ const compileGlobal = () =>
   }));
 
 describe("Cloud tokens", () => {
+  test("has the motion tokens and stops view transitions under reduced motion", async () => {
+    const css = (await compileGlobal()).replace(/\s+/g, "");
+    const auto = /@media\(prefers-reduced-motion:no-preference\)\{@view-transition\{navigation:auto;?\}\}/g;
+    expect(css.match(auto)).toHaveLength(1);
+    expect(css.replace(auto, "")).not.toMatch(/@view-transition\{navigation:auto/);
+    // The compiler writes one rule per pseudo-element.
+    const instant = (host: string) =>
+      ["group", "old", "new"].map((part) => `${host}::view-transition-${part}(*){animation:none!important;}`).join("");
+    expect(css).toContain(`@media(prefers-reduced-motion:reduce){${instant("")}}`);
+    expect(css).toContain(instant('html[data-k2b-motion="reduced"]'));
+    for (const token of ["motion-fast", "motion-base", "motion-sheet", "motion-celebrate", "fresh-fade", "ease-out", "ease-spring"])
+      expect(css).toContain(`--k2b-${token}:`);
+  });
+
   // Bun 1.4.2 keeps only the first of adjacent same-condition @supports rules
   // (oven-sh/bun#24770). With Tailwind's color-mix() polyfill that left one
   // mixed value per rule; the others fell back to their first color.

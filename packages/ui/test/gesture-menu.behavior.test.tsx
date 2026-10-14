@@ -129,7 +129,7 @@ else
       await closeSheets();
       dispose?.();
       dispose = undefined;
-      Reflect.deleteProperty(globalThis, "matchMedia");
+      Reflect.deleteProperty(dom.window, "matchMedia");
     });
     afterAll(() => {
       Reflect.deleteProperty(globalThis, "DOMRect");
@@ -304,7 +304,7 @@ else
     });
 
     test("with reduced motion the content stays put while the swipe still works", async () => {
-      Object.defineProperty(globalThis, "matchMedia", {
+      Object.defineProperty(dom.window, "matchMedia", {
         configurable: true,
         writable: true,
         value: (query: string) => ({ matches: query === "(prefers-reduced-motion: reduce)", media: query }),

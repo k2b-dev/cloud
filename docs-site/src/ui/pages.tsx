@@ -3,6 +3,7 @@ import { fibelHtml } from "../ssr";
 import { uiCatalogEntries } from "./catalog";
 import focusMarkdown from "./context/focus.md" with { type: "text" };
 import gettingStartedMarkdown from "./context/getting-started.md" with { type: "text" };
+import motionMarkdown from "./context/motion.md" with { type: "text" };
 import overviewMarkdown from "./context/overview.md" with { type: "text" };
 import { UiCatalogOverview, UiComponentShowcase } from "./UiCatalogPage";
 
@@ -68,6 +69,32 @@ export const uiPages = [
           <p>{page.meta.description}</p>
         </header>
         <section class="ui-reference-body" aria-label="Focus ring guide">
+          <div class="ui-documentation fibel-prose" innerHTML={content.html} />
+        </section>
+      </article>
+    ),
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/motion",
+    title: "Motion",
+    navTitle: "Motion",
+    description: "Shared motion tokens, interaction budgets, and instant reduced motion for CSS and JavaScript.",
+    section: "Start",
+    order: 4,
+    layout: "full",
+    content: motionMarkdown,
+    component: ({ content, page }) => (
+      <article class="ui-showcase ui-reference-showcase">
+        <header class="ui-reference-heading">
+          <div class="ui-page-heading">
+            <p>@k2b/ui</p>
+            <h1>{page.meta.title}</h1>
+          </div>
+          <p>{page.meta.description}</p>
+        </header>
+        <section class="ui-reference-body" aria-label="Motion guide">
           <div class="ui-documentation fibel-prose" innerHTML={content.html} />
         </section>
       </article>

@@ -18,6 +18,7 @@ import Dropdown, { type DropdownItem } from "../actions/Dropdown";
 import { announce } from "../feedback/announce";
 import { useDateConfigLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { prefersReducedMotion } from "../motion";
 import { useTimelineMessages } from "./timeline-messages";
 import {
   buildTimelineModel,
@@ -91,8 +92,6 @@ const GESTURE_GAP_MS = 150;
 const GLIDE_FROM = 50;
 const COLOR_TOKENS = new Set(["blue", "emerald", "amber", "red", "violet", "cyan", "zinc"]);
 const HEX_COLOR = /^#[0-9a-f]{3,8}$/i;
-
-const reducedMotion = () => typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const colorAttributes = (color: string | undefined) =>
   color && HEX_COLOR.test(color)
@@ -409,7 +408,7 @@ export default function Timeline(props: TimelineProps): JSX.Element {
     if (!primary) return;
     event.preventDefault();
     const delta = event.deltaY * (event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? viewport.clientWidth : 1);
-    if (reducedMotion() || (Math.abs(delta) < GLIDE_FROM && !wheelFrame)) {
+    if (prefersReducedMotion() || (Math.abs(delta) < GLIDE_FROM && !wheelFrame)) {
       viewport.scrollLeft += delta;
       return;
     }
@@ -454,7 +453,7 @@ export default function Timeline(props: TimelineProps): JSX.Element {
    * arrives instead of cutting it short.
    */
   const ownScrollBehavior = (): ScrollBehavior => {
-    if (reducedMotion()) return "auto";
+    if (prefersReducedMotion()) return "auto";
     scrolled();
     return "smooth";
   };

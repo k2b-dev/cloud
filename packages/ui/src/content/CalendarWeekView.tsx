@@ -12,6 +12,7 @@ import {
   Show,
   untrack,
 } from "solid-js";
+import { prefersReducedMotion } from "../motion";
 import type { CalendarEvent } from "./Calendar";
 import { GESTURE_GAP_MS, snapToColumn, type WheelAxis, wheelAxis, wheelDelta, wheelPixels } from "./calendar-day-scroll";
 import {
@@ -43,7 +44,6 @@ import {
   longDay,
   markerAbove,
   nightHours,
-  reducedMotion,
   swallowNextClick,
   TimeBand,
   TimeCheck,
@@ -125,7 +125,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
     glideTimer = window.setTimeout(() => {
       glideTarget = null;
     }, 1600);
-    scroller.scrollTo({ left: target, ...(top === undefined ? {} : { top }), behavior: reducedMotion() ? "instant" : "smooth" });
+    scroller.scrollTo({ left: target, ...(top === undefined ? {} : { top }), behavior: prefersReducedMotion() ? "instant" : "smooth" });
   };
   /** The scroll position of a minute in the timeline, with now in the upper third. */
   const topFor = (minute: number) => {
@@ -207,7 +207,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
     gesture = false;
     if (Math.abs(target - scroller.scrollLeft) <= 0.5) return;
     settling = true;
-    scroller.scrollTo({ left: target, behavior: reducedMotion() ? "instant" : "smooth" });
+    scroller.scrollTo({ left: target, behavior: prefersReducedMotion() ? "instant" : "smooth" });
     window.setTimeout(() => {
       settling = false;
     }, 450);

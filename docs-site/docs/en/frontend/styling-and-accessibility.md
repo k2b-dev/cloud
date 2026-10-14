@@ -317,6 +317,16 @@ the Cloud repository, the `hover-motion` repository check rejects these
 patterns in package sources, including Tailwind variants such as
 `hover:shadow-sm` and `group-hover:translate-x-0.5`.
 
+## Move with the shared motion tokens
+
+Every duration and curve comes from the `--k2b-motion-*` and `--k2b-ease-*`
+tokens of `@k2b/ui`. Set the state first and animate after it: a result never
+waits for an animation. Animate transform, opacity, and color, never width,
+height, padding, margin, or position. Nothing animates on first paint or on
+mount, and popovers and menus close at once. Reduced motion makes all of it
+instant. [Motion](/en/ui/motion) lists the tokens, their uses, and the
+`motion` repository check.
+
 ## Keep dynamic scroll regions stable
 
 Let normal page content grow with the document. When a region is already
@@ -456,9 +466,14 @@ checks, drop behavior, mutation, and an equivalent keyboard path.
 adding another live region around the same message. A `danger` tone alone does
 not announce an error: add `role="alert"` when a newly appearing action error
 needs immediate attention. Do not announce every historical error as an alert
-when a list renders. Keep field errors associated with their inputs. Loading
-animations respect reduced-motion preferences; see the
-[component contract](/en/ui/feedback/blocks) for defaults and overrides.
+when a list renders. Keep field errors associated with their inputs.
+
+On a Cloud page, the OS reduced-motion setting or `data-k2b-motion="reduced"`
+on `<html>` makes CSS transitions, animations, and scrolling inside `.k2b-ui`
+instant and stops view transitions. Color may still change, movement does
+not. Motion that your code drives, such as a smooth `scrollIntoView()` or
+`element.animate()`, checks `prefersReducedMotion()` from `@k2b/ui`; see
+[Motion](/en/ui/motion).
 
 Do not add `aria-grabbed` as a substitute for keyboard-operable movement and
 clear announcements.
@@ -501,6 +516,8 @@ Before accepting a component or screen, verify:
   async results, validation, save bars, and badges move or resize nothing.
 - [Hover and focus never move, resize, or lift](#respond-to-hover-without-movement)
   an element; they change only paint.
+- [Motion uses the shared tokens](#move-with-the-shared-motion-tokens),
+  animates no layout property, and is instant under reduced motion.
 - Hierarchy works without decorative color or separator lines.
 - Lists, settings, forms, details, and pagination use spacing or shared
   surfaces instead of `<hr>`, `divide-y`, or app-owned hairlines.
