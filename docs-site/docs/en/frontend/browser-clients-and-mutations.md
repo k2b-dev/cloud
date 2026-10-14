@@ -112,12 +112,18 @@ Use it to capture the previous UI state, such as a removed row and its
 position, before the optimistic change.
 
 Restore that state on error and abort, in the same place, so the item returns
-where the person left it. Do not optimistically grant permission, expose new
-data, or pretend an irreversible action completed.
+where the person left it. Restore it only if no later action on the same item
+has taken over that state, so an earlier failure never rolls back a newer
+choice; then reconcile with the server. Do not optimistically grant
+permission, expose new data, or pretend an irreversible action completed.
 
-Undo either cancels a request that has not been sent yet or sends a request
-that reverses the change on the server. It restores the captured state at
-once, so keep that context until the Undo notice closes.
+For an action that offers Undo, Undo either cancels a request that has not
+been sent yet or sends a request that reverses the change on the server.
+Cancelling an unsent request never makes a hard delete eligible for Undo. Undo
+restores the captured state at once, so keep that context until the Undo
+notice closes. Treat Undo as its own mutation: reconcile with the server after
+it, and if the reversal is refused or fails, show the state the server kept
+and an error with the reason.
 
 The server remains authoritative. Reconcile the returned resource or reload
 the affected server-backed view after success. If that refresh fails, keep

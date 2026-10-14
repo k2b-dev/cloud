@@ -100,7 +100,9 @@ Each state answers the question a person has at that moment.
 
 Do not present unavailable or failed content as empty. Do not claim an
 irreversible outcome, such as "Sent" or "Deleted permanently", until the
-server has confirmed it. A reversible change may show at once with Undo; see
+server has confirmed it. A reversible change that grants no access and
+exposes no data may show at once with Undo; a message such as "Shared with
+Alice" waits for the server too. See
 [Show mutation state](/en/docs/frontend/forms-prompts-and-feedback#show-mutation-state).
 If a write succeeds but the view cannot refresh, say that the change was saved
 and offer to refresh the view.
