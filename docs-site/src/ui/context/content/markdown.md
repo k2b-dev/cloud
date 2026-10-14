@@ -104,8 +104,6 @@ sanitizer keep `svg` only when its class is exactly `k2b-callout__icon`,
 replace its attributes with `MARKDOWN_CALLOUT_ICON_ATTRIBUTES`, and keep only
 `path` children with only `d`, dropping other children and text; all other
 SVG tags and paths are discarded while ordinary content survives.
-Cloud renderers share these rules through `markdownCalloutSanitizeOptions()`
-from `@k2b/cloud/shared`, creating fresh options for each sanitization.
 
 Prose stays flat on the surrounding surface. Links follow
 [Links and references](#links-and-references). Inline code and fenced code blocks are text on a light fill

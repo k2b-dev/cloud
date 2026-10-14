@@ -440,6 +440,7 @@ export const documentedOnlyUiCatalogExports = {
   DropdownItem: "Documented compositional child of Dropdown.",
   FileTree: "Documented child composed by the FileBrowserPanel demo.",
   MARKDOWN_CALLOUT_CLASSES: "Documented Markdown callout root and icon classes for non-Solid renderers.",
+  MARKDOWN_CALLOUT_ICON_ATTRIBUTES: "Documented fixed callout icon SVG attributes for host sanitizers.",
   NOTICE_CARD_CLASSES: "Documented NoticeCard class contract for non-Solid renderers.",
   PANES_LAYOUT_VERSION: "Documented Panes serialization version.",
   abbreviations: "Documented completion dictionary used by editor examples.",

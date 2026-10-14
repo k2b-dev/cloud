@@ -178,6 +178,10 @@ Callouts are one syntax and one look across Cloud: `MarkdownView` from
 from `@k2b/cloud/shared` (pass `{ locale }` to name untitled callouts in the
 reader's language), Notebooks, and Markdown PDF exports. See
 [Markdown content](/en/ui/content/markdown#info-blocks) for the exact rules.
+A Cloud renderer with its own `sanitize-html` pass spreads
+`markdownCalloutSanitizeOptions()` from `@k2b/cloud/shared` into its options,
+creating fresh options for each sanitization, so the callout icon survives
+and every other SVG is still discarded.
 
 By default these helpers render links like `MarkdownView`: a relative link is
 a reference pill with a type icon, and a web or mail link is quiet text with a
