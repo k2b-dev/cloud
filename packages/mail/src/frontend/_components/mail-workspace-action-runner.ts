@@ -81,7 +81,8 @@ export type MailWorkspaceActionRunnerHost = {
     onSettled: (settlement: MailActionSettlement) => void;
     onFailure: () => void;
   }) => () => void;
-  reconcile: () => Promise<void>;
+  reconcile: () => Promise<boolean>;
+  releaseOnNextSnapshot: (target: MailBulkTarget, wanted: () => boolean) => void;
   showMissingTarget: () => Promise<void>;
   showNothingToMove: () => void;
   showFailures: (failures: readonly ActionFailure[], params: { targetCount: number; retry: () => Promise<void> }) => void;
@@ -179,98 +180,119 @@ export const runMailWorkspaceAction = async (
     const undo = async () => {
       if (undone || signal.aborted) return;
       undone = true;
-      if (!options.silent) host.announce("undo", targets);
-      const undoFailures: MailBulkTarget[] = [];
-      const pending = jobs.map((job) => {
+      const undoFailures = new Set<MailBulkTarget>();
+      let requestPhases = jobs.length;
+      const requestPhaseEnded = () => {
+        requestPhases -= 1;
+        if (requestPhases === 0 && undoFailures.size === 0 && !signal.aborted && !options.silent) host.announce("undo", targets);
+      };
+      const pending = jobs.map(async (job) => {
         if (job.cancel()) {
           host.restore(job.target);
-          return Promise.resolve();
+          requestPhaseEnded();
+          return;
         }
         host.hold(job.target);
         job.stop?.();
-        return host.queue.enqueue(job.target.conversationId, async () => {
-          const submitted = await job.result;
-          if (submitted.failed || submitted.commands.length === 0) {
-            host.release(job.target);
-            return;
-          }
-          const byId = new Map<string, ConversationTriageUndoOutcome>();
-          let ids = [...new Set(submitted.commands.map((command) => command.id))];
-          const startedAt = Date.now();
-          let attempt = 0;
-          try {
-            while (ids.length > 0) {
-              // Placements across several folders can exceed one Undo request's command-ID budget.
-              const outcomes: ConversationTriageUndoOutcome[] = [];
-              for (let offset = 0; offset < ids.length; offset += MAX_CONVERSATION_ACTION_MESSAGES) {
-                outcomes.push(
-                  ...(await host.submitUndo({
-                    target: job.target,
-                    commandIds: ids.slice(offset, offset + MAX_CONVERSATION_ACTION_MESSAGES),
-                  })),
-                );
-                if (signal.aborted) return;
-              }
-              for (const id of ids) {
-                const outcome = outcomes.find((outcome) => outcome.id === id);
-                if (outcome) byId.set(id, outcome);
-                else byId.set(id, { id, outcome: "unavailable", inverse: null });
-              }
-              ids = ids.filter((id) => byId.get(id)?.outcome === "pending");
-              if (ids.length === 0) break;
-              const remaining = MAIL_ACTION_OUTCOME_TTL_MS - (Date.now() - startedAt);
-              if (remaining <= 0) break;
-              await waitForUndo(Math.min(1_000 * 2 ** attempt++, 30_000, remaining), signal);
-            }
-            let failed = ids.length > 0 || [...byId.values()].some((outcome) => outcome.outcome === "unavailable");
-            const inverse = [...byId.values()].flatMap((outcome) => {
-              if (outcome.outcome !== "reversed") return [];
-              if (!outcome.inverse) {
-                failed = true;
+        try {
+          const inverse = await (async (): Promise<MailActionQueuedCommand[]> => {
+            try {
+              const byId = new Map<string, ConversationTriageUndoOutcome>();
+              let ids: string[] = [];
+              let startedAt = 0;
+              const submitRound = async () => {
+                // Placements across several folders can exceed one Undo request's command-ID budget.
+                const outcomes: ConversationTriageUndoOutcome[] = [];
+                for (let offset = 0; offset < ids.length; offset += MAX_CONVERSATION_ACTION_MESSAGES) {
+                  outcomes.push(
+                    ...(await host.submitUndo({
+                      target: job.target,
+                      commandIds: ids.slice(offset, offset + MAX_CONVERSATION_ACTION_MESSAGES),
+                    })),
+                  );
+                  if (signal.aborted) return;
+                }
+                for (const id of ids) {
+                  byId.set(id, outcomes.find((outcome) => outcome.id === id) ?? { id, outcome: "unavailable", inverse: null });
+                }
+                ids = ids.filter((id) => byId.get(id)?.outcome === "pending");
+              };
+              const queued = await host.queue.enqueue(job.target.conversationId, async () => {
+                const submitted = await job.result;
+                ids = [...new Set(submitted.commands.map((command) => command.id))];
+                startedAt = Date.now();
+                if (ids.length > 0) await submitRound();
+                return submitted;
+              }).result;
+              if (!queued.ran) return [];
+              if (queued.value.commands.length === 0) {
+                if (!queued.value.failed) undoFailures.add(job.target);
                 return [];
               }
-              return [{ ...outcome.inverse, sourceFolderId: knownDestination ?? "" }];
-            });
-            if (inverse.length > 0) {
-              const settlement = await new Promise<MailActionSettlement>((resolve) => {
-                let finished = false;
-                let stop = () => {};
-                const finish = (settlement: MailActionSettlement) => {
-                  finished = true;
-                  signal.removeEventListener("abort", abort);
-                  resolve(settlement);
-                };
-                const abort = () => {
-                  stop();
-                  finish({ conversationId: job.target.conversationId, ok: false, expired: true });
-                };
-                stop = host.followOutcomes({
-                  actionId,
-                  destinationFolderId: null,
-                  target: job.target,
-                  commands: inverse,
-                  reportFailures: false,
-                  onSettled: finish,
-                  onFailure: () => finish({ conversationId: job.target.conversationId, ok: false, expired: false }),
-                });
-                if (signal.aborted) abort();
-                else if (!finished) signal.addEventListener("abort", abort, { once: true });
+              let attempt = 0;
+              while (ids.length > 0 && !signal.aborted) {
+                const remaining = MAIL_ACTION_OUTCOME_TTL_MS - (Date.now() - startedAt);
+                if (remaining <= 0) break;
+                await waitForUndo(Math.min(1_000 * 2 ** attempt++, 30_000, remaining), signal);
+                await submitRound();
+              }
+              if (signal.aborted) return [];
+              if (ids.length > 0 || [...byId.values()].some((outcome) => outcome.outcome === "unavailable")) undoFailures.add(job.target);
+              return [...byId.values()].flatMap((outcome) => {
+                if (outcome.outcome !== "reversed") return [];
+                if (!outcome.inverse) {
+                  undoFailures.add(job.target);
+                  return [];
+                }
+                if (["failed", "cancelled", "needs_attention"].includes(outcome.inverse.state)) undoFailures.add(job.target);
+                return [{ ...outcome.inverse, sourceFolderId: knownDestination ?? "" }];
               });
-              failed ||= !settlement.ok;
-              await host.reconcile();
+            } catch {
+              if (!signal.aborted) undoFailures.add(job.target);
+              return [];
+            } finally {
+              requestPhaseEnded();
             }
-            if (failed) undoFailures.push(job.target);
-          } catch (error) {
-            if (!signal.aborted) undoFailures.push(job.target);
-          } finally {
-            host.release(job.target);
+          })();
+          if (inverse.length > 0) {
+            const settlement = await new Promise<MailActionSettlement>((resolve) => {
+              let finished = false;
+              let stop = () => {};
+              const finish = (settlement: MailActionSettlement) => {
+                if (!settlement.ok) undoFailures.add(job.target);
+                finished = true;
+                signal.removeEventListener("abort", abort);
+                resolve(settlement);
+              };
+              const abort = () => {
+                stop();
+                finish({ conversationId: job.target.conversationId, ok: false, expired: true });
+              };
+              stop = host.followOutcomes({
+                actionId,
+                destinationFolderId: null,
+                target: job.target,
+                commands: inverse,
+                reportFailures: false,
+                onSettled: finish,
+                onFailure: () => finish({ conversationId: job.target.conversationId, ok: false, expired: false }),
+              });
+              if (signal.aborted) abort();
+              else if (!finished) signal.addEventListener("abort", abort, { once: true });
+            });
+            if (!settlement.ok) undoFailures.add(job.target);
+            await host.reconcile();
           }
-        }).result;
+        } catch {
+          if (!signal.aborted) undoFailures.add(job.target);
+        } finally {
+          host.release(job.target);
+        }
       });
       await Promise.all(pending);
       if (signal.aborted) return;
       await host.reconcile();
-      if (undoFailures.length > 0) host.showUndoFailed(undoFailures, knownDestination ?? null);
+      if (undoFailures.size > 0) host.showUndoFailed([...undoFailures], knownDestination ?? null);
     };
     if (removing && !options.silent) host.offerUndo({ actionId, targets, destinationFolderId: knownDestination ?? null, undo });
     else if (!options.silent) host.announce(actionId, targets);
@@ -322,8 +344,10 @@ export const runMailWorkspaceAction = async (
         if (undone || signal.aborted || result.commands.length === 0) {
           if (!undone && !result.failed) {
             if (removing)
-              void host.reconcile().then(() => {
-                if (!undone && !signal.aborted) host.release(target);
+              void host.reconcile().then((fresh) => {
+                if (undone || signal.aborted) return;
+                if (fresh) host.release(target);
+                else host.releaseOnNextSnapshot(target, () => !undone && !signal.aborted);
               });
             else host.release(target);
           }
@@ -342,8 +366,10 @@ export const runMailWorkspaceAction = async (
           onSettled: (settlement) => {
             if (undone || signal.aborted) return;
             if (!settlement.ok && !settlement.expired) return;
-            void host.reconcile().then(() => {
-              if (!undone && !signal.aborted) host.release(target);
+            void host.reconcile().then((fresh) => {
+              if (undone || signal.aborted) return;
+              if (fresh || !removing) host.release(target);
+              else host.releaseOnNextSnapshot(target, () => !undone && !signal.aborted);
             });
           },
         });

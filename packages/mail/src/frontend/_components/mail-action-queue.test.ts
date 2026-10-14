@@ -57,6 +57,45 @@ describe("Mail action queue", () => {
     await first.result;
     expect(await next.result).toEqual({ ran: true, value: "next" });
   });
+  test("flush starts every ready conversation in order, then drain waits below the bound", async () => {
+    const queue = createMailActionQueue(2);
+    const holds = Array.from({ length: 4 }, () => deferred<void>());
+    const events: string[] = [];
+    const first = queue.enqueue("one", async () => {
+      events.push("one");
+      await holds[0]!.promise;
+    });
+    const same = queue.enqueue("one", async () => {
+      events.push("one-next");
+    });
+    const others = ["two", "three", "four"].map((id, index) =>
+      queue.enqueue(id, async () => {
+        events.push(id);
+        await holds[index + 1]!.promise;
+      }),
+    );
+    expect(events).toEqual(["one", "two"]);
+    queue.flush();
+    queue.flush();
+    expect(events).toEqual(["one", "two", "three", "four"]);
+    const last = queue.enqueue("five", async () => {
+      events.push("five");
+    });
+    holds[0]!.resolve();
+    await first.result;
+    expect(events).toEqual(["one", "two", "three", "four"]);
+    holds[1]!.resolve();
+    await others[0]!.result;
+    expect(events).toEqual(["one", "two", "three", "four"]);
+    holds[2]!.resolve();
+    await others[1]!.result;
+    await same.result;
+    await last.result;
+    expect(events).toEqual(["one", "two", "three", "four", "one-next", "five"]);
+    holds[3]!.resolve();
+    await others[2]!.result;
+    expect(queue.size()).toBe(0);
+  });
   test("rejection settles its own result and does not block later jobs; listeners unsubscribe", async () => {
     const queue = createMailActionQueue();
     let changes = 0;

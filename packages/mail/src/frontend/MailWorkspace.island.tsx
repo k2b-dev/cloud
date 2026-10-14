@@ -171,12 +171,18 @@ function MailWorkspaceView(props: {
   let preferenceTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingPreferences: Partial<MailWorkspacePreferences> = {};
   const actionQueue = createMailActionQueue();
+  onMount(() => {
+    const flushActions = () => actionQueue.flush();
+    window.addEventListener("pagehide", flushActions);
+    onCleanup(() => window.removeEventListener("pagehide", flushActions));
+  });
   const [actionsUnsent, setActionsUnsent] = createSignal(false);
   onCleanup(actionQueue.onChange(() => setActionsUnsent(actionQueue.size() > 0)));
   let structureMutationLoading = () => false;
   const structurePending = () => structureMutationLoading() || actionsUnsent();
   const [removals, setRemovals] = createSignal<readonly MailListRemoval[]>([]);
   const removalOwners = new WeakMap<MailListRemoval, symbol>();
+  const releasesOnNextSnapshot = new Set<() => void>();
   const leaveTimers = new Set<ReturnType<typeof setTimeout>>();
   const undoNotices = new Set<ToastHandle>();
   const [snapshotItems, setSnapshotItems] = createSignal<readonly MailListItem[]>(structuredClone(props.data.listItems));
@@ -188,6 +194,8 @@ function MailWorkspaceView(props: {
       viewCounts: data.viewCounts,
       activeView: data.activeView,
       listMode: data.listMode,
+      now: Date.now(),
+      currentUserId: props.currentUserId,
       items: snapshotItems(),
       shown: data.listItems,
       removals: removals(),
@@ -393,6 +401,9 @@ function MailWorkspaceView(props: {
       const rawItems = new Map(pages.flatMap((page) => page.snapshot.listItems.map((item) => [mailListRowKey(item), item] as const)));
       setSnapshotItems([...rawItems.values()]);
       setData(reconcile(next));
+      const releases = [...releasesOnNextSnapshot];
+      releasesOnNextSnapshot.clear();
+      for (const release of releases) release();
       setConversationSelection((current) =>
         scopeChanged
           ? emptyMailConversationSelection()
@@ -742,6 +753,7 @@ function MailWorkspaceView(props: {
     for (const timer of leaveTimers) clearTimeout(timer);
     for (const notice of undoNotices) notice.dismiss();
     setRemovals([]);
+    releasesOnNextSnapshot.clear();
     actionUiController.abort();
   });
 
@@ -858,9 +870,20 @@ function MailWorkspaceView(props: {
 
   const requireWorkspaceReconcile = () => requireMailWorkspaceRefresh(() => replaceWorkspaceRoute(requestPath()), t().refreshMailboxFailed);
 
-  const reconcileWorkspace = async () => {
-    const refreshError = await captureMailWorkspaceRefreshError(requireWorkspaceReconcile);
+  const reconcileWorkspaceForActions = async (): Promise<boolean> => {
+    let fresh = false;
+    const refreshError = await captureMailWorkspaceRefreshError(() =>
+      requireMailWorkspaceRefresh(async () => {
+        const result = await replaceWorkspaceRoute(requestPath());
+        fresh = result === "applied";
+        return result;
+      }, t().refreshMailboxFailed),
+    );
     if (refreshError) toast.error(refreshError.message);
+    return fresh;
+  };
+  const reconcileWorkspace = async (): Promise<void> => {
+    await reconcileWorkspaceForActions();
   };
 
   /**
@@ -1366,16 +1389,24 @@ function MailWorkspaceView(props: {
   const actionUiController = new AbortController();
   // A reload that a newer one replaces resolves before its snapshot arrives, and a row released on it would show again.
   // Actions that settle together share one reload, and those that settle during it share the next.
-  let actionReconcile: Promise<void> | null = null;
-  let nextActionReconcile: Promise<void> | null = null;
-  const reconcileAfterAction = (): Promise<void> => {
-    if (disposed) return Promise.resolve();
+  let actionReconcile: Promise<boolean> | null = null;
+  let nextActionReconcile: Promise<boolean> | null = null;
+  let actionReconcileStarted = false;
+  const reconcileAfterAction = (): Promise<boolean> => {
+    if (disposed) return Promise.resolve(false);
     if (!actionReconcile) {
-      actionReconcile = reconcileWorkspace().finally(() => {
-        actionReconcile = null;
-      });
+      actionReconcile = Promise.resolve()
+        .then(() => {
+          actionReconcileStarted = true;
+          return reconcileWorkspaceForActions();
+        })
+        .finally(() => {
+          actionReconcile = null;
+          actionReconcileStarted = false;
+        });
       return actionReconcile;
     }
+    if (!actionReconcileStarted) return actionReconcile;
     nextActionReconcile ??= actionReconcile.then(() => {
       nextActionReconcile = null;
       return reconcileAfterAction();
@@ -1401,6 +1432,12 @@ function MailWorkspaceView(props: {
     };
     return {
       queue: actionQueue,
+      releaseOnNextSnapshot: (target, wanted) => {
+        if (disposed) return;
+        releasesOnNextSnapshot.add(() => {
+          if (wanted()) release(target);
+        });
+      },
       resolveTargets: actionTargets,
       chooseDestinationFolder,
       roleDestinationFolderId: (nextActionId) => mailRoleDestinationFolderId(nextActionId, data.folders),
@@ -1451,6 +1488,7 @@ function MailWorkspaceView(props: {
               item: structuredClone(unwrap(item)),
               before: rows.slice(0, index).map(mailListRowKey),
               sourceFolderIds: target.sourceFolderIds,
+              destinationFolderId,
               phase: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "hidden" : "leaving",
             };
             removalOwners.set(removal, owner);

@@ -339,6 +339,42 @@ export const undoConversationTriageCommands = async (params: {
       `
     : [];
   const replayByKey = new Map(replays.map((command) => [command.idempotency_key, command]));
+  const candidates = reversible.length
+    ? await sql<{ command_id: string; ref_id: string; projected: boolean }[]>`
+        SELECT original.id AS command_id, ref.id AS ref_id,
+          (ref.connector_ref ->> 'source' = 'command'
+            AND ref.connector_ref ->> 'commandId' = original.id::text) IS TRUE AS projected
+        FROM mail.commands original
+        JOIN mail.remote_message_refs ref
+          ON ref.message_id = (SELECT source.message_id FROM mail.remote_message_refs source
+            WHERE source.id = (original.target ->> 'remoteMessageRefId')::uuid)
+          AND ref.folder_id = (original.target ->> 'destinationFolderId')::uuid
+        JOIN mail.message_placements placement ON placement.remote_message_ref_id = ref.id
+        WHERE original.id = ANY(${toPgUuidArray(reversible.map((command) => command.id))}::uuid[])
+          AND ref.stale_at IS NULL AND placement.deleted_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM mail.commands other
+            WHERE other.mailbox_id = ${params.mailboxId}::uuid AND other.kind = 'move'
+              AND other.id <> original.id
+              AND other.target ->> 'remoteMessageRefId' = ref.id::text
+              AND (other.state NOT IN ('confirmed', 'reconciled', 'failed', 'cancelled', 'needs_attention')
+                OR other.idempotency_key LIKE 'undo:%')
+          )
+        ORDER BY projected DESC, placement.updated_at DESC, ref.id
+      `
+    : [];
+  const assignedRefs = new Set<string>();
+  // Reserve command-created copies first so a fallback for another move cannot take them.
+  const pinnedRefs = new Map<string, string>();
+  for (const command of reversible) {
+    if (replayByKey.has(`undo:${command.id}`)) continue;
+    const candidate = candidates.find(
+      (candidate) => candidate.command_id === command.id && candidate.projected && !assignedRefs.has(candidate.ref_id),
+    );
+    if (!candidate) continue;
+    pinnedRefs.set(command.id, candidate.ref_id);
+    assignedRefs.add(candidate.ref_id);
+  }
   const inverseIds: string[] = [];
   for (const command of reversible) {
     const outcome = outcomes.get(command.id)!;
@@ -356,6 +392,11 @@ export const undoConversationTriageCommands = async (params: {
       if (outcome.outcome === "reversed") outcome.inverse = { id: replay.id, state: replay.state, code: replay.code };
       continue;
     }
+    const refId =
+      pinnedRefs.get(command.id) ??
+      candidates.find((candidate) => candidate.command_id === command.id && !assignedRefs.has(candidate.ref_id))?.ref_id;
+    if (!refId) continue;
+    assignedRefs.add(refId);
     const inverse = await createActorCommands({
       context: params.context,
       mailboxId: params.mailboxId,
@@ -363,6 +404,7 @@ export const undoConversationTriageCommands = async (params: {
         {
           kind: "move",
           messageId: command.message_id,
+          remoteMessageRefId: refId,
           sourceFolderId: command.destination_folder_id,
           destinationFolderId: command.source_folder_id,
           idempotencyKey,

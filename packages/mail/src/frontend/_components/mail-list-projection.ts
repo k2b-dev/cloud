@@ -1,4 +1,5 @@
 import type { ConversationView } from "../../contracts";
+import { mailPlacementsBelongInListing, mailRowLeavesListing } from "../../folder-display-rules";
 import type { ConversationViewCounts, MailFolderView } from "../../service/messages";
 import type { MailListItem, MailListMode } from "../../service/workspace";
 import { mailListMessagePendingKey } from "./mail-list-optimistic";
@@ -17,15 +18,23 @@ export type MailListRemoval = {
   /** Keys before this row, nearest last, for restoration after a changed snapshot. */
   before: readonly string[];
   sourceFolderIds: readonly string[];
+  destinationFolderId: string | null;
   phase: "leaving" | "hidden" | "held";
 };
+
+export const mailRemovalCoversRow = (removal: MailListRemoval, snapshotRow: MailListItem): boolean =>
+  !(snapshotRow.selectionKind === "conversation" && Date.parse(snapshotRow.latestMessageAt) > Date.parse(removal.item.latestMessageAt));
 
 export const projectMailList = (params: {
   items: readonly MailListItem[];
   removals: readonly MailListRemoval[];
   scope: string;
 }): { items: MailListItem[]; leavingKeys: ReadonlySet<string> } => {
-  const removals = params.removals.filter((removal) => removal.scope === params.scope);
+  const snapshot = new Map(params.items.map((item) => [mailListRowKey(item), item]));
+  const removals = params.removals.filter((removal) => {
+    const row = snapshot.get(removal.rowKey);
+    return removal.scope === params.scope && (!row || mailRemovalCoversRow(removal, row));
+  });
   const hidden = new Set(removals.filter((removal) => removal.phase === "hidden").map((removal) => removal.rowKey));
   const leavingKeys = new Set(removals.filter((removal) => removal.phase === "leaving").map((removal) => removal.rowKey));
   const items = params.items.filter((item) => !hidden.has(mailListRowKey(item)));
@@ -43,6 +52,8 @@ export const projectMailCounts = (params: {
   viewCounts: ConversationViewCounts;
   activeView: ConversationView | null;
   listMode: MailListMode;
+  now: number;
+  currentUserId: string | null;
   items: readonly MailListItem[];
   shown: readonly MailListItem[];
   removals: readonly MailListRemoval[];
@@ -56,16 +67,52 @@ export const projectMailCounts = (params: {
   const removedKeys = new Set<string>();
   const removedFolders = new Map<string, ReadonlySet<string>>();
   let viewDelta = 0;
+  const viewDeltas = new Map<ConversationView, number>();
   for (const removal of params.removals) {
     if (removal.scope !== params.scope || removedKeys.has(removal.rowKey)) continue;
+    const item = snapshot.get(removal.rowKey);
+    if (item && !mailRemovalCoversRow(removal, item)) continue;
     removedKeys.add(removal.rowKey);
     if (removal.phase !== "held") removedFolders.set(removal.rowKey, new Set(removal.sourceFolderIds));
-    const item = snapshot.get(removal.rowKey);
     const delta = removal.phase === "held" ? (item ? 0 : 1) : item ? -1 : 0;
     if (delta === 0) continue;
     if (!conversations.has(removal.conversationId)) {
       conversations.add(removal.conversationId);
       viewDelta += delta;
+      if (params.listMode === "conversations") {
+        const row = removal.item;
+        const snoozed = row.snoozedUntil !== null && Date.parse(row.snoozedUntil) > params.now;
+        const views = {
+          needs_action: row.workStatus === "needs_action" && !snoozed,
+          waiting: row.workStatus === "waiting" && !snoozed,
+          mine:
+            params.currentUserId !== null &&
+            row.assigneeUserIds.includes(params.currentUserId) &&
+            row.workStatus !== null &&
+            row.workStatus !== "done" &&
+            !snoozed,
+          unassigned: row.assigneeUserIds.length === 0 && row.workStatus !== null && row.workStatus !== "done" && !snoozed,
+          snoozed,
+          done: row.workStatus === "done",
+          recently_active: true,
+        };
+        for (const view of ["needs_action", "mine", "unassigned", "waiting", "done", "snoozed", "recently_active"] as const) {
+          if (view === params.activeView || !views[view]) continue;
+          const scope = { viewFolderId: null, activeView: view, hasSearch: false, hasSavedView: false, scheduledMode: false };
+          if (mailPlacementsBelongInListing({ ...scope, activeFolderIds: row.activeFolderIds, folders: params.folders }) !== true) continue;
+          if (
+            !mailRowLeavesListing({
+              ...scope,
+              item: row,
+              sourceFolderIds: removal.sourceFolderIds,
+              destinationFolderId: removal.destinationFolderId,
+              folders: params.folders,
+            })
+          )
+            continue;
+          viewDeltas.set(view, (viewDeltas.get(view) ?? 0) + delta);
+        }
+      }
     }
     const row = item ?? removal.item;
     for (const folderId of new Set(removal.sourceFolderIds)) {
@@ -91,9 +138,8 @@ export const projectMailCounts = (params: {
         return delta === 0 ? folder : { ...folder, unread: Math.max(0, folder.unread + delta) };
       })
     : params.folders;
-  const viewCounts =
-    params.activeView && params.listMode === "conversations" && viewDelta !== 0
-      ? { ...params.viewCounts, [params.activeView]: Math.max(0, params.viewCounts[params.activeView] + viewDelta) }
-      : params.viewCounts;
+  if (params.activeView && params.listMode === "conversations" && viewDelta !== 0) viewDeltas.set(params.activeView, viewDelta);
+  const viewCounts = [...viewDeltas.values()].some((delta) => delta !== 0) ? { ...params.viewCounts } : params.viewCounts;
+  for (const [view, delta] of viewDeltas) if (delta !== 0) viewCounts[view] = Math.max(0, params.viewCounts[view] + delta);
   return { folders, viewCounts };
 };

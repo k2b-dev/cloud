@@ -60,6 +60,30 @@ export const mailListingExcludesTrashAndJunk = (scope: MailListingScope): boolea
   (!scope.scheduledMode && !scope.hasSearch && !scope.viewFolderId && !scope.activeView && !scope.hasSavedView) ||
   (!scope.hasSearch && scope.activeView !== null && FOLLOW_UP_VIEWS.includes(scope.activeView));
 
+/** Whether known placements belong in a listing; missing folders or placements leave membership unknown. */
+export const mailPlacementsBelongInListing = (
+  params: MailListingScope & {
+    activeFolderIds: readonly string[];
+    folders: readonly { id: string; role: string; effectiveDisplay: FolderDisplay; displayNeutral: boolean }[];
+  },
+): boolean | null => {
+  const byId = new Map(params.folders.map((folder) => [folder.id, folder]));
+  const folders = [...new Set(params.activeFolderIds)].map((id) => byId.get(id));
+  if (folders.length === 0 || folders.some((folder) => !folder)) return null;
+  if (params.viewFolderId) return params.activeFolderIds.includes(params.viewFolderId);
+  const visible = folders.filter(
+    (folder) => folder !== undefined && !(mailListingExcludesTrashAndJunk(params) && (folder.role === "trash" || folder.role === "junk")),
+  );
+  if (visible.length === 0) return false;
+  if (params.hasSearch || params.hasSavedView || params.scheduledMode || !isAggregatedListing(null, params.activeView)) return true;
+  // Sent and provider collections neither isolate mail nor bring isolated mail into an aggregated view.
+  const deciding = visible.flatMap((folder) => (folder && !folder.displayNeutral ? [folder] : []));
+  return !(
+    deciding.some((folder) => folder.effectiveDisplay !== "everywhere") &&
+    deciding.every((folder) => folder.effectiveDisplay !== "everywhere")
+  );
+};
+
 /** Whether the known placements after a move still belong in this listing. Unknown folders keep the row. */
 export const mailRowLeavesListing = (
   params: MailListingScope & {
@@ -72,19 +96,10 @@ export const mailRowLeavesListing = (
   if (params.viewFolderId) return params.sourceFolderIds.includes(params.viewFolderId);
   if (!params.destinationFolderId) return false;
   const sources = new Set(params.sourceFolderIds);
-  const ids = new Set([...params.item.activeFolderIds.filter((id) => !sources.has(id)), params.destinationFolderId]);
-  const byId = new Map(params.folders.map((folder) => [folder.id, folder]));
-  const folders = [...ids].map((id) => byId.get(id));
-  if (folders.some((folder) => !folder)) return false;
-  const visible = folders.filter(
-    (folder) => folder !== undefined && !(mailListingExcludesTrashAndJunk(params) && (folder.role === "trash" || folder.role === "junk")),
-  );
-  if (visible.length === 0) return true;
-  if (params.hasSearch || params.hasSavedView || params.scheduledMode || !isAggregatedListing(null, params.activeView)) return false;
-  // Sent and provider collections neither isolate mail nor bring isolated mail into an aggregated view.
-  const deciding = visible.flatMap((folder) => (folder && !folder.displayNeutral ? [folder] : []));
   return (
-    deciding.some((folder) => folder.effectiveDisplay !== "everywhere") &&
-    deciding.every((folder) => folder.effectiveDisplay !== "everywhere")
+    mailPlacementsBelongInListing({
+      ...params,
+      activeFolderIds: [...params.item.activeFolderIds.filter((id) => !sources.has(id)), params.destinationFolderId],
+    }) === false
   );
 };

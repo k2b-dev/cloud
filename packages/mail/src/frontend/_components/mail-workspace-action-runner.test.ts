@@ -66,6 +66,10 @@ const host = (overrides: Partial<MailWorkspaceActionRunnerHost> = {}) => {
     },
     reconcile: async () => {
       events.push("reconcile");
+      return true;
+    },
+    releaseOnNextSnapshot: (target) => {
+      events.push(`release-next:${target.conversationId}`);
     },
     showMissingTarget: async () => {
       events.push("missing");
@@ -174,6 +178,7 @@ describe("Mail workspace action runner", () => {
         return [{ id: "move", state: "queued" }];
       },
       submitUndo: async ({ commandIds }) => {
+        if (requests.length === 1) expect(fixture.events).not.toContain("announce:undo");
         requests.push(commandIds);
         return [{ id: "move", outcome: requests.length === 1 ? "pending" : "cancelled", inverse: null }];
       },
@@ -188,6 +193,7 @@ describe("Mail workspace action runner", () => {
     expect(requests).toEqual([["move"], ["move"]]);
     expect(fixture.events).toContain("release:one");
     expect(fixture.followed).toEqual([]);
+    expect(fixture.events.filter((event) => event === "announce:undo")).toHaveLength(1);
   });
   test("a reversed Undo follows inverse commands, reconciles before release and stops the original", async () => {
     const fixture = host({
@@ -251,6 +257,128 @@ describe("Mail workspace action runner", () => {
     expect(fixture.offered).toHaveLength(1);
     await fixture.offered[0]!.undo();
     expect(undone).toEqual(["one", "two"]);
+  });
+  test("bulk Undo releases queue slots while inverse outcomes or pending IDs wait", async () => {
+    for (const pending of [false, true]) {
+      const controller = new AbortController();
+      const fixture = host({
+        resolveTargets: () => ["one", "two", "three", "four"].map((id) => target(id)),
+        submitUndo: async ({ commandIds }) =>
+          commandIds.map((id) => ({
+            id,
+            outcome: pending ? "pending" : "reversed",
+            inverse: pending ? null : { id: `inverse:${id}`, state: "queued", code: null },
+          })),
+      });
+      await runMailWorkspaceAction("trash", {}, fixture.host, controller.signal);
+      const undo = fixture.offered[0]!.undo();
+      let finished = false;
+      void undo.then(() => {
+        finished = true;
+      });
+      await Bun.sleep(0);
+      expect(finished).toBe(false);
+      expect(fixture.host.queue.size()).toBe(0);
+      await runMailWorkspaceAction("flag", { targets: [target("five")] }, fixture.host, controller.signal);
+      expect(fixture.events).toContain("submit:five");
+      expect(fixture.host.queue.size()).toBe(0);
+      if (pending) expect(fixture.events).not.toContain("announce:undo");
+      else expect(fixture.followed.filter((follow) => !follow.reportFailures)).toHaveLength(4);
+      controller.abort();
+      await undo;
+      if (pending) expect(fixture.events).not.toContain("announce:undo");
+    }
+  });
+  test("Undo reverses accepted commands even when a later placement submission failed", async () => {
+    const requests: string[][] = [];
+    const fixture = host({
+      resolveTargets: () => [target("one", ["inbox", "projects"])],
+      submit: async ({ sourceFolderId }) => {
+        if (sourceFolderId === "projects") throw new Error("rejected");
+        return [{ id: "accepted", state: "queued" }];
+      },
+      submitUndo: async ({ commandIds }) => {
+        requests.push(commandIds);
+        return commandIds.map((id) => ({ id, outcome: "cancelled", inverse: null }));
+      },
+    });
+    await runMailWorkspaceAction("trash", {}, fixture.host, signal());
+    await fixture.offered[0]!.undo();
+    expect(requests).toEqual([["accepted"]]);
+    expect(fixture.events).toContain("release:one");
+    expect(fixture.events).toContain("announce:undo");
+    expect(fixture.events).not.toContain("undo-failed:one");
+  });
+  test("Undo reports a zero-command success as unavailable, but a failed submission accepted nothing", async () => {
+    for (const failed of [false, true]) {
+      const requests: string[][] = [];
+      const fixture = host({
+        resolveTargets: () => [target("one")],
+        submit: async () => {
+          if (failed) throw new Error("rejected");
+          return [];
+        },
+        submitUndo: async ({ commandIds }) => {
+          requests.push(commandIds);
+          return [];
+        },
+      });
+      await runMailWorkspaceAction("trash", {}, fixture.host, signal());
+      await fixture.offered[0]!.undo();
+      expect(requests).toEqual([]);
+      expect(fixture.events).toContain("release:one");
+      expect(fixture.events.includes("undo-failed:one")).toBe(!failed);
+      expect(fixture.events.includes("announce:undo")).toBe(failed);
+    }
+  });
+  test("Undo announces once after immediate cancellation, and never after a request failure", async () => {
+    for (const failed of [false, true]) {
+      const fixture = host({
+        submitUndo: async ({ commandIds }) =>
+          commandIds.map((id) => ({ id, outcome: failed ? "unavailable" : "cancelled", inverse: null })),
+      });
+      await runMailWorkspaceAction("trash", {}, fixture.host, signal());
+      await fixture.offered[0]!.undo();
+      expect(fixture.events.filter((event) => event === "announce:undo")).toHaveLength(failed ? 0 : 1);
+    }
+  });
+  test("Undo does not announce success when the returned inverse already failed", async () => {
+    const fixture = host({
+      resolveTargets: () => [target("one")],
+      submitUndo: async ({ commandIds }) =>
+        commandIds.map((id) => ({ id, outcome: "reversed", inverse: { id: "inverse", state: "failed", code: "PROVIDER_RIGHTS_CHANGED" } })),
+      followOutcomes: ({ reportFailures, onSettled }) => {
+        if (!reportFailures) onSettled({ conversationId: "one", ok: false, expired: false });
+        return () => {};
+      },
+    });
+    await runMailWorkspaceAction("trash", {}, fixture.host, signal());
+    await fixture.offered[0]!.undo();
+    expect(fixture.events).not.toContain("announce:undo");
+    expect(fixture.events).toContain("undo-failed:one");
+  });
+  test("failed refresh retains removals until a fresh snapshot, for zero commands and settled commands", async () => {
+    for (const zeroCommands of [false, true]) {
+      const releases: { target: MailBulkTarget; wanted: () => boolean }[] = [];
+      const controller = new AbortController();
+      const fixture = host({
+        resolveTargets: () => [target("one")],
+        submit: async () => (zeroCommands ? [] : [{ id: "command", state: "queued" }]),
+        reconcile: async () => false,
+        releaseOnNextSnapshot: (target, wanted) => {
+          releases.push({ target, wanted });
+        },
+      });
+      await runMailWorkspaceAction("trash", {}, fixture.host, controller.signal);
+      if (!zeroCommands) fixture.followed[0]!.onSettled({ conversationId: "one", ok: true, expired: false });
+      await Bun.sleep(0);
+      expect(fixture.events).not.toContain("release:one");
+      expect(releases).toHaveLength(1);
+      expect(releases[0]?.target).toEqual(target("one"));
+      expect(releases[0]?.wanted()).toBe(true);
+      await fixture.offered[0]!.undo();
+      expect(releases[0]?.wanted()).toBe(false);
+    }
   });
   test("toggles reconcile once per invocation, announce and offer no toast; silent read announces nothing", async () => {
     const fixture = host();

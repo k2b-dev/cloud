@@ -8,6 +8,7 @@ import { migrate } from "../migrate";
 import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { executeMutationCommand } from "./command-runtime";
+import { createActorCommands } from "./commands";
 import { keepConversation } from "./conversation-keeps";
 import { createMailbox } from "./mailboxes";
 import { createConversationTriageCommands, undoConversationTriageCommands } from "./triage";
@@ -178,8 +179,9 @@ suite("mail conversation action undo", () => {
     if (readerId) await sql`DELETE FROM auth.users WHERE id = ${readerId}::uuid`;
   });
 
-  const fixture = async (state: CommandState = "queued", sourceFolderId = inboxId) => {
+  const fixture = async (state: CommandState = "queued", sourceFolderId = inboxId, copies = 1) => {
     const messageId = await addMessage({ folderId: sourceFolderId, subject: crypto.randomUUID(), minutesAgo: 1 });
+    for (let index = 1; index < copies; index++) await addCopy({ messageId, folderId: sourceFolderId, uid: nextUid++, flags: [] });
     const conversationId = await addConversation("Undo action", [messageId]);
     const action = await createConversationTriageCommands({
       context,
@@ -198,11 +200,14 @@ suite("mail conversation action undo", () => {
     const [stored] = await sql<{ target: { remoteMessageRefId: string } }[]>`
       SELECT target FROM mail.commands WHERE id = ${command.id}::uuid
     `;
-    if (state !== "queued") await sql`UPDATE mail.commands SET state = ${state} WHERE id = ${command.id}::uuid`;
+    for (const command of action.data.commands) {
+      if (state !== "queued") await sql`UPDATE mail.commands SET state = ${state} WHERE id = ${command.id}::uuid`;
+    }
     return {
       messageId,
       conversationId,
       commandId: command.id,
+      commandIds: action.data.commands.map((command) => command.id),
       refId: stored!.target.remoteMessageRefId,
       correlationId: action.data.correlationId,
     };
@@ -266,6 +271,103 @@ suite("mail conversation action undo", () => {
       await sql<{ id: string }[]>`SELECT id FROM mail.commands WHERE mailbox_id = ${mailboxId}::uuid
       AND idempotency_key = ${`undo:${row.commandId}`}`,
     ).toEqual([{ id: first.inverse!.id }]);
+  });
+
+  test("pins two inverses of one message to distinct moved copies, including separate Undo requests", async () => {
+    for (const separateRequests of [false, true]) {
+      const row = await fixture("confirmed", inboxId, 2);
+      expect(row.commandIds).toHaveLength(2);
+      for (const id of row.commandIds) {
+        const [original] = await sql<{ target: { remoteMessageRefId: string } }[]>`SELECT target FROM mail.commands WHERE id = ${id}::uuid`;
+        await sql`UPDATE mail.remote_message_refs SET stale_at = now() WHERE id = ${original!.target.remoteMessageRefId}::uuid`;
+        await sql`UPDATE mail.message_placements SET deleted_at = now() WHERE remote_message_ref_id = ${original!.target.remoteMessageRefId}::uuid`;
+      }
+      const refs = [
+        await addCopy({ messageId: row.messageId, folderId: archiveId, uid: nextUid++, flags: [] }),
+        await addCopy({ messageId: row.messageId, folderId: archiveId, uid: nextUid++, flags: [] }),
+      ];
+      const batches = separateRequests ? row.commandIds.map((id) => [id]) : [row.commandIds];
+      const inverseRefs: string[] = [];
+      for (const commandIds of batches) {
+        const result = await undo(row, commandIds);
+        if (!result.ok) throw new Error(result.error.message);
+        expect(result.data.commands.every((command) => command.outcome === "reversed")).toBe(true);
+        for (const command of result.data.commands) {
+          const [inverse] = await sql<
+            { target: { remoteMessageRefId: string } }[]
+          >`SELECT target FROM mail.commands WHERE id = ${command.inverse!.id}::uuid`;
+          inverseRefs.push(inverse!.target.remoteMessageRefId);
+        }
+      }
+      expect(new Set(inverseRefs).size).toBe(2);
+      expect(inverseRefs.sort()).toEqual(refs.sort());
+    }
+  });
+
+  test("prefers the command-created moved copy over a newer unrelated destination copy", async () => {
+    const row = await fixture("confirmed");
+    const refId = await destinationCopy(row);
+    await sql`UPDATE mail.remote_message_refs SET connector_ref = ${{ source: "command", commandId: row.commandId }}::jsonb WHERE id = ${refId}::uuid`;
+    await sql`UPDATE mail.message_placements SET updated_at = now() - interval '1 hour' WHERE remote_message_ref_id = ${refId}::uuid`;
+    await addCopy({ messageId: row.messageId, folderId: archiveId, uid: nextUid++, flags: [] });
+    const result = await outcome(row);
+    expect(result.outcome).toBe("reversed");
+    expect(await snapshot(result.inverse!.id)).toMatchObject({ target: { remoteMessageRefId: refId } });
+  });
+
+  test("does not take a destination ref already targeted by another unfinished move", async () => {
+    const row = await fixture("confirmed");
+    const refId = await destinationCopy(row);
+    const laterMove = await createActorCommands({
+      context,
+      mailboxId,
+      inputs: [
+        {
+          kind: "move",
+          messageId: row.messageId,
+          remoteMessageRefId: refId,
+          sourceFolderId: archiveId,
+          destinationFolderId: trashId,
+          idempotencyKey: crypto.randomUUID(),
+        },
+      ],
+    });
+    if (!laterMove.ok) throw new Error(laterMove.error.message);
+    expect(await outcome(row)).toMatchObject({ outcome: "pending", inverse: null });
+    const fallback = await addCopy({ messageId: row.messageId, folderId: archiveId, uid: nextUid++, flags: [] });
+    const result = await outcome(row);
+    expect(result.outcome).toBe("reversed");
+    expect(await snapshot(result.inverse!.id)).toMatchObject({ target: { remoteMessageRefId: fallback } });
+  });
+
+  test("reserves command-created refs before assigning fallback refs to other original moves", async () => {
+    const row = await fixture("confirmed", inboxId, 2);
+    const refId = await destinationCopy(row);
+    // The command ordered last owns the only projected copy; the first must fall back to the unrelated one.
+    const lastCommandId = [...row.commandIds].sort().at(-1)!;
+    await sql`UPDATE mail.remote_message_refs SET connector_ref = ${{ source: "command", commandId: lastCommandId }}::jsonb WHERE id = ${refId}::uuid`;
+    const fallback = await addCopy({ messageId: row.messageId, folderId: archiveId, uid: nextUid++, flags: [] });
+    await sql`UPDATE mail.message_placements SET updated_at = now() - interval '1 hour' WHERE remote_message_ref_id = ${fallback}::uuid`;
+    const result = await undo(row, row.commandIds);
+    if (!result.ok) throw new Error(result.error.message);
+    for (const command of result.data.commands) {
+      expect(command.outcome).toBe("reversed");
+      expect(await snapshot(command.inverse!.id)).toMatchObject({
+        target: { remoteMessageRefId: command.id === lastCommandId ? refId : fallback },
+      });
+    }
+  });
+
+  test("answers pending for an extra original move when all destination copies are already assigned", async () => {
+    const row = await fixture("confirmed", inboxId, 2);
+    await destinationCopy(row);
+    const result = await undo(row, row.commandIds);
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.data.commands.map((command) => command.outcome).sort()).toEqual(["pending", "reversed"]);
+    const pending = result.data.commands.find((command) => command.outcome === "pending")!;
+    const retry = await undo(row, [pending.id]);
+    if (!retry.ok) throw new Error(retry.error.message);
+    expect(retry.data.commands[0]?.outcome).toBe("pending");
   });
 
   test("replays a completed inverse even after its source placement disappeared", async () => {

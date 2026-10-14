@@ -59,6 +59,19 @@ export const createMailActionQueue = (concurrency = MAIL_BULK_CONCURRENCY) => {
         },
       };
     },
+    flush: () => {
+      for (let index = 0; index < waiting.length; ) {
+        const job = waiting[index]!;
+        if (active.has(job.conversationId)) {
+          index += 1;
+          continue;
+        }
+        waiting.splice(index, 1);
+        active.add(job.conversationId);
+        job.start();
+      }
+      notify();
+    },
     size: () => waiting.length + active.size,
     onChange: (listener: () => void) => {
       listeners.add(listener);

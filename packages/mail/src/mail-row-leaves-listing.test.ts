@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { type MailListingScope, mailListingExcludesTrashAndJunk, mailRowLeavesListing } from "./folder-display-rules";
+import {
+  type MailListingScope,
+  mailListingExcludesTrashAndJunk,
+  mailPlacementsBelongInListing,
+  mailRowLeavesListing,
+} from "./folder-display-rules";
 import { mailTestFolder, mailTestRow } from "./frontend/_components/mail-list-test-fixtures";
 
 const scope: MailListingScope = { viewFolderId: null, activeView: null, hasSearch: false, hasSavedView: false, scheduledMode: false };
@@ -51,5 +56,18 @@ describe("Mail row listing membership after a move", () => {
         sourceFolderIds: ["sent"],
       }),
     ).toBe(true);
+  });
+  test("known placement membership matches the move rules and leaves unknown or empty sets undecided", () => {
+    const belongs = (activeFolderIds: string[], activeView: MailListingScope["activeView"] = "needs_action") =>
+      mailPlacementsBelongInListing({ ...scope, activeView, folders, activeFolderIds });
+    expect(belongs([])).toBeNull();
+    expect(belongs(["unknown"])).toBeNull();
+    expect(belongs(["inbox", "unknown"])).toBeNull();
+    expect(belongs(["inbox"])).toBe(true);
+    expect(belongs(["trash"])).toBe(false);
+    expect(belongs(["private", "sent"])).toBe(false);
+    expect(belongs(["private", "inbox"])).toBe(true);
+    expect(belongs(["private"], "mine")).toBe(true);
+    expect(belongs(["trash"], "recently_active")).toBe(true);
   });
 });

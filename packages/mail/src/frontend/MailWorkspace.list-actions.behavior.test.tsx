@@ -5,6 +5,7 @@ import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom"
 import { conversationTriageInputSchema, conversationTriageUndoInputSchema, type ConversationTriageInput } from "../contracts";
 import type { MailboxPageData } from "../service/workspace";
 import { mailTestFolder, mailTestRow as fixtureMailRow } from "./_components/mail-list-test-fixtures";
+import { MAIL_BULK_CONCURRENCY } from "./_components/mail-bulk-actions";
 import { MAIL_ROW_LEAVE_MS } from "./_components/mail-list-projection";
 
 const mailTestRow = (id: string) =>
@@ -207,6 +208,8 @@ describe("Mail list actions", () => {
   let actionResponse: (index: number) => Promise<Response>;
   let outcomeState: "queued" | "failed" | "confirmed";
   let undoResponse: () => Promise<Response>;
+  let workspaceRequests: string[];
+  let workspaceResponse: (href: string) => Promise<Response>;
 
   beforeEach(() => {
     dom = createDomTestHarness();
@@ -217,6 +220,13 @@ describe("Mail list actions", () => {
     requests = [];
     undoRequests = [];
     outcomeState = "queued";
+    workspaceRequests = [];
+    workspaceResponse = async (href) =>
+      Response.json(
+        href.includes("conversation=")
+          ? snapshot
+          : { ...snapshot, selectedConversationId: null, selectedMessageId: null, detailMessages: [] },
+      );
     actionResponse = async (index) => Response.json({ commands: [{ id: commandId(index), state: "queued" }] });
     undoResponse = async () => Response.json({ commands: undoRequests.at(-1)!.map((id) => ({ id, outcome: "cancelled", inverse: null })) });
     globalThis.fetch = Object.assign(
@@ -224,11 +234,8 @@ describe("Mail list actions", () => {
         const url = String(input instanceof Request ? input.url : input);
         if (url.includes("/workspace-route")) {
           const href = new URL(url, "http://localhost").searchParams.get("href") ?? "";
-          return Response.json(
-            href.includes("conversation=")
-              ? snapshot
-              : { ...snapshot, selectedConversationId: null, selectedMessageId: null, detailMessages: [] },
-          );
+          workspaceRequests.push(href);
+          return workspaceResponse(href);
         }
         const body = input instanceof Request ? await input.clone().text() : String(init?.body ?? "{}");
         if (url.endsWith("/actions/undo")) {
@@ -461,6 +468,87 @@ describe("Mail list actions", () => {
     for (const request of requests) expect(request.body.kind).toBe("move_to_role");
     hold.resolve(Response.json({ commands: [{ id: commandId(1), state: "queued" }] }));
     await settle();
+  });
+  test("pagehide flushes bulk Delete submissions past the concurrency bound", async () => {
+    const hold = deferred<Response>();
+    actionResponse = () => hold.promise;
+    const rows = Array.from({ length: MAIL_BULK_CONCURRENCY + 2 }, (_, index) => mailTestRow(`row-${index}`));
+    mount({ listItems: rows });
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Select conversations"]')!.click();
+    for (const checkbox of dom.root.querySelectorAll<HTMLInputElement>('.mail-list-entry input[type="checkbox"]')) checkbox.click();
+    const trigger = dom.root.querySelector<HTMLButtonElement>('button[aria-label="More selected conversation actions"]')!;
+    trigger.click();
+    await Bun.sleep(0);
+    const item = [...trigger.closest(".k2b-dropdown")!.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent?.trim() === "Move to Trash",
+    );
+    if (!item) throw new Error("No bulk Delete");
+    item.click();
+    await settle();
+    expect(requests).toHaveLength(MAIL_BULK_CONCURRENCY);
+    dom.window.dispatchEvent(new dom.window.Event("pagehide"));
+    await settle();
+    expect(requests.map((request) => request.conversationId)).toEqual(rows.map((row) => row.id));
+    expect(requests.every((request) => request.keepalive)).toBe(true);
+    dispose();
+    hold.resolve(Response.json({ commands: [] }));
+    await settle();
+  });
+  test("confirmed Delete survives a failed refresh and releases on the next applied snapshot", async () => {
+    mount();
+    await menuAction("one", "Move to Trash");
+    await Bun.sleep(MAIL_ROW_LEAVE_MS + 20);
+    expect(rowIds()).toEqual(["two", "three"]);
+    workspaceResponse = async () => Response.json({ error: { message: "Refresh unavailable" } }, { status: 500 });
+    outcomeState = "confirmed";
+    await Bun.sleep(1_050);
+    expect(workspaceRequests).toHaveLength(1);
+    expect(rowIds()).toEqual(["two", "three"]);
+    expect(
+      [...dom.document.querySelectorAll(".k2b-toast")].some((notice) =>
+        notice.textContent?.includes("Could not refresh this mailbox yet. Reload to confirm the latest state."),
+      ),
+    ).toBe(true);
+    snapshot = {
+      ...snapshot,
+      listItems: snapshot.listItems.filter((item) => item.id !== "one"),
+      folders: snapshot.folders.map((folder) => (folder.id === "Inbox1" ? { ...folder, unread: 2 } : folder)),
+    };
+    workspaceResponse = async () => Response.json(snapshot);
+    await refresh();
+    expect(rowIds()).toEqual(["two", "three"]);
+    expect(badge(`/app/mail/${MAILBOX_ID}?folder=Inbox1`)).toContain("2");
+    // A later server snapshot can show the same conversation again once its removal was released.
+    snapshot = { ...snapshot, listItems: data.listItems };
+    await refresh();
+    expect(rowIds()).toEqual(["one", "two", "three"]);
+  });
+  test("two Deletes settling in one tick share one refresh and stay hidden until its snapshot applies", async () => {
+    const fresh = deferred<Response>();
+    mount();
+    await menuAction("one", "Move to Trash");
+    await menuAction("two", "Move to Trash");
+    await Bun.sleep(MAIL_ROW_LEAVE_MS + 20);
+    expect(rowIds()).toEqual(["three"]);
+    const observedRows: (string | undefined)[][] = [];
+    const observer = new MutationObserver(() => {
+      observedRows.push(rowIds());
+    });
+    observer.observe(dom.root, { subtree: true, childList: true });
+    try {
+      workspaceResponse = () => fresh.promise;
+      outcomeState = "confirmed";
+      await Bun.sleep(1_050);
+      expect(workspaceRequests).toHaveLength(1);
+      expect(rowIds()).toEqual(["three"]);
+      fresh.resolve(Response.json({ ...snapshot, listItems: [mailTestRow("three")] }));
+      await settle();
+      expect(workspaceRequests).toHaveLength(1);
+      expect(rowIds()).toEqual(["three"]);
+      expect(observedRows.every((ids) => !ids.includes("one") && !ids.includes("two"))).toBe(true);
+    } finally {
+      observer.disconnect();
+    }
   });
   test("a message row removes only its message and focuses the next message of the same conversation", async () => {
     const hold = deferred<Response>();
