@@ -592,7 +592,8 @@ describe("profile menu in the rail", () => {
             avatarBottom: Math.round(avatar.bottom),
             avatarTop: Math.round(avatar.top),
             railRight: Math.round(document.querySelector(".layout-rail")!.getBoundingClientRect().right),
-            themes: [...panel.querySelectorAll('[role="radio"]')].map((item) => item.textContent?.trim()),
+            appearanceLabel: panel.querySelector(".menu-item")?.getAttribute("aria-label"),
+            radios: panel.querySelectorAll('[role="radio"]').length,
             items: [...panel.querySelectorAll(".menu-item")].map((item) => item.textContent?.trim()),
           };
         });
@@ -601,9 +602,14 @@ describe("profile menu in the rail", () => {
         expect(menu.bottom).toBe(menu.avatarBottom);
         expect(menu.top).toBeLessThan(menu.avatarTop);
         expect(menu.items).toEqual(
-          language === "de" ? ["English", "Profileinstellungen", "App", "Abmelden"] : ["Deutsch", "Profile settings", "App", "Sign out"],
+          language === "de"
+            ? ["Hell", "English", "Profileinstellungen", "App", "Abmelden"]
+            : ["Light", "Deutsch", "Profile settings", "App", "Sign out"],
         );
-        expect(menu.themes).toEqual(language === "de" ? ["Hell", "Dunkel", "Automatisch"] : ["Light", "Dark", "Automatic"]);
+        expect(menu.radios).toBe(0);
+        expect(menu.appearanceLabel).toBe(
+          language === "de" ? "Darstellung: Hell. Wechselt zu Dunkel." : "Appearance: Light. Switches to Dark.",
+        );
         // Keyboard users move from the avatar into the menu.
         await page.keyboard.press("Tab");
         expect(await page.evaluate(() => document.activeElement?.closest(".layout-profile-preferences__panel") !== null)).toBe(true);

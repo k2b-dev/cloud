@@ -2,6 +2,7 @@ import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { PWA_LIMITS } from "@k2b/cloud/contracts";
 import type { CloudThemePreference } from "@k2b/cloud/shared";
 import { createPreferenceController } from "@k2b/cloud/ssr/preference-controller";
+import { ThemeCycleButton } from "@k2b/cloud/ssr/ThemeCycleButton.tsx";
 import { Avatar, Button, SegmentedControl, SettingsSection, TextInput, toast, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { shellMessages } from "../../messages";
@@ -69,12 +70,7 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
         />
       </SettingsSection>
       <SettingsSection title={t().appearance}>
-        <SegmentedControl
-          ariaLabel={t().appearance}
-          options={preferences.themeOptions()}
-          value={preferences.theme}
-          onValueChange={preferences.setTheme}
-        />
+        <ThemeCycleButton preferences={preferences} variant="secondary" />
       </SettingsSection>
       <SettingsSection title={t().thisPhone}>
         <form

@@ -295,14 +295,16 @@ footer that holds the legal links of all running applications and the
 language and theme settings for visitors. The legal links come from the
 runtime registry, so they appear when the router installs
 `middleware.runtime()`. The language control shows the current language and
-switches between English and German. The theme menu offers **Light**,
-**Dark**, and **Automatic** and names the current choice. Below the `md`
-breakpoint both controls are compact: the language control shows the
-language code, such as `DE`, and the theme control only its icon. The full
-names remain their accessible labels and fill the menus. Where the legal
-links and the controls do not fit one row, the controls move to a second row
-below the links. On touch screens, every footer
-control is at least 44 px tall, and no control covers another.
+switches between English and German. The theme button shows the current
+choice. Each click switches to the next: **Automatic**, **Light**, **Dark**,
+then **Automatic** again. Below the `md` breakpoint both controls are compact:
+the language control shows the language code, such as `DE`, and the theme
+control only its icon. The full
+language name remains its accessible label. The theme button's accessible
+name states the current choice and the next one. Where the legal links and
+the controls do not fit one row, the controls move to a second row below the
+links. On touch screens, every footer control is at least 44 px tall, and no
+control covers another.
 
 The page content and the footer share one column that is at least one
 viewport tall, and the content comes first. On a short page the footer sits at

@@ -28,6 +28,7 @@ Your account area combines local Cloud data, optional FreeIPA data, and the acti
 
 ## Choose your appearance {icon="palette"}
 
-In the profile menu, **Appearance** offers **Light**, **Dark**, and
-**Automatic**. Automatic is the default. It follows your device's light or
-dark setting.
+The profile menu shows your current appearance as one entry. Each click
+switches to the next: **Automatic**, **Light**, **Dark**, then **Automatic**
+again. The menu stays open. Automatic is the default. It follows your
+device's light or dark setting.
