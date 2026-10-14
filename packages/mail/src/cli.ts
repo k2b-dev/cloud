@@ -3781,7 +3781,7 @@ const specialistCommands = {
       run: async ({ ctx, args }) => {
         const resolved = await resolveAdminMailbox(ctx, args.mailbox);
         const mailbox = await readApi<PlatformMailboxOperationSummary>(ctx, `/admin/mailboxes/${resolved.id}/operations`);
-        if (printStructured(ctx, { ...mailbox, permalink: cloudResourceUrl(ctx, { type: "mail.mailbox", id: mailbox.mailboxId }) })) return;
+        if (printStructured(ctx, mailbox)) return;
         ctx.print(`${mailbox.mailboxName} (${mailbox.mailboxId})`);
         ctx.print(
           `Health ${mailbox.health}; administrators ${mailbox.access.administrators}; access entries ${mailbox.access.total}; attention ${mailbox.attentionCount}.`,

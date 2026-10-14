@@ -1450,7 +1450,10 @@ function spacesCommands(locale?: string) {
           );
           printRows(
             ctx,
-            items.map((item) => withCloudResourcePermalink(ctx, "spaces.item", item)),
+            items.map((item) => ({
+              ...item,
+              permalink: cloudResourceUrl(ctx, { type: "spaces.item", id: item.id.split(":", 1)[0] ?? item.id }),
+            })),
             items,
             [
               { key: "id", label: "ID" },

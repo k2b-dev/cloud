@@ -2471,6 +2471,23 @@ test("admin operations reads the redacted platform operator endpoint", async () 
   expect(JSON.parse(result.stdout)).toMatchObject({ mailboxes: [{ mailboxId: MAILBOX_ID, coverage: { search: { covered: 1 } } }] });
 });
 
+test("admin mailbox get omits a permalink that requires mailbox membership", async () => {
+  const server = Bun.serve({
+    port: 0,
+    fetch: (request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/api/mail/admin/operations") return api({ mailboxes: [platformMailboxSummary], nextCursor: null });
+      if (path === `/api/mail/admin/mailboxes/${MAILBOX_ID}/operations`) return api(platformMailboxSummary);
+      return api({ message: "unexpected" }, { status: 500 });
+    },
+  });
+  servers.push(server);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "admin", "mailbox", "get", MAILBOX_ID]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual(platformMailboxSummary);
+  expect(JSON.parse(result.stdout)).not.toHaveProperty("permalink");
+});
+
 test("admin mailbox list preserves server pagination and recovery counts", async () => {
   let requested = "";
   const server = withMailbox((request) => {

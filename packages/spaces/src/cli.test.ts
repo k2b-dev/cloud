@@ -218,6 +218,16 @@ beforeAll(async () => {
         return json([
           { id: "Evt001", spaceId: "Space1", spaceName: "Roadmap", title: "Launch", startsAt: "a", endsAt: "b" },
           { id: "Evt002", spaceId: "Other1", spaceName: "Other", title: "Else", startsAt: "a", endsAt: "b" },
+          {
+            id: "Evt003:2026-10-21T09:00:00.000Z",
+            spaceId: "Space1",
+            spaceName: "Roadmap",
+            title: "Weekly",
+            startsAt: "2026-10-21T09:00:00.000Z",
+            endsAt: "2026-10-21T10:00:00.000Z",
+            isRecurringInstance: true,
+            recurringEventId: "Evt003",
+          },
         ]);
       if (path === "/api/spaces/calendar/overlap")
         return json([{ itemId: "Evt001", spaceId: "Space1", spaceName: "Roadmap", title: "Launch" }]);
@@ -660,6 +670,17 @@ describe("secondary resources", () => {
         startsAt: "a",
         endsAt: "b",
         permalink: `${base}/open/spaces.item/~Evt001`,
+      },
+      {
+        id: "Evt003:2026-10-21T09:00:00.000Z",
+        spaceId: "Space1",
+        spaceName: "Roadmap",
+        title: "Weekly",
+        startsAt: "2026-10-21T09:00:00.000Z",
+        endsAt: "2026-10-21T10:00:00.000Z",
+        isRecurringInstance: true,
+        recurringEventId: "Evt003",
+        permalink: `${base}/open/spaces.item/~Evt003`,
       },
     ]);
     expect(calendar.requests.at(-1)?.path).toBe(

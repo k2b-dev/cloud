@@ -20,6 +20,7 @@ import type {
   PublicSectionInput,
   PublicSectionPatch,
   PublicStatus,
+  ShiftAssignment,
   UpcomingSlot,
   Venue,
   VenueDashboard,
@@ -41,16 +42,21 @@ type VenueApiKeyCreateResponse = {
   token: string;
 };
 
-const withSlotPermalinks = (ctx: CloudCliContext, slots: UpcomingSlot[]) =>
-  slots.map((slot) => ({
-    ...slot,
-    assignments: slot.assignments.map((assignment) => withCloudResourcePermalink(ctx, "venue.assignment", assignment)),
-  }));
+/** The assignment reader returns only the caller's own sign-ups; the dashboard names the caller only in `myUpcomingShifts`. */
+const ownAssignmentPermalinks = (ctx: CloudCliContext, dashboard: VenueDashboard) => {
+  const callerUserIds = new Set(dashboard.myUpcomingShifts.map((assignment) => assignment.userId));
+  return (assignment: ShiftAssignment) =>
+    callerUserIds.has(assignment.userId) ? withCloudResourcePermalink(ctx, "venue.assignment", assignment) : assignment;
+};
+const withSlotPermalinks = (ctx: CloudCliContext, dashboard: VenueDashboard) => {
+  const link = ownAssignmentPermalinks(ctx, dashboard);
+  return dashboard.slots.map((slot) => ({ ...slot, assignments: slot.assignments.map(link) }));
+};
 const withDashboardPermalinks = (ctx: CloudCliContext, dashboard: VenueDashboard) => ({
   ...dashboard,
   venue: withCloudResourcePermalink(ctx, "venue.venue", dashboard.venue),
-  slots: withSlotPermalinks(ctx, dashboard.slots),
-  assignments: dashboard.assignments.map((assignment) => withCloudResourcePermalink(ctx, "venue.assignment", assignment)),
+  slots: withSlotPermalinks(ctx, dashboard),
+  assignments: dashboard.assignments.map(ownAssignmentPermalinks(ctx, dashboard)),
   myUpcomingShifts: dashboard.myUpcomingShifts.map((assignment) => withCloudResourcePermalink(ctx, "venue.assignment", assignment)),
 });
 
@@ -601,7 +607,7 @@ export default defineCliCommands({
       args: { venue: arg.optional({ valueLabel: "venue" }) },
       async run({ ctx, args }) {
         const dashboard = await loadDashboard(ctx, args.venue);
-        printJsonOrTable(ctx, { items: withSlotPermalinks(ctx, dashboard.slots) }, slotRows(dashboard.slots), [
+        printJsonOrTable(ctx, { items: withSlotPermalinks(ctx, dashboard) }, slotRows(dashboard.slots), [
           { key: "date" },
           { key: "recurring" },
           { key: "title" },
