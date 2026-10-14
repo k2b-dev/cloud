@@ -510,6 +510,9 @@ Before accepting a component or screen, verify:
 - App-owned CSS uses semantic host tokens and does not copy a shared component.
 - Hover, focus, active, selected, disabled, loading, empty, and error states
   are covered.
+- [Every action answers at once](/en/docs/frontend/forms-prompts-and-feedback#show-mutation-state)
+  with an optimistic update or a pending state on the acted element, and
+  offers Undo only where the server can reverse it.
 - Progressive disclosure works with pointer, keyboard, and touch.
 - Height-constrained dynamic content keeps a stable width as overflow changes.
 - Desktop and mobile layouts avoid page-level overflow.
