@@ -275,7 +275,7 @@ if (process.env.CONTACTS_CLI_CHILD !== "1") {
       ]);
       expect(preview.candidates.length).toBe(2);
       expect(await cldJson<unknown>(["contacts", "import", customers.name, "--from", "import.vcf"])).toEqual({
-        book: { id: customers.id, name: customers.name },
+        book: { id: customers.id, name: customers.name, permalink: `${serverUrl}/open/contacts.book/~${customers.id}` },
         created: 1,
         skipped: 1,
         failures: [],
