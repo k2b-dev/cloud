@@ -27,6 +27,11 @@ export type DropdownActionBase = {
   icon?: string;
   image?: string;
   label: string;
+  /**
+   * Accessible name when it must say more than the visible label, such as the current value and what the next
+   * activation does. It must contain the visible label.
+   */
+  ariaLabel?: string;
   description?: string;
   variant?: "danger";
 };
@@ -34,6 +39,11 @@ export type DropdownActionBase = {
 export type DropdownAction =
   | (DropdownActionBase & {
       action: () => void;
+      /**
+       * Set `false` for an action that changes a value in place, such as cycling a setting: the menu stays open and
+       * the focus stays on the row. Defaults to `true`.
+       */
+      closeOnSelect?: boolean;
       href?: never;
       external?: never;
     })
@@ -112,6 +122,8 @@ export type DropdownTriggerProps = Omit<
 
 export type DropdownItemProps = {
   children: JSX.Element;
+  closeOnSelect?: boolean;
+  ariaLabel?: string;
   icon?: string;
   image?: string;
   description?: string;
@@ -222,6 +234,7 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
         <button
           type="button"
           role="menuitem"
+          aria-label={props.ariaLabel}
           tabIndex={-1}
           class={`k2b-dropdown__item ${props.class ?? ""}`}
           data-danger={danger() ? "true" : undefined}
@@ -230,7 +243,7 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            menu?.close();
+            if (props.closeOnSelect !== false) menu?.close();
             props.onSelect?.();
           }}
         >
@@ -244,6 +257,7 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
           target={props.external ? "_blank" : undefined}
           rel={props.external ? "noopener noreferrer" : undefined}
           role="menuitem"
+          aria-label={props.ariaLabel}
           tabIndex={-1}
           class={`k2b-dropdown__item ${props.class ?? ""}`}
           data-danger={danger() ? "true" : undefined}
@@ -273,6 +287,7 @@ function DropdownChoiceItem(props: DropdownChoice): JSX.Element {
     <button
       type="button"
       role={props.choice === "checkbox" ? "menuitemcheckbox" : "menuitemradio"}
+      aria-label={props.ariaLabel}
       aria-checked={checked()}
       aria-disabled={props.disabled ? "true" : undefined}
       tabIndex={-1}
@@ -318,6 +333,8 @@ export function DropdownItems(props: { items: readonly DropdownItem[]; close: (r
       <DropdownChoiceItem {...item} />
     ) : (
       <DropdownItem
+        ariaLabel={item.ariaLabel}
+        closeOnSelect={"closeOnSelect" in item ? item.closeOnSelect : undefined}
         icon={item.icon}
         image={item.image}
         description={item.description}
