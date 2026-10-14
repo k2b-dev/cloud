@@ -174,6 +174,12 @@ jobs:
           path: packages/ui/dist
       - name: Install the Playwright browser used by the unit tests that launch Chromium
         run: ./packages/assistant/node_modules/.bin/playwright install chromium
+      - name: Fetch the Bun runtime that the standalone CLI test compiles into cld
+        # `bun build --compile` downloads the release target's runtime (37 MB)
+        # on first use. Fetched here, a slow registry fails this step by name
+        # instead of the test's 60 s budget.
+        timeout-minutes: 3
+        run: CLD_TARGETS=linux_x64 CLD_OUTPUT_DIR="$RUNNER_TEMP/cld-runtime" bun run packages/cloud-cli/scripts/build.ts
       - run: bun run test --shard ${{ matrix.shard }}/3
         env:
           # Unit tests of encrypted settings and grants derive keys from the application secret.
