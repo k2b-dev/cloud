@@ -190,7 +190,13 @@ const addCommandUndoRequests = async (tx: SqlClient): Promise<void> => {
     CREATE TABLE IF NOT EXISTS mail.command_undo_requests (
       command_id uuid PRIMARY KEY REFERENCES mail.commands(id) ON DELETE CASCADE,
       requested_at timestamptz NOT NULL DEFAULT now(),
-      -- NULL while the original command or its destination copy is still pending.
+      attempted_at timestamptz,
+      credential_scopes text[],
+      credential_id uuid,
+      credential_expires_at timestamptz,
+      audit_actor jsonb NOT NULL,
+      request_id text,
+      -- NULL while the original command, destination copy, or transport is still pending.
       outcome text CONSTRAINT command_undo_requests_outcome_check CHECK (outcome IN ('reversed', 'not_applied', 'unavailable')),
       inverse_command_id uuid REFERENCES mail.commands(id) ON DELETE SET NULL,
       CONSTRAINT command_undo_requests_inverse_check CHECK (inverse_command_id IS NULL OR outcome = 'reversed')
@@ -198,7 +204,7 @@ const addCommandUndoRequests = async (tx: SqlClient): Promise<void> => {
   `.simple();
   await tx`
     CREATE INDEX IF NOT EXISTS command_undo_requests_pending_idx
-    ON mail.command_undo_requests (requested_at, command_id) WHERE outcome IS NULL
+    ON mail.command_undo_requests (attempted_at NULLS FIRST, requested_at, command_id) WHERE outcome IS NULL
   `.simple();
 };
 

@@ -303,7 +303,7 @@ export const undoConversationTriageCommands = async (params: {
       }
       outcomes.set(command.id, { id: command.id, outcome, inverse: null });
     }
-    await recordUndoRequests(tx, recorded);
+    await recordUndoRequests(tx, recorded, params.context);
     return ok({ commands, outcomes, recorded });
   });
   if (!prepared.ok) return prepared;

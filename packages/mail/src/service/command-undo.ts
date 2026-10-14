@@ -2,6 +2,7 @@ import { audit, logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services
 import { sql } from "bun";
 import { MAIL_ACTION_OUTCOME_TTL_MS, MAX_CONVERSATION_ACTION_MESSAGES } from "../command-outcomes";
 import type { CommandState } from "../contracts";
+import { auditActorFromRequest, durableCredentialSnapshot, type MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { commandStillAuthorized, type StoredCommandAuthorization } from "./command-authorization";
 import { checkCommandKeepProtection } from "./conversation-keep-rules";
@@ -14,7 +15,10 @@ type UndoOriginal = StoredCommandAuthorization & {
   message_id: string | null;
   source_folder_id: string;
   destination_folder_id: string;
-  settled_at: Date | string;
+  created_at: Date | string;
+  expired: boolean;
+  audit_actor: ReturnType<typeof auditActorFromRequest>;
+  request_id: string | null;
   outcome: string | null;
 };
 
@@ -22,12 +26,24 @@ type UndoFilter = { mailboxId?: string; commandIds?: string[] };
 
 const log = logger("mail:commands");
 
-export const recordUndoRequests = async (tx: typeof sql, commandIds: string[]): Promise<void> => {
+export const recordUndoRequests = async (tx: typeof sql, commandIds: string[], context: MailRequestContext): Promise<void> => {
   if (commandIds.length === 0) return;
+  const credential = durableCredentialSnapshot(context);
   await tx`
-    INSERT INTO mail.command_undo_requests (command_id)
-    SELECT unnest(${toPgUuidArray(commandIds)}::uuid[])
-    ON CONFLICT (command_id) DO NOTHING
+    INSERT INTO mail.command_undo_requests (
+      command_id, credential_scopes, credential_id, credential_expires_at, audit_actor, request_id
+    )
+    SELECT unnest(${toPgUuidArray(commandIds)}::uuid[]),
+      ${credential ? toPgTextArray(credential.scopes) : null}::text[],
+      ${credential?.credentialId ?? null}::uuid, ${credential?.credentialExpiresAt ?? null}::timestamptz,
+      ${auditActorFromRequest(context)}::jsonb, ${context.requestId ?? null}
+    ON CONFLICT (command_id) DO UPDATE SET
+      credential_scopes = EXCLUDED.credential_scopes,
+      credential_id = EXCLUDED.credential_id,
+      credential_expires_at = EXCLUDED.credential_expires_at,
+      audit_actor = EXCLUDED.audit_actor,
+      request_id = EXCLUDED.request_id
+    WHERE mail.command_undo_requests.outcome IS NULL
   `;
 };
 
@@ -40,11 +56,11 @@ const resolveUndoRequest = async (commandId: string, mailboxId: string): Promise
     const [original] = await tx<UndoOriginal[]>`
       SELECT c.id, c.mailbox_id, c.kind, c.state, c.target, c.actor_kind, c.actor_id, c.delegated_user_id,
         c.initiator_actor_kind, c.initiator_actor_id, c.access_subject_kind, c.access_subject_id,
-        c.credential_scopes, c.credential_id, c.credential_expires_at, c.correlation_id,
-        request.outcome, ref.message_id,
+        request.credential_scopes, request.credential_id, request.credential_expires_at, c.correlation_id,
+        request.outcome, request.audit_actor, request.request_id, ref.message_id, c.created_at,
+        request.requested_at + make_interval(secs => ${MAIL_ACTION_OUTCOME_TTL_MS / 1_000}) < now() AS expired,
         c.target ->> 'sourceFolderId' AS source_folder_id,
-        c.target ->> 'destinationFolderId' AS destination_folder_id,
-        COALESCE(c.finished_at, c.updated_at) AS settled_at
+        c.target ->> 'destinationFolderId' AS destination_folder_id
       FROM mail.command_undo_requests request
       JOIN mail.commands c ON c.id = request.command_id
       LEFT JOIN mail.remote_message_refs ref ON ref.id = (c.target ->> 'remoteMessageRefId')::uuid
@@ -106,6 +122,14 @@ const resolveUndoRequest = async (commandId: string, mailboxId: string): Promise
       return true;
     };
     if (await replay()) return null;
+    if (original.expired) {
+      await finish("unavailable");
+      return null;
+    }
+    const pending = async () => {
+      await tx`UPDATE mail.command_undo_requests SET attempted_at = now() WHERE command_id = ${commandId}::uuid`;
+      return null;
+    };
 
     const [copy] = await tx<{ id: string }[]>`
       SELECT ref.id
@@ -114,6 +138,8 @@ const resolveUndoRequest = async (commandId: string, mailboxId: string): Promise
       WHERE ref.message_id = ${original.message_id}::uuid AND ref.folder_id = ${original.destination_folder_id}::uuid
         AND ref.stale_at IS NULL AND placement.deleted_at IS NULL
         AND (ref.connector_ref ->> 'commandId' IS NULL OR ref.connector_ref ->> 'commandId' = ${commandId})
+        AND ((ref.connector_ref ->> 'source' = 'command' AND ref.connector_ref ->> 'commandId' = ${commandId}) IS TRUE
+          OR ref.first_seen_at >= ${original.created_at}::timestamptz)
         AND NOT EXISTS (
           SELECT 1 FROM mail.commands other
           WHERE other.mailbox_id = ${mailboxId}::uuid AND other.kind = 'move' AND other.id <> ${commandId}::uuid
@@ -125,10 +151,7 @@ const resolveUndoRequest = async (commandId: string, mailboxId: string): Promise
         placement.updated_at DESC, ref.id
       LIMIT 1
     `;
-    if (!copy) {
-      if (Date.now() - new Date(original.settled_at).getTime() > MAIL_ACTION_OUTCOME_TTL_MS) await finish("unavailable");
-      return null;
-    }
+    if (!copy) return pending();
     const target = {
       remoteMessageRefId: copy.id,
       sourceFolderId: original.destination_folder_id,
@@ -156,10 +179,7 @@ const resolveUndoRequest = async (commandId: string, mailboxId: string): Promise
       ],
       db: tx,
     });
-    if (!execution.ok || !execution.data.bindingId) {
-      await finish("unavailable");
-      return null;
-    }
+    if (!execution.ok || !execution.data.bindingId) return pending();
     const [inverse] = await tx<{ id: string }[]>`
       INSERT INTO mail.commands (
         mailbox_id, kind, actor_kind, actor_id, delegated_user_id, idempotency_key, request_hash, correlation_id,
@@ -196,9 +216,9 @@ const resolveUndoRequest = async (commandId: string, mailboxId: string): Promise
       {
         action: "mail.command.move.request",
         outcome: "allowed",
-        actor: null,
+        actor: original.audit_actor,
         target: { type: "mailbox", id: mailboxId },
-        requestId: `mail-undo:${commandId}`,
+        requestId: original.request_id ?? `mail-undo:${commandId}`,
         metadata: {
           commandId: inverse.id,
           selectedBindingId: execution.data.bindingId,
@@ -223,17 +243,21 @@ export const resolveUndoRequests = async (filter: UndoFilter): Promise<string[]>
       AND (${filter.mailboxId ?? null}::uuid IS NULL OR c.mailbox_id = ${filter.mailboxId ?? null}::uuid)
       AND (${filter.commandIds ? toPgUuidArray(filter.commandIds) : null}::uuid[] IS NULL
         OR c.id = ANY(${filter.commandIds ? toPgUuidArray(filter.commandIds) : null}::uuid[]))
-    ORDER BY request.requested_at, request.command_id
+    ORDER BY request.attempted_at NULLS FIRST, request.requested_at, request.command_id
     LIMIT ${MAX_CONVERSATION_ACTION_MESSAGES}
   `;
   const created: string[] = [];
   for (const request of pending) {
     // A failing record stays pending for the next run and must not hold back the records after it.
-    const inverseId = await resolveUndoRequest(request.command_id, request.mailbox_id).catch((error) => {
+    const inverseId = await resolveUndoRequest(request.command_id, request.mailbox_id).catch(async (error) => {
       log.warn("Recorded Undo waits for the next run", {
         commandId: request.command_id,
         error: error instanceof Error ? error.message : String(error),
       });
+      await sql`
+        UPDATE mail.command_undo_requests SET attempted_at = now()
+        WHERE command_id = ${request.command_id}::uuid AND outcome IS NULL
+      `.catch(() => undefined);
       return null;
     });
     if (inverseId) created.push(inverseId);

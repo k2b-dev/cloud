@@ -461,12 +461,14 @@ and `code` to follow through command outcomes. Mail records an accepted Undo
 per command. `pending` means the server finishes it itself once the original
 move settles and its destination copy is known; the client may stop asking.
 When the provider did not report the new copy, Mail finishes after a folder
-sync, within about a minute of that copy appearing. It waits for the copy at
-most 15 minutes after the original settled, then answers `unavailable`.
+sync, within about a minute of that copy appearing. A recorded Undo finishes
+within 15 minutes of the first request; otherwise it answers `unavailable`,
+also when the original settles later. A paused or disconnected mailbox keeps
+it `pending` within that window.
 A failed or cancelled original resolves as `not_applied`. Repeated requests
 and concurrent clients get the same single inverse. `unavailable` also means
 Mail cannot safely reverse the move, for example because it needs attention
-or current access, folder rights, or keep rules refuse the inverse. Each
+or current access or keep rules refuse the inverse. Each
 inverse is queued independently, so one refusal does not prevent the others.
 
 `reply` and `forward` create a draft from a conversation's latest message, and

@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
+import { MAIL_ACTION_OUTCOME_TTL_MS } from "../command-outcomes";
 import { type ConversationTriageInput, conversationTriageInputSchema, conversationTriageUndoInputSchema } from "../contracts";
 import type { MailboxPageData } from "../service/workspace";
 import { MAIL_BULK_CONCURRENCY } from "./_components/mail-bulk-actions";
@@ -472,6 +473,27 @@ describe("Mail list actions", () => {
     );
     await settle();
     expect(await announced()).toContain("Undone");
+  });
+  test("Undo still polls after the browser horizon so the server can answer at its later deadline", async () => {
+    let wallClock = Date.now();
+    const clock = spyOn(Date, "now").mockImplementation(() => wallClock);
+    undoResponse = async () => {
+      if (undoRequests.length === 1) {
+        wallClock += MAIL_ACTION_OUTCOME_TTL_MS;
+        return Response.json({ commands: [{ id: commandId(1), outcome: "pending", inverse: null }] });
+      }
+      return Response.json({ commands: [{ id: commandId(1), outcome: "unavailable", inverse: null }] });
+    };
+    try {
+      mount();
+      await menuAction("two", "Move to Trash");
+      await settle();
+      toastAction("Undo").click();
+      await Bun.sleep(1_100);
+      expect(undoRequests).toEqual([[commandId(1)], [commandId(1)]]);
+    } finally {
+      clock.mockRestore();
+    }
   });
   test("bulk Delete projects all three, ends selection, and one Undo restores their order", async () => {
     const hold = deferred<Response>();

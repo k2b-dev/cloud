@@ -4045,7 +4045,7 @@ const runMailboxCommandTurn = async (mailboxId: string, jobHeartbeat?: () => Pro
               await heartbeatCommandFence(fence);
             }),
         );
-  await finishUndoRequests({ mailboxId }).catch((error) => {
+  await finishUndoRequests({ commandIds: moveSet.length > 1 ? moveSet : [next.id] }).catch((error) => {
     log.warn("Recorded Undo waits for the commands-due retry", { mailboxId, code: normalizeCode(error, "UNDO_RESOLUTION_FAILED") });
   });
   return { retryAfterMs: run?.busyRetryAfterMs ?? 0 };
