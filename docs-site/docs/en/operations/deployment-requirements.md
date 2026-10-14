@@ -107,7 +107,7 @@ Per replica, the built-in applications reserve:
 
 | Application | Jobs and queues at the default | Larger streams, log and dead letters together | Reservation |
 | --- | --- | --- | --- |
-| Core, with the platform services it runs | 20 | [outgoing mail](/en/docs/operations/outgoing-mail) attachment store (`cloud-outgoing-mail-attachments`) 2 GiB and settled wakeups 4 MiB, AI turn streams 520 MiB, `cloud:live:core` 65 MiB, previous AI invalidations (`cloud-ai-invalidations`) 128 MiB until a later release removes them, FreeIPA backfill pump 64 MiB, app login hints 2 MiB | 4.1 GiB |
+| Core, with the platform services it runs | 20 | [outgoing mail](/en/docs/operations/outgoing-mail) attachment store (`cloud-outgoing-mail-attachments`) 2 GiB and settled wakeups 4 MiB, AI turn streams 520 MiB, `cloud:live:core` 65 MiB, previous AI invalidations (`cloud-ai-invalidations`) 128 MiB until a later release removes them, FreeIPA backfill pump 64 MiB, app login hints 2 MiB, mobile app pairing claim hints (`cloud:pwa-pairing-claims`) 2 MiB | 4.1 GiB |
 | Gateway | 0 | `cloud-gateway-telemetry` 2 GiB | 2 GiB |
 | Gateway Ops | 2 | none | 132 MiB |
 | Grids | 2 | `grids:workflow-record-events` 1 GiB, workflow runtime events 32 MiB, workflow wake hints (`cloud:workflow-wake`) 2 MiB shared with Mail, `cloud:live:grids` 65 MiB, previous record events (`grids:records`) 1 GiB, run events 512 MiB, and metadata events 128 MiB until a later release removes them | 2.9 GiB |

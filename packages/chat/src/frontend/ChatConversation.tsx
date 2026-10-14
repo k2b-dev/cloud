@@ -1,6 +1,7 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import {
+  Button,
   Chat,
   EmojiPicker,
   IconButtonLink,
@@ -14,7 +15,7 @@ import {
   VirtualFeed,
   type VirtualFeedController,
 } from "@k2b/ui";
-import { createEffect, createSignal, type JSX, onCleanup, onMount } from "solid-js";
+import { createEffect, createMemo, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { chatMessages } from "../messages";
 import { dayLabel, messageTime, sameDay } from "./chat-format";
 import { followVisualViewport } from "./follow-viewport";
@@ -32,6 +33,9 @@ export type ChatFeedItem = {
   status?: MessageRowStatus;
   /** Set on a failed send: sends it again with the same client ID. */
   retry?: () => void;
+  /** Position and ID of a stored message; a send the history does not hold yet has neither. */
+  seq?: number;
+  messageId?: string;
 };
 
 export type ChatConversationProps = {
@@ -59,6 +63,13 @@ export type ChatConversationProps = {
   onBack: (navigation: LinkNavigateEvent) => void | Promise<void>;
   /** Receives the history's controller, for example to follow the end after a send. */
   controller?: (controller: VirtualFeedController) => void;
+  /** Key of the first new message when the chat opened; "New messages" stays above it until the chat closes. */
+  markerKey: string | null;
+  /** The first and last item fully in view, for reporting what the reader has seen. */
+  onVisibleChange: (visible: { first: ChatFeedItem; last: ChatFeedItem } | null) => void;
+  onMarkUnreadFrom: (item: ChatFeedItem) => void;
+  /** Esc within the chat or with no focused control, unless a field, menu, dialog, tooltip, or light-dismiss popover uses it. */
+  onEscape: () => void;
 };
 
 const ROW_ESTIMATE = 60;
@@ -87,6 +98,38 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     if (controller.scrollToKey(key, { highlight: true })) focused = key;
   });
 
+  // Where "New messages" is while it is out of view, so its button points there. Without a marker or with the marker
+  // in view there is no button.
+  const [visible, setVisible] = createSignal<{ first: ChatFeedItem; last: ChatFeedItem } | null>(null);
+  const markerAway = createMemo(() => {
+    const range = visible();
+    const marker = props.markerKey ? props.items.findIndex((item) => item.key === props.markerKey) : -1;
+    if (!range || marker < 0) return null;
+    return marker < props.items.indexOf(range.first) ? "above" : marker > props.items.indexOf(range.last) ? "below" : null;
+  });
+  // When the chat opens without showing the marker, it moves there once, unless a deep link leads.
+  let placed = false;
+  createEffect(() => {
+    const controller = feed();
+    const away = markerAway();
+    if (placed || !controller || !visible()) return;
+    placed = true;
+    if (away && props.markerKey && !props.focusKey) controller.scrollToKey(props.markerKey, { align: "start" });
+  });
+
+  onMount(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target !== document.body && target !== document.documentElement && (!target || !frame.contains(target))) return;
+      if (target?.closest('dialog, [role="dialog"], [role="menu"], [role="listbox"]')) return;
+      if (document.querySelector(".k2b-tooltip:popover-open, :is([popover=''], [popover='auto' i]):popover-open")) return;
+      props.onEscape();
+    };
+    document.addEventListener("keydown", escape);
+    onCleanup(() => document.removeEventListener("keydown", escape));
+  });
+
   const startsGroup = (item: ChatFeedItem, previous: ChatFeedItem | undefined) =>
     !previous ||
     !sameDay(item.at, previous.at, config()) ||
@@ -105,6 +148,19 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
           </IconButtonLink>
         </span>
         <PageTitle trail={{ title: props.title, ancestors: [] }} subtitle={t().members({ count: props.memberCount })} />
+        <Show when={markerAway()}>
+          {(direction) => (
+            <Button
+              size="sm"
+              variant="ghost"
+              tooltip={t().jumpToNewLabel}
+              onClick={() => props.markerKey && feed()?.scrollToKey(props.markerKey, { align: "start" })}
+            >
+              <i class={direction() === "above" ? "ti ti-arrow-up" : "ti ti-arrow-down"} aria-hidden="true" />
+              {t().jumpToNew}
+            </Button>
+          )}
+        </Show>
       </header>
       <VirtualFeed
         class="chat-conversation__feed"
@@ -123,6 +179,12 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         onLoadOlder={props.onLoadOlder}
         onLoadNewer={props.onLoadNewer}
         onLoadNewest={props.onLoadNewest}
+        markerKey={props.markerKey}
+        markerLabel={t().newMarker}
+        onVisibleChange={(range) => {
+          setVisible(range);
+          props.onVisibleChange(range);
+        }}
         busy={props.busy}
         announce={(added) => {
           const count = added.filter((item) => !item.own && item.kind === "text").length;
@@ -148,6 +210,11 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               groupStart={startsGroup(item, props.items[index() - 1])}
               status={item.status}
               onRetry={item.retry}
+              actions={
+                item.messageId
+                  ? [{ id: "unread", label: t().markUnreadFromHere, icon: "ti ti-mail", onSelect: () => props.onMarkUnreadFrom(item) }]
+                  : undefined
+              }
             />
           )
         }

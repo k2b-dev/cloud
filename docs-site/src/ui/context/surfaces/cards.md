@@ -12,7 +12,7 @@ Use `LinkCard` when the complete surface leads to one destination. Use `Resource
 import { Avatar, LinkCard, ResourceCard, type ResourceCardState } from "@k2b/ui";
 ```
 
-`LinkCard` accepts a title, description, icon, destination, optional semantic color, and one optional trailing `meta` fact. Without `color`, the glyph uses `--k2b-app-workspace-active`, the same optional accent hook as `AppOverview`'s icon, which defaults to the action color; Cloud maps it to the active application's accent. Use `meta` for one count or one non-interactive badge, such as a role; counts render with tabular figures. `Avatar` accepts a name, optional image URL or icon, fallback, size, and loading behavior. Image content takes precedence over the icon, which takes precedence over initials. Initials and icons sit on a calm tint that the name decides, from a palette of ten colors, so the same name has the same color wherever an avatar shows it and people stay apart in long lists and conversations. Pass the display name the application shows for the person, so their avatar matches across surfaces.
+`LinkCard` accepts a title, description, icon, destination, optional semantic color, and one optional trailing `meta` fact. Without `color`, the glyph uses `--k2b-app-workspace-active`, the same optional accent hook as `AppOverview`'s icon, which defaults to the action color; Cloud maps it to the active application's accent. For navigation in place, pass `navigation="enhanced"` and `onNavigate`, as with `ButtonLink`. Without both, the card follows its link with a full page load. Use `meta` for one count or one non-interactive badge, such as a role; counts render with tabular figures. `Avatar` accepts a name, optional image URL or icon, fallback, size, and loading behavior. Image content takes precedence over the icon, which takes precedence over initials. Initials and icons sit on a calm tint that the name decides, from a palette of ten colors, so the same name has the same color wherever an avatar shows it and people stay apart in long lists and conversations. Pass the display name the application shows for the person, so their avatar matches across surfaces.
 
 ## Show a referenced element
 
@@ -35,6 +35,7 @@ type LinkCardColor = "blue" | "emerald" | "violet" | "orange" | "red" | "amber" 
 
 type LinkCardProps = {
   href: string; title: string; description: string; icon: string; color?: LinkCardColor; meta?: JSX.Element;
+  navigation?: "document" | "enhanced"; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
 };
 
 type ResourceCardState = "ok" | "loading" | "no_access" | "deleted" | "unavailable";
@@ -60,7 +61,7 @@ The card remains one native link with a visible focus indicator. A `ResourceCard
 
 ## Runtime
 
-All three components render on the server. Link navigation works without hydration; a `ResourceCard` with `onOpen` and the avatar image-failure fallback need hydration.
+All three components render on the server. Link navigation works without hydration; enhanced navigation needs hydration and keeps native modified-click behavior; a `ResourceCard` with `onOpen` and the avatar image-failure fallback need hydration.
 
 ## Example
 

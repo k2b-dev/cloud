@@ -143,6 +143,17 @@ class World {
     const before = new Map(model.members);
     const count = model.msgs.length;
     const message = model.apply(op);
+    for (const update of model.outbox)
+      if (update.key === "p") {
+        const key = `p:${update.principal}`;
+        const queue = this.pending.get(key) ?? [];
+        queue.push({
+          v: 1,
+          k: key,
+          d: { type: "read", conversationId: id, ...update.read, unread: update.unread, asOfRev: update.asOfRev },
+        });
+        this.pending.set(key, queue);
+      }
     if (!message || count === model.msgs.length) return;
     const affected =
       op.type === "add"
@@ -192,6 +203,13 @@ class World {
         "en",
       ),
       memberCount: m.members.size,
+      unread: m.unread(person),
+      read: m.parts.has(person)
+        ? (() => {
+            const { origin: _, ...read } = m.parts.get(person)!;
+            return read;
+          })()
+        : null,
       withGuests: false,
       peerDeactivated: false,
       lastMessage: (() => {
@@ -229,6 +247,15 @@ class World {
   }
   api(person: string): ChatStoreApi {
     return {
+      read: async () => {
+        throw new Error("Unused write");
+      },
+      markUnread: async () => {
+        throw new Error("Unused write");
+      },
+      readAll: async () => {
+        throw new Error("Unused write");
+      },
       snapshot: async (id) => {
         const conversation = this.conversation(person, id),
           page = this.page(person, id);
@@ -262,7 +289,7 @@ class World {
     const conversation = this.conversation(person, X),
       page = this.page(person, X);
     const store = createChatStore(
-      { cursor, sidebar: this.list(person), ...(conversation && page ? { open: { conversation, page } } : {}) },
+      { viewerId: person, cursor, sidebar: this.list(person), ...(conversation && page ? { open: { conversation, page } } : {}) },
       { api: this.api(person), connection: liveConnection(`/api/chat/live?world=${worldNumber}&person=${person}`, { activity: "always" }) },
     );
     this.stores.push(store);

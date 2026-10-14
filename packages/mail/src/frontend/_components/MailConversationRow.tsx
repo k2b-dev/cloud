@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { Dropdown, type HoverPreviewController, Tooltip, useLocale } from "@k2b/ui";
-import { createMemo, For, Show } from "solid-js";
+import { createEffect, createMemo, For, Show } from "solid-js";
 import { getMailAction, type MailActionId } from "./mail-actions";
 import { MAX_MAIL_CONVERSATION_SELECTION } from "./mail-conversation-selection";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
@@ -41,6 +41,7 @@ type MailConversationRowQuickLook = Pick<HoverPreviewController<string>, "id" | 
 
 export default function MailConversationRow(props: {
   item: MailListItem;
+  leaving?: boolean;
   requestUrl: URL;
   state: MailConversationRowState;
   actions: MailConversationRowActions;
@@ -84,12 +85,21 @@ export default function MailConversationRow(props: {
   const quickLookId = props.item.selectionKind === "conversation" ? props.item.conversationId : null;
   const quickLook = quickLookId ? props.quickLook : undefined;
   const peeking = () => Boolean(quickLook && quickLook.active() === quickLookId);
+  let entry: HTMLDivElement | undefined;
+  // The collapse starts from the row's own height; a fixed value would make taller rows jump first.
+  createEffect(() => {
+    if (props.leaving && entry) entry.style.setProperty("--mail-row-height", `${entry.offsetHeight}px`);
+  });
 
   return (
     <div
       ref={(element) => {
+        entry = element;
         if (quickLook && quickLookId) quickLook.anchor(quickLookId, () => link)(element);
       }}
+      data-leaving={props.leaving ? "true" : undefined}
+      inert={props.leaving}
+      aria-hidden={props.leaving ? "true" : undefined}
       class="mail-list-entry k2b-progressive-row relative"
       classList={{
         "mail-list-entry-active": selected(),

@@ -168,6 +168,27 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(link).not.toContain("k2b-link-card__meta");
   });
 
+  test("enhanced LinkCard navigation preserves the document anchor markup", () => {
+    const props = {
+      href: "/storage",
+      title: "Personal",
+      description: "Only you",
+      icon: "ti ti-home",
+      color: "cyan" as const,
+      meta: "Missing",
+    };
+    const document = renderToString(() => createComponent(LinkCard, props));
+    const enhanced = renderToString(() => createComponent(LinkCard, { ...props, navigation: "enhanced", onNavigate: () => {} }));
+    const attributes = (html: string) =>
+      (html.match(/^<a([^>]*)>/)?.[1]?.match(/[\w-]+="[^"]*"/g) ?? []).filter((attribute) => !attribute.startsWith("data-hk=")).sort();
+    expect(attributes(enhanced)).toEqual(attributes(document));
+    expect(enhanced.slice(enhanced.indexOf(">"))).toBe(document.slice(document.indexOf(">")));
+    expect(enhanced).toMatch(/class="k2b-paper k2b-link-card\s*"/);
+    expect(enhanced).toContain('data-interactive="true"');
+    expect(enhanced).toContain('data-color="cyan"');
+    expect(renderToString(() => createComponent(LinkCard, { ...props, navigation: "enhanced" }))).toBe(document);
+  });
+
   test("lets a LinkCard follow the app accent and carry one trailing fact", () => {
     const link = renderToString(() =>
       createComponent(LinkCard, {

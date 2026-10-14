@@ -1,16 +1,27 @@
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { type LinkNavigateEvent, listenPopState, navigate, refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
-import { AppWorkspace, announce, type MessageRowStatus, Placeholder, toast, useLocale, type VirtualFeedController } from "@k2b/ui";
+import {
+  AppWorkspace,
+  announce,
+  Dropdown,
+  type MessageRowStatus,
+  Placeholder,
+  prompts,
+  toast,
+  useLocale,
+  type VirtualFeedController,
+} from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
-import type { ConversationPageSchema, ConversationSchema, MessagePageSchema } from "../service/contracts";
+import { type ConversationPageSchema, type ConversationSchema, type MessagePageSchema, readStart } from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import ChatList from "./ChatList";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 import { createChatStore, type OpenChat } from "./chat-store";
+import { createReadReporter, seenRange } from "./read-reporter";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 type Store = ReturnType<typeof createChatStore>;
@@ -128,7 +139,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const stored = new Set(current.messages.map((message) => message.id));
     const reuse = (item: ChatFeedItem) => {
       const known = cache.get(item.key);
-      return known && known.body === item.body && known.status === item.status && known.at === item.at ? known : item;
+      return known && known.body === item.body && known.status === item.status && known.at === item.at && known.seq === item.seq
+        ? known
+        : item;
     };
     const result = current.messages.map((message) => {
       const own = message.kind === "text" && message.author.id === props.viewerId;
@@ -141,6 +154,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         at: message.createdAt,
         own,
         status: own ? "sent" : undefined,
+        seq: message.seq,
+        messageId: message.id,
       });
     });
     // Sends wait at the end of the newest history; a window further back shows them once the reader is there.
@@ -170,6 +185,100 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const focusKey = () => {
     const id = route().messageId;
     return id ? (sendKeys.get(id) ?? id) : null;
+  };
+
+  // "New messages" stands above the first message from others after the read position as the chat opened, and stays
+  // there until the reader leaves the chat, also while the read position moves on.
+  const [marker, setMarker] = createSignal<string | null>(null);
+  // Reports what the reader sees in the open chat. After the reader marks it unread, nothing is reported until they
+  // leave it, so the mark is not read away at once.
+  let reporter: { chatId: string; reporter: ReturnType<typeof createReadReporter> } | undefined;
+  let paused = false;
+  const reading = () => document.visibilityState === "visible" && document.hasFocus();
+  // Per chat, not per change of the open chat.
+  const openId = createMemo(() => openChat()?.id ?? null);
+  createEffect(
+    on(openId, (id) => {
+      const current = openChat();
+      const start = readStart(current?.conversation?.read ?? null);
+      const first =
+        start === null || !current || (current.hasOlder && (current.messages[0]?.seq ?? Infinity) > start + 1)
+          ? undefined
+          : current?.messages.find((message) => message.seq > start && message.kind === "text" && message.author.id !== props.viewerId);
+      setMarker(first?.id ?? null);
+      reporter?.reporter.dispose();
+      reporter = undefined;
+      paused = false;
+      if (!id || start === null) return;
+      reporter = {
+        chatId: id,
+        reporter: createReadReporter({
+          start,
+          active: reading,
+          post: (seq) => (paused ? Promise.resolve() : store ? store.markRead(id, seq) : Promise.reject(new Error("Chat is not live yet"))),
+        }),
+      };
+    }),
+  );
+  createEffect(() => {
+    const current = openChat();
+    const start = readStart(current?.conversation?.read ?? null);
+    if (current && start !== null && reporter?.chatId === current.id) reporter.reporter.setStart(start);
+  });
+  const reportVisible = (visible: { first: ChatFeedItem; last: ChatFeedItem } | null) => {
+    if (!visible) return;
+    const list = items();
+    const range = seenRange(
+      list,
+      list.findIndex((item) => item.key === visible.first.key),
+      list.findIndex((item) => item.key === visible.last.key),
+    );
+    if (range) reporter?.reporter.seen(range.first, range.last);
+  };
+  const changeRead = async (work: () => Promise<unknown> | undefined) => {
+    try {
+      await work();
+      return true;
+    } catch {
+      toast.error(t().readStateFailed);
+      return false;
+    }
+  };
+  // The server stops at the newest message, so the largest position marks the whole chat read.
+  const markRead = (id: string) => void changeRead(() => store?.markRead(id, Number.MAX_SAFE_INTEGER));
+  const markUnread = async (id: string, from?: ChatFeedItem) => {
+    const open = openChat()?.id === id;
+    if (open) paused = true;
+    // Let earlier reads finish before the server applies the unread mark.
+    if (open && reporter?.chatId === id) await reporter.reporter.settled();
+    if (from) setMarker(from.key);
+    if (!(await changeRead(() => store?.markUnread(id, from?.messageId))) && open) paused = false;
+  };
+  const markOpenRead = () => {
+    const current = openChat();
+    if (!current) return;
+    paused = false;
+    setMarker(null);
+    announce(t().markedRead);
+    void changeRead(() => store?.markRead(current.id, current.seqHead));
+  };
+  const readAll = async () => {
+    const live = store;
+    if (!live) return;
+    await changeRead(async () => {
+      let result = await live.readAll(false);
+      if (result.outcome === "confirm") {
+        const confirmed = await prompts.confirm(t().markAllReadDescription, {
+          title: t().markAllReadTitle,
+          icon: "ti ti-checks",
+          confirmText: t().markAllRead,
+        });
+        if (!confirmed) return;
+        result = await live.readAll(true);
+      }
+      // Each request marks one bounded batch; the server says whether more chats wait.
+      while (result.outcome === "done" && result.more) result = await live.readAll(true);
+    });
   };
 
   const applyRoute = (next: Route) => {
@@ -231,6 +340,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
   onMount(() => {
     const live = createChatStore({
+      viewerId: props.viewerId,
       cursor: props.cursor,
       sidebar: props.sidebar,
       ...(props.open ? { open: { conversation: props.open.conversation, page: props.open.page } } : {}),
@@ -285,7 +395,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         return true;
       }),
     );
+    const activate = () => reporter?.reporter.activate();
+    document.addEventListener("visibilitychange", activate);
+    window.addEventListener("focus", activate);
     onCleanup(() => {
+      document.removeEventListener("visibilitychange", activate);
+      window.removeEventListener("focus", activate);
+      reporter?.reporter.dispose();
       box.dispose();
       live.dispose();
     });
@@ -301,7 +417,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       hasMore={hasMore()}
       onOpen={openFromList}
       onMore={() => void store?.loadMoreSidebar()}
+      onMarkRead={markRead}
+      onMarkUnread={(id) => void markUnread(id)}
     />
+  );
+  const chatsActions = () => (
+    <Dropdown.Root position="bottom-right" items={[{ label: t().markAllRead, icon: "ti ti-checks", action: () => void readAll() }]}>
+      <Dropdown.Trigger iconOnly label={t().chatsActions} tooltip={t().chatsActions} size="xs">
+        <i class="ti ti-dots text-xs" />
+      </Dropdown.Trigger>
+    </Dropdown.Root>
   );
 
   return (
@@ -309,7 +434,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       <AppWorkspace.Sidebar label={t().chats}>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">
-            <AppWorkspace.SidebarSection title={t().chats}>
+            <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
               <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().noneYet} />}>
                 {list()}
               </Show>
@@ -348,6 +473,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       controller={(controller) => {
                         feed = controller;
                       }}
+                      markerKey={marker()}
+                      onVisibleChange={reportVisible}
+                      onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
+                      onEscape={markOpenRead}
                     />
                   )}
                 </Show>
@@ -373,7 +502,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             </Match>
             <Match when={true}>
               <nav class="chat-list-page" aria-label={t().chats}>
-                {list()}
+                <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
+                  {list()}
+                </AppWorkspace.SidebarSection>
               </nav>
               <div class="chat-select">
                 <Placeholder

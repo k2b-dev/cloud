@@ -14,6 +14,7 @@ import {
   composeFormattingWarningSchema,
   composePreviewSchema,
   conversationTriageInputSchema,
+  conversationTriageUndoInputSchema,
   createAutomaticReplyConfigurationSchema,
   createAutomaticReplySetupSchema,
   createConversationCommentSchema,
@@ -28,6 +29,7 @@ import {
   draftContentInputSchema,
   draftEditableContentInputSchema,
   MAIL_CONVERSATION_ASSIGNEE_LIMIT,
+  MAX_CONVERSATION_ACTION_MESSAGES,
   mailboxComposeStyleSchema,
   mailSearchExpressionSchema,
   mergeConversationsInputSchema,
@@ -999,4 +1001,20 @@ test("guided negation keeps operators field-specific, bounded and strict", () =>
     ).toBe(false);
   }
   expect(createIncomingAutomationSchema.safeParse(definition("attachment_presence", "is_not", false)).success).toBe(false);
+});
+
+describe("conversation action undo contracts", () => {
+  test("accepts command UUIDs up to one conversation action's command bound", () => {
+    const id = crypto.randomUUID();
+    expect(conversationTriageUndoInputSchema.safeParse({ commandIds: [id] }).success).toBe(true);
+    expect(conversationTriageUndoInputSchema.safeParse({ commandIds: Array(MAX_CONVERSATION_ACTION_MESSAGES).fill(id) }).success).toBe(
+      true,
+    );
+    expect(conversationTriageUndoInputSchema.safeParse({ commandIds: Array(MAX_CONVERSATION_ACTION_MESSAGES + 1).fill(id) }).success).toBe(
+      false,
+    );
+    expect(conversationTriageUndoInputSchema.safeParse({ commandIds: [] }).success).toBe(false);
+    expect(conversationTriageUndoInputSchema.safeParse({ commandIds: ["cmd123"] }).success).toBe(false);
+    expect(conversationTriageUndoInputSchema.safeParse({ commandIds: [id], extra: true }).success).toBe(false);
+  });
 });

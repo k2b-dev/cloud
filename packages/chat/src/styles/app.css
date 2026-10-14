@@ -95,6 +95,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The time sits on the title line and the unread count below it on the preview line. Both lines always exist, so a
+   count that comes or goes never moves the time or changes the row. */
+.chat-list__meta {
+  display: grid;
+  grid-template-rows: 1.125rem 1.125rem;
+  row-gap: 0.2rem;
+  align-items: center;
+  justify-items: end;
+}
 .chat-list__time {
+  grid-row: 1;
   font-variant-numeric: tabular-nums;
+}
+.chat-list__unread {
+  display: flex;
+  grid-row: 2;
 }
