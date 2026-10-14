@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { nessi, type ProviderRequest, type StoreEntry } from "@k2b/nessi";
+import { defineTool, nessi, type ProviderRequest, type StoreEntry, toolToSpec } from "@k2b/nessi";
 import type { Provider } from "@k2b/nessi/ai";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
@@ -715,6 +715,98 @@ describe("AI capability catalog", () => {
     expect(schema.safeParse({ status: "open" }).success).toBe(true);
     expect(schema.safeParse({ status: "invalid" }).success).toBe(false);
     expect(z.toJSONSchema(schema)).toHaveProperty("properties.query.minLength", 2);
+  });
+
+  test("reduces tuples to provider-safe arrays and round-trips through Nessi", () => {
+    const setContent = {
+      type: "object",
+      properties: { kind: { type: "string", const: "set-content" }, content: { type: "string" } },
+      required: ["kind", "content"],
+      additionalProperties: false,
+    };
+    const structural = {
+      type: "object",
+      properties: { kind: { type: "string", const: "append" }, content: { type: "string" } },
+      required: ["kind", "content"],
+      additionalProperties: false,
+    };
+    const string = { type: "string" };
+    const number = { type: "number" };
+    const tuple = { type: "array", prefixItems: [string, number], items: false };
+    const source = {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: {
+        operations: {
+          anyOf: [
+            { type: "array", prefixItems: [setContent], items: false, minItems: 1, maxItems: 1, description: "Replace content." },
+            { type: "array", items: structural, minItems: 1, maxItems: 20 },
+          ],
+        },
+        mixed: { ...tuple, minItems: 1 },
+        repeated: { type: "array", prefixItems: [string, string], items: false },
+        rest: { type: "array", prefixItems: [string, string], items: setContent, minItems: 2 },
+        boundedRest: { type: "array", prefixItems: [string], items: setContent, maxItems: 10 },
+        sameRest: { type: "array", prefixItems: [string], items: string },
+        empty: { type: "array", prefixItems: [], items: false },
+        referenced: { $ref: "#/$defs/tuple" },
+        legacy: { type: "array", items: [string, number, string], additionalItems: false, minItems: 3, maxItems: 3 },
+        legacyRest: { type: "array", items: [string], additionalItems: number },
+        open: { type: "array", prefixItems: [string] },
+        openTrue: { type: "array", prefixItems: [string], items: true },
+        legacyOpen: { type: "array", items: [string], additionalItems: true },
+        closedItems: { type: "array", items: false },
+        openItems: { type: "array", items: true },
+        nested: { type: "array", items: { oneOf: [{ allOf: [tuple] }] } },
+        withDefault: { type: "object", default: { note: "kept" } },
+      },
+      required: ["operations"],
+      additionalProperties: false,
+      $defs: { tuple },
+      definitions: { tuple },
+    };
+    const reduced = reduceAiCapabilityInputSchema(source);
+    const closedSetContent = { type: "array", items: setContent, minItems: 1, maxItems: 1, description: "Replace content." };
+    expect(reduced).toHaveProperty("properties.operations.anyOf.0", closedSetContent);
+    expect(reduced).toHaveProperty("properties.operations.anyOf.1", source.properties.operations.anyOf[1]);
+    expect(reduced).toHaveProperty("properties.mixed", { type: "array", items: { anyOf: [string, number] }, minItems: 1, maxItems: 2 });
+    expect(reduced).toHaveProperty("properties.repeated", { type: "array", items: string, maxItems: 2 });
+    expect(reduced).toHaveProperty("properties.rest", { type: "array", items: { anyOf: [string, setContent] }, minItems: 2 });
+    expect(reduced).toHaveProperty("properties.boundedRest", { type: "array", items: { anyOf: [string, setContent] }, maxItems: 10 });
+    expect(reduced).toHaveProperty("properties.sameRest", { type: "array", items: string });
+    expect(reduced).toHaveProperty("properties.empty", { type: "array", items: {}, maxItems: 0 });
+    expect(reduced).toHaveProperty("properties.referenced", { $ref: "#/$defs/tuple" });
+    const mixedArray = { type: "array", items: { anyOf: [string, number] }, maxItems: 2 };
+    expect(reduced).toHaveProperty("$defs.tuple", mixedArray);
+    expect(reduced).toHaveProperty("definitions.tuple", mixedArray);
+    expect(reduced).toHaveProperty("properties.legacy", { ...mixedArray, minItems: 3, maxItems: 3 });
+    expect(reduced).toHaveProperty("properties.legacyRest", { type: "array", items: { anyOf: [string, number] } });
+    for (const field of ["open", "openTrue", "legacyOpen"]) {
+      expect(reduced).toHaveProperty(`properties.${field}`, { type: "array", items: {} });
+    }
+    expect(reduced).toHaveProperty("properties.closedItems", { type: "array", items: {}, maxItems: 0 });
+    expect(reduced).toHaveProperty("properties.openItems", { type: "array", items: {} });
+    expect(reduced).toHaveProperty("properties.nested.items.oneOf.0.allOf.0", mixedArray);
+    expect(reduced).toHaveProperty("properties.withDefault.default", { note: "kept" });
+    expect(JSON.stringify(reduced)).not.toContain("prefixItems");
+    expect(JSON.stringify(reduced)).not.toContain("additionalItems");
+
+    const schema = aiCapabilityInputSchema(source);
+    const operation = { kind: "set-content", content: "New content." };
+    expect(schema.safeParse({ operations: [operation] }).success).toBe(true);
+    expect(schema.safeParse({ operations: [] }).success).toBe(false);
+    expect(schema.safeParse({ operations: [operation, operation] }).success).toBe(false);
+    expect(schema.safeParse({ operations: operation }).success).toBe(false);
+    expect(schema.safeParse({ operations: [operation], empty: ["extra"] }).success).toBe(false);
+    const tool = defineTool({ name: "note_edit", description: "Edit note.", inputSchema: schema }).server(async () => ({}));
+    const spec = toolToSpec(tool).inputSchema;
+    expect(spec).toHaveProperty("properties.operations.anyOf.0", closedSetContent);
+    const serialized = JSON.stringify(spec);
+    expect(serialized).not.toContain('"items":[');
+    expect(serialized).not.toContain("additionalItems");
+    expect(serialized).not.toContain("prefixItems");
+    expect(serialized).not.toContain('"items":false');
+    expect(serialized).not.toContain('"items":true');
   });
 
   test("loads exact live names and exposes loaded app operations as ordinary tools", async () => {

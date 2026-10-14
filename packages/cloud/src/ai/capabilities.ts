@@ -425,6 +425,7 @@ const SCHEMA_KEYS = new Set([
   "required",
   "items",
   "prefixItems",
+  "additionalItems",
   "additionalProperties",
   "anyOf",
   "oneOf",
@@ -436,26 +437,45 @@ const SCHEMA_KEYS = new Set([
 ]);
 
 const reduceSchemaValue = (value: unknown, key?: string): unknown => {
-  if (key === "const") return structuredClone(value);
+  if (key === "const" || key === "default") return structuredClone(value);
   if (Array.isArray(value)) {
     if (key === "required" || key === "enum" || key === "type") return structuredClone(value);
     return value.map((item) => reduceSchemaValue(item));
   }
   if (!value || typeof value !== "object") return value;
+  if (key === "properties" || key === "$defs" || key === "definitions") {
+    return Object.fromEntries(Object.entries(value).map(([name, schema]) => [name, reduceSchemaValue(schema)]));
+  }
 
   const output: Record<string, unknown> = {};
   for (const [childKey, childValue] of Object.entries(value)) {
-    if (key === "properties" || key === "$defs" || key === "definitions") {
-      output[childKey] = reduceSchemaValue(childValue);
-      continue;
-    }
     if (!SCHEMA_KEYS.has(childKey)) continue;
     output[childKey] = reduceSchemaValue(childValue, childKey);
   }
+
+  const positions = Array.isArray(output.prefixItems) ? output.prefixItems : Array.isArray(output.items) ? output.items : null;
+  if (positions) {
+    const rest = Array.isArray(output.prefixItems) ? output.items : output.additionalItems;
+    // Extra items of an open tuple may be anything, so the AI side must not narrow them to the positions.
+    const schemas = rest === undefined || rest === true ? [] : rest === false ? positions : [...positions, rest];
+    const distinct = schemas.filter(
+      (schema, index) => schemas.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(schema)) === index,
+    );
+    output.items = distinct.length === 0 ? {} : distinct.length === 1 ? distinct[0] : { anyOf: distinct };
+    if (rest === false && (positions.length === 0 || output.maxItems === undefined)) output.maxItems = positions.length;
+  }
+  delete output.prefixItems;
+  delete output.additionalItems;
+  if (output.items === false) output.maxItems = 0;
+  // Zod drops array bounds without an item schema, so "any item" stays an empty schema.
+  if (typeof output.items === "boolean") output.items = {};
   return output;
 };
 
-/** Keep the provider-useful shape while leaving authoritative validation in the target app. */
+/**
+ * Keep the provider-useful shape while leaving authoritative validation in the target app.
+ * Tuples reach the model as bounded arrays of their item schemas; mixed tuples are looser here, and the app validates the exact tuple.
+ */
 export const reduceAiCapabilityInputSchema = (schema: Record<string, unknown>): Record<string, unknown> =>
   reduceSchemaValue(schema) as Record<string, unknown>;
 
