@@ -12,12 +12,14 @@ import { sql } from "bun";
 import { z } from "zod";
 import { app } from "../config";
 import type { ActorCommandInput, MailAddress, MailCommand, ResponseScheduleDefinitionInput } from "../contracts";
-import { mailAddressSchema, responseScheduleDefinitionSchema } from "../contracts";
+import { conversationWorkStatusSchema, mailAddressSchema, responseScheduleDefinitionSchema } from "../contracts";
 import { createSpaceEventOnce, linkSpaceItemResource } from "../service/app-integrations";
 import { linkAutomaticReplyCommandInTransaction, prepareAutomaticReplyInTransaction } from "../service/automatic-reply";
 import {
   createWorkflowConversationCommentInTransaction,
   insertActivity,
+  lockWorkflowConversationStatus,
+  recordConversationStatusDecision,
   updateWorkflowConversationCollaborationInTransaction,
 } from "../service/collaboration";
 import { hasCurrentMailboxUserPermission } from "../service/collaborators";
@@ -39,7 +41,11 @@ import { renderMailWorkflowTemplate } from "../service/template-rendering";
 import { mailWorkflowActionFailure } from "../service/workflow-action-errors";
 import { withMailWorkflowCollaborationEvent } from "../service/workflow-collaboration-events";
 import { mailWorkflowDependencyDeadline } from "../service/workflow-dependencies";
-import { mailWorkflowMessagePrecondition, projectMailWorkflowMessagePrecondition } from "../service/workflow-message-preconditions";
+import {
+  mailWorkflowMessagePrecondition,
+  mailWorkflowTriggerMessageId,
+  projectMailWorkflowMessagePrecondition,
+} from "../service/workflow-message-preconditions";
 import {
   applyMailConversationTransition,
   applyMailMessageTransition,
@@ -448,7 +454,17 @@ const conversationMutation = (
               (() => {
                 throw new Error("status must resolve to a value");
               })());
-        if (!mailConversationTransitionChanges(conversation, kind, value)) {
+        const current =
+          kind === "setConversationStatus"
+            ? await lockWorkflowConversationStatus(tx, {
+                mailboxId: scope.mailboxId,
+                conversationId,
+                expectedRevision,
+                triggerMessageId: mailWorkflowTriggerMessageId(ctx.invocation.context),
+              })
+            : null;
+        if (current ? current.workStatus === value : !mailConversationTransitionChanges(conversation, kind, value)) {
+          if (current) await recordConversationStatusDecision(tx, conversationId);
           return { state: "succeeded", output: { action: kind, applied: false } as JsonObject };
         }
         const mutation = await updateWorkflowConversationCollaborationInTransaction({
@@ -458,7 +474,7 @@ const conversationMutation = (
           input:
             kind === "assignConversation"
               ? { expectedRevision, assigneeUserIds: typeof value === "string" ? [value] : [] }
-              : { expectedRevision, workStatus: value as "needs_action" | "waiting" | "done" },
+              : { expectedRevision: current?.revision ?? expectedRevision, workStatus: conversationWorkStatusSchema.parse(value) },
           db: tx,
           activityMetadata: { workflowRunId: ctx.runId, workflowStepKey: ctx.stepKey },
         });

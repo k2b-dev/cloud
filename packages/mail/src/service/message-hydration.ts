@@ -65,6 +65,7 @@ type VerifiedConversationProjection = {
   protocol_facts: Record<string, unknown> | string;
   outbound: boolean;
   is_latest_verified: boolean;
+  status_decided: boolean;
   received_since_send: boolean;
   message_count: number;
 };
@@ -487,6 +488,7 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
       conversation.mailbox_id,
       conversation.work_status,
       conversation.snoozed_until,
+      link.status_decided_at IS NOT NULL AS status_decided,
       message.in_reply_to,
       message.reference_ids,
       message.protocol_facts,
@@ -530,9 +532,10 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
     typeof projection.protocol_facts === "string" ? JSON.parse(projection.protocol_facts) : projection.protocol_facts,
   );
   // The provider's copy of a reply Mail sent does not answer mail that arrived after someone chose
-  // Send, so it leaves that mail needing action, as the confirmed send did.
+  // Send, so it leaves that mail needing action, as the confirmed send did. A status that someone
+  // decided after Mail linked this message already covers it.
   const transition =
-    projection.is_latest_verified && !(projection.outbound && projection.received_since_send)
+    projection.is_latest_verified && !projection.status_decided && !(projection.outbound && projection.received_since_send)
       ? deriveConversationWorkState(projection.work_status, {
           direction: projection.outbound ? "outbound" : "inbound",
           intent:
@@ -547,14 +550,23 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
     (projection.snoozed_until ? new Date(projection.snoozed_until).toISOString() : null) !==
       (nextSnoozedUntil ? new Date(nextSnoozedUntil).toISOString() : null);
   await refreshConversationTimeline(params.db, projection.conversation_id);
-  await params.db`
+  const [updated] = await params.db<{ revision: string | number }[]>`
     UPDATE mail.conversations
     SET
       work_status = ${nextWorkStatus},
       snoozed_until = ${nextSnoozedUntil},
       revision = revision + CASE WHEN ${projection.message_count > 1 || changed} THEN 1 ELSE 0 END
     WHERE id = ${projection.conversation_id}::uuid
+    RETURNING revision
   `;
+  if (!updated) throw new Error("Conversation work-state update returned no row");
+  // A workflow that this message triggered tells this revision apart from other changes.
+  if (projection.message_count > 1 || changed) {
+    await params.db`
+      UPDATE mail.conversation_messages SET hydrated_revision = ${updated.revision}
+      WHERE message_id = ${params.messageId}::uuid
+    `;
+  }
   if (!changed || !projection.is_latest_verified) return null;
 
   const [activity] = await params.db<{ id: string | number }[]>`

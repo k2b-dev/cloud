@@ -75,7 +75,7 @@ Verwende **Später anzeigen**, wenn die nächste Prüfung von einem Datum oder e
 
 So setzt Mail den nächsten Schritt:
 
-- Neue eingehende E-Mails setzen die Unterhaltung immer auf **Handlungsbedarf** und entfernen sie aus **Später**.
+- Neue eingehende E-Mails setzen die Unterhaltung auf **Handlungsbedarf** und entfernen sie aus **Später**. Ein Status oder eine Zeit für **Später anzeigen**, die du oder eine Automatisierung setzt, gilt auch für die Nachrichten, die Mail noch lädt. Erst E-Mails, die danach ankommen, setzen wieder **Handlungsbedarf**.
 - Eine menschliche Antwort oder Antwort an alle setzt sie auf **Wartet auf Antwort**, aber erst, wenn Mail die Zustellung bestätigt.
 - Eine neue Nachricht, die du in Cloud schreibst, beginnt eine Unterhaltung in **Wartet auf Antwort**. Das gilt auch für eine Nachricht, die Mail aus einem anderen E-Mail-Programm in deinem Ordner Gesendet findet.
 - E-Mails von deiner eigenen Adresse, die im Posteingang ankommen, beginnen in **Handlungsbedarf**. Ein Beispiel ist ein Kontaktformular, das im Namen deines Postfachs sendet.
