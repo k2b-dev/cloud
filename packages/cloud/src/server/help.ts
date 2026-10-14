@@ -169,10 +169,28 @@ export const defineHelp = (
       for (const reference of document.related) validate(reference, "related");
       walkHelpTokens(lexHelpMarkdown(document.markdown, locale), (token) => {
         if (token.type === "link" && token.href.startsWith("help:")) validate(token.href.slice(5), "help:");
+        // Callouts do not render inside details, and a warning must stay where the reader sees it.
+        if (token.type === "helpDetails" && token.callout === true) {
+          throw new Error(
+            `Help document "${document.id}" has a callout inside details in locale "${locale}"; place it outside the details`,
+          );
+        }
         if (token.type === "helpKbd" && formatShortcut(String(token.keys), { platform: "other", locale }).keys.length === 0) {
           throw new Error(`Help document "${document.id}" has an invalid key shortcut "${token.keys}" in locale "${locale}"`);
         }
       });
+      // Agents never see a help: target: a link form the agent text cannot convert, such as a reference
+      // definition, fails here instead of reaching them with an unchecked address.
+      const agentTokens = lexHelpMarkdown(helpAgentMarkdown({ markdown: document.markdown, locale, appId: "", links: {} }), locale);
+      let unconverted = Object.values(agentTokens.links).some((link) => link.href.startsWith("help:"));
+      walkHelpTokens(agentTokens, (token) => {
+        if (token.type === "link" && token.href.startsWith("help:")) unconverted = true;
+      });
+      if (unconverted) {
+        throw new Error(
+          `Help document "${document.id}" has a help: link that agents cannot read in locale "${locale}"; write it inline as [text](help:id)`,
+        );
+      }
     }
   }
 

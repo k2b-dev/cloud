@@ -23,10 +23,11 @@ export const helpArticleParts = (html: string): HelpArticleParts => {
   return {
     lead,
     body: template.innerHTML,
-    sections: Array.from(body.querySelectorAll("h2[id]"), (heading) => ({
-      id: heading.id,
-      label: heading.textContent?.trim() ?? "",
-    })).filter((section) => section.label),
+    // A heading inside collapsed details is not a section of the page.
+    sections: Array.from(body.querySelectorAll("h2[id]"))
+      .filter((heading) => !heading.closest("details"))
+      .map((heading) => ({ id: heading.id, label: heading.textContent?.trim() ?? "" }))
+      .filter((section) => section.label),
     // Steps inside a collapsed `details` block are an aside, not the task.
     steps: Array.from(body.querySelectorAll(".help-steps > ol > li")).filter((step) => !step.closest("details")).length,
   };

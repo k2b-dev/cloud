@@ -124,16 +124,26 @@ test("labels and menu paths use chips while preserving inline Markdown", () => {
 
 test("details start closed, contain guided blocks and keep their full searchable text", () => {
   const source =
-    ":::details Why *share*?\nHidden but searchable.\n\n:::steps\n1. Choose **Share**.\n:::\n\n:::warning Risk\nRead carefully.\n:::\n:::";
+    ":::details Why *share*?\nHidden but [searchable][r].\n\n:::steps\n1. Choose **Share**.\n:::\n:::\n\n[r]: https://example.com";
   const html = renderHelpMarkdown(source);
   expect(html).toContain('<details class="k2b-disclosure help-details" data-surface="plain"><summary><span>Why <em>share</em>?</span>');
   expect(html).not.toContain(" open");
   expect(html).toContain('<ol class="k2b-steps">');
-  expect(html).toContain("Read carefully.");
+  // The body belongs to the document: a link definition below the block still applies.
+  expect(html).toContain('href="https://example.com"');
   expect(html).not.toContain(":::");
   expect(markdownToPlainText(source)).toContain("Hidden but searchable.");
   expect(markdownToPlainText(source)).toContain("Choose Share.");
   expect(renderHelpMarkdown(":::details\nText\n:::")).toContain(":::details");
+});
+
+test("details end at their own closing line, never inside code, and an unclosed block stays text", () => {
+  const fenced = renderHelpMarkdown(":::details Example\n```md\n``` not a closing fence\n:::\n```\nAfter.\n:::");
+  expect(fenced).toContain("``` not a closing fence\n:::</code>");
+  expect(fenced).toContain("<p>After.</p>\n</div></details>");
+  const unclosed = renderHelpMarkdown(":::details Open\n".repeat(400));
+  expect(unclosed).not.toContain("<details");
+  expect(unclosed).toContain(":::details Open");
 });
 
 test("Help references use normal internal links only when resolved", () => {

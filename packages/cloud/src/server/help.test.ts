@@ -150,6 +150,12 @@ describe("Help author contract", () => {
       defineHelp({ documents: [helpSource("start", "", "`:kbd[]` `[Read](help:missing)`\n\n```md\n:kbd[]\n[Read](help:missing)\n```")] }),
     ).not.toThrow();
     expect(() => defineHelp({ documents: [helpSource("start", "", ":::details Keys\n:kbd[]\n:::")] })).toThrow("invalid key shortcut");
+    expect(() => defineHelp({ documents: [helpSource("start", "", ":::details Why?\n:::warning Careful\nText.\n:::\n:::")] })).toThrow(
+      "has a callout inside details",
+    );
+    // Agents never receive a help: target that their text form could not convert.
+    for (const body of ["[Read][r]\n\n[r]: help:hidden/private", "| a |\n| --- |\n| [x\\|y](help:hidden/private) |"])
+      expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).toThrow("has a help: link that agents cannot read");
     // A malformed target is an author error, not a link that quietly turns into text.
     expect(() => defineHelp({ documents: [helpSource("start", "", "[Read](help:Start_Page)")] })).toThrow(
       'unknown help: reference "Start_Page"',

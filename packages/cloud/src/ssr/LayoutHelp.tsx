@@ -191,6 +191,9 @@ const HelpShell = (props: {
       articleContent?.querySelectorAll<HTMLHeadingElement>("h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]") ?? [],
     ).find((element) => element.id === hash);
     if (!heading) return false;
+    // A link to a heading in collapsed details opens them first.
+    const details = heading.closest("details");
+    if (details) details.open = true;
     setActiveSectionId(hash);
     heading.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
     return true;

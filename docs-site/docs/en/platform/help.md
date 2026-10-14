@@ -154,7 +154,9 @@ each target in its current published corpus and language, using the same app
 visibility rule as article reads. Resolved links use
 `/help/apps/<app>/<id>#section`. Unknown or invisible targets render only the
 link text and expose no target address. `next` and `related` use this same
-resolution; unresolved entries are omitted.
+resolution; unresolved entries are omitted. Write `help:` links inline: a reference
+definition with a `help:` target, or a link form that agent text cannot
+convert, fails startup.
 
 ### Use guided blocks
 
@@ -191,8 +193,10 @@ Inventory keeps the items you already created.
 ```
 
 Details start collapsed. Their full body remains searchable and is given in
-full to agents. They can contain steps, callouts, and other Help Markdown.
-Details do not nest. An opener without a title stays literal text.
+full to agents. They can contain steps, reference, and compare blocks and
+ordinary Markdown. A callout inside details fails startup: a warning or note
+belongs where the reader sees it. An opener without a title, or one that is
+never closed, stays literal text.
 
 A paragraph containing only bold text becomes an eyebrow. Use it as a short
 label, not another heading.

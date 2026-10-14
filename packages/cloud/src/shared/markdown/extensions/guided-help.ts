@@ -1,4 +1,4 @@
-import { Lexer, type MarkedExtension, type Token, Tokenizer, type Tokens } from "marked";
+import { Lexer, type MarkedExtension, type Token, type Tokens } from "marked";
 
 export const headingMetaPattern = /\s+\{icon="([a-z0-9-]+)"\}\s*$/i;
 export const helpHeadingSlug = (value: string): string =>
@@ -19,6 +19,47 @@ const headingTitleTokens = (token: Tokens.Heading): Token[] => {
       text: trailing.text.replace(headingMetaPattern, ""),
     };
   return tokens;
+};
+
+const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+const DIRECTIVE_OPENER = /^ {0,3}:::[a-z]+\b/i;
+const DIRECTIVE_CLOSER = /^ {0,3}:::[ \t]*$/;
+const CALLOUT_OPENER = /^ {0,3}:::(?:note|info|success|warning|danger)\b/i;
+
+/**
+ * A `:::details Title` block up to its own closing `:::`. One directive inside it (steps, reference, compare, a
+ * callout, which stays text there) keeps its own closer; directives do not nest further, and fenced code hides
+ * its lines. Without a closing line there is no block.
+ */
+const detailsBlock = (source: string): { raw: string; title: string; body: string; callout: boolean } | undefined => {
+  const opener = /^:::details[ \t]+(\S[^\n]*)\n/.exec(source);
+  if (!opener) return undefined;
+  let offset = opener[0].length;
+  let inner = false;
+  let callout = false;
+  let fence: string | undefined;
+  for (const line of source.slice(offset).split(/(?<=\n)/)) {
+    const text = line.replace(/\r?\n$/, "");
+    const marker = FENCE.exec(text);
+    if (fence) {
+      if (marker && marker[1]![0] === fence[0] && marker[1]!.length >= fence.length && !marker[2]!.trim()) fence = undefined;
+    } else if (marker && !(marker[1]![0] === "`" && marker[2]!.includes("`"))) fence = marker[1];
+    else if (DIRECTIVE_CLOSER.test(text)) {
+      if (!inner)
+        return {
+          raw: source.slice(0, offset + line.length),
+          title: opener[1]!.trim(),
+          body: source.slice(opener[0].length, offset),
+          callout,
+        };
+      inner = false;
+    } else if (DIRECTIVE_OPENER.test(text)) {
+      inner = true;
+      callout ||= CALLOUT_OPENER.test(text);
+    }
+    offset += line.length;
+  }
+  return undefined;
 };
 
 const menuSegments = (tokens: Token[]): Token[][] => {
@@ -111,44 +152,23 @@ export function guidedHelpExtension(): MarkedExtension {
       {
         name: "helpDetails",
         level: "block",
-        start: (source) => source.match(/^:::details\s+\S/m)?.index,
-        tokenizer: function details(source) {
-          const opener = /^:::details[ \t]+([^\n]+)\n/.exec(source);
-          if (!opener?.[1]?.trim()) return undefined;
-          let offset = opener[0].length;
-          let depth = 0;
-          let fence: { character: string; length: number } | undefined;
-          for (const line of source.slice(offset).split(/(?<=\n)/)) {
-            const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line);
-            if (marker) {
-              if (!fence) fence = { character: marker[1]![0]!, length: marker[1]!.length };
-              else if (marker[1]![0] === fence.character && marker[1]!.length >= fence.length) fence = undefined;
-            } else if (!fence) {
-              if (/^:::(?:steps|reference|compare|note|info|success|warning|danger)\b/.test(line)) depth += 1;
-              else if (/^:::[ \t]*(?:\n|$)/.test(line)) {
-                if (depth === 0) {
-                  const body = source.slice(opener[0].length, offset);
-                  // Callouts need a top-level document; its tokenizer must not share the outer lexer.
-                  const options = this.lexer.options;
-                  const tokenizer = Object.assign(new Tokenizer(options), options.tokenizer);
-                  const extensions = options.extensions
-                    ? { ...options.extensions, block: options.extensions.block?.filter((tokenizer) => tokenizer !== details) }
-                    : null;
-                  const tokens = new Lexer({ ...options, tokenizer, extensions }).lex(body);
-                  return {
-                    type: "helpDetails",
-                    raw: source.slice(0, offset + line.length),
-                    title: opener[1].trim(),
-                    titleTokens: this.lexer.inlineTokens(opener[1].trim()),
-                    tokens,
-                  };
-                }
-                depth -= 1;
-              }
-            }
-            offset += line.length;
-          }
+        start(source) {
+          // Only a block that closes splits a paragraph; an unclosed opener stays text without rescanning the rest.
+          for (const opener of source.matchAll(/^:::details[ \t]+\S/gm)) if (detailsBlock(source.slice(opener.index))) return opener.index;
           return undefined;
+        },
+        tokenizer(source) {
+          const block = detailsBlock(source);
+          if (!block) return undefined;
+          return {
+            type: "helpDetails",
+            raw: block.raw,
+            title: block.title,
+            titleTokens: this.lexer.inlineTokens(block.title),
+            callout: block.callout,
+            // The body joins this document: its links, steps, and reference blocks work as anywhere else.
+            tokens: this.lexer.blockTokens(block.body, []),
+          };
         },
         renderer(token) {
           return `<details class="k2b-disclosure help-details" data-surface="plain"><summary><span>${this.parser.parseInline(token.titleTokens ?? [])}</span><i class="ti ti-chevron-down k2b-disclosure__chevron" aria-hidden="true"></i></summary><div class="k2b-disclosure__content">${this.parser.parse(token.tokens ?? [])}</div></details>`;
