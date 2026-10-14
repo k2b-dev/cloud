@@ -33,15 +33,12 @@ const consume = async (stream: ReadableStream<Uint8Array>, output: Output) => {
   }
 };
 
-/** Report failures or an approaching deadline, keeping partial child output. */
-export const traced = (timeoutMs: number, body: (trace: ProcessTrace) => Promise<void>) => async () => {
+/** Record steps and children; `describe` renders their current state without side effects. */
+export const processTrace = (): { trace: ProcessTrace; describe(reason: string): string } => {
   const start = performance.now();
   const elapsed = () => performance.now() - start;
   const entries: Entry[] = [];
-  let reported = false;
-  const report = (reason: string) => {
-    if (reported) return;
-    reported = true;
+  const describe = (reason: string) => {
     const lines = [`${reason} after ${Math.round(elapsed())} ms; process trace:`];
     for (const entry of entries) {
       const timing = entry.duration === undefined ? `running since ${Math.round(entry.start)} ms` : `${Math.round(entry.duration)} ms`;
@@ -60,7 +57,7 @@ export const traced = (timeoutMs: number, body: (trace: ProcessTrace) => Promise
         if (output.text) lines.push(`  ${name} tail:\n${output.text.slice(-2000).replace(/^/gm, "    ")}`);
       }
     }
-    console.error(lines.join("\n"));
+    return lines.join("\n");
   };
   const trace: ProcessTrace = {
     async phase(name, fn) {
@@ -100,12 +97,21 @@ export const traced = (timeoutMs: number, body: (trace: ProcessTrace) => Promise
       return { exitCode, stdout: entry.stdout.text, stderr: entry.stderr.text };
     },
   };
-  const watchdog = setTimeout(() => report("Test is close to its deadline"), timeoutMs - 5000);
+  return { trace, describe };
+};
+
+/**
+ * Report an approaching deadline and a failure, keeping partial child output.
+ * A failure after the deadline report prints again, with the final state.
+ */
+export const traced = (timeoutMs: number, body: (trace: ProcessTrace) => Promise<void>) => async () => {
+  const { trace, describe } = processTrace();
+  const watchdog = setTimeout(() => console.error(describe("Test is close to its deadline")), timeoutMs - 5000);
   watchdog.unref();
   try {
     await body(trace);
   } catch (error) {
-    report("Test failed");
+    console.error(describe("Test failed"));
     throw error;
   } finally {
     clearTimeout(watchdog);

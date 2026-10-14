@@ -498,11 +498,11 @@ queue, and its result is authoritative.
 
 The standalone `cld` test compiles the release target. On Linux x64, Bun
 downloads that target's runtime into its install cache on first use. The
-`unit` job fetches it in a named step before the tests, so the download runs
-outside the test's 60 s budget. When the test fails or comes within five
-seconds of its timeout, it prints a trace of every step and child process:
-pid, duration, exit status, output sizes, whether each stream ended, and the
-last output. This shows which step stalled.
+`unit` job and the nightly `ubuntu-next` job fetch it in a named step before
+the tests, so the download runs outside the test's 60 s budget. When the test
+fails or comes within five seconds of its timeout, it prints a trace of every
+step and child process: pid, duration, exit status, output sizes, whether each
+stream ended, and the last output. This shows which step stalled.
 
 Locally, run the typecheck and the focused tests of each package you touched,
 for example:
