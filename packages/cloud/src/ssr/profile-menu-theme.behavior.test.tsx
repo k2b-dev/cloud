@@ -125,7 +125,7 @@ test("the mobile profile menu has one appearance button that cycles", async () =
   }
 });
 
-test("a controller syncs another controller's choice without announcing it", async () => {
+test("a controller syncs another controller's choice without announcing it or keeping a stale announcement", async () => {
   const { createPreferenceController } = await import("./preference-controller");
   const { ThemeCycleButton } = await import("./ThemeCycleButton");
   dispose = render(
@@ -144,6 +144,6 @@ test("a controller syncs another controller's choice without announcing it", asy
   expect(announcements[1]!.textContent).toBe("");
   buttons[1]!.click();
   expect(buttons[0]!.textContent).toBe("Dark");
-  expect(announcements[0]!.textContent).toBe("Appearance: Light");
+  expect(announcements[0]!.textContent).toBe("");
   expect(announcements[1]!.textContent).toBe("Appearance: Dark");
 });

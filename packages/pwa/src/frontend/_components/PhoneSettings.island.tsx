@@ -2,7 +2,7 @@ import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { PWA_LIMITS } from "@k2b/cloud/contracts";
 import type { CloudThemePreference } from "@k2b/cloud/shared";
 import { createPreferenceController } from "@k2b/cloud/ssr/preference-controller";
-import { ThemeCycleButton } from "@k2b/cloud/ssr/ThemeCycleButton.tsx";
+import { ThemeCycleButton } from "@k2b/cloud/ssr/ThemeCycleButton";
 import { Avatar, Button, SegmentedControl, SettingsSection, TextInput, toast, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { shellMessages } from "../../messages";

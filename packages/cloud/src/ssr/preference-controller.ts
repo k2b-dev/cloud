@@ -26,7 +26,10 @@ export const createPreferenceController = (initialTheme: CloudThemePreference, l
   const toggleLanguage = () => setLocalePreference(nextLanguage());
 
   onMount(() => {
-    const syncTheme = () => updateTheme(getCurrentThemePreference());
+    const syncTheme = () => {
+      const syncedTheme = updateTheme(getCurrentThemePreference());
+      if (syncedTheme !== announcedTheme()) setAnnouncedTheme(undefined);
+    };
     syncTheme();
     window.addEventListener(THEME_PREFERENCE_EVENT, syncTheme);
     onCleanup(() => window.removeEventListener(THEME_PREFERENCE_EVENT, syncTheme));
