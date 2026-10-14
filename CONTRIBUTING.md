@@ -65,6 +65,9 @@ to the main checkout, not to worktrees.
 
 Reference the issue the pull request closes (`Closes #n`), or say in one line
 why none is needed.
+A fix pull request also answers "How do we prevent this next time?" with a
+guard (a check, a test, or a convention) or a reason why none, and adds its
+entry to [Lessons learned](docs-site/docs/en/contributing/lessons-learned.md).
 
 ## Add an application
 
