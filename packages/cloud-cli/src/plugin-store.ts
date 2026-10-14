@@ -1,5 +1,5 @@
 /**
- * Plugins served by a profile's Cloud.
+ * The plugin store: verified bundles of served and package plugins.
  *
  * Every application serves its own `cld` module under `/cli/plugins/<name>/`
  * with a manifest that lists each file's SHA-512. `cld` downloads a plugin,
@@ -7,7 +7,8 @@
  * and keeps it content-addressed in `<plugins>/store/<digest>/`. Each profile
  * locks the plugins it uses (`name -> { app, version, digest }`) in the `cld`
  * config, so profiles for different Clouds use different versions and share
- * identical ones.
+ * identical ones. Package plugins carry the same bundle and are verified and
+ * stored the same way; see `plugins.ts`.
  */
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -18,6 +19,7 @@ import {
   CLOUD_CLI_PLUGIN_ENTRY,
   CLOUD_CLI_PLUGIN_ROUTE,
   type CloudCliModule,
+  type CloudCliPluginFile,
   type CloudCliPluginManifest,
   type CloudCliPluginSummary,
   isCloudCliAlias,
@@ -87,15 +89,20 @@ export const fetchPluginManifest = async (fetch: CloudFetch, name: string): Prom
     throw new PluginError(`Plugin "${name}" has an invalid manifest (${error instanceof Error ? error.message : String(error)}).`);
   }
   if (manifest.name !== name) throw new PluginError(`Plugin "${name}" answered with a manifest for "${manifest.name}".`);
+  checkPluginApiVersion(manifest);
+  return manifest;
+};
+
+/** The same API compatibility contract for served and package bundles. */
+export const checkPluginApiVersion = (manifest: CloudCliPluginManifest): void => {
   if (manifest.apiVersion !== CLOUD_CLI_API_VERSION) {
     throw new PluginError(
       manifest.apiVersion > CLOUD_CLI_API_VERSION
-        ? `Plugin "${name}" needs plugin API ${manifest.apiVersion}; this cld supports ${CLOUD_CLI_API_VERSION}. Run \`cld update\`.`
-        : `Plugin "${name}" uses plugin API ${manifest.apiVersion}; this cld supports ${CLOUD_CLI_API_VERSION}. Update the Cloud or install an older cld.`,
+        ? `Plugin "${manifest.name}" needs plugin API ${manifest.apiVersion}; this cld supports ${CLOUD_CLI_API_VERSION}. Run \`cld update\`.`
+        : `Plugin "${manifest.name}" uses plugin API ${manifest.apiVersion}; this cld supports ${CLOUD_CLI_API_VERSION}. Update the Cloud or install an older cld.`,
       "incompatible",
     );
   }
-  return manifest;
 };
 
 /** Read a response body of exactly `size` bytes; stop as soon as it is longer. */
@@ -134,31 +141,45 @@ const loadModuleFile = async (entry: string, name: string): Promise<CloudCliModu
   return module;
 };
 
+/** Download a served plugin through {@link storePlugin}. */
+export const downloadPlugin = (fetch: CloudFetch, manifest: CloudCliPluginManifest, root = pluginsDirectory()) =>
+  storePlugin(
+    manifest,
+    async (file) => {
+      const response = await fetch(`${CLOUD_CLI_PLUGIN_ROUTE}/${manifest.name}/${file.path}`);
+      if (!response.ok) throw failure(response, `Cannot download ${manifest.name}/${file.path}`);
+      return readExactly(response, file.size, `${manifest.name}/${file.path}`);
+    },
+    root,
+  );
+
 /**
- * Download every file of `manifest` into a new incoming directory of the
- * store, verifying size and SHA-512, then load the module once to check it.
- * The caller places the result with {@link placePlugin}.
+ * Read every file of `manifest` into a new incoming directory of the store,
+ * verifying size and SHA-512, then load the module once to check it. Served
+ * and package plugins both go through here. The caller places the result
+ * with {@link placePlugin}.
  */
-export const downloadPlugin = async (
-  fetch: CloudFetch,
+export const storePlugin = async (
   manifest: CloudCliPluginManifest,
+  read: (file: CloudCliPluginFile) => Promise<Uint8Array>,
   root = pluginsDirectory(),
 ): Promise<{ incoming: string; module: CloudCliModule }> => {
   const store = pluginStoreDirectory(root);
   await mkdir(store, { recursive: true, mode: 0o700 });
   const incoming = join(store, `${INCOMING_PREFIX}${crypto.randomUUID()}`);
   try {
-    await Promise.all(
+    // Finish all writes before cleanup, even when one file fails verification.
+    const results = await Promise.allSettled(
       manifest.files.map(async (file) => {
-        const response = await fetch(`${CLOUD_CLI_PLUGIN_ROUTE}/${manifest.name}/${file.path}`);
-        if (!response.ok) throw failure(response, `Cannot download ${manifest.name}/${file.path}`);
-        const bytes = await readExactly(response, file.size, `${manifest.name}/${file.path}`);
+        const bytes = await read(file);
+        if (bytes.byteLength !== file.size) throw new PluginError(`${manifest.name}/${file.path} size does not match its manifest.`);
         if (sha512Hex(bytes) !== file.sha512) throw new PluginError(`${manifest.name}/${file.path} does not match its SHA-512.`);
         const target = join(incoming, file.path);
         await mkdir(dirname(target), { recursive: true, mode: 0o700 });
         await writeFile(target, bytes, { mode: 0o600 });
       }),
     );
+    for (const result of results) if (result.status === "rejected") throw result.reason;
     await writeFile(join(incoming, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
     return { incoming, module: await loadModuleFile(join(incoming, CLOUD_CLI_PLUGIN_ENTRY), manifest.name) };
   } catch (error) {
@@ -169,11 +190,13 @@ export const downloadPlugin = async (
 
 /** Move a verified download to `store/<digest>`; an identical plugin already there is kept. */
 export const placePlugin = async (incoming: string, digest: string, root = pluginsDirectory()): Promise<void> => {
-  const target = join(pluginStoreDirectory(root), digest);
-  if ((await stat(target).catch(() => null))?.isDirectory()) {
+  if (await hasStoredPlugin(digest, root)) {
     await rm(incoming, { recursive: true, force: true });
     return;
   }
+  // A damaged entry, for example one missing its module, is replaced.
+  const target = join(pluginStoreDirectory(root), digest);
+  await rm(target, { recursive: true, force: true });
   await rename(incoming, target);
 };
 
@@ -183,7 +206,11 @@ export const hasStoredPlugin = async (digest: string, root = pluginsDirectory())
   Boolean((await stat(join(pluginStoreDirectory(root), digest, CLOUD_CLI_PLUGIN_ENTRY)).catch(() => null))?.isFile());
 
 /** Load the locked plugin `name` from the store. */
-export const loadStoredPlugin = async (name: string, locked: LockedPlugin, root = pluginsDirectory()): Promise<CloudCliModule> => {
+export const loadStoredPlugin = async (
+  name: string,
+  locked: Pick<LockedPlugin, "digest">,
+  root = pluginsDirectory(),
+): Promise<CloudCliModule> => {
   if (!(await hasStoredPlugin(locked.digest, root))) {
     throw new PluginError(`Plugin "${name}" is missing from the plugin store. Run \`cld plugins install ${name}\`.`);
   }
@@ -191,7 +218,7 @@ export const loadStoredPlugin = async (name: string, locked: LockedPlugin, root 
 };
 
 /** The skill reference files of a stored plugin, as `references/<path>` in manifest order. */
-export const storedReferenceFiles = async (locked: LockedPlugin, root = pluginsDirectory()): Promise<string[]> => {
+export const storedReferenceFiles = async (locked: Pick<LockedPlugin, "digest">, root = pluginsDirectory()): Promise<string[]> => {
   const raw: unknown = JSON.parse(await readFile(join(pluginStoreDirectory(root), locked.digest, "manifest.json"), "utf8"));
   return parseCloudCliPluginManifest(raw)
     .files.map((file) => file.path)
@@ -202,7 +229,7 @@ export const storedReferenceFiles = async (locked: LockedPlugin, root = pluginsD
 /** Read one skill reference of a stored plugin; `file` defaults to `index.md`. */
 export const readStoredReference = async (
   name: string,
-  locked: LockedPlugin,
+  locked: Pick<LockedPlugin, "digest">,
   file = "index.md",
   root = pluginsDirectory(),
 ): Promise<string> => {
@@ -217,7 +244,7 @@ export const readStoredReference = async (
 };
 
 /**
- * Remove stored plugins that no profile locks, and incoming directories that
+ * Remove stored plugins no profile or package record uses, and incoming directories that
  * an interrupted process left behind. Run it while holding the config lock.
  */
 export const collectPluginGarbage = async (referenced: ReadonlySet<string>, root = pluginsDirectory()): Promise<string[]> => {

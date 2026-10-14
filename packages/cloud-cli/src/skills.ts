@@ -6,7 +6,7 @@
  * `SKILL.md` and references embedded in this `cld` release, plus
  * `references/<module>/<version>/` copied from the plugin store for every
  * module a profile has installed. `SKILL.md` carries a generated table from
- * profile to module, version, and reference folder. The folder is rebuilt as
+ * profile to module, version, summary, and reference index. The folder is rebuilt as
  * a whole on every change, so versions no profile uses disappear.
  */
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
@@ -25,7 +25,7 @@ export const CLAUDE_SKILL_TARGET = "~/.claude/skills";
 export type SkillsConfig = { targets: string[] };
 
 /** One installed module of one profile, as a row of the generated table. */
-export type SkillModuleRow = { profile: string; name: string; version: string; digest: string };
+export type SkillModuleRow = { profile: string; name: string; version: string; summary: string; digest: string };
 
 const MODULES_START = "<!-- cld:modules -->";
 const MODULES_END = "<!-- /cld:modules -->";
@@ -50,9 +50,12 @@ export const renderModulesTable = (rows: readonly SkillModuleRow[]): string => {
   }
   const sorted = [...rows].sort((left, right) => left.profile.localeCompare(right.profile) || left.name.localeCompare(right.name));
   return [
-    "| Profile | Module | Version | Reference folder |",
-    "| --- | --- | --- | --- |",
-    ...sorted.map((row) => `| ${row.profile} | ${row.name} | ${row.version} | \`${referenceFolder(row.name, row.version)}\` |`),
+    "| Profile | Module | Version | Summary | Start |",
+    "| --- | --- | --- | --- | --- |",
+    ...sorted.map(
+      (row) =>
+        `| ${row.profile} | ${row.name} | ${row.version} | ${row.summary.replace(/[\r\n]+/g, " ").replaceAll("|", "\\|")} | \`${referenceFolder(row.name, row.version)}index.md\` |`,
+    ),
   ].join("\n");
 };
 

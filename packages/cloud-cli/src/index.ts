@@ -35,18 +35,20 @@ import {
   readServedPlugins,
   readStoredReference,
   resolveShortNames,
+  storePlugin,
 } from "./plugin-store";
 import {
-  commitPlugin,
   isPackagePluginSource,
-  loadPlugin,
-  loadPlugins,
+  legacyPlugins,
+  type PackagePlugins,
   PluginError,
   type PluginInfo,
-  pluginIds,
   pluginsDirectory,
+  readPackagePluginFile,
+  readPackagePlugins,
   removePlugin,
   stagePlugin,
+  writePackagePlugins,
 } from "./plugins";
 import { updateCli } from "./release";
 import {
@@ -1431,7 +1433,9 @@ the current profile, or for every profile with --all. \`list --all\` covers ever
 profile. Profiles share identical plugin versions on disk.
 
 A local directory, a .tgz archive, or an npm: package installs a plugin for every
-profile, for development or for commands that no Cloud serves. Such a plugin runs
+profile, for development or for commands that no Cloud serves. Authors build these
+verified bundles with \`bun run node_modules/@k2b/cloud/scripts/cli-pack.ts\`. They
+carry references and use the same verified store as served plugins. A plugin runs
 inside cld with your Cloud credentials; install only plugins you trust.
 
 Plugin commands run as \`cld <name> ...\`. \`cld plugins run <name>\` always reaches the
@@ -1456,8 +1460,10 @@ aktuelle Profil, mit --all für alle Profile. \`list --all\` zeigt alle Profile.
 Profile teilen sich identische Plugin-Versionen auf der Festplatte.
 
 Ein lokales Verzeichnis, ein .tgz-Archiv oder ein npm:-Paket installiert ein Plugin
-für alle Profile, zum Entwickeln oder für Befehle, die keine Cloud bereitstellt. Ein
-solches Plugin läuft in cld mit deinen Cloud-Zugangsdaten; installiere nur Plugins,
+für alle Profile, zum Entwickeln oder für Befehle, die keine Cloud bereitstellt. Autoren
+bauen die geprüften Bundles mit \`bun run node_modules/@k2b/cloud/scripts/cli-pack.ts\`.
+Sie enthalten Referenzen und nutzen denselben geprüften Store wie Cloud-Plugins.
+Ein solches Plugin läuft in cld mit deinen Cloud-Zugangsdaten; installiere nur Plugins,
 denen du vertraust.
 
 Plugin-Befehle laufen als \`cld <Name> ...\`. \`cld plugins run <Name>\` erreicht das Plugin
@@ -1518,7 +1524,7 @@ const profileShortNames = async (config: CloudCliConfig, profileName: string) =>
   const served = readServedPlugins(config.profiles?.[profileName]?.servedPlugins);
   return resolveShortNames(lock, {
     builtIn: reservedNames,
-    modules: new Set([...Object.keys(lock), ...(await pluginIds())]),
+    modules: new Set(installedModules(config, profileName, await readPackagePlugins()).map((module) => module.name)),
     served: served === undefined ? undefined : new Set(served),
   });
 };
@@ -1560,49 +1566,66 @@ const pluginMetadata = (module: CloudCliModule) => ({
   ...(module.shortcuts !== undefined ? { shortcuts: { ...module.shortcuts } } : {}),
 });
 
-/** Digests any profile still locks; everything else in the store may go. */
-const lockedDigests = (config: CloudCliConfig): Set<string> =>
-  new Set(Object.keys(config.profiles ?? {}).flatMap((name) => Object.values(profileLock(config, name)).map((entry) => entry.digest)));
-
-/**
- * Load an installed plugin: the one the profile locks, else a package plugin
- * installed for every profile. Undefined when neither exists.
- */
-const loadInstalledModule = async (name: string, global: GlobalArgs): Promise<CloudCliModule | undefined> => {
-  const locked = await lockedPlugin(name, global);
-  const module = locked ? loadStoredPlugin(name, locked) : loadPlugin(name);
-  return module.catch((error) => pluginFailure(error, `Plugin "${name}" cannot run`, `Plugin "${name}" kann nicht ausgeführt werden`));
+/** One metadata resolver for the profile lock and global package records. */
+const installedModule = (config: CloudCliConfig, profile: string, packages: PackagePlugins, name: string) => {
+  const lock = profileLock(config, profile);
+  const locked = Object.hasOwn(lock, name) ? lock[name] : undefined;
+  if (locked) return { name, profile, version: locked.version, digest: locked.digest, summary: locked.summary, locked };
+  const record = Object.hasOwn(packages, name) ? packages[name] : undefined;
+  if (record) return { name, profile: "*", version: record.version, digest: record.digest, summary: record.summary };
+  return undefined;
 };
+const installedModules = (config: CloudCliConfig, profile: string, packages: PackagePlugins) =>
+  [...new Set([...Object.keys(profileLock(config, profile)), ...Object.keys(packages)])].flatMap((name) => {
+    const module = installedModule(config, profile, packages, name);
+    return module ? [module] : [];
+  });
 
-/** The current profile's lock entry for `name`, if the profile installed it from its Cloud. */
-const lockedPlugin = async (name: string, global: GlobalArgs): Promise<LockedPlugin | undefined> => {
+/** Every digest used by a profile or a package record must survive garbage collection. */
+const referencedDigests = async (config: CloudCliConfig): Promise<Set<string>> =>
+  new Set([
+    ...Object.keys(config.profiles ?? {}).flatMap((name) => Object.values(profileLock(config, name)).map((entry) => entry.digest)),
+    ...Object.values(await readPackagePlugins()).map((entry) => entry.digest),
+  ]);
+
+const resolveInstalledModule = async (name: string, global: GlobalArgs) => {
   const config = await loadConfig();
-  const lock = profileLock(config, resolveProfileName(config, global.profile));
-  return Object.hasOwn(lock, name) ? lock[name] : undefined;
+  return installedModule(config, resolveProfileName(config, global.profile), await readPackagePlugins(), name);
 };
 
-/** `cld <module> reference [file]`: print a served plugin's skill reference. */
-const runReferenceCommand = async (name: string, locked: LockedPlugin, args: string[]): Promise<number> => {
+/** Load the active module from the shared store, never from legacy directories. */
+const loadInstalledModule = async (name: string, global: GlobalArgs): Promise<CloudCliModule | undefined> => {
+  const installed = await resolveInstalledModule(name, global);
+  if (!installed) return undefined;
+  return loadStoredPlugin(name, installed).catch((error) =>
+    pluginFailure(error, `Plugin "${name}" cannot run`, `Plugin "${name}" kann nicht ausgeführt werden`),
+  );
+};
+
+/** `cld <module> reference [file]` works for every installed bundle. */
+const runReferenceCommand = async (name: string, installed: { digest: string }, args: string[]): Promise<number> => {
   const [file, ...extra] = args;
-  if (extra.length > 0 || file?.startsWith("-")) {
+  if (extra.length > 0 || file?.startsWith("-"))
     throw new CliError(`Usage: cld ${name} reference [file]`, 1, `Verwendung: cld ${name} reference [Datei]`);
-  }
-  const markdown = await readStoredReference(name, locked, file).catch((error) =>
+  const markdown = await readStoredReference(name, installed, file).catch((error) =>
     pluginFailure(error, `Cannot read the "${name}" reference`, `Referenz von "${name}" kann nicht gelesen werden`),
   );
   process.stdout.write(markdown);
   return 0;
 };
 
-/** Every installed module of every profile, for the generated skill table. */
-const skillRows = (config: CloudCliConfig): SkillModuleRow[] =>
-  Object.keys(config.profiles ?? {})
-    .sort()
-    .flatMap((profile) =>
-      Object.entries(profileLock(config, profile))
-        .filter(([name]) => !reservedNames.has(name))
-        .map(([name, locked]) => ({ profile, name, version: locked.version, digest: locked.digest })),
-    );
+/** Active profile modules plus one global row for each active package module. */
+const skillRows = async (config: CloudCliConfig): Promise<SkillModuleRow[]> => {
+  const packages = await readPackagePlugins();
+  const profiles = Object.keys(config.profiles ?? {}).sort();
+  const rows = new Map<string, SkillModuleRow>();
+  for (const profile of profiles.length ? profiles : [DEFAULT_PROFILE]) {
+    for (const module of installedModules(config, profile, packages)) {
+      if (!reservedNames.has(module.name)) rows.set(`${module.profile}/${module.name}`, module);
+    }
+  }
+  return [...rows.values()];
+};
 
 /**
  * Rewrite the skill in every configured target from `config`. Problems never
@@ -1612,7 +1635,7 @@ const syncSkills = async (config: CloudCliConfig, locale: string): Promise<strin
   const targets = config.skills?.targets ?? [];
   if (targets.length === 0) return [];
   try {
-    return await syncSkillTargets(targets, skillRows(config));
+    return await syncSkillTargets(targets, await skillRows(config));
   } catch (error) {
     printErrorLine(
       text(
@@ -1638,8 +1661,8 @@ Usage:
 
 cld writes the cloud-cli agent skill into every target directory: the core
 SKILL.md and references of this cld release, plus references/<module>/<version>/
-for every module a profile has installed, and a table in SKILL.md that maps each
-profile to its modules. The default target is ${DEFAULT_SKILL_TARGET}; add
+for every active installed module. The table in SKILL.md shows Profile (* for
+package plugins), Module, Version, Summary, and Start (the reference index). The default target is ${DEFAULT_SKILL_TARGET}; add
 ${CLAUDE_SKILL_TARGET} for Claude Code. Every change to the installed plugins and
 every \`cld update\` rewrites all targets; \`sync\` rewrites them now. When no
 target was ever chosen, \`sync\` and \`cld update\` ask once; --yes takes the
@@ -1655,8 +1678,8 @@ Verwendung:
 
 cld schreibt den cloud-cli-Agent-Skill in jedes Zielverzeichnis: SKILL.md und
 Referenzen dieses cld-Releases sowie references/<Modul>/<Version>/ für jedes
-Modul, das ein Profil installiert hat, und eine Tabelle in SKILL.md, die jedem
-Profil seine Module zuordnet. Standardziel ist ${DEFAULT_SKILL_TARGET}; für
+aktive installierte Modul. Die Tabelle in SKILL.md zeigt Profil (* für Paket-Plugins),
+Modul, Version, Zusammenfassung und Start (den Referenzindex). Standardziel ist ${DEFAULT_SKILL_TARGET}; für
 Claude Code kommt ${CLAUDE_SKILL_TARGET} hinzu. Jede Änderung an den installierten
 Plugins und jedes \`cld update\` schreibt alle Ziele neu; \`sync\` tut es sofort.
 Wurde nie ein Ziel gewählt, fragen \`sync\` und \`cld update\` einmal; --yes nimmt
@@ -1711,7 +1734,7 @@ const runSkillsCommand = async (args: string[], global: GlobalArgs): Promise<num
       printLine(text(locale, `Removed the cloud-cli skill from ${normalized}.`, `cloud-cli-Skill aus ${normalized} entfernt.`));
       return 0;
     }
-    const written = await syncSkillTargets([normalized], skillRows(config));
+    const written = await syncSkillTargets([normalized], await skillRows(config));
     printLine(text(locale, `Wrote the cloud-cli skill to ${written[0]}.`, `cloud-cli-Skill nach ${written[0]} geschrieben.`));
     return 0;
   }
@@ -1724,7 +1747,7 @@ const runSkillsCommand = async (args: string[], global: GlobalArgs): Promise<num
         `Kein Skill-Ziel konfiguriert. Führe zuerst \`cld skills add ${DEFAULT_SKILL_TARGET}\` aus.`,
       );
     }
-    const written = await syncSkillTargets(config.skills!.targets, skillRows(config));
+    const written = await syncSkillTargets(config.skills!.targets, await skillRows(config));
     if (output !== "text") printLine(JSON.stringify({ written }, null, output === "json" ? 2 : 0));
     else
       for (const path of written)
@@ -1851,11 +1874,11 @@ const syncProfilePlugins = async (
   for (const name of names) {
     try {
       if (reservedNames.has(name)) throw new PluginError(`"${name}" is a built-in cld command`, "shadowed");
-      if (!current[name] && (await loadPlugin(name).catch(() => null))) {
+      if (!Object.hasOwn(current, name) && Object.hasOwn(await readPackagePlugins(), name)) {
         throw new PluginError(`a package plugin "${name}" is installed for every profile; run \`cld plugins remove ${name}\` first`);
       }
       const manifest = await fetchPluginManifest(cloud.fetch, name);
-      const previous = current[name];
+      const previous = Object.hasOwn(current, name) ? current[name] : undefined;
       if (previous?.digest === manifest.digest && (await hasStoredPlugin(manifest.digest))) {
         const metadata = pluginMetadata(await loadStoredPlugin(name, previous));
         if (
@@ -1873,7 +1896,7 @@ const syncProfilePlugins = async (
         continue;
       }
       const download = (await hasStoredPlugin(manifest.digest))
-        ? { incoming: null, module: await loadStoredPlugin(name, { ...manifest, summary: "" }) }
+        ? { incoming: null, module: await loadStoredPlugin(name, manifest) }
         : await downloadPlugin(cloud.fetch, manifest);
       staged.push({
         name,
@@ -1920,7 +1943,7 @@ const syncProfilePlugins = async (
     };
     await saveConfig(config);
     if (staged.length > 0) {
-      await collectPluginGarbage(lockedDigests(config));
+      await collectPluginGarbage(await referencedDigests(config));
       await syncSkills(config, locale);
     }
   });
@@ -1964,6 +1987,7 @@ type PluginRow = {
   available: string | null;
   status: string;
   source: string;
+  message?: string;
 };
 
 const listProfilePlugins = async (global: GlobalArgs, profileName: string, current: boolean): Promise<PluginRow[]> => {
@@ -2053,7 +2077,19 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
     const profileNames = all ? Object.keys(config.profiles ?? {}).sort() : [currentProfile];
     const rows: PluginRow[] = [];
     for (const profileName of profileNames) rows.push(...(await listProfilePlugins(global, profileName, profileName === currentProfile)));
-    const { plugins } = await loadPlugins(reservedNames);
+    const packages = await readPackagePlugins();
+    const plugins = await legacyPlugins();
+    for (const [id, record] of Object.entries(packages).sort(([a], [b]) => a.localeCompare(b))) {
+      const status = reservedNames.has(id) ? "shadowed" : (await hasStoredPlugin(record.digest)) ? "ok" : "error";
+      plugins.push({
+        id,
+        ...record,
+        status,
+        ...(status === "error"
+          ? { message: `Plugin "${id}" is missing from the plugin store. Reinstall with \`cld plugins install ${record.source}\`.` }
+          : {}),
+      });
+    }
     for (const plugin of plugins) {
       rows.push({
         profile: null,
@@ -2061,7 +2097,8 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
         alias: null,
         shortcuts: {},
         inactive: [],
-        app: null,
+        app: plugin.package ?? null,
+        ...(plugin.message ? { message: plugin.message } : {}),
         installed: plugin.version ?? null,
         available: null,
         status: plugin.status,
@@ -2111,12 +2148,23 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
     );
     try {
       const { manifest, source } = staged;
-      const label = `${manifest.package}@${manifest.version}`;
+      const id = manifest.name;
+      const label = `${manifest.app}@${manifest.version}`;
+      const references = manifest.files.filter((file) => file.path.startsWith("references/")).length;
+      const check = (config: CloudCliConfig) => {
+        if (reservedNames.has(id)) throw new PluginError(`plugin id "${id}" is reserved by a built-in cld command`, "shadowed");
+        const lockedBy = Object.keys(config.profiles ?? {}).filter((name) => Object.hasOwn(profileLock(config, name), id));
+        if (lockedBy.length)
+          throw new PluginError(
+            `profile "${lockedBy[0]}" already uses the Cloud's plugin "${id}"; run \`cld plugins remove ${id}\` there first`,
+          );
+      };
+      check(await loadConfig());
       printErrorLine(
         text(
           locale,
-          `Plugin ${label} from ${source} runs inside cld with your Cloud credentials.`,
-          `Plugin ${label} aus ${source} läuft in cld mit deinen Cloud-Zugangsdaten.`,
+          `Plugin ${label} from ${source} (module "${id}", ${references} reference files) runs inside cld with your Cloud credentials.`,
+          `Plugin ${label} aus ${source} (Modul "${id}", ${references} Referenzdateien) läuft in cld mit deinen Cloud-Zugangsdaten.`,
         ),
       );
       if (
@@ -2126,29 +2174,47 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
         printErrorLine(text(locale, "Plugin installation cancelled.", "Plugin-Installation abgebrochen."));
         return 1;
       }
-      const config = await loadConfig();
-      const { id, replaced } = await commitPlugin(staged, reservedNames, pluginsDirectory(), (id) => {
-        const lockedBy = Object.keys(config.profiles ?? {}).filter((name) => profileLock(config, name)[id]);
-        if (lockedBy.length > 0) {
-          throw new PluginError(
-            `profile "${lockedBy[0]}" already uses the Cloud's plugin "${id}"; run \`cld plugins remove ${id}\` there first`,
-          );
-        }
-      }).catch((error) => pluginFailure(error, "Cannot install plugin", "Plugin kann nicht installiert werden"));
-      if (output !== "text") {
-        printJson({ id, package: manifest.package, version: manifest.version, source, replaced });
-      } else {
+      // Verify every file even when the store already holds this digest, so a
+      // broken package never installs just because an intact copy exists.
+      const download = await storePlugin(manifest, (file) => readPackagePluginFile(staged, file));
+      let replaced: boolean;
+      try {
+        replaced = await withConfigLock(async () => {
+          const config = await loadConfig();
+          check(config);
+          const packages = await readPackagePlugins();
+          const replaced = Object.hasOwn(packages, id) || (await legacyPlugins()).some((plugin) => plugin.id === id);
+          await placePlugin(download.incoming, manifest.digest);
+          packages[id] = {
+            package: manifest.app,
+            version: manifest.version,
+            digest: manifest.digest,
+            summary: download.module.summary,
+            source,
+          };
+          await writePackagePlugins(packages);
+          await removePlugin(id);
+          await collectPluginGarbage(await referencedDigests(config));
+          await syncSkills(config, locale);
+          return replaced;
+        });
+      } finally {
+        await rm(download.incoming, { recursive: true, force: true });
+      }
+      if (output !== "text") printJson({ id, package: manifest.app, version: manifest.version, source, references, replaced });
+      else
         printLine(
           text(
             locale,
-            `${replaced ? "Replaced" : "Installed"} plugin "${id}" (${label}). Run \`cld ${id} help\`.`,
-            `Plugin "${id}" (${label}) ${replaced ? "ersetzt" : "installiert"}. Führe \`cld ${id} help\` aus.`,
+            `${replaced ? "Replaced" : "Installed"} plugin "${id}" (${label}, ${references} reference files). Run \`cld ${id} help\`.`,
+            `Plugin "${id}" (${label}, ${references} Referenzdateien) ${replaced ? "ersetzt" : "installiert"}. Führe \`cld ${id} help\` aus.`,
           ),
         );
-      }
       const latestConfig = await loadConfig();
       warnInactiveShortNames((await profileShortNames(latestConfig, resolveProfileName(latestConfig, global.profile))).inactive, locale);
       return 0;
+    } catch (error) {
+      return pluginFailure(error, "Cannot install plugin", "Plugin kann nicht installiert werden");
     } finally {
       await staged.cleanup();
     }
@@ -2172,7 +2238,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
           )
         )
           .map((plugin) => plugin.name)
-          .filter((name) => !lock[name] && !reservedNames.has(name))
+          .filter((name) => !Object.hasOwn(lock, name) && !reservedNames.has(name))
       : targets;
     if (names.length === 0) {
       await syncProfilePlugins(cloud, names, "install", locale);
@@ -2191,8 +2257,16 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
     for (const profileName of profileNames) {
       const lock = profileLock(config, profileName);
       const names = targets.length > 0 ? targets : Object.keys(lock).sort();
-      const missing = names.find((name) => !lock[name]);
+      const missing = names.find((name) => !Object.hasOwn(lock, name));
       if (missing) {
+        const packages = await readPackagePlugins();
+        const record = Object.hasOwn(packages, missing) ? packages[missing] : undefined;
+        if (record)
+          throw new CliError(
+            `Package plugins update by installing the new package again: \`cld plugins install ${record.source}\`.`,
+            1,
+            `Paket-Plugins werden durch erneutes Installieren des neuen Pakets aktualisiert: \`cld plugins install ${record.source}\`.`,
+          );
         throw new CliError(
           `Plugin "${missing}" is not installed for profile "${profileName}". Run \`cld plugins install ${missing}\`.`,
           1,
@@ -2214,7 +2288,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
     const name = targets[0]!;
     const config = await loadConfig();
     const profileName = resolveProfileName(config, global.profile);
-    if (profileLock(config, profileName)[name]) {
+    if (Object.hasOwn(profileLock(config, profileName), name)) {
       await withConfigLock(async () => {
         const latest = await loadConfig();
         const lock = profileLock(latest, profileName);
@@ -2222,11 +2296,23 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
         latest.profiles ??= {};
         latest.profiles[profileName] = { ...latest.profiles[profileName], plugins: lock };
         await saveConfig(latest);
-        await collectPluginGarbage(lockedDigests(latest));
+        await collectPluginGarbage(await referencedDigests(latest));
         await syncSkills(latest, global.locale);
       });
-    } else if (!(await removePlugin(name))) {
-      throw new CliError(`Plugin "${name}" is not installed.`, 1, `Plugin "${name}" ist nicht installiert.`);
+    } else {
+      await withConfigLock(async () => {
+        const latest = await loadConfig();
+        const packages = await readPackagePlugins();
+        const recorded = Object.hasOwn(packages, name);
+        const legacy = await removePlugin(name);
+        if (!recorded && !legacy) throw new CliError(`Plugin "${name}" is not installed.`, 1, `Plugin "${name}" ist nicht installiert.`);
+        if (recorded) {
+          delete packages[name];
+          await writePackagePlugins(packages);
+        }
+        await collectPluginGarbage(await referencedDigests(latest));
+        await syncSkills(latest, locale);
+      });
     }
     if (output !== "text") printJson({ id: name, removed: true });
     else printLine(text(locale, `Removed plugin "${name}".`, `Plugin "${name}" entfernt.`));
@@ -2301,7 +2387,7 @@ const removeProfile = async (args: string[], config: CloudCliConfig, global: Glo
     delete profiles[name];
     if (latest.currentProfile === name) delete latest.currentProfile;
     await saveConfig(latest);
-    await collectPluginGarbage(lockedDigests(latest));
+    await collectPluginGarbage(await referencedDigests(latest));
     await syncSkills(latest, locale);
     return result;
   });
@@ -2969,7 +3055,7 @@ const offerCloudPlugins = async (global: GlobalArgs, yes: boolean): Promise<void
     const lock = profileLock(await loadConfig(), cloud.profile);
     const plugins = await fetchAvailablePlugins(cloud.fetch);
     await saveServedPlugins(cloud.profile, plugins);
-    const missing = plugins.map((plugin) => plugin.name).filter((name) => !lock[name] && !reservedNames.has(name));
+    const missing = plugins.map((plugin) => plugin.name).filter((name) => !Object.hasOwn(lock, name) && !reservedNames.has(name));
     if (missing.length === 0) return;
     const list = missing.join(", ");
     if (!yes) {
@@ -3169,19 +3255,17 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   const moduleArgs = global.help ? ["--help"] : commandArgs;
 
   if (!moduleName || moduleName === "help" || moduleName === "--help" || moduleName === "-h") {
-    const { modules: pluginModules, plugins } = await loadPlugins(reservedNames);
+    const plugins = await legacyPlugins();
     for (const plugin of plugins) if (plugin.status !== "ok") warnSkippedPlugin(plugin, global.locale);
     const config = await loadConfig();
     const profileName = resolveProfileName(config, global.profile);
     const shortNames = await profileShortNames(config, profileName);
     warnInactiveShortNames(shortNames.inactive, global.locale);
-    const served = Object.entries(profileLock(config, profileName))
-      .filter(([name]) => !reservedNames.has(name))
-      .map(([name, locked]) => ({ name, summary: locked.summary }));
+    const modules = installedModules(config, profileName, await readPackagePlugins()).filter((module) => !reservedNames.has(module.name));
     printLine(
       helpText(
         global.locale,
-        [...served, ...pluginModules].sort((left, right) => left.name.localeCompare(right.name)),
+        modules.sort((left, right) => left.name.localeCompare(right.name)),
         shortNames,
       ),
     );
@@ -3196,7 +3280,7 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   }
 
   if (moduleArgs[0] === "reference" && !reservedNames.has(moduleName)) {
-    const locked = await lockedPlugin(moduleName, global);
+    const locked = await resolveInstalledModule(moduleName, global);
     if (locked) return runReferenceCommand(moduleName, locked, moduleArgs.slice(1));
   }
   const module = reservedNames.has(moduleName) ? undefined : await loadInstalledModule(moduleName, global);
@@ -3207,7 +3291,7 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
     const shortName = shortNames.active.get(moduleName);
     if (shortName) {
       const args = [...shortName.path, ...moduleArgs];
-      const locked = profileLock(config, profileName)[shortName.module];
+      const locked = installedModule(config, profileName, await readPackagePlugins(), shortName.module);
       if (shortName.path.length === 0 && args[0] === "reference" && locked) {
         return runReferenceCommand(shortName.module, locked, args.slice(1));
       }

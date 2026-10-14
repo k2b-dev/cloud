@@ -1,47 +1,43 @@
 /**
- * Third-party application CLI modules installed as `cld` plugins.
+ * Package plugins: `cld` modules installed from a local directory, a `.tgz`,
+ * or an npm package, for every profile.
  *
- * A plugin is one directory `<plugins>/<id>/` holding a `package.json` with
- * `"cld": { "apiVersion": 1, "entry": "<relative path>" }`. The entry is a
- * self-contained ESM file whose default export is a `CloudCliModule` named
- * `<id>`. Plugins run in the `cld` process with the invoking user's
- * credentials; they are trusted code, not sandboxed code.
+ * A package carries the same verified bundle a Cloud application serves
+ * (`manifest.json`, `cli.js`, `references/`), packed with
+ * `@k2b/cloud/scripts/cli-pack.ts`; its `package.json` points at the manifest
+ * with `"cld": { "manifest": "manifest.json" }`. `cld` stages and verifies the
+ * package without running its code, stores the bundle in the shared
+ * content-addressed store, and records it in `<plugins>/packages.json`.
+ * Plugins run in the `cld` process with the invoking user's credentials; they
+ * are trusted code, not sandboxed code. Directories from the old package
+ * format are listed as incompatible and never loaded.
  */
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
-import { CLOUD_CLI_API_VERSION, type CloudCliModule, validateCloudCliModule } from "@k2b/cloud/cli";
+import { CLOUD_CLI_MODULE_NAME, type CloudCliPluginManifest, parseCloudCliPluginManifest } from "@k2b/cloud/cli";
 import { userConfigDirectory } from "./config";
+import { checkPluginApiVersion } from "./plugin-store";
 
 const execFileAsync = promisify(execFile);
 
-/** Plugin contract version: the `CloudCliModule` shape exported by `@k2b/cloud/cli`. */
-export const CLD_PLUGIN_API_VERSION = CLOUD_CLI_API_VERSION;
 export const NPM_REGISTRY = "https://registry.npmjs.org";
-const INSTALL_RECORD = ".cld-install.json";
 const FETCH_TIMEOUT_MS = 60_000;
-const MODULE_NAME = /^[a-z][a-z0-9-]*$/;
-/** Directory of served plugins inside the plugins directory; never a plugin ID. */
+/** Directory of the plugin store inside the plugins directory; never a plugin ID. */
 const STORE_DIRECTORY = "store";
+const PACKAGE_RECORDS = "packages.json";
+const DIGEST = /^[0-9a-f]{128}$/;
 const NPM_NAME = /^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
 export const pluginsDirectory = (): string => join(userConfigDirectory(), "cloud", "cld", "plugins");
 
-export type PluginManifest = { package: string; version: string; entry: string };
-
 export type PluginStatus = "ok" | "shadowed" | "incompatible" | "error";
 
-export type PluginInfo = {
-  id: string;
-  package?: string;
-  version?: string;
-  source: string;
-  status: PluginStatus;
-  message?: string;
-};
+export type PluginInfo = { id: string; package?: string; version?: string; source: string; status: PluginStatus; message?: string };
 
 export class PluginError extends Error {
   constructor(
@@ -52,121 +48,150 @@ export class PluginError extends Error {
   }
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+/** One installed package plugin; `source` is the resolved path or `npm:name@version`. */
+export type PackagePlugin = { package: string; version: string; digest: string; summary: string; source: string };
+export type PackagePlugins = Record<string, PackagePlugin>;
 
-/** Read and validate `<directory>/package.json`. */
-export const readPluginManifest = async (directory: string): Promise<PluginManifest> => {
-  let raw: unknown;
+/** Drop invalid records rather than treating them as installed modules. */
+export const readPackagePlugins = async (root = pluginsDirectory()): Promise<PackagePlugins> => {
+  const raw: unknown = await readFile(join(root, PACKAGE_RECORDS), "utf8")
+    .then(JSON.parse)
+    .catch(() => null);
+  const records: PackagePlugins = {};
+  if (!isRecord(raw)) return records;
+  for (const [name, entry] of Object.entries(raw)) {
+    if (
+      !CLOUD_CLI_MODULE_NAME.test(name) ||
+      !isRecord(entry) ||
+      typeof entry.package !== "string" ||
+      !entry.package ||
+      typeof entry.version !== "string" ||
+      !entry.version ||
+      typeof entry.digest !== "string" ||
+      !DIGEST.test(entry.digest) ||
+      typeof entry.summary !== "string" ||
+      typeof entry.source !== "string" ||
+      !entry.source
+    )
+      continue;
+    records[name] = { package: entry.package, version: entry.version, digest: entry.digest, summary: entry.summary, source: entry.source };
+  }
+  return records;
+};
+
+/** Write atomically while the caller holds the config lock. */
+export const writePackagePlugins = async (records: PackagePlugins, root = pluginsDirectory()): Promise<void> => {
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  const temporary = join(root, `.packages-${crypto.randomUUID()}.json`);
   try {
-    raw = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
-  } catch (error) {
-    throw new PluginError(`cannot read package.json (${error instanceof Error ? error.message : String(error)})`);
-  }
-  if (!isRecord(raw) || typeof raw.name !== "string" || typeof raw.version !== "string") {
-    throw new PluginError("package.json needs a string name and version");
-  }
-  const cld = raw.cld;
-  if (!isRecord(cld)) throw new PluginError('package.json has no "cld" manifest');
-  if (cld.apiVersion !== CLD_PLUGIN_API_VERSION) {
-    throw new PluginError(`needs plugin API ${String(cld.apiVersion)}; this cld supports ${CLD_PLUGIN_API_VERSION}`, "incompatible");
-  }
-  if (typeof cld.entry !== "string" || cld.entry === "" || isAbsolute(cld.entry)) {
-    throw new PluginError('"cld.entry" must be a relative file path');
-  }
-  const entry = resolve(directory, cld.entry);
-  const inside = relative(resolve(directory), entry);
-  if (inside.startsWith("..") || isAbsolute(inside)) throw new PluginError('"cld.entry" must stay inside the plugin directory');
-  if (!(await stat(entry).catch(() => null))?.isFile()) throw new PluginError(`entry ${cld.entry} does not exist`);
-  return { package: raw.name, version: raw.version, entry };
-};
-
-/** Check the default export structurally; see `validateCloudCliModule`. */
-export const validatePluginModule = (value: unknown): CloudCliModule => {
-  try {
-    return validateCloudCliModule(value);
-  } catch (error) {
-    throw new PluginError(error instanceof Error ? error.message : String(error));
+    await writeFile(temporary, `${JSON.stringify(records, null, 2)}\n`, { mode: 0o600 });
+    await rename(temporary, join(root, PACKAGE_RECORDS));
+  } finally {
+    await rm(temporary, { force: true });
   }
 };
 
-const importPluginModule = async (entry: string): Promise<CloudCliModule> => {
-  let loaded: unknown;
-  try {
-    loaded = await import(pathToFileURL(entry).href);
-  } catch (error) {
-    throw new PluginError(`cannot load entry (${error instanceof Error ? error.message : String(error)})`);
-  }
-  return validatePluginModule(isRecord(loaded) ? loaded.default : undefined);
-};
+export const repackMessage = (name: string, version: string): string =>
+  `${name}@${version} uses the old plugin format without a verified bundle; its author must re-pack it with \`bun run node_modules/@k2b/cloud/scripts/cli-pack.ts\``;
 
-const importInstalledPlugin = async (id: string, manifest: PluginManifest): Promise<CloudCliModule> => {
-  const module = await importPluginModule(manifest.entry);
-  if (module.name !== id) throw new PluginError(`module name "${module.name}" does not match its directory "${id}"`);
-  return module;
-};
-
-/** Load plugin `<id>`; returns undefined when it is not installed. */
-export const loadPlugin = async (id: string, root = pluginsDirectory()): Promise<CloudCliModule | undefined> => {
-  if (!MODULE_NAME.test(id) || id === STORE_DIRECTORY) return undefined;
-  const directory = join(root, id);
-  if (!(await stat(directory).catch(() => null))?.isDirectory()) return undefined;
-  return importInstalledPlugin(id, await readPluginManifest(directory));
-};
-
-const readInstallSource = async (directory: string): Promise<string> => {
-  try {
-    const record: unknown = JSON.parse(await readFile(join(directory, INSTALL_RECORD), "utf8"));
-    return isRecord(record) && typeof record.source === "string" ? record.source : "manual";
-  } catch {
-    return "manual";
-  }
-};
-
-/** List package plugin IDs without importing their code. */
-export const pluginIds = async (root = pluginsDirectory()): Promise<string[]> => {
+/** Every non-hidden directory except the store is a legacy package installation. */
+export const legacyPlugins = async (root = pluginsDirectory()): Promise<PluginInfo[]> => {
   const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
-  return entries
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== STORE_DIRECTORY)
-    .map((entry) => entry.name)
-    .sort();
+  const plugins: PluginInfo[] = [];
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === STORE_DIRECTORY) continue;
+    const raw: unknown = await readFile(join(root, entry.name, "package.json"), "utf8")
+      .then(JSON.parse)
+      .catch(() => null);
+    const name = isRecord(raw) && typeof raw.name === "string" ? raw.name : entry.name;
+    const version = isRecord(raw) && typeof raw.version === "string" ? raw.version : "unknown";
+    plugins.push({
+      id: entry.name,
+      package: name,
+      version,
+      source: join(root, entry.name),
+      status: "incompatible",
+      message: repackMessage(name, version),
+    });
+  }
+  return plugins;
 };
 
-export type LoadedPlugins = { modules: CloudCliModule[]; plugins: PluginInfo[] };
+/** Remove only an exact legacy directory; never the store or package records. */
+export const removePlugin = async (id: string, root = pluginsDirectory()): Promise<boolean> => {
+  if (!id || id.startsWith(".") || id.includes("/") || id.includes("\\") || id === STORE_DIRECTORY) return false;
+  const directory = join(root, id);
+  if (!(await lstat(directory).catch(() => null))?.isDirectory()) return false;
+  await rm(directory, { recursive: true, force: true });
+  return true;
+};
 
-/**
- * Load every installed plugin. A failing plugin is reported with its status
- * and never prevents the others or the built-in modules from working.
- * Names in `reserved` belong to built-in commands and win over `cld <id>`;
- * a shadowed plugin still loads through `cld plugins run <id>`.
- */
-export const loadPlugins = async (reserved: ReadonlySet<string>, root = pluginsDirectory()): Promise<LoadedPlugins> => {
-  const modules: CloudCliModule[] = [];
-  const plugins: PluginInfo[] = [];
-  for (const id of await pluginIds(root)) {
-    const directory = join(root, id);
-    const info: PluginInfo = { id, source: await readInstallSource(directory), status: "ok" };
-    plugins.push(info);
-    try {
-      const manifest = await readPluginManifest(directory);
-      info.package = manifest.package;
-      info.version = manifest.version;
-      const module = await importInstalledPlugin(id, manifest);
-      if (reserved.has(id)) throw new PluginError(`shadowed by a built-in command, use \`cld plugins run ${id}\``, "shadowed");
-      modules.push(module);
-    } catch (error) {
-      info.status = error instanceof PluginError ? error.status : "error";
-      info.message = error instanceof Error ? error.message : String(error);
+/** lstat every entry, rejecting links anywhere and unlisted reference files. */
+const verifyBundleDirectory = async (directory: string, manifest: CloudCliPluginManifest, prefix = ""): Promise<void> => {
+  const info = await lstat(directory);
+  if (!info.isDirectory()) throw new PluginError(`Plugin bundle ${directory} must be a directory without symlinks.`);
+  for (const entry of await readdir(directory)) {
+    const path = join(directory, entry);
+    const file = prefix + entry;
+    const info = await lstat(path);
+    if (info.isSymbolicLink()) throw new PluginError(`Plugin bundle contains a symlink: ${file}.`);
+    if (info.isDirectory()) await verifyBundleDirectory(path, manifest, `${file}/`);
+    else if (file.startsWith("references/") && !manifest.files.some((listed) => listed.path === file)) {
+      throw new PluginError(`Plugin reference ${file} is not listed in its manifest.`);
     }
   }
-  return { modules, plugins };
+};
+
+const readPackageBundle = async (directory: string): Promise<{ manifest: CloudCliPluginManifest; bundle: string }> => {
+  const raw: unknown = await readFile(join(directory, "package.json"), "utf8")
+    .then(JSON.parse)
+    .catch((error) => {
+      throw new PluginError(`cannot read package.json (${error instanceof Error ? error.message : String(error)})`);
+    });
+  if (!isRecord(raw) || typeof raw.name !== "string" || !raw.name || typeof raw.version !== "string" || !raw.version) {
+    throw new PluginError("package.json needs a string name and version");
+  }
+  if (!isRecord(raw.cld) || typeof raw.cld.manifest !== "string")
+    throw new PluginError(repackMessage(raw.name, raw.version), "incompatible");
+  const path = raw.cld.manifest;
+  const inside = relative(resolve(directory), resolve(directory, path));
+  if (!path || isAbsolute(path) || inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside)) {
+    throw new PluginError('"cld.manifest" must be a relative file path inside the package');
+  }
+  // Check every ancestor too: a symlink parent must not escape the package.
+  let current = directory;
+  for (const part of inside.split(sep)) {
+    current = join(current, part);
+    if ((await lstat(current)).isSymbolicLink()) throw new PluginError(`Plugin manifest path contains a symlink: ${path}.`);
+  }
+  let manifest: CloudCliPluginManifest;
+  try {
+    manifest = parseCloudCliPluginManifest(JSON.parse(await readFile(current, "utf8")));
+  } catch (error) {
+    throw new PluginError(`Invalid plugin manifest (${error instanceof Error ? error.message : String(error)}).`);
+  }
+  checkPluginApiVersion(manifest);
+  if (manifest.app !== raw.name || manifest.version !== raw.version)
+    throw new PluginError("Plugin manifest app/version must match package.json name/version.");
+  const bundle = dirname(current);
+  await verifyBundleDirectory(bundle, manifest);
+  return { manifest, bundle };
 };
 
 export type StagedPlugin = {
-  /** Temporary directory holding the unpacked package. */
-  directory: string;
-  manifest: PluginManifest;
+  bundle: string;
+  manifest: CloudCliPluginManifest;
   source: string;
   cleanup: () => Promise<void>;
+};
+
+/** A local reader applies the same exact-size contract as served downloads. */
+export const readPackagePluginFile = async (staged: StagedPlugin, file: CloudCliPluginManifest["files"][number]): Promise<Uint8Array> => {
+  const path = join(staged.bundle, file.path);
+  const info = await lstat(path).catch(() => null);
+  if (!info?.isFile() || info.size !== file.size)
+    throw new PluginError(`${staged.manifest.name}/${file.path} must be a regular file of exactly ${file.size} bytes.`);
+  return readFile(path);
 };
 
 const parseNpmSpec = (spec: string): { name: string; version: string } => {
@@ -222,9 +247,10 @@ export const isPackagePluginSource = (spec: string): boolean =>
   spec.startsWith(NPM_SPEC_PREFIX) || spec.includes("/") || /\.(tgz|tar\.gz)$/.test(spec);
 
 /**
- * Unpack a plugin from a local directory, a local `.tgz`, or an npm package
- * spec (`npm:name`, `npm:name@version`, `npm:name@tag`) into a temporary
- * directory and verify its manifest. Nothing is imported or placed yet.
+ * Unpack a plugin from a local `.tgz` or an npm package spec (`npm:name`,
+ * `npm:name@version`, `npm:name@tag`) into a temporary directory, or read a
+ * local directory in place, and verify its manifest. Nothing is imported or
+ * placed yet.
  */
 export const stagePlugin = async (spec: string, options: { registry?: string } = {}): Promise<StagedPlugin> => {
   const workspace = await mkdtemp(join(tmpdir(), "cld-plugin-"));
@@ -235,12 +261,9 @@ export const stagePlugin = async (spec: string, options: { registry?: string } =
     let directory: string;
     let source: string;
     if (local?.isDirectory()) {
+      // Read in place: storing checks every file against the confirmed manifest.
       source = resolve(spec);
-      directory = join(workspace, "package");
-      await cp(source, directory, {
-        recursive: true,
-        filter: (path) => !["node_modules", ".git"].includes(basename(path)),
-      });
+      directory = source;
     } else if (local?.isFile()) {
       source = resolve(spec);
       directory = await extractTarball(source, workspace);
@@ -251,50 +274,9 @@ export const stagePlugin = async (spec: string, options: { registry?: string } =
     } else {
       throw new PluginError(`${spec} does not exist; use ${NPM_SPEC_PREFIX}<package> for an npm package`);
     }
-    return { directory, manifest: await readPluginManifest(directory), source, cleanup };
+    return { ...(await readPackageBundle(directory)), source, cleanup };
   } catch (error) {
     await cleanup();
     throw error;
   }
-};
-
-/**
- * Import the staged plugin to validate its module, then place it at
- * `<root>/<module name>`, replacing an earlier installation of the same id.
- */
-export const commitPlugin = async (
-  staged: StagedPlugin,
-  reserved: ReadonlySet<string>,
-  root = pluginsDirectory(),
-  /** Throws a `PluginError` when the module name must not be installed. */
-  check: (id: string) => void = () => {},
-): Promise<{ id: string; replaced: boolean }> => {
-  const module = await importPluginModule(staged.manifest.entry);
-  const id = module.name;
-  check(id);
-  if (reserved.has(id) || id === STORE_DIRECTORY)
-    throw new PluginError(`plugin id "${id}" is reserved by a built-in cld command`, "shadowed");
-  await writeFile(join(staged.directory, INSTALL_RECORD), `${JSON.stringify({ source: staged.source }, null, 2)}\n`);
-  await mkdir(root, { recursive: true, mode: 0o700 });
-  const target = join(root, id);
-  const incoming = join(root, `.incoming-${id}-${crypto.randomUUID()}`);
-  await cp(staged.directory, incoming, { recursive: true });
-  const replaced = Boolean(await stat(target).catch(() => null));
-  try {
-    await rm(target, { recursive: true, force: true });
-    await rename(incoming, target);
-  } catch (error) {
-    await rm(incoming, { recursive: true, force: true });
-    throw error;
-  }
-  return { id, replaced };
-};
-
-/** Remove plugin `<id>`; returns false when it is not installed. */
-export const removePlugin = async (id: string, root = pluginsDirectory()): Promise<boolean> => {
-  if (!MODULE_NAME.test(id) || id === STORE_DIRECTORY) return false;
-  const directory = join(root, id);
-  if (!(await stat(directory).catch(() => null))?.isDirectory()) return false;
-  await rm(directory, { recursive: true, force: true });
-  return true;
 };

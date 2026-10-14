@@ -1,87 +1,132 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildEchoPlugin } from "../test/fixtures/build-plugin";
+import { cloudCliPluginDigest, validateCloudCliModule } from "@k2b/cloud/cli";
+import { buildEchoPlugin, packInlinePlugin } from "../test/fixtures/build-plugin";
+import { hasStoredPlugin, loadStoredPlugin, placePlugin, storePlugin } from "./plugin-store";
 import {
-  commitPlugin,
-  loadPlugin,
-  loadPlugins,
+  legacyPlugins,
   PluginError,
-  readPluginManifest,
+  readPackagePluginFile,
+  readPackagePlugins,
   removePlugin,
   stagePlugin,
-  validatePluginModule,
+  writePackagePlugins,
 } from "./plugins";
 
 const workspace = await mkdtemp(join(tmpdir(), "cld-plugins-test-"));
 const echoBuild = await buildEchoPlugin(join(workspace, "echo-build"));
 let counter = 0;
-const tempDir = async (): Promise<string> => {
-  counter += 1;
-  const dir = join(workspace, `case-${counter}`);
-  await mkdir(dir, { recursive: true });
+const tempDir = async () => {
+  const dir = join(workspace, `case-${++counter}`);
+  await mkdir(dir);
   return dir;
 };
-
 afterAll(() => rm(workspace, { recursive: true, force: true }));
-
-const writePlugin = async (directory: string, cld: unknown, entrySource = "export default {}"): Promise<void> => {
-  await mkdir(join(directory, "dist"), { recursive: true });
-  await writeFile(join(directory, "package.json"), JSON.stringify({ name: "fake", version: "0.1.0", cld }));
-  await writeFile(join(directory, "dist", "cli.js"), entrySource);
+const runCli = async (args: string[], configHome: string, config = join(configHome, "config.json")) => {
+  const child = Bun.spawn([process.execPath, "run", join(import.meta.dir, "index.ts"), ...args], {
+    env: {
+      ...process.env,
+      HOME: configHome,
+      CLD_LOCALE: "",
+      LC_ALL: "",
+      LC_MESSAGES: "",
+      LANG: "C",
+      XDG_CONFIG_HOME: configHome,
+      CLD_CONFIG: config,
+    },
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  return { exitCode, stdout, stderr };
 };
-
 const moduleSource = (name: string) =>
-  `export default { name: ${JSON.stringify(name)}, summary: "Fake", requiresCloud: false, run: (ctx) => { ctx.print("ran ${name}"); } };`;
-
-const expectPluginError = async (promise: Promise<unknown>, status: PluginError["status"], message: string | RegExp) => {
-  const error = await promise.then(
-    () => undefined,
-    (reason: unknown) => reason,
-  );
-  if (!(error instanceof PluginError)) throw new Error(`expected a PluginError, got ${String(error)}`);
+  `export default { name: ${JSON.stringify(name)}, summary: "Fake", requiresCloud: false, run: (ctx) => ctx.print("ran ${name}") };`;
+const expectPluginError = async (promise: Promise<unknown>, status: PluginError["status"], message: string) => {
+  const error: unknown = await promise.catch((error) => error);
+  expect(error).toBeInstanceOf(PluginError);
+  if (!(error instanceof PluginError)) throw new Error("expected PluginError");
   expect(error.status).toBe(status);
-  expect(error.message).toMatch(message);
+  expect(error.message).toContain(message);
+};
+const installStaged = async (spec: string, root: string, registry?: string) => {
+  const staged = await stagePlugin(spec, { registry });
+  try {
+    const stored = await storePlugin(staged.manifest, (file) => readPackagePluginFile(staged, file), root);
+    await placePlugin(stored.incoming, staged.manifest.digest, root);
+    await writePackagePlugins(
+      {
+        [staged.manifest.name]: {
+          package: staged.manifest.app,
+          version: staged.manifest.version,
+          digest: staged.manifest.digest,
+          summary: stored.module.summary,
+          source: staged.source,
+        },
+      },
+      root,
+    );
+    return staged.manifest;
+  } finally {
+    await staged.cleanup();
+  }
 };
 
-describe("plugin manifest", () => {
-  test("reads package name, version, and an entry inside the package", async () => {
-    const manifest = await readPluginManifest(echoBuild);
-    expect(manifest).toEqual({ package: "@k2b-test/cld-plugin-echo", version: "1.0.0", entry: join(echoBuild, "dist", "cli.js") });
-  });
-
-  test("rejects an incompatible API version with a distinct status", async () => {
+describe("package bundles", () => {
+  test("stages metadata without importing and rejects old formats with incompatible status", async () => {
+    const staged = await stagePlugin(echoBuild);
+    expect(staged.manifest).toMatchObject({ name: "echo", app: "@k2b-test/cld-plugin-echo", version: "1.0.0" });
+    await staged.cleanup();
     const dir = await tempDir();
-    await writePlugin(dir, { apiVersion: 2, entry: "dist/cli.js" });
-    await expectPluginError(readPluginManifest(dir), "incompatible", "needs plugin API 2; this cld supports 1");
-  });
-
-  test("rejects a missing manifest, an escaping entry, and a missing entry file", async () => {
-    const dir = await tempDir();
-    await writePlugin(dir, undefined);
-    await expectPluginError(readPluginManifest(dir), "error", 'no "cld" manifest');
-    await writePlugin(dir, { apiVersion: 1, entry: "../outside.js" });
-    await expectPluginError(readPluginManifest(dir), "error", "inside the plugin directory");
-    await writePlugin(dir, { apiVersion: 1, entry: "dist/missing.js" });
-    await expectPluginError(readPluginManifest(dir), "error", "does not exist");
-  });
-
-  test("validates the module structurally, independent of the package copy", () => {
-    const plain = { name: "inventory", summary: "Inventory", run: () => 0 };
-    expect(validatePluginModule(plain)).toBe(plain);
-    expect(() => validatePluginModule(undefined)).toThrow("not a CLI module");
-    expect(() => validatePluginModule({ ...plain, name: "Inventory" })).toThrow("kebab-case");
-    expect(() => validatePluginModule({ ...plain, run: undefined })).toThrow("run function");
-    expect(() => validatePluginModule({ ...plain, booleanFlags: [1] })).toThrow("booleanFlags");
-  });
-  test("validates alias and shortcut metadata structurally", () => {
-    const plain = { name: "inventory", summary: "Inventory", run: () => 0 };
-    const valid = { ...plain, alias: "inv", shortcuts: { stock: "items list" } };
-    expect(validatePluginModule(valid)).toBe(valid);
-    for (const alias of [null, 1, "", "Inv", "inventory", "inv_name"]) {
-      expect(() => validatePluginModule({ ...plain, alias })).toThrow("alias");
+    for (const cld of [undefined, { apiVersion: 1, entry: "cli.js" }, { apiVersion: 2, entry: "cli.js" }]) {
+      await writeFile(join(dir, "package.json"), JSON.stringify({ name: "old", version: "1.0.0", cld }));
+      await expectPluginError(stagePlugin(dir), "incompatible", "old@1.0.0 uses the old plugin format without a verified bundle");
+      const refused = await runCli(["plugins", "install", dir, "--yes"], dir);
+      expect(refused.exitCode).toBe(1);
+      expect(refused.stderr.trim().split("\n")).toHaveLength(1);
+      expect(refused.stderr).toContain("cli-pack.ts");
     }
+  });
+
+  test("shares API compatibility, checks manifest paths and drops malformed records", async () => {
+    const dir = await tempDir();
+    await cp(echoBuild, join(dir, "package"), { recursive: true });
+    const pkg = join(dir, "package");
+    const raw = await Bun.file(join(pkg, "package.json")).json();
+    for (const manifest of ["../manifest.json", "/manifest.json"]) {
+      await writeFile(join(pkg, "package.json"), JSON.stringify({ ...raw, cld: { manifest } }));
+      await expectPluginError(stagePlugin(pkg), "error", "relative file path inside the package");
+    }
+    await writeFile(join(pkg, "package.json"), JSON.stringify(raw));
+    const manifest = await Bun.file(join(pkg, "manifest.json")).json();
+    await writeFile(join(pkg, "manifest.json"), JSON.stringify({ ...manifest, apiVersion: 2 }));
+    await expectPluginError(stagePlugin(pkg), "incompatible", "needs plugin API 2");
+    await writeFile(
+      join(dir, "packages.json"),
+      JSON.stringify({
+        bad: { digest: "bad" },
+        echo: { package: "echo", version: "1", digest: "a".repeat(128), source: pkg, summary: "Echo" },
+      }),
+    );
+    expect(Object.keys(await readPackagePlugins(dir))).toEqual(["echo"]);
+  });
+
+  test("validates modules and short-name metadata structurally", () => {
+    const plain = { name: "inventory", summary: "Inventory", run: () => 0 };
+    expect(validateCloudCliModule(plain)).toBe(plain);
+    expect(() => validateCloudCliModule(undefined)).toThrow("not a CLI module");
+    expect(() => validateCloudCliModule({ ...plain, name: "Inventory" })).toThrow("kebab-case");
+    expect(() => validateCloudCliModule({ ...plain, run: undefined })).toThrow("run function");
+    expect(() => validateCloudCliModule({ ...plain, booleanFlags: [1] })).toThrow("booleanFlags");
+    for (const alias of [null, 1, "", "Inv", "inventory", "inv_name"])
+      expect(() => validateCloudCliModule({ ...plain, alias })).toThrow("alias");
     for (const shortcuts of [
       null,
       [],
@@ -100,90 +145,14 @@ describe("plugin manifest", () => {
       { stock: "items --json" },
       { stock: "-h" },
     ]) {
-      expect(() => validatePluginModule({ ...plain, alias: "inv", shortcuts })).toThrow("shortcuts");
+      expect(() => validateCloudCliModule({ ...plain, alias: "inv", shortcuts })).toThrow("shortcuts");
     }
-    // The loader cannot inspect a module's private tree, so it accepts a syntactically valid path.
-    expect(validatePluginModule({ ...plain, shortcuts: { stock: "unknown path" } }).shortcuts).toEqual({ stock: "unknown path" });
-  });
-});
-
-describe("plugin loading", () => {
-  test("loads good plugins and isolates shadowed, incompatible, broken, and mismatched ones", async () => {
-    const root = await tempDir();
-    await buildEchoPlugin(join(root, "echo"));
-    await writePlugin(join(root, "profile"), { apiVersion: 1, entry: "dist/cli.js" }, moduleSource("profile"));
-    await writePlugin(join(root, "future"), { apiVersion: 2, entry: "dist/cli.js" }, moduleSource("future"));
-    await writePlugin(join(root, "broken"), { apiVersion: 1, entry: "dist/cli.js" }, 'throw new Error("boom");');
-    await writePlugin(join(root, "renamed"), { apiVersion: 1, entry: "dist/cli.js" }, moduleSource("other"));
-    await mkdir(join(root, ".incoming-echo-1"));
-
-    const { modules, plugins } = await loadPlugins(new Set(["profile"]), root);
-
-    expect(modules.map((module) => module.name)).toEqual(["echo"]);
-    expect(plugins.map(({ id, status }) => [id, status])).toEqual([
-      ["broken", "error"],
-      ["echo", "ok"],
-      ["future", "incompatible"],
-      ["profile", "shadowed"],
-      ["renamed", "error"],
-    ]);
-    expect(plugins.find((plugin) => plugin.id === "broken")?.message).toContain("boom");
-    expect(plugins.find((plugin) => plugin.id === "profile")?.message).toBe(
-      "shadowed by a built-in command, use `cld plugins run profile`",
-    );
-    expect(plugins.find((plugin) => plugin.id === "renamed")?.message).toContain('"other" does not match its directory "renamed"');
-    expect(plugins.find((plugin) => plugin.id === "echo")).toMatchObject({
-      package: "@k2b-test/cld-plugin-echo",
-      version: "1.0.0",
-      source: "manual",
-    });
+    expect(validateCloudCliModule({ ...plain, shortcuts: { stock: "unknown path" } }).shortcuts).toEqual({ stock: "unknown path" });
   });
 
-  test("loads one plugin by id and ignores unknown or invalid ids", async () => {
-    const root = await tempDir();
-    await buildEchoPlugin(join(root, "echo"));
-    expect((await loadPlugin("echo", root))?.name).toBe("echo");
-    expect(await loadPlugin("missing", root)).toBeUndefined();
-    expect(await loadPlugin("../echo", root)).toBeUndefined();
-  });
-});
-
-describe("plugin install and remove", () => {
-  test("installs from a directory, records the source, replaces, and removes", async () => {
-    const root = await tempDir();
-    const staged = await stagePlugin(echoBuild);
-    try {
-      expect(staged.source).toBe(echoBuild);
-      expect(await commitPlugin(staged, new Set(), root)).toEqual({ id: "echo", replaced: false });
-      expect(await commitPlugin(staged, new Set(), root)).toEqual({ id: "echo", replaced: true });
-    } finally {
-      await staged.cleanup();
-    }
-    const { plugins } = await loadPlugins(new Set(), root);
-    expect(plugins).toEqual([{ id: "echo", package: "@k2b-test/cld-plugin-echo", version: "1.0.0", source: echoBuild, status: "ok" }]);
-    expect(await removePlugin("echo", root)).toBe(true);
-    expect(await removePlugin("echo", root)).toBe(false);
-    expect((await loadPlugins(new Set(), root)).plugins).toEqual([]);
-  });
-
-  test("refuses a plugin whose name belongs to a built-in command", async () => {
-    const root = await tempDir();
-    const staged = await stagePlugin(echoBuild);
-    try {
-      await expectPluginError(
-        commitPlugin(staged, new Set(["echo"]), root),
-        "shadowed",
-        'plugin id "echo" is reserved by a built-in cld command',
-      );
-    } finally {
-      await staged.cleanup();
-    }
-  });
-
-  test("installs a verified npm tarball and rejects an integrity mismatch", async () => {
+  test("installs npm-layout tarballs, checks npm integrity and uses the same store", async () => {
     const dir = await tempDir();
-    const packageDir = join(dir, "package");
-    await buildEchoPlugin(packageDir);
+    await cp(echoBuild, join(dir, "package"), { recursive: true });
     const archive = join(dir, "echo.tgz");
     expect(Bun.spawnSync(["tar", "-czf", archive, "-C", dir, "package"]).exitCode).toBe(0);
     const bytes = await readFile(archive);
@@ -191,27 +160,25 @@ describe("plugin install and remove", () => {
     const registry: ReturnType<typeof Bun.serve> = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
-      fetch(request): Response {
+      fetch(request) {
         const path = new URL(request.url).pathname;
-        if (path === "/@k2b-test%2fcld-plugin-echo/latest") {
+        if (path === "/@k2b-test%2fcld-plugin-echo/latest")
           return Response.json({ version: "1.0.0", dist: { tarball: `${registry.url.origin}/echo.tgz`, integrity } });
-        }
         if (path === "/echo.tgz") return new Response(bytes);
         return new Response("not found", { status: 404 });
       },
     });
     try {
-      const root = await tempDir();
-      const staged = await stagePlugin("npm:@k2b-test/cld-plugin-echo", { registry: registry.url.origin });
-      try {
-        expect(staged.source).toBe("npm:@k2b-test/cld-plugin-echo@1.0.0");
-        expect(await commitPlugin(staged, new Set(), root)).toEqual({ id: "echo", replaced: false });
-      } finally {
-        await staged.cleanup();
-      }
-      expect((await loadPlugins(new Set(), root)).plugins[0]).toMatchObject({ id: "echo", status: "ok" });
-
-      integrity = `sha512-${Buffer.from("wrong").toString("base64")}`;
+      const root = join(dir, "npm-plugins");
+      const manifest = await installStaged("npm:@k2b-test/cld-plugin-echo", root, registry.url.origin);
+      expect(await hasStoredPlugin(manifest.digest, root)).toBe(true);
+      expect((await loadStoredPlugin("echo", manifest, root)).name).toBe("echo");
+      expect((await readPackagePlugins(root)).echo).toMatchObject({ source: "npm:@k2b-test/cld-plugin-echo@1.0.0" });
+      const cli = await runCli(["plugins", "install", archive, "--yes", "--json"], dir);
+      expect(cli.exitCode, cli.stderr).toBe(0);
+      expect(JSON.parse(cli.stdout)).toMatchObject({ id: "echo", source: archive, references: 2 });
+      expect((await runCli(["echo", "reference", "guides/setup.md"], dir)).stdout).toContain("# Echo setup");
+      integrity = "sha512-wrong";
       await expectPluginError(
         stagePlugin("npm:@k2b-test/cld-plugin-echo", { registry: registry.url.origin }),
         "error",
@@ -226,34 +193,48 @@ describe("plugin install and remove", () => {
   });
 });
 
-describe("cld plugins command", () => {
-  const runCli = async (args: string[], configHome: string) => {
-    const child = Bun.spawn([process.execPath, "run", "packages/cloud-cli/src/index.ts", ...args], {
-      cwd: join(import.meta.dir, "../../.."),
-      env: {
-        ...process.env,
-        CLD_LOCALE: "",
-        LC_ALL: "",
-        LC_MESSAGES: "",
-        LANG: "C",
-        XDG_CONFIG_HOME: configHome,
-        CLD_CONFIG: join(configHome, "config.json"),
-      },
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
+describe("cld package plugins", () => {
+  test("directory install stores references, updates skills, runs, lists metadata offline and removes", async () => {
+    const dir = await tempDir();
+    const root = join(dir, "cloud", "cld", "plugins");
+    const target = join(dir, "skills");
+    expect((await runCli(["skills", "add", target], dir)).exitCode).toBe(0);
+    const refused = await runCli(["plugins", "install", echoBuild], dir);
+    expect(refused.exitCode).toBe(1);
+    expect(refused.stderr).toContain("pass --yes");
+    const installed = await runCli(["plugins", "install", echoBuild, "--yes", "--json"], dir);
+    expect(installed.exitCode, installed.stderr).toBe(0);
+    expect(JSON.parse(installed.stdout)).toEqual({
+      id: "echo",
+      package: "@k2b-test/cld-plugin-echo",
+      version: "1.0.0",
+      source: echoBuild,
+      references: 2,
+      replaced: false,
     });
-    const [exitCode, stdout, stderr] = await Promise.all([
-      child.exited,
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-    ]);
-    return { exitCode, stdout, stderr };
-  };
-
-  test("installs, runs with the host context, lists, and removes a plugin while built-ins keep working", async () => {
-    const configHome = await tempDir();
-    const pluginsRoot = join(configHome, "cloud", "cld", "plugins");
+    expect(installed.stderr).toContain(`@k2b-test/cld-plugin-echo@1.0.0 from ${echoBuild}`);
+    expect(installed.stderr).toContain('module "echo", 2 reference files');
+    expect(installed.stderr).toContain("runs inside cld with your Cloud credentials");
+    const record = (await readPackagePlugins(root)).echo!;
+    expect(await hasStoredPlugin(record.digest, root)).toBe(true);
+    expect(await readdir(root)).toEqual(expect.arrayContaining(["store", "packages.json"]));
+    expect(await Bun.file(join(root, "echo", "package.json")).exists()).toBe(false);
+    const skill = join(target, "cloud-cli");
+    expect(await readFile(join(skill, "SKILL.md"), "utf8")).toContain(
+      "| * | echo | 1.0.0 | Echo the host CLI context (test plugin). | `references/echo/1.0.0/index.md` |",
+    );
+    expect(await readFile(join(skill, "references", "echo", "1.0.0", "guides", "setup.md"), "utf8")).toContain("# Echo setup");
+    expect((await runCli(["echo", "reference"], dir)).stdout).toContain("# Echo package");
+    expect((await runCli(["echo", "reference", "guides/setup.md"], dir)).stdout).toContain("# Echo setup");
+    expect((await runCli(["echo", "reference", "../package.json"], dir)).exitCode).toBe(1);
+    const help = await runCli(["help"], dir);
+    expect(help.stdout).toMatch(/\n {2}echo +Echo the host CLI context/);
+    // Help lists recorded summaries without importing installed code.
+    const entry = join(root, "store", record.digest, "cli.js");
+    const code = await readFile(entry);
+    await writeFile(entry, 'throw new Error("help imported code");');
+    expect((await runCli(["help"], dir)).exitCode).toBe(0);
+    await writeFile(entry, code);
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
@@ -261,71 +242,271 @@ describe("cld plugins command", () => {
         Response.json({ authorization: request.headers.get("authorization"), locale: request.headers.get("accept-language") }),
     });
     try {
-      const refused = await runCli(["plugins", "install", echoBuild], configHome);
-      expect(refused.exitCode).toBe(1);
-      expect(refused.stderr).toContain("pass --yes");
-
-      const installed = await runCli(["plugins", "install", echoBuild, "--yes"], configHome);
-      expect(installed.exitCode, installed.stderr).toBe(0);
-      expect(installed.stderr).toContain(`@k2b-test/cld-plugin-echo@1.0.0 from ${echoBuild} runs inside cld with your Cloud credentials`);
-      expect(installed.stdout).toContain('Installed plugin "echo"');
-
-      const ran = await runCli(
-        ["--server", server.url.origin, "--token", "plugin-token", "--locale", "de", "--json", "echo", "whoami"],
-        configHome,
-      );
-      expect(ran.exitCode, ran.stderr).toBe(0);
-      expect(JSON.parse(ran.stdout)).toEqual({ authorization: "Bearer plugin-token", locale: "de", profile: "default", output: "json" });
-
-      await writePlugin(join(pluginsRoot, "broken"), { apiVersion: 1, entry: "dist/cli.js" }, 'throw new Error("boom");');
-      await writePlugin(join(pluginsRoot, "update"), { apiVersion: 1, entry: "dist/cli.js" }, moduleSource("update"));
-      const help = await runCli(["help"], configHome);
-      expect(help.exitCode, help.stderr).toBe(0);
-      expect(help.stdout).toMatch(/\n {2}echo +Echo the host CLI context/);
-      expect(help.stderr).toContain('plugin "broken" skipped (error)');
-      expect(help.stderr).toContain('plugin "update" shadowed by a built-in command, use `cld plugins run update`');
-      const germanHelp = await runCli(["--locale", "de", "help"], configHome);
-      expect(germanHelp.stderr).toContain('Plugin "update" verdeckt durch eingebauten Befehl, nutze `cld plugins run update`');
-
-      const shadowedRun = await runCli(["plugins", "run", "update", "anything"], configHome);
-      expect(shadowedRun.exitCode, shadowedRun.stderr).toBe(0);
-      expect(shadowedRun.stdout).toBe("ran update\n");
-      const flatRun = await runCli(
-        ["--server", server.url.origin, "--token", "plugin-token", "plugins", "run", "echo", "whoami", "--json"],
-        configHome,
-      );
-      expect(flatRun.exitCode, flatRun.stderr).toBe(0);
-      expect(JSON.parse(flatRun.stdout)).toMatchObject({ authorization: "Bearer plugin-token", output: "json" });
-      const missingRun = await runCli(["plugins", "run", "missing"], configHome);
-      expect(missingRun.exitCode).toBe(1);
-      expect(missingRun.stderr).toContain('Plugin "missing" is not installed.');
-
-      const pluginsHelp = await runCli(["plugins", "help"], configHome);
-      expect(pluginsHelp.stdout).toContain("cld plugins run <name> [args...]");
-
-      const reservedSource = join(configHome, "reserved-plugin");
-      await writePlugin(reservedSource, { apiVersion: 1, entry: "dist/cli.js" }, moduleSource("login"));
-      const reserved = await runCli(["plugins", "install", reservedSource, "--yes"], configHome);
-      expect(reserved.exitCode).toBe(1);
-      expect(reserved.stderr).toContain('Cannot install plugin: plugin id "login" is reserved by a built-in cld command');
-
-      const broken = await runCli(["broken", "anything"], configHome);
-      expect(broken.exitCode).toBe(1);
-      expect(broken.stderr).toContain('Plugin "broken" cannot run: cannot load entry');
-
-      const listed = await runCli(["plugins", "list", "--json"], configHome);
-      expect(listed.exitCode, listed.stderr).toBe(0);
-      expect(
-        JSON.parse(listed.stdout).plugins.map((plugin: { name: string; status: string }) => `${plugin.name}:${plugin.status}`),
-      ).toEqual(["broken:error", "echo:ok", "update:shadowed"]);
-
-      const removed = await runCli(["plugins", "remove", "echo"], configHome);
-      expect(removed.exitCode, removed.stderr).toBe(0);
-      const gone = await runCli(["echo", "whoami"], configHome);
-      expect(gone.exitCode).toBe(1);
-      expect(gone.stderr).toContain('Unknown command "echo"');
+      for (const command of [["echo"], ["plugins", "run", "echo"]]) {
+        const ran = await runCli(
+          ["--server", server.url.origin, "--token", "plugin-token", "--locale", "de", ...command, "whoami", "--json"],
+          dir,
+        );
+        expect(ran.exitCode, ran.stderr).toBe(0);
+        expect(JSON.parse(ran.stdout)).toMatchObject({ authorization: "Bearer plugin-token", locale: "de", output: "json" });
+      }
     } finally {
       await server.stop(true);
     }
+    expect(JSON.parse((await runCli(["plugins", "install", echoBuild, "--yes", "--json"], dir)).stdout).replaced).toBe(true);
+    expect((await runCli(["help"], dir, join(dir, "other-config.json"))).stdout).toContain("Echo the host CLI context");
+    const listed = await runCli(["plugins", "list", "--json"], dir);
+    expect(JSON.parse(listed.stdout).plugins).toContainEqual({
+      profile: null,
+      name: "echo",
+      app: record.package,
+      installed: record.version,
+      available: null,
+      status: "ok",
+      source: echoBuild,
+      alias: null,
+      shortcuts: {},
+      inactive: [],
+    });
+    const update = await runCli(["plugins", "update", "echo"], dir);
+    expect(update.exitCode).toBe(1);
+    expect(update.stderr).toContain(`cld plugins install ${echoBuild}`);
+    expect((await runCli(["plugins", "remove", "echo"], dir)).exitCode).toBe(0);
+    expect(await readPackagePlugins(root)).toEqual({});
+    expect(await readdir(join(root, "store"))).toEqual([]);
+    expect(await readFile(join(skill, "SKILL.md"), "utf8")).not.toContain("| * | echo |");
+    expect(await Bun.file(join(skill, "references", "echo", "1.0.0", "index.md")).exists()).toBe(false);
+    expect((await runCli(["plugins", "run", "missing"], dir)).stderr).toContain('Plugin "missing" is not installed.');
   }, 30_000);
+
+  test("rejects tampering, links, unlisted references, missing index and mismatched package metadata without changing installations", async () => {
+    const dir = await tempDir();
+    const root = join(dir, "cloud", "cld", "plugins");
+    expect((await runCli(["plugins", "install", echoBuild, "--yes"], dir)).exitCode).toBe(0);
+    const records = await readFile(join(root, "packages.json"), "utf8");
+    const store = await readdir(join(root, "store"));
+    const mutations: Array<(pkg: string) => Promise<unknown>> = [
+      (pkg) =>
+        writeFile(
+          join(pkg, "references", "index.md"),
+          "x".repeat(Buffer.byteLength("# Echo package\n\nUse `cld echo whoami` to inspect the host context.\n")),
+        ),
+      (pkg) => symlink("index.md", join(pkg, "references", "link.md")),
+      (pkg) => symlink("references", join(pkg, "extra-link")),
+      (pkg) => writeFile(join(pkg, "references", "binary.txt"), "no"),
+      (pkg) => writeFile(join(pkg, "references", "unlisted.md"), "no"),
+      (pkg) => rm(join(pkg, "references", "index.md")),
+      async (pkg) => {
+        const m = await Bun.file(join(pkg, "manifest.json")).json();
+        m.files = m.files.filter((file: { path: string }) => file.path !== "references/index.md");
+        m.digest = cloudCliPluginDigest(m.files);
+        await writeFile(join(pkg, "manifest.json"), JSON.stringify(m));
+      },
+      async (pkg) => {
+        const m = await Bun.file(join(pkg, "manifest.json")).json();
+        m.app = "other";
+        await writeFile(join(pkg, "manifest.json"), JSON.stringify(m));
+      },
+      async (pkg) => {
+        const m = await Bun.file(join(pkg, "manifest.json")).json();
+        m.version = "other";
+        await writeFile(join(pkg, "manifest.json"), JSON.stringify(m));
+      },
+    ];
+    for (const mutate of mutations) {
+      const pkg = join(await tempDir(), "package");
+      await cp(echoBuild, pkg, { recursive: true });
+      await mutate(pkg);
+      const refused = await runCli(["plugins", "install", pkg, "--yes"], dir);
+      expect(refused.exitCode, refused.stdout + refused.stderr).toBe(1);
+      expect(await readFile(join(root, "packages.json"), "utf8")).toBe(records);
+      expect(await readdir(join(root, "store"))).toEqual(store);
+    }
+  }, 30_000);
+
+  test("never runs code before confirmation or conflict checks", async () => {
+    const dir = await tempDir();
+    const marker = join(dir, "executed");
+    const pkg = await packInlinePlugin(
+      join(dir, "marker-package"),
+      `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "executed"); ${moduleSource("marker")}`,
+    );
+    await rm(marker); // Packing imports the author's source and output; installing must wait.
+    const refused = await runCli(["plugins", "install", pkg], dir);
+    expect(refused.exitCode).toBe(1);
+    expect(refused.stderr).toContain("pass --yes");
+    expect(await Bun.file(marker).exists()).toBe(false);
+    const reserved = await packInlinePlugin(join(dir, "reserved"), moduleSource("login"));
+    const conflict = await runCli(["plugins", "install", reserved, "--yes"], dir);
+    expect(conflict.stderr).toContain('plugin id "login" is reserved by a built-in cld command');
+    expect(conflict.stderr).not.toContain("runs inside cld");
+    expect((await runCli(["plugins", "install", pkg, "--yes"], dir)).exitCode).toBe(0);
+    expect(await Bun.file(marker).exists()).toBe(true);
+  }, 30_000);
+
+  test("legacy directories are incompatible, never loaded, warned once and removable", async () => {
+    const dir = await tempDir();
+    const root = join(dir, "cloud", "cld", "plugins");
+    const legacy = join(root, "old");
+    await mkdir(legacy, { recursive: true });
+    await writeFile(
+      join(legacy, "package.json"),
+      JSON.stringify({ name: "old-package", version: "1.0.0", cld: { apiVersion: 1, entry: "cli.js" } }),
+    );
+    await writeFile(join(legacy, "cli.js"), 'throw new Error("legacy code must not run");');
+    await mkdir(join(root, "store"));
+    await mkdir(join(root, ".ignored"));
+    expect((await legacyPlugins(root)).map((p) => p.id)).toEqual(["old"]);
+    const list = await runCli(["plugins", "list", "--json"], dir);
+    expect(JSON.parse(list.stdout).plugins[0]).toMatchObject({
+      profile: null,
+      name: "old",
+      status: "incompatible",
+      message: expect.stringContaining("old-package@1.0.0 uses the old plugin format"),
+    });
+    const help = await runCli(["help"], dir);
+    expect(help.exitCode).toBe(0);
+    expect(help.stderr.trim().split("\n")).toHaveLength(1);
+    expect(help.stderr).toContain('plugin "old" skipped (incompatible)');
+    expect((await runCli(["old"], dir)).stderr).toContain('Unknown command "old"');
+    expect((await runCli(["plugins", "remove", "old"], dir)).exitCode).toBe(0);
+    expect(await removePlugin("store", root)).toBe(false);
+    expect(await removePlugin("../old", root)).toBe(false);
+  });
+
+  test("reserved records stay reachable through plugins run, while missing store records tell users to reinstall", async () => {
+    const dir = await tempDir();
+    const root = join(dir, "cloud", "cld", "plugins");
+    const pkg = await packInlinePlugin(join(dir, "shadowed"), moduleSource("update"));
+    const manifest = await installStaged(pkg, root);
+    const help = await runCli(["help"], dir);
+    expect(help.stdout).not.toContain("Fake");
+    expect((await runCli(["plugins", "run", "update"], dir)).stdout).toBe("ran update\n");
+    let listed = await runCli(["plugins", "list", "--json"], dir);
+    expect(JSON.parse(listed.stdout).plugins[0].status).toBe("shadowed");
+    const records = await readPackagePlugins(root);
+    records.echo = { ...records.update!, source: echoBuild };
+    delete records.update;
+    await writePackagePlugins(records, root);
+    await rm(join(root, "store", manifest.digest), { recursive: true });
+    listed = await runCli(["plugins", "list", "--json"], dir);
+    expect(JSON.parse(listed.stdout).plugins[0]).toMatchObject({
+      status: "error",
+      message: expect.stringContaining(`cld plugins install ${echoBuild}`),
+    });
+  });
+});
+
+test("profile locks win for run, aliases and references; only active package modules get skill rows", async () => {
+  const dir = await tempDir();
+  const root = join(dir, "cloud", "cld", "plugins");
+  const packageDir = await packInlinePlugin(
+    join(dir, "package-echo"),
+    'export default { name: "echo", summary: "Package echo", requiresCloud: false, run: (ctx) => ctx.print("package echo") };',
+    "package-echo",
+  );
+  expect((await runCli(["plugins", "install", packageDir, "--yes"], dir)).exitCode).toBe(0);
+  const packageRecord = (await readPackagePlugins(root)).echo!;
+  const servedDir = await packInlinePlugin(
+    join(dir, "served-echo"),
+    'export default { name: "echo", alias: "e", summary: "Served echo", requiresCloud: false, run: (ctx) => ctx.print("served echo") };',
+    "served-echo",
+    "2.0.0",
+  );
+  const staged = await stagePlugin(servedDir);
+  const stored = await storePlugin(staged.manifest, (file) => readPackagePluginFile(staged, file), root);
+  await placePlugin(stored.incoming, staged.manifest.digest, root);
+  await staged.cleanup();
+  const lock = { app: "served-echo", version: "2.0.0", digest: staged.manifest.digest, summary: stored.module.summary, alias: "e" };
+  const configPath = join(dir, "config.json");
+  const target = join(dir, "skills");
+  const config = {
+    currentProfile: "a",
+    profiles: { a: { plugins: { echo: lock }, servedPlugins: ["echo"] }, b: {} },
+    skills: { targets: [target] },
+  };
+  await writeFile(configPath, JSON.stringify(config));
+  expect((await runCli(["echo"], dir)).stdout).toBe("served echo\n");
+  expect((await runCli(["e"], dir)).stdout).toBe("served echo\n");
+  expect((await runCli(["echo", "reference"], dir)).stdout).toBe("# served-echo\n");
+  expect((await runCli(["e", "reference"], dir)).stdout).toBe("# served-echo\n");
+  expect((await runCli(["--profile", "b", "echo"], dir)).stdout).toBe("package echo\n");
+  expect((await runCli(["--profile", "b", "echo", "reference"], dir)).stdout).toBe("# package-echo\n");
+  expect((await runCli(["skills", "sync"], dir)).exitCode).toBe(0);
+  const skillPath = join(target, "cloud-cli", "SKILL.md");
+  let skill = await readFile(skillPath, "utf8");
+  expect(skill).toContain("| a | echo | 2.0.0 | Served echo | `references/echo/2.0.0/index.md` |");
+  expect(skill.match(/\| \* \| echo \|/g)).toHaveLength(1);
+  expect(skill).not.toContain("| b | echo |");
+  const allLocked = { ...config, profiles: { a: config.profiles.a, b: { plugins: { echo: lock } } } };
+  await writeFile(configPath, JSON.stringify(allLocked));
+  expect((await runCli(["skills", "sync"], dir)).exitCode).toBe(0);
+  skill = await readFile(skillPath, "utf8");
+  expect(skill).toContain("| b | echo | 2.0.0 |");
+  expect(skill).not.toContain("| * | echo |");
+  expect(await Bun.file(join(target, "cloud-cli", "references", "echo", "1.0.0", "index.md")).exists()).toBe(false);
+  // Removing a profile must retain the globally recorded bundle, even while shadowed.
+  expect((await runCli(["profile", "rm", "b", "--yes"], dir)).exitCode).toBe(0);
+  expect(await hasStoredPlugin(packageRecord.digest, root)).toBe(true);
+  // Removing the last served lock reveals the package plugin and syncs its references.
+  expect((await runCli(["plugins", "remove", "echo"], dir)).exitCode).toBe(0);
+  expect(await readFile(skillPath, "utf8")).toContain("| * | echo | 1.0.0 | Package echo |");
+  expect(await hasStoredPlugin(staged.manifest.digest, root)).toBe(false);
+  // Removing the package prunes its skill row, reference folder and store entry.
+  expect((await runCli(["plugins", "remove", "echo"], dir)).exitCode).toBe(0);
+  expect(await readFile(skillPath, "utf8")).not.toContain("| * | echo |");
+  expect(await Bun.file(join(target, "cloud-cli", "references", "echo", "1.0.0", "index.md")).exists()).toBe(false);
+  expect(await hasStoredPlugin(packageRecord.digest, root)).toBe(false);
+}, 30_000);
+
+test("local npm-layout tarballs use the shared store and keep nested skill references", async () => {
+  const dir = await tempDir();
+  await cp(echoBuild, join(dir, "package"), { recursive: true });
+  const archive = join(dir, "echo.tgz");
+  expect(Bun.spawnSync(["tar", "-czf", archive, "-C", dir, "package"]).exitCode).toBe(0);
+  const target = join(dir, "skills");
+  expect((await runCli(["skills", "add", target], dir)).exitCode).toBe(0);
+  const installed = await runCli(["plugins", "install", archive, "--yes", "--json"], dir);
+  expect(installed.exitCode, installed.stderr).toBe(0);
+  expect(JSON.parse(installed.stdout)).toMatchObject({ source: archive, references: 2 });
+  const root = join(dir, "cloud", "cld", "plugins");
+  expect(await hasStoredPlugin((await readPackagePlugins(root)).echo!.digest, root)).toBe(true);
+  expect((await runCli(["echo", "reference", "guides/setup.md"], dir)).stdout).toContain("# Echo setup");
+  expect(await readFile(join(target, "cloud-cli", "references", "echo", "1.0.0", "guides", "setup.md"), "utf8")).toContain("# Echo setup");
+});
+
+test("nested bundle roots ignore foreign files outside them and reinstall repairs a missing store entry", async () => {
+  const dir = await tempDir();
+  const pkg = join(dir, "package");
+  await cp(echoBuild, join(pkg, "bundle"), { recursive: true });
+  const raw = await Bun.file(join(echoBuild, "package.json")).json();
+  await writeFile(join(pkg, "package.json"), JSON.stringify({ ...raw, cld: { manifest: "bundle/manifest.json" } }));
+  await writeFile(join(pkg, "ignored.txt"), "ignored");
+  await symlink("ignored.txt", join(pkg, "outside-link"));
+  const result = await runCli(["plugins", "install", pkg, "--yes"], dir);
+  expect(result.exitCode, result.stderr).toBe(0);
+  const root = join(dir, "cloud", "cld", "plugins");
+  const record = (await readPackagePlugins(root)).echo!;
+  const stored = join(root, "store", record.digest);
+  expect((await readdir(stored)).sort()).toEqual(["cli.js", "manifest.json", "references"]);
+  await rm(join(stored, "cli.js"));
+  expect(JSON.parse((await runCli(["plugins", "list", "--json"], dir)).stdout).plugins[0].status).toBe("error");
+  expect((await runCli(["plugins", "install", pkg, "--yes"], dir)).exitCode).toBe(0);
+  expect(await hasStoredPlugin(record.digest, root)).toBe(true);
+  expect((await runCli(["echo", "reference"], dir)).stdout).toContain("# Echo package");
+  // An escaping symlink in the manifest path itself must be rejected.
+  await writeFile(join(pkg, "package.json"), JSON.stringify({ ...raw, cld: { manifest: "bundle-link/manifest.json" } }));
+  await symlink("bundle", join(pkg, "bundle-link"));
+  await expectPluginError(stagePlugin(pkg), "error", "symlink");
+});
+
+test("package names never resolve inherited object properties as profile locks", async () => {
+  const dir = await tempDir();
+  const pkg = await packInlinePlugin(join(dir, "constructor"), moduleSource("constructor"));
+  const install = await runCli(["plugins", "install", pkg, "--yes"], dir);
+  expect(install.exitCode, install.stderr).toBe(0);
+  expect((await runCli(["constructor"], dir)).stdout).toBe("ran constructor\n");
+  expect((await runCli(["plugins", "update", "constructor"], dir)).stderr).toContain(`cld plugins install ${pkg}`);
+  expect((await runCli(["plugins", "remove", "constructor"], dir)).exitCode).toBe(0);
+  expect(await readPackagePlugins(join(dir, "cloud", "cld", "plugins"))).toEqual({});
 });

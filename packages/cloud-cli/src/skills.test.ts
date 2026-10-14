@@ -26,11 +26,11 @@ describe("cloud-cli skill targets", () => {
     const template = "# Skill\n\n<!-- cld:modules -->\nPLACEHOLDER\n<!-- /cld:modules -->\n\nTail\n";
     expect(renderSkill(template, [])).toContain("No module is installed");
     const rendered = renderSkill(template, [
-      { profile: "work", name: "mail", version: "0.19.0", digest: "d1" },
-      { profile: "home", name: "notebooks", version: "0.18.2", digest: "d2" },
+      { profile: "work", name: "mail", version: "0.19.0", summary: "Mail | tools\nMore", digest: "d1" },
+      { profile: "home", name: "notebooks", version: "0.18.2", summary: "Mail | tools\nMore", digest: "d2" },
     ]);
-    expect(rendered).toContain("| home | notebooks | 0.18.2 | `references/notebooks/0.18.2/` |");
-    expect(rendered).toContain("| work | mail | 0.19.0 | `references/mail/0.19.0/` |");
+    expect(rendered).toContain("| home | notebooks | 0.18.2 | Mail \\| tools More | `references/notebooks/0.18.2/index.md` |");
+    expect(rendered).toContain("| work | mail | 0.19.0 | Mail \\| tools More | `references/mail/0.19.0/index.md` |");
     expect(rendered).not.toContain("PLACEHOLDER");
     expect(rendered.startsWith("# Skill\n\n<!-- cld:modules -->\n")).toBe(true);
     expect(rendered.endsWith("<!-- /cld:modules -->\n\nTail\n")).toBe(true);
@@ -53,9 +53,9 @@ describe("cloud-cli skill targets", () => {
       const target = join(dir, "skills");
       await writeFile(join(dir, "keep.txt"), "untouched");
       const rows = [
-        { profile: "a", name: "mail", version: "1.0.0", digest: "a".repeat(128) },
-        { profile: "b", name: "mail", version: "1.0.0", digest: "a".repeat(128) },
-        { profile: "b", name: "mail", version: "2.0.0", digest: "b".repeat(128) },
+        { profile: "a", name: "mail", version: "1.0.0", summary: "Mail | tools\nMore", digest: "a".repeat(128) },
+        { profile: "b", name: "mail", version: "1.0.0", summary: "Mail | tools\nMore", digest: "a".repeat(128) },
+        { profile: "b", name: "mail", version: "2.0.0", summary: "Mail | tools\nMore", digest: "b".repeat(128) },
       ];
       const written = await writeSkillTarget(target, rows, root);
       expect(written).toBe(join(target, "cloud-cli"));
@@ -69,7 +69,9 @@ describe("cloud-cli skill targets", () => {
         "references/plugins.md",
         "references/sign-in.md",
       ]);
-      expect(await readFile(join(written, "SKILL.md"), "utf8")).toContain("| b | mail | 2.0.0 | `references/mail/2.0.0/` |");
+      expect(await readFile(join(written, "SKILL.md"), "utf8")).toContain(
+        "| b | mail | 2.0.0 | Mail \\| tools More | `references/mail/2.0.0/index.md` |",
+      );
 
       // A later sync with fewer modules replaces the folder; stale versions and stray files go.
       await writeFile(join(written, "stray.md"), "stray");

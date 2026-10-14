@@ -1,6 +1,6 @@
 /**
- * `cld` plugin contract shared by the applications that serve plugins and by
- * `cld`, which installs and loads them.
+ * Verified `cld` bundle contract shared by application-served plugins,
+ * package plugins, and `cld`, which installs and loads them.
  *
  * An application serves each declared CLI module under
  * `/cli/plugins/<name>/`: `manifest.json`, the bundled module `cli.js`, and
@@ -34,9 +34,9 @@ export type CloudCliPluginManifest = {
   apiVersion: number;
   /** Module name and plugin ID. */
   name: string;
-  /** ID of the application that serves the plugin. */
+  /** ID of the serving application, or name of the publishing package. */
   app: string;
-  /** Version of the serving application build. */
+  /** Application build or package version. */
   version: string;
   entry: typeof CLOUD_CLI_PLUGIN_ENTRY;
   /** SHA-512 over the file list; see {@link cloudCliPluginDigest}. */
@@ -88,7 +88,7 @@ export const isCloudCliShortcuts = (value: unknown, name: string, alias?: string
         .every((segment) => !segment.startsWith("-")),
   );
 
-/** Validate a served manifest, including its digest. Throws an `Error` naming the first problem. */
+/** Validate a bundle manifest, including its digest. Throws an `Error` naming the first problem. */
 export const parseCloudCliPluginManifest = (value: unknown): CloudCliPluginManifest => {
   if (!isRecord(value)) throw new Error("plugin manifest is not an object");
   const { apiVersion, name, app, version, entry, digest, files } = value;

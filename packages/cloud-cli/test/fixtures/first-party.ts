@@ -1,5 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { CLOUD_CLI_API_VERSION, cloudCliPluginDigest, sha512Hex, validateCloudCliModule } from "@k2b/cloud/cli";
+import { readPackagePlugins, writePackagePlugins } from "../../src/plugins";
 
 const root = resolve(import.meta.dir, "../../../..");
 
@@ -62,18 +65,48 @@ export const bundleFirstPartyModule = (name: string): Promise<Uint8Array> => {
 
 /**
  * Install first-party modules as package plugins under `configHome`
- * (`XDG_CONFIG_HOME`), so a test `cld` runs them without a Cloud.
+ * (`XDG_CONFIG_HOME`), so a test `cld` runs them without a Cloud. Each one is
+ * written into the plugin store with a stub reference and recorded in
+ * `packages.json`, the state `cld plugins install` leaves behind.
  */
 export const installFirstPartyModules = async (configHome: string, names: readonly string[]): Promise<void> => {
+  const root = join(configHome, "cloud", "cld", "plugins");
+  const records = await readPackagePlugins(root);
   await Promise.all(
     names.map(async (name) => {
-      const directory = join(configHome, "cloud", "cld", "plugins", name);
-      await mkdir(join(directory, "dist"), { recursive: true });
+      const bytes = await bundleFirstPartyModule(name);
+      const index = `# ${name}\n`;
+      const files = [
+        { path: "cli.js", size: bytes.byteLength, sha512: sha512Hex(bytes) },
+        { path: "references/index.md", size: Buffer.byteLength(index), sha512: sha512Hex(index) },
+      ];
+      const digest = cloudCliPluginDigest(files);
+      const directory = join(root, "store", digest);
+      await mkdir(join(directory, "references"), { recursive: true });
+      await writeFile(join(directory, "cli.js"), bytes);
+      await writeFile(join(directory, "references", "index.md"), index);
       await writeFile(
-        join(directory, "package.json"),
-        JSON.stringify({ name: `@k2b-test/${name}`, version: "0.0.0-test", type: "module", cld: { apiVersion: 1, entry: "dist/cli.js" } }),
+        join(directory, "manifest.json"),
+        JSON.stringify({
+          apiVersion: CLOUD_CLI_API_VERSION,
+          name,
+          app: `@k2b-test/${name}`,
+          version: "0.0.0-test",
+          entry: "cli.js",
+          digest,
+          files,
+        }),
       );
-      await writeFile(join(directory, "dist", "cli.js"), await bundleFirstPartyModule(name));
+      const loaded: { default?: unknown } = await import(pathToFileURL(join(directory, "cli.js")).href);
+      const module = validateCloudCliModule(loaded.default);
+      records[name] = {
+        package: `@k2b-test/${name}`,
+        version: "0.0.0-test",
+        digest,
+        summary: module.summary,
+        source: firstPartyModuleSource(name),
+      };
     }),
   );
+  await writePackagePlugins(records, root);
 };

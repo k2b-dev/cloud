@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildEchoPlugin } from "../test/fixtures/build-plugin";
+import { buildEchoPlugin, packInlinePlugin } from "../test/fixtures/build-plugin";
 import { type PluginCloudState, servedEchoPlugin, startPluginCloud } from "../test/fixtures/plugin-cloud";
 
 const cleanup: Array<() => Promise<unknown> | unknown> = [];
@@ -110,8 +110,8 @@ test("profiles lock their own verified plugin versions and share identical ones"
   expect(added.exitCode, added.stderr).toBe(0);
   expect((await cli.config()).skills).toEqual({ targets: ["~/agent-skills"] });
   const skill = await readFile(join(skills, "cloud-cli", "SKILL.md"), "utf8");
-  expect(skill).toContain("| a | echo | 1.0.0 | `references/echo/1.0.0/` |");
-  expect(skill).toContain("| b | echo | 2.0.0 | `references/echo/2.0.0/` |");
+  expect(skill).toContain("| a | echo | 1.0.0 | Echo the host CLI context (test plugin). | `references/echo/1.0.0/index.md` |");
+  expect(skill).toContain("| b | echo | 2.0.0 | Echo the host CLI context (test plugin). | `references/echo/2.0.0/index.md` |");
   expect(skill).toContain("cld <app> reference");
   expect(await readFile(join(skills, "cloud-cli", "references", "echo", "1.0.0", "index.md"), "utf8")).toBe("# Echo 1.0.0\n");
   expect(await readFile(join(skills, "cloud-cli", "references", "echo", "2.0.0", "index.md"), "utf8")).toBe("# Echo 2.0.0\n");
@@ -532,13 +532,8 @@ test("installing a package plugin warns when its ID takes a shortcut's name", as
   expect((await cli.run(["plugins", "install", "echo"])).exitCode).toBe(0);
   expect((await cli.run(["me"])).exitCode).toBe(0);
   const directory = join(cli.dir, "package-me");
-  await mkdir(directory);
-  await writeFile(
-    join(directory, "package.json"),
-    JSON.stringify({ name: "test-package-me", version: "1.0.0", cld: { apiVersion: 1, entry: "cli.js" } }),
-  );
-  await writeFile(
-    join(directory, "cli.js"),
+  await packInlinePlugin(
+    directory,
     `export default {
     name: "me", summary: "Package fixture", requiresCloud: false,
     run: (ctx) => { ctx.print("package me"); return 0; },
@@ -565,19 +560,15 @@ test("built-ins and package module names win, while package short-name declarati
   expect((await cli.run(["constructor", "whoami"])).exitCode).toBe(0);
   expect((await cli.run(["e"])).exitCode).toBe(0);
 
-  const directory = join(cli.dir, "cloud", "cld", "plugins", "e");
-  await mkdir(directory, { recursive: true });
-  await writeFile(
-    join(directory, "package.json"),
-    JSON.stringify({ name: "test-package-e", version: "1.0.0", cld: { apiVersion: 1, entry: "cli.js" } }),
-  );
-  await writeFile(
-    join(directory, "cli.js"),
+  const directory = join(cli.dir, "package-e");
+  await packInlinePlugin(
+    directory,
     `export default {
     name: "e", summary: "Package fixture", alias: "pkg", shortcuts: { pack: "run" }, requiresCloud: false,
     help: () => "Package e help", run: (ctx) => { ctx.print("package " + ctx.args.join(" ")); return 0; },
   };`,
   );
+  expect((await cli.run(["plugins", "install", directory, "--yes"])).exitCode).toBe(0);
   expect((await cli.run(["e", "anything"])).stdout).toBe("package anything\n");
   expect((await cli.run(["e", "--help"])).stdout).toBe("Package e help\n");
   const help = await cli.run(["help"]);
@@ -595,11 +586,11 @@ test("built-ins and package module names win, while package short-name declarati
   expect(JSON.parse(listed.stdout).plugins).toContainEqual({
     profile: null,
     name: "e",
-    app: null,
+    app: "test-plugin",
     installed: "1.0.0",
     available: null,
     status: "ok",
-    source: "manual",
+    source: directory,
     alias: null,
     shortcuts: {},
     inactive: [],

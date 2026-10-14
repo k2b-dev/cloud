@@ -128,3 +128,65 @@ describe("plugin lock metadata", () => {
     }
   });
 });
+
+describe("shared bundle verification", () => {
+  test("served and local readers share verification, module checks, reuse and failure cleanup", async () => {
+    const { mkdtemp, readdir, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { cloudCliPluginDigest, sha512Hex } = await import("@k2b/cloud/cli");
+    const { downloadPlugin, placePlugin, storePlugin } = await import("./plugin-store");
+    const root = await mkdtemp(join(tmpdir(), "shared-plugin-store-"));
+    const encoder = new TextEncoder();
+    const source = 'export default { name: "verified", summary: "Verified", run: () => 0 };';
+    const bytes = new Map([
+      ["cli.js", encoder.encode(source)],
+      ["references/index.md", encoder.encode("# Verified\n")],
+    ]);
+    const files = [...bytes].map(([path, content]) => ({ path, size: content.byteLength, sha512: sha512Hex(content) }));
+    const manifest = {
+      apiVersion: 1,
+      name: "verified",
+      app: "verified-package",
+      version: "1.0.0",
+      entry: "cli.js" as const,
+      files,
+      digest: cloudCliPluginDigest(files),
+    };
+    const store = join(root, "store");
+    try {
+      const download = await downloadPlugin(async (path) => new Response(bytes.get(path.split("/verified/")[1]!)), manifest, root);
+      expect(download.module.name).toBe("verified");
+      await placePlugin(download.incoming, manifest.digest, root);
+      const local = await storePlugin(manifest, async (file) => bytes.get(file.path)!, root);
+      expect(local.module.summary).toBe("Verified");
+      await placePlugin(local.incoming, manifest.digest, root);
+      expect(await readdir(store)).toEqual([manifest.digest]);
+      for (const size of [-1, 1]) {
+        await expect(
+          downloadPlugin(
+            async (path) => new Response(new Uint8Array(bytes.get(path.split("/verified/")[1]!)!.byteLength + size)),
+            manifest,
+            root,
+          ),
+        ).rejects.toThrow(size < 0 ? "smaller" : "larger");
+        expect(await readdir(store)).toEqual([manifest.digest]);
+      }
+      await expect(storePlugin(manifest, async (file) => new Uint8Array(file.size), root)).rejects.toThrow("SHA-512");
+      expect(await readdir(store)).toEqual([manifest.digest]);
+      const changed = new Map(bytes);
+      changed.set("cli.js", encoder.encode(source.replace('"verified"', '"other"')));
+      const changedFiles = [...changed].map(([path, content]) => ({ path, size: content.byteLength, sha512: sha512Hex(content) }));
+      await expect(
+        storePlugin(
+          { ...manifest, files: changedFiles, digest: cloudCliPluginDigest(changedFiles) },
+          async (file) => changed.get(file.path)!,
+          root,
+        ),
+      ).rejects.toThrow('exports the module "other"');
+      expect(await readdir(store)).toEqual([manifest.digest]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
