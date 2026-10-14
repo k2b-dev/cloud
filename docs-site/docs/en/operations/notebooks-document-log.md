@@ -167,6 +167,7 @@ unavailable**, and the Notebooks logs contain
    saves an edit. Then restore the original account limit.
 
 The editor shows **Live editing is unavailable** while the broker refuses to
-store updates. It retries five times over about a minute, then reloads the
-note and tells the user to ask an administrator to raise the limit. Changes
-typed while live editing is unavailable are not saved.
+store updates. It retries five times over about a minute, then keeps the text
+on screen read-only. The bar says storage is full and whether changes are saved,
+and offers **Copy text** and **Reload**. Changes typed while live editing is
+unavailable are not saved on the server.

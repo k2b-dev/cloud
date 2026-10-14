@@ -430,3 +430,185 @@ describe("Yjs provider storage exhaustion", () => {
     }
   });
 });
+
+const syncPublishes = (socket: FakeWebSocket) =>
+  socket.sent
+    .map((value) => JSON.parse(value) as { type: string; payload: { payload: string } })
+    .filter((value) => value.type === notebooksYjs.wsType.syncPublish)
+    .map((value) => value.payload.payload);
+const readyReplay = (socket: FakeWebSocket) => socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID } });
+const echo = (socket: FakeWebSocket, payload: string) =>
+  socket.message({ type: notebooksYjs.wsType.syncPush, payload: { noteId: NOTE_ID, updates: [{ payload }] } });
+
+const localEditor = () => {
+  const doc = new Y.Doc();
+  const awareness = new Awareness(doc);
+  const provider = createYjsProvider({ doc, awareness, noteId: NOTE_ID, appUrl: "http://localhost" });
+  provider.connect();
+  const socket = FakeWebSocket.instances.at(-1)!;
+  socket.open();
+  return {
+    doc,
+    provider,
+    socket,
+    [Symbol.dispose]: () => {
+      provider.dispose();
+      awareness.destroy();
+      doc.destroy();
+    },
+  };
+};
+
+describe("Yjs provider unconfirmed edits", () => {
+  test("a published edit is unsent until the server echoes its payload", () => {
+    using editor = localEditor();
+    readyReplay(editor.socket);
+    expect(editor.provider.hasUnsentChanges()).toBe(false);
+    editor.doc.getText("content").insert(0, "keep this");
+    const [payload] = syncPublishes(editor.socket);
+    expect(payload).toBeDefined();
+    expect(editor.provider.hasUnsentChanges()).toBe(true);
+    echo(editor.socket, payload!);
+    expect(editor.provider.hasUnsentChanges()).toBe(false);
+  });
+
+  test("a plain disconnect resends only unechoed updates in order, including after another disconnect", () => {
+    using editor = localEditor();
+    readyReplay(editor.socket);
+    for (const text of ["first", "second", "third"]) editor.doc.getText("content").insert(0, text);
+    const payloads = syncPublishes(editor.socket);
+    const timers: Array<() => void> = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
+    try {
+      editor.socket.close();
+      editor.socket.onclose?.({ code: 1006, reason: "" });
+      timers.shift()!();
+      const next = FakeWebSocket.instances.at(-1)!;
+      next.open();
+      echo(next, payloads[0]!);
+      expect(syncPublishes(next)).toEqual([]);
+      readyReplay(next);
+      expect(syncPublishes(next)).toEqual(payloads.slice(1));
+      next.close();
+      next.onclose?.({ code: 1006, reason: "" });
+      timers.shift()!();
+      const again = FakeWebSocket.instances.at(-1)!;
+      again.open();
+      readyReplay(again);
+      expect(syncPublishes(again)).toEqual(payloads.slice(1));
+      for (const payload of payloads.slice(1)) echo(again, payload);
+      expect(editor.provider.hasUnsentChanges()).toBe(false);
+    } finally {
+      Object.assign(globalThis, { setTimeout: originalSetTimeout });
+    }
+  });
+
+  test("edits before replay ready are pending and publish one covering full state", () => {
+    using editor = localEditor();
+    editor.doc.getText("content").insert(0, "first");
+    editor.doc.getText("content").insert(5, " second");
+    expect(editor.provider.hasUnsentChanges()).toBe(true);
+    expect(syncPublishes(editor.socket)).toEqual([]);
+    readyReplay(editor.socket);
+    expect(syncPublishes(editor.socket)).toEqual([Buffer.from(Y.encodeStateAsUpdate(editor.doc)).toString("base64")]);
+    expect(editor.provider.hasUnsentChanges()).toBe(true);
+    echo(editor.socket, syncPublishes(editor.socket)[0]!);
+    expect(editor.provider.hasUnsentChanges()).toBe(false);
+  });
+
+  test("a covering full state replaces older unconfirmed updates after an offline edit", () => {
+    using editor = localEditor();
+    readyReplay(editor.socket);
+    editor.doc.getText("content").insert(0, "online");
+    editor.socket.open();
+    editor.doc.getText("content").insert(6, " offline");
+    readyReplay(editor.socket);
+    const publishes = syncPublishes(editor.socket);
+    expect(publishes).toHaveLength(2);
+    expect(publishes[1]).toBe(Buffer.from(Y.encodeStateAsUpdate(editor.doc)).toString("base64"));
+    echo(editor.socket, publishes[1]!);
+    expect(editor.provider.hasUnsentChanges()).toBe(false);
+    editor.socket.open();
+    readyReplay(editor.socket);
+    expect(syncPublishes(editor.socket)).toEqual(publishes);
+  });
+
+  test("a failed resend leaves every pending payload available for the next replay", () => {
+    using editor = localEditor();
+    readyReplay(editor.socket);
+    editor.doc.getText("content").insert(0, "first");
+    editor.doc.getText("content").insert(5, " second");
+    const payloads = syncPublishes(editor.socket);
+    const send = editor.socket.send.bind(editor.socket);
+    editor.socket.send = (value) => {
+      send(value);
+      const message = JSON.parse(value) as { type: string };
+      if (message.type === notebooksYjs.wsType.syncPublish) editor.socket.close();
+    };
+    editor.socket.open();
+    readyReplay(editor.socket);
+    expect(syncPublishes(editor.socket)).toEqual([...payloads, payloads[0]!]);
+    expect(editor.provider.hasUnsentChanges()).toBe(true);
+    editor.socket.send = send;
+    editor.socket.open();
+    readyReplay(editor.socket);
+    expect(syncPublishes(editor.socket).slice(-2)).toEqual(payloads);
+    for (const payload of payloads) echo(editor.socket, payload);
+    expect(editor.provider.hasUnsentChanges()).toBe(false);
+  });
+
+  test("terminal session errors retain pending edits and resume ignores all stale socket events", () => {
+    using editor = localEditor();
+    readyReplay(editor.socket);
+    editor.doc.getText("content").insert(0, "unsaved");
+    const payloads = syncPublishes(editor.socket);
+    editor.socket.message({ type: notebooksYjs.wsType.error, payload: { code: "SESSION_EXPIRED", message: "expired" } });
+    expect(editor.provider.hasUnsentChanges()).toBe(true);
+    editor.provider.resume();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    const next = FakeWebSocket.instances[1]!;
+    next.open();
+    expect(replayRequests(next)).toEqual([null]);
+    readyReplay(next);
+    expect(syncPublishes(next)).toEqual(payloads);
+    const timers: Array<() => void> = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
+    try {
+      editor.socket.onclose?.({ code: 1006, reason: "" });
+      editor.socket.onopen?.();
+      editor.socket.onerror?.();
+      editor.socket.message({ type: notebooksYjs.wsType.error, payload: { code: "SESSION_EXPIRED", message: "late" } });
+      editor.doc.getText("content").insert(7, " more");
+      expect(syncPublishes(next)).toHaveLength(2);
+      expect(replayRequests(next)).toEqual([null]);
+      expect(next.readyState).toBe(FakeWebSocket.OPEN);
+      expect(timers).toHaveLength(0);
+    } finally {
+      Object.assign(globalThis, { setTimeout: originalSetTimeout });
+    }
+  });
+
+  test("termination preserves a needed full resync until resume", () => {
+    using editor = localEditor();
+    editor.doc.getText("content").insert(0, "before replay");
+    editor.socket.message({ type: notebooksYjs.wsType.error, payload: { code: "SESSION_EXPIRED", message: "expired" } });
+    expect(editor.provider.hasUnsentChanges()).toBe(true);
+    editor.provider.resume();
+    const next = FakeWebSocket.instances.at(-1)!;
+    next.open();
+    readyReplay(next);
+    expect(syncPublishes(next)).toEqual([Buffer.from(Y.encodeStateAsUpdate(editor.doc)).toString("base64")]);
+  });
+
+  test("resume does nothing while connected or after disposal", () => {
+    using editor = localEditor();
+    editor.provider.resume();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    editor.socket.message({ type: notebooksYjs.wsType.error, payload: { code: "SESSION_EXPIRED", message: "expired" } });
+    editor.provider.dispose();
+    editor.provider.resume();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+});

@@ -2,7 +2,6 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { encoding } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
@@ -66,6 +65,7 @@ import { createNoteNavigationCoordinator, headingFromHash, resolveSameNotebookNo
 import { NOTE_PREVIEW_ID } from "./note-preview";
 import { keepReadingPosition, previewReadingPosition, type ReadingPosition, scrollToReadingPosition } from "./reading-position";
 import { slashCommandsExtension } from "./slash-commands";
+import { createSyncEnded, SyncEndedBar } from "./sync-ended";
 import { createTabKeyPreference } from "./tab-key-preference";
 
 const TOC_DEBOUNCE_MS = 300;
@@ -339,7 +339,11 @@ function EditorInstance(
   });
   const [isDark, setIsDark] = createSignal(document.documentElement.classList.contains("dark"));
   const [richMode, setRichMode] = createSignal(props.initialRichMode !== "source");
-  const tabKeys = createTabKeyPreference(() => !!props.readOnly);
+  const syncEnded = createSyncEnded({
+    hasUnsentChanges: () => provider?.hasUnsentChanges() ?? false,
+    resume: () => provider?.resume(),
+  });
+  const tabKeys = createTabKeyPreference(() => !!props.readOnly || !!syncEnded.ended());
 
   const doc = new Y.Doc({ gc: true });
   if (props.initialSnapshot) {
@@ -390,12 +394,11 @@ function EditorInstance(
     addExtension(() => yCollab(ytext, null, { undoManager }));
     addExtension(() => isolateYjsHistory(undoManager));
     addExtension(() => remoteCursors(ytext, awareness));
-    addExtension(() => keymap.of(yUndoManagerKeymap));
+    addExtension(() => (syncEnded.ended() ? [] : keymap.of(yUndoManagerKeymap)));
   }
 
   let cursorIdleTimer: ReturnType<typeof setTimeout> | undefined;
   let cursorHiddenByIdle = false;
-  let fatalPromptOpen = false;
 
   const publishCurrentCursor = (view: EditorView) => {
     const selection = view.state.selection.main;
@@ -446,13 +449,17 @@ function EditorInstance(
   addExtension(linkedHeadingJump.extension);
 
   addExtension(editor.basicExtensions());
-  addExtension(formattingKeymap({ notebookId: props.notebookId }));
-  addExtension(slashCommandsExtension({ notebookId: props.notebookId, notebookName: props.notebookName, locale: locale() }));
+  // Custom formatting commands dispatch changes even in a read-only state.
+  addExtension(() => (syncEnded.ended() ? [] : formattingKeymap({ notebookId: props.notebookId })));
+  addExtension(() =>
+    syncEnded.ended() ? [] : slashCommandsExtension({ notebookId: props.notebookId, notebookName: props.notebookName, locale: locale() }),
+  );
   addExtension(editor.markdownExtension());
   addExtension(editor.searchTheme());
   let scrollPort: HTMLDivElement | undefined;
   addExtension(fadeScrollMarginsExtension(() => scrollPort));
   addExtension(() => (props.readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []));
+  addExtension(syncEnded.extension);
   // Tab indents unless the person prefers focus movement; Esc, then Tab always leaves the editor.
   addExtension(tabKeys.extension);
   // List keys work whatever the Tab preference; toolbar formats follow the caret.
@@ -519,7 +526,10 @@ function EditorInstance(
         onError: (error) => {
           if (error.code === "STORAGE_EXHAUSTED") setStorageExhausted(true);
         },
-        onReady: () => setStorageExhausted(false),
+        onReady: () => {
+          setStorageExhausted(false);
+          syncEnded.ready();
+        },
         // Forwards every presence update to the OnlineSection island via a
         // window event — the editor itself doesn't need to track participants
         // anymore now that the toolbar no longer renders them.
@@ -532,60 +542,7 @@ function EditorInstance(
           onEvent: dispatchWorkspaceEvent,
           onCursorChange: props.onWorkspaceCursorChange,
         },
-        onFatal: (error) => {
-          if (fatalPromptOpen) return;
-          fatalPromptOpen = true;
-          const isLocked = error.code === "NOTE_LOCKED";
-          const isMissing = error.code === "NOTE_NOT_FOUND";
-          const isRevoked = error.code === "ACCESS_REVOKED" || error.code === "ACCESS_DENIED";
-          const isSession = error.code === "SESSION_EXPIRED" || error.code === "LOGIN_REQUIRED";
-          const isStorage = error.code === "STORAGE_EXHAUSTED";
-
-          const title = isStorage
-            ? t().storageExhaustedTitle
-            : isLocked
-              ? t().noteLocked
-              : isMissing
-                ? t().noteNotFound
-                : isRevoked
-                  ? t().accessChanged
-                  : isSession
-                    ? t().sessionExpired
-                    : t().connectionClosed;
-
-          const icon = isStorage
-            ? "ti ti-database-off"
-            : isLocked
-              ? "ti ti-lock"
-              : isMissing
-                ? "ti ti-file-x"
-                : isRevoked
-                  ? "ti ti-shield-off"
-                  : isSession
-                    ? "ti ti-login-2"
-                    : "ti ti-alert-triangle";
-
-          const message = isStorage
-            ? t().storageExhaustedDescription
-            : isLocked
-              ? t().noteLockedDescription
-              : isMissing
-                ? t().noteMissingDescription
-                : isRevoked
-                  ? t().accessChangedDescription
-                  : isSession
-                    ? t().sessionExpiredDescription
-                    : t().connectionClosedDescription;
-
-          void prompts
-            .alert(t().reloadNotice({ message }), {
-              title,
-              icon,
-            })
-            .finally(() => {
-              refreshCurrentPath();
-            });
-        },
+        onFatal: syncEnded.end,
       });
 
   let themeObserver: MutationObserver | undefined;
@@ -793,6 +750,7 @@ function EditorInstance(
   };
 
   const onPaste = (event: ClipboardEvent) => {
+    if (syncEnded.ended()) return;
     const fileList = Array.from(event.clipboardData?.files ?? []);
     if (fileList.length === 0) return;
     event.preventDefault();
@@ -940,28 +898,45 @@ function EditorInstance(
         onPaste={props.readOnly ? undefined : onPaste}
         role="textbox"
         tabIndex={-1}
-        aria-label={props.readOnly ? t().readonlySurface : t().editorSurface}
+        aria-label={props.readOnly || syncEnded.ended() ? t().readonlySurface : t().editorSurface}
       >
         <div ref={editorRef} />
       </ScrollArea>
       {/* Files dropped anywhere on the note's page upload and land at the cursor. */}
-      <FileDropTarget label={t().dropToInsert} disabled={props.readOnly} onDrop={(fileList) => void uploadFilesSequentially(fileList)} />
+      <FileDropTarget
+        label={t().dropToInsert}
+        disabled={props.readOnly || !!syncEnded.ended()}
+        onDrop={(fileList) => void uploadFilesSequentially(fileList)}
+      />
       <Show when={tabKeys.indents()}>
         <p id={tabKeys.hintId} class="sr-only">
           {t().tabIndentHint}
         </p>
       </Show>
       <Show when={!props.readOnly}>
-        <EditorToolbar
-          connected={connected()}
-          editorView={editorView()}
-          notebookId={props.notebookId}
-          noteId={props.noteId}
-          initialPanelOpen={props.initialPanelOpen}
-          format={format()}
-          onUndo={() => undoManager?.undo()}
-          onRedo={() => undoManager?.redo()}
-        />
+        <Show
+          when={syncEnded.ended()}
+          fallback={
+            <EditorToolbar
+              connected={connected()}
+              editorView={editorView()}
+              notebookId={props.notebookId}
+              noteId={props.noteId}
+              initialPanelOpen={props.initialPanelOpen}
+              format={format()}
+              onUndo={() => undoManager?.undo()}
+              onRedo={() => undoManager?.redo()}
+            />
+          }
+        >
+          {(ended) => (
+            <SyncEndedBar
+              ended={ended()}
+              markdown={() => ytext.toString()}
+              noteHref={() => window.location.pathname + window.location.search}
+            />
+          )}
+        </Show>
       </Show>
     </div>
   );

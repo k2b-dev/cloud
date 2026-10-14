@@ -5,6 +5,7 @@ import { EditorView } from "@codemirror/view";
 import { LocaleProvider, ScrollArea } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
+import { notebooksYjs } from "../../../../lib/yjs";
 import { basicExtensions } from "../../../lib/editor/basic";
 import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
 import { listCommandsExtension } from "../../../lib/editor/list-commands";
@@ -13,12 +14,15 @@ import { markdownExtension } from "../../../lib/editor/markdown";
 import { noteScrollerTheme } from "../../../lib/editor/theme";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
 import { caretFormat, sameCaretFormat } from "./editor-actions";
+import { type SyncEnded, SyncEndedBar } from "./sync-ended";
 
 function Harness() {
   let host!: HTMLDivElement;
   let scrollPort: HTMLDivElement | undefined;
   const [view, setView] = createSignal<EditorView>();
   const [toolbarMounted, setToolbarMounted] = createSignal(true);
+  const [syncEnded, setSyncEnded] = createSignal<SyncEnded | null>(null);
+  const locale = new URLSearchParams(window.location.search).get("locale") ?? "en";
   // Match NoteEditor: formats follow document and selection transactions, suppressing equal values.
   const [format, setFormat] = createSignal(caretFormat(EditorState.create()), { equals: sameCaretFormat });
 
@@ -76,6 +80,14 @@ function Harness() {
       blur() {
         editor.contentDOM.blur();
       },
+      endSync(code: string, unsent: boolean) {
+        const known = Object.values(notebooksYjs.errorCode).find((value) => value === code);
+        if (!known) throw new Error(`Unknown sync error: ${code}`);
+        setSyncEnded({ code: known, unsent });
+      },
+      resumeSync() {
+        setSyncEnded(null);
+      },
       async remountToolbar() {
         setToolbarMounted(false);
         // Let the test open the keyboard while no toolbar is listening.
@@ -92,28 +104,41 @@ function Harness() {
   });
 
   return (
-    <LocaleProvider locale="en">
+    <LocaleProvider locale={locale}>
       <div class="flex flex-1 min-h-0 min-w-0 flex-col">
-        <ScrollArea ref={scrollPort} style={{ "scroll-padding-block": fadeScrollPadding }} class="flex-1 min-h-0">
+        <ScrollArea ref={scrollPort} style={{ "scroll-padding-block": fadeScrollPadding }} class="flex-1 min-h-0" data-editor-scroller>
           <div ref={host} />
         </ScrollArea>
         <Show when={toolbarMounted()}>
-          <EditorToolbar
-            connected={true}
-            editorView={view()}
-            notebookId="Book01"
-            noteId="Note01"
-            initialPanelOpen={false}
-            format={format()}
-            onUndo={() => {
-              const editor = view();
-              if (editor) undo(editor);
-            }}
-            onRedo={() => {
-              const editor = view();
-              if (editor) redo(editor);
-            }}
-          />
+          <Show
+            when={syncEnded()}
+            fallback={
+              <EditorToolbar
+                connected={true}
+                editorView={view()}
+                notebookId="Book01"
+                noteId="Note01"
+                initialPanelOpen={false}
+                format={format()}
+                onUndo={() => {
+                  const editor = view();
+                  if (editor) undo(editor);
+                }}
+                onRedo={() => {
+                  const editor = view();
+                  if (editor) redo(editor);
+                }}
+              />
+            }
+          >
+            {(ended) => (
+              <SyncEndedBar
+                ended={ended()}
+                markdown={() => view()?.state.doc.toString() ?? ""}
+                noteHref={() => "/app/notebooks/Book01/Note01"}
+              />
+            )}
+          </Show>
         </Show>
       </div>
     </LocaleProvider>
@@ -127,6 +152,8 @@ export type ToolbarHarness = {
   read: () => { doc: string; anchor: number; head: number; hasFocus: boolean };
   caretRect: () => { top: number; bottom: number } | null;
   blur: () => void;
+  endSync: (code: string, unsent: boolean) => void;
+  resumeSync: () => void;
   remountToolbar: () => Promise<void>;
   settle: () => Promise<void>;
 };

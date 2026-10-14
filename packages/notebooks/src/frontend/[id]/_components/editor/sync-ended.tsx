@@ -1,0 +1,121 @@
+import { EditorState, type Extension } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import { createLoginRedirectUrl } from "@k2b/cloud/shared";
+import { refreshCurrentPath } from "@k2b/ssr/nav";
+import { clipboard } from "@k2b/stdlib/browser";
+import { Button, IconButton, InlineGuidance, prompts, toast, useLocale } from "@k2b/ui";
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import type { YjsProviderError } from "../../../lib/yjs/provider";
+import { notebookWorkspaceMessages } from "../../messages";
+
+export type SyncEnded = { code: YjsProviderError["code"]; unsent: boolean };
+export const signInCodes = new Set<YjsProviderError["code"]>(["SESSION_EXPIRED", "LOGIN_REQUIRED"]);
+
+export function createSyncEnded(opts: { hasUnsentChanges: () => boolean; resume: () => void }) {
+  const [ended, setEnded] = createSignal<SyncEnded | null>(null, {
+    equals: (a, b) => a?.code === b?.code && a?.unsent === b?.unsent,
+  });
+  createEffect(() => {
+    const code = ended()?.code;
+    if (!code || !signInCodes.has(code)) return;
+    const onFocus = () => opts.resume();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") opts.resume();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    onCleanup(() => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+    });
+  });
+  return {
+    ended,
+    end: (error: YjsProviderError): void => {
+      setEnded({ code: error.code, unsent: opts.hasUnsentChanges() });
+    },
+    ready: (): void => {
+      setEnded(null);
+    },
+    extension: (): Extension => (ended() ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
+  };
+}
+
+const iconFor = (code: SyncEnded["code"]) => {
+  if (signInCodes.has(code)) return "ti ti-login-2";
+  if (code === "NOTE_NOT_FOUND") return "ti ti-file-x";
+  if (code === "ACCESS_REVOKED" || code === "ACCESS_DENIED") return "ti ti-shield-off";
+  if (code === "NOTE_LOCKED") return "ti ti-lock";
+  if (code === "STORAGE_EXHAUSTED") return "ti ti-database-off";
+  return "ti ti-alert-triangle";
+};
+
+export function SyncEndedBar(props: { ended: SyncEnded; markdown: () => string; noteHref: () => string }) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
+  let primary!: HTMLButtonElement;
+  const signIn = () => signInCodes.has(props.ended.code);
+  const title = () => {
+    const code = props.ended.code;
+    if (signInCodes.has(code)) return t().sessionExpired;
+    if (code === "NOTE_NOT_FOUND") return t().noteNotFound;
+    if (code === "ACCESS_REVOKED" || code === "ACCESS_DENIED") return t().accessChanged;
+    if (code === "NOTE_LOCKED") return t().noteLocked;
+    if (code === "STORAGE_EXHAUSTED") return t().storageFull;
+    return t().connectionClosed;
+  };
+  const onPrimary = () => {
+    if (signIn()) {
+      window.open(createLoginRedirectUrl(new URL(props.noteHref(), window.location.href).href), "_blank", "noopener");
+    } else {
+      void clipboard.copy(props.markdown()).then(
+        () => toast.success(t().contentCopied),
+        () => toast.error(t().contentCopyFailed),
+      );
+    }
+  };
+  const onReload = async () => {
+    if (
+      props.ended.unsent &&
+      !(await prompts.confirm(t().discardUnsavedConfirm, {
+        title: t().reload,
+        icon: "ti ti-refresh",
+        variant: "danger",
+        confirmText: t().reload,
+      }))
+    )
+      return;
+    refreshCurrentPath();
+  };
+  onMount(() => {
+    // Keep keyboard focus reachable when the editor stops accepting input.
+    if (document.activeElement?.closest(".cm-editor") || document.activeElement === document.body) primary.focus();
+  });
+  return (
+    <div
+      class="notebooks-editor-toolbar mt-1 flex min-w-0 items-center gap-2 px-2 py-2 text-base text-dimmed"
+      data-sync-ended={props.ended.code}
+    >
+      <InlineGuidance
+        role="alert"
+        tone={props.ended.unsent ? "danger" : "warning"}
+        icon={iconFor(props.ended.code)}
+        class="min-w-0 flex-1 items-center"
+      >
+        {/* The save state leads, so a narrow phone row truncates the reason, never whether text is lost. */}
+        <span class="block truncate">
+          {props.ended.unsent ? t().changesNotSaved : t().allChangesSaved}. {title()}
+        </span>
+      </InlineGuidance>
+      <Show when={!signIn()}>
+        <IconButton size="xs" variant="ghost" class="text-dimmed shrink-0" label={t().reload} onClick={() => void onReload()}>
+          <i class="ti ti-refresh" aria-hidden="true" />
+        </IconButton>
+      </Show>
+      <Button ref={primary} size="xs" variant="primary" class="shrink-0" onClick={onPrimary}>
+        <i class={signIn() ? "ti ti-login-2" : "ti ti-copy"} aria-hidden="true" />
+        {signIn() ? t().signInAgain : t().copyText}
+      </Button>
+    </div>
+  );
+}
