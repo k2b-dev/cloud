@@ -1,4 +1,4 @@
-import { expect, jest, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, jest, setSystemTime, spyOn, test } from "bun:test";
 import type { AiConversation } from "@k2b/cloud/ai";
 import { createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
@@ -18,6 +18,11 @@ const load = async () => {
   }
 };
 const { AssistantSidebar, createAssistantLiveHub } = await load();
+
+// The sidebar switches to the browser clock after mount, so the age sections must not depend on the day the suite runs.
+const renderedAt = "2026-10-08T10:00:00.000Z";
+beforeEach(() => setSystemTime(new Date(renderedAt)));
+afterEach(() => setSystemTime());
 
 const conversation = (id: string, title: string, projectId: string | null): AiConversation => ({
   id,
@@ -64,7 +69,7 @@ test("chat clicks select immediately while loading, preserve native modifiers an
     () => (
       <AssistantSidebar
         timeZone="UTC"
-        renderedAt="2026-10-08T10:00:00.000Z"
+        renderedAt={renderedAt}
         conversations={() => [conversation("first", "First", null), conversation("second", "Second", null)]}
         activeConversationId={selected}
         activeProjectId={project()}
@@ -144,7 +149,7 @@ test("footer project popup and mobile group share search and creation; pinned ch
     () => (
       <AssistantSidebar
         timeZone="UTC"
-        renderedAt="2026-10-08T10:00:00.000Z"
+        renderedAt={renderedAt}
         projects={[project]}
         live={live}
         onCreateProject={() => {
@@ -244,7 +249,7 @@ test("Done keeps its row through live updates, confirms success, then fades with
     () => (
       <AssistantSidebar
         timeZone="UTC"
-        renderedAt="2026-10-08T10:00:00.000Z"
+        renderedAt={renderedAt}
         conversations={items}
         live={live}
         onConversationUpdated={(item) => setItems([item])}
@@ -291,7 +296,7 @@ test("failed Done request leaves the chat available and clears its pending feedb
     () => (
       <AssistantSidebar
         timeZone="UTC"
-        renderedAt="2026-10-08T10:00:00.000Z"
+        renderedAt={renderedAt}
         conversations={() => [conversation("fail", "Keep this", null)]}
         live={live}
       />
@@ -321,7 +326,7 @@ test("the server's approvals count renders the row from the first paint", async 
     () => (
       <AssistantSidebar
         timeZone="UTC"
-        renderedAt="2026-10-08T10:00:00.000Z"
+        renderedAt={renderedAt}
         conversations={() => [conversation("first", "First", null)]}
         pendingApprovals={3}
         live={live}
@@ -358,7 +363,7 @@ test("the Approvals row sits above Studio while something waits and changes only
     () => (
       <AssistantSidebar
         timeZone="UTC"
-        renderedAt="2026-10-08T10:00:00.000Z"
+        renderedAt={renderedAt}
         conversations={() => [conversation("first", "First", null), conversation("second", "Second", null)]}
         activeConversationId={selected}
         pendingApprovals={pending()}

@@ -217,11 +217,11 @@ describe("MailComposer signature choice", () => {
       ),
       dom.root,
     );
-    await waitFor(() => Boolean(dom.root.querySelector<HTMLButtonElement>(".mail-composer-signature button:not(:disabled)")));
+    await waitFor(() => Boolean(dom.root.querySelector<HTMLButtonElement>("footer button.mail-compose-action:not(:disabled)")));
   };
-  const trigger = () => dom.root.querySelector<HTMLButtonElement>(".mail-composer-signature button")!;
-  const choose = (label: string) => {
-    const option = Array.from(dom.document.querySelectorAll<HTMLElement>('[role="menuitemradio"], [role="menuitem"]')).find((item) =>
+  const trigger = () => dom.root.querySelector<HTMLButtonElement>("footer button.mail-composer-signature")!;
+  const choose = (label: string, role: "menuitemradio" | "menuitem" = "menuitemradio") => {
+    const option = Array.from(dom.document.querySelectorAll<HTMLElement>(`[role="${role}"]`)).find((item) =>
       item.textContent?.includes(label),
     );
     expect(option).toBeDefined();
@@ -232,9 +232,17 @@ describe("MailComposer signature choice", () => {
     await mount();
     expect(trigger().textContent).toContain("Personal signature");
     expect(trigger().getAttribute("aria-label")).toBe("Signature: Personal signature");
+    const footer = dom.root.querySelector("footer")!;
+    const buttons = Array.from(footer.querySelectorAll("button:not([role])"));
+    const signatureIndex = buttons.indexOf(trigger());
+    expect(buttons[signatureIndex - 1]?.textContent).toContain("Write with AI");
+    expect(buttons[signatureIndex + 1]?.getAttribute("aria-label")).toBe("Message options");
+    expect(dom.root.querySelectorAll(".mail-composer-signature")).toHaveLength(1);
+    expect(footer.contains(dom.root.querySelector(".mail-composer-signature"))).toBe(true);
     trigger().click();
     choose("No signature");
-    expect(trigger().textContent).toContain("No signature");
+    expect(trigger().textContent).toContain("None");
+    expect(trigger().getAttribute("aria-label")).toBe("Signature: None");
     await waitFor(() => saves.length > 0 && previews.some((content) => content.signatureTemplateId === null));
     expect(saves.at(-1)?.signatureTemplateId).toBeNull();
     expect(saves.at(-1)?.body).toBe("Hello");
@@ -242,22 +250,40 @@ describe("MailComposer signature choice", () => {
     expect(dom.root.querySelector(".mail-composer-signature")).not.toBeNull();
   });
 
+  test("marks the sender default as the current radio choice", async () => {
+    await mount("en", { ...initialDraft, signatureTemplateId: "Sign01" });
+    expect(trigger().textContent).toContain("Support signature");
+    trigger().click();
+    const items = Array.from(dom.document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
+    expect(items).toHaveLength(4);
+    for (const item of items) {
+      const isDefault = Boolean(item.textContent?.includes("Support signature"));
+      expect(item.getAttribute("aria-checked")).toBe(String(isDefault));
+      if (isDefault) expect(item.querySelector("small")?.textContent).toBe("Default");
+    }
+  });
+
+  test("omits the signature button when the initial draft has no choice or templates", async () => {
+    await mount("en", { ...initialDraft, signatureTemplateId: null }, []);
+    expect(dom.root.querySelector(".mail-composer-signature")).toBeNull();
+  });
+
   test("a sender menu change uses that sender's personal default", async () => {
     await mount();
     dom.root.querySelector<HTMLButtonElement>('button[aria-label^="Change sender identity"]')!.click();
-    choose("Sales · sales@example.test");
+    choose("Sales · sales@example.test", "menuitem");
     expect(trigger().textContent).toContain("Sales signature");
     await waitFor(() => saves.length > 0);
     expect(saves.at(-1)).toMatchObject({ senderIdentityId: "Send02", signatureTemplateId: "Sign03" });
   });
 
-  test("renders the row and No signature choice in German", async () => {
+  test("renders the button and No signature choice in German", async () => {
     await mount("de");
-    expect(dom.root.querySelector(".mail-composer-signature")?.textContent).toContain("Signatur");
     expect(trigger().getAttribute("aria-label")).toBe("Signatur: Personal signature");
     trigger().click();
     choose("Keine Signatur");
-    expect(trigger().textContent).toContain("Keine Signatur");
+    expect(trigger().textContent).toContain("Keine");
+    expect(trigger().getAttribute("aria-label")).toBe("Signatur: Keine");
   });
 
   test("preserves an unavailable private signature on a shared draft", async () => {
@@ -269,7 +295,7 @@ describe("MailComposer signature choice", () => {
     trigger().click();
     choose("No signature");
     await waitFor(() => saves.length > 0);
-    expect(trigger().textContent).toContain("No signature");
+    expect(trigger().textContent).toContain("None");
     expect(dom.root.querySelector(".mail-composer-signature")).not.toBeNull();
   });
 
@@ -333,7 +359,7 @@ describe("MailComposer signature choice", () => {
       }),
     );
     await mount();
-    await waitFor(() => Boolean(trigger().textContent?.includes("No signature")));
+    await waitFor(() => Boolean(trigger().textContent?.includes("None")));
     await waitFor(() => saves.length > 0);
     expect(saves.at(-1)).toMatchObject({ signatureTemplateId: null, body: "Recovered" });
   });
@@ -358,7 +384,7 @@ describe("MailComposer signature choice", () => {
       }),
     );
     await mount();
-    await waitFor(() => Boolean(trigger().textContent?.includes("No signature")));
+    await waitFor(() => Boolean(trigger().textContent?.includes("None")));
     await waitFor(() => saves.length > 0);
     expect(saves.at(-1)).toMatchObject({ signatureTemplateId: null, body: "Recovered\n\n\u2063Best regards\u2064" });
   });

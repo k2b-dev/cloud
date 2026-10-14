@@ -105,7 +105,7 @@ If another session schedules, sends, or discards the draft, every open composer 
 
 ## Use signatures and snippets {icon="pencil"}
 
-The composer shows **Signature** below your text when a signature is available. New messages, replies, and forwards start with the sender's default signature. A personal default takes precedence over the mailbox default for that sender. Choose another signature or **No signature**. Switching the sender switches to that sender's default.
+The action bar at the bottom of the composer has a **Signature** button between **Write with AI** and **Options** when a signature is available. It shows your current signature. On narrow screens, it shows only the signature icon. New messages, replies, and forwards start with the sender's default signature. A personal default takes precedence over the mailbox default for that sender. Choose another signature or **No signature**. Switching the sender switches to that sender's default.
 
 Signatures stay separate from the editable text. Preview and the sent message show the signature after your text. When you write above a quoted reply or a forwarded message, the signature goes between your text and that message. The copy in the provider's Drafts folder contains only your text, so add a signature yourself if you send the draft from another mail program. When you open an older draft that still has its signature in the text, Mail moves the signature into the signature choice.
 

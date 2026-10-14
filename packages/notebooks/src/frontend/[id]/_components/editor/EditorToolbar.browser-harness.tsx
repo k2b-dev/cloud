@@ -3,9 +3,10 @@ import { forceParsing } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { LocaleProvider, ScrollArea } from "@k2b/ui";
-import { createSignal, onCleanup, onMount } from "solid-js";
+import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { basicExtensions } from "../../../lib/editor/basic";
+import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../../lib/editor/fade-scroll-margins";
 import { listCommandsExtension } from "../../../lib/editor/list-commands";
 import { listsExtension } from "../../../lib/editor/lists";
 import { markdownExtension } from "../../../lib/editor/markdown";
@@ -15,7 +16,9 @@ import { caretFormat, sameCaretFormat } from "./editor-actions";
 
 function Harness() {
   let host!: HTMLDivElement;
+  let scrollPort: HTMLDivElement | undefined;
   const [view, setView] = createSignal<EditorView>();
+  const [toolbarMounted, setToolbarMounted] = createSignal(true);
   // Match NoteEditor: formats follow document and selection transactions, suppressing equal values.
   const [format, setFormat] = createSignal(caretFormat(EditorState.create()), { equals: sameCaretFormat });
 
@@ -34,6 +37,7 @@ function Harness() {
           }),
           listsExtension(),
           noteScrollerTheme,
+          fadeScrollMarginsExtension(() => scrollPort),
         ],
       }),
     });
@@ -65,6 +69,19 @@ function Harness() {
           hasFocus: editor.hasFocus,
         };
       },
+      caretRect(): { top: number; bottom: number } | null {
+        const rect = editor.coordsAtPos(editor.state.selection.main.head);
+        return rect ? { top: rect.top, bottom: rect.bottom } : null;
+      },
+      blur() {
+        editor.contentDOM.blur();
+      },
+      async remountToolbar() {
+        setToolbarMounted(false);
+        // Let the test open the keyboard while no toolbar is listening.
+        await Promise.resolve();
+        setToolbarMounted(true);
+      },
       async settle() {
         await document.fonts.ready;
         // Allow CodeMirror measurements and Solid's DOM updates to finish; never refocus after a toolbar press.
@@ -77,25 +94,27 @@ function Harness() {
   return (
     <LocaleProvider locale="en">
       <div class="flex flex-1 min-h-0 min-w-0 flex-col">
-        <ScrollArea class="flex-1 min-h-0">
+        <ScrollArea ref={scrollPort} style={{ "scroll-padding-block": fadeScrollPadding }} class="flex-1 min-h-0">
           <div ref={host} />
         </ScrollArea>
-        <EditorToolbar
-          connected={true}
-          editorView={view()}
-          notebookId="Book01"
-          noteId="Note01"
-          initialPanelOpen={false}
-          format={format()}
-          onUndo={() => {
-            const editor = view();
-            if (editor) undo(editor);
-          }}
-          onRedo={() => {
-            const editor = view();
-            if (editor) redo(editor);
-          }}
-        />
+        <Show when={toolbarMounted()}>
+          <EditorToolbar
+            connected={true}
+            editorView={view()}
+            notebookId="Book01"
+            noteId="Note01"
+            initialPanelOpen={false}
+            format={format()}
+            onUndo={() => {
+              const editor = view();
+              if (editor) undo(editor);
+            }}
+            onRedo={() => {
+              const editor = view();
+              if (editor) redo(editor);
+            }}
+          />
+        </Show>
       </div>
     </LocaleProvider>
   );
@@ -106,12 +125,20 @@ export type ToolbarHarness = {
   placeCaret: (text: string, offset: number) => void;
   select: (text: string) => void;
   read: () => { doc: string; anchor: number; head: number; hasFocus: boolean };
+  caretRect: () => { top: number; bottom: number } | null;
+  blur: () => void;
+  remountToolbar: () => Promise<void>;
   settle: () => Promise<void>;
 };
 
 declare global {
   interface Window {
     toolbarHarness: ToolbarHarness;
+    keyboard: {
+      set: (values: { offsetTop?: number; height?: number; scale?: number }) => void;
+      show: (top: number, height: number) => void;
+      hide: () => void;
+    };
   }
 }
 
