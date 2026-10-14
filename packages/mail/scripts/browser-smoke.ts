@@ -884,8 +884,8 @@ const runSmoke = async (fixture: Fixture) => {
       "recovered composer returns to the conversation",
     );
     ok("local draft recovery survives a page lifecycle");
-    // The mailbox name equals the subject, and the workspace keeps that name as a hidden page title for assistive technology.
-    await page.locator("[data-mail-reader-heading]").filter({ hasText: fixture.subject }).waitFor();
+    // The mailbox name equals the subject, and since #1003 the workspace renders that name as a hidden page heading before the reader, so a page-wide text match hits it first.
+    await page.locator("[data-mail-reader-heading]").getByText(fixture.subject, { exact: true }).waitFor();
 
     await page.getByRole("button", { name: "Reply, draft available", exact: true }).click();
     await continueDraft(page);
