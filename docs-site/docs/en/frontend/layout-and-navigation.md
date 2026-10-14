@@ -33,7 +33,9 @@ when people navigate.
 | From 1536 px | No header. The app area is a card with 8 px spacing on the app background | Same as above |
 
 Where the app area is a card, the outermost workspace is that card. It has
-rounded corners and the card's frame, also when it is `flat`. A page without a
+rounded corners and the card's frame, also when it is `flat`. Render that
+workspace as the page's own content, not inside a wrapper element, so it fills
+the app area and its frame shows in the card spacing. A page without a
 workspace shows its content on the app background, so scroll the content in a
 `ScrollArea` and do not wrap it in an opaque surface that fills the app area.
 

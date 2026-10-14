@@ -303,6 +303,10 @@ solid-island {
      so short and long pages keep the same width. Full-page surfaces own their
      inner scrolling. */
   html:has(.cloud-app-canvas:not([data-layout-full-page])) { scrollbar-gutter: stable; }
+  /* A page that scrolls its content in a ScrollArea grows with it here, so
+     the area does not scroll and reserves no second gutter beside the
+     document's. From md, `main` bounds its height and it scrolls. */
+  .cloud-app-canvas:not([data-layout-full-page]) .layout-content-main > .k2b-scroll-area { scrollbar-gutter: auto; }
   .cloud-app-canvas > .layout-shell-content { gap: 0; }
   .cloud-app-canvas .layout-header {
     border-radius: 0; border: 0; border-bottom: 1px solid var(--ui-border);
@@ -318,12 +322,16 @@ solid-island {
 
 /* Card: the outermost workspace is the app card, so it gets the card's radius
    and frame also when it is flat. Its sidebar and content round their corners
-   with that radius and clip what they show. A workspace fills `main` and
-   scrolls inside itself, so `main` keeps no scrollbar gutter beside it and the
-   card keeps the shell spacing on every side. For signed-in people, the flush
-   range below removes the frame again; it comes later at equal specificity. */
+   with that radius and clip what they show. A workspace that is `main`'s own
+   child fills `main` and scrolls inside itself, so `main` neither scrolls nor
+   clips: it keeps no scrollbar gutter beside the card, the card keeps the
+   shell spacing on every side, and its frame shadow shows in that spacing. A
+   workspace nested in other page content leaves `main` the page scroller. For
+   signed-in people, the flush range below removes the frame again; it comes
+   later at equal specificity. */
 @media (min-width: 768px) {
-  .cloud-app-canvas .layout-content-main:has(.k2b-app-workspace) {
+  .cloud-app-canvas .layout-content-main:has(> .k2b-app-workspace, > :is(solid-island, solid-client) > .k2b-app-workspace) {
+    overflow: visible;
     scrollbar-gutter: auto;
   }
   .cloud-app-canvas .layout-content-main .k2b-app-workspace[data-flat="true"]:not(.k2b-app-workspace *) {
