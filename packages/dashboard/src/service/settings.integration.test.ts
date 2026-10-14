@@ -27,8 +27,13 @@ dbTest("a person without settings follows the default board; a saved board and i
     expect(await getUserSettings(userId)).toEqual({ exists: false, settings: { shortcuts: [], board: null }, legacy: null });
 
     const board = [
-      { key: "spaces/today", size: "large" as const },
-      { key: "weather/current", size: "small" as const },
+      {
+        id: "spaces/today",
+        key: "spaces/today",
+        size: "large" as const,
+        settings: { space: { type: "spaces.space", id: "home", title: "Home" }, done: true },
+      },
+      { id: "weather/current", key: "weather/current", size: "small" as const },
     ];
     await saveUserSettings(userId, { shortcuts: [shortcut], board });
     // The migration runs on every start and keeps what is stored.
@@ -59,14 +64,14 @@ dbTest("settings from before widgets had sizes become a board once, and never ov
     });
 
     const migrated = [
-      { key: "spaces/today", size: "large" as const },
-      { key: "weather/current", size: "small" as const },
+      { id: "spaces/today", key: "spaces/today", size: "large" as const },
+      { id: "weather/current", key: "weather/current", size: "small" as const },
     ];
     expect(await adoptMigratedBoard(userId, migrated)).toEqual({ shortcuts: [shortcut], board: migrated });
     expect(await getUserSettings(userId)).toEqual({ exists: true, settings: { shortcuts: [shortcut], board: migrated }, legacy: null });
 
     // A second conversion, such as from a page that loaded at the same time, keeps the board that is stored.
-    expect(await adoptMigratedBoard(userId, [{ key: "notebooks/recent", size: "medium" }])).toEqual({
+    expect(await adoptMigratedBoard(userId, [{ id: "notebooks/recent", key: "notebooks/recent", size: "medium" }])).toEqual({
       shortcuts: [shortcut],
       board: migrated,
     });
@@ -82,5 +87,13 @@ dbTest("settings from before widgets had sizes become a board once, and never ov
     await sql`UPDATE dashboard.user_settings SET hidden_widgets = ARRAY['quotes/quote']::text[] WHERE user_id = ${userId}`;
     await saveUserSettings(userId, { shortcuts: [shortcut], board: null });
     expect((await getUserSettings(userId)).legacy).toBeNull();
+  });
+});
+
+dbTest("stored boards from before entry ids read back with the key as id", async () => {
+  await withUser(async (userId) => {
+    const board = [{ key: "weather/current", size: "small" }];
+    await sql`INSERT INTO dashboard.user_settings (user_id, board) VALUES (${userId}, ${JSON.stringify(board)}::jsonb)`;
+    expect((await getUserSettings(userId)).settings.board).toEqual([{ id: "weather/current", key: "weather/current", size: "small" }]);
   });
 });

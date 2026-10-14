@@ -37,3 +37,14 @@ describe("Cloud resource search", () => {
     ).toEqual(["kept"]);
   });
 });
+
+test("resource type filtering composes with reader and excluded references", () => {
+  const other = { ...item("other", true), ref: { type: "other.item", id: "other" } };
+  expect(
+    filterCloudResourceSearchItems([item("kept", true), other, item("hidden", false), item("existing", true)], {
+      resourceType: "demo.item",
+      requireReader: true,
+      excludeRefs: [{ type: "demo.item", id: "existing" }],
+    }).map((entry) => entry.ref.id),
+  ).toEqual(["kept"]);
+});

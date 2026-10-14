@@ -27,8 +27,13 @@ export const cloudResourceSearchUrl = (request: {
 
 export const filterCloudResourceSearchItems = (
   items: readonly SearchItem[],
-  options: { excludeRefs?: readonly CloudResourceRef[]; requireReader?: boolean },
+  options: { excludeRefs?: readonly CloudResourceRef[]; requireReader?: boolean; resourceType?: string },
 ): SearchItem[] => {
   const excluded = new Set((options.excludeRefs ?? []).map(refKey));
-  return items.filter((item) => (!options.requireReader || item.readable) && !excluded.has(refKey(item.ref)));
+  return items.filter(
+    (item) =>
+      (options.resourceType === undefined || item.ref.type === options.resourceType) &&
+      (!options.requireReader || item.readable) &&
+      !excluded.has(refKey(item.ref)),
+  );
 };
