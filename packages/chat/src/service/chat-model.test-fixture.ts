@@ -1,7 +1,10 @@
-import type { SystemMessage } from "./contracts";
+import { type ReadState, type SystemMessage, UNREAD_CAP } from "./contracts";
 import type { rng } from "./rng.test-fixture";
 
-export type Participant = { joinedSeq: number; lastReadSeq: null };
+export type Participant = ReadState & { origin: "direct" | "ondemand" };
+export type ModelUpdate =
+  | { key: "l"; message: ModelMessage }
+  | { key: "p"; principal: string; read: ReadState; unread: number; asOfRev: number };
 export type ModelMessage = {
   id: string;
   seq: number;
@@ -13,6 +16,10 @@ export type ModelMessage = {
 };
 type Permission = "read" | "write" | "admin";
 export type ModelOperation =
+  | { type: "read"; actor: string; seq: number }
+  | { type: "markUnread"; actor: string; message?: number }
+  | { type: "readAll"; actor: string }
+  | { type: "open"; actor: string }
   | { type: "send"; actor: string; clientId: string; body: string }
   | { type: "add"; actor: string; members: string[] }
   | { type: "remove"; actor: string; member: string }
@@ -30,6 +37,8 @@ export class ChatModel {
   purpose: string | null = null;
   members = new Map<string, Permission>();
   parts = new Map<string, Participant>();
+  directory = new Set<string>();
+  outbox: ModelUpdate[] = [];
   msgs: ModelMessage[] = [];
   byClientId = new Map<string, ModelMessage>();
 
@@ -49,17 +58,92 @@ export class ChatModel {
     };
     this.changedRev = this.rev;
     this.msgs.push(message);
+    this.outbox.push({ key: "l", message });
     return message;
   }
   create(actor: string, members: string[]) {
     for (const id of new Set([actor, ...members])) {
       this.members.set(id, id === actor ? "admin" : "write");
-      this.parts.set(id, { joinedSeq: 0, lastReadSeq: null });
+      this.parts.set(id, { joinedSeq: 0, lastReadSeq: null, unreadFromSeq: null, origin: "direct" });
     }
     return this.append(actor, null, { code: "conversation_created", params: {} });
   }
+  canRead(actor: string) {
+    return this.members.has(actor) || this.directory.has(actor);
+  }
+  start(actor: string) {
+    const row = this.parts.get(actor);
+    if (!row) return null;
+    const base = Math.max(row.lastReadSeq ?? 0, row.joinedSeq);
+    return row.unreadFromSeq === null ? base : Math.min(base, row.unreadFromSeq - 1);
+  }
+  unread(actor: string) {
+    const start = this.start(actor);
+    if (start === null || this.seqHead <= start) return 0;
+    return Math.min(UNREAD_CAP, this.msgs.filter((m) => m.seq > start && m.kind === "text" && m.author !== actor).length);
+  }
+  readUpdate(actor: string) {
+    const row = this.parts.get(actor);
+    if (!row) throw new Error("No participant for read update");
+    const { origin: _, ...read } = row;
+    this.outbox.push({ key: "p", principal: actor, read, unread: this.unread(actor), asOfRev: this.rev });
+  }
+  private ensureParticipant(actor: string, joinedSeq = this.seqHead) {
+    let row = this.parts.get(actor);
+    const created = !row;
+    if (!row) {
+      row = { joinedSeq, lastReadSeq: null, unreadFromSeq: null, origin: "ondemand" };
+      this.parts.set(actor, row);
+    }
+    return { row, created };
+  }
+  open(actor: string) {
+    if (!this.canRead(actor)) return;
+    if (this.ensureParticipant(actor).created) this.readUpdate(actor);
+  }
+  read(actor: string, seq: number) {
+    if (!this.canRead(actor)) return;
+    const s = Math.min(seq, this.seqHead);
+    const { row, created } = this.ensureParticipant(actor, s);
+    const before = JSON.stringify(row);
+    row.lastReadSeq = Math.max(row.lastReadSeq ?? s, s);
+    if (row.unreadFromSeq !== null && s >= row.unreadFromSeq) row.unreadFromSeq = s + 1 <= row.lastReadSeq ? s + 1 : null;
+    if (created || before !== JSON.stringify(row)) this.readUpdate(actor);
+  }
+  markUnread(actor: string, message?: number) {
+    if (!this.canRead(actor)) return;
+    const { row, created } = this.ensureParticipant(actor);
+    const from = message ?? this.msgs.findLast((m) => m.kind === "text" && m.author !== actor)?.seq ?? this.seqHead;
+    const base = Math.max(row.lastReadSeq ?? 0, row.joinedSeq);
+    const changed = from >= 1 && from <= base && from !== row.unreadFromSeq;
+    if (changed) row.unreadFromSeq = from;
+    if (created || changed) this.readUpdate(actor);
+  }
+  readAll(actor: string) {
+    if (!this.canRead(actor)) return;
+    const row = this.parts.get(actor);
+    if (!row || (row.unreadFromSeq === null && this.unread(actor) === 0)) return;
+    row.lastReadSeq = Math.max(row.lastReadSeq ?? this.seqHead, this.seqHead);
+    row.unreadFromSeq = null;
+    this.readUpdate(actor);
+  }
   apply(op: ModelOperation): ModelMessage | undefined {
-    const permission = this.members.get(op.actor);
+    this.outbox = [];
+    switch (op.type) {
+      case "read":
+        this.read(op.actor, op.seq);
+        return;
+      case "markUnread":
+        this.markUnread(op.actor, op.message);
+        return;
+      case "readAll":
+        this.readAll(op.actor);
+        return;
+      case "open":
+        this.open(op.actor);
+        return;
+    }
+    const permission = this.members.get(op.actor) ?? (this.directory.has(op.actor) ? "write" : undefined);
     if (!permission) return;
     switch (op.type) {
       case "send": {
@@ -91,7 +175,8 @@ export class ChatModel {
         if (!added.length) return;
         for (const id of added) {
           this.members.set(id, "write");
-          this.parts.set(id, { joinedSeq: this.seqHead, lastReadSeq: null });
+          const { row } = this.ensureParticipant(id);
+          row.origin = "direct";
         }
         return this.append(op.actor, null, { code: "members_added", params: { members: added.map((id) => this.person(id)) } });
       }
@@ -118,7 +203,8 @@ export class ChatModel {
         if (lastManager && !successor) return;
         if (lastManager && successor) this.members.set(successor, "admin");
         this.members.delete(member);
-        this.parts.delete(member);
+        if (this.directory.has(member)) this.parts.get(member)!.origin = "ondemand";
+        else this.parts.delete(member);
         return this.append(
           op.actor,
           null,
@@ -136,7 +222,7 @@ export const randomOperation = (model: ChatModel, random: ReturnType<typeof rng>
   const actor = random.pick([...model.members.keys()])!;
   const member = random.pick(people)!;
   const manager = [...model.members].find(([, permission]) => permission === "admin")![0];
-  switch (random.int(8)) {
+  switch (random.int(12)) {
     case 0:
       return { type: "add", actor: manager, members: [member] };
     case 1:
@@ -155,6 +241,14 @@ export const randomOperation = (model: ChatModel, random: ReturnType<typeof rng>
       };
     case 4:
       return { type: "permission", actor: manager, member, permission: random.pick(["read", "write", "admin"] as const)! };
+    case 8:
+      return { type: "read", actor, seq: 1 + random.int(model.seqHead + 5) };
+    case 9:
+      return { type: "markUnread", actor, ...(random.int(2) ? { message: 1 + random.int(Math.max(1, model.seqHead)) } : {}) };
+    case 10:
+      return { type: "open", actor };
+    case 11:
+      return { type: "readAll", actor };
     case 5: {
       const retry = random.pick([...model.byClientId.keys()]);
       if (retry) {

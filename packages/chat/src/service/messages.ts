@@ -10,6 +10,7 @@ import {
   MessageIdSchema,
   MessageQuerySchema,
   type MessageViewSchema,
+  readStart,
   SEND_CONVERSATION_LIMIT,
   SEND_CONVERSATION_WINDOW_SECONDS,
   SEND_LIMIT,
@@ -19,6 +20,7 @@ import {
 import { conversations } from "./conversations";
 import { chatLive } from "./live";
 import { appendMessage, type MessageRow, messageViews } from "./message-store";
+import { openParticipant } from "./read-state";
 
 const conversationLimit = ratelimit({
   id: "chat.message.send.conversation",
@@ -96,8 +98,10 @@ const list = async (input: Input & { query?: unknown }) => {
     });
   });
 };
-const snapshot = async (input: Input & { messageId?: string }): Promise<Result<Omit<z.infer<typeof ChatSnapshotSchema>, "cursor">>> =>
-  sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
+const snapshot = async (input: Input & { messageId?: string }): Promise<Result<Omit<z.infer<typeof ChatSnapshotSchema>, "cursor">>> => {
+  const opened = await openParticipant(input);
+  if (!opened.ok) return opened;
+  return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;
     const conversation = await conversations.get(input, db);
@@ -107,8 +111,15 @@ const snapshot = async (input: Input & { messageId?: string }): Promise<Result<O
       ? await db<{ short_id: string; seq: bigint | string }[]>`SELECT short_id, seq FROM chat.messages
           WHERE conversation_id = ${allowed.data.id}::uuid AND short_id = ${id.data}`
       : [];
+    const read = conversation.data.read;
+    const start = readStart(read);
+    const position = target
+      ? Number(target.seq)
+      : input.messageId === undefined && conversation.data.unread > 0 && start !== null
+        ? start + 1
+        : null;
     const rows = await db<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid
-      AND ${target ? db`seq < ${Number(target.seq) + MESSAGE_PAGE_SIZE / 2}` : db`true`}
+      AND ${position !== null ? db`seq < ${position + MESSAGE_PAGE_SIZE / 2}` : db`true`}
       ORDER BY seq DESC LIMIT ${MESSAGE_PAGE_SIZE}`;
     rows.reverse();
     return ok({
@@ -121,6 +132,7 @@ const snapshot = async (input: Input & { messageId?: string }): Promise<Result<O
       focus: target?.short_id ?? null,
     });
   });
+};
 const get = async (input: Input & { messageId: string }) => {
   const allowed = await requireConversation({ ...input, required: "read" });
   if (!allowed.ok) return allowed;

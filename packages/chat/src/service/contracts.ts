@@ -2,6 +2,10 @@ import { z } from "zod";
 
 export const MEMBER_PAGE_SIZE = 100;
 export const CONVERSATION_PAGE_SIZE = 50;
+export const UNREAD_CAP = 100;
+export const READ_ALL_CONFIRM_FROM = 10;
+// One sidebar page bounds each transaction; the client repeats while more remain.
+export const READ_ALL_BATCH = CONVERSATION_PAGE_SIZE;
 export const MAX_GROUP_MEMBERS = 500;
 export const PEOPLE_PAGE_SIZE = 20;
 export const MAX_PARTICIPANTS = 5_000;
@@ -107,7 +111,32 @@ export const PeoplePageSchema = z.object({
 export const MemberQuerySchema = z.object({ cursor: z.uuid().optional() });
 export const MessageIdSchema = z.string().regex(/^[0-9A-Za-z]{10}$/);
 const AuthorSchema = z.object({ type: z.enum(["user", "service_account"]), id: z.uuid(), name: z.string() });
+export const ReadStateSchema = z.object({
+  lastReadSeq: z.number().int().min(0).nullable(),
+  unreadFromSeq: z.number().int().min(1).nullable(),
+  joinedSeq: z.number().int().min(0),
+});
+export type ReadState = z.infer<typeof ReadStateSchema>;
+/** Messages after this seq can be unread; null without a participant row, where nothing is unread yet. */
+export const readStart = (read: ReadState | null): number | null =>
+  read === null
+    ? null
+    : Math.min(Math.max(read.lastReadSeq ?? 0, read.joinedSeq), read.unreadFromSeq === null ? Infinity : read.unreadFromSeq - 1);
+export const ReadUpdateSchema = ReadStateSchema.extend({
+  conversationId: ShortIdSchema,
+  unread: z.number().int().min(0).max(UNREAD_CAP),
+  asOfRev: z.number().int().min(0),
+});
+export const ReadSchema = z.strictObject({ seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER) });
+export const MarkUnreadSchema = z.strictObject({ message: MessageIdSchema.optional() });
+export const ReadAllSchema = z.strictObject({ confirmed: z.boolean().default(false) });
+export const ReadAllOutcomeSchema = z.discriminatedUnion("outcome", [
+  z.object({ outcome: z.literal("confirm") }),
+  z.object({ outcome: z.literal("done"), marked: z.number().int(), more: z.boolean() }),
+]);
 export const ConversationSchema = z.object({
+  unread: z.number().int().min(0).max(UNREAD_CAP),
+  read: ReadStateSchema.nullable(),
   id: ShortIdSchema,
   name: z.string().nullable(),
   icon: z.string().nullable(),
@@ -202,6 +231,7 @@ export const ChangesPageSchema = z.object({
   messages: z.array(MessageViewSchema),
 });
 export const ChatLiveEventSchema = z.discriminatedUnion("type", [
+  ReadUpdateSchema.extend({ type: z.literal("read") }),
   z.object({ type: z.literal("membership"), conversationId: ShortIdSchema }),
   z.object({ type: z.literal("message"), message: MessageSchema }),
   MessageSchema.pick({ conversationId: true, id: true, seq: true, rev: true, kind: true, author: true, createdAt: true }).extend({

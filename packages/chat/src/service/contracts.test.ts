@@ -156,3 +156,24 @@ test("former entries preserve the whole localized label within a derived title",
   expect(deriveTitle(null, [former], "de")).toBe("Ehemaliges Konto");
   expect(deriveTitle(null, [{ displayName: "Lea Example", givenName: "Lea" }, former], "en")).toBe("Lea, Former account");
 });
+
+test("personal read contracts reject unsafe seqs, unknown input fields and unbounded unread", async () => {
+  const { ReadSchema, MarkUnreadSchema, ReadAllSchema, ReadStateSchema, ReadUpdateSchema, ReadAllOutcomeSchema } = await import(
+    "./contracts"
+  );
+  for (const seq of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) expect(ReadSchema.safeParse({ seq }).success).toBeFalse();
+  expect(ReadSchema.parse({ seq: Number.MAX_SAFE_INTEGER })).toEqual({ seq: Number.MAX_SAFE_INTEGER });
+  expect(ReadSchema.safeParse({ seq: 1, lastReadAt: "now" }).success).toBeFalse();
+  expect(MarkUnreadSchema.parse({})).toEqual({});
+  expect(MarkUnreadSchema.safeParse({ message: "bad" }).success).toBeFalse();
+  expect(ReadAllSchema.parse({})).toEqual({ confirmed: false });
+  expect(ReadAllSchema.safeParse({ extra: true }).success).toBeFalse();
+  const state = { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 };
+  expect(ReadStateSchema.parse(state)).toEqual(state);
+  expect(ReadStateSchema.safeParse({ ...state, unreadFromSeq: 0 }).success).toBeFalse();
+  const update = { ...state, conversationId: "abcdef", unread: 100, asOfRev: 1 };
+  expect(ReadUpdateSchema.safeParse(update).success).toBeTrue();
+  expect(ReadUpdateSchema.safeParse({ ...update, unread: 101 }).success).toBeFalse();
+  expect(ReadUpdateSchema.safeParse({ ...update, asOfRev: undefined }).success).toBeFalse();
+  expect(ReadAllOutcomeSchema.parse({ outcome: "done", marked: 50, more: true })).toMatchObject({ marked: 50 });
+});
