@@ -362,7 +362,7 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
 
     /** Never returns the code: the person types what the phone shows. */
     inspectPairing: async (actor: PwaWebActor, id: string, hold?: { ms: number; signal?: AbortSignal }) => {
-      const read = async () => {
+      const read = async (validateInitiator = false) => {
         const [p] = await sql<(PairingRow & { current_epoch: string })[]>`
           SELECT p.*, u.auth_epoch AS current_epoch FROM auth.pwa_pairings p JOIN auth.users u ON u.id = p.user_id
           WHERE p.id = ${id}::uuid AND p.user_id = ${actor.userId}::uuid AND p.initiator_sid = ${actor.sid}::uuid
@@ -370,6 +370,7 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
         if (!p) return fail("NOT_FOUND", 404);
         if (passed(p.expires_at) || p.current_epoch !== p.auth_epoch || (p.state === "pending" && passed(p.claim_until)))
           return fail("EXPIRED", 410);
+        if (validateInitiator && !(await initiatorValid(sql, p))) return fail("EXPIRED", 410);
         return {
           state: p.state,
           claimUntil: iso(p.claim_until),
@@ -379,7 +380,9 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
         };
       };
       if (!hold) return read();
-      // Listen before the first read so a claim committed in between still wakes this request.
+      // Listen before the first read so a claim committed in between usually wakes this request.
+      // live() has no subscription-ready barrier, so the hint is best effort; the deadline re-read is the guarantee.
+      // The read after the hold also checks the initiating web session, which may have ended meanwhile.
       const waiting = new AbortController();
       const ended = new Promise((resolve) => waiting.signal.addEventListener("abort", resolve, { once: true }));
       const stop = () => waiting.abort();
@@ -392,7 +395,7 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
         if (first.state !== "pending") return first;
         timer = setTimeout(stop, Math.min(hold.ms, new Date(first.claimUntil).getTime() - Date.now()));
         await Promise.race([hint, ended]);
-        return await read();
+        return await read(true);
       } finally {
         clearTimeout(timer);
         hold.signal?.removeEventListener("abort", stop);

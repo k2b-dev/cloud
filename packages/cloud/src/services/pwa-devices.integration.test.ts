@@ -20,7 +20,7 @@ import { invalidateIdentityRuntimeConfig } from "./identity/runtime-config";
 import { notifications } from "./notifications";
 import { registerNotificationDefinitions } from "./notifications/catalog";
 import { toPgUuidArray } from "./postgres";
-import { createPwaDeviceService, type PwaDevicePairedNotice, pwaDevices } from "./pwa-devices";
+import { createPwaDeviceService, type PwaDevicePairedNotice, pwaDevices, syncPairingClaimHints } from "./pwa-devices";
 import { session } from "./session";
 import { requireRecentWebSession } from "./session/recent";
 import { createTestAppSession, createTestSession } from "./session/session.test-fixture";
@@ -258,6 +258,8 @@ suite("mobile app pairing and app sessions", () => {
   });
 
   test("a pending read is held until the phone claims the link, and for one poll interval at most", async () => {
+    // First use provisions the topic alongside the publisher; a claim during provisioning would only be seen at the deadline.
+    await syncPairingClaimHints.wait(crypto.randomUUID(), AbortSignal.abort());
     const owner = await person();
     const started = await startPairing(owner);
     const path = `${PWA_API_PATH}/pairings/${started.id}`;
@@ -311,6 +313,28 @@ suite("mobile app pairing and app sessions", () => {
     expect(elapsed).toBeLessThan(1000);
     expect(stillPending.state).toBe("pending");
     expect(waitingSignal?.aborted).toBe(true);
+  });
+
+  test("a held pairing read expires without device details when the initiating web session ends", async () => {
+    await syncPairingClaimHints.wait(crypto.randomUUID(), AbortSignal.abort());
+    const owner = await person();
+    const started = await startPairing(owner);
+    const path = `${PWA_API_PATH}/pairings/${started.id}`;
+    let answered = false;
+    const pending = call(owner.web, "GET", path).then((response) => {
+      answered = true;
+      return response;
+    });
+    await Bun.sleep(100);
+    expect(answered).toBe(false);
+    await session.revoke(owner.token);
+    expect((await claim(new Jar(), started.secret)).status).toBe(200);
+    const response = await pending;
+    expect(response.status).toBe(410);
+    const body = await response.text();
+    expect(JSON.parse(body)).toMatchObject({ code: "EXPIRED" });
+    expect(body).not.toContain("iPhone");
+    expect(body).not.toContain('"device"');
   });
 
   test("without the mobile app nothing pairs or renews, while removal and sign-out still work", async () => {

@@ -134,9 +134,9 @@ phones with their platform and last use, and marks the phone you are using.
    app**. On Android, install it from Chrome. In Samsung Internet, the page
    offers **Open in Chrome** instead, because Android may block an app
    installed from there as built for an older Android version.
-3. As soon as the phone scans the code or opens the link, the dialog moves to
-   code entry on its own. The app shows a six-digit code. Enter it in the
-   dialog and choose **Pair**. The third wrong code ends the pairing; start
+3. As soon as the app scans the code or receives the pasted link, the dialog
+   moves to code entry on its own. The app shows a six-digit code. Enter it in
+   the dialog and choose **Pair**. The third wrong code ends the pairing; start
    again for a new one.
 4. The app finishes on its own, and the phone appears in the list.
 
