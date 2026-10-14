@@ -1275,6 +1275,13 @@ test("areas resolve by name through cld, ambiguity reports 409 with every candid
         issues: [],
         editor: null,
       });
+    if (url.pathname.endsWith("/directories/batch")) {
+      const { paths } = (await request.json()) as { paths: string[] };
+      return Response.json({
+        base,
+        results: paths.map((path) => ({ path, state: "created", entry: { ...entry, path, directory: true } })),
+      });
+    }
     const body = (await request.json()) as { path: string };
     if (body.path === "a") return Response.json({ code: "path_conflict", message: "path_conflict" }, { status: 409 });
     return Response.json({ base, entry: { ...entry, path: body.path, directory: true } });
@@ -1297,11 +1304,7 @@ test("areas resolve by name through cld, ambiguity reports 409 with every candid
   const made = await run(["--json", "filesv2", "mkdir", "-p", "me:/b/c"], { server: cloud.url.href });
   expect(made.exitCode, made.stderr).toBe(0);
   expect(JSON.parse(made.stdout).entry.path).toBe("b/c");
-  expect(seen).toEqual([
-    "GET /api/filesv2/bases",
-    `POST /api/filesv2/bases/${base.id}/directories`,
-    `POST /api/filesv2/bases/${base.id}/directories`,
-  ]);
+  expect(seen).toEqual(["GET /api/filesv2/bases", `POST /api/filesv2/bases/${base.id}/directories/batch`]);
   const conflict = await run(["filesv2", "mkdir", "me:/a"], { server: cloud.url.href });
   expect(conflict.exitCode).toBe(1);
   expect(conflict.stderr).toContain("path_conflict");
