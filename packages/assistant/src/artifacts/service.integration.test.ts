@@ -109,7 +109,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await sql`CREATE TABLE ai.tool_approval_preferences(id uuid DEFAULT gen_random_uuid(),actor_user_id uuid,tool_name text,approval_scope text,conversation_id uuid REFERENCES ai.conversations(id) ON DELETE CASCADE,created_at timestamptz DEFAULT now(),last_used_at timestamptz,expires_at timestamptz)`;
     await sql`CREATE SCHEMA auth`;
     await sql`CREATE TYPE auth.permission_level AS ENUM ('none','read','write','admin')`;
-    await sql`CREATE TABLE auth.users(id uuid PRIMARY KEY, display_name text DEFAULT 'Test', uid text DEFAULT 'test', avatar_hash text)`;
+    await sql`CREATE TABLE auth.users(id uuid PRIMARY KEY, display_name text DEFAULT 'Test', uid text DEFAULT 'test', avatar_hash text, auth_epoch bigint NOT NULL DEFAULT 0)`;
     await sql`CREATE TABLE auth.groups(id uuid PRIMARY KEY,name text,provider text)`;
     await sql`CREATE TABLE auth.user_groups_v2(user_id uuid,group_id uuid)`;
     await sql`CREATE TABLE auth.group_groups_v2(parent_group_id uuid,child_group_id uuid)`;
