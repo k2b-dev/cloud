@@ -139,7 +139,7 @@ describe("MinimalLayout footer in a browser", () => {
           "Privacy",
           "Terms",
           "Language: English",
-          "Appearance: Automatic",
+          "Appearance: Automatic. Switches to Light.",
         ]);
         for (const control of controls) {
           const name = `${context} ${control.name}`;
@@ -424,7 +424,7 @@ describe("standalone page load in a browser", () => {
       for (const locale of ["en", "de"] as const) {
         const context = `${width} ${locale}`;
         const { controls } = await firstFrameAndLoad({ ...viewports[0], width }, locale);
-        // The language code and the theme icon; the full names stay the accessible labels and fill the menu.
+        // The language code and the theme icon; the accessible names keep the full language and appearance.
         expect(
           controls.map((control) => [control.name, control.text]),
           context,
@@ -435,14 +435,14 @@ describe("standalone page load in a browser", () => {
                 ["Privacy", "Privacy"],
                 ["Terms", "Terms"],
                 ["Language: English", "EN"],
-                ["Appearance: Automatic", ""],
+                ["Appearance: Automatic. Switches to Light.", ""],
               ]
             : [
                 ["Impressum", "Impressum"],
                 ["Datenschutz", "Datenschutz"],
                 ["Nutzungsbedingungen", "Nutzungsbedingungen"],
                 ["Sprache: Deutsch", "DE"],
-                ["Darstellung: Automatisch", ""],
+                ["Darstellung: Automatisch. Wechselt zu Hell.", ""],
               ],
         );
         for (const control of controls) {

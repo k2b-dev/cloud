@@ -21,7 +21,7 @@ import MinimalLayoutPreferences from "./MinimalLayoutPreferences.island";
 import { MobileProfileActions } from "./MobileProfileActions";
 const params = new URLSearchParams(location.search);
 render(() => <LocaleProvider locale={params.get("locale") ?? "en"}>
-  {params.get("surface") === "profile" ? <ProfilePreferences name="Test user" initialTheme="system" /> :
+  {params.get("surface") === "profile" || params.get("surface") === "panel" ? <ProfilePreferences name="Test user" initialTheme="system" /> :
    params.get("surface") === "minimal" ? <footer class="minimal-layout-footer"><MinimalLayoutPreferences initialTheme="system" /></footer> :
    <MobileProfileActions profile={{ name: "Test user", theme: "system" }} beforeSelect={async () => true} />}
 </LocaleProvider>, document.getElementById("app"));
@@ -62,19 +62,38 @@ afterAll(async () => {
 });
 
 const settle = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+// Standalone profile at both widths: expose its hydrated trigger even on a fine pointer, without the rail.
+const dropdownOnly = `.layout-profile-preferences > .layout-profile-preferences__dropdown { display: inline-flex; }
+.layout-profile-preferences__link, .layout-profile-preferences__panel { display: none; }`;
 const surfaces = {
   profile: {
     control: '.k2b-dropdown__menu [role="menuitem"]',
     neighbor: '.k2b-dropdown__menu [role="menuitem"]:nth-child(2)',
     container: ".k2b-dropdown__menu",
+    css: dropdownOnly,
+  },
+  // The server-rendered panel a fine pointer opens beside the rail, kept open below room for it to grow upward.
+  panel: {
+    control: ".layout-profile-preferences__panel .menu-item",
+    neighbor: ".layout-profile-preferences__panel .menu-item:nth-child(2)",
+    container: ".layout-profile-preferences__panel",
+    css: `#app { padding-top: 320px; }
+.layout-profile-preferences__panel { display: flex; opacity: 1; visibility: visible; pointer-events: auto; }
+.layout-profile-preferences > .layout-profile-preferences__dropdown { display: none; }`,
   },
   // The footer keeps language first, so its adjacent control is the preceding sibling.
   minimal: {
     control: ".cloud-theme-cycle",
     neighbor: ".minimal-layout-footer__preferences > .k2b-dropdown",
     container: ".minimal-layout-footer",
+    css: dropdownOnly,
   },
-  mobile: { control: ".cloud-theme-cycle", neighbor: '.cloud-mobile-profile > a[href="/me"]', container: ".cloud-mobile-profile" },
+  mobile: {
+    control: ".cloud-theme-cycle",
+    neighbor: '.cloud-mobile-profile > a[href="/me"]',
+    container: ".cloud-mobile-profile",
+    css: dropdownOnly,
+  },
 };
 
 for (const viewport of [
@@ -91,12 +110,10 @@ for (const viewport of [
         const errors: string[] = [];
         page.on("pageerror", (error) => errors.push(error.message));
         try {
-          // Standalone profile at both widths: expose its hydrated trigger even on a fine pointer, without the rail.
           const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}
 *, *::before, *::after { animation: none !important; transition: none !important; }
 #app { padding: 16px; }
-.layout-profile-preferences > .layout-profile-preferences__dropdown { display: inline-flex; }
-.layout-profile-preferences__link, .layout-profile-preferences__panel { display: none; }
+${selectors.css}
 </style></head><body class="k2b-ui"><main id="app"></main></body></html>`;
           await page.route("http://localhost/theme-cycle**", (route) => route.fulfill({ contentType: "text/html", body: html }));
           await page.goto(`http://localhost/theme-cycle?locale=${locale}&surface=${surface}`);
