@@ -19,12 +19,14 @@ import {
 import { listIdentityJwks } from "../../../packages/cloud/src/services/identity/key-ring";
 import { getIdentityRuntimeConfig } from "../../../packages/cloud/src/services/identity/runtime-config";
 import { authenticateWorkloadCredential } from "../../../packages/cloud/src/services/identity/workload-auth";
-import { toPgUuidArray } from "../../../packages/cloud/src/services/postgres";
+import { verifyAccessToken } from "../../../packages/cloud/src/services/oauth-tokens";
+import { toPgTextArray, toPgUuidArray } from "../../../packages/cloud/src/services/postgres";
 import { serviceAccountCredentials } from "../../../packages/cloud/src/services/service-account-credentials";
 import { createTestAppSession, createTestSession } from "../../../packages/cloud/src/services/session/session.test-fixture";
 import { loadCurrentUser } from "../../../packages/cloud/src/services/session/user";
 import * as settings from "../../../packages/cloud/src/services/settings";
 import oauthAdminRoutes from "../../../packages/oauth/src/api";
+import type { OAuthScope } from "../../../packages/oauth/src/contracts";
 import oauthRoutes from "../../../packages/oauth/src/oauth";
 import * as clients from "../../../packages/oauth/src/service/clients";
 import * as refreshTokens from "../../../packages/oauth/src/service/refresh-tokens";
@@ -42,6 +44,13 @@ const expected = {
     regenerateClientSecret: 200,
   },
   "cld OAuth token of an admin": {
+    createServiceAccount: 201,
+    saveSecuritySetting: 204,
+    createLoginToken: 200,
+    regenerateClientSecret: 200,
+  },
+  // These routes require no OAuth scope today.
+  "read-only cld OAuth token of an admin": {
     createServiceAccount: 201,
     saveSecuritySetting: 204,
     createLoginToken: 200,
@@ -172,11 +181,14 @@ suite("Admin credential matrix", () => {
 
     const cli = await clients.getByClientId({ clientId: "cloud-cli" });
     if (!cli) throw new Error("Seeded cloud-cli client is missing");
-    const mintCldToken = async (userId: string) => {
+    const mintCldToken = async (
+      userId: string,
+      scopes: OAuthScope[] = ["openid", "profile", "email", "offline_access", "read", "write"],
+    ) => {
       const refresh = await refreshTokens.create({
         userId,
         client: cli,
-        scopes: ["openid", "profile", "email", "offline_access", "read", "write"],
+        scopes,
       });
       const exchanged = await oauthRoutes.request("/oauth/token", {
         method: "POST",
@@ -194,7 +206,13 @@ suite("Admin credential matrix", () => {
       return body.access_token;
     };
     credentials.set("cld OAuth token of an admin", bearer(await mintCldToken(adminId)));
-    credentials.set("cld OAuth token of an expired admin", bearer(await mintCldToken(expiredAdminId)));
+    const readOnlyCldToken = await mintCldToken(adminId, ["openid", "read"]);
+    const scope = decodeJwt(readOnlyCldToken).scope;
+    if (typeof scope !== "string") throw new Error("CLI access token scope is not a string");
+    expect(scope.split(/\s+/)).not.toContain("write");
+    credentials.set("read-only cld OAuth token of an admin", bearer(readOnlyCldToken));
+    const expiredCldToken = await mintCldToken(expiredAdminId);
+    credentials.set("cld OAuth token of an expired admin", bearer(expiredCldToken));
 
     for (const access of ["full", "models"] as const) {
       const created = await serviceAccountCredentials.createUserApiToken({ user: admin, access, name: `${prefix}-${access}` });
@@ -216,6 +234,9 @@ suite("Admin credential matrix", () => {
     if (!expiredKey.ok) throw new Error(expiredKey.error.message);
     expect((await serviceAccountCredentials.authenticateApiToken(expiredKey.data.token))?.delegatedUser?.id).toBe(expiredAdminId);
     credentials.set("personal API key of an expired admin", bearer(expiredKey.data.token));
+    const verified = await verifyAccessToken(expiredCldToken);
+    expect(verified?.kind).toBe("user");
+    expect(verified?.kind === "user" ? verified.user.id : null).toBe(expiredAdminId);
     await sql`UPDATE auth.users SET account_expires = now() - interval '1 day' WHERE id = ${expiredAdminId}::uuid`;
     await sql`
       INSERT INTO auth.service_accounts (id, name, kind, app_id, resource_type, resource_id, created_by)
@@ -321,23 +342,57 @@ suite("Admin credential matrix", () => {
   }, 30_000);
 
   afterAll(async () => {
-    for (const token of loginTokens) await redis.del(`email-login:${token}`);
-    await sql.begin(async (tx) => {
-      const accounts = await tx<{ id: string }[]>`
-        SELECT id FROM auth.service_accounts
-        WHERE created_by = ANY(${userIds}::uuid[]) OR delegated_user_id = ANY(${userIds}::uuid[]) OR name LIKE ${`${prefix}%`}
-      `;
-      const accountIds = toPgUuidArray(accounts.map((account) => account.id));
-      await tx`DELETE FROM oauth.refresh_token_families WHERE user_id = ANY(${userIds}::uuid[])`;
-      await tx`DELETE FROM oauth.clients WHERE created_by = ANY(${userIds}::uuid[])`;
-      await tx`DELETE FROM auth.service_account_credentials WHERE service_account_id = ANY(${accountIds}::uuid[])`;
-      await tx`DELETE FROM auth.access WHERE service_account_id = ANY(${accountIds}::uuid[]) OR user_id = ANY(${userIds}::uuid[])`;
-      await tx`DELETE FROM auth.service_accounts WHERE id = ANY(${accountIds}::uuid[])`;
-      await tx`DELETE FROM auth.session_families WHERE user_id = ANY(${userIds}::uuid[])`;
-      await tx`DELETE FROM auth.pwa_devices WHERE user_id = ANY(${userIds}::uuid[])`;
-      await tx`DELETE FROM auth.users WHERE id = ANY(${userIds}::uuid[])`;
-    });
-    if (settingExisted === false) await settings.remove(settingKey);
+    const errors: unknown[] = [];
+    try {
+      for (const token of loginTokens) await redis.del(`email-login:${token}`);
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      await sql.begin(async (tx) => {
+        const accounts = await tx<{ id: string }[]>`
+          SELECT id FROM auth.service_accounts
+          WHERE created_by = ANY(${userIds}::uuid[]) OR delegated_user_id = ANY(${userIds}::uuid[]) OR name LIKE ${`${prefix}%`}
+        `;
+        const accountIds = toPgUuidArray(accounts.map((account) => account.id));
+        const keys = await tx<{ id: string }[]>`
+          SELECT id FROM auth.service_account_credentials WHERE service_account_id = ANY(${accountIds}::uuid[])
+        `;
+        const oauthClients = await tx<{ id: string }[]>`SELECT id FROM oauth.clients WHERE created_by = ANY(${userIds}::uuid[])`;
+        const targetIds = toPgTextArray([
+          adminId,
+          expiredAdminId,
+          targetId,
+          ...accounts.map((account) => account.id),
+          ...keys.map((key) => key.id),
+          ...oauthClients.map((client) => client.id),
+        ]);
+        await tx`
+          DELETE FROM audit.events
+          WHERE actor_user_id = ANY(${userIds}::uuid[]) OR target_id = ANY(${targetIds}::text[]) OR target_label LIKE ${`${prefix}%`}
+        `;
+        await tx`
+          DELETE FROM logging.entries
+          WHERE message = 'Admin created local login token' AND metadata->>'targetUserId' = ${targetId}
+        `;
+        await tx`DELETE FROM oauth.refresh_token_families WHERE user_id = ANY(${userIds}::uuid[])`;
+        await tx`DELETE FROM oauth.clients WHERE created_by = ANY(${userIds}::uuid[])`;
+        await tx`DELETE FROM auth.service_account_credentials WHERE service_account_id = ANY(${accountIds}::uuid[])`;
+        await tx`DELETE FROM auth.access WHERE service_account_id = ANY(${accountIds}::uuid[]) OR user_id = ANY(${userIds}::uuid[])`;
+        await tx`DELETE FROM auth.service_accounts WHERE id = ANY(${accountIds}::uuid[])`;
+        await tx`DELETE FROM auth.session_families WHERE user_id = ANY(${userIds}::uuid[])`;
+        await tx`DELETE FROM auth.pwa_devices WHERE user_id = ANY(${userIds}::uuid[])`;
+        await tx`DELETE FROM auth.users WHERE id = ANY(${userIds}::uuid[])`;
+      });
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      if (settingExisted === false) await settings.remove(settingKey);
+    } catch (error) {
+      errors.push(error);
+    }
+    if (errors.length) throw errors[0];
   }, 30_000);
 
   for (const [label, statuses] of Object.entries(expected)) {
