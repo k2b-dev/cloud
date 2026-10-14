@@ -40,12 +40,35 @@ class FakeWebSocket {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 3;
+  static instances: FakeWebSocket[] = [];
   readyState = 0;
-  onopen = null;
-  onmessage = null;
+  onopen: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
   onclose = null;
   onerror = null;
-  send() {}
+  conversationSubscription: string | undefined;
+  constructor() {
+    FakeWebSocket.instances.push(this);
+  }
+  send(data: string) {
+    const frame: unknown = JSON.parse(data);
+    if (
+      frame &&
+      typeof frame === "object" &&
+      "channel" in frame &&
+      frame.channel === "conversation" &&
+      "id" in frame &&
+      typeof frame.id === "string"
+    )
+      this.conversationSubscription = frame.id;
+  }
+  open() {
+    this.readyState = FakeWebSocket.OPEN;
+    this.onopen?.(new Event("open"));
+  }
+  message(data: unknown) {
+    this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(data) }));
+  }
   close() {
     this.readyState = 3;
   }
@@ -79,12 +102,17 @@ describe("ChatWorkspace interactions", () => {
   const consoleErrors: unknown[][] = [];
   const posted: { clientId: string; body: string }[] = [];
   const snapshots = new Map<string, ReturnType<typeof ChatSnapshotSchema.parse>>();
+  const pendingSnapshots = new Map<string, Promise<Response>>();
+  let membersRequests = 0;
   let answer: (response: Response) => void;
   beforeEach(() => {
     dom = createDomTestHarness();
     delegateEvents(["click", "input", "keydown"], dom.document);
     posted.length = 0;
     snapshots.clear();
+    pendingSnapshots.clear();
+    membersRequests = 0;
+    FakeWebSocket.instances = [];
     consoleErrors.length = 0;
     console.error = (...args: unknown[]) => {
       consoleErrors.push(args);
@@ -98,10 +126,16 @@ describe("ChatWorkspace interactions", () => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
         const snapshot = /^\/api\/chat\/conversations\/([^/]+)\/snapshot$/.exec(url.pathname);
         if (snapshot) {
+          const pending = pendingSnapshots.get(snapshot[1]!);
+          if (pending) return pending;
           const body = snapshots.get(snapshot[1]!);
           return body ? Response.json(ChatSnapshotSchema.parse(body)) : Response.json({}, { status: 404 });
         }
-        if (url.pathname === "/api/chat/conversations/Chat01/members") return Response.json({ items: [], managers: 1, nextCursor: null });
+        if (url.pathname === "/api/chat/conversations/Chat01/members") {
+          membersRequests++;
+          return Response.json({ items: [], managers: 1, nextCursor: null });
+        }
+        if (url.pathname === "/api/chat/conversations/Chat01") return Response.json({ ...conversation, permission: "admin" });
         if (url.pathname === "/api/chat/conversations/Chat01/messages" && init?.method === "POST") {
           posted.push(SendMessageSchema.parse(JSON.parse(String(init.body))));
           return new Promise<Response>((resolve) => {
@@ -132,13 +166,20 @@ describe("ChatWorkspace interactions", () => {
     panel: "info" | null = null,
     locale = "en",
     permission: typeof conversation.permission = "write",
+    initial: { url?: string; page?: NonNullable<ChatWorkspaceProps["open"]>["page"]; focus?: string | null } = {},
   ) => {
     const { ChatWorkspace, LocaleProvider } = modules!;
-    dom.window.history.replaceState(null, "", open ? `/app/chat/c/Chat01${panel ? "?panel=info" : ""}` : "/app/chat");
+    dom.window.history.replaceState(null, "", initial.url ?? (open ? `/app/chat/c/Chat01${panel ? "?panel=info" : ""}` : "/app/chat"));
     const props: ChatWorkspaceProps = {
       cursor: "c.0",
       sidebar: { items: sidebar, nextCursor: null },
-      open: open ? { conversation: { ...conversation, permission }, page: { items: [], seqHead: 0, rev: 0 }, focus: null } : null,
+      open: open
+        ? {
+            conversation: { ...conversation, permission },
+            page: initial.page ?? { items: [], seqHead: 0, rev: 0 },
+            focus: initial.focus ?? null,
+          }
+        : null,
       chatId: open ? conversation.id : null,
       guest: false,
       panel,
@@ -358,6 +399,129 @@ describe("ChatWorkspace interactions", () => {
     ).toBe("true");
     expect(consoleErrors).toEqual([]);
   });
+  test("returning to info supersedes a pending open of another chat", async () => {
+    const other = { ...conversation, id: "Chat02", title: "Other chat" };
+    const pending = Promise.withResolvers<Response>();
+    pendingSnapshots.set(other.id, pending.promise);
+    snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0 }, focus: null });
+    await mount(true, [conversation, other], "info");
+    // A panel-only return must differ from the route still showing while the next chat loads.
+    dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
+    await settle();
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat02"]')!.click();
+    await settle();
+    expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("true");
+    dom.window.history.pushState(null, "", "/app/chat/c/Chat01?panel=info");
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await settle();
+    pending.resolve(Response.json({ cursor: "c.0", conversation: other, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+    await settle();
+    expect(dom.root.querySelector(".chat-conversation__header")?.textContent).toContain("Secret board");
+    expect(dom.window.location.pathname).toBe("/app/chat/c/Chat01");
+    expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
+    expect(consoleErrors).toEqual([]);
+  });
+  test("a superseded open does not clear busy while the next open is pending", async () => {
+    const second = { ...conversation, id: "Chat02", title: "Second chat" };
+    const third = { ...conversation, id: "Chat03", title: "Third chat" };
+    const pendingSecond = Promise.withResolvers<Response>();
+    const pendingThird = Promise.withResolvers<Response>();
+    pendingSnapshots.set(second.id, pendingSecond.promise);
+    pendingSnapshots.set(third.id, pendingThird.promise);
+    await mount(true, [conversation, second, third]);
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat02"]')!.click();
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat03"]')!.click();
+    pendingSecond.resolve(Response.json({ cursor: "c.0", conversation: second, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+    await settle();
+    expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("true");
+    pendingThird.resolve(Response.json({ cursor: "c.0", conversation: third, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+    await settle();
+    expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("false");
+    expect(dom.window.location.pathname).toBe("/app/chat/c/Chat03");
+    expect(consoleErrors).toEqual([]);
+  });
+  test("info reloads members for a live membership change by someone else, but not the viewer", async () => {
+    const otherId = "22222222-2222-4222-8222-222222222222";
+    const membership = (seq: number, authorId: string) =>
+      MessageViewSchema.parse({
+        ...message(seq),
+        kind: "system",
+        author: { type: "user", id: authorId, name: "Member" },
+        body: null,
+        system: { code: "member_left", params: {} },
+        systemText: "Member left the chat.",
+      });
+    await mount(true, [conversation], "info", "en", "admin", {
+      page: { items: [membership(1, otherId)], seqHead: 1, rev: 1 },
+    });
+    // The initial history only establishes the sequence already seen.
+    expect(membersRequests).toBe(1);
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    expect(socket.conversationSubscription).toBeDefined();
+    socket.message({
+      t: "event",
+      id: socket.conversationSubscription,
+      cursor: "c.2",
+      data: { type: "message", message: membership(2, otherId) },
+    });
+    await settle();
+    expect(dom.root.querySelectorAll(".k2b-message-system-row")).toHaveLength(2);
+    expect(membersRequests).toBe(2);
+    socket.message({
+      t: "event",
+      id: socket.conversationSubscription,
+      cursor: "c.3",
+      data: { type: "message", message: membership(3, viewerId) },
+    });
+    await settle();
+    expect(dom.root.querySelectorAll(".k2b-message-system-row")).toHaveLength(3);
+    expect(membersRequests).toBe(2);
+    expect(consoleErrors).toEqual([]);
+  });
+  test("the way up from info returns to the list in one action", async () => {
+    snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0 }, focus: null });
+    await mount(false);
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat01"]')!.click();
+    await settle();
+    expect(dom.window.history.state).toEqual({ chatFromList: true });
+    dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
+    await settle();
+    expect(dom.window.location.search).toBe("?panel=info");
+    const up = new dom.window.CustomEvent("cloud:page-up", { detail: { href: "/app/chat" }, cancelable: true });
+    dom.window.dispatchEvent(up);
+    await settle();
+    expect(up.defaultPrevented).toBe(true);
+    expect(dom.window.location.pathname).toBe("/app/chat");
+    expect(dom.root.querySelector(".chat-conversation__header")).toBeNull();
+    expect(consoleErrors).toEqual([]);
+  });
+  for (const initialPanel of [null, "info"] as const) {
+    test(`info preserves the linked message window when opened from ${initialPanel ?? "the chat"}`, async () => {
+      const linked = message(1, "Linked message");
+      const path = `/app/chat/c/Chat01/m/${linked.id}`;
+      await mount(true, [conversation], initialPanel, "en", "write", {
+        url: `${path}${initialPanel ? "?panel=info" : ""}`,
+        page: { items: [linked], seqHead: 1, rev: 1 },
+        focus: linked.id,
+      });
+      const infoLink = () =>
+        dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!;
+      if (initialPanel === null) {
+        expect(infoLink().getAttribute("href")).toBe(`${path}?panel=info`);
+        infoLink().click();
+        await settle();
+      }
+      expect(dom.window.location.pathname + dom.window.location.search).toBe(`${path}?panel=info`);
+      expect(infoLink().getAttribute("href")).toBe(path);
+      infoLink().click();
+      await settle();
+      expect(dom.window.location.pathname + dom.window.location.search).toBe(path);
+      expect(dom.root.querySelector(".k2b-message-row")?.textContent).toContain("Linked message");
+      expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(true);
+      expect(consoleErrors).toEqual([]);
+    });
+  }
   for (const locale of ["en", "de"]) {
     const t = chatMessages.resolve([locale]).t;
     for (const permission of ["admin", "write", "read"] as const) {

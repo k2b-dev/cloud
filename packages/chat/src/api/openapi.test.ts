@@ -96,3 +96,23 @@ test("member list documents name search and opaque keyset cursors", async () => 
   expect(parameters).toContainEqual({ name: "q", in: "query" });
   expect(parameters).toContainEqual({ name: "cursor", in: "query" });
 });
+
+test("member removal and leave require the group access outcome", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  for (const [path, method] of [
+    ["/api/chat/conversations/{conversation}/members/{accessId}", "delete"],
+    ["/api/chat/conversations/{conversation}/leave", "post"],
+  ] as const) {
+    const response = z
+      .object({
+        content: z.object({
+          "application/json": z.object({
+            schema: z.object({ required: z.array(z.string()), properties: z.record(z.string(), z.unknown()) }),
+          }),
+        }),
+      })
+      .parse(spec.paths[path]?.[method]?.responses["200"]);
+    expect(response.content["application/json"].schema.required).toEqual(["success", "keptThroughGroup"]);
+    expect(response.content["application/json"].schema.properties.keptThroughGroup).toMatchObject({ type: "boolean" });
+  }
+});

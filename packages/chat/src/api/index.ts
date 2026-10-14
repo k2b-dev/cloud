@@ -33,6 +33,7 @@ import {
   MemberParamSchema,
   MemberPreviewSchema,
   MemberQuerySchema,
+  MemberRemovalSchema,
   MessagePageSchema,
   MessageParamSchema,
   MessageQuerySchema,
@@ -339,7 +340,7 @@ const app = new Hono<AuthContext>()
   )
   .delete(
     "/conversations/:conversation/members/:accessId",
-    description("Remove a person or group member", SuccessSchema),
+    description("Remove a person or group member", MemberRemovalSchema),
     validator("param", MemberParamSchema, invalidInput),
     async (c) =>
       respond(
@@ -353,7 +354,7 @@ const app = new Hono<AuthContext>()
   )
   .post(
     "/conversations/:conversation/leave",
-    description("Leave a chat, handing over management when needed", SuccessSchema),
+    description("Leave a chat, handing over management when needed", MemberRemovalSchema),
     validator("param", ConversationParamSchema, invalidInput),
     validator("json", LeaveSchema, invalidInput),
     async (c) =>

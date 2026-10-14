@@ -107,10 +107,10 @@ export function AddPeopleDialog(props: AddPeopleProps & { close: (chatId?: strin
   /** The current entries without the viewer, plus the chosen ones, when they fit one new chat. */
   const freshMembers = createMemo<MemberPrincipal[] | null>(() => {
     const page = current.error ? undefined : current();
-    if (!page || page.nextCursor !== null) return null;
+    if (!page || page.nextCursor !== null || (props.guest && page.items.some((entry) => entry.principal.type === "group"))) return null;
     const members = new Map<string, MemberPrincipal>();
     for (const entry of page.items)
-      if (entry.principal.type !== "user" || entry.principal.userId !== props.viewerId)
+      if (!entry.deactivated && (entry.principal.type !== "user" || entry.principal.userId !== props.viewerId))
         members.set(principalKey(entry.principal), entry.principal);
     for (const member of chosen()) members.set(principalKey(member.principal), member.principal);
     return members.size <= MEMBER_PAGE_SIZE ? [...members.values()] : null;

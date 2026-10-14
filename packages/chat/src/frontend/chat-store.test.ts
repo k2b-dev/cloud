@@ -75,8 +75,8 @@ const memberApi = {
   previewMembers: async () => ({ joining: 1, throughGroups: 0, memberCount: 3 }),
   addMembers: async () => ({ added: 1 }),
   updateMember: async () => ({ success: true as const }),
-  removeMember: async () => ({ success: true as const }),
-  leave: async () => ({ success: true as const }),
+  removeMember: async () => ({ success: true as const, keptThroughGroup: false }),
+  leave: async () => ({ success: true as const, keptThroughGroup: false }),
   people: async () => ({ items: [], nextCursor: null }),
 };
 const fixture = (overrides: Partial<ChatStoreApi> = {}) => {
@@ -967,11 +967,11 @@ test("member methods forward arguments, and the reader's own changes refresh tha
     },
     removeMember: async (id, accessId) => {
       calls.push(["remove", id, accessId]);
-      return { success: true };
+      return { success: true, keptThroughGroup: false };
     },
     leave: async (id, successor) => {
       calls.push(["leave", id, successor]);
-      return { success: true };
+      return { success: true, keptThroughGroup: false };
     },
     people: async (search, cursor) => {
       calls.push(["people", search, cursor]);
@@ -1019,12 +1019,81 @@ test("member methods forward arguments, and the reader's own changes refresh tha
   store.dispose();
 });
 
+for (const operation of ["create", "updateDetails", "addMembers", "removeMember", "leave"] as const)
+  test(`${operation} awaits the follow-up GET but preserves mutation success when it fails`, async () => {
+    const original = globalThis.fetch;
+    const refresh = deferred<Response>();
+    const started = deferred<boolean>();
+    const calls: string[] = [];
+    const result =
+      operation === "create"
+        ? { outcome: "created" as const, conversation }
+        : operation === "updateDetails"
+          ? conversation
+          : operation === "addMembers"
+            ? { added: 1 }
+            : { success: true as const, keptThroughGroup: true };
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), "http://localhost");
+        const method = init?.method ?? "GET";
+        calls.push(`${method} ${url.pathname}`);
+        if (method === "GET") {
+          started.resolve(true);
+          return refresh.promise;
+        }
+        return Response.json(result, { status: operation === "create" ? 201 : 200 });
+      },
+      { preconnect: original.preconnect },
+    );
+    const { store } = fixture(createChatStoreApi());
+    try {
+      let settled = false;
+      const mutation =
+        operation === "create"
+          ? store.create({ members: [] })
+          : operation === "updateDetails"
+            ? store.updateDetails(conversation.id, { name: "Updated" })
+            : operation === "addMembers"
+              ? store.addMembers(conversation.id, [])
+              : operation === "removeMember"
+                ? store.removeMember(conversation.id, "access")
+                : store.leave(conversation.id);
+      const pending = mutation.then((value) => {
+        settled = true;
+        return value;
+      });
+      await started.promise;
+      expect(settled).toBe(false);
+      refresh.resolve(Response.json({ message: "Temporary failure" }, { status: 503 }));
+      expect(await pending).toEqual(result);
+      expect(calls).toEqual([
+        operation === "create"
+          ? "POST /api/chat/conversations"
+          : operation === "updateDetails"
+            ? `PATCH /api/chat/conversations/${conversation.id}`
+            : operation === "addMembers"
+              ? `POST /api/chat/conversations/${conversation.id}/members`
+              : operation === "removeMember"
+                ? `DELETE /api/chat/conversations/${conversation.id}/members/access`
+                : `POST /api/chat/conversations/${conversation.id}/leave`,
+        `GET /api/chat/conversations/${conversation.id}`,
+      ]);
+      expect(store.openConversation?.status).toBe("live");
+      expect(store.sidebar).toEqual([conversation]);
+    } finally {
+      refresh.resolve(Response.json({ message: "Temporary failure" }, { status: 503 }));
+      store.dispose();
+      globalThis.fetch = original;
+    }
+  });
+
 test("leaving the open chat reaches no-access on the refresh 404, without a live event", async () => {
   let left = false;
   const { store, connection } = fixture({
     leave: async () => {
       left = true;
-      return { success: true };
+      return { success: true, keptThroughGroup: false };
     },
     conversations: async () => ({ items: [], nextCursor: null }),
     conversation: async () => (left ? null : conversation),
@@ -1069,7 +1138,7 @@ test("typed member requests use their routes, payloads and schemas, including bo
         return Response.json(method === "GET" ? { items: [], nextCursor: null, managers: 1 } : { added: 1 });
       if (url.pathname.endsWith("/people")) return Response.json({ items: [], nextCursor: null });
       if (url.pathname.endsWith(conversation.id)) return Response.json(conversation);
-      return Response.json({ success: true });
+      return Response.json({ success: true, keptThroughGroup: true });
     },
     { preconnect: original.preconnect },
   );
@@ -1084,8 +1153,8 @@ test("typed member requests use their routes, payloads and schemas, including bo
     await api.previewMembers(conversation.id, members);
     await api.addMembers(conversation.id, members);
     await api.updateMember(conversation.id, "access", "admin");
-    await api.removeMember(conversation.id, "access");
-    await api.leave(conversation.id, "successor");
+    expect(await api.removeMember(conversation.id, "access")).toEqual({ success: true, keptThroughGroup: true });
+    expect(await api.leave(conversation.id, "successor")).toEqual({ success: true, keptThroughGroup: true });
     await api.people("co member", "opaque");
     expect(calls.map(({ path, method, body }) => ({ path, method, body }))).toEqual([
       { path: "/api/chat/conversations", method: "POST", body: { members, name: "New", allowDuplicate: true } },

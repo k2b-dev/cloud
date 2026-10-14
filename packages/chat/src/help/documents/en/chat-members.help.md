@@ -25,8 +25,9 @@ For 21 or more people joining through groups, the dialog suggests **Discoverable
 A discoverable chat lets people find it and join when they want to.
 
 If the chat has no name, you can give it one in the dialog.
-You can choose **Start a new chat without the history** instead. The new chat has the current members and the new ones.
-This choice is available for a chat with up to 100 members.
+You can choose **Start a new chat without the history** instead. The new chat has the current members and the new ones,
+without deactivated accounts. This choice is available for a chat with up to 100 members.
+As a guest, you do not get this choice when the chat includes a group.
 
 ## Use Chat info {icon="info-circle"}
 
@@ -37,12 +38,15 @@ With **Write** access, you can change the name, icon, and purpose. Open the acti
 A message in the chat records the change.
 
 People with **Manage** access can change a person's access or remove a member.
+A removed person who also belongs through a group keeps access through that group.
 The last person with **Manage** keeps that access and cannot be removed.
 
 ## Leave a chat {icon="logout"}
 
 Leaving ends your access to the whole chat history. Your messages stay in the chat.
-If you belong through a group, archive the chat instead of leaving.
+If you also belong through a group, you keep access through that group.
+If you belong only through a group, archive the chat instead of leaving.
+You cannot leave a chat with no other direct member.
 
 :::steps
 1. Open **Chat info**.

@@ -25,8 +25,9 @@ Wenn 21 oder mehr Personen über Gruppen dazukommen, schlägt der Dialog **Auffi
 Einen auffindbaren Chat finden Personen selbst und treten bei, wenn sie möchten.
 
 Wenn der Chat keinen Namen hat, kannst du ihm im Dialog einen geben.
-Du kannst stattdessen **Neuen Chat ohne bisherigen Verlauf starten** wählen. Der neue Chat hat die bisherigen und die neuen Mitglieder.
-Diese Auswahl gibt es für einen Chat mit bis zu 100 Mitgliedern.
+Du kannst stattdessen **Neuen Chat ohne bisherigen Verlauf starten** wählen. Der neue Chat hat die bisherigen und die neuen Mitglieder,
+ohne deaktivierte Konten. Diese Auswahl gibt es für einen Chat mit bis zu 100 Mitgliedern.
+Als Gast bekommst du diese Auswahl nicht, wenn der Chat eine Gruppe enthält.
 
 ## Die Chat-Info nutzen {icon="info-circle"}
 
@@ -37,12 +38,15 @@ Mit Zugriff **Schreiben** kannst du Namen, Symbol und Zweck ändern. Öffne das 
 Eine Nachricht im Chat hält die Änderung fest.
 
 Mit Zugriff **Verwalten** kannst du den Zugriff einer Person ändern oder ein Mitglied entfernen.
+Gehört eine entfernte Person auch über eine Gruppe dazu, behält sie den Zugriff über diese Gruppe.
 Die letzte Person mit Zugriff **Verwalten** behält diesen Zugriff und lässt sich nicht entfernen.
 
 ## Einen Chat verlassen {icon="logout"}
 
 Wenn du den Chat verlässt, endet dein Zugriff auf den ganzen Verlauf. Deine Nachrichten bleiben im Chat.
-Wenn du über eine Gruppe dazugehörst, archiviere den Chat, statt ihn zu verlassen.
+Wenn du auch über eine Gruppe dazugehörst, behältst du den Zugriff über diese Gruppe.
+Wenn du nur über eine Gruppe dazugehörst, archiviere den Chat, statt ihn zu verlassen.
+Einen Chat ohne anderes direktes Mitglied kannst du nicht verlassen.
 
 :::steps
 1. Öffne **Chat-Info**.

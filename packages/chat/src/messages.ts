@@ -57,11 +57,15 @@ export const chatMessages = i18n.define({
       largeGroup: "More than 500 people",
       permissionFor: ({ name }: { name: string }) => `Permission for ${name}`,
       removeMemberTitle: ({ name }: { name: string }) => `Remove ${name}?`,
-      removeMemberDescription: "They lose access to the chat and its whole history. Their messages stay.",
+      removeMemberDescription:
+        "They lose access to the chat and its whole history, unless they are also in it through a group. Their messages stay.",
+      removedKeptThroughGroup: ({ name }: { name: string }) => `${name} stays in the chat through a group.`,
       remove: "Remove",
       leaveChat: "Leave chat",
       leaveChatTitle: "Leave this chat?",
-      leaveChatDescription: "You lose access to the chat and its whole history. Your messages stay in the chat.",
+      leaveChatDescription:
+        "You lose access to the chat and its whole history, unless you are also in it through a group. Your messages stay in the chat.",
+      leftKeptThroughGroup: "You left the chat, but you are still in it through a group.",
       chooseSuccessor: "You are the last member who can manage this chat. Choose who manages it after you.",
       successor: "Successor",
 
@@ -97,7 +101,7 @@ export const chatMessages = i18n.define({
       groupUnavailable: "A selected group does not exist.",
       groupTooLarge: "A group with more than 500 people cannot be a chat member. Use “Discoverable by” for larger groups.",
       guestCoMembers: "Guests can add only people they already share a chat with.",
-      guestGroups: "Guests cannot add groups to chats.",
+      fullAccountGroups: "Only full accounts can add groups to chats.",
       groupMemberLeave: "You belong to this chat through a group, so you cannot leave it. Archive the chat instead.",
       noDirectEntry: "You are not a direct member of this chat.",
       formerAccount: "Former account",
@@ -220,11 +224,15 @@ export const chatMessages = i18n.define({
       largeGroup: "Mehr als 500 Personen",
       permissionFor: ({ name }: { name: string }) => `Berechtigung für ${name}`,
       removeMemberTitle: ({ name }: { name: string }) => `${name} entfernen?`,
-      removeMemberDescription: "Die Person verliert den Zugriff auf den Chat und seinen ganzen Verlauf. Ihre Nachrichten bleiben.",
+      removeMemberDescription:
+        "Die Person verliert den Zugriff auf den Chat und seinen ganzen Verlauf, außer sie ist auch über eine Gruppe darin. Ihre Nachrichten bleiben.",
+      removedKeptThroughGroup: ({ name }: { name: string }) => `${name} bleibt über eine Gruppe im Chat.`,
       remove: "Entfernen",
       leaveChat: "Chat verlassen",
       leaveChatTitle: "Diesen Chat verlassen?",
-      leaveChatDescription: "Du verlierst den Zugriff auf den Chat und seinen ganzen Verlauf. Deine Nachrichten bleiben im Chat.",
+      leaveChatDescription:
+        "Du verlierst den Zugriff auf den Chat und seinen ganzen Verlauf, außer du bist auch über eine Gruppe darin. Deine Nachrichten bleiben im Chat.",
+      leftKeptThroughGroup: "Du hast den Chat verlassen, bist aber über eine Gruppe weiter darin.",
       chooseSuccessor: "Du bist das letzte Mitglied, das diesen Chat verwalten kann. Wähle, wer ihn nach dir verwaltet.",
       successor: "Nachfolge",
 
@@ -261,7 +269,7 @@ export const chatMessages = i18n.define({
       groupUnavailable: "Eine ausgewählte Gruppe existiert nicht.",
       groupTooLarge: "Eine Gruppe mit mehr als 500 Personen kann kein Chat-Mitglied sein. Nutze für größere Gruppen „Auffindbar für“.",
       guestCoMembers: "Gäste können nur Personen hinzufügen, mit denen sie schon einen Chat teilen.",
-      guestGroups: "Gäste können keine Gruppen zu Chats hinzufügen.",
+      fullAccountGroups: "Nur vollständige Konten können Gruppen zu Chats hinzufügen.",
       groupMemberLeave:
         "Du gehörst über eine Gruppe zu diesem Chat und kannst ihn deshalb nicht verlassen. Archiviere den Chat stattdessen.",
       noDirectEntry: "Du bist kein direktes Mitglied dieses Chats.",

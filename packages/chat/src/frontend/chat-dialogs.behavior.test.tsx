@@ -268,6 +268,178 @@ describe("chat dialogs and info", () => {
       expect(dom.root.textContent).toContain(t.joining({ count: 1 }));
       expect(dom.root.textContent).toContain(t.quietChat);
     });
+    test(`starting without history excludes deactivated people and the viewer in ${locale}`, async () => {
+      const former = MemberSchema.parse({
+        ...nora,
+        accessId: "44444444-4444-4444-8444-444444444444",
+        principal: { type: "user", userId: "44444444-4444-4444-8444-444444444444" },
+        deactivated: true,
+      });
+      const existing = MemberSchema.parse({
+        ...nora,
+        accessId: "55555555-5555-4555-8555-555555555555",
+        principal: { type: "user", userId: "55555555-5555-4555-8555-555555555555" },
+        displayName: "Kai",
+      });
+      const viewer = MemberSchema.parse({
+        ...nora,
+        accessId: viewerId,
+        principal: { type: "user", userId: viewerId },
+        permission: "admin",
+      });
+      const create = mock<ChatDialogStore["create"]>(async () => ({ outcome: "created", conversation }));
+      await mount(locale, () =>
+        createComponent(modules!.AddPeopleDialog, {
+          store: store({
+            create,
+            members: async () => ({ items: [viewer, existing, former], managers: 1, nextCursor: null }),
+            previewMembers: async () => ({ joining: 1, memberCount: 3, throughGroups: 0 }),
+          }),
+          conversation: { ...conversation, name: null },
+          guest: true,
+          viewerId,
+          locale,
+          close: () => {},
+        }),
+      );
+      await chooseNora();
+      await Bun.sleep(270);
+      expect(button(t.startWithoutHistory).disabled).toBe(false);
+      button(t.startWithoutHistory).click();
+      await settle();
+      expect(create.mock.calls).toEqual([[{ members: [existing.principal, nora.principal], allowDuplicate: true }]]);
+    });
+    test(`a guest cannot start without history when the current entries include a group in ${locale}`, async () => {
+      const group = MemberSchema.parse({
+        ...nora,
+        principal: { type: "group", groupId: "55555555-5555-4555-8555-555555555555" },
+        displayName: "Team",
+        groupSize: 2,
+      });
+      const create = mock<ChatDialogStore["create"]>(unexpected);
+      await mount(locale, () =>
+        createComponent(modules!.AddPeopleDialog, {
+          store: store({
+            create,
+            members: async () => ({ items: [group], managers: 1, nextCursor: null }),
+            previewMembers: async () => ({ joining: 1, memberCount: 3, throughGroups: 2 }),
+          }),
+          conversation: { ...conversation, name: null },
+          guest: true,
+          viewerId,
+          locale,
+          close: () => {},
+        }),
+      );
+      await chooseNora();
+      await Bun.sleep(270);
+      expect(button(t.add).disabled).toBe(false);
+      expect(dom.root.textContent).not.toContain(t.startWithoutHistory);
+      expect(create).not.toHaveBeenCalled();
+    });
+    for (const dialog of ["add", "new"] as const) {
+      test(`Enter in the ${dialog} dialog's guest picker does not submit in ${locale}`, async () => {
+        const create = mock<ChatDialogStore["create"]>(async () => ({ outcome: "created", conversation }));
+        const addMembers = mock<ChatDialogStore["addMembers"]>(async () => ({ added: 1 }));
+        const fake = store({
+          create,
+          addMembers,
+          previewMembers: async () => ({ joining: 1, memberCount: 3, throughGroups: 0 }),
+          people: async () => ({
+            items: [
+              { id: personId, displayName: "Nora" },
+              { id: "55555555-5555-4555-8555-555555555555", displayName: "Kai" },
+            ],
+            nextCursor: null,
+          }),
+        });
+        await mount(locale, () =>
+          dialog === "add"
+            ? createComponent(modules!.AddPeopleDialog, { store: fake, conversation, guest: true, viewerId, locale, close: () => {} })
+            : createComponent(modules!.NewChatDialog, {
+                store: fake,
+                guest: true,
+                viewerId,
+                locale,
+                dateConfig: { timeZone: "UTC" },
+                close: () => {},
+              }),
+        );
+        if (dialog === "add") {
+          await chooseNora();
+          await Bun.sleep(270);
+          expect(button(t.add).disabled).toBe(false);
+        }
+        const field = input('[role="combobox"]');
+        type(field, "Kai");
+        await Bun.sleep(180);
+        expect(field.getAttribute("aria-expanded")).toBe("true");
+        expect(dom.document.querySelector('[role="option"]')).not.toBeNull();
+        const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+        field.dispatchEvent(enter);
+        // happy-dom does not implicitly submit forms on Enter.
+        if (!enter.defaultPrevented) dom.root.querySelector("form")!.requestSubmit();
+        await settle();
+        expect(addMembers).not.toHaveBeenCalled();
+        expect(create).not.toHaveBeenCalled();
+        expect(enter.defaultPrevented).toBe(true);
+      });
+    }
+    test(`a manager's failed member read stays in the leave dialog and can be retried in ${locale}`, async () => {
+      const members = mock<ChatDialogStore["members"]>(async () => {
+        if (members.mock.calls.length === 1) throw new Error("Members unavailable");
+        return { items: [nora], managers: 2, nextCursor: null };
+      });
+      await mount(locale, () =>
+        createComponent(modules!.LeaveChatDialog, {
+          store: store({ members }),
+          conversation,
+          viewerId,
+          locale,
+          close: () => {},
+        }),
+      );
+      expect(dom.root.querySelector('[role="alert"]')?.textContent).toContain(t.membersFailed);
+      expect(button(t.leaveChat).disabled).toBe(true);
+      button(t.retry).click();
+      await settle();
+      expect(members.mock.calls).toEqual([
+        [conversation.id, {}],
+        [conversation.id, {}],
+      ]);
+      expect(dom.root.textContent).not.toContain(t.membersFailed);
+      expect(button(t.leaveChat).disabled).toBe(false);
+    });
+    test(`the only direct person cannot leave a chat held through a group in ${locale}`, async () => {
+      const viewer = MemberSchema.parse({
+        ...nora,
+        accessId: viewerId,
+        principal: { type: "user", userId: viewerId },
+        permission: "admin",
+      });
+      const group = MemberSchema.parse({
+        ...nora,
+        principal: { type: "group", groupId: "55555555-5555-4555-8555-555555555555" },
+        displayName: "Team",
+        groupSize: 2,
+      });
+      const leave = mock<ChatDialogStore["leave"]>(unexpected);
+      await mount(locale, () =>
+        createComponent(modules!.LeaveChatDialog, {
+          store: store({ members: async () => ({ items: [viewer, group], managers: 1, nextCursor: null }), leave }),
+          conversation,
+          viewerId,
+          locale,
+          close: () => {},
+        }),
+      );
+      expect(dom.root.textContent).toContain(t.cannotLeaveAlone);
+      expect(dom.root.textContent).not.toContain(t.chooseSuccessor);
+      expect(dom.root.querySelector('[role="combobox"]')).toBeNull();
+      expect(button(t.leaveChat).disabled).toBe(true);
+      button(t.leaveChat).click();
+      expect(leave).not.toHaveBeenCalled();
+    });
     for (const permission of ["admin", "write", "read"] as const) {
       test(`info offers Add people only to managers: ${permission} in ${locale}`, async () => {
         const onAddPeople = mock<() => void>();
@@ -295,7 +467,7 @@ describe("chat dialogs and info", () => {
     for (const managers of [1, 2]) {
       test(`leaving with ${managers} managers ${managers === 1 ? "requires a successor" : "needs no successor"} in ${locale}`, async () => {
         const members = mock<ChatDialogStore["members"]>(async () => ({ items: [nora], managers, nextCursor: null }));
-        const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true }));
+        const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false }));
         const close = mock<(left?: boolean) => void>();
         await mount(locale, () =>
           createComponent(modules!.LeaveChatDialog, {
@@ -325,7 +497,7 @@ describe("chat dialogs and info", () => {
     }
     test(`a writer leaves without loading members in ${locale}`, async () => {
       const members = mock<ChatDialogStore["members"]>(unexpected);
-      const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true }));
+      const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false }));
       await mount(locale, () =>
         createComponent(modules!.LeaveChatDialog, {
           store: store({ members, leave }),

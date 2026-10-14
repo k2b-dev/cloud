@@ -80,6 +80,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [chat, setChat] = createSignal<OpenChat | null>(props.open ? initialChat(props.open) : null);
   const [liveStopped, setLiveStopped] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
+  let opensInFlight = 0;
   // The outbox changes its entries in place; this counts its changes so the history reads them again.
   const [sendsVersion, setSendsVersion] = createSignal(0);
   // The list keeps its order while messages arrive elsewhere; it sorts again on the reader's own actions.
@@ -109,6 +110,38 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const current = chat();
     return current && current.status !== "no-access" && current.conversation ? current : null;
   };
+  let membersChatId: string | null = null;
+  let membersSeq = 0;
+  const membershipCodes = new Set([
+    "members_added",
+    "groups_added",
+    "group_removed",
+    "manager_assigned",
+    "member_removed",
+    "member_left",
+    "permission_changed",
+  ]);
+  createEffect(() => {
+    const current = openChat();
+    const id = current?.id ?? null;
+    const latest = current?.messages.at(-1)?.seq ?? 0;
+    if (membersChatId !== id) {
+      membersChatId = id;
+      membersSeq = latest;
+      return;
+    }
+    // Only new changes by others reload the panel; initial and older history already belong to its snapshot.
+    const messages = current?.messages ?? [];
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index]!;
+      if (message.seq <= membersSeq) break;
+      if (message.kind === "system" && message.system && membershipCodes.has(message.system.code) && message.author.id !== props.viewerId) {
+        setMembersRevision((revision) => revision + 1);
+        break;
+      }
+    }
+    membersSeq = Math.max(membersSeq, latest);
+  });
   const conversation = () => openChat()?.conversation ?? null;
   const noAccess = () => route().chatId !== null && openChat() === null;
   const breadcrumbs = (title?: string) => [
@@ -307,7 +340,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   /** Loads the chat's snapshot before the address changes; only an applied open may change it. */
   const open = async (next: Route): Promise<"applied" | "superseded" | "failed"> => {
     if (!store) return "failed";
-    if (route().chatId === next.chatId && route().messageId === next.messageId && route().panel !== next.panel) {
+    if (opensInFlight === 0 && route().chatId === next.chatId && route().messageId === next.messageId && route().panel !== next.panel) {
       setRoute(next);
       setPanel(openChat() ? next.panel : null);
       return "applied";
@@ -320,7 +353,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       });
       return "applied";
     }
-    setBusy(true);
+    opensInFlight++;
+    setBusy(opensInFlight > 0);
     try {
       const result = await store.openChat(next.chatId, next.messageId ?? undefined);
       if (result.status === "superseded") return "superseded";
@@ -334,7 +368,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       toast.error(t().openFailed);
       return "failed";
     } finally {
-      setBusy(false);
+      opensInFlight--;
+      setBusy(opensInFlight > 0);
     }
   };
   const openFromList = async (id: string, navigation: LinkNavigateEvent) => {
@@ -343,24 +378,27 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       navigation.push(undefined, { scroll: "preserve", state: { chatFromList: fromList } });
   };
 
-  // A list opened before the chat is the previous history entry, so going back to it does not stack entries.
-  const openedFromList = () => {
+  // Info adds one entry above a chat opened from the list.
+  const listDepth = () => {
     const state: unknown = history.state;
-    return Boolean(state && typeof state === "object" && "chatFromList" in state && state.chatFromList === true);
+    if (!state || typeof state !== "object" || !("chatFromList" in state) || state.chatFromList !== true) return 0;
+    return "chatInfoFromChat" in state && state.chatInfoFromChat === true ? 2 : 1;
   };
   const backToList = async (navigation: LinkNavigateEvent) => {
-    if (openedFromList()) history.back();
+    const depth = listDepth();
+    if (depth > 0) history.go(-depth);
     else if ((await open({ chatId: null, messageId: null, panel: null })) === "applied") navigation.push(undefined, { scroll: "preserve" });
   };
 
   const openInfo = (navigation?: LinkNavigateEvent) => {
     const id = route().chatId;
     if (!id || !openChat() || panel() === "info") return;
+    const messageId = route().messageId;
     setPanel("info");
-    setRoute({ chatId: id, messageId: null, panel: "info" });
-    const options = { scroll: "preserve" as const, state: { chatFromList: openedFromList(), chatInfoFromChat: true } };
-    if (navigation) navigation.push(panelHref(id, "info"), options);
-    else navigate(panelHref(id, "info"), options);
+    setRoute({ chatId: id, messageId, panel: "info" });
+    const options = { scroll: "preserve" as const, state: { chatFromList: listDepth() === 1, chatInfoFromChat: true } };
+    if (navigation) navigation.push(panelHref(id, "info", messageId), options);
+    else navigate(panelHref(id, "info", messageId), options);
   };
   const closeInfo = (navigation?: LinkNavigateEvent) => {
     const id = route().chatId;
@@ -370,10 +408,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       history.back();
       return;
     }
+    const messageId = route().messageId;
     setPanel(null);
-    setRoute({ chatId: id, messageId: null, panel: null });
-    if (navigation) navigation.push(panelHref(id, null), { scroll: "preserve" });
-    else navigate(panelHref(id, null), { scroll: "preserve" });
+    setRoute({ chatId: id, messageId, panel: null });
+    if (navigation) navigation.push(panelHref(id, null, messageId), { scroll: "preserve" });
+    else navigate(panelHref(id, null, messageId), { scroll: "preserve" });
   };
 
   /** A chat the person just started, or chose among existing ones, opens in place like a chat from the list. */
@@ -491,7 +530,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     onCleanup(
       layout.handleUp((href) => {
         if (new URL(href, location.href).pathname !== "/app/chat" || !route().chatId) return false;
-        if (openedFromList()) history.back();
+        const depth = listDepth();
+        if (depth > 0) history.go(-depth);
         else void open({ chatId: null, messageId: null, panel: null }).then((result) => result === "applied" && navigate("/app/chat"));
         return true;
       }),
@@ -564,7 +604,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                           </Show>
                           <IconButtonLink
                             label={panel() === "info" ? t().closeChatInfo : t().chatInfo}
-                            href={panelHref(current().id, panel() === "info" ? null : "info")}
+                            href={panelHref(current().id, panel() === "info" ? null : "info", route().messageId)}
                             navigation="enhanced"
                             onNavigate={(navigation) => (panel() === "info" ? closeInfo(navigation) : openInfo(navigation))}
                             aria-expanded={panel() === "info"}

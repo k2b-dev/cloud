@@ -1,4 +1,4 @@
-import { Button, Combobox, InlineGuidance, LocaleProvider, prompts } from "@k2b/ui";
+import { Button, Combobox, InlineGuidance, LocaleProvider, prompts, toast } from "@k2b/ui";
 import { createResource, createSignal, type JSX, Show } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
@@ -27,15 +27,15 @@ export const openLeaveChatDialog = (props: LeaveProps): Promise<boolean | undefi
   );
 
 /**
- * Leaving ends access to the history. The last manager hands the chat over first: the member list's manager count
- * says when, and the server's refusal says so too if someone else stepped down in the meantime.
+ * Leaving ends access to the history, unless a group keeps the person in the chat. The last manager hands the chat
+ * over first: the member list's manager count says when. A refusal reads the list again, so the dialog follows a
+ * change someone else made in the meantime.
  */
 export function LeaveChatDialog(props: LeaveProps & { close: (left?: boolean) => void }): JSX.Element {
   const t = useChatMessages();
   const [successor, setSuccessor] = createSignal<Member | null>(null);
   // The rows of the last search, so a choice keeps the person's avatar.
   let offered = new Map<string, Member>();
-  const [refused, setRefused] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal("");
   const manager = () => props.conversation.permission === "admin";
@@ -44,19 +44,31 @@ export function LeaveChatDialog(props: LeaveProps & { close: (left?: boolean) =>
     () => manager() || undefined,
     () => props.store.members(props.conversation.id, {}),
   );
-  const needsSuccessor = () => refused() || (manager() && page()?.managers === 1);
+  // A failed read throws when read, so the error state is checked first.
+  const loaded = () => (page.error ? undefined : page());
+  const needsSuccessor = () => loaded()?.managers === 1;
+  // Nobody else holds a direct entry, so there is nobody to hand the chat to and leaving is refused.
+  const alone = () => {
+    const current = loaded();
+    return (
+      current?.nextCursor === null &&
+      !current.items.some((member) => member.principal.type === "user" && member.principal.userId !== props.viewerId)
+    );
+  };
   const checking = () => manager() && page.loading;
+  const blocked = () => checking() || Boolean(page.error) || alone() || (needsSuccessor() && !successor());
 
   const leave = async () => {
-    if (busy() || checking() || page.error || (needsSuccessor() && !successor())) return;
+    if (busy() || blocked()) return;
     setBusy(true);
     setError("");
     try {
-      await props.store.leave(props.conversation.id, needsSuccessor() ? successor()?.accessId : undefined);
+      const result = await props.store.leave(props.conversation.id, needsSuccessor() ? successor()?.accessId : undefined);
+      if (result.keptThroughGroup) toast(t().leftKeptThroughGroup);
       props.close(true);
     } catch (failure) {
-      if (failure instanceof ChatRequestError && failure.status === 409 && manager()) setRefused(true);
       setError(errorMessage(failure, t().requestFailed));
+      if (failure instanceof ChatRequestError && failure.status === 409 && manager()) void refetch();
     } finally {
       setBusy(false);
     }
@@ -77,7 +89,10 @@ export function LeaveChatDialog(props: LeaveProps & { close: (left?: boolean) =>
             </Button>
           </InlineGuidance>
         </Show>
-        <Show when={needsSuccessor()}>
+        <Show when={alone()}>
+          <InlineGuidance icon="ti ti-info-circle">{t().cannotLeaveAlone}</InlineGuidance>
+        </Show>
+        <Show when={needsSuccessor() && !alone()}>
           <div class="flex flex-col gap-2">
             <p class="text-sm">{t().chooseSuccessor}</p>
             <Combobox
@@ -113,12 +128,7 @@ export function LeaveChatDialog(props: LeaveProps & { close: (left?: boolean) =>
         <Button variant="secondary" disabled={busy()} onClick={() => props.close()}>
           {t().cancel}
         </Button>
-        <Button
-          variant="danger"
-          loading={busy()}
-          disabled={checking() || Boolean(page.error) || (needsSuccessor() && !successor())}
-          onClick={() => void leave()}
-        >
+        <Button variant="danger" loading={busy()} disabled={blocked()} onClick={() => void leave()}>
           {t().leaveChat}
         </Button>
       </DialogActions>

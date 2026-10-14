@@ -16,6 +16,7 @@ import {
   CreateOutcomeSchema,
   MemberPageSchema,
   MemberPreviewSchema,
+  MemberRemovalSchema,
   MessagePageSchema,
   MessageViewSchema,
   PeoplePageSchema,
@@ -835,12 +836,15 @@ suite("chat conversations, people, and directory groups", () => {
     expect((await request(headers, `${path}/members`, "POST", { members: [{ type: "group", groupId }] })).status).toBe(200);
     const left = await request(await cookie(grouped), `${path}/leave`, "POST", {});
     expect(left.status).toBe(200);
+    expect(MemberRemovalSchema.parse(await left.json())).toEqual({ success: true, keptThroughGroup: true });
     expect(await participant()).toEqual([{ origin: "ondemand", joined_seq: "42", last_read_seq: "7" }]);
     expect((await request(await cookie(grouped), path)).status).toBe(200);
     const groupEntry = members.items.find((entry) => entry.principal.type === "group")!;
     expect((await request(headers, `${path}/members/${groupEntry.accessId}`, "PATCH", { permission: "admin" })).status).toBe(404);
     expect((await request(await cookie(direct), `${path}/members/${groupEntry.accessId}`, "DELETE")).status).toBe(403);
-    expect((await request(headers, `${path}/members/${groupEntry.accessId}`, "DELETE")).status).toBe(200);
+    const removedGroup = await request(headers, `${path}/members/${groupEntry.accessId}`, "DELETE");
+    expect(removedGroup.status).toBe(200);
+    expect(MemberRemovalSchema.parse(await removedGroup.json())).toEqual({ success: true, keptThroughGroup: false });
     expect(await participant()).toEqual([]);
     expect(ConversationSchema.parse(await (await request(headers, path)).json()).memberCount).toBe(2);
     expect((await request(await cookie(grouped), path)).status).toBe(404);
@@ -854,16 +858,25 @@ suite("chat conversations, people, and directory groups", () => {
     const chat = await fixture(owner, [{ id: other, permission: "write" }]);
     const headers = await cookie(owner);
     await groupGrant(chat, await group([other]), owner);
-    expect((await request(headers, `/${chat.shortId}/members/${chat.entries.get(other)}`, "DELETE")).status).toBe(200);
+    const removed = await request(headers, `/${chat.shortId}/members/${chat.entries.get(other)}`, "DELETE");
+    expect(removed.status).toBe(200);
+    expect(MemberRemovalSchema.parse(await removed.json())).toEqual({ success: true, keptThroughGroup: true });
     const [remaining] = await sql<
       { origin: string }[]
     >`SELECT origin FROM chat.participants WHERE conversation_id = ${chat.id}::uuid AND principal_id = ${other}::uuid`;
     expect(remaining?.origin).toBe("ondemand");
     const standalone = await fixture(owner, [{ id: other, permission: "write" }]);
-    expect((await request(await cookie(other), `/${standalone.shortId}/leave`, "POST", {})).status).toBe(200);
+    const left = await request(await cookie(other), `/${standalone.shortId}/leave`, "POST", {});
+    expect(left.status).toBe(200);
+    expect(MemberRemovalSchema.parse(await left.json())).toEqual({ success: true, keptThroughGroup: false });
     expect(
       await sql`SELECT principal_id FROM chat.participants WHERE conversation_id = ${standalone.id}::uuid AND principal_id = ${other}::uuid`,
     ).toHaveLength(0);
+    const directOnly = await fixture(owner, [{ id: other, permission: "write" }]);
+    const plainRemoval = await request(headers, `/${directOnly.shortId}/members/${directOnly.entries.get(other)}`, "DELETE");
+    expect(plainRemoval.status).toBe(200);
+    expect(MemberRemovalSchema.parse(await plainRemoval.json())).toEqual({ success: true, keptThroughGroup: false });
+    expect((await request(await cookie(other), `/${directOnly.shortId}`)).status).toBe(404);
   });
 
   test("guest people pages expose only direct co-members, search literally, and enforce the same rule for delegated guests", async () => {
@@ -908,7 +921,7 @@ suite("chat conversations, people, and directory groups", () => {
         }
         const denied = await request(guestHeaders, suffix, "POST", { members: [{ type: "group", groupId: await group() }] });
         expect(denied.status).toBe(400);
-        expect((await denied.json()).message).toBe("Guests cannot add groups to chats.");
+        expect((await denied.json()).message).toBe("Only full accounts can add groups to chats.");
       }
     }
     const own = await create(headers, [], { allowDuplicate: true });
@@ -1142,6 +1155,42 @@ suite("chat conversations, people, and directory groups", () => {
     expect((await read()).items.find((entry) => entry.principal.type === "group" && entry.principal.groupId === large)?.groupSize).toBe(
       501,
     );
+  });
+
+  test("standalone accounts with discoverable admin access cannot expand or add groups", async () => {
+    const owner = await user();
+    const chat = await fixture(owner);
+    const listedGroup = await group([owner]);
+    await groupGrant(chat, listedGroup, owner);
+    const account = await credential("standalone", null, ["openid", "read", "admin"]);
+    const access = await createAccess({ principal: { type: "service_account", serviceAccountId: account.id }, permission: "admin" });
+    if (!access.ok) throw new Error(access.error.message);
+    accessIds.push(access.data.id);
+    await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
+      VALUES (${chat.id}::uuid, ${access.data.id}::uuid, 'discoverable', 'user', ${owner}::uuid)`;
+    const path = `/${chat.shortId}`;
+    const response = await request(account.headers, `${path}/members`);
+    expect(response.status).toBe(200);
+    const page = MemberPageSchema.parse(await response.json());
+    expect(page.items.find((entry) => entry.principal.type === "group")).toMatchObject({
+      principal: { type: "group", groupId: listedGroup },
+      groupSize: null,
+    });
+    const ownerPage = MemberPageSchema.parse(await (await request(await cookie(owner), `${path}/members`)).json());
+    expect(ownerPage.items.find((entry) => entry.principal.type === "group")?.groupSize).toBe(1);
+    // A direct-user preview proves the account's grant and scopes authorize management.
+    const newcomer = await user();
+    const preview = await request(account.headers, `${path}/members/preview`, "POST", { members: [{ type: "user", userId: newcomer }] });
+    expect(preview.status).toBe(200);
+    expect(MemberPreviewSchema.parse(await preview.json())).toEqual({ joining: 1, throughGroups: 0, memberCount: 2 });
+    const members = [{ type: "group", groupId: await group([newcomer]) }];
+    for (const suffix of ["/members/preview", "/members"]) {
+      const rejected = await request(account.headers, path + suffix, "POST", { members });
+      expect(rejected.status).toBe(400);
+      expect(await rejected.json()).toMatchObject({ code: "BAD_INPUT", message: "Only full accounts can add groups to chats." });
+    }
+    const after = MemberPageSchema.parse(await (await request(await cookie(owner), `${path}/members`)).json());
+    expect(after).toEqual(ownerPage);
   });
 
   test("member preview authorizes admin, deduplicates joining people and leaves all chat state untouched", async () => {

@@ -18,6 +18,7 @@ import {
   MemberPageSchema,
   MemberPreviewSchema,
   type MemberPrincipal,
+  MemberRemovalSchema,
   MessagePageSchema,
   MessageSchema,
   PeoplePageSchema,
@@ -42,8 +43,8 @@ export type ChatStoreApi = {
   previewMembers(id: string, members: MemberPrincipal[]): Promise<z.infer<typeof MemberPreviewSchema>>;
   addMembers(id: string, members: MemberPrincipal[]): Promise<z.infer<typeof ChangeSchema>>;
   updateMember(id: string, accessId: string, permission: z.infer<typeof PermissionSchema>): Promise<z.infer<typeof SuccessSchema>>;
-  removeMember(id: string, accessId: string): Promise<z.infer<typeof SuccessSchema>>;
-  leave(id: string, successor?: string): Promise<z.infer<typeof SuccessSchema>>;
+  removeMember(id: string, accessId: string): Promise<z.infer<typeof MemberRemovalSchema>>;
+  leave(id: string, successor?: string): Promise<z.infer<typeof MemberRemovalSchema>>;
   people(search: string, cursor?: string, signal?: AbortSignal): Promise<z.infer<typeof PeoplePageSchema>>;
   read(id: string, seq: number): Promise<z.infer<typeof ReadUpdateSchema>>;
   markUnread(id: string, message?: string): Promise<z.infer<typeof ReadUpdateSchema>>;
@@ -128,12 +129,12 @@ export const createChatStoreApi = (): ChatStoreApi => {
     removeMember: async (id, accessId) =>
       requiredResponse(
         await client.conversations[":conversation"].members[":accessId"].$delete({ param: { conversation: id, accessId } }),
-        SuccessSchema,
+        MemberRemovalSchema,
       ),
     leave: async (id, successor) =>
       requiredResponse(
         await client.conversations[":conversation"].leave.$post({ param: { conversation: id }, json: { successor } }),
-        SuccessSchema,
+        MemberRemovalSchema,
       ),
     people: async (search, cursor, signal) =>
       requiredResponse(await client.people.$get({ query: { search, cursor } }, { init: { signal } }), PeoplePageSchema),
@@ -548,34 +549,35 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   if (snapshot.open) open({ ...snapshot.open, cursor: snapshot.cursor });
   return {
     // A change the reader made shows at once: its chat's row is read again instead of waiting for the live event.
+    // Refresh failures leave committed changes successful; live updates and resync repair the row.
     // A chat the reader left answers 404, which removes the row and ends an open view in "No access".
     create: async (input: Parameters<ChatStoreApi["create"]>[0]) => {
       const result = await api.create(input);
-      if (result.outcome === "created") await sidebar(() => refetchRow(result.conversation.id));
+      if (result.outcome === "created") await sidebar(() => refetchRow(result.conversation.id)).catch(() => {});
       return result;
     },
     updateDetails: async (id: string, patch: Parameters<ChatStoreApi["updateDetails"]>[1]) => {
       const result = await api.updateDetails(id, patch);
-      await sidebar(() => refetchRow(id));
+      await sidebar(() => refetchRow(id)).catch(() => {});
       return result;
     },
     members: (id: string, query: Parameters<ChatStoreApi["members"]>[1]) => api.members(id, query),
     previewMembers: (id: string, members: MemberPrincipal[]) => api.previewMembers(id, members),
     addMembers: async (id: string, members: MemberPrincipal[]) => {
       const result = await api.addMembers(id, members);
-      await sidebar(() => refetchRow(id));
+      await sidebar(() => refetchRow(id)).catch(() => {});
       return result;
     },
     updateMember: (id: string, accessId: string, permission: z.infer<typeof PermissionSchema>) =>
       api.updateMember(id, accessId, permission),
     removeMember: async (id: string, accessId: string) => {
       const result = await api.removeMember(id, accessId);
-      await sidebar(() => refetchRow(id));
+      await sidebar(() => refetchRow(id)).catch(() => {});
       return result;
     },
     leave: async (id: string, successor?: string) => {
       const result = await api.leave(id, successor);
-      await sidebar(() => refetchRow(id));
+      await sidebar(() => refetchRow(id)).catch(() => {});
       return result;
     },
     people: (search: string, signal?: AbortSignal) => api.people(search, undefined, signal),

@@ -35,7 +35,7 @@ export default function ChatInfoPanel(props: {
   viewerId: string;
   /** Members load only while the panel shows. */
   active: boolean;
-  /** Changes when the viewer added people, so the list starts again from its first page. */
+  /** Changes when the membership changed, by the viewer or through a live membership message, so the list starts again from its first page. */
   revision: number;
   store: ChatDialogStore | undefined;
   onClose: () => void;
@@ -103,9 +103,12 @@ export default function ChatInfoPanel(props: {
     }),
   );
 
-  /** A change keeps the list as it is: the row updates in place, and only the manager count is read again. */
+  /**
+   * A change keeps the list as it is: the row updates in place, and only the manager count is read again. The change
+   * is already saved, so a failed count is not reported as a failed change; the next membership message reads it again.
+   */
   const recount = async () => {
-    const page = await props.store?.members(props.conversation.id, {});
+    const page = await props.store?.members(props.conversation.id, {}).catch(() => undefined);
     if (page) setManagers(page.managers);
   };
   const changePermission = async (member: Member, permission: Permission) => {
@@ -134,7 +137,8 @@ export default function ChatInfoPanel(props: {
     if (!confirmed) return;
     setChanging(true);
     try {
-      await store.removeMember(props.conversation.id, member.accessId);
+      const result = await store.removeMember(props.conversation.id, member.accessId);
+      if (result.keptThroughGroup) toast(t().removedKeptThroughGroup({ name: member.displayName }));
       setRows((current) => current.filter((row) => row.accessId !== member.accessId));
       list?.focus();
       await recount();
