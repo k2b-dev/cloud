@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { Readable } from "node:stream";
 import { getProcessSync } from "@k2b/cloud";
 import { encryptSecret, mandates, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
@@ -20,7 +21,9 @@ import { snapshotMailWorkflowCatalog } from "../workflows/catalog";
 import { grantMailboxAccess, listMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { executeMutationCommand } from "./command-runtime";
+import type { ConnectorEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors/imap-smtp";
+import { updateConversationCollaboration } from "./conversation-assignments";
 import { resolveIncomingAutomationPlacementTurn } from "./incoming-automation-order";
 import { resolveIncomingAutomationMandateCaller } from "./incoming-automation-workload";
 import {
@@ -40,6 +43,7 @@ import {
   validateDestructiveIncomingAutomationsForMailbox,
 } from "./incoming-automations";
 import { createMailbox } from "./mailboxes";
+import { hydrateMessageFromSource } from "./message-hydration";
 import { ingestEnvelope } from "./sync-runtime";
 import { loadMailWorkflowCatalog } from "./workflow-catalog-service";
 import { workflowSnapshotQuery } from "./workflow-data";
@@ -2276,4 +2280,259 @@ suite("incoming automations", () => {
     );
     expect(draft.steps?.[0]?.senderIdentityId).toBe(senderIdentityId);
   });
+
+  const statusEnvelope = (uid: number, key: string, inReplyTo: string | null = null): ConnectorEnvelope => ({
+    remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: "1" },
+    providerMessageId: `status-${key}-${uid}-${suffix}`,
+    providerThreadId: null,
+    messageId: `<status-${key}-${uid}-${suffix}@external.test>`,
+    inReplyTo,
+    references: inReplyTo ? [inReplyTo] : [],
+    subject: `Status hydration ${key}`,
+    sentAt: new Date(inReplyTo ? "2026-10-01T08:01:00.000Z" : "2026-10-01T08:00:00.000Z"),
+    internalDate: new Date(inReplyTo ? "2026-10-01T08:01:00.000Z" : "2026-10-01T08:00:00.000Z"),
+    sizeBytes: 256,
+    flags: [],
+    labels: [],
+    addresses: {
+      from: [{ name: "Sender", address: `status-${key}-${suffix}@external.test` }],
+      replyTo: [],
+      to: [{ name: "Support", address: "automation@example.test" }],
+      cc: [],
+      bcc: [],
+    },
+    mimeStructure: {},
+  });
+
+  const hydrateStatusMessage = async (messageId: string, envelope: ConnectorEnvelope) => {
+    const source = Buffer.from(
+      [
+        `Message-ID: ${envelope.messageId}`,
+        `From: ${envelope.addresses.from[0]!.address}`,
+        `To: ${envelope.addresses.to[0]!.address}`,
+        `Subject: ${envelope.subject}`,
+        ...(envelope.inReplyTo ? [`In-Reply-To: ${envelope.inReplyTo}`] : []),
+        "Content-Type: text/plain; charset=utf-8",
+        "",
+        "Status hydration test body",
+      ].join("\r\n"),
+    );
+    await hydrateMessageFromSource({ messageId, source: Readable.from([source]), expectedSize: source.byteLength });
+  };
+
+  const statusConversation = async (messageId: string) => {
+    const [conversation] = await sql<{ id: string; revision: number; work_status: string }[]>`
+      SELECT conversation.id, conversation.revision::int AS revision, conversation.work_status
+      FROM mail.conversation_messages link
+      JOIN mail.conversations conversation ON conversation.id = link.conversation_id
+      WHERE link.message_id = ${messageId}::uuid
+    `;
+    if (!conversation) throw new Error("Status message was not linked to a conversation");
+    return conversation;
+  };
+
+  const reconciledStatusActivities = (messageId: string) => sql<{ id: string }[]>`
+    SELECT id FROM mail.activity_events
+    WHERE mailbox_id = ${mailboxId}::uuid
+      AND action = 'conversation.work_state_changed' AND outcome = 'reconciled'
+      AND metadata ->> 'messageId' = ${messageId}
+  `;
+
+  const markStatusConversationDone = async (messageId: string) => {
+    const conversation = await statusConversation(messageId);
+    const updated = await updateConversationCollaboration({
+      context: ownerContext,
+      mailboxId,
+      conversationId: conversation.id,
+      locale: "en",
+      input: { expectedRevision: conversation.revision, completion: "done" },
+    });
+    if (!updated.ok) throw new Error(updated.error.message);
+    expect(updated.data.workStatus).toBe("done");
+  };
+
+  const createStatusAutomation = async (key: string, archiveId?: string) => {
+    const created = await createIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        name: `Status hydration ${key} ${suffix}`,
+        enabled: true,
+        scope: {
+          mode: "matching",
+          conditions: { mode: "all", items: [{ field: "sender_address", operator: "is", value: `status-${key}-${suffix}@external.test` }] },
+        },
+        steps: [
+          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "set_status", status: "done" } },
+          ...(archiveId
+            ? [{ id: crypto.randomUUID(), kind: "mail_action" as const, action: { kind: "move_to_folder" as const, folderId: archiveId } }]
+            : []),
+        ],
+      },
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    return created.data;
+  };
+
+  const dispatchStatusRun = async (workflowId: string) => {
+    await dispatchPendingWorkflowEvents(100, { appId: "mail", scopeId: mailboxId });
+    const [run] = await sql<{ id: string }[]>`
+      SELECT id FROM workflows.run WHERE workflow_id = ${workflowId}::uuid ORDER BY created_at DESC LIMIT 1
+    `;
+    if (!run) throw new Error("Status automation run was not dispatched");
+    return run.id;
+  };
+
+  const deleteStatusAutomation = async (automationId: string) => {
+    const [current] = await sql<{ revision: number }[]>`
+      SELECT revision::int AS revision FROM mail.incoming_automations WHERE id = ${automationId}::uuid
+    `;
+    if (!current) throw new Error("Status automation was not found for cleanup");
+    const deleted = await deleteIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      automationId,
+      input: { expectedRevision: current.revision },
+    });
+    if (!deleted.ok) throw new Error(deleted.error.message);
+  };
+
+  // #1142: a status decision covers messages already linked when it commits, before or after hydration.
+  test("keeps Done from an incoming automation when Mail hydrates the triggering message", async () => {
+    const [archive] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.folders WHERE id = ${archiveFolderId}::uuid`;
+    if (!archive) throw new Error("Archive folder was not found");
+    const automation = await createStatusAutomation("done-move", archive.short_id);
+    try {
+      const envelope = statusEnvelope(12001, "done-move");
+      const messageId = await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: envelope,
+        captureWorkflowTriggers: true,
+      });
+      const runId = await dispatchStatusRun(automation.workflowId);
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished", result: { state: "waiting" } });
+      const [command] = await sql<{ id: string }[]>`
+        SELECT id FROM mail.commands WHERE correlation_id = ${runId} AND kind = 'move'
+      `;
+      if (!command) throw new Error("Status automation did not queue its move");
+      let moved = false;
+      const state = () => ({ exists: !moved, flags: [], keywords: [], messageId: envelope.messageId, modseq: "1" });
+      const getState = spyOn(imapSmtpConnector, "getMessageState").mockImplementation(async () => state());
+      const getStates = spyOn(imapSmtpConnector, "getMessageStates").mockImplementation(
+        async (_config, messages) => new Map(moved ? [] : messages.uids.map((uid) => [uid, state()] as const)),
+      );
+      const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue({
+        uidValidity: "1",
+        uidNext: 12002,
+        highestModseq: null,
+        messages: 0,
+      });
+      const move = spyOn(imapSmtpConnector, "moveMessages").mockImplementation(async (_config, messages) => {
+        moved = true;
+        return { completed: true, destinationUidValidity: "1", destinationUids: new Map(messages.uids.map((uid) => [uid, 12001])) };
+      });
+      try {
+        expect(await executeMutationCommand(command.id)).toBe("confirmed");
+        expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished", result: { state: "succeeded" } });
+        expect(move).toHaveBeenCalledTimes(1);
+      } finally {
+        move.mockRestore();
+        status.mockRestore();
+        getStates.mockRestore();
+        getState.mockRestore();
+      }
+      expect((await statusConversation(messageId)).work_status).toBe("done");
+      await hydrateStatusMessage(messageId, envelope);
+      expect((await statusConversation(messageId)).work_status).toBe("done");
+      expect(await reconciledStatusActivities(messageId)).toEqual([]);
+    } finally {
+      await deleteStatusAutomation(automation.id);
+    }
+  }, 30_000);
+
+  test("keeps an already Done conversation Done when an automation's set_status done is a no-op", async () => {
+    const first = statusEnvelope(12011, "done-noop");
+    const firstId = await ingestEnvelope({
+      db: sql,
+      mailboxId,
+      remoteResourceId,
+      folderId: inboxFolderId,
+      message: first,
+      captureWorkflowTriggers: false,
+    });
+    await hydrateStatusMessage(firstId, first);
+    await markStatusConversationDone(firstId);
+    const automation = await createStatusAutomation("done-noop");
+    try {
+      const second = statusEnvelope(12012, "done-noop", first.messageId);
+      const secondId = await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: second,
+        captureWorkflowTriggers: true,
+      });
+      expect((await statusConversation(secondId)).id).toBe((await statusConversation(firstId)).id);
+      const runId = await dispatchStatusRun(automation.workflowId);
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished", result: { state: "succeeded" } });
+      const [step] = await sql<{ output: Record<string, unknown> }[]>`
+        SELECT outcome #> '{outcome,output}' AS output FROM workflows.step_outcome
+        WHERE run_id = ${runId}::uuid AND outcome #>> '{outcome,output,action}' = 'setConversationStatus'
+      `;
+      expect(step?.output).toMatchObject({ action: "setConversationStatus", applied: false });
+      expect((await statusConversation(secondId)).work_status).toBe("done");
+      await hydrateStatusMessage(secondId, second);
+      expect((await statusConversation(secondId)).work_status).toBe("done");
+      expect(await reconciledStatusActivities(secondId)).toEqual([]);
+    } finally {
+      await deleteStatusAutomation(automation.id);
+    }
+  }, 30_000);
+
+  for (const initiallyDone of [false, true]) {
+    test(`applies an automation's status after Mail hydrated its triggering message in a longer conversation${initiallyDone ? " that was Done" : ""}`, async () => {
+      const key = initiallyDone ? "hydrated-first-done" : "hydrated-first-open";
+      const uid = initiallyDone ? 12031 : 12021;
+      const first = statusEnvelope(uid, key);
+      const firstId = await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: first,
+        captureWorkflowTriggers: false,
+      });
+      await hydrateStatusMessage(firstId, first);
+      expect((await statusConversation(firstId)).work_status).toBe("needs_action");
+      if (initiallyDone) await markStatusConversationDone(firstId);
+      const automation = await createStatusAutomation(key);
+      try {
+        const second = statusEnvelope(uid + 1, key, first.messageId);
+        const secondId = await ingestEnvelope({
+          db: sql,
+          mailboxId,
+          remoteResourceId,
+          folderId: inboxFolderId,
+          message: second,
+          captureWorkflowTriggers: true,
+        });
+        expect((await statusConversation(secondId)).id).toBe((await statusConversation(firstId)).id);
+        const runId = await dispatchStatusRun(automation.workflowId);
+        await hydrateStatusMessage(secondId, second);
+        expect((await statusConversation(secondId)).work_status).toBe("needs_action");
+        expect((await runMailWorkflow(runId)).state).toBe("finished");
+        const [run] = await sql<{ state: string; error: string | null }[]>`
+          SELECT state, error ->> 'message' AS error FROM workflows.run WHERE id = ${runId}::uuid
+        `;
+        expect(run).toEqual({ state: "succeeded", error: null });
+        expect((await statusConversation(secondId)).work_status).toBe("done");
+      } finally {
+        await deleteStatusAutomation(automation.id);
+      }
+    }, 30_000);
+  }
 });

@@ -7,6 +7,7 @@ import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { releaseDueSnoozes } from "./collaboration";
 import type { ConnectorEnvelope, ConnectorProtocolFacts } from "./connectors";
+import { updateConversationCollaboration } from "./conversation-assignments";
 import { refreshConversationTimeline } from "./conversation-timeline";
 import { createMailbox } from "./mailboxes";
 import { createBlobReadable } from "./message-blobs";
@@ -487,4 +488,119 @@ suite("mail conversation work-state projection", () => {
     for await (const chunk of createBlobReadable(stored!.source_blob_id)) chunks.push(Buffer.from(chunk));
     expect(Buffer.concat(chunks)).toEqual(source);
   }, 30_000);
+
+  const conversationForMessage = async (messageId: string) => {
+    const [conversation] = await sql<
+      {
+        id: string;
+        revision: number;
+        work_status: string;
+        snoozed_until: Date | string | null;
+      }[]
+    >`
+      SELECT conversation.id, conversation.revision::int AS revision, conversation.work_status, conversation.snoozed_until
+      FROM mail.conversation_messages link
+      JOIN mail.conversations conversation ON conversation.id = link.conversation_id
+      WHERE link.message_id = ${messageId}::uuid
+    `;
+    if (!conversation) throw new Error("Message was not linked to a conversation");
+    return conversation;
+  };
+
+  const decideWorkState = async (messageId: string, input: { completion?: "done"; snoozedUntil?: string }) => {
+    const conversation = await conversationForMessage(messageId);
+    const updated = await updateConversationCollaboration({
+      context,
+      mailboxId,
+      conversationId: conversation.id,
+      locale: "en",
+      input: { expectedRevision: conversation.revision, ...input },
+    });
+    if (!updated.ok) throw new Error(updated.error.message);
+    return updated.data;
+  };
+
+  const reconciledActivities = (messageId: string) => sql<{ id: string }[]>`
+    SELECT id FROM mail.activity_events
+    WHERE mailbox_id = ${mailboxId}::uuid
+      AND action = 'conversation.work_state_changed' AND outcome = 'reconciled'
+      AND metadata ->> 'messageId' = ${messageId}
+  `;
+
+  for (const decision of ["Done", "snooze"] as const) {
+    test(`keeps Done or a snooze that a person set before Mail hydrated the message (${decision})`, async () => {
+      const key = decision.toLowerCase();
+      const sender = `before-hydration-${key}-${suffix}@example.test`;
+      const message = envelope({
+        uid: decision === "Done" ? 101 : 102,
+        messageId: `<before-hydration-${key}-${suffix}@example.test>`,
+        inReplyTo: null,
+        from: sender,
+        to: "support@example.test",
+        date: new Date("2026-10-01T08:00:00.000Z"),
+      });
+      const messageId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message });
+      const futureSnooze = new Date(Date.now() + 60 * 60_000).toISOString();
+      const decided = await decideWorkState(messageId, decision === "Done" ? { completion: "done" } : { snoozedUntil: futureSnooze });
+      expect(decided.workStatus).toBe(decision === "Done" ? "done" : "needs_action");
+      expect(decided.snoozedUntil).toBe(decision === "Done" ? null : futureSnooze);
+      await hydrate(messageId, [
+        `Message-ID: ${message.messageId}`,
+        `From: ${sender}`,
+        "To: support@example.test",
+        `Subject: ${message.subject}`,
+      ]);
+      const conversation = await conversationForMessage(messageId);
+      expect(conversation.work_status).toBe(decided.workStatus);
+      expect(conversation.snoozed_until ? new Date(conversation.snoozed_until).toISOString() : null).toBe(decided.snoozedUntil);
+      expect(await reconciledActivities(messageId)).toEqual([]);
+    }, 30_000);
+  }
+
+  for (const decision of ["Done", "snooze"] as const) {
+    const name =
+      decision === "Done"
+        ? "reopens a Done conversation for a message that arrives after the decision"
+        : "clears a snooze for a message that arrives after the decision";
+    test(name, async () => {
+      const key = decision.toLowerCase();
+      const sender = `after-decision-${key}-${suffix}@example.test`;
+      const firstMessageId = `<after-decision-${key}-first-${suffix}@example.test>`;
+      const first = envelope({
+        uid: decision === "Done" ? 111 : 121,
+        messageId: firstMessageId,
+        inReplyTo: null,
+        from: sender,
+        to: "support@example.test",
+        date: new Date("2026-10-01T09:00:00.000Z"),
+      });
+      const firstId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: first });
+      await hydrate(firstId, [`Message-ID: ${firstMessageId}`, `From: ${sender}`, "To: support@example.test", `Subject: ${first.subject}`]);
+      const futureSnooze = new Date(Date.now() + 60 * 60_000).toISOString();
+      const decided = await decideWorkState(firstId, decision === "Done" ? { completion: "done" } : { snoozedUntil: futureSnooze });
+      expect(decided.workStatus).toBe(decision === "Done" ? "done" : "needs_action");
+      expect(decided.snoozedUntil).toBe(decision === "Done" ? null : futureSnooze);
+      const second = envelope({
+        uid: decision === "Done" ? 112 : 122,
+        messageId: `<after-decision-${key}-second-${suffix}@example.test>`,
+        inReplyTo: firstMessageId,
+        from: sender,
+        to: "support@example.test",
+        date: new Date("2026-10-01T09:01:00.000Z"),
+      });
+      const secondId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: second });
+      expect((await conversationForMessage(secondId)).id).toBe((await conversationForMessage(firstId)).id);
+      await hydrate(secondId, [
+        `Message-ID: ${second.messageId}`,
+        `In-Reply-To: ${firstMessageId}`,
+        `From: ${sender}`,
+        "To: support@example.test",
+        `Subject: ${second.subject}`,
+      ]);
+      const conversation = await conversationForMessage(secondId);
+      expect(conversation.work_status).toBe("needs_action");
+      expect(conversation.snoozed_until).toBeNull();
+      expect(await reconciledActivities(secondId)).toHaveLength(1);
+    }, 30_000);
+  }
 });
