@@ -92,6 +92,7 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   onToggleDetails: () => undefined,
   onToolbarActionsChange: () => undefined,
   actionPending: false,
+  structurePending: false,
   onAction: () => undefined,
   onOpenHref: () => undefined,
   onManageTags: () => undefined,
@@ -647,6 +648,36 @@ test.skipIf(isServer)("under Automatic both bodies render until the theme is kno
     setTheme("light");
     await waitFor(() => variant("plain") === null);
     expect(variant("html")?.className).toBe("contents");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("queued actions keep triage available while structure controls wait", () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        canWrite: true,
+        actionPending: false,
+        structurePending: true,
+        toolbarActions: ["trash", "keep", "tags"],
+      }),
+    dom.root,
+  );
+  try {
+    const button = (label: string) => dom.root.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+    expect(button("Move to Trash")?.disabled).toBe(false);
+    expect(button("Keep")?.disabled).toBe(true);
+    expect(button("Tags")?.disabled).toBe(true);
+    const menuItem = (label: string) =>
+      [...dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent?.trim() === label);
+    expect(menuItem("Move to Trash")?.disabled).toBe(false);
+    expect(menuItem("Keep")?.disabled).toBe(true);
+    expect(menuItem("Tags")?.disabled).toBe(true);
   } finally {
     dispose();
     dom.cleanup();

@@ -117,6 +117,7 @@ const renderReader = (
       onToggleDetails: () => undefined,
       onToolbarActionsChange: () => undefined,
       actionPending: false,
+      structurePending: false,
       onAction: () => undefined,
       onOpenHref: () => undefined,
       onManageTags: () => undefined,

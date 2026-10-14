@@ -1,4 +1,5 @@
 import { i18n } from "@k2b/stdlib";
+import type { MailActionId } from "./_components/mail-actions";
 
 export const mailWorkspaceMessages = i18n.define({
   baseLocale: "en",
@@ -55,8 +56,6 @@ export const mailWorkspaceMessages = i18n.define({
       splitOpenFailed: "The new conversation could not be opened yet. Reload to confirm the latest state.",
       splitCreated: "New conversation created",
       splitRefreshFailed: "Conversation created, refresh failed",
-      actionRefreshFailed: "The action was queued, but this mailbox view could not be refreshed yet.",
-      actionQueuedRefreshFailed: "Action queued, refresh failed",
       chooseFolderFirstBody: "Open the conversation from a mailbox folder, then try this action again.",
       chooseFolderFirst: "Choose a folder first",
       nothingToMoveBody: "The selected conversations are already in this folder",
@@ -96,8 +95,39 @@ export const mailWorkspaceMessages = i18n.define({
       detailsUnavailable: "Conversation details are unavailable",
       refreshConversation: "Try refreshing this conversation.",
       actionFailed: "Could not update the conversation",
-      actionQueued: "Action queued",
-      actionQueuedFor: ({ count }: { count: number }) => `Action queued for ${count} conversations`,
+      actionMoved: ({
+        actionId,
+        count,
+        messages,
+        folder,
+      }: {
+        actionId: MailActionId;
+        count: number;
+        messages: boolean;
+        folder: string;
+      }) => {
+        const noun = messages ? (count === 1 ? "Message" : `${count} messages`) : count === 1 ? "Conversation" : `${count} conversations`;
+        if (actionId === "archive") return `${noun} archived`;
+        const destination = actionId === "trash" ? "Trash" : actionId === "junk" ? "Junk" : actionId === "not_spam" ? "Inbox" : folder;
+        return `${noun} moved${destination ? ` to ${destination}` : ""}`;
+      },
+      actionAnnouncement: ({ actionId, count, messages }: { actionId: MailActionId; count: number; messages: boolean }) => {
+        const text =
+          actionId === "mark_read"
+            ? "Marked as read"
+            : actionId === "mark_unread"
+              ? "Marked as unread"
+              : actionId === "flag"
+                ? "Flagged"
+                : "Flag removed";
+        if (count === 1) return text;
+        const noun = messages ? "messages" : "conversations";
+        return actionId === "unflag" ? `Flag removed from ${count} ${noun}` : `${count} ${noun} ${text.toLowerCase()}`;
+      },
+      undone: "Undone",
+      undoFailed: "Could not undo",
+      undoNotMoved: ({ label, folder }: { label: string; folder: string | null }) =>
+        `${label}: The mail server did not move it back. ${folder ? `It is still in ${folder}.` : "It was not moved back."}`,
       somePlacementsQueued: "some placements were already queued",
       noProviderPlacement: "No active provider folder is available for this conversation.",
       actionCouldNotBeQueued: "The action could not be queued.",
@@ -173,8 +203,6 @@ export const mailWorkspaceMessages = i18n.define({
       splitOpenFailed: "Die neue Unterhaltung konnte noch nicht geöffnet werden. Lade die Seite neu, um den aktuellen Stand zu prüfen.",
       splitCreated: "Neue Unterhaltung erstellt",
       splitRefreshFailed: "Unterhaltung erstellt, Aktualisierung fehlgeschlagen",
-      actionRefreshFailed: "Die Aktion wurde eingereiht, aber die Postfachansicht konnte noch nicht aktualisiert werden.",
-      actionQueuedRefreshFailed: "Aktion eingereiht, Aktualisierung fehlgeschlagen",
       chooseFolderFirstBody: "Öffne die Unterhaltung aus einem Postfachordner und versuche es erneut.",
       chooseFolderFirst: "Zuerst Ordner auswählen",
       nothingToMoveBody: "Die ausgewählten Unterhaltungen befinden sich bereits in diesem Ordner",
@@ -210,8 +238,44 @@ export const mailWorkspaceMessages = i18n.define({
       detailsUnavailable: "Unterhaltungsdetails sind nicht verfügbar",
       refreshConversation: "Aktualisiere die Unterhaltung und versuche es erneut.",
       actionFailed: "Die Unterhaltung konnte nicht aktualisiert werden",
-      actionQueued: "Aktion eingereiht",
-      actionQueuedFor: ({ count }) => `Aktion für ${count} Unterhaltungen eingereiht`,
+      actionMoved: ({ actionId, count, messages, folder }) => {
+        const noun = messages
+          ? count === 1
+            ? "Nachricht"
+            : `${count} Nachrichten`
+          : count === 1
+            ? "Unterhaltung"
+            : `${count} Unterhaltungen`;
+        if (actionId === "archive") return `${noun} archiviert`;
+        const destination =
+          actionId === "trash"
+            ? "in den Papierkorb"
+            : actionId === "junk"
+              ? "in Spam"
+              : actionId === "not_spam"
+                ? "in den Posteingang"
+                : folder
+                  ? `nach ${folder}`
+                  : "";
+        return `${noun}${destination ? ` ${destination}` : ""} verschoben`;
+      },
+      actionAnnouncement: ({ actionId, count, messages }) => {
+        const text =
+          actionId === "mark_read"
+            ? "Als gelesen markiert"
+            : actionId === "mark_unread"
+              ? "Als ungelesen markiert"
+              : actionId === "flag"
+                ? "Markiert"
+                : "Markierung entfernt";
+        if (count === 1) return text;
+        const noun = messages ? "Nachrichten" : "Unterhaltungen";
+        return actionId === "unflag" ? `Markierung von ${count} ${noun} entfernt` : `${count} ${noun} ${text.toLowerCase()}`;
+      },
+      undone: "Rückgängig gemacht",
+      undoFailed: "Rückgängig machen fehlgeschlagen",
+      undoNotMoved: ({ label, folder }) =>
+        `${label}: Der Mailserver hat sie nicht zurückverschoben. ${folder ? `Sie liegt weiterhin in ${folder}.` : "Sie wurde nicht zurückverschoben."}`,
       somePlacementsQueued: "einige Zuordnungen wurden bereits eingereiht",
       noProviderPlacement: "Für diese Unterhaltung ist kein aktiver Anbieterordner verfügbar.",
       actionCouldNotBeQueued: "Die Aktion konnte nicht eingereiht werden.",

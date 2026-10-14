@@ -40,7 +40,11 @@ export type MailActionFailureReport = {
   failures: MailActionFailure[];
 };
 
+export type MailActionSettlement = { conversationId: string; ok: boolean; expired: boolean };
+
 type FollowedConversation = {
+  reported: boolean;
+  failureReported: boolean;
   conversationId: string;
   label: string;
   messageIds?: readonly string[];
@@ -53,6 +57,10 @@ type FollowedConversation = {
 };
 
 type FollowedAction = {
+  key?: symbol;
+  onSettled?: (settlement: MailActionSettlement) => void;
+  onFailure?: (conversationId: string) => void;
+  reportFailures: boolean;
   actionId: MailActionId;
   destinationFolderId: string | null;
   startedAt: number;
@@ -110,12 +118,36 @@ export const createMailActionOutcomes = () => {
   const actions = new Set<FollowedAction>();
   let rotation = 0;
 
+  const settle = (action: FollowedAction, expired = false) => {
+    for (const conversation of action.conversations) {
+      if (conversation.failureCode && !conversation.failureReported) {
+        conversation.failureReported = true;
+        action.onFailure?.(conversation.conversationId);
+      }
+      if (conversation.reported || (!expired && conversation.pending.size > 0)) continue;
+      conversation.reported = true;
+      action.onSettled?.({ conversationId: conversation.conversationId, ok: !expired && !conversation.failureCode, expired });
+    }
+  };
+
   return {
+    /** Stops this action's conversation without reporting Undo's cancellation as a failure. */
+    stop: (key: symbol, conversationId: string) => {
+      for (const action of actions) {
+        if (action.key !== key) continue;
+        action.conversations = action.conversations.filter((conversation) => conversation.conversationId !== conversationId);
+        if (!isPending(action)) actions.delete(action);
+      }
+    },
     /**
      * Follows the commands one action queued, per conversation, as the server returned them.
      * Reports right away when they all already finished.
      */
     follow: (params: {
+      key?: symbol;
+      onSettled?: (settlement: MailActionSettlement) => void;
+      onFailure?: (conversationId: string) => void;
+      reportFailures?: boolean;
       actionId: MailActionId;
       destinationFolderId: string | null;
       conversations: readonly {
@@ -127,12 +159,18 @@ export const createMailActionOutcomes = () => {
       now?: number;
     }): MailActionFailureReport | null => {
       const action: FollowedAction = {
+        key: params.key,
+        onSettled: params.onSettled,
+        onFailure: params.onFailure,
+        reportFailures: params.reportFailures ?? true,
         actionId: params.actionId,
         destinationFolderId: params.destinationFolderId,
         startedAt: params.now ?? Date.now(),
         conversations: params.conversations.map((conversation) => {
           const ids = conversation.commands.map((command) => command.id);
           const followed: FollowedConversation = {
+            reported: false,
+            failureReported: false,
             conversationId: conversation.conversationId,
             label: conversation.label,
             ...(conversation.messageIds ? { messageIds: conversation.messageIds } : {}),
@@ -146,7 +184,8 @@ export const createMailActionOutcomes = () => {
           return followed;
         }),
       };
-      if (!isPending(action)) return failureReport(action);
+      settle(action);
+      if (!isPending(action)) return action.reportFailures ? failureReport(action) : null;
       actions.add(action);
       return null;
     },
@@ -181,10 +220,12 @@ export const createMailActionOutcomes = () => {
             record(conversation, byId.get(id) ?? { id, state: "confirmed", code: null });
           }
         }
-        if (isPending(action) && now - action.startedAt < MAIL_ACTION_OUTCOME_TTL_MS) continue;
+        const expired = now - action.startedAt >= MAIL_ACTION_OUTCOME_TTL_MS;
+        settle(action, expired);
+        if (isPending(action) && !expired) continue;
         actions.delete(action);
         const report = failureReport(action);
-        if (report) reports.push(report);
+        if (report && action.reportFailures) reports.push(report);
       }
       return reports;
     },

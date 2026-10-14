@@ -1074,3 +1074,86 @@ describe("Mail row actions", () => {
     });
   }
 });
+
+describe("Mail rows that an action takes out of the list", () => {
+  /** The top of every row, by conversation. */
+  const positions = (page: Page): Promise<Record<string, number>> =>
+    page.evaluate(() =>
+      Object.fromEntries(
+        [...document.querySelectorAll<HTMLElement>(".mail-list-entry")].map((entry) => [
+          entry.dataset.conversationId ?? "",
+          Math.round(entry.getBoundingClientRect().top * 10) / 10,
+        ]),
+      ),
+    );
+  /** Holds the collapse at a fraction of its run, so the test reads its frames instead of racing them. */
+  const collapseAt = (page: Page, fraction: number) =>
+    page.evaluate((fraction) => {
+      const animations = document.querySelector(".mail-list-entry[data-leaving]")?.getAnimations() ?? [];
+      for (const animation of animations) {
+        animation.pause();
+        animation.currentTime = Number(animation.effect?.getComputedTiming().duration ?? 0) * fraction;
+      }
+      return animations.length;
+    }, fraction);
+
+  for (const viewport of [
+    { name: "desktop", context: { viewport: { width: 1366, height: 900 } } },
+    { name: "phone", context: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
+  ] satisfies { name: string; context: BrowserContextOptions }[]) {
+    test(`${viewport.name}: collapses in place, the rows below close the gap, and dropping the row moves nothing`, async () => {
+      const page = await load({ context: viewport.context });
+      try {
+        const before = await positions(page);
+        const left = (await box(page, row("Cv0002")))!;
+        const next = before.Cv0003!;
+        const step = next - before.Cv0002!;
+
+        await page.evaluate(() => window.setMailLeaving(["Cv0002"]));
+        expect(await collapseAt(page, 0)).toBe(1);
+        const leaving = page.locator(row("Cv0002"));
+        expect(await leaving.getAttribute("inert")).not.toBeNull();
+        expect(await leaving.getAttribute("aria-hidden")).toBe("true");
+        // The first frame keeps every row where it was; nothing jumps when the collapse starts.
+        expect(await positions(page)).toEqual(before);
+        expect((await box(page, row("Cv0002")))!.height).toBeCloseTo(left.height, 0);
+
+        await collapseAt(page, 0.5);
+        const halfway = await positions(page);
+        expect(halfway.Cv0001).toBe(before.Cv0001!);
+        expect(halfway.Cv0003!).toBeLessThan(next);
+        expect(halfway.Cv0003!).toBeGreaterThan(next - step);
+
+        // At its end the row takes its gap along: the next row stands where the leaving one stood.
+        await collapseAt(page, 1);
+        const collapsed = await positions(page);
+        expect(collapsed.Cv0003).toBeCloseTo(before.Cv0002!, 0);
+
+        await page.evaluate(() => {
+          window.setMailItems(window.mailItems().filter((item) => item.id !== "Cv0002"));
+          window.setMailLeaving([]);
+        });
+        const after = await positions(page);
+        expect(Object.keys(after)).not.toContain("Cv0002");
+        // Rows below the fold are placeholders of an estimated height until they come near the viewport, so only the
+        // rows in view have a position the reader can see move.
+        const inView = Object.entries(after).filter(([id]) => collapsed[id]! < viewport.context.viewport.height);
+        expect(inView.length).toBeGreaterThan(3);
+        for (const [id, top] of inView) expect(top).toBeCloseTo(collapsed[id]!, 0);
+        expect(page.errors).toEqual([]);
+      } finally {
+        await close(page);
+      }
+    }, 30_000);
+  }
+
+  test("goes at once without an animation when the reader asks for reduced motion", async () => {
+    const page = await load({ context: { ...desktop, reducedMotion: "reduce" } });
+    try {
+      await page.evaluate(() => window.setMailLeaving(["Cv0002"]));
+      expect(await collapseAt(page, 0)).toBe(0);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+});

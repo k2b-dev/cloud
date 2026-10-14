@@ -39,6 +39,21 @@
     background: color-mix(in srgb, var(--app-accent) 16%, var(--ui-surface));
   }
 
+  /* A row an action takes out of the list closes its gap from its measured height, so the rows below slide up
+     instead of jumping; the list drops the row when the collapse ends. It keeps no hover or focus meanwhile. */
+  .mail-list-entry[data-leaving] {
+    align-items: flex-start;
+    overflow: hidden;
+    content-visibility: visible;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .mail-list-entry[data-leaving] {
+      animation: mail-list-row-leave 160ms ease-in forwards;
+    }
+  }
+
   .mail-list-checkbox {
     flex: 0 0 auto;
   }
@@ -984,6 +999,18 @@
   .k2b-ui .mail-quick-look__placeholder,
   .k2b-ui .mail-focus-skeleton-shape {
     animation: mail-quick-look-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+/* The end state takes the list's 0.125rem row gap along, so nothing moves when the row is dropped. */
+@keyframes mail-list-row-leave {
+  from {
+    height: var(--mail-row-height);
+  }
+  to {
+    height: 0;
+    margin-bottom: -0.125rem;
+    opacity: 0;
   }
 }
 

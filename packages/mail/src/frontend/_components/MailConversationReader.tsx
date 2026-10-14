@@ -119,6 +119,7 @@ export default function MailConversationReader(props: {
   onToggleDetails: () => void;
   onToolbarActionsChange: (actions: MailConversationToolbarActionId[]) => void;
   actionPending: boolean;
+  structurePending: boolean;
   onAction: (actionId: MailActionId, options?: { silent?: boolean }) => void | Promise<void>;
   onOpenHref: (href: string, replace?: boolean) => void | Promise<void>;
   onManageTags: () => void | Promise<void>;
@@ -756,11 +757,11 @@ export default function MailConversationReader(props: {
   const keepAction = (): { label: string; icon: string; description?: string; disabled: boolean; action: () => void } | null => {
     if (props.keep) {
       return props.canAdmin
-        ? { label: t().stopKeeping, icon: "ti ti-lock-open", disabled: props.actionPending, action: () => void props.onStopKeeping() }
+        ? { label: t().stopKeeping, icon: "ti ti-lock-open", disabled: props.structurePending, action: () => void props.onStopKeeping() }
         : { label: t().kept, icon: "ti ti-lock", description: t().keptOnlyManagers, disabled: true, action: () => undefined };
     }
     return props.canWrite
-      ? { label: t().keep, icon: "ti ti-lock", disabled: props.actionPending, action: () => void props.onKeep() }
+      ? { label: t().keep, icon: "ti ti-lock", disabled: props.structurePending, action: () => void props.onKeep() }
       : null;
   };
 
@@ -843,7 +844,7 @@ export default function MailConversationReader(props: {
         id,
         label: t().splitLatest,
         icon: "ti ti-arrows-split-2",
-        disabled: props.actionPending,
+        disabled: props.structurePending,
         action: () => void props.onSplitMessage(message.id),
       };
     }
@@ -857,7 +858,7 @@ export default function MailConversationReader(props: {
         id,
         label: t().tags,
         icon: "ti ti-tags",
-        disabled: props.actionPending,
+        disabled: props.structurePending,
         action: () => void props.onManageTags(),
       };
     }
@@ -867,7 +868,7 @@ export default function MailConversationReader(props: {
         id,
         label: t().mergeWithConversation,
         icon: "ti ti-git-merge",
-        disabled: props.actionPending,
+        disabled: props.structurePending,
         action: () => void props.onMergeConversation(),
       };
     }
@@ -922,6 +923,7 @@ export default function MailConversationReader(props: {
     return {
       label: localizedActionLabel(actionId),
       icon: getMailAction(actionId).icon,
+      disabled: props.actionPending,
       action: () => props.onAction(actionId),
       ...(actionId === "trash" ? { variant: "danger" as const } : {}),
     };
@@ -933,7 +935,7 @@ export default function MailConversationReader(props: {
     return [
       keep.disabled && keep.description
         ? { label: keep.label, icon: keep.icon, description: keep.description, disabled: true }
-        : { label: keep.label, icon: keep.icon, action: keep.action },
+        : { label: keep.label, icon: keep.icon, disabled: keep.disabled, action: keep.action },
     ];
   };
 
@@ -972,6 +974,7 @@ export default function MailConversationReader(props: {
           {
             label: localizedActionLabel("archive"),
             icon: getMailAction("archive").icon,
+            disabled: props.actionPending,
             action: () => props.onAction("archive"),
           },
           organizeItem(props.inJunk ? "not_spam" : "junk"),
@@ -979,6 +982,7 @@ export default function MailConversationReader(props: {
           {
             label: localizedActionLabel("move"),
             icon: getMailAction("move").icon,
+            disabled: props.actionPending,
             action: () => props.onAction("move"),
           },
         ],
@@ -989,16 +993,19 @@ export default function MailConversationReader(props: {
           {
             label: localizedActionLabel(props.unread ? "mark_read" : "mark_unread"),
             icon: getMailAction(props.unread ? "mark_read" : "mark_unread").icon,
+            disabled: props.actionPending,
             action: () => props.onAction(props.unread ? "mark_read" : "mark_unread"),
           },
           {
             label: localizedActionLabel(props.flagged ? "unflag" : "flag"),
             icon: getMailAction(props.flagged ? "unflag" : "flag").icon,
+            disabled: props.actionPending,
             action: () => props.onAction(props.flagged ? "unflag" : "flag"),
           },
           {
             label: t().tags,
             icon: "ti ti-tags",
+            disabled: props.structurePending,
             action: props.onManageTags,
           },
         ],
@@ -1017,6 +1024,7 @@ export default function MailConversationReader(props: {
                 {
                   label: t().mergeWithConversation,
                   icon: "ti ti-git-merge",
+                  disabled: props.structurePending,
                   action: props.onMergeConversation,
                 },
               ]
@@ -1027,6 +1035,7 @@ export default function MailConversationReader(props: {
                 {
                   label: t().splitLatest,
                   icon: "ti ti-arrows-split-2",
+                  disabled: props.structurePending,
                   action: () => {
                     const message = latestMessage();
                     if (message) void props.onSplitMessage(message.id);
