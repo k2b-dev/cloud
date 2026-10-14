@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { type SQL, sql } from "bun";
 import type { Context } from "hono";
+import { lazySync } from "../_internal/process-sync";
 import { PWA_LIMITS as limits, type PwaDeviceView, type PwaErrorCode, type PwaPairingState, type PwaPlatform } from "../contracts/pwa";
 import { isAccountCategoryAllowed } from "./account-category-policy";
 import { audit } from "./audit";
@@ -30,6 +31,13 @@ const fail = (code: PwaErrorCode, status: PwaError["status"], attemptsLeft?: num
 
 /** The initiating web session of a pairing. */
 export type PwaWebActor = { userId: string; sid: string };
+/** Best-effort wake-ups for browsers waiting on a pairing claim. Postgres stays authoritative. */
+export type PwaPairingClaimHints = {
+  /** Call after the claim commits. Must not throw or delay the caller. */
+  publish(pairingId: string): void;
+  /** Settles on the first hint for this pairing, or when `signal` aborts. */
+  wait(pairingId: string, signal: AbortSignal): Promise<void>;
+};
 /** Administration of another account's phones needs current admin authority. */
 export type PwaDeviceAdministrator = { userId: string; admin: boolean };
 export type PwaRevocationReason = "user" | "unpaired" | "admin" | "replaced" | "account_expired";
@@ -87,6 +95,25 @@ type UserRow = {
 };
 
 const log = logger("pwa-devices");
+const claimTopic = lazySync((sync) =>
+  sync.topic<null>({
+    id: "cloud:pwa-pairing-claims",
+    owner: "cloud",
+    retention: { maxAgeMs: 120_000, maxBytes: 1_048_576 },
+    maxPayloadBytes: 2000,
+  }),
+);
+/** Core NATS broadcast reaches the waiting browser on any replica. */
+export const syncPairingClaimHints: PwaPairingClaimHints = {
+  publish: (pairingId) => {
+    void Promise.resolve()
+      .then(() => claimTopic().publish({ tenantId: pairingId, data: null }))
+      .catch((error) => log.warn("App pairing claim hint failed", { error: error instanceof Error ? error.name : "UnknownError" }));
+  },
+  wait: async (pairingId, signal) => {
+    for await (const _event of claimTopic().live({ tenantId: pairingId, signal })) return;
+  },
+};
 const iso = (value: Date | string) => new Date(value).toISOString();
 const passed = (value: Date | string) => new Date(value).getTime() <= Date.now();
 const DEVICE_KEY = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.([A-Za-z0-9_-]{43})$/;
@@ -243,7 +270,7 @@ export type PwaCompletion =
   | { state: "paired"; credentials: PwaCredentials | null; platform: PwaPlatform }
   | { state: "waiting"; code: string; account: { name: string }; expiresAt: string };
 
-export const createPwaDeviceService = () => {
+export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairingClaimHints) => {
   const appSession = (deviceId: string) => ({ ttlSeconds: limits.sessionSeconds, pwaDeviceId: deviceId, recordLogin: false });
 
   /**
@@ -334,21 +361,46 @@ export const createPwaDeviceService = () => {
     },
 
     /** Never returns the code: the person types what the phone shows. */
-    inspectPairing: async (actor: PwaWebActor, id: string) => {
-      const [p] = await sql<(PairingRow & { current_epoch: string })[]>`
-        SELECT p.*, u.auth_epoch AS current_epoch FROM auth.pwa_pairings p JOIN auth.users u ON u.id = p.user_id
-        WHERE p.id = ${id}::uuid AND p.user_id = ${actor.userId}::uuid AND p.initiator_sid = ${actor.sid}::uuid
-      `;
-      if (!p) return fail("NOT_FOUND", 404);
-      if (passed(p.expires_at) || p.current_epoch !== p.auth_epoch || (p.state === "pending" && passed(p.claim_until)))
-        return fail("EXPIRED", 410);
-      return {
-        state: p.state,
-        claimUntil: iso(p.claim_until),
-        expiresAt: iso(p.expires_at),
-        device: p.state === "pending" || !p.device_name || !p.platform ? null : { name: p.device_name, platform: p.platform },
-        attemptsLeft: Math.max(0, limits.confirmAttempts - p.failed_attempts),
+    inspectPairing: async (actor: PwaWebActor, id: string, hold?: { ms: number; signal?: AbortSignal }) => {
+      const read = async (validateInitiator = false) => {
+        const [p] = await sql<(PairingRow & { current_epoch: string })[]>`
+          SELECT p.*, u.auth_epoch AS current_epoch FROM auth.pwa_pairings p JOIN auth.users u ON u.id = p.user_id
+          WHERE p.id = ${id}::uuid AND p.user_id = ${actor.userId}::uuid AND p.initiator_sid = ${actor.sid}::uuid
+        `;
+        if (!p) return fail("NOT_FOUND", 404);
+        if (passed(p.expires_at) || p.current_epoch !== p.auth_epoch || (p.state === "pending" && passed(p.claim_until)))
+          return fail("EXPIRED", 410);
+        if (validateInitiator && !(await initiatorValid(sql, p))) return fail("EXPIRED", 410);
+        return {
+          state: p.state,
+          claimUntil: iso(p.claim_until),
+          expiresAt: iso(p.expires_at),
+          device: p.state === "pending" || !p.device_name || !p.platform ? null : { name: p.device_name, platform: p.platform },
+          attemptsLeft: Math.max(0, limits.confirmAttempts - p.failed_attempts),
+        };
       };
+      if (!hold) return read();
+      // Listen before the first read so a claim committed in between usually wakes this request.
+      // live() has no subscription-ready barrier, so the hint is best effort; the deadline re-read is the guarantee.
+      // The read after the hold also checks the initiating web session, which may have ended meanwhile.
+      const waiting = new AbortController();
+      const ended = new Promise((resolve) => waiting.signal.addEventListener("abort", resolve, { once: true }));
+      const stop = () => waiting.abort();
+      hold.signal?.addEventListener("abort", stop, { once: true });
+      if (hold.signal?.aborted) stop();
+      const hint = hints.wait(id, waiting.signal).catch(() => {});
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const first = await read();
+        if (first.state !== "pending") return first;
+        timer = setTimeout(stop, Math.min(hold.ms, new Date(first.claimUntil).getTime() - Date.now()));
+        await Promise.race([hint, ended]);
+        return await read(true);
+      } finally {
+        clearTimeout(timer);
+        hold.signal?.removeEventListener("abort", stop);
+        stop();
+      }
     },
 
     confirmPairing: async (actor: PwaWebActor, id: string, code: string) => {
@@ -438,6 +490,7 @@ export const createPwaDeviceService = () => {
           WHERE id = ${p.id}::uuid`;
         return { account: { name: accountName(user) }, expiresAt: p.expires_at };
       });
+      hints.publish(snapshot.id);
       return { code, account: result.account, expiresAt: iso(result.expiresAt), completionSecret };
     },
 

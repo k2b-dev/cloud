@@ -134,11 +134,16 @@ export const createPwaRoutes = (options: PwaRouteOptions = {}) => {
       describeRoute({
         tags,
         summary: "Read a pairing",
-        description: "Only for the web session that started it. Never returns the code.",
+        description:
+          "Only for the web session that started it. Never returns the code. A pending read is held for up to one poll interval and answers as soon as the phone claims the link.",
         responses: { 200: jsonResponse(PwaPairingStatusSchema, "Pairing state") },
       }),
       v("param", IdParamSchema, pwaInvalidRequest),
-      async (c) => c.json(await service.inspectPairing(await webActor(c), c.req.valid("param").id)),
+      async (c) => {
+        const actor = await webActor(c);
+        const hold = { ms: PWA_LIMITS.pollSeconds * 1000, signal: c.req.raw.signal };
+        return c.json(await service.inspectPairing(actor, c.req.valid("param").id, hold));
+      },
     )
     .post(
       "/pairings/:id/confirm",

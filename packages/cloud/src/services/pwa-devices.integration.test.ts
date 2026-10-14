@@ -20,7 +20,7 @@ import { invalidateIdentityRuntimeConfig } from "./identity/runtime-config";
 import { notifications } from "./notifications";
 import { registerNotificationDefinitions } from "./notifications/catalog";
 import { toPgUuidArray } from "./postgres";
-import { type PwaDevicePairedNotice, pwaDevices } from "./pwa-devices";
+import { createPwaDeviceService, type PwaDevicePairedNotice, pwaDevices, syncPairingClaimHints } from "./pwa-devices";
 import { session } from "./session";
 import { requireRecentWebSession } from "./session/recent";
 import { createTestAppSession, createTestSession } from "./session/session.test-fixture";
@@ -255,6 +255,86 @@ suite("mobile app pairing and app sessions", () => {
     expect(audits.map((row) => row.action)).toEqual(["auth.pwa.pairing.start", "auth.pwa.pairing.confirm", "auth.pwa.device.enroll"]);
     const recorded = JSON.stringify(audits);
     for (const value of [started.secret, claimed.code, device.value, phone.get("pwa_session")!]) expect(recorded).not.toContain(value);
+  });
+
+  test("a pending read is held until the phone claims the link, and for one poll interval at most", async () => {
+    // First use provisions the topic alongside the publisher; a claim during provisioning would only be seen at the deadline.
+    await syncPairingClaimHints.wait(crypto.randomUUID(), AbortSignal.abort());
+    const owner = await person();
+    const started = await startPairing(owner);
+    const path = `${PWA_API_PATH}/pairings/${started.id}`;
+    let claimSent = false;
+    let answeredBeforeClaim: boolean | undefined;
+    const began = performance.now();
+    const pending = call(owner.web, "GET", path).then((response) => {
+      answeredBeforeClaim = !claimSent;
+      return response;
+    });
+    await Bun.sleep(100);
+    expect(answeredBeforeClaim).toBeUndefined();
+    claimSent = true;
+    expect((await claim(new Jar(), started.secret)).status).toBe(200);
+    const response = await pending;
+    expect(performance.now() - began).toBeLessThan(4000);
+    expect(answeredBeforeClaim).toBe(false);
+    expect(response.status).toBe(200);
+    expect(await typed<{ state: string; device: { name: string; platform: string } }>(response)).toMatchObject({
+      state: "claimed",
+      device: { name: "iPhone", platform: "ios" },
+    });
+
+    const immediate = performance.now();
+    const alreadyClaimed = await call(owner.web, "GET", path);
+    expect(performance.now() - immediate).toBeLessThan(1000);
+    expect(alreadyClaimed.status).toBe(200);
+    expect(await json(alreadyClaimed)).toMatchObject({ state: "claimed" });
+
+    const unclaimed = await startPairing(owner);
+    const otherSession = new Jar({ session_token: await createTestSession(owner.id) });
+    const denied = performance.now();
+    const notFound = await call(otherSession, "GET", `${PWA_API_PATH}/pairings/${unclaimed.id}`);
+    expect(performance.now() - denied).toBeLessThan(1000);
+    expect(notFound.status).toBe(404);
+    expect(await json(notFound)).toMatchObject({ code: "NOT_FOUND" });
+
+    // A silent hint source exercises the poll deadline without waiting five seconds.
+    let waitingSignal: AbortSignal | undefined;
+    const service = createPwaDeviceService({
+      publish: () => {},
+      wait: (_id, signal) => {
+        waitingSignal = signal;
+        return new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      },
+    });
+    const bounded = performance.now();
+    const stillPending = await service.inspectPairing({ userId: owner.id, sid: owner.sid }, unclaimed.id, { ms: 50 });
+    const elapsed = performance.now() - bounded;
+    expect(elapsed).toBeGreaterThanOrEqual(50);
+    expect(elapsed).toBeLessThan(1000);
+    expect(stillPending.state).toBe("pending");
+    expect(waitingSignal?.aborted).toBe(true);
+  });
+
+  test("a held pairing read expires without device details when the initiating web session ends", async () => {
+    await syncPairingClaimHints.wait(crypto.randomUUID(), AbortSignal.abort());
+    const owner = await person();
+    const started = await startPairing(owner);
+    const path = `${PWA_API_PATH}/pairings/${started.id}`;
+    let answered = false;
+    const pending = call(owner.web, "GET", path).then((response) => {
+      answered = true;
+      return response;
+    });
+    await Bun.sleep(100);
+    expect(answered).toBe(false);
+    await session.revoke(owner.token);
+    expect((await claim(new Jar(), started.secret)).status).toBe(200);
+    const response = await pending;
+    expect(response.status).toBe(410);
+    const body = await response.text();
+    expect(JSON.parse(body)).toMatchObject({ code: "EXPIRED" });
+    expect(body).not.toContain("iPhone");
+    expect(body).not.toContain('"device"');
   });
 
   test("without the mobile app nothing pairs or renews, while removal and sign-out still work", async () => {
