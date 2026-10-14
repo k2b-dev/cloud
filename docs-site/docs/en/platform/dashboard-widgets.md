@@ -363,14 +363,24 @@ restores the previous board and settings.
 
 The gallery can add a widget with settings several times. Each board entry has
 its own id and settings, stored separately, even when entries name the same
-widget. A widget without settings appears at most once. The framework
-validates values against the current declaration on every call, and the
-handler authorizes every chosen resource. A stored resource title is only a
-display snapshot for the settings dialog; it is never sent to the widget and
-grants no access.
+widget. A widget without settings appears at most once: saving a board with a
+second entry of a running widget that declares no settings fails with `400`.
+Core does not judge a key whose app is not running, or every key while the app
+registry cannot be read, so such a save still succeeds; the page then shows
+that widget once. The framework validates values against the current
+declaration on every call, and the handler authorizes every chosen resource. A
+stored resource title is only a display snapshot for the settings dialog; it is
+never sent to the widget and grants no access.
+
+In edit mode, every label and announcement names an entry by its widget title
+and its first chosen resource, option, or text, for example "Today · Team
+Logistics", so screen reader users can tell entries apart. The widget's own
+frame shows what its handler returns, so a widget that can appear several times
+should name its chosen resource or option in its `title` or `meta`.
 
 A board keeps the place and settings of a widget whose app is not running,
-and shows it again when the app returns.
+and shows it again when the app returns. An entry keeps its settings while its
+app temporarily declares none.
 
 ## Read widgets from a browser
 

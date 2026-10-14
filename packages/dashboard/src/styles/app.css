@@ -334,6 +334,25 @@
   padding: 0;
 }
 
+/* A small widget's group sits centered right above its size choice, at every width: at the top it would cover the
+   head, which names the widget and is where a person picks it up. `--dashboard-sizes-height` is the size choice's
+   height: its options, its padding and its border. */
+.dashboard-tile {
+  --dashboard-sizes-height: 2.125rem;
+}
+
+.dashboard-tile[data-size="small"] .dashboard-tile__tools {
+  top: auto;
+  bottom: 0.625rem;
+  left: 0.5rem;
+  width: fit-content;
+  margin-inline: auto;
+}
+
+.dashboard-tile[data-size="small"]:has(.dashboard-tile__sizes) .dashboard-tile__tools {
+  bottom: calc(0.625rem + var(--dashboard-sizes-height) + 0.125rem);
+}
+
 /* ── Widget settings ──────────────────────────────────────────────────── */
 .dashboard-widget-settings {
   display: flex;
@@ -617,13 +636,27 @@
     inset: -0.375rem;
   }
 
+  .dashboard-gallery-card__preview {
+    height: 11.5rem;
+  }
+
+  .dashboard-gallery .dashboard-gallery-card__actions .k2b-segmented-control[data-size] .k2b-segmented-control__option {
+    min-height: 2.75rem;
+  }
+}
+
+/* 44px to hit on a phone and on every touch screen. A small widget's size choice spans the widget, and each option
+   grows from its label, so all three labels fit in half of a 320px screen. */
+@media (max-width: 47.999rem), (pointer: coarse) {
+  .dashboard-tile {
+    --dashboard-sizes-height: 3.125rem;
+  }
+
   .dashboard-board .dashboard-tile__sizes .k2b-segmented-control[data-size] .k2b-segmented-control__option {
     min-height: 2.75rem;
     padding-inline: 0.5rem;
   }
 
-  /* A small widget is half the phone's width: its size choice spans the widget, and each option grows from its label,
-     so all three labels fit down to a 320px screen. */
   .dashboard-tile[data-size="small"] .dashboard-tile__sizes {
     right: 0.25rem;
     left: 0.25rem;
@@ -638,18 +671,16 @@
     padding-inline: 0.125rem;
   }
 
-  /* 44px to hit. A small widget is half the phone's width, so its group spans it and each control takes its share.
-     It sits right above the size choice, which leaves the widget's head free to pick the widget up by. */
   .dashboard-board .dashboard-tile__tools .k2b-button[data-size] {
     min-width: 2.75rem;
     min-height: 2.75rem;
   }
 
+  /* A small widget's group spans it, and each control takes its share. */
   .dashboard-tile[data-size="small"] .dashboard-tile__tools {
-    top: auto;
     right: 0.25rem;
-    bottom: 0.625rem;
     left: 0.25rem;
+    width: auto;
     max-width: none;
     justify-content: space-between;
     gap: 0;
@@ -661,16 +692,9 @@
     flex: 1 1 0;
   }
 
-  /* The size choice is 3.125rem high: its 44px options, its padding and its border. */
-  .dashboard-tile[data-size="small"]:has(.dashboard-tile__sizes) .dashboard-tile__tools {
-    bottom: calc(0.625rem + 3.125rem + 0.125rem);
-  }
-
-  .dashboard-gallery-card__preview {
-    height: 11.5rem;
-  }
-
-  .dashboard-gallery .dashboard-gallery-card__actions .k2b-segmented-control[data-size] .k2b-segmented-control__option {
+  /* The resource field's Clear and Choose in the widget settings. */
+  .dashboard-widget-settings .k2b-input-shell__affix .k2b-button[data-size] {
+    min-width: 2.75rem;
     min-height: 2.75rem;
   }
 }

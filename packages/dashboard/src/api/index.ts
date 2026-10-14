@@ -122,9 +122,9 @@ const apiRoutes = new Hono<AuthContext>()
     if (!user.ok) return respond(c, user);
     const input = c.req.valid("json");
     if (input.board && new Set(input.board.map((entry) => entry.key)).size < input.board.length) {
-      const declared = new Map(
-        (await listWidgets()).map((widget) => [widgetKey(widget.appId, widget.widgetId), hasWidgetSettings(widget)]),
-      );
+      // Registry downtime leaves every key unknown, so it does not block saving the board.
+      const widgets = await listWidgets().catch(() => []);
+      const declared = new Map(widgets.map((widget) => [widgetKey(widget.appId, widget.widgetId), hasWidgetSettings(widget)]));
       const repeated = repeatedKeysWithoutSettings(input.board, declared);
       if (repeated.length) return respond(c, fail(err.badInput(`Widgets without settings can appear only once: ${repeated.join(", ")}`)));
     }

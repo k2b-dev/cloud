@@ -206,6 +206,42 @@ export const hasWidgetSettings = (widget: { settings?: WidgetSettingsDeclaration
 export const newDashboardEntryId = (key: string, taken: ReadonlySet<string>): string =>
   key.length <= DASHBOARD_MAX_ID_LENGTH && !taken.has(key) ? key : crypto.randomUUID();
 
+/** Only values that still fit the declaration leave the settings dialog; choice values keep their exact spelling. */
+export const fitEntrySettings = (declaration: WidgetSettingsDeclaration, draft: DashboardEntrySettings): DashboardEntrySettings => {
+  const settings: DashboardEntrySettings = {};
+  for (const [name, field] of Object.entries(declaration)) {
+    const value = draft[name];
+    switch (field.kind) {
+      case "text":
+        if (typeof value === "string" && value.trim()) settings[name] = value.trim();
+        break;
+      case "choice":
+        if (typeof value === "string" && field.options.some((option) => option.value === value)) settings[name] = value;
+        break;
+      case "toggle":
+        if (typeof value === "boolean") settings[name] = value;
+        break;
+      case "resource":
+        if (typeof value === "object" && value.type === field.type) {
+          const title = value.title?.trim().slice(0, DASHBOARD_MAX_TITLE_LENGTH);
+          settings[name] = { type: value.type, id: value.id, ...(title ? { title } : {}) };
+        }
+        break;
+    }
+  }
+  return settings;
+};
+
+/** Unset and empty settings are equal, so applying an unchanged dialog does not edit the board. */
+export const sameEntrySettings = (a: DashboardEntrySettings | undefined, b: DashboardEntrySettings | undefined): boolean =>
+  Object.keys(a ?? {}).length === Object.keys(b ?? {}).length &&
+  Object.entries(a ?? {}).every(([name, value]) => {
+    const other = b?.[name];
+    return typeof value === "object" && typeof other === "object"
+      ? value.type === other.type && value.id === other.id && value.title === other.title
+      : value === other;
+  });
+
 /** Title snapshots are for the settings dialog only; the widget receives strict resource references. */
 export const widgetRequestSettings = (settings: DashboardEntrySettings | undefined): WidgetSettings | undefined => {
   if (!settings || !Object.keys(settings).length) return undefined;
@@ -226,15 +262,21 @@ const SIZE_RANK: Record<DashboardWidgetSize, number> = { large: 0, medium: 1, sm
  * default size. Large widgets come first, then medium, then small, each in catalog order, so the rows fill without
  * gaps on four columns and on two.
  */
-export const defaultDashboardBoard = (catalog: readonly DashboardCatalogWidget[]): DashboardBoardEntry[] =>
-  catalog
+export const defaultDashboardBoard = (catalog: readonly DashboardCatalogWidget[]): DashboardBoardEntry[] => {
+  const taken = new Set<string>();
+  return catalog
     .filter((widget) => widget.suggest)
     .map((widget, index) => ({ widget, index }))
     .sort((a, b) => SIZE_RANK[a.widget.defaultSize] - SIZE_RANK[b.widget.defaultSize] || a.index - b.index)
-    .map(({ widget }) => ({ id: widget.key, key: widget.key, size: widget.defaultSize }))
-    .slice(0, DASHBOARD_MAX_ITEMS);
+    .slice(0, DASHBOARD_MAX_ITEMS)
+    .map(({ widget }) => {
+      const id = newDashboardEntryId(widget.key, taken);
+      taken.add(id);
+      return { id, key: widget.key, size: widget.defaultSize };
+    });
+};
 
-/** A saved widget the page cannot show now, and its place on the saved board. */
+/** A saved widget the page cannot show now, and its place on the board after surplus entries are dropped. */
 export type DashboardKeptEntry = DashboardBoardEntry & { index: number };
 
 /**
@@ -251,13 +293,13 @@ export const splitDashboardBoard = (
   const shown: DashboardBoardEntry[] = [];
   const kept: DashboardKeptEntry[] = [];
   const once = new Set<string>();
-  board.forEach((entry, index) => {
+  board.forEach((entry) => {
     const widget = byKey.get(entry.key);
-    if (!widget) kept.push({ ...entry, index });
+    if (!widget) kept.push({ ...entry, index: shown.length + kept.length });
     else if (hasWidgetSettings(widget)) shown.push({ ...entry, size: fitWidgetSize(entry.size, widget) });
     else if (!once.has(entry.key)) {
       once.add(entry.key);
-      shown.push({ id: entry.id, key: entry.key, size: fitWidgetSize(entry.size, widget) });
+      shown.push({ ...entry, size: fitWidgetSize(entry.size, widget) });
     }
   });
   return { shown, kept };

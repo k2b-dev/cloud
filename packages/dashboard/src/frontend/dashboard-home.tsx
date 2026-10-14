@@ -7,6 +7,7 @@ import { apiClient } from "../api/client";
 import {
   DASHBOARD_MAX_ITEMS,
   DASHBOARD_MAX_SHORTCUTS,
+  DASHBOARD_MAX_TITLE_LENGTH,
   type DashboardAppSummary,
   type DashboardBoardEntry,
   type DashboardCatalogWidget,
@@ -17,6 +18,7 @@ import {
   hasWidgetSettings,
   newDashboardEntryId,
   restoreKeptDashboardEntries,
+  sameEntrySettings,
   widgetRequestSettings,
 } from "../shared";
 import { openDashboardGallery } from "./dashboard-gallery";
@@ -109,7 +111,28 @@ export default function DashboardHome(props: DashboardHomeProps) {
   /** Widgets the page cannot show count too: saving keeps them. */
   const boardIsFull = () => board().length + kept().length >= DASHBOARD_MAX_ITEMS;
   const sizeOf = (id: string): DashboardWidgetSize => board().find((entry) => entry.id === id)?.size ?? "medium";
-  const titleOf = (id: string) => catalogByKey.get(board().find((entry) => entry.id === id)?.key ?? "")?.title ?? id;
+  /**
+   * The widget's title and, for an entry with settings, the first resource, option, or text the person chose, so two
+   * entries of one widget have different names in every label and announcement.
+   */
+  const titleOf = (id: string) => {
+    const entry = board().find((entry) => entry.id === id);
+    const widget = catalogByKey.get(entry?.key ?? "");
+    if (!entry || !widget) return id;
+    for (const [name, field] of Object.entries(widget.settings ?? {})) {
+      const value = entry.settings?.[name];
+      const detail =
+        field.kind === "resource" && typeof value === "object" && value.type === field.type
+          ? value.title
+          : field.kind === "choice"
+            ? field.options.find((option) => option.value === value)?.label
+            : field.kind === "text" && typeof value === "string"
+              ? value.trim()
+              : undefined;
+      if (detail) return t().entryName({ title: widget.title, detail: detail.slice(0, DASHBOARD_MAX_TITLE_LENGTH) });
+    }
+    return widget.title;
+  };
   const tileElement = (id: string) => grid?.querySelector<HTMLElement>(`.dashboard-tile[data-id="${CSS.escape(id)}"]`) ?? undefined;
 
   // ── Loading ───────────────────────────────────────────────────────────
@@ -326,8 +349,10 @@ export default function DashboardHome(props: DashboardHomeProps) {
     const dialog = await importOnDemand(() => import("./dashboard-widget-settings"));
     if (!dialog) return;
     try {
-      const next = await dialog.openDashboardWidgetSettings({ widget, settings: entry.settings }, locale());
-      if (next === undefined || !editable() || !board().some((entry) => entry.id === id)) return;
+      const next = await dialog.openDashboardWidgetSettings({ widget, name: titleOf(id), settings: entry.settings }, locale());
+      const current = board().find((entry) => entry.id === id);
+      // Apply without a change leaves the board as it was, also a default board the person follows.
+      if (next === undefined || !editable() || !current || sameEntrySettings(next, current.settings)) return;
       change(
         board().map((entry) => {
           if (entry.id !== id) return entry;
@@ -336,7 +361,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
         }),
       );
       loadMissing();
-      announce(t().customized({ name: widget.title }));
+      announce(t().customized({ name: titleOf(id) }));
     } finally {
       tileElement(id)?.querySelector<HTMLButtonElement>(".dashboard-tile__customize")?.focus({ preventScroll: true });
     }
@@ -520,6 +545,13 @@ export default function DashboardHome(props: DashboardHomeProps) {
   const onTouchMove = (event: TouchEvent) => {
     if (press?.armed) event.preventDefault();
   };
+  // The finger of a long press lifts over the edit controls that appeared under it. Without this, the touch screen's
+  // emulated mouse press would focus whichever control is there instead of the widget.
+  const onTouchEnd = (event: TouchEvent) => {
+    if (!suppressClick) return;
+    suppressClick = false;
+    event.preventDefault();
+  };
   const onClickCapture = (event: MouseEvent) => {
     if (!suppressClick) return;
     suppressClick = false;
@@ -534,6 +566,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
     window.addEventListener("pointerup", onPointerEnd);
     window.addEventListener("pointercancel", onPointerEnd);
     grid?.addEventListener("touchmove", onTouchMove, { passive: false });
+    grid?.addEventListener("touchend", onTouchEnd, { passive: false });
     grid?.addEventListener("click", onClickCapture, { capture: true });
     onCleanup(() => {
       endPress();
@@ -541,6 +574,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
       window.removeEventListener("pointerup", onPointerEnd);
       window.removeEventListener("pointercancel", onPointerEnd);
       grid?.removeEventListener("touchmove", onTouchMove);
+      grid?.removeEventListener("touchend", onTouchEnd);
       grid?.removeEventListener("click", onClickCapture, { capture: true });
     });
   });
@@ -551,6 +585,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
     const first = () => ids().indexOf(tileProps.id) === 0;
     const last = () => ids().indexOf(tileProps.id) === ids().length - 1;
     const state = () => tiles()[tileProps.id] ?? { status: "loading" as const };
+    const name = () => titleOf(tileProps.id);
     return (
       <div
         class="dashboard-tile"
@@ -563,7 +598,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
         tabIndex={editing() ? 0 : -1}
         role="group"
         aria-roledescription={t().widgetRole}
-        aria-label={t().widgetLabel({ title: widget.title, app: widget.appName })}
+        aria-label={t().widgetLabel({ title: name(), app: widget.appName })}
         onKeyDown={(event) => onTileKeyDown(event, tileProps.id)}
       >
         <div class="dashboard-tile__frame" inert={editing()}>
@@ -573,18 +608,18 @@ export default function DashboardHome(props: DashboardHomeProps) {
           <button
             type="button"
             class="dashboard-remove dashboard-tile__remove dashboard-tile__control"
-            aria-label={t().removeNamed({ name: widget.title })}
+            aria-label={t().removeNamed({ name: name() })}
             disabled={saving()}
             onClick={() => remove(tileProps.id)}
           >
             <i class="ti ti-x" aria-hidden="true" />
           </button>
-          <div class="dashboard-tile__tools dashboard-tile__control" role="group" aria-label={t().toolsOf({ name: widget.title })}>
+          <div class="dashboard-tile__tools dashboard-tile__control" role="group" aria-label={t().toolsOf({ name: name() })}>
             <IconButton
               size="sm"
               class="dashboard-tile__move"
               data-move="forward"
-              label={t().moveForwardNamed({ name: widget.title })}
+              label={t().moveForwardNamed({ name: name() })}
               tooltip={t().moveForward}
               aria-disabled={first() || saving() ? "true" : undefined}
               onClick={() => moveBy(tileProps.id, -1, "forward")}
@@ -595,7 +630,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
               size="sm"
               class="dashboard-tile__move"
               data-move="back"
-              label={t().moveBackNamed({ name: widget.title })}
+              label={t().moveBackNamed({ name: name() })}
               tooltip={t().moveBack}
               aria-disabled={last() || saving() ? "true" : undefined}
               onClick={() => moveBy(tileProps.id, 1, "back")}
@@ -607,7 +642,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
                 size="sm"
                 variant="ghost"
                 class="dashboard-tile__customize"
-                aria-label={t().customizeNamed({ name: widget.title })}
+                aria-label={t().customizeNamed({ name: name() })}
                 // A small widget shows the icon alone, so the name comes as a tooltip there.
                 tooltip={sizeOf(tileProps.id) === "small" ? t().customize : false}
                 disabled={saving()}
@@ -623,7 +658,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
               <SegmentedControl<DashboardWidgetSize>
                 size="sm"
                 disabled={saving()}
-                ariaLabel={t().sizeOf({ name: widget.title })}
+                ariaLabel={t().sizeOf({ name: name() })}
                 value={() => sizeOf(tileProps.id)}
                 onValueChange={(size) => resize(tileProps.id, size)}
                 options={widget.sizes.map((value) => ({ value, label: t()[value] }))}

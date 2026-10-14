@@ -830,17 +830,81 @@ describe("the dashboard board in a browser", () => {
       await tile(page, "weather/current").getByText("Weather hamburg", { exact: true }).waitFor();
       await tile(page, "w2").getByText("Weather berlin", { exact: true }).waitFor();
       await page.getByRole("button", { name: "Edit dashboard" }).click();
-      await tile(page, "w2").getByRole("button", { name: "Move Weather forward" }).click();
+      // Each entry is named by its chosen option, in its label, its controls, and what is announced.
+      expect(await tile(page, "weather/current").getAttribute("aria-label")).toBe("Weather · Hamburg, Weather");
+      expect(await tile(page, "w2").getAttribute("aria-label")).toBe("Weather · Berlin, Weather");
+      await tile(page, "w2").getByRole("button", { name: "Customize Weather · Berlin", exact: true }).waitFor();
+      await tile(page, "w2").getByRole("button", { name: "Move Weather · Berlin forward", exact: true }).click();
+      await announced(page, "Weather · Berlin at position 1 of 2");
       expect((await layout(page)).order).toEqual(["w2:small", "weather/current:small"]);
       await tile(page, "w2").getByRole("radio", { name: "Medium" }).click();
       await page.waitForFunction(() => document.querySelector('[data-id="w2"]')?.getAttribute("data-size") === "medium");
       expect(requests.at(-1)).toEqual([{ ...entries[1]!, size: "medium" }]);
       expect(await tile(page, "weather/current").getAttribute("data-size")).toBe("small");
-      await tile(page, "w2").getByRole("button", { name: "Remove Weather" }).click();
+      await tile(page, "w2").getByRole("button", { name: "Remove Weather · Berlin", exact: true }).click();
+      await announced(page, "Weather · Berlin removed");
       expect((await layout(page)).order).toEqual(["weather/current:small"]);
       expect(await tile(page, "weather/current").textContent()).toContain("Weather hamburg");
     } finally {
       await close();
+    }
+  }, 30_000);
+
+  test("Apply without a change keeps a person on the default board", async () => {
+    const { page, close } = await open(desktop, {
+      props: { ...baseProps, board: [{ id: "weather/current", key: "weather/current", size: "small" }], kept: [], followsDefault: true },
+    });
+    try {
+      await waitForState(page, "weather/current", "ok");
+      const asked = requests.length;
+      await page.getByRole("button", { name: "Edit dashboard" }).click();
+      await tile(page, "weather/current").getByRole("button", { name: "Customize Weather", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Customize Weather" });
+      await dialog.getByRole("button", { name: "Apply", exact: true }).click();
+      await dialog.waitFor({ state: "detached" });
+      const savedBefore = saved.length;
+      await page.getByRole("button", { name: "Done", exact: true }).click();
+      await page.getByRole("button", { name: "Edit dashboard" }).waitFor();
+      expect(saved.length).toBe(savedBefore);
+      expect(requests.length).toBe(asked);
+    } finally {
+      await close();
+    }
+  }, 30_000);
+
+  test("a small widget keeps its head free of the edit controls, and touch screens get 44px targets", async () => {
+    const board: DashboardBoardEntry[] = [
+      { id: "weather/current", key: "weather/current", size: "small" },
+      { id: "gateway/health", key: "gateway/health", size: "small" },
+    ];
+    for (const view of [
+      { width: 800, height: 900, touch: false },
+      { width: 820, height: 1180, touch: true },
+    ]) {
+      const { page, close } = await open(view, { props: { ...baseProps, board, kept: [] } });
+      try {
+        await waitForState(page, "weather/current", "ok");
+        await page.getByRole("button", { name: "Edit dashboard" }).click();
+        const result = await page.locator(".dashboard-tile").evaluateAll((tiles) =>
+          tiles.map((tile) => {
+            const head = tile.querySelector(".k2b-widget > *")!.getBoundingClientRect();
+            const tools = tile.querySelector(".dashboard-tile__tools")!.getBoundingClientRect();
+            const sizes = tile.querySelector(".dashboard-tile__sizes .k2b-segmented-control")!.getBoundingClientRect();
+            const buttons = Array.from(tile.querySelectorAll(".dashboard-tile__tools button")).map((button) => {
+              const box = button.getBoundingClientRect();
+              return Math.min(box.width, box.height);
+            });
+            return { coversHead: tools.top < head.bottom, overlapsSizes: tools.bottom > sizes.top, smallest: Math.min(...buttons) };
+          }),
+        );
+        for (const tile of result) {
+          expect(tile.coversHead).toBeFalse();
+          expect(tile.overlapsSizes).toBeFalse();
+          if (view.touch) expect(tile.smallest).toBeGreaterThanOrEqual(44);
+        }
+      } finally {
+        await close();
+      }
     }
   }, 30_000);
 
@@ -916,6 +980,12 @@ describe("the dashboard board in a browser", () => {
       await tile(page, "weather/current").getByRole("button", { name: "Customize Weather" }).click();
       await page.getByRole("dialog", { name: "Customize Weather" }).waitFor();
       expect(await page.locator(".k2b-bottom-sheet-frame").count()).toBe(1);
+      await page.keyboard.press("Escape");
+      await page.getByRole("dialog").waitFor({ state: "detached" });
+      await tile(page, "spaces/today").getByRole("button", { name: "Customize Today" }).click();
+      const choose = page.getByRole("dialog", { name: "Customize Today" }).getByRole("button", { name: "Choose", exact: true });
+      const box = (await choose.boundingBox())!;
+      expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
     } finally {
       await close();
     }
@@ -1079,7 +1149,7 @@ describe("the dashboard board in a browser", () => {
       await allLoaded(page);
       await page.getByRole("button", { name: "Dashboard bearbeiten" }).click();
       await page.getByRole("button", { name: "Fertig" }).waitFor();
-      expect(await page.locator(".dashboard-edit-hint").textContent()).toContain("Halten und ziehen verschiebt");
+      expect(await page.locator(".dashboard-edit-hint").textContent()).toContain("Halten und ziehen oder ← → tippen verschiebt");
       await tile(page, "weather/current").getByRole("radio", { name: "Mittel" }).waitFor();
       await tile(page, "weather/current").getByRole("button", { name: "Weather anpassen" }).waitFor();
       expect(await tile(page, "weather/current").locator(".dashboard-tile__customize").textContent()).toContain("Anpassen");

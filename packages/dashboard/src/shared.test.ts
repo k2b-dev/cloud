@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { WIDGET_REQUEST_MAX_ID_LENGTH, WIDGET_SETTING_TEXT_MAX_LENGTH, WIDGET_SETTINGS_MAX_FIELDS } from "@k2b/cloud/contracts";
+import {
+  WIDGET_REQUEST_MAX_ID_LENGTH,
+  WIDGET_SETTING_TEXT_MAX_LENGTH,
+  WIDGET_SETTINGS_MAX_FIELDS,
+  type WidgetSettingsDeclaration,
+} from "@k2b/cloud/contracts";
 import {
   DASHBOARD_MAX_ID_LENGTH,
   DASHBOARD_MAX_ITEMS,
@@ -8,6 +13,7 @@ import {
   type DashboardBoardEntry,
   type DashboardCatalogWidget,
   defaultDashboardBoard,
+  fitEntrySettings,
   isSafeDashboardShortcutHref,
   migrateLegacyDashboardLayout,
   newDashboardEntryId,
@@ -16,6 +22,7 @@ import {
   normalizeDashboardShortcutHref,
   normalizeLegacyDashboardLayout,
   restoreKeptDashboardEntries,
+  sameEntrySettings,
   splitDashboardBoard,
   widgetRequestSettings,
 } from "./shared";
@@ -95,6 +102,19 @@ describe("dashboard shortcut URLs", () => {
 });
 
 describe("defaultDashboardBoard", () => {
+  test("gives long suggested keys bounded, unique ids while short keys keep their ids", () => {
+    const board = defaultDashboardBoard([
+      widget("a".repeat(125), { suggest: true }),
+      widget("b".repeat(125), { suggest: true }),
+      widget("spaces/today", { suggest: true }),
+    ]);
+    expect(board).toHaveLength(3);
+    expect(board.every((entry) => entry.id.length <= DASHBOARD_MAX_ID_LENGTH)).toBeTrue();
+    expect(new Set(board.map((entry) => entry.id)).size).toBe(board.length);
+    expect(board[2]?.id).toBe("spaces/today");
+    expect(board.map((entry) => entry.key)).toEqual(["a".repeat(125), "b".repeat(125), "spaces/today"]);
+  });
+
   test("holds every suggested widget in its default size, large first, then medium, then small, each in catalog order", () => {
     const catalog = [
       widget("weather/current", { suggest: true, defaultSize: "small" }),
@@ -114,6 +134,19 @@ describe("defaultDashboardBoard", () => {
 });
 
 describe("splitDashboardBoard", () => {
+  test("restores unavailable widgets in order after surplus entries were dropped", () => {
+    const stored: DashboardBoardEntry[] = [
+      { id: "a", key: "app/a", size: "small" },
+      { id: "a-duplicate", key: "app/a", size: "small" },
+      { id: "b", key: "app/b", size: "small" },
+      { id: "stopped", key: "stopped/widget", size: "small" },
+      { id: "c", key: "app/c", size: "small" },
+    ];
+    const { shown, kept } = splitDashboardBoard(stored, [widget("app/a"), widget("app/b"), widget("app/c")]);
+    expect(kept).toEqual([{ ...stored[3]!, index: 2 }]);
+    expect(restoreKeptDashboardEntries(shown, kept)).toEqual([stored[0]!, ...stored.slice(2)]);
+  });
+
   test("shows what the catalog offers in a size it offers today, and keeps the rest at its place for the next save", () => {
     const catalog = [widget("weather/current", { sizes: ["small", "medium"], defaultSize: "small" }), widget("spaces/today")];
     const stored = [
@@ -272,13 +305,13 @@ test("stored settings tolerate invalid members and bound title snapshots", () =>
 
 test("split and restore keep whole unavailable entries and drop extra instances without settings", () => {
   const board: DashboardBoardEntry[] = [
-    { id: "one", key: "a/one", size: "small" as const, settings: { note: "old" } },
+    { id: "one", key: "a/one", size: "small", settings: { space: { type: "spaces.space", id: "a", title: "Home" } } },
     { id: "two", key: "a/one", size: "small" as const },
     { id: "offline", key: "stopped/widget", size: "large" as const, settings: { space: { type: "spaces.space", id: "a", title: "Home" } } },
   ];
   const split = splitDashboardBoard(board, [widget("a/one")]);
-  expect(split.shown).toEqual([{ id: "one", key: "a/one", size: "small" }]);
-  expect(split.kept).toEqual([{ ...board[2]!, index: 2 }]);
+  expect(split.shown).toEqual([board[0]!]);
+  expect(split.kept).toEqual([{ ...board[2]!, index: 1 }]);
   expect(restoreKeptDashboardEntries(split.shown, split.kept)).toEqual([split.shown[0]!, board[2]!]);
   expect(splitDashboardBoard(board, [widget("a/one", { settings: { note: { kind: "text", label: "Note" } } })]).shown).toEqual(
     board.slice(0, 2),
@@ -302,4 +335,69 @@ test("widget request settings strip resource titles and omit empty settings", ()
   });
   expect(widgetRequestSettings(undefined)).toBeUndefined();
   expect(widgetRequestSettings({})).toBeUndefined();
+});
+
+describe("fitEntrySettings", () => {
+  test("trims text, omits empty text and values of another kind, and drops undeclared fields", () => {
+    const declaration: WidgetSettingsDeclaration = { note: { kind: "text", label: "Note" } };
+    expect(fitEntrySettings(declaration, { note: "  hello  ", old: "gone" })).toEqual({ note: "hello" });
+    for (const note of ["", " \n ", true, { type: "spaces.space", id: "a" }]) {
+      expect(fitEntrySettings(declaration, { note })).toEqual({});
+    }
+    expect(fitEntrySettings(declaration, {})).toEqual({});
+  });
+
+  test("keeps exact choice values including surrounding spaces and drops unknown choices", () => {
+    const declaration: WidgetSettingsDeclaration = {
+      mode: { kind: "choice", label: "Mode", options: [{ label: "A", value: " a " }] },
+    };
+    expect(fitEntrySettings(declaration, { mode: " a " })).toEqual({ mode: " a " });
+    for (const mode of ["a", "unknown", "", false, { type: "spaces.space", id: "a" }]) {
+      expect(fitEntrySettings(declaration, { mode })).toEqual({});
+    }
+  });
+
+  test("keeps only boolean toggles, including false", () => {
+    const declaration: WidgetSettingsDeclaration = { done: { kind: "toggle", label: "Done" } };
+    expect(fitEntrySettings(declaration, { done: true })).toEqual({ done: true });
+    expect(fitEntrySettings(declaration, { done: false })).toEqual({ done: false });
+    for (const done of ["false", "", { type: "spaces.space", id: "a" }]) {
+      expect(fitEntrySettings(declaration, { done })).toEqual({});
+    }
+  });
+
+  test("keeps only matching resource types and trims, bounds, or omits their title snapshots", () => {
+    const declaration: WidgetSettingsDeclaration = {
+      space: { kind: "resource", label: "Space", type: "spaces.space" },
+    };
+    const ref = { type: "spaces.space", id: "a" };
+    expect(fitEntrySettings(declaration, { space: { ...ref, title: " Home " } })).toEqual({ space: { ...ref, title: "Home" } });
+    expect(fitEntrySettings(declaration, { space: { ...ref, title: `  ${"x".repeat(DASHBOARD_MAX_TITLE_LENGTH + 1)}  ` } })).toEqual({
+      space: { ...ref, title: "x".repeat(DASHBOARD_MAX_TITLE_LENGTH) },
+    });
+    for (const space of [ref, { ...ref, title: "" }, { ...ref, title: " \n " }]) {
+      expect(fitEntrySettings(declaration, { space })).toEqual({ space: ref });
+    }
+    for (const space of [{ type: "notebooks.notebook", id: "a", title: "Home" }, "a", true]) {
+      expect(fitEntrySettings(declaration, { space })).toEqual({});
+    }
+  });
+});
+
+test("settings equality ignores key order and empty settings but compares every value including titles", () => {
+  expect(sameEntrySettings(undefined, {})).toBeTrue();
+  expect(sameEntrySettings({}, undefined)).toBeTrue();
+  expect(sameEntrySettings(undefined, undefined)).toBeTrue();
+  const settings = { note: "hello", done: false, space: { type: "spaces.space", id: "a", title: "Home" } };
+  expect(sameEntrySettings(settings, { space: { title: "Home", id: "a", type: "spaces.space" }, done: false, note: "hello" })).toBeTrue();
+  expect(sameEntrySettings(settings, { ...settings, note: "other" })).toBeFalse();
+  expect(sameEntrySettings(settings, { ...settings, done: true })).toBeFalse();
+  expect(sameEntrySettings(settings, { ...settings, space: { ...settings.space, type: "other.resource" } })).toBeFalse();
+  expect(sameEntrySettings(settings, { ...settings, space: { ...settings.space, id: "b" } })).toBeFalse();
+  expect(sameEntrySettings(settings, { ...settings, space: { ...settings.space, title: "Other" } })).toBeFalse();
+  expect(sameEntrySettings(settings, { ...settings, space: { type: "spaces.space", id: "a" } })).toBeFalse();
+  expect(sameEntrySettings(settings, { ...settings, space: "a" })).toBeFalse();
+  expect(sameEntrySettings({ note: "hello" }, { other: "hello" })).toBeFalse();
+  expect(sameEntrySettings(settings, undefined)).toBeFalse();
+  expect(sameEntrySettings(undefined, settings)).toBeFalse();
 });

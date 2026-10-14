@@ -19,6 +19,7 @@ import {
   type DashboardCatalogWidget,
   type DashboardEntrySettings,
   type DashboardEntrySettingValue,
+  fitEntrySettings,
 } from "../shared";
 import { DASHBOARD_PHONE_QUERY } from "./dashboard-gallery";
 import { type DashboardMessages, dashboardMessages } from "./messages";
@@ -93,8 +94,10 @@ const SettingField = (props: {
           requireReader: true,
         });
         // The title is only what this dialog shows; the widget gets the reference and authorizes it on every call.
-        if (item?.ref.type === field.type)
-          props.onChange({ type: item.ref.type, id: item.ref.id, title: item.title.slice(0, DASHBOARD_MAX_TITLE_LENGTH) });
+        if (item?.ref.type === field.type) {
+          const title = item.title.trim().slice(0, DASHBOARD_MAX_TITLE_LENGTH);
+          props.onChange({ type: item.ref.type, id: item.ref.id, ...(title ? { title } : {}) });
+        }
       };
       return (
         <TextInput
@@ -128,11 +131,11 @@ const SettingField = (props: {
  * when they closed it. Nothing is saved here: the board saves with Done.
  */
 export const openDashboardWidgetSettings = (
-  props: { widget: DashboardCatalogWidget; settings: DashboardEntrySettings | undefined },
+  props: { widget: DashboardCatalogWidget; name: string; settings: DashboardEntrySettings | undefined },
   locale: string,
 ): Promise<DashboardEntrySettings | undefined> => {
   const t = dashboardMessages.resolve([locale]).t;
-  const title = t.customizeTitle({ name: props.widget.title });
+  const title = t.customizeTitle({ name: props.name });
   const subtitle = t.customizeSubtitle({ app: props.widget.appName });
   const fields = Object.entries(props.widget.settings ?? {});
   const phone = window.matchMedia(DASHBOARD_PHONE_QUERY).matches;
@@ -143,15 +146,7 @@ export const openDashboardWidgetSettings = (
       const [draft, setDraft] = createSignal<DashboardEntrySettings>({ ...props.settings });
       const set = (name: string, value: DashboardEntrySettingValue | undefined) =>
         setDraft(({ [name]: _previous, ...rest }) => (value === undefined ? rest : { ...rest, [name]: value }));
-      const submit = () => {
-        const settings: DashboardEntrySettings = {};
-        for (const [name] of fields) {
-          const value = draft()[name];
-          const chosen = typeof value === "string" ? value.trim() : value;
-          if (chosen !== undefined && chosen !== "") settings[name] = chosen;
-        }
-        close(settings);
-      };
+      const submit = () => close(fitEntrySettings(props.widget.settings ?? {}, draft()));
       const form = (
         <form
           id={formId}
