@@ -1558,10 +1558,7 @@ test("deleted mailbox CLI lists, reads, and restores retained mailboxes", async 
   const restored = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "mailbox", "restore", MAILBOX_ID, "--yes"]);
 
   expect(listed.exitCode, listed.stderr).toBe(0);
-  expect(JSON.parse(listed.stdout)).toEqual({
-    items: [deleted],
-    nextCursor: "next-page",
-  });
+  expect(JSON.parse(listed.stdout)).toEqual({ items: [deleted], nextCursor: "next-page" });
   expect(read.exitCode).toBe(0);
   expect(JSON.parse(read.stdout)).toEqual(deleted);
   expect(restored.exitCode).toBe(0);

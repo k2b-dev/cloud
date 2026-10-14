@@ -338,10 +338,7 @@ function notebooksCommands(locale?: string) {
     const split = splitNotebookPath(raw);
     const notebook = await getNotebook(ctx, split?.notebook ?? raw);
     const path = split?.path.replace(/^\/+|\/+$/g, "") ?? "";
-    return {
-      notebook: { id: notebook.id, name: notebook.name },
-      noteId: path ? (await resolvePath(ctx, notebook.id, path)).id : null,
-    };
+    return { notebook: { id: notebook.id, name: notebook.name }, noteId: path ? (await resolvePath(ctx, notebook.id, path)).id : null };
   };
 
   /** A notebook: `<notebook>`, `<notebook>:`, or a path inside its mirror. */

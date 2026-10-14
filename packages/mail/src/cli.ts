@@ -2715,10 +2715,7 @@ const everydayCommands = (t: Translate) => {
         if (printStructured(ctx, { draft, command: result })) return;
         ctx.print(
           flags.wait
-            ? t({
-                en: `Sent draft ${draft.id} (${result.state}).`,
-                de: `Entwurf ${draft.id} gesendet (${result.state}).`,
-              })
+            ? t({ en: `Sent draft ${draft.id} (${result.state}).`, de: `Entwurf ${draft.id} gesendet (${result.state}).` })
             : t({
                 en: `Queued draft ${draft.id} for sending (${result.id}).`,
                 de: `Entwurf ${draft.id} zum Senden eingereiht (${result.id}).`,
