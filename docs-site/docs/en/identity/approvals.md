@@ -38,6 +38,8 @@ credential, such as `cld capabilities action` or a request to
 | Input and review digests | SHA-256 over the canonical Action input and over the review snapshot |
 | Status | `pending`, then `approved`, `rejected`, `expired`, or `cancelled`; `approved` becomes `consumed` when the Action runs |
 | Decided via | The decision channel: `web_session`, `app_session`, `oauth`, `api_key`, `invocation`, `acp_bridge`, or `cloud_login` |
+| Deciding device | The Cloud Login device that decided, if any; an approval from a device revoked since then is not used |
+| Approver's sign-out epoch | The approver's authentication epoch when Cloud asked; signing out everywhere moves it and ends the request |
 | Expiry | When an undecided request stops accepting a decision |
 
 The level follows what the call offers. An Action with
@@ -107,6 +109,8 @@ against a client that holds the person's `cld` token and leaves the header out.
 - **Requests expire.** A chat request accepts a decision for 24 hours, like the
   turn that waits for it. A Studio capability call waits up to one day. No
   request waits longer than 24 hours.
+- **Signing out everywhere ends open requests.** They leave lists, counts,
+  and Cloud Login. A decision on such a request answers as expired.
 - **Ending the wait cancels the request.** When a turn ends, its open requests
   and the approvals no call used are cancelled. A Studio capability call that is
   still open after one day is abandoned, and its request with it.
@@ -150,6 +154,7 @@ so no other call can use it.
 | --- | --- | --- |
 | Review and input unchanged | The Action runs | The Action runs |
 | The review changed, for example a draft got another recipient | Cloud asks again with the current review; nothing runs | The call fails with `CONFLICT`; the person can still decline |
+| The device that approved was revoked, or the person signed out everywhere | Cloud asks again; nothing runs | The call fails with `CONFLICT` |
 | The approval was already used, for example after a restart during the Action | The call ends with an error and does not run again; a new call asks again | The stored result is returned, or `CONFLICT` |
 
 Asking again about a changed review keeps the call's idempotency key, so an

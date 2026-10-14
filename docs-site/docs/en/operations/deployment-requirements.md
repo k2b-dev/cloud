@@ -664,6 +664,29 @@ Rolling back leaves the widened constraint and new columns in place. Older
 Core ignores the columns and keeps the widened constraint. Existing sign-in
 commands and pairing keys remain valid.
 
+### End approvals when a device is revoked or the person signs out everywhere
+
+Deploy the updated platform package, Core, and Assistant together. On start,
+Core adds the nullable columns `decided_device_id` and `approver_auth_epoch`
+to `approvals.requests` and fills missing epochs of pending and approved
+requests with the person's current epoch. The migration is idempotent and
+repairs missing epochs on every start. No configuration change is required.
+
+Rolling back keeps the columns; the older release ignores them and does not
+check revocation when an approval is used. Requests it writes get their epoch
+at the next start of the updated release. Until then, the updated release
+treats them as ended, so the person is asked again.
+
+After the rollout, approve an Action on a paired phone, then check that the
+request records the phone and the epoch:
+
+```sql
+SELECT status, decided_via, decided_device_id IS NOT NULL AS device, approver_auth_epoch IS NOT NULL AS epoch
+FROM approvals.requests ORDER BY created_at DESC LIMIT 1;
+```
+
+The request shows `consumed`, `cloud_login`, and `true` for both checks.
+
 ### Reuse Agent Skills folders
 
 Update Core and Assistant together for portable Skill frontmatter, relative

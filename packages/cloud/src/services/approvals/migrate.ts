@@ -38,4 +38,9 @@ export const migrateApprovals = async (): Promise<void> => {
   END $$`.simple();
   await sql`CREATE INDEX IF NOT EXISTS approvals_requests_pending ON approvals.requests(approver_user_id, created_at) WHERE status='pending'`.simple();
   await sql`CREATE INDEX IF NOT EXISTS approvals_requests_expiry ON approvals.requests(expires_at)`.simple();
+  await sql`ALTER TABLE approvals.requests ADD COLUMN IF NOT EXISTS decided_device_id UUID`.simple();
+  await sql`ALTER TABLE approvals.requests ADD COLUMN IF NOT EXISTS approver_auth_epoch BIGINT`.simple();
+  // Stay nullable for rollback writes; backfill every start to repair open rows written by an older release.
+  await sql`UPDATE approvals.requests r SET approver_auth_epoch=u.auth_epoch FROM auth.users u
+    WHERE u.id=r.approver_user_id AND r.approver_auth_epoch IS NULL AND r.status IN ('pending','approved')`.simple();
 };

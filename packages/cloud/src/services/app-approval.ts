@@ -296,7 +296,8 @@ export const createAppApprovalService = (
           UPDATE auth.app_devices d SET action_wake_at=now(), action_wake_ref=${approvalId}::uuid
           WHERE d.id IN (
             SELECT device.id FROM auth.app_devices device JOIN approvals.requests r ON r.approver_user_id=device.user_id
-            WHERE r.id=${approvalId}::uuid AND r.status='pending' AND r.expires_at > now()
+            JOIN auth.users u ON u.id=r.approver_user_id
+            WHERE r.id=${approvalId}::uuid AND r.status='pending' AND r.expires_at > now() AND r.approver_auth_epoch=u.auth_epoch
               AND EXISTS (SELECT 1 FROM ai.pending_actions p JOIN ai.turns t ON t.id=p.turn_id
                 WHERE p.approval_id=r.id AND p.status='pending' AND t.run_config->>'signedInSession' IS NULL)
               AND device.issuer=${cfg.issuer} AND device.revoked_at IS NULL AND device.push_token IS NOT NULL

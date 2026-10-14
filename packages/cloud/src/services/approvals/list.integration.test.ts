@@ -3,6 +3,7 @@ import { sql } from "bun";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
 import { migrateCloudAi } from "../../ai/migrate";
 import { aiConversations } from "../../ai/store";
+import { createDeviceActions } from "../../api/app-approval-actions";
 import { APPROVALS_PAGE_SIZE } from "../../contracts/approvals";
 import { type ApprovalRequestInput, approvals, countPending, listPending, presentPendingApproval } from ".";
 
@@ -107,6 +108,28 @@ databaseSuite()("pending approval lists", () => {
     expect(await countPending(query)).toEqual({ total: 4, apps: { mail: 3, assistant: 2, contacts: 1, spaces: 1 } });
     const row = mail.items.find((row) => row.id === requester)!;
     expect(presentPendingApproval(row, []).requester).toMatchObject({ kind: "chat", title: "Write a letter", appId: "mail" });
+  });
+
+  test("signing out everywhere removes open requests from counts and Cloud Login until a fresh request", async () => {
+    const { userId, ask } = await fixture();
+    const stale = await ask();
+    const query = { approverUserId: userId };
+    const deviceActions = createDeviceActions((appId) => appId);
+    const deviceQuery = { userId, issuer: "https://cloud.example.test" };
+    expect(await listPending(query)).toMatchObject({ items: [{ id: stale }], count: 1 });
+    expect((await deviceActions.inbox(deviceQuery)).actions).toHaveLength(1);
+    expect(await deviceActions.view({ ...deviceQuery, actionId: stale })).not.toBeNull();
+    await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${userId}::uuid`;
+    expect(await listPending(query)).toMatchObject({ items: [], count: 0, elsewhere: 0 });
+    expect(await countPending(query)).toEqual({ total: 0, apps: {} });
+    expect(await deviceActions.inbox(deviceQuery)).toEqual({ actions: [], moreActions: 0 });
+    expect(await deviceActions.view({ ...deviceQuery, actionId: stale })).toBeNull();
+    expect(await approvals.get(stale)).toMatchObject({ status: "pending" });
+    const fresh = await ask();
+    expect(await listPending(query)).toMatchObject({ items: [{ id: fresh }], count: 1 });
+    expect(await countPending(query)).toMatchObject({ total: 1 });
+    expect((await deviceActions.inbox(deviceQuery)).actions).toHaveLength(1);
+    expect(await deviceActions.view({ ...deviceQuery, actionId: fresh })).not.toBeNull();
   });
 
   test("keyset pages remain newest-first with microsecond timestamps and count across all pages", async () => {
