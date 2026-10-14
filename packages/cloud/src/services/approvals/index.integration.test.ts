@@ -135,6 +135,16 @@ databaseSuite()("platform approvals", () => {
     expect(await consume(record)).toEqual({ ok: false, code: "NOT_APPROVED" });
   });
 
+  test("a Cloud Login approval without a recorded device is revoked when used", async () => {
+    const record = await ask();
+    expect(
+      await approvals.decide(record.id, { approved: true }, { userId, via: "cloud_login", deviceId: await device(false) }),
+    ).toMatchObject({ ok: true });
+    await sql`UPDATE approvals.requests SET decided_device_id=NULL WHERE id=${record.id}::uuid`;
+    expect(await consume(record)).toEqual({ ok: false, code: "REVOKED" });
+    expect(await approvals.get(record.id)).toMatchObject({ status: "cancelled" });
+  });
+
   test("signing out everywhere cancels an unused web approval", async () => {
     const record = await ask({ ...input(), subjectId: epochUserId, approverUserId: epochUserId });
     expect(await approvals.decide(record.id, { approved: true }, { userId: epochUserId, via: "web_session" })).toMatchObject({ ok: true });
@@ -158,7 +168,7 @@ databaseSuite()("platform approvals", () => {
     }
   });
 
-  test("each start repairs missing epochs of pending and approved rows, leaving terminal rows alone", async () => {
+  test("the upgrade fills the epoch of pending rows once and leaves approved and later rows ended", async () => {
     const pending = await ask(),
       approved = await ask(),
       terminal = await ask();
@@ -171,12 +181,23 @@ databaseSuite()("platform approvals", () => {
       return row?.epoch;
     };
     const [user] = await sql<{ epoch: string }[]>`SELECT auth_epoch::text AS epoch FROM auth.users WHERE id=${userId}::uuid`;
-    for (let start = 0; start < 2; start++) {
-      await sql`UPDATE approvals.requests SET approver_auth_epoch=NULL WHERE id IN (${pending.id}::uuid,${approved.id}::uuid,${terminal.id}::uuid)`;
+    await sql`ALTER TABLE approvals.requests DROP COLUMN approver_auth_epoch`.simple();
+    try {
       await migrateApprovals();
       expect(await epoch(pending.id)).toBe(user?.epoch);
-      expect(await epoch(approved.id)).toBe(user?.epoch);
+      expect(await epoch(approved.id)).toBeNull();
       expect(await epoch(terminal.id)).toBeNull();
+      expect(await consume(approved)).toEqual({ ok: false, code: "REVOKED" });
+
+      await sql`UPDATE approvals.requests SET approver_auth_epoch=NULL WHERE id=${pending.id}::uuid`;
+      await migrateApprovals();
+      expect(await epoch(pending.id)).toBeNull();
+      expect(await approvals.decide(pending.id, { approved: true }, { userId, via: "web_session" })).toEqual({
+        ok: false,
+        code: "EXPIRED",
+      });
+    } finally {
+      await migrateApprovals();
     }
   });
 

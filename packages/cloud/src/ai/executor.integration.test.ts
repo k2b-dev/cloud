@@ -392,7 +392,7 @@ const createExecutor = (
 
 suite("AI executor integration", () => {
   const resumeModes = ["unchanged", "changed", "revoked", "used"] as const;
-  test.each(resumeModes)("resumed capability approval binds the live review (%s)", async (mode) => {
+  test.each([...resumeModes])("resumed capability approval binds the live review (%s)", async (mode) => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["demo.write"] });
     const compiled = compileCapabilities(

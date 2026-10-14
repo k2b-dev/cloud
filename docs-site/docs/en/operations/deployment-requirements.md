@@ -668,14 +668,17 @@ commands and pairing keys remain valid.
 
 Deploy the updated platform package, Core, and Assistant together. On start,
 Core adds the nullable columns `decided_device_id` and `approver_auth_epoch`
-to `approvals.requests` and fills missing epochs of pending and approved
-requests with the person's current epoch. The migration is idempotent and
-repairs missing epochs on every start. No configuration change is required.
+to `approvals.requests`. When it adds the epoch column, it fills it once for
+pending requests with the person's current epoch. Approved requests that are
+not yet used at the upgrade, and Cloud Login approvals without a recorded
+device, are treated as ended when used, so the chat asks again. The migration
+is idempotent. No configuration change is required.
 
 Rolling back keeps the columns; the older release ignores them and does not
-check revocation when an approval is used. Requests it writes get their epoch
-at the next start of the updated release. Until then, the updated release
-treats them as ended, so the person is asked again.
+check revocation when an approval is used. Requests the older release writes
+keep no epoch, and the updated release treats them as ended. Pending requests
+leave lists, and decisions on them answer as expired. Unused approvals are
+cancelled when used, so the person is asked again.
 
 After the rollout, approve an Action on a paired phone, then check that the
 request records the phone and the epoch:

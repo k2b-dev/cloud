@@ -229,6 +229,7 @@ export const consume = async (
     if (row.status === "consumed") return { ok: false, code: "ALREADY_CONSUMED" };
     if (row.status !== "approved") return { ok: false, code: "NOT_APPROVED" };
     if (
+      (row.decidedVia === "cloud_login" && row.decidedDeviceId === null) ||
       (row.decidedDeviceId !== null && !decider.deviceActive) ||
       row.approverAuthEpoch === null ||
       row.approverAuthEpoch !== decider.epoch
