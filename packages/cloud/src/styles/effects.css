@@ -816,7 +816,12 @@
 .help-document details.help-details[data-surface] {
   margin: 1rem 0 1.25rem;
   padding: 0;
-  background: transparent;
+  /* Disclosure tints the whole open block while its summary is hovered. */
+  background: transparent !important;
+}
+
+.help-document details.help-details > summary:hover {
+  background: var(--ui-surface-subtle);
 }
 
 .help-document details.help-details > summary {
