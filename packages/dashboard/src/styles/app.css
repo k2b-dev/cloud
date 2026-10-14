@@ -646,13 +646,15 @@
 }
 
 /* 44px to hit on a phone and on every touch screen. A small widget's size choice spans the widget, and each option
-   grows from its label, so all three labels fit in half of a 320px screen. */
+   grows from its label, so all three labels fit in half of a 320px screen. Elsewhere an option is at least 44px wide,
+   because short labels such as "Large" render narrower than that in some fonts. */
 @media (max-width: 47.999rem), (pointer: coarse) {
   .dashboard-tile {
     --dashboard-sizes-height: 3.125rem;
   }
 
   .dashboard-board .dashboard-tile__sizes .k2b-segmented-control[data-size] .k2b-segmented-control__option {
+    min-width: 2.75rem;
     min-height: 2.75rem;
     padding-inline: 0.5rem;
   }
@@ -668,6 +670,7 @@
 
   .dashboard-board .dashboard-tile[data-size="small"] .dashboard-tile__sizes .k2b-segmented-control[data-size] .k2b-segmented-control__option {
     flex: 1 1 auto;
+    min-width: auto;
     padding-inline: 0.125rem;
   }
 
