@@ -179,6 +179,36 @@ describe("ChatWorkspace browser full view", () => {
         await page.context().close();
       }
     }, 30_000);
+    test(`a later send waits behind a failed one until it is discarded on ${name}`, async () => {
+      const chat = harness.addChat({ members: [viewer, nora], count: 4, end: new Date() });
+      const { page, errors } = await load(options, { chat });
+      try {
+        const start = harness.posted.length;
+        harness.failSends();
+        const send = async (text: string) => {
+          await page.getByRole("textbox").fill(text);
+          await page.getByRole("button", { name: "Send message", exact: true }).click();
+        };
+        await send(`Refused on ${name}`);
+        const failed = page.locator('.k2b-message-row[data-status="failed"]', { hasText: `Refused on ${name}` });
+        await failed.waitFor();
+        await send(`Waiting on ${name}`);
+        await page.locator('.k2b-message-row[data-status="pending"]', { hasText: `Waiting on ${name}` }).waitFor();
+        await page.getByText("Later messages wait for the one that was not sent.", { exact: true }).waitFor();
+        expect(harness.posted.slice(start).map((input) => input.body)).toEqual([`Refused on ${name}`]);
+        // A phone shows the row's actions on the first tap, a mouse while it rests on the row.
+        if (options.hasTouch) await failed.locator(".k2b-message-row__bubble").tap();
+        else await failed.hover();
+        await failed.getByRole("button", { name: "Discard message", exact: true }).click();
+        await page.locator('.k2b-message-row[data-status="sent"]', { hasText: `Waiting on ${name}` }).waitFor();
+        await failed.waitFor({ state: "detached" });
+        expect(harness.posted.slice(start).map((input) => input.body)).toEqual([`Refused on ${name}`, `Waiting on ${name}`]);
+        expect(await page.getByText("Later messages wait for the one that was not sent.", { exact: true }).count()).toBe(0);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
   }
   test("going back to a deep link in the same chat shows and highlights its message again", async () => {
     const chat = harness.addChat({ members: [viewer, nora], count: 120, end: new Date() });

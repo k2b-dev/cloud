@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
-import { ChatSnapshotSchema, MessageViewSchema, SendMessageSchema } from "../service/contracts";
+import { ChatSnapshotSchema, MESSAGE_BODY_MAX, MessageViewSchema, SendMessageSchema } from "../service/contracts";
 import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 
 const load = async () => {
@@ -284,6 +284,46 @@ describe("ChatWorkspace interactions", () => {
     expect(rows.map((row) => row.getAttribute("data-status"))).toEqual(["sent", "sent"]);
     expect(rows[0]?.textContent).toContain("first");
     expect(rows[1]?.textContent).toContain("second");
+  });
+  test("discarding a message the server refuses lets the waiting ones go out", async () => {
+    await mount(true);
+    const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
+    const hint = () => dom.root.querySelector(".k2b-chat-composer__hint-text")?.textContent ?? "";
+    const type = (text: string) => {
+      field.value = text;
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      button("Send message").click();
+    };
+    type("refused");
+    await settle();
+    answer(Response.json({ message: "Invalid input" }, { status: 400 }));
+    await settle();
+    expect(hint()).toBe("Later messages wait for the one that was not sent.");
+    type("waiting");
+    await settle();
+    expect(posted.map((input) => input.body)).toEqual(["refused"]);
+    button("Discard message").click();
+    await settle();
+    expect(posted.map((input) => input.body)).toEqual(["refused", "waiting"]);
+    expect(hint()).toBe("");
+    answer(Response.json(message(1, "waiting"), { status: 201 }));
+    await settle();
+    const rows = [...dom.root.querySelectorAll(".k2b-message-row")];
+    expect(rows.map((row) => row.getAttribute("data-status"))).toEqual(["sent"]);
+    expect(rows[0]?.textContent).toContain("waiting");
+  });
+  test("a message longer than the server accepts stays in the composer", async () => {
+    await mount(true);
+    const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
+    const long = "😀".repeat(MESSAGE_BODY_MAX + 1);
+    field.value = long;
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    button("Send message").click();
+    await settle();
+    expect(posted).toEqual([]);
+    expect(dom.root.querySelector(".k2b-message-row")).toBeNull();
+    expect(field.value).toBe(long);
+    expect(document.body.textContent).toContain("A message can have at most 20,000 characters.");
   });
   // happy-dom has no viewport layout; the 120-message deep link is verified in the browser suite.
 });

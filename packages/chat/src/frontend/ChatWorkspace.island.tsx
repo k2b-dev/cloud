@@ -15,7 +15,13 @@ import {
 import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
-import { type ConversationPageSchema, type ConversationSchema, type MessagePageSchema, readStart } from "../service/contracts";
+import {
+  type ConversationPageSchema,
+  type ConversationSchema,
+  MESSAGE_BODY_MAX,
+  type MessagePageSchema,
+  readStart,
+} from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import ChatList from "./ChatList";
@@ -175,13 +181,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             at: send.message?.createdAt ?? send.createdAt,
             own: true,
             status,
-            ...(status === "failed" ? { retry: () => outbox?.retry(send.clientId) } : {}),
+            ...(status === "failed" ? { retry: () => outbox?.retry(send.clientId), discard: () => outbox?.forget(send.clientId) } : {}),
           }),
         );
       }
     }
     return result;
   });
+  // A send that was not sent holds back the later ones of its chat until it is retried or discarded.
+  const waiting = () => {
+    const current = openChat();
+    sendsVersion();
+    return current ? outbox?.sends(current.id).find((send) => send.status !== "sent")?.status === "failed" : false;
+  };
   const focusKey = () => {
     const id = route().messageId;
     return id ? (sendKeys.get(id) ?? id) : null;
@@ -332,6 +344,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const send = async (text: string): Promise<boolean> => {
     const current = openChat();
     if (!current || !outbox || !text.trim()) return false;
+    // The server refuses longer messages; checking here keeps the text in the composer.
+    if ([...text].length > MESSAGE_BODY_MAX) {
+      toast.error(t().messageTooLong({ max: MESSAGE_BODY_MAX.toLocaleString(locale()) }));
+      return false;
+    }
     if (current.hasNewer) await store?.loadLatest();
     outbox.send(current.id, text);
     feed?.scrollToEnd();
@@ -462,7 +479,15 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
                       focusKey={focusKey()}
                       canWrite={current().permission !== "read"}
-                      hint={current().permission === "read" ? t().readOnly : liveStopped() ? t().liveStopped : undefined}
+                      hint={
+                        current().permission === "read"
+                          ? t().readOnly
+                          : liveStopped()
+                            ? t().liveStopped
+                            : waiting()
+                              ? t().messagesWaiting
+                              : undefined
+                      }
                       draft={draft()}
                       onDraftChange={setDraft}
                       onSend={send}

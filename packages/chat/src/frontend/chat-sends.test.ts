@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import { MessageViewSchema } from "../service/contracts";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 
@@ -250,5 +251,39 @@ test("send API accepts 200 and 201, validates messages, and rejects every failed
     expect(requests[0]).toEqual(["/api/chat/conversations/abcdef/messages", "POST", input]);
   } finally {
     globalThis.fetch = original;
+  }
+});
+
+test("send API passes the gateway deadline signal and rejects when it aborts", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalTimeout = AbortSignal.timeout;
+  const controller = new AbortController();
+  const budgets: number[] = [];
+  const signals: (AbortSignal | null | undefined)[] = [];
+  AbortSignal.timeout = (milliseconds) => {
+    budgets.push(milliseconds);
+    return controller.signal;
+  };
+  globalThis.fetch = Object.assign(
+    (url: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const signal = init?.signal ?? (url instanceof Request ? url.signal : undefined);
+      signals.push(signal);
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  try {
+    const pending = createChatSendsApi()("abcdef", { clientId: "same-id", body: "Hello" });
+    expect(budgets).toEqual([REQUEST_IDLE_TIMEOUT_MAX_SECONDS * 1000]);
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toBeInstanceOf(AbortSignal);
+    expect(signals[0]?.aborted).toBe(false);
+    controller.abort(new DOMException("Request timed out", "TimeoutError"));
+    await expect(pending).rejects.toThrow("Request timed out");
+  } finally {
+    globalThis.fetch = originalFetch;
+    AbortSignal.timeout = originalTimeout;
   }
 });

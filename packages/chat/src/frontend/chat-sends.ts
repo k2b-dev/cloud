@@ -1,4 +1,5 @@
 import { createApiClient } from "@k2b/cloud/browser";
+import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import type { z } from "zod";
 import type { ApiType } from "../api";
 import { MessageViewSchema } from "../service/contracts";
@@ -97,7 +98,13 @@ export const createChatSends = (dependencies: {
 export const createChatSendsApi = () => {
   const client = createApiClient<ApiType>({ baseUrl: "/api/chat" });
   return async (conversationId: string, input: { clientId: string; body: string }) => {
-    const response = await client.conversations[":conversation"].messages.$post({ param: { conversation: conversationId }, json: input });
+    // The gateway gives up on an app answer after this long, so a request still open then never gets one. Ending it
+    // marks the send failed, so it can be retried and the later sends of its chat are not held back forever.
+    const signal = AbortSignal.timeout(REQUEST_IDLE_TIMEOUT_MAX_SECONDS * 1000);
+    const response = await client.conversations[":conversation"].messages.$post(
+      { param: { conversation: conversationId }, json: input },
+      { init: { signal } },
+    );
     if (!response.ok) throw new Error(`Chat request failed (${response.status})`);
     return MessageViewSchema.parse(await response.json());
   };

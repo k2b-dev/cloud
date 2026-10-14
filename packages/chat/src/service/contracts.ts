@@ -202,10 +202,12 @@ export const MessageSchema = z.object({
   createdAt: z.iso.datetime(),
 });
 export const MessageViewSchema = MessageSchema.extend({ systemText: z.string().nullable() });
+/** Longest message body in code points; the database checks the same limit. */
+export const MESSAGE_BODY_MAX = 20_000;
 export const SendMessageSchema = z.strictObject({
   clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
   // Postgres text cannot store U+0000, so reject it here instead of failing the write.
-  body: z.string().refine((body) => /\S/u.test(body) && !body.includes("\u0000") && [...body].length <= 20_000),
+  body: z.string().refine((body) => /\S/u.test(body) && !body.includes("\u0000") && [...body].length <= MESSAGE_BODY_MAX),
 });
 const sequenceQuery = (minimum: number) =>
   z.union([z.number(), z.string().regex(/^\d+$/).transform(Number)]).pipe(z.number().int().min(minimum).max(Number.MAX_SAFE_INTEGER));
