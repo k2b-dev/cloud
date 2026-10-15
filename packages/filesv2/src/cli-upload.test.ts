@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +7,9 @@ import { uploadFile } from "./cli-upload";
 import type { EntryResult, UploadSession } from "./contracts";
 
 const defaults = new Map<string, string>();
+const errors: string[] = [];
 const ctx = {
+  error: (value: string) => void errors.push(value),
   getDefault: async (key: string) => defaults.get(key),
   setDefault: async (key: string, value: string | undefined) => {
     if (value === undefined) defaults.delete(key);
@@ -19,6 +21,7 @@ const directories: string[] = [];
 const servers: ReturnType<typeof Bun.serve>[] = [];
 afterEach(async () => {
   defaults.clear();
+  errors.length = 0;
   for (const server of servers.splice(0)) server.stop(true);
   for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true });
 });
@@ -249,4 +252,146 @@ test("lost start responses retain the durable key and committed replay transfers
   });
   expect(replayed).toEqual(result);
   expect(defaults.size).toBe(0);
+});
+
+test.each(["en", "de"])("TTY progress uses acknowledged bytes, throttles updates, and always shows 100 percent (%s)", async (locale) => {
+  const local = await file("abcdefghijklmnopqrst");
+  const descriptor = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+  const nativeFetch = globalThis.fetch;
+  const start = Date.UTC(2026, 9, 15);
+  const now = spyOn(Date, "now").mockReturnValue(start);
+  let received = 0;
+  let put = 0;
+  Object.defineProperty(process.stderr, "isTTY", { configurable: true, value: true });
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (new URL(String(input)).searchParams.has("segments")) return Response.json({ items: [] });
+      if (init?.method === "PUT") {
+        received += 4;
+        now.mockReturnValue(start + [100, 999, 1000, 1100, 1101][put++]!);
+      }
+      return Response.json({ id: "session", root: "cloud", size: 20, chunkSize: 4, state: "open", received });
+    },
+    { preconnect: nativeFetch.preconnect },
+  );
+  try {
+    await uploadFile({ ...ctx, options: { ...ctx.options, output: "text", locale } }, local, {
+      scope: "base/path/error",
+      open: async () => session("https://filegate.test/lease?token=secret", 20),
+      renew: async () => {
+        throw new Error("must not renew");
+      },
+      commit: async () => {
+        expect(errors.at(-2)).toEndWith("(100 %)");
+        return result;
+      },
+      abort: async () => {
+        throw new Error("must not abort");
+      },
+    });
+    const uploading = locale === "de" ? "Hochladen" : "Uploading";
+    const of = locale === "de" ? "von" : "of";
+    expect(errors).toEqual([
+      `${uploading} file`,
+      `\x1b[1A\x1b[2K${uploading} file: 0.0 MiB ${of} 0.0 MiB (0 %)`,
+      `\x1b[1A\x1b[2K${uploading} file: 0.0 MiB ${of} 0.0 MiB (60 %)`,
+      `\x1b[1A\x1b[2K${uploading} file: 0.0 MiB ${of} 0.0 MiB (100 %)`,
+      locale === "de" ? "Upload abschließen…" : "Finishing upload…",
+      locale === "de" ? "Upload abgeschlossen." : "Upload done.",
+    ]);
+  } finally {
+    globalThis.fetch = nativeFetch;
+    now.mockRestore();
+    if (descriptor) Object.defineProperty(process.stderr, "isTTY", descriptor);
+    else Reflect.deleteProperty(process.stderr, "isTTY");
+  }
+});
+
+test.each([
+  { kind: "busy", en: "The file server is busy. Try again later.", de: "Der Dateiserver ist ausgelastet. Versuche es später erneut." },
+  { kind: "network", en: "No connection to the file server.", de: "Keine Verbindung zum Dateiserver." },
+  { kind: "stalled", en: "No response from the file server.", de: "Keine Antwort vom Dateiserver." },
+])("CLI localizes $kind transfer failures and still aborts the session", async ({ kind, en, de }) => {
+  const local = await file("");
+  const nativeFetch = globalThis.fetch;
+  const nativeTimeout = AbortSignal.timeout;
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => nativeTimeout(Math.min(ms, 40)));
+  let aborts = 0;
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (kind === "network") throw new TypeError("https://filegate.test/lease?token=secret");
+      if (kind === "busy") return Response.json({ error: "busy" }, { status: 429, headers: { "Retry-After": "5" } });
+      return new Promise<Response>((_, reject) => {
+        init?.signal?.throwIfAborted();
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      });
+    },
+    { preconnect: nativeFetch.preconnect },
+  );
+  try {
+    for (const [locale, message] of [
+      ["en", en],
+      ["de", de],
+    ]) {
+      await expect(
+        uploadFile({ ...ctx, options: { ...ctx.options, locale } }, local, {
+          scope: "base/path/error",
+          open: async () => session("https://filegate.test/lease?token=secret", 0),
+          renew: async () => {
+            throw new Error("must not renew");
+          },
+          commit: async () => {
+            throw new Error("must not commit");
+          },
+          abort: async () => {
+            aborts++;
+          },
+        }),
+      ).rejects.toThrow(message);
+    }
+    expect(aborts).toBe(2);
+    expect(errors).toEqual([]);
+  } finally {
+    globalThis.fetch = nativeFetch;
+    timeout.mockRestore();
+  }
+});
+
+test.each(["open", "commit"])("CLI localizes a Cloud %s deadline without aborting an uncertain result", async (phase) => {
+  const local = await file("");
+  const nativeTimeout = AbortSignal.timeout;
+  const deadlines: number[] = [];
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+    deadlines.push(ms);
+    return nativeTimeout(40);
+  });
+  const pending = (signal: AbortSignal): Promise<never> =>
+    new Promise((_, reject) => {
+      signal.throwIfAborted();
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+  try {
+    for (const [locale, message] of [
+      ["en", "No response from Cloud within 60 seconds."],
+      ["de", "Keine Antwort von Cloud innerhalb von 60 Sekunden."],
+    ]) {
+      await expect(
+        uploadFile({ ...ctx, options: { ...ctx.options, locale } }, local, {
+          scope: "base/path/error",
+          open: async (_size, signal) =>
+            phase === "open" ? pending(signal) : { ...session("https://filegate.test/unused", 0), state: "committed" },
+          renew: async () => {
+            throw new Error("must not renew");
+          },
+          commit: async (_id, signal) => pending(signal),
+          abort: async () => {
+            throw new Error("must not abort an uncertain result");
+          },
+        }),
+      ).rejects.toThrow(message);
+    }
+    expect(deadlines).toEqual(phase === "open" ? [60_000, 60_000] : [60_000, 60_000, 60_000, 60_000]);
+  } finally {
+    timeout.mockRestore();
+  }
 });

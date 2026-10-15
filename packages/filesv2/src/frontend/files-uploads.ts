@@ -3,9 +3,9 @@ import { apiClient } from "../api/client";
 import { useBrowserMessages } from "./browser-messages";
 import { apiFailure } from "./file-preview";
 import { useFilesMessages } from "./messages";
-import { useUploadMessages } from "./upload-messages";
+import { uploadFailureReason, useUploadMessages } from "./upload-messages";
 import { createUploadQueue, type UploadQueue } from "./upload-queue";
-import { UploadConflict, uploadFile } from "./uploads";
+import { requestSignal, UploadConflict, uploadFile } from "./uploads";
 
 export type ReplacePolicy = "ask" | "overwrite" | "skip";
 /** One pick or drop into one storage folder. Its replace answer is given once and then holds for all of its files. */
@@ -47,7 +47,7 @@ export function createFilesUploads(): FilesUploads {
       for (const folder of group.folders) {
         const response = await apiClient.bases[":baseId"].directories.$post(
           { param: { baseId: group.baseId }, json: { path: group.root ? `${group.root}/${folder}` : folder } },
-          { init: { signal } },
+          { init: { signal: requestSignal(signal) } },
         );
         if (!response.ok && (response.status as number) !== 409) await apiFailure(response, t().unavailable);
       }
@@ -73,11 +73,6 @@ export function createFilesUploads(): FilesUploads {
         }
       }
     },
-    reason: (error) =>
-      typeof navigator !== "undefined" && !navigator.onLine
-        ? u().offline
-        : error instanceof Error && error.message && error.message !== "path_conflict"
-          ? error.message
-          : u().failed,
+    reason: (error) => uploadFailureReason(error, u()),
   });
 }

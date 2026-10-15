@@ -1,5 +1,6 @@
 import { type CloudCliContext, type CloudCliText, cliAmbiguityText, cliText, cloudResourceUrl, parseCliAddress } from "@k2b/cloud/cli";
 import type { ApiType } from "./api";
+import { cloudRequestError, REQUEST_TIMEOUT_MS } from "./cli-request";
 import type { BaseSummary, BasesResult, EntryResult, FileEntry } from "./contracts";
 import { entryRefId, parseEntryRefId, parseStableEntryRefId } from "./resource-ref";
 
@@ -143,7 +144,10 @@ export function fileResolver(ctx: CloudCliContext) {
   };
   let bases: Promise<BaseSummary[]> | undefined;
   const areas = () => {
-    bases ??= api.bases.$get().then(async (response) => (await ctx.readJson<BasesResult>(response)).items);
+    bases ??= api.bases
+      .$get(undefined, { init: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } })
+      .then(async (response) => (await ctx.readJson<BasesResult>(response)).items)
+      .catch((error: unknown) => cloudRequestError(ctx, error));
     return bases;
   };
   const areaId = async (ref: AreaRef, raw: string) => {
@@ -154,7 +158,10 @@ export function fileResolver(ctx: CloudCliContext) {
   const file = async (raw: string): Promise<FileTarget & { entry?: EntryResult }> => {
     const address = localized(() => parseFileAddress(raw));
     if (address.kind === "file-id") {
-      const entry = await ctx.readJson<EntryResult>(await api.entries[":id"].$get({ param: { id: address.id } }));
+      const entry = await api.entries[":id"]
+        .$get({ param: { id: address.id } }, { init: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } })
+        .then((response) => ctx.readJson<EntryResult>(response))
+        .catch((error: unknown) => cloudRequestError(ctx, error));
       return { baseId: entry.base.id, path: entry.entry.path, folder: entry.entry.directory, entry };
     }
     return { baseId: await areaId(address.area, address.container), path: address.path, folder: address.folder };

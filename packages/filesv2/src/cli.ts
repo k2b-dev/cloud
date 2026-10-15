@@ -25,6 +25,7 @@ import {
 } from "./cli-address";
 import { adminCommands } from "./cli-admin";
 import { downloadFile, readFile } from "./cli-download";
+import { cloudRequestError, REQUEST_TIMEOUT_MS } from "./cli-request";
 import { templateCommands } from "./cli-templates";
 import { uploadFile } from "./cli-upload";
 import {
@@ -176,9 +177,14 @@ function filesCommands(locale?: string) {
         }),
       ),
     ].sort((a, b) => a.split("/").length - b.split("/").length);
-    const result = await ctx.readJson<FolderBatchResult>(
-      await api(ctx).bases[":baseId"].directories.batch.$post({ param: { baseId }, json: { paths } }),
-    );
+    // The deadline also bounds a response body that stalls after its headers.
+    const result = await api(ctx)
+      .bases[":baseId"].directories.batch.$post(
+        { param: { baseId }, json: { paths } },
+        { init: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } },
+      )
+      .then((response) => ctx.readJson<FolderBatchResult>(response))
+      .catch((error: unknown) => cloudRequestError(ctx, error));
     const failed = result.results.find((item) => item.state === "failed");
     if (failed) throw folderFailure(result.results, `${failed.path}: ${failed.message ?? failed.error}`);
     return result;
