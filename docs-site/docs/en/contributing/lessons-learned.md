@@ -1,0 +1,121 @@
+---
+title: Lessons learned
+navTitle: Lessons learned
+section: Contributing
+order: 1305
+description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
+tags: [contributing, testing, quality]
+updated: 2026-10-15
+---
+
+# Lessons learned
+
+A bug that is fixed once can come back in another place. To stop that, every
+fix names the error class of its bug, then adds or names the guard that
+catches that class next time. A guard is a repository check under
+`scripts/checks/`, a test that fails on the bug, or a named convention that
+reviews apply. Checks and tests fail on their own. A convention works only
+while reviews apply it, and a rule that nothing checks decays. The table marks
+each guard as a check, a test, or a convention, so a class that has only a
+convention still needs a check or a test.
+
+## Error classes
+
+| Class | What goes wrong | Current guard |
+| --- | --- | --- |
+| Time | A test or a render depends on today's date, the time zone, or randomness, so it passes on one day and fails on another. | Test: the Assistant sidebar test from [#1121](https://github.com/k2b-dev/cloud/pull/1121) freezes its clock. No repository check finds other tests that compare fixed dates with the real clock yet. |
+| Server render vs. mount | An island replaces the server HTML when it mounts; see [Know how an island mounts](/en/docs/frontend/islands-and-hydration#know-how-an-island-mounts). When the server and the browser render different markup or styles, the page moves on mount or after a reload, and WebKit can keep stale styles from before the mount. | Convention: [Know how an island mounts](/en/docs/frontend/islands-and-hydration#know-how-an-island-mounts). Test: the month view browser tests from [#1157](https://github.com/k2b-dev/cloud/pull/1157) check row places right after mount. No shared test compares positions before and after mount and after a reload yet. |
+| Layout shift | A transient state, such as a status text, a notice, or a loader, appears in the layout flow and moves its neighbors. | Convention: [Keep the layout still](/en/docs/frontend/styling-and-accessibility#keep-the-layout-still) ([#1143](https://github.com/k2b-dev/cloud/pull/1143)). Each change applies its browser-test pattern, which compares bounding boxes before and after each state change. No automatic check yet. |
+| State lost on navigation or reload | Clearing, cancelling, reloading, or going Back does not return the person to where they started, or drops input that was not saved yet. | Convention: [Test URL behavior](/en/docs/frontend/testing#test-url-behavior) covers reload, Back, Forward, and opened links. No shared guard covers unsent local edits yet; Grids tests the leave warning of its public forms in `PublicFormSubmit.behavior.test.tsx`. |
+| Ordering and concurrency | Work for one item runs in parallel or races another writer, so results land out of order or a later step undoes an earlier one. | Convention: the order and no-drop rules in [Show mutation state](/en/docs/frontend/forms-prompts-and-feedback#show-mutation-state) ([#1148](https://github.com/k2b-dev/cloud/pull/1148)) cover actions in the browser. No shared guard covers server-side writers yet; Mail's command queue has an integration test for server-side order in `conversation-actions.integration.test.ts`, and nothing covers automation versus reconciliation ([#1142](https://github.com/k2b-dev/cloud/issues/1142)). |
+| Silent failure | Async work fails and the person sees nothing, or a progress text stays as the last word. | Convention: [Show mutation state](/en/docs/frontend/forms-prompts-and-feedback#show-mutation-state) for single actions. No shared guard covers background work yet. |
+| Foreign system contracts | Cloud sends a schema or a payload that a foreign system, such as a model provider or Filegate, does not accept. | Partial test: the chart tool schema is checked for provider shape (one root object without `oneOf`, `anyOf`, or `allOf`, and no tuple `items`) in `packages/cloud/src/ai/chart-block.test.ts` and `default-tools.test.ts`. A check of every registered capability input schema is added by the fix for [#1149](https://github.com/k2b-dev/cloud/issues/1149). |
+
+## Lessons
+
+### Assistant sidebar test broke every gate
+
+- **What happened:** From 2026-10-14, the Assistant sidebar behavior test failed on every gate run, also on `main`, and blocked the merge queue ([#1121](https://github.com/k2b-dev/cloud/pull/1121)).
+- **Root cause:** The sidebar switches from the server's render time to the browser clock in `onMount`. The fixture chat had a fixed date, so 30 days later it moved from "this month" to "older".
+- **Error class:** Time.
+- **Guard:** The test sets the system time to the render time before each test. No check finds the same mistake in other tests yet.
+
+### Month rows keep a stale place in WebKit
+
+- **What happened:** In WebKit, the continuous month view sometimes kept its server-rendered week rows at an old place and height for up to a second after mount, and the WebKit gate flaked on it ([#1132](https://github.com/k2b-dev/cloud/issues/1132)).
+- **Root cause:** Row place and height depended on container query units of a size container. WebKit did not always resolve the container units again after mount, so the server-rendered rows kept their old place and height until a later restyle.
+- **Error class:** Server render vs. mount.
+- **Guard:** Since [#1157](https://github.com/k2b-dev/cloud/pull/1157), rows take their size from the scroller, and browser tests in `@k2b/ui` and Spaces check each row's place right after mount.
+
+### App sidebar overlaps its header after a reload
+
+- **What happened:** After a person scrolled the app sidebar and reloaded the page, the sticky header drew on top of the scrolled list until the first interaction. It was seen in Mail on iPad Safari ([#1154](https://github.com/k2b-dev/cloud/issues/1154)).
+- **Root cause:** Suspected: the browser restores the old scroll offset while the server-rendered header and list have a different layout from the mounted ones.
+- **Error class:** Server render vs. mount.
+- **Guard:** Pending in [#1154](https://github.com/k2b-dev/cloud/issues/1154): a Chromium and WebKit browser test that scrolls the sidebar, reloads, and checks that nothing overlaps or moves.
+
+### Assistant reconnect notice moves the page
+
+- **What happened:** When the live connection dropped for a moment, the Assistant's reconnect notice moved the title, the composer, and the starters on the new-chat page ([#1159](https://github.com/k2b-dev/cloud/issues/1159)).
+- **Root cause:** The notice above the composer is mounted only while it shows, so it takes a new line in the layout flow.
+- **Error class:** Layout shift.
+- **Guard:** Pending in [#1159](https://github.com/k2b-dev/cloud/issues/1159): the notice gets a place that the page reserves, and a browser test compares the places of the title, the composer, and the starters before and during a reconnect. The class rule is [Keep the layout still](/en/docs/frontend/styling-and-accessibility#keep-the-layout-still).
+
+### Studio Save moves when the editor becomes dirty
+
+- **What happened:** In the Studio manual editor, the first edit inserted "Unsaved changes" before Save, and Save jumped sideways ([#1146](https://github.com/k2b-dev/cloud/issues/1146)).
+- **Root cause:** The status text is mounted only while the editor is dirty, inside the same flex row as Save.
+- **Error class:** Layout shift.
+- **Guard:** Pending in [#1146](https://github.com/k2b-dev/cloud/issues/1146). The class rule is [Keep the layout still](/en/docs/frontend/styling-and-accessibility#keep-the-layout-still).
+
+### Clearing a Mail search lands in All mail
+
+- **What happened:** A person started a search from a Focus view or a folder and then cleared it. Mail showed All mail instead of the view the search started from ([#1156](https://github.com/k2b-dev/cloud/issues/1156)).
+- **Root cause:** Suspected: starting a search drops the previous view from the URL state, so clearing it falls back to the default view.
+- **Error class:** State lost on navigation or reload.
+- **Guard:** Pending in [#1156](https://github.com/k2b-dev/cloud/issues/1156): the search keeps its starting view in the URL, so clearing, reload, and Back return to it.
+
+### Notebooks lose unsent text on a sync error
+
+- **What happened:** When the note editor hit a fatal sync error, such as an expired session, it showed an alert and then reloaded the page. Edits that were not sent yet were lost ([#1144](https://github.com/k2b-dev/cloud/issues/1144)).
+- **Root cause:** The fatal-error handler always reloads after the alert, also while unsent changes exist.
+- **Error class:** State lost on navigation or reload.
+- **Guard:** Pending in [#1144](https://github.com/k2b-dev/cloud/issues/1144): no reload while changes are pending; the text stays on screen with one recovery action.
+
+### Chat stores quick messages out of order
+
+- **What happened:** Two Chat messages sent right after each other could be stored and shown in a different order than they were typed ([#1145](https://github.com/k2b-dev/cloud/issues/1145)).
+- **Root cause:** Chat posts each message as soon as it is sent, so the posts of one conversation run in parallel, and the server numbers them in the order they arrive.
+- **Error class:** Ordering and concurrency.
+- **Guard:** Pending in [#1145](https://github.com/k2b-dev/cloud/issues/1145): one send queue per conversation, in submit order.
+
+### Automation Done is reverted by reconciliation
+
+- **What happened:** An incoming Mail automation set a conversation to Done, and a few minutes later the system set it back to Needs action ([#1142](https://github.com/k2b-dev/cloud/issues/1142)).
+- **Root cause:** Suspected: the reconciliation that derives Needs action from incoming mail runs after the automation and treats the same message as new incoming mail.
+- **Error class:** Ordering and concurrency.
+- **Guard:** Pending in [#1142](https://github.com/k2b-dev/cloud/issues/1142).
+
+### Assistant turn fails without telling the person
+
+- **What happened:** When the model provider rejected a request in the middle of a turn, the chat showed the last progress sentence and then nothing ([#1150](https://github.com/k2b-dev/cloud/issues/1150)).
+- **Root cause:** Suspected: the failed-turn notice from [#712](https://github.com/k2b-dev/cloud/pull/712) does not show on this path. The turn outcome records the provider error, but the chat ends on the last progress sentence; the exact path is open in [#1150](https://github.com/k2b-dev/cloud/issues/1150).
+- **Error class:** Silent failure.
+- **Guard:** Pending in [#1150](https://github.com/k2b-dev/cloud/issues/1150): a failed turn always ends with one line that says what failed and offers a retry.
+
+### Provider rejects a tuple tool schema
+
+- **What happened:** OpenAI-compatible providers rejected the whole tool list with HTTP 400, which ended the turn ([#1149](https://github.com/k2b-dev/cloud/issues/1149)).
+- **Root cause:** A capability input schema used a tuple, which becomes a list of item schemas in JSON Schema. The capability schema reducer passed it to the provider unchanged.
+- **Error class:** Foreign system contracts.
+- **Guard:** Pending in [#1149](https://github.com/k2b-dev/cloud/issues/1149): a provider-safe reducer and a contract test that extends the chart tool's provider-shape test to every registered capability input schema.
+
+## Add a lesson
+
+A fix pull request answers "How do we prevent this next time?" and adds its
+entry here in four lines: what happened, root cause, error class, and guard.
+When neither the code on `main` nor a test confirms the root cause, start it
+with "Suspected:"; the fix pull request replaces it with the confirmed cause.
+When the guard does not exist yet, write "Pending in #n" with the issue that
+tracks it, or "None, because …". A pull request that adds a guard for a class
+updates that class's row in the table.

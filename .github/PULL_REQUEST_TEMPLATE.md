@@ -4,6 +4,10 @@
 
 Closes #
 
+## How do we prevent this next time? (guard: check/test/convention, or why none)
+
+<!-- A fix also adds its lesson to docs-site/docs/en/contributing/lessons-learned.md. -->
+
 ## Checklist
 
 - [ ] The title is a Conventional Commit: `type(scope): outcome` (`feat` = minor, `fix` = patch, `!` only with maintainer approval)
