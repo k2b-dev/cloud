@@ -244,9 +244,12 @@ describe("heavy command processes", () => {
 
   test("refuses a dotenv leak when started without --no-env-file", () => {
     writeFileSync(join(dir, ".env"), "HEAVY_LEAK=leaked\n");
+    // `bun run test` passes --no-env-file to every process through BUN_OPTIONS;
+    // drop it so this child really starts without the flag.
+    const { BUN_OPTIONS: _, ...withoutOptions } = env;
     const child = Bun.spawnSync([process.execPath, heavy, "sh", "-c", 'test -z "$HEAVY_LEAK"'], {
       cwd: dir,
-      env,
+      env: withoutOptions,
       stdout: "pipe",
       stderr: "pipe",
     });
