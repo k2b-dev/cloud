@@ -471,7 +471,8 @@ when a list renders. Keep field errors associated with their inputs.
 On a Cloud page, the OS reduced-motion setting or `data-k2b-motion="reduced"`
 on `<html>` makes CSS transitions, animations, and scrolling inside `.k2b-ui`
 instant and stops view transitions. Color may still change, movement does
-not. Motion that your code drives, such as a smooth `scrollIntoView()` or
+not. A delay that only keeps a fast request from flashing a loading indicator
+must keep its wait under reduced motion. Motion that your code drives, such as a smooth `scrollIntoView()` or
 `element.animate()`, checks `prefersReducedMotion()` from `@k2b/ui`; see
 [Motion](/en/ui/motion).
 

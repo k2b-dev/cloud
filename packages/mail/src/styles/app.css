@@ -438,9 +438,11 @@
   }
 
   /* Loading rows have the layout of the rows they stand for, so the list keeps its size when the
-     rows arrive. They appear only once a read takes a moment, so a fast one never flashes them. */
+     rows arrive. They appear only once a read takes a moment, so a fast one never flashes them.
+     The delay is a debounce, not motion: it stays under reduced motion, which only makes the fade instant. */
   .mail-focus-skeleton > .mail-focus-row {
     animation: mail-focus-skeleton-appear 150ms ease-out 300ms both;
+    animation-delay: 300ms !important;
   }
 
   .mail-focus-skeleton > .mail-focus-row:hover {

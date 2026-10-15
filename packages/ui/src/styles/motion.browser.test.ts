@@ -13,7 +13,8 @@ const markup = `
   <dialog class="k2b-dialog k2b-bottom-sheet-frame"><div class="k2b-bottom-sheet-viewport">Sheet</div></dialog>
   <div data-k2b-toast-container><div class="k2b-toast" data-k2b-toast data-tone="success">Saved</div></div>
   <progress class="k2b-toast__progress"></progress>
-  <div class="k2b-gesture-menu" data-swipe="right"><span class="k2b-gesture-menu__swipe"></span></div>`;
+  <div class="k2b-gesture-menu" data-swipe="right"><span class="k2b-gesture-menu__swipe"></span></div>
+  <span class="k2b-chart-group-controls__loading" data-loading></span>`;
 const sizes = {
   desktop: { viewport: { width: 1280, height: 800 } },
   phone: { viewport: { width: 390, height: 664 }, isMobile: true, hasTouch: true },
@@ -66,7 +67,10 @@ for (const [size, options] of Object.entries(sizes)) {
             // frozen segment, and the swipe icon above the content that stays put.
             const progress = getComputedStyle(document.querySelector(".k2b-toast__progress")!).backgroundImage;
             const swipe = getComputedStyle(document.querySelector(".k2b-gesture-menu__swipe")!).zIndex;
-            return { started, durations, running, progress, swipe };
+            // A delay that debounces a loader is not motion: it outlasts reduced motion.
+            const loader = getComputedStyle(document.querySelector(".k2b-chart-group-controls__loading")!);
+            const debounce = { delay: loader.transitionDelay, duration: loader.transitionDuration };
+            return { started, durations, running, progress, swipe, debounce };
           });
           const moving = entry.started.filter((animation) => animation.length > 0);
           if (state === "normal") {
@@ -76,7 +80,9 @@ for (const [size, options] of Object.entries(sizes)) {
             expect(moving.some((animation) => animation.toast)).toBe(true);
             expect(entry.progress).toContain("linear-gradient");
             expect(entry.swipe).toBe("auto");
+            expect(entry.debounce).toEqual({ delay: "0.2s", duration: "0.15s" });
           } else {
+            expect(entry.debounce).toEqual({ delay: "0.2s", duration: "0s" });
             expect(entry.progress).toBe("none");
             expect(entry.swipe).toBe("1");
             expect(entry.durations.every((durations) => durations.every((duration) => duration === "0s"))).toBe(true);

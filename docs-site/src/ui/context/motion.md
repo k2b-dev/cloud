@@ -43,6 +43,21 @@ The operating system's reduced-motion setting or
 `data-k2b-motion="reduced"` on `<html>` makes motion inside `.k2b-ui`
 instant. Duration tokens become zero, transitions and animations end at once,
 and scroll behavior becomes `auto`. Color may still change, movement does not.
+A highlight that only fades its color, such as a fresh item, also ends at
+once.
+
+Reduced motion sets delays to zero as well. A delay that debounces a
+loading indicator, so a fast request never flashes it, is not motion. Keep it
+with `!important`, either in a cascade layer or on a selector more specific
+than `html[data-k2b-motion="reduced"] .k2b-ui *`. The indicator then still
+waits and appears without a fade:
+
+```css
+.k2b-ui .my-loader[data-loading] {
+  opacity: 1;
+  transition-delay: 0.2s !important;
+}
+```
 
 The attribute is a generic `@k2b/ui` contract. The host page sets it, for
 example from a person's profile setting. It reaches `.k2b-ui` elements inside

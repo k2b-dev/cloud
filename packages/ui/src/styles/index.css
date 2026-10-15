@@ -11283,9 +11283,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chart-group-controls { display: grid; gap: .75rem; padding: 1rem; }
 .k2b-ui .k2b-chart [data-chart-reference="true"] > :is(rect, circle, path) { fill: none !important; pointer-events: all; stroke: var(--k2b-chart-reference-color); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
 
-/* Reserve the loader slot; brief chart requests never flash a visible indicator. */
+/* Reserve the loader slot; brief chart requests never flash a visible indicator.
+   The delay is a debounce, not motion: !important on this more specific
+   selector keeps it under reduced motion, which only makes the fade instant. */
 .k2b-ui .k2b-chart-group-controls__loading { display: inline-flex; align-items: center; justify-content: center; width: 1rem; height: 1rem; flex: 0 0 1rem; color: var(--k2b-text-muted); font-size: .875rem; opacity: 0; transition: opacity .15s; }
-.k2b-ui .k2b-chart-group-controls__loading[data-loading] { opacity: 1; transition-delay: .2s; }
+.k2b-ui .k2b-chart-group-controls__loading[data-loading] { opacity: 1; transition-delay: .2s !important; }
 
 /* Maps use a full-width geographic viewport; headers and legends stay outside its crop. */
 .k2b-ui .k2b-chart[data-chart-kind="map"] .k2b-chart__svg { container-type: size; }
