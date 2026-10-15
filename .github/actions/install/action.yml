@@ -1,0 +1,32 @@
+name: Install dependencies
+description: Restore the Bun install cache and run a bounded install
+inputs:
+  args:
+    description: Extra bun ci arguments
+    required: false
+    default: ""
+outputs:
+  cache-key:
+    description: Exact lockfile cache key
+    value: ${{ steps.restore.outputs.cache-primary-key }}
+  cache-hit:
+    description: Whether the exact lockfile cache was restored
+    value: ${{ steps.restore.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    # A warm cache needs no registry, so a registry hang cannot touch the gate.
+    # main.yml writes it; consumers only restore the current lockfile's cache.
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: restore
+      continue-on-error: true
+      env:
+        SEGMENT_DOWNLOAD_TIMEOUT_MINS: "2"
+      with:
+        path: ~/.bun/install/cache
+        key: bun-install-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+    # Bound each install and retry only a stalled install once.
+    - shell: bash
+      env:
+        ARGS: ${{ inputs.args }}
+      run: BUN_INSTALL_CACHE_DIR="$HOME/.bun/install/cache" bun "$GITHUB_WORKSPACE/scripts/ci-install.ts" $ARGS
