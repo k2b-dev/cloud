@@ -80,6 +80,7 @@ describe("capability provider tool schemas", () => {
     const catalog = buildAiCapabilityCatalog(apps);
     const prepared = prepareAiTools({
       tools: createLoadedAiCapabilityTools({
+        apps,
         catalog,
         loadedNames: catalog.map((entry) => entry.name),
         actor,
