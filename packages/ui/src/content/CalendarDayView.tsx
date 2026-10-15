@@ -11,6 +11,7 @@ import {
   Show,
   untrack,
 } from "solid-js";
+import { prefersReducedMotion } from "../motion";
 import { brakedScroll, GESTURE_GAP_MS, SETTLE_RADIUS, settleTarget, stopCrossing, stopIndexAt, wheelPixels } from "./calendar-day-scroll";
 import {
   addDayKeys,
@@ -40,7 +41,6 @@ import {
   longDay,
   markerAbove,
   nightHours,
-  reducedMotion,
   shortDay,
   soonNote,
   TimeBand,
@@ -150,7 +150,7 @@ export const CalendarDayView = (props: TimeViewProps) => {
     const index = stopIndexAt(tops, target);
     const section = sections[index];
     if (section) anchor = { key: keysOf(section)[0]!, delta: target - tops[index]! };
-    scroller.scrollTo({ top: target, behavior: reducedMotion() ? "instant" : "smooth" });
+    scroller.scrollTo({ top: target, behavior: prefersReducedMotion() ? "instant" : "smooth" });
   };
 
   /** Puts a day on screen: now in the upper third today, else an hour before its first entry, else its start. */
@@ -191,7 +191,7 @@ export const CalendarDayView = (props: TimeViewProps) => {
     const target = settleTarget(tops.slice(1), scroller.scrollTop, lastInput === "touch" ? SETTLE_RADIUS.touch : SETTLE_RADIUS.wheel);
     if (target === undefined) return;
     settling = true;
-    scroller.scrollTo({ top: target, behavior: reducedMotion() ? "instant" : "smooth" });
+    scroller.scrollTo({ top: target, behavior: prefersReducedMotion() ? "instant" : "smooth" });
     window.setTimeout(() => {
       settling = false;
     }, 450);

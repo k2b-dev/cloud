@@ -8,6 +8,7 @@ import {
   MarkdownView,
   NoticeCard,
   Placeholder,
+  prefersReducedMotion,
   prompts,
   ScrollArea,
   TextInput,
@@ -186,7 +187,7 @@ const HelpShell = (props: {
     ).find((element) => element.id === hash);
     if (!heading) return false;
     setActiveSectionId(hash);
-    heading.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    heading.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
     return true;
   };
 

@@ -1,4 +1,5 @@
 import { suppressTextSelection } from "../internal/text-selection";
+import { prefersReducedMotion } from "../motion";
 import {
   APP_WORKSPACE_DETAIL_DEFAULT,
   APP_WORKSPACE_DETAIL_MAX,
@@ -436,7 +437,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   const phone = typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 47.999rem)") : null;
   const wide = typeof window.matchMedia === "function" ? window.matchMedia("(min-width: 48rem)") : null;
   const touchDrawer = typeof window.matchMedia === "function" ? window.matchMedia(`${COMPACT_QUERY} and (pointer: coarse)`) : null;
-  const reducedMotion = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
   const detailSelector = ".k2b-app-workspace__detail";
   const grabberSelector = ".k2b-app-workspace__detail-grabber";
   type RememberedItem = {
@@ -612,7 +612,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   // edge, so the workspace clips while the panel moves (see the stylesheet).
   const slide = (root: HTMLElement, aside: HTMLElement) => {
     slides.get(root)?.();
-    if (!root.hasAttribute("data-workspace-motion") || reducedMotion?.matches || !wide?.matches) return;
+    if (!root.hasAttribute("data-workspace-motion") || prefersReducedMotion() || !wide?.matches) return;
     const end = () => {
       aside.removeEventListener("transitionend", onEnd);
       aside.removeEventListener("transitioncancel", onEnd);
@@ -650,7 +650,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           mainElement(root)?.contains(snapshot.item) &&
           snapshot.item.closest(ROOT_SELECTOR) === root
         ) {
-          const behavior = reducedMotion?.matches ? "auto" : "smooth";
+          const behavior = prefersReducedMotion() ? "auto" : "smooth";
           const main = mainElement(root);
           const cell = snapshot.cell;
           const target = cell?.isConnected && main?.contains(cell) ? cell : snapshot.item;
@@ -713,7 +713,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (aside.hidden) {
       if (pendingTitle?.aside === aside) cancelTitle();
       if (panelStep === aside) panelStep = null;
-      if (root.hasAttribute("data-workspace-motion") && !reducedMotion?.matches && wide?.matches) {
+      if (root.hasAttribute("data-workspace-motion") && !prefersReducedMotion() && wide?.matches) {
         // Closing holds the detail column until the slide ends; anchor after Main widens.
         const cancel = () => {
           root.removeEventListener("transitionend", onTransitionEnd);

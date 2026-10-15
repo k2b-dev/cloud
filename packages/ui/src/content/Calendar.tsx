@@ -8,6 +8,7 @@ import { GestureMenu } from "../actions/GestureMenu";
 import SegmentedControl from "../actions/SegmentedControl";
 import { useDateConfigLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { prefersReducedMotion } from "../motion";
 import { CalendarDayView } from "./CalendarDayView";
 import { CalendarWeekView } from "./CalendarWeekView";
 import { addDayKeys } from "./calendar-days";
@@ -41,7 +42,7 @@ import {
   textWidth,
   validDate,
 } from "./calendar-shared";
-import { compactGermanDate, reducedMotion, type TimeViewHandle, type TodayDirection } from "./calendar-time-view";
+import { compactGermanDate, type TimeViewHandle, type TodayDirection } from "./calendar-time-view";
 
 export type CalendarView = "day" | "week" | "month" | "year" | "mobile-month";
 
@@ -1603,7 +1604,7 @@ const MonthView = (props: {
     reportVisible();
   };
   const pulseToday = () => {
-    if (reducedMotion()) return;
+    if (prefersReducedMotion()) return;
     setPulseKey(todayKey());
     window.clearTimeout(pulseTimer);
     pulseTimer = window.setTimeout(() => setPulseKey(""), 1000);
@@ -1649,13 +1650,13 @@ const MonthView = (props: {
     if (!scroller) return;
     const maximum = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
     const target = Math.max(0, Math.min(top, maximum));
-    if (smooth && !reducedMotion() && Math.abs(target - scroller.scrollTop) > viewHeight() * 3) {
+    if (smooth && !prefersReducedMotion() && Math.abs(target - scroller.scrollTop) > viewHeight() * 3) {
       scroller.scrollTop = target - Math.sign(target - scroller.scrollTop) * viewHeight();
       readScroll();
     }
-    scroller.scrollTo({ top: target, behavior: smooth && !reducedMotion() ? "smooth" : "instant" });
+    scroller.scrollTo({ top: target, behavior: smooth && !prefersReducedMotion() ? "smooth" : "instant" });
     if (top > maximum + 1) loadMore("later");
-    if (!smooth || reducedMotion()) {
+    if (!smooth || prefersReducedMotion()) {
       readScroll();
       finishGlide();
     }
@@ -1721,7 +1722,7 @@ const MonthView = (props: {
   };
   const goToday = () => {
     if (!continuous() || !loaded(todayKey()) || !scroller) return false;
-    pulseOnArrival = !reducedMotion();
+    pulseOnArrival = !prefersReducedMotion();
     if (positionMonth(todayKey(), true, true)) return true;
     pulseOnArrival = false;
     return false;
@@ -3074,7 +3075,7 @@ const TimeGridView = (props: {
       if (!scrollContainer || !defaultHourMarker) return;
       const targetTop = defaultHourMarker.getBoundingClientRect().top - scrollContainer.getBoundingClientRect().top;
       // Reduced motion jumps to the business hours instead of gliding there, like every transition of the library.
-      const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+      const behavior = prefersReducedMotion() ? "auto" : "smooth";
       scrollContainer.scrollTo({ top: Math.max(0, scrollContainer.scrollTop + targetTop), behavior });
     });
   });

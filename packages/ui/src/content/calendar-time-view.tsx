@@ -119,9 +119,6 @@ export const eventAccent = (event: Pick<CalendarEvent, "color" | "colorHex">): s
 /** Minimum minutes an overlap counts for a band, about the height of its title. */
 const LANE_MINUTES = 20;
 
-export const reducedMotion = () =>
-  typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
 /** Swallows the click a browser sends right after a gesture ends, never the next one. */
 export const swallowNextClick = () => {
   const stop = (event: Event) => {

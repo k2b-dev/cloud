@@ -225,6 +225,29 @@ describe("Mail overview views", () => {
       }
     }, 30_000);
 
+    test(`keeps the loading rows' wait under reduced motion on a ${name}`, async () => {
+      // Reduced motion makes the fade instant, but the wait is a debounce: a fast read still shows nothing.
+      for (const source of ["os", "attribute"] as const) {
+        const page = await load(
+          { ...context, reducedMotion: source === "os" ? "reduce" : "no-preference" },
+          { initialView: "mine", initialFocusError: "Mail is restarting", initialFocus: null },
+        );
+        try {
+          if (source === "attribute") await page.evaluate(() => document.documentElement.setAttribute("data-k2b-motion", "reduced"));
+          await choose(page, "Unassigned");
+          await page.waitForSelector(".mail-focus-skeleton");
+          const appear = await page.evaluate(() => {
+            const style = getComputedStyle(document.querySelector(".mail-focus-skeleton > .mail-focus-row")!);
+            return { delay: style.animationDelay, duration: style.animationDuration, fill: style.animationFillMode };
+          });
+          expect(appear).toEqual({ delay: "0.3s", duration: "0s", fill: "both" });
+          expect(page.errors).toEqual([]);
+        } finally {
+          await close(page);
+        }
+      }
+    }, 30_000);
+
     test(`shows loading rows of the final size, never the empty state, while a view loads on a ${name}`, async () => {
       const page = await load(context, { initialView: "mine", initialFocusError: "Mail is restarting", initialFocus: null });
       try {

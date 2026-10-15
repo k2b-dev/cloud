@@ -115,7 +115,8 @@ local state calls `preventDefault()`.
 Opening reserves the column immediately, then slides the panel in. Closing
 slides it out over 140 ms with the column still reserved, then returns the
 room in one step. The initial server-rendered panel appears without motion;
-reduced motion makes opening and closing instant.
+the OS reduced-motion setting or `data-k2b-motion="reduced"` on `<html>`
+makes opening and closing instant; see [Motion](/en/ui/motion).
 
 For DataTable, pass `scrollClass="k2b-detail-trail"` to keep column widths
 while the scroller narrows beside the panel. Closing returns the full width

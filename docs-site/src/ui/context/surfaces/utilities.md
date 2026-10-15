@@ -64,6 +64,13 @@ Keep contrast between semantic text and surfaces when overriding color stacks. F
 
 Do not remove component focus treatments or reduced-motion behavior.
 
+## Motion
+
+The OS reduced-motion setting or `data-k2b-motion="reduced"` on `<html>` makes
+transitions and animations inside `.k2b-ui` instant. For
+JavaScript-driven motion, use `prefersReducedMotion()` from `@k2b/ui`.
+See [Motion](/en/ui/motion) for tokens and interaction guardrails.
+
 ## Runtime
 
 The styles need no JavaScript. Theme variables work in the initial server response and do not read Cloud state or browser storage. An application may still update those variables from an island when it offers an interactive theme picker.

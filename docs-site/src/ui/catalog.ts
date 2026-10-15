@@ -409,6 +409,7 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  prefersReducedMotion: "Documented OS and host preference helper in the Motion guide (/en/ui/motion).",
   formatShortcut: "Documented Kbd formatter for plain text labels and spoken names.",
   keyboardPlatform: "Documented Kbd platform detection for browser and server hosts.",
   reconcileChatMentions: "Documented Chat composer helper for preserving reference ranges during external text edits.",

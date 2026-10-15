@@ -96,6 +96,14 @@
   --k2b-radius-control: 0.5rem;
   --k2b-radius-surface: 0.75rem;
   --k2b-radius-dialog: 0.875rem;
+  /* One motion vocabulary: every time and curve comes from these tokens. */
+  --k2b-motion-fast: 120ms; /* color, hover, press */
+  --k2b-motion-base: 180ms; /* pop, slide, fade in */
+  --k2b-motion-sheet: 220ms; /* panels, sheets, period changes */
+  --k2b-motion-celebrate: 600ms; /* completion moments only */
+  --k2b-fresh-fade: 1600ms; /* color only: a highlight fades out */
+  --k2b-ease-out: cubic-bezier(0.23, 1, 0.32, 1); /* standard curve */
+  --k2b-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* small marks only: check, switch knob, badge */
   /* Cloud pins `--ui-shadow-surface: none` in both themes: flat surfaces carry
      a border, not a drop shadow, and an outer shadow is clipped anyway by the
      `overflow: hidden` parents these surfaces sit in. Only genuinely floating,
@@ -124,6 +132,61 @@
   font-size: 0.9375rem;
   font-weight: 400;
   color-scheme: light;
+}
+
+/* Reduced motion means instant: color may change, movement does not.
+   The OS setting and data-k2b-motion="reduced" on html are the two sources.
+   Like every rule here it stays inside .k2b-ui; view transitions belong to
+   the host page. !important lets this state rule beat every component
+   transition. A component rule that changes more than timing under the OS
+   setting repeats directly after its media block for the attribute, under
+   :where(html[data-k2b-motion="reduced"]) so it keeps the same specificity
+   and cascade position; motion-contract.test.ts keeps the pairs complete.
+   The attribute reaches .k2b-ui elements below <html>, not <html> itself. */
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui {
+    --k2b-motion-fast: 0ms;
+    --k2b-motion-base: 0ms;
+    --k2b-motion-sheet: 0ms;
+    --k2b-motion-celebrate: 0ms;
+    --k2b-fresh-fade: 0ms;
+  }
+  .k2b-ui,
+  .k2b-ui::before,
+  .k2b-ui::after,
+  .k2b-ui::backdrop,
+  .k2b-ui *,
+  .k2b-ui *::before,
+  .k2b-ui *::after,
+  .k2b-ui *::backdrop {
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+html[data-k2b-motion="reduced"] .k2b-ui {
+  --k2b-motion-fast: 0ms;
+  --k2b-motion-base: 0ms;
+  --k2b-motion-sheet: 0ms;
+  --k2b-motion-celebrate: 0ms;
+  --k2b-fresh-fade: 0ms;
+}
+html[data-k2b-motion="reduced"] .k2b-ui,
+html[data-k2b-motion="reduced"] .k2b-ui::before,
+html[data-k2b-motion="reduced"] .k2b-ui::after,
+html[data-k2b-motion="reduced"] .k2b-ui::backdrop,
+html[data-k2b-motion="reduced"] .k2b-ui *,
+html[data-k2b-motion="reduced"] .k2b-ui *::before,
+html[data-k2b-motion="reduced"] .k2b-ui *::after,
+html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  scroll-behavior: auto !important;
 }
 
 .k2b-ui[data-theme="dark"],
@@ -1791,6 +1854,11 @@
   }
 }
 
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-button:not(:disabled, [aria-disabled="true"]):active,
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-dropdown.k2b-split-button:has(> .k2b-split-button__primary:not(:disabled):active) {
+  scale: none;
+}
+
 /* Touch targets: on a coarse pointer every button gets an invisible hit area
    of at least 2.75rem (44 px) in both axes, while its visible box stays the
    same. A later element paints over an earlier one, so a hit area must never
@@ -2570,6 +2638,10 @@
   .k2b-ui .k2b-pull-to-refresh__icon {
     transform: none;
   }
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-pull-to-refresh__icon {
+  transform: none;
 }
 
 /* A host may expose its trailing inset to the panel. The scrollport expands
@@ -10265,6 +10337,18 @@
   }
 }
 
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-progress-dots > span {
+  animation: none;
+  opacity: 0.6;
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"]) .k2b-chat-activity__leading,
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong {
+  animation: none;
+  color: var(--k2b-chat-activity-busy-color);
+  background-image: none;
+}
+
 @media (forced-colors: active) {
   .k2b-ui,
   .k2b-ui .k2b-app-workspace__sidebar-body,
@@ -10501,6 +10585,14 @@
   .k2b-ui .k2b-gesture-menu[data-swipe] > .k2b-gesture-menu__swipe {
     z-index: 1;
   }
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-gesture-menu[data-swipe] {
+  isolation: isolate;
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-gesture-menu[data-swipe] > .k2b-gesture-menu__swipe {
+  z-index: 1;
 }
 
 .k2b-ui .k2b-select-chip {
@@ -11191,9 +11283,11 @@
 .k2b-ui .k2b-chart-group-controls { display: grid; gap: .75rem; padding: 1rem; }
 .k2b-ui .k2b-chart [data-chart-reference="true"] > :is(rect, circle, path) { fill: none !important; pointer-events: all; stroke: var(--k2b-chart-reference-color); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
 
-/* Reserve the loader slot; brief chart requests never flash a visible indicator. */
+/* Reserve the loader slot; brief chart requests never flash a visible indicator.
+   The delay is a debounce, not motion: !important on this more specific
+   selector keeps it under reduced motion, which only makes the fade instant. */
 .k2b-ui .k2b-chart-group-controls__loading { display: inline-flex; align-items: center; justify-content: center; width: 1rem; height: 1rem; flex: 0 0 1rem; color: var(--k2b-text-muted); font-size: .875rem; opacity: 0; transition: opacity .15s; }
-.k2b-ui .k2b-chart-group-controls__loading[data-loading] { opacity: 1; transition-delay: .2s; }
+.k2b-ui .k2b-chart-group-controls__loading[data-loading] { opacity: 1; transition-delay: .2s !important; }
 
 /* Maps use a full-width geographic viewport; headers and legends stay outside its crop. */
 .k2b-ui .k2b-chart[data-chart-kind="map"] .k2b-chart__svg { container-type: size; }
@@ -11218,6 +11312,11 @@
   .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"]) .k2b-chat-activity__leading,
   .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong { -webkit-text-fill-color: currentColor; }
 }
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-composer__loading strong { animation: none; background-image: none; -webkit-text-fill-color: currentColor; }
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-composer__loading .k2b-spin { animation: none; }
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"]) .k2b-chat-activity__leading,
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong { -webkit-text-fill-color: currentColor; }
 
 .k2b-ui .k2b-chat-tasks { border: 1px solid var(--k2b-border); border-radius: 0.75rem; overflow: hidden; }
 .k2b-ui .k2b-chat-tasks__header { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.6rem 0.75rem; font-size: 0.8125rem; text-align: start; cursor: pointer; }

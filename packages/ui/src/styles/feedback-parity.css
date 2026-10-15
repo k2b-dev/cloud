@@ -1110,6 +1110,11 @@ html:has(.k2b-mobile-shell):not(:has(dialog:modal)) .k2b-ui [data-k2b-toast-cont
   }
 }
 
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-toast__progress:indeterminate {
+  background: color-mix(in srgb, var(--k2b-action-solid) 35%, var(--k2b-border));
+  animation: none;
+}
+
 /* Forced colours turn the track and the fill into the same Canvas, so the bar
    draws itself in system colours: an outlined track, a Highlight fill, and a
    still hatch while the total is unknown. */
@@ -1244,6 +1249,13 @@ html:has(.k2b-mobile-shell):not(:has(dialog:modal)) .k2b-ui [data-k2b-toast-cont
     background-image: none;
     -webkit-text-fill-color: currentColor;
   }
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-inline-guidance[data-loading="true"] .k2b-inline-guidance__icon,
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-inline-guidance[data-loading="true"] .k2b-inline-guidance__content {
+  animation: none;
+  background-image: none;
+  -webkit-text-fill-color: currentColor;
 }
 
 /* These containers clip their content, so focus rings inside them are drawn
