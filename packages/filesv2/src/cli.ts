@@ -4,6 +4,7 @@ import {
   arg,
   type CloudCliContext,
   type CloudCliText,
+  cloudResourceUrl,
   command,
   confirmFlag,
   defineCliCommands,
@@ -13,7 +14,15 @@ import {
   printStructured,
 } from "@k2b/cloud/cli";
 import type { ApiType } from "./api";
-import { addressOf, areaLabel, type FileTarget, fileResolver } from "./cli-address";
+import {
+  addressOf,
+  areaLabel,
+  type FileTarget,
+  fileResolver,
+  withEntryPermalink,
+  withEntryPermalinks,
+  withEntryResultPermalink,
+} from "./cli-address";
 import { adminCommands } from "./cli-admin";
 import { downloadFile, readFile } from "./cli-download";
 import { templateCommands } from "./cli-templates";
@@ -41,6 +50,7 @@ import {
 } from "./contracts";
 import { DOCUMENT_KINDS } from "./documents";
 import { editorUrl } from "./frontend/urls";
+import { entryRefId } from "./resource-ref";
 
 /** The server's scan budget for one listing or search; `tree` stops at the same size instead of paging forever. */
 const TREE_LIMIT = 10_000;
@@ -179,6 +189,14 @@ function filesCommands(locale?: string) {
     const info = await localStat(local).catch(() => null);
     return info?.isDirectory() ? join(local, name) : local;
   };
+  const withEntriesPermalinks = (ctx: CloudCliContext, result: EntriesResult) => {
+    if (ctx.options.output === "text") return result;
+    return {
+      ...result,
+      entries: withEntryPermalinks(ctx, result.base.id, result.entries),
+      results: result.results.map((item) => (item.ok ? { ...item, entry: withEntryPermalink(ctx, result.base.id, item.entry) } : item)),
+    };
+  };
   const batch = (ctx: CloudCliContext, result: { results: { path: string; ok: boolean; error?: string }[] }) => {
     printRows(ctx, ctx.options.output === "jsonl" ? result.results : result, result.results, [
       { key: "path", label: t({ en: "Path", de: "Pfad" }) },
@@ -187,8 +205,9 @@ function filesCommands(locale?: string) {
     ]);
     if (result.results.some((item) => !item.ok)) return 1;
   };
-  const entryRows = (ctx: CloudCliContext, value: unknown, items: FileEntry[], key: "name" | "path") =>
-    printRows(ctx, ctx.options.output === "jsonl" ? items : value, items, [
+  const entryRows = (ctx: CloudCliContext, value: DirectoryResult | SearchResult, items: FileEntry[], key: "name" | "path") => {
+    const linked = withEntryPermalinks(ctx, value.base.id, items);
+    printRows(ctx, ctx.options.output === "jsonl" ? linked : { ...value, items: linked }, items, [
       {
         key,
         label: key === "name" ? t({ en: "Name", de: "Name" }) : t({ en: "Path", de: "Pfad" }),
@@ -197,16 +216,21 @@ function filesCommands(locale?: string) {
       { key: "size", label: "Bytes", value: (item) => (item.directory ? "" : item.size) },
       { key: "modified", label: t({ en: "Modified", de: "Geändert" }) },
     ]);
-  const markedRows = (ctx: CloudCliContext, items: MarkedEntry[], column: CloudCliText) =>
+  };
+  const markedRows = (ctx: CloudCliContext, items: MarkedEntry[], column: CloudCliText) => {
+    const linked = items.map((item) =>
+      ctx.options.output === "text" ? item : { ...item, entry: withEntryPermalink(ctx, item.base.id, item.entry) },
+    );
     printRows(
       ctx,
-      items,
+      linked,
       items.map((item) => ({ address: addressOf(item.base, item.entry.path), markedAt: item.markedAt })),
       [
         { key: "address", label: t({ en: "Address", de: "Adresse" }) },
         { key: "markedAt", label: t(column) },
       ],
     );
+  };
 
   return defineCliCommands({
     name: "filesv2",
@@ -336,7 +360,7 @@ function filesCommands(locale?: string) {
             } while (cursor);
           };
           await walk(target.path, 1);
-          if (printStructured(ctx, { base, path: target.path, depth, items })) return;
+          if (printStructured(ctx, { base, path: target.path, depth, items: withEntryPermalinks(ctx, target.baseId, items) })) return;
           ctx.print(`${addressOf(base ?? { name: target.baseId }, target.path)}`);
           for (const item of items) ctx.print(`${"  ".repeat(item.depth)}${item.name}${item.directory ? "/" : ""}`);
         },
@@ -346,7 +370,7 @@ function filesCommands(locale?: string) {
         args: { file: fileArg({ en: "<area>:/path or a file ID", de: "<bereich>:/pfad oder eine Datei-ID" }) },
         async run({ ctx, args }) {
           const result = await entry(ctx, await fileResolver(ctx).file(args.file));
-          if (printStructured(ctx, result)) return;
+          if (printStructured(ctx, withEntryResultPermalink(ctx, result))) return;
           const rows: [string, unknown][] = [
             [t({ en: "Address", de: "Adresse" }), addressOf(result.base, result.entry.path)],
             [t({ en: "Type", de: "Art" }), result.entry.directory ? t({ en: "folder", de: "Ordner" }) : t({ en: "file", de: "Datei" })],
@@ -395,7 +419,17 @@ function filesCommands(locale?: string) {
               }),
             );
           }
-          if (!printStructured(ctx, { baseId: target.baseId, path, bytes: bytes.byteLength, content })) await ctx.write(content);
+          if (ctx.options.output === "text") await ctx.write(content);
+          else {
+            const id = target.entry?.resourceId ?? target.entry?.entry.resourceId ?? entryRefId(target.baseId, path);
+            printStructured(ctx, {
+              baseId: target.baseId,
+              path,
+              bytes: bytes.byteLength,
+              content,
+              ...(id ? { permalink: cloudResourceUrl(ctx, { type: "filesv2.entry", id }) } : {}),
+            });
+          }
         },
       }),
       command("get", {
@@ -509,9 +543,10 @@ function filesCommands(locale?: string) {
               await api(ctx).bases[":baseId"].uploads[":id"].abort.$post({ param: { ...baseParam, id } }, { init: { signal } });
             },
           });
-          if (!printStructured(ctx, result))
+          const linked = withEntryResultPermalink(ctx, result);
+          if (!printStructured(ctx, linked))
             ctx.print(
-              `${t({ en: "Uploaded", de: "Hochgeladen" })}: ${addressOf(result.base, result.entry.path)} (${result.entry.size} bytes)`,
+              `${t({ en: "Uploaded", de: "Hochgeladen" })}: ${addressOf(result.base, result.entry.path)} (${result.entry.size} bytes)${linked.entry.permalink ? ` ${linked.entry.permalink}` : ""}`,
             );
         },
       }),
@@ -535,15 +570,20 @@ function filesCommands(locale?: string) {
           if (paths.length === 1) {
             const item = result.results.find((item) => item.path === paths[0]);
             if (!item?.entry) throw new Error(t({ en: "The folder result is missing.", de: "Das Ordnerergebnis fehlt." }));
-            const single: EntryResult = { base: result.base, entry: item.entry };
-            if (!printStructured(ctx, single))
-              ctx.print(`${t({ en: "Created", de: "Angelegt" })}: ${addressOf(single.base, single.entry.path)}`);
+            const linked = withEntryResultPermalink(ctx, { base: result.base, entry: item.entry });
+            if (!printStructured(ctx, linked))
+              ctx.print(
+                `${t({ en: "Created", de: "Angelegt" })}: ${addressOf(linked.base, linked.entry.path)}${linked.entry.permalink ? ` ${linked.entry.permalink}` : ""}`,
+              );
             return;
           }
+          const results = result.results.map((item) =>
+            item.entry ? { ...item, entry: withEntryPermalink(ctx, result.base.id, item.entry) } : item,
+          );
           printRows(
             ctx,
-            ctx.options.output === "jsonl" ? result.results : result,
-            result.results.filter((item) => paths.includes(item.path)),
+            ctx.options.output === "jsonl" ? results : { ...result, results },
+            results.filter((item) => paths.includes(item.path)),
             [
               {
                 key: "state",
@@ -582,7 +622,7 @@ function filesCommands(locale?: string) {
             const result = await ctx.readJson<EntriesResult>(
               await api(ctx).bases[":baseId"].move.$post({ param: { baseId }, json: { paths: sources, folder: destination.path } }),
             );
-            return batch(ctx, result);
+            return batch(ctx, withEntriesPermalinks(ctx, result));
           }
           if (existing)
             throw new Error(
@@ -607,7 +647,7 @@ function filesCommands(locale?: string) {
             entries: [renamed.entry],
             results: [{ path: source, ok: true, entry: renamed.entry }],
           };
-          return batch(ctx, result);
+          return batch(ctx, withEntriesPermalinks(ctx, result));
         },
       }),
       command("cp", {
@@ -635,7 +675,7 @@ function filesCommands(locale?: string) {
               json: { paths: targets.map(requireEntry), targetBaseId: destination.baseId, folder: destination.path },
             }),
           );
-          return batch(ctx, result);
+          return batch(ctx, withEntriesPermalinks(ctx, result));
         },
       }),
       command("rm", {
@@ -724,7 +764,7 @@ function filesCommands(locale?: string) {
               query: { path: flags.to?.replace(/^\/+/, "") },
             }),
           );
-          if (!printStructured(ctx, result))
+          if (!printStructured(ctx, withEntryResultPermalink(ctx, result)))
             ctx.print(`${t({ en: "Restored", de: "Wiederhergestellt" })}: ${addressOf(result.base, result.entry.path)}`);
         },
       }),
@@ -801,7 +841,7 @@ function filesCommands(locale?: string) {
                 })
               : await api(ctx).bases[":baseId"].versions.restore.$post({ param: param(target), json: { path, id: args.id } }),
           );
-          if (!printStructured(ctx, result))
+          if (!printStructured(ctx, withEntryResultPermalink(ctx, result)))
             ctx.print(`${t({ en: "Restored", de: "Wiederhergestellt" })}: ${addressOf(result.base, result.entry.path)}`);
         },
       }),
@@ -995,8 +1035,11 @@ function filesCommands(locale?: string) {
               ? await api(ctx).bases[":baseId"].markdown.$post({ param: param(target), json: { path } })
               : await api(ctx).bases[":baseId"].documents.$post({ param: param(target), json: { path, kind } }),
           );
-          if (!printStructured(ctx, result))
-            ctx.print(`${t({ en: "Created", de: "Angelegt" })}: ${addressOf(result.base, result.entry.path)}`);
+          const linked = withEntryResultPermalink(ctx, result);
+          if (!printStructured(ctx, linked))
+            ctx.print(
+              `${t({ en: "Created", de: "Angelegt" })}: ${addressOf(result.base, result.entry.path)}${linked.entry.permalink ? ` ${linked.entry.permalink}` : ""}`,
+            );
         },
       }),
       command("edit-url", {

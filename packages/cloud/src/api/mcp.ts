@@ -17,6 +17,7 @@ import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { HELP_SEARCH_MAX_LIMIT, helpResourceUri, parseHelpResourceUri, readHelpArticle } from "../_internal/help-catalog";
 import { getCapability, listApps } from "../_internal/registry";
+import { addCloudResourceHrefs } from "../ai/resource-refs";
 import { capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
@@ -26,9 +27,11 @@ import {
   type CapabilityActionManifest,
   type CapabilityQueryManifest,
   CapabilitySemanticLinkSchema,
-  CloudResourceRefSchema,
+  type CloudResourceRef,
   capabilityResultJsonSchema,
+  capabilityResultSchema,
   cloudResourceRefAppId,
+  LinkedCloudResourceReferenceSchema,
   resolveCapabilityResourceReader,
 } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
@@ -121,7 +124,7 @@ const platformTools: Tool[] = [
     title: "Read Cloud resource",
     description:
       "Read one Cloud resource through its current canonical reader. Pass a typed ref returned by search, list, lookup, or another capability unchanged; never guess a reader name or substitute an id from another resource type.",
-    inputSchema: structuredClone(z.toJSONSchema(CloudResourceRefSchema)) as Tool["inputSchema"],
+    inputSchema: structuredClone(z.toJSONSchema(LinkedCloudResourceReferenceSchema)) as Tool["inputSchema"],
     annotations: { title: "Read Cloud resource", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _meta: { "cloud/kind": "resource-read" },
   },
@@ -206,7 +209,7 @@ const projectTool = (
       title: `${app.appName}: ${operation.title}`,
       description: operation.description,
       inputSchema: action ? actionInputSchema(action) : cloneObjectSchema(operation.inputSchema),
-      outputSchema: cloneObjectSchema(capabilityResultJsonSchema(operation.dataSchema)),
+      outputSchema: cloneObjectSchema(capabilityResultJsonSchema(operation.dataSchema, { consumer: true })),
       annotations: {
         title: operation.title,
         readOnlyHint: !isAction,
@@ -300,7 +303,7 @@ const findCapabilityTool = async (
 };
 
 const findResourceReaderTool = async (
-  ref: z.infer<typeof CloudResourceRefSchema>,
+  ref: CloudResourceRef,
   lookup: (appId: string) => Promise<CapabilityRegistryEntry | null>,
   registry: () => Promise<AppRegistryEntry[]>,
 ): Promise<CapabilityTool | null> => {
@@ -333,15 +336,20 @@ const responseTooLargeToolResult = (): CallToolResult => {
   return { isError: true, structuredContent: error, content: [{ type: "text", text: JSON.stringify(error) }] };
 };
 
+const toolResult = (body: Record<string, unknown>, isError: boolean): CallToolResult => ({
+  ...(isError ? { isError: true } : {}),
+  structuredContent: body,
+  content: [{ type: "text", text: JSON.stringify(body) }],
+});
+
+const fitsToolResult = (result: CallToolResult): boolean =>
+  new TextEncoder().encode(JSON.stringify(result)).byteLength <= CAPABILITY_MAX_RESULT_BYTES;
+
 const ensureBoundedToolResult = (result: CallToolResult): CallToolResult =>
-  new TextEncoder().encode(JSON.stringify(result)).byteLength > CAPABILITY_MAX_RESULT_BYTES ? responseTooLargeToolResult() : result;
+  fitsToolResult(result) ? result : responseTooLargeToolResult();
 
 const boundedToolResult = (body: Record<string, unknown>, isError: boolean): CallToolResult =>
-  ensureBoundedToolResult({
-    ...(isError ? { isError: true } : {}),
-    structuredContent: body,
-    content: [{ type: "text", text: JSON.stringify(body) }],
-  });
+  ensureBoundedToolResult(toolResult(body, isError));
 
 const semanticResourceLinks = (body: Record<string, unknown>, origin: string): CallToolResult["content"] => {
   const found = new Map<string, z.infer<typeof CapabilitySemanticLinkSchema>>();
@@ -573,14 +581,14 @@ const createMcpServer = (
     let args: Record<string, unknown>;
     try {
       if (message.params.name === RESOURCE_READ_TOOL) {
-        const parsed = CloudResourceRefSchema.safeParse(message.params.arguments);
+        const parsed = LinkedCloudResourceReferenceSchema.safeParse(message.params.arguments);
         if (!parsed.success) {
           const issues = parsed.error.issues.map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`).join("; ");
           return validationToolError(
             `cloud__resource__read requires one exact typed ref returned by a current Cloud capability (${issues})`,
           );
         }
-        selected = await findResourceReaderTool(parsed.data, capabilityLookup, registry);
+        selected = await findResourceReaderTool({ type: parsed.data.type, id: parsed.data.id }, capabilityLookup, registry);
         args = { id: parsed.data.id };
         if (!selected) {
           return boundedToolResult(
@@ -646,12 +654,35 @@ const createMcpServer = (
       authority,
       dependencies,
     });
-    const body = await parseResponse(response);
-    const result = boundedToolResult(body, !response.ok);
-    if (response.ok) {
-      result.content.push(...semanticResourceLinks(body, publicCloudOrigin(await (dependencies.getAppUrl ?? defaultAppUrl)())));
+    const providerBody = await parseResponse(response);
+    let body = providerBody;
+    const origin = response.ok ? publicCloudOrigin(await (dependencies.getAppUrl ?? defaultAppUrl)()) : undefined;
+    if (origin) {
+      const parsed = capabilityResultSchema(z.unknown()).safeParse(body);
+      const appIds = new Set(parsed.success ? parsed.data.refs?.map(cloudResourceRefAppId) : []);
+      const apps = appIds.size ? await registry().catch(() => []) : [];
+      const capabilities = await Promise.all(
+        apps
+          .filter((app) => appIds.has(app.id) && app.capabilities?.protocolVersion === CAPABILITY_PROTOCOL_VERSION)
+          .map(async (app) => {
+            const entry = await capabilityLookup(app.id).catch(() => null);
+            return entry?.appId === app.id && entry.manifest.manifestHash === app.capabilities?.manifestHash ? entry : null;
+          }),
+      );
+      body = addCloudResourceHrefs(
+        body,
+        capabilities.filter((entry) => entry !== null),
+        origin,
+      );
     }
-    return ensureBoundedToolResult(result);
+    const resultFor = (value: Record<string, unknown>): CallToolResult => {
+      const result = toolResult(value, !response.ok);
+      if (origin) result.content.push(...semanticResourceLinks(value, origin));
+      return result;
+    };
+    // Added hrefs are optional: they never turn a result that fits into RESPONSE_TOO_LARGE.
+    const result = resultFor(body);
+    return ensureBoundedToolResult(fitsToolResult(result) || body === providerBody ? result : resultFor(providerBody));
   });
 
   return server;

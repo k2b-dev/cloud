@@ -51,7 +51,10 @@ const resolvedRecord = () =>
 describe("Grids operational CLI", () => {
   test("document sources validate pagination locally and preserve source metadata", async () => {
     const page = {
-      items: [{ tableId: "TABLE1", recordId: "REC001", tableName: "Expenses", label: "Ticket", version: null, deleted: true }],
+      items: [
+        { tableId: "TABLE1", recordId: "REC001", tableName: "Expenses", label: "Ticket", version: null, deleted: true },
+        { tableId: "TABLE1", recordId: "REC002", tableName: "Expenses", label: "Live ticket", version: 1, deleted: false },
+      ],
       hasMore: false,
     };
     const { ctx, calls, values } = context([Response.json(page)]);
@@ -61,7 +64,9 @@ describe("Grids operational CLI", () => {
     expect(calls).toHaveLength(0);
     await command("documents sources").run({ ctx, args: { document: "DOC001" }, flags: {} });
     expect(calls[0]?.path).toBe("/api/grids/documents/DOC001/sources");
-    expect(values).toEqual([page]);
+    expect(values).toEqual([
+      { ...page, items: [page.items[0], { ...page.items[1], permalink: "http://cloud.test/open/grids.record/~REC002" }] },
+    ]);
   });
   test("keeps the skill command index aligned with operational commands", async () => {
     const reference = await Bun.file(new URL("../cli-references/index.md", import.meta.url)).text();
@@ -201,4 +206,18 @@ describe("Grids operational CLI", () => {
     await command("records comments list").run({ ctx, args: record, flags: { limit: 5 } });
     expect(values.at(-1)).toEqual({ items: [], nextCursor: "more" });
   });
+});
+
+test("referenced-by exposes the source Record's permalink", async () => {
+  const item = {
+    sourceTableId: "TABLE1",
+    sourceTableName: "Expenses",
+    sourceRecordId: "REC002",
+    sourceRecordLabel: "Ticket",
+    relationFieldId: "FIELD1",
+    relationFieldName: "Parent",
+  };
+  const { ctx, values } = context([resolvedRecord(), Response.json({ items: [item], nextCursor: null })]);
+  await command("records referenced-by").run({ ctx, args: record, flags: {} });
+  expect(values).toEqual([{ items: [{ ...item, permalink: "http://cloud.test/open/grids.record/~REC002" }], nextCursor: null }]);
 });

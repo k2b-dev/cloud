@@ -321,6 +321,20 @@ ctx.print(`${item.name} (${item.quantity})`);
 Do not call `ctx.json()` for both structured modes. It pretty-prints JSON and
 does not satisfy the JSONL contract.
 
+Use `cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` to produce an absolute
+resource link on the selected profile's server. When returning a resource
+object, use `withCloudResourcePermalink(ctx, type, resource)` to add that link
+as `permalink`; `resource.id` must be the ID the Type's reader accepts. Link a
+derived entry, such as one occurrence of a recurring event, to the resource its
+reader accepts, and give entries the caller may see but not read no link. The URL
+uses `/open/<type>/~<encoded-id>` with a required `~` prefix.
+Generic capability commands convert provider semantic links to absolute URLs
+and add `permalink` to refs with live readers. A provider's `open`, the
+consumer's `href` and the CLI's `permalink` are described together in
+[Resource links](/en/docs/platform/capabilities#resource-links).
+Include links only for resources that remain readable after the command, and
+in text output only on create-style confirmations.
+
 Use `printRows()` for lists:
 
 ```ts

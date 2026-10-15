@@ -151,3 +151,33 @@ describe("published App terminal journeys", () => {
     for (const item of publishedAppCommands) expect(paths).toContain(item.path.join(" "));
   });
 });
+
+test("published records and workflow receipts omit Base-only resource URLs in JSONL", async () => {
+  const rows = { ok: true, rows: [{ recordId: "REC001", values: { name: "Example" } }, { values: { total: 1 } }] };
+  const { ctx, values } = context([
+    Response.json(rows),
+    Response.json({ recordId: "REC002" }),
+    Response.json({ runId: "RUN001", status: "queued" }),
+  ]);
+  ctx.options.output = "jsonl";
+  await command("records").run({ ctx, args, flags: {} });
+  await command("sidebar-submit").run({ ctx, args: { app: args.app, action: "new" }, flags: { body: body({}), yes: true } });
+  await command("scan").run({ ctx, args, flags: { body: body({}), yes: true } });
+  expect(values).toEqual([rows, { recordId: "REC002" }, { runId: "RUN001", status: "queued" }]);
+});
+
+test("published app-only resource objects keep their projection without Base-only links", async () => {
+  const result = {
+    blocks: [
+      {
+        id: "detail",
+        record: { record: { id: "REC001", data: { FIELD1: "Example" } } },
+        documents: [{ id: "DOC001", number: "Invoice 1", downloadUrl: "/download" }],
+      },
+    ],
+  };
+  const { ctx, calls, values } = context([Response.json(result)]);
+  await command("read").run({ ctx, args: { app: args.app }, flags: {} });
+  expect(values).toEqual([result]);
+  expect(calls.map((call) => call.path)).toEqual(["/api/grids/apps/runtime/APP001"]);
+});

@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
@@ -114,6 +114,20 @@ beforeAll(async () => {
   if (testInfra.database) await migrate();
 });
 
+const resourceReaders: Record<string, string> = {
+  base: "base.read",
+  table: "table.read",
+  view: "view.read",
+  record: "record.read",
+  document: "document.read",
+  "workflow-run": "workflow.run.read",
+};
+
+test("every declared Type has a reader fixture", () => {
+  expect(Object.keys(resourceReaders).sort()).toEqual(Object.keys(gridsCapabilities.types).sort());
+  for (const [typeId, type] of Object.entries(gridsCapabilities.types)) expect(resourceReaders[typeId]).toBe(type.reader);
+});
+
 describe("Grids capabilities", () => {
   test("compiles the full additive capability manifest", () => {
     expect(() => compileCapabilityManifest("grids", gridsCapabilities)).not.toThrow();
@@ -202,8 +216,9 @@ describe("Grids capabilities", () => {
       expect(document.artifacts.map((artifact) => artifact.downloadUrl)).toEqual([`/api/grids/documents/${document.id}/artifacts/pdf`]);
       expect(read.ok && read.data.links).toEqual([
         { rel: "download", href: document.downloadUrl },
-        { rel: "open", href: `/api/grids/documents/${document.id}/artifacts/pdf` },
+        { rel: "open", href: `/app/grids/${basePublicId}/documents?q=${encodeURIComponent(document.number)}` },
       ]);
+      expect(read.ok && read.data.refs).toEqual([{ type: "grids.document", id: document.id, title: document.number }]);
       const content = await invoke("query", "document.content.read", { id: document.id }, context);
       if (!content.ok || !content.data.stream) throw new Error("Expected artifact stream");
       const stream = content.data.stream;
@@ -285,6 +300,24 @@ describe("Grids capabilities", () => {
       const runStatus = await invoke("query", "workflow.run.read", { id: runId }, context);
       expect(runStatus.ok).toBe(true);
       expect((await invoke("query", "workflow.run.read", { id: runId }, outsider)).ok).toBe(false);
+      const viewPublicId = testShortId();
+      await sql`INSERT INTO grids.views (short_id, table_id, base_id, name, source)
+        VALUES (${viewPublicId}, ${tableId}::uuid, ${baseId}::uuid, 'Reader fixture', 'from table TestDocs')`;
+      const resourceIds: Record<string, string> = {
+        base: basePublicId,
+        table: tablePublicId,
+        view: viewPublicId,
+        record: recordPublicId,
+        document: document.id,
+        "workflow-run": runId!,
+      };
+      for (const [typeId, type] of Object.entries(gridsCapabilities.types)) {
+        const result = await invoke("query", resourceReaders[typeId]!, { id: resourceIds[typeId] }, context);
+        if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
+        expect(resourceReaders[typeId]).toBe(type.reader);
+        assertResourceOpenLink(result.data);
+      }
+
       expect(JSON.stringify(runStatus)).not.toContain(recordId);
       expect((await invoke("action", "workflow.record-action", { ...actionInput, recordId: otherPublicId }, keyed)).ok).toBe(false);
       await sql`DELETE FROM grids.base_access WHERE base_id=${baseId}::uuid`;
@@ -998,7 +1031,10 @@ describe("Grids capabilities", () => {
       expect(
         savedView.ok && savedView.data.data.ok && savedView.data.data.rows.some((row: { recordId?: string }) => row.recordId === record.id),
       ).toBe(true);
-      if (savedView.ok) expect(savedView.data.summary).toContain("Executed saved Grids View “All items”");
+      if (savedView.ok) {
+        expect(savedView.data.summary).toContain("Executed saved Grids View “All items”");
+        expect(savedView.data.refs).toContainEqual({ type: "grids.view", id: viewPublicId, title: "All items" });
+      }
 
       for (const [operation, args] of [
         ["gql.preview", { baseId: basePublicId, query: `from table {${tablePublicId}}` }],

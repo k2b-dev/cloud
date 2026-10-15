@@ -119,6 +119,11 @@ const withEntry =
     return handler(request);
   };
 const entry = { name: "résumé.txt", path: "Documents/résumé.txt", directory: false, size: 12, modified: "2026-09-18T12:00:00Z" };
+/** The entry as `cld --json` prints it: with the absolute permalink on the profile's server. */
+const linkedEntry = (server: { url: URL }) => ({
+  ...entry,
+  permalink: new URL(`/open/filesv2.entry/~${Buffer.from(`${base.id}\n${entry.path}`).toString("base64url")}`, server.url).href,
+});
 const inventoryItem = {
   identityId,
   name: "alice",
@@ -167,7 +172,9 @@ describe("Filesv2 CLI integration", () => {
     const server = serve(async (request) => {
       const path = new URL(request.url).pathname;
       requests.push({ method: request.method, path, body: request.method === "GET" ? null : await request.json().catch(() => null) });
-      return Response.json(request.method === "GET" && path.endsWith("/templates") ? { items: [template], next: null } : template);
+      if (request.method === "GET" && path.endsWith("/templates")) return Response.json({ items: [template], next: null });
+      // Creating a file from a template or as an empty document answers with the new entry.
+      return Response.json(path.endsWith("/use") || path.endsWith("/markdown") ? { base, entry } : template);
     });
     const file = join(await directory(), "minutes.md");
     await writeFile(file, "# Minutes\n");
@@ -307,7 +314,7 @@ describe("Filesv2 CLI integration", () => {
     expect(bases.stderr).toContain("unavailable");
     const page = await run(["--json", "filesv2", "ls", at("Documents/ä & +"), "--after", inventory.next], options);
     expect(page.exitCode, page.stderr).toBe(0);
-    expect(JSON.parse(page.stdout)).toEqual({ base, path: "Documents/ä & +", items: [entry], next: inventory.next });
+    expect(JSON.parse(page.stdout)).toEqual({ base, path: "Documents/ä & +", items: [linkedEntry(server)], next: inventory.next });
     expect(requests.at(-1)?.url.searchParams.get("path")).toBe("Documents/ä & +");
     expect(requests.at(-1)?.url.searchParams.get("after")).toBe(inventory.next);
     const admin = await run(
@@ -321,7 +328,7 @@ describe("Filesv2 CLI integration", () => {
     expect(requests.at(-1)?.url.searchParams.get("after")).toBe(inventory.next);
     for (const [args, expected] of [
       [["ls"], base],
-      [["ls", at("")], entry],
+      [["ls", at("")], linkedEntry(server)],
       [["admin", "inventory"], inventoryItem],
     ] as const) {
       const lines = await run(["--jsonl", "filesv2", ...args], options);
@@ -927,7 +934,7 @@ test("stat and thumbnail use the same authenticated base and keep transfer crede
   });
   const metadata = await run(["--json", "filesv2", "stat", at(entry.path)], { server: cloud.url.href });
   expect(metadata.exitCode, metadata.stderr).toBe(0);
-  expect(JSON.parse(metadata.stdout)).toEqual({ base, entry });
+  expect(JSON.parse(metadata.stdout)).toEqual({ base, entry: linkedEntry(cloud) });
   const out = join(await directory(), "thumbnail.png");
   const result = await run(["--json", "filesv2", "thumbnail", at(entry.path), out, "--size", "large"], {
     server: cloud.url.href,
@@ -955,7 +962,7 @@ test("search and mkdir pass folder scope and names through the authenticated API
   });
   const search = await run(["--json", "filesv2", "search", at("Documents"), "report"], { server: cloud.url.href });
   expect(search.exitCode, search.stderr).toBe(0);
-  expect(JSON.parse(search.stdout).items).toEqual([entry]);
+  expect(JSON.parse(search.stdout).items).toEqual([linkedEntry(cloud)]);
   const made = await run(["--json", "filesv2", "mkdir", at("Documents/2026")], { server: cloud.url.href });
   expect(made.exitCode, made.stderr).toBe(0);
   expect(JSON.parse(made.stdout).entry.path).toBe("Documents/2026");

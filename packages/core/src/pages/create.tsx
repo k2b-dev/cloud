@@ -32,6 +32,7 @@ import notificationsPage from "./me/notifications.page";
 import profilePage from "./me/page";
 import securityPage from "./me/security.page";
 import notFoundPage from "./NotFound";
+import { createResourceOpenRoutes } from "./open";
 
 /**
  * Creates the SSR pages router.
@@ -141,7 +142,8 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
       // data URI, so PNG/ICO uploads still work).
       return serveBranding(c, "app.favicon", join(brandingPublicDir, "logo.svg"), "image/svg+xml");
     })
-    .route("/branding", createAppIconRoutes());
+    .route("/branding", createAppIconRoutes())
+    .route("/open", createResourceOpenRoutes());
 
   // 404 catch-all (must be after all mounted routes)
   pages.get("/*", auth.requireRole("*"), ...notFoundPage);

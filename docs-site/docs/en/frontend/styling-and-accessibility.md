@@ -295,8 +295,8 @@ instead of jumping. The test "Aa adds one row above the
 field; … never move the field, a control, or the newest message" in
 `packages/ui/src/chat/chat-composer.browser.test.ts` shows the pattern: it
 toggles each state at 720 px and 360 px and checks that the field and every
-control keep their position, and that the newest message stays directly above
-the composer in every frame.
+control keep their position. While the formatting row opens, it also checks in
+every frame that the newest message stays directly above the composer.
 
 ## Respond to hover without movement
 
@@ -309,8 +309,13 @@ draws attention away from the content. This is the general form of the rule that
 [file drop targets](/en/ui/input/file-drop-target) already follow.
 
 To verify, hover and focus the element and compare its bounding box with the
-resting state. Search the changed CSS for `translate`, `scale`, and
-`box-shadow` inside `:hover` or `:focus` rules.
+resting state. Search the changed CSS for `transform`, `translate`, `scale`,
+and `rotate` inside `:hover` and `:focus` rules, and for an outer `box-shadow`
+inside `:hover` rules. A focus ring drawn with `box-shadow`, such as the inset
+ring that [Focus rings](/en/ui/focus) describes, is paint, not movement. In
+the Cloud repository, the `hover-motion` repository check rejects these
+patterns in package sources, including Tailwind variants such as
+`hover:shadow-sm` and `group-hover:translate-x-0.5`.
 
 ## Keep dynamic scroll regions stable
 
@@ -499,10 +504,11 @@ Before accepting a component or screen, verify:
 - Hierarchy works without decorative color or separator lines.
 - Lists, settings, forms, details, and pagination use spacing or shared
   surfaces instead of `<hr>`, `divide-y`, or app-owned hairlines.
-- [No lines separate](#group-content-without-decorative-lines) header,
-  content, and footer, or the regions of a workspace.
-- [In-flow surfaces take depth](#choose-surfaces-deliberately) from the shared
-  surface, without outer shadows, nested borders, or a box inside a box.
+- [App code draws no lines](#group-content-without-decorative-lines) between
+  header, content, and footer, or between workspace regions.
+- [App-owned in-flow surfaces take depth](#choose-surfaces-deliberately) from
+  the shared surface; app code adds no outer shadow, nested border, or box
+  inside a box.
 - [The screen is clean and flat](#build-hierarchy-before-decoration): the most
   important value comes first, and data the person does not need is left out.
 - The closest shared primitive owns geometry and interaction behavior.

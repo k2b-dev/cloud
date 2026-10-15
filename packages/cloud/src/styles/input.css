@@ -38,10 +38,6 @@ button[disabled],
     @apply text-white;
   }
 
-  input[type="checkbox"]:hover {
-    transform: var(--ui-check-hover-transform);
-  }
-
   input[type="checkbox"]:focus {
     @apply outline-none;
   }
@@ -52,9 +48,5 @@ button[disabled],
 
   input[type="checkbox"]:disabled {
     @apply opacity-50 cursor-not-allowed;
-  }
-
-  input[type="checkbox"]:disabled:hover {
-    transform: none;
   }
 }

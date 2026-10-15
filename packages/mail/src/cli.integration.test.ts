@@ -47,7 +47,17 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
   let home = "";
   let serverUrl = "";
   let cleanup: () => Promise<void> = async () => undefined;
-  const ids = { mailbox: "", inbox: "", archive: "", projects: "", year: "", yearArchive: "", rootArchive: "", lowerArchive: "" };
+  const ids = {
+    mailbox: "",
+    identity: "",
+    inbox: "",
+    archive: "",
+    projects: "",
+    year: "",
+    yearArchive: "",
+    rootArchive: "",
+    lowerArchive: "",
+  };
   const conversations: string[] = [];
   const internal = { mailbox: "", twin: "", conversations: [] as string[] };
 
@@ -177,10 +187,12 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
       rootArchive: rootArchive.short_id,
       lowerArchive: lowerArchive.short_id,
     });
-    await sql`
+    const [identity] = await sql<{ short_id: string }[]>`
       INSERT INTO mail.sender_identities (short_id, mailbox_id, display_name, from_address, label, is_default, status)
       VALUES (${newShortId()}, ${internal.mailbox}::uuid, 'Support', 'support@example.test', 'Support', true, 'verified')
+      RETURNING short_id
     `;
+    ids.identity = identity!.short_id;
 
     for (const [index, subject] of ["Invoice question", "Delivery date", "Contract renewal"].entries()) {
       const [message] = await sql<{ id: string }[]>`
@@ -313,7 +325,7 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
       const mine = await cldJson<{ items: Array<{ id: string }> }>(["mail", "ls", ids.mailbox, "--view", "mine"]);
       expect(mine.items.map((item) => item.id).sort()).toEqual([conversations[0]!, conversations[1]!].sort());
 
-      const draft = await cldJson<{ id: string; intent: string; subject: string; to: Array<{ address: string }> }>([
+      const draft = await cldJson<{ id: string; permalink: string; intent: string; subject: string; to: Array<{ address: string }> }>([
         "mail",
         "reply",
         conversations[0]!,
@@ -321,6 +333,26 @@ if (process.env.MAIL_CLI_CHILD !== "1") {
         "Thanks, we are on it.",
       ]);
       expect(draft).toMatchObject({ intent: "reply", subject: "Re: Invoice question", to: [{ address: "ada@customer.test" }] });
+      expect(draft.permalink).toBe(`${serverUrl}/open/mail.draft/~${draft.id}`);
+    });
+
+    test("draft create returns an absolute resource permalink", async () => {
+      const draft = await cldJson<{ id: string; permalink: string }>([
+        "mail",
+        "draft",
+        "create",
+        "--mailbox",
+        ids.mailbox,
+        "--identity",
+        ids.identity,
+        "--to",
+        "ada@customer.test",
+        "--subject",
+        "CLI permalink",
+        "--body",
+        "Ready for review.",
+      ]);
+      expect(draft.permalink).toBe(`${serverUrl}/open/mail.draft/~${draft.id}`);
     });
 
     test("archive and mv queue one provider move per conversation from the Inbox", async () => {

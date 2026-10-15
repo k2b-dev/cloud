@@ -62,6 +62,76 @@ const noteFixture = {
   lockedAt: null,
 };
 
+const permalinkServer = () => {
+  const child = { ...noteFixture, id: "child1", parentId: noteFixture.id, title: "Child" };
+  const created = { ...noteFixture, id: "new001", title: "New" };
+  const server = Bun.serve({
+    port: 0,
+    fetch: (request) => {
+      const url = new URL(request.url);
+      const path = url.pathname;
+      if (request.method === "GET" && path === "/api/notebooks/wiki01") return Response.json(notebookFixture);
+      if (request.method === "GET" && path === "/api/notebooks/wiki01/outline")
+        return Response.json({ data: [{ ...noteFixture, hasChildren: true }, child], pagination: { has_next: false } });
+      if (request.method === "GET" && path === "/api/notebooks/notes/note01") return Response.json(noteFixture);
+      if (request.method === "GET" && path === "/api/notebooks/wiki01/notes/note01/content") return Response.json(noteFixture);
+      if (request.method === "GET" && path === "/api/notebooks/wiki01/notes/note01/backlinks")
+        return Response.json({ data: [{ noteId: child.id, title: child.title, notebookName: notebookFixture.name }] });
+      if (request.method === "GET" && path === "/api/notebooks/wiki01/resolve" && url.searchParams.get("path") === "new")
+        return Response.json({ message: "Not found" }, { status: 404 });
+      if (request.method === "POST" && path === "/api/notebooks/wiki01/notes") return Response.json(created);
+      return Response.json({ message: `Unexpected ${request.method} ${path}` }, { status: 500 });
+    },
+  });
+  servers.push(server);
+  return `http://127.0.0.1:${server.port}`;
+};
+
+test.each(["ls", "tree"])("%s includes notebook and note permalinks", async (command) => {
+  const server = permalinkServer();
+  const result = await runCli(server, ["--json", "notebooks", command, "wiki01"]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  const root = {
+    id: "note01",
+    title: "Handbook",
+    hasChildren: true,
+    updatedAt: noteFixture.updatedAt,
+    permalink: `${server}/open/notebooks.note/~note01`,
+  };
+  const child = {
+    id: "child1",
+    title: "Child",
+    hasChildren: false,
+    updatedAt: noteFixture.updatedAt,
+    permalink: `${server}/open/notebooks.note/~child1`,
+    children: [],
+  };
+  expect(JSON.parse(result.stdout)).toEqual({
+    notebook: { id: "wiki01", name: "Wiki", permalink: `${server}/open/notebooks.notebook/~wiki01` },
+    parentId: null,
+    data: command === "tree" ? [{ ...root, children: [child] }] : [root],
+  });
+});
+
+test.each([
+  { command: "cat", args: ["note01"], id: "note01" },
+  { command: "write", args: ["wiki01:new", "--content", "# New"], id: "new001" },
+])("$command includes the note permalink", async ({ command, args, id }) => {
+  const server = permalinkServer();
+  const result = await runCli(server, ["--json", "notebooks", command, ...args]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({ note: { id, permalink: `${server}/open/notebooks.note/~${id}` } });
+});
+
+test("backlinks builds permalinks from noteId", async () => {
+  const server = permalinkServer();
+  const result = await runCli(server, ["--json", "notebooks", "backlinks", "note01"]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({
+    data: [{ noteId: "child1", title: "Child", notebookName: "Wiki", permalink: `${server}/open/notebooks.note/~child1` }],
+  });
+});
+
 const editingServer = (note: typeof noteFixture = noteFixture) => {
   const writes: unknown[] = [];
   const server = Bun.serve({

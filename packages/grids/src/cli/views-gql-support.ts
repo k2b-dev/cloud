@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import type { CliInputFlagValue, CloudCliContext } from "@k2b/cloud/cli";
-import { flag, printStructured } from "@k2b/cloud/cli";
+import { cloudResourceUrl, flag, printStructured } from "@k2b/cloud/cli";
 import type { PublicTable as Table, PublicView as View } from "../api/public-dto";
 import type { DslQueryExecuteResponse } from "../contracts";
 import { GRID_FORMULA_FUNCTIONS } from "../formula/function-catalog";
@@ -124,10 +124,20 @@ export const printGqlDiagnostics = (
 };
 
 export const printGqlResult = (ctx: CloudCliContext, payload: DslQueryExecuteResponse): number => {
-  if (ctx.options.output === "json") {
-    ctx.json(payload);
+  if (
+    printStructured(
+      ctx,
+      payload.ok
+        ? {
+            ...payload,
+            rows: payload.rows.map((row) =>
+              row.recordId ? { ...row, permalink: cloudResourceUrl(ctx, { type: "grids.record", id: row.recordId }) } : row,
+            ),
+          }
+        : payload,
+    )
+  )
     return payload.ok ? 0 : 1;
-  }
   if (!payload.ok) {
     printGqlDiagnostics(ctx, payload.diagnostics);
     return 1;

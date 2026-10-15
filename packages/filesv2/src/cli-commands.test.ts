@@ -536,12 +536,15 @@ test("put and get round-trip text and binary files, never overwrite, and keep Cl
 test("cat prints text, refuses binary content, and saves with --out", async () => {
   const printed = await cli(["cat", "me:/Documents/notes.txt"], {}, "text");
   expect(printed.out).toBe("hello notes\n");
+  requests = [];
   expect((await cli(["cat", "me:/Documents/notes.txt"])).json).toEqual({
     baseId: home.id,
     path: "Documents/notes.txt",
     bytes: 12,
     content: "hello notes\n",
+    permalink: `${server.url.origin}/open/filesv2.entry/~${entryRefId(home.id, "Documents/notes.txt")}`,
   });
+  expect(requests).toEqual(["GET /bases", `POST /bases/${home.id}/download`]);
   expect(await failure(["cat", "me:/Documents/binary.bin"])).toBe("This file is not text. Save it with --out or get.");
   const out = join(await directory(), "binary.bin");
   expect((await cli(["cat", "me:/Documents/binary.bin"], { out })).json).toEqual({ path: out, bytes: 3 });

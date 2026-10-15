@@ -220,9 +220,11 @@ describe("@k2b/ui Cloud content contract", () => {
       "box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-action)) 42%, transparent)",
     );
     expect(contentCss).not.toContain("0 0 0 2px color-mix(in srgb, var(--k2b-calendar-accent");
-    expect(contentCss).toMatch(
-      /\.k2b-calendar-event\[data-interactive="true"\]:not\(\[data-selected="true"\]\):hover \{[^}]*box-shadow: 0 1px 2px rgb\(9 9 11 \/ 0\.12\);/s,
-    );
+    // Hover tints an event; it never lifts it with an outer shadow.
+    const liftedOnHover = [...contentCss.matchAll(/([^{}]*\.k2b-calendar-event[^{}]*:hover[^{}]*)\{([^}]*)\}/g)]
+      .filter(([, , body]) => /box-shadow:(?!\s*(?:none|inset)\b)/.test(body!))
+      .map(([, selector]) => selector!.trim());
+    expect(liftedOnHover).toEqual([]);
     expect(contentCss).toMatch(/\.k2b-calendar-time-grid__now \{[^}]*border-top: 2px solid var\(--k2b-danger-500\);/s);
     expect(contentCss).toMatch(
       /\.k2b-calendar-time-grid__resize \{[^}]*left: 50%;[^}]*width: 2\.5rem;[^}]*height: 1\.5rem;[^}]*background: transparent;[^}]*transform: translateX\(-50%\);/s,

@@ -184,8 +184,20 @@ if (process.env.CONTACTS_CLI_CHILD !== "1") {
       expect((await cldJson<Contact>(["contacts", "show", "--email", `ADA-${suffix}@example.org`])).id).toBe(ada.id);
       expect(await cldJson<Book>(["contacts", "show", `${customers.name}:`])).toMatchObject({ id: customers.id, name: customers.name });
 
-      const listed = await cldJson<{ book: Book; data: Contact[] }>(["contacts", "ls", customers.name, "--tag", "VIP", "--q", "ada"]);
-      expect(listed.book).toEqual({ id: customers.id, name: customers.name });
+      const listed = await cldJson<{ book: Book & { permalink: string }; data: Contact[] }>([
+        "contacts",
+        "ls",
+        customers.name,
+        "--tag",
+        "VIP",
+        "--q",
+        "ada",
+      ]);
+      expect(listed.book).toEqual({
+        id: customers.id,
+        name: customers.name,
+        permalink: `${serverUrl}/open/contacts.book/~${customers.id}`,
+      });
       expect(listed.data.map((contact) => contact.id)).toEqual([ada.id]);
       expect((await cldJson<{ data: Book[] }>(["contacts", "ls", "--q", suffix])).data.map((book) => book.id).sort()).toEqual(
         [customers.id, alumni.id].sort(),
@@ -242,7 +254,7 @@ if (process.env.CONTACTS_CLI_CHILD !== "1") {
 
       const out = join(home, "customers.vcf");
       expect(await cldJson<unknown>(["contacts", "export", customers.name, "--out", out])).toEqual({
-        book: { id: customers.id, name: customers.name },
+        book: { id: customers.id, name: customers.name, permalink: `${serverUrl}/open/contacts.book/~${customers.id}` },
         format: "vcf",
         output: out,
       });
@@ -263,7 +275,7 @@ if (process.env.CONTACTS_CLI_CHILD !== "1") {
       ]);
       expect(preview.candidates.length).toBe(2);
       expect(await cldJson<unknown>(["contacts", "import", customers.name, "--from", "import.vcf"])).toEqual({
-        book: { id: customers.id, name: customers.name },
+        book: { id: customers.id, name: customers.name, permalink: `${serverUrl}/open/contacts.book/~${customers.id}` },
         created: 1,
         skipped: 1,
         failures: [],

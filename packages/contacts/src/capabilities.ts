@@ -896,7 +896,10 @@ const runContactCreate = async (input: z.infer<typeof ContactCreateInputSchema>,
             data: { contact: mapContactDetail(publicContact) },
             summary: boundedCapabilitySummary(`Created ${resolveContactName(publicContact)} in ${access.data.book.name}.`),
             refs: [bookRef(access.data.book), contactRef(publicContact)],
-            links: [{ rel: "edit", href: contactHref(publicContact) }],
+            links: [
+              { rel: "open", href: contactHref(publicContact) },
+              { rel: "edit", href: contactHref(publicContact) },
+            ],
           })
         : fail(err.conflict("The contact created by this idempotency key no longer exists"));
     },
@@ -926,7 +929,10 @@ const runContactUpdate = async (input: z.infer<typeof ContactUpdateInputSchema>,
             contactUpdateSummary(resolved.data.contact, result.data, Object.keys(data) as ContactReviewField[]),
           ),
           refs: [contactRef(contact!)],
-          links: [{ rel: "edit", href: contactHref(contact!) }],
+          links: [
+            { rel: "open", href: contactHref(contact!) },
+            { rel: "edit", href: contactHref(contact!) },
+          ],
         })
       : result;
   });
@@ -951,7 +957,10 @@ const runContactMove = async (input: z.infer<typeof ContactMoveInputSchema>, con
           data: { contact: mapContactDetail(contact!) },
           summary: boundedCapabilitySummary(`Moved ${resolveContactName(contact!)} to ${target.data.book.name}.`),
           refs: [contactRef(contact!)],
-          links: [{ rel: "edit", href: contactHref(contact!) }],
+          links: [
+            { rel: "open", href: contactHref(contact!) },
+            { rel: "edit", href: contactHref(contact!) },
+          ],
         })
       : result;
   });

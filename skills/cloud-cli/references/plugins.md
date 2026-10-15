@@ -43,6 +43,14 @@ cld mail reference compose.md
 
 `reference` prints the plugin's entry page; a file argument prints one of the files it links to. An unknown file lists the available ones. The same files are in this skill under `references/<module>/<version>/`; the table in `SKILL.md` names the folder for each profile and module.
 
+Readable resource objects in JSON/JSONL output carry `permalink`, an absolute
+`/open/<type>/~<encoded-id>` link on the selected profile's server; the `~` prefix
+is required. Share supplied links without building URLs. Generic capability
+commands also make provider semantic `links[].href` absolute. The link opens
+the resource for anyone who may read it; Core checks access when it is followed.
+Published Grids app commands add no permalinks, because a published app can show
+records to people without access to the Base.
+
 ## Skill targets
 
 ```bash

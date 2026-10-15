@@ -507,6 +507,10 @@ an active device here. Revoked devices remain visible, including their
 revocation time. Use **Load more** to page through older device records.
 Disabling app sign-in hides enrollment but leaves this management available.
 
+Revoking a device also voids Action approvals it gave that have not been used
+yet. Signing out everywhere ends open requests and unused approvals. Cloud
+checks both when an approval is used, before the Action runs.
+
 `GET /manage/devices?after=<UUID>` lists only the current user's devices,
 including revoked ones, as `{items,nextCursor}`. Items contain
 `id,name,createdAt,lastUsedAt,revokedAt,assisted`.

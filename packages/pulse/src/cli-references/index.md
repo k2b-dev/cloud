@@ -342,6 +342,8 @@ An agent account works like a person with the same grant: it lists and reads the
 
 ## JSON contracts
 
+Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
+
 Use `--json` whenever another command or agent consumes one complete result. Use `--jsonl` for list commands when the consumer should process one returned item per line. Commands that return a single object or mutation result emit one JSON object line in JSONL mode. The following JSON shapes are abridged: omitted fields remain available in actual output.
 
 ### Base and lifecycle

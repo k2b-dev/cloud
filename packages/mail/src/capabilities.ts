@@ -10,6 +10,7 @@ import {
   type CapabilitySemanticLink,
   type CloudResourceView,
   capabilityPage,
+  cloudResourceHref,
   defineCapabilities,
   UniversalSearchDataSchema,
   type UniversalSearchInput,
@@ -314,6 +315,7 @@ const folderHref = (mailboxId: string, folderId: string): string => `${mailboxHr
 const conversationHref = (mailboxId: string, conversationId: string): string =>
   `${mailboxHref(mailboxId)}?conversation=${encodeURIComponent(conversationId)}`;
 const messageHref = (mailboxId: string, messageId: string): string => `${mailboxHref(mailboxId)}?message=${encodeURIComponent(messageId)}`;
+const draftReadHref = (mailboxId: string, draftId: string): string => `${mailboxHref(mailboxId)}/drafts/${encodeURIComponent(draftId)}`;
 const draftHref = (mailboxId: string, draftId: string): string => `${mailboxHref(mailboxId)}/compose/${encodeURIComponent(draftId)}`;
 const scheduledHref = (mailboxId: string): string => `${mailboxHref(mailboxId)}?scheduled=1`;
 const subscriptionHref = (mailboxId: string, listKey: string): string | null => {
@@ -382,7 +384,7 @@ const deliveryRef = (id: string, subject: string | null | undefined, state?: str
 });
 const draftMetadata = (mailboxId: string, draftId: string, subject?: string | null, locale?: string) => ({
   refs: [draftRef(draftId, subject, locale)],
-  links: [editLink(draftHref(mailboxId, draftId))],
+  links: [openLink(draftHref(mailboxId, draftId))],
 });
 const conversationMetadata = (
   mailboxId: string,
@@ -518,7 +520,7 @@ const mapDraftSummary = (draft: MailDraft, ids: DraftPublicIds, locale?: string)
     ref: { type: "mail.draft" as const, id },
     title: truncateText(draft.subject || mailCapabilityMessages(locale).noSubject, 500).text,
     ...(preview ? { preview } : {}),
-    links: [editLink(draftHref(requirePublicId(ids.mailboxes, draft.mailboxId), id))],
+    links: [openLink(cloudResourceHref({ type: "mail.draft", id }))],
     conversationId: draft.conversationId ? requirePublicId(ids.conversations, draft.conversationId) : null,
     intent: draft.intent,
     senderIdentityId: requirePublicId(ids.senderIdentities, draft.senderIdentityId),
@@ -1192,6 +1194,7 @@ const queryDefinitions = {
       return ok({
         data,
         refs: [{ type: "mail.mailbox" as const, id: scope.data.shortId }],
+        links: [openLink(mailboxHref(scope.data.shortId))],
         page: capabilityPage(result.data.nextCursor),
       });
     },
@@ -1326,6 +1329,7 @@ const queryDefinitions = {
       return ok({
         data,
         refs: [{ type: "mail.mailbox" as const, id: scope.data.shortId }],
+        links: [openLink(mailboxHref(scope.data.shortId))],
         page: capabilityPage(result.data.nextCursor),
       });
     },
@@ -1676,7 +1680,10 @@ const queryDefinitions = {
         data,
         summary: capabilitySummary(t.readAttachment({ filename: data.filename?.trim() || t.unnamedAttachment })),
         refs: [attachmentRef(input.id, data.filename, context.locale)],
-        links: [{ rel: "download" as const, href: data.downloadHref, title: data.filename?.trim() || t.downloadAttachment }],
+        links: [
+          openLink(messageHref(requirePublicId(mailboxIds, parent.mailboxId), requirePublicId(messageIds, parent.messageId))),
+          { rel: "download" as const, href: data.downloadHref, title: data.filename?.trim() || t.downloadAttachment },
+        ],
       });
     },
   },
@@ -1814,13 +1821,15 @@ const queryDefinitions = {
       if (!mailboxId) return fail(err.notFound("Draft"));
       const result = await drafts.getDraft(requestContext(context), mailboxId, draftId.data);
       if (!result.ok) return result;
+      const access = await mailboxAccess.requireMailboxAccess(requestContext(context), mailboxId, "write");
       const ids = await draftPublicIds([result.data]);
       const mailboxShortId = requirePublicId(ids.mailboxes, mailboxId);
       const data = mapDraft(result.data, ids);
       const envelope = {
         data,
         summary: capabilitySummary(t.readDraft({ subject: reviewSubject(data.subject, context) })),
-        ...draftMetadata(mailboxShortId, input.id, data.subject, context.locale),
+        refs: [draftRef(input.id, data.subject, context.locale)],
+        links: [openLink(access.ok ? draftHref(mailboxShortId, input.id) : draftReadHref(mailboxShortId, input.id))],
       };
       while (Buffer.byteLength(JSON.stringify(envelope)) > CAPABILITY_MAX_RESULT_BYTES - 1024) {
         data.editableSnapshotComplete = false;
@@ -2105,7 +2114,7 @@ const queryDefinitions = {
           ref: { type: "mail.delivery" as const, id: item.id },
           title: truncateText(item.subject || t.noSubject, 500).text,
           ...(lastError ? { preview: lastError } : {}),
-          links: [statusLink(scheduledHref(scope.data.shortId))],
+          links: [openLink(scheduledHref(scope.data.shortId)), statusLink(scheduledHref(scope.data.shortId))],
           draftId: item.draftId,
           conversationId: item.conversationId,
           scheduledAt: item.scheduledAt,
@@ -2117,7 +2126,7 @@ const queryDefinitions = {
       return ok({
         data,
         page: capabilityPage(result.data.nextCursor),
-        links: [statusLink(scheduledHref(scope.data.shortId))],
+        links: [openLink(scheduledHref(scope.data.shortId)), statusLink(scheduledHref(scope.data.shortId))],
       });
     },
   },
@@ -2161,7 +2170,7 @@ const queryDefinitions = {
           t.readDelivery({ state: localizedState(item.state, context.locale), subject: reviewSubject(subject, context) }),
         ),
         refs: [deliveryRef(item.id, subject, item.state, context.locale)],
-        links: [statusLink(scheduledHref(requirePublicId(mailboxes, mailboxId)))],
+        links: [openLink(scheduledHref(requirePublicId(mailboxes, mailboxId)))],
       });
     },
   },
@@ -2822,6 +2831,7 @@ const actionDefinitions = {
           ...(conversationId ? [conversationRef(conversationId, draft.ok ? draft.data.subject : undefined)] : []),
         ],
         links: [
+          openLink(scheduledHref(input.mailboxId)),
           statusLink(scheduledHref(input.mailboxId)),
           ...(conversationId ? [openLink(conversationHref(input.mailboxId, conversationId))] : []),
         ],
@@ -3309,6 +3319,10 @@ const actionDefinitions = {
           const count = result.results.filter((item) => item.status === "ok").length;
           const missing = result.results.length - count;
           return {
+            refs: result.results
+              .filter((item) => item.status === "ok")
+              .map((item) => conversationRef(item.conversationId, undefined, undefined, context.locale)),
+            links: [openLink(mailboxHref(input.mailboxId))],
             summary: capabilitySummary(
               input.assigneeUserIds.length > 0
                 ? t.assignmentSummary({

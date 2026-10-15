@@ -45,6 +45,7 @@ Start here for everyday mail, mailbox setup, search, and collaboration. Continue
 
 - Run `cld mail help` and confirm that the Mail module is available before changing a mailbox.
 - Use `--json` when a later command needs an id, revision, token, or cursor.
+- Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
 - Pass provider credentials with `--secret-stdin` or `--secret-file`. Credentials are write-only and are never returned by the API.
 - Read a message and its folder ids before changing provider state, moving, copying, or deleting it.
 - Public Mail resource ids are case-sensitive, exactly six ASCII letters or digits, and must be passed through unchanged. This applies to mailboxes, folders, conversations, messages, attachments, drafts and draft attachments, sender identities, tags, comments, reminders, scheduled deliveries, saved views, compose templates, incoming automations, and automatic replies. Legacy UUID resource ids are rejected. Mailboxes also accept their exact name, folders their path, and tags their exact name; see [Address mailboxes and folders](#address-mailboxes-and-folders).

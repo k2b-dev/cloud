@@ -304,8 +304,8 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
     // request was asked means the person is deciding in Cloud already; requests from before registration stay silent.
     const candidates = await sql<{ id: string; user_id: string; count: number }[]>`
       WITH eligible AS MATERIALIZED (
-        SELECT r.id,r.approver_user_id,r.created_at FROM approvals.requests r
-        WHERE r.status='pending' AND r.expires_at > now()
+        SELECT r.id,r.approver_user_id,r.created_at FROM approvals.requests r JOIN auth.users u ON u.id=r.approver_user_id
+        WHERE r.status='pending' AND r.expires_at > now() AND r.approver_auth_epoch=u.auth_epoch
           AND (${input.approvalId ?? null}::uuid IS NULL OR r.approver_user_id=(
             SELECT approver_user_id FROM approvals.requests WHERE id=${input.approvalId ?? null}::uuid))
           AND EXISTS (SELECT 1 FROM ai.pending_actions p JOIN ai.turns t ON t.id=p.turn_id

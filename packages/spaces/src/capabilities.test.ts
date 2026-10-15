@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
   type CapabilityActionReviewResult,
   CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
+  type CapabilityInvocationResult,
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
@@ -1410,9 +1411,10 @@ describe("spaces capabilities", () => {
     }
   });
 
-  test("reviews an existing calendar import against the internal Space boundary", async () => {
+  test("reviews an existing calendar import and names its authorized event in the preview", async () => {
     spyOn(spacesService.space, "get").mockResolvedValue(space);
     spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.item, "get").mockResolvedValue(event);
     spyOn(spacesService.calendarInvitations, "previewCalendarInvitation").mockResolvedValue({
       ok: true,
       data: {
@@ -1457,6 +1459,11 @@ describe("spaces capabilities", () => {
       ok: true,
       data: { links: [{ rel: "open", href: `/app/spaces/${spaceId}?item=${itemId}` }] },
     });
+    const preview = await spacesCapabilities.queries["calendar-invitation.preview"].run(
+      { mailboxId: "mail01", messageId: "msg001", calendar: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n" },
+      userContext,
+    );
+    expect(preview).toMatchObject({ ok: true, data: { refs: [{ type: "spaces.item", id: itemId, title: event.title }] } });
   });
 
   test("summarizes calendar preview and response preparation without extra lookups", async () => {
@@ -2092,7 +2099,10 @@ test("work capabilities enforce grants and resource binding before touching work
   expect((await spacesCapabilities.actions["task.progress"].run(input, serviceAccountContext)).ok).toBe(false);
   expect(change).not.toHaveBeenCalled();
   const writable = { ...serviceAccountContext, actor: { ...serviceAccountContext.actor, scopes: ["write"] } };
-  expect((await spacesCapabilities.actions["task.progress"].run(input, writable)).ok).toBe(true);
+  expect(await spacesCapabilities.actions["task.progress"].run(input, writable)).toMatchObject({
+    ok: true,
+    data: { refs: [{ type: "spaces.item", id: itemId, title: task.title }] },
+  });
   expect(change).toHaveBeenLastCalledWith(
     expect.objectContaining({
       actor: { kind: "service_account", id: serviceAccountId },
@@ -2121,7 +2131,10 @@ test("work capabilities enforce grants and resource binding before touching work
   // Claims coordinate work and do not lock it: any writer may take one over.
   permission.mockResolvedValue("write");
   const observed = crypto.randomUUID();
-  expect((await spacesCapabilities.actions["task.release"].run({ itemId, claimId: observed, force: true }, userContext)).ok).toBe(true);
+  expect(await spacesCapabilities.actions["task.release"].run({ itemId, claimId: observed, force: true }, userContext)).toMatchObject({
+    ok: true,
+    data: { refs: [{ type: "spaces.item", id: itemId, title: task.title }] },
+  });
   expect(change).toHaveBeenCalledWith(expect.objectContaining({ operation: "release", claimId: observed, force: true }));
 });
 
@@ -2206,4 +2219,27 @@ test("item search confines results to an authorized Space context", async () => 
       .ok,
   ).toBe(false);
   expect(search).toHaveBeenCalledTimes(1);
+});
+
+test("every declared Type has a reader open-link case or an explicit reason", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  spyOn(spacesService.space, "getDetail").mockResolvedValue({ ...space, columns: [], virtualColumns: [], tags: [], templates: [] });
+  spyOn(spacesService.item, "get").mockResolvedValue(task);
+  spyOn(spacesService.item.attachments, "list").mockResolvedValue([]);
+  spyOn(spacesService.comment, "get").mockResolvedValue(comment);
+  const cases: Record<string, { reader: string; read: () => Promise<CapabilityInvocationResult<unknown>> }> = {
+    space: { reader: "space.read", read: async () => spacesCapabilities.queries["space.read"].run({ id: spaceId }, userContext) },
+    item: { reader: "item.read", read: async () => spacesCapabilities.queries["item.read"].run({ id: itemId }, userContext) },
+    comment: { reader: "comment.read", read: async () => spacesCapabilities.queries["comment.read"].run({ id: commentId }, userContext) },
+  };
+  expect(Object.keys(cases).sort()).toEqual(Object.keys(spacesCapabilities.types).sort());
+  for (const [typeId, type] of Object.entries(spacesCapabilities.types)) {
+    const fixture = cases[typeId];
+    if (!fixture) throw new Error(`Missing reader fixture for ${typeId}`);
+    expect(fixture.reader).toBe(type.reader);
+    const result = await fixture.read();
+    if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
+    assertResourceOpenLink(result.data);
+  }
 });
