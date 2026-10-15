@@ -418,7 +418,18 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const aside = target.closest<HTMLElement>(detailSelector);
     const panel =
       overlay?.sidebar ?? (phone?.matches && aside && !aside.hidden && phonePage(aside) && eventRoot.contains(aside) ? aside : null);
-    if (event.key !== "Tab" || !panel?.contains(target)) return;
+    if (event.key !== "Tab") return;
+    if (!panel) {
+      // Focus outside an open phone page, on the body after a load or on chrome the page covers, enters the page.
+      // Dialogs and popovers keep their own Tab order.
+      const page = phone?.matches ? allRoots().flatMap(openDetails).find(phonePage) : undefined;
+      if (!page || ownerDocument.querySelector("dialog[open], [aria-modal='true']") || target.closest("[popover]")) return;
+      const stops = tabStopsIn(page);
+      event.preventDefault();
+      (event.shiftKey ? stops.at(-1) : stops[0])?.focus();
+      return;
+    }
+    if (!panel.contains(target)) return;
     const stops = tabStopsIn(panel);
     const first = stops[0];
     const last = stops.at(-1);

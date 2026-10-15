@@ -671,6 +671,19 @@ describe("floating workspace detail", () => {
       await page.waitForFunction(() => document.activeElement?.textContent === "Selected record");
       await page.keyboard.press("Shift+Tab");
       expect(await detail.evaluate((aside) => aside.contains(document.activeElement))).toBe(true);
+      // Focus on the body, as after loading with the page open, enters the page in both directions, past chrome
+      // outside the workspace that the page covers.
+      await page.evaluate(() => {
+        const chrome = (id: string) => Object.assign(document.createElement("button"), { id, textContent: id });
+        document.body.prepend(chrome("chrome-before"));
+        document.body.append(chrome("chrome-after"));
+      });
+      for (const key of ["Tab", "Shift+Tab"]) {
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+        await page.keyboard.press(key);
+        expect(await detail.evaluate((aside) => aside.contains(document.activeElement))).toBe(true);
+      }
       await detail.evaluate((aside) => {
         const stops = Array.from(
           aside.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), input:not([disabled]), [tabindex]"),
