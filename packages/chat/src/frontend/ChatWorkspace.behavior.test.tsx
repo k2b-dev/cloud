@@ -542,6 +542,33 @@ describe("ChatWorkspace interactions", () => {
     expect(dom.window.location.pathname).toBe("/app/chat/c/Chat03");
     expect(consoleErrors).toEqual([]);
   });
+  test("a newer open that finishes first ends busy and leaves info usable while the superseded one is pending", async () => {
+    const second = { ...conversation, id: "Chat02", title: "Second chat" };
+    const third = { ...conversation, id: "Chat03", title: "Third chat" };
+    const pendingSecond = Promise.withResolvers<Response>();
+    const pendingThird = Promise.withResolvers<Response>();
+    pendingSnapshots.set(second.id, pendingSecond.promise);
+    pendingSnapshots.set(third.id, pendingThird.promise);
+    await mount(true, [conversation, second, third]);
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat02"]')!.click();
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat03"]')!.click();
+    pendingThird.resolve(Response.json({ cursor: "c.0", conversation: third, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+    await settle();
+    try {
+      expect(dom.window.location.pathname).toBe("/app/chat/c/Chat03");
+      expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("false");
+      dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
+      await settle();
+      expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat03?panel=info");
+      expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
+    } finally {
+      pendingSecond.resolve(Response.json({ cursor: "c.0", conversation: second, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+      await settle();
+    }
+    expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat03?panel=info");
+    expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("false");
+    expect(consoleErrors).toEqual([]);
+  });
   for (const historical of [false, true]) {
     test(`info reflects live membership changes by every author${historical ? " outside the displayed history" : ""}`, async () => {
       const otherId = "22222222-2222-4222-8222-222222222222";

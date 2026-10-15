@@ -81,7 +81,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [chat, setChat] = createSignal<OpenChat | null>(props.open ? initialChat(props.open) : null);
   const [liveStopped, setLiveStopped] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
-  let opensInFlight = 0;
+  // The latest open whose snapshot is still loading; an older one that a newer navigation superseded no longer counts.
+  let openToken = 0;
+  let pendingOpen = 0;
   // The outbox changes its entries in place; this counts its changes so the history reads them again.
   const [sendsVersion, setSendsVersion] = createSignal(0);
   // The list keeps its order while messages arrive elsewhere; it sorts again on the reader's own actions.
@@ -311,21 +313,25 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   /** Loads the chat's snapshot before the address changes; only an applied open may change it. */
   const open = async (next: Route): Promise<"applied" | "superseded" | "failed"> => {
     if (!store) return "failed";
-    if (opensInFlight === 0 && route().chatId === next.chatId && route().messageId === next.messageId && route().panel !== next.panel) {
+    if (pendingOpen === 0 && route().chatId === next.chatId && route().messageId === next.messageId && route().panel !== next.panel) {
       setRoute(next);
       setPanel(openChat() ? next.panel : null);
       return "applied";
     }
     if (!next.chatId) {
       const live = store;
+      // Closing the chat supersedes a pending open.
+      pendingOpen = 0;
+      setBusy(false);
       batch(() => {
         live.closeConversation();
         applyRoute(next);
       });
       return "applied";
     }
-    opensInFlight++;
-    setBusy(opensInFlight > 0);
+    const token = ++openToken;
+    pendingOpen = token;
+    setBusy(true);
     try {
       const result = await store.openChat(next.chatId, next.messageId ?? undefined);
       if (result.status === "superseded") return "superseded";
@@ -339,8 +345,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       toast.error(t().openFailed);
       return "failed";
     } finally {
-      opensInFlight--;
-      setBusy(opensInFlight > 0);
+      if (pendingOpen === token) {
+        pendingOpen = 0;
+        setBusy(false);
+      }
     }
   };
   const openFromList = async (id: string, navigation: LinkNavigateEvent) => {
@@ -362,7 +370,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
 
   const openInfo = (navigation?: LinkNavigateEvent) => {
-    if (opensInFlight > 0) return;
+    if (pendingOpen !== 0) return;
     const id = route().chatId;
     if (!id || !openChat() || panel() === "info") return;
     const messageId = route().messageId;
@@ -373,7 +381,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     else navigate(panelHref(id, "info", messageId), options);
   };
   const closeInfo = (navigation?: LinkNavigateEvent) => {
-    if (opensInFlight > 0) return;
+    if (pendingOpen !== 0) return;
     const id = route().chatId;
     if (!id || panel() === null) return;
     const state: unknown = history.state;
