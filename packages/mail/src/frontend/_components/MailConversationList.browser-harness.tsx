@@ -23,6 +23,8 @@ export type MailListHarnessOptions = {
    * history, the detail arrives as one reconciled snapshot, and back and forward restore it.
    */
   reader?: boolean;
+  /** Starts the list at this route and lets it navigate through the history, as the workspace does. */
+  requestUrl?: string;
   /** The reader's toolbar; Reply by default. */
   toolbarActions?: MailConversationToolbarActionId[];
   /** The mail server deleted the messages of kept conversations, so the reader shows Cloud's copies. */
@@ -125,7 +127,20 @@ window.mountMailList = (options) => {
         ),
       );
     });
-  const requestUrl = () => `/app/mail/Box001${selected() ? `?conversation=${selected()}` : ""}`;
+  const [route, setRoute] = createSignal(options.requestUrl);
+  const updateRoute = () => setRoute(location.pathname + location.search);
+  const openHref = (href: string, replace = false) => {
+    if (!options.requestUrl) return;
+    window.mailNavigations.push(href);
+    if (replace) history.replaceState(null, "", href);
+    else history.pushState(null, "", href);
+    updateRoute();
+  };
+  if (options.requestUrl) {
+    history.replaceState(null, "", options.requestUrl);
+    window.addEventListener("popstate", updateRoute);
+  }
+  const requestUrl = () => route() ?? `/app/mail/Box001${selected() ? `?conversation=${selected()}` : ""}`;
   if (options.reader) {
     history.replaceState(null, "", requestUrl());
     window.addEventListener("popstate", () => open(new URL(location.href).searchParams.get("conversation")));
@@ -167,7 +182,7 @@ window.mountMailList = (options) => {
                   mailbox={mailbox}
                   mailboxId="Box001"
                   requestUrl={requestUrl()}
-                  query=""
+                  query={options.requestUrl ? (new URL(requestUrl(), location.origin).searchParams.get("q") ?? "") : ""}
                   search={{ query: "", expression: null, sort: "relevance", error: null }}
                   title="Inbox"
                   items={list.items}
@@ -204,7 +219,12 @@ window.mountMailList = (options) => {
                   onCollapse={noop}
                   onOpenHealth={noop}
                   onOpenDeliverySettings={noop}
-                  onNavigate={noop}
+                  onNavigate={(nav) => {
+                    if (!options.requestUrl) return;
+                    window.mailNavigations.push(nav.href);
+                    nav.push();
+                    updateRoute();
+                  }}
                   onNavigateItem={(href) => {
                     window.mailNavigations.push(href);
                     if (!options.reader) return;
@@ -221,7 +241,7 @@ window.mountMailList = (options) => {
                   onItemAction={noop}
                   onManageTags={noop}
                   onMergeItem={noop}
-                  onOpenHref={noop}
+                  onOpenHref={openHref}
                   onLoadMore={() => false}
                   onRefresh={async () => {}}
                 />

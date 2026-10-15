@@ -41,7 +41,14 @@ import { mailConversationListMessages } from "./mail-conversation-list-messages"
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { mailboxHealthPresentation } from "./mail-health-presentation";
 import { mailListRowKey } from "./mail-list-projection";
-import { buildMailListHref, buildMailSelectionHref, type MailListItem, mailRouteUrl } from "./mail-navigation";
+import {
+  buildMailListHref,
+  buildMailSearchClearHref,
+  buildMailSearchHref,
+  buildMailSelectionHref,
+  type MailListItem,
+  mailRouteUrl,
+} from "./mail-navigation";
 import { createMailQuickLookLoader } from "./mail-quick-look";
 import { summarizeMailSearchExpression } from "./mail-search-builder-model";
 
@@ -180,6 +187,7 @@ export default function MailConversationList(props: {
     void props.onNavigateItem(buildMailSelectionHref(requestUrl(), item), item, "pointer");
   };
   const [searchValue, setSearchValue] = createSignal(props.query);
+  let quickSearchPending = false;
   const [searchFields, setSearchFields] = createSignal<MailQuickSearchField[]>(selectedQuickSearchFields(requestUrl()));
   const [loadMoreElement, setLoadMoreElement] = createSignal<HTMLDivElement>();
   const [failedLoadHref, setFailedLoadHref] = createSignal<string | null>(null);
@@ -205,20 +213,31 @@ export default function MailConversationList(props: {
   const healthPresentation = createMemo(() => mailboxHealthPresentation(props.mailbox, locale()));
   const searchActive = () => Boolean(props.query.trim() || requestUrl().searchParams.has(MAIL_SEARCH_PARAMETER) || props.activeSavedViewId);
 
+  const clearSearch = () => {
+    quickSearch.cancel();
+    setSearchValue("");
+    const currentUrl = requestUrl();
+    if (currentUrl.searchParams.has("q")) {
+      // A new history entry, so Back after clearing returns to the search instead of repeating the starting view.
+      void props.onOpenHref(buildMailSearchClearHref(currentUrl));
+    } else if (quickSearchPending) {
+      // Supersede the pending search before it can put the cleared text back.
+      void props.onOpenHref(`${currentUrl.pathname}${currentUrl.search}`, true);
+    }
+  };
+
   const applyQuickSearch = (query: string, fields: MailQuickSearchField[], replace: boolean) => {
     const currentUrl = requestUrl();
-    const next = new URL(buildMailListHref(currentUrl, true), currentUrl.origin);
     const normalizedQuery = query.trim();
-    if (normalizedQuery) {
-      next.searchParams.set("q", normalizedQuery);
-      if (!isDefaultQuickSearch(fields)) next.searchParams.set(MAIL_QUICK_SEARCH_FIELDS_PARAMETER, fields.join(","));
-      next.searchParams.delete("savedView");
-      next.searchParams.delete("view");
-      next.searchParams.delete("folder");
-      next.searchParams.delete("scheduled");
+    if (!normalizedQuery) {
+      clearSearch();
+      return;
     }
-    const href = `${next.pathname}${next.search}`;
+    const search: Record<string, string> = { q: normalizedQuery };
+    if (!isDefaultQuickSearch(fields)) search[MAIL_QUICK_SEARCH_FIELDS_PARAMETER] = fields.join(",");
+    const href = buildMailSearchHref(currentUrl, search);
     if (href === `${currentUrl.pathname}${currentUrl.search}`) return;
+    quickSearchPending = true;
     void props.onOpenHref(href, replace);
   };
 
@@ -229,6 +248,7 @@ export default function MailConversationList(props: {
 
   createEffect(() => {
     quickSearch.cancel();
+    quickSearchPending = false;
     setSearchValue(props.query);
     setSearchFields(selectedQuickSearchFields(requestUrl()));
   });
@@ -280,23 +300,13 @@ export default function MailConversationList(props: {
     });
     if (!result) return;
     const currentUrl = requestUrl();
-    const next = new URL(buildMailListHref(currentUrl, true), currentUrl.origin);
-    if (result.action === "apply") {
-      next.searchParams.set(MAIL_SEARCH_PARAMETER, result.serialized);
-      next.searchParams.delete("savedView");
-      next.searchParams.delete("view");
-      next.searchParams.delete("folder");
-      next.searchParams.delete("scheduled");
-    } else if (result.action === "saved") {
-      next.searchParams.set("savedView", result.view.id);
-      next.searchParams.delete("view");
-      next.searchParams.delete("folder");
-      next.searchParams.delete("scheduled");
-    } else {
-      next.searchParams.delete("savedView");
-    }
-    next.searchParams.delete("cursor");
-    void props.onOpenHref(`${next.pathname}${next.search}`);
+    const href =
+      result.action === "apply"
+        ? buildMailSearchHref(currentUrl, { search: result.serialized })
+        : result.action === "saved"
+          ? buildMailSearchHref(currentUrl, { savedView: result.view.id })
+          : buildMailSearchClearHref(currentUrl);
+    void props.onOpenHref(href);
   };
 
   const nextHref = () => {
@@ -438,7 +448,18 @@ export default function MailConversationList(props: {
             onAction={props.onBulkAction}
           />
         </Show>
-        <form class="flex min-w-0 items-center gap-2" role="search" onSubmit={submitSearch}>
+        <form
+          class="flex min-w-0 items-center gap-2"
+          role="search"
+          onSubmit={submitSearch}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && event.target instanceof Element && event.target.matches('input[name="q"]') && searchValue()) {
+              // Prevent the native search input from clearing again after the view returns.
+              event.preventDefault();
+              clearSearch();
+            }
+          }}
+        >
           <div class="min-w-0 flex-1">
             <TextInput
               type="search"
@@ -450,10 +471,7 @@ export default function MailConversationList(props: {
               value={searchValue}
               onValueChange={updateSearchValue}
               clearable
-              onClear={() => {
-                setSearchValue("");
-                quickSearch.trigger("", searchFields(), replaceLiveSearchRoute());
-              }}
+              onClear={clearSearch}
               maxLength={500}
             />
           </div>
@@ -564,7 +582,7 @@ export default function MailConversationList(props: {
               }
               action={
                 <ButtonLink
-                  href={props.error === "invalid_search" ? buildMailListHref(requestUrl(), true) : listHref()}
+                  href={props.error === "invalid_search" ? buildMailSearchClearHref(requestUrl()) : listHref()}
                   variant="secondary"
                   size="sm"
                   navigation="enhanced"
@@ -596,7 +614,7 @@ export default function MailConversationList(props: {
               action={
                 searchActive() ? (
                   <ButtonLink
-                    href={buildMailListHref(requestUrl(), true)}
+                    href={buildMailSearchClearHref(requestUrl())}
                     variant="secondary"
                     size="sm"
                     navigation="enhanced"

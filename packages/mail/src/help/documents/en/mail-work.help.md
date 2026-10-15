@@ -28,7 +28,9 @@ The filter dialog can search:
 - Folder
 - Local tag
 
-Choose **Any condition** to match at least one filled field. Choose **All conditions** to require every filled field. Search filters stay in the page URL, so a reload or a shared URL keeps the current result. Choose **Clear search** to return to the unfiltered view.
+Choose **Any condition** to match at least one filled field. Choose **All conditions** to require every filled field. Search filters stay in the page URL, so a reload or a shared URL keeps the current result.
+
+A search remembers the view where you started it, such as **Needs action** or a folder. To end the search, choose **Clear** in the search field, delete the text, press Esc, or choose **Clear search**. Mail then returns to that view and opens the conversation that was open before. The URL keeps the starting view, so a reload or Back keeps it too.
 
 Provider keywords are advanced synchronized metadata, not a normal labeling system. Existing search URLs with keywords still work, and you can still edit them. New filters use local tags for labels that people read.
 
