@@ -488,7 +488,7 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
       conversation.mailbox_id,
       conversation.work_status,
       conversation.snoozed_until,
-      link.status_decided_at IS NOT NULL AS status_decided,
+      link.status_covered IS TRUE AS status_decided,
       message.in_reply_to,
       message.reference_ids,
       message.protocol_facts,

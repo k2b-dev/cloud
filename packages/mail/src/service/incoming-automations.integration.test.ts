@@ -2631,6 +2631,74 @@ suite("incoming automations", () => {
     }
   }, 30_000);
 
+  test("does not let a stale status step override a newer decision that released the triggering message", async () => {
+    const key = "waiting-noop-released";
+    const first = statusEnvelope(13041, key);
+    const firstId = await ingestEnvelope({
+      db: sql,
+      mailboxId,
+      remoteResourceId,
+      folderId: inboxFolderId,
+      message: first,
+      captureWorkflowTriggers: false,
+    });
+    await hydrateStatusMessage(firstId, first);
+    const conversation = await statusConversation(firstId);
+    expect(conversation.work_status).toBe("needs_action");
+    await sql`
+      UPDATE mail.conversations SET work_status = 'waiting', revision = revision + 1
+      WHERE id = ${conversation.id}::uuid
+    `;
+    const automation = await createStatusAutomation(key, undefined, "waiting");
+    try {
+      const reply = statusEnvelope(13042, key, first.messageId);
+      const replyId = await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: reply,
+        captureWorkflowTriggers: true,
+      });
+      expect((await statusConversation(replyId)).id).toBe(conversation.id);
+      const runId = await dispatchStatusRun(automation.workflowId);
+      const current = await statusConversation(replyId);
+      const snoozed = await updateConversationCollaboration({
+        context: ownerContext,
+        mailboxId,
+        conversationId: conversation.id,
+        locale: "en",
+        input: { expectedRevision: current.revision, snoozedUntil: new Date(Date.now() + 60 * 60_000).toISOString() },
+      });
+      if (!snoozed.ok) throw new Error(snoozed.error.message);
+      const released = await updateConversationCollaboration({
+        context: ownerContext,
+        mailboxId,
+        conversationId: conversation.id,
+        locale: "en",
+        input: { expectedRevision: snoozed.data.revision, snoozedUntil: null },
+      });
+      if (!released.ok) throw new Error(released.error.message);
+      expect(released.data).toMatchObject({ workStatus: "waiting", snoozedUntil: null });
+      expect(released.data.revision).toBeGreaterThan(current.revision);
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished", result: { state: "succeeded" } });
+      const [run] = await sql<{ state: string }[]>`
+        SELECT state FROM workflows.run WHERE id = ${runId}::uuid
+      `;
+      expect(run?.state).toBe("succeeded");
+      const [step] = await sql<{ output: Record<string, unknown> }[]>`
+        SELECT outcome #> '{outcome,output}' AS output FROM workflows.step_outcome
+        WHERE run_id = ${runId}::uuid AND outcome #>> '{outcome,output,action}' = 'setConversationStatus'
+      `;
+      expect(step?.output).toEqual({ action: "setConversationStatus", applied: false });
+      await hydrateStatusMessage(replyId, reply);
+      expect(await statusConversation(replyId)).toMatchObject({ work_status: "needs_action", snoozed_until: null });
+      expect(await reconciledStatusActivities(replyId)).toHaveLength(1);
+    } finally {
+      await deleteStatusAutomation(automation.id);
+    }
+  }, 30_000);
+
   for (const initiallyDone of [false, true]) {
     test(`applies an automation's status after Mail hydrated its triggering message in a longer conversation${initiallyDone ? " that was Done" : ""}`, async () => {
       const key = initiallyDone ? "hydrated-first-done" : "hydrated-first-open";

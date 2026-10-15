@@ -459,23 +459,25 @@ type ConversationCollaborationMutation = CollaborationMutation<ConversationColla
 
 /**
  * The latest status decision decides whether a still unhydrated link keeps that decision:
- * Done, Waiting, and a snooze set the mark; Needs action, reopening, and clearing a snooze clear it.
+ * Done, Waiting, and a snooze cover it; Needs action, reopening, and clearing a snooze release it.
  * The caller holds the conversation row lock. Update only visible, unhydrated links, limited to
  * messageId when supplied. A conversation timestamp cannot express which links the decision saw.
+ * onlyUndecided lets a stale workflow step cover a link without overriding a newer decision.
  */
 export const recordConversationStatusDecision = async (
   db: SqlClient,
-  params: { conversationId: string; covers: boolean; messageId?: string },
+  params: { conversationId: string; covers: boolean; messageId?: string; onlyUndecided?: boolean },
 ): Promise<void> => {
   await db`
     UPDATE mail.conversation_messages link
-    SET status_decided_at = CASE WHEN ${params.covers} THEN now() ELSE NULL END
+    SET status_covered = ${params.covers}
     FROM mail.message_contents message
     WHERE link.conversation_id = ${params.conversationId}::uuid
       AND (${params.messageId ?? null}::uuid IS NULL OR link.message_id = ${params.messageId ?? null}::uuid)
       AND message.id = link.message_id
       AND message.hydration_status <> 'complete'
-      AND (link.status_decided_at IS NULL) = ${params.covers}
+      AND link.status_covered IS DISTINCT FROM ${params.covers}
+      AND (${params.onlyUndecided === true} = false OR link.status_covered IS NULL)
   `;
 };
 
