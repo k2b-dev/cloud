@@ -1,8 +1,67 @@
 import type { AiProject } from "@k2b/cloud/ai";
 import { type AiComposerAttachment, aiChatAttachments } from "@k2b/cloud/ai/ui";
-import type { ChatCommand } from "@k2b/ui";
+import type { ChatCommand, ChatCommandResult } from "@k2b/ui";
 import { assistantApi } from "../api/client";
 import { artifactClient } from "../artifacts/client";
+import { type AssistantCopy, assistantCopyFor } from "./ui-copy";
+
+export function assistantBuiltInCommands(input: {
+  copy: AssistantCopy;
+  projectComposer: boolean;
+  running: boolean;
+  hasMessages: boolean;
+  hasAssistantMessage: boolean;
+  compact: () => Promise<ChatCommandResult>;
+  fork: () => Promise<ChatCommandResult>;
+  newChat: () => Promise<ChatCommandResult>;
+}): ChatCommand[] {
+  const t = input.copy;
+  return [
+    {
+      id: "compact",
+      name: "compact",
+      icon: "ti ti-fold",
+      label: t.compactLabel,
+      keywords: ["compact", "kompaktieren", "kontext", "zusammenfassen", "platz"],
+      description: t.compactDescription,
+      busyLabel: t.compactBusy,
+      reason: input.projectComposer
+        ? t.commandNeedsChat
+        : !input.hasMessages
+          ? t.commandNeedsMessages
+          : input.running
+            ? t.commandNeedsIdle
+            : undefined,
+      action: input.compact,
+    },
+    {
+      id: "fork",
+      name: "fork",
+      icon: "ti ti-git-fork",
+      label: t.forkLabel,
+      keywords: ["fork", "abzweigen", "kopie", "verzweigen", "branch"],
+      description: t.forkDescription,
+      busyLabel: t.forkBusy,
+      reason: input.projectComposer
+        ? t.commandNeedsChat
+        : !input.hasAssistantMessage
+          ? t.commandNeedsAnswer
+          : input.running
+            ? t.commandNeedsIdle
+            : undefined,
+      action: input.fork,
+    },
+    {
+      id: "new",
+      name: "new",
+      icon: "ti ti-plus",
+      label: t.newChatLabel,
+      keywords: ["new", "neu", "chat", "leer"],
+      description: t.newChatDescription,
+      action: input.newChat,
+    },
+  ];
+}
 
 /** Only explicit selection inserts a reference or performs an action. */
 export async function assistantComposerCommands(input: {
@@ -16,6 +75,7 @@ export async function assistantComposerCommands(input: {
   running: boolean;
 }): Promise<ChatCommand[]> {
   const de = input.locale.startsWith("de");
+  const copy = assistantCopyFor(input.locale);
   const match = /^(skill|app|file|project)(?:\s+(.*))?$/i.exec(input.query);
   const category = match?.[1]?.toLowerCase();
   const query = (match ? (match[2] ?? "") : input.query).trim().toLowerCase();
@@ -89,14 +149,8 @@ export async function assistantComposerCommands(input: {
         name: project.name,
         label: project.name,
         icon: project.icon || "ti ti-folders",
-        disabled: input.running,
-        description: input.running
-          ? de
-            ? "Nach der laufenden Antwort verfügbar"
-            : "Available after the current response"
-          : de
-            ? "Chat diesem Projekt zuordnen"
-            : "Assign this chat to Project",
+        reason: input.running ? copy.commandNeedsIdle : undefined,
+        description: copy.assignProjectDescription,
         action: () => input.assignProject(project.id),
       });
     }

@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  chatCommandKey,
+  chatCommandMatches,
   conversationEnterAction,
   executeChatAction,
+  foldChatSearchText,
   isChatNearBottom,
   nextChatCommandIndex,
   reportChatFailure,
@@ -178,5 +181,22 @@ describe("conversation Enter", () => {
       expect(conversationEnterAction(key({ ctrlKey: true }), context)).toBe("send");
       expect(conversationEnterAction(key({ metaKey: true }), context)).toBe("send");
     }
+  });
+});
+
+describe("command discovery", () => {
+  test("folds case, accents, combining marks and German sharp s", () => {
+    expect(foldChatSearchText("ÄLTEREN Café Straße e\u0301")).toBe("alteren cafe strasse e");
+  });
+  test("matches every search field and treats empty trimmed queries as all commands", () => {
+    const command = { name: "compact", label: "Chat kompaktieren", description: "Älteren Verlauf", keywords: ["zusammenfassen"] };
+    for (const query of ["kompakt", "COMPACT", "alter", "zusammenfassen", "  ", " compact "])
+      expect(chatCommandMatches(command, query)).toBe(true);
+    expect(chatCommandMatches(command, "fork")).toBe(false);
+    expect(chatCommandMatches({ name: "a", description: "", keywords: ["älter"] }, "alter")).toBe(true);
+  });
+  test("uses the explicit stable key, defaulting to name", () => {
+    expect(chatCommandKey({ id: "stable", name: "compact", description: "" })).toBe("stable");
+    expect(chatCommandKey({ name: "compact", description: "" })).toBe("compact");
   });
 });

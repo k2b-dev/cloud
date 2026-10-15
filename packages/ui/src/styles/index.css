@@ -9329,6 +9329,41 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Out of the grid, so no gap opens: the suggestions keep their place above the composer, which does not move. */
 .k2b-ui .k2b-chat-composer-slot[data-overlay] { position: absolute; right: 0; bottom: calc(100% + 0.5rem); left: 0; }
 .k2b-ui .k2b-chat-composer-accessory { position: absolute; bottom: 0; left: 0; right: 0; z-index: 10; }
+/* What a command is doing, floating above the composer (and above its accessory) like the suggestions: it never moves the field. */
+.k2b-ui .k2b-chat-composer__status {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.5rem);
+  left: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: flex-start;
+  pointer-events: none;
+}
+.k2b-ui .k2b-chat-composer__status-line {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.4375rem 0.75rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+}
+.k2b-ui .k2b-chat-composer__status-line > i { flex-shrink: 0; font-size: 1rem; line-height: 1.125rem; color: var(--k2b-ai-accent); }
+.k2b-ui .k2b-chat-composer__status-line[data-tone="done"] > i { color: var(--k2b-success-text); }
+.k2b-ui .k2b-chat-composer__status-line[data-tone="error"] {
+  border-color: transparent;
+  color: var(--k2b-danger-text);
+  background: var(--k2b-danger-surface);
+}
+.k2b-ui .k2b-chat-composer__status-line[data-tone="error"] > i { color: var(--k2b-danger-text); }
 .k2b-ui .k2b-chat-composer__highlight { position: absolute; inset: 0; overflow: hidden; pointer-events: none; white-space: pre-wrap; overflow-wrap: break-word; }
 .k2b-ui .k2b-chat-composer__mention { color: var(--k2b-ai-accent); background: var(--k2b-ai-surface); border-radius: 0.2rem; }
 .k2b-ui .k2b-chat-composer__textarea--highlighted { color: transparent !important; caret-color: var(--k2b-text); }
@@ -9366,7 +9401,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-chat-composer__commands > [role="status"] { color: var(--k2b-text-muted); cursor: default; }
 
-.k2b-ui .k2b-chat-composer__commands button:hover,
+.k2b-ui .k2b-chat-composer__commands button:not([aria-disabled="true"]):hover,
 .k2b-ui .k2b-chat-composer__commands button[data-active="true"] {
   color: var(--k2b-text);
   background: var(--k2b-hover);
@@ -9386,7 +9421,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Command names and descriptions wrap instead of truncating, so every entry
    stays readable on a phone. */
 .k2b-ui .k2b-chat-composer__commands strong { font-size: 0.8125rem; font-weight: 400; overflow-wrap: anywhere; flex-shrink: 0; max-width: 55%; }
-.k2b-ui .k2b-chat-composer__commands [aria-disabled="true"] { opacity: 0.5; cursor: default; }
+/* An unavailable row stays readable: only its name and icon are muted, and its reason reads like a description. */
+.k2b-ui .k2b-chat-composer__commands [aria-disabled="true"] { cursor: default; }
+.k2b-ui .k2b-chat-composer__commands [aria-disabled="true"] > i,
+.k2b-ui .k2b-chat-composer__commands [aria-disabled="true"] strong { color: var(--k2b-text-muted); }
 
 .k2b-ui .k2b-chat-composer__commands small {
   min-width: 0;

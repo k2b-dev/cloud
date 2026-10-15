@@ -130,9 +130,12 @@ type ChatCommandContext = {
   setValue: (value: string) => void; submit: () => void; focus: () => void;
 };
 
+type ChatCommandResult = void | "cancelled" | { done: string };
+
 type ChatCommand = {
-  name: string; description: string; icon?: string; label?: string; disabled?: boolean;
-  action?: (context: ChatCommandContext) => void | Promise<void>;
+  id?: string; name: string; description: string; icon?: string; label?: string;
+  keywords?: readonly string[]; reason?: string; busyLabel?: string; disabled?: boolean;
+  action?: (context: ChatCommandContext) => ChatCommandResult | Promise<ChatCommandResult>;
   mention?: ChatAttachment;
 };
 
@@ -144,6 +147,32 @@ type ChatFileSelection = {
 type ChatPasteHandler = (event: ClipboardEvent & { currentTarget: HTMLTextAreaElement; target: Element }) => void;
 
 ```
+
+Static commands match their label, name, keywords, or description, ignoring
+case and accents. `id` defaults to `name` and identifies the row across result
+updates; static matches precede server results, with the first row per key
+winning. `searchCommands` supplies already filtered rows. The list keeps its
+previous server rows while loading the next results. Arrow selection stays on
+the same key when results arrive; typing selects the top match again.
+
+Set `reason` when a command is unavailable. It replaces the description and is
+associated with the option for screen readers. Enter, Tab, and click keep the
+list open, perform no action, and announce the reason. Legacy `disabled` still
+prevents selection and keeps the description.
+
+An action returning `"cancelled"` restores the exact `/…` token and mentions
+when the draft is unchanged. Rejections use the same restoration guard. The
+caret returns after the token and the list stays closed until the next edit.
+The persistent status line shows `busyLabel` while working, `{ done }` for
+about three seconds, and a failure message for about six seconds or until the
+next edit. Command failures are reported once there, without calling `onError`.
+The visible status hides while suggestions are open and takes no layout space.
+
+Only plain Enter or Tab chooses a command. Shift+Enter breaks the line,
+Shift+Tab moves focus back, and Ctrl/⌘+Enter sends even with suggestions open.
+Nothing chooses during IME composition. Escape closes suggestions for the
+current `/`, including while more text is typed into that token; a new `/`
+can open them again.
 
 ### Root and timeline
 

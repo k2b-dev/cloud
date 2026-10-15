@@ -570,6 +570,24 @@ const copy = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      compactLabel: "Compact chat",
+      compactDescription: "Summarize older history to free up room",
+      compactBusy: "Compacting chat …",
+      compactDone: "Compacted",
+      forkLabel: "Fork chat",
+      forkDescription: "New chat from the latest response, with this draft",
+      forkBusy: "Forking chat …",
+      forkDone: "Forked. Your draft came along.",
+      newChatLabel: "New chat",
+      newChatDescription: "Start empty; this chat stays in the list",
+      commandNeedsChat: "Available inside a chat",
+      commandNeedsMessages: "Available once the chat has messages",
+      commandNeedsAnswer: "Available after the first response",
+      commandNeedsIdle: "Available when the response is done",
+      assignProjectDescription: "Assign this chat to Project",
+      compactFailed: ({ reason }: { reason: string }) => `Compacting did not work: ${reason}. Your draft is unchanged.`,
+      forkFailed: ({ reason }: { reason: string }) => `Forking did not work: ${reason}. Your draft is unchanged.`,
+      newChatDraftKept: ({ title }: { title: string }) => `Your draft stays in the chat “${title}”.`,
       text: ({ value }: { value: string }) => value,
       archiveChat: ({ title }: { title: string }) => `Archive "${title}"?`,
       deleteNamed: ({ name }: { name: string }) => `Delete "${name}"?`,
@@ -600,6 +618,24 @@ const copy = i18n.define({
         `${count === 1 ? "1 run" : `${count} runs`} · page ${page} of ${pages}`,
     },
     de: {
+      compactLabel: "Chat kompaktieren",
+      compactDescription: "Älteren Verlauf zusammenfassen, damit wieder Platz ist",
+      compactBusy: "Chat wird kompaktiert …",
+      compactDone: "Kompaktiert",
+      forkLabel: "Chat abzweigen",
+      forkDescription: "Neuer Chat ab der letzten Antwort, mit diesem Entwurf",
+      forkBusy: "Chat wird abgezweigt …",
+      forkDone: "Abgezweigt. Dein Entwurf ist mitgekommen.",
+      newChatLabel: "Neuer Chat",
+      newChatDescription: "Leer anfangen; dieser Chat bleibt in der Liste",
+      commandNeedsChat: "Geht erst in einem Chat",
+      commandNeedsMessages: "Geht erst, wenn der Chat Nachrichten hat",
+      commandNeedsAnswer: "Geht erst nach der ersten Antwort",
+      commandNeedsIdle: "Geht, sobald die Antwort fertig ist",
+      assignProjectDescription: "Chat diesem Projekt zuordnen",
+      compactFailed: ({ reason }: { reason: string }) => `Kompaktieren hat nicht geklappt: ${reason}. Dein Entwurf ist unverändert.`,
+      forkFailed: ({ reason }: { reason: string }) => `Abzweigen hat nicht geklappt: ${reason}. Dein Entwurf ist unverändert.`,
+      newChatDraftKept: ({ title }: { title: string }) => `Dein Entwurf bleibt im Chat „${title}“.`,
       text: ({ value }: { value: string }) => germanText[value] ?? value,
       archiveChat: ({ title }: { title: string }) => `„${title}“ archivieren?`,
       deleteNamed: ({ name }: { name: string }) => `„${name}“ löschen?`,
@@ -647,3 +683,6 @@ export const assistantBrowserText = (value: string): string => assistantBrowserC
 
 export const assistantBrowserCopy = () =>
   copy.resolve([typeof document === "undefined" ? copy.baseLocale : document.documentElement.lang || copy.baseLocale]).t;
+
+export const assistantCopyFor = (locale: string) => copy.resolve([locale]).t;
+export type AssistantCopy = ReturnType<typeof assistantCopyFor>;
