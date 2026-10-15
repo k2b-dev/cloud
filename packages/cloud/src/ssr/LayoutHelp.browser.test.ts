@@ -250,25 +250,34 @@ for (const host of ["grids", "pulse"] as const)
       try {
         expect(await page.locator("article h3").textContent()).toBe("Topic 0");
         expect(await page.locator(".help-article-toc-icon, .help-section-icon, [data-help-icon]").count()).toBe(0);
-        if (viewport.width < 768) {
-          expect(await page.locator(".help-article-aside").isVisible()).toBe(false);
-          await page.getByRole("button", { name: "On this page" }).waitFor();
-          continue;
-        }
+        const phone = viewport.width < 768;
+        expect(await page.locator(".help-article-aside").isVisible()).toBe(!phone);
         const toc = page.locator(".help-article-aside .k2b-toc");
-        expect(await toc.isVisible()).toBe(true);
         expect(await toc.locator("a").allTextContents()).toEqual(Array.from({ length: 8 }, (_, index) => `Section ${index}`));
         expect(await toc.locator("i").count()).toBe(0);
         // The host, not the window, scrolls the article.
-        await page.locator(".help-article-layout").evaluate((element) => {
-          let scroller = element.parentElement;
-          while (scroller && !(scroller.scrollHeight > scroller.clientHeight && /auto|scroll/.test(getComputedStyle(scroller).overflowY)))
-            scroller = scroller.parentElement;
-          scroller!.scrollTop = 2000;
+        const scroller = await page.locator(".help-article-layout").evaluateHandle((element) => {
+          let box = element.parentElement;
+          while (box && !(box.scrollHeight > box.clientHeight && /auto|scroll/.test(getComputedStyle(box).overflowY)))
+            box = box.parentElement;
+          if (!box || box === document.scrollingElement || box === document.body) throw new Error("The host does not scroll the article");
+          return box;
         });
-        await page.waitForFunction(
-          () => document.querySelector('.help-article-aside a[aria-current="location"]')?.textContent !== "Section 0",
-        );
+        await scroller.evaluate((element) => {
+          element.scrollTop = 2000;
+        });
+        await page.waitForFunction(() => {
+          const current = document.querySelector('.help-article-aside a[aria-current="location"]')?.textContent;
+          return current !== undefined && current !== "Section 0";
+        });
+        if (!phone) continue;
+        // Open the menu where the reader is: a pointer click would first scroll the trigger back into view.
+        await page.getByRole("button", { name: "On this page" }).dispatchEvent("click");
+        await page.getByRole("menuitemradio", { name: "Section 6" }).click();
+        await page.waitForFunction((element) => {
+          const top = document.getElementById("section-6")!.getBoundingClientRect().top - element.getBoundingClientRect().top;
+          return top >= -1 && top < 120;
+        }, scroller);
       } finally {
         await page.close();
       }
