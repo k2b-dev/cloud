@@ -10,7 +10,7 @@
  * identical ones. Package plugins carry the same bundle and are verified and
  * stored the same way; see `plugins.ts`.
  */
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -200,10 +200,29 @@ export const placePlugin = async (incoming: string, digest: string, root = plugi
   await rename(incoming, target);
 };
 
-/** Whether the store holds the plugin with `digest`. */
-export const hasStoredPlugin = async (digest: string, root = pluginsDirectory()): Promise<boolean> =>
-  DIGEST.test(digest) &&
-  Boolean((await stat(join(pluginStoreDirectory(root), digest, CLOUD_CLI_PLUGIN_ENTRY)).catch(() => null))?.isFile());
+/** Whether the store holds a complete plugin with `digest`, without rehashing its files. */
+export const hasStoredPlugin = async (digest: string, root = pluginsDirectory()): Promise<boolean> => {
+  if (!DIGEST.test(digest)) return false;
+  const directory = join(pluginStoreDirectory(root), digest);
+  try {
+    const raw: unknown = JSON.parse(await readFile(join(directory, "manifest.json"), "utf8"));
+    const manifest = parseCloudCliPluginManifest(raw);
+    if (manifest.digest !== digest) return false;
+    for (const file of manifest.files) {
+      const entry = await lstat(join(directory, file.path));
+      if (!entry.isFile() || entry.size !== file.size) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** Remove exactly one stored bundle; package operations must not sweep the shared store. */
+export const removeStoredPlugin = async (digest: string, root = pluginsDirectory()): Promise<void> => {
+  if (!DIGEST.test(digest)) throw new PluginError("Invalid plugin digest.");
+  await rm(join(pluginStoreDirectory(root), digest), { recursive: true, force: true });
+};
 
 /** Load the locked plugin `name` from the store. */
 export const loadStoredPlugin = async (

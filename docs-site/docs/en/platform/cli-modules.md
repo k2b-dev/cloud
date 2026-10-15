@@ -918,6 +918,10 @@ and `CLD_CONFIG`. Installing the same module again replaces its record and
 removes an old-format directory of that ID. Skill targets sync automatically
 after package install and removal too.
 
+Removing or replacing a package deletes only its own old bundle, and only if
+no profile lock in the current config or remaining package record uses it.
+Other unused bundles are removed at the next served plugin change.
+
 Old packages with `cld.apiVersion` and `cld.entry` are refused. Their authors
 must re-pack with `cli-pack.ts` and publish the new package. Existing
 `plugins/<id>/` directories are listed as `incompatible` and never loaded.

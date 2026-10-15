@@ -441,6 +441,35 @@ describe("cld package plugins", () => {
     expect(await readdir(join(root, "locks"))).toEqual([]);
   }, 30_000);
 
+  test("package changes prune only their previous bundle and preserve another config's locks", async () => {
+    const dir = await tempDir();
+    const root = join(dir, "cloud", "cld", "plugins");
+    const configA = join(dir, "a.json");
+    const configB = join(dir, "b.json");
+    const lockedDigest = "a".repeat(128);
+    const lockedEntry = join(root, "store", lockedDigest);
+    await mkdir(lockedEntry, { recursive: true });
+    await writeFile(join(lockedEntry, "cli.js"), moduleSource("served"));
+    await writeFile(
+      configA,
+      JSON.stringify({ profiles: { a: { plugins: { served: { app: "served", version: "1", digest: lockedDigest } } } } }),
+    );
+    const install = await runCli(["plugins", "install", echoBuild, "--yes"], dir, configB);
+    expect(install.exitCode, install.stderr).toBe(0);
+    const previous = (await readPackagePlugins(root)).echo!;
+    expect(await Bun.file(join(lockedEntry, "cli.js")).exists()).toBe(true);
+    const pkg = await packInlinePlugin(join(dir, "echo-v2"), moduleSource("echo"), "@k2b-test/cld-plugin-echo", "2.0.0");
+    const replace = await runCli(["plugins", "install", pkg, "--yes"], dir, configB);
+    expect(replace.exitCode, replace.stderr).toBe(0);
+    const current = (await readPackagePlugins(root)).echo!;
+    expect(current.digest).not.toBe(previous.digest);
+    expect((await readdir(join(root, "store"))).sort()).toEqual([lockedDigest, current.digest].sort());
+    expect(await hasStoredPlugin(current.digest, root)).toBe(true);
+    const remove = await runCli(["plugins", "remove", "echo"], dir, configB);
+    expect(remove.exitCode, remove.stderr).toBe(0);
+    expect(await readdir(join(root, "store"))).toEqual([lockedDigest]);
+  });
+
   test("never runs code before confirmation or conflict checks", async () => {
     const dir = await tempDir();
     const marker = join(dir, "executed");
@@ -619,6 +648,30 @@ test("nested bundle roots ignore foreign files outside them and reinstall repair
   await writeFile(join(pkg, "package.json"), JSON.stringify({ ...raw, cld: { manifest: "bundle-link/manifest.json" } }));
   await symlink("bundle", join(pkg, "bundle-link"));
   await expectPluginError(stagePlugin(pkg), "error", "symlink");
+});
+
+test("reinstalling a package repairs missing manifests and missing or truncated references", async () => {
+  const dir = await tempDir();
+  const root = join(dir, "cloud", "cld", "plugins");
+  expect((await runCli(["plugins", "install", echoBuild, "--yes"], dir)).exitCode).toBe(0);
+  const record = (await readPackagePlugins(root)).echo!;
+  const stored = join(root, "store", record.digest);
+  const reference = join(stored, "references", "index.md");
+  const expected = await readFile(reference, "utf8");
+  const mutations = [() => rm(join(stored, "manifest.json")), () => rm(reference), () => writeFile(reference, "# Echo")];
+  for (const mutate of mutations) {
+    await mutate();
+    expect(await hasStoredPlugin(record.digest, root)).toBe(false);
+    const listed = await runCli(["plugins", "list", "--json"], dir);
+    expect(JSON.parse(listed.stdout).plugins[0].status).toBe("error");
+    const reinstall = await runCli(["plugins", "install", echoBuild, "--yes"], dir);
+    expect(reinstall.exitCode, reinstall.stderr).toBe(0);
+    expect(await hasStoredPlugin(record.digest, root)).toBe(true);
+    expect(await readFile(reference, "utf8")).toBe(expected);
+    const printed = await runCli(["echo", "reference"], dir);
+    expect(printed.exitCode, printed.stderr).toBe(0);
+    expect(printed.stdout).toBe(expected);
+  }
 });
 
 test("package names never resolve inherited object properties as profile locks", async () => {

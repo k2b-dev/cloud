@@ -34,6 +34,7 @@ import {
   readPluginLock,
   readServedPlugins,
   readStoredReference,
+  removeStoredPlugin,
   resolveShortNames,
   storePlugin,
 } from "./plugin-store";
@@ -2187,6 +2188,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
             const config = await loadConfig();
             check(config);
             const packages = await readPackagePlugins();
+            const previous = Object.hasOwn(packages, id) ? packages[id] : undefined;
             const replaced = Object.hasOwn(packages, id) || (await legacyPlugins()).some((plugin) => plugin.id === id);
             await placePlugin(download.incoming, manifest.digest);
             packages[id] = {
@@ -2198,7 +2200,9 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
             };
             await writePackagePlugins(packages);
             await removePlugin(id);
-            await collectPluginGarbage(await referencedDigests(config));
+            if (previous && previous.digest !== manifest.digest && !(await referencedDigests(config)).has(previous.digest)) {
+              await removeStoredPlugin(previous.digest);
+            }
             await syncSkills(config, locale);
             return replaced;
           }),
@@ -2309,14 +2313,14 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
         withDirectoryLock(packagesLockPath(), async () => {
           const latest = await loadConfig();
           const packages = await readPackagePlugins();
-          const recorded = Object.hasOwn(packages, name);
+          const previous = Object.hasOwn(packages, name) ? packages[name] : undefined;
           const legacy = await removePlugin(name);
-          if (!recorded && !legacy) throw new CliError(`Plugin "${name}" is not installed.`, 1, `Plugin "${name}" ist nicht installiert.`);
-          if (recorded) {
+          if (!previous && !legacy) throw new CliError(`Plugin "${name}" is not installed.`, 1, `Plugin "${name}" ist nicht installiert.`);
+          if (previous) {
             delete packages[name];
             await writePackagePlugins(packages);
+            if (!(await referencedDigests(latest)).has(previous.digest)) await removeStoredPlugin(previous.digest);
           }
-          await collectPluginGarbage(await referencedDigests(latest));
           await syncSkills(latest, locale);
         }),
       );

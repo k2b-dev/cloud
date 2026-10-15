@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { type LockedPlugin, readPluginLock, readServedPlugins, resolveShortNames } from "./plugin-store";
+import {
+  hasStoredPlugin,
+  type LockedPlugin,
+  readPluginLock,
+  readServedPlugins,
+  removeStoredPlugin,
+  resolveShortNames,
+} from "./plugin-store";
 
 const entry = (metadata: Partial<LockedPlugin> = {}): LockedPlugin => ({
   app: "test-app",
@@ -131,7 +138,7 @@ describe("plugin lock metadata", () => {
 
 describe("shared bundle verification", () => {
   test("served and local readers share verification, module checks, reuse and failure cleanup", async () => {
-    const { mkdtemp, readdir, rm } = await import("node:fs/promises");
+    const { cp, mkdir, mkdtemp, readdir, rm, symlink, writeFile } = await import("node:fs/promises");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
     const { cloudCliPluginDigest, sha512Hex } = await import("@k2b/cloud/cli");
@@ -162,6 +169,27 @@ describe("shared bundle verification", () => {
       expect(local.module.summary).toBe("Verified");
       await placePlugin(local.incoming, manifest.digest, root);
       expect(await readdir(store)).toEqual([manifest.digest]);
+      expect(await hasStoredPlugin(manifest.digest, root)).toBe(true);
+      // A valid manifest from another bundle cannot identify this directory.
+      const otherDigest = "b".repeat(128);
+      await cp(join(store, manifest.digest), join(store, otherDigest), { recursive: true });
+      expect(await hasStoredPlugin(otherDigest, root)).toBe(false);
+      await removeStoredPlugin(otherDigest, root);
+      const reference = join(store, manifest.digest, "references", "index.md");
+      const linkedReference = join(root, "reference.md");
+      await writeFile(linkedReference, bytes.get("references/index.md")!);
+      await rm(reference);
+      await symlink(linkedReference, reference);
+      expect(await hasStoredPlugin(manifest.digest, root)).toBe(false);
+      await rm(reference);
+      await mkdir(reference);
+      expect(await hasStoredPlugin(manifest.digest, root)).toBe(false);
+      await rm(reference, { recursive: true });
+      await writeFile(reference, bytes.get("references/index.md")!);
+      await writeFile(join(store, manifest.digest, "manifest.json"), "{}");
+      expect(await hasStoredPlugin(manifest.digest, root)).toBe(false);
+      await writeFile(join(store, manifest.digest, "manifest.json"), JSON.stringify(manifest));
+      expect(await hasStoredPlugin(manifest.digest, root)).toBe(true);
       for (const size of [-1, 1]) {
         await expect(
           downloadPlugin(
@@ -185,6 +213,26 @@ describe("shared bundle verification", () => {
         ),
       ).rejects.toThrow('exports the module "other"');
       expect(await readdir(store)).toEqual([manifest.digest]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("removes only the validated digest, leaving other bundles and incoming directories", async () => {
+    const { mkdir, mkdtemp, readdir, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const root = await mkdtemp(join(tmpdir(), "remove-plugin-store-"));
+    const digest = "a".repeat(128);
+    const otherDigest = "b".repeat(128);
+    const store = join(root, "store");
+    try {
+      for (const name of [digest, otherDigest, ".incoming-test"]) await mkdir(join(store, name), { recursive: true });
+      for (const invalid of ["..", "../store", ".incoming-test", "", "A".repeat(128)]) {
+        await expect(removeStoredPlugin(invalid, root)).rejects.toThrow("Invalid plugin digest");
+      }
+      await removeStoredPlugin(digest, root);
+      expect((await readdir(store)).sort()).toEqual([".incoming-test", otherDigest]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
