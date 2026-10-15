@@ -430,6 +430,83 @@ describe("Yjs provider storage exhaustion", () => {
       Object.assign(globalThis, { setTimeout: originalSetTimeout });
     }
   });
+
+  test("unsent edits keep the retry budget until storage accepts a write", () => {
+    const doc = new Y.Doc();
+    const fatal: string[] = [];
+    const timers: Array<() => void> = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
+    try {
+      const provider = createYjsProvider({
+        doc,
+        awareness: new Awareness(doc),
+        noteId: NOTE_ID,
+        appUrl: "http://localhost",
+        onFatal: (error) => fatal.push(error.code),
+      });
+      provider.connect();
+      const ready = (socket: FakeWebSocket) => {
+        socket.open();
+        socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID } });
+      };
+      const rejectWrite = (socket: FakeWebSocket) => {
+        socket.message({ type: notebooksYjs.wsType.error, payload: { code: "STORAGE_EXHAUSTED", message: "full", noteId: NOTE_ID } });
+        socket.onclose?.({ code: 1012, reason: "STORAGE_EXHAUSTED" });
+      };
+      ready(FakeWebSocket.instances[0]!);
+      doc.getText("content").insert(0, "unsent");
+      expect(provider.hasUnsentChanges()).toBe(true);
+      rejectWrite(FakeWebSocket.instances[0]!);
+      // Every reconnect reads fine and resends the edit, which storage rejects again.
+      for (let attempt = 1; attempt < 5; attempt++) {
+        timers.shift()!();
+        const socket = FakeWebSocket.instances.at(-1)!;
+        ready(socket);
+        expect(syncPublishes(socket)).toHaveLength(1);
+        rejectWrite(socket);
+      }
+      expect(fatal).toEqual(["STORAGE_EXHAUSTED"]);
+      expect(timers).toHaveLength(0);
+      expect(provider.hasUnsentChanges()).toBe(true);
+      provider.dispose();
+    } finally {
+      Object.assign(globalThis, { setTimeout: originalSetTimeout });
+    }
+  });
+
+  test("an echoed write resets the storage retry budget", () => {
+    const doc = new Y.Doc();
+    const fatal: string[] = [];
+    const timers: Array<() => void> = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
+    try {
+      const provider = createYjsProvider({
+        doc,
+        awareness: new Awareness(doc),
+        noteId: NOTE_ID,
+        appUrl: "http://localhost",
+        onFatal: (error) => fatal.push(error.code),
+      });
+      provider.connect();
+      const socket = FakeWebSocket.instances[0]!;
+      socket.open();
+      socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID } });
+      for (let attempt = 1; attempt < 5; attempt++) {
+        socket.message({ type: notebooksYjs.wsType.error, payload: { code: "STORAGE_EXHAUSTED", message: "full", noteId: NOTE_ID } });
+      }
+      doc.getText("content").insert(0, "saved");
+      const [payload] = syncPublishes(socket);
+      socket.message({ type: notebooksYjs.wsType.syncPush, payload: { noteId: NOTE_ID, updates: [{ cursor: "1-1", payload }] } });
+      expect(provider.hasUnsentChanges()).toBe(false);
+      socket.message({ type: notebooksYjs.wsType.error, payload: { code: "STORAGE_EXHAUSTED", message: "full", noteId: NOTE_ID } });
+      expect(fatal).toEqual([]);
+      provider.dispose();
+    } finally {
+      Object.assign(globalThis, { setTimeout: originalSetTimeout });
+    }
+  });
 });
 
 const syncPublishes = (socket: FakeWebSocket) =>
