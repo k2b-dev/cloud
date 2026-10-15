@@ -35,8 +35,8 @@ export function TableOfContents(props: TableOfContentsProps): JSX.Element {
     const content = resolveMaybeAccessor(props.contentRoot);
     const heading = (id: string): Element | null => {
       const element = document.getElementById(id);
-      if (!content || !element || content.contains(element)) return element;
-      // The same id earlier on the page must not stand in for the heading inside the content root.
+      if (!content || (element && content.contains(element))) return element;
+      // The same id elsewhere on the page, or a root outside the document tree, needs a lookup within the root.
       for (const candidate of content.querySelectorAll("[id]")) if (candidate.id === id) return candidate;
       return null;
     };
