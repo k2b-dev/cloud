@@ -3,6 +3,22 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.42.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.41.0...cloud-v0.42.0) (2026-10-15)
+
+
+### Features
+
+* **cloud:** keep the webhook tester and other person-chosen requests away from internal addresses ([#1192](https://github.com/k2b-dev/cloud/issues/1192)) ([7efd4e7](https://github.com/k2b-dev/cloud/commit/7efd4e7e64d8e66cb9322bc0a0cadaebab36afc1))
+
+
+### Bug Fixes
+
+* **ai:** describe capability inputs to every model provider in a shape it accepts (Closes [#1149](https://github.com/k2b-dev/cloud/issues/1149)) ([#1203](https://github.com/k2b-dev/cloud/issues/1203)) ([7cdd720](https://github.com/k2b-dev/cloud/commit/7cdd720962eaf43388bcaca1bed88500330479c7))
+* **chat:** send the messages of a chat one after the other in the order typed ([#1185](https://github.com/k2b-dev/cloud/issues/1185)) ([9c93635](https://github.com/k2b-dev/cloud/commit/9c936358d1256a8911af2677d876e09c39b9208d))
+* **mail:** return to the view a search started from when the search is cleared ([#1202](https://github.com/k2b-dev/cloud/issues/1202)) ([2f6098c](https://github.com/k2b-dev/cloud/commit/2f6098c897fea3debc598d70d4abe8119d7718c7)), closes [#1156](https://github.com/k2b-dev/cloud/issues/1156)
+* **notebooks:** keep unsent text on screen when sync ends instead of reloading ([#1198](https://github.com/k2b-dev/cloud/issues/1198)) ([80f2445](https://github.com/k2b-dev/cloud/commit/80f2445a5313d3169c383003df71f8da032bb2e5))
+* **spaces:** reject a literal \n that agents send instead of a line break ([#1196](https://github.com/k2b-dev/cloud/issues/1196)) ([5fd97f0](https://github.com/k2b-dev/cloud/commit/5fd97f0e486001fa48cc9c5682a320ff8c066640)), closes [#1178](https://github.com/k2b-dev/cloud/issues/1178)
+
 ## [0.41.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.40.0...cloud-v0.41.0) (2026-10-15)
 
 

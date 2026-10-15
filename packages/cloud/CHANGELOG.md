@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.35.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.34.0...npm-cloud-v0.35.0) (2026-10-15)
+
+
+### Features
+
+* **cloud:** keep the webhook tester and other person-chosen requests away from internal addresses ([#1192](https://github.com/k2b-dev/cloud/issues/1192)) ([7efd4e7](https://github.com/k2b-dev/cloud/commit/7efd4e7e64d8e66cb9322bc0a0cadaebab36afc1))
+
+
+### Bug Fixes
+
+* **ai:** describe capability inputs to every model provider in a shape it accepts (Closes [#1149](https://github.com/k2b-dev/cloud/issues/1149)) ([#1203](https://github.com/k2b-dev/cloud/issues/1203)) ([7cdd720](https://github.com/k2b-dev/cloud/commit/7cdd720962eaf43388bcaca1bed88500330479c7))
+
 ## [0.34.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.33.0...npm-cloud-v0.34.0) (2026-10-15)
 
 
