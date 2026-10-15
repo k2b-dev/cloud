@@ -1087,15 +1087,15 @@ test("member methods forward arguments, and the reader's own changes refresh tha
     ["leave", conversation.id, "successor"],
     ["people", "search", undefined],
   ]);
-  // Each of the reader's own changes reads its chat's row again, not the whole list; another member's permission
-  // changes nothing the reader sees. Leaving reads the membership-filtered list, which decides the sidebar.
+  // Each of the reader's own changes reads its chat's row again, not the whole list; a permission change may be the
+  // reader's own, so it reads the row too. Leaving reads the membership-filtered list, which decides the sidebar.
   expect(reloads).toBe(1);
-  expect(details).toBe(5);
+  expect(details).toBe(6);
   expect(store.openConversation?.conversation?.title).toBe("Refreshed");
   store.dispose();
 });
 
-for (const operation of ["create", "updateDetails", "addMembers", "removeMember", "leave"] as const)
+for (const operation of ["create", "updateDetails", "addMembers", "updateMember", "removeMember", "leave"] as const)
   test(`${operation} awaits the follow-up GET but preserves mutation success when it fails`, async () => {
     const original = globalThis.fetch;
     const refresh = deferred<Response>();
@@ -1108,7 +1108,9 @@ for (const operation of ["create", "updateDetails", "addMembers", "removeMember"
           ? conversation
           : operation === "addMembers"
             ? { added: 1 }
-            : { success: true as const, keptThroughGroup: true };
+            : operation === "updateMember"
+              ? { success: true as const }
+              : { success: true as const, keptThroughGroup: true };
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input), "http://localhost");
@@ -1132,9 +1134,11 @@ for (const operation of ["create", "updateDetails", "addMembers", "removeMember"
             ? store.updateDetails(conversation.id, { name: "Updated" })
             : operation === "addMembers"
               ? store.addMembers(conversation.id, [])
-              : operation === "removeMember"
-                ? store.removeMember(conversation.id, "access")
-                : store.leave(conversation.id);
+              : operation === "updateMember"
+                ? store.updateMember(conversation.id, "access", "write")
+                : operation === "removeMember"
+                  ? store.removeMember(conversation.id, "access")
+                  : store.leave(conversation.id);
       const pending = mutation.then((value) => {
         settled = true;
         return value;
@@ -1150,9 +1154,11 @@ for (const operation of ["create", "updateDetails", "addMembers", "removeMember"
             ? `PATCH /api/chat/conversations/${conversation.id}`
             : operation === "addMembers"
               ? `POST /api/chat/conversations/${conversation.id}/members`
-              : operation === "removeMember"
-                ? `DELETE /api/chat/conversations/${conversation.id}/members/access`
-                : `POST /api/chat/conversations/${conversation.id}/leave`,
+              : operation === "updateMember"
+                ? `PATCH /api/chat/conversations/${conversation.id}/members/access`
+                : operation === "removeMember"
+                  ? `DELETE /api/chat/conversations/${conversation.id}/members/access`
+                  : `POST /api/chat/conversations/${conversation.id}/leave`,
         operation === "leave" ? "GET /api/chat/conversations" : `GET /api/chat/conversations/${conversation.id}`,
       ]);
       expect(store.openConversation?.status).toBe("live");
@@ -1179,6 +1185,21 @@ test("leaving the open chat reaches no-access on the refresh 404, without a live
   expect(store.openConversation?.conversation).toBeNull();
   expect(store.sidebar).toEqual([]);
   expect(connection.get("conversation").closed).toBe(true);
+  store.dispose();
+});
+
+test("changing the reader's own permission updates the open chat's effective permission", async () => {
+  let demoted = false;
+  const { store } = fixture({
+    updateMember: async () => {
+      demoted = true;
+      return { success: true };
+    },
+    conversation: async () => ({ ...conversation, permission: demoted ? "read" : "admin", rev: demoted ? 2 : 1 }),
+  });
+  await store.updateMember(conversation.id, "own-access", "read");
+  expect(store.openConversation?.conversation?.permission).toBe("read");
+  expect(store.sidebar.find((row) => row.id === conversation.id)?.permission).toBe("read");
   store.dispose();
 });
 

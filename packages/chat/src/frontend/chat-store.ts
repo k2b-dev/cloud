@@ -595,8 +595,12 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       await sidebar(() => refetchRow(id)).catch(() => {});
       return result;
     },
-    updateMember: (id: string, accessId: string, permission: z.infer<typeof PermissionSchema>) =>
-      api.updateMember(id, accessId, permission),
+    // The changed entry may be the reader's own, so the chat's effective permission is read again.
+    updateMember: async (id: string, accessId: string, permission: z.infer<typeof PermissionSchema>) => {
+      const result = await api.updateMember(id, accessId, permission);
+      await sidebar(() => refetchRow(id)).catch(() => {});
+      return result;
+    },
     removeMember: async (id: string, accessId: string) => {
       const result = await api.removeMember(id, accessId);
       await sidebar(() => refetchRow(id)).catch(() => {});
