@@ -744,6 +744,18 @@ describe("AI capability catalog", () => {
           ],
         },
         mixed: { ...tuple, minItems: 1 },
+        defaultedTuple: {
+          type: "array",
+          prefixItems: [
+            {
+              type: "object",
+              properties: { a: { type: "string", default: "A" }, default: { type: "string", default: "kept property" } },
+              additionalProperties: false,
+            },
+            { type: "object", properties: { b: { type: "string", default: "B" } }, additionalProperties: false },
+          ],
+          items: false,
+        },
         repeated: { type: "array", prefixItems: [string, string], items: false },
         closedMax: { type: "array", prefixItems: [string], items: false, maxItems: 5 },
         value: { oneOf: [tuple, { ...tuple, prefixItems: [number, string] }] },
@@ -802,6 +814,11 @@ describe("AI capability catalog", () => {
 
     const schema = aiCapabilityInputSchema(source);
     const operation = { kind: "set-content", content: "New content." };
+    expect(schema.parse({ operations: [operation], defaultedTuple: [{}, {}] })).toHaveProperty("defaultedTuple", [{}, {}]);
+    expect(reduced).toHaveProperty("properties.defaultedTuple.items.anyOf", [
+      { type: "object", properties: { a: string, default: string }, additionalProperties: false },
+      { type: "object", properties: { b: string }, additionalProperties: false },
+    ]);
     expect(schema.safeParse({ operations: [operation] }).success).toBe(true);
     expect(schema.safeParse({ operations: [] }).success).toBe(false);
     expect(schema.safeParse({ operations: [operation, operation] }).success).toBe(false);

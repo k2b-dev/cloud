@@ -436,6 +436,20 @@ const SCHEMA_KEYS = new Set([
   "definitions",
 ]);
 
+const stripSchemaDefaults = (value: unknown, key?: string): unknown => {
+  if (key === "const" || key === "enum" || key === "required" || key === "type" || key === "default") return value;
+  if (Array.isArray(value)) return value.map((schema) => stripSchemaDefaults(schema));
+  if (!value || typeof value !== "object") return value;
+  if (key === "properties" || key === "$defs" || key === "definitions") {
+    return Object.fromEntries(Object.entries(value).map(([name, schema]) => [name, stripSchemaDefaults(schema)]));
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([childKey]) => childKey !== "default")
+      .map(([childKey, childValue]) => [childKey, stripSchemaDefaults(childValue, childKey)]),
+  );
+};
+
 const reduceSchemaValue = (value: unknown, key?: string): unknown => {
   if (key === "const" || key === "default") return structuredClone(value);
   if (Array.isArray(value)) {
@@ -466,8 +480,12 @@ const reduceSchemaValue = (value: unknown, key?: string): unknown => {
     const rest = Array.isArray(output.prefixItems) ? output.items : output.additionalItems;
     // Extra items of an open tuple may be anything, so the AI side must not narrow them to the positions.
     const schemas = rest === undefined || rest === true ? [] : rest === false ? positions : [...positions, rest];
-    const distinct = schemas.filter(
-      (schema, index) => schemas.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(schema)) === index,
+    // Position-erased branches must leave defaults to the app's authoritative tuple schema.
+    const mergedSchemas = schemas.some((schema) => JSON.stringify(schema) !== JSON.stringify(schemas[0]))
+      ? schemas.map((schema) => stripSchemaDefaults(schema))
+      : schemas;
+    const distinct = mergedSchemas.filter(
+      (schema, index) => mergedSchemas.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(schema)) === index,
     );
     output.items = distinct.length === 0 ? {} : distinct.length === 1 ? distinct[0] : { anyOf: distinct };
     if (rest === false)
