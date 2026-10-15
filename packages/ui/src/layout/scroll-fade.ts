@@ -3,20 +3,25 @@ import { createEffect, onCleanup } from "solid-js";
 const selector = "[data-scroll-fade-mode]";
 const active = new WeakMap<HTMLElement, { users: number; stop: () => void }>();
 
+/** Self-contained because the sidebar inline script embeds its source. */
+export function scrollFadeEdges(body: HTMLElement): "top" | "bottom" | "both" | undefined {
+  const mode = body.getAttribute("data-scroll-fade-mode");
+  const horizontal = body.getAttribute("data-scroll-fade-axis") === "horizontal";
+  const overflow = horizontal ? body.scrollWidth - body.clientWidth : body.scrollHeight - body.clientHeight;
+  // Horizontal RTL scrollLeft starts at zero on the right and becomes negative.
+  const rtl = horizontal && getComputedStyle(body).direction === "rtl";
+  const offset = horizontal ? (rtl ? overflow + body.scrollLeft : body.scrollLeft) : body.scrollTop;
+  const top = mode === "both" && overflow > 1 && offset > 1;
+  const bottom = !!mode && overflow > 1 && overflow - offset > 1;
+  return top && bottom ? "both" : top ? "top" : bottom ? "bottom" : undefined;
+}
+
 /** Shared by hydrated components and the workspace's server-rendered scrollports. */
 function observeScrollFade(body: HTMLElement) {
   let entry = active.get(body);
   if (!entry) {
     const update = () => {
-      const mode = body.getAttribute("data-scroll-fade-mode");
-      const horizontal = body.getAttribute("data-scroll-fade-axis") === "horizontal";
-      const overflow = horizontal ? body.scrollWidth - body.clientWidth : body.scrollHeight - body.clientHeight;
-      // Horizontal RTL scrollLeft starts at zero on the right and becomes negative.
-      const rtl = horizontal && getComputedStyle(body).direction === "rtl";
-      const offset = horizontal ? (rtl ? overflow + body.scrollLeft : body.scrollLeft) : body.scrollTop;
-      const top = mode === "both" && overflow > 1 && offset > 1;
-      const bottom = !!mode && overflow > 1 && overflow - offset > 1;
-      const edges = top && bottom ? "both" : top ? "top" : bottom ? "bottom" : undefined;
+      const edges = scrollFadeEdges(body);
       if (edges) {
         if (body.getAttribute("data-scroll-fade") !== edges) body.setAttribute("data-scroll-fade", edges);
       } else if (body.hasAttribute("data-scroll-fade")) body.removeAttribute("data-scroll-fade");

@@ -40,7 +40,8 @@ This has two consequences:
   island mounts: a value typed into an input, focus, a text selection, or a
   scroll position. Keep islands small so that they mount soon after the page
   appears. Do not rely on input made before mount; derive the island's initial
-  state from its props or the URL.
+  state from its props or the URL. `AppWorkspace.SidebarBody` restores its own
+  scroll offset again on mount.
 - The server and the browser must render the same markup from the same props.
   When they differ, the page moves as the island mounts. Do not read
   browser-only values such as the window width, `localStorage`, or the
