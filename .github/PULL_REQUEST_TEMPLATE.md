@@ -4,9 +4,9 @@
 
 Closes #
 
-## How do we prevent this next time?
+## How do we prevent this next time? (guard: check/test/convention, or why none)
 
-<!-- (guard: check/test/convention, or why none) A fix also adds its lesson to docs-site/docs/en/contributing/lessons-learned.md. -->
+<!-- A fix also adds its lesson to docs-site/docs/en/contributing/lessons-learned.md. -->
 
 ## Checklist
 
