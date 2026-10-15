@@ -8,6 +8,7 @@ import { createDomTestHarness } from "../../../../../../ui/test/dom";
 import type { YjsProviderOptions } from "../../../lib/yjs";
 import type { YjsProviderError } from "../../../lib/yjs/provider";
 import { notebookWorkspaceMessages } from "../../messages";
+import { SIDEBAR_FILTER_CHANGED_EVENT } from "../detail/events";
 
 const refreshCurrentPath = mock(() => {});
 const load = async () => {
@@ -303,6 +304,19 @@ describe("sync ended editor recovery", () => {
     expect(instance.dispose).not.toHaveBeenCalled();
     expect(editor.view()).toBe(view);
     expect(view.state.doc.toString()).toBe(text);
+  });
+
+  test("a cancelled popstate keeps a sidebar filter chosen after the note opened", async () => {
+    using editor = mountNoteEditor();
+    editor.end();
+    const filtered = "/app/notebooks/Book01/notes/Note01?mode=write&view=recents#heading-keep-me";
+    window.history.replaceState(window.history.state, "", filtered);
+    window.dispatchEvent(new Event(SIDEBAR_FILTER_CHANGED_EVENT));
+    window.history.replaceState({ back: true }, "", "/app/notebooks/Book01/notes/Third1?mode=write");
+    window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+    await flush();
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(filtered);
   });
 
   test("a cancelled request that manages its own history leaves the address and history alone", async () => {

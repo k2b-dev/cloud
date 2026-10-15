@@ -57,5 +57,7 @@ export const NAMED_BLOCK_SCROLL_EVENT = "notebooks.namedBlocks.scrollTo";
  * that address, so read the address from `href`, not from `window.location`.
  */
 export const NOTE_SOFT_NAVIGATED_EVENT = "notebooks.note.softNavigated";
+/** Sidebar → editor: the filter replaced the shown note's address in place, so a cancelled Back restores this one. */
+export const SIDEBAR_FILTER_CHANGED_EVENT = "notebooks.sidebar.filterChanged";
 /** Editor → local workspace surfaces while the persisted projection catches up. */
 export const NOTE_TITLE_CHANGED_EVENT = "notebooks.note.titleChanged";

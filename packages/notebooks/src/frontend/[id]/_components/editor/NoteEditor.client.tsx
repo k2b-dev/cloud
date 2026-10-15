@@ -42,6 +42,7 @@ import {
   NOTE_TITLE_CHANGED_EVENT,
   PRESENCE_EVENT,
   RICH_MODE_CHANGED_EVENT,
+  SIDEBAR_FILTER_CHANGED_EVENT,
   TASKS_UPDATE_EVENT,
   TOC_SCROLL_EVENT,
   TOC_UPDATE_EVENT,
@@ -308,8 +309,13 @@ export default function NoteEditor(props: Props) {
       });
     };
 
+    const onFilterChanged = () => {
+      shownHref = window.location.href;
+    };
+
     document.addEventListener("click", onClick);
     window.addEventListener("popstate", onPopState);
+    window.addEventListener(SIDEBAR_FILTER_CHANGED_EVENT, onFilterChanged);
     onCleanup(
       registerSearchNavigation(async ({ href }) => {
         const target = inheritPresentationMode(href, window.location.href);
@@ -331,6 +337,7 @@ export default function NoteEditor(props: Props) {
     onCleanup(() => {
       document.removeEventListener("click", onClick);
       window.removeEventListener("popstate", onPopState);
+      window.removeEventListener(SIDEBAR_FILTER_CHANGED_EVENT, onFilterChanged);
       offSoftRequests();
       navigation.dispose();
     });
