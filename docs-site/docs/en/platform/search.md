@@ -438,7 +438,9 @@ supports tag filters, and returns the resource view after the user selects
 a result and confirms with **Add**. Store the
 structured `ref`; treat its title, preview, and links as presentation data.
 Set `requireReader` when the consumer must resolve the selected resource later,
-as AI Project references do.
+as AI Project references do. Set `resourceType` to list only resources whose
+`ref.type` matches that type, for example `"spaces.space"`. This filters picker
+results in the browser; the consumer still authorizes the chosen resource.
 
 ```ts
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";

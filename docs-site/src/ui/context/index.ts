@@ -19,10 +19,13 @@ import contentCode from "./content/code.md" with { type: "text" };
 import contentDocs from "./content/docs.md" with { type: "text" };
 import contentFiles from "./content/files.md" with { type: "text" };
 import contentIntl from "./content/intl.md" with { type: "text" };
+import contentKbd from "./content/kbd.md" with { type: "text" };
+import contentLabelChip from "./content/label-chip.md" with { type: "text" };
 import contentLogs from "./content/logs.md" with { type: "text" };
 import contentMarkdown from "./content/markdown.md" with { type: "text" };
 import contentMedia from "./content/media.md" with { type: "text" };
 import contentMessageRows from "./content/message-rows.md" with { type: "text" };
+import contentSteps from "./content/steps.md" with { type: "text" };
 import contentStructuredData from "./content/structured-data.md" with { type: "text" };
 import contentTables from "./content/tables.md" with { type: "text" };
 import contentTemplateEditor from "./content/template-editor.md" with { type: "text" };
@@ -74,6 +77,7 @@ import layoutPullToRefresh from "./layout/pull-to-refresh.md" with { type: "text
 import layoutScrollArea from "./layout/scroll-area.md" with { type: "text" };
 import layoutSettingsModal from "./layout/settings-modal.md" with { type: "text" };
 import layoutTabBar from "./layout/tab-bar.md" with { type: "text" };
+import layoutTableOfContents from "./layout/table-of-contents.md" with { type: "text" };
 import layoutWorkspace from "./layout/workspace.md" with { type: "text" };
 import inputMarkdownEditor from "./markdown-editor.md" with { type: "text" };
 import surfaceBaseStylesheet from "./surfaces/base-stylesheet.md" with { type: "text" };
@@ -155,6 +159,10 @@ const catalogContextSources = {
   "feedback/hover-preview": { file: "feedback/hover-preview.md", content: feedbackHoverPreview },
   "feedback/prompts": { file: "feedback/prompts.md", content: feedbackPrompts },
   "feedback/install-guide": { file: "feedback/install-guide.md", content: feedbackInstallGuide },
+  "content/kbd": { file: "content/kbd.md", content: contentKbd },
+  "content/label-chip": { file: "content/label-chip.md", content: contentLabelChip },
+  "content/steps": { file: "content/steps.md", content: contentSteps },
+  "layout/table-of-contents": { file: "layout/table-of-contents.md", content: layoutTableOfContents },
   "content/charts": { file: "content/charts.md", content: contentCharts },
   "content/tables": { file: "content/tables.md", content: contentTables },
   "content/calendar": { file: "surfaces/calendar.md", content: contentCalendar },

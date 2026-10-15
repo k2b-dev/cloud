@@ -25,13 +25,15 @@ describe("note PDF HTML", () => {
       templateId: "report",
     });
     expect(html).not.toContain(":::");
+    expect(html.match(/<svg class="k2b-callout__icon" aria-hidden="true"/g)).toHaveLength(5);
+    expect(html).toContain('<path d="M10.363 3.591l-8.106 13.534');
     expect(html).toContain('<h1 id="heading-trip-plan">Trip plan</h1>');
     for (const kind of NOTICES) {
       expect(html).toContain(`data-tone="${TONES[kind]}"`);
       expect(html).toContain(`Pack the <strong>${kind}</strong> kit.`);
       expect(html).toContain(`.k2b-notice-card[data-tone="${TONES[kind]}"]`);
     }
-    // The calm notice on paper: a light tint, no accent border, and the preset's text colour.
+    // The body keeps the preset's text colour on a tinted surface without an accent border.
     const notice = /\.k2b-notice-card \{([^}]*)\}/.exec(html)?.[1] ?? "";
     expect(notice).toContain("background: var(--notice-tint)");
     expect(notice).not.toContain("border:");

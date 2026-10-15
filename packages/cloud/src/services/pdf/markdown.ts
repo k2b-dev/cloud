@@ -127,19 +127,23 @@ hr { border: 0; border-top: 1px solid #d1d5db; margin: .9em 0; }
 };
 
 /**
- * Markdown info blocks print as the calm NoticeCard: a light tint per tone, no
- * border, and the preset's own text colour, so they stay readable on paper.
+ * Markdown callouts print with a light tint and no border. The inline icon
+ * and title use print-safe tone ink; the body keeps the preset's text colour.
  * The tints are a step stronger than on screen because paper and printers wash
  * them out. Every preset and application document shares them.
  */
 const INFO_BLOCK_PRINT_CSS = `
 .k2b-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .k2b-notice-card { margin: 0 0 1em; padding: .85em 1.05em; border-radius: .8em; background: var(--notice-tint); break-inside: avoid; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-.k2b-notice-card[data-tone="neutral"] { --notice-tint: #f1f2f4; }
-.k2b-notice-card[data-tone="info"] { --notice-tint: #e9f1fe; }
-.k2b-notice-card[data-tone="success"] { --notice-tint: #e6f6ee; }
-.k2b-notice-card[data-tone="warning"] { --notice-tint: #fcf2da; }
-.k2b-notice-card[data-tone="danger"] { --notice-tint: #fcebeb; }
+.k2b-notice-card[data-tone="neutral"] { --notice-tint: #f1f2f4; --notice-ink: #4b5563; }
+.k2b-notice-card[data-tone="info"] { --notice-tint: #e9f1fe; --notice-ink: #1d4ed8; }
+.k2b-notice-card[data-tone="success"] { --notice-tint: #e6f6ee; --notice-ink: #15803d; }
+.k2b-notice-card[data-tone="warning"] { --notice-tint: #fcf2da; --notice-ink: #92400e; }
+.k2b-notice-card[data-tone="danger"] { --notice-tint: #fcebeb; --notice-ink: #b91c1c; }
+.k2b-callout { display: grid; grid-template-columns: 1.25em minmax(0, 1fr); column-gap: .7em; }
+.k2b-callout > * { grid-column: 2; }
+.k2b-callout > .k2b-callout__icon { grid-column: 1; grid-row: 1 / span 2; width: 1.25em; height: 1lh; color: var(--notice-ink); }
+.k2b-callout > .k2b-notice-card__title { color: var(--notice-ink); }
 .k2b-notice-card__title { margin: 0 0 .25em; font-weight: 600; }
 .k2b-notice-card__body > :first-child { margin-top: 0; }
 .k2b-notice-card__body > :last-child { margin-bottom: 0; }

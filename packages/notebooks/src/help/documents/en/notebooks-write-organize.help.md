@@ -200,7 +200,7 @@ Use callouts for context, decisions, warnings, and status that readers must see 
 4. Close the callout with `:::` on its own line.
 :::
 
-A callout is a calm box: a light tint for its type, regular text, and no icon. The editor, Book, and PDF export show the same box. Spaces descriptions, comments, and Help show it too.
+A callout shows a type icon and a light tint. The icon and title use the tone color; body text stays neutral. The editor, Book, and PDF export show the same box. Spaces descriptions, comments, and Help show it too.
 
 **Readable boxes**
 

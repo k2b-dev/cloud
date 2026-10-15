@@ -407,6 +407,13 @@
 }
 .k2b-ui :is(.k2b-notice-card__head, .k2b-notice-card__title) + :is(.k2b-notice-card__description, .k2b-notice-card__body) { margin-top: 0.25rem; }
 .k2b-ui .k2b-notice-card__description + .k2b-notice-card__body { margin-top: 0.75rem; }
+/* Markdown callouts add a decorative type icon and a title in the tone colour.
+   The icon scales with the reading size and sits centred on the first text
+   line, so it adds no height. */
+.k2b-ui .k2b-notice-card.k2b-callout { display: grid; grid-template-columns: 1.25em minmax(0, 1fr); column-gap: 0.75em; align-items: start; }
+.k2b-ui .k2b-callout > * { grid-column: 2; }
+.k2b-ui .k2b-callout > .k2b-callout__icon { grid-column: 1; grid-row: 1 / span 2; width: 1.25em; height: 1.5em; height: 1lh; color: var(--k2b-notice-ink); }
+.k2b-ui .k2b-callout > .k2b-notice-card__title { color: var(--k2b-notice-ink); }
 .k2b-ui .k2b-notice-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
 @media (min-width: 48rem) {
   .k2b-ui .k2b-notice-grid[data-columns="two"],

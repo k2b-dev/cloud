@@ -218,8 +218,11 @@ phone chrome. This removes its exterior border, radius, shadow, and background
 below 48 rem. Embedded workspaces keep the default contained surface.
 
 Set `flat` on a workspace that is the page itself, such as an app's overview.
-It draws no border, corner radius, or shadow at any width, and its sidebar and
-content keep square outer corners.
+It removes the workspace's own border, corner radius, and shadow. Where the
+host shows the app area as a card, the outermost workspace is that card and
+gets its radius and frame, flat or not, so every app shows the same rounded
+card. Cloud does this from 1536 px for signed-in people and from 768 px on
+anonymous pages.
 
 Sidebar links use document navigation by default. Set `navigation="enhanced"`
 only inside an island that loads and applies the target state before committing

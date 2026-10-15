@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createMailActionOutcomes, MAIL_ACTION_OUTCOME_TTL_MS } from "./mail-action-outcomes";
+import { MAIL_ACTION_OUTCOME_TTL_MS } from "../../command-outcomes";
+import { createMailActionOutcomes } from "./mail-action-outcomes";
 
 describe("Mail action outcomes", () => {
   // Archive two conversations: one message in the Inbox, and one conversation filed in the Inbox and Projects.

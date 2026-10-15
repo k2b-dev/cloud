@@ -12,6 +12,7 @@ export type CloudResourcePickerOptions = {
   initialAppId?: string;
   excludeRefs?: readonly CloudResourceRef[];
   requireReader?: boolean;
+  resourceType?: string;
 };
 
 export const openCloudResourcePicker = (options: CloudResourcePickerOptions = {}): Promise<CloudResourcePickerItem | undefined> => {

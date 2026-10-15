@@ -4,25 +4,7 @@ import { DialogHeader } from "../feedback/prompts";
 import type { CalendarCommand } from "./Calendar";
 import { addDayKeys } from "./calendar-days";
 import type { CalendarMessages } from "./calendar-messages";
-
-const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
-
-/** The keys of a shortcut as the reader presses them, such as ["⇧", "N"] or ["Shift", "N"]. */
-export const shortcutKeys = (shortcut: string): string[] => {
-  const mac = isMac();
-  const names: Record<string, string> = {
-    shift: mac ? "⇧" : "Shift",
-    alt: mac ? "⌥" : "Alt",
-    ctrl: mac ? "⌃" : "Ctrl",
-    meta: mac ? "⌘" : "Meta",
-    mod: mac ? "⌘" : "Ctrl",
-    arrowup: "↑",
-    arrowdown: "↓",
-    arrowleft: "←",
-    arrowright: "→",
-  };
-  return shortcut.split("+").map((part) => names[part.toLowerCase()] ?? (part.length === 1 ? part.toUpperCase() : part));
-};
+import { Kbd } from "./Kbd";
 
 /**
  * The calendar's shortcuts: the same list the host registers for its dispatcher and its help. `alternatives` names
@@ -43,12 +25,12 @@ export const openCalendarShortcuts = (
               {(command) => (
                 <>
                   <dt>
-                    <For each={shortcutKeys(command.shortcut!)}>{(key) => <kbd class="k2b-calendar-shortcuts__key">{key}</kbd>}</For>
+                    <Kbd keys={command.shortcut!} />
                     <Show when={alternatives[command.id]}>
                       {(other) => (
                         <>
                           <span class="k2b-calendar-shortcuts__or">/</span>
-                          <For each={shortcutKeys(other())}>{(key) => <kbd class="k2b-calendar-shortcuts__key">{key}</kbd>}</For>
+                          <Kbd keys={other()} />
                         </>
                       )}
                     </Show>

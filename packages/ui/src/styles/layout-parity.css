@@ -2885,3 +2885,16 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
     display: none;
   }
 }
+
+.k2b-ui .k2b-toc[data-sticky="true"] { position: sticky; top: 0; align-self: start; }
+.k2b-ui .k2b-toc__title { margin: 0 0 0.375rem 0.875rem; color: var(--k2b-text-muted); font-size: 0.8125rem; font-weight: 600; }
+.k2b-ui .k2b-toc__list { display: flex; flex-direction: column; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.k2b-ui .k2b-toc__link { position: relative; display: block; padding: 0.3125rem 0.5rem 0.3125rem 0.875rem; border-radius: 0.5rem; color: var(--k2b-text-secondary); font-size: 0.8125rem; line-height: 1.4; text-decoration: none; }
+.k2b-ui .k2b-toc__link::before { content: ""; position: absolute; top: 0.4375rem; bottom: 0.4375rem; left: 0.25rem; width: 0.1875rem; border-radius: 999px; background: transparent; }
+.k2b-ui .k2b-toc__link[aria-current] { color: color-mix(in srgb, var(--app-accent, var(--k2b-action)) 70%, var(--k2b-text)); }
+.k2b-ui .k2b-toc__link[aria-current]::before { background: currentColor; }
+.k2b-ui .k2b-toc__link:hover { background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-toc__link:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-toc__link { min-height: 2.75rem; }
+}

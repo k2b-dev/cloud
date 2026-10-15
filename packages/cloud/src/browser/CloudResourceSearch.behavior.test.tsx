@@ -465,7 +465,14 @@ if (!isServer)
     delegateEvents(["input", "click", "keydown"]);
     const [contextVisible, setContextVisible] = createSignal(true);
     const calls: string[] = [];
-    const context = { id: "done", title: "Complete Summer party", description: "The current task", context: true, action: () => {} };
+    const context = {
+      id: "done",
+      title: "Complete Summer party",
+      description: "The current task",
+      context: true,
+      shortcut: "mod+k",
+      action: () => {},
+    };
     const globalCommand = {
       id: "spaces.task.compose",
       title: "New task",
@@ -485,6 +492,8 @@ if (!isServer)
     );
     try {
       await waitFor(() => dom.root.textContent?.includes("Complete Summer party") ?? false, "context action");
+      expect(dom.root.querySelector('.k2b-kbd__keys[aria-hidden="true"]')).not.toBeNull();
+      expect(dom.root.querySelector(".k2b-kbd__key")?.textContent).toMatch(/Ctrl|⌘/);
       const input = dom.root.querySelector<HTMLInputElement>("input")!;
       expect(dom.root.textContent).not.toContain("New task");
       input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));

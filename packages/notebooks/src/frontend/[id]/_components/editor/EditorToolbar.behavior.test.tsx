@@ -421,6 +421,10 @@ describe("editor toolbar formats and shortcuts", () => {
       expect(view.state.doc.toString()).toBe("==word==");
       expect(button("Highlight").getAttribute("aria-pressed")).toBe("true");
       expect(button("Bold").getAttribute("aria-keyshortcuts")).toBe("Control+B");
+      // The tooltip names the keys with the shared formatter of @k2b/ui.
+      const tooltips = Array.from(dom.root.querySelectorAll('[role="tooltip"]'), (surface) => surface.textContent);
+      expect(tooltips).toContain("Bold (Ctrl+B)");
+      expect(tooltips).toContain("Highlight (Ctrl+Shift+H)");
       for (const control of dom.root.querySelectorAll(".notebooks-editor-toolbar button, .notebooks-editor-toolbar a")) {
         const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
         control.dispatchEvent(down);

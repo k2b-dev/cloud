@@ -418,7 +418,7 @@ test("empty palette favors the selected object and drops its actions when the ob
     const rows = () => Array.from(dom.root.querySelectorAll('[role="option"]'));
     await waitFor(() => rows().length === 3, "three suggested actions");
     expect(rows()[0]?.textContent).toContain("Edit selected note");
-    expect(rows()[0]?.querySelector("kbd")?.textContent).toBe("E");
+    expect(rows()[0]?.querySelector(".k2b-kbd__key")?.textContent).toBe("E");
     expect(rows().some((row) => row.textContent?.includes("Open overview"))).toBe(false);
     selection();
     await waitFor(() => rows()[0]?.textContent?.includes("Search notebook") ?? false, "page actions after selection closes");

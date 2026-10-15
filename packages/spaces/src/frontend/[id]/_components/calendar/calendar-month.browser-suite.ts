@@ -351,15 +351,31 @@ const dayOverflow = (page: Page, key: string) =>
       label: more?.getAttribute("aria-label") ?? null,
     };
   }, key);
-/** The heights of the week rows and the widths of the first row's days: the grid itself, without its content. */
+/** The week heights, day widths, misplaced week keys, and the continuous track's height against its declared weeks. */
 const gridShape = (page: Page) =>
-  page.evaluate(() => ({
-    rows: Array.from(document.querySelectorAll(".k2b-calendar-month__week"), (row) => Math.round(row.getBoundingClientRect().height)),
-    // The weekday row comes first, so the first week row is the first element with its class, not a :first-of-type.
-    columns: Array.from(document.querySelector(".k2b-calendar-month__week")!.querySelectorAll("[role='gridcell']"), (cell) =>
-      Math.round(cell.getBoundingClientRect().width),
-    ),
-  }));
+  page.evaluate(() => {
+    const grid = document.querySelector(".k2b-calendar-month")!;
+    const weeks = Array.from(grid.querySelectorAll(".k2b-calendar-month__week"));
+    const track = grid.matches("[data-continuous]")
+      ? (grid.querySelector(".k2b-calendar-month__track")?.getBoundingClientRect() ?? null)
+      : null;
+    const rowHeight = Math.round(weeks[0]!.getBoundingClientRect().height);
+    return {
+      rows: weeks.map((row) => Math.round(row.getBoundingClientRect().height)),
+      // The weekday row comes first, so the first week row is the first element with its class, not a :first-of-type.
+      columns: Array.from(weeks[0]!.querySelectorAll("[role='gridcell']"), (cell) => Math.round(cell.getBoundingClientRect().width)),
+      // Without a continuous track no row has its place, so a missing track fails instead of passing empty.
+      misplaced: weeks
+        .filter(
+          (row) =>
+            !track ||
+            Math.round(row.getBoundingClientRect().top - track.top) !== (Number(row.getAttribute("aria-rowindex")) - 2) * rowHeight,
+        )
+        .map((row) => row.getAttribute("data-week-key")),
+      trackHeight: track ? Math.round(track.height) : null,
+      weeksHeight: (Number(grid.getAttribute("aria-rowcount")) - 1) * rowHeight,
+    };
+  });
 const waitFor = async (check: () => boolean, what: string) => {
   for (let tries = 0; tries < 200; tries++) {
     if (check()) return;
@@ -1004,6 +1020,8 @@ describe(`Spaces month view in ${browserName}`, () => {
       expect(await dayOverflow(page, "2026-10-12")).toEqual({ drawn: 2, more: 0, label: null });
       const shape = await gridShape(page);
       expect(new Set(shape.rows).size).toBe(1);
+      expect(shape.misplaced).toEqual([]);
+      expect(shape.trackHeight).toBe(shape.weeksHeight);
       expect(shape.columns).toHaveLength(7);
 
       await page.setViewportSize({ width: 1440, height: 640 });
@@ -1016,6 +1034,8 @@ describe(`Spaces month view in ${browserName}`, () => {
       expect(small.drawn + small.more).toBe(6);
       const smallShape = await gridShape(page);
       expect(new Set(smallShape.rows).size).toBe(1);
+      expect(smallShape.misplaced).toEqual([]);
+      expect(smallShape.trackHeight).toBe(smallShape.weeksHeight);
       expect(smallShape.columns).toEqual(shape.columns);
 
       await page.setViewportSize({ width: 1440, height: 1300 });
