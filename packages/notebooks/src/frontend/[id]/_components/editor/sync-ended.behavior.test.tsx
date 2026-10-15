@@ -237,6 +237,18 @@ describe("sync ended editor recovery", () => {
     return;
   }
 
+  test("the storage notice survives retries until pending changes are saved", () => {
+    using editor = mountNoteEditor();
+    const { opts } = editor.providers[0]!;
+    opts.onError?.({ code: "STORAGE_EXHAUSTED", message: "storage full" });
+    const notice = editor.dom.root.querySelector('[role="alert"]');
+    expect(notice?.textContent).toContain("Live editing is unavailable");
+    opts.onReady?.();
+    expect(notice?.isConnected).toBe(true);
+    editor.setPending(false);
+    expect(notice?.isConnected).toBe(false);
+  });
+
   test("soft requests ask before replacing the editor, cancel keeps text, confirm leaves once", async () => {
     using editor = mountNoteEditor();
     const instance = editor.providers[0]!;
@@ -304,6 +316,25 @@ describe("sync ended editor recovery", () => {
     expect(instance.dispose).not.toHaveBeenCalled();
     expect(editor.view()).toBe(view);
     expect(view.state.doc.toString()).toBe(text);
+  });
+
+  test("two cancelled popstates sharing a prompt restore the shown URL only once", async () => {
+    using editor = mountNoteEditor();
+    editor.end();
+    const answer = Promise.withResolvers<boolean>();
+    editor.confirmed.mockImplementation(() => answer.promise);
+    const length = window.history.length;
+    const shownHref = window.location.href;
+    window.history.replaceState({ back: true }, "", otherHref);
+    window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+    window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
+    answer.resolve(false);
+    await flush();
+    await flush();
+    expect(window.history.length).toBe(length + 1);
+    expect(window.location.href).toBe(shownHref);
+    expect(beforeUnloadPrevented()).toBe(true);
   });
 
   test("a cancelled popstate keeps a sidebar filter chosen after the note opened", async () => {
@@ -443,6 +474,35 @@ describe("sync ended editor recovery", () => {
     editor.confirmed.mockResolvedValue(false);
     expect(await loaded!.requestSoftNoteNavigation(otherHref)).toEqual({ kind: "superseded" });
     expect(editor.confirmed).toHaveBeenCalledTimes(2);
+  });
+
+  test("a confirmed navigation superseded by another pending leave keeps leave confirmed", async () => {
+    using editor = mountNoteEditor();
+    editor.end();
+    editor.confirmed.mockResolvedValue(true);
+    const firstStarted = Promise.withResolvers<void>();
+    const firstResponse = Promise.withResolvers<Response>();
+    const secondStarted = Promise.withResolvers<void>();
+    const secondResponse = Promise.withResolvers<Response>();
+    routeGet.mockImplementationOnce(() => {
+      firstStarted.resolve();
+      return firstResponse.promise;
+    });
+    routeGet.mockImplementationOnce(() => {
+      secondStarted.resolve();
+      return secondResponse.promise;
+    });
+    const first = loaded!.requestSoftNoteNavigation(otherHref);
+    await firstStarted.promise;
+    const second = loaded!.requestSoftNoteNavigation("/app/notebooks/Book01/notes/Third1?mode=write");
+    await secondStarted.promise;
+    expect(await first).toEqual({ kind: "superseded" });
+    expect(beforeUnloadPrevented()).toBe(false);
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
+    firstResponse.resolve(Response.json({ kind: "fallback", reason: "superseded request" }));
+    secondResponse.resolve(Response.json({ kind: "fallback", reason: "failed request" }));
+    expect(await second).toEqual({ kind: "fallback" });
+    await flush();
   });
 
   test("soft navigation without unsent text proceeds without a prompt", async () => {

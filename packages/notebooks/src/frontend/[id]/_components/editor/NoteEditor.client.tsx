@@ -142,6 +142,7 @@ export default function NoteEditor(props: Props) {
   let shownHref = window.location.href;
   let restoringShownHref = false;
   let leaveGuard: LeaveGuard | undefined;
+  let pendingGuardedNavigations = 0;
   const registerLeaveGuard = (guard: LeaveGuard) => {
     leaveGuard = guard;
     return () => {
@@ -254,7 +255,7 @@ export default function NoteEditor(props: Props) {
     const keepsEditor = target && target.noteShortId === current().noteId && (!mode || mode === (props.readOnly ? "readonly" : "write"));
     const guard = keepsEditor ? undefined : leaveGuard;
     if (guard && !(await guard.confirmLeave())) {
-      if (traversal) {
+      if (traversal && window.location.href !== shownHref) {
         // Without a history index, restoring the shown URL with pushState drops forward entries after it.
         window.history.pushState(window.history.state, "", shownHref);
         restoringShownHref = true;
@@ -271,9 +272,11 @@ export default function NoteEditor(props: Props) {
       // Read-only opens another note with a page load; the open note stays, so a link to its heading opens in place.
       if (target.noteShortId !== current().noteId || (mode && mode !== "readonly")) return { kind: "fallback" };
     } else if (mode && mode !== "write") return { kind: "fallback" };
+    if (guard) pendingGuardedNavigations++;
     const result = await navigation.navigate(target, push);
-    if (result.kind === "applied") shownHref = result.href;
-    else if (result.kind === "superseded") guard?.releaseLeave();
+    if (guard) pendingGuardedNavigations--;
+    if (result.kind === "applied") shownHref = new URL(result.href, window.location.href).href;
+    else if (result.kind === "superseded" && pendingGuardedNavigations === 0) guard?.releaseLeave();
     return result;
   };
 
@@ -584,7 +587,7 @@ function EditorInstance(
           if (error.code === "STORAGE_EXHAUSTED") setStorageExhausted(true);
         },
         onReady: () => {
-          setStorageExhausted(false);
+          if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
           syncEnded.ready();
         },
         // Forwards every presence update to the OnlineSection island via a
@@ -600,7 +603,10 @@ function EditorInstance(
           onCursorChange: props.onWorkspaceCursorChange,
         },
         onFatal: syncEnded.end,
-        onUnsentChange: syncEnded.refresh,
+        onUnsentChange: () => {
+          if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
+          syncEnded.refresh();
+        },
       });
 
   let themeObserver: MutationObserver | undefined;
