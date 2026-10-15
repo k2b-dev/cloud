@@ -1,7 +1,8 @@
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import type { HelpDocumentManifest, HelpDocumentPayload } from "../shared/help";
-import { LayoutHelpPage } from "./LayoutHelp";
+import { LayoutHelpPage, openLayoutHelpDialog } from "./LayoutHelp";
+import { registry } from "./layout-help-registry";
 
 const documents: HelpDocumentManifest[] = Array.from({ length: 8 }, (_, index) => ({
   id: `topic-${index}`,
@@ -20,7 +21,7 @@ const longHtml =
       `<h2 id="section-${index}" class="help-section-title">Section ${index}</h2>${Array.from({ length: 18 }, () => "<p>Read this guidance to finish the task and understand how the app works.</p>").join("")}`,
   ).join("");
 // A short task article: the short answer, one section, four steps.
-const taskHtml = `${lead}<h2 id="invite-people" class="help-section-title">Invite people</h2><div class="help-steps"><ol class="k2b-steps"><li>Open <span class="k2b-label-chip">Space settings</span>.</li><li>Choose <span class="k2b-label-chip">Add person</span>.</li><li>Enter a name or a group.</li><li>Choose the access level.</li></ol></div><p>Spaces saves the change at once.</p>`;
+const taskHtml = `${lead}<h2 id="invite-people" class="help-section-title">Invite people</h2><div class="help-steps"><ol class="k2b-steps"><li>Open <span class="k2b-label-chip">Space settings</span>.</li><li>Choose <span class="k2b-label-chip">Add person</span>.</li><li>Enter a name or a group.</li><li>Choose the access level.</li></ol></div><p>Spaces saves the change at once.</p><div class="help-compare"><ul><li><strong>Add a person</strong> Gives one named person access to every task in this Space.</li><li><strong>Add a group</strong> Gives everyone in the group access, including people who join later.</li></ul></div>`;
 const link = (id: string, title: string, appId = "spaces", appName = "Spaces") => ({
   appId,
   appName,
@@ -53,15 +54,22 @@ window.fetch = Object.assign(
 );
 const main = document.querySelector<HTMLElement>(".layout-content-main");
 if (!main) throw new Error("Missing Layout main");
-const embedded = new URL(location.href).searchParams.has("embedded");
-const host = document.createElement("div");
-if (embedded) host.style.cssText = "width:360px;height:700px";
-main.append(host);
-render(
-  () => (
-    <LocaleProvider locale="en">
-      <LayoutHelpPage documents={documents} embedded={embedded} pageBase="/app/spaces/help" />
-    </LocaleProvider>
-  ),
-  host,
-);
+const params = new URL(location.href).searchParams;
+const embedded = params.has("embedded");
+if (params.has("modal")) {
+  // The dialog reads the topics the page registered, as Layout.HelpDocuments does.
+  for (const manifest of documents) registry()?.set(manifest.id, { ...manifest, kind: "document" });
+  openLayoutHelpDialog();
+} else {
+  const host = document.createElement("div");
+  if (embedded) host.style.cssText = "width:360px;height:700px";
+  main.append(host);
+  render(
+    () => (
+      <LocaleProvider locale="en">
+        <LayoutHelpPage documents={documents} embedded={embedded} pageBase="/app/spaces/help" />
+      </LocaleProvider>
+    ),
+    host,
+  );
+}

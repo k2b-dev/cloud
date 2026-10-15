@@ -163,6 +163,38 @@ test("on a phone a short task article shows its access once and its first step w
   }
 }, 30_000);
 
+test("in the Help dialog on a phone a short task article shows its first step without scrolling", async () => {
+  const page = await open("?modal", { width: 390, height: 844 });
+  try {
+    await page.getByRole("dialog").getByRole("button", { name: "Topic 1", exact: false }).first().click();
+    const firstStep = page.getByRole("dialog").locator(".help-document .k2b-steps > li").first();
+    await firstStep.waitFor();
+    const step = await firstStep.boundingBox();
+    expect(step).not.toBeNull();
+    expect(step!.y).toBeGreaterThanOrEqual(0);
+    expect(step!.y + step!.height).toBeLessThanOrEqual(844);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("compare blocks use two columns on a wide page and one on a phone", async () => {
+  for (const [viewport, columns] of [
+    [{ width: 1440, height: 900 }, 2],
+    [{ width: 390, height: 844 }, 1],
+  ] as const) {
+    const page = await open("", viewport);
+    try {
+      await page.getByRole("button", { name: "Topic 1", exact: false }).first().click();
+      const compare = page.locator(".help-document .help-compare > ul");
+      await compare.waitFor();
+      expect(await compare.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(columns);
+    } finally {
+      await page.close();
+    }
+  }
+}, 30_000);
+
 test("on a phone the table of contents is an On this page menu under the head that follows the reading position", async () => {
   const page = await open("", { width: 390, height: 844 });
   try {

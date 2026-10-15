@@ -1091,6 +1091,11 @@
   .help-article-head {
     margin-bottom: 1.5rem;
   }
+
+  /* Two columns leave a phone about 140 px per alternative. */
+  .help-document .help-compare > ul {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Dashboard launchpad panel. Scoped through :has() so the calmer backdrop only
