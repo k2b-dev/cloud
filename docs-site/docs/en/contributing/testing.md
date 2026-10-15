@@ -539,6 +539,16 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
+Every job of the CI and nightly workflows installs dependencies through
+`.github/actions/install`. It restores the Bun install cache that `main.yml`
+writes for the current `bun.lock`. With that cache, `bun ci` needs no
+registry. `scripts/ci-install.ts` stops an install that takes over two
+minutes and retries a stalled install once. Any other install failure fails
+at once. A pull request that changes `bun.lock` installs from the registry
+until it merges. The `ci-install` check rejects direct dependency installs in
+workflows. Only the release workflow keeps a plain `bun ci`, because it can
+finish an older release from a commit without the install action.
+
 The standalone `cld` test compiles the release target. On Linux x64, Bun
 downloads that target's runtime into its install cache on first use. The
 `unit` job and the nightly `ubuntu-next` job fetch it in a named step before
@@ -686,9 +696,10 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit with `bun run test --browser`, against the Playwright image
-as in [Run WebKit locally](#run-webkit-locally). It runs when a workspace with
-browser tests or a shared input such as `packages/cloud` or `scripts/` changed.
+them again in WebKit in three shards with `bun run test --browser`, against
+the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
+when a workspace with browser tests or a shared input such as `packages/cloud`
+or `scripts/` changed.
 
 The nightly workflow repeats the integration suites against PostgreSQL 15, the
 oldest supported version, and runs the longer acceptance checks that are too
