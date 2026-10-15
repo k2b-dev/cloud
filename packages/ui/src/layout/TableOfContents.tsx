@@ -33,7 +33,13 @@ export function TableOfContents(props: TableOfContentsProps): JSX.Element {
     const ids = props.items.map((item) => item.id);
     const root = resolveMaybeAccessor(props.scrollRoot);
     const content = resolveMaybeAccessor(props.contentRoot);
-    const heading = (id: string) => (content ? content.querySelector(`#${CSS.escape(id)}`) : document.getElementById(id));
+    const heading = (id: string): Element | null => {
+      const element = document.getElementById(id);
+      if (!content || !element || content.contains(element)) return element;
+      // The same id earlier on the page must not stand in for the heading inside the content root.
+      for (const candidate of content.querySelectorAll("[id]")) if (candidate.id === id) return candidate;
+      return null;
+    };
     const target = root ?? window;
     let frame: number | undefined;
     const update = () => {
