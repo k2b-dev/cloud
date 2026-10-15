@@ -213,6 +213,18 @@ describe("shared bundle verification", () => {
         ),
       ).rejects.toThrow('exports the module "other"');
       expect(await readdir(store)).toEqual([manifest.digest]);
+      // The first failure cancels a stalled sibling read instead of waiting for it.
+      await expect(
+        storePlugin(
+          manifest,
+          (file, signal) =>
+            file.path === "cli.js"
+              ? Promise.reject(new Error("first failure"))
+              : new Promise((_, reject) => signal.addEventListener("abort", () => reject(new Error("aborted")))),
+          root,
+        ),
+      ).rejects.toThrow("first failure");
+      expect(await readdir(store)).toEqual([manifest.digest]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

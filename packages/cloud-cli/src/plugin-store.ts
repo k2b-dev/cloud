@@ -145,8 +145,8 @@ const loadModuleFile = async (entry: string, name: string): Promise<CloudCliModu
 export const downloadPlugin = (fetch: CloudFetch, manifest: CloudCliPluginManifest, root = pluginsDirectory()) =>
   storePlugin(
     manifest,
-    async (file) => {
-      const response = await fetch(`${CLOUD_CLI_PLUGIN_ROUTE}/${manifest.name}/${file.path}`);
+    async (file, signal) => {
+      const response = await fetch(`${CLOUD_CLI_PLUGIN_ROUTE}/${manifest.name}/${file.path}`, { signal });
       if (!response.ok) throw failure(response, `Cannot download ${manifest.name}/${file.path}`);
       return readExactly(response, file.size, `${manifest.name}/${file.path}`);
     },
@@ -161,25 +161,32 @@ export const downloadPlugin = (fetch: CloudFetch, manifest: CloudCliPluginManife
  */
 export const storePlugin = async (
   manifest: CloudCliPluginManifest,
-  read: (file: CloudCliPluginFile) => Promise<Uint8Array>,
+  read: (file: CloudCliPluginFile, signal: AbortSignal) => Promise<Uint8Array>,
   root = pluginsDirectory(),
 ): Promise<{ incoming: string; module: CloudCliModule }> => {
   const store = pluginStoreDirectory(root);
   await mkdir(store, { recursive: true, mode: 0o700 });
   const incoming = join(store, `${INCOMING_PREFIX}${crypto.randomUUID()}`);
   try {
-    // Finish all writes before cleanup, even when one file fails verification.
-    const results = await Promise.allSettled(
+    // The first failure cancels the other reads; all writes finish before cleanup.
+    const controller = new AbortController();
+    let failed: { error: unknown } | undefined;
+    await Promise.allSettled(
       manifest.files.map(async (file) => {
-        const bytes = await read(file);
-        if (bytes.byteLength !== file.size) throw new PluginError(`${manifest.name}/${file.path} size does not match its manifest.`);
-        if (sha512Hex(bytes) !== file.sha512) throw new PluginError(`${manifest.name}/${file.path} does not match its SHA-512.`);
-        const target = join(incoming, file.path);
-        await mkdir(dirname(target), { recursive: true, mode: 0o700 });
-        await writeFile(target, bytes, { mode: 0o600 });
+        try {
+          const bytes = await read(file, controller.signal);
+          if (bytes.byteLength !== file.size) throw new PluginError(`${manifest.name}/${file.path} size does not match its manifest.`);
+          if (sha512Hex(bytes) !== file.sha512) throw new PluginError(`${manifest.name}/${file.path} does not match its SHA-512.`);
+          const target = join(incoming, file.path);
+          await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+          await writeFile(target, bytes, { mode: 0o600 });
+        } catch (error) {
+          failed ??= { error };
+          controller.abort();
+        }
       }),
     );
-    for (const result of results) if (result.status === "rejected") throw result.reason;
+    if (failed) throw failed.error;
     await writeFile(join(incoming, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
     return { incoming, module: await loadModuleFile(join(incoming, CLOUD_CLI_PLUGIN_ENTRY), manifest.name) };
   } catch (error) {
