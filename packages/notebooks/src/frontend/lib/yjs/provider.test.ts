@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { encoding } from "@k2b/stdlib";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -520,6 +520,40 @@ describe("Yjs provider unconfirmed edits", () => {
     } finally {
       Object.assign(globalThis, { setTimeout: originalSetTimeout });
     }
+  });
+
+  test("reconnect chunks large unconfirmed updates within the sync limit and clears their echoes", () => {
+    using editor = localEditor();
+    readyReplay(editor.socket);
+    const text = editor.doc.getText("content");
+    // Each update fits the 8 MB base64 limit, but the pair does not.
+    for (const char of ["a", "b"]) text.insert(text.length, char.repeat(3_100_000));
+    const payloads = syncPublishes(editor.socket);
+    expect(payloads).toHaveLength(2);
+    for (const payload of payloads) expect(payload.length).toBeLessThanOrEqual(notebooksYjs.maxSyncPayloadLength);
+    expect(encoding.toBase64(Y.mergeUpdates(payloads.map(encoding.fromBase64))).length).toBeGreaterThan(notebooksYjs.maxSyncPayloadLength);
+
+    editor.socket.open();
+    const send = spyOn(editor.socket, "send").mockImplementationOnce((value) => {
+      editor.socket.sent.push(value);
+      editor.socket.close();
+    });
+    try {
+      readyReplay(editor.socket);
+      expect(syncPublishes(editor.socket).slice(2)).toEqual([payloads[0]!]);
+      expect(editor.provider.hasUnsentChanges()).toBe(true);
+    } finally {
+      send.mockRestore();
+    }
+    editor.socket.readyState = FakeWebSocket.OPEN;
+    readyReplay(editor.socket);
+    const retries = syncPublishes(editor.socket).slice(3);
+    expect(retries).toEqual(payloads);
+    for (const payload of retries) expect(payload.length).toBeLessThanOrEqual(notebooksYjs.maxSyncPayloadLength);
+    echo(editor.socket, retries[0]!);
+    expect(editor.provider.hasUnsentChanges()).toBe(true);
+    echo(editor.socket, retries[1]!);
+    expect(editor.provider.hasUnsentChanges()).toBe(false);
   });
 
   test("edits before replay ready are pending and publish one covering full state", () => {

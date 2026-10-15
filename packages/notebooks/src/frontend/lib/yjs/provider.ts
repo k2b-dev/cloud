@@ -164,13 +164,27 @@ export function createYjsProvider(opts: YjsProviderOptions) {
       if (localState.length > 0 && !sendSyncPublish(localState)) return;
     } else {
       if (unconfirmed.size > 1) {
-        const payload = encoding.toBase64(Y.mergeUpdates([...unconfirmed].map(encoding.fromBase64)));
+        // Merge consecutive updates into groups that stay within the server limit (a merge is never
+        // larger than its parts); an update that alone exceeds the limit stays as it is.
+        const groups: string[][] = [];
+        let size = Number.POSITIVE_INFINITY;
+        for (const update of unconfirmed) {
+          if (size + update.length > notebooksYjs.maxSyncPayloadLength) {
+            groups.push([]);
+            size = 0;
+          }
+          groups.at(-1)!.push(update);
+          size += update.length;
+        }
         unconfirmed.clear();
-        unconfirmed.add(payload);
+        for (const group of groups) {
+          unconfirmed.add(group.length === 1 ? group[0]! : encoding.toBase64(Y.mergeUpdates(group.map(encoding.fromBase64))));
+        }
         pendingChanged();
       }
-      const [payload] = unconfirmed;
-      if (payload && !sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload })) return;
+      for (const payload of unconfirmed) {
+        if (!sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload })) return;
+      }
     }
     localStateSent = true;
     if (needsFullResync) {

@@ -1,9 +1,13 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
+import { EditorView } from "@codemirror/view";
 import { createCodeMirror } from "solid-codemirror";
 import { Show } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
+import * as Y from "yjs";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
+import type { YjsProviderOptions } from "../../../lib/yjs";
 import type { YjsProviderError } from "../../../lib/yjs/provider";
+import { notebookWorkspaceMessages } from "../../messages";
 
 const refreshCurrentPath = mock(() => {});
 const load = async () => {
@@ -14,13 +18,43 @@ const load = async () => {
     const sync = await import("./sync-ended");
     const { formattingKeymap } = await import("./EditorToolbar");
     const { markdownExtension } = await import("../../../lib/editor/markdown");
+    mock.module("@/api/client", () => ({ apiClient: { ":id": { "route-state": { $get: routeGet } } } }));
+    const { default: NoteEditor } = await import("./NoteEditor.client");
+    const { yjs } = await import("../../../lib/yjs");
+    const softNavigation = await import("../../../lib/soft-navigation");
     const ui = await import("@k2b/ui");
     const { clipboard } = await import("@k2b/stdlib/browser");
-    return { ...sync, ...ui, clipboard, formattingKeymap, markdownExtension };
+    return { ...sync, ...ui, ...softNavigation, NoteEditor, yjs, clipboard, formattingKeymap, markdownExtension };
   } finally {
     dom.cleanup();
   }
 };
+const detail = (id: string) => ({
+  noteId: id,
+  noteTitle: id,
+  contentMd: null,
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z",
+  lockedAt: null,
+  historyIncomplete: false,
+  isLocked: false,
+  tocItems: [],
+  taskProgress: { total: 0, done: 0 },
+  attachments: [],
+  backlinks: [],
+  namedBlocks: [],
+});
+const routeGet = mock(async ({ query: { href } }: { query: { href: string } }) => {
+  const id = new URL(href, "http://localhost").pathname.split("/").at(-1)!;
+  return Response.json({
+    kind: "ok",
+    state: {
+      href,
+      note: { id, title: id, lockedAt: null, historyIncomplete: false, yjsSnapshot: null },
+      detail: detail(id),
+    },
+  });
+});
 const loaded = isServer ? undefined : await load();
 const markdown = "# Keep me\n\nUnsaved **words**.";
 const notePath = "/app/notebooks/Book01/Note01?mode=write";
@@ -44,7 +78,12 @@ const mount = ({ pending: initialPending = true, locale = "en" } = {}) => {
   let sync!: ReturnType<typeof createSyncEnded>;
   let mirror!: ReturnType<typeof createCodeMirror>;
   const dispose = render(() => {
-    sync = createSyncEnded({ hasUnsentChanges: () => pending, resume, focusEditor: () => mirror.editorView()?.focus() });
+    sync = createSyncEnded({
+      messages: () => notebookWorkspaceMessages.resolve([locale]).t,
+      hasUnsentChanges: () => pending,
+      resume,
+      focusEditor: () => mirror.editorView()?.focus(),
+    });
     mirror = createCodeMirror({ value: markdown });
     mirror.createExtension(markdownExtension());
     mirror.createExtension(sync.extension);
@@ -53,7 +92,14 @@ const mount = ({ pending: initialPending = true, locale = "en" } = {}) => {
       <LocaleProvider locale={locale}>
         <div ref={mirror.ref} />
         <Show when={sync.ended()}>
-          {(ended) => <SyncEndedBar ended={ended()} markdown={() => mirror.editorView()!.state.doc.toString()} noteHref={() => notePath} />}
+          {(ended) => (
+            <SyncEndedBar
+              sync={sync}
+              ended={ended()}
+              markdown={() => mirror.editorView()!.state.doc.toString()}
+              noteHref={() => notePath}
+            />
+          )}
         </Show>
       </LocaleProvider>
     );
@@ -93,6 +139,75 @@ const mount = ({ pending: initialPending = true, locale = "en" } = {}) => {
   };
 };
 
+const editorHref = "/app/notebooks/Book01/notes/Note01?mode=write#heading-keep-me";
+const otherHref = "/app/notebooks/Book01/notes/Other1?mode=write";
+const mountNoteEditor = ({ pending: initialPending = true, readOnly = false } = {}) => {
+  let pending = initialPending;
+  const dom = createDomTestHarness();
+  delegateEvents(["click"], dom.document);
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
+  Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: dom.window.sessionStorage });
+  window.history.replaceState({ shown: true }, "", editorHref);
+  const { NoteEditor, LocaleProvider, yjs, prompts } = loaded!;
+  const providers: Array<{ opts: YjsProviderOptions; dispose: ReturnType<typeof mock> }> = [];
+  const provider = spyOn(yjs, "createYjsProvider").mockImplementation((opts) => {
+    const dispose = mock(() => {});
+    providers.push({ opts, dispose });
+    return { connect: () => {}, resume: () => {}, dispose, hasUnsentChanges: () => pending };
+  });
+  const confirmed = spyOn(prompts, "confirm").mockResolvedValue(false);
+  routeGet.mockClear();
+  const doc = new Y.Doc();
+  doc.getText("codemirror").insert(0, markdown);
+  const initialSnapshot = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
+  doc.destroy();
+  const dispose = render(
+    () => (
+      <LocaleProvider locale="en">
+        <NoteEditor
+          noteId="Note01"
+          noteTitle="Keep me"
+          notebookId="Book01"
+          noteLockedAt={null}
+          historyIncomplete={false}
+          notebookName="Book"
+          appUrl="http://localhost"
+          workspaceCursor={null}
+          userId="User01"
+          displayName="Reader"
+          initialSnapshot={initialSnapshot}
+          initialPanelOpen={false}
+          initialRichMode="source"
+          initialHref={editorHref.split("#")[0]!}
+          initialDetail={detail("Note01")}
+          readOnly={readOnly}
+        />
+      </LocaleProvider>
+    ),
+    dom.root,
+  );
+  const view = () => EditorView.findFromDOM(dom.root.querySelector<HTMLElement>(".cm-editor")!)!;
+  return {
+    dom,
+    providers,
+    confirmed,
+    view,
+    setPending: (value: boolean) => {
+      pending = value;
+      providers.at(-1)?.opts.onUnsentChange?.();
+    },
+    end: () => providers.at(-1)!.opts.onFatal?.({ code: "NOTE_LOCKED", message: "locked" }),
+    [Symbol.dispose]: () => {
+      dispose();
+      if (previousStorage) Object.defineProperty(globalThis, "sessionStorage", previousStorage);
+      else Reflect.deleteProperty(globalThis, "sessionStorage");
+      provider.mockRestore();
+      confirmed.mockRestore();
+      dom.cleanup();
+    },
+  };
+};
+
 const reasons = [
   ["SESSION_EXPIRED", "Session expired"],
   ["LOGIN_REQUIRED", "Session expired"],
@@ -109,6 +224,134 @@ describe("sync ended editor recovery", () => {
     test.skip("runs with browser export conditions", () => {});
     return;
   }
+
+  test("soft requests ask before replacing the editor, cancel keeps text, confirm leaves once", async () => {
+    using editor = mountNoteEditor();
+    const instance = editor.providers[0]!;
+    const view = editor.view();
+    editor.end();
+    let answer!: (leave: boolean) => void;
+    editor.confirmed.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const cancelled = loaded!.requestSoftNoteNavigation(otherHref);
+    const alsoCancelled = loaded!.requestSoftNoteNavigation(otherHref);
+    await flush();
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
+    expect(routeGet).not.toHaveBeenCalled();
+    expect(instance.dispose).not.toHaveBeenCalled();
+    answer(false);
+    expect(await cancelled).toEqual({ kind: "superseded" });
+    expect(await alsoCancelled).toEqual({ kind: "superseded" });
+    expect(editor.view()).toBe(view);
+    expect(view.state.doc.toString()).toBe(markdown);
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(editorHref);
+
+    editor.confirmed.mockResolvedValue(true);
+    await loaded!.navigateToNotebookNote(otherHref);
+    expect(editor.confirmed).toHaveBeenCalledTimes(2);
+    expect(routeGet).toHaveBeenCalledTimes(1);
+    expect(instance.dispose).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname + window.location.search).toBe(otherHref);
+    expect(editor.providers).toHaveLength(2);
+    // The old guard is removed along with its editor instance.
+    await loaded!.navigateToNotebookNote("/app/notebooks/Book01/notes/Third1?mode=write");
+    expect(editor.confirmed).toHaveBeenCalledTimes(2);
+  });
+
+  test.each(["mount", "navigation"])("cancelled popstate restores the shown note URL after %s", async (source) => {
+    using editor = mountNoteEditor({ pending: source === "mount" });
+    const shownHref = source === "mount" ? editorHref : `${otherHref}#heading-other`;
+    if (source === "navigation") {
+      await loaded!.requestSoftNoteNavigation(shownHref);
+      editor.setPending(true);
+      routeGet.mockClear();
+    }
+    const instance = editor.providers.at(-1)!;
+    const view = editor.view();
+    const text = view.state.doc.toString();
+    editor.end();
+    window.history.replaceState({ back: true }, "", "/app/notebooks/Book01/notes/Third1?mode=write");
+    window.dispatchEvent(new Event("popstate"));
+    await flush();
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
+    expect(routeGet).not.toHaveBeenCalled();
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(shownHref);
+    expect(window.history.state).toEqual({ back: true });
+    expect(instance.dispose).not.toHaveBeenCalled();
+    expect(editor.view()).toBe(view);
+    expect(view.state.doc.toString()).toBe(text);
+  });
+
+  test("a heading of the shown note opens in place without asking", async () => {
+    using editor = mountNoteEditor();
+    const view = editor.view();
+    editor.end();
+    const heading = "/app/notebooks/Book01/notes/Note01?mode=write#heading-other";
+    expect(await loaded!.requestSoftNoteNavigation(heading)).toEqual({ kind: "applied", href: heading });
+    expect(editor.confirmed).not.toHaveBeenCalled();
+    expect(editor.providers[0]!.dispose).not.toHaveBeenCalled();
+    expect(editor.view()).toBe(view);
+  });
+
+  test("soft navigation without unsent text proceeds without a prompt", async () => {
+    using editor = mountNoteEditor({ pending: false });
+    editor.end();
+    expect(await loaded!.requestSoftNoteNavigation(otherHref)).toEqual({ kind: "applied", href: otherHref });
+    expect(editor.confirmed).not.toHaveBeenCalled();
+    expect(editor.providers[0]!.dispose).toHaveBeenCalledTimes(1);
+    editor.setPending(true);
+    editor.end();
+    expect(await loaded!.requestSoftNoteNavigation(editorHref)).toEqual({ kind: "superseded" });
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
+    expect(routeGet).toHaveBeenCalledTimes(1);
+
+    using reader = mountNoteEditor({ readOnly: true });
+    reader.confirmed.mockClear();
+    expect(reader.providers).toHaveLength(0);
+    expect(reader.dom.root.querySelector("[data-sync-ended]")).toBeNull();
+    expect(await loaded!.requestSoftNoteNavigation(otherHref)).toEqual({ kind: "fallback" });
+    expect(reader.confirmed).not.toHaveBeenCalled();
+  });
+
+  test("concurrent leave guards share one promise and confirmation bypasses later guards", async () => {
+    using editor = mount();
+    expect(await editor.sync.confirmLeave()).toBe(true);
+    editor.end("NOTE_LOCKED");
+    let answer!: (leave: boolean) => void;
+    editor.confirmed.mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const first = editor.sync.confirmLeave();
+    expect(editor.sync.confirmLeave()).toBe(first);
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
+    answer(true);
+    expect(await first).toBe(true);
+    expect(await editor.sync.confirmLeave()).toBe(true);
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  test("confirmed Reload does not also prevent beforeunload", async () => {
+    using editor = mount();
+    editor.end("NOTE_LOCKED");
+    editor.confirmed.mockResolvedValue(true);
+    editor.button("Reload").click();
+    await flush();
+    expect(refreshCurrentPath).toHaveBeenCalledTimes(1);
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
+  });
 
   test.each(reasons)("%s keeps pending text read-only and offers the recovery actions", async (code, title) => {
     using editor = mount();
@@ -279,6 +522,8 @@ describe("sync ended editor recovery", () => {
     link.click();
     await flush();
     expect(followed).toBe(1);
+    expect(unload()).toBe(false);
+    expect(editor.confirmed).toHaveBeenCalledTimes(2);
 
     editor.setPending(false);
     editor.confirmed.mockClear();

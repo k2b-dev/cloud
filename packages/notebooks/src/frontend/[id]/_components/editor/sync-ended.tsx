@@ -11,10 +11,41 @@ import { notebookWorkspaceMessages } from "../../messages";
 export type SyncEnded = { code: YjsProviderError["code"]; unsent: boolean };
 export const signInCodes = new Set<YjsProviderError["code"]>(["SESSION_EXPIRED", "LOGIN_REQUIRED"]);
 
-export function createSyncEnded(opts: { hasUnsentChanges: () => boolean; resume: () => void; focusEditor: () => void }) {
+export function createSyncEnded(opts: {
+  hasUnsentChanges: () => boolean;
+  resume: () => void;
+  focusEditor: () => void;
+  messages: () => Pick<ReturnType<typeof notebookWorkspaceMessages.resolve>["t"], "leaveUnsavedConfirm" | "leaveNote">;
+}) {
   const [ended, setEnded] = createSignal<SyncEnded | null>(null, {
     equals: (a, b) => a?.code === b?.code && a?.unsent === b?.unsent,
   });
+  const [leaveConfirmed, setLeaveConfirmed] = createSignal(false);
+  let pendingLeave: Promise<boolean> | undefined;
+  const shouldConfirmLeave = () => !!ended()?.unsent && !leaveConfirmed();
+  const allowLeave = () => {
+    setLeaveConfirmed(true);
+  };
+  const confirmLeave = (): Promise<boolean> => {
+    if (!shouldConfirmLeave()) return Promise.resolve(true);
+    if (pendingLeave) return pendingLeave;
+    const t = opts.messages();
+    pendingLeave = prompts
+      .confirm(t.leaveUnsavedConfirm, {
+        title: t.leaveNote,
+        icon: "ti ti-logout",
+        variant: "danger",
+        confirmText: t.leaveNote,
+      })
+      .then((leave) => {
+        if (leave) allowLeave();
+        return leave === true;
+      })
+      .finally(() => {
+        pendingLeave = undefined;
+      });
+    return pendingLeave;
+  };
   createEffect(() => {
     const code = ended()?.code;
     if (!code || !signInCodes.has(code)) return;
@@ -31,6 +62,9 @@ export function createSyncEnded(opts: { hasUnsentChanges: () => boolean; resume:
   });
   return {
     ended,
+    confirmLeave,
+    allowLeave,
+    shouldConfirmLeave,
     end: (error: YjsProviderError): void => {
       setEnded({ code: error.code, unsent: opts.hasUnsentChanges() });
     },
@@ -42,6 +76,7 @@ export function createSyncEnded(opts: { hasUnsentChanges: () => boolean; resume:
       // The bar unmounts with its focused button, so hand focus back to the note instead of dropping it on the page.
       const barFocused = !!document.activeElement?.closest("[data-sync-ended]");
       setEnded(null);
+      setLeaveConfirmed(false);
       if (barFocused) opts.focusEditor();
     },
     extension: (): Extension => (ended() ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
@@ -57,7 +92,12 @@ const iconFor = (code: SyncEnded["code"]) => {
   return "ti ti-alert-triangle";
 };
 
-export function SyncEndedBar(props: { ended: SyncEnded; markdown: () => string; noteHref: () => string }) {
+export function SyncEndedBar(props: {
+  ended: SyncEnded;
+  sync: ReturnType<typeof createSyncEnded>;
+  markdown: () => string;
+  noteHref: () => string;
+}) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   let primary!: HTMLButtonElement;
@@ -92,11 +132,12 @@ export function SyncEndedBar(props: { ended: SyncEnded; markdown: () => string; 
       }))
     )
       return;
+    props.sync.allowLeave();
     refreshCurrentPath();
   };
   // The unsent text exists only in this tab: closing it or following a link asks first, like Reload does.
   createEffect(() => {
-    if (!props.ended.unsent) return;
+    if (!props.sync.shouldConfirmLeave()) return;
     const beforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
       event.returnValue = "";
@@ -108,14 +149,12 @@ export function SyncEndedBar(props: { ended: SyncEnded; markdown: () => string; 
       if (!link || link.target === "_blank" || link.hasAttribute("download") || link.getAttribute("href")?.startsWith("#")) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      void prompts
-        .confirm(t().leaveUnsavedConfirm, { title: t().leaveNote, icon: "ti ti-logout", variant: "danger", confirmText: t().leaveNote })
-        .then((leave) => {
-          if (!leave || !link.isConnected) return;
-          replaying = true;
-          link.click();
-          replaying = false;
-        });
+      void props.sync.confirmLeave().then((leave) => {
+        if (!leave || !link.isConnected) return;
+        replaying = true;
+        link.click();
+        replaying = false;
+      });
     };
     window.addEventListener("beforeunload", beforeUnload);
     document.addEventListener("click", click, true);

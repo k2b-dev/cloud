@@ -137,6 +137,14 @@ export default function NoteEditor(props: Props) {
   const [linkedHeading, setLinkedHeading] = createSignal<LinkedHeading | null>(
     initialHeading ? { noteId: initialEditorProps.noteId, id: initialHeading } : null,
   );
+  let shownHref = window.location.href;
+  let leaveGuard: (() => Promise<boolean>) | undefined;
+  const registerLeaveGuard = (guard: () => Promise<boolean>) => {
+    leaveGuard = guard;
+    return () => {
+      if (leaveGuard === guard) leaveGuard = undefined;
+    };
+  };
   const navigation = createNoteNavigationCoordinator({
     initialSource: initialHref,
     currentNoteShortId: () => current().noteId,
@@ -238,13 +246,21 @@ export default function NoteEditor(props: Props) {
 
   const navigateSoft = async (href: string, push: boolean): Promise<SoftNavigationResult> => {
     const target = resolveSameNotebookNoteTarget(href, window.location.href, props.notebookId);
+    // A heading of the shown note keeps its editor; anything else replaces it and asks first while text is unsent.
+    const leaves = !target || target.noteShortId !== current().noteId;
+    if (leaves && leaveGuard && !(await leaveGuard())) {
+      if (!push) window.history.pushState(window.history.state, "", shownHref);
+      return { kind: "superseded" };
+    }
     if (!target) return { kind: "fallback" };
     const mode = requestedPresentationMode(new URL(target.canonicalHref, window.location.href).searchParams);
     if (props.readOnly) {
       // Read-only opens another note with a page load; the open note stays, so a link to its heading opens in place.
       if (target.noteShortId !== current().noteId || (mode && mode !== "readonly")) return { kind: "fallback" };
     } else if (mode && mode !== "write") return { kind: "fallback" };
-    return await navigation.navigate(target, push);
+    const result = await navigation.navigate(target, push);
+    if (result.kind === "applied") shownHref = result.href;
+    return result;
   };
 
   onMount(() => {
@@ -312,7 +328,9 @@ export default function NoteEditor(props: Props) {
         {(note) => {
           const startPosition = previewPosition;
           previewPosition = null;
-          return <EditorInstance {...note} linkedHeading={linkedHeading} startPosition={startPosition} />;
+          return (
+            <EditorInstance {...note} linkedHeading={linkedHeading} startPosition={startPosition} registerLeaveGuard={registerLeaveGuard} />
+          );
         }}
       </Show>
       <Show when={showRouteLoading()}>
@@ -328,7 +346,11 @@ export default function NoteEditor(props: Props) {
 }
 
 function EditorInstance(
-  props: EditorInstanceProps & { linkedHeading: Accessor<LinkedHeading | null>; startPosition: ReadingPosition | null },
+  props: EditorInstanceProps & {
+    linkedHeading: Accessor<LinkedHeading | null>;
+    startPosition: ReadingPosition | null;
+    registerLeaveGuard: (guard: () => Promise<boolean>) => () => void;
+  },
 ) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
@@ -341,10 +363,12 @@ function EditorInstance(
   const [isDark, setIsDark] = createSignal(document.documentElement.classList.contains("dark"));
   const [richMode, setRichMode] = createSignal(props.initialRichMode !== "source");
   const syncEnded = createSyncEnded({
+    messages: t,
     hasUnsentChanges: () => provider?.hasUnsentChanges() ?? false,
     resume: () => provider?.resume(),
     focusEditor: () => editorView()?.focus(),
   });
+  onCleanup(props.registerLeaveGuard(syncEnded.confirmLeave));
   // The sync-ended bar replaces the toolbar, so a toolbar mounted again starts from the panel's current state.
   const [panelOpen, setPanelOpen] = createSignal(props.initialPanelOpen);
   const onPanelState = (event: Event) => {
@@ -944,6 +968,7 @@ function EditorInstance(
           {(ended) => (
             <SyncEndedBar
               ended={ended()}
+              sync={syncEnded}
               markdown={() => ytext.toString()}
               noteHref={() => window.location.pathname + window.location.search}
             />

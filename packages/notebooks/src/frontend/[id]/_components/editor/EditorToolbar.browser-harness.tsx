@@ -12,17 +12,24 @@ import { listCommandsExtension } from "../../../lib/editor/list-commands";
 import { listsExtension } from "../../../lib/editor/lists";
 import { markdownExtension } from "../../../lib/editor/markdown";
 import { noteScrollerTheme } from "../../../lib/editor/theme";
+import { notebookWorkspaceMessages } from "../../messages";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
 import { caretFormat, sameCaretFormat } from "./editor-actions";
-import { type SyncEnded, SyncEndedBar } from "./sync-ended";
+import { createSyncEnded, SyncEndedBar } from "./sync-ended";
 
 function Harness() {
   let host!: HTMLDivElement;
   let scrollPort: HTMLDivElement | undefined;
   const [view, setView] = createSignal<EditorView>();
   const [toolbarMounted, setToolbarMounted] = createSignal(true);
-  const [syncEnded, setSyncEnded] = createSignal<SyncEnded | null>(null);
   const locale = new URLSearchParams(window.location.search).get("locale") ?? "en";
+  let pending = false;
+  const sync = createSyncEnded({
+    messages: () => notebookWorkspaceMessages.resolve([locale]).t,
+    hasUnsentChanges: () => pending,
+    resume: () => {},
+    focusEditor: () => view()?.focus(),
+  });
   // Match NoteEditor: formats follow document and selection transactions, suppressing equal values.
   const [format, setFormat] = createSignal(caretFormat(EditorState.create()), { equals: sameCaretFormat });
 
@@ -83,10 +90,11 @@ function Harness() {
       endSync(code: string, unsent: boolean) {
         const known = Object.values(notebooksYjs.errorCode).find((value) => value === code);
         if (!known) throw new Error(`Unknown sync error: ${code}`);
-        setSyncEnded({ code: known, unsent });
+        pending = unsent;
+        sync.end({ code: known, message: code });
       },
       resumeSync() {
-        setSyncEnded(null);
+        sync.ready();
       },
       async remountToolbar() {
         setToolbarMounted(false);
@@ -111,7 +119,7 @@ function Harness() {
         </ScrollArea>
         <Show when={toolbarMounted()}>
           <Show
-            when={syncEnded()}
+            when={sync.ended()}
             fallback={
               <EditorToolbar
                 connected={true}
@@ -134,6 +142,7 @@ function Harness() {
             {(ended) => (
               <SyncEndedBar
                 ended={ended()}
+                sync={sync}
                 markdown={() => view()?.state.doc.toString() ?? ""}
                 noteHref={() => "/app/notebooks/Book01/Note01"}
               />
