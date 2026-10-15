@@ -1,4 +1,5 @@
 import { createApiClient } from "@k2b/cloud/browser";
+import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import type { z } from "zod";
 import type { ApiType } from "../api";
 import { MessageViewSchema } from "../service/contracts";
@@ -23,6 +24,16 @@ export const createChatSends = (dependencies: {
   const notify = () => {
     if (!disposed) for (const listener of listeners) listener();
   };
+  // The server orders messages by arrival, so each conversation posts one send at a time in the order typed.
+  // A failed send holds back the later ones until it is retried or forgotten.
+  const posting = new Set<string>();
+  const next = (conversationId: string) => {
+    if (disposed || posting.has(conversationId)) return;
+    const head = [...entries.values()].find((entry) => entry.conversationId === conversationId && entry.status !== "sent");
+    if (head?.status !== "pending") return;
+    posting.add(conversationId);
+    void post(head);
+  };
   const post = async (entry: ChatSend) => {
     try {
       const message = await dependencies.post(entry.conversationId, { clientId: entry.clientId, body: entry.body });
@@ -32,10 +43,15 @@ export const createChatSends = (dependencies: {
     } catch {
       if (disposed || entries.get(entry.clientId) !== entry) return;
       entry.status = "failed";
+    } finally {
+      posting.delete(entry.conversationId);
+      if (!disposed && entries.get(entry.clientId) === entry) notify();
+      next(entry.conversationId);
     }
-    notify();
   };
   return {
+    // True while a send of any conversation is not sent yet, so leaving the page would lose it.
+    unsent: (): boolean => [...entries.values()].some((entry) => entry.status !== "sent"),
     sends: (conversationId: string): readonly ChatSend[] =>
       [...entries.values()].filter((entry) => entry.conversationId === conversationId),
     send: (conversationId: string, body: string): ChatSend => {
@@ -50,7 +66,7 @@ export const createChatSends = (dependencies: {
       if (!disposed) {
         entries.set(entry.clientId, entry);
         notify();
-        void post(entry);
+        next(conversationId);
       }
       return entry;
     },
@@ -59,10 +75,14 @@ export const createChatSends = (dependencies: {
       if (disposed || !entry || entry.status !== "failed") return;
       entry.status = "pending";
       notify();
-      void post(entry);
+      next(entry.conversationId);
     },
     forget: (clientId: string) => {
-      if (!disposed && entries.delete(clientId)) notify();
+      const entry = entries.get(clientId);
+      if (disposed || !entry) return;
+      entries.delete(clientId);
+      notify();
+      next(entry.conversationId);
     },
     subscribe: (listener: () => void) => {
       listeners.add(listener);
@@ -80,7 +100,13 @@ export const createChatSends = (dependencies: {
 export const createChatSendsApi = () => {
   const client = createApiClient<ApiType>({ baseUrl: "/api/chat" });
   return async (conversationId: string, input: { clientId: string; body: string }) => {
-    const response = await client.conversations[":conversation"].messages.$post({ param: { conversation: conversationId }, json: input });
+    // The gateway gives up on an app answer after this long, so a request still open then never gets one. Ending it
+    // marks the send failed, so it can be retried and the later sends of its chat are not held back forever.
+    const signal = AbortSignal.timeout(REQUEST_IDLE_TIMEOUT_MAX_SECONDS * 1000);
+    const response = await client.conversations[":conversation"].messages.$post(
+      { param: { conversation: conversationId }, json: input },
+      { init: { signal } },
+    );
     if (!response.ok) throw new Error(`Chat request failed (${response.status})`);
     return MessageViewSchema.parse(await response.json());
   };

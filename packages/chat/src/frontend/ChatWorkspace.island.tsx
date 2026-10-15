@@ -175,13 +175,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             at: send.message?.createdAt ?? send.createdAt,
             own: true,
             status,
-            ...(status === "failed" ? { retry: () => outbox?.retry(send.clientId) } : {}),
+            ...(status === "failed" ? { retry: () => outbox?.retry(send.clientId), discard: () => outbox?.forget(send.clientId) } : {}),
           }),
         );
       }
     }
     return result;
   });
+  // A send that was not sent holds back the later ones of its chat until it is retried or discarded.
+  const waiting = () => {
+    const current = openChat();
+    sendsVersion();
+    return current ? outbox?.sends(current.id).find((send) => send.status !== "sent")?.status === "failed" : false;
+  };
   const focusKey = () => {
     const id = route().messageId;
     return id ? (sendKeys.get(id) ?? id) : null;
@@ -362,6 +368,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
     const box = createChatSends({ post: createChatSendsApi() });
     outbox = box;
+    const leave = (event: BeforeUnloadEvent) => {
+      if (box.unsent()) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", leave);
+    onCleanup(() => window.removeEventListener("beforeunload", leave));
     const failed = new Set<string>();
     onCleanup(
       box.subscribe(() => {
@@ -462,7 +476,15 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
                       focusKey={focusKey()}
                       canWrite={current().permission !== "read"}
-                      hint={current().permission === "read" ? t().readOnly : liveStopped() ? t().liveStopped : undefined}
+                      hint={
+                        current().permission === "read"
+                          ? t().readOnly
+                          : liveStopped()
+                            ? t().liveStopped
+                            : waiting()
+                              ? t().messagesWaiting
+                              : undefined
+                      }
                       draft={draft()}
                       onDraftChange={setDraft}
                       onSend={send}
