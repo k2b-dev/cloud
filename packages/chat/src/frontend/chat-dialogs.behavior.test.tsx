@@ -162,11 +162,13 @@ describe("chat dialogs and info", () => {
     button("Nora", dom.document).click();
     await settle();
   };
-  const info = (data: Conversation, fake: ChatDialogStore, revision = () => 0) =>
+  const info = (data: Conversation, fake: ChatDialogStore, revision = () => 0, active = () => true) =>
     createComponent(modules!.ChatInfoPanel, {
       conversation: data,
       viewerId,
-      active: true,
+      get active() {
+        return active();
+      },
       get revision() {
         return revision();
       },
@@ -385,6 +387,39 @@ describe("chat dialogs and info", () => {
       expect(previewMembers.mock.calls).toEqual([[conversation.id, [nora.principal]]]);
       expect(dom.root.textContent).toContain(t.joining({ count: 1 }));
       expect(dom.root.textContent).toContain(t.quietChat);
+    });
+    test(`a failed preview offers Try again for the same choice in ${locale}`, async () => {
+      let failing = true;
+      const previewMembers = mock<ChatDialogStore["previewMembers"]>(async () => {
+        if (failing) throw new Error("offline");
+        return { joining: 1, memberCount: 3, throughGroups: 0 };
+      });
+      await mount(locale, () =>
+        createComponent(modules!.AddPeopleDialog, {
+          setDismissHandler: () => {},
+          store: store({ previewMembers }),
+          conversation,
+          guest: true,
+          viewerId,
+          locale,
+          close: () => {},
+        }),
+      );
+      await chooseNora();
+      await Bun.sleep(270);
+      await settle();
+      expect(dom.root.textContent).toContain(t.requestFailed);
+      expect(button(t.add).disabled).toBe(true);
+      failing = false;
+      button(t.retry).click();
+      await Bun.sleep(270);
+      await settle();
+      expect(previewMembers.mock.calls).toEqual([
+        [conversation.id, [nora.principal]],
+        [conversation.id, [nora.principal]],
+      ]);
+      expect(dom.root.textContent).toContain(t.joining({ count: 1 }));
+      expect(button(t.add).disabled).toBe(false);
     });
     test(`starting without history excludes deactivated people and the viewer in ${locale}`, async () => {
       const former = MemberSchema.parse({
@@ -827,6 +862,34 @@ describe("chat dialogs and info", () => {
       expect(members).toHaveBeenCalledTimes(4);
       expect(dom.root.querySelectorAll(".chat-member-row__name")).toHaveLength(1);
       expect(dom.root.querySelector('[role="alert"]')).toBeNull();
+    });
+    test(`returning to info keeps the pages the reader loaded in ${locale}`, async () => {
+      const [active, setActive] = createSignal(true);
+      const page = (offset: number): Awaited<ReturnType<ChatDialogStore["members"]>> => ({
+        items: Array.from({ length: 100 }, (_, index) => ({
+          ...nora,
+          accessId: `member-${offset + index}`,
+          displayName: `Member ${offset + index}`,
+        })),
+        self,
+        managers: 2,
+        nextCursor: offset ? null : "page-2",
+      });
+      const members = mock<ChatDialogStore["members"]>(async (_id, query) => page(query.cursor ? 100 : 0));
+      await mount(locale, () => info(conversation, store({ members }), () => 0, active));
+      button(t.showMoreMembers).click();
+      await settle();
+      expect(dom.root.querySelectorAll(".chat-member-row__name")).toHaveLength(200);
+      const before = members.mock.calls.length;
+      setActive(false);
+      await settle();
+      setActive(true);
+      await settle();
+      expect(members.mock.calls.slice(before)).toEqual([
+        [conversation.id, {}],
+        [conversation.id, { cursor: "page-2" }],
+      ]);
+      expect(dom.root.querySelectorAll(".chat-member-row__name")).toHaveLength(200);
     });
     for (const q of ["", "Nora"]) {
       test(`info revision preserves two loaded pages with query "${q}" in ${locale}`, async () => {

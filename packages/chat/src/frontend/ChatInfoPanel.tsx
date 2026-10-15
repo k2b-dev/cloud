@@ -105,12 +105,10 @@ export default function ChatInfoPanel(props: {
     }),
   );
   createEffect(
-    on([() => props.active, () => props.store, query, () => props.revision], ([active, store, q, revision], previous) => {
-      if (active && store) {
-        const preserveDepth =
-          !!previous && previous[0] === active && previous[1] === store && previous[2] === q && previous[3] !== revision;
-        void load(preserveDepth);
-      }
+    on([() => props.active, () => props.store, query, () => props.revision], ([active, store, q], previous) => {
+      // Only a new search starts again from the first page; a membership change or a return to the panel keeps the
+      // rows the reader loaded.
+      if (active && store) void load(!!previous && previous[1] === store && previous[2] === q && rows.length > 0);
     }),
   );
 

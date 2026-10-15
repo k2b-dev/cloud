@@ -78,9 +78,11 @@ export function AddPeopleDialog(
   const [added, setAdded] = createSignal(false);
   const unnamed = () => props.conversation.name === null;
   const principals = () => chosen().map((member) => member.principal);
+  // Retry asks again for the same choice.
+  const [previewAttempt, setPreviewAttempt] = createSignal(0);
 
   createEffect(
-    on(principals, (members) => {
+    on([principals, previewAttempt], ([members]) => {
       setPreviewError("");
       if (!members.length) {
         setPreview(null);
@@ -192,7 +194,12 @@ export function AddPeopleDialog(
               </Show>
             }
           >
-            <DialogError message={previewError()} />
+            <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+              {previewError()}{" "}
+              <Button variant="text" size="xs" onClick={() => setPreviewAttempt((attempt) => attempt + 1)}>
+                {t().retry}
+              </Button>
+            </InlineGuidance>
           </Show>
         </Show>
         <Show when={unnamed()}>
