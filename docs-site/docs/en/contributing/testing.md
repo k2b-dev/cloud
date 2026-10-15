@@ -653,7 +653,9 @@ slow for every pull request. Its `browser-smoke` job builds the Core, gateway,
 Accounts, Grids, Mail, and Chat images, boots them against fresh infrastructure,
 and runs the Grids, Mail, and Chat browser smokes against that stack. It runs
 independently of the Assistant browser suites, so a failure in one does not hide
-the other's result.
+the other's result. The smokes accept pending legal documents using the version
+rendered in the consent page's `data-legal-version` attribute; they must not read
+island props, whose encoding is internal.
 
 ### Read slow statements from a CI run
 

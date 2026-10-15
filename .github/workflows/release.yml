@@ -332,7 +332,7 @@ jobs:
             -H 'content-type: application/json' --data '{"token":"release-smoke"}' | jq -r .session_token)
           # A first sign-in stays pending until the account accepts the legal documents, as in the browser.
           version=$(curl --silent --fail-with-body -H "cookie: session_token=$token" http://127.0.0.1:3000/auth/continue \
-            | grep -oE 'version:&quot;[a-f0-9]{64}' | grep -oE '[a-f0-9]{64}')
+            | grep -oE 'data-legal-version="[a-f0-9]{64}"' | grep -oE '[a-f0-9]{64}') || { echo "::error::The legal consent page rendered no data-legal-version." >&2; exit 1; }
           curl --silent --fail-with-body -X POST http://127.0.0.1:3000/api/auth/legal-consent \
             -H "authorization: Bearer $token" -H "origin: $APP_URL" -H 'content-type: application/json' \
             --data "{\"accepted\":true,\"version\":\"$version\"}"
