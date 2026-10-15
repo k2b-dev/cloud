@@ -181,19 +181,14 @@
   justify-content: center;
 }
 /* Removal stays quiet until the row is engaged where a pointer can hover; touch screens always show it. Only the
-   opacity changes, so nothing moves. */
+   opacity changes, so nothing moves; the @k2b/ui motion tokens make it instant under reduced motion. */
 @media (hover: hover) and (min-width: 40rem) {
   .chat-member-row .chat-member-row__remove {
     opacity: 0;
-    transition: opacity 150ms;
+    transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
   }
   .chat-member-row:is(:hover, :focus-within) .chat-member-row__remove {
     opacity: 1;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .chat-member-row .chat-member-row__remove {
-    transition: none;
   }
 }
 .chat-info__purpose {
