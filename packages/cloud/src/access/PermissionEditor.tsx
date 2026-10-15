@@ -225,8 +225,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       if (index !== -1) setEntries(index, reconcile({ ...entry }));
       announce(t().accessGranted({ name: display.displayName }));
     } catch (err) {
-      if (disposed) return;
-      setEntries((current) => current.filter((entry) => entry.id !== id));
+      if (!disposed) setEntries((current) => current.filter((entry) => entry.id !== id));
+      // Prompts are global, so a grant that fails after its dialog closed still says so.
       if (!(typeof err === "object" && err !== null && "name" in err && err.name === "AbortError")) {
         prompts.error(err instanceof Error ? err.message : String(err));
       }

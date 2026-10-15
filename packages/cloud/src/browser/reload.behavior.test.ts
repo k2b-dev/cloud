@@ -52,6 +52,38 @@ else {
     });
   }
 
+  test("lets the code that waited for a confirmation start its request before the reload", async () => {
+    const { ui, reload } = modules!;
+    const dom = createDomTestHarness();
+    const order: string[] = [];
+    Object.assign(dom.window.location, {
+      reload: () => {
+        order.push("reload");
+      },
+    });
+    let answer: (ok: boolean) => void = () => {};
+    const confirmed = ui.prompts
+      .dialog<boolean>((close) => {
+        answer = close;
+        return "Delete the item?";
+      })
+      .then((ok) => {
+        if (ok) order.push("delete request");
+      });
+    try {
+      expect(reload.reloadOnce("confirm")).toBe(true);
+      answer(true);
+      await confirmed;
+      await Bun.sleep(10);
+      expect(order).toEqual(["delete request", "reload"]);
+    } finally {
+      answer(false);
+      await confirmed;
+      await Bun.sleep(10);
+      dom.cleanup();
+    }
+  });
+
   for (const storageFails of [false, true]) {
     test(`waits for the last dialog and ${storageFails ? "reloads even if storage later fails" : "starts the window at the deferred reload"}`, async () => {
       const { reload } = modules!;

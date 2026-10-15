@@ -873,7 +873,7 @@ describe("PermissionEditor pending grants", () => {
   });
 
   for (const fail of [false, true]) {
-    test(`disposal silences a late grant ${fail ? "failure" : "success"}`, async () => {
+    test(`after disposal a late grant ${fail ? "failure still shows its error" : "success stays silent"}`, async () => {
       const view = await renderEditor();
       const { dom, grants, pick } = view;
       try {
@@ -883,7 +883,8 @@ describe("PermissionEditor pending grants", () => {
         if (fail) grants[0]!.reject(new Error("Late grant failure"));
         else grants[0]!.resolve(grants[0]!.entry);
         await Bun.sleep(10);
-        expect(dom.document.querySelector("dialog[open]")).toBeNull();
+        // Closing the dialog while the grant saves must not hide that it failed.
+        expect(dom.document.querySelector("dialog[open]")?.textContent?.includes("Late grant failure") === true).toBe(fail);
         expect(dom.document.querySelectorAll("[data-k2b-live]")).toHaveLength(0);
         expect(grants).toHaveLength(1);
       } finally {

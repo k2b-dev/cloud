@@ -144,11 +144,16 @@ const replacePage = () => {
 };
 ```
 
-`reloadOnce` waits while a dialog is open and reloads once the last dialog
-closes. An automatic reload never discards a dialog. For editors outside a
-dialog, the application must still wait until reloading will not discard a
-draft. `reloadOnce` also returns `false` when `sessionStorage` is unavailable.
-A reload that follows an explicit user action does not need the guard.
+`reloadOnce` waits while a dialog is open, a modeless one included, and
+reloads once the last dialog closes. An automatic reload never discards a
+dialog. It reloads one task after the close, so the code that waited for the
+dialog, such as a confirmed delete, starts its request first; the reload does
+not wait for that request to finish. While it waits, `reloadOnce` returns
+`true` and the page gets no live updates. A dialog that shows live data says
+itself that its updates are paused. For editors outside a dialog, the
+application must still wait until reloading will not discard a draft.
+`reloadOnce` also returns `false` when `sessionStorage` is unavailable. A
+reload that follows an explicit user action does not need the guard.
 
 An ended session reaches the page as `unavailable`. Reload, so the page's
 route policy sends the person to sign-in with a return URL. Do not navigate to

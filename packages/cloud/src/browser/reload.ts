@@ -11,13 +11,17 @@ export const AUTOMATIC_RELOAD_WINDOW_MS = 30_000;
 
 let reloadPending = false;
 
+/** Any open dialog holds the reload: a modeless window, such as global search moved aside, can sit above a modal one. */
+const dialogOpen = () => document.querySelector("dialog[open]") !== null;
+
 const storageKey = (key: string) => `cloud.reload.${key}`;
 
 /**
  * Reloads the page for an automatic reason (a live event, a failed live
  * subscription, a changed view) at most once per `key` and window in this tab.
- * Waits while a dialog is open and reloads once the last dialog closes, so an
- * automatic reload never discards a dialog.
+ * Waits while a dialog is open and reloads once the last one closes, so an
+ * automatic reload never discards a dialog. While it waits, the call still
+ * returns `true`; a dialog that shows live data says itself that it is stale.
  *
  * Returns `false` without reloading when the same key already reloaded within
  * the window, or when `sessionStorage` is unavailable and a repeat therefore
@@ -37,10 +41,18 @@ export const reloadOnce = (key: string, options: { windowMs?: number } = {}): bo
   } catch {
     return false;
   }
-  if (typeof document !== "undefined" && document.querySelector("dialog[open]")) {
-    reloadPending = true;
-    const observer = new MutationObserver(() => {
-      if (document.querySelector("dialog[open]")) return;
+  if (typeof document === "undefined" || !dialogOpen()) {
+    window.location.reload();
+    return true;
+  }
+  reloadPending = true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const observer = new MutationObserver(() => {
+    if (timer !== undefined || dialogOpen()) return;
+    // A task later, so the code that waited for the dialog (a confirmed delete, for example) starts its request first.
+    timer = setTimeout(() => {
+      timer = undefined;
+      if (dialogOpen()) return;
       observer.disconnect();
       reloadPending = false;
       try {
@@ -49,9 +61,9 @@ export const reloadOnce = (key: string, options: { windowMs?: number } = {}): bo
         // Storage worked when the reload was scheduled; closing the dialog still reloads.
       }
       window.location.reload();
-    });
-    observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["open"] });
-  } else window.location.reload();
+    }, 0);
+  });
+  observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["open"] });
   return true;
 };
 

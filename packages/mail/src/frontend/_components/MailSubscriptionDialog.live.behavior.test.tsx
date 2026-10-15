@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { isServer } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
 
@@ -125,5 +125,33 @@ describe("Mail subscription dialog live updates", () => {
     socket().message({ t: "resync", id: "1", cursor: "s6t.mail.90" });
     await settle();
     expect(listRequests).toBe(3);
+  });
+
+  test("an ended session says in the open dialog that updates are paused and reloads once it closes", async () => {
+    const reload = spyOn(dom.window.location, "reload").mockImplementation(() => {});
+    try {
+      const { dialogCore } = await import("@k2b/ui");
+      const { openMailSubscriptionDialog } = await import("./MailSubscriptionDialog");
+      const dialog = openMailSubscriptionDialog({ mailboxId: MAILBOX_ID, canWrite: false, liveCursor: "s6t.mail.4" });
+      await settle();
+      const updatesPaused = () => dom.document.querySelector("dialog[open]")?.textContent?.includes("Updates paused") ?? false;
+      expect(updatesPaused()).toBe(false);
+
+      socket().open();
+      socket().message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
+      socket().message({ t: "error", code: "login_required", message: "Sign in again to receive live updates." });
+      socket().close(1008, "login_required");
+      await settle();
+      // The reload waits for the dialog, so the dialog itself says that its list is stale.
+      expect(reload).not.toHaveBeenCalled();
+      expect(updatesPaused()).toBe(true);
+
+      dialogCore.close();
+      await dialog;
+      await settle();
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      reload.mockRestore();
+    }
   });
 });

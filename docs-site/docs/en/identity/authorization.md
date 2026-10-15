@@ -467,7 +467,7 @@ service; the editor does not authorize requests.
 A pick appears at once as a pending row. The picker keeps focus but accepts no
 new pick until the server answers, so `grantAccess`, `updateAccess`, and
 `revokeAccess` never run concurrently from one editor. A failed grant removes
-its row and shows the error.
+its row and shows the error, also when the dialog closed meanwhile.
 
 ### Offer a level on part of the resource
 
