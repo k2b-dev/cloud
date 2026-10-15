@@ -1,4 +1,4 @@
-import { LocaleProvider } from "@k2b/ui";
+import { AppWorkspace, LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import type { HelpDocumentManifest, HelpDocumentPayload } from "../shared/help";
 import { LayoutHelpPage, openLayoutHelpDialog } from "./LayoutHelp";
@@ -56,7 +56,37 @@ const main = document.querySelector<HTMLElement>(".layout-content-main");
 if (!main) throw new Error("Missing Layout main");
 const params = new URL(location.href).searchParams;
 const embedded = params.has("embedded");
-if (params.has("modal")) {
+const referenceHost = params.get("host");
+if (referenceHost === "grids" || referenceHost === "pulse") {
+  // The Grids and Pulse query reference windows: one article beside the reference sidebar, without the Cloud shell.
+  const host = document.createElement("div");
+  host.className = "h-dvh";
+  document.body.replaceChildren(host);
+  const reader = () => <LayoutHelpPage documents={documents.slice(0, 1)} initialTopic="topic-0" includeShortcuts={false} embedded />;
+  render(
+    () => (
+      <LocaleProvider locale="en">
+        <AppWorkspace>
+          <AppWorkspace.Sidebar>
+            <AppWorkspace.SidebarDesktop>
+              <AppWorkspace.SidebarBody>Reference</AppWorkspace.SidebarBody>
+            </AppWorkspace.SidebarDesktop>
+          </AppWorkspace.Sidebar>
+          <AppWorkspace.Content>
+            {referenceHost === "grids" ? (
+              <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scroll={false}>
+                <div class="flex min-h-0 flex-1 flex-col overflow-auto">{reader()}</div>
+              </AppWorkspace.Main>
+            ) : (
+              <AppWorkspace.Main class="overflow-y-auto">{reader()}</AppWorkspace.Main>
+            )}
+          </AppWorkspace.Content>
+        </AppWorkspace>
+      </LocaleProvider>
+    ),
+    host,
+  );
+} else if (params.has("modal")) {
   // The dialog reads the topics the page registered, as Layout.HelpDocuments does.
   for (const manifest of documents) registry()?.set(manifest.id, { ...manifest, kind: "document" });
   openLayoutHelpDialog();

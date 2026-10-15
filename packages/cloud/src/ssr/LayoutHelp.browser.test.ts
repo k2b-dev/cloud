@@ -104,12 +104,12 @@ afterAll(async () => {
   for (const spy of spies) spy.mockRestore();
   await browser?.close();
 });
-const open = async (query = "", viewport = { width: 1440, height: 900 }) => {
+const open = async (query = "", viewport = { width: 1440, height: 900 }, ready = "[data-help-search]") => {
   const page = await browser.newPage({ viewport, reducedMotion: "reduce" });
   await page.route("http://cloud.test/**", (route) => route.fulfill({ contentType: "text/html", body: markup }));
   await page.goto(`http://cloud.test/help/apps/spaces${query}`);
   await page.addScriptTag({ content: bundle });
-  await page.locator("[data-help-search]").waitFor();
+  await page.locator(ready).waitFor();
   return page;
 };
 
@@ -239,6 +239,41 @@ test("an embedded reader in a narrow pane uses one column with the menu in a wid
     await page.close();
   }
 }, 30_000);
+
+for (const host of ["grids", "pulse"] as const)
+  test(`the ${host} query reference shows its article with a text table of contents that follows its scroller`, async () => {
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 390, height: 844 },
+    ]) {
+      const page = await open(`?host=${host}`, viewport, ".help-document h2");
+      try {
+        expect(await page.locator("article h3").textContent()).toBe("Topic 0");
+        expect(await page.locator(".help-article-toc-icon, .help-section-icon, [data-help-icon]").count()).toBe(0);
+        if (viewport.width < 768) {
+          expect(await page.locator(".help-article-aside").isVisible()).toBe(false);
+          await page.getByRole("button", { name: "On this page" }).waitFor();
+          continue;
+        }
+        const toc = page.locator(".help-article-aside .k2b-toc");
+        expect(await toc.isVisible()).toBe(true);
+        expect(await toc.locator("a").allTextContents()).toEqual(Array.from({ length: 8 }, (_, index) => `Section ${index}`));
+        expect(await toc.locator("i").count()).toBe(0);
+        // The host, not the window, scrolls the article.
+        await page.locator(".help-article-layout").evaluate((element) => {
+          let scroller = element.parentElement;
+          while (scroller && !(scroller.scrollHeight > scroller.clientHeight && /auto|scroll/.test(getComputedStyle(scroller).overflowY)))
+            scroller = scroller.parentElement;
+          scroller!.scrollTop = 2000;
+        });
+        await page.waitForFunction(
+          () => document.querySelector('.help-article-aside a[aria-current="location"]')?.textContent !== "Section 0",
+        );
+      } finally {
+        await page.close();
+      }
+    }
+  }, 30_000);
 
 test("typing keeps the same focused search input at the same position and reserves the result region", async () => {
   const page = await open();
