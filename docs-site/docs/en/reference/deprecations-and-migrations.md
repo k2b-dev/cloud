@@ -10,6 +10,29 @@ updated: 2026-10-14
 
 # Deprecations and migrations
 
+## Help articles have kinds, next steps, key caps, and details
+
+Help frontmatter now accepts `kind`, `needs`, `next`, and `related`, and the
+article body accepts key caps, icon labels, and `:::details` blocks. Core adds
+four columns to `help.documents` for them. Update Core before applications that
+publish Help: until Core adds the columns, an updated application that
+publishes Help fails its first registration and does not start.
+
+Startup checks Help more strictly. An application with Help that passed before
+fails startup when an article:
+
+- uses `kind`, `needs`, `next`, or `related` in its frontmatter for something
+  else; Help no longer strips these keys;
+- has a line that starts with `:::details` but has no title, no closing `:::`,
+  or another `:::details` inside;
+- has a `:kbd[...]` that does not name a key;
+- has a callout inside details;
+- has a `help:` target in a reference definition, autolink, image, HTML, or
+  callout title.
+
+Code spans and fenced code stay exempt. See
+[In-product Help](/en/docs/platform/help).
+
 ## Package plugins ship as verified bundles
 
 Package plugins now use the same verified manifest, bundled module, references,

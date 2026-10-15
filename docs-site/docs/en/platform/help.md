@@ -304,8 +304,10 @@ Same-app IDs in `next`, `related`, and `help:` links must exist in the base
 locale. This includes references prefixed with the owning app ID. Validation
 names the locale, document, and bad reference; code examples are ignored.
 Cross-app references resolve for the reader at read time and do not prevent
-startup. Unknown extra frontmatter fields are stripped. Third-party articles
-with only `id`, `title`, `icon`, `description`, and `order` keep working.
+startup. Unknown extra frontmatter fields are stripped. Help reserves `kind`,
+`needs`, `next`, and `related`: an article that uses one of these keys for
+something else fails startup. Third-party articles with only `id`, `title`,
+`icon`, `description`, and `order` keep working.
 
 One Markdown article is limited to 128 KiB. Search text is retained for every
 language. Invalid articles fail startup before the application advertises Help.
