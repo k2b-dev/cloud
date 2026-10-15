@@ -124,6 +124,15 @@ describe("Help author contract", () => {
     }
     expect(() => defineHelp({ documents: [helpSource("start", "", '`<a href="help:hidden/private">x</a>`')] })).not.toThrow();
   });
+  test("search text uses the article locale for key names", () => {
+    const definition = defineHelp({
+      baseLocale: "de",
+      documents: { de: [helpSource("keys", "", ":kbd[enter] :kbd[mod+k]")] },
+    });
+    expect(definition.documents[0]?.searchText).toContain("Eingabetaste");
+    expect(definition.documents[0]?.searchText).toContain("Steuerung K");
+    expect(definition.documents[0]?.searchText).not.toContain("Control");
+  });
   test("escaped pipes in table Help links start and convert", () => {
     const body = "| a |\n| --- |\n| [x\\|y](help:hidden/private) |";
     const definition = defineHelp({ documents: [helpSource("start", "", body)] });

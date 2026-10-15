@@ -116,7 +116,7 @@ const boundedExcerpt = (markdown: string, terms: readonly string[]): string => {
   return `${start > 0 ? `${marker}\n\n` : ""}${body}${start + budget < markdown.length ? `\n\n${marker}` : ""}`;
 };
 
-export const selectHelpMarkdown = (markdown: string, query?: string): { markdown: string; truncated: boolean } => {
+export const selectHelpMarkdown = (markdown: string, query?: string, locale?: string): { markdown: string; truncated: boolean } => {
   // An exact heading identifies one complete reference section, even in short articles.
   const headingQuery = query?.trim().toLocaleLowerCase();
   const exact =
@@ -136,7 +136,7 @@ export const selectHelpMarkdown = (markdown: string, query?: string): { markdown
   const phrase = normalizeSearchText(query ?? "");
   const ranked = splitSections(markdown)
     .map((section, index) => {
-      const text = normalizeSearchText(markdownToPlainText(section));
+      const text = normalizeSearchText(markdownToPlainText(section, locale));
       const score = (phrase && text.includes(phrase) ? 10 : 0) + terms.filter((term) => text.includes(term)).length;
       return { section, index, score };
     })
@@ -162,7 +162,7 @@ export const readHelpArticle = (document: HelpArticle, query?: string) => ({
   documentId: document.documentId,
   title: document.title,
   description: document.description,
-  ...selectHelpMarkdown(helpAgentMarkdown(document), query),
+  ...selectHelpMarkdown(helpAgentMarkdown(document), query, document.locale),
 });
 
 export const helpResourceUri = (appId: string, documentId: string): string =>

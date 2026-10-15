@@ -72,7 +72,7 @@ const parseSource = (source: string, locale: string): ParsedHelpDocument => {
     ...metadata,
     markdown,
     html: renderHelpMarkdown(markdown, { locale }),
-    searchText: markdownToPlainText(markdown),
+    searchText: markdownToPlainText(markdown, locale),
   };
 };
 

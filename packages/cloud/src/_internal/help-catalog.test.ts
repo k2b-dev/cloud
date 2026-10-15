@@ -42,6 +42,34 @@ const agentArticle = (markdown: string, locale = "en") => ({
   },
 });
 
+test("long German article excerpts score untitled callouts in the article locale", () => {
+  const markdown = [
+    "## Hintergrund",
+    "Allgemeine Grundlagen. ".repeat(400),
+    "## Sicherheit",
+    ":::warning\nDieser Vorgang entfernt alle gespeicherten Entwürfe.\n:::",
+    "## Weitere Informationen",
+    "Zusätzliche Erläuterungen. ".repeat(400),
+  ].join("\n\n");
+  expect(markdown.length).toBeGreaterThan(7000);
+  expect(markdown).not.toContain("Warnung");
+  const document = {
+    ...agentArticle(markdown, "de"),
+    appName: "Mail",
+    manifestHash: "current",
+    documentId: "sicherheit",
+    title: "Sicherheit",
+    order: 10,
+    kind: "reference" as const,
+    related: [],
+  };
+  const result = readHelpArticle(document, "Warnung");
+  expect(result.markdown).toContain("Dieser Vorgang entfernt alle gespeicherten Entwürfe.");
+  expect(result.markdown.startsWith("## Sicherheit")).toBe(true);
+  expect(result.markdown).not.toContain("Allgemeine Grundlagen.");
+  expect(result.truncated).toBe(true);
+});
+
 test("agent text names both keyboard platforms in the document language", () => {
   expect(helpAgentMarkdown(agentArticle(":kbd[mod+k]"))).toBe("Ctrl+K (⌘K on Mac)");
   expect(helpAgentMarkdown(agentArticle(":kbd[mod+k]", "de-CH"))).toBe("Strg+K (⌘K auf dem Mac)");

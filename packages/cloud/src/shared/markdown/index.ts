@@ -265,10 +265,10 @@ export function renderHelpMarkdown(content: string, options: HelpMarkdownRenderO
 }
 
 /** Plain text used by lightweight client-side help search indexes. */
-export function markdownToPlainText(content: string): string {
+export function markdownToPlainText(content: string, locale?: string): string {
   // The text a screen reader reads: key names instead of key caps, no decorative separators, and words of
   // adjacent blocks (a callout's title and body, a summary and its details) kept apart.
-  const html = renderHelpMarkdown(content).replace(/<\/(?:p|div|summary|li|h[1-6]|td|th)>/g, "$& ");
+  const html = renderHelpMarkdown(content, { locale }).replace(/<\/(?:p|div|summary|li|h[1-6]|td|th)>/g, "$& ");
   // Hidden parts are spans and icons; the filter only sees tags that the first pass keeps.
   const spoken = sanitizeHtml(html, {
     allowedTags: ["span", "i"],
