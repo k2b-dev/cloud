@@ -1,4 +1,4 @@
-import { MAIL_SEARCH_PARAMETER, MAX_MAIL_WORKSPACE_HREF_LENGTH, mailExactAddressSearch } from "../../search-url";
+import { MAIL_SEARCH_PARAMETER, MAX_MAIL_SEARCH_PARAMETER_LENGTH, mailExactAddressSearch } from "../../search-url";
 import type { MailListItem } from "../../service/workspace";
 
 export type { MailListItem } from "../../service/workspace";
@@ -69,8 +69,8 @@ export const buildMailSearchHref = (requestUrl: URL, search: Record<string, stri
     return `${next.pathname}${next.search}`;
   };
   const href = build();
-  if (href.length <= MAX_MAIL_WORKSPACE_HREF_LENGTH || !origin.has(MAIL_SEARCH_PARAMETER)) return href;
-  // A large starting filter plus the new search would exceed what the workspace route accepts; keep its view only.
+  if (href.length <= MAX_MAIL_SEARCH_PARAMETER_LENGTH || !origin.has(MAIL_SEARCH_PARAMETER)) return href;
+  // Leave room for selection and paging within the workspace route limit; keep the starting view without its large filter.
   origin.delete(MAIL_SEARCH_PARAMETER);
   return build();
 };

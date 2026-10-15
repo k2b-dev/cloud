@@ -205,9 +205,14 @@ function MailWorkspaceView(props: {
   let searchStart: { scope: string; scroll: ScrollSnapshot } | null = null;
   const captureSearchStart = (href: string) => {
     const target = mailRouteUrl(href);
-    if (target.searchParams.has(MAIL_SEARCH_FROM_PARAMETER) && !mailRouteUrl(requestPath()).searchParams.has(MAIL_SEARCH_FROM_PARAMETER)) {
+    const startingScope = mailListScope(buildMailSearchClearHref(target));
+    if (
+      target.searchParams.has(MAIL_SEARCH_FROM_PARAMETER) &&
+      !mailRouteUrl(requestPath()).searchParams.has(MAIL_SEARCH_FROM_PARAMETER) &&
+      mailListScope(requestPath()) === startingScope
+    ) {
       searchStart = {
-        scope: mailListScope(buildMailSearchClearHref(target)),
+        scope: startingScope,
         scroll: captureScroll(`[data-scroll-preserve="mail-list-${mailboxId}"]`),
       };
     }

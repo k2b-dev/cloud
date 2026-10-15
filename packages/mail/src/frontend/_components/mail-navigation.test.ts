@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { MAIL_SEARCH_PARAMETER, parseMailSearchState, serializeMailSearchState } from "../../search-state";
-import { MAX_MAIL_WORKSPACE_HREF_LENGTH } from "../../search-url";
+import { MAX_MAIL_SEARCH_PARAMETER_LENGTH, MAX_MAIL_WORKSPACE_HREF_LENGTH } from "../../search-url";
 import {
   buildExactParticipantSearchHref,
   buildExactSenderSearchHref,
@@ -263,6 +263,44 @@ describe("Mail search origin", () => {
     expect(new URL(buildMailSearchHref(small, { search: "structured" }), source.origin).searchParams.get("searchFrom")).toBe(
       "view=needs_action&search=tag",
     );
+  });
+
+  test("leaves room for selecting and paging results after dropping a large starting filter", () => {
+    const filter = (count: number, length: number) =>
+      serializeMailSearchState({
+        expression: {
+          type: "and",
+          expressions: Array.from({ length: count }, () => ({ type: "text", field: "any", query: "a".repeat(length), match: "words" })),
+        },
+        sort: "relevance",
+      });
+    const starting = filter(2, 500);
+    const search = filter(4, 475);
+    if (!starting.ok || !search.ok) throw new Error("Invalid search fixture");
+    const source = url("view=needs_action");
+    source.searchParams.set("search", starting.value);
+    const href = buildMailSearchHref(source, { search: search.value });
+    const selected = new URL(buildMailSelectionHref(new URL(href, source.origin), { ...item, selectionKind: "message" }), source.origin);
+    expect(selected.searchParams.get("conversation")).toBe("Conv01");
+    expect(selected.searchParams.get("message")).toBe("Msg001");
+    // Search pages use a base64url cursor with a fixed hash, rank, timestamp, and UUID.
+    selected.searchParams.set(
+      "cursor",
+      Buffer.from(
+        JSON.stringify({
+          version: 3,
+          sort: "relevance",
+          backend: "pg_textsearch",
+          queryHash: "a".repeat(64),
+          rank: 0.123456789,
+          internalDate: "2026-10-03T10:00:00.000000Z",
+          id: "019a0000-0000-7000-8000-000000000001",
+        }),
+      ).toString("base64url"),
+    );
+    expect(`${selected.pathname}${selected.search}`.length).toBeLessThanOrEqual(MAX_MAIL_WORKSPACE_HREF_LENGTH);
+    expect(href.length).toBeLessThanOrEqual(MAX_MAIL_SEARCH_PARAMETER_LENGTH);
+    expect(new URL(href, source.origin).searchParams.get("searchFrom")).toBe("view=needs_action");
   });
 
   test("filters a hand-edited origin and restores only first allowed values", () => {

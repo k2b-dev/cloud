@@ -178,6 +178,7 @@ describe("Mail workspace search return", () => {
   let workspaceRequests: string[];
   let emptyResults: boolean;
   let invalidSearch: boolean;
+  let heldSearchResponse: Promise<Response> | undefined;
 
   const snapshotFor = (href: string): MailboxPageData => {
     const url = new URL(href, "http://localhost");
@@ -225,6 +226,7 @@ describe("Mail workspace search return", () => {
     workspaceRequests = [];
     emptyResults = false;
     invalidSearch = false;
+    heldSearchResponse = undefined;
     builderResult = undefined;
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL) => {
@@ -232,6 +234,7 @@ describe("Mail workspace search return", () => {
         if (url.pathname.endsWith("/workspace-route")) {
           const href = url.searchParams.get("href") ?? "";
           workspaceRequests.push(href);
+          if (new URL(href, "http://localhost").searchParams.has("q") && heldSearchResponse) return heldSearchResponse;
           return Response.json(snapshotFor(href));
         }
         if (url.pathname.endsWith("/activity")) return Response.json({ items: [], nextCursor: null });
@@ -299,6 +302,43 @@ describe("Mail workspace search return", () => {
     await settle();
   };
   const scroller = () => dom.root.querySelector<HTMLElement>('[data-scroll-preserve="mail-list-Box001"]')!;
+
+  for (const method of ["delete", "Escape", "button"]) {
+    test(`clearing a pending first quick search via ${method} supersedes its response`, async () => {
+      mount("view=needs_action&conversation=one");
+      const response = Promise.withResolvers<Response>();
+      heldSearchResponse = response.promise;
+      type("invoice");
+      await Bun.sleep(380);
+      expect(workspaceRequests).toHaveLength(1);
+      expect(new URL(workspaceRequests[0]!, "http://localhost").searchParams.get("q")).toBe("invoice");
+      const historyLength = history.length;
+      if (method === "button") clearButton().click();
+      else if (method === "delete") type("");
+      else input().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      await settle();
+      response.resolve(Response.json(snapshotFor(workspaceRequests[0]!)));
+      await settle();
+      assertRoute("view=needs_action&conversation=one", "Needs action");
+      expect(input().value).toBe("");
+      expect(history.length).toBe(historyLength);
+      expect(dom.root.querySelector("[data-mail-reader-heading]")?.textContent).toBe("one");
+    });
+  }
+
+  for (const method of ["button", "Escape"]) {
+    test(`a tag view stays put when cleared via ${method} before the debounce`, async () => {
+      mount(tagQuery);
+      type("i");
+      if (method === "button") clearButton().click();
+      else input().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      await Bun.sleep(380);
+      expect(location.pathname + location.search).toBe(`${path}?${tagQuery}`);
+      expect(workspaceRequests).toEqual([]);
+      expect(input().value).toBe("");
+      expect(title()).toBe("Tagged mail");
+    });
+  }
 
   for (const method of ["button", "delete", "Escape"]) {
     test(`quick search returns to Needs action and its open conversation via ${method}`, async () => {
@@ -441,5 +481,22 @@ describe("Mail workspace search return", () => {
     await clickLink("view=needs_action");
     assertRoute("view=needs_action", "Needs action");
     expect(scroller().scrollTop).toBe(35);
+  });
+
+  test("Back into a search from another view does not capture that view's scroll", async () => {
+    mount();
+    scroller().scrollTop = 480;
+    await search();
+    await clickLink("view=done");
+    assertRoute("view=done", "Done");
+    scroller().scrollTop = 120;
+    history.back();
+    await settle();
+    assertRoute("searchFrom=view%3Dneeds_action&q=invoice", "Search results");
+    scroller().scrollTop = 300;
+    clearButton().click();
+    await settle();
+    assertRoute("view=needs_action", "Needs action");
+    expect(scroller().scrollTop).toBe(300);
   });
 });

@@ -187,6 +187,7 @@ export default function MailConversationList(props: {
     void props.onNavigateItem(buildMailSelectionHref(requestUrl(), item), item, "pointer");
   };
   const [searchValue, setSearchValue] = createSignal(props.query);
+  let quickSearchPending = false;
   const [searchFields, setSearchFields] = createSignal<MailQuickSearchField[]>(selectedQuickSearchFields(requestUrl()));
   const [loadMoreElement, setLoadMoreElement] = createSignal<HTMLDivElement>();
   const [failedLoadHref, setFailedLoadHref] = createSignal<string | null>(null);
@@ -216,23 +217,27 @@ export default function MailConversationList(props: {
     quickSearch.cancel();
     setSearchValue("");
     const currentUrl = requestUrl();
-    const href = buildMailSearchClearHref(currentUrl);
-    if (href === `${currentUrl.pathname}${currentUrl.search}`) return;
-    // A new history entry, so Back after clearing returns to the search instead of repeating the starting view.
-    void props.onOpenHref(href);
+    if (currentUrl.searchParams.has("q")) {
+      // A new history entry, so Back after clearing returns to the search instead of repeating the starting view.
+      void props.onOpenHref(buildMailSearchClearHref(currentUrl));
+    } else if (quickSearchPending) {
+      // Supersede the pending search before it can put the cleared text back.
+      void props.onOpenHref(`${currentUrl.pathname}${currentUrl.search}`, true);
+    }
   };
 
   const applyQuickSearch = (query: string, fields: MailQuickSearchField[], replace: boolean) => {
     const currentUrl = requestUrl();
     const normalizedQuery = query.trim();
     if (!normalizedQuery) {
-      if (currentUrl.searchParams.has("q")) clearSearch();
+      clearSearch();
       return;
     }
     const search: Record<string, string> = { q: normalizedQuery };
     if (!isDefaultQuickSearch(fields)) search[MAIL_QUICK_SEARCH_FIELDS_PARAMETER] = fields.join(",");
     const href = buildMailSearchHref(currentUrl, search);
     if (href === `${currentUrl.pathname}${currentUrl.search}`) return;
+    quickSearchPending = true;
     void props.onOpenHref(href, replace);
   };
 
@@ -243,6 +248,7 @@ export default function MailConversationList(props: {
 
   createEffect(() => {
     quickSearch.cancel();
+    quickSearchPending = false;
     setSearchValue(props.query);
     setSearchFields(selectedQuickSearchFields(requestUrl()));
   });
