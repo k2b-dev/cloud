@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
+import { arg, cloudResourceUrl, command, confirmFlag, flag, withCloudResourcePermalink } from "@k2b/cloud/cli";
 import type { PulseBase } from "../contracts";
 import { PULSE_BASE_DEFAULT_KEY, requireDefaultBaseRef, resolveBase, resolveBaseFromCommand } from "./context";
 import { baseFlag } from "./flags";
@@ -11,15 +11,20 @@ export const baseCommands = [
     summary: "List Pulse bases",
     async run({ ctx }) {
       const bases = await readApi<PulseBase[]>(ctx, "/bases");
-      printJsonOrTable(ctx, bases, baseRows(bases), [
-        { key: "id" },
-        { key: "name" },
-        { key: "rawRetentionDays", label: "raw" },
-        { key: "rollupRetentionDays", label: "rollups" },
-        { key: "sensitiveRetentionHours", label: "sensitive" },
-        { key: "deletion" },
-        { key: "updatedAt" },
-      ]);
+      printJsonOrTable(
+        ctx,
+        bases.map((resource) => withCloudResourcePermalink(ctx, "pulse.base", resource)),
+        baseRows(bases),
+        [
+          { key: "id" },
+          { key: "name" },
+          { key: "rawRetentionDays", label: "raw" },
+          { key: "rollupRetentionDays", label: "rollups" },
+          { key: "sensitiveRetentionHours", label: "sensitive" },
+          { key: "deletion" },
+          { key: "updatedAt" },
+        ],
+      );
     },
   }),
   command("use", {
@@ -28,7 +33,8 @@ export const baseCommands = [
     async run({ ctx, args }) {
       const base = await resolveBase(ctx, args.base);
       await ctx.setDefault(PULSE_BASE_DEFAULT_KEY, base.id);
-      if (!printStructured(ctx, { base, defaultBase: base.id })) ctx.print(`Using Pulse base ${base.name} (${base.id}).`);
+      if (!printStructured(ctx, { base: withCloudResourcePermalink(ctx, "pulse.base", base), defaultBase: base.id }))
+        ctx.print(`Using Pulse base ${base.name} (${base.id}).`);
     },
   }),
   command("current", {
@@ -36,7 +42,8 @@ export const baseCommands = [
     async run({ ctx }) {
       const ref = await requireDefaultBaseRef(ctx);
       const base = await resolveBase(ctx, ref);
-      if (!printStructured(ctx, { base, defaultBase: base.id })) ctx.print(`${base.name} (${base.id})`);
+      if (!printStructured(ctx, { base: withCloudResourcePermalink(ctx, "pulse.base", base), defaultBase: base.id }))
+        ctx.print(`${base.name} (${base.id})`);
     },
   }),
   command("get", {
@@ -45,7 +52,7 @@ export const baseCommands = [
     args: { args: arg.rest({ valueLabel: "base" }) },
     async run({ ctx, args }) {
       const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
-      if (!printStructured(ctx, base)) {
+      if (!printStructured(ctx, withCloudResourcePermalink(ctx, "pulse.base", base))) {
         ctx.print(`${base.name} (${base.id})`);
         ctx.print(`Raw retention: ${base.rawRetentionDays} days`);
         ctx.print(`Rollup retention: ${base.rollupRetentionDays} days`);
@@ -68,7 +75,8 @@ export const baseCommands = [
         jsonRequest("POST", { name: args.name, description: flags.description ?? null }),
       );
       if (flags.use) await ctx.setDefault(PULSE_BASE_DEFAULT_KEY, base.id);
-      if (!printStructured(ctx, base)) ctx.print(`Created Pulse base ${base.name} (${base.id}).`);
+      if (!printStructured(ctx, withCloudResourcePermalink(ctx, "pulse.base", base)))
+        ctx.print(`Created Pulse base ${base.name} (${base.id}). ${cloudResourceUrl(ctx, { type: "pulse.base", id: base.id })}`);
     },
   }),
   command("update", {
@@ -102,7 +110,8 @@ export const baseCommands = [
         sensitiveRetentionHours: flags.sensitiveRetentionHours,
       };
       const updated = await readApi<PulseBase>(ctx, `/bases/${encodeURIComponent(base.id)}`, jsonRequest("PATCH", patch));
-      if (!printStructured(ctx, updated)) ctx.print(`Updated Pulse base ${updated.name} (${updated.id}).`);
+      if (!printStructured(ctx, withCloudResourcePermalink(ctx, "pulse.base", updated)))
+        ctx.print(`Updated Pulse base ${updated.name} (${updated.id}).`);
     },
   }),
   command("delete", {

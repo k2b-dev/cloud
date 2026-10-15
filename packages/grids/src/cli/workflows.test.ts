@@ -276,7 +276,7 @@ describe("Grids workflow CLI", () => {
       idempotencyKey: "preview-42",
       expectedRevision: 3,
     });
-    expect(lines).toEqual([`Created workflow run ${runId} (queued).`]);
+    expect(lines).toEqual([`Created workflow run ${runId} (queued). http://cloud.test/open/grids.workflow-run/~${runId}`]);
   });
 
   test("uses explicit launcher list, create, update, and delete routes", async () => {

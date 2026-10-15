@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-11
+updated: 2026-10-13
 ---
 
 # App capabilities
@@ -464,12 +464,77 @@ types: {
 consumer that a `CloudResourceRef` of this Type can be read programmatically.
 The referenced Query is the only read implementation; do not publish a second
 `item.get` or a Project-specific reader for the same operation. Omit `reader`
-when the resource has no useful bounded machine representation.
+only when the resource has neither a page nor a useful bounded machine
+representation.
 
 When an application lets a user copy or paste this identity, use Cloud's
 versioned resource clipboard format instead of embedding an ID in app-specific
 JSON or inferring it from text. See
 [Copy and paste Cloud resources](/en/docs/platform/resource-references).
+
+### Resource links
+
+The owning application returns a root-relative semantic link with `rel: "open"`
+for each resource it exposes. Its canonical reader returns that destination
+in top-level `links`. Choose a page the current caller may open: a reader's
+Mail draft opens a read view, while a writer's draft opens the composer. A
+resource without its own page can open its containing page, such as a comment's
+conversation. Never build another application's page route.
+
+Cloud supplies a permanent entry through `cloudResourceHref(ref)` from
+`@k2b/cloud/contracts`: `/open/<type>/~<encoded-id>`. The required `~` prefix keeps
+IDs such as `.` and `..` intact during URL normalization; the helper supports
+the full 512-character resource ID limit. For example,
+`{ type: "mail.draft", id: "AbC123" }` produces `/open/mail.draft/~AbC123`.
+Core invokes the Type's live reader under the signed-in user's authority and
+redirects to its first top-level `open` link. Signed-out users return to the
+permalink after signing in. Missing access, unavailable apps and missing
+readers or destinations show the same 404 page. Links without `~` also return 404.
+
+These fields serve different boundaries:
+
+| Field | Author and meaning |
+| --- | --- |
+| Provider `links[].rel: "open"` with `href` | The owning app's root-relative, permission-aware destination |
+| Consumer `refs[].href` | Assistant adds the canonical `/open` link for refs with live readers; MCP makes it absolute using the installation's `app.url` |
+| CLI `permalink` | An absolute `/open` URL on the selected profile's server, added by `cloudResourceUrl(ctx, ref)` or `withCloudResourcePermalink(ctx, type, resource)` |
+
+Providers keep the strict ref shape and root-relative semantic links. MCP's
+advertised output schema accepts its added `refs[].href`; that consumer field
+is optional and does not become a provider field. Assistant's
+`read_cloud_resource` and MCP's `cloud__resource__read` accept a ref with its
+`href` unchanged. A ref whose ID is not well-formed Unicode gets no `href` or
+`permalink`. Generic `cld capabilities
+read`, `query` and `action` add permalinks for refs with live readers and make
+returned semantic links absolute, including links inside resource lists. They
+read the catalog for this only when a result names refs; if the catalog is
+unavailable, the command warns and still prints the successful result.
+Assistant CLI JSON, JSONL, terminal and ACP output make supplied Cloud-relative
+Markdown links absolute. Models use supplied links and never construct URLs.
+
+A permalink identifies a resource; it grants no access and contains only its
+Type and ID. A CLI must omit a canonical link if its reader requires access the
+caller lacks. Published Grids app commands add no permalinks: projections can
+be accessible without Base access, but canonical readers require it.
+See [CLI modules](/en/docs/platform/cli-modules).
+
+### Test resource links
+
+Give every Type with a page a reader. In the provider's tests, call each reader
+for a caller of every access level that may read the resource. Check its
+top-level destination with `assertResourceOpenLink(result)` from
+`@k2b/cloud/capabilities/testing`.
+
+A reader must return a page that caller may open: Mail drafts open the composer
+for writers and the read view for readers. A denied read returns no link.
+Actions that remove a resource or the caller's access to it do not name it in
+`refs`.
+
+Older owning-app readers that return only `edit` remain usable: Core accepts a
+validated `edit` destination during rollout when no `open` is supplied. Readers
+without any destination still work through capability calls but cannot open a
+permalink. Update owning apps together with Core; see the
+[rollout note](/en/docs/operations/deployment-requirements#enable-resource-permalinks).
 
 ### Queries read data
 
@@ -1129,9 +1194,10 @@ it when the operation title and structured data already say everything useful.
 Provider-owned `refs` use qualified declared Types. Foreign qualified refs are
 opaque cross-app identities and need not be redeclared by the provider. An app
 may enrich a foreign ref only when it has an authoritative user-facing label;
-otherwise it returns the bare identity. Links are root-relative same-origin
-Cloud paths. They are hints: a caller may open one, but an operation does not
-require UI merely because it returns a link.
+otherwise it returns the bare identity. Provider links are root-relative
+same-origin Cloud paths. Readers return the resource's top-level `open` link
+for [Resource links](#resource-links); links on other results remain optional
+hints and do not require UI.
 When `hasMore` is true, `nextCursor` is required; on the final page it must be
 absent. Treat cursors as opaque values.
 

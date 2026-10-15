@@ -1,4 +1,4 @@
-import { arg, type CloudCliContext, command, confirmFlag, flag } from "@k2b/cloud/cli";
+import { arg, type CloudCliContext, cloudResourceUrl, command, confirmFlag, flag, withCloudResourcePermalink } from "@k2b/cloud/cli";
 import type { MetricQueryPoint, PulseCurrentState, PulseQueryCompileResult, PulseRecordedEvent, PulseSavedQuery } from "../contracts";
 import { listSavedQueries, requireRestArg, resolveBaseFromCommand, resolveSavedQueryId } from "./context";
 import { baseFlag, QUERY_INPUT } from "./flags";
@@ -73,7 +73,12 @@ export const queryCommands = [
     async run({ ctx, args }) {
       const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
       const queries = await listSavedQueries(ctx, base.id);
-      printJsonOrTable(ctx, queries, savedQueryRows(queries), [{ key: "id" }, { key: "name" }, { key: "query" }, { key: "updatedAt" }]);
+      printJsonOrTable(
+        ctx,
+        queries.map((resource) => withCloudResourcePermalink(ctx, "pulse.saved_query", resource)),
+        savedQueryRows(queries),
+        [{ key: "id" }, { key: "name" }, { key: "query" }, { key: "updatedAt" }],
+      );
     },
   }),
   command("query save", {
@@ -95,7 +100,8 @@ export const queryCommands = [
         `/bases/${encodeURIComponent(base.id)}/saved-queries`,
         jsonRequest("POST", { name: flags.name, description: flags.description ?? null, query }),
       );
-      if (!printStructured(ctx, saved)) ctx.print(`Saved query ${saved.name} (${saved.id}).`);
+      if (!printStructured(ctx, withCloudResourcePermalink(ctx, "pulse.saved_query", saved)))
+        ctx.print(`Saved query ${saved.name} (${saved.id}). ${cloudResourceUrl(ctx, { type: "pulse.saved_query", id: saved.id })}`);
     },
   }),
   command("query delete", {

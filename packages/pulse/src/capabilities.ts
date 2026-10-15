@@ -213,6 +213,7 @@ const runSourceRead = async (input: z.infer<typeof SourceReadInputSchema>, conte
     data: mapSource(source!),
     summary: resolvePulseMessages(context.locale).t.readSource({ name: source!.name }),
     refs: [{ type: "pulse.source", id: source!.id }],
+    links: [{ rel: "open" as const, href: pulseSourceHref(source!.baseId, source!.id) }],
   });
 };
 
@@ -272,6 +273,7 @@ const runResourceRead = async (input: z.infer<typeof ResourceReadInputSchema>, c
     },
     summary: resolvePulseMessages(context.locale).t.readResource({ name: resource.label.slice(0, 500) }),
     refs: [{ type: "pulse.resource", id: input.id }],
+    links: [{ rel: "open" as const, href: pulseResourceHref(ref.baseShortId, resource.key) }],
   });
 };
 
@@ -314,6 +316,7 @@ const runSavedQueryRead = async (input: z.infer<typeof SavedQueryReadInputSchema
     data: mapSavedQuery(query!),
     summary: resolvePulseMessages(context.locale).t.readSavedQuery({ name: query!.name }),
     refs: [{ type: "pulse.saved_query", id: query!.id }],
+    links: [{ rel: "open" as const, href: pulseExplorerHref(query!.baseId) }],
   });
 };
 

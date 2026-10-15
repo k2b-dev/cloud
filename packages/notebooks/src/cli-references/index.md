@@ -439,6 +439,8 @@ All commands support the global options `--json`, `--profile`, `--server`, and `
 
 ## JSON contracts
 
+Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
+
 Treat JSON fields as the contract and tolerate additional fields.
 
 - `ls` without a notebook returns `{ data: Notebook[], pagination }`. With a notebook it returns `{ notebook: { id, name }, parentId, data: [{ id, title, hasChildren, updatedAt }] }`. `tree` returns the same with nested `children`.

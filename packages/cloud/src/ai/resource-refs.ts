@@ -1,11 +1,42 @@
 import {
+  CloudResourceHrefSchema,
   type CloudResourceRef,
-  type CloudResourceReference,
   CloudResourceReferenceSchema,
   type CloudResourceView,
   CloudResourceViewSchema,
+  cloudResourceHref,
+  cloudResourceRefAppId,
+  resolveCapabilityResourceReader,
 } from "../contracts/capabilities";
+import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { AiConversationResourceObservation } from "./types";
+
+const LinkedResourceReferenceSchema = CloudResourceReferenceSchema.extend({
+  href: CloudResourceHrefSchema.optional(),
+});
+
+export const addCloudResourceHrefs = <T>(
+  value: T,
+  apps: readonly Pick<CapabilityRegistryEntry, "appId" | "manifest">[],
+  origin?: string,
+) => {
+  if (!value || typeof value !== "object" || !("refs" in value) || !Array.isArray(value.refs)) return value;
+  return {
+    ...value,
+    refs: value.refs.map((reference: unknown) => {
+      if (reference && typeof reference === "object" && "href" in reference) return reference;
+      const parsed = CloudResourceReferenceSchema.safeParse(reference);
+      if (!parsed.success) return reference;
+      const ref = parsed.data;
+      if (!ref.id.isWellFormed()) return reference;
+      const app = apps.find((candidate) => candidate.appId === cloudResourceRefAppId(ref));
+      if (!app || !resolveCapabilityResourceReader(app.manifest, ref)) return reference;
+      const href = CloudResourceHrefSchema.safeParse(cloudResourceHref(ref));
+      if (!href.success) return reference;
+      return { ...ref, href: origin ? new URL(href.data, origin).href : href.data };
+    }),
+  };
+};
 
 const observationKey = (ref: CloudResourceRef): string => `${ref.type}\0${ref.id}`;
 
@@ -47,9 +78,9 @@ export const collectConversationResourceObservations = (...values: unknown[]): A
         href: resource.links.find((link) => link.rel === "open")?.href,
       });
     } else {
-      const reference = CloudResourceReferenceSchema.safeParse(value);
+      const reference = LinkedResourceReferenceSchema.safeParse(value);
       if (reference.success) {
-        const resource: CloudResourceReference = reference.data;
+        const resource = reference.data;
         const ref: CloudResourceRef = { type: resource.type, id: resource.id };
         const previous = observations.get(observationKey(ref));
         observations.set(observationKey(ref), {
@@ -58,6 +89,7 @@ export const collectConversationResourceObservations = (...values: unknown[]): A
           ...(resource.title !== undefined ? { title: resource.title } : {}),
           ...(resource.preview !== undefined ? { preview: resource.preview } : {}),
           ...(resource.icon !== undefined ? { icon: resource.icon } : {}),
+          ...(resource.href !== undefined ? { href: resource.href } : {}),
         });
       }
     }

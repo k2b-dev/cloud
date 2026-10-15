@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
+import { arg, cloudResourceUrl, command, confirmFlag, flag, withCloudResourcePermalink } from "@k2b/cloud/cli";
 import type { WorkflowInvocationReceipt } from "@k2b/cloud/workflows";
 import type { z } from "zod";
 import { PUBLIC_DOCUMENT_PAGE_LIMIT } from "../api/document-public-contracts";
@@ -547,7 +547,11 @@ export const workflowCommands = [
           ...(flags.expectedRevision !== undefined ? { expectedRevision: flags.expectedRevision } : {}),
         }),
       );
-      printJsonOrMessage(ctx, receipt, `${receipt.created ? "Created" : "Reused"} workflow run ${receipt.runId} (${receipt.status}).`);
+      printJsonOrMessage(
+        ctx,
+        { ...receipt, permalink: cloudResourceUrl(ctx, { type: "grids.workflow-run", id: receipt.runId }) },
+        `${receipt.created ? "Created" : "Reused"} workflow run ${receipt.runId} (${receipt.status}).${receipt.created ? ` ${cloudResourceUrl(ctx, { type: "grids.workflow-run", id: receipt.runId })}` : ""}`,
+      );
     },
   }),
   command("workflow-launchers list", {
@@ -640,8 +644,8 @@ export const workflowCommands = [
       );
       printJsonOrMessage(
         ctx,
-        receipt,
-        `${receipt.created ? "Created" : "Reused"} ${launcher.config.kind === "customApp" ? "custom-app" : launcher.config.kind} workflow run ${receipt.runId} (${receipt.status}).`,
+        { ...receipt, permalink: cloudResourceUrl(ctx, { type: "grids.workflow-run", id: receipt.runId }) },
+        `${receipt.created ? "Created" : "Reused"} ${launcher.config.kind === "customApp" ? "custom-app" : launcher.config.kind} workflow run ${receipt.runId} (${receipt.status}).${receipt.created ? ` ${cloudResourceUrl(ctx, { type: "grids.workflow-run", id: receipt.runId })}` : ""}`,
       );
     },
   }),
@@ -680,14 +684,19 @@ export const workflowRunCommands = [
           limit: flags.limit,
         })}`,
       );
-      printJsonOrTable(ctx, payload, workflowRunRows(payload.items), [
-        { key: "id", label: "ID" },
-        { key: "revision", label: "REVISION" },
-        { key: "channel", label: "CHANNEL" },
-        { key: "mode", label: "MODE" },
-        { key: "status", label: "STATUS" },
-        { key: "createdAt", label: "CREATED" },
-      ]);
+      printJsonOrTable(
+        ctx,
+        { ...payload, items: payload.items.map((run) => withCloudResourcePermalink(ctx, "grids.workflow-run", run)) },
+        workflowRunRows(payload.items).map((run) => withCloudResourcePermalink(ctx, "grids.workflow-run", run)),
+        [
+          { key: "id", label: "ID" },
+          { key: "revision", label: "REVISION" },
+          { key: "channel", label: "CHANNEL" },
+          { key: "mode", label: "MODE" },
+          { key: "status", label: "STATUS" },
+          { key: "createdAt", label: "CREATED" },
+        ],
+      );
       if (ctx.options.output === "text" && payload.nextCursor) ctx.print(`next cursor: ${payload.nextCursor}`);
     },
   }),
@@ -698,7 +707,7 @@ export const workflowRunCommands = [
     args: { run: arg.required({ description: "Workflow run public id" }) },
     async run({ ctx, args }) {
       const run = await readApi<WorkflowRun>(ctx, `/workflows/runs/${encodeURIComponent(requirePublicId(args.run, "Workflow run id"))}`);
-      if (!printCliStructured(ctx, run)) {
+      if (!printCliStructured(ctx, withCloudResourcePermalink(ctx, "grids.workflow-run", run))) {
         ctx.print(`${run.id} (${run.status})`);
         ctx.print(`workflow: ${run.workflowId ?? "-"}`);
         ctx.print(`launcher: ${run.launcherId ?? "-"}`);
@@ -782,7 +791,7 @@ export const workflowRunCommands = [
       );
       printJsonOrMessage(
         ctx,
-        run,
+        withCloudResourcePermalink(ctx, "grids.workflow-run", run),
         run.status === "canceled"
           ? `Canceled workflow run ${run.id}.`
           : `Requested cancellation of workflow run ${run.id}; it is still ${run.status}.`,
@@ -828,13 +837,18 @@ export const workflowRunCommands = [
         ctx,
         `/workflows/runs/${encodeURIComponent(requirePublicId(args.run, "Workflow run id"))}/documents${queryString({ limit: flags.limit, offset: flags.offset })}`,
       );
-      printJsonOrTable(ctx, payload, documentRows(payload.items), [
-        { key: "id", label: "ID" },
-        { key: "number", label: "NUMBER" },
-        { key: "filename", label: "FILENAME" },
-        { key: "tags", label: "TAGS" },
-        { key: "createdAt", label: "CREATED" },
-      ]);
+      printJsonOrTable(
+        ctx,
+        { ...payload, items: payload.items.map((document) => withCloudResourcePermalink(ctx, "grids.document", document)) },
+        documentRows(payload.items).map((document) => withCloudResourcePermalink(ctx, "grids.document", document)),
+        [
+          { key: "id", label: "ID" },
+          { key: "number", label: "NUMBER" },
+          { key: "filename", label: "FILENAME" },
+          { key: "tags", label: "TAGS" },
+          { key: "createdAt", label: "CREATED" },
+        ],
+      );
     },
   }),
   command("workflow-runs download-documents", {

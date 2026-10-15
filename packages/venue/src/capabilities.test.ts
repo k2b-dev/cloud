@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   type CapabilityExecutionContext,
@@ -87,6 +87,16 @@ const futureDateForWeekday = (weekday: number): string => {
 };
 
 const postgresTest = testFor("database");
+
+const resourceReaders: Record<string, string> = {
+  venue: "venue.read",
+  assignment: "assignment.read",
+};
+
+test("every declared Type has a reader fixture", () => {
+  expect(Object.keys(resourceReaders).sort()).toEqual(Object.keys(venueCapabilities.types).sort());
+  for (const [typeId, type] of Object.entries(venueCapabilities.types)) expect(resourceReaders[typeId]).toBe(type.reader);
+});
 
 describe("Venue capabilities", () => {
   test("declares the curated agent surface", () => {
@@ -407,6 +417,14 @@ describe("Venue capabilities", () => {
           ]),
         );
 
+        if (!signup.ok) throw new Error("Expected a readable assignment fixture");
+        const resourceIds: Record<string, string> = { venue: venueShortId, assignment: signup.data.data.id };
+        for (const [typeId, type] of Object.entries(venueCapabilities.types)) {
+          const result = await invokeQuery(resourceReaders[typeId]!, { id: resourceIds[typeId] }, context);
+          if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
+          expect(resourceReaders[typeId]).toBe(type.reader);
+          assertResourceOpenLink(result.data);
+        }
         const feedback = await invokeQuery("feedback.summary", { venueId: venueShortId }, context);
         expect(feedback.ok && feedback.data.data).toMatchObject({ venueId: venueShortId, count: 1, averageRating: 5 });
         if (feedback.ok) {

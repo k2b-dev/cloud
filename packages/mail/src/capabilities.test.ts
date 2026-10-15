@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, jest, mock, spyOn, test } from "bun:test";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
   CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
+  type CapabilityInvocationResult,
   capabilityResultSchema,
+  cloudResourceHref,
 } from "@k2b/cloud/contracts";
 import { mailCapabilities } from "./capabilities";
 import {
@@ -122,6 +124,7 @@ const publicIdsByTable = {
   reminders: new Map([[internalReminderId, reminderId]]),
 } as const;
 const internalIdsByTable = {
+  reminders: new Map([[reminderId, internalReminderId]]),
   mailboxes: new Map([[mailboxId, internalMailboxId]]),
   folders: new Map([[folderId, internalFolderId]]),
   conversations: new Map([[conversationId, internalConversationId]]),
@@ -1735,6 +1738,10 @@ describe("mail capabilities", () => {
       actionOutputs.push(result.data);
       const parsed = capabilityResultSchema(action.data).safeParse(result.data);
       if (!parsed.success) throw new Error(`Invalid Mail result for ${localId}: ${parsed.error.message}`);
+      const refs = parsed.data.refs?.map(({ type, id }) => ({ type, id }));
+      if (localId === "conversation.assign.batch") expect(refs).toEqual([{ type: "mail.conversation", id: conversationId }]);
+      if (localId === "draft.discard") expect(refs).toBeUndefined();
+      if (localId === "delivery.cancel") expect(refs).toEqual([{ type: "mail.draft", id: draftId }]);
     }
     expect(Object.fromEntries(summaries)).toMatchObject({
       "draft.create": "Created draft “Release follow-up”.",
@@ -2950,4 +2957,187 @@ describe("mail capabilities", () => {
     };
     expect(Buffer.byteLength(JSON.stringify(messageEnvelope), "utf8")).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
   });
+});
+
+test("every declared Type has a reader open-link case or an explicit reason", async () => {
+  const message = {
+    id: internalMessageId,
+    subject: "Release follow-up",
+    preview: "Follow-up",
+    hasAttachments: true,
+    messageId: null,
+    internalDate: timestamp,
+    sentAt: null,
+    from: [],
+    to: [],
+    flags: [],
+    keywords: [],
+    hydrationStatus: "hydrated",
+    remoteAvailable: true,
+    folderId: internalFolderId,
+    deletedOnServer: false,
+    contentType: "text/plain",
+    sizeBytes: 123,
+    replyTo: [],
+    cc: [],
+    plainText: "Body",
+    sanitizedHtml: null,
+    forwardText: "Body",
+    selectedHeaders: {},
+    sourceAvailable: false,
+    mailingList: null,
+    remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
+    delivery: null,
+    attachments: [{ id: internalAttachmentId, filename: "notes.pdf", contentType: "application/pdf", sizeBytes: 123, contentId: null }],
+  };
+  spyOn(mailboxes, "getMailbox").mockResolvedValue({
+    ok: true,
+    data: {
+      accessScope: "mailbox",
+      id: internalMailboxId,
+      name: "Support",
+      description: null,
+      health: "active",
+      healthReason: null,
+      syncEnabled: true,
+      searchBackend: "postgres",
+      automaticReplyManagementPermission: "admin",
+      composeSafety: { internalDomains: [], largeRecipientThreshold: 20 },
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+  });
+  spyOn(resourceParents, "conversation").mockResolvedValue(internalMailboxId);
+  spyOn(resourceParents, "message").mockResolvedValue(internalMailboxId);
+  spyOn(resourceParents, "attachment").mockResolvedValue({ mailboxId: internalMailboxId, messageId: internalMessageId });
+  spyOn(resourceParents, "draft").mockResolvedValue(internalMailboxId);
+  spyOn(resourceParents, "comment").mockResolvedValue({ mailboxId: internalMailboxId, conversationId: internalConversationId });
+  spyOn(resourceParents, "reminder").mockResolvedValue({ mailboxId: internalMailboxId, conversationId: internalConversationId });
+  spyOn(resourceParents, "delivery").mockResolvedValue(internalMailboxId);
+  spyOn(messages, "getMessage").mockResolvedValue({ ok: true, data: message });
+  spyOn(messages, "listConversationMessages").mockResolvedValue({ ok: true, data: { items: [message], nextCursor: null } });
+  spyOn(conversationSummaries, "getConversationSummary").mockResolvedValue({
+    ok: true,
+    data: { summary: "Follow-up", summaryRevision: 1, conversationRevision: 5 },
+  });
+  spyOn(collaboration, "getConversationCollaboration").mockResolvedValue({
+    ok: true,
+    data: { ...collaborationFixture, assignees: [...collaborationFixture.assignees] },
+  });
+  spyOn(localTags, "getConversationLocalTags").mockResolvedValue({
+    ok: true,
+    data: { conversationId: internalConversationId, conversationRevision: 5, tags: [] },
+  });
+  spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+  spyOn(collaboration, "getConversationComment").mockResolvedValue({ ok: true, data: commentFixture });
+  spyOn(reminders, "getConversationReminder").mockResolvedValue({ ok: true, data: reminderFixture });
+  spyOn(attachmentExtraction, "loadAttachmentExtractionMetadata").mockResolvedValue(null);
+  spyOn(scheduledSends, "getScheduledSend").mockResolvedValue({
+    ok: true,
+    data: {
+      id: internalConversationId,
+      commandId: technicalTargetId,
+      draftId: internalDraftId,
+      conversationId: internalConversationId,
+      intent: "new",
+      to: [],
+      cc: [],
+      bcc: [],
+      subject: "Release follow-up",
+      bodyPreview: "Body",
+      scheduledAt: timestamp,
+      nextAttemptAt: null,
+      state: "scheduled",
+      attempt: 0,
+      lastErrorCode: null,
+      lastError: null,
+      scheduledBy: { kind: "user", displayName: "Ada" },
+      createdAt: timestamp,
+    },
+  });
+  const cases: Record<string, { reader: string; read: () => Promise<CapabilityInvocationResult<unknown>> }> = {
+    mailbox: { reader: "mailbox.read", read: async () => mailCapabilities.queries["mailbox.read"].run({ id: mailboxId }, context) },
+    conversation: {
+      reader: "conversation.read",
+      read: async () => mailCapabilities.queries["conversation.read"].run({ id: conversationId }, context),
+    },
+    message: { reader: "message.read", read: async () => mailCapabilities.queries["message.read"].run({ id: messageId }, context) },
+    attachment: {
+      reader: "attachment.read",
+      read: async () => mailCapabilities.queries["attachment.read"].run({ id: attachmentId }, context),
+    },
+    draft: { reader: "draft.read", read: async () => mailCapabilities.queries["draft.read"].run({ id: draftId }, context) },
+    comment: { reader: "comment.read", read: async () => mailCapabilities.queries["comment.read"].run({ id: commentId }, context) },
+    reminder: { reader: "reminder.read", read: async () => mailCapabilities.queries["reminder.read"].run({ id: reminderId }, context) },
+    delivery: { reader: "delivery.read", read: async () => mailCapabilities.queries["delivery.read"].run({ id: deliveryId }, context) },
+  };
+  const withoutReader: Record<string, string> = {
+    "sender-identity": "Mailbox-scoped configuration: select a From identity through mailbox.identity.list.",
+    folder: "Mailbox-scoped selector: folder.list supplies the folder open links.",
+    tag: "Mailbox-scoped collaboration label: select through mailbox.tag.list.",
+    "mailing-list": "Mailbox-scoped subscription: subscription queries supply bounded open links.",
+  };
+  expect([...Object.keys(cases), ...Object.keys(withoutReader)].sort()).toEqual(Object.keys(mailCapabilities.types).sort());
+  for (const [typeId, type] of Object.entries(mailCapabilities.types)) {
+    if (!("reader" in type)) {
+      expect(withoutReader[typeId]?.length).toBeGreaterThan(0);
+      continue;
+    }
+    const fixture = cases[typeId];
+    if (!fixture) throw new Error(`Missing reader fixture for ${typeId}`);
+    expect(fixture.reader).toBe(type.reader);
+    const result = await fixture.read();
+    if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
+    assertResourceOpenLink(result.data);
+  }
+});
+
+test("a created draft is named in refs and its reader opens compose", async () => {
+  spyOn(drafts, "materializeDraftSeed").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+  spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+  spyOn(resourceParents, "draft").mockResolvedValue(internalMailboxId);
+  spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+
+  // The Assistant and MCP attach the permalink to exactly this ref; `/open` then follows the reader's open link.
+  const create = mailCapabilities.actions["draft.create"];
+  const created = await create.run(create.input.parse({ mailboxId, senderIdentityId, subject: mutableDraftFixture.subject }), {
+    ...context,
+    idempotencyKey: "draft-link-test",
+  });
+  if (!created.ok) throw new Error(created.error.message);
+  expect(created.data.refs).toMatchObject([{ type: "mail.draft", id: draftId, title: mutableDraftFixture.subject }]);
+  expect(cloudResourceHref({ type: "mail.draft", id: draftId })).toBe(`/open/mail.draft/~${draftId}`);
+
+  const read = await mailCapabilities.queries["draft.read"].run({ id: draftId }, context);
+  if (!read.ok) throw new Error(read.error.message);
+  expect(assertResourceOpenLink(read.data).href).toBe(`/app/mail/${mailboxId}/compose/${draftId}`);
+  expect(read.data.links.filter((link) => link.rel === "edit")).toEqual([]);
+});
+
+test("a draft reader without write access opens the read view", async () => {
+  spyOn(resourceParents, "draft").mockResolvedValue(internalMailboxId);
+  spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+  const access = spyOn(mailboxAccess, "requireMailboxAccess").mockImplementation(async (_context, _mailboxId, permission) =>
+    permission === "write"
+      ? { ok: false, error: { code: "FORBIDDEN", message: "Write denied", status: 403 } }
+      : { ok: true, data: { scope: "mailbox", permission } },
+  );
+  const result = await mailCapabilities.queries["draft.read"].run({ id: draftId }, context);
+  if (!result.ok) throw new Error(result.error.message);
+  expect(access.mock.calls[0]?.[2]).toBe("write");
+  expect(assertResourceOpenLink(result.data).href).toBe(`/app/mail/${mailboxId}/drafts/${draftId}`);
+  expect(result.data.links).toHaveLength(1);
+  expect(result.data.links.filter((link) => link.rel === "edit")).toEqual([]);
+});
+
+test("a draft reader without access returns 404 and no link", async () => {
+  spyOn(resourceParents, "draft").mockResolvedValue(internalMailboxId);
+  spyOn(drafts, "getDraft").mockResolvedValue({
+    ok: false,
+    error: { code: "NOT_FOUND", message: "Draft not found", status: 404 },
+  });
+  const result = await mailCapabilities.queries["draft.read"].run({ id: draftId }, context);
+  expect(result).toEqual({ ok: false, error: { code: "NOT_FOUND", message: "Draft not found", status: 404 } });
+  expect(result).not.toHaveProperty("data");
+  expect(result).not.toHaveProperty("links");
 });

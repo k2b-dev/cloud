@@ -1,4 +1,6 @@
-import { arg, type CloudCliContext, command, confirmFlag, flag } from "@k2b/cloud/cli";
+import { arg, type CloudCliContext, cloudResourceUrl, command, confirmFlag, flag } from "@k2b/cloud/cli";
+import type { z } from "zod";
+import type { PublicReferencedByPageSchema } from "../api/referenced-by";
 import { recordArgs, requirePublicId, resolveRecordFromCommand } from "./resources";
 import { jsonRequest, printCliStructured, printJsonOrMessage, queryString, readApi, readTextInput, requireRestArg } from "./runtime";
 
@@ -28,7 +30,7 @@ export const recordDiscussionCommands = [
     args: recordArgs,
     flags: { ...pageFlags, relationField: flag.string({ name: "relation-field", description: "Filter by relation Field public ID" }) },
     async run({ ctx, args, flags }) {
-      const page = await readApi<unknown>(
+      const page = await readApi<z.infer<typeof PublicReferencedByPageSchema>>(
         ctx,
         `${(await recordPath(ctx, args.args)).path}/referenced-by${queryString({
           cursor: flags.cursor,
@@ -36,7 +38,11 @@ export const recordDiscussionCommands = [
           relationFieldId: flags.relationField ? requirePublicId(flags.relationField, "Relation field") : undefined,
         })}`,
       );
-      if (!printCliStructured(ctx, page)) ctx.json(page);
+      const linked = {
+        ...page,
+        items: page.items.map((item) => ({ ...item, permalink: cloudResourceUrl(ctx, { type: "grids.record", id: item.sourceRecordId }) })),
+      };
+      if (!printCliStructured(ctx, linked)) ctx.json(page);
     },
   }),
   command("records comments list", {

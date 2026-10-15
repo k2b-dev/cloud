@@ -1,4 +1,4 @@
-import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
+import { arg, type CloudCliContext, cloudResourceUrl, command, flag, withCloudResourcePermalink } from "@k2b/cloud/cli";
 import type {
   PulseCurrentState,
   PulseInventory,
@@ -29,6 +29,19 @@ import {
 } from "./inventory";
 import { dashboardRows, sourceRows } from "./rows";
 import { exactMatch, printJsonOrTable, queryString, readApi } from "./shared";
+
+export const withResourcePermalinkForBase = <T extends { key: string }>(
+  ctx: Pick<CloudCliContext, "options">,
+  baseId: string,
+  resource: T,
+) => ({
+  ...resource,
+  permalink: cloudResourceUrl(ctx, { type: "pulse.resource", id: `${baseId}/${resource.key}` }),
+});
+const withInventoryPermalinks = (ctx: CloudCliContext, baseId: string, inventory: PulseInventory) => ({
+  ...inventory,
+  resources: inventory.resources.map((resource) => withResourcePermalinkForBase(ctx, baseId, resource)),
+});
 
 const resourceListFlags = {
   ...baseFlag,
@@ -66,7 +79,7 @@ const listResourcesForCommand = async (
     offset: flags.offset,
   });
   const rows = resourceSummaryRows(resources);
-  printJsonOrTable(ctx, { resources }, rows, [
+  printJsonOrTable(ctx, { resources: resources.map((resource) => withResourcePermalinkForBase(ctx, base.id, resource)) }, rows, [
     { key: "type" },
     { key: "label" },
     { key: "metrics" },
@@ -94,7 +107,7 @@ export const inventoryCommands = [
       };
       printJsonOrTable(
         ctx,
-        { summary, inventory },
+        { summary, inventory: withInventoryPermalinks(ctx, base.id, inventory) },
         [summary],
         [{ key: "resources" }, { key: "metrics" }, { key: "events" }, { key: "states" }, { key: "fields" }],
       );
@@ -151,7 +164,10 @@ export const inventoryCommands = [
     async run({ ctx, args }) {
       const { base, rest } = await resolveBaseFromCommand(ctx, args.args, 1);
       const resource = await readResource(ctx, base.id, requireRestArg(rest, 0, "resource"));
-      printJsonOrTable(ctx, resource, resourceDetailRows(resource), [{ key: "key" }, { key: "value" }]);
+      printJsonOrTable(ctx, withResourcePermalinkForBase(ctx, base.id, resource), resourceDetailRows(resource), [
+        { key: "key" },
+        { key: "value" },
+      ]);
     },
   }),
   command("resources metrics", {
@@ -281,13 +297,16 @@ export const inventoryCommands = [
       const topMetrics = [...metrics].sort((a, b) => b.seriesCount - a.seriesCount).slice(0, 20);
       const summary = overviewRows(base, inventory, sources, metrics)[0]!;
       const overview = {
-        base,
+        base: withCloudResourcePermalink(ctx, "pulse.base", base),
         summary,
-        sources: sourceRows(sources),
+        sources: sourceRows(sources).map((source) => withCloudResourcePermalink(ctx, "pulse.source", source)),
         dashboards: dashboardRows(dashboards),
-        topResources: resourceRows({ ...inventory, resources: topResources }, {}),
+        topResources: resourceRows({ ...inventory, resources: topResources }, {}).map((row, index) => ({
+          ...row,
+          permalink: withResourcePermalinkForBase(ctx, base.id, topResources[index]!).permalink,
+        })),
         topMetrics: metricRows(topMetrics),
-        ...(flags.includeInventory ? { inventory, metrics } : {}),
+        ...(flags.includeInventory ? { inventory: withInventoryPermalinks(ctx, base.id, inventory), metrics } : {}),
       };
       printJsonOrTable(ctx, overview, overviewRows(base, inventory, sources, metrics), [
         { key: "base" },

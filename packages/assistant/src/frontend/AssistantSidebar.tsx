@@ -558,6 +558,15 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     window.history.replaceState(window.history.state, "", url);
     void openStudio();
   });
+  // A Skill's Cloud link (`?skill=<id>`) opens that Skill once; reload and Back do not reopen it.
+  onMount(() => {
+    const url = new URL(window.location.href);
+    const skillId = url.searchParams.get("skill");
+    if (!skillId) return;
+    url.searchParams.delete("skill");
+    window.history.replaceState(window.history.state, "", url);
+    void openAssistantPrefsModal("skills", { skillId });
+  });
   const mobileNavigation = createNavigation({
     items: () => [
       { id: "new", action: "new", label: t().newChat, icon: "ti ti-plus", disabled: creatingConversation() },

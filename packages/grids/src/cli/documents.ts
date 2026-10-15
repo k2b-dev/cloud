@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag } from "@k2b/cloud/cli";
+import { arg, cloudResourceUrl, command, confirmFlag, flag, withCloudResourcePermalink } from "@k2b/cloud/cli";
 import type { z } from "zod";
 import { DOCUMENT_CATALOG_SORTS, PUBLIC_DOCUMENT_PAGE_LIMIT } from "../api/document-public-contracts";
 import type {
@@ -370,13 +370,18 @@ export const documentCommands = [
           limit: flags.limit,
         })}`,
       );
-      printJsonOrTable(ctx, payload, documentRows(payload.items), [
-        { key: "id", label: "ID" },
-        { key: "number", label: "NUMBER" },
-        { key: "filename", label: "FILENAME" },
-        { key: "tags", label: "TAGS" },
-        { key: "createdAt", label: "CREATED" },
-      ]);
+      printJsonOrTable(
+        ctx,
+        { ...payload, items: payload.items.map((document) => withCloudResourcePermalink(ctx, "grids.document", document)) },
+        documentRows(payload.items).map((document) => withCloudResourcePermalink(ctx, "grids.document", document)),
+        [
+          { key: "id", label: "ID" },
+          { key: "number", label: "NUMBER" },
+          { key: "filename", label: "FILENAME" },
+          { key: "tags", label: "TAGS" },
+          { key: "createdAt", label: "CREATED" },
+        ],
+      );
       if (ctx.options.output !== "json" && payload.cursor) ctx.print(`next cursor: ${payload.cursor}`);
     },
   }),
@@ -388,7 +393,7 @@ export const documentCommands = [
         ctx,
         `/documents/${encodeURIComponent(requirePublicId(args.document, "Document id"))}`,
       );
-      printJsonOrMessage(ctx, document, `${document.number} (${document.id})`);
+      printJsonOrMessage(ctx, withCloudResourcePermalink(ctx, "grids.document", document), `${document.number} (${document.id})`);
     },
   }),
   command("documents download-artifact", {
@@ -430,13 +435,18 @@ export const documentCommands = [
           limit: flags.limit,
         })}`,
       );
-      printJsonOrTable(ctx, payload, documentRows(payload.items), [
-        { key: "id", label: "ID" },
-        { key: "number", label: "NUMBER" },
-        { key: "filename", label: "FILENAME" },
-        { key: "tags", label: "TAGS" },
-        { key: "createdAt", label: "CREATED" },
-      ]);
+      printJsonOrTable(
+        ctx,
+        { ...payload, items: payload.items.map((document) => withCloudResourcePermalink(ctx, "grids.document", document)) },
+        documentRows(payload.items).map((document) => withCloudResourcePermalink(ctx, "grids.document", document)),
+        [
+          { key: "id", label: "ID" },
+          { key: "number", label: "NUMBER" },
+          { key: "filename", label: "FILENAME" },
+          { key: "tags", label: "TAGS" },
+          { key: "createdAt", label: "CREATED" },
+        ],
+      );
       if (ctx.options.output !== "json" && payload.cursor) ctx.print(`next cursor: ${payload.cursor}`);
     },
   }),
@@ -467,7 +477,13 @@ export const documentCommands = [
           limit: flags.limit,
         })}`,
       );
-      if (printCliStructured(ctx, payload)) return;
+      if (
+        printCliStructured(ctx, {
+          ...payload,
+          items: payload.items.map((document) => withCloudResourcePermalink(ctx, "grids.document", document)),
+        })
+      )
+        return;
       if (payload.folders.length > 0) {
         ctx.table(documentFolderRows(payload.folders), [
           { key: "kind", label: "KIND" },
@@ -509,7 +525,10 @@ export const documentCommands = [
         items: Array<{ tableId: string; recordId: string; tableName: string; label: string; version: number | null; deleted: boolean }>;
         hasMore: boolean;
       }>(ctx, `/documents/${encodeURIComponent(requirePublicId(args.document, "Document id"))}/sources${params.size ? `?${params}` : ""}`);
-      printJsonOrTable(ctx, payload, payload.items, [
+      const items = payload.items.map((item) =>
+        item.deleted ? item : { ...item, permalink: cloudResourceUrl(ctx, { type: "grids.record", id: item.recordId }) },
+      );
+      printJsonOrTable(ctx, { ...payload, items }, items, [
         { key: "tableName", label: "TABLE" },
         { key: "label", label: "RECORD" },
         { key: "recordId", label: "ID" },
@@ -538,7 +557,11 @@ export const documentCommands = [
           limit: flags.limit,
         })}`,
       );
-      printJsonOrTable(ctx, payload, payload.items, [
+      const items = payload.items.map((item) => ({
+        ...item,
+        permalink: cloudResourceUrl(ctx, { type: "grids.document", id: item.documentId }),
+      }));
+      printJsonOrTable(ctx, { ...payload, items }, items, [
         { key: "path", label: "PATH" },
         { key: "sizeBytes", label: "BYTES" },
         { key: "documentId", label: "DOCUMENT" },
@@ -556,13 +579,18 @@ export const documentCommands = [
         ctx,
         `/documents/by-record/${encodeURIComponent(table.id)}/${encodeURIComponent(recordId)}`,
       );
-      printJsonOrTable(ctx, payload, documentRows(payload.items), [
-        { key: "id", label: "ID" },
-        { key: "number", label: "NUMBER" },
-        { key: "filename", label: "FILENAME" },
-        { key: "tags", label: "TAGS" },
-        { key: "createdAt", label: "CREATED" },
-      ]);
+      printJsonOrTable(
+        ctx,
+        { ...payload, items: payload.items.map((document) => withCloudResourcePermalink(ctx, "grids.document", document)) },
+        documentRows(payload.items).map((document) => withCloudResourcePermalink(ctx, "grids.document", document)),
+        [
+          { key: "id", label: "ID" },
+          { key: "number", label: "NUMBER" },
+          { key: "filename", label: "FILENAME" },
+          { key: "tags", label: "TAGS" },
+          { key: "createdAt", label: "CREATED" },
+        ],
+      );
     },
   }),
   command("documents generate", {

@@ -6,6 +6,7 @@ import {
   type CloudCliContext,
   type CloudCliText,
   cliAmbiguityText,
+  cloudResourceUrl,
   command,
   confirmFlag,
   createAccessCommands,
@@ -15,6 +16,7 @@ import {
   parseCliAddress,
   printRows,
   printStructured,
+  withCloudResourcePermalink,
 } from "@k2b/cloud/cli";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import { dates, type Paginated } from "@k2b/stdlib";
@@ -46,6 +48,16 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 /** The time the web form's Today, Tomorrow, and End of week deadline presets use. */
 const DATE_ONLY_DEADLINE_TIME = "17:00";
 const JSON_HEADERS = { "Content-Type": "application/json" };
+
+const withDepsPermalinks = (ctx: CloudCliContext, deps: ItemDeps) => ({
+  ...deps,
+  item: withCloudResourcePermalink(ctx, "spaces.item", deps.item),
+  blockers: deps.blockers.map((entry) => ({ ...entry, blocker: withCloudResourcePermalink(ctx, "spaces.item", entry.blocker) })),
+  blocks: {
+    ...deps.blocks,
+    items: deps.blocks.items.map((entry) => ({ ...entry, dependent: withCloudResourcePermalink(ctx, "spaces.item", entry.dependent) })),
+  },
+});
 
 const api = (path = "") => `/api/spaces${path}`;
 const itemApi = (item: Pick<SpaceItem, "id" | "spaceId">, suffix = "") =>
@@ -275,8 +287,9 @@ function spacesCommands(locale?: string) {
     { key: "blockers", label: t({ en: "BLOCKERS", de: "BLOCKER" }) },
   ];
 
-  const printItem = (ctx: CloudCliContext, verb: CloudCliText, item: SpaceItem) => {
-    if (!printStructured(ctx, item)) ctx.print(`${t(verb)} ${item.title} (${item.id})`);
+  const printItem = (ctx: CloudCliContext, verb: CloudCliText, item: SpaceItem, created = false) => {
+    if (!printStructured(ctx, withCloudResourcePermalink(ctx, "spaces.item", item)))
+      ctx.print(`${t(verb)} ${item.title} (${item.id})${created ? ` ${cloudResourceUrl(ctx, { type: "spaces.item", id: item.id })}` : ""}`);
   };
 
   const loadDeps = async (ctx: CloudCliContext, item: SpaceItem, page = 1, perPage = 50): Promise<ItemDeps> => {
@@ -441,11 +454,16 @@ function spacesCommands(locale?: string) {
             const spaces = (await readApi<Space[]>(ctx, api())).filter(
               (space) => !query || space.name.toLowerCase().includes(query) || space.description?.toLowerCase().includes(query),
             );
-            printRows(ctx, spaces, spaces, [
-              { key: "id", label: "ID" },
-              { key: "name", label: "NAME" },
-              { key: "updatedAt", label: t({ en: "UPDATED", de: "GEÄNDERT" }) },
-            ]);
+            printRows(
+              ctx,
+              spaces.map((space) => withCloudResourcePermalink(ctx, "spaces.space", space)),
+              spaces,
+              [
+                { key: "id", label: "ID" },
+                { key: "name", label: "NAME" },
+                { key: "updatedAt", label: t({ en: "UPDATED", de: "GEÄNDERT" }) },
+              ],
+            );
             return;
           }
           if ([flags.ready, flags.blocked].filter(Boolean).length > 1 || [flags.mine, flags.unassigned].filter(Boolean).length > 1)
@@ -478,7 +496,12 @@ function spacesCommands(locale?: string) {
             page: flags.page ?? 1,
             pageSize: flags.perPage ?? 50,
           });
-          printRows(ctx, result, itemRows(result.items, space), itemColumns);
+          printRows(
+            ctx,
+            { ...result, items: result.items.map((item) => withCloudResourcePermalink(ctx, "spaces.item", item)) },
+            itemRows(result.items, space),
+            itemColumns,
+          );
           if (ctx.options.output === "text" && result.page < result.totalPages)
             ctx.error(`${t({ en: "More items", de: "Weitere Einträge" })}: --page ${result.page + 1}`);
         },
@@ -512,7 +535,7 @@ function spacesCommands(locale?: string) {
           const address = parseCliAddress(args.target);
           if (address.kind === "path" && address.path === "") {
             const space = await loadSpace(ctx, (await resolveSpace(ctx, args.target)).id);
-            if (!printStructured(ctx, space)) {
+            if (!printStructured(ctx, withCloudResourcePermalink(ctx, "spaces.space", space))) {
               ctx.print(`${space.name} (${space.id})`);
               if (space.description) ctx.print(space.description);
               ctx.print(`${t({ en: "columns", de: "Spalten" })}: ${space.columns.map((c) => `${c.name} (${c.id})`).join(", ") || "-"}`);
@@ -551,11 +574,23 @@ function spacesCommands(locale?: string) {
               links,
               comments,
             };
-            if (!printStructured(ctx, context)) ctx.print(JSON.stringify(context, null, 2));
+            const linkedDeps = deps ? withDepsPermalinks(ctx, deps) : null;
+            if (
+              !printStructured(ctx, {
+                ...withCloudResourcePermalink(ctx, "spaces.item", context),
+                blockers: linkedDeps?.blockers ?? [],
+                blocks: linkedDeps?.blocks ?? null,
+                comments: {
+                  ...comments,
+                  items: comments.items.map((comment) => withCloudResourcePermalink(ctx, "spaces.comment", comment)),
+                },
+              })
+            )
+              ctx.print(JSON.stringify(context, null, 2));
             return;
           }
           const detail = attachments ? { ...item, attachments } : item;
-          if (printStructured(ctx, detail)) return;
+          if (printStructured(ctx, withCloudResourcePermalink(ctx, "spaces.item", detail))) return;
           ctx.print(`${item.title} (${item.id})`);
           if (item.description) ctx.print(item.description);
           ctx.print(`space: ${item.spaceId}`);
@@ -584,7 +619,10 @@ function spacesCommands(locale?: string) {
             description: flags.description,
             color: flags.color ?? "#3b82f6",
           });
-          if (!printStructured(ctx, space)) ctx.print(`${t({ en: "Created", de: "Angelegt" })} ${space.name} (${space.id})`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "spaces.space", space)))
+            ctx.print(
+              `${t({ en: "Created", de: "Angelegt" })} ${space.name} (${space.id}) ${cloudResourceUrl(ctx, { type: "spaces.space", id: space.id })}`,
+            );
         },
       }),
 
@@ -668,7 +706,7 @@ function spacesCommands(locale?: string) {
               assigneeIds: explicit.assigneeIds ?? [],
               tagIds: explicit.tagIds ?? [],
             });
-            printItem(ctx, { en: "Added", de: "Hinzugefügt" }, item);
+            printItem(ctx, { en: "Added", de: "Hinzugefügt" }, item, true);
             return;
           }
           if ([flags.date, flags.noDate || undefined, explicit.deadline, explicit.startsAt].filter(Boolean).length > 1)
@@ -715,7 +753,7 @@ function spacesCommands(locale?: string) {
               }),
             );
           const item = await send<SpaceItem>(ctx, "POST", api(`/${space.id}/items`), body);
-          printItem(ctx, { en: "Added", de: "Hinzugefügt" }, item);
+          printItem(ctx, { en: "Added", de: "Hinzugefügt" }, item, true);
           const others = draft.proposals.filter((date) => date !== draft.date);
           if (ctx.options.output === "text" && others.length && !flags.date && !explicit.deadline && !explicit.startsAt)
             ctx.error(`${t({ en: "Other proposed dates", de: "Weitere vorgeschlagene Daten" })}: ${proposalText(others)}`);
@@ -969,7 +1007,7 @@ function spacesCommands(locale?: string) {
             await send<unknown>(ctx, "DELETE", itemApi(item, "/blockers"), { blockerItemId: blocker.id });
           }
           const deps = await loadDeps(ctx, item, flags.page, flags.perPage);
-          if (printStructured(ctx, deps)) return;
+          if (printStructured(ctx, withDepsPermalinks(ctx, deps))) return;
           const status = (entry: { completedAt: string | null }) => (entry.completedAt ? "completed" : "active");
           ctx.table(
             [
@@ -1011,7 +1049,7 @@ function spacesCommands(locale?: string) {
           );
           printRows(
             ctx,
-            page,
+            { ...page, items: page.items.map((comment) => withCloudResourcePermalink(ctx, "spaces.comment", comment)) },
             page.items.map((comment) => ({
               id: comment.id,
               author: comment.userName ?? comment.userId ?? "",
@@ -1037,7 +1075,10 @@ function spacesCommands(locale?: string) {
           const content = await requireText(flags.content, flags.from, "content");
           const item = await resolveItem(ctx, args.item);
           const comment = await send<SpaceComment>(ctx, "POST", itemApi(item, "/comments"), { content });
-          if (!printStructured(ctx, comment)) ctx.print(`${t({ en: "Added comment", de: "Kommentar hinzugefügt" })} ${comment.id}`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "spaces.comment", comment)))
+            ctx.print(
+              `${t({ en: "Added comment", de: "Kommentar hinzugefügt" })} ${comment.id} ${cloudResourceUrl(ctx, { type: "spaces.comment", id: comment.id })}`,
+            );
         },
       }),
       command("comments update", {
@@ -1050,7 +1091,8 @@ function spacesCommands(locale?: string) {
           const comment = await send<SpaceComment>(ctx, "PATCH", itemApi(item, `/comments/${encodeURIComponent(args.comment)}`), {
             content,
           });
-          if (!printStructured(ctx, comment)) ctx.print(`${t({ en: "Updated comment", de: "Kommentar aktualisiert" })} ${comment.id}`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "spaces.comment", comment)))
+            ctx.print(`${t({ en: "Updated comment", de: "Kommentar aktualisiert" })} ${comment.id}`);
         },
       }),
       command("comments delete", {
@@ -1406,14 +1448,22 @@ function spacesCommands(locale?: string) {
           const items = (await readApi<CalendarItem[]>(ctx, withQuery(api("/calendar"), range))).filter(
             (item) => !space || item.spaceId === space.id,
           );
-          printRows(ctx, items, items, [
-            { key: "id", label: "ID" },
-            { key: "spaceName", label: "SPACE" },
-            { key: "title", label: t({ en: "TITLE", de: "TITEL" }) },
-            { key: "startsAt", label: t({ en: "START", de: "BEGINN" }) },
-            { key: "endsAt", label: t({ en: "END", de: "ENDE" }) },
-            { key: "deadline", label: t({ en: "DUE", de: "FÄLLIG" }) },
-          ]);
+          printRows(
+            ctx,
+            items.map((item) => ({
+              ...item,
+              permalink: cloudResourceUrl(ctx, { type: "spaces.item", id: item.id.split(":", 1)[0] ?? item.id }),
+            })),
+            items,
+            [
+              { key: "id", label: "ID" },
+              { key: "spaceName", label: "SPACE" },
+              { key: "title", label: t({ en: "TITLE", de: "TITEL" }) },
+              { key: "startsAt", label: t({ en: "START", de: "BEGINN" }) },
+              { key: "endsAt", label: t({ en: "END", de: "ENDE" }) },
+              { key: "deadline", label: t({ en: "DUE", de: "FÄLLIG" }) },
+            ],
+          );
         },
       }),
       command("overlap", {
@@ -1442,13 +1492,18 @@ function spacesCommands(locale?: string) {
           const items = (await readApi<OverlapItem[]>(ctx, withQuery(api("/calendar/overlap"), { ...range, excludeItemId }))).filter(
             (item) => !space || item.spaceId === space.id,
           );
-          printRows(ctx, items, items, [
-            { key: "itemId", label: "ID" },
-            { key: "spaceName", label: "SPACE" },
-            { key: "title", label: t({ en: "TITLE", de: "TITEL" }) },
-            { key: "startsAt", label: t({ en: "START", de: "BEGINN" }) },
-            { key: "endsAt", label: t({ en: "END", de: "ENDE" }) },
-          ]);
+          printRows(
+            ctx,
+            items.map((item) => ({ ...item, permalink: cloudResourceUrl(ctx, { type: "spaces.item", id: item.itemId }) })),
+            items,
+            [
+              { key: "itemId", label: "ID" },
+              { key: "spaceName", label: "SPACE" },
+              { key: "title", label: t({ en: "TITLE", de: "TITEL" }) },
+              { key: "startsAt", label: t({ en: "START", de: "BEGINN" }) },
+              { key: "endsAt", label: t({ en: "END", de: "ENDE" }) },
+            ],
+          );
         },
       }),
       command("invitation context", {
@@ -1456,7 +1511,13 @@ function spacesCommands(locale?: string) {
         args: itemArg,
         async run({ ctx, args }) {
           const value = await readApi<EventInvitationContext>(ctx, itemApi(await resolveItem(ctx, args.item), "/invitation-context"));
-          if (printStructured(ctx, value)) return;
+          if (
+            printStructured(ctx, {
+              ...value,
+              mailboxes: value.mailboxes.map((mailbox) => withCloudResourcePermalink(ctx, "mail.mailbox", mailbox)),
+            })
+          )
+            return;
           ctx.table(
             value.mailboxes.flatMap((mailbox) =>
               mailbox.identities.map((identity) => ({
@@ -1516,8 +1577,10 @@ function spacesCommands(locale?: string) {
             attendees: flags.to.map((address) => ({ name: null, address })),
             method: flags.cancel ? "cancel" : "request",
           });
-          if (!printStructured(ctx, value))
-            ctx.print(`${t({ en: "Created Mail draft", de: "Mail-Entwurf angelegt" })} ${value.draftId}: ${value.href}`);
+          if (!printStructured(ctx, { ...value, permalink: cloudResourceUrl(ctx, { type: "mail.draft", id: value.draftId }) }))
+            ctx.print(
+              `${t({ en: "Created Mail draft", de: "Mail-Entwurf angelegt" })} ${value.draftId}: ${cloudResourceUrl(ctx, { type: "mail.draft", id: value.draftId })}`,
+            );
         },
       }),
       ...spaceAccessCommands,

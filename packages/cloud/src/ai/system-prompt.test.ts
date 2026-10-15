@@ -371,7 +371,8 @@ describe("composeAiSystemPrompt", () => {
     expect(prompt).toContain("Prefer open over edit");
     expect(prompt).toContain("Without a supplied href, use plain text");
     expect(prompt).toContain("Never construct a Cloud URL");
-    expect(prompt).toContain("[Urgent invoice review 001](/app/mail/5guDsC?conversation=nTf34n)");
+    expect(prompt).toContain("Cloud adds an href to resource refs it can open");
+    expect(prompt).toContain("[Urgent invoice review 001](/open/mail.draft/~AbC123)");
   });
 
   it("orders platform, organization, turn, Project instructions, context and personalization", () => {
@@ -464,7 +465,7 @@ test("web prompt stays byte-identical with organization and selected Cloud Skill
     loadedSkills: [{ name: "invoice", revision: 2, instructions: "Read rules.", files: ["/skills/invoice/SKILL.md"] }],
   });
   expect(new Bun.CryptoHasher("sha256").update(prompt).digest("hex")).toBe(
-    "5e8543d1dee0f44107b0351c4bab6c817204844b24912caaf2d9b19a3e84f7a7",
+    "0d4f6c8d60cd6dc853c24f87085275fa83e3dbd2db7fd4fec3af83905b64016e",
   );
 });
 
@@ -477,6 +478,7 @@ test("local client facts and raw instructions follow organization instructions",
   expect(prompt).toContain(
     "Client: terminal (cld)\nCloud: https://cloud.example.test\nWorkspace: /work\nOS: Linux\nShell: /bin/bash\nLocal tools: ask\nKeep {{ user.uid }} literal.",
   );
+  expect(prompt).toContain("Offer the supplied link for every Cloud resource you create, change, or name");
   expect(prompt.indexOf("# Local client")).toBeGreaterThan(prompt.indexOf("# Organization instructions"));
   expect(prompt).toContain('it replaces "What the user sees" above');
   const acp = composeAiSystemPrompt({

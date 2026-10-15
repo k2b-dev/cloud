@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-11
+updated: 2026-10-13
 ---
 
 # Deployment requirements
@@ -809,6 +809,30 @@ browser, send it a test notification, and check that its history shows the
 browser delivery held back by do not disturb and no fallback email. Resume,
 send again, and confirm that the push arrives. An older release ignores the
 table, so a rollback turns quiet time off and keeps the saved settings.
+
+### Enable resource permalinks
+
+Deploy Core and the owning applications together to enable resource permalinks.
+Core serves `/open/<type>/~<encoded-id>` and registers `/open` with the gateway;
+owners provide permission-aware top-level `open` destinations in their readers.
+The `~` prefix is required; links without it return 404.
+Deploy Core before clients start exposing these links, because older Core images
+return 404. Updating Core alone does not update Mail's draft destination or
+other owning-app readers. No configuration or database migration is needed.
+
+During a rolling update, Core accepts an older reader's validated `edit` link
+when it has no `open`. This preserves existing writer links, but cannot repair
+a destination that requires more access than the reader. Update Mail with Core
+so readable drafts open the read view for readers and the composer for writers.
+MCP advertises its consumer `refs[].href` field in the output schema; owning-app
+responses retain the strict provider ref schema.
+
+Verify permalinks while signed out, as a writer, as a reader and without access.
+Sign-in must preserve the return URL, and the destination page must recheck
+current permissions, including revocation after resolution. Missing access,
+offline apps and missing destinations show Core's 404 page. Existing readers
+without links keep working through capability calls. See
+[Resource links](/en/docs/platform/capabilities#resource-links).
 
 ## Coordinate an existing installation's identity upgrade
 

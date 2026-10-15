@@ -12,11 +12,12 @@ import {
   aiConversations,
   aiSkills,
 } from "@k2b/cloud/ai";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
+  type CapabilityInvocationResult,
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
@@ -157,6 +158,37 @@ const storedMessage = (seq: number, message: AiStoredMessage["message"], overrid
 afterEach(() => mock.restore());
 
 describe("Core AI capabilities", () => {
+  test("every declared Type has a reader open-link case or an explicit reason", async () => {
+    spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(chat);
+    spyOn(aiConversations, "listMessagesPage").mockResolvedValue({ messages: [], hasMore: false });
+    spyOn(aiChatTasks, "get").mockResolvedValue(scheduledTask);
+    spyOn(aiChatTasks, "listOccurrences").mockResolvedValue([]);
+    spyOn(aiSkills, "getByShortId").mockResolvedValue(skill);
+    const cases: Record<string, { reader: string; read: () => Promise<CapabilityInvocationResult<unknown>> }> = {
+      "ai.chat": {
+        reader: "ai.chat.read",
+        read: async () => aiCapabilities.queries["ai.chat.read"].run({ id: chat.shortId, limit: 20 }, context),
+      },
+      "ai.task": {
+        reader: "ai.task.read",
+        read: async () => aiCapabilities.queries["ai.task.read"].run({ id: scheduledTask.shortId }, context),
+      },
+      "ai.skill": {
+        reader: "ai.skill.read",
+        read: async () => aiCapabilities.queries["ai.skill.read"].run({ id: skill.shortId }, context),
+      },
+    };
+    expect(Object.keys(cases).sort()).toEqual(Object.keys(aiCapabilities.types).sort());
+    for (const [typeId, type] of Object.entries(aiCapabilities.types)) {
+      const fixture = cases[typeId];
+      if (!fixture) throw new Error(`Missing reader fixture for ${typeId}`);
+      expect(fixture.reader).toBe(type.reader);
+      const result = await fixture.read();
+      if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
+      assertResourceOpenLink(result.data);
+    }
+  });
+
   test("recipient discovery preserves actor visibility and returns directly usable principals", async () => {
     const list = spyOn(accountsAppService.entity, "list").mockResolvedValue({
       items: [{ kind: "user", user }],
@@ -536,7 +568,12 @@ describe("Core AI capabilities", () => {
       if (!result.ok) continue;
       const action = (aiCapabilities.actions as unknown as Record<string, CapabilityActionDefinition>)[localId];
       if (!action) throw new Error(`Missing Core action ${localId}`);
-      expect(capabilityResultSchema(action.data).safeParse(result.data).success).toBeTrue();
+      const parsed = capabilityResultSchema(action.data).safeParse(result.data);
+      expect(parsed.success).toBeTrue();
+      // A deleted Skill has nothing left to open, so its result names no ref.
+      expect(parsed.data?.refs).toEqual(
+        localId === "ai.skill.delete" ? undefined : [{ type: "core.ai.skill", id: skill.shortId, title: skill.name }],
+      );
     }
     expect(setReferences).toHaveBeenCalledWith(skill.id, context.accessSubject, {
       skillId: skill.shortId,
@@ -993,4 +1030,19 @@ test("Skill, task and chat reviews and summaries use the reader's language", asy
     ok: true,
     data: { message: "Pause scheduled task tSk234.", details: [{ label: "Task" }, { label: "Schedule" }] },
   });
+});
+
+test("revoking the caller's last Skill access does not offer an unreadable ref or open link", async () => {
+  let revoked = false;
+  spyOn(aiSkills, "getByShortId").mockImplementation(async () => (revoked ? null : skill));
+  spyOn(aiSkills, "revokeAccess").mockImplementation(async () => {
+    revoked = true;
+    return true;
+  });
+  const action = aiCapabilities.actions["ai.skill.access.change"];
+  const result = await action.run(
+    action.input.parse({ skillId: skill.shortId, accessId: "AbC234", permission: null, expectedAccessRevision: "a".repeat(64) }),
+    context,
+  );
+  expect(result).toEqual({ ok: true, data: { data: { changed: true } } });
 });

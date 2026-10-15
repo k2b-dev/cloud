@@ -113,6 +113,12 @@ const item = (id: string, title: string) => ({
   tags: [],
 });
 const task = item("Item01", "Ship release");
+const event = {
+  ...item("Event1", "Team meeting"),
+  url: "https://meeting.example/join",
+  startsAt: "2026-10-14T08:00:00Z",
+  endsAt: "2026-10-14T09:00:00Z",
+};
 const blocker = item("Block1", "Approve scope");
 const attachment = {
   id: "File01",
@@ -183,6 +189,7 @@ beforeAll(async () => {
         return Response.json({ message: "No item" }, { status: 404 });
       }
       if (path === "/api/spaces/items/Item01") return json(task);
+      if (path === "/api/spaces/items/Event1") return json(event);
       if (path === "/api/spaces/items/Block1") return json(blocker);
       if (path.startsWith("/api/spaces/items/")) return Response.json({ message: "Item not found" }, { status: 404 });
       if (path === "/api/spaces/Space1") return json(spaceDetail);
@@ -211,11 +218,21 @@ beforeAll(async () => {
         return json([
           { id: "Evt001", spaceId: "Space1", spaceName: "Roadmap", title: "Launch", startsAt: "a", endsAt: "b" },
           { id: "Evt002", spaceId: "Other1", spaceName: "Other", title: "Else", startsAt: "a", endsAt: "b" },
+          {
+            id: "Evt003:2026-10-21T09:00:00.000Z",
+            spaceId: "Space1",
+            spaceName: "Roadmap",
+            title: "Weekly",
+            startsAt: "2026-10-21T09:00:00.000Z",
+            endsAt: "2026-10-21T10:00:00.000Z",
+            isRecurringInstance: true,
+            recurringEventId: "Evt003",
+          },
         ]);
       if (path === "/api/spaces/calendar/overlap")
         return json([{ itemId: "Evt001", spaceId: "Space1", spaceName: "Roadmap", title: "Launch" }]);
 
-      const itemPath = path.match(/^\/api\/spaces\/Space1\/items\/(Item01|Block1)(\/.*)?$/);
+      const itemPath = path.match(/^\/api\/spaces\/Space1\/items\/(Item01|Block1|Event1)(\/.*)?$/);
       if (itemPath) {
         const suffix = itemPath[2] ?? "";
         if (suffix === "" && request.method === "PATCH") return json({ ...task, ...(body as object) });
@@ -325,7 +342,7 @@ describe("addressing", () => {
 
   test("<space>: addresses the space itself", async () => {
     const { json } = await run(["show", "Roadmap:"]);
-    expect(json).toEqual(spaceDetail);
+    expect(json).toEqual({ ...spaceDetail, permalink: `${base}/open/spaces.space/~${spaceDetail.id}` });
   });
 
   test("<space>: names the enabled automatic columns in text output", async () => {
@@ -337,9 +354,23 @@ describe("addressing", () => {
 });
 
 describe("browse", () => {
+  test("event items keep their URL and gain a permalink in JSON and JSONL", async () => {
+    for (const output of ["--json", "--jsonl"]) {
+      const result = await cld([output, "spaces", "show", event.id]);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        id: event.id,
+        url: event.url,
+        permalink: `${base}/open/spaces.item/~${event.id}`,
+      });
+    }
+  });
+
   test("ls lists spaces, filtered by -q", async () => {
     expect((await run(["ls"])).json).toHaveLength(2);
-    expect((await run(["ls", "--q", "hir"])).json).toEqual([{ ...space, id: "Space2", name: "Hiring" }]);
+    expect((await run(["ls", "--q", "hir"])).json).toEqual([
+      { ...space, id: "Space2", name: "Hiring", permalink: `${base}/open/spaces.space/~Space2` },
+    ]);
   });
 
   test("ls <space> sends every filter through the item filter", async () => {
@@ -482,7 +513,20 @@ describe("changes", () => {
 
   test("deps lists both directions and adds or removes blockers by address", async () => {
     const listed = await run(["deps", "Item01"]);
-    expect(listed.json).toEqual({ item: { id: "Item01", title: "Ship release" }, blockers, blocks: blocksPage });
+    expect(listed.json).toEqual({
+      item: { id: "Item01", title: "Ship release", permalink: `${base}/open/spaces.item/~Item01` },
+      blockers: blockers.map((entry) => ({
+        ...entry,
+        blocker: { ...entry.blocker, permalink: `${base}/open/spaces.item/~${entry.blocker.id}` },
+      })),
+      blocks: {
+        ...blocksPage,
+        items: blocksPage.items.map((entry) => ({
+          ...entry,
+          dependent: { ...entry.dependent, permalink: `${base}/open/spaces.item/~${entry.dependent.id}` },
+        })),
+      },
+    });
     expect(writes(listed.requests)).toEqual([]);
 
     const changed = await run(["deps", "Item01", "--add", "Roadmap:Approve scope", "--rm", "Block1"]);
@@ -521,7 +565,10 @@ describe("changes", () => {
 
 describe("secondary resources", () => {
   test("comments list, add, update and delete", async () => {
-    expect((await run(["comments", "list", "Item01", "--page", "2", "--per-page", "10"])).json).toEqual(commentsPage);
+    expect((await run(["comments", "list", "Item01", "--page", "2", "--per-page", "10"])).json).toEqual({
+      ...commentsPage,
+      items: commentsPage.items.map((comment) => ({ ...comment, permalink: `${base}/open/spaces.comment/~${comment.id}` })),
+    });
     expect(writes((await run(["comments", "add", "Item01", "--content", "Ready"])).requests)[0]?.body).toEqual({ content: "Ready" });
     const updated = await run(["comments", "update", "Item01", "Cmt001", "--content", "Edited"]);
     expect(writes(updated.requests)[0]).toMatchObject({ method: "PATCH", path: "/api/spaces/Space1/items/Item01/comments/Cmt001" });
@@ -614,7 +661,28 @@ describe("secondary resources", () => {
 
   test("calendar, overlap and invitations", async () => {
     const calendar = await run(["calendar", "2026-10-01", "2026-10-31", "--space", "Roadmap"]);
-    expect(calendar.json).toEqual([{ id: "Evt001", spaceId: "Space1", spaceName: "Roadmap", title: "Launch", startsAt: "a", endsAt: "b" }]);
+    expect(calendar.json).toEqual([
+      {
+        id: "Evt001",
+        spaceId: "Space1",
+        spaceName: "Roadmap",
+        title: "Launch",
+        startsAt: "a",
+        endsAt: "b",
+        permalink: `${base}/open/spaces.item/~Evt001`,
+      },
+      {
+        id: "Evt003:2026-10-21T09:00:00.000Z",
+        spaceId: "Space1",
+        spaceName: "Roadmap",
+        title: "Weekly",
+        startsAt: "2026-10-21T09:00:00.000Z",
+        endsAt: "2026-10-21T10:00:00.000Z",
+        isRecurringInstance: true,
+        recurringEventId: "Evt003",
+        permalink: `${base}/open/spaces.item/~Evt003`,
+      },
+    ]);
     expect(calendar.requests.at(-1)?.path).toBe(
       `/api/spaces/calendar?${new URLSearchParams({ from: "2026-09-30T22:00:00.000Z", to: "2026-10-31T23:00:00.000Z" })}`,
     );
