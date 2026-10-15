@@ -117,12 +117,25 @@ describe("Help author contract", () => {
       '<div data-target="help:hidden/private">x</div>',
       "Read <a href='help:hidden/private'>x</a>.",
       "<a href=help:hidden/private>x</a>",
+      "<div>\n[private](help:hidden/private)\n</div>",
+      ":::note [private](help:hidden/private)\nBody\n:::",
     ]) {
       expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).toThrow(
         'Help document "start" has a help: link that agents cannot read in locale "en"; write it inline as [text](help:id)',
       );
     }
     expect(() => defineHelp({ documents: [helpSource("start", "", '`<a href="help:hidden/private">x</a>`')] })).not.toThrow();
+    expect(() =>
+      defineHelp({
+        documents: [
+          helpSource(
+            "start",
+            "",
+            "`[private](help:hidden/private)`\n\n```md\n<div>\n[private](help:hidden/private)\n</div>\n\n:::note [private](help:hidden/private)\nBody\n:::\n```",
+          ),
+        ],
+      }),
+    ).not.toThrow();
   });
   test("search text uses the article locale for key names", () => {
     const definition = defineHelp({

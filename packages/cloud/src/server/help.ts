@@ -204,7 +204,13 @@ export const defineHelp = (
       let unconvertedLink = Object.values(agentTokens.links).some((link) => link.href.startsWith("help:"));
       let unconvertedSyntax = false;
       walkHelpTokens(agentTokens, (token) => {
-        if (token.type === "link" && token.href.startsWith("help:")) unconvertedLink = true;
+        if (
+          (token.type === "link" && token.href.startsWith("help:")) ||
+          // Markdown inside raw HTML and callout titles stays text in agent text, so its target would reach readers.
+          (token.type === "html" && /help:[a-z0-9]/i.test(token.raw)) ||
+          (token.type === "markdownInfoBlock" && typeof token.title === "string" && /help:[a-z0-9]/i.test(token.title))
+        )
+          unconvertedLink = true;
         if (token.type === "helpKbd" || token.type === "helpLabel" || token.type === "helpDetails") unconvertedSyntax = true;
       });
       if (unconvertedLink) throw unreadableLink();
