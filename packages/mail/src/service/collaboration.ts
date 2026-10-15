@@ -458,8 +458,10 @@ export const getConversationCollaboration = async (params: {
 type ConversationCollaborationMutation = CollaborationMutation<ConversationCollaboration> & { addedUserIds: string[] };
 
 /**
- * The latest status decision decides whether a still unhydrated link keeps that decision:
- * Done, Waiting, and a snooze cover it; Needs action, reopening, and clearing a snooze release it.
+ * The latest decision that covers a still unhydrated link, or changes its status or snooze, wins:
+ * Done, Waiting, and a future snooze cover it; Needs action, reopening, and clearing a snooze
+ * release it only when the status or snooze changes. A no-op release is not a decision because
+ * it does not move the revision that fences older automation steps.
  * The caller holds the conversation row lock. Update only visible, unhydrated links, limited to
  * messageId when supplied. A conversation timestamp cannot express which links the decision saw.
  * onlyUndecided lets a stale workflow step cover a link without overriding a newer decision.
@@ -631,22 +633,10 @@ const applyConversationCollaborationInTransaction = async (params: {
     if (nextStatus === "done") return fail(err.badInput("A completed conversation cannot be snoozed"));
   }
 
-  if (
-    params.statusDecisionMessageId !== null &&
-    (("workStatus" in params.input && params.input.workStatus) ||
-      ("completion" in params.input && params.input.completion !== undefined) ||
-      params.input.snoozedUntil !== undefined)
-  ) {
-    await recordConversationStatusDecision(params.db, {
-      conversationId: params.conversationId,
-      covers:
-        ("workStatus" in params.input && (params.input.workStatus === "done" || params.input.workStatus === "waiting")) ||
-        ("completion" in params.input && params.input.completion === "done") ||
-        Boolean(requestedSnooze),
-      messageId: params.statusDecisionMessageId,
-    });
-  }
-
+  const covers =
+    ("workStatus" in params.input && (params.input.workStatus === "done" || params.input.workStatus === "waiting")) ||
+    ("completion" in params.input && params.input.completion === "done") ||
+    Boolean(requestedSnooze);
   const assigneesChanged =
     nextAssigneeIds.length !== currentAssigneeIds.length || nextAssigneeIds.some((id) => !currentAssigneeIds.includes(id));
   const completionChanged = "completion" in params.input && params.input.completion !== undefined;
@@ -656,7 +646,21 @@ const applyConversationCollaborationInTransaction = async (params: {
       : requestedSnooze === undefined
         ? toNullableIso(current.snoozed_until)
         : requestedSnooze;
-  const unchanged = !assigneesChanged && nextStatus === current.work_status && nextSnoozedUntil === toNullableIso(current.snoozed_until);
+  const statusOrSnoozeChanged = nextStatus !== current.work_status || nextSnoozedUntil !== toNullableIso(current.snoozed_until);
+  if (
+    params.statusDecisionMessageId !== null &&
+    (covers || statusOrSnoozeChanged) &&
+    (("workStatus" in params.input && params.input.workStatus) ||
+      ("completion" in params.input && params.input.completion !== undefined) ||
+      params.input.snoozedUntil !== undefined)
+  ) {
+    await recordConversationStatusDecision(params.db, {
+      conversationId: params.conversationId,
+      covers,
+      messageId: params.statusDecisionMessageId,
+    });
+  }
+  const unchanged = !assigneesChanged && !statusOrSnoozeChanged;
   if (unchanged) {
     const state = await loadCollaboration(params.mailboxId, params.conversationId, params.db);
     return state ? ok({ value: state, event: null, addedUserIds: [] }) : fail(err.notFound("Conversation"));

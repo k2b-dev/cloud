@@ -464,11 +464,11 @@ const conversationMutation = (
                 triggerMessageId,
               })
             : null;
-        // A status that already holds still decides whether its triggering message keeps the status
-        // during hydration. The run's view follows the live state.
+        // Done or Waiting that already holds still covers its triggering message during hydration.
+        // A Needs action no-op releases nothing. The run's view follows the live state.
         if (live?.revision != null && live.workStatus === value) {
-          if (triggerMessageId !== null) {
-            await recordConversationStatusDecision(tx, { conversationId, covers: value !== "needs_action", messageId: triggerMessageId });
+          if (triggerMessageId !== null && (value === "done" || value === "waiting")) {
+            await recordConversationStatusDecision(tx, { conversationId, covers: true, messageId: triggerMessageId });
           }
           applyMailConversationTransition(conversation, kind, value);
           conversation.revision = live.revision;

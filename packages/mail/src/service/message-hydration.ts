@@ -533,8 +533,10 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
   );
   // The provider's copy of a reply Mail sent does not answer mail that arrived after someone chose
   // Send, so it leaves that mail needing action, as the confirmed send did. For an unhydrated link,
-  // the latest decision wins: Done, Waiting, or a snooze keeps it covered; Needs action, reopening,
-  // or clearing a snooze lets hydration derive its status again.
+  // the latest decision that covers it or changes its status or snooze wins: Done, Waiting, or a
+  // future snooze keeps it covered; Needs action, reopening, or clearing a snooze releases it only
+  // when the status or snooze changes. A no-op release is not a decision because it does not move
+  // the revision that fences older automation steps.
   const transition =
     projection.is_latest_verified && !projection.status_decided && !(projection.outbound && projection.received_since_send)
       ? deriveConversationWorkState(projection.work_status, {
