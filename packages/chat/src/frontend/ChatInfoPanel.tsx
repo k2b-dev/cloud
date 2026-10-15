@@ -35,7 +35,7 @@ export default function ChatInfoPanel(props: {
   viewerId: string;
   /** Members load only while the panel shows. */
   active: boolean;
-  /** Changes when the membership changed, by the viewer or through a live membership message, so the list starts again from its first page. */
+  /** Changes when the membership changed, by the viewer or through a live membership message, preserving the number of loaded rows. */
   revision: number;
   store: ChatDialogStore | undefined;
   onClose: () => void;
@@ -58,13 +58,20 @@ export default function ChatInfoPanel(props: {
 
   const read = (after?: string) =>
     props.store?.members(props.conversation.id, { ...(query() ? { q: query() } : {}), ...(after ? { cursor: after } : {}) });
-  const load = async () => {
+  const load = async (preserveDepth = false) => {
+    const depth = preserveDepth ? rows.length : 0;
     const mine = ++request;
     setStatus("loading");
     try {
-      const page = await read();
+      let page = await read();
       if (!page || mine !== request) return;
-      setRows(reconcile(page.items, { key: "accessId" }));
+      const items = [...page.items];
+      while (items.length < depth && page.nextCursor) {
+        page = await read(page.nextCursor);
+        if (!page || mine !== request) return;
+        items.push(...page.items);
+      }
+      setRows(reconcile(items, { key: "accessId" }));
       setManagers(page.managers);
       setCursor(page.nextCursor);
       setStatus("ready");
@@ -74,7 +81,7 @@ export default function ChatInfoPanel(props: {
   };
   const more = async () => {
     const after = cursor();
-    if (!after || status() === "loading" || loadingMore()) return;
+    if (!after || status() !== "ready" || loadingMore()) return;
     const mine = request;
     setLoadingMore(true);
     try {
@@ -98,8 +105,12 @@ export default function ChatInfoPanel(props: {
     }),
   );
   createEffect(
-    on([() => props.active, () => props.store, query, () => props.revision], ([active, store]) => {
-      if (active && store) void load();
+    on([() => props.active, () => props.store, query, () => props.revision], ([active, store, q, revision], previous) => {
+      if (active && store) {
+        const preserveDepth =
+          !!previous && previous[0] === active && previous[1] === store && previous[2] === q && previous[3] !== revision;
+        void load(preserveDepth);
+      }
     }),
   );
 
@@ -245,7 +256,7 @@ export default function ChatInfoPanel(props: {
                 size="xs"
                 class="self-start"
                 loading={loadingMore()}
-                disabled={status() === "loading"}
+                disabled={status() !== "ready"}
                 onClick={() => void more()}
               >
                 {t().showMoreMembers}

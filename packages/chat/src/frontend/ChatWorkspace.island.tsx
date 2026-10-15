@@ -58,6 +58,7 @@ const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>): OpenChat =>
     status: "live",
     conversation: open.conversation,
     messages: items,
+    membershipRev: 0,
     watermark: open.page.rev,
     seqHead: open.page.seqHead,
     hasOlder: (items[0]?.seq ?? 1) > 1,
@@ -93,7 +94,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   let store: Store | undefined;
   // The same store as `store`, for the info panel, which renders before the store exists and loads once it does.
   const [liveStore, setLiveStore] = createSignal<Store>();
-  const [membersRevision, setMembersRevision] = createSignal(0);
+  const [localBumps, setLocalBumps] = createSignal(0);
   let outbox: Sends | undefined;
   let feed: VirtualFeedController | undefined;
 
@@ -110,38 +111,6 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const current = chat();
     return current && current.status !== "no-access" && current.conversation ? current : null;
   };
-  let membersChatId: string | null = null;
-  let membersSeq = 0;
-  const membershipCodes = new Set([
-    "members_added",
-    "groups_added",
-    "group_removed",
-    "manager_assigned",
-    "member_removed",
-    "member_left",
-    "permission_changed",
-  ]);
-  createEffect(() => {
-    const current = openChat();
-    const id = current?.id ?? null;
-    const latest = current?.messages.at(-1)?.seq ?? 0;
-    if (membersChatId !== id) {
-      membersChatId = id;
-      membersSeq = latest;
-      return;
-    }
-    // Only new changes by others reload the panel; initial and older history already belong to its snapshot.
-    const messages = current?.messages ?? [];
-    for (let index = messages.length - 1; index >= 0; index--) {
-      const message = messages[index]!;
-      if (message.seq <= membersSeq) break;
-      if (message.kind === "system" && message.system && membershipCodes.has(message.system.code) && message.author.id !== props.viewerId) {
-        setMembersRevision((revision) => revision + 1);
-        break;
-      }
-    }
-    membersSeq = Math.max(membersSeq, latest);
-  });
   const conversation = () => openChat()?.conversation ?? null;
   const noAccess = () => route().chatId !== null && openChat() === null;
   const breadcrumbs = (title?: string) => [
@@ -439,7 +408,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         guest: props.guest,
         viewerId: props.viewerId,
         locale: locale(),
-        onAdded: () => setMembersRevision((revision) => revision + 1),
+        onAdded: () => setLocalBumps((revision) => revision + 1),
       }),
     );
   };
@@ -709,7 +678,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                   conversation={current()}
                   viewerId={props.viewerId}
                   active={panel() === "info"}
-                  revision={membersRevision()}
+                  revision={(openChat()?.membershipRev ?? 0) + localBumps()}
                   store={liveStore()}
                   onClose={() => closeInfo()}
                   onAddPeople={() => void addPeople()}

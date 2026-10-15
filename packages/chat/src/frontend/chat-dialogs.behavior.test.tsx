@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { createComponent, type JSX } from "solid-js";
+import { createComponent, createSignal, type JSX } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 import { chatMessages } from "../messages";
@@ -149,12 +149,14 @@ describe("chat dialogs and info", () => {
     button("Nora", dom.document).click();
     await settle();
   };
-  const info = (data: Conversation, fake: ChatDialogStore) =>
+  const info = (data: Conversation, fake: ChatDialogStore, revision = () => 0) =>
     createComponent(modules!.ChatInfoPanel, {
       conversation: data,
       viewerId,
       active: true,
-      revision: 0,
+      get revision() {
+        return revision();
+      },
       store: fake,
       onClose: () => {},
       onAddPeople: () => {},
@@ -596,6 +598,125 @@ describe("chat dialogs and info", () => {
       await settle();
       expect(members.mock.calls[2]).toEqual([conversation.id, { q: "No", cursor: newCursor }]);
       expect([...dom.root.querySelectorAll(".chat-member-row__name")].map((row) => row.textContent)).toEqual(["Noah", "Nora"]);
+    });
+    test(`info disables paging after a new search fails and Retry starts its first page in ${locale}`, async () => {
+      let fail = true;
+      const members = mock<ChatDialogStore["members"]>(async (_id, query) => {
+        if (query.q) {
+          if (fail) throw new Error("Search unavailable");
+          return { items: [nora], managers: 1, nextCursor: null };
+        }
+        const offset = query.cursor ? 100 : 0;
+        return {
+          items: Array.from({ length: 100 }, (_, index) => ({ ...nora, accessId: `member-${offset + index}` })),
+          managers: 2,
+          nextCursor: query.cursor ? "old-page-3" : "old-page-2",
+        };
+      });
+      await mount(locale, () => info(conversation, store({ members })));
+      button(t.showMoreMembers).click();
+      await settle();
+      expect(dom.root.querySelectorAll(".chat-member-row__name")).toHaveLength(200);
+      const more = button(t.showMoreMembers);
+      type(input('input[type="search"]'), "Nora");
+      await Bun.sleep(280);
+      expect(dom.root.querySelector('[role="alert"]')?.textContent).toContain(t.membersFailed);
+      expect(button(t.showMoreMembers)).toBe(more);
+      expect(more.disabled).toBe(true);
+      more.click();
+      await settle();
+      expect(members.mock.calls).toEqual([
+        [conversation.id, {}],
+        [conversation.id, { cursor: "old-page-2" }],
+        [conversation.id, { q: "Nora" }],
+      ]);
+      fail = false;
+      button(t.retry).click();
+      await settle();
+      expect(members.mock.calls.at(-1)).toEqual([conversation.id, { q: "Nora" }]);
+      expect(members).toHaveBeenCalledTimes(4);
+      expect(dom.root.querySelectorAll(".chat-member-row__name")).toHaveLength(1);
+      expect(dom.root.querySelector('[role="alert"]')).toBeNull();
+    });
+    for (const q of ["", "Nora"]) {
+      test(`info revision preserves two loaded pages with query "${q}" in ${locale}`, async () => {
+        const [revision, setRevision] = createSignal(0);
+        const pending = Promise.withResolvers<Awaited<ReturnType<ChatDialogStore["members"]>>>();
+        const page = (offset: number, updated: boolean): Awaited<ReturnType<ChatDialogStore["members"]>> => ({
+          items: Array.from({ length: 100 }, (_, index) => ({
+            ...nora,
+            accessId: `member-${offset + index}`,
+            permission: offset === 0 && index === 0 ? "admin" : "write",
+            displayName: `${updated ? "Updated" : "Original"} ${offset + index}`,
+          })),
+          managers: updated && offset ? 1 : 2,
+          nextCursor: offset ? "page-3" : "page-2",
+        });
+        let refreshing = false;
+        const members = mock<ChatDialogStore["members"]>(async (_id, query) => {
+          if (refreshing && query.cursor) return pending.promise;
+          return page(query.cursor ? 100 : 0, refreshing);
+        });
+        await mount(locale, () => info(conversation, store({ members }), revision));
+        if (q) {
+          type(input('input[type="search"]'), q);
+          await Bun.sleep(280);
+        }
+        button(t.showMoreMembers).click();
+        await settle();
+        expect(dom.root.querySelectorAll(".chat-member-row__name")).toHaveLength(200);
+        expect(button(t.removeName({ name: "Original 0" })).disabled).toBe(false);
+        const before = members.mock.calls.length;
+        refreshing = true;
+        setRevision(1);
+        await settle();
+        expect(members.mock.calls.slice(before)).toEqual([
+          [conversation.id, q ? { q } : {}],
+          [conversation.id, { ...(q ? { q } : {}), cursor: "page-2" }],
+        ]);
+        // Neither the first refreshed page nor loading guidance replaces the existing rows.
+        expect(dom.root.querySelector(".chat-member-row__name")?.textContent).toBe("Original 0");
+        expect(dom.root.querySelectorAll(".chat-member-row__name")).toHaveLength(200);
+        expect(dom.root.textContent).not.toContain(t.membersLoading);
+        expect(button(t.showMoreMembers).disabled).toBe(true);
+        pending.resolve(page(100, true));
+        await settle();
+        expect([...dom.root.querySelectorAll(".chat-member-row__name")].map((row) => row.textContent)).toEqual(
+          Array.from({ length: 200 }, (_, index) => `Updated ${index}`),
+        );
+        expect(button(t.showMoreMembers).disabled).toBe(false);
+        expect(button(t.removeName({ name: "Updated 0" })).disabled).toBe(true);
+        refreshing = false;
+        button(t.showMoreMembers).click();
+        await settle();
+        expect(members.mock.calls.at(-1)).toEqual([conversation.id, { ...(q ? { q } : {}), cursor: "page-3" }]);
+      });
+    }
+    test(`a newer search wins over an unfinished revision reload in ${locale}`, async () => {
+      const [revision, setRevision] = createSignal(0);
+      const pending = Promise.withResolvers<Awaited<ReturnType<ChatDialogStore["members"]>>>();
+      const members = mock<ChatDialogStore["members"]>(async (_id, query) => {
+        if (query.q) return { items: [nora], managers: 1, nextCursor: null };
+        if (revision() && query.cursor) return pending.promise;
+        return {
+          items: [{ ...nora, accessId: query.cursor ? "second" : "first", displayName: "Old member" }],
+          managers: 2,
+          nextCursor: query.cursor ? null : "page-2",
+        };
+      });
+      await mount(locale, () => info(conversation, store({ members }), revision));
+      button(t.showMoreMembers).click();
+      await settle();
+      setRevision(1);
+      await settle();
+      expect(members).toHaveBeenCalledTimes(4);
+      type(input('input[type="search"]'), "Nora");
+      await Bun.sleep(280);
+      pending.resolve({ items: [{ ...nora, displayName: "Stale result" }], managers: 2, nextCursor: "stale-cursor" });
+      await settle();
+      expect([...dom.root.querySelectorAll(".chat-member-row__name")].map((row) => row.textContent)).toEqual(["Nora"]);
+      expect(dom.root.textContent).not.toContain(t.showMoreMembers);
+      expect(members.mock.calls.at(-1)).toEqual([conversation.id, { q: "Nora" }]);
     });
     for (const managers of [1, 2]) {
       test(`info locks the last manager's removal and lower levels only at count ${managers} in ${locale}`, async () => {

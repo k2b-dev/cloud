@@ -105,6 +105,77 @@ const fixture = (overrides: Partial<ChatStoreApi> = {}) => {
   return { api, connection, store };
 };
 
+for (const historical of [false, true]) {
+  test(`membership revisions count every author once per live batch${historical ? " outside the displayed history" : ""}`, async () => {
+    const { store, connection } = fixture();
+    if (historical) store.open({ cursor: "history", conversation, page: { ...page(1), seqHead: 50, rev: 50 } });
+    expect(store.openConversation?.membershipRev).toBe(0);
+    expect(store.openConversation?.hasNewer).toBe(historical);
+    let rev = historical ? 51 : 2;
+    let expected = 0;
+    const person = { id: message(1).author.id, name: "Ana" };
+    const params = {
+      members_added: { members: [person] },
+      groups_added: { groups: [person] },
+      group_removed: { group: person },
+      manager_assigned: { member: person },
+      member_removed: { member: person },
+      member_left: {},
+      permission_changed: { member: person, permission: "read" },
+      conversation_created: {},
+    };
+    const system = (code: keyof typeof params, authorId: string) =>
+      MessageSchema.parse({
+        ...message(rev++),
+        kind: "system",
+        body: null,
+        author: { type: "user", id: authorId, name: "Member" },
+        system: { code, params: params[code] },
+      });
+    for (const authorId of ["22222222-2222-4222-8222-222222222222", "11111111-1111-4111-8111-111111111111"]) {
+      for (const code of [
+        "members_added",
+        "groups_added",
+        "group_removed",
+        "manager_assigned",
+        "member_removed",
+        "member_left",
+        "permission_changed",
+      ] as const) {
+        await connection.get("conversation").applyBatch([
+          { type: "message", message: system(code, authorId) },
+          { type: "message", message: system(code, authorId) },
+        ]);
+        expect(store.openConversation?.membershipRev).toBe(++expected);
+      }
+    }
+    await connection.get("conversation").applyBatch([
+      { type: "message", message: message(rev++) },
+      { type: "message", message: system("conversation_created", message(1).author.id) },
+      { type: "message", message: { ...system("member_left", message(1).author.id), conversationId: "zzzzzz" } },
+    ]);
+    expect(store.openConversation?.membershipRev).toBe(expected);
+    if (historical) {
+      expect(store.openConversation?.messages).toEqual([message(1)]);
+      expect(store.openConversation?.hasNewer).toBe(true);
+    }
+    store.open({ cursor: "reopen", conversation, page: page(1) });
+    expect(store.openConversation?.membershipRev).toBe(0);
+    store.dispose();
+  });
+}
+
+test("a failed conversation resync does not invalidate members", async () => {
+  const { store, connection } = fixture({
+    changes: async () => {
+      throw new Error("Offline");
+    },
+  });
+  await expect(connection.get("conversation").resync()).rejects.toThrow("Offline");
+  expect(store.openConversation?.membershipRev).toBe(0);
+  store.dispose();
+});
+
 test("resync after live text messages asks only for the gap", async () => {
   const afters: number[] = [];
   const { store, connection } = fixture({
@@ -116,6 +187,7 @@ test("resync after live text messages asks only for the gap", async () => {
   for (let rev = 2; rev <= 50; rev++) await connection.get("conversation").apply({ type: "message", message: message(rev) });
   await connection.get("conversation").resync();
   expect(afters).toEqual([50]);
+  expect(store.openConversation?.membershipRev).toBe(1);
   store.dispose();
 });
 
@@ -167,6 +239,7 @@ test("resync follows delta pages and refreshes metadata without replacing loaded
   });
   await connection.get("conversation").resync();
   expect(afters).toEqual([1, 2]);
+  expect(store.openConversation?.membershipRev).toBe(1);
   expect(store.openConversation?.messages.map((m) => m.rev)).toEqual([1, 2, 3]);
   expect(store.openConversation?.watermark).toBe(3);
   expect(store.openConversation?.conversation).toMatchObject({ title: "Renamed", memberCount: 3, permission: "read" });
@@ -196,6 +269,7 @@ for (const mode of ["oversized", "restored"] as const)
     });
     await connection.get("conversation").resync();
     expect(latest).toBe(1);
+    expect(store.openConversation?.membershipRev).toBe(1);
     expect(deltas).toBe(mode === "oversized" ? 6 : 1);
     expect(store.openConversation?.messages).toEqual([message(1_500)]);
     expect(store.openConversation?.watermark).toBe(1_500);
@@ -637,6 +711,7 @@ test("openChat 404 replaces the current chat without leaking its details", async
   expect(await store.openChat("ghijkl")).toEqual({ status: "no-access" });
   expect(store.openConversation).toEqual({
     id: "ghijkl",
+    membershipRev: 0,
     status: "no-access",
     conversation: null,
     messages: [],

@@ -67,6 +67,7 @@ export type OpenChat = {
   status: "live" | "no-access" | "stopped";
   conversation: Conversation | null;
   messages: readonly Message[];
+  membershipRev: number;
   watermark: number;
   seqHead: number;
   hasOlder: boolean;
@@ -185,6 +186,16 @@ export const createChatStoreApi = (): ChatStoreApi => {
     },
   };
 };
+
+const membershipCodes = new Set([
+  "members_added",
+  "groups_added",
+  "group_removed",
+  "manager_assigned",
+  "member_removed",
+  "member_left",
+  "permission_changed",
+]);
 
 // The live client's maximum waiting backlog; larger catch-ups load the latest page.
 const MAX_CATCHUP_ROWS = 1_000;
@@ -343,17 +354,27 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       const delta = await api.changes(chat.view.id, after);
       if (!active(chat)) return;
       if (delta === null) return noAccess(chat);
-      if (delta === "RESYNC_REQUIRED" || count + delta.messages.length > MAX_CATCHUP_ROWS) return replaceMessages(chat);
-      if (!delta.more && delta.rev < chat.view.watermark) return replaceMessages(chat);
+      if (
+        delta === "RESYNC_REQUIRED" ||
+        count + delta.messages.length > MAX_CATCHUP_ROWS ||
+        (!delta.more && delta.rev < chat.view.watermark)
+      ) {
+        await replaceMessages(chat);
+        break;
+      }
       count += delta.messages.length;
       if (delta.conversation) metadata(chat, delta.conversation);
       for (const message of delta.messages) applyMessage(chat, MessageSchema.parse(message));
       chat.view = { ...chat.view, watermark: Math.max(chat.view.watermark, delta.rev) };
       chat.metadataRev = Math.max(chat.metadataRev, delta.rev);
       publishMessages(chat);
-      if (!delta.more) return;
+      if (!delta.more) break;
       if (delta.rev <= after) throw new Error("Chat changes did not advance the watermark");
       after = delta.rev;
+    }
+    if (active(chat)) {
+      chat.view = { ...chat.view, membershipRev: chat.view.membershipRev + 1 };
+      notify();
     }
   };
   const open = (next: OpenChatSnapshot) => {
@@ -365,6 +386,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         id: next.conversation.id,
         status: "live",
         conversation: next.conversation,
+        membershipRev: 0,
         watermark: next.page.rev,
         seqHead: Math.max(next.page.seqHead, ...next.page.items.map((message) => message.seq)),
         hasOlder: (next.page.items[0]?.seq ?? 0) > 1,
@@ -390,14 +412,19 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         parse: (data) => ChatLiveEventSchema.parse(data),
         apply: async (events) => {
           let system = false,
+            membership = false,
             highestRev = 0;
           for (const { data } of events) {
             if (!active(chat)) return;
             if (data.type !== "message" || data.message.conversationId !== chat.view.id) continue;
             applyMessage(chat, data.message);
-            if (data.message.kind === "system") system = true;
+            if (data.message.kind === "system") {
+              system = true;
+              if (data.message.system && membershipCodes.has(data.message.system.code)) membership = true;
+            }
             highestRev = Math.max(highestRev, data.message.rev);
           }
+          if (membership) chat.view = { ...chat.view, membershipRev: chat.view.membershipRev + 1 };
           if (system) await refreshMetadata(chat);
           if (active(chat)) chat.metadataRev = Math.max(chat.metadataRev, highestRev);
           publishMessages(chat);
@@ -648,7 +675,17 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       }
       current?.subscription?.close();
       const chat: Current = {
-        view: { id, status: "live", conversation: null, messages: [], watermark: 0, seqHead: 0, hasOlder: false, hasNewer: false },
+        view: {
+          id,
+          status: "live",
+          conversation: null,
+          messages: [],
+          membershipRev: 0,
+          watermark: 0,
+          seqHead: 0,
+          hasOlder: false,
+          hasNewer: false,
+        },
         metadataRev: 0,
         messages: new Map(),
         subscription: null,

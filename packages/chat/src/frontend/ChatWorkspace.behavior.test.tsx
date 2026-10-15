@@ -104,6 +104,7 @@ describe("ChatWorkspace interactions", () => {
   const snapshots = new Map<string, ReturnType<typeof ChatSnapshotSchema.parse>>();
   const pendingSnapshots = new Map<string, Promise<Response>>();
   let membersRequests = 0;
+  let memberName: string | null = null;
   let answer: (response: Response) => void;
   beforeEach(() => {
     dom = createDomTestHarness();
@@ -112,6 +113,7 @@ describe("ChatWorkspace interactions", () => {
     snapshots.clear();
     pendingSnapshots.clear();
     membersRequests = 0;
+    memberName = null;
     FakeWebSocket.instances = [];
     consoleErrors.length = 0;
     console.error = (...args: unknown[]) => {
@@ -133,7 +135,24 @@ describe("ChatWorkspace interactions", () => {
         }
         if (url.pathname === "/api/chat/conversations/Chat01/members") {
           membersRequests++;
-          return Response.json({ items: [], managers: 1, nextCursor: null });
+          return Response.json({
+            items: memberName
+              ? [
+                  {
+                    accessId: "33333333-3333-4333-8333-333333333333",
+                    principal: { type: "user", userId: "22222222-2222-4222-8222-222222222222" },
+                    displayName: memberName,
+                    guest: false,
+                    deactivated: false,
+                    groupSize: null,
+                    permission: "write",
+                    addedAt: now,
+                  },
+                ]
+              : [],
+            managers: 1,
+            nextCursor: null,
+          });
         }
         if (url.pathname === "/api/chat/conversations/Chat01") return Response.json({ ...conversation, permission: "admin" });
         if (url.pathname === "/api/chat/conversations/Chat01/messages" && init?.method === "POST") {
@@ -440,45 +459,54 @@ describe("ChatWorkspace interactions", () => {
     expect(dom.window.location.pathname).toBe("/app/chat/c/Chat03");
     expect(consoleErrors).toEqual([]);
   });
-  test("info reloads members for a live membership change by someone else, but not the viewer", async () => {
-    const otherId = "22222222-2222-4222-8222-222222222222";
-    const membership = (seq: number, authorId: string) =>
-      MessageViewSchema.parse({
-        ...message(seq),
-        kind: "system",
-        author: { type: "user", id: authorId, name: "Member" },
-        body: null,
-        system: { code: "member_left", params: {} },
-        systemText: "Member left the chat.",
+  for (const historical of [false, true]) {
+    test(`info reflects live membership changes by every author${historical ? " outside the displayed history" : ""}`, async () => {
+      const otherId = "22222222-2222-4222-8222-222222222222";
+      const membership = (seq: number, authorId: string) =>
+        MessageViewSchema.parse({
+          ...message(seq),
+          kind: "system",
+          author: { type: "user", id: authorId, name: "Member" },
+          body: null,
+          system: { code: "member_left", params: {} },
+          systemText: "Member left the chat.",
+        });
+      memberName = "Initial member";
+      const seqHead = historical ? 10 : 1;
+      await mount(true, [conversation], "info", "en", "admin", {
+        page: { items: [membership(1, otherId)], seqHead, rev: seqHead },
       });
-    await mount(true, [conversation], "info", "en", "admin", {
-      page: { items: [membership(1, otherId)], seqHead: 1, rev: 1 },
+      // The initial history belongs to the snapshot and does not trigger another member read.
+      expect(membersRequests).toBe(1);
+      expect(dom.root.querySelector(".chat-member-row__name")?.textContent).toBe("Initial member");
+      const socket = FakeWebSocket.instances[0]!;
+      socket.open();
+      expect(socket.conversationSubscription).toBeDefined();
+      memberName = "Changed by someone else";
+      socket.message({
+        t: "event",
+        id: socket.conversationSubscription,
+        cursor: "c.2",
+        data: { type: "message", message: membership(seqHead + 1, otherId) },
+      });
+      await settle();
+      expect(dom.root.querySelectorAll(".k2b-message-system-row")).toHaveLength(historical ? 1 : 2);
+      expect(membersRequests).toBe(2);
+      expect(dom.root.querySelector(".chat-member-row__name")?.textContent).toBe("Changed by someone else");
+      memberName = "Changed by the viewer elsewhere";
+      socket.message({
+        t: "event",
+        id: socket.conversationSubscription,
+        cursor: "c.3",
+        data: { type: "message", message: membership(seqHead + 2, viewerId) },
+      });
+      await settle();
+      expect(dom.root.querySelectorAll(".k2b-message-system-row")).toHaveLength(historical ? 1 : 3);
+      expect(membersRequests).toBe(3);
+      expect(dom.root.querySelector(".chat-member-row__name")?.textContent).toBe("Changed by the viewer elsewhere");
+      expect(consoleErrors).toEqual([]);
     });
-    // The initial history only establishes the sequence already seen.
-    expect(membersRequests).toBe(1);
-    const socket = FakeWebSocket.instances[0]!;
-    socket.open();
-    expect(socket.conversationSubscription).toBeDefined();
-    socket.message({
-      t: "event",
-      id: socket.conversationSubscription,
-      cursor: "c.2",
-      data: { type: "message", message: membership(2, otherId) },
-    });
-    await settle();
-    expect(dom.root.querySelectorAll(".k2b-message-system-row")).toHaveLength(2);
-    expect(membersRequests).toBe(2);
-    socket.message({
-      t: "event",
-      id: socket.conversationSubscription,
-      cursor: "c.3",
-      data: { type: "message", message: membership(3, viewerId) },
-    });
-    await settle();
-    expect(dom.root.querySelectorAll(".k2b-message-system-row")).toHaveLength(3);
-    expect(membersRequests).toBe(2);
-    expect(consoleErrors).toEqual([]);
-  });
+  }
   test("the way up from info returns to the list in one action", async () => {
     snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0 }, focus: null });
     await mount(false);
