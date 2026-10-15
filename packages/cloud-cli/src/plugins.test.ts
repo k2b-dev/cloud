@@ -698,6 +698,13 @@ test("reinstalling a package repairs missing manifests and missing or truncated 
     expect(printed.exitCode, printed.stderr).toBe(0);
     expect(printed.stdout).toBe(expected);
   }
+  // A same-size change keeps the entry complete, but a reinstall still restores the verified bytes.
+  await writeFile(reference, "x".repeat(Buffer.byteLength(expected)));
+  expect(await hasStoredPlugin(record.digest, root)).toBe(true);
+  expect(await hasStoredPlugin(record.digest, root, true)).toBe(false);
+  const reinstall = await runCli(["plugins", "install", echoBuild, "--yes"], dir);
+  expect(reinstall.exitCode, reinstall.stderr).toBe(0);
+  expect(await readFile(reference, "utf8")).toBe(expected);
 });
 
 test("package names never resolve inherited object properties as profile locks", async () => {

@@ -188,9 +188,9 @@ export const storePlugin = async (
   }
 };
 
-/** Move a verified download to `store/<digest>`; an identical plugin already there is kept. */
+/** Move a verified download to `store/<digest>`; an entry whose bytes all still match is kept. */
 export const placePlugin = async (incoming: string, digest: string, root = pluginsDirectory()): Promise<void> => {
-  if (await hasStoredPlugin(digest, root)) {
+  if (await hasStoredPlugin(digest, root, true)) {
     await rm(incoming, { recursive: true, force: true });
     return;
   }
@@ -200,8 +200,12 @@ export const placePlugin = async (incoming: string, digest: string, root = plugi
   await rename(incoming, target);
 };
 
-/** Whether the store holds a complete plugin with `digest`, without rehashing its files. */
-export const hasStoredPlugin = async (digest: string, root = pluginsDirectory()): Promise<boolean> => {
+/**
+ * Whether the store holds a complete plugin with `digest`: manifest, and every
+ * listed file at its exact size. `rehash` also compares each file's SHA-512,
+ * so a reinstall replaces an entry that changed in place.
+ */
+export const hasStoredPlugin = async (digest: string, root = pluginsDirectory(), rehash = false): Promise<boolean> => {
   if (!DIGEST.test(digest)) return false;
   const directory = join(pluginStoreDirectory(root), digest);
   try {
@@ -211,6 +215,7 @@ export const hasStoredPlugin = async (digest: string, root = pluginsDirectory())
     for (const file of manifest.files) {
       const entry = await lstat(join(directory, file.path));
       if (!entry.isFile() || entry.size !== file.size) return false;
+      if (rehash && sha512Hex(await readFile(join(directory, file.path))) !== file.sha512) return false;
     }
     return true;
   } catch {
