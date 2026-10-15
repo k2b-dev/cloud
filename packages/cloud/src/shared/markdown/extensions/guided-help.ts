@@ -53,6 +53,7 @@ const detailsBlock = (
   let offset = start + opener[0].length;
   let inner = false;
   let callout = false;
+  let listContentColumn: number | undefined;
   let fence: { marker: string; prefix: string; quotes: number; list: boolean } | undefined;
   while (offset < source.length) {
     const newline = source.indexOf("\n", offset);
@@ -62,8 +63,14 @@ const detailsBlock = (
     const marker = FENCE.exec(text);
     const prefix = /^[ \t]*(?:>[ \t]*|(?:[-+*]|\d+[.)])[ \t]+)*/.exec(text)![0];
     const quotes = prefix.split(">").length - 1;
+    const list = /[-+*]|\d+[.)]/.test(prefix);
+    const indentation = indentAfterQuotes(prefix);
     if (fence && (quotes < fence.quotes || (fence.list && text.trim() && columns(/^[ \t>]*/.exec(text)![0]) < columns(fence.prefix))))
       fence = undefined;
+    if (!fence) {
+      if (list) listContentColumn = indentation;
+      else if (text.trim() && listContentColumn !== undefined && indentation < listContentColumn) listContentColumn = undefined;
+    }
     if (fence) {
       if (
         marker &&
@@ -74,8 +81,8 @@ const detailsBlock = (
         indentAfterQuotes(marker[1]!) <= indentAfterQuotes(fence.prefix) + 3
       )
         fence = undefined;
-    } else if (marker && !(marker[2]![0] === "`" && marker[3]!.includes("`")))
-      fence = { marker: marker[2]!, prefix: marker[1]!, quotes, list: /[-+*]|\d+[.)]/.test(marker[1]!) };
+    } else if (marker && indentation - (listContentColumn ?? 0) <= 3 && !(marker[2]![0] === "`" && marker[3]!.includes("`")))
+      fence = { marker: marker[2]!, prefix: marker[1]!, quotes, list };
     else if (DETAILS_OPENER.test(text)) return { stoppedAt: offset };
     else if (DIRECTIVE_CLOSER.test(text)) {
       if (!inner)

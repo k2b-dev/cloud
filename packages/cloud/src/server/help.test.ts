@@ -161,6 +161,7 @@ describe("Help author contract", () => {
     ["an unclosed quote fence", ":::details Title\n> ```\n> code\n\nAfter.\n:::"],
     ["an unclosed list fence", ":::details Title\n- ```\n  code\n\nAfter.\n:::"],
     ["a tab-indented list fence", ":::details Q\n1. ~~~\n\tcode\n\t~~~\n\nAfter\n:::"],
+    ["indented code resembling a fence", ":::details Example\n\n    ~~~js\n\nAfter.\n:::"],
   ] as const) {
     test(`accepts details with ${name}`, () => {
       expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).not.toThrow();

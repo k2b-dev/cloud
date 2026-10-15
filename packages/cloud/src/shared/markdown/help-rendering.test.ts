@@ -220,6 +220,22 @@ test("details keep container fences and following prose in their body", () => {
   expect(html.indexOf("After.")).toBeLessThan(html.indexOf("</details>"));
 });
 
+test("details keep indented code that resembles a fence and following prose in their body", () => {
+  const html = renderHelpMarkdown(":::details Example\n\n    ~~~js\n\nAfter.\n:::");
+  expect(html.match(/<details /g)).toHaveLength(1);
+  expect(html).not.toContain(" open");
+  expect(html).toContain("~~~js</code>");
+  expect(html).toContain("<p>After.</p>\n</div></details>");
+});
+
+test("details keep directive closers inside list continuation fences", () => {
+  const html = renderHelpMarkdown(":::details Example\n- Step\n\n    ```md\n    :::\n    ```\n\nAfter.\n:::");
+  expect(html.match(/<details /g)).toHaveLength(1);
+  expect(html).toContain('<li class="custom-list custom-list-bullet"><p>Step</p>');
+  expect(html).toContain('language-md">:::</code>');
+  expect(html).toContain("</li>\n</ul>\n<p>After.</p>\n</div></details>");
+});
+
 // Count regex search spans and copied array elements so machine load cannot change the bound.
 const countHelpWork = (run: () => unknown): number => {
   const exec = RegExp.prototype.exec;

@@ -92,6 +92,20 @@ test("agent text keeps emphasis, unfolds details and resolves visible Help refer
   expect(helpAgentMarkdown(agentArticle("[text](help:hidden/private)"))).toBe("text");
 });
 
+test("agent text excludes unresolved link titles containing label delimiters", () => {
+  expect(helpAgentMarkdown(agentArticle('[Read](help:hidden/private "text ](here")'))).toBe("Read");
+});
+
+test("agent text excludes resolved link titles containing label delimiters", () => {
+  expect(helpAgentMarkdown(agentArticle('[Read](help:mail-invitations "text ](here")'))).toBe("[Read](/help/apps/mail/mail-invitations)");
+});
+
+test("agent text preserves nested brackets and code spans in Help link labels", () => {
+  for (const label of ["a [b] c", "a `]` c", "a `` `x` ] `` c", "a \\] c", "a \\``]` c"]) {
+    expect(helpAgentMarkdown(agentArticle(`[${label}](help:mail-invitations)`))).toBe(`[${label}](/help/apps/mail/mail-invitations)`);
+  }
+});
+
 test("agent rewriting preserves code and unrelated source formatting", () => {
   const source =
     '` :kbd[mod+k] **Hide**{icon="eye-off"} [x](help:hidden/private) `\n\n```md\n:::details Code\n:kbd[mod+k]\n**Hide**{icon="eye-off"}\n[x](help:hidden/private)\n:::\n```\n';

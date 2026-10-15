@@ -13,6 +13,37 @@ const helpAgentMessages = i18n.define({
   },
 });
 
+const helpLinkLabel = (source: string, fallback: string): string => {
+  // Index backtick runs once so unmatched runs cannot repeatedly scan the remaining source.
+  const backticks = new Map<number, { positions: number[]; next: number }>();
+  for (const run of source.matchAll(/`+/g)) {
+    const length = run[0].length;
+    if (!backticks.has(length)) backticks.set(length, { positions: [], next: 0 });
+    backticks.get(length)!.positions.push(run.index);
+  }
+  let depth = 0;
+  for (let index = 1; index < source.length; index++) {
+    const char = source[index];
+    if (char === "\\") index++;
+    else if (char === "`") {
+      let end = index + 1;
+      while (source[end] === "`") end++;
+      const length = end - index;
+      const runs = backticks.get(length);
+      if (runs) {
+        while (runs.next < runs.positions.length && runs.positions[runs.next]! <= index) runs.next++;
+      }
+      const closing = runs?.positions[runs.next];
+      index = closing === undefined ? end - 1 : closing + length - 1;
+    } else if (char === "[") depth++;
+    else if (char === "]") {
+      if (depth === 0) return source.slice(1, index);
+      depth--;
+    }
+  }
+  return fallback;
+};
+
 /** Portable source for agents and Copy as Markdown; code is kept verbatim. */
 export const helpAgentMarkdown = (article: Pick<HelpArticle, "markdown" | "locale" | "appId" | "links">): string => {
   const { t } = helpAgentMessages.resolve([article.locale]);
@@ -66,7 +97,7 @@ export const helpAgentMarkdown = (article: Pick<HelpArticle, "markdown" | "local
     if (token.type === "link" && token.href.startsWith("help:")) {
       const ref = parseHelpReference(token.href.slice(5));
       const target = ref && article.links[`${ref.appId ?? article.appId}/${ref.documentId}`];
-      const label = rewriteChildren(source.match(/^\[([\s\S]*)\]\(/)?.[1] ?? token.text, token.tokens ?? []);
+      const label = rewriteChildren(helpLinkLabel(source, token.text), token.tokens ?? []);
       return target ? `[${label}](${target.url}${ref.fragment})` : label;
     }
     const children =
