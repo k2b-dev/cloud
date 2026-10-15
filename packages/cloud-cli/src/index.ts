@@ -2277,12 +2277,15 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
       if (missing) {
         const packages = await readPackagePlugins();
         const record = Object.hasOwn(packages, missing) ? packages[missing] : undefined;
-        if (record)
+        if (record) {
+          // The recorded npm source pins the installed version; an update needs the latest one.
+          const source = record.source.startsWith("npm:") ? `npm:${record.package}` : record.source;
           throw new CliError(
-            `Package plugins update by installing the new package again: \`cld plugins install ${record.source}\`.`,
+            `Package plugins update by installing the new package again: \`cld plugins install ${source}\`.`,
             1,
-            `Paket-Plugins werden durch erneutes Installieren des neuen Pakets aktualisiert: \`cld plugins install ${record.source}\`.`,
+            `Paket-Plugins werden durch erneutes Installieren des neuen Pakets aktualisiert: \`cld plugins install ${source}\`.`,
           );
+        }
         throw new CliError(
           `Plugin "${missing}" is not installed for profile "${profileName}". Run \`cld plugins install ${missing}\`.`,
           1,

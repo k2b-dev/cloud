@@ -441,6 +441,14 @@ describe("cld package plugins", () => {
       expect(result.stderr).toContain(`Run \`cld plugins install ${record.source}\``);
       expect(result.stderr).not.toContain("Run `cld plugins install echo`");
     }
+    // `plugins update` names a path source as recorded, but an npm source without its pinned version.
+    const local = await runCli(["plugins", "update", "echo"], dir);
+    expect(local.exitCode).toBe(1);
+    expect(local.stderr).toContain(`\`cld plugins install ${record.source}\``);
+    await writePackagePlugins({ echo: { ...record, source: `npm:${record.package}@${record.version}` } }, root);
+    const npm = await runCli(["plugins", "update", "echo"], dir);
+    expect(npm.exitCode).toBe(1);
+    expect(npm.stderr).toContain(`\`cld plugins install npm:${record.package}\`.`);
   });
 
   test("package installs and removals share a lock across different config directories", async () => {
