@@ -157,7 +157,7 @@ test("details end at their own closing line, never inside code, and an unclosed 
 });
 
 test("a later details opener closes independently while the earlier opener stays text", () => {
-  const html = renderHelpMarkdown(":::details A\n:::details B\nBody\n:::");
+  const html = renderHelpMarkdown(":::details A\n\n:::details B\nBody\n:::");
   expect(html).toContain("<p>:::details A</p>");
   expect(html.match(/<details /g)).toHaveLength(1);
   expect(html).toContain("<summary><span>B</span>");
@@ -168,19 +168,38 @@ test("a later details opener closes independently while the earlier opener stays
   expect(fenced).toContain(":::details B</code>");
 });
 
-test("guided blocks still interrupt the paragraph before them", () => {
-  const html = renderHelpMarkdown("Intro\n:::steps\n1. A\n:::");
-  expect(html).toStartWith("<p>Intro</p>");
-  expect(html).toContain('<div class="help-steps"><ol class="k2b-steps">');
-});
+for (const [kind, block] of [
+  ["details", ":::details Title\nBody\n:::"],
+  ["steps", ":::steps\n1. A\n:::"],
+  ["reference", ":::reference\nBody\n:::"],
+  ["compare", ":::compare\nBody\n:::"],
+] as const) {
+  test(`${kind} after a text line stays paragraph text`, () => {
+    const html = renderHelpMarkdown(`X\n${block}`);
+    expect(html).toStartWith("<p>X<br />:::");
+    expect(html).not.toContain("<details");
+    expect(html).not.toContain(`<div class="help-${kind}">`);
+  });
+  test(`${kind} after a blank line renders a block`, () => {
+    const html = renderHelpMarkdown(`X\n\n${block}`);
+    expect(html).toStartWith("<p>X</p>");
+    expect(html).toContain(kind === "details" ? "<details " : `<div class="help-${kind}">`);
+    expect(html).not.toContain(" open");
+  });
+}
 
-test("details interrupt a one-character paragraph and start closed", () => {
-  const html = renderHelpMarkdown("X\n:::details Title\nBody\n:::");
-  expect(html.match(/<details /g)).toHaveLength(1);
-  expect(html).not.toContain(" open");
-  expect(html).toContain("<p>X</p>");
-  expect(html).toContain("<p>Body</p>\n</div></details>");
-});
+for (const [name, source] of [
+  ["indented backticks inside a fence", ":::details Example\n```md\n    ```\n:::\n```\nAfter.\n:::"],
+  ["an unclosed quote fence", ":::details Title\n> ```\n> code\n\nAfter.\n:::"],
+  ["an unclosed list fence", ":::details Title\n- ```\n  code\n\nAfter.\n:::"],
+] as const) {
+  test(`details keep ${name} and following prose in their body`, () => {
+    const html = renderHelpMarkdown(source);
+    expect(html.match(/<details /g)).toHaveLength(1);
+    expect(html).toContain("<p>After.</p>\n</div></details>");
+    if (name === "indented backticks inside a fence") expect(html).toContain("    ```\n:::</code>");
+  });
+}
 
 test("details keep container fences and following prose in their body", () => {
   for (const prefix of ["- ", "+ ", "* ", "1. ", "1) ", "> ", "> - "]) {
@@ -248,6 +267,8 @@ for (const [name, size, build] of [
     500,
     (size: number) => Array.from({ length: size }, (_, index) => `:::details Q${index}\n\n`).join(""),
   ],
+  ["adjacent guided blocks", 100, (size: number) => "Intro\n:::reference\nBody\n:::\n".repeat(size)],
+  ["adjacent details blocks", 100, (size: number) => "Intro\n:::details Q\nBody\n:::\n".repeat(size)],
   ["ordinary paragraphs", 300, (size: number) => "Ordinary paragraph.\n\n".repeat(size)],
   ["ordinary strong runs", 6000, (size: number) => "**a** ".repeat(size)],
   // A trailing icon exposes repeated lexing of preceding spans, even when the final output is unchanged.

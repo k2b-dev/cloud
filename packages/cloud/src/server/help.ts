@@ -17,6 +17,9 @@ import {
 import { lexHelpMarkdown, markdownToPlainText, renderHelpMarkdown, walkHelpTokens } from "../shared/markdown";
 import { auth } from "./middleware/auth";
 
+// A help: target in a Markdown link or definition, an autolink, or an HTML attribute value.
+const RAW_HELP_TARGET = /(?:\]\(|\]:|<|=)\s*(?:[<"']\s*)?help:/i;
+
 const metadataSchema = z.object({
   id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
   title: z.string().trim().min(1),
@@ -177,7 +180,7 @@ export const defineHelp = (
         if (
           (token.type === "link" && /^help:/i.test(token.href) && (!token.href.startsWith("help:") || !token.raw.startsWith("["))) ||
           (token.type === "image" && /^help:/i.test(token.href)) ||
-          (token.type === "html" && /\s[\w:-]+\s*=\s*(?:["']\s*)?help:/i.test(token.raw))
+          (token.type === "html" && RAW_HELP_TARGET.test(token.raw))
         )
           throw unreadableLink();
         if ((token.type === "paragraph" || token.type === "text") && token.tokens?.length) {
@@ -186,8 +189,11 @@ export const defineHelp = (
           walkHelpTokens(token.tokens, (child) => {
             if (child.type === "codespan") prose = prose.replaceAll(child.raw, child.raw.replace(/[^\r\n]/g, "x"));
           });
-          if (/^ {0,3}:::details\b/m.test(prose)) {
-            throw new Error(`Help document "${document.id}" has a :::details block without a title or closing ::: in locale "${locale}"`);
+          const block = /^ {0,3}:::(details|steps|reference|compare)\b/m.exec(prose);
+          if (block) {
+            const missing =
+              block[1] === "details" ? "a blank line before it, a title, or a closing :::" : "a blank line before it or a closing :::";
+            throw new Error(`Help document "${document.id}" has a :::${block[1]} block without ${missing} in locale "${locale}"`);
           }
         }
         if (token.type === "link" && token.href.startsWith("help:")) validate(token.href.slice(5), "help:");
@@ -209,8 +215,8 @@ export const defineHelp = (
         if (
           (token.type === "link" && token.href.startsWith("help:")) ||
           // Markdown inside raw HTML and callout titles stays text in agent text, so its target would reach readers.
-          (token.type === "html" && /(?:\]\(|\]:|<)\s*(?:<\s*)?help:/i.test(token.raw)) ||
-          (token.type === "markdownInfoBlock" && typeof token.title === "string" && /(?:\]\(|\]:|<)\s*(?:<\s*)?help:/i.test(token.title))
+          (token.type === "html" && RAW_HELP_TARGET.test(token.raw)) ||
+          (token.type === "markdownInfoBlock" && typeof token.title === "string" && RAW_HELP_TARGET.test(token.title))
         )
           unconvertedLink = true;
         if (token.type === "helpKbd" || token.type === "helpLabel" || token.type === "helpDetails") unconvertedSyntax = true;

@@ -85,16 +85,17 @@ describe("Help author contract", () => {
   test("rejects details without a title or closing line in every locale, outside code", () => {
     for (const body of [
       ":::details Title\nBody",
+      "first\r:::details Title\nBody\n:::",
       ":::details\nBody\n:::",
       "   :::details Title\nBody",
       ":::details X\n".repeat(40),
       ":::details Outer\n:::details Inner\nBody\n:::\n:::",
     ]) {
       expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).toThrow(
-        'Help document "start" has a :::details block without a title or closing ::: in locale "en"',
+        'Help document "start" has a :::details block without a blank line before it, a title, or a closing ::: in locale "en"',
       );
       expect(() => defineHelp({ baseLocale: "en", documents: { en: [helpSource("start")], de: [helpSource("start", "", body)] } })).toThrow(
-        'Help document "start" has a :::details block without a title or closing ::: in locale "de"',
+        'Help document "start" has a :::details block without a blank line before it, a title, or a closing ::: in locale "de"',
       );
     }
     expect(() =>
@@ -142,17 +143,42 @@ describe("Help author contract", () => {
       }),
     ).not.toThrow();
   });
-  test("accepts details after a one-character paragraph", () => {
-    const definition = defineHelp({ documents: [helpSource("start", "", "X\n:::details Title\nBody\n:::")] });
-    expect(definition.documents[0]?.html.match(/<details /g)).toHaveLength(1);
-  });
+  for (const [kind, body] of [
+    ["details", "X\n:::details Title\nBody\n:::"],
+    ["steps", "Intro\n:::steps\n1. A\n:::"],
+    ["reference", "Intro\n:::reference\nBody\n:::"],
+    ["compare", "Intro\n:::compare\nBody\n:::"],
+  ] as const) {
+    test(`rejects ${kind} directly after a text line`, () => {
+      const missing = kind === "details" ? "a blank line before it, a title, or a closing :::" : "a blank line before it or a closing :::";
+      expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).toThrow(
+        `Help document "start" has a :::${kind} block without ${missing} in locale "en"`,
+      );
+    });
+  }
+  for (const [name, body] of [
+    ["indented backticks inside a fence", ":::details Example\n```md\n    ```\n:::\n```\nAfter.\n:::"],
+    ["an unclosed quote fence", ":::details Title\n> ```\n> code\n\nAfter.\n:::"],
+    ["an unclosed list fence", ":::details Title\n- ```\n  code\n\nAfter.\n:::"],
+  ] as const) {
+    test(`accepts details with ${name}`, () => {
+      expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).not.toThrow();
+    });
+  }
+  for (const target of ['"HELP:hidden/private"', '"help:hidden/private"', "'help:hidden/private'"]) {
+    test(`rejects HTML Help target ${target} in a callout title`, () => {
+      expect(() => defineHelp({ documents: [helpSource("start", "", `:::note <a href=${target}>Read more</a>\nBody\n:::`)] })).toThrow(
+        'Help document "start" has a help: link that agents cannot read in locale "en"; write it inline as [text](help:id)',
+      );
+    });
+  }
   test("rejects details nested through Markdown containers", () => {
     for (const body of [
       ":::details Outer\n> :::details Inner\n> Body\n> :::\n:::",
       ":::details Outer\n- :::details Inner\n  Body\n  :::\n:::",
     ]) {
       expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).toThrow(
-        'Help document "start" has a :::details block without a title or closing ::: in locale "en"',
+        'Help document "start" has a :::details block without a blank line before it, a title, or a closing ::: in locale "en"',
       );
     }
   });
@@ -214,7 +240,6 @@ describe("Help author contract", () => {
   for (const [name, body] of [
     ["keyboard shortcut", "first\r:kbd[esc]"],
     ["label", 'first\r**Label**{icon="eye"}'],
-    ["details", "first\r:::details Title\nBody\n:::"],
   ]) {
     test(`rejects an unconverted ${name} in agent text in every locale`, () => {
       expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).toThrow(

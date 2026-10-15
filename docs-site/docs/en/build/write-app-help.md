@@ -69,6 +69,8 @@ each with at most seven steps.
   result the reader sees, then the next step if there is one.
 - **Facts.** Put facts that the reader looks up, not follows, in a `reference`
   block. Put alternatives in a `compare` block.
+- **Block spacing.** Put a blank line before a `:::` block after text; an
+  opener directly after a text line fails startup.
 - **Details.** Put reasons and special cases in `:::details`. The reader can
   open them; search and agents still find them.
 - **Icons.** Show a control's icon with `{icon}` on its label. Do not describe

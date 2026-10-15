@@ -23,8 +23,9 @@ fails startup when an article:
 
 - uses `kind`, `needs`, `next`, or `related` in its frontmatter for something
   else; Help no longer strips these keys;
-- has a line that starts with `:::details` but has no title, no closing `:::`,
-  or another `:::details` inside;
+- has a line starting with `:::details`, `:::steps`, `:::reference`, or
+  `:::compare` directly after a text line, a details opener without a title or
+  closing `:::`, or details inside details;
 - has a `:kbd[...]` that does not name a key;
 - has a callout inside details;
 - has a `help:` target in a reference definition, autolink, image, HTML, or

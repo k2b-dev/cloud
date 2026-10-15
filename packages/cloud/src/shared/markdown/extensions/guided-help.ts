@@ -21,20 +21,13 @@ const headingTitleTokens = (token: Tokens.Heading): Token[] => {
   return tokens;
 };
 
-const FENCE = /^[ \t]*(?:>[ \t]*|(?:[-+*]|\d+[.)])[ \t]+)*(`{3,}|~{3,})(.*)$/;
+const FENCE = /^([ \t]*(?:>[ \t]*|(?:[-+*]|\d+[.)])[ \t]+)*)(`{3,}|~{3,})(.*)$/;
 const DIRECTIVE_OPENER = /^ {0,3}:::(?:steps|reference|compare|details|note|info|success|warning|danger)\b/i;
 const DIRECTIVE_CLOSER = /^ {0,3}:::[ \t]*$/;
 const CALLOUT_OPENER = /^ {0,3}:::(?:note|info|success|warning|danger)\b/i;
 const DETAILS_OPENER = /^ {0,3}:::details\b/i;
 
 const detailsLexers = new WeakSet<Lexer>();
-
-const startParagraph = (source: string, lexer: Lexer): string => {
-  const rules = Lexer.rules.block[lexer.options.pedantic ? "pedantic" : lexer.options.gfm ? "gfm" : "normal"];
-  // Marked passes start hooks src.slice(1); restore a paragraph character before measuring its extent.
-  const extent = (rules.paragraph.exec(`x${source}`)?.[0].length ?? 1) - 1;
-  return source.slice(0, extent);
-};
 
 /**
  * A `:::details Title` block up to its own closing `:::`. One directive inside it (steps, reference, compare, a
@@ -51,16 +44,29 @@ const detailsBlock = (
   let offset = start + opener[0].length;
   let inner = false;
   let callout = false;
-  let fence: string | undefined;
+  let fence: { marker: string; prefix: string; quotes: number; list: boolean } | undefined;
   while (offset < source.length) {
     const newline = source.indexOf("\n", offset);
     const end = newline < 0 ? source.length : newline + 1;
     const line = source.slice(offset, end);
     const text = line.replace(/\r?\n$/, "");
     const marker = FENCE.exec(text);
+    const prefix = /^[ \t]*(?:>[ \t]*|(?:[-+*]|\d+[.)])[ \t]+)*/.exec(text)![0];
+    const quotes = prefix.split(">").length - 1;
+    if (fence && (quotes < fence.quotes || (fence.list && text.trim() && /^[ \t>]*/.exec(text)![0].length < fence.prefix.length)))
+      fence = undefined;
     if (fence) {
-      if (marker && marker[1]![0] === fence[0] && marker[1]!.length >= fence.length && /^[ \t]*$/.test(marker[2]!)) fence = undefined;
-    } else if (marker && !(marker[1]![0] === "`" && marker[2]!.includes("`"))) fence = marker[1];
+      if (
+        marker &&
+        marker[2]![0] === fence.marker[0] &&
+        marker[2]!.length >= fence.marker.length &&
+        /^[ \t]*$/.test(marker[3]!) &&
+        quotes === fence.quotes &&
+        marker[1]!.length - marker[1]!.lastIndexOf(">") <= fence.prefix.length - fence.prefix.lastIndexOf(">") + 3
+      )
+        fence = undefined;
+    } else if (marker && !(marker[2]![0] === "`" && marker[3]!.includes("`")))
+      fence = { marker: marker[2]!, prefix: marker[1]!, quotes, list: /[-+*]|\d+[.)]/.test(marker[1]!) };
     else if (DETAILS_OPENER.test(text)) return { stoppedAt: offset };
     else if (DIRECTIVE_CLOSER.test(text)) {
       if (!inner)
@@ -173,18 +179,6 @@ export function guidedHelpExtension(): MarkedExtension {
       {
         name: "helpDetails",
         level: "block",
-        start(source) {
-          if (detailsLexers.has(this.lexer)) return undefined;
-          const paragraph = startParagraph(source, this.lexer);
-          const openers = /^:::details[ \t]+\S/gm;
-          for (let opener = openers.exec(paragraph); opener; opener = openers.exec(paragraph)) {
-            const result = detailsBlock(source, opener.index);
-            if (result.block) return opener.index;
-            if (result.stoppedAt === source.length) return undefined;
-            openers.lastIndex = result.stoppedAt;
-          }
-          return undefined;
-        },
         tokenizer(source) {
           if (detailsLexers.has(this.lexer)) return undefined;
           const { block } = detailsBlock(source);
@@ -213,7 +207,7 @@ export function guidedHelpExtension(): MarkedExtension {
         name: "guidedHelpBlock",
         level: "block",
         start(source) {
-          return startParagraph(source, this.lexer).match(/^:::(?:compare|reference|steps)\b/m)?.index;
+          return source.match(/^:::(?:compare|reference|steps)\b/)?.index;
         },
         tokenizer(source) {
           const match = /^:::(compare|reference|steps)[ \t]*\n([\s\S]*?)\n:::(?:\n|$)/.exec(source);

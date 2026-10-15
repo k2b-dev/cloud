@@ -170,7 +170,9 @@ Help supports these guided blocks:
 | `compare` | Alternatives or differences |
 | `details Question` | Collapsed reasons or special cases; a title is required |
 
-The block contains normal Markdown:
+Start a `:::` block after a blank line, at the start of the document, or after
+another block. An opener directly after a text line fails startup. The block
+contains normal Markdown:
 
 ```md
 :::steps
@@ -196,8 +198,9 @@ Inventory keeps the items you already created.
 Details start collapsed. Their full body remains searchable and is given in
 full to agents. They can contain steps, reference, and compare blocks and
 ordinary Markdown, but no other details. A callout inside details fails
-startup: a warning or note belongs where the reader sees it. An opener without
-a title, one that is never closed, or one with details inside fails startup.
+startup: a warning or note belongs where the reader sees it. An opener directly
+after a text line, without a title, without a closing `:::`, or with details
+inside fails startup.
 
 A paragraph containing only bold text becomes an eyebrow. Use it as a short
 label, not another heading.
