@@ -913,6 +913,30 @@ describe("AI capability catalog", () => {
     expect(aiCapabilityInputSchema(source).parse({ value: { kind: "B" } })).toEqual({ value: { kind: "B", label: "B" } });
   });
 
+  test("visits each shared definition once when looking for tuples in union branches", () => {
+    // Every level references the next twice; following each edge again would take 2^40 steps.
+    const depth = 40;
+    const $defs = Object.fromEntries(
+      Array.from({ length: depth }, (_, level) => [
+        `D${level}`,
+        level === depth - 1
+          ? { type: "string", default: "leaf" }
+          : {
+              type: "object",
+              properties: { left: { $ref: `#/$defs/D${level + 1}` }, right: { $ref: `#/$defs/D${level + 1}` } },
+            },
+      ]),
+    );
+    const source = {
+      type: "object",
+      properties: { value: { anyOf: [{ $ref: "#/$defs/D0" }, { type: "number" }] } },
+      $defs,
+    };
+    const reduced = reduceAiCapabilityInputSchema(source);
+    expect(reduced).toHaveProperty("properties.value.anyOf", [{ $ref: "#/$defs/D0" }, { type: "number" }]);
+    expect(reduced).toHaveProperty(`$defs.D${depth - 1}.default`, "leaf");
+  });
+
   test.each(["$defs", "definitions"])("detects tuples through transitive escaped %s references in union branches", (keyword) => {
     const branch = (name: string) => ({
       type: "object",

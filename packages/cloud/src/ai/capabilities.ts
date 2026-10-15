@@ -440,15 +440,15 @@ type SchemaReductionContext = {
   root: Record<string, unknown>;
   mirrorNames: Map<string, string>;
   mirrors: Record<string, Record<string, unknown>>;
-  tupleDefinitions: Map<string, boolean>;
 };
 
-const containsTuple = (value: unknown, context: SchemaReductionContext, key?: string, checking = new Set<string>()): boolean => {
+/** Whether a raw schema reaches a tuple; `visited` keeps each definition to one visit per question. */
+const containsTuple = (value: unknown, context: SchemaReductionContext, key?: string, visited = new Set<string>()): boolean => {
   if (key === "const" || key === "enum" || key === "default" || key === "required" || key === "type") return false;
-  if (Array.isArray(value)) return value.some((item) => containsTuple(item, context, undefined, checking));
+  if (Array.isArray(value)) return value.some((item) => containsTuple(item, context, undefined, visited));
   if (!value || typeof value !== "object") return false;
   if (key === "properties" || key === "$defs" || key === "definitions") {
-    return Object.values(value).some((schema) => containsTuple(schema, context, undefined, checking));
+    return Object.values(value).some((schema) => containsTuple(schema, context, undefined, visited));
   }
   if (Object.hasOwn(value, "prefixItems") || Array.isArray(Reflect.get(value, "items"))) return true;
   const reference = Reflect.get(value, "$ref");
@@ -458,19 +458,12 @@ const containsTuple = (value: unknown, context: SchemaReductionContext, key?: st
     const name = encodedName!.replace(/~1/g, "/").replace(/~0/g, "~");
     const definitions = context.root[keyword!];
     const identity = `${keyword}/${name}`;
-    if (definitions && typeof definitions === "object" && Object.hasOwn(definitions, name)) {
-      if (!context.tupleDefinitions.has(identity) && !checking.has(identity)) {
-        checking.add(identity);
-        const found = containsTuple(Reflect.get(definitions, name), context, undefined, checking);
-        checking.delete(identity);
-        // A nested negative may have skipped a cycle whose tuple has not been found yet.
-        if (found || checking.size === 0) context.tupleDefinitions.set(identity, found);
-        if (found) return true;
-      }
-      if (context.tupleDefinitions.get(identity)) return true;
+    if (definitions && typeof definitions === "object" && Object.hasOwn(definitions, name) && !visited.has(identity)) {
+      visited.add(identity);
+      if (containsTuple(Reflect.get(definitions, name), context, undefined, visited)) return true;
     }
   }
-  return Object.entries(value).some(([childKey, childValue]) => containsTuple(childValue, context, childKey, checking));
+  return Object.entries(value).some(([childKey, childValue]) => containsTuple(childValue, context, childKey, visited));
 };
 
 const reduceSchemaValue = (value: unknown, context: SchemaReductionContext, key?: string, merged = false): unknown => {
@@ -558,7 +551,7 @@ const reduceSchemaValue = (value: unknown, context: SchemaReductionContext, key?
  * overlap; the app still validates exact tuple positions and exclusive unions.
  */
 export const reduceAiCapabilityInputSchema = (schema: Record<string, unknown>): Record<string, unknown> => {
-  const context: SchemaReductionContext = { root: schema, mirrorNames: new Map(), mirrors: {}, tupleDefinitions: new Map() };
+  const context: SchemaReductionContext = { root: schema, mirrorNames: new Map(), mirrors: {} };
   const reduced = reduceSchemaValue(schema, context) as Record<string, unknown>;
   for (const [keyword, mirrors] of Object.entries(context.mirrors)) {
     const definitions = reduced[keyword];
