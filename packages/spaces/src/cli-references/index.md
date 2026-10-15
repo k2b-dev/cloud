@@ -251,6 +251,8 @@ Run `cld spaces <command> --help` for every flag.
 | Calendar | `calendar <start> <end>`, `overlap <start> <end>`, `invitation context`, `invitation draft` |
 | Access | `access list`, `grant`, `set`, `revoke`, `search-principals` |
 
+Inline text containing the two characters `\n` and no real line break is rejected; pass multi-line text with `--from <file|->`.
+
 Every command takes `--json` (and `--jsonl` for lists), destructive commands need `--yes`, and long text comes from `--from <file|->`. A command exits `0` only when it did everything it was asked to do.
 
 ## JSON contracts

@@ -498,6 +498,10 @@ a provider-safe callable name when preparing a model request. Model message
 history stores each call under its provider-safe name, and the `call` field of
 a `load_tools` result carries that name. Code that reads stored tool calls
 accepts both the capability ID and the provider name.
+Cloud also describes each loaded capability's input in the schema subset every
+model provider accepts: a tuple reaches the model as a bounded array of its
+item schemas, an exclusive union (`oneOf`) as a plain union (`anyOf`), and the
+app still validates the exact input.
 When a result contains a semantic `open` or `edit` link, clients use
 that exact path instead of inferring a route from a resource ref.
 

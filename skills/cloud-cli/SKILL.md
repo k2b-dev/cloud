@@ -55,7 +55,7 @@ Start with the reference named here; it holds the exact syntax and the safe work
 - Use `--json` whenever the next action depends on one complete response. Use `--jsonl` for supported list commands when processing items as a stream. Keep normal output for simple inspection.
 - Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
 - Before writing content into an app, such as a note, a message, a record, or a file, read that module's reference. Use only the syntax, commands, and flags it lists, and check flags with `cld <app> <command> --help`; what is not listed does not exist.
-- Pass structured or multiline content through a command's file or stdin option instead of trying to escape it in a shell argument.
+- Pass structured or multiline content through a command's file or stdin option instead of trying to escape it in a shell argument; a shell keeps `\n` inside quotes as two characters, so it never becomes a line break.
 - File uploads such as `cld filesv2 put` and `cld notebooks attach` store the bytes as they are and convert nothing. Create a file in its final format locally with a tool available on the machine, then upload it.
 - Ask the user for content you do not have, such as names, figures, or dates. Do not fill a note or file with invented data.
 - Do not delete content, revoke access, or perform another destructive action without an explicit user request. Check command help for any required confirmation first.

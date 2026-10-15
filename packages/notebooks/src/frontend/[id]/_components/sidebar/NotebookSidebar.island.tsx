@@ -24,7 +24,7 @@ import { requestSoftNoteNavigation } from "../../../lib/soft-navigation";
 import { extractTags } from "../../../lib/tag-extract";
 import { buildAttachmentsUrl, buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
-import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
+import { NOTE_SOFT_NAVIGATED_EVENT, SIDEBAR_FILTER_CHANGED_EVENT } from "../detail/events";
 import { resolveSameNotebookNoteTarget } from "../editor/note-navigation";
 import { openNoteSearchPrompt } from "../search/openNoteSearchPrompt";
 import NotebookSettingsButton from "../settings/NotebookSettingsButton";
@@ -100,6 +100,7 @@ export default function NotebookSidebar(props: Props) {
     setFilterState(next);
     const href = withSidebarFilter(`${window.location.pathname}${window.location.search}`, next);
     window.history.replaceState(window.history.state, "", `${href}${window.location.hash}`);
+    window.dispatchEvent(new Event(SIDEBAR_FILTER_CHANGED_EVENT));
   };
   const toggleFilter = (view: "favorites" | "recents") => setFilter(filter().view === view ? {} : { view });
   onMount(() => {

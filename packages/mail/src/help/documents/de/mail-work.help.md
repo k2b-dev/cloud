@@ -28,7 +28,9 @@ Der Filterdialog kann diese Felder durchsuchen:
 - Ordner
 - Lokaler Tag
 
-Wähle **Mindestens eine Bedingung**, damit mindestens ein ausgefülltes Feld passen muss. Wähle **Alle Bedingungen**, damit jedes ausgefüllte Feld passen muss. Suchfilter bleiben in der Seiten-URL. Ein Neuladen oder eine geteilte URL behält deshalb das aktuelle Ergebnis. Mit **Suche zurücksetzen** kehrst du zur ungefilterten Ansicht zurück.
+Wähle **Mindestens eine Bedingung**, damit mindestens ein ausgefülltes Feld passen muss. Wähle **Alle Bedingungen**, damit jedes ausgefüllte Feld passen muss. Suchfilter bleiben in der Seiten-URL. Ein Neuladen oder eine geteilte URL behält deshalb das aktuelle Ergebnis.
+
+Eine Suche merkt sich die Ansicht, in der du sie gestartet hast, etwa **Handlungsbedarf** oder einen Ordner. Um die Suche zu beenden, wähle **Leeren** im Suchfeld, lösche den Text, drücke Esc oder wähle **Suche zurücksetzen**. Mail kehrt dann zu dieser Ansicht zurück und öffnet die Unterhaltung, die vorher offen war. Die URL behält die Ausgangsansicht. Ein Neuladen oder Zurück behält sie deshalb auch.
 
 Anbieter-Schlüsselwörter sind erweiterte synchronisierte Metadaten, kein normales System zum Kennzeichnen. Vorhandene Such-URLs mit Schlüsselwörtern funktionieren weiter, und du kannst sie weiter bearbeiten. Neue Filter nutzen für Kennzeichnungen, die Menschen lesen, lokale Tags.
 

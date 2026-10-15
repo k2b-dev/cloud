@@ -435,6 +435,33 @@ describe("browse", () => {
 });
 
 describe("changes", () => {
+  test("rejects escaped line breaks in inline text before any request", async () => {
+    for (const { args, field } of [
+      { args: ["add", "Roadmap:Write notes", "--description", "Caption:\\nText"], field: "description" },
+      { args: ["set", "Item01", "--description", "Caption:\\nText"], field: "description" },
+      { args: ["comments", "add", "Item01", "--content", "Caption:\\nText"], field: "content" },
+      { args: ["comments", "update", "Item01", "Cmt001", "--content", "Caption:\\nText"], field: "content" },
+      { args: ["done", "Item01", "--result", "Caption:\\nText"], field: "result" },
+      { args: ["progress", "Item01", "--content", "Caption:\\nText"], field: "content" },
+    ]) {
+      const result = await failing(args);
+      expect(result.stderr).toContain(
+        `--${field} contains "\\n" as two characters, not a line break. Pass multi-line text with --from <file|-> (for example a heredoc).`,
+      );
+      expect(result.requests).toEqual([]);
+    }
+  });
+
+  test("preserves real inline line breaks and literal file content", async () => {
+    const description = "Caption:\nText";
+    const added = await run(["add", "Roadmap:Write notes", "--description", description]);
+    expect(writes(added.requests)[0]?.body).toMatchObject({ description });
+    const path = join(dir, "literal-description.md");
+    await Bun.write(path, "Caption:\\nText");
+    const from = await run(["add", "Roadmap:Write notes", "--from", path]);
+    expect(writes(from.requests)[0]?.body).toMatchObject({ description: "Caption:\\nText" });
+  });
+
   test("create, add, set, mv and rm send the documented payloads", async () => {
     expect((await run(["create", "Hiring", "--description", "People"])).requests[0]?.body).toEqual({
       name: "Hiring",

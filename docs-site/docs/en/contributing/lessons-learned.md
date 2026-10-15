@@ -26,13 +26,21 @@ convention still needs a check or a test.
 | Time | A test or a render depends on today's date, the time zone, or randomness, so it passes on one day and fails on another. | Test: the Assistant sidebar test from [#1121](https://github.com/k2b-dev/cloud/pull/1121) freezes its clock. No repository check finds other tests that compare fixed dates with the real clock yet. |
 | Server render vs. mount | An island replaces the server HTML when it mounts; see [Know how an island mounts](/en/docs/frontend/islands-and-hydration#know-how-an-island-mounts). When the server and the browser render different markup or styles, the page moves on mount or after a reload, and WebKit can keep stale styles from before the mount. | Convention: [Know how an island mounts](/en/docs/frontend/islands-and-hydration#know-how-an-island-mounts). Test: the month view browser tests from [#1157](https://github.com/k2b-dev/cloud/pull/1157) check row places right after mount. The `@k2b/ui` sidebar reload test from [#1154](https://github.com/k2b-dev/cloud/issues/1154) compares the server frame, the frame right after mount, and the settled frame after a reload. No shared test does this for other islands yet. |
 | Layout shift | A transient state, such as a status text, a notice, or a loader, appears in the layout flow and moves its neighbors. | Convention: [Keep the layout still](/en/docs/frontend/styling-and-accessibility#keep-the-layout-still) ([#1143](https://github.com/k2b-dev/cloud/pull/1143)). Each change applies its browser-test pattern, which compares bounding boxes before and after each state change. No automatic check yet. |
-| State lost on navigation or reload | Clearing, cancelling, reloading, or going Back does not return the person to where they started, or drops input that was not saved yet. | Convention: [Test URL behavior](/en/docs/frontend/testing#test-url-behavior) covers reload, Back, Forward, and opened links. No shared guard covers unsent local edits yet; Grids tests the leave warning of its public forms in `PublicFormSubmit.behavior.test.tsx`. |
+| State lost on navigation or reload | Clearing, cancelling, reloading, or going Back does not return the person to where they started, or drops input that was not saved yet. | Convention: [Test URL behavior](/en/docs/frontend/testing#test-url-behavior) covers reload, Back, Forward, and opened links. No shared guard covers unsent local edits yet; Grids tests the leave warning of its public forms in `PublicFormSubmit.behavior.test.tsx`, and Notebooks tests that a sync error keeps unsent text in `sync-ended.behavior.test.tsx` and `provider.test.ts`. |
 | Ordering and concurrency | Work for one item runs in parallel or races another writer, so results land out of order or a later step undoes an earlier one. | Convention: the order and no-drop rules in [Show mutation state](/en/docs/frontend/forms-prompts-and-feedback#show-mutation-state) ([#1148](https://github.com/k2b-dev/cloud/pull/1148)) cover actions in the browser. Test: Chat's send queue keeps the browser posts of one conversation in order in `chat-sends.test.ts` ([#1145](https://github.com/k2b-dev/cloud/issues/1145)). No shared guard covers server-side writers yet; Mail's command queue has an integration test for server-side order in `conversation-actions.integration.test.ts`, and nothing covers automation versus reconciliation ([#1142](https://github.com/k2b-dev/cloud/issues/1142)). |
 | Silent failure | Async work fails and the person sees nothing, or a progress text stays as the last word. | Convention: [Show mutation state](/en/docs/frontend/forms-prompts-and-feedback#show-mutation-state) for single actions. No shared guard covers background work yet. |
-| Foreign system contracts | Cloud sends a schema or a payload that a foreign system, such as a model provider or Filegate, does not accept. | Partial test: the chart tool schema is checked for provider shape (one root object without `oneOf`, `anyOf`, or `allOf`, and no tuple `items`) in `packages/cloud/src/ai/chart-block.test.ts` and `default-tools.test.ts`. A check of every registered capability input schema is added by the fix for [#1149](https://github.com/k2b-dev/cloud/issues/1149). |
+| Foreign system contracts | Cloud sends a schema or a payload that a foreign system, such as a model provider or Filegate, does not accept. | Partial test: the chart tool schema is checked for provider shape (one root object without `oneOf`, `anyOf`, or `allOf`, and no tuple `items`) in `packages/cloud/src/ai/chart-block.test.ts` and `default-tools.test.ts`. Test: `tests/capability-tool-schemas.test.ts` builds every app's capability tools the way the Assistant does and checks the same provider shape for each input schema ([#1149](https://github.com/k2b-dev/cloud/issues/1149)). No guard covers Filegate payloads yet. |
 | Server-side request forgery | A person-chosen address reaches the server’s private network or changes between validation and connection. | Check: `network-guard` lets only the platform guard resolve host names. Test: platform address and resolution tests, plus Tools refusal and pinned-transport tests. |
+| Escaped text input | An agent writes `\n` as two characters through a shell argument or double-escaped JSON, and the text is stored and shown with a literal backslash. | Test: Spaces rejects such inline CLI text and capability text inputs ([#1178](https://github.com/k2b-dev/cloud/issues/1178)). No shared guard covers inline text in other apps, such as `cld notebooks write --content`, yet ([#1193](https://github.com/k2b-dev/cloud/issues/1193)). |
 
 ## Lessons
+
+### Spaces showed a literal backslash-n on a card
+
+- **What happened:** A Kanban card preview showed `Caption:\nText` instead of a line break ([#1178](https://github.com/k2b-dev/cloud/issues/1178)).
+- **Root cause:** The stored description held a backslash and an `n`. A shell keeps `\n` inside quotes as two characters, and a model can double-escape JSON; the Spaces CLI and capability inputs stored that text unchanged. The preview only showed what was stored.
+- **Error class:** Escaped text input.
+- **Guard:** Tests in Spaces: inline CLI text and capability text inputs reject `\n` outside inline code when the text has no real line break. Stored text and the browser editor stay unchanged, because `\n` can be real content, such as a Windows path.
 
 ### Assistant sidebar test broke every gate
 
@@ -72,16 +80,16 @@ convention still needs a check or a test.
 ### Clearing a Mail search lands in All mail
 
 - **What happened:** A person started a search from a Focus view or a folder and then cleared it. Mail showed All mail instead of the view the search started from ([#1156](https://github.com/k2b-dev/cloud/issues/1156)).
-- **Root cause:** Suspected: starting a search drops the previous view from the URL state, so clearing it falls back to the default view.
+- **Root cause:** Starting a search dropped the previous view from the URL state. Restoring its scroll alone also lost the position beyond page one, because changing the query source reloads only the first page.
 - **Error class:** State lost on navigation or reload.
-- **Guard:** Pending in [#1156](https://github.com/k2b-dev/cloud/issues/1156): the search keeps its starting view in the URL, so clearing, reload, and Back return to it.
+- **Guard:** `mail-navigation.test.ts` and `MailWorkspace.search-return.behavior.test.tsx` cover the starting view across clearing, reload, and Back. The behavior tests also require previously loaded pages to reload before the final scroll restore, and check that leaving during that load preserves the other view and its scroll.
 
 ### Notebooks lose unsent text on a sync error
 
 - **What happened:** When the note editor hit a fatal sync error, such as an expired session, it showed an alert and then reloaded the page. Edits that were not sent yet were lost ([#1144](https://github.com/k2b-dev/cloud/issues/1144)).
-- **Root cause:** The fatal-error handler always reloads after the alert, also while unsent changes exist.
+- **Root cause:** The fatal-error handler always reloads after the alert, also while unsent changes exist. The provider also did not track which sent edits the server had stored, so it could not tell whether a reload loses text.
 - **Error class:** State lost on navigation or reload.
-- **Guard:** Pending in [#1144](https://github.com/k2b-dev/cloud/issues/1144): no reload while changes are pending; the text stays on screen with one recovery action.
+- **Guard:** The provider keeps each sent edit until the server echoes it, and a sync error never reloads by itself: the note stays on screen read-only with one recovery action, and Reload or leaving asks first while edits are unsent. `provider.test.ts` covers the pending state, and `sync-ended.behavior.test.tsx` checks every error code with and without unsent edits.
 
 ### Chat stores quick messages out of order
 
@@ -107,9 +115,9 @@ convention still needs a check or a test.
 ### Provider rejects a tuple tool schema
 
 - **What happened:** OpenAI-compatible providers rejected the whole tool list with HTTP 400, which ended the turn ([#1149](https://github.com/k2b-dev/cloud/issues/1149)).
-- **Root cause:** A capability input schema used a tuple, which becomes a list of item schemas in JSON Schema. The capability schema reducer passed it to the provider unchanged.
+- **Root cause:** The Notebooks `note.edit` input uses a tuple. The AI schema reducer kept its `prefixItems` and `items: false`, Zod rebuilt the tuple, and Nessi sent it to the provider as a list of item schemas (`items: [...]` with `additionalItems: false`), which the provider does not accept.
 - **Error class:** Foreign system contracts.
-- **Guard:** Pending in [#1149](https://github.com/k2b-dev/cloud/issues/1149): a provider-safe reducer and a contract test that extends the chart tool's provider-shape test to every registered capability input schema.
+- **Guard:** The reducer rewrites every tuple as a bounded array of its item schemas, and `tests/capability-tool-schemas.test.ts` checks the provider shape of every app's capability tools.
 
 ### Webhook testing bypasses outbound address policy
 

@@ -105,6 +105,7 @@ import {
   updateSenderIdentityInputSchema,
   updateSenderIdentityTransportInputSchema,
 } from "../contracts";
+import { MAX_MAIL_WORKSPACE_HREF_LENGTH } from "../search-url";
 import {
   createMailProtectedIdentityInputSchema,
   createMailSecurityPolicyInputSchema,
@@ -254,7 +255,7 @@ const activityQuerySchema = cursorQuerySchema.extend({
   conversationId: ResourceShortIdSchema.optional(),
 });
 const workspaceRouteQuerySchema = z.object({
-  href: z.string().trim().min(1).max(4_000),
+  href: z.string().trim().min(1).max(MAX_MAIL_WORKSPACE_HREF_LENGTH),
   listMode: z.enum(["conversations", "messages"]).default("conversations"),
 });
 const attachmentQuerySchema = z.object({

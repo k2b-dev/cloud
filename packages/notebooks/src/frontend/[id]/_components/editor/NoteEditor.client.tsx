@@ -2,7 +2,6 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { encoding } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
@@ -31,6 +30,7 @@ import { isolateYjsHistory } from "../../../lib/yjs/history";
 import { notebookWorkspaceMessages } from "../../messages";
 import {
   ATTACHMENTS_UPDATE_EVENT,
+  DETAIL_PANEL_STATE_EVENT,
   EDITOR_COPY_EVENT,
   EDITOR_DOWNLOAD_EVENT,
   EDITOR_INSERT_ATTACHMENT_EVENT,
@@ -42,6 +42,7 @@ import {
   NOTE_TITLE_CHANGED_EVENT,
   PRESENCE_EVENT,
   RICH_MODE_CHANGED_EVENT,
+  SIDEBAR_FILTER_CHANGED_EVENT,
   TASKS_UPDATE_EVENT,
   TOC_SCROLL_EVENT,
   TOC_UPDATE_EVENT,
@@ -66,9 +67,11 @@ import { createNoteNavigationCoordinator, headingFromHash, resolveSameNotebookNo
 import { NOTE_PREVIEW_ID } from "./note-preview";
 import { keepReadingPosition, previewReadingPosition, type ReadingPosition, scrollToReadingPosition } from "./reading-position";
 import { slashCommandsExtension } from "./slash-commands";
+import { createSyncEnded, SyncEndedBar } from "./sync-ended";
 import { createTabKeyPreference } from "./tab-key-preference";
 
 const TOC_DEBOUNCE_MS = 300;
+type LeaveGuard = Pick<ReturnType<typeof createSyncEnded>, "confirmLeave" | "releaseLeave">;
 type EditorInstanceProps = {
   noteId: string;
   noteTitle: string;
@@ -136,6 +139,16 @@ export default function NoteEditor(props: Props) {
   const [linkedHeading, setLinkedHeading] = createSignal<LinkedHeading | null>(
     initialHeading ? { noteId: initialEditorProps.noteId, id: initialHeading } : null,
   );
+  let shownHref = window.location.href;
+  let restoringShownHref = false;
+  let leaveGuard: LeaveGuard | undefined;
+  let pendingGuardedNavigations = 0;
+  const registerLeaveGuard = (guard: LeaveGuard) => {
+    leaveGuard = guard;
+    return () => {
+      if (leaveGuard === guard) leaveGuard = undefined;
+    };
+  };
   const navigation = createNoteNavigationCoordinator({
     initialSource: initialHref,
     currentNoteShortId: () => current().noteId,
@@ -235,15 +248,36 @@ export default function NoteEditor(props: Props) {
     }
   });
 
-  const navigateSoft = async (href: string, push: boolean): Promise<SoftNavigationResult> => {
+  /** `traversal`: Back or Forward already moved the history, so a cancel has to restore the shown note's address. */
+  const navigateSoft = async (href: string, push: boolean, traversal = false): Promise<SoftNavigationResult> => {
     const target = resolveSameNotebookNoteTarget(href, window.location.href, props.notebookId);
+    const mode = target ? requestedPresentationMode(new URL(target.canonicalHref, window.location.href).searchParams) : undefined;
+    const keepsEditor = target && target.noteShortId === current().noteId && (!mode || mode === (props.readOnly ? "readonly" : "write"));
+    const guard = keepsEditor ? undefined : leaveGuard;
+    if (guard && !(await guard.confirmLeave())) {
+      if (traversal && window.location.href !== shownHref) {
+        // Without a history index, restoring the shown URL with pushState drops forward entries after it.
+        window.history.pushState(window.history.state, "", shownHref);
+        restoringShownHref = true;
+        try {
+          window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+        } finally {
+          restoringShownHref = false;
+        }
+      }
+      return { kind: "superseded" };
+    }
     if (!target) return { kind: "fallback" };
-    const mode = requestedPresentationMode(new URL(target.canonicalHref, window.location.href).searchParams);
     if (props.readOnly) {
       // Read-only opens another note with a page load; the open note stays, so a link to its heading opens in place.
       if (target.noteShortId !== current().noteId || (mode && mode !== "readonly")) return { kind: "fallback" };
     } else if (mode && mode !== "write") return { kind: "fallback" };
-    return await navigation.navigate(target, push);
+    if (guard) pendingGuardedNavigations++;
+    const result = await navigation.navigate(target, push);
+    if (guard) pendingGuardedNavigations--;
+    if (result.kind === "applied") shownHref = new URL(result.href, window.location.href).href;
+    else if (result.kind === "superseded" && pendingGuardedNavigations === 0) guard?.releaseLeave();
+    return result;
   };
 
   onMount(() => {
@@ -272,13 +306,19 @@ export default function NoteEditor(props: Props) {
     };
 
     const onPopState = () => {
-      void navigateSoft(window.location.href, false).then((result) => {
+      if (restoringShownHref) return;
+      void navigateSoft(window.location.href, false, true).then((result) => {
         if (result.kind === "fallback") window.location.reload();
       });
     };
 
+    const onFilterChanged = () => {
+      shownHref = window.location.href;
+    };
+
     document.addEventListener("click", onClick);
     window.addEventListener("popstate", onPopState);
+    window.addEventListener(SIDEBAR_FILTER_CHANGED_EVENT, onFilterChanged);
     onCleanup(
       registerSearchNavigation(async ({ href }) => {
         const target = inheritPresentationMode(href, window.location.href);
@@ -286,7 +326,11 @@ export default function NoteEditor(props: Props) {
         const mode = requestedPresentationMode(new URL(target, window.location.href).searchParams);
         if (noteTarget && !props.readOnly && (!mode || mode === "write")) {
           const result = await navigateSoft(target, true);
-          if (result.kind === "fallback") throw new Error("Note navigation failed");
+          if (result.kind === "fallback") {
+            // Search reports the failure and the note stays open, so a confirmed leave must not outlive it.
+            leaveGuard?.releaseLeave();
+            throw new Error("Note navigation failed");
+          }
           return true;
         }
         if (target !== href) {
@@ -300,6 +344,7 @@ export default function NoteEditor(props: Props) {
     onCleanup(() => {
       document.removeEventListener("click", onClick);
       window.removeEventListener("popstate", onPopState);
+      window.removeEventListener(SIDEBAR_FILTER_CHANGED_EVENT, onFilterChanged);
       offSoftRequests();
       navigation.dispose();
     });
@@ -311,7 +356,9 @@ export default function NoteEditor(props: Props) {
         {(note) => {
           const startPosition = previewPosition;
           previewPosition = null;
-          return <EditorInstance {...note} linkedHeading={linkedHeading} startPosition={startPosition} />;
+          return (
+            <EditorInstance {...note} linkedHeading={linkedHeading} startPosition={startPosition} registerLeaveGuard={registerLeaveGuard} />
+          );
         }}
       </Show>
       <Show when={showRouteLoading()}>
@@ -327,7 +374,11 @@ export default function NoteEditor(props: Props) {
 }
 
 function EditorInstance(
-  props: EditorInstanceProps & { linkedHeading: Accessor<LinkedHeading | null>; startPosition: ReadingPosition | null },
+  props: EditorInstanceProps & {
+    linkedHeading: Accessor<LinkedHeading | null>;
+    startPosition: ReadingPosition | null;
+    registerLeaveGuard: (guard: LeaveGuard) => () => void;
+  },
 ) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
@@ -339,7 +390,20 @@ function EditorInstance(
   });
   const [isDark, setIsDark] = createSignal(document.documentElement.classList.contains("dark"));
   const [richMode, setRichMode] = createSignal(props.initialRichMode !== "source");
-  const tabKeys = createTabKeyPreference(() => !!props.readOnly);
+  const syncEnded = createSyncEnded({
+    messages: t,
+    hasUnsentChanges: () => provider?.hasUnsentChanges() ?? false,
+    resume: () => provider?.resume(),
+    focusEditor: () => editorView()?.focus(),
+  });
+  onCleanup(props.registerLeaveGuard(syncEnded));
+  // The sync-ended bar replaces the toolbar, so a toolbar mounted again starts from the panel's current state.
+  const [panelOpen, setPanelOpen] = createSignal(props.initialPanelOpen);
+  const onPanelState = (event: Event) => {
+    const detail: unknown = event instanceof CustomEvent ? event.detail : undefined;
+    if (detail && typeof detail === "object" && "isOpen" in detail && typeof detail.isOpen === "boolean") setPanelOpen(detail.isOpen);
+  };
+  const tabKeys = createTabKeyPreference(() => !!props.readOnly || !!syncEnded.ended());
 
   const doc = new Y.Doc({ gc: true });
   if (props.initialSnapshot) {
@@ -390,12 +454,11 @@ function EditorInstance(
     addExtension(() => yCollab(ytext, null, { undoManager }));
     addExtension(() => isolateYjsHistory(undoManager));
     addExtension(() => remoteCursors(ytext, awareness));
-    addExtension(() => keymap.of(yUndoManagerKeymap));
+    addExtension(() => (syncEnded.ended() ? [] : keymap.of(yUndoManagerKeymap)));
   }
 
   let cursorIdleTimer: ReturnType<typeof setTimeout> | undefined;
   let cursorHiddenByIdle = false;
-  let fatalPromptOpen = false;
 
   const publishCurrentCursor = (view: EditorView) => {
     const selection = view.state.selection.main;
@@ -446,13 +509,17 @@ function EditorInstance(
   addExtension(linkedHeadingJump.extension);
 
   addExtension(editor.basicExtensions());
-  addExtension(formattingKeymap({ notebookId: props.notebookId }));
-  addExtension(slashCommandsExtension({ notebookId: props.notebookId, notebookName: props.notebookName, locale: locale() }));
+  // Custom formatting commands dispatch changes even in a read-only state.
+  addExtension(() => (syncEnded.ended() ? [] : formattingKeymap({ notebookId: props.notebookId })));
+  addExtension(() =>
+    syncEnded.ended() ? [] : slashCommandsExtension({ notebookId: props.notebookId, notebookName: props.notebookName, locale: locale() }),
+  );
   addExtension(editor.markdownExtension());
   addExtension(editor.searchTheme());
   let scrollPort: HTMLDivElement | undefined;
   addExtension(fadeScrollMarginsExtension(() => scrollPort));
   addExtension(() => (props.readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []));
+  addExtension(syncEnded.extension);
   // Tab indents unless the person prefers focus movement; Esc, then Tab always leaves the editor.
   addExtension(tabKeys.extension);
   // List keys work whatever the Tab preference; toolbar formats follow the caret.
@@ -519,7 +586,10 @@ function EditorInstance(
         onError: (error) => {
           if (error.code === "STORAGE_EXHAUSTED") setStorageExhausted(true);
         },
-        onReady: () => setStorageExhausted(false),
+        onReady: () => {
+          if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
+          syncEnded.ready();
+        },
         // Forwards every presence update to the OnlineSection island via a
         // window event — the editor itself doesn't need to track participants
         // anymore now that the toolbar no longer renders them.
@@ -532,59 +602,10 @@ function EditorInstance(
           onEvent: dispatchWorkspaceEvent,
           onCursorChange: props.onWorkspaceCursorChange,
         },
-        onFatal: (error) => {
-          if (fatalPromptOpen) return;
-          fatalPromptOpen = true;
-          const isLocked = error.code === "NOTE_LOCKED";
-          const isMissing = error.code === "NOTE_NOT_FOUND";
-          const isRevoked = error.code === "ACCESS_REVOKED" || error.code === "ACCESS_DENIED";
-          const isSession = error.code === "SESSION_EXPIRED" || error.code === "LOGIN_REQUIRED";
-          const isStorage = error.code === "STORAGE_EXHAUSTED";
-
-          const title = isStorage
-            ? t().storageExhaustedTitle
-            : isLocked
-              ? t().noteLocked
-              : isMissing
-                ? t().noteNotFound
-                : isRevoked
-                  ? t().accessChanged
-                  : isSession
-                    ? t().sessionExpired
-                    : t().connectionClosed;
-
-          const icon = isStorage
-            ? "ti ti-database-off"
-            : isLocked
-              ? "ti ti-lock"
-              : isMissing
-                ? "ti ti-file-x"
-                : isRevoked
-                  ? "ti ti-shield-off"
-                  : isSession
-                    ? "ti ti-login-2"
-                    : "ti ti-alert-triangle";
-
-          const message = isStorage
-            ? t().storageExhaustedDescription
-            : isLocked
-              ? t().noteLockedDescription
-              : isMissing
-                ? t().noteMissingDescription
-                : isRevoked
-                  ? t().accessChangedDescription
-                  : isSession
-                    ? t().sessionExpiredDescription
-                    : t().connectionClosedDescription;
-
-          void prompts
-            .alert(t().reloadNotice({ message }), {
-              title,
-              icon,
-            })
-            .finally(() => {
-              refreshCurrentPath();
-            });
+        onFatal: syncEnded.end,
+        onUnsentChange: () => {
+          if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
+          syncEnded.refresh();
         },
       });
 
@@ -793,6 +814,7 @@ function EditorInstance(
   };
 
   const onPaste = (event: ClipboardEvent) => {
+    if (syncEnded.ended()) return;
     const fileList = Array.from(event.clipboardData?.files ?? []);
     if (fileList.length === 0) return;
     event.preventDefault();
@@ -867,6 +889,7 @@ function EditorInstance(
     window.addEventListener(EDITOR_DOWNLOAD_EVENT, onDownload);
     window.addEventListener(EDITOR_PDF_EVENT, onPdf);
     window.addEventListener(EDITOR_INSERT_ATTACHMENT_EVENT, onInsertAttachment);
+    window.addEventListener(DETAIL_PANEL_STATE_EVENT, onPanelState);
 
     themeObserver = new MutationObserver(() => {
       setIsDark(document.documentElement.classList.contains("dark"));
@@ -896,6 +919,7 @@ function EditorInstance(
     window.removeEventListener(EDITOR_DOWNLOAD_EVENT, onDownload);
     window.removeEventListener(EDITOR_PDF_EVENT, onPdf);
     window.removeEventListener(EDITOR_INSERT_ATTACHMENT_EVENT, onInsertAttachment);
+    window.removeEventListener(DETAIL_PANEL_STATE_EVENT, onPanelState);
     themeObserver?.disconnect();
     provider?.dispose();
     undoManager?.destroy();
@@ -905,7 +929,8 @@ function EditorInstance(
 
   return (
     <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
-      <Show when={storageExhausted()}>
+      {/* Once retries stop, the sync-ended bar owns the message; this notice promises retries. */}
+      <Show when={storageExhausted() && !syncEnded.ended()}>
         <NoticeCard role="alert" tone="danger" title={t().storageExhaustedTitle} detail={t().storageExhaustedDetail} />
       </Show>
       <Show when={historyIncomplete()}>
@@ -940,28 +965,47 @@ function EditorInstance(
         onPaste={props.readOnly ? undefined : onPaste}
         role="textbox"
         tabIndex={-1}
-        aria-label={props.readOnly ? t().readonlySurface : t().editorSurface}
+        aria-label={props.readOnly || syncEnded.ended() ? t().readonlySurface : t().editorSurface}
       >
         <div ref={editorRef} />
       </ScrollArea>
       {/* Files dropped anywhere on the note's page upload and land at the cursor. */}
-      <FileDropTarget label={t().dropToInsert} disabled={props.readOnly} onDrop={(fileList) => void uploadFilesSequentially(fileList)} />
+      <FileDropTarget
+        label={t().dropToInsert}
+        disabled={props.readOnly || !!syncEnded.ended()}
+        onDrop={(fileList) => void uploadFilesSequentially(fileList)}
+      />
       <Show when={tabKeys.indents()}>
         <p id={tabKeys.hintId} class="sr-only">
           {t().tabIndentHint}
         </p>
       </Show>
       <Show when={!props.readOnly}>
-        <EditorToolbar
-          connected={connected()}
-          editorView={editorView()}
-          notebookId={props.notebookId}
-          noteId={props.noteId}
-          initialPanelOpen={props.initialPanelOpen}
-          format={format()}
-          onUndo={() => undoManager?.undo()}
-          onRedo={() => undoManager?.redo()}
-        />
+        <Show
+          when={syncEnded.ended()}
+          fallback={
+            <EditorToolbar
+              connected={connected()}
+              editorView={editorView()}
+              notebookId={props.notebookId}
+              noteId={props.noteId}
+              initialPanelOpen={panelOpen()}
+              format={format()}
+              onUndo={() => undoManager?.undo()}
+              onRedo={() => undoManager?.redo()}
+            />
+          }
+        >
+          {(ended) => (
+            <SyncEndedBar
+              notebookId={props.notebookId}
+              ended={ended()}
+              sync={syncEnded}
+              markdown={() => ytext.toString()}
+              noteHref={() => window.location.pathname + window.location.search}
+            />
+          )}
+        </Show>
       </Show>
     </div>
   );
