@@ -58,7 +58,9 @@ describe("RecordCardsView sizing", () => {
     expect(html).toContain("grids-record-card");
     expect(html).toContain("grid px-3 pb-3 pt-0.5");
     expect(html).toContain("bg-[var(--k2b-surface-muted)]");
-    expect(html).toContain("hover:bg-[var(--k2b-hover)] hover:shadow-xs");
+    expect(html).toContain("hover:bg-[var(--k2b-hover)]");
+    // Hover changes paint only; a growing shadow would lift the card under the pointer.
+    expect(html).not.toContain("hover:shadow");
     expect(html).not.toContain("grids-record-card paper");
     expect(html).toContain('data-selected="true"');
   });

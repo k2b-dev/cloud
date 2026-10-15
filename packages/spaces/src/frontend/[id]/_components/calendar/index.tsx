@@ -205,7 +205,7 @@ const chooseRecurringEditScope = async (t: ReturnType<typeof useSpaceMessages>):
                   <span class="block text-sm font-medium text-primary">{label}</span>
                   <span class="block text-xs text-dimmed">{description}</span>
                 </span>
-                <i class="ti ti-chevron-right shrink-0 text-sm text-dimmed opacity-50 transition-[opacity,transform] group-hover:translate-x-0.5 group-hover:opacity-100 group-focus-visible:opacity-100" />
+                <i class="ti ti-chevron-right shrink-0 text-sm text-dimmed opacity-50 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
               </button>
             ))}
           </div>

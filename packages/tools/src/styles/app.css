@@ -96,16 +96,13 @@
 
 .tools-image-converter-card__selection,
 .tools-image-converter-card__actions {
-  transition:
-    opacity 120ms ease,
-    transform 120ms ease;
+  transition: opacity 120ms ease;
 }
 
 @media (any-hover: hover) {
   .tools-image-converter-card__selection,
   .tools-image-converter-card__actions {
     opacity: 0;
-    transform: translateY(-0.25rem);
   }
 
   .tools-image-converter-card:hover .tools-image-converter-card__selection,
@@ -114,7 +111,6 @@
   .tools-image-converter-card:focus-within .tools-image-converter-card__actions,
   .tools-image-converter-card[data-selection-active="true"] .tools-image-converter-card__selection {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 

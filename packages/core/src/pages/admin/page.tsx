@@ -120,7 +120,7 @@ export default ssr<AuthContext>(async (c) => {
               </div>
               <span class="mt-4 inline-flex items-center gap-1 text-xs font-medium text-primary">
                 {primaryDestination.action}
-                <i class="ti ti-arrow-up-right transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+                <i class="ti ti-arrow-up-right" aria-hidden="true" />
               </span>
             </a>
 
