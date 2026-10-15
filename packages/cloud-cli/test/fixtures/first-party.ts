@@ -63,6 +63,17 @@ export const bundleFirstPartyModule = (name: string): Promise<Uint8Array> => {
   return bundle;
 };
 
+/** Import each bundle once per test process; every temporary copy would otherwise load its own module graph. */
+const summaries = new Map<string, Promise<string>>();
+const moduleSummary = (digest: string, entry: string): Promise<string> => {
+  let summary = summaries.get(digest);
+  if (!summary) {
+    summary = import(pathToFileURL(entry).href).then((loaded: { default?: unknown }) => validateCloudCliModule(loaded.default).summary);
+    summaries.set(digest, summary);
+  }
+  return summary;
+};
+
 /**
  * Install first-party modules as package plugins under `configHome`
  * (`XDG_CONFIG_HOME`), so a test `cld` runs them without a Cloud. Each one is
@@ -97,13 +108,11 @@ export const installFirstPartyModules = async (configHome: string, names: readon
           files,
         }),
       );
-      const loaded: { default?: unknown } = await import(pathToFileURL(join(directory, "cli.js")).href);
-      const module = validateCloudCliModule(loaded.default);
       records[name] = {
         package: `@k2b-test/${name}`,
         version: "0.0.0-test",
         digest,
-        summary: module.summary,
+        summary: await moduleSummary(digest, join(directory, "cli.js")),
         source: firstPartyModuleSource(name),
       };
     }),

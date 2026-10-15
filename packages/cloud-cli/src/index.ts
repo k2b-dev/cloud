@@ -2059,6 +2059,11 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
     if (!id || id.startsWith("-")) {
       throw new CliError("Usage: cld plugins run <name> [args...]", 1, "Verwendung: cld plugins run <Name> [Argumente...]");
     }
+    // `reference` is the host's command for every module, shadowed or not.
+    if (moduleArgs[0] === "reference") {
+      const installed = await resolveInstalledModule(id, global);
+      if (installed) return runReferenceCommand(id, installed, moduleArgs.slice(1));
+    }
     const module = await loadInstalledModule(id, global);
     if (!module) throw new CliError(`Plugin "${id}" is not installed.`, 1, `Plugin "${id}" ist nicht installiert.`);
     return runModule(module, moduleArgs, global);

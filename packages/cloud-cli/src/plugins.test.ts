@@ -604,6 +604,7 @@ describe("cld package plugins", () => {
     const help = await runCli(["help"], dir);
     expect(help.stdout).not.toContain("Fake");
     expect((await runCli(["plugins", "run", "update"], dir)).stdout).toBe("ran update\n");
+    expect((await runCli(["plugins", "run", "update", "reference"], dir)).stdout).toBe("# test-plugin\n");
     let listed = await runCli(["plugins", "list", "--json"], dir);
     expect(JSON.parse(listed.stdout).plugins[0].status).toBe("shadowed");
     const records = await readPackagePlugins(root);
