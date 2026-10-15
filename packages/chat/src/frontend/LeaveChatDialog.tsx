@@ -44,9 +44,11 @@ export function LeaveChatDialog(
   });
   const [error, setError] = createSignal("");
   const manager = () => props.conversation.permission === "admin";
+  // Someone may have made the viewer a manager while the dialog was open; the server's refusal says so.
+  const [refused, setRefused] = createSignal(false);
   // Only a manager can be the last one, so only a manager asks.
   const [page, { refetch }] = createResource(
-    () => manager() || undefined,
+    () => manager() || refused() || undefined,
     () => props.store.members(props.conversation.id, {}),
   );
   // A failed read throws when read, so the error state is checked first.
@@ -63,7 +65,7 @@ export function LeaveChatDialog(
       !current.items.some((member) => member.principal.type === "user" && member.principal.userId !== props.viewerId)
     );
   };
-  const checking = () => manager() && page.loading;
+  const checking = () => (manager() || refused()) && page.loading;
   const blocked = () => checking() || Boolean(page.error) || alone() || (needsSuccessor() && !successor());
 
   const leave = async () => {
@@ -76,7 +78,10 @@ export function LeaveChatDialog(
       props.close(true);
     } catch (failure) {
       setError(errorMessage(failure, t().requestFailed));
-      if (failure instanceof ChatRequestError && failure.status === 409 && manager()) void refetch();
+      if (failure instanceof ChatRequestError && failure.status === 409) {
+        if (manager() || refused()) void refetch();
+        else setRefused(true);
+      }
     } finally {
       setBusy(false);
     }

@@ -16,7 +16,9 @@ const load = async () => {
     const { LeaveChatDialog } = await import("./LeaveChatDialog");
     const { default: MemberPicker } = await import("./MemberPicker");
     const { default: ChatInfoPanel } = await import("./ChatInfoPanel");
+    const { ChatRequestError } = await import("./chat-store");
     return {
+      ChatRequestError,
       LocaleProvider,
       NewChatDialog,
       AddPeopleDialog,
@@ -672,6 +674,35 @@ describe("chat dialogs and info", () => {
       await settle();
       expect(leave.mock.calls).toEqual([[conversation.id, undefined]]);
       expect(members).not.toHaveBeenCalled();
+    });
+    test(`a writer made the last manager while leaving gets the successor choice after the refusal in ${locale}`, async () => {
+      const members = mock<ChatDialogStore["members"]>(async () => ({
+        items: [nora],
+        self: { ...self, permission: "admin" },
+        managers: 1,
+        nextCursor: null,
+      }));
+      const leave = mock<ChatDialogStore["leave"]>(async () => {
+        throw new modules!.ChatRequestError(t.successorRequired, "CONFLICT", 409);
+      });
+      await mount(locale, () =>
+        createComponent(modules!.LeaveChatDialog, {
+          setDismissHandler: () => {},
+          store: store({ members, leave }),
+          conversation: { ...conversation, permission: "write" },
+          viewerId,
+          locale,
+          close: () => {},
+        }),
+      );
+      expect(members).not.toHaveBeenCalled();
+      button(t.leaveChat).click();
+      await settle();
+      expect(leave.mock.calls).toEqual([[conversation.id, undefined]]);
+      expect(members.mock.calls).toEqual([[conversation.id, {}]]);
+      expect(dom.root.textContent).toContain(t.successorRequired);
+      expect(dom.root.textContent).toContain(t.chooseSuccessor);
+      expect(button(t.leaveChat).disabled).toBe(true);
     });
     test(`guest picker uses chat people and person icons without groups or directory fetches in ${locale}`, async () => {
       const fetched: string[] = [];
