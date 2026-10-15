@@ -144,10 +144,11 @@ const replacePage = () => {
 };
 ```
 
-Wait for open editors to close before an automatic reload, so a reload does
-not discard a draft. `reloadOnce` also returns `false` when `sessionStorage`
-is unavailable. A reload that follows an explicit user action does not need
-the guard.
+`reloadOnce` waits while a dialog is open and reloads once the last dialog
+closes. An automatic reload never discards a dialog. For editors outside a
+dialog, the application must still wait until reloading will not discard a
+draft. `reloadOnce` also returns `false` when `sessionStorage` is unavailable.
+A reload that follows an explicit user action does not need the guard.
 
 An ended session reaches the page as `unavailable`. Reload, so the page's
 route policy sends the person to sign-in with a return URL. Do not navigate to

@@ -9,11 +9,15 @@ import { type ToastHandle, toast } from "@k2b/ui";
  */
 export const AUTOMATIC_RELOAD_WINDOW_MS = 30_000;
 
+let reloadPending = false;
+
 const storageKey = (key: string) => `cloud.reload.${key}`;
 
 /**
  * Reloads the page for an automatic reason (a live event, a failed live
  * subscription, a changed view) at most once per `key` and window in this tab.
+ * Waits while a dialog is open and reloads once the last dialog closes, so an
+ * automatic reload never discards a dialog.
  *
  * Returns `false` without reloading when the same key already reloaded within
  * the window, or when `sessionStorage` is unavailable and a repeat therefore
@@ -22,6 +26,7 @@ const storageKey = (key: string) => `cloud.reload.${key}`;
  * need this guard.
  */
 export const reloadOnce = (key: string, options: { windowMs?: number } = {}): boolean => {
+  if (reloadPending) return true;
   const windowMs = options.windowMs ?? AUTOMATIC_RELOAD_WINDOW_MS;
   const now = Date.now();
   try {
@@ -32,7 +37,21 @@ export const reloadOnce = (key: string, options: { windowMs?: number } = {}): bo
   } catch {
     return false;
   }
-  window.location.reload();
+  if (typeof document !== "undefined" && document.querySelector("dialog[open]")) {
+    reloadPending = true;
+    const observer = new MutationObserver(() => {
+      if (document.querySelector("dialog[open]")) return;
+      observer.disconnect();
+      reloadPending = false;
+      try {
+        window.sessionStorage.setItem(storageKey(key), String(Date.now()));
+      } catch {
+        // Storage worked when the reload was scheduled; closing the dialog still reloads.
+      }
+      window.location.reload();
+    });
+    observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["open"] });
+  } else window.location.reload();
   return true;
 };
 

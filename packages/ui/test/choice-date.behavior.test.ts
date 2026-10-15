@@ -248,6 +248,83 @@ describe("@k2b/ui choice and date browser behavior", () => {
     dom.cleanup();
   });
 
+  test("a read-only Combobox keeps focus, closes its list, and resumes searching when editable", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { Combobox } = await import("../src/inputs/Combobox");
+    const [readOnly, setReadOnly] = createSignal(false);
+    const queries: string[] = [];
+    const edits: string[] = [];
+    const picks: string[] = [];
+    delegateEvents(["input", "click", "keydown"], dom.document);
+    const dispose = render(
+      () =>
+        createComponent(Combobox, {
+          label: "Add team",
+          get readOnly() {
+            return readOnly();
+          },
+          debounceMs: 0,
+          fetchData: async (query) => {
+            queries.push(query);
+            return [{ id: "platform", label: "Platform" }];
+          },
+          onQueryChange: (query) => edits.push(query),
+          onSelect: (option) => picks.push(option.id),
+        }),
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+      input.focus();
+      setSolidInputValue(input, "plat");
+      await Bun.sleep(0);
+      expect(input.getAttribute("aria-expanded")).toBe("true");
+      expect(queries).toEqual(["plat"]);
+
+      setReadOnly(true);
+      expect(dom.document.activeElement).toBe(input);
+      expect(input.disabled).toBe(false);
+      expect(input.tabIndex).toBe(0);
+      expect(input.readOnly).toBe(true);
+      expect(input.getAttribute("aria-readonly")).toBe("true");
+      expect(input.getAttribute("aria-expanded")).toBe("false");
+      expect(dom.root.querySelector(".k2b-choice-popover")!.matches(":popover-open")).toBe(false);
+
+      setSolidInputValue(input, "ignored");
+      input.click();
+      for (const key of ["ArrowDown", "ArrowUp", "Escape", "Tab"]) {
+        const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+        input.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+      }
+      await Bun.sleep(0);
+      expect(input.value).toBe("plat");
+      expect(edits).toEqual(["plat"]);
+      expect(queries).toEqual(["plat"]);
+      expect(input.getAttribute("aria-expanded")).toBe("false");
+
+      setReadOnly(false);
+      expect(dom.document.activeElement).toBe(input);
+      expect(input.readOnly).toBe(false);
+      expect(input.hasAttribute("aria-readonly")).toBe(false);
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      await Bun.sleep(0);
+      expect(input.getAttribute("aria-expanded")).toBe("true");
+      expect(queries).toEqual(["plat", "plat"]);
+      setSolidInputValue(input, "platform");
+      await Bun.sleep(0);
+      expect(queries).toEqual(["plat", "plat", "platform"]);
+      dom.root.querySelector<HTMLButtonElement>("[role=option]")!.click();
+      expect(picks).toEqual(["platform"]);
+      expect(input.value).toBe("");
+    } finally {
+      dispose();
+      popover.restore();
+      dom.cleanup();
+    }
+  });
+
   test("hides a Combobox listbox before publishing a selection", async () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);

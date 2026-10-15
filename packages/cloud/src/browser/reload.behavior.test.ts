@@ -19,6 +19,100 @@ const missingChunk = () => Promise.reject(new TypeError("Failed to fetch dynamic
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
+  for (const coalesce of [false, true]) {
+    test(`waits for a real prompt dialog to close${coalesce ? " and coalesces other reload keys" : ""}`, async () => {
+      const { ui, reload } = modules!;
+      const dom = createDomTestHarness();
+      let reloads = 0;
+      Object.assign(dom.window.location, {
+        reload: () => {
+          reloads += 1;
+        },
+      });
+      let closeDialog = () => {};
+      const dialog = ui.prompts.dialog<void>((close) => {
+        closeDialog = close;
+        return "Space settings";
+      });
+      try {
+        expect(dom.document.querySelector("dialog[open]")).not.toBeNull();
+        expect(reload.reloadOnce("x")).toBe(true);
+        if (coalesce) expect(reload.reloadOnce("another-key")).toBe(true);
+        expect(reloads).toBe(0);
+        closeDialog();
+        await dialog;
+        await Bun.sleep(10);
+        expect(reloads).toBe(1);
+      } finally {
+        closeDialog();
+        await dialog;
+        await Bun.sleep(10);
+        dom.cleanup();
+      }
+    });
+  }
+
+  for (const storageFails of [false, true]) {
+    test(`waits for the last dialog and ${storageFails ? "reloads even if storage later fails" : "starts the window at the deferred reload"}`, async () => {
+      const { reload } = modules!;
+      const dom = createDomTestHarness();
+      let reloads = 0;
+      let now = 1_000_000;
+      const clock = spyOn(Date, "now").mockImplementation(() => now);
+      Object.assign(dom.window.location, {
+        reload: () => {
+          reloads += 1;
+        },
+      });
+      const first = dom.document.createElement("dialog");
+      const second = dom.document.createElement("dialog");
+      first.setAttribute("open", "");
+      second.setAttribute("open", "");
+      dom.document.body.append(first, second);
+      let write: ReturnType<typeof spyOn> | undefined;
+      try {
+        expect(reload.reloadOnce("last-dialog")).toBe(true);
+        expect(dom.window.sessionStorage.getItem("cloud.reload.last-dialog")).toBe(String(now));
+        first.removeAttribute("open");
+        await Bun.sleep(10);
+        expect(reloads).toBe(0);
+        now += reload.AUTOMATIC_RELOAD_WINDOW_MS;
+        if (storageFails)
+          write = spyOn(dom.window.sessionStorage, "setItem").mockImplementation(() => {
+            throw new Error("QuotaExceededError");
+          });
+        second.remove();
+        await Bun.sleep(10);
+        expect(reloads).toBe(1);
+        if (!storageFails) expect(dom.window.sessionStorage.getItem("cloud.reload.last-dialog")).toBe(String(now));
+      } finally {
+        first.remove();
+        second.remove();
+        await Bun.sleep(10);
+        write?.mockRestore();
+        clock.mockRestore();
+        dom.cleanup();
+      }
+    });
+  }
+
+  test("reloads immediately when no dialog is open", () => {
+    const { reload } = modules!;
+    const dom = createDomTestHarness();
+    let reloads = 0;
+    Object.assign(dom.window.location, {
+      reload: () => {
+        reloads += 1;
+      },
+    });
+    try {
+      expect(reload.reloadOnce("no-dialog")).toBe(true);
+      expect(reloads).toBe(1);
+    } finally {
+      dom.cleanup();
+    }
+  });
+
   test("passes the loaded code through without a notice", async () => {
     const { ui, reload } = modules!;
     const dom = createDomTestHarness();
