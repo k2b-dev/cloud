@@ -42,7 +42,10 @@ export const normalizeSkillTarget = (path: string): string => {
 };
 
 /** Folder name of one module version; versions are opaque strings from the manifest. */
-export const referenceFolder = (name: string, version: string): string => `references/${name}/${version.replace(/[^A-Za-z0-9._-]/g, "_")}/`;
+export const referenceFolder = (name: string, version: string): string =>
+  `references/${name}/${version.replace(/[^A-Za-z0-9._-]/g, "_").replace(/^\./, "_")}/`;
+
+const cell = (value: string): string => value.replace(/[\r\n]+/g, " ").replaceAll("|", "\\|");
 
 export const renderModulesTable = (rows: readonly SkillModuleRow[]): string => {
   if (rows.length === 0) {
@@ -54,7 +57,7 @@ export const renderModulesTable = (rows: readonly SkillModuleRow[]): string => {
     "| --- | --- | --- | --- | --- |",
     ...sorted.map(
       (row) =>
-        `| ${row.profile} | ${row.name} | ${row.version} | ${row.summary.replace(/[\r\n]+/g, " ").replaceAll("|", "\\|")} | \`${referenceFolder(row.name, row.version)}index.md\` |`,
+        `| ${cell(row.profile)} | ${cell(row.name)} | ${cell(row.version)} | ${cell(row.summary)} | \`${cell(referenceFolder(row.name, row.version))}index.md\` |`,
     ),
   ].join("\n");
 };

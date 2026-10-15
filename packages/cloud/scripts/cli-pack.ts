@@ -10,8 +10,8 @@
  * `package.json` whose `cld.manifest` points at the manifest. Name and version
  * come from `package.json` in the current directory.
  */
-import { lstat, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { lstat, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildCliPlugin, writeCliPlugin } from "../src/_internal/cli-plugins";
 import { validateCloudCliModule } from "../src/cli/plugin";
@@ -49,15 +49,32 @@ const parseArgs = (args: string[]) => {
   return { module: resolve(module), references: resolve(references), out: resolve(out) };
 };
 
+const containsPath = (directory: string, path: string): boolean => {
+  const inside = relative(directory, path);
+  return inside !== ".." && !inside.startsWith(`..${sep}`) && !isAbsolute(inside);
+};
+
 /** Empty `out` for a fresh pack; anything but an earlier pack output stays untouched. */
-const prepareOut = async (out: string): Promise<void> => {
+const prepareOut = async (out: string, inputs: string[]): Promise<void> => {
+  const refusal = `Refusing --out ${out}: it must be missing, empty, or an earlier pack output.`;
+  const output = await realpath(out).catch(() => out);
+  for (const input of inputs) {
+    const path = await realpath(input).catch(() => input);
+    if (containsPath(out, input) || containsPath(output, path)) throw new Error(refusal);
+  }
   const info = await lstat(out).catch(() => null);
   if (!info) return;
-  const refusal = `Refusing --out ${out}: it must be missing, empty, or an earlier pack output.`;
   if (!info.isDirectory()) throw new Error(refusal);
-  if ((await readdir(out)).length === 0) return;
+  const entries = await readdir(out);
+  if (entries.length === 0) return;
   const previous = await readJson(join(out, "package.json"));
-  if (!isRecord(previous) || !isRecord(previous.cld) || typeof previous.cld.manifest !== "string") throw new Error(refusal);
+  if (
+    entries.some((entry) => !["package.json", "manifest.json", "cli.js", "references"].includes(entry)) ||
+    !isRecord(previous) ||
+    !isRecord(previous.cld) ||
+    previous.cld.manifest !== "manifest.json"
+  )
+    throw new Error(refusal);
   await rm(out, { recursive: true });
 };
 
@@ -79,7 +96,7 @@ const pack = async (args: string[]): Promise<void> => {
     throw new Error(`${join(cwd, "package.json")} needs a string name and version.`);
   }
   const { name: packageName, version } = manifest;
-  await prepareOut(options.out);
+  await prepareOut(options.out, [cwd, options.module, options.references]);
   const loaded: unknown = await import(pathToFileURL(options.module).href);
   const module = validateCloudCliModule(isRecord(loaded) ? loaded.default : undefined);
   const plugin = await buildCliPlugin({

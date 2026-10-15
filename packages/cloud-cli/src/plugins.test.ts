@@ -1,7 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { gzipSync } from "node:zlib";
 import { cloudCliPluginDigest, validateCloudCliModule } from "@k2b/cloud/cli";
 import { buildEchoPlugin, packInlinePlugin } from "../test/fixtures/build-plugin";
 import { hasStoredPlugin, loadStoredPlugin, placePlugin, storePlugin } from "./plugin-store";
@@ -35,6 +36,7 @@ const runCli = async (args: string[], configHome: string, config = join(configHo
       LANG: "C",
       XDG_CONFIG_HOME: configHome,
       CLD_CONFIG: config,
+      TMPDIR: configHome,
     },
     stdin: "ignore",
     stdout: "pipe",
@@ -55,6 +57,25 @@ const expectPluginError = async (promise: Promise<unknown>, status: PluginError[
   if (!(error instanceof PluginError)) throw new Error("expected PluginError");
   expect(error.status).toBe(status);
   expect(error.message).toContain(message);
+};
+// Minimal ustar entries preserve unsafe member names that tar's writer normalizes.
+const tarEntry = (name: string, content = "", link?: string): Buffer => {
+  const header = Buffer.alloc(512);
+  const bytes = Buffer.from(content);
+  header.write(name, 0, 100);
+  header.write("0000644\0", 100);
+  header.write("0000000\0", 108);
+  header.write("0000000\0", 116);
+  header.write(`${bytes.length.toString(8).padStart(11, "0")}\0`, 124);
+  header.write("00000000000\0", 136);
+  header.fill(" ", 148, 156);
+  header.write(link ? "2" : "0", 156);
+  if (link) header.write(link, 157, 100);
+  header.write("ustar\0", 257);
+  header.write("00", 263);
+  const checksum = header.reduce((sum, byte) => sum + byte, 0);
+  header.write(`${checksum.toString(8).padStart(6, "0")}\0 `, 148);
+  return Buffer.concat([header, bytes, Buffer.alloc((512 - (bytes.length % 512)) % 512)]);
 };
 const installStaged = async (spec: string, root: string, registry?: string) => {
   const staged = await stagePlugin(spec, { registry });
@@ -324,6 +345,102 @@ describe("cld package plugins", () => {
     }
   }, 30_000);
 
+  test("tar refusals preserve archives, outside files and installed records", async () => {
+    const dir = await tempDir();
+    const root = join(dir, "cloud", "cld", "plugins");
+    expect((await runCli(["plugins", "install", echoBuild, "--yes"], dir)).exitCode).toBe(0);
+    const records = await readFile(join(root, "packages.json"), "utf8");
+    const store = await readdir(join(root, "store"));
+    const outside = join(dir, "outside");
+    await mkdir(outside);
+    await writeFile(join(outside, "keep.md"), "keep");
+    const traversal = tarEntry("package/../../escape.md", "escaped");
+    const attacks = [
+      Buffer.concat([tarEntry("package/link", "", outside), tarEntry("package/link/evil.md", "evil"), traversal]),
+      traversal,
+    ];
+    for (const [index, attack] of attacks.entries()) {
+      const archive = join(dir, `malicious-${index}.tgz`);
+      const bytes = gzipSync(Buffer.concat([attack, Buffer.alloc(1024)]));
+      await writeFile(archive, bytes);
+      const refused = await runCli(["plugins", "install", archive, "--yes"], dir);
+      expect(refused.exitCode).toBe(1);
+      expect(refused.stderr.trim().split("\n")).toHaveLength(1);
+      expect(refused.stderr).toContain(`Cannot unpack ${archive}: `);
+      expect(refused.stderr).not.toContain("Command failed:");
+      expect(await readFile(archive)).toEqual(bytes);
+      expect(await readdir(outside)).toEqual(["keep.md"]);
+      expect(await readFile(join(outside, "keep.md"), "utf8")).toBe("keep");
+      expect(await Bun.file(join(dir, "escape.md")).exists()).toBe(false);
+      expect((await readdir(dir)).filter((entry) => entry.startsWith("cld-plugin-"))).toEqual([]);
+      expect(await readFile(join(root, "packages.json"), "utf8")).toBe(records);
+      expect(await readdir(join(root, "store"))).toEqual(store);
+    }
+    // Tar accepts a symlink member itself; bundle verification must reject it.
+    await cp(echoBuild, join(dir, "package"), { recursive: true });
+    await symlink("/etc/hostname", join(dir, "package", "references", "guide.md"));
+    const archive = join(dir, "symlink.tgz");
+    expect(Bun.spawnSync(["tar", "-czf", archive, "-C", dir, "package"]).exitCode).toBe(0);
+    const bytes = await readFile(archive);
+    const refused = await runCli(["plugins", "install", archive, "--yes"], dir);
+    expect(refused.exitCode).toBe(1);
+    expect(refused.stderr).toContain("contains a symlink");
+    expect(await readFile(archive)).toEqual(bytes);
+    expect(await readFile(join(root, "packages.json"), "utf8")).toBe(records);
+    expect(await readdir(join(root, "store"))).toEqual(store);
+  });
+
+  test("missing package store entries use the recorded source in command and reference hints", async () => {
+    const dir = await tempDir();
+    const root = join(dir, "cloud", "cld", "plugins");
+    const installed = await runCli(["plugins", "install", echoBuild, "--yes"], dir);
+    expect(installed.exitCode, installed.stderr).toBe(0);
+    const record = (await readPackagePlugins(root)).echo!;
+    await rm(join(root, "store", record.digest), { recursive: true });
+    for (const args of [
+      ["echo", "whoami"],
+      ["echo", "reference"],
+    ]) {
+      const result = await runCli(args, dir);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain(`Run \`cld plugins install ${record.source}\``);
+      expect(result.stderr).not.toContain("Run `cld plugins install echo`");
+    }
+  });
+
+  test("package installs and removals share a lock across different config directories", async () => {
+    const dir = await tempDir();
+    const root = join(dir, "cloud", "cld", "plugins");
+    const configA = join(dir, "a", "config.json");
+    const configB = join(dir, "b", "config.json");
+    expect((await runCli(["plugins", "install", echoBuild, "--yes"], dir, configA)).exitCode).toBe(0);
+    const pkg = await packInlinePlugin(join(dir, "other"), moduleSource("other"));
+    const packagesLock = join(root, "locks", "packages.lock");
+    await mkdir(packagesLock);
+    await writeFile(join(packagesLock, "owner.json"), JSON.stringify({ pid: process.pid, createdAt: 0 }));
+    const pending = [runCli(["plugins", "remove", "echo"], dir, configA), runCli(["plugins", "install", pkg, "--yes"], dir, configB)];
+    let results: Awaited<ReturnType<typeof runCli>>[];
+    try {
+      const owners = ["a", "b"].map((config) => join(dir, config, "locks", "config.lock", "owner.json"));
+      // Wait until both commands hold their config lock; stay well below the 15 s lock timeout.
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline && !(await Promise.all(owners.map((path) => Bun.file(path).exists()))).every(Boolean)) {
+        await Bun.sleep(20);
+      }
+      expect(await Promise.all(owners.map((path) => Bun.file(path).exists()))).toEqual([true, true]);
+      expect(Object.keys(await readPackagePlugins(root))).toEqual(["echo"]);
+    } finally {
+      await rm(packagesLock, { recursive: true, force: true });
+      results = await Promise.all(pending);
+    }
+    for (const result of results) expect(result.exitCode, result.stderr).toBe(0);
+    const records = await readPackagePlugins(root);
+    expect(Object.keys(records)).toEqual(["other"]);
+    expect(await hasStoredPlugin(records.other!.digest, root)).toBe(true);
+    expect(await readdir(join(root, "store"))).toEqual([records.other!.digest]);
+    expect(await readdir(join(root, "locks"))).toEqual([]);
+  }, 30_000);
+
   test("never runs code before confirmation or conflict checks", async () => {
     const dir = await tempDir();
     const marker = join(dir, "executed");
@@ -355,9 +472,11 @@ describe("cld package plugins", () => {
     );
     await writeFile(join(legacy, "cli.js"), 'throw new Error("legacy code must not run");');
     await mkdir(join(root, "store"));
+    await mkdir(join(root, "locks"));
     await mkdir(join(root, ".ignored"));
     expect((await legacyPlugins(root)).map((p) => p.id)).toEqual(["old"]);
     const list = await runCli(["plugins", "list", "--json"], dir);
+    expect(JSON.parse(list.stdout).plugins).toHaveLength(1);
     expect(JSON.parse(list.stdout).plugins[0]).toMatchObject({
       profile: null,
       name: "old",
@@ -371,6 +490,8 @@ describe("cld package plugins", () => {
     expect((await runCli(["old"], dir)).stderr).toContain('Unknown command "old"');
     expect((await runCli(["plugins", "remove", "old"], dir)).exitCode).toBe(0);
     expect(await removePlugin("store", root)).toBe(false);
+    expect(await removePlugin("locks", root)).toBe(false);
+    expect((await stat(join(root, "locks"))).isDirectory()).toBe(true);
     expect(await removePlugin("../old", root)).toBe(false);
   });
 

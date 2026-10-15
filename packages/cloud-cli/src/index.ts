@@ -552,8 +552,7 @@ const cleanupStaleProfileLock = async (lockPath: string): Promise<boolean> => {
   return true;
 };
 
-const withConfigLock = async <T>(run: () => Promise<T>): Promise<T> => {
-  const lockPath = configLockPath();
+const withDirectoryLock = async <T>(lockPath: string, run: () => Promise<T>): Promise<T> => {
   await mkdir(dirname(lockPath), { recursive: true, mode: 0o700 });
   const startedAt = Date.now();
 
@@ -566,7 +565,7 @@ const withConfigLock = async <T>(run: () => Promise<T>): Promise<T> => {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       if (await cleanupStaleProfileLock(lockPath)) continue;
       if (Date.now() - startedAt > PROFILE_LOCK_TIMEOUT_MS) {
-        throw new CliError("Timed out waiting for the Cloud CLI config lock.");
+        throw new CliError("Timed out waiting for the Cloud CLI lock.", 1, "Zeitüberschreitung beim Warten auf die Cloud-CLI-Sperre.");
       }
       await sleep(100);
     }
@@ -578,6 +577,10 @@ const withConfigLock = async <T>(run: () => Promise<T>): Promise<T> => {
     await rm(lockPath, { recursive: true, force: true });
   }
 };
+
+const withConfigLock = <T>(run: () => Promise<T>): Promise<T> => withDirectoryLock(configLockPath(), run);
+/** Global package records live beside the plugins, not beside `CLD_CONFIG`; take it inside the config lock. */
+const packagesLockPath = (): string => join(pluginsDirectory(), "locks", "packages.lock");
 
 const revokeOAuthRefreshToken = async (server: string, refreshToken: string): Promise<void> => {
   const response = await fetchOAuth(joinUrl(server, "/oauth/revoke"), {
@@ -1572,7 +1575,7 @@ const installedModule = (config: CloudCliConfig, profile: string, packages: Pack
   const locked = Object.hasOwn(lock, name) ? lock[name] : undefined;
   if (locked) return { name, profile, version: locked.version, digest: locked.digest, summary: locked.summary, locked };
   const record = Object.hasOwn(packages, name) ? packages[name] : undefined;
-  if (record) return { name, profile: "*", version: record.version, digest: record.digest, summary: record.summary };
+  if (record) return { name, profile: "*", version: record.version, digest: record.digest, summary: record.summary, source: record.source };
   return undefined;
 };
 const installedModules = (config: CloudCliConfig, profile: string, packages: PackagePlugins) =>
@@ -1597,17 +1600,17 @@ const resolveInstalledModule = async (name: string, global: GlobalArgs) => {
 const loadInstalledModule = async (name: string, global: GlobalArgs): Promise<CloudCliModule | undefined> => {
   const installed = await resolveInstalledModule(name, global);
   if (!installed) return undefined;
-  return loadStoredPlugin(name, installed).catch((error) =>
+  return loadStoredPlugin(name, installed, undefined, installed.source).catch((error) =>
     pluginFailure(error, `Plugin "${name}" cannot run`, `Plugin "${name}" kann nicht ausgeführt werden`),
   );
 };
 
 /** `cld <module> reference [file]` works for every installed bundle. */
-const runReferenceCommand = async (name: string, installed: { digest: string }, args: string[]): Promise<number> => {
+const runReferenceCommand = async (name: string, installed: { digest: string; source?: string }, args: string[]): Promise<number> => {
   const [file, ...extra] = args;
   if (extra.length > 0 || file?.startsWith("-"))
     throw new CliError(`Usage: cld ${name} reference [file]`, 1, `Verwendung: cld ${name} reference [Datei]`);
-  const markdown = await readStoredReference(name, installed, file).catch((error) =>
+  const markdown = await readStoredReference(name, installed, file, undefined, installed.source).catch((error) =>
     pluginFailure(error, `Cannot read the "${name}" reference`, `Referenz von "${name}" kann nicht gelesen werden`),
   );
   process.stdout.write(markdown);
@@ -2179,25 +2182,27 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
       const download = await storePlugin(manifest, (file) => readPackagePluginFile(staged, file));
       let replaced: boolean;
       try {
-        replaced = await withConfigLock(async () => {
-          const config = await loadConfig();
-          check(config);
-          const packages = await readPackagePlugins();
-          const replaced = Object.hasOwn(packages, id) || (await legacyPlugins()).some((plugin) => plugin.id === id);
-          await placePlugin(download.incoming, manifest.digest);
-          packages[id] = {
-            package: manifest.app,
-            version: manifest.version,
-            digest: manifest.digest,
-            summary: download.module.summary,
-            source,
-          };
-          await writePackagePlugins(packages);
-          await removePlugin(id);
-          await collectPluginGarbage(await referencedDigests(config));
-          await syncSkills(config, locale);
-          return replaced;
-        });
+        replaced = await withConfigLock(() =>
+          withDirectoryLock(packagesLockPath(), async () => {
+            const config = await loadConfig();
+            check(config);
+            const packages = await readPackagePlugins();
+            const replaced = Object.hasOwn(packages, id) || (await legacyPlugins()).some((plugin) => plugin.id === id);
+            await placePlugin(download.incoming, manifest.digest);
+            packages[id] = {
+              package: manifest.app,
+              version: manifest.version,
+              digest: manifest.digest,
+              summary: download.module.summary,
+              source,
+            };
+            await writePackagePlugins(packages);
+            await removePlugin(id);
+            await collectPluginGarbage(await referencedDigests(config));
+            await syncSkills(config, locale);
+            return replaced;
+          }),
+        );
       } finally {
         await rm(download.incoming, { recursive: true, force: true });
       }
@@ -2300,19 +2305,21 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
         await syncSkills(latest, global.locale);
       });
     } else {
-      await withConfigLock(async () => {
-        const latest = await loadConfig();
-        const packages = await readPackagePlugins();
-        const recorded = Object.hasOwn(packages, name);
-        const legacy = await removePlugin(name);
-        if (!recorded && !legacy) throw new CliError(`Plugin "${name}" is not installed.`, 1, `Plugin "${name}" ist nicht installiert.`);
-        if (recorded) {
-          delete packages[name];
-          await writePackagePlugins(packages);
-        }
-        await collectPluginGarbage(await referencedDigests(latest));
-        await syncSkills(latest, locale);
-      });
+      await withConfigLock(() =>
+        withDirectoryLock(packagesLockPath(), async () => {
+          const latest = await loadConfig();
+          const packages = await readPackagePlugins();
+          const recorded = Object.hasOwn(packages, name);
+          const legacy = await removePlugin(name);
+          if (!recorded && !legacy) throw new CliError(`Plugin "${name}" is not installed.`, 1, `Plugin "${name}" ist nicht installiert.`);
+          if (recorded) {
+            delete packages[name];
+            await writePackagePlugins(packages);
+          }
+          await collectPluginGarbage(await referencedDigests(latest));
+          await syncSkills(latest, locale);
+        }),
+      );
     }
     if (output !== "text") printJson({ id: name, removed: true });
     else printLine(text(locale, `Removed plugin "${name}".`, `Plugin "${name}" entfernt.`));

@@ -27,6 +27,7 @@ export const NPM_REGISTRY = "https://registry.npmjs.org";
 const FETCH_TIMEOUT_MS = 60_000;
 /** Directory of the plugin store inside the plugins directory; never a plugin ID. */
 const STORE_DIRECTORY = "store";
+const LOCKS_DIRECTORY = "locks";
 const PACKAGE_RECORDS = "packages.json";
 const DIGEST = /^[0-9a-f]{128}$/;
 const NPM_NAME = /^(@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
@@ -79,7 +80,7 @@ export const readPackagePlugins = async (root = pluginsDirectory()): Promise<Pac
   return records;
 };
 
-/** Write atomically while the caller holds the config lock. */
+/** Write atomically while the caller holds the packages lock inside the config lock. */
 export const writePackagePlugins = async (records: PackagePlugins, root = pluginsDirectory()): Promise<void> => {
   await mkdir(root, { recursive: true, mode: 0o700 });
   const temporary = join(root, `.packages-${crypto.randomUUID()}.json`);
@@ -94,12 +95,12 @@ export const writePackagePlugins = async (records: PackagePlugins, root = plugin
 export const repackMessage = (name: string, version: string): string =>
   `${name}@${version} uses the old plugin format without a verified bundle; its author must re-pack it with \`bun run node_modules/@k2b/cloud/scripts/cli-pack.ts\``;
 
-/** Every non-hidden directory except the store is a legacy package installation. */
+/** Every non-hidden directory except the store and locks is a legacy package installation. */
 export const legacyPlugins = async (root = pluginsDirectory()): Promise<PluginInfo[]> => {
   const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
   const plugins: PluginInfo[] = [];
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === STORE_DIRECTORY) continue;
+    if (!entry.isDirectory() || entry.name.startsWith(".") || entry.name === STORE_DIRECTORY || entry.name === LOCKS_DIRECTORY) continue;
     const raw: unknown = await readFile(join(root, entry.name, "package.json"), "utf8")
       .then(JSON.parse)
       .catch(() => null);
@@ -117,9 +118,9 @@ export const legacyPlugins = async (root = pluginsDirectory()): Promise<PluginIn
   return plugins;
 };
 
-/** Remove only an exact legacy directory; never the store or package records. */
+/** Remove only an exact legacy directory; never the store, locks or package records. */
 export const removePlugin = async (id: string, root = pluginsDirectory()): Promise<boolean> => {
-  if (!id || id.startsWith(".") || id.includes("/") || id.includes("\\") || id === STORE_DIRECTORY) return false;
+  if (!id || id.startsWith(".") || id.includes("/") || id.includes("\\") || id === STORE_DIRECTORY || id === LOCKS_DIRECTORY) return false;
   const directory = join(root, id);
   if (!(await lstat(directory).catch(() => null))?.isDirectory()) return false;
   await rm(directory, { recursive: true, force: true });
@@ -205,7 +206,13 @@ const parseNpmSpec = (spec: string): { name: string; version: string } => {
 const extractTarball = async (archive: string, workspace: string): Promise<string> => {
   const target = join(workspace, "unpacked");
   await mkdir(target, { recursive: true });
-  await execFileAsync("tar", ["-xzf", archive, "-C", target]);
+  try {
+    await execFileAsync("tar", ["-xzf", archive, "-C", target]);
+  } catch (error) {
+    const message =
+      isRecord(error) && typeof error.stderr === "string" ? error.stderr : error instanceof Error ? error.message : String(error);
+    throw new PluginError(`Cannot unpack ${archive}: ${message.trim().split(/[\r\n]/)[0]}`);
+  }
   // npm tarballs wrap the package in one top-level `package/` directory.
   const entries = await readdir(target, { withFileTypes: true });
   return entries.length === 1 && entries[0]!.isDirectory() ? join(target, entries[0]!.name) : target;

@@ -5,7 +5,7 @@ section: Platform services
 order: 595
 description: Expose application operations through the shared cld command-line interface.
 tags: [cli, cld, automation, plugins]
-updated: 2026-10-14
+updated: 2026-10-15
 ---
 
 # Application CLI modules
@@ -780,9 +780,12 @@ The manifest's `app` and `version` match the package name and version.
 holds the bundle. The manifest lists `cli.js` and every reference with its
 size and SHA-512, and carries the digest of that file list.
 
-The output directory must be absent, empty, or a previous pack output.
-Repacking removes previous output first, so stale files disappear. A foreign
-non-empty directory is refused.
+The output directory must be absent, empty, or a previous pack output containing
+only `package.json`, `manifest.json`, `cli.js`, and `references`, with
+`cld.manifest` equal to `"manifest.json"`. Repacking removes previous output
+first, so stale files disappear. Other non-empty directories are refused.
+The output must not equal or contain the current directory, module file, or
+references directory.
 
 Top-level commands (`help`, `version`, `login`, `logout`, `auth`, `profile`,
 `update`, `plugins`, `skills`) are reserved. `reference` is reserved as the first

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CORE_SKILL_FILES } from "./skill-source";
-import { normalizeSkillTarget, referenceFolder, renderSkill, syncSkillTargets, writeSkillTarget } from "./skills";
+import { normalizeSkillTarget, referenceFolder, renderModulesTable, renderSkill, syncSkillTargets, writeSkillTarget } from "./skills";
 
 const listFiles = async (directory: string, prefix = ""): Promise<string[]> => {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -36,6 +36,42 @@ describe("cloud-cli skill targets", () => {
     expect(rendered.endsWith("<!-- /cld:modules -->\n\nTail\n")).toBe(true);
     expect(() => renderSkill("# no block", [])).toThrow("cld:modules");
     expect(referenceFolder("grids", "1.0.0+build/7")).toBe("references/grids/1.0.0_build_7/");
+  });
+
+  test("escapes every free-text table cell", () => {
+    const table = renderModulesTable([
+      { profile: "work|home\r\nnext", name: "mail", version: "1|2\n3", summary: "Mail|tools\rMore", digest: "d1" },
+    ]);
+    expect(table.split("\n")).toHaveLength(3);
+    expect(table).toContain("| work\\|home next | mail | 1\\|2 3 | Mail\\|tools More | `references/mail/1_2_3/index.md` |");
+  });
+
+  test("dot versions keep module references separate from the core references", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "cld-skills-dots-"));
+    try {
+      const root = join(dir, "plugins");
+      const digest = "a".repeat(128);
+      const references = join(root, "store", digest, "references");
+      await mkdir(references, { recursive: true });
+      await writeFile(join(references, "plugins.md"), "module plugins reference");
+      await writeFile(join(references, "index.md"), "module index");
+      for (const [version, segment] of [
+        [".", "_"],
+        ["..", "_."],
+        [".hidden", "_hidden"],
+      ] as const) {
+        expect(referenceFolder("mail", version)).toBe(`references/mail/${segment}/`);
+        const destination = await writeSkillTarget(
+          join(dir, "skills"),
+          [{ profile: "*", name: "mail", version, summary: "Mail", digest }],
+          root,
+        );
+        expect(CORE_SKILL_FILES["references/plugins.md"]).toBe(await readFile(join(destination, "references", "plugins.md"), "utf8"));
+        expect(await readFile(join(destination, "references", "mail", segment, "index.md"), "utf8")).toBe("module index");
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("writes the core skill plus one reference folder per installed module version and prunes the rest", async () => {

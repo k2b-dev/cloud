@@ -210,9 +210,10 @@ export const loadStoredPlugin = async (
   name: string,
   locked: Pick<LockedPlugin, "digest">,
   root = pluginsDirectory(),
+  reinstall = name,
 ): Promise<CloudCliModule> => {
   if (!(await hasStoredPlugin(locked.digest, root))) {
-    throw new PluginError(`Plugin "${name}" is missing from the plugin store. Run \`cld plugins install ${name}\`.`);
+    throw new PluginError(`Plugin "${name}" is missing from the plugin store. Run \`cld plugins install ${reinstall}\`.`);
   }
   return loadModuleFile(join(pluginStoreDirectory(root), locked.digest, CLOUD_CLI_PLUGIN_ENTRY), name);
 };
@@ -232,9 +233,10 @@ export const readStoredReference = async (
   locked: Pick<LockedPlugin, "digest">,
   file = "index.md",
   root = pluginsDirectory(),
+  reinstall = name,
 ): Promise<string> => {
   if (!(await hasStoredPlugin(locked.digest, root))) {
-    throw new PluginError(`Plugin "${name}" is missing from the plugin store. Run \`cld plugins install ${name}\`.`);
+    throw new PluginError(`Plugin "${name}" is missing from the plugin store. Run \`cld plugins install ${reinstall}\`.`);
   }
   const files = await storedReferenceFiles(locked, root);
   if (!files.includes(file)) {
