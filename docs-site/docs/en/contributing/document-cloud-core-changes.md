@@ -26,7 +26,7 @@ repository-local Fibel, UI catalog, or workspace checks below.
 | Renamed, deprecated, or removed contract | Add the supported replacement and migration to [Deprecations](/en/docs/reference/deprecations-and-migrations). |
 | Shared UI component or interaction contract | Update the UI catalog context and live example. |
 | Runtime configuration, deployment, or operational behavior | Update the matching [Operations](/en/docs/operations) page. |
-| A rule listed in the conventions catalog changed | Update its row in [Application conventions](/en/docs/conventions); retire a dropped rule instead of deleting or renumbering it. |
+| A rule listed in the conventions catalog changed | Update its row in [Conventions for Cloud applications](/en/docs/conventions); retire a dropped rule instead of deleting or renumbering it. |
 | Internal refactor with no observable contract change | No public documentation change is required. Keep non-obvious invariants in tests or code comments. |
 
 Do not document an export only because it exists. Application-facing APIs need

@@ -5,12 +5,12 @@ section: Conventions
 order: 1281
 description: Check built-in and third-party applications and report findings by root cause.
 tags: [conventions, audit, review, checklist]
-updated: 2026-10-14
+updated: 2026-10-15
 ---
 
 # Audit an application against the conventions
 
-Use the [Application conventions](/en/docs/conventions) catalog to review one
+Use the [Conventions for Cloud applications](/en/docs/conventions) catalog to review one
 application. Follow the canonical link whenever a row needs more context.
 
 ## 1. Name the application and its surfaces
@@ -23,22 +23,24 @@ Assistant Skills, and Help. Note which surfaces the application does not have.
 
 In the Cloud monorepo, run the named `bun scripts/check.ts <rule>` checks and
 focused tests from the relevant rows. For a third-party application, use their
-manual equivalents. Record failures and checks you could not run.
+manual equivalents. Record failures and checks you could not run; capture the
+reproduction for every finding (the check command, a grep, or a click path).
 
 ## 3. Walk the catalog
 
 Review each applicable area against the code. Where a rule names the running
 application, check it at desktop and phone width in light mode. Verify the
 canonical page's expected behavior, including denied requests and retries
-where relevant.
+where relevant. Capture the reproduction for every finding (the check command,
+a grep, or a click path).
 
 ## 4. Record findings
 
 Use this format. The filled row uses demo data:
 
 ```text
-ID | Location (file:line or URL) | Severity | Observed vs. expected | Fix
-ACC-02 | src/service/items.ts:42 | blocker | Demo item is returned without checking read permission; the service must authorize the resource. | Resolve the subject's permission before reading the item.
+ID | Location (file:line or URL) | Severity | Observed vs. expected | Reproduce | Fix
+ACC-02 | src/service/items.ts:42 | blocker | Demo item is returned without checking read permission; the service must authorize the resource. | curl -i "$DEMO_APP_URL/api/items/demo-item" | Resolve the subject's permission before reading the item.
 ```
 
 | Severity | Meaning |
@@ -61,10 +63,10 @@ In `k2b-dev/cloud`, file one GitHub issue per root cause using the **Agent
 report** issue form, with labels `via-agent` and `needs-triage`. Use its four
 sections exactly:
 
-- **What is wrong**: observed and expected behavior.
-- **How to reproduce**: the exact command.
-- **Suspected cause**: file and line, with a short explanation.
-- **Proposal**: the smallest fix or a decision needed from the maintainer.
+- **What is wrong**: IDs, severity, and observed vs. expected behavior.
+- **How to reproduce**: the reproduction recorded for the finding.
+- **Suspected cause**: the location (`file:line`) with one sentence explaining why.
+- **Proposal**: the fix, or a decision needed from the maintainer.
 
 Use demo data only. Include no personal data or screenshots with personal
 content; redact secrets and machine-specific paths. A third-party application

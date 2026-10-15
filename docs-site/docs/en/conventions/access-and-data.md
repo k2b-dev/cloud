@@ -5,12 +5,12 @@ section: Conventions
 order: 1283
 description: Look up authorization, persistence, and effect rules with their canonical owners and checks.
 tags: [conventions, identity, access, data, audit]
-updated: 2026-10-14
+updated: 2026-10-15
 ---
 
 # Access and data conventions
 
-Use these rows with the [Application conventions](/en/docs/conventions) index
+Use these rows with the [Conventions for Cloud applications](/en/docs/conventions) index
 and [audit procedure](/en/docs/conventions/audit). Follow each canonical link
 for the complete contract.
 
@@ -24,8 +24,8 @@ for the complete contract.
 | ACC-04 | Protect SSR entry and render only data returned by the permission-aware service. | A page login cannot expose a forbidden resource. | Manual: load a protected page directly as a subject without access and inspect its service call. | [SSR authorization](/en/docs/identity/authorization#repeat-the-check-for-ssr) |
 | ACC-05 | Apply resource permission predicates inside list SQL. | Unauthorized rows never enter the result or its count. | Manual: inspect list and count queries for the shared access predicate and exact resource-bound restrictions. | [Authorized lists](/en/docs/identity/authorization#filter-lists-in-sql) |
 | ACC-06 | Keep at least one manager when changing grants with the resource locked and authorization checked in the same transaction. | Concurrent grant changes cannot leave a resource unmanaged. | Manual: inspect grant mutations for `ensureManagerRemains()` and test concurrent removal of the last managers. | [Last manager](/en/docs/identity/authorization#keep-at-least-one-manager) |
-| ACC-07 | Enforce destination authorization independently of navigation visibility. | Hidden or restricted links cannot protect a directly requested URL. | Manual: request the destination directly as a subject outside the shortcut's audience. | [Shortcut visibility](/en/docs/frontend/layout-and-navigation#provide-global-app-bar-shortcuts) |
-| ACC-08 | Cap service-account grants by credential scopes and check exact binding only for resource-bound accounts. | Scopes cannot create access or widen a resource binding. | Manual: test resource-bound mismatches and standalone or agent requests with narrower scopes than their grants. | [Credential limits](/en/docs/identity/authorization#limit-resource-bound-credentials) |
+| ACC-07 | Enforce destination authorization independently of navigation visibility. | Hidden or restricted links cannot protect a directly requested URL. | Manual: request each `nav` and `adminHref` destination directly as a subject outside its `requiresRoles` or `requiresAuth` audience and confirm that the route policy or service denies it. | [Global navigation](/en/docs/build/define-app#add-global-navigation) |
+| ACC-08 | Lower grants to credential scopes for every service account without a delegated user, require an exact binding for resource-bound accounts, and let user-delegated actors use their user grants. | Scopes cannot create access or widen a resource binding. | Manual: test a resource-bound binding mismatch, a resource-bound, standalone, or agent account with narrower scopes than its grants, and a user-delegated request, which keeps its user grants. | [Credential limits](/en/docs/identity/authorization#limit-resource-bound-credentials) |
 | ACC-09 | Require a user-backed resource administrator to create, list, or revoke resource API keys and verify the selected account or credential's binding. | An account or credential ID alone cannot authorize key management. | Manual: inspect all key routes and try a credential belonging to another demo resource. | [Resource key management](/en/docs/identity/resource-api-keys#create-a-resource-api-key) |
 | ACC-10 | Send interactive cross-app capability credentials through the Core-backed adapter. | Core dispatches a target- and operation-bound invocation. | Manual: trace cross-app capability calls to the server adapter and verify that the original credential goes only to Core. | [Capability invocation](/en/docs/platform/capabilities#invoke-capabilities) |
 | ACC-11 | Store one revocable mandate per durable cross-app workload instead of a user's session or personal key. | Background work has bounded authority beyond the session lifetime. | Manual: inspect persisted workload authority and mandate confirmation before the first invocation. | [Workload mandates](/en/docs/identity/background-mandates#create-one-mandate-with-the-workload) |

@@ -24,7 +24,7 @@ operations contracts. Your application keeps its domain logic and release cycle.
 - **Use platform services:** settings, notifications, logging, search,
   background work, workflows, shared UI, and AI.
 - **Ship and look up:** local development, deployment, operations, public
-  imports, shared vocabulary, and the UI catalog.
+  imports, shared vocabulary, application conventions, and the UI catalog.
 
 ## Source formats
 

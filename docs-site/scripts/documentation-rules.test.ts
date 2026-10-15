@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { conventionCatalogErrors, headingContractErrors, metadataErrors, uiLinkError } from "./documentation-rules";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { checkDocumentation } from "./check-documentation";
+import { conventionCatalogErrors, headingContractErrors, metadataErrors, uiHeadingIds, uiLinkError } from "./documentation-rules";
 
 const validMeta = {
   title: "Page",
@@ -116,15 +120,54 @@ describe("convention catalog", () => {
     ]);
   });
 
-  test("keeps escaped pipes and inline code pipes inside their cells", () => {
+  test("reports unescaped pipes inside code spans and accepts escaped pipes", () => {
+    const prose = catalog("| CODE-01 | Accept a \\| b. | Keep `x | y` intact. | Manual: inspect the code. | [Build](/en/docs/build) |");
+    expect(conventionCatalogErrors([{ file: "page.md", prose }])).toContain(
+      "page.md:3: convention CODE-01 has 6 cells instead of 5; escape '|' as \\|",
+    );
+    expect(conventionCatalogErrors([{ file: "page.md", prose: prose.replace("`x | y`", "`x \\| y`") }])).toEqual([]);
+  });
+
+  test("requires exactly five cells even when the canonical link is in its column", () => {
+    const prose = catalog(row("CODE-01").replace(/ \|$/, " | Extra |"));
+    expect(conventionCatalogErrors([{ file: "page.md", prose }])).toEqual([
+      "page.md:3: convention CODE-01 has 6 cells instead of 5; escape '|' as \\|",
+    ]);
+  });
+
+  test("accepts a retired row with the replacement's canonical link", () => {
     expect(
       conventionCatalogErrors([
         {
           file: "page.md",
-          prose: catalog("| CODE-01 | Accept a \\| b. | Keep `x | y` intact. | Manual: inspect `` `x | y` ``. | [Build](/en/docs/build) |"),
+          prose: catalog(row("SRV-01"), row("SRV-02").replace("Return a Result.", "Retired. Replaced by SRV-01.")),
         },
       ]),
     ).toEqual([]);
+  });
+
+  test("checks duplicate IDs across all catalog pages during a partial run", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "cloud-docs-"));
+    try {
+      const docsRoot = path.join(root, "en");
+      const directory = path.join(docsRoot, "conventions");
+      await mkdir(directory, { recursive: true });
+      const files = [path.join(directory, "a.md"), path.join(directory, "b.md")];
+      for (const [index, file] of files.entries()) {
+        const frontmatter = Object.entries({ ...validMeta, section: "Conventions", order: String(index + 1) })
+          .map(([key, value]) => `${key}: ${value}`)
+          .join("\n");
+        await Bun.write(file, `---\n${frontmatter}\n---\n\n# Page\n\n${catalog(row("SRV-01", "[UI](/en/ui)"))}\n`);
+      }
+      const result = await checkDocumentation({ docsRoot, requestedPaths: [files[0]] });
+      expect(result.checked).toBe(1);
+      expect(result.indexed).toBe(2);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain("b.md:15: duplicate convention ID 'SRV-01' (first in");
+      expect(result.errors[0]).toContain("a.md:15)");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test("accepts a two-page catalog and retained rows", () => {
@@ -142,6 +185,26 @@ describe("UI links", () => {
     ["/en/ui", new Set(["ui"])],
     ["/en/ui/content/calendar", new Set(["day-and-week-views-with-dayhours"])],
   ]);
+
+  test("uses Fibel heading IDs and excludes only the first H1", () => {
+    const headings = uiHeadingIds("# Title\n\n## Give a host's trail\n\n# Later\n\n```md\n## Code\n```");
+    expect(headings).toEqual(new Set(["give-a-host-s-trail", "later"]));
+    expect(headings.has("give-a-hosts-trail")).toBe(false);
+    const uiPages = new Map([["/en/ui/layout/page-title", headings]]);
+    expect(uiLinkError("/en/ui/layout/page-title#give-a-hosts-trail", uiPages)).toBe(
+      "missing anchor '#give-a-hosts-trail' in UI page /en/ui/layout/page-title",
+    );
+    expect(uiLinkError("/en/ui/layout/page-title#give-a-host-s-trail", uiPages)).toBeNull();
+  });
+
+  test("strips query strings before resolving UI routes and anchors", () => {
+    expect(uiLinkError("/en/ui/content/calendar?view=week#day-and-week-views-with-dayhours", pages)).toBeNull();
+    expect(uiLinkError("/en/ui/content/calendar?view=week", pages)).toBeNull();
+    expect(uiLinkError("/en/ui/content/calendar?view=week#missing", pages)).toBe(
+      "missing anchor '#missing' in UI page /en/ui/content/calendar",
+    );
+    expect(uiLinkError("/en/ui/missing?view=week#anchor", pages)).toBe("broken UI link '/en/ui/missing?view=week#anchor'");
+  });
 
   test("rejects routes that are not in the real route table", () => {
     expect(uiLinkError("/en/ui/surfaces/calendar", pages)).toBe("broken UI link '/en/ui/surfaces/calendar'");

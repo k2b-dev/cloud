@@ -1,3 +1,5 @@
+import { withoutFencedCode } from "./markdown";
+
 const requiredMeta = ["title", "navTitle", "section", "order", "description", "tags", "updated"] as const;
 
 export const metadataErrors = (meta: Record<string, string>): string[] => {
@@ -65,22 +67,36 @@ export const conventionPrefixes = ["CODE", "SRV", "ACC", "DATA", "UI", "IX", "A1
 const conventionId = new RegExp(`^(${conventionPrefixes.join("|")})-\\d{2}$`);
 const conventionColumns = ["ID", "Rule", "Why", "How to check", "Canonical"];
 
+export const fibelSlug = (text: string): string =>
+  text
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+export const uiHeadingIds = (markdown: string): Set<string> => {
+  const ids = new Set<string>();
+  let skippedTitle = false;
+  for (const match of withoutFencedCode(markdown).matchAll(/^ {0,3}(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/gm)) {
+    if (match[1] === "#" && !skippedTitle) {
+      skippedTitle = true;
+      continue;
+    }
+    ids.add(fibelSlug(match[2]));
+  }
+  return ids;
+};
+
 const tableCells = (line: string): string[] => {
   const cells: string[] = [];
   let cell = "";
-  let codeTicks = 0;
   const row = line.trim();
   for (let index = 0; index < row.length; index++) {
     const char = row[index];
-    if (char === "\\" && !codeTicks) {
+    if (char === "\\") {
       cell += char + (row[++index] ?? "");
-    } else if (char === "`") {
-      const ticks = row.slice(index).match(/^`+/)?.[0] ?? "`";
-      if (!codeTicks) codeTicks = ticks.length;
-      else if (codeTicks === ticks.length) codeTicks = 0;
-      cell += ticks;
-      index += ticks.length - 1;
-    } else if (char === "|" && !codeTicks) {
+    } else if (char === "|") {
       cells.push(cell.trim());
       cell = "";
     } else {
@@ -123,6 +139,9 @@ export const conventionCatalogErrors = (pages: readonly { file: string; prose: s
       if (!inCatalog || cells.every((cell) => /^:?-+:?$/.test(cell))) continue;
 
       const id = cells[0] ?? "";
+      if (cells.length !== conventionColumns.length) {
+        errors.push(`${location}: convention ${id} has ${cells.length} cells instead of 5; escape '|' as \\|`);
+      }
       if (!conventionId.test(id)) {
         errors.push(`${location}: invalid convention ID '${id}'`);
       } else {
@@ -168,7 +187,7 @@ export const conventionCatalogErrors = (pages: readonly { file: string; prose: s
 export const uiLinkError = (href: string, uiPages: ReadonlyMap<string, ReadonlySet<string>>): string | null => {
   if (!href.startsWith("/en/ui")) return null;
   const [rawRoute, rawFragment] = href.split("#", 2);
-  const route = rawRoute.replace(/\/+$/, "");
+  const route = rawRoute.split("?", 1)[0].replace(/\/+$/, "");
   const headings = uiPages.get(route);
   if (!headings) return `broken UI link '${href}'`;
   if (rawFragment !== undefined) {

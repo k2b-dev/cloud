@@ -1,14 +1,14 @@
 ---
-title: Application conventions
+title: Conventions for Cloud applications
 navTitle: Overview
 section: Conventions
 order: 1280
 description: Review an application with a checklist index of Cloud's public rules.
 tags: [conventions, audit, checklist, review]
-updated: 2026-10-14
+updated: 2026-10-15
 ---
 
-# Application conventions
+# Conventions for Cloud applications
 
 This catalog is a checklist index of the public rules every Cloud application
 follows. Each row links to the canonical page that owns the rule. That page
@@ -29,8 +29,9 @@ third-party application and record findings.
 | Canonical | The one public page that owns the rule |
 
 IDs use `PREFIX-NN`, with two digits starting at `01` in each area. Never
-renumber or reuse an ID. A dropped rule keeps its row: its Rule cell starts
-with `Retired.` and names the replacing ID.
+renumber or reuse an ID. A dropped rule keeps its row: its Rule cell reads
+`Retired. Replaced by SRV-13.`, for example, and its Canonical cell keeps one
+link to the replacement rule's canonical page.
 
 Rows apply to all applications unless the Rule cell starts with
 `Built-in apps:`. Those rows describe monorepo workflow rules that third-party
@@ -74,4 +75,5 @@ to verify the rule against the application's actual behavior.
 Maintainers change the canonical page first, then its catalog row. Never
 renumber IDs; retire dropped rules instead of deleting their rows.
 `bun run --cwd docs-site check:docs` enforces ID format, uniqueness, no gaps,
-and exactly one canonical link per row.
+exactly five cells, and exactly one canonical link per row. Escape literal
+pipes as `\|`, including inside code spans.

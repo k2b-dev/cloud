@@ -5,7 +5,7 @@ section: Frontend
 order: 840
 description: Add browser interactivity to server-rendered pages without turning the whole page into a client application.
 tags: [islands, hydration, solidjs]
-updated: 2026-10-12
+updated: 2026-10-15
 ---
 
 # Islands
@@ -101,6 +101,10 @@ An island may import:
 
 Do not import `@k2b/cloud/server`, `/services`, `/ssr`, or a domain
 service that imports Bun SQL.
+
+A window `message` listener (including `window.onmessage`) compares
+`event.source` with the window it expects before it acts, because any window
+(frame, popup, or opener) can post to the page.
 
 ## Keep the first load small
 

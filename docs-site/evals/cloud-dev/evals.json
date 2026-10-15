@@ -244,9 +244,9 @@
       "expected_output": "Reads the conventions catalog and audit procedure, checks applicable rules, records evidence by convention ID, and reports findings grouped by root cause.",
       "files": [],
       "expectations": [
-        "Reads Application conventions and its audit page through the documentation MCP.",
+        "Reads Conventions for Cloud applications and its audit page through the documentation MCP.",
         "Runs the named checks and tests or substitutes their manual equivalents.",
-        "Records findings with ID, location, severity, observed vs. expected, and fix.",
+        "Records findings with ID, location, severity, observed vs. expected, reproduction, and fix.",
         "Groups findings by root cause.",
         "Does not report rules that do not apply to the application."
       ]
