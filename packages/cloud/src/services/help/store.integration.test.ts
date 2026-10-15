@@ -149,12 +149,30 @@ suite("Postgres Help publication and retrieval", () => {
   });
 
   test("idempotently upgrades the old table and publishes revision two next to revision one", async () => {
+    const columns = await db<{ column_name: string }[]>`SELECT column_name FROM information_schema.columns
+      WHERE table_schema='help' AND table_name='documents'
+        AND column_name IN ('kind', 'needs', 'next_id', 'related') ORDER BY column_name`;
+    expect(columns.map((column) => column.column_name)).toEqual(["kind", "needs", "next_id", "related"]);
     const [old] =
       await db`SELECT kind, needs, next_id, related FROM help.documents WHERE app_id='help-integration' AND manifest_hash=${legacyHash}`;
     expect(old).toMatchObject({ kind: "task", needs: null, next_id: null, related: [] });
     expect(published.corpus.manifestHash).not.toBe(legacyHash);
     const rows = await db<{ manifest_hash: string }[]>`SELECT manifest_hash FROM help.corpora WHERE app_id='help-integration'`;
     expect(rows.map((row) => row.manifest_hash).sort()).toEqual([legacyHash, published.corpus.manifestHash].sort());
+  });
+  test("migrating an upgraded table does not wait for Help readers", async () => {
+    const migrationDb = new SQL(disposable.url, { max: 1 });
+    try {
+      await migrationDb`SET statement_timeout = '1s'`.simple();
+      // Of the migration's statements only ALTER TABLE conflicts with a reader; a waiting ALTER queues every later reader.
+      await db.begin(async (tx) => {
+        await tx`LOCK TABLE help.documents IN ACCESS SHARE MODE`.simple();
+        await migrateHelp(migrationDb);
+        expect((await tx`SELECT 1 FROM help.documents LIMIT 1`).length).toBe(1);
+      });
+    } finally {
+      await migrationDb.close();
+    }
   });
   test("metadata persists per locale and reader links resolve only current visible localized targets in bounded queries", async () => {
     const linked = compileHelp({

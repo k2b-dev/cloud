@@ -27,7 +27,11 @@ export const migrateHelp = async (db: SQL = sql): Promise<void> => {
     PRIMARY KEY (app_id, manifest_hash, locale, document_id),
     FOREIGN KEY (app_id, manifest_hash) REFERENCES help.corpora ON DELETE CASCADE
   )`.simple();
-    await tx`ALTER TABLE help.documents
+    const columns = await tx`SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'help' AND table_name = 'documents'
+        AND column_name IN ('kind', 'needs', 'next_id', 'related')`;
+    if (columns.length < 4)
+      await tx`ALTER TABLE help.documents
       ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'task',
       ADD COLUMN IF NOT EXISTS needs text,
       ADD COLUMN IF NOT EXISTS next_id text,
