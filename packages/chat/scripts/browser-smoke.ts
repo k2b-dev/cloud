@@ -105,7 +105,7 @@ const acceptLegal = async (sessionToken: string) => {
   });
   if (response.status === 302 && response.headers.get("location") === "/") return;
   if (response.status !== 200) fail(`GET /auth/continue expected consent, got ${response.status}`);
-  const version = /version:&quot;([a-f0-9]{64})/.exec(await response.text())?.[1];
+  const version = /data-legal-version="([a-f0-9]{64})"/.exec(await response.text())?.[1];
   if (!version) fail("legal consent page returned no document version");
   await api("POST", "/api/auth/legal-consent", { accepted: true, version }, sessionToken, 204);
 };
