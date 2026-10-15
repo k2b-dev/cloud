@@ -68,10 +68,11 @@ class ManualConnection implements LiveConnection {
     return controls;
   }
 }
+const self = { accessId: "11111111-1111-4111-8111-111111111111", permission: "write" as const, active: true };
 const memberApi = {
   create: async () => ({ outcome: "created" as const, conversation }),
   updateDetails: async () => conversation,
-  members: async () => ({ items: [], nextCursor: null, managers: 1 }),
+  members: async () => ({ items: [], nextCursor: null, managers: 1, self }),
   previewMembers: async () => ({ joining: 1, throughGroups: 0, memberCount: 3 }),
   addMembers: async () => ({ added: 1 }),
   updateMember: async () => ({ success: true as const }),
@@ -1026,7 +1027,7 @@ test("member methods forward arguments, and the reader's own changes refresh tha
     },
     members: async (id, query) => {
       calls.push(["members", id, query]);
-      return { items: [], nextCursor: null, managers: 1 };
+      return { items: [], nextCursor: null, managers: 1, self };
     },
     previewMembers: async (id, members) => {
       calls.push(["preview", id, members]);
@@ -1068,7 +1069,7 @@ test("member methods forward arguments, and the reader's own changes refresh tha
   expect(await store.create(input)).toEqual({ outcome: "created", conversation });
   expect(store.sidebar[0]?.title).toBe("Refreshed");
   expect(await store.updateDetails(conversation.id, patch)).toEqual(conversation);
-  expect(await store.members(conversation.id, query)).toEqual({ items: [], nextCursor: null, managers: 1 });
+  expect(await store.members(conversation.id, query)).toEqual({ items: [], nextCursor: null, managers: 1, self });
   expect(await store.previewMembers(conversation.id, members)).toEqual({ joining: 1, throughGroups: 0, memberCount: 3 });
   expect(await store.addMembers(conversation.id, members)).toEqual({ added: 1 });
   await store.updateMember(conversation.id, "access", "admin");
@@ -1210,7 +1211,7 @@ test("typed member requests use their routes, payloads and schemas, including bo
         });
       if (url.pathname.endsWith("/preview")) return Response.json({ joining: 1, throughGroups: 0, memberCount: 3 });
       if (url.pathname.endsWith("/members"))
-        return Response.json(method === "GET" ? { items: [], nextCursor: null, managers: 1 } : { added: 1 });
+        return Response.json(method === "GET" ? { items: [], nextCursor: null, managers: 1, self } : { added: 1 });
       if (url.pathname.endsWith("/people")) return Response.json({ items: [], nextCursor: null });
       if (url.pathname.endsWith(conversation.id)) return Response.json(conversation);
       return Response.json({ success: true, keptThroughGroup: true });
@@ -1224,7 +1225,12 @@ test("typed member requests use their routes, payloads and schemas, including bo
     createStatus = 200;
     expect(await api.create({ members })).toEqual({ outcome: "existing", matches: [] });
     await api.updateDetails(conversation.id, { purpose: null });
-    await api.members(conversation.id, { q: "A_%", cursor: "opaque" });
+    expect(await api.members(conversation.id, { q: "A_%", cursor: "opaque" })).toEqual({
+      items: [],
+      nextCursor: null,
+      managers: 1,
+      self,
+    });
     await api.previewMembers(conversation.id, members);
     await api.addMembers(conversation.id, members);
     await api.updateMember(conversation.id, "access", "admin");

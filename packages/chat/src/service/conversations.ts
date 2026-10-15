@@ -639,6 +639,18 @@ const listMembers = async (input: ChatContext & { conversationId: string; query?
         AND (u.account_expires IS NULL OR u.account_expires > now())
     `;
     const page = rows.slice(0, MEMBER_PAGE_SIZE);
+    const [self] =
+      input.accessSubject.type === "user"
+        ? await db<{ accessId: string; permission: Exclude<PermissionLevel, "none">; active: boolean }[]>`
+            SELECT ca.access_id AS "accessId", a.permission,
+              (u.account_expires IS NULL OR u.account_expires > now()) AS active
+            FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+            JOIN auth.users u ON u.id = a.user_id
+            WHERE ca.conversation_id = ${allowed.data.id}::uuid AND ca.role = 'member'
+              AND a.user_id = ${input.accessSubject.userId}::uuid
+            LIMIT 1
+          `
+        : [];
     const last = page.at(-1);
     return ok({
       items: page.map((row) => ({
@@ -654,6 +666,7 @@ const listMembers = async (input: ChatContext & { conversationId: string; query?
       })),
       nextCursor: rows.length > MEMBER_PAGE_SIZE && last ? JSON.stringify({ name: last.cursor_name, id: last.access_id }) : null,
       managers: count!.managers,
+      self: self ?? null,
     });
   });
 };

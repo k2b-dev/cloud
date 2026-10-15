@@ -7,6 +7,7 @@ import {
   ConversationSchema,
   CreateConversationSchema,
   LeaveSchema,
+  MemberPageSchema,
   MemberPreviewSchema,
   MemberQuerySchema,
   PeopleQuerySchema,
@@ -16,6 +17,22 @@ import {
 import { deriveTitle } from "./titles";
 
 const lea = "12345678-1234-4234-8234-123456789012";
+test("member pages require nullable direct membership with its permission and active state", () => {
+  const page = { items: [], nextCursor: null, managers: 1 };
+  expect(MemberPageSchema.safeParse(page).success).toBeFalse();
+  expect(MemberPageSchema.parse({ ...page, self: null }).self).toBeNull();
+  for (const permission of ["read", "write", "admin"] as const)
+    for (const active of [true, false]) {
+      const self = { accessId: lea, permission, active };
+      expect(MemberPageSchema.parse({ ...page, self }).self).toEqual(self);
+    }
+  for (const self of [
+    { accessId: "bad", permission: "admin", active: true },
+    { accessId: lea, permission: "none", active: true },
+    { accessId: lea, permission: "admin" },
+  ])
+    expect(MemberPageSchema.safeParse({ ...page, self }).success).toBeFalse();
+});
 describe("conversation inputs", () => {
   test("defaults to an only-you chat and requires explicit duplicate creation", () => {
     expect(CreateConversationSchema.parse({})).toEqual({ members: [], allowDuplicate: false });

@@ -177,6 +177,8 @@ export const MemberPageSchema = z.object({
   items: z.array(MemberSchema),
   nextCursor: z.string().nullable(),
   managers: z.number().int().nonnegative(),
+  /** The access subject's direct user membership, independent of search and pagination. */
+  self: z.object({ accessId: z.uuid(), permission: PermissionSchema, active: z.boolean() }).nullable(),
 });
 export const MemberPreviewSchema = z.object({
   joining: z.number().int().nonnegative(),

@@ -95,6 +95,30 @@ test("member list documents name search and opaque keyset cursors", async () => 
     .parse(spec.paths["/api/chat/conversations/{conversation}/members"]?.get?.parameters);
   expect(parameters).toContainEqual({ name: "q", in: "query" });
   expect(parameters).toContainEqual({ name: "cursor", in: "query" });
+  const response = z
+    .object({
+      content: z.object({
+        "application/json": z.object({
+          schema: z.object({ required: z.array(z.string()), properties: z.record(z.string(), z.unknown()) }),
+        }),
+      }),
+    })
+    .parse(spec.paths["/api/chat/conversations/{conversation}/members"]?.get?.responses["200"]);
+  expect(response.content["application/json"].schema.required).toEqual(["items", "nextCursor", "managers", "self"]);
+  expect(response.content["application/json"].schema.properties.self).toMatchObject({
+    anyOf: [
+      {
+        type: "object",
+        required: ["accessId", "permission", "active"],
+        properties: {
+          accessId: { type: "string", format: "uuid" },
+          permission: { type: "string", enum: ["read", "write", "admin"] },
+          active: { type: "boolean" },
+        },
+      },
+      { type: "null" },
+    ],
+  });
 });
 
 test("member removal and leave require the group access outcome", async () => {

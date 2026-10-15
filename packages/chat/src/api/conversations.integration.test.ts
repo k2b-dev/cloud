@@ -222,6 +222,14 @@ suite("chat conversations, people, and directory groups", () => {
             expect(result.items.some((item) => item.id === chat.shortId)).toBe(permission !== "none");
           } else if (operation === "detail" && expected === 200 && permission !== "none") {
             expect(ConversationSchema.parse(await response.json()).permission).toBe(permission);
+          } else if (operation === "members" && expected === 200) {
+            const page = MemberPageSchema.parse(await response.json());
+            if (identity === "group" || identity === "nested") expect(page.self).toBeNull();
+            else {
+              const accessId = chat.entries.get(caller);
+              if (!accessId || permission === "none") throw new Error("Expected a direct member");
+              expect(page.self).toEqual({ accessId, permission, active: true });
+            }
           } else if (expected === 403 && ["add", "permission", "remove"].includes(operation)) {
             const [event] = await sql<
               { outcome: string }[]
@@ -1075,6 +1083,7 @@ suite("chat conversations, people, and directory groups", () => {
         const page = MemberPageSchema.parse(await response.json());
         expect(page.items).toHaveLength(size);
         expect(page.managers).toBe(1);
+        expect(page.self).toEqual({ accessId: chat.ownerAccess, permission: "admin", active: true });
         seen.push(...page.items.map((row) => row.accessId));
         cursor = page.nextCursor;
       }
@@ -1116,6 +1125,12 @@ suite("chat conversations, people, and directory groups", () => {
       MemberPageSchema.parse(await (await request(headers, `/${chat.shortId}/members?${new URLSearchParams({ q })}`)).json());
     const page = await read();
     expect(page.managers).toBe(1);
+    expect(page.self).toEqual({ accessId: chat.ownerAccess, permission: "admin", active: true });
+    // Effective admin through the group does not change the caller's direct write entry.
+    const readerPage = MemberPageSchema.parse(await (await request(await cookie(reader), `/${chat.shortId}/members?q=Support`)).json());
+    expect(readerPage.self).toEqual({ accessId: chat.entries.get(reader)!, permission: "write", active: true });
+    const discovererPage = MemberPageSchema.parse(await (await request(await cookie(discoverer), `/${chat.shortId}/members`)).json());
+    expect(discovererPage.self).toBeNull();
     expect(page.items.find((entry) => entry.principal.type === "group")).toMatchObject({
       displayName: "Support_% Team",
       groupSize: 2,
@@ -1125,6 +1140,7 @@ suite("chat conversations, people, and directory groups", () => {
     const guestResponse = await request(await cookie(guest), `/${chat.shortId}/members`);
     expect(guestResponse.status).toBe(200);
     const guestPage = MemberPageSchema.parse(await guestResponse.json());
+    expect(guestPage.self).toEqual({ accessId: chat.entries.get(guest)!, permission: "read", active: true });
     expect(guestPage.items.find((entry) => entry.principal.type === "group")).toMatchObject({
       principal: { type: "group", groupId },
       displayName: "Support_% Team",
@@ -1172,6 +1188,7 @@ suite("chat conversations, people, and directory groups", () => {
     const response = await request(account.headers, `${path}/members`);
     expect(response.status).toBe(200);
     const page = MemberPageSchema.parse(await response.json());
+    expect(page.self).toBeNull();
     expect(page.items.find((entry) => entry.principal.type === "group")).toMatchObject({
       principal: { type: "group", groupId: listedGroup },
       groupSize: null,

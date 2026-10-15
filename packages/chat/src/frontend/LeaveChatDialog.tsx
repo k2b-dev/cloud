@@ -51,7 +51,10 @@ export function LeaveChatDialog(
   );
   // A failed read throws when read, so the error state is checked first.
   const loaded = () => (page.error ? undefined : page());
-  const needsSuccessor = () => loaded()?.managers === 1;
+  const needsSuccessor = () => {
+    const current = loaded();
+    return current?.managers === 1 && current.self?.permission === "admin" && current.self.active;
+  };
   // Nobody else holds a direct entry, so there is nobody to hand the chat to and leaving is refused.
   const alone = () => {
     const current = loaded();

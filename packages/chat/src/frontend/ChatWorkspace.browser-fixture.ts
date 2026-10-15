@@ -526,6 +526,7 @@ export const startChatHarness = async () => {
                 member.displayName.toLowerCase().localeCompare(cursor.name) > 0 ||
                 (member.displayName.toLowerCase() === cursor.name && member.accessId > cursor.id),
             );
+          const own = chat.members.find((member) => member.principal.type === "user" && member.principal.userId === viewer.id);
           const items = matches.slice(0, MEMBER_PAGE_SIZE);
           const last = items.at(-1);
           return Response.json(
@@ -536,6 +537,7 @@ export const startChatHarness = async () => {
                   ? JSON.stringify({ name: last.displayName.toLowerCase(), id: last.accessId })
                   : null,
               managers: managers(chat),
+              self: own ? { accessId: own.accessId, permission: own.permission, active: !own.deactivated } : null,
             }),
           );
         }

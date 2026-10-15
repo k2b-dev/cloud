@@ -153,6 +153,7 @@ describe("ChatWorkspace interactions", () => {
                 ]
               : [],
             managers: 1,
+            self: { accessId: "11111111-1111-4111-8111-111111111111", permission: "admin", active: true },
             nextCursor: null,
           });
         }

@@ -61,6 +61,7 @@ const nora = MemberSchema.parse({
   permission: "write",
   addedAt: now,
 });
+const self = { accessId: viewerId, permission: "admin" as const, active: true };
 const unexpected = async (): Promise<never> => {
   throw new Error("Unexpected store call");
 };
@@ -237,7 +238,7 @@ describe("chat dialogs and info", () => {
           store: store({
             addMembers,
             updateDetails,
-            members: async () => ({ items: [], managers: 1, nextCursor: null }),
+            members: async () => ({ items: [], self, managers: 1, nextCursor: null }),
             previewMembers: async () => ({ joining: 1, memberCount: 3, throughGroups: 0 }),
           }),
           conversation: { ...conversation, name: null },
@@ -408,7 +409,7 @@ describe("chat dialogs and info", () => {
           setDismissHandler: () => {},
           store: store({
             create,
-            members: async () => ({ items: [viewer, existing, former], managers: 1, nextCursor: null }),
+            members: async () => ({ items: [viewer, existing, former], self, managers: 1, nextCursor: null }),
             previewMembers: async () => ({ joining: 1, memberCount: 3, throughGroups: 0 }),
           }),
           conversation: { ...conversation, name: null },
@@ -438,7 +439,7 @@ describe("chat dialogs and info", () => {
           setDismissHandler: () => {},
           store: store({
             create,
-            members: async () => ({ items: [group], managers: 1, nextCursor: null }),
+            members: async () => ({ items: [group], self, managers: 1, nextCursor: null }),
             previewMembers: async () => ({ joining: 1, memberCount: 3, throughGroups: 2 }),
           }),
           conversation: { ...conversation, name: null },
@@ -514,7 +515,7 @@ describe("chat dialogs and info", () => {
     test(`a manager's failed member read stays in the leave dialog and can be retried in ${locale}`, async () => {
       const members = mock<ChatDialogStore["members"]>(async () => {
         if (members.mock.calls.length === 1) throw new Error("Members unavailable");
-        return { items: [nora], managers: 2, nextCursor: null };
+        return { items: [nora], self, managers: 2, nextCursor: null };
       });
       await mount(locale, () =>
         createComponent(modules!.LeaveChatDialog, {
@@ -554,7 +555,7 @@ describe("chat dialogs and info", () => {
       await mount(locale, () =>
         createComponent(modules!.LeaveChatDialog, {
           setDismissHandler: () => {},
-          store: store({ members: async () => ({ items: [viewer, group], managers: 1, nextCursor: null }), leave }),
+          store: store({ members: async () => ({ items: [viewer, group], self, managers: 1, nextCursor: null }), leave }),
           conversation,
           viewerId,
           locale,
@@ -577,7 +578,7 @@ describe("chat dialogs and info", () => {
             viewerId,
             active: true,
             revision: 0,
-            store: store({ members: async () => ({ items: [nora], managers: 1, nextCursor: null }) }),
+            store: store({ members: async () => ({ items: [nora], self: { ...self, permission }, managers: 1, nextCursor: null }) }),
             onClose: () => {},
             onAddPeople,
             onEditDetails: () => {},
@@ -594,7 +595,7 @@ describe("chat dialogs and info", () => {
     }
     for (const managers of [1, 2]) {
       test(`leaving with ${managers} managers ${managers === 1 ? "requires a successor" : "needs no successor"} in ${locale}`, async () => {
-        const members = mock<ChatDialogStore["members"]>(async () => ({ items: [nora], managers, nextCursor: null }));
+        const members = mock<ChatDialogStore["members"]>(async () => ({ items: [nora], self, managers, nextCursor: null }));
         const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false }));
         const close = mock<(left?: boolean) => void>();
         await mount(locale, () =>
@@ -624,6 +625,34 @@ describe("chat dialogs and info", () => {
         expect(close.mock.calls).toEqual([[true]]);
       });
     }
+    test(`an effective admin with a direct write entry leaves without a successor in ${locale}`, async () => {
+      const members = mock<ChatDialogStore["members"]>(async () => ({
+        items: [{ ...nora, permission: "admin" }],
+        self: { ...self, permission: "write" },
+        managers: 1,
+        nextCursor: null,
+      }));
+      const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false }));
+      const close = mock<(left?: boolean) => void>();
+      await mount(locale, () =>
+        createComponent(modules!.LeaveChatDialog, {
+          setDismissHandler: () => {},
+          store: store({ members, leave }),
+          conversation,
+          viewerId,
+          locale,
+          close,
+        }),
+      );
+      expect(members.mock.calls).toEqual([[conversation.id, {}]]);
+      expect(button(t.leaveChat).disabled).toBe(false);
+      expect(dom.root.textContent).not.toContain(t.chooseSuccessor);
+      expect(dom.root.querySelector('[role="combobox"]')).toBeNull();
+      button(t.leaveChat).click();
+      await settle();
+      expect(leave.mock.calls).toEqual([[conversation.id, undefined]]);
+      expect(close.mock.calls).toEqual([[true]]);
+    });
     test(`a writer leaves without loading members in ${locale}`, async () => {
       const members = mock<ChatDialogStore["members"]>(unexpected);
       const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false }));
@@ -681,6 +710,7 @@ describe("chat dialogs and info", () => {
       const cursor = JSON.stringify({ name: "nora", id: nora.accessId });
       const members = mock<ChatDialogStore["members"]>(async (_id, query) => ({
         items: query.cursor ? [second] : [nora],
+        self,
         managers: 2,
         nextCursor: query.cursor ? null : cursor,
       }));
@@ -703,9 +733,9 @@ describe("chat dialogs and info", () => {
       const newCursor = JSON.stringify({ name: "noah", id: second.accessId });
       const pending = Promise.withResolvers<Awaited<ReturnType<ChatDialogStore["members"]>>>();
       const members = mock<ChatDialogStore["members"]>(async (_id, query) => {
-        if (query.cursor) return { items: [nora], managers: 2, nextCursor: null };
+        if (query.cursor) return { items: [nora], self, managers: 2, nextCursor: null };
         if (query.q) return pending.promise;
-        return { items: [nora], managers: 2, nextCursor: oldCursor };
+        return { items: [nora], self, managers: 2, nextCursor: oldCursor };
       });
       await mount(locale, () => info(conversation, store({ members })));
       type(input('input[type="search"]'), "No");
@@ -719,7 +749,7 @@ describe("chat dialogs and info", () => {
       more.click();
       await settle();
       expect(members).toHaveBeenCalledTimes(2);
-      pending.resolve({ items: [second], managers: 2, nextCursor: newCursor });
+      pending.resolve({ items: [second], self, managers: 2, nextCursor: newCursor });
       await settle();
       expect(button(t.showMoreMembers).disabled).toBe(false);
       button(t.showMoreMembers).click();
@@ -732,11 +762,12 @@ describe("chat dialogs and info", () => {
       const members = mock<ChatDialogStore["members"]>(async (_id, query) => {
         if (query.q) {
           if (fail) throw new Error("Search unavailable");
-          return { items: [nora], managers: 1, nextCursor: null };
+          return { items: [nora], self, managers: 1, nextCursor: null };
         }
         const offset = query.cursor ? 100 : 0;
         return {
           items: Array.from({ length: 100 }, (_, index) => ({ ...nora, accessId: `member-${offset + index}` })),
+          self,
           managers: 2,
           nextCursor: query.cursor ? "old-page-3" : "old-page-2",
         };
@@ -777,6 +808,7 @@ describe("chat dialogs and info", () => {
             permission: offset === 0 && index === 0 ? "admin" : "write",
             displayName: `${updated ? "Updated" : "Original"} ${offset + index}`,
           })),
+          self,
           managers: updated && offset ? 1 : 2,
           nextCursor: offset ? "page-3" : "page-2",
         });
@@ -824,10 +856,11 @@ describe("chat dialogs and info", () => {
       const [revision, setRevision] = createSignal(0);
       const pending = Promise.withResolvers<Awaited<ReturnType<ChatDialogStore["members"]>>>();
       const members = mock<ChatDialogStore["members"]>(async (_id, query) => {
-        if (query.q) return { items: [nora], managers: 1, nextCursor: null };
+        if (query.q) return { items: [nora], self, managers: 1, nextCursor: null };
         if (revision() && query.cursor) return pending.promise;
         return {
           items: [{ ...nora, accessId: query.cursor ? "second" : "first", displayName: "Old member" }],
+          self,
           managers: 2,
           nextCursor: query.cursor ? null : "page-2",
         };
@@ -840,7 +873,7 @@ describe("chat dialogs and info", () => {
       expect(members).toHaveBeenCalledTimes(4);
       type(input('input[type="search"]'), "Nora");
       await Bun.sleep(280);
-      pending.resolve({ items: [{ ...nora, displayName: "Stale result" }], managers: 2, nextCursor: "stale-cursor" });
+      pending.resolve({ items: [{ ...nora, displayName: "Stale result" }], self, managers: 2, nextCursor: "stale-cursor" });
       await settle();
       expect([...dom.root.querySelectorAll(".chat-member-row__name")].map((row) => row.textContent)).toEqual(["Nora"]);
       expect(dom.root.textContent).not.toContain(t.showMoreMembers);
@@ -862,6 +895,7 @@ describe("chat dialogs and info", () => {
             store({
               members: async () => ({
                 items: [{ ...nora, permission: "admin" }, group],
+                self,
                 managers,
                 nextCursor: null,
               }),
