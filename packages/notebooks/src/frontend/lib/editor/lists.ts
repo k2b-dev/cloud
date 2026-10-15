@@ -213,6 +213,13 @@ const taskPress = ViewPlugin.define(() => ({}), {
       }
       return true;
     },
+    // Cancelling mousedown does not stop the box's own toggle on click, so a read-only note keeps the box as it is.
+    click(event, view) {
+      if (!view.state.readOnly || !(event.target instanceof Element)) return;
+      if (!event.target.closest(".custom-list-task-marker")) return;
+      event.preventDefault();
+      return true;
+    },
   },
 });
 

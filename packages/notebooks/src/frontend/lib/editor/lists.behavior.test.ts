@@ -167,6 +167,10 @@ describe("editor checklist boxes", () => {
     try {
       const event = press("task");
       expect(event.defaultPrevented).toBe(true);
+      // A full click also runs the box's native toggle, which must not show a checked task.
+      const box = view.dom.querySelector<HTMLInputElement>(".custom-list-task-marker")!;
+      box.click();
+      expect(box.checked).toBe(false);
       expect(view.state.doc.toString()).toBe("- [ ] task");
       expect(view.state.selection.main.head).toBe(0);
       expect(transactions).toHaveLength(0);
