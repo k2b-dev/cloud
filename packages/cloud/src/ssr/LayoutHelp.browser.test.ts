@@ -246,7 +246,7 @@ for (const host of ["grids", "pulse"] as const)
       { width: 1440, height: 900 },
       { width: 390, height: 844 },
     ]) {
-      const page = await open(`?host=${host}`, viewport, ".help-document h2");
+      const page = await open(`?host=${host}`, viewport, ".help-document #section-0");
       try {
         expect(await page.locator("article h3").textContent()).toBe("Topic 0");
         expect(await page.locator(".help-article-toc-icon, .help-section-icon, [data-help-icon]").count()).toBe(0);
