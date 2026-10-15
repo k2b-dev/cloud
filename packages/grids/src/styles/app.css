@@ -129,10 +129,7 @@
   padding: 0.25rem;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(0.125rem);
-  transition:
-    opacity 120ms ease,
-    transform 120ms ease;
+  transition: opacity 120ms ease;
 }
 
 .custom-app-editor-control:active {
@@ -158,14 +155,12 @@
 .custom-app-block:hover > .custom-app-block-control {
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(0);
 }
 
 @media (hover: none) {
   .custom-app-block > .custom-app-block-control {
     opacity: 1;
     pointer-events: auto;
-    transform: translateY(0);
   }
 }
 

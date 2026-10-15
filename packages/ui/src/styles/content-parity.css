@@ -1199,10 +1199,6 @@
   background: color-mix(in srgb, var(--k2b-calendar-accent, var(--k2b-text-muted)) 17%, var(--k2b-surface-elevated));
 }
 
-.k2b-ui .k2b-calendar-event[data-interactive="true"]:not([data-selected="true"]):hover {
-  box-shadow: 0 1px 2px rgb(9 9 11 / 0.12);
-}
-
 .k2b-ui .k2b-calendar-event__title,
 .k2b-ui .k2b-calendar-event__meta {
   display: block;

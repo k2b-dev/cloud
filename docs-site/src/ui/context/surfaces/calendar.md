@@ -49,7 +49,8 @@ Optional event detail includes `meta`, `description`, `location`,
 a point in time, such as a deadline, as a small colored marker beside its title
 on the plain surface instead of a filled band; hover and selection tint it like
 an event, and a custom `renderEvent` output replaces the default marker.
-`href` or `getEventHref` makes an event a canonical link.
+`href` or `getEventHref` makes an event a canonical link. Hover tints an
+event that opens or links; it never moves the event or adds a shadow.
 `accessibleDetail` adds short text to the event's accessible name for state
 that its content shows only visually, such as a priority flag in a custom
 `renderEvent` output.
