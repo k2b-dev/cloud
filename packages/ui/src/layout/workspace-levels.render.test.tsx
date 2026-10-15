@@ -211,4 +211,28 @@ describe("AppWorkspace ordered levels SSR", () => {
     expect(html).not.toContain("k2b-app-workspace__level-body");
     expect(html).toContain('data-mobile-pane="items"');
   });
+  test("ordinary Main clamps a stored pane width to its own limits before hydration", () => {
+    const html = renderToString(() =>
+      createComponent(AppWorkspace.LayoutStateProvider, {
+        state: { version: 2, paneWidths: { sections: 720 } },
+        get children() {
+          return createComponent(AppWorkspace, {
+            get children() {
+              return createComponent(AppWorkspace.Main, {
+                get children() {
+                  return [createComponent(AppWorkspace.MainPane, { ...panes()[0]!, maxSize: 640 }), "Primary content"];
+                },
+              });
+            },
+          });
+        },
+      }),
+    );
+    const pane = attributes(html, "section", "data-workspace-main-region").find(
+      (attrs) => attrs["data-workspace-main-region"] === "sections",
+    );
+    expect(html).not.toContain("data-workspace-levels");
+    expect(pane?.style).toContain("--k2b-workspace-panel-size:clamp(240px, var(--k2b-workspace-pane-sections-width, 320px), 640px)");
+    expect(attributes(html, "button", "data-app-workspace-resize")[0]?.["aria-valuenow"]).toBe("640");
+  });
 });

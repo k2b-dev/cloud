@@ -1081,6 +1081,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
         variable,
         `${numberData(handle, "workspaceDefaultSize", kind === "pane" ? APP_WORKSPACE_PANE_DEFAULT : APP_WORKSPACE_DETAIL_DEFAULT)}px`,
       );
+    // The siblings fit again around the default width, also in a Main without levels.
+    if (kind === "pane") reconcilePanes(root, layoutState);
     updateHandleValue(root, handle, kind, currentSize(root, handle, kind));
     options.writeState?.(layoutState);
   };
@@ -1104,6 +1106,31 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       layoutState = { ...layoutState, [key]: { ...layoutState[key], [panelId(handle)]: size } };
     }
     options.writeState?.(layoutState);
+  };
+
+  // A level resize starts from what is on screen. When the preferred widths do
+  // not fit beside the flexible level, CSS shrinks the fixed levels, so a step
+  // from a shrunk width would land on a preference that shrinks again and jump.
+  // The visible fixed levels therefore take their rendered widths as their
+  // preferences first; then they fit, and a step moves exactly by its size.
+  const settleLevels = (root: HTMLElement, handle: HTMLElement) => {
+    const main = handle.closest<HTMLElement>(".k2b-app-workspace__main");
+    if (!main?.hasAttribute("data-workspace-levels")) return;
+    const widths: Array<{ id: string; width: number }> = [];
+    for (const other of Array.from(main.querySelectorAll<HTMLElement>(HANDLE_SELECTOR))) {
+      if (other.closest(".k2b-app-workspace__main") !== main || resizeKind(other) !== "pane") continue;
+      const panel = controlledPanel(root, other);
+      if (!isVisible(panel) || flexibleLevel(panel)) continue;
+      const width = Math.round(elementSize(panel, "pane"));
+      const id = panelId(other);
+      widths.push({ id, width });
+    }
+    // Measure every level before changing a preference can reflow its siblings.
+    for (const { id, width } of widths) {
+      if (layoutState.paneWidths?.[id] === width) continue;
+      root.style.setProperty(appWorkspacePanelVariable("pane", id), `${width}px`);
+      layoutState = { ...layoutState, paneWidths: { ...layoutState.paneWidths, [id]: width } };
+    }
   };
 
   const flushPointerMove = () => {
@@ -1176,6 +1203,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     event.preventDefault();
     stopResize();
     pendingClient = null;
+    if (kind === "pane") settleLevels(root, handle);
     const startSize = currentSize(root, handle, kind);
     active = {
       handle,
@@ -1203,6 +1231,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const kind = handle ? resizeKind(handle) : null;
     const root = handle ? workspaceRoot(handle) : null;
     if (!handle || !kind || !root || !workspaceResizable(root) || !controlsResizableRegion(root, handle, kind)) return;
+    if (kind === "pane" && ["Home", "End", "ArrowLeft", "ArrowRight"].includes(event.key)) settleLevels(root, handle);
     const current = currentSize(root, handle, kind);
     const { min, max } = sizeLimits(root, handle, kind);
     const step = event.shiftKey ? 32 : 8;

@@ -118,49 +118,62 @@ export default function WorkspaceLevelsDemo(props: {
               </AppWorkspace.MainPane>
               <AppWorkspace.MainPane
                 id="providers"
-                label={provider().name}
-                description={provider().kind}
+                label={level() === "areas" ? "Provider" : provider().name}
+                description={level() === "areas" ? "None selected" : provider().kind}
                 href={href("providers", provider().id)}
                 actions={
-                  <Button size="sm" variant="secondary">
-                    Add models
-                  </Button>
+                  <Show when={level() !== "areas"}>
+                    <Button size="sm" variant="secondary">
+                      Add models
+                    </Button>
+                  </Show>
                 }
               >
                 <Show
-                  when={provider().models.length}
+                  when={level() !== "areas"}
                   fallback={
-                    <Placeholder icon="ti ti-key" title="No models yet" description="Add an API key to load this provider's models." />
+                    <Placeholder
+                      icon="ti ti-plug-connected"
+                      title="No provider selected"
+                      description="Choose a provider to see its models."
+                    />
                   }
                 >
-                  <AppWorkspace.SidebarSection title={`${provider().models.length} models`}>
-                    <For each={provider().models}>
-                      {(candidate) => (
-                        <AppWorkspace.SidebarItem
-                          href={href("model", provider().id, candidate.id)}
-                          icon="ti ti-cube"
-                          description={candidate.summary}
-                          active={candidate.id === model()?.id}
-                        >
-                          {candidate.name}
-                        </AppWorkspace.SidebarItem>
-                      )}
-                    </For>
-                  </AppWorkspace.SidebarSection>
+                  <Show
+                    when={provider().models.length}
+                    fallback={
+                      <Placeholder icon="ti ti-key" title="No models yet" description="Add an API key to load this provider's models." />
+                    }
+                  >
+                    <AppWorkspace.SidebarSection title={`${provider().models.length} models`}>
+                      <For each={provider().models}>
+                        {(candidate) => (
+                          <AppWorkspace.SidebarItem
+                            href={href("model", provider().id, candidate.id)}
+                            icon="ti ti-cube"
+                            description={candidate.summary}
+                            active={candidate.id === model()?.id && level() === "model"}
+                          >
+                            {candidate.name}
+                          </AppWorkspace.SidebarItem>
+                        )}
+                      </For>
+                    </AppWorkspace.SidebarSection>
+                  </Show>
                 </Show>
               </AppWorkspace.MainPane>
               <AppWorkspace.MainPane
                 id="model"
-                label={model()?.name ?? "Model"}
-                description={model() ? provider().name : undefined}
+                label={(level() === "model" && model()?.name) || "Model"}
+                description={level() === "model" && model() ? provider().name : "None selected"}
                 actions={
-                  <Show when={model()}>
+                  <Show when={level() === "model" && model()}>
                     <StatusBadge tone="ok" label="Active" variant="dot" />
                   </Show>
                 }
               >
                 <Show
-                  when={model()}
+                  when={level() === "model" && model()}
                   fallback={<Placeholder icon="ti ti-cube" title="No model selected" description="Choose a model to see its details." />}
                 >
                   {(current) => (

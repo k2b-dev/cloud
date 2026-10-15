@@ -282,6 +282,17 @@ test("keyboard resizing, cookie restoration without a hydration shift, and doubl
     await frames(page);
     expect(await boxes(page)).toEqual(constrained);
     await checkFill(page);
+    await handle.focus();
+    const items = page.locator('[data-workspace-level="2"]');
+    const sectionsWidth = Math.round((await pane.boundingBox())!.width);
+    const itemsWidth = Math.round((await items.boundingBox())!.width);
+    await page.keyboard.press("ArrowLeft");
+    await frames(page);
+    expect(Math.round((await pane.boundingBox())!.width)).toBe(sectionsWidth - 8);
+    expect(Math.round((await items.boundingBox())!.width)).toBe(itemsWidth);
+    const resized = await boxes(page);
+    await page.goto(`${origin}/?level=item&hydrate=0`);
+    expect(await boxes(page)).toEqual(resized);
   } finally {
     await page.close();
   }

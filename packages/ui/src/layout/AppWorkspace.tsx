@@ -682,9 +682,8 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                     isAnchor()
                       ? undefined
                       : {
-                          "--k2b-workspace-panel-size": levelsMode()
-                            ? `clamp(${minSize()}px, var(${variable}, ${defaultSize()}px), ${maxSize()}px)`
-                            : `var(${variable}, ${defaultSize()}px)`,
+                          // A stored width keeps to this pane's limits before the controller attaches.
+                          "--k2b-workspace-panel-size": `clamp(${minSize()}px, var(${variable}, ${defaultSize()}px), ${maxSize()}px)`,
                           "--k2b-workspace-panel-min": `${minSize()}px`,
                         }
                   }

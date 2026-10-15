@@ -6,7 +6,7 @@ import {
   APP_WORKSPACE_SIDEBAR_HIDE_EVENT,
   installAppWorkspaceController,
 } from "./app-workspace-controller";
-import { APP_WORKSPACE_DETAIL_DEFAULT, APP_WORKSPACE_SIDEBAR_COLLAPSED } from "./app-workspace-state";
+import { APP_WORKSPACE_DETAIL_DEFAULT, APP_WORKSPACE_SIDEBAR_COLLAPSED, fitAppWorkspacePaneSizes } from "./app-workspace-state";
 
 type Frame = (time: number) => void;
 type Rect = { height: number; width: number };
@@ -1187,6 +1187,74 @@ describe("floating detail controller", () => {
     }
   });
 
+  for (const reflow of [false, true])
+    test(`keyboard resizing settles CSS-shrunk fixed levels to their rendered widths${reflow ? " through flex reflow" : ""}`, () => {
+      Object.defineProperty(window, "matchMedia", {
+        value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }),
+      });
+      const { root } = workspace({ width: 1440 });
+      const main = document.createElement("main");
+      main.className = "k2b-app-workspace__main";
+      main.dataset.workspaceLevels = "";
+      setRect(main, { width: 1200, height: 700 });
+      const handles: HTMLButtonElement[] = [];
+      for (const [index, [id, width]] of (
+        [
+          ["sections", 480],
+          ["items", 400],
+          ["item", 320],
+        ] as const
+      ).entries()) {
+        const pane = document.createElement("section");
+        pane.id = id;
+        pane.className = `k2b-app-workspace__main-pane ${index === 2 ? "is-primary" : ""}`;
+        pane.dataset.workspaceLevel = String(index + 1);
+        pane.dataset.workspaceLevelLast = index === 2 ? "1 2 3" : "";
+        pane.dataset.workspaceResizable = index === 2 ? "false" : "true";
+        setRect(pane, { width, height: 700 });
+        if (reflow && index !== 2) {
+          // Happy DOM has no flex layout: shrink the fixed bases into the 880 px left beside the primary.
+          setDynamicRect(pane, () => {
+            const sections = Number.parseFloat(root.style.getPropertyValue("--k2b-workspace-pane-sections-width")) || 720;
+            const items = Number.parseFloat(root.style.getPropertyValue("--k2b-workspace-pane-items-width")) || 640;
+            return { width: ((index === 0 ? sections : items) * 880) / Math.max(880, sections + items), height: 700 };
+          });
+        }
+        main.append(pane);
+        if (index === 2) continue;
+        const handle = document.createElement("button");
+        handle.dataset.appWorkspaceResize = "pane";
+        handle.dataset.workspacePanelId = id;
+        handle.dataset.workspaceResizeEdge = "end";
+        handle.dataset.workspaceDefaultSize = "320";
+        handle.dataset.workspaceMinSize = "240";
+        handle.dataset.workspaceMaxSize = "720";
+        handle.setAttribute("aria-controls", id);
+        main.append(handle);
+        handles.push(handle);
+      }
+      root.append(main);
+      const written: unknown[] = [];
+      const dispose = installAppWorkspaceController({
+        root,
+        readState: () => ({ version: 2, paneWidths: { sections: 720, items: 640 } }),
+        writeState: (state) => written.push(state),
+      });
+      try {
+        flushFrames();
+        expect(root.style.getPropertyValue("--k2b-workspace-pane-sections-width")).toBe("720px");
+        expect(root.style.getPropertyValue("--k2b-workspace-pane-items-width")).toBe("640px");
+        const sectionsWidth = Math.round(main.querySelector<HTMLElement>("#sections")!.getBoundingClientRect().width);
+        const itemsWidth = Math.round(main.querySelector<HTMLElement>("#items")!.getBoundingClientRect().width);
+        dispatchKey(handles[0]!, "ArrowLeft");
+        expect(root.style.getPropertyValue("--k2b-workspace-pane-sections-width")).toBe(`${sectionsWidth - 8}px`);
+        expect(root.style.getPropertyValue("--k2b-workspace-pane-items-width")).toBe(`${itemsWidth}px`);
+        expect(written).toEqual([expect.objectContaining({ paneWidths: { sections: sectionsWidth - 8, items: itemsWidth } })]);
+      } finally {
+        dispose();
+      }
+    });
+
   test("double-click resets a pane and preserves other pane preferences", () => {
     const { root } = workspace({ width: 1500 });
     const main = document.createElement("div");
@@ -1217,9 +1285,67 @@ describe("floating detail controller", () => {
       flushFrames();
       expect(root.style.getPropertyValue(variable)).toBe("500px");
       handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-      expect(root.style.getPropertyValue(variable)).toBe("");
+      // Reconciliation applies the default width after removing the stored preference.
+      expect(root.style.getPropertyValue(variable)).toBe("320px");
       expect(handle.getAttribute("aria-valuenow")).toBe("320");
       expect(written.at(-1)).toMatchObject({ paneWidths: { other: 420 } });
+    } finally {
+      dispose();
+    }
+  });
+
+  test("double-click refits sibling panes around the default and preserves the primary minimum", () => {
+    const { root } = workspace({ width: 1000 });
+    const main = document.createElement("main");
+    main.className = "k2b-app-workspace__main";
+    setRect(main, { width: 1000, height: 700 });
+    const variables = ["--k2b-workspace-pane-list-width", "--k2b-workspace-pane-other-width"];
+    const handles: HTMLButtonElement[] = [];
+    for (const [index, id] of ["list", "other"].entries()) {
+      const pane = document.createElement("section");
+      pane.id = `${id}-pane`;
+      pane.className = "k2b-app-workspace__main-pane";
+      pane.dataset.workspaceResizable = "true";
+      setDynamicRect(pane, () => ({ width: Number.parseFloat(root.style.getPropertyValue(variables[index]!)) || 320, height: 700 }));
+      const handle = document.createElement("button");
+      handle.dataset.appWorkspaceResize = "pane";
+      handle.dataset.workspacePanelId = id;
+      handle.dataset.workspaceDefaultSize = "320";
+      handle.dataset.workspaceMinSize = "240";
+      handle.dataset.workspaceMaxSize = "640";
+      handle.setAttribute("aria-controls", pane.id);
+      main.append(pane, handle);
+      handles.push(handle);
+    }
+    const primary = document.createElement("section");
+    primary.className = "k2b-app-workspace__main-primary";
+    setDynamicRect(primary, () => ({
+      width: 1000 - variables.reduce((total, variable) => total + Number.parseFloat(root.style.getPropertyValue(variable)), 0),
+      height: 700,
+    }));
+    main.append(primary);
+    root.append(main);
+    const written: unknown[] = [];
+    const dispose = installAppWorkspaceController({
+      root,
+      readState: () => ({ version: 2, paneWidths: { list: 240, other: 640 } }),
+      writeState: (state) => written.push(state),
+    });
+    try {
+      flushFrames();
+      expect(variables.map((variable) => root.style.getPropertyValue(variable))).toEqual(["240px", "440px"]);
+      expect(primary.getBoundingClientRect().width).toBe(320);
+      handles[0]!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+      const fitted = fitAppWorkspacePaneSizes(
+        [
+          { desired: 320, min: 240 },
+          { desired: 640, min: 240 },
+        ],
+        1000 - 320,
+      );
+      expect(variables.map((variable) => root.style.getPropertyValue(variable))).toEqual(fitted.map((width) => `${width}px`));
+      expect(primary.getBoundingClientRect().width).toBe(320);
+      expect(written.at(-1)).toMatchObject({ paneWidths: { other: 640 } });
     } finally {
       dispose();
     }
