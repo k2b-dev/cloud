@@ -264,18 +264,23 @@ export function renderHelpMarkdown(content: string, options: HelpMarkdownRenderO
   return sanitizeRenderedHtml(instance.parser(tokens), "help");
 }
 
-/** Plain text used by lightweight client-side help search indexes. */
-export function markdownToPlainText(content: string, locale?: string): string {
+/** Derive Help search text from already-rendered HTML. */
+export function helpHtmlToPlainText(html: string): string {
   // The text a screen reader reads: key names instead of key caps, no decorative separators, and words of
   // adjacent blocks (a callout's title and body, a summary and its details) kept apart.
-  const html = renderHelpMarkdown(content, { locale }).replace(/<\/(?:p|div|summary|li|h[1-6]|td|th)>/g, "$& ");
+  const spaced = html.replace(/<\/(?:p|div|summary|li|h[1-6]|td|th)>/g, "$& ");
   // Hidden parts are spans and icons; the filter only sees tags that the first pass keeps.
-  const spoken = sanitizeHtml(html, {
+  const spoken = sanitizeHtml(spaced, {
     allowedTags: ["span", "i"],
     allowedAttributes: { "*": ["aria-hidden"] },
     exclusiveFilter: (frame) => frame.attribs["aria-hidden"] === "true",
   });
   return sanitizeHtml(spoken, { allowedTags: [], allowedAttributes: {} }).replace(/\s+/g, " ").trim();
+}
+
+/** Plain text used by lightweight client-side help search indexes. */
+export function markdownToPlainText(content: string, locale?: string): string {
+  return helpHtmlToPlainText(renderHelpMarkdown(content, { locale }));
 }
 
 export { marked };

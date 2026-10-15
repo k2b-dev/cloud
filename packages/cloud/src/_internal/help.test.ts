@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { Lexer } from "marked";
 import { defineHelp, type HelpDefinition } from "../server/help";
 import { compileHelp, HELP_DOCUMENT_MAX_BYTES } from "./help";
 
@@ -14,6 +15,32 @@ order: ${order}
 ${body}`;
 
 describe("Help registration compiler", () => {
+  test("lexes each document at most three times during definition and compilation", () => {
+    const markers = ["help-lexer-budget-en-body", "help-lexer-budget-de-body"];
+    const lexer = spyOn(Lexer.prototype, "lex");
+    try {
+      compileHelp({
+        appId: "inventory",
+        definition: defineHelp({
+          baseLocale: "en",
+          documents: {
+            en: [article("start", "Start", 10, `${markers[0]} [Read](help:inventory/start) :kbd[esc]`)],
+            de: [article("start", "Starten", 10, `${markers[1]} [Lesen](help:inventory/start) :kbd[esc]`)],
+          },
+        }),
+      });
+
+      for (const marker of markers) {
+        // Count full block-lexer passes over each body, including the converted agent output.
+        const passes = lexer.mock.calls.filter(([source]) => source.includes(marker)).length;
+        expect(passes).toBeGreaterThan(0);
+        expect(passes).toBeLessThanOrEqual(3);
+      }
+    } finally {
+      lexer.mockRestore();
+    }
+  });
+
   test("validates, sorts, and freezes one app-owned declaration", () => {
     const definition = defineHelp({
       documents: [article("second", "Second", 20), article("first", "First", 10)],
@@ -125,6 +152,18 @@ test("own-app prefixed related and inline references validate at compile time", 
     );
     expect(() => compileHelp({ appId: "other", definition })).not.toThrow();
   }
+});
+
+test("validates inline references in hand-built definitions without cached targets", () => {
+  const original = defineHelp({ documents: [article("start", "Start", 10)] });
+  const definition: HelpDefinition = {
+    documents: [{ ...original.documents[0]!, markdown: "[Read](help:inventory/missing#section)" }],
+    getMarkdown: () => undefined,
+  };
+  expect(() => compileHelp({ appId: "inventory", definition })).toThrow(
+    'Help locale "en" document "start" has unknown reference "inventory/missing#section"',
+  );
+  expect(() => compileHelp({ appId: "other", definition })).not.toThrow();
 });
 
 test("revision two republishes an unchanged definition", () => {

@@ -6,12 +6,15 @@ import { parseHelpReference } from "../shared/help";
 import { lexHelpMarkdown, walkHelpTokens } from "../shared/markdown";
 
 export const HELP_DOCUMENT_MAX_BYTES = 128 * 1024;
+// defineHelp documents are frozen; retain only their validated targets, not the token trees.
+export const helpLinkTargets = new WeakMap<object, readonly string[]>();
 export type CompiledHelp = { summary: AppRegistryHelpSummary; corpus: HelpCorpus };
 
 export const compileHelp = (input: { appId: string; basePath?: string; definition: HelpDefinition }): CompiledHelp => {
   const baseIds = new Set(input.definition.documents.map((document) => document.id));
   const compileDocuments = (source: HelpDefinition["documents"], locale: string): HelpDocument[] =>
-    source.map(({ id, title, icon, description, order, kind, needs, next, related, markdown, searchText }) => {
+    source.map((document) => {
+      const { id, title, icon, description, order, kind, needs, next, related, markdown, searchText } = document;
       if (Buffer.byteLength(markdown) > HELP_DOCUMENT_MAX_BYTES) {
         throw new Error(`Help document "${id}" exceeds the ${HELP_DOCUMENT_MAX_BYTES}-byte limit`);
       }
@@ -21,9 +24,14 @@ export const compileHelp = (input: { appId: string; basePath?: string; definitio
           throw new Error(`Help locale "${locale}" document "${id}" has unknown reference "${reference}"`);
       };
       for (const reference of related) validate(reference);
-      walkHelpTokens(lexHelpMarkdown(markdown, locale), (token) => {
-        if (token.type === "link" && token.href.startsWith("help:")) validate(token.href.slice(5));
-      });
+      const targets = helpLinkTargets.get(document);
+      if (targets) {
+        for (const target of targets) validate(target);
+      } else {
+        walkHelpTokens(lexHelpMarkdown(markdown, locale), (token) => {
+          if (token.type === "link" && token.href.startsWith("help:")) validate(token.href.slice(5));
+        });
+      }
       return { id, title, icon, description, order, kind, needs, next, related, markdown, searchText };
     });
   const baseLocale = input.definition.baseLocale ?? "en";

@@ -45,7 +45,10 @@ const helpLinkLabel = (source: string, fallback: string): string => {
 };
 
 /** Portable source for agents and Copy as Markdown; code is kept verbatim. */
-export const helpAgentMarkdown = (article: Pick<HelpArticle, "markdown" | "locale" | "appId" | "links">): string => {
+export const helpAgentMarkdown = (
+  article: Pick<HelpArticle, "markdown" | "locale" | "appId" | "links">,
+  tokens: readonly Token[] = lexHelpMarkdown(article.markdown, article.locale),
+): string => {
   const { t } = helpAgentMessages.resolve([article.locale]);
   const rewriteChildren = (raw: string, children: readonly Token[]): string => {
     let offset = 0;
@@ -111,7 +114,7 @@ export const helpAgentMarkdown = (article: Pick<HelpArticle, "markdown" | "local
     const raw = rewriteChildren(source, children);
     return token.type === "heading" ? raw.replace(/[ \t]+\{icon="[a-z0-9-]+"\}(?=[ \t]*\r?\n?$)/i, "") : raw;
   };
-  return rewriteChildren(article.markdown, lexHelpMarkdown(article.markdown, article.locale));
+  return rewriteChildren(article.markdown, tokens);
 };
 
 export const HELP_SEARCH_MAX_LIMIT = 25;

@@ -2,6 +2,7 @@ import { formatShortcut } from "@k2b/ui";
 import { Hono } from "hono";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
+import { helpLinkTargets } from "../_internal/help";
 import { helpAgentMarkdown } from "../_internal/help-catalog";
 import {
   HELP_ACCESS_LEVELS,
@@ -14,7 +15,7 @@ import {
   helpLocaleChain,
   parseHelpReference,
 } from "../shared/help";
-import { lexHelpMarkdown, markdownToPlainText, renderHelpMarkdown, walkHelpTokens } from "../shared/markdown";
+import { helpHtmlToPlainText, lexHelpMarkdown, renderHelpMarkdown, walkHelpTokens } from "../shared/markdown";
 import { auth } from "./middleware/auth";
 
 // A help: target in a Markdown link or definition, an autolink, or an attribute value inside an HTML tag.
@@ -70,12 +71,13 @@ const parseSource = (source: string, locale: string): ParsedHelpDocument => {
   const metadata = metadataSchema.parse(parseYaml(match[1]!));
   const markdown = match[2]!.trim();
   if (!markdown) throw new Error(`Help document "${metadata.id}" has no body`);
+  const html = renderHelpMarkdown(markdown, { locale });
 
   return {
     ...metadata,
     markdown,
-    html: renderHelpMarkdown(markdown, { locale }),
-    searchText: markdownToPlainText(markdown, locale),
+    html,
+    searchText: helpHtmlToPlainText(html),
   };
 };
 
@@ -175,6 +177,7 @@ export const defineHelp = (
           `Help document "${document.id}" has a help: link that agents cannot read in locale "${locale}"; write it inline as [text](help:id)`,
         );
       const tokens = lexHelpMarkdown(document.markdown, locale);
+      const targets: string[] = [];
       if (Object.values(tokens.links).some((link) => /^help:/i.test(link.href) && !link.href.startsWith("help:"))) throw unreadableLink();
       walkHelpTokens(tokens, (token) => {
         if (
@@ -196,7 +199,11 @@ export const defineHelp = (
             throw new Error(`Help document "${document.id}" has a :::${block[1]} block without ${missing} in locale "${locale}"`);
           }
         }
-        if (token.type === "link" && token.href.startsWith("help:")) validate(token.href.slice(5), "help:");
+        if (token.type === "link" && token.href.startsWith("help:")) {
+          const target = token.href.slice(5);
+          validate(target, "help:");
+          targets.push(target);
+        }
         // Callouts do not render inside details, and a warning must stay where the reader sees it.
         if (token.type === "helpDetails" && token.callout === true) {
           throw new Error(
@@ -208,7 +215,7 @@ export const defineHelp = (
         }
       });
       // Unconverted Help syntax and targets fail here instead of reaching agents.
-      const agentTokens = lexHelpMarkdown(helpAgentMarkdown({ markdown: document.markdown, locale, appId: "", links: {} }), locale);
+      const agentTokens = lexHelpMarkdown(helpAgentMarkdown({ markdown: document.markdown, locale, appId: "", links: {} }, tokens), locale);
       let unconvertedLink = Object.values(agentTokens.links).some((link) => link.href.startsWith("help:"));
       let unconvertedSyntax = false;
       walkHelpTokens(agentTokens, (token) => {
@@ -225,6 +232,7 @@ export const defineHelp = (
       if (unconvertedSyntax) {
         throw new Error(`Help document "${document.id}" has Help syntax that agents cannot read in locale "${locale}"`);
       }
+      helpLinkTargets.set(document, targets);
     }
   }
 
