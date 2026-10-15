@@ -40,6 +40,38 @@ const fakePost = () => {
   };
 };
 
+test("unsent tracks pending and failed sends across conversations until sent or forgotten", async () => {
+  const fake = fakePost();
+  let clientId = 0;
+  const controller = createChatSends({
+    post: fake.post,
+    newClientId: () => `client-${++clientId}`,
+    now: () => new Date(message.createdAt),
+  });
+  expect(controller.unsent()).toBe(false);
+  controller.send("abcdef", "Hello");
+  expect(controller.unsent()).toBe(true);
+  const second = controller.send("ghijkl", "Other chat");
+  fake.calls[0]!.request.resolve(message);
+  await Bun.sleep(0);
+  expect(controller.unsent()).toBe(true);
+  fake.calls[1]!.request.reject(new Error("offline"));
+  await Bun.sleep(0);
+  expect(second.status).toBe("failed");
+  expect(controller.unsent()).toBe(true);
+  controller.retry(second.clientId);
+  fake.calls[2]!.request.resolve({ ...message, conversationId: "ghijkl", body: second.body });
+  await Bun.sleep(0);
+  expect(controller.unsent()).toBe(false);
+  const failed = controller.send("abcdef", "Try again");
+  fake.calls[3]!.request.reject(new Error("offline"));
+  await Bun.sleep(0);
+  expect(controller.unsent()).toBe(true);
+  controller.forget(failed.clientId);
+  expect(controller.unsent()).toBe(false);
+  controller.dispose();
+});
+
 test("send is pending immediately; a failed send retries with the same identity and body", async () => {
   const first = deferred<typeof message>(),
     second = deferred<typeof message>();

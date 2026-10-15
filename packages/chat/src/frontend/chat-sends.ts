@@ -50,6 +50,8 @@ export const createChatSends = (dependencies: {
     }
   };
   return {
+    // True while a send of any conversation is not sent yet, so leaving the page would lose it.
+    unsent: (): boolean => [...entries.values()].some((entry) => entry.status !== "sent"),
     sends: (conversationId: string): readonly ChatSend[] =>
       [...entries.values()].filter((entry) => entry.conversationId === conversationId),
     send: (conversationId: string, body: string): ChatSend => {

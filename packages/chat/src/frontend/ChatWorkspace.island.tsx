@@ -368,6 +368,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
     const box = createChatSends({ post: createChatSendsApi() });
     outbox = box;
+    const leave = (event: BeforeUnloadEvent) => {
+      if (box.unsent()) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", leave);
+    onCleanup(() => window.removeEventListener("beforeunload", leave));
     const failed = new Set<string>();
     onCleanup(
       box.subscribe(() => {

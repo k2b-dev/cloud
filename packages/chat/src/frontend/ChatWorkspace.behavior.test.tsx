@@ -312,5 +312,22 @@ describe("ChatWorkspace interactions", () => {
     expect(rows.map((row) => row.getAttribute("data-status"))).toEqual(["sent"]);
     expect(rows[0]?.textContent).toContain("waiting");
   });
+  test("leaving warns while a message is unsent and stops warning after delivery", async () => {
+    await mount(true);
+    const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
+    field.value = "Please wait";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    button("Send message").click();
+    await settle();
+    expect(posted).toHaveLength(1);
+    const pendingLeave = new dom.window.Event("beforeunload", { cancelable: true });
+    dom.window.dispatchEvent(pendingLeave);
+    expect(pendingLeave.defaultPrevented).toBe(true);
+    answer(Response.json(message(1, "Please wait"), { status: 201 }));
+    await settle();
+    const sentLeave = new dom.window.Event("beforeunload", { cancelable: true });
+    dom.window.dispatchEvent(sentLeave);
+    expect(sentLeave.defaultPrevented).toBe(false);
+  });
   // happy-dom has no viewport layout; the 120-message deep link is verified in the browser suite.
 });
