@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { nessi, type ProviderRequest, type StoreEntry } from "@k2b/nessi";
+import { defineTool, nessi, type ProviderRequest, type StoreEntry, toolToSpec } from "@k2b/nessi";
 import type { Provider } from "@k2b/nessi/ai";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
@@ -715,6 +715,395 @@ describe("AI capability catalog", () => {
     expect(schema.safeParse({ status: "open" }).success).toBe(true);
     expect(schema.safeParse({ status: "invalid" }).success).toBe(false);
     expect(z.toJSONSchema(schema)).toHaveProperty("properties.query.minLength", 2);
+  });
+
+  test("reduces tuples to provider-safe arrays and round-trips through Nessi", () => {
+    const setContent = {
+      type: "object",
+      properties: { kind: { type: "string", const: "set-content" }, content: { type: "string" } },
+      required: ["kind", "content"],
+      additionalProperties: false,
+    };
+    const structural = {
+      type: "object",
+      properties: { kind: { type: "string", const: "append" }, content: { type: "string" } },
+      required: ["kind", "content"],
+      additionalProperties: false,
+    };
+    const string = { type: "string" };
+    const number = { type: "number" };
+    const tuple = { type: "array", prefixItems: [string, number], items: false };
+    const A = { type: "object", properties: { a: { type: "string", default: "A" } }, additionalProperties: false };
+    const B = { type: "object", properties: { b: { type: "string", default: "B" } }, additionalProperties: false };
+    const Node = {
+      type: "object",
+      properties: {
+        children: { type: "array", items: { $ref: "#/$defs/Node" } },
+        label: { type: "string", default: "x" },
+      },
+    };
+    const source = {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: {
+        operations: {
+          anyOf: [
+            { type: "array", prefixItems: [setContent], items: false, minItems: 1, maxItems: 1, description: "Replace content." },
+            { type: "array", items: structural, minItems: 1, maxItems: 20 },
+          ],
+        },
+        mixed: { ...tuple, minItems: 1 },
+        defaultedTuple: {
+          type: "array",
+          prefixItems: [
+            {
+              type: "object",
+              properties: { a: { type: "string", default: "A" }, default: { type: "string", default: "kept property" } },
+              additionalProperties: false,
+            },
+            { type: "object", properties: { b: { type: "string", default: "B" } }, additionalProperties: false },
+          ],
+          items: false,
+        },
+        referencedTuple: { type: "array", prefixItems: [{ $ref: "#/$defs/A" }, { $ref: "#/$defs/B" }], items: false },
+        directA: { $ref: "#/$defs/A" },
+        singleReferenced: { type: "array", prefixItems: [{ $ref: "#/$defs/A" }], items: false },
+        recursiveTuple: { type: "array", prefixItems: [{ $ref: "#/$defs/Node" }, string], items: false },
+        repeated: { type: "array", prefixItems: [string, string], items: false },
+        closedMax: { type: "array", prefixItems: [string], items: false, maxItems: 5 },
+        value: { oneOf: [tuple, { ...tuple, prefixItems: [number, string] }] },
+        bothUnions: { anyOf: [string, number], oneOf: [string, { type: "boolean" }], allOf: [{ type: "string", maxLength: 3 }] },
+        rest: { type: "array", prefixItems: [string, string], items: setContent, minItems: 2 },
+        boundedRest: { type: "array", prefixItems: [string], items: setContent, maxItems: 10 },
+        sameRest: { type: "array", prefixItems: [string], items: string },
+        empty: { type: "array", prefixItems: [], items: false },
+        referenced: { $ref: "#/$defs/tuple" },
+        legacy: { type: "array", items: [string, number, string], additionalItems: false, minItems: 3, maxItems: 3 },
+        legacyRest: { type: "array", items: [string], additionalItems: number },
+        open: { type: "array", prefixItems: [string] },
+        openTrue: { type: "array", prefixItems: [string], items: true },
+        legacyOpen: { type: "array", items: [string], additionalItems: true },
+        closedItems: { type: "array", items: false },
+        openItems: { type: "array", items: true },
+        nested: { type: "array", items: { oneOf: [{ allOf: [tuple] }] } },
+        withDefault: { type: "object", default: { note: "kept" } },
+      },
+      required: ["operations"],
+      additionalProperties: false,
+      $defs: { tuple, A, B, Node },
+      definitions: { tuple },
+    };
+    const reduced = reduceAiCapabilityInputSchema(source);
+    const closedSetContent = { type: "array", items: setContent, minItems: 1, maxItems: 1, description: "Replace content." };
+    expect(reduced).toHaveProperty("properties.operations.anyOf.0", closedSetContent);
+    expect(reduced).toHaveProperty("properties.operations.anyOf.1", source.properties.operations.anyOf[1]);
+    expect(reduced).toHaveProperty("properties.mixed", { type: "array", items: { anyOf: [string, number] }, minItems: 1, maxItems: 2 });
+    expect(reduced).toHaveProperty("properties.repeated", { type: "array", items: string, maxItems: 2 });
+    expect(reduced).toHaveProperty("properties.closedMax", { type: "array", items: string, maxItems: 1 });
+    expect(reduced).toHaveProperty("properties.rest", { type: "array", items: { anyOf: [string, setContent] }, minItems: 2 });
+    expect(reduced).toHaveProperty("properties.boundedRest", { type: "array", items: { anyOf: [string, setContent] }, maxItems: 10 });
+    expect(reduced).toHaveProperty("properties.sameRest", { type: "array", items: string });
+    expect(reduced).toHaveProperty("properties.empty", { type: "array", items: {}, maxItems: 0 });
+    expect(reduced).toHaveProperty("properties.referenced", { $ref: "#/$defs/tuple" });
+    const mixedArray = { type: "array", items: { anyOf: [string, number] }, maxItems: 2 };
+    expect(reduced).toHaveProperty("properties.value.anyOf", [mixedArray, { ...mixedArray, items: { anyOf: [number, string] } }]);
+    expect(reduced).toHaveProperty("properties.bothUnions", {
+      allOf: [{ type: "string", maxLength: 3 }, { anyOf: [string, number] }, { anyOf: [string, { type: "boolean" }] }],
+    });
+    expect(reduced).toHaveProperty("$defs.tuple", mixedArray);
+    expect(reduced).toHaveProperty("definitions.tuple", mixedArray);
+    expect(reduced).toHaveProperty("properties.legacy", { ...mixedArray, minItems: 3, maxItems: 3 });
+    expect(reduced).toHaveProperty("properties.legacyRest", { type: "array", items: { anyOf: [string, number] } });
+    for (const field of ["open", "openTrue", "legacyOpen"]) {
+      expect(reduced).toHaveProperty(`properties.${field}`, { type: "array", items: {} });
+    }
+    expect(reduced).toHaveProperty("properties.closedItems", { type: "array", items: {}, maxItems: 0 });
+    expect(reduced).toHaveProperty("properties.openItems", { type: "array", items: {} });
+    expect(reduced).toHaveProperty("properties.nested.items.anyOf.0.allOf.0", mixedArray);
+    expect(reduced).toHaveProperty("properties.withDefault.default", { note: "kept" });
+    expect(JSON.stringify(reduced)).not.toContain("prefixItems");
+    expect(JSON.stringify(reduced)).not.toContain("additionalItems");
+    expect(JSON.stringify(reduced)).not.toContain("oneOf");
+
+    const schema = aiCapabilityInputSchema(source);
+    const operation = { kind: "set-content", content: "New content." };
+    expect(schema.parse({ operations: [operation], referencedTuple: [{}, {}], directA: {}, singleReferenced: [{}] })).toEqual({
+      operations: [operation],
+      referencedTuple: [{}, {}],
+      directA: { a: "A" },
+      singleReferenced: [{ a: "A" }],
+      withDefault: { note: "kept" },
+    });
+    expect(reduced).toHaveProperty("properties.referencedTuple.items.anyOf", [{ $ref: "#/$defs/A.ai" }, { $ref: "#/$defs/B.ai" }]);
+    expect(reduced).toHaveProperty("$defs.A", A);
+    expect(reduced).toHaveProperty("$defs.B", B);
+    expect(reduced).toHaveProperty("$defs.Node", Node);
+    expect(reduced).toHaveProperty(["$defs", "A.ai"], { ...A, properties: { a: string } });
+    expect(reduced).toHaveProperty(["$defs", "B.ai"], { ...B, properties: { b: string } });
+    expect(reduced).toHaveProperty("properties.directA", { $ref: "#/$defs/A" });
+    expect(reduced).toHaveProperty("properties.singleReferenced.items", { $ref: "#/$defs/A" });
+    expect(reduced).toHaveProperty("properties.recursiveTuple.items.anyOf.0", { $ref: "#/$defs/Node.ai" });
+    expect(reduced).toHaveProperty(["$defs", "Node.ai"], {
+      ...Node,
+      properties: { children: { type: "array", items: { $ref: "#/$defs/Node.ai" } }, label: string },
+    });
+    expect(schema.parse({ operations: [operation], defaultedTuple: [{}, {}] })).toHaveProperty("defaultedTuple", [{}, {}]);
+    expect(reduced).toHaveProperty("properties.defaultedTuple.items.anyOf", [
+      { type: "object", properties: { a: string, default: string }, additionalProperties: false },
+      { type: "object", properties: { b: string }, additionalProperties: false },
+    ]);
+    expect(schema.safeParse({ operations: [operation] }).success).toBe(true);
+    expect(schema.safeParse({ operations: [] }).success).toBe(false);
+    expect(schema.safeParse({ operations: [operation, operation] }).success).toBe(false);
+    expect(schema.safeParse({ operations: operation }).success).toBe(false);
+    expect(schema.safeParse({ operations: [operation], empty: ["extra"] }).success).toBe(false);
+    expect(schema.safeParse({ operations: [operation], closedMax: ["a"] }).success).toBe(true);
+    expect(schema.safeParse({ operations: [operation], closedMax: ["a", "b"] }).success).toBe(false);
+    expect(schema.safeParse({ operations: [operation], value: ["x", 1] }).success).toBe(true);
+    expect(
+      aiCapabilityInputSchema({ type: "object", properties: { value: source.properties.value } }).safeParse({ value: ["x", 1] }).success,
+    ).toBe(true);
+    expect(schema.safeParse({ operations: [operation], bothUnions: "yes" }).success).toBe(true);
+    for (const bothUnions of [1, true, "long"]) {
+      expect(schema.safeParse({ operations: [operation], bothUnions }).success).toBe(false);
+    }
+    const tool = defineTool({ name: "note_edit", description: "Edit note.", inputSchema: schema }).server(async () => ({}));
+    const spec = toolToSpec(tool).inputSchema;
+    expect(spec).toHaveProperty("properties.operations.anyOf.0", closedSetContent);
+    const serialized = JSON.stringify(spec);
+    expect(serialized).not.toContain('"items":[');
+    expect(serialized).not.toContain("additionalItems");
+    expect(serialized).not.toContain("prefixItems");
+    expect(serialized).not.toContain("oneOf");
+    expect(serialized).not.toContain('"items":false');
+    expect(serialized).not.toContain('"items":true');
+  });
+
+  test.each(["oneOf", "anyOf"])("leaves defaults to the app when tuple widening overlaps surrounding %s branches", (keyword) => {
+    const branch = (types: string[], label: string) => ({
+      type: "object",
+      properties: {
+        pair: { type: "array", prefixItems: types.map((type) => ({ type })), items: false, minItems: 2 },
+        label: { type: "string", default: label },
+      },
+      required: ["pair"],
+      additionalProperties: false,
+    });
+    const source = {
+      type: "object",
+      properties: { value: { [keyword]: [branch(["string", "number"], "A"), branch(["number", "string"], "B")] } },
+    };
+    expect(aiCapabilityInputSchema(source).parse({ value: { pair: [1, "x"] } })).toEqual({ value: { pair: [1, "x"] } });
+  });
+
+  test.each(["oneOf", "anyOf"])("keeps defaults in tuple-free %s branches", (keyword) => {
+    const source = {
+      type: "object",
+      properties: {
+        value: {
+          [keyword]: ["A", "B"].map((kind) => ({
+            type: "object",
+            properties: { kind: { type: "string", const: kind }, label: { type: "string", default: kind } },
+            required: ["kind"],
+            additionalProperties: false,
+          })),
+        },
+      },
+    };
+    expect(aiCapabilityInputSchema(source).parse({ value: { kind: "B" } })).toEqual({ value: { kind: "B", label: "B" } });
+  });
+
+  test("visits each shared definition once when looking for tuples in union branches", () => {
+    // Every level references the next twice; following each edge again would take 2^40 steps.
+    const depth = 40;
+    const $defs = Object.fromEntries(
+      Array.from({ length: depth }, (_, level) => [
+        `D${level}`,
+        level === depth - 1
+          ? { type: "string", default: "leaf" }
+          : {
+              type: "object",
+              properties: { left: { $ref: `#/$defs/D${level + 1}` }, right: { $ref: `#/$defs/D${level + 1}` } },
+            },
+      ]),
+    );
+    const source = {
+      type: "object",
+      properties: { value: { anyOf: [{ $ref: "#/$defs/D0" }, { type: "number" }] } },
+      $defs,
+    };
+    const reduced = reduceAiCapabilityInputSchema(source);
+    expect(reduced).toHaveProperty("properties.value.anyOf", [{ $ref: "#/$defs/D0" }, { type: "number" }]);
+    expect(reduced).toHaveProperty(`$defs.D${depth - 1}.default`, "leaf");
+  });
+
+  test("mirrors a root reference in merged tuple branches", () => {
+    type Node = { label?: string; pair?: [Node, { label?: string }] };
+    const Root: z.ZodType<Node> = z.lazy(() =>
+      z.object({ label: z.string().default("A"), pair: z.tuple([Root, z.object({ label: z.string().default("B") })]).optional() }),
+    );
+    const source = z.toJSONSchema(Root, { io: "input" }) as Record<string, unknown>;
+    expect(source).toHaveProperty("properties.pair.prefixItems.0", { $ref: "#" });
+    const reduced = reduceAiCapabilityInputSchema(source);
+    expect(reduced).toHaveProperty("properties.label.default", "A");
+    expect(reduced).toHaveProperty("properties.pair.items.anyOf.0", { $ref: "#/$defs/root.ai" });
+    expect(reduced).toHaveProperty(["$defs", "root.ai", "properties", "label"], { type: "string" });
+    expect(aiCapabilityInputSchema(source).parse({ pair: [{}, {}] })).toEqual({ label: "A", pair: [{}, {}] });
+  });
+
+  test.each(["$defs", "definitions"])("detects tuples through transitive escaped %s references in union branches", (keyword) => {
+    const branch = (name: string) => ({
+      type: "object",
+      properties: { pair: { $ref: `#/${keyword}/${name}` }, label: { type: "string", default: name } },
+      required: ["pair"],
+      additionalProperties: false,
+    });
+    const source = {
+      type: "object",
+      properties: { value: { oneOf: [branch("Alias"), branch("B")] } },
+      [keyword]: {
+        Alias: { $ref: `#/${keyword}/A~1~01` },
+        "A/~1": { type: "array", prefixItems: [{ type: "string" }, { type: "number" }], items: false, minItems: 2 },
+        B: { type: "array", items: [{ type: "number" }, { type: "string" }], additionalItems: false, minItems: 2 },
+      },
+    };
+    const schema =
+      keyword === "$defs"
+        ? aiCapabilityInputSchema(source)
+        : z.fromJSONSchema(reduceAiCapabilityInputSchema(source), { defaultTarget: "draft-7" });
+    expect(schema.parse({ value: { pair: [1, "x"] } })).toEqual({ value: { pair: [1, "x"] } });
+  });
+
+  test("drops defaults from every union branch even when only one contains a single-position tuple", () => {
+    const source = {
+      type: "object",
+      properties: {
+        value: {
+          anyOf: [
+            { type: "object", properties: { label: { type: "string", default: "A" } } },
+            { type: "array", prefixItems: [{ type: "string" }], items: false },
+          ],
+        },
+      },
+    };
+    expect(aiCapabilityInputSchema(source).parse({ value: {} })).toEqual({ value: {} });
+  });
+
+  test("ignores tuple-like data and schema map names while checking cyclic union references", () => {
+    const tupleData = { prefixItems: [], items: [] };
+    const source = {
+      type: "object",
+      properties: { value: { anyOf: [{ $ref: "#/$defs/A" }, { type: "string", default: "kept" }] } },
+      $defs: {
+        A: {
+          $ref: "#/definitions/B",
+          properties: {
+            prefixItems: { type: "string" },
+            items: { type: "string" },
+            const: { type: "string" },
+            $defs: { type: "string" },
+          },
+          $defs: { prefixItems: {}, items: {} },
+          definitions: { prefixItems: {}, items: {} },
+          const: tupleData,
+          enum: [tupleData],
+          default: tupleData,
+          required: ["prefixItems"],
+          type: ["object", "null"],
+        },
+      },
+      definitions: { B: { $ref: "#/$defs/A" } },
+    };
+    expect(reduceAiCapabilityInputSchema(source)).toHaveProperty("properties.value.anyOf.1.default", "kept");
+    const nestedTuple = structuredClone(source);
+    Object.assign(nestedTuple.$defs.A.properties.const, { type: "array", prefixItems: [] });
+    expect(reduceAiCapabilityInputSchema(nestedTuple)).not.toHaveProperty("properties.value.anyOf.1.default");
+    const sharedCycle = {
+      ...nestedTuple,
+      properties: {
+        ...nestedTuple.properties,
+        other: { anyOf: [{ $ref: "#/definitions/B" }, { type: "string", default: "kept" }] },
+      },
+    };
+    expect(reduceAiCapabilityInputSchema(sharedCycle)).not.toHaveProperty("properties.other.anyOf.1.default");
+  });
+
+  test("keeps recursive defaults out of merged tuple branches", () => {
+    const recursiveDefinition = (name: string) => ({
+      type: "object",
+      properties: { child: { $ref: `#/$defs/${name}` }, label: { type: "string", default: name } },
+    });
+    const source = {
+      type: "array",
+      prefixItems: [{ $ref: "#/$defs/A" }, { $ref: "#/$defs/B" }],
+      items: false,
+      $defs: { A: recursiveDefinition("A"), B: recursiveDefinition("B") },
+    };
+    const input = [{ child: {} }, { child: {} }];
+    const reduced = reduceAiCapabilityInputSchema(source);
+    expect(aiCapabilityInputSchema(source).parse(input)).toEqual(input);
+    expect(reduced).toHaveProperty("items.anyOf", [{ $ref: "#/$defs/A.ai" }, { $ref: "#/$defs/B.ai" }]);
+    for (const name of ["A", "B"] as const) {
+      expect(reduced).toHaveProperty(["$defs", name], source.$defs[name]);
+      expect(reduced).toHaveProperty(["$defs", `${name}.ai`], {
+        type: "object",
+        properties: { child: { $ref: `#/$defs/${name}.ai` }, label: { type: "string" } },
+      });
+    }
+    expect(reduceAiCapabilityInputSchema(source)).toEqual(reduced);
+    const schema = z.fromJSONSchema(reduced);
+    expect(schema.parse(input)).toEqual(input);
+    expect(z.fromJSONSchema(z.toJSONSchema(schema)).parse(input)).toEqual(input);
+    const tool = defineTool({ name: "recursive_tuple", description: "Parse recursive items.", inputSchema: schema }).server(
+      async () => ({}),
+    );
+    const serialized = JSON.stringify(toolToSpec(tool).inputSchema);
+    expect(serialized).not.toContain("prefixItems");
+    expect(serialized).not.toContain("additionalItems");
+    expect(serialized).not.toContain('"items":[');
+    expect(serialized).not.toContain("oneOf");
+  });
+
+  test.each(["$defs", "definitions"])("mirrors transitive escaped %s references only in merged tuple branches", (keyword) => {
+    const reference = `#/${keyword}/A~1~01`;
+    const definitions = {
+      Alias: { $ref: reference, description: "Alias definition." },
+      "Alias.ai": { type: "boolean" },
+      "Alias.ai1": { type: "null" },
+      "A/~1.ai": { type: "number" },
+      "A/~1": {
+        type: "object",
+        properties: {
+          label: { type: "string", default: "x" },
+          child: { $ref: `#/${keyword}/Alias` },
+          unknown: { $ref: `#/${keyword}/Missing` },
+          external: { $ref: "https://example.test/schema" },
+          otherLocal: { $ref: "#/properties/label" },
+        },
+      },
+    };
+    const source = {
+      type: "array",
+      prefixItems: [{ $ref: `#/${keyword}/Alias`, description: "Alias item." }, { type: "number" }],
+      items: false,
+      [keyword]: definitions,
+    };
+    const reduced = reduceAiCapabilityInputSchema(source);
+    expect(reduced).toHaveProperty("items.anyOf.0", { $ref: `#/${keyword}/Alias.ai2`, description: "Alias item." });
+    expect(reduced[keyword]).toEqual({
+      ...definitions,
+      "Alias.ai2": { $ref: `#/${keyword}/A~1~01.ai1`, description: "Alias definition." },
+      "A/~1.ai1": {
+        type: "object",
+        properties: {
+          label: { type: "string" },
+          child: { $ref: `#/${keyword}/Alias.ai2` },
+          unknown: { $ref: `#/${keyword}/Missing` },
+          external: { $ref: "https://example.test/schema" },
+          otherLocal: { $ref: "#/properties/label" },
+        },
+      },
+    });
   });
 
   test("loads exact live names and exposes loaded app operations as ordinary tools", async () => {

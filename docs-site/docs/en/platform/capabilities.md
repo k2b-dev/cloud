@@ -948,6 +948,8 @@ exports, and document bodies belong in app-owned upload or download APIs
 referenced by a capability.
 
 Each operation publishes input and data JSON Schema plus a stable schema hash.
+Tuples are allowed in input schemas: the model sees a bounded array of their
+item schemas, and the app's own schema validates the exact tuple.
 The result envelope is one fixed Core contract and is not repeated in every
 manifest entry. Refresh the live catalog after `SCHEMA_MISMATCH`.
 

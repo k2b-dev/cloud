@@ -425,6 +425,7 @@ const SCHEMA_KEYS = new Set([
   "required",
   "items",
   "prefixItems",
+  "additionalItems",
   "additionalProperties",
   "anyOf",
   "oneOf",
@@ -435,29 +436,139 @@ const SCHEMA_KEYS = new Set([
   "definitions",
 ]);
 
-const reduceSchemaValue = (value: unknown, key?: string): unknown => {
-  if (key === "const") return structuredClone(value);
+type SchemaReductionContext = {
+  root: Record<string, unknown>;
+  mirrorNames: Map<string, string>;
+  mirrors: Record<string, Record<string, unknown>>;
+};
+
+/** A local reference into the input schema: the root (`#`) or one of its `$defs` or `definitions`. */
+const localReference = (
+  reference: unknown,
+  root: Record<string, unknown>,
+): { identity: string; keyword: string; name: string; schema: unknown } | null => {
+  if (reference === "#") {
+    const { $defs: _defs, definitions: _definitions, ...schema } = root;
+    return { identity: "#", keyword: "$defs", name: "root", schema };
+  }
+  const match = typeof reference === "string" ? /^#\/(\$defs|definitions)\/([^/]+)$/.exec(reference) : null;
+  if (!match) return null;
+  const [, keyword, encodedName] = match;
+  const name = encodedName!.replace(/~1/g, "/").replace(/~0/g, "~");
+  const definitions = root[keyword!];
+  if (!definitions || typeof definitions !== "object" || !Object.hasOwn(definitions, name)) return null;
+  return { identity: `${keyword}/${name}`, keyword: keyword!, name, schema: Reflect.get(definitions, name) };
+};
+
+/** Whether a raw schema reaches a tuple; `visited` keeps each definition to one visit per question. */
+const containsTuple = (value: unknown, context: SchemaReductionContext, key?: string, visited = new Set<string>()): boolean => {
+  if (key === "const" || key === "enum" || key === "default" || key === "required" || key === "type") return false;
+  if (Array.isArray(value)) return value.some((item) => containsTuple(item, context, undefined, visited));
+  if (!value || typeof value !== "object") return false;
+  if (key === "properties" || key === "$defs" || key === "definitions") {
+    return Object.values(value).some((schema) => containsTuple(schema, context, undefined, visited));
+  }
+  if (Object.hasOwn(value, "prefixItems") || Array.isArray(Reflect.get(value, "items"))) return true;
+  const reference = localReference(Reflect.get(value, "$ref"), context.root);
+  if (reference && !visited.has(reference.identity)) {
+    visited.add(reference.identity);
+    if (containsTuple(reference.schema, context, undefined, visited)) return true;
+  }
+  return Object.entries(value).some(([childKey, childValue]) => containsTuple(childValue, context, childKey, visited));
+};
+
+const reduceSchemaValue = (value: unknown, context: SchemaReductionContext, key?: string, merged = false): unknown => {
+  if (key === "const" || key === "default") return structuredClone(value);
   if (Array.isArray(value)) {
     if (key === "required" || key === "enum" || key === "type") return structuredClone(value);
-    return value.map((item) => reduceSchemaValue(item));
+    return value.map((item) => reduceSchemaValue(item, context, undefined, merged));
   }
   if (!value || typeof value !== "object") return value;
+  if (key === "properties" || key === "$defs" || key === "definitions") {
+    return Object.fromEntries(Object.entries(value).map(([name, schema]) => [name, reduceSchemaValue(schema, context, undefined, merged)]));
+  }
 
   const output: Record<string, unknown> = {};
   for (const [childKey, childValue] of Object.entries(value)) {
-    if (key === "properties" || key === "$defs" || key === "definitions") {
-      output[childKey] = reduceSchemaValue(childValue);
-      continue;
+    if (!SCHEMA_KEYS.has(childKey) || (merged && childKey === "default")) continue;
+    // Tuple widening can make surrounding union branches overlap, so their defaults belong to the app.
+    const unionMerged =
+      merged ||
+      ((childKey === "anyOf" || childKey === "oneOf") &&
+        Array.isArray(childValue) &&
+        childValue.some((branch) => containsTuple(branch, context)));
+    output[childKey] = reduceSchemaValue(childValue, context, childKey, unionMerged);
+  }
+  if (output.oneOf !== undefined) {
+    if (output.anyOf === undefined) output.anyOf = output.oneOf;
+    else {
+      output.allOf = [...(Array.isArray(output.allOf) ? output.allOf : []), { anyOf: output.anyOf }, { anyOf: output.oneOf }];
+      delete output.anyOf;
     }
-    if (!SCHEMA_KEYS.has(childKey)) continue;
-    output[childKey] = reduceSchemaValue(childValue, childKey);
+    delete output.oneOf;
+  }
+
+  const positions = Array.isArray(output.prefixItems) ? output.prefixItems : Array.isArray(output.items) ? output.items : null;
+  if (positions) {
+    const rest = Array.isArray(output.prefixItems) ? output.items : output.additionalItems;
+    // Extra items of an open tuple may be anything, so the AI side must not narrow them to the positions.
+    const schemas = rest === undefined || rest === true ? [] : rest === false ? positions : [...positions, rest];
+    // Position-erased branches must leave defaults to the app's authoritative tuple schema.
+    const mergedSchemas = schemas.some((schema) => JSON.stringify(schema) !== JSON.stringify(schemas[0]))
+      ? schemas.map((schema) => reduceSchemaValue(schema, context, undefined, true))
+      : schemas;
+    const distinct = mergedSchemas.filter(
+      (schema, index) => mergedSchemas.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(schema)) === index,
+    );
+    output.items = distinct.length === 0 ? {} : distinct.length === 1 ? distinct[0] : { anyOf: distinct };
+    if (rest === false)
+      output.maxItems = Math.min(typeof output.maxItems === "number" ? output.maxItems : positions.length, positions.length);
+  }
+  delete output.prefixItems;
+  delete output.additionalItems;
+  if (output.items === false) output.maxItems = 0;
+  // Zod drops array bounds without an item schema, so "any item" stays an empty schema.
+  if (typeof output.items === "boolean") output.items = {};
+  const reference = merged ? localReference(output.$ref, context.root) : null;
+  if (reference) {
+    const { identity, keyword, name } = reference;
+    const definitions = context.root[keyword];
+    const mirrors = context.mirrors[keyword] ?? {};
+    context.mirrors[keyword] = mirrors;
+    let mirrorName = context.mirrorNames.get(identity);
+    if (mirrorName === undefined) {
+      mirrorName = `${name}.ai`;
+      for (
+        let suffix = 1;
+        (definitions && typeof definitions === "object" && Object.hasOwn(definitions, mirrorName)) || Object.hasOwn(mirrors, mirrorName);
+        suffix++
+      ) {
+        mirrorName = `${name}.ai${suffix}`;
+      }
+      // Reserve the mirror before descending so recursive refs never reach default-bearing originals.
+      context.mirrorNames.set(identity, mirrorName);
+      mirrors[mirrorName] = {};
+      mirrors[mirrorName] = reduceSchemaValue(reference.schema, context, undefined, true);
+    }
+    output.$ref = `#/${keyword}/${mirrorName.replace(/~/g, "~0").replace(/\//g, "~1")}`;
   }
   return output;
 };
 
-/** Keep the provider-useful shape while leaving authoritative validation in the target app. */
-export const reduceAiCapabilityInputSchema = (schema: Record<string, unknown>): Record<string, unknown> =>
-  reduceSchemaValue(schema) as Record<string, unknown>;
+/**
+ * Keep the provider-useful shape while leaving authoritative validation in the target app.
+ * Tuples reach the model as bounded arrays of their item schemas and `oneOf` as `anyOf`, because loosened branches may
+ * overlap; the app still validates exact tuple positions and exclusive unions.
+ */
+export const reduceAiCapabilityInputSchema = (schema: Record<string, unknown>): Record<string, unknown> => {
+  const context: SchemaReductionContext = { root: schema, mirrorNames: new Map(), mirrors: {} };
+  const reduced = reduceSchemaValue(schema, context) as Record<string, unknown>;
+  for (const [keyword, mirrors] of Object.entries(context.mirrors)) {
+    const definitions = reduced[keyword];
+    reduced[keyword] = { ...(definitions && typeof definitions === "object" ? definitions : {}), ...mirrors };
+  }
+  return reduced;
+};
 
 export const aiCapabilityInputSchema = (schema: Record<string, unknown>): z.ZodType =>
   z.fromJSONSchema(reduceAiCapabilityInputSchema(schema));
