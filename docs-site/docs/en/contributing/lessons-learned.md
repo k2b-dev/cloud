@@ -31,8 +31,16 @@ convention still needs a check or a test.
 | Silent failure | Async work fails and the person sees nothing, or a progress text stays as the last word. | Convention: [Show mutation state](/en/docs/frontend/forms-prompts-and-feedback#show-mutation-state) for single actions. No shared guard covers background work yet. |
 | Foreign system contracts | Cloud sends a schema or a payload that a foreign system, such as a model provider or Filegate, does not accept. | Partial test: the chart tool schema is checked for provider shape (one root object without `oneOf`, `anyOf`, or `allOf`, and no tuple `items`) in `packages/cloud/src/ai/chart-block.test.ts` and `default-tools.test.ts`. A check of every registered capability input schema is added by the fix for [#1149](https://github.com/k2b-dev/cloud/issues/1149). |
 | Server-side request forgery | A person-chosen address reaches the server’s private network or changes between validation and connection. | Check: `network-guard` lets only the platform guard resolve host names. Test: platform address and resolution tests, plus Tools refusal and pinned-transport tests. |
+| Escaped text input | An agent writes `\n` as two characters through a shell argument or double-escaped JSON, and the text is stored and shown with a literal backslash. | Test: Spaces rejects such inline CLI text and capability text inputs ([#1178](https://github.com/k2b-dev/cloud/issues/1178)). No shared guard covers inline text in other apps, such as `cld notebooks write --content`, yet ([#1193](https://github.com/k2b-dev/cloud/issues/1193)). |
 
 ## Lessons
+
+### Spaces showed a literal backslash-n on a card
+
+- **What happened:** A Kanban card preview showed `Caption:\nText` instead of a line break ([#1178](https://github.com/k2b-dev/cloud/issues/1178)).
+- **Root cause:** The stored description held a backslash and an `n`. A shell keeps `\n` inside quotes as two characters, and a model can double-escape JSON; the Spaces CLI and capability inputs stored that text unchanged. The preview only showed what was stored.
+- **Error class:** Escaped text input.
+- **Guard:** Tests in Spaces: inline CLI text and capability text inputs reject `\n` outside inline code when the text has no real line break. Stored text and the browser editor stay unchanged, because `\n` can be real content, such as a Windows path.
 
 ### Assistant sidebar test broke every gate
 

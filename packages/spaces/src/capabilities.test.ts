@@ -61,6 +61,14 @@ const templateUuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const templateId = "Tpl001";
 const createdAt = "2026-08-02T08:00:00.000Z";
 
+test("task progress guards its stored note at the capability input", () => {
+  const schema = spacesCapabilities.actions["task.progress"].input;
+  expect(schema.safeParse({ itemId, content: "Caption:\\nText" }).success).toBeFalse();
+  for (const content of ["Caption:\nText", "Split on `\\n`"]) {
+    expect(schema.parse({ itemId, content: `  ${content}  ` })).toEqual({ itemId, content });
+  }
+});
+
 test("declares remembered approval for bounded Space changes", () => {
   const rememberable = (Object.entries(spacesCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
     .filter(([, action]) => action.approval === "rememberable")

@@ -1,14 +1,25 @@
 import { expect, test } from "bun:test";
 import { capabilityResultSchema } from "@k2b/cloud/contracts";
+import { z } from "zod";
 import {
   CalendarDestinationListInputSchema,
+  CommentCreateInputSchema,
+  CommentUpdateInputSchema,
+  EventCreateInputSchema,
   EventListItemDataSchema,
+  EventUpdateInputSchema,
   SpaceBrowseDataSchema,
   TaskChecklistListDataSchema,
   TaskChecklistUpdateInputSchema,
+  TaskCreateInputSchema,
   TaskDependentListInputSchema,
   TaskListInputSchema,
   TaskListItemDataSchema,
+  TaskProgressInputSchema,
+  TaskSetCompletedInputSchema,
+  TaskUpdateInputSchema,
+  TemplateCreateInputSchema,
+  TemplateUpdateInputSchema,
 } from "./capability-contracts";
 
 test("existing Space list inputs retain defaults with additive work filters", () => {
@@ -58,3 +69,112 @@ test("checklist patch requires an actual field, including explicit false", () =>
   expect(TaskChecklistUpdateInputSchema.safeParse({ itemId: "Itm001", entryId: "Chk001" }).success).toBeFalse();
   expect(TaskChecklistUpdateInputSchema.parse({ itemId: "Itm001", entryId: "Chk001", completed: false }).completed).toBeFalse();
 });
+
+const textInputs = [
+  {
+    name: "progress note",
+    schema: TaskProgressInputSchema,
+    input: { itemId: "Itm001" },
+    field: "content",
+    nullable: false,
+    optional: false,
+  },
+  {
+    name: "task create",
+    schema: TaskCreateInputSchema,
+    input: { spaceId: "Spc001", columnId: "Col001", title: "Task" },
+    field: "description",
+    nullable: false,
+    optional: true,
+  },
+  {
+    name: "task update",
+    schema: TaskUpdateInputSchema,
+    input: { itemId: "Itm001", title: "Task" },
+    field: "description",
+    nullable: true,
+    optional: true,
+  },
+  {
+    name: "event create",
+    schema: EventCreateInputSchema,
+    input: { spaceId: "Spc001", columnId: "Col001", title: "Event", startsAt: "2026-10-15T09:00:00Z", endsAt: "2026-10-15T10:00:00Z" },
+    field: "description",
+    nullable: false,
+    optional: true,
+  },
+  {
+    name: "event update",
+    schema: EventUpdateInputSchema,
+    input: { itemId: "Itm001", title: "Event" },
+    field: "description",
+    nullable: true,
+    optional: true,
+  },
+  {
+    name: "template create",
+    schema: TemplateCreateInputSchema,
+    input: { spaceId: "Spc001", kind: "task", name: "Template" },
+    field: "description",
+    nullable: true,
+    optional: true,
+  },
+  {
+    name: "template update",
+    schema: TemplateUpdateInputSchema,
+    input: { templateId: "Tpl001", name: "Template" },
+    field: "description",
+    nullable: true,
+    optional: true,
+  },
+  {
+    name: "comment create",
+    schema: CommentCreateInputSchema,
+    input: { itemId: "Itm001" },
+    field: "content",
+    nullable: false,
+    optional: false,
+  },
+  {
+    name: "comment update",
+    schema: CommentUpdateInputSchema,
+    input: { commentId: "Com001" },
+    field: "content",
+    nullable: false,
+    optional: false,
+  },
+  {
+    name: "completion result",
+    schema: TaskSetCompletedInputSchema,
+    input: { itemId: "Itm001", completed: true },
+    field: "result",
+    nullable: false,
+    optional: true,
+  },
+];
+
+for (const { name, schema, input, field, nullable, optional } of textInputs) {
+  test(`${name} rejects escaped line breaks with actionable guidance`, () => {
+    const result = schema.safeParse({ ...input, [field]: "Caption:\\nText" });
+    expect(result.success).toBeFalse();
+    if (!result.success)
+      expect(result.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: [field],
+          message: 'Contains "\\n" as two characters; send real line breaks, and put code or paths in backticks.',
+        }),
+      );
+    for (const text of ["Caption:\nText", "Split on `\\n`", "a\\\\nb", "Caption:\\nText\nMore"])
+      expect(schema.safeParse({ ...input, [field]: text }).success, text).toBeTrue();
+    expect(schema.safeParse({ ...input, [field]: null }).success).toBe(nullable);
+    expect(schema.safeParse(input).success).toBe(optional);
+  });
+
+  test(`${name} exports a standard JSON Schema text field`, () => {
+    const json = z.toJSONSchema(schema, { io: "input" });
+    expect(json.properties?.[field]).toMatchObject(
+      nullable ? { anyOf: [{ type: "string", maxLength: 5000 }, { type: "null" }] } : { type: "string", maxLength: 5000 },
+    );
+    expect(z.fromJSONSchema(json).safeParse({ ...input, [field]: "Caption:\\nText" }).success).toBeTrue();
+  });
+}
