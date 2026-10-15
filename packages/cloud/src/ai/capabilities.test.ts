@@ -733,6 +733,15 @@ describe("AI capability catalog", () => {
     const string = { type: "string" };
     const number = { type: "number" };
     const tuple = { type: "array", prefixItems: [string, number], items: false };
+    const A = { type: "object", properties: { a: { type: "string", default: "A" } }, additionalProperties: false };
+    const B = { type: "object", properties: { b: { type: "string", default: "B" } }, additionalProperties: false };
+    const Node = {
+      type: "object",
+      properties: {
+        children: { type: "array", items: { $ref: "#/$defs/Node" } },
+        label: { type: "string", default: "x" },
+      },
+    };
     const source = {
       $schema: "https://json-schema.org/draft/2020-12/schema",
       type: "object",
@@ -756,6 +765,10 @@ describe("AI capability catalog", () => {
           ],
           items: false,
         },
+        referencedTuple: { type: "array", prefixItems: [{ $ref: "#/$defs/A" }, { $ref: "#/$defs/B" }], items: false },
+        directA: { $ref: "#/$defs/A" },
+        singleReferenced: { type: "array", prefixItems: [{ $ref: "#/$defs/A" }], items: false },
+        recursiveTuple: { type: "array", prefixItems: [{ $ref: "#/$defs/Node" }, string], items: false },
         repeated: { type: "array", prefixItems: [string, string], items: false },
         closedMax: { type: "array", prefixItems: [string], items: false, maxItems: 5 },
         value: { oneOf: [tuple, { ...tuple, prefixItems: [number, string] }] },
@@ -777,7 +790,7 @@ describe("AI capability catalog", () => {
       },
       required: ["operations"],
       additionalProperties: false,
-      $defs: { tuple },
+      $defs: { tuple, A, B, Node },
       definitions: { tuple },
     };
     const reduced = reduceAiCapabilityInputSchema(source);
@@ -814,6 +827,24 @@ describe("AI capability catalog", () => {
 
     const schema = aiCapabilityInputSchema(source);
     const operation = { kind: "set-content", content: "New content." };
+    expect(schema.parse({ operations: [operation], referencedTuple: [{}, {}], directA: {}, singleReferenced: [{}] })).toEqual({
+      operations: [operation],
+      referencedTuple: [{}, {}],
+      directA: { a: "A" },
+      singleReferenced: [{ a: "A" }],
+      withDefault: { note: "kept" },
+    });
+    expect(reduced).toHaveProperty("properties.referencedTuple.items.anyOf", [
+      { type: "object", properties: { a: string }, additionalProperties: false },
+      { type: "object", properties: { b: string }, additionalProperties: false },
+    ]);
+    expect(reduced).toHaveProperty("$defs.A", A);
+    expect(reduced).toHaveProperty("properties.directA", { $ref: "#/$defs/A" });
+    expect(reduced).toHaveProperty("properties.singleReferenced.items", { $ref: "#/$defs/A" });
+    expect(reduced).toHaveProperty("properties.recursiveTuple.items.anyOf.0", {
+      ...Node,
+      properties: { ...Node.properties, label: string },
+    });
     expect(schema.parse({ operations: [operation], defaultedTuple: [{}, {}] })).toHaveProperty("defaultedTuple", [{}, {}]);
     expect(reduced).toHaveProperty("properties.defaultedTuple.items.anyOf", [
       { type: "object", properties: { a: string, default: string }, additionalProperties: false },
@@ -844,6 +875,38 @@ describe("AI capability catalog", () => {
     expect(serialized).not.toContain("oneOf");
     expect(serialized).not.toContain('"items":false');
     expect(serialized).not.toContain('"items":true');
+  });
+
+  test.each(["$defs", "definitions"])("inlines transitive escaped %s references only in merged tuple branches", (keyword) => {
+    const reference = `#/${keyword}/A~1~01`;
+    const source = {
+      type: "array",
+      prefixItems: [{ $ref: `#/${keyword}/Alias` }, { type: "number" }],
+      items: false,
+      [keyword]: {
+        Alias: { $ref: reference },
+        "A/~1": {
+          type: "object",
+          properties: {
+            label: { type: "string", default: "x" },
+            child: { $ref: `#/${keyword}/Alias` },
+            unknown: { $ref: `#/${keyword}/Missing` },
+            external: { $ref: "https://example.test/schema" },
+          },
+        },
+      },
+    };
+    const reduced = reduceAiCapabilityInputSchema(source);
+    expect(reduced).toHaveProperty("items.anyOf.0", {
+      type: "object",
+      properties: {
+        label: { type: "string" },
+        child: { $ref: `#/${keyword}/Alias` },
+        unknown: { $ref: `#/${keyword}/Missing` },
+        external: { $ref: "https://example.test/schema" },
+      },
+    });
+    expect(reduced[keyword]).toEqual(source[keyword]);
   });
 
   test("loads exact live names and exposes loaded app operations as ordinary tools", async () => {

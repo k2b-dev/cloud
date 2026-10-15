@@ -436,35 +436,21 @@ const SCHEMA_KEYS = new Set([
   "definitions",
 ]);
 
-const stripSchemaDefaults = (value: unknown, key?: string): unknown => {
-  if (key === "const" || key === "enum" || key === "required" || key === "type" || key === "default") return value;
-  if (Array.isArray(value)) return value.map((schema) => stripSchemaDefaults(schema));
-  if (!value || typeof value !== "object") return value;
-  if (key === "properties" || key === "$defs" || key === "definitions") {
-    return Object.fromEntries(Object.entries(value).map(([name, schema]) => [name, stripSchemaDefaults(schema)]));
-  }
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([childKey]) => childKey !== "default")
-      .map(([childKey, childValue]) => [childKey, stripSchemaDefaults(childValue, childKey)]),
-  );
-};
-
-const reduceSchemaValue = (value: unknown, key?: string): unknown => {
+const reduceSchemaValue = (value: unknown, root: Record<string, unknown>, key?: string, inlining?: ReadonlySet<string>): unknown => {
   if (key === "const" || key === "default") return structuredClone(value);
   if (Array.isArray(value)) {
     if (key === "required" || key === "enum" || key === "type") return structuredClone(value);
-    return value.map((item) => reduceSchemaValue(item));
+    return value.map((item) => reduceSchemaValue(item, root, undefined, inlining));
   }
   if (!value || typeof value !== "object") return value;
   if (key === "properties" || key === "$defs" || key === "definitions") {
-    return Object.fromEntries(Object.entries(value).map(([name, schema]) => [name, reduceSchemaValue(schema)]));
+    return Object.fromEntries(Object.entries(value).map(([name, schema]) => [name, reduceSchemaValue(schema, root, undefined, inlining)]));
   }
 
   const output: Record<string, unknown> = {};
   for (const [childKey, childValue] of Object.entries(value)) {
-    if (!SCHEMA_KEYS.has(childKey)) continue;
-    output[childKey] = reduceSchemaValue(childValue, childKey);
+    if (!SCHEMA_KEYS.has(childKey) || (inlining && childKey === "default")) continue;
+    output[childKey] = reduceSchemaValue(childValue, root, childKey, inlining);
   }
   if (output.oneOf !== undefined) {
     if (output.anyOf === undefined) output.anyOf = output.oneOf;
@@ -482,7 +468,7 @@ const reduceSchemaValue = (value: unknown, key?: string): unknown => {
     const schemas = rest === undefined || rest === true ? [] : rest === false ? positions : [...positions, rest];
     // Position-erased branches must leave defaults to the app's authoritative tuple schema.
     const mergedSchemas = schemas.some((schema) => JSON.stringify(schema) !== JSON.stringify(schemas[0]))
-      ? schemas.map((schema) => stripSchemaDefaults(schema))
+      ? schemas.map((schema) => reduceSchemaValue(schema, root, undefined, inlining ?? new Set()))
       : schemas;
     const distinct = mergedSchemas.filter(
       (schema, index) => mergedSchemas.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(schema)) === index,
@@ -496,6 +482,22 @@ const reduceSchemaValue = (value: unknown, key?: string): unknown => {
   if (output.items === false) output.maxItems = 0;
   // Zod drops array bounds without an item schema, so "any item" stays an empty schema.
   if (typeof output.items === "boolean") output.items = {};
+  // Inline only merged branches; a cycle keeps its ref and other consumers keep definition defaults.
+  if (inlining && typeof output.$ref === "string") {
+    const match = /^#\/(\$defs|definitions)\/([^/]+)$/.exec(output.$ref);
+    if (match) {
+      const [, keyword, encodedName] = match;
+      const name = encodedName!.replace(/~1/g, "/").replace(/~0/g, "~");
+      const definitions = root[keyword!];
+      const identity = `${keyword}/${name}`;
+      if (definitions && typeof definitions === "object" && Object.hasOwn(definitions, name) && !inlining.has(identity)) {
+        const definition = Reflect.get(definitions, name);
+        const inlined = reduceSchemaValue(definition, root, undefined, new Set([...inlining, identity]));
+        delete output.$ref;
+        return Object.keys(output).length === 0 ? inlined : { allOf: [inlined, output] };
+      }
+    }
+  }
   return output;
 };
 
@@ -505,7 +507,7 @@ const reduceSchemaValue = (value: unknown, key?: string): unknown => {
  * overlap; the app still validates exact tuple positions and exclusive unions.
  */
 export const reduceAiCapabilityInputSchema = (schema: Record<string, unknown>): Record<string, unknown> =>
-  reduceSchemaValue(schema) as Record<string, unknown>;
+  reduceSchemaValue(schema, schema) as Record<string, unknown>;
 
 export const aiCapabilityInputSchema = (schema: Record<string, unknown>): z.ZodType =>
   z.fromJSONSchema(reduceAiCapabilityInputSchema(schema));
