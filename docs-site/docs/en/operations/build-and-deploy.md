@@ -106,7 +106,9 @@ do not change the application's island code, preserving browser caches.
 Files remain flat in `dist/_ssr/`; the SSR adapter serves compressed siblings.
 Copy the whole `_ssr` directory into the image, including the build output
 `dist/_ssr/manifest.json`. The server fails with a clear error when `_ssr`
-exists without it. Production pages preload their islands' static modules.
+exists without it. The production inline loader preloads rendered islands'
+shared static imports after the page's stylesheets. It creates modulepreload
+links at runtime so the HTML preload scanner does not compete with first paint.
 Rebuild affected application images when updating SSR so entry modules and lazy
 chunks come from the same build.
 

@@ -53,8 +53,10 @@ build, mount runtime, or adapters reaches every application: also run the
   fallback to the old expression format.
 - `html()` and `ssr()` keep JSX creation inside synchronous render functions
   so Solid SSR context exists for primitives like `createUniqueId()`.
-  Production `html()` adds modulepreload links for rendered islands' static
-  module closures to `scripts`.
+  The production inline loader adds modulepreload links for rendered islands'
+  shared static imports when it runs, after script-blocking stylesheets. Never
+  emit modulepreload links in the HTML: the preload scanner then competes
+  with first paint.
 - `_ssr/` is the filesystem artifact boundary; the public HTTP path is
   derived separately through `config.ssrPath`.
 - Island IDs stay stable for the same source path. Production assets share one

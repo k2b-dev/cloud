@@ -167,21 +167,25 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
     // Production reads the manifest on first render; build scripts create configs before islands exist.
     const manifest = dev ? undefined : readAssetManifest(config);
     const assetPath = manifest ? `${ssrPath}/${manifest.version}` : ssrPath;
-    // Preload the static import closure of the rendered entries in one level; lazy chunks stay on demand.
+    // The loader preloads the rendered entries' shared static imports next to the entry imports, so the chain is one
+    // level deep. It runs after script-blocking stylesheets, keeping the preload scanner from competing with first paint.
+    const entries = new Set<string>();
     const preloads = new Set<string>();
     if (manifest) {
       for (const [, id = ""] of body.matchAll(RENDERED_COMPONENT)) {
+        entries.add(`${id}.js`);
         for (const file of manifest.entries[id] ?? []) preloads.add(file);
       }
     }
-    const preloadLinks = [...preloads]
-      .map((file) => `<link rel="modulepreload" href="${Bun.escapeHTML(`${assetPath}/${file}`)}">\n`)
-      .join("");
+    const shared = [...preloads].filter((file) => !entries.has(file));
+    const preload = shared.length
+      ? `${JSON.stringify(shared)}.forEach(f=>{const l=document.createElement('link');l.rel='modulepreload';l.href=p+'/'+f;document.head.append(l)});`
+      : "";
     // Hydration script - dynamically loads island/client bundles based on DOM
-    const hydrationScript = `<script type="module">const p=${JSON.stringify(assetPath)};document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`;
+    const hydrationScript = `<script type="module">const p=${JSON.stringify(assetPath)};${preload}document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`;
 
     // Framework-injected assets
-    let scripts = `${islandDisplayStyle}\n${preloadLinks}${hydrationScript}`;
+    let scripts = `${islandDisplayStyle}\n${hydrationScript}`;
 
     // Add dev tools script in dev mode (inlined)
     if (dev) {

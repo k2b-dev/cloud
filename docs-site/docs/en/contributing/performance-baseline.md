@@ -163,8 +163,9 @@ The probe and static inspector depend on today's SSR internals:
 clear-and-render mounting, the inline `const p=` loader, and
 `_ssr/<content-hash>/<file>` asset paths. Content hashing needs no harness
 change: the loader keeps its `const p=` shape and exactly one segment sits
-between `_ssr/` and the file. Modulepreload links are not module scripts, so
-the static inspector's module set stays unchanged. Hydration without
+between `_ssr/` and the file. The loader's preload list contains no import
+expressions, so the static inspector's module set stays unchanged; the harness
+needed no change. Hydration without
 clear-and-render or a different loader/path shape needs a harness update in
 the same change; until then, mounting or asset resolution fails loudly. A
 replacement probe must observe the same point, the end of each initial

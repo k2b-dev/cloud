@@ -49,17 +49,36 @@ test("production adapters preserve one module URL through lazy imports", async (
       const prefix = (await (await createConfig().html(() => "")).text()).match(/const p="([^"]+)"/)[1];
       if (onlyPrefix) { console.log(prefix); process.exit(0); }
       const scanner = new Bun.Transpiler({ loader: "js" });
+      const runLoader = (output, ids) => {
+        assert.ok(!output.includes('<link rel="modulepreload"'));
+        const loader = output.match(/<script type="module">([^<]+)<\\/script>/)[1];
+        assert.ok(loader.startsWith("const p="));
+        const links = [];
+        const entries = [];
+        new Function("document", "capture", loader.replaceAll("import(", "capture("))({
+          createElement: tag => { assert.equal(tag, "link"); return {}; },
+          head: { append: link => {
+            assert.equal(link.rel, "modulepreload");
+            assert.equal(entries.length, 0, "preloads precede entry imports");
+            links.push({ rel: link.rel, href: link.href });
+          } },
+          querySelectorAll: selector => {
+            assert.equal(selector, "solid-island,solid-client");
+            return ids.map(id => ({ dataset: { id } }));
+          },
+        }, url => { entries.push(url); });
+        return { loader, hrefs: links.map(link => link.href), entries };
+      };
       for (const basePath of ["", "/docs"]) {
         const { config, html } = createConfig({ basePath });
         const empty = await (await html(() => "")).text();
         assert.ok(!empty.includes("modulepreload"));
+        const assetPath = config.ssrPath + "/" + prefix.split("/").pop();
+        assert.equal(runLoader(empty, []).loader, 'const p=' + JSON.stringify(assetPath) + ";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));");
         const output = await (await html(() => ssr('<solid-island data-id="' + id + '" data-props="{}"></solid-island>'))).text();
-        const hrefs = [...output.matchAll(/<link rel="modulepreload" href="([^"]+)">/g)].map(match => match[1]);
-        const loader = output.match(/<script type="module">([^<]+)<\\/script>/)[1];
-        let entry;
-        new Function("document", "capture", loader.replace("import(", "capture("))(
-          { querySelectorAll: () => [{ dataset: { id } }] }, (url) => { entry = url; }
-        );
+        const { hrefs, entries } = runLoader(output, [id]);
+        assert.equal(entries.length, 1);
+        const [entry] = entries;
         assert.match(entry, new RegExp("^" + config.ssrPath + "/[a-f0-9]{16}/" + id + "\\\\.js$"));
         for (const adapter of ["hono", "bun", "elysia"]) {
           const hono = adapter === "hono" ? new Hono().route(config.ssrPath, honoRoutes(config)) : undefined;
@@ -102,8 +121,12 @@ test("production adapters preserve one module URL through lazy imports", async (
               }
             }
             const staticPaths = [...staticClosure].map(url => new URL(url).pathname);
-            assert.deepEqual([...hrefs].sort(), staticPaths.sort(), adapter + ": static preloads");
-            assert.ok(hrefs.includes(entry));
+            assert.deepEqual([...hrefs, entry].sort(), [...staticPaths].sort(), adapter + ": static preloads and entry");
+            assert.ok(!hrefs.includes(entry));
+            for (const href of hrefs) {
+              assert.equal(href, new URL(href, origin).pathname, "canonical preload URL");
+              assert.ok(staticClosure.has(new URL(href, origin).href), adapter + ": preload module identity");
+            }
             assert.ok(hrefs.some(path => path.includes("/chunk-")));
             assert.ok(visited.size > staticClosure.size, "fixture must emit a lazy-only chunk");
             for (const url of visited) if (!staticClosure.has(url)) assert.ok(!hrefs.includes(new URL(url).pathname));
@@ -126,9 +149,15 @@ test("production adapters preserve one module URL through lazy imports", async (
             }
             const unionBody = '<solid-client data-id="' + clientId + '"></solid-client><solid-island data-id="' + id + '"></solid-island><solid-island data-id="' + id + '"></solid-island><solid-client data-id="000000000000"></solid-client>';
             const unionOutput = await (await html(() => ssr(unionBody))).text();
-            const unionHrefs = [...unionOutput.matchAll(/<link rel="modulepreload" href="([^"]+)">/g)].map(match => match[1]);
-            assert.deepEqual([...unionHrefs].sort(), [...new Set([...clientPaths, ...staticPaths])].sort());
-            assert.equal(unionHrefs[0], clientEntry);
+            const { hrefs: unionHrefs, entries: unionEntries } = runLoader(unionOutput, [clientId, id, id, "000000000000"]);
+            assert.deepEqual(unionEntries, [clientEntry, entry, entry, assetPath + "/000000000000.js"]);
+            // Each manifest closure lists its entry first, then its shared files in filename order.
+            const sharedPaths = paths => [...paths].filter(path => path !== entry && path !== clientEntry).sort();
+            const expectedUnion = [...new Set([...sharedPaths(clientPaths), ...sharedPaths(staticPaths)])];
+            assert.deepEqual(unionHrefs, expectedUnion, adapter + ": ordered shared union");
+            assert.ok(!unionHrefs.includes(entry));
+            assert.ok(!unionHrefs.includes(clientEntry));
+            assert.equal(new Set(unionHrefs).size, unionHrefs.length);
             for (const path of [config.ssrPath + "/" + id + ".js", config.ssrPath + "/old/" + id + ".js", config.ssrPath + "/0/" + id + ".js", config.ssrPath + "/1234567890000/" + id + ".js", entry.replace(id + ".js", "manifest.json"), config.ssrPath + "/manifest.json", entry.replace(id + ".js", "extra/" + id + ".js")]) {
               assert.equal((await request(new URL(path, origin), { signal: AbortSignal.timeout(3000) })).status, 404, adapter + ": unexpected alias " + path);
             }
@@ -210,7 +239,7 @@ test("production manifests are required, validated, and memoized only after a su
           assert.notEqual(response.status, 200);
         } catch (error) { assert.ok(error.message.startsWith(missing)); }
       }
-      for (const invalid of ['{', 'null', '[]', '{}', '{"version":"0","entries":{}}', '{"version":"0123456789ABCDEf","entries":{}}', '{"version":"0123456789abcdef","entries":[]}', '{"version":"0123456789abcdef","entries":{"id":[1]}}', '{"version":"0123456789abcdef","entries":{"id":"entry.js"}}']) {
+      for (const invalid of ['{', 'null', '[]', '{}', '{"version":"0","entries":{}}', '{"version":"0123456789ABCDEf","entries":{}}', '{"version":"0123456789abcdef","entries":[]}', '{"version":"0123456789abcdef","entries":{"id":[1]}}', '{"version":"0123456789abcdef","entries":{"id":"entry.js"}}', ...["x</script>.js", "../x.js", "x.js.map", "x.js.MAP"].map(file => JSON.stringify({ version: "0123456789abcdef", entries: { id: [file] } }))]) {
         writeFileSync(path, invalid);
         assert.throws(() => readAssetManifest(config), error => error.message.startsWith("[ssr] Invalid " + path));
       }

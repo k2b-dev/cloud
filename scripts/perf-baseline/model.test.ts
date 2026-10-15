@@ -64,9 +64,10 @@ describe("performance baseline contracts", () => {
 
   test("content-hashed SSR prefixes and modulepreload preserve the inspector module set", async () => {
     const html = `<solid-island data-id="one" data-props="{}"></solid-island><script type="module">const p="/faq/_ssr/0123456789abcdef";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`;
-    const links = `<link rel="modulepreload" href="/faq/_ssr/0123456789abcdef/one.js"><link rel="modulepreload" href="/faq/_ssr/0123456789abcdef/chunk-abc.js">`;
+    const preload = `["chunk-abc.js","chunk-def.js"].forEach(f=>{const l=document.createElement('link');l.rel='modulepreload';l.href=p+'/'+f;document.head.append(l)});`;
+    const withPreloads = html.replace(";document.querySelectorAll", ";" + preload + "document.querySelectorAll");
     const original = await inspectHtml(html, "http://127.0.0.1:4100/faq");
-    const preloaded = await inspectHtml(links + html, "http://127.0.0.1:4100/faq");
+    const preloaded = await inspectHtml(withPreloads, "http://127.0.0.1:4100/faq");
     expect(preloaded.islandEntries).toEqual(original.islandEntries);
     expect(preloaded.modules).toEqual(original.modules);
     expect(original.islandEntries).toEqual(["/faq/_ssr/0123456789abcdef/one.js"]);

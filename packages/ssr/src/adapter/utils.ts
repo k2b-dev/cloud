@@ -39,6 +39,7 @@ export const getSsrDir = (config: SsrConfig): string => join(config.dev ? (confi
 
 export type AssetManifest = { version: string; entries: Record<string, string[]> };
 export const ASSET_MANIFEST = "manifest.json";
+const ASSET_FILE = /^[a-z0-9._-]+\.js(?:\.map)?$/i;
 
 const isAssetManifest = (value: unknown): value is AssetManifest =>
   typeof value === "object" &&
@@ -50,7 +51,9 @@ const isAssetManifest = (value: unknown): value is AssetManifest =>
   typeof value.entries === "object" &&
   value.entries !== null &&
   !Array.isArray(value.entries) &&
-  Object.values(value.entries).every((files) => Array.isArray(files) && files.every((file) => typeof file === "string"));
+  Object.values(value.entries).every(
+    (files) => Array.isArray(files) && files.every((file) => typeof file === "string" && ASSET_FILE.test(file) && /\.js$/i.test(file)),
+  );
 
 const assetManifests = new Map<string, AssetManifest>();
 const unbuiltAssetManifest: AssetManifest = { version: "0", entries: {} };
@@ -80,7 +83,9 @@ export const readAssetManifest = (config: SsrConfig): AssetManifest => {
     // Reported below with the expected shape.
   }
   if (!isAssetManifest(manifest)) {
-    throw new Error(`[ssr] Invalid ${path}. Expected a 16-character hexadecimal version and an entries object of string arrays.`);
+    throw new Error(
+      `[ssr] Invalid ${path}. Expected a 16-character hexadecimal version and an entries object of JavaScript filename arrays matching /^[a-z0-9._-]+\\.js$/i.`,
+    );
   }
   assetManifests.set(directory, manifest);
   return manifest;
@@ -90,7 +95,6 @@ export const readAssetManifest = (config: SsrConfig): AssetManifest => {
 export const getAssetPrefix = (config: SsrConfig): string => (config.dev ? "" : `/${readAssetManifest(config).version}`);
 
 const HASHED_CHUNK = /^chunk-[a-z0-9]+\.js$/i;
-const ASSET_FILE = /^[a-z0-9._-]+\.js(?:\.map)?$/i;
 
 const acceptedEncodings = (header: string | null): Array<"br" | "gzip" | "identity"> => {
   const qualities = new Map<string, number>();
