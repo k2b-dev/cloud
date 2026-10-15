@@ -274,11 +274,14 @@ const [hidden, setHidden] = createSignal(initiallyHidden);
 ```
 
 Set `scrollPreserveKey` on scrolling sidebar bodies when enhanced navigation should restore their position.
+The key also names the sidebar's memory across reloads and document navigations.
 
-Across document navigations, `SidebarBody` restores its own scroll offset
-before the first paint: it remembers the offset in `sessionStorage` per path
-segment and sidebar position, then keeps the item marked `aria-current="page"`
-in view. Nothing outlives the tab, and no prop is needed.
+Across reloads and document navigations, `SidebarBody` restores the scroll offset the person
+left the page with before the first paint, including when an island or other
+client render replaces the server markup. The item marked current stays in
+view, and the scroll fade matches from the first paint. Memory is per
+`scrollPreserveKey` and sidebar position. Without a key, memory is per page path
+and sidebar position. Nothing outlives the tab.
 
 `SidebarBody` fades its top and bottom edges automatically while more content
 is available in that direction. Scrolling, resizing, and live content changes

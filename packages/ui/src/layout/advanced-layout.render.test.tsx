@@ -197,7 +197,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     // The sidebar body's scroll memory runs inline right after the body so a
     // document navigation restores it before the first paint; SSR has no window.
     expect(typeof window).toBe("undefined");
-    expect(html).toMatch(/k2b-app-workspace__sidebar-body[\s\S]*<\/div><script>\(function\(\)\{var body=document\.currentScript/);
+    expect(html).toMatch(/k2b-app-workspace__sidebar-body[\s\S]*<\/div><script>\(function rememberSidebarScroll\(/);
+    expect(html).toContain("document.currentScript&&document.currentScript.previousElementSibling");
     expect(html).toContain('role="separator"');
     expect(html).toContain('data-app-workspace-resize="detail"');
     expect(html).toContain('data-workspace-panel-id="item"');
