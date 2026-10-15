@@ -32,22 +32,12 @@ const UNSAFE_IPV4_RANGES: ReadonlyArray<readonly [string, number]> = [
   ["240.0.0.0", 4],
 ];
 
-const ipv6ToBigInt = (rawAddress: string): bigint | null => {
-  let address = rawAddress.toLowerCase().split("%")[0] ?? "";
-  if (address.includes(".")) {
-    const separator = address.lastIndexOf(":");
-    const ipv4 = ipv4ToNumber(address.slice(separator + 1));
-    if (separator < 0 || ipv4 === null) return null;
-    address = `${address.slice(0, separator)}:${(ipv4 >>> 16).toString(16)}:${(ipv4 & 0xffff).toString(16)}`;
-  }
+// Only canonical IPv6 from the WHATWG parser reaches this conversion.
+const ipv6ToBigInt = (address: string): bigint => {
   const halves = address.split("::");
-  if (halves.length > 2) return null;
   const left = halves[0] ? halves[0].split(":") : [];
   const right = halves[1] ? halves[1].split(":") : [];
-  const missing = halves.length === 2 ? 8 - left.length - right.length : 0;
-  if (missing < 0 || (halves.length === 1 && left.length !== 8)) return null;
-  const groups = [...left, ...Array.from({ length: missing }, () => "0"), ...right];
-  if (groups.length !== 8 || groups.some((group) => !/^[0-9a-f]{1,4}$/.test(group))) return null;
+  const groups = [...left, ...Array.from({ length: 8 - left.length - right.length }, () => "0"), ...right];
   return groups.reduce((value, group) => (value << 16n) | BigInt(`0x${group}`), 0n);
 };
 
@@ -57,51 +47,62 @@ const ipv6InRange = (address: bigint, base: bigint, bits: number): boolean => {
 };
 
 const UNSAFE_IPV6_RANGES: ReadonlyArray<readonly [bigint, number]> = [
-  [ipv6ToBigInt("::")!, 96],
-  [ipv6ToBigInt("64:ff9b::")!, 96],
-  [ipv6ToBigInt("64:ff9b:1::")!, 48],
-  [ipv6ToBigInt("100::")!, 64],
-  [ipv6ToBigInt("2001::")!, 32],
-  [ipv6ToBigInt("2001:2::")!, 48],
-  [ipv6ToBigInt("2001:db8::")!, 32],
-  [ipv6ToBigInt("2002::")!, 16],
-  [ipv6ToBigInt("3fff::")!, 20],
-  [ipv6ToBigInt("fc00::")!, 7],
-  [ipv6ToBigInt("fe80::")!, 10],
-  [ipv6ToBigInt("fec0::")!, 10],
-  [ipv6ToBigInt("ff00::")!, 8],
+  [ipv6ToBigInt("2001::"), 23],
+  [ipv6ToBigInt("2001:db8::"), 32],
+  [ipv6ToBigInt("2002::"), 16],
+  [ipv6ToBigInt("3fff::"), 20],
 ];
 
-export const normalizeNetworkHostname = (hostname: string): string =>
-  hostname
-    .toLowerCase()
-    .replace(/^\[|\]$/g, "")
-    .replace(/\.$/, "");
-
-export const networkAddressFamily = (rawAddress: string): 4 | 6 | null => {
-  const address = normalizeNetworkHostname(rawAddress);
-  if (ipv4ToNumber(address) !== null) return 4;
-  return ipv6ToBigInt(address) !== null ? 6 : null;
+export const normalizeNetworkHostname = (hostname: string): string => {
+  const lower = hostname.toLowerCase();
+  if (lower.startsWith("[") && lower.endsWith("]") && lower.includes(":")) return lower.slice(1, -1);
+  return lower.includes(":") ? lower : lower.replace(/\.$/, "");
 };
 
-export const isUnsafeNetworkAddress = (rawAddress: string): boolean => {
+// WHATWG's "ends in a number" rule: these hosts must parse as IPv4,
+// rather than falling back to DNS (including invalid octal and overflow).
+const endsInNumber = (hostname: string): boolean => {
+  const last = hostname.split(".").at(-1) ?? "";
+  return /^\d+$/.test(last) || /^0x[0-9a-f]*$/i.test(last);
+};
+
+/** Parse all URL IP literal forms without DNS or server-only dependencies. */
+export const parseNetworkAddress = (rawAddress: string): { address: string; family: 4 | 6 } | null => {
   const address = normalizeNetworkHostname(rawAddress);
-  const family = networkAddressFamily(address);
-  if (family === 4) return UNSAFE_IPV4_RANGES.some(([base, bits]) => ipv4InRange(address, base, bits));
-  if (family !== 6) return true;
-  const value = ipv6ToBigInt(address);
-  if (value === null) return true;
-  if (value >> 32n === 0xffffn) {
-    const mapped = Number(value & 0xffffffffn);
-    const ipv4 = [mapped >>> 24, (mapped >>> 16) & 255, (mapped >>> 8) & 255, mapped & 255].join(".");
-    return isUnsafeNetworkAddress(ipv4);
+  const ipv6 = address.includes(":");
+  if (!address || /[\s/@\\?#%\[\]]/.test(address) || (!ipv6 && !endsInNumber(address))) return null;
+  try {
+    // URL implements legacy IPv4 (decimal, octal, hex and shortened forms),
+    // as well as IPv6 compression and dotted tails. Reject zone IDs above.
+    const parsed = new URL(`http://${ipv6 ? `[${address}]` : address}/`).hostname;
+    if (ipv6) return { address: normalizeNetworkHostname(parsed), family: 6 };
+    return ipv4ToNumber(parsed) !== null ? { address: parsed, family: 4 } : null;
+  } catch {
+    return null;
   }
-  return UNSAFE_IPV6_RANGES.some(([base, bits]) => ipv6InRange(value, base, bits));
+};
+
+export const networkAddressFamily = (rawAddress: string): 4 | 6 | null => parseNetworkAddress(rawAddress)?.family ?? null;
+
+export const isUnsafeNetworkAddress = (rawAddress: string): boolean => {
+  const literal = parseNetworkAddress(rawAddress);
+  if (!literal) return true;
+  if (literal.family === 4) return UNSAFE_IPV4_RANGES.some(([base, bits]) => ipv4InRange(literal.address, base, bits));
+  const value = ipv6ToBigInt(literal.address);
+  if (value >> 32n === 0xffffn || ipv6InRange(value, ipv6ToBigInt("64:ff9b::"), 96)) {
+    const mapped = Number(value & 0xffffffffn);
+    return isUnsafeNetworkAddress([mapped >>> 24, (mapped >>> 16) & 255, (mapped >>> 8) & 255, mapped & 255].join("."));
+  }
+  return !ipv6InRange(value, ipv6ToBigInt("2000::"), 3) || UNSAFE_IPV6_RANGES.some(([base, bits]) => ipv6InRange(value, base, bits));
 };
 
 export const isUnsafeNetworkHostname = (rawHostname: string): boolean => {
   const hostname = normalizeNetworkHostname(rawHostname);
   return (
-    hostname === "localhost" || hostname.endsWith(".localhost") || hostname === "metadata.google.internal" || hostname.endsWith(".internal")
+    !hostname ||
+    ["localhost", "localhost.localdomain", "metadata", "metadata.google.internal", "instance-data"].includes(hostname) ||
+    [".localhost", ".internal", ".local", ".home.arpa"].some((suffix) => hostname.endsWith(suffix)) ||
+    /[%\[\]]/.test(hostname) ||
+    ((endsInNumber(hostname) || hostname.includes(":")) && !parseNetworkAddress(hostname))
   );
 };

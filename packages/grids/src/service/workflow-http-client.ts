@@ -1,8 +1,13 @@
-import { lookup as dnsLookup } from "node:dns/promises";
 import { type ClientRequest, request as httpRequest, type IncomingMessage, type RequestOptions } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { isIP } from "node:net";
-import { isUnsafeNetworkAddress, isUnsafeNetworkHostname, normalizeNetworkHostname } from "@k2b/cloud/shared";
+import {
+  type NetworkLookup,
+  NetworkTargetBlockedError,
+  type PublicNetworkAddress,
+  pinnedNetworkLookup,
+  resolvePublicNetworkAddresses,
+} from "@k2b/cloud/services/network-security";
+import { isUnsafeNetworkAddress, networkAddressFamily, normalizeNetworkHostname } from "@k2b/cloud/shared";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { workflowServiceText } from "./workflow-service-messages";
 
@@ -12,10 +17,9 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_TIMEOUT_MS = 60_000;
 
 type RequestFactory = (options: RequestOptions, callback: (response: IncomingMessage) => void) => ClientRequest;
-type LookupAddress = { address: string; family: number };
 
 type WorkflowHttpClientDeps = {
-  lookup?: (hostname: string, options: { all: true; verbatim: true }) => Promise<LookupAddress[]>;
+  lookup?: NetworkLookup;
   request?: RequestFactory;
 };
 
@@ -38,8 +42,7 @@ type WorkflowHttpResponse = {
 
 type ResolvedTarget = {
   url: URL;
-  address: string;
-  family: 4 | 6;
+  addresses: PublicNetworkAddress[];
 };
 
 type PreparedWorkflowHttpRequest = {
@@ -50,8 +53,6 @@ type PreparedWorkflowHttpRequest = {
 export const isUnsafeWorkflowHttpAddress = isUnsafeNetworkAddress;
 
 const normalizeHostname = normalizeNetworkHostname;
-
-const isUnsafeHostname = isUnsafeNetworkHostname;
 
 const resolveTarget = async (rawUrl: string, deps: WorkflowHttpClientDeps, locale?: string): Promise<Result<ResolvedTarget>> => {
   const t = workflowServiceText(locale);
@@ -64,23 +65,12 @@ const resolveTarget = async (rawUrl: string, deps: WorkflowHttpClientDeps, local
   if (url.protocol !== "http:" && url.protocol !== "https:") return fail(err.badInput(t.httpProtocolInvalid));
   if (url.username || url.password) return fail(err.badInput(t.httpCredentialsForbidden));
 
-  const hostname = normalizeHostname(url.hostname);
-  if (isUnsafeHostname(hostname)) return fail(err.badInput(t.httpTargetPrivate));
-
-  const literalFamily = isIP(hostname);
-  const lookupAll = deps.lookup ?? ((host: string) => dnsLookup(host, { all: true, verbatim: true }) as Promise<LookupAddress[]>);
-  const addresses: LookupAddress[] = literalFamily
-    ? [{ address: hostname, family: literalFamily }]
-    : await lookupAll(hostname, { all: true, verbatim: true }).catch(() => []);
-  if (addresses.length === 0) return fail(err.badInput(t.httpTargetUnresolved));
-  // Every answer, not just the one dialled: a name that resolves to one public
-  // and one private address would otherwise be a way in on the second attempt.
-  if (addresses.some((entry) => isUnsafeWorkflowHttpAddress(entry.address))) {
-    return fail(err.badInput(t.httpTargetPrivate));
+  try {
+    const addresses = await resolvePublicNetworkAddresses(url.hostname, deps.lookup);
+    return ok({ url, addresses });
+  } catch (error) {
+    return fail(err.badInput(error instanceof NetworkTargetBlockedError ? t.httpTargetPrivate : t.httpTargetUnresolved));
   }
-  const selected = addresses[0];
-  if (!selected || (selected.family !== 4 && selected.family !== 6)) return fail(err.badInput(t.httpTargetUnresolved));
-  return ok({ url, address: selected.address, family: selected.family });
 };
 
 const BLOCKED_REQUEST_HEADERS = new Set([
@@ -181,17 +171,9 @@ const sendPinnedRequest = (
       path: `${target.url.pathname}${target.url.search}`,
       method: input.method,
       headers,
-      servername: normalizeHostname(target.url.hostname),
-      lookup: (_hostname, options, callback) => {
-        if (typeof options === "object" && options.all) {
-          (callback as (error: Error | null, addresses: LookupAddress[]) => void)(null, [
-            { address: target.address, family: target.family },
-          ]);
-          return;
-        }
-        (callback as (error: Error | null, address: string, family: number) => void)(null, target.address, target.family);
-      },
-    } as RequestOptions & { servername: string };
+      servername: networkAddressFamily(target.url.hostname) ? undefined : normalizeHostname(target.url.hostname),
+      lookup: pinnedNetworkLookup(target.addresses),
+    } satisfies RequestOptions & { servername?: string };
     const request = factory(options, (response) => {
       onDispatched();
       const declaredLength = Number(response.headers["content-length"] ?? 0);

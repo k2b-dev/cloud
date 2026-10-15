@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import type { Readable } from "node:stream";
+import { pinnedNetworkLookup } from "@k2b/cloud/services/network-security";
 import {
   type DownloadObject,
   type FetchMessageObject,
@@ -55,7 +56,7 @@ import type {
   SourceDownload,
   SourceDownloadRequest,
 } from "./contract";
-import { createPinnedLookup, type ResolvedEndpoint, resolvePublicEndpoint } from "./endpoint-policy";
+import { type ResolvedEndpoint, resolvePublicEndpoint } from "./endpoint-policy";
 import { readImapAclRights, selectFallbackRights } from "./imap-acl";
 import { appendStream } from "./imap-append-stream";
 import { openImapChangeListener } from "./imap-listener";
@@ -128,7 +129,7 @@ const createImapClient = (config: ProviderConnectionInput, endpoint: ResolvedEnd
       tls: {
         rejectUnauthorized: true,
         minVersion: "TLSv1.2",
-        lookup: createPinnedLookup(endpoint),
+        lookup: pinnedNetworkLookup(endpoint.addresses),
       },
     }),
   );

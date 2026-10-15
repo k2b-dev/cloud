@@ -1,9 +1,10 @@
 import { resolveSrv } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { domainToASCII } from "node:url";
+import { pinnedNetworkLookup } from "@k2b/cloud/services/network-security";
 import { XMLParser } from "fast-xml-parser";
 import type { MailEndpoint } from "../contracts";
-import { createPinnedLookup, resolvePublicEndpoint } from "./connectors/endpoint-policy";
+import { resolvePublicEndpoint } from "./connectors/endpoint-policy";
 
 const MAX_AUTOCONFIG_BYTES = 256 * 1024;
 const DEFAULT_TIMEOUT_MS = 5_000;
@@ -147,7 +148,7 @@ const readPinnedHttps = async (url: URL, timeoutMs: number): Promise<string | nu
         path: `${url.pathname}${url.search}`,
         method: "GET",
         headers: { accept: "application/xml,text/xml;q=0.9", "user-agent": "Cloud-Mail-Autoconfig/1" },
-        lookup: createPinnedLookup(endpoint),
+        lookup: pinnedNetworkLookup(endpoint.addresses),
         timeout: timeoutMs,
       },
       (response) => {

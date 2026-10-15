@@ -196,15 +196,27 @@ Before it opens a connection, `requestPublicHttps` throws for:
   (`HTTPS_REQUIRED`);
 - a `maxBytes` that is not a whole number of zero or more
   (`INVALID_BYTE_LIMIT`);
-- `localhost`, names under `.localhost` or `.internal`, and
-  `metadata.google.internal`;
+- `localhost`, `localhost.localdomain`, `metadata`, `metadata.google.internal`,
+  `instance-data`, and names under `.localhost`, `.internal`, `.local`, or
+  `.home.arpa`;
 - a name with any DNS answer in a private, loopback, link-local, shared,
-  documentation, multicast, or other reserved range, IPv4 addresses mapped
-  into IPv6 included. One such answer is enough.
+  documentation, multicast, or other reserved range. One such answer is enough;
+- a failed or empty DNS lookup, or an invalid address in its answers.
+
+Every IP literal form is classified, including shortened, decimal, octal, and
+hexadecimal IPv4, and IPv4-mapped, IPv4-compatible, NAT64, 6to4, and Teredo IPv6.
+Well-known NAT64 addresses are judged by their embedded IPv4 address.
 
 It then connects to the address it checked, without a second lookup, so a DNS
 answer that changes in between cannot move the request. TLS still verifies the
 certificate for the URL's host name.
+
+For transports `requestPublicHttps` cannot cover, such as IMAP, SMTP, or a
+plain-HTTP tester, resolve with `resolvePublicNetworkAddresses` from
+`@k2b/cloud/services/network-security`, catch `NetworkTargetBlockedError` for
+policy refusals, and connect through `pinnedNetworkLookup(addresses)`. This
+keeps the connection on the checked addresses; never call `fetch()` with the
+URL.
 
 ### Read the result
 

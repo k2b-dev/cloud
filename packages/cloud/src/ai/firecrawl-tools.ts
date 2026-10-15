@@ -1,8 +1,8 @@
-import { isIP } from "node:net";
 import { type ToolContext, truncateMiddle } from "@k2b/nessi";
 import { z } from "zod";
 import type { RequestActor } from "../server";
 import { coreSettings } from "../services";
+import { isUnsafeNetworkAddress, isUnsafeNetworkHostname, parseNetworkAddress } from "../shared/network-address";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsWebsiteApprovals, aiWebsiteApprovalScope, findRememberedAiToolApproval } from "./approvals";
 import { aiConversations } from "./store";
 import { defineAiTool } from "./tools";
@@ -141,31 +141,6 @@ const truncate = (text: string, maxChars: number): { text: string; truncated: bo
   return { text: text.slice(0, Math.max(0, maxChars)).trimEnd(), truncated: true };
 };
 
-const isPrivateIpv4 = (hostname: string): boolean => {
-  const parts = hostname.split(".").map((part) => Number(part));
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
-  const [a, b] = parts as [number, number, number, number];
-  if (a === 0 || a === 10 || a === 127) return true;
-  if (a === 100 && b >= 64 && b <= 127) return true;
-  if (a === 169 && b === 254) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;
-  if (a === 192 && (b === 0 || b === 168)) return true;
-  if (a === 198 && (b === 18 || b === 19)) return true;
-  return a >= 224;
-};
-
-const isPrivateIpv6 = (hostname: string): boolean => {
-  const normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  return (
-    normalized === "::" ||
-    normalized === "::1" ||
-    normalized.startsWith("fc") ||
-    normalized.startsWith("fd") ||
-    normalized.startsWith("fe80:") ||
-    normalized.startsWith("2001:db8:")
-  );
-};
-
 export const assertPublicHttpUrl = (rawUrl: string): string => {
   let parsed: URL;
   try {
@@ -176,13 +151,11 @@ export const assertPublicHttpUrl = (rawUrl: string): string => {
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("URL must use http or https.");
 
   const hostname = parsed.hostname.toLowerCase();
-  if (!hostname || hostname === "localhost" || hostname.endsWith(".localhost")) {
+  if (isUnsafeNetworkHostname(hostname)) {
     throw new Error("URL host is not allowed.");
   }
 
-  const ipKind = isIP(hostname.replace(/^\[|\]$/g, ""));
-  if (ipKind === 4 && isPrivateIpv4(hostname)) throw new Error("URL must not point to a private IP address.");
-  if (ipKind === 6 && isPrivateIpv6(hostname)) throw new Error("URL must not point to a private IP address.");
+  if (parseNetworkAddress(hostname) && isUnsafeNetworkAddress(hostname)) throw new Error("URL must not point to a private IP address.");
   return parsed.toString();
 };
 
