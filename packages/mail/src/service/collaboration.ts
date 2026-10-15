@@ -479,8 +479,10 @@ export const recordConversationStatusDecision = async (db: SqlClient, conversati
 /**
  * Locks a conversation for a workflow status step and returns its live state when the step may
  * apply: at the run's revision, or one revision later when that revision came from hydrating the
- * message that triggered the run. Any other change since the run's view returns null and keeps
- * the step's revision conflict.
+ * message that triggered the run and no other message of the conversation still waits for
+ * hydration. Linking a message does not change the revision, so a message that joined after the
+ * run's view is either still unhydrated or hydrated with its own revision. Any other change since
+ * the run's view returns null and keeps the step's revision conflict.
  */
 export const lockWorkflowConversationStatus = async (
   db: SqlClient,
@@ -498,12 +500,19 @@ export const lockWorkflowConversationStatus = async (
       revision: string | number;
       work_status: ConversationCollaboration["workStatus"];
       hydrated_revision: string | number | null;
+      others_hydrated: boolean;
     }[]
   >`
     SELECT conversation.revision, conversation.work_status, (
       SELECT link.hydrated_revision FROM mail.conversation_messages link
       WHERE link.conversation_id = conversation.id AND link.message_id = ${params.triggerMessageId}::uuid
-    ) AS hydrated_revision
+    ) AS hydrated_revision, NOT EXISTS (
+      SELECT 1 FROM mail.conversation_messages link
+      JOIN mail.message_contents message ON message.id = link.message_id
+      WHERE link.conversation_id = conversation.id
+        AND link.message_id IS DISTINCT FROM ${params.triggerMessageId}::uuid
+        AND message.hydration_status <> 'complete'
+    ) AS others_hydrated
     FROM mail.conversations conversation
     WHERE conversation.id = ${params.conversationId}::uuid AND conversation.mailbox_id = ${params.mailboxId}::uuid
     FOR UPDATE OF conversation
@@ -511,7 +520,10 @@ export const lockWorkflowConversationStatus = async (
   if (!current) return null;
   const revision = Number(current.revision);
   return revision === params.expectedRevision ||
-    (revision === params.expectedRevision + 1 && current.hydrated_revision !== null && Number(current.hydrated_revision) === revision)
+    (revision === params.expectedRevision + 1 &&
+      current.others_hydrated &&
+      current.hydrated_revision !== null &&
+      Number(current.hydrated_revision) === revision)
     ? { revision, workStatus: current.work_status }
     : null;
 };
