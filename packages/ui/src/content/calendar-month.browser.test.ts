@@ -130,6 +130,24 @@ const atWeek = async (page: Page, week: string) => {
     );
   }, week);
 };
+/** Week keys not at their week's place in the track, and the track's height against the height its declared weeks need. */
+const placement = (page: Page) =>
+  page.locator(GRID).evaluate((grid) => {
+    const weeks = Array.from(grid.querySelectorAll(".k2b-calendar-month__week"));
+    const track = grid.querySelector(".k2b-calendar-month__track")?.getBoundingClientRect() ?? null;
+    const rowHeight = Math.round(weeks[0]!.getBoundingClientRect().height);
+    return {
+      misplaced: weeks
+        .filter(
+          (row) =>
+            !track ||
+            Math.round(row.getBoundingClientRect().top - track.top) !== (Number(row.getAttribute("aria-rowindex")) - 2) * rowHeight,
+        )
+        .map((row) => row.getAttribute("data-week-key")),
+      trackHeight: track ? Math.round(track.height) : null,
+      weeksHeight: (Number(grid.getAttribute("aria-rowcount")) - 1) * rowHeight,
+    };
+  });
 const clickDay = async (page: Page, key: string) => {
   const bounds = (await page.locator(cell(key)).boundingBox())!;
   await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height - 8);
@@ -142,6 +160,9 @@ describe(`continuous month in ${browserName}`, () => {
       const initial = await page.evaluate(() => window.monthFixture.initial);
       expect(Math.abs(initial.top - 4 * initial.height)).toBeLessThanOrEqual(1);
       await atWeek(page, "2026-09-28");
+      const placed = await placement(page);
+      expect(placed.misplaced).toEqual([]);
+      expect(placed.trackHeight).toBe(placed.weeksHeight);
       expect(await title(page)).toBe("October 2026");
       expect(await page.locator(cell("2026-09-30")).getAttribute("data-outside")).toBe("true");
       expect(await page.locator(cell("2026-10-01")).getAttribute("data-outside")).toBeNull();

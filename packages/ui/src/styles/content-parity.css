@@ -647,11 +647,11 @@
   height: 100%;
   min-height: 0;
   flex-direction: column;
-  container-type: size;
 }
 
 .k2b-ui .k2b-calendar-month[data-continuous] {
   --k2b-calendar-month-edge: color-mix(in srgb, var(--k2b-text) 16%, transparent);
+  position: relative;
   display: block;
   height: 100%;
   min-height: 0;
@@ -677,18 +677,22 @@
   padding-block: 0;
 }
 
+/* Whole pixels, as the week view's columns: a scroll position lands exactly on a row, and the last of the five rows
+   shows whole, so focusing it scrolls nothing. The rows take their height from percentages of the scroller, which
+   layout resolves, and not from container units: WebKit kept the place and height that server-rendered rows had
+   before mount until a later restyle, even with the right week index already in their style. */
 .k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__track {
-  position: relative;
-  height: calc(var(--k2b-calendar-weeks) * max(5rem, round(down, calc((100cqb - var(--k2b-calendar-weekday-row)) / 5), 1px)));
+  height: calc(var(--k2b-calendar-weeks) * max(5rem, round(down, calc((100% - var(--k2b-calendar-weekday-row)) / 5), 1px)));
 }
 
+/* Placed in the scroller, below the weekday row: there a percentage is of the scroller's visible height. */
 .k2b-ui .k2b-calendar-month[data-continuous] .k2b-calendar-month__week {
   position: absolute;
-  /* Whole pixels, as the week view's columns: a scroll position lands exactly on a row, and the last of the five rows
-     shows whole, so focusing it scrolls nothing. The container units stay in these declarations: behind a custom
-     property, WebKit kept the place and height that server-rendered rows had before the viewport settled. */
-  top: calc(var(--k2b-calendar-week-index) * max(5rem, round(down, calc((100cqb - var(--k2b-calendar-weekday-row)) / 5), 1px)));
-  height: max(5rem, round(down, calc((100cqb - var(--k2b-calendar-weekday-row)) / 5), 1px));
+  top: calc(
+    var(--k2b-calendar-weekday-row) + var(--k2b-calendar-week-index) *
+      max(5rem, round(down, calc((100% - var(--k2b-calendar-weekday-row)) / 5), 1px))
+  );
+  height: max(5rem, round(down, calc((100% - var(--k2b-calendar-weekday-row)) / 5), 1px));
   inset-inline: 0;
 }
 
