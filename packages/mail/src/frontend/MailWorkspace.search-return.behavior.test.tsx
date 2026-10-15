@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
@@ -179,6 +179,7 @@ describe("Mail workspace search return", () => {
   let emptyResults: boolean;
   let invalidSearch: boolean;
   let heldSearchResponse: Promise<Response> | undefined;
+  let heldCursorResponse: Promise<Response> | undefined;
 
   const snapshotFor = (href: string): MailboxPageData => {
     const url = new URL(href, "http://localhost");
@@ -210,7 +211,13 @@ describe("Mail workspace search return", () => {
                   : "All mail",
       query: search.query,
       search,
-      listItems: searching && emptyResults ? [] : data.listItems.map((item) => ({ ...item, unread: false })),
+      listItems:
+        searching && emptyResults
+          ? []
+          : activeView === "needs_action" && params.has("cursor")
+            ? [mailTestRow("page-two")]
+            : data.listItems.map((item) => ({ ...item, unread: false })),
+      nextListCursor: activeView === "needs_action" && !params.has("cursor") ? "needs-action-next" : null,
       listError: searching && invalidSearch ? "invalid_search" : null,
       selectedConversationId: conversation,
       selectedMessageId: params.get("message"),
@@ -220,6 +227,7 @@ describe("Mail workspace search return", () => {
   };
 
   beforeEach(() => {
+    setSystemTime(new Date(now));
     dom = createDomTestHarness();
     Object.defineProperty(globalThis, "CSS", { value: dom.window.CSS, configurable: true });
     Reflect.set(globalThis, "WebSocket", FakeWebSocket);
@@ -227,6 +235,7 @@ describe("Mail workspace search return", () => {
     emptyResults = false;
     invalidSearch = false;
     heldSearchResponse = undefined;
+    heldCursorResponse = undefined;
     builderResult = undefined;
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL) => {
@@ -235,6 +244,7 @@ describe("Mail workspace search return", () => {
           const href = url.searchParams.get("href") ?? "";
           workspaceRequests.push(href);
           if (new URL(href, "http://localhost").searchParams.has("q") && heldSearchResponse) return heldSearchResponse;
+          if (new URL(href, "http://localhost").searchParams.has("cursor") && heldCursorResponse) return heldCursorResponse;
           return Response.json(snapshotFor(href));
         }
         if (url.pathname.endsWith("/activity")) return Response.json({ items: [], nextCursor: null });
@@ -254,6 +264,7 @@ describe("Mail workspace search return", () => {
     dom.cleanup();
     if (originalCss) Object.defineProperty(globalThis, "CSS", originalCss);
     else Reflect.deleteProperty(globalThis, "CSS");
+    setSystemTime();
   });
   const mount = (query = "view=needs_action") => {
     const href = `${path}${query ? `?${query}` : ""}`;
@@ -302,6 +313,11 @@ describe("Mail workspace search return", () => {
     await settle();
   };
   const scroller = () => dom.root.querySelector<HTMLElement>('[data-scroll-preserve="mail-list-Box001"]')!;
+  const loadSecondPage = async () => {
+    dom.root.querySelector<HTMLAnchorElement>(`a[href="${path}?view=needs_action&cursor=needs-action-next"]`)!.click();
+    await settle();
+    expect(dom.root.querySelector('[data-conversation-id="page-two"]')).not.toBeNull();
+  };
 
   for (const method of ["delete", "Escape", "button"]) {
     test(`clearing a pending first quick search via ${method} supersedes its response`, async () => {
@@ -468,6 +484,52 @@ describe("Mail workspace search return", () => {
     await settle();
     assertRoute("view=needs_action", "Needs action");
     expect(scroller().scrollTop).toBe(480);
+  });
+
+  for (const method of ["clear", "Back"]) {
+    test(`${method} reloads the starting list's second page before restoring its scroll`, async () => {
+      mount();
+      await loadSecondPage();
+      scroller().scrollTop = 480;
+      await search();
+      workspaceRequests = [];
+      scroller().scrollTop = 20;
+      if (method === "clear") clearButton().click();
+      else history.back();
+      await settle();
+      expect(workspaceRequests).toEqual([`${path}?view=needs_action`, `${path}?view=needs_action&cursor=needs-action-next`]);
+      expect(title()).toBe("Needs action");
+      expect(dom.root.querySelector('[data-conversation-id="page-two"]')).not.toBeNull();
+      // Happy DOM does not clamp scrollTop, so the page request and rendered row guard the list's height too.
+      expect(scroller().scrollTop).toBe(480);
+    });
+  }
+
+  test("leaving while the starting list's extra page loads preserves the other view and its scroll", async () => {
+    mount();
+    await loadSecondPage();
+    scroller().scrollTop = 480;
+    await search();
+    const response = Promise.withResolvers<Response>();
+    heldCursorResponse = response.promise;
+    workspaceRequests = [];
+    clearButton().click();
+    await settle();
+    expect(workspaceRequests).toEqual([`${path}?view=needs_action`, `${path}?view=needs_action&cursor=needs-action-next`]);
+    scroller().scrollTop = 35;
+    await clickLink("view=done");
+    assertRoute("view=done", "Done");
+    expect(scroller().scrollTop).toBe(35);
+    response.resolve(Response.json(snapshotFor(`${path}?view=needs_action&cursor=needs-action-next`)));
+    await settle();
+    expect(workspaceRequests).toEqual([
+      `${path}?view=needs_action`,
+      `${path}?view=needs_action&cursor=needs-action-next`,
+      `${path}?view=done`,
+    ]);
+    expect(title()).toBe("Done");
+    expect(dom.root.querySelector('[data-conversation-id="page-two"]')).toBeNull();
+    expect(scroller().scrollTop).toBe(35);
   });
 
   test("choosing another view discards the starting scroll before a later visit", async () => {

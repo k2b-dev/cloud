@@ -202,7 +202,7 @@ function MailWorkspaceView(props: {
   const undoNotices = new Set<ToastHandle>();
   const [snapshotItems, setSnapshotItems] = createSignal<readonly MailListItem[]>(structuredClone(props.data.listItems));
   // Keep the starting list position only until the search returns or another view is chosen.
-  let searchStart: { scope: string; scroll: ScrollSnapshot } | null = null;
+  let searchStart: { scope: string; scroll: ScrollSnapshot; pages: number } | null = null;
   const captureSearchStart = (href: string) => {
     const target = mailRouteUrl(href);
     const startingScope = mailListScope(buildMailSearchClearHref(target));
@@ -214,14 +214,33 @@ function MailWorkspaceView(props: {
       searchStart = {
         scope: startingScope,
         scroll: captureScroll(`[data-scroll-preserve="mail-list-${mailboxId}"]`),
+        pages: workspaceQuery.pages().length,
       };
     }
   };
-  const searchScrollSnapshot = (href: string): ScrollSnapshot | undefined => {
+  const searchScrollSnapshot = (href: string) => {
     if (mailRouteUrl(href).searchParams.has(MAIL_SEARCH_FROM_PARAMETER)) return;
-    const snapshot = mailListScope(href) === searchStart?.scope ? searchStart.scroll : undefined;
+    const snapshot = mailListScope(href) === searchStart?.scope ? searchStart : undefined;
     searchStart = null;
     return snapshot;
+  };
+  const restoreSearchScroll = async (snapshot: ReturnType<typeof searchScrollSnapshot>, source: string) => {
+    if (!snapshot || workspaceQuery.pages().length >= snapshot.pages) return;
+    // Reload the list's former height after navigation restores the first page's scroll.
+    while (
+      !disposed &&
+      routeSource() === source &&
+      workspaceQuery.pages().length < snapshot.pages &&
+      workspaceQuery.hasMore() &&
+      !workspaceQuery.error()
+    ) {
+      const loaded = workspaceQuery.pages().length;
+      // Join a page load the list started itself; it reports its own failure.
+      if (workspaceQuery.loadingMore()) await workspaceQuery.loadMore();
+      else if (!(await loadMoreConversations(decodeRouteSource(source).href))) break;
+      if (workspaceQuery.pages().length <= loaded) break;
+    }
+    if (!disposed && routeSource() === source) restoreScroll(snapshot.scroll);
   };
   const listView = createMemo(() => projectMailList({ items: data.listItems, removals: removals(), scope: mailListScope(requestPath()) }));
   const selectableRows = () => listView().items.filter((item) => !listView().leavingKeys.has(mailListRowKey(item)));
@@ -469,8 +488,12 @@ function MailWorkspaceView(props: {
   const navigateWorkspace = async (nav: LinkNavigateEvent) => {
     captureSearchStart(nav.href);
     const result = await replaceWorkspaceRoute(nav.href);
-    if (result === "applied") nav.push(undefined, { scroll: "preserve", scrollSnapshot: searchScrollSnapshot(nav.href) });
-    else if (result === "failed") toast.error(t().openViewFailed);
+    if (result === "applied") {
+      const snapshot = searchScrollSnapshot(nav.href);
+      const source = routeSource();
+      nav.push(undefined, { scroll: "preserve", scrollSnapshot: snapshot?.scroll });
+      void restoreSearchScroll(snapshot, source);
+    } else if (result === "failed") toast.error(t().openViewFailed);
   };
 
   const closeConversation = async (nav: LinkNavigateEvent) => {
@@ -487,7 +510,10 @@ function MailWorkspaceView(props: {
     const result = await replaceWorkspaceRoute(href);
     if (result === "applied") {
       if (data.selectedConversationId) setConversationOpenIntent((intent) => intent + 1);
-      navigate(href, { replace, scroll: "preserve", scrollSnapshot: searchScrollSnapshot(href) });
+      const snapshot = searchScrollSnapshot(href);
+      const source = routeSource();
+      navigate(href, { replace, scroll: "preserve", scrollSnapshot: snapshot?.scroll });
+      void restoreSearchScroll(snapshot, source);
     }
     return result;
   };
@@ -774,7 +800,9 @@ function MailWorkspaceView(props: {
         const result = await replaceWorkspaceRoute(href);
         if (!disposed && result === "applied") {
           const snapshot = searchScrollSnapshot(href);
-          if (snapshot) restoreScroll(snapshot);
+          const source = routeSource();
+          if (snapshot) restoreScroll(snapshot.scroll);
+          void restoreSearchScroll(snapshot, source);
         }
         if (!disposed && result === "failed") {
           navigate(requestPath(), { replace: true, scroll: "preserve", viewTransition: false });
