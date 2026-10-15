@@ -134,9 +134,12 @@ test("a label icon applies only to the immediately preceding strong span", () =>
 
 test("details start closed, contain guided blocks and keep their full searchable text", () => {
   const source =
-    ":::details Why *share*?\nHidden but [searchable][r].\n\n:::steps\n1. Choose **Share**.\n:::\n:::\n\n[r]: https://example.com";
+    ":::details Why *share* [here][r]?\nHidden but [searchable][r].\n\n:::steps\n1. Choose **Share**.\n:::\n:::\n\n[r]: https://example.com";
   const html = renderHelpMarkdown(source);
-  expect(html).toContain('<details class="k2b-disclosure help-details" data-surface="plain"><summary><span>Why <em>share</em>?</span>');
+  // A link definition below the block applies to the title as well as to the body.
+  expect(html).toContain(
+    '<details class="k2b-disclosure help-details" data-surface="plain"><summary><span>Why <em>share</em> <a href="https://example.com"',
+  );
   expect(html).not.toContain(" open");
   expect(html).toContain('<ol class="k2b-steps">');
   // The body belongs to the document: a link definition below the block still applies.

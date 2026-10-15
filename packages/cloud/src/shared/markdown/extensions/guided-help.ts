@@ -205,7 +205,8 @@ export function guidedHelpExtension(): MarkedExtension {
               type: "helpDetails",
               raw: block.raw,
               title: block.title,
-              titleTokens: this.lexer.inlineTokens(block.title),
+              // Queued like paragraph text, so a link definition below the block applies to the title too.
+              titleTokens: this.lexer.inline(block.title),
               callout: block.callout,
               // The body joins this document: its links, steps, and reference blocks work as anywhere else.
               tokens: this.lexer.blockTokens(block.body, []),
