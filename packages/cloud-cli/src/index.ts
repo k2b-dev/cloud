@@ -1592,6 +1592,14 @@ const referencedDigests = async (config: CloudCliConfig): Promise<Set<string>> =
     ...Object.values(await readPackagePlugins()).map((entry) => entry.digest),
   ]);
 
+/**
+ * Sweep the shared store while holding the packages lock, so a package
+ * install from another config cannot place its bundle between the snapshot
+ * of package records and the sweep. Call it inside the config lock.
+ */
+const collectUnusedPlugins = (config: CloudCliConfig): Promise<string[]> =>
+  withDirectoryLock(packagesLockPath(), async () => collectPluginGarbage(await referencedDigests(config)));
+
 const resolveInstalledModule = async (name: string, global: GlobalArgs) => {
   const config = await loadConfig();
   return installedModule(config, resolveProfileName(config, global.profile), await readPackagePlugins(), name);
@@ -1947,7 +1955,7 @@ const syncProfilePlugins = async (
     };
     await saveConfig(config);
     if (staged.length > 0) {
-      await collectPluginGarbage(await referencedDigests(config));
+      await collectUnusedPlugins(config);
       await syncSkills(config, locale);
     }
   });
@@ -2305,7 +2313,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
         latest.profiles ??= {};
         latest.profiles[profileName] = { ...latest.profiles[profileName], plugins: lock };
         await saveConfig(latest);
-        await collectPluginGarbage(await referencedDigests(latest));
+        await collectUnusedPlugins(latest);
         await syncSkills(latest, global.locale);
       });
     } else {
@@ -2398,7 +2406,7 @@ const removeProfile = async (args: string[], config: CloudCliConfig, global: Glo
     delete profiles[name];
     if (latest.currentProfile === name) delete latest.currentProfile;
     await saveConfig(latest);
-    await collectPluginGarbage(await referencedDigests(latest));
+    await collectUnusedPlugins(latest);
     await syncSkills(latest, locale);
     return result;
   });

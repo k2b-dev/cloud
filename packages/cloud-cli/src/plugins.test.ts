@@ -441,6 +441,32 @@ describe("cld package plugins", () => {
     expect(await readdir(join(root, "locks"))).toEqual([]);
   }, 30_000);
 
+  test("store garbage collection waits for the shared packages lock", async () => {
+    const dir = await tempDir();
+    const root = join(dir, "cloud", "cld", "plugins");
+    const config = join(dir, "config.json");
+    await writeFile(config, JSON.stringify({ currentProfile: "a", profiles: { a: {}, b: {} } }));
+    const unused = join(root, "store", "c".repeat(128));
+    await mkdir(unused, { recursive: true });
+    const packagesLock = join(root, "locks", "packages.lock");
+    await mkdir(packagesLock, { recursive: true });
+    await writeFile(join(packagesLock, "owner.json"), JSON.stringify({ pid: process.pid, createdAt: 0 }));
+    const pending = runCli(["profile", "rm", "b", "--yes"], dir);
+    try {
+      // The profile is saved before the sweep; wait for that, then give an unlocked sweep time to run.
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline && JSON.parse(await readFile(config, "utf8")).profiles.b) await Bun.sleep(20);
+      expect(JSON.parse(await readFile(config, "utf8")).profiles.b).toBeUndefined();
+      await Bun.sleep(300);
+      expect(await stat(unused).catch(() => null)).not.toBeNull();
+    } finally {
+      await rm(packagesLock, { recursive: true, force: true });
+    }
+    const result = await pending;
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(await stat(unused).catch(() => null)).toBeNull();
+  }, 30_000);
+
   test("package changes prune only their previous bundle and preserve another config's locks", async () => {
     const dir = await tempDir();
     const root = join(dir, "cloud", "cld", "plugins");
