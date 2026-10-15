@@ -507,7 +507,7 @@ suite("mail conversation work-state projection", () => {
     return conversation;
   };
 
-  const decideWorkState = async (messageId: string, input: { completion?: "done"; snoozedUntil?: string }) => {
+  const decideWorkState = async (messageId: string, input: { completion?: "done" | "open"; snoozedUntil?: string }) => {
     const conversation = await conversationForMessage(messageId);
     const updated = await updateConversationCollaboration({
       context,
@@ -526,6 +526,55 @@ suite("mail conversation work-state projection", () => {
       AND action = 'conversation.work_state_changed' AND outcome = 'reconciled'
       AND metadata ->> 'messageId' = ${messageId}
   `;
+
+  test("reopening lets an envelope-only reply reopen the conversation to Needs action", async () => {
+    const ownAddress = `reopen-outbound-${suffix}@example.test`;
+    await sql`
+      INSERT INTO mail.sender_identities (short_id, mailbox_id, label, display_name, from_address, is_default, status)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Reopen test', 'Support', ${ownAddress}, false, 'verified')
+    `;
+    const outbound = envelope({
+      uid: 13021,
+      messageId: `<reopen-outbound-${suffix}@example.test>`,
+      inReplyTo: `<reopen-parent-${suffix}@example.test>`,
+      from: ownAddress,
+      to: "customer@example.test",
+      date: new Date("2026-10-01T10:00:00.000Z"),
+    });
+    outbound.subject = `Re: Work-state reopen ${suffix}`;
+    outbound.remoteRef.folderStableKey = `work-state-sent-${suffix}`;
+    const outboundId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId: sentFolderId, message: outbound });
+    await hydrate(outboundId, [
+      `Message-ID: ${outbound.messageId}`,
+      `In-Reply-To: ${outbound.inReplyTo}`,
+      `From: ${ownAddress}`,
+      "To: customer@example.test",
+      `Subject: ${outbound.subject}`,
+    ]);
+    expect((await conversationForMessage(outboundId)).work_status).toBe("waiting");
+    const reply = envelope({
+      uid: 13022,
+      messageId: `<reopen-inbound-${suffix}@example.test>`,
+      inReplyTo: outbound.messageId,
+      from: "customer@example.test",
+      to: ownAddress,
+      date: new Date("2026-10-01T10:01:00.000Z"),
+    });
+    reply.subject = outbound.subject;
+    const replyId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: reply });
+    expect((await conversationForMessage(replyId)).id).toBe((await conversationForMessage(outboundId)).id);
+    expect((await decideWorkState(replyId, { completion: "done" })).workStatus).toBe("done");
+    expect((await decideWorkState(replyId, { completion: "open" })).workStatus).toBe("waiting");
+    await hydrate(replyId, [
+      `Message-ID: ${reply.messageId}`,
+      `In-Reply-To: ${outbound.messageId}`,
+      "From: customer@example.test",
+      `To: ${ownAddress}`,
+      `Subject: ${reply.subject}`,
+    ]);
+    expect((await conversationForMessage(replyId)).work_status).toBe("needs_action");
+    expect(await reconciledActivities(replyId)).toHaveLength(1);
+  }, 30_000);
 
   for (const decision of ["Done", "snooze"] as const) {
     test(`keeps Done or a snooze that a person set before Mail hydrated the message (${decision})`, async () => {

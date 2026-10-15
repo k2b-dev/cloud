@@ -454,19 +454,22 @@ const conversationMutation = (
               (() => {
                 throw new Error("status must resolve to a value");
               })());
+        const triggerMessageId = mailWorkflowTriggerMessageId(ctx.invocation.context);
         const live =
           kind === "setConversationStatus"
             ? await lockWorkflowConversationStatus(tx, {
                 mailboxId: scope.mailboxId,
                 conversationId,
                 expectedRevision,
-                triggerMessageId: mailWorkflowTriggerMessageId(ctx.invocation.context),
+                triggerMessageId,
               })
             : null;
-        // A status that already holds is still a decision: it covers the messages the conversation
-        // holds now, so their hydration keeps it. The run's view follows the live state.
+        // A status that already holds still decides whether its triggering message keeps the status
+        // during hydration. The run's view follows the live state.
         if (live?.revision != null && live.workStatus === value) {
-          await recordConversationStatusDecision(tx, conversationId);
+          if (triggerMessageId !== null) {
+            await recordConversationStatusDecision(tx, { conversationId, covers: value !== "needs_action", messageId: triggerMessageId });
+          }
           applyMailConversationTransition(conversation, kind, value);
           conversation.revision = live.revision;
           return {
@@ -483,6 +486,7 @@ const conversationMutation = (
           mailboxId: scope.mailboxId,
           workflowVersionId: scope.workflowVersionId,
           conversationId,
+          triggerMessageId,
           input:
             kind === "assignConversation"
               ? { expectedRevision, assigneeUserIds: typeof value === "string" ? [value] : [] }

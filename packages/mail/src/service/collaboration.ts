@@ -458,21 +458,24 @@ export const getConversationCollaboration = async (params: {
 type ConversationCollaborationMutation = CollaborationMutation<ConversationCollaboration> & { addedUserIds: string[] };
 
 /**
- * A status decision covers every message the conversation held when it committed.
- * The caller holds the conversation row lock. Mark only its visible, unhydrated links:
- * now() is the transaction start, so a concurrent sync can insert a link with an earlier
- * created_at that the decision cannot see. Under READ COMMITTED, this per-link UPDATE
- * marks only links the decision could see; a conversation timestamp cannot express that.
+ * The latest status decision decides whether a still unhydrated link keeps that decision:
+ * Done, Waiting, and a snooze set the mark; Needs action, reopening, and clearing a snooze clear it.
+ * The caller holds the conversation row lock. Update only visible, unhydrated links, limited to
+ * messageId when supplied. A conversation timestamp cannot express which links the decision saw.
  */
-export const recordConversationStatusDecision = async (db: SqlClient, conversationId: string): Promise<void> => {
+export const recordConversationStatusDecision = async (
+  db: SqlClient,
+  params: { conversationId: string; covers: boolean; messageId?: string },
+): Promise<void> => {
   await db`
     UPDATE mail.conversation_messages link
-    SET status_decided_at = now()
+    SET status_decided_at = CASE WHEN ${params.covers} THEN now() ELSE NULL END
     FROM mail.message_contents message
-    WHERE link.conversation_id = ${conversationId}::uuid
+    WHERE link.conversation_id = ${params.conversationId}::uuid
+      AND (${params.messageId ?? null}::uuid IS NULL OR link.message_id = ${params.messageId ?? null}::uuid)
       AND message.id = link.message_id
       AND message.hydration_status <> 'complete'
-      AND link.status_decided_at IS NULL
+      AND (link.status_decided_at IS NULL) = ${params.covers}
   `;
 };
 
@@ -533,6 +536,8 @@ const applyConversationCollaborationInTransaction = async (params: {
   actorOverride?: ActorRef;
   activityMetadata?: Record<string, unknown>;
   assigneesToValidate?: readonly string[];
+  // undefined: person/API, all links; string: workflow trigger only; null: no trigger, record nothing.
+  statusDecisionMessageId?: string | null;
 }): Promise<Result<ConversationCollaborationMutation>> => {
   const [current] = await params.db<CollaborationRow[]>`
     SELECT
@@ -625,11 +630,19 @@ const applyConversationCollaborationInTransaction = async (params: {
   }
 
   if (
-    ("workStatus" in params.input && params.input.workStatus) ||
-    ("completion" in params.input && params.input.completion !== undefined) ||
-    params.input.snoozedUntil !== undefined
+    params.statusDecisionMessageId !== null &&
+    (("workStatus" in params.input && params.input.workStatus) ||
+      ("completion" in params.input && params.input.completion !== undefined) ||
+      params.input.snoozedUntil !== undefined)
   ) {
-    await recordConversationStatusDecision(params.db, params.conversationId);
+    await recordConversationStatusDecision(params.db, {
+      conversationId: params.conversationId,
+      covers:
+        ("workStatus" in params.input && (params.input.workStatus === "done" || params.input.workStatus === "waiting")) ||
+        ("completion" in params.input && params.input.completion === "done") ||
+        Boolean(requestedSnooze),
+      messageId: params.statusDecisionMessageId,
+    });
   }
 
   const assigneesChanged =
@@ -722,6 +735,7 @@ export const updateWorkflowConversationCollaborationInTransaction = async (param
   mailboxId: string;
   workflowVersionId: string;
   conversationId: string;
+  triggerMessageId: string | null;
   input: WorkflowConversationCollaborationInput;
   db: SqlClient;
   activityMetadata?: Record<string, unknown>;
@@ -735,6 +749,7 @@ export const updateWorkflowConversationCollaborationInTransaction = async (param
   return applyConversationCollaborationInTransaction({
     ...params,
     context: null,
+    statusDecisionMessageId: params.triggerMessageId,
     actorOverride: { kind: "workflow", workflowVersionId: params.workflowVersionId },
   });
 };

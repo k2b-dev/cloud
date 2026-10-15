@@ -2281,7 +2281,7 @@ suite("incoming automations", () => {
     expect(draft.steps?.[0]?.senderIdentityId).toBe(senderIdentityId);
   });
 
-  const statusEnvelope = (uid: number, key: string, inReplyTo: string | null = null): ConnectorEnvelope => ({
+  const statusEnvelope = (uid: number, key: string, inReplyTo: string | null = null, senderKey = key): ConnectorEnvelope => ({
     remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: "1" },
     providerMessageId: `status-${key}-${uid}-${suffix}`,
     providerThreadId: null,
@@ -2295,7 +2295,7 @@ suite("incoming automations", () => {
     flags: [],
     labels: [],
     addresses: {
-      from: [{ name: "Sender", address: `status-${key}-${suffix}@external.test` }],
+      from: [{ name: "Sender", address: `status-${senderKey}-${suffix}@external.test` }],
       replyTo: [],
       to: [{ name: "Support", address: "automation@example.test" }],
       cc: [],
@@ -2321,8 +2321,8 @@ suite("incoming automations", () => {
   };
 
   const statusConversation = async (messageId: string) => {
-    const [conversation] = await sql<{ id: string; revision: number; work_status: string }[]>`
-      SELECT conversation.id, conversation.revision::int AS revision, conversation.work_status
+    const [conversation] = await sql<{ id: string; revision: number; work_status: string; snoozed_until: Date | string | null }[]>`
+      SELECT conversation.id, conversation.revision::int AS revision, conversation.work_status, conversation.snoozed_until
       FROM mail.conversation_messages link
       JOIN mail.conversations conversation ON conversation.id = link.conversation_id
       WHERE link.message_id = ${messageId}::uuid
@@ -2351,7 +2351,7 @@ suite("incoming automations", () => {
     expect(updated.data.workStatus).toBe("done");
   };
 
-  const createStatusAutomation = async (key: string, archiveId?: string) => {
+  const createStatusAutomation = async (key: string, archiveId?: string, status: "needs_action" | "waiting" | "done" = "done") => {
     const created = await createIncomingAutomation({
       context: ownerContext,
       mailboxId,
@@ -2363,7 +2363,7 @@ suite("incoming automations", () => {
           conditions: { mode: "all", items: [{ field: "sender_address", operator: "is", value: `status-${key}-${suffix}@external.test` }] },
         },
         steps: [
-          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "set_status", status: "done" } },
+          { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "set_status", status } },
           ...(archiveId
             ? [{ id: crypto.randomUUID(), kind: "mail_action" as const, action: { kind: "move_to_folder" as const, folderId: archiveId } }]
             : []),
@@ -2397,7 +2397,91 @@ suite("incoming automations", () => {
     if (!deleted.ok) throw new Error(deleted.error.message);
   };
 
-  // #1142: a status decision covers messages already linked when it commits, before or after hydration.
+  // #1142: a workflow status decision covers only its triggering message, even before hydration.
+  test("does not cover a reply that joined before the automation's status step", async () => {
+    const automation = await createStatusAutomation("joined-before-status");
+    try {
+      const first = statusEnvelope(13001, "joined-before-status");
+      const firstId = await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: first,
+        captureWorkflowTriggers: true,
+      });
+      const second = statusEnvelope(13002, "joined-before-status", first.messageId, "other-sender");
+      const secondId = await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: second,
+        captureWorkflowTriggers: false,
+      });
+      expect((await statusConversation(secondId)).id).toBe((await statusConversation(firstId)).id);
+      const runId = await dispatchStatusRun(automation.workflowId);
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished", result: { state: "succeeded" } });
+      expect((await statusConversation(firstId)).work_status).toBe("done");
+      await hydrateStatusMessage(firstId, first);
+      expect((await statusConversation(firstId)).work_status).toBe("done");
+      expect(await reconciledStatusActivities(firstId)).toEqual([]);
+      await hydrateStatusMessage(secondId, second);
+      expect((await statusConversation(secondId)).work_status).toBe("needs_action");
+      expect(await reconciledStatusActivities(secondId)).toHaveLength(1);
+    } finally {
+      await deleteStatusAutomation(automation.id);
+    }
+  }, 30_000);
+
+  test("clears a snooze for new mail when an automation's needs_action is a no-op", async () => {
+    const first = statusEnvelope(13011, "needs-action-noop");
+    const firstId = await ingestEnvelope({
+      db: sql,
+      mailboxId,
+      remoteResourceId,
+      folderId: inboxFolderId,
+      message: first,
+      captureWorkflowTriggers: false,
+    });
+    await hydrateStatusMessage(firstId, first);
+    const conversation = await statusConversation(firstId);
+    const futureSnooze = new Date(Date.now() + 60 * 60_000).toISOString();
+    const snoozed = await updateConversationCollaboration({
+      context: ownerContext,
+      mailboxId,
+      conversationId: conversation.id,
+      locale: "en",
+      input: { expectedRevision: conversation.revision, snoozedUntil: futureSnooze },
+    });
+    if (!snoozed.ok) throw new Error(snoozed.error.message);
+    expect(snoozed.data.snoozedUntil).toBe(futureSnooze);
+    const automation = await createStatusAutomation("needs-action-noop", undefined, "needs_action");
+    try {
+      const reply = statusEnvelope(13012, "needs-action-noop", first.messageId);
+      const replyId = await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: reply,
+        captureWorkflowTriggers: true,
+      });
+      expect((await statusConversation(replyId)).id).toBe(conversation.id);
+      const runId = await dispatchStatusRun(automation.workflowId);
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished", result: { state: "succeeded" } });
+      const [step] = await sql<{ output: Record<string, unknown> }[]>`
+        SELECT outcome #> '{outcome,output}' AS output FROM workflows.step_outcome
+        WHERE run_id = ${runId}::uuid AND outcome #>> '{outcome,output,action}' = 'setConversationStatus'
+      `;
+      expect(step?.output).toMatchObject({ action: "setConversationStatus", applied: false });
+      await hydrateStatusMessage(replyId, reply);
+      expect(await statusConversation(replyId)).toMatchObject({ work_status: "needs_action", snoozed_until: null });
+    } finally {
+      await deleteStatusAutomation(automation.id);
+    }
+  }, 30_000);
+
   test("keeps Done from an incoming automation when Mail hydrates the triggering message", async () => {
     const [archive] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.folders WHERE id = ${archiveFolderId}::uuid`;
     if (!archive) throw new Error("Archive folder was not found");

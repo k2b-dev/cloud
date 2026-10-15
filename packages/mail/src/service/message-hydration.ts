@@ -532,8 +532,9 @@ const applyVerifiedConversationTransition = async (params: { db: typeof sql; mes
     typeof projection.protocol_facts === "string" ? JSON.parse(projection.protocol_facts) : projection.protocol_facts,
   );
   // The provider's copy of a reply Mail sent does not answer mail that arrived after someone chose
-  // Send, so it leaves that mail needing action, as the confirmed send did. A status that someone
-  // decided after Mail linked this message already covers it.
+  // Send, so it leaves that mail needing action, as the confirmed send did. For an unhydrated link,
+  // the latest decision wins: Done, Waiting, or a snooze keeps it covered; Needs action, reopening,
+  // or clearing a snooze lets hydration derive its status again.
   const transition =
     projection.is_latest_verified && !projection.status_decided && !(projection.outbound && projection.received_since_send)
       ? deriveConversationWorkState(projection.work_status, {
