@@ -651,6 +651,51 @@ describe("floating workspace detail", () => {
       expect(await page.locator("body").getAttribute("data-closes")).toBe("1");
       expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(false);
       expect(await page.evaluate(() => document.activeElement?.id)).toBe("row-30");
+      expect(await page.locator("[data-k2b-app-workspace] [inert]").count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+  });
+  test("390×844: a phone page isolates workspace focus and releases only its own inert on Escape", async () => {
+    const page = await load(390, 844, "phone-page=1");
+    try {
+      // The application's own inert must survive opening and closing the page.
+      await page.locator(".k2b-app-workspace__sidebar").evaluate((sidebar) => sidebar.setAttribute("inert", ""));
+      await openRow(page);
+      expect(await page.locator(".k2b-app-workspace__main").getAttribute("inert")).toBe("");
+      for (const region of await page.locator(".k2b-app-workspace__sidebar, .k2b-app-workspace__head").all()) {
+        expect(await region.getAttribute("inert")).toBe("");
+      }
+      const detail = page.locator(".k2b-app-workspace__detail");
+      await detail.evaluate((aside) => {
+        const stops = Array.from(
+          aside.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), input:not([disabled]), [tabindex]"),
+        ).filter((element) => element.tabIndex >= 0 && element.getClientRects().length > 0 && !element.closest("[inert]"));
+        stops.at(-1)!.focus();
+      });
+      for (const key of ["Tab", "Tab", "Shift+Tab", "F6"]) {
+        await page.keyboard.press(key);
+        expect(await detail.evaluate((aside) => aside.contains(document.activeElement))).toBe(true);
+      }
+      await page.keyboard.press("Escape");
+      await settlePanel(page);
+      expect(await detail.isVisible()).toBe(false);
+      expect(
+        await page.locator("[data-k2b-app-workspace] [inert]").evaluateAll((regions) => regions.map((region) => region.className)),
+      ).toEqual([await page.locator(".k2b-app-workspace__sidebar").getAttribute("class")]);
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe("row-0");
+    } finally {
+      await page.close();
+    }
+  });
+  test("390×844: resizing an open phone page to desktop releases workspace inert", async () => {
+    const page = await load(390, 844, "phone-page=1");
+    try {
+      await openRow(page);
+      expect(await page.locator(".k2b-app-workspace__main").getAttribute("inert")).toBe("");
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.waitForFunction(() => !document.querySelector("[data-k2b-app-workspace] [inert]"));
+      expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(true);
     } finally {
       await page.close();
     }
@@ -664,6 +709,7 @@ describe("floating workspace detail", () => {
       expect((await geometry(page)).detail).toEqual((await geometry(sheet)).detail);
       expect((await geometry(page)).main).toEqual((await geometry(sheet)).main);
       expect((await geometry(page)).detail.top).toBe(8);
+      expect(await page.locator("[data-k2b-app-workspace] [inert]").count()).toBe(0);
       expect(await page.locator(".k2b-app-workspace__detail-grabber").isVisible()).toBe(false);
       await page.keyboard.press("Escape");
       await settlePanel(page);

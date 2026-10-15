@@ -406,24 +406,27 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (control.matches("a[href]") || control.closest(ITEM_SELECTOR)) closeOverlay("kept");
   };
   const onOverlayKeyDown = (event: KeyboardEvent) => {
-    if (!overlay || event.defaultPrevented) return;
+    if (event.defaultPrevented) return;
     const target = eventElement(event);
     if (!target) return;
     // Escape also closes it when a click left focus on nothing, so on the body.
-    if (event.key === "Escape" && (overlay.sidebar.contains(target) || target === ownerDocument.body)) {
+    if (overlay && event.key === "Escape" && (overlay.sidebar.contains(target) || target === ownerDocument.body)) {
       event.preventDefault();
       closeOverlay("button");
       return;
     }
-    if (event.key !== "Tab" || !overlay.sidebar.contains(target)) return;
-    const stops = tabStopsIn(overlay.sidebar);
+    const aside = target.closest<HTMLElement>(detailSelector);
+    const panel =
+      overlay?.sidebar ?? (phone?.matches && aside && !aside.hidden && phonePage(aside) && eventRoot.contains(aside) ? aside : null);
+    if (event.key !== "Tab" || !panel?.contains(target)) return;
+    const stops = tabStopsIn(panel);
     const first = stops[0];
     const last = stops.at(-1);
     if (!first || !last) {
       event.preventDefault();
       return;
     }
-    if (event.shiftKey && (document.activeElement === first || document.activeElement === overlay.sidebar)) {
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === panel)) {
       event.preventDefault();
       last.focus();
     } else if (!event.shiftKey && document.activeElement === last) {
@@ -1206,6 +1209,32 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const nested = Array.from(eventRoot.querySelectorAll<HTMLElement>(ROOT_SELECTOR));
     return eventRoot instanceof HTMLElement && eventRoot.matches(ROOT_SELECTOR) ? [eventRoot, ...nested] : nested;
   };
+  // Remember only attributes we own; application-set inert survives every transition.
+  const phonePageInerted = new Set<HTMLElement>();
+  const syncPhonePages = () => {
+    const regions = new Set<HTMLElement>();
+    if (phone?.matches) {
+      for (const root of allRoots()) {
+        if (!root.isConnected) continue;
+        for (const aside of openDetails(root).filter(phonePage)) {
+          for (let node: HTMLElement | null = aside; node && node !== root; node = node.parentElement) {
+            const parent: HTMLElement | null = node.parentElement;
+            if (parent) overlayRegions(parent, aside).forEach((region) => regions.add(region));
+          }
+        }
+      }
+    }
+    phonePageInerted.forEach((region) => {
+      if (regions.has(region)) return;
+      region.removeAttribute("inert");
+      phonePageInerted.delete(region);
+    });
+    regions.forEach((region) => {
+      if (region.hasAttribute("inert")) return;
+      region.setAttribute("inert", "");
+      phonePageInerted.add(region);
+    });
+  };
   const roots = () => {
     // A hidden or zero-width workspace measures 0, which drives every limit
     // down to its minimum — reconciling one would overwrite its variables and
@@ -1344,6 +1373,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     typeof MutationObserver === "undefined"
       ? null
       : new MutationObserver((records) => {
+          syncPhonePages();
           if (pendingTitle && (pendingTitle.aside.hidden || !pendingTitle.aside.isConnected)) cancelTitle();
           // Hiding or removing the sidebar, or its button, ends the overlay.
           if (overlay && (overlay.sidebar.hidden || !overlay.sidebar.isConnected || !overlay.toggle.isConnected)) closeOverlay("kept");
@@ -1390,9 +1420,11 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   eventRoot.addEventListener("touchend", onDetailTouchEnd);
   eventRoot.addEventListener("touchcancel", onDetailTouchEnd);
   compact?.addEventListener("change", onCompactChange);
+  phone?.addEventListener("change", syncPhonePages);
   eventRoot.addEventListener("keydown", onKeyDown as EventListener);
   eventRoot.addEventListener("focusin", onFocusIn as EventListener);
   window.addEventListener("resize", onResize);
+  syncPhonePages();
   syncObservedRoots();
   mutationObserver?.observe(eventRoot, {
     attributes: true,
@@ -1403,6 +1435,9 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   });
   scheduleReconcile();
   return () => {
+    phonePageInerted.forEach((region) => region.removeAttribute("inert"));
+    phonePageInerted.clear();
+    phone?.removeEventListener("change", syncPhonePages);
     cancelTitle();
     pendingAnchors.forEach((cancel) => cancel());
     slides.forEach((end) => end());
