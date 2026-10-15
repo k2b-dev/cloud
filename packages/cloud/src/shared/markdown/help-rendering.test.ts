@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { helpAgentMarkdown } from "../../_internal/help-catalog";
 import { markdownToPlainText, renderHelpMarkdown, renderMarkdown } from ".";
 
 describe("renderHelpMarkdown", () => {
@@ -120,6 +121,15 @@ test("labels and menu paths use chips while preserving inline Markdown", () => {
   expect(path).toContain('<span class="help-menu-path-separator" aria-hidden="true">›</span><span class="k2b-sr-only">→</span>');
   expect(renderHelpMarkdown("**Settings → Sharing**")).toContain("help-menu-path");
   expect(renderHelpMarkdown("**View**")).toContain("<strong>View</strong>");
+  expect(renderHelpMarkdown('**Open `Settings`**{icon="settings"}')).toContain(">Settings</code>");
+});
+
+test("a label icon applies only to the immediately preceding strong span", () => {
+  const markdown = '**a** **b**{icon="eye-off"}';
+  const html = renderHelpMarkdown(markdown);
+  expect(html).toContain('<strong>a</strong> <span class="k2b-label-chip"><i class="ti ti-eye-off" aria-hidden="true"></i>b</span>');
+  expect(html.match(/class="k2b-label-chip"/g)).toHaveLength(1);
+  expect(helpAgentMarkdown({ markdown, locale: "en", appId: "a", links: {} })).toBe("**a** **b**");
 });
 
 test("details start closed, contain guided blocks and keep their full searchable text", () => {
@@ -145,6 +155,69 @@ test("details end at their own closing line, never inside code, and an unclosed 
   expect(unclosed).not.toContain("<details");
   expect(unclosed).toContain(":::details Open");
 });
+
+test("a later details opener closes independently while the earlier opener stays text", () => {
+  const html = renderHelpMarkdown(":::details A\n:::details B\nBody\n:::");
+  expect(html).toContain("<p>:::details A</p>");
+  expect(html.match(/<details /g)).toHaveLength(1);
+  expect(html).toContain("<summary><span>B</span>");
+  expect(html).toContain("<p>Body</p>");
+  const fenced = renderHelpMarkdown(":::details A\n```md\n:::details B\n```\n:::");
+  expect(fenced.match(/<details /g)).toHaveLength(1);
+  expect(fenced).toContain("<summary><span>A</span>");
+  expect(fenced).toContain(":::details B</code>");
+});
+
+// Count regex calls and copied array elements instead of time so machine load cannot change the bound.
+const countHelpWork = (run: () => unknown): number => {
+  const exec = RegExp.prototype.exec;
+  const concat = Array.prototype.concat;
+  let work = 0;
+  try {
+    RegExp.prototype.exec = function (source) {
+      work++;
+      return exec.call(this, source);
+    };
+    Array.prototype.concat = function (...items) {
+      work += this.length;
+      return concat.apply(this, items);
+    };
+    run();
+  } finally {
+    RegExp.prototype.exec = exec;
+    Array.prototype.concat = concat;
+  }
+  return work;
+};
+for (const [name, size, build] of [
+  ["consecutive unclosed details", 1500, (size: number) => Array.from({ length: size }, (_, index) => `:::details Q${index}\n`).join("")],
+  [
+    "blank-separated unclosed details",
+    500,
+    (size: number) => Array.from({ length: size }, (_, index) => `:::details Q${index}\n\n`).join(""),
+  ],
+  ["ordinary strong runs", 6000, (size: number) => "**a** ".repeat(size)],
+  // A trailing icon exposes repeated lexing of preceding spans, even when the final output is unchanged.
+  ["strong runs before a label", 150, (size: number) => `${"**a** ".repeat(size)}**b**{icon="eye-off"}`],
+] as const) {
+  for (const [operation, run] of [
+    ["render", (markdown: string) => renderHelpMarkdown(markdown)],
+    ["convert", (markdown: string) => helpAgentMarkdown({ markdown, locale: "en", appId: "a", links: {} })],
+  ] as const) {
+    test(`${name} ${operation} with linear work`, () => {
+      const small = build(size);
+      const large = build(size * 2);
+      let output = "";
+      const smallWork = countHelpWork(() => run(small));
+      const largeWork = countHelpWork(() => {
+        output = run(large);
+      });
+      expect(largeWork).toBeLessThanOrEqual(smallWork * 2.5);
+      expect(output).not.toContain("<details");
+      if (operation === "convert") expect(output).toBe(large.replaceAll('{icon="eye-off"}', ""));
+    });
+  }
+}
 
 test("Help references use normal internal links only when resolved", () => {
   const target = {

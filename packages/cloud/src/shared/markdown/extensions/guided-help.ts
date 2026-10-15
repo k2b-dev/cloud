@@ -25,41 +25,53 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
 const DIRECTIVE_OPENER = /^ {0,3}:::(?:steps|reference|compare|details|note|info|success|warning|danger)\b/i;
 const DIRECTIVE_CLOSER = /^ {0,3}:::[ \t]*$/;
 const CALLOUT_OPENER = /^ {0,3}:::(?:note|info|success|warning|danger)\b/i;
+const DETAILS_OPENER = /^ {0,3}:::details\b/i;
 
 /**
  * A `:::details Title` block up to its own closing `:::`. One directive inside it (steps, reference, compare, a
  * callout, which stays text there) keeps its own closer; directives do not nest further, and fenced code hides
- * its lines. Without a closing line there is no block.
+ * its lines. Details never nest; another details opener or a missing closer leaves the first opener as text.
  */
-const detailsBlock = (source: string): { raw: string; title: string; body: string; callout: boolean } | undefined => {
-  const opener = /^:::details[ \t]+(\S[^\n]*)\n/.exec(source);
-  if (!opener) return undefined;
-  let offset = opener[0].length;
+const detailsBlock = (
+  source: string,
+  start = 0,
+): { block?: { raw: string; title: string; body: string; callout: boolean }; stoppedAt: number } => {
+  const openerEnd = source.indexOf("\n", start);
+  const opener = /^:::details[ \t]+(\S[^\n]*)\n/.exec(source.slice(start, openerEnd + 1));
+  if (!opener) return { stoppedAt: source.length };
+  let offset = start + opener[0].length;
   let inner = false;
   let callout = false;
   let fence: string | undefined;
-  for (const line of source.slice(offset).split(/(?<=\n)/)) {
+  while (offset < source.length) {
+    const newline = source.indexOf("\n", offset);
+    const end = newline < 0 ? source.length : newline + 1;
+    const line = source.slice(offset, end);
     const text = line.replace(/\r?\n$/, "");
     const marker = FENCE.exec(text);
     if (fence) {
       if (marker && marker[1]![0] === fence[0] && marker[1]!.length >= fence.length && /^[ \t]*$/.test(marker[2]!)) fence = undefined;
     } else if (marker && !(marker[1]![0] === "`" && marker[2]!.includes("`"))) fence = marker[1];
+    else if (DETAILS_OPENER.test(text)) return { stoppedAt: offset };
     else if (DIRECTIVE_CLOSER.test(text)) {
       if (!inner)
         return {
-          raw: source.slice(0, offset + line.length),
-          title: opener[1]!.trim(),
-          body: source.slice(opener[0].length, offset),
-          callout,
+          block: {
+            raw: source.slice(start, end),
+            title: opener[1]!.trim(),
+            body: source.slice(start + opener[0].length, offset),
+            callout,
+          },
+          stoppedAt: end,
         };
       inner = false;
     } else if (DIRECTIVE_OPENER.test(text)) {
       inner = true;
       callout ||= CALLOUT_OPENER.test(text);
     }
-    offset += line.length;
+    offset = end;
   }
-  return undefined;
+  return { stoppedAt: source.length };
 };
 
 const menuSegments = (tokens: Token[]): Token[][] => {
@@ -115,7 +127,7 @@ export function guidedHelpExtension(): MarkedExtension {
         level: "inline",
         start: (source) => source.indexOf("**"),
         tokenizer(source) {
-          const match = /^(\*\*[\s\S]+?\*\*)\{icon="([a-z0-9-]+)"\}/.exec(source);
+          const match = /^(\*\*(?:[^*]|\*(?!\*))+?\*\*)\{icon="([a-z0-9-]+)"\}/.exec(source);
           if (!match) return undefined;
           const [strong] = Lexer.lexInline(match[1]!);
           if (strong?.type !== "strong") return undefined;
@@ -153,12 +165,21 @@ export function guidedHelpExtension(): MarkedExtension {
         name: "helpDetails",
         level: "block",
         start(source) {
-          // Only a block that closes splits a paragraph; an unclosed opener stays text without rescanning the rest.
-          for (const opener of source.matchAll(/^:::details[ \t]+\S/gm)) if (detailsBlock(source.slice(opener.index))) return opener.index;
+          // Only openers in this paragraph can split it. Looking beyond it rescans the rest at every blank line.
+          const rules = Lexer.rules.block[this.lexer.options.pedantic ? "pedantic" : this.lexer.options.gfm ? "gfm" : "normal"];
+          const extent = rules.paragraph.exec(source)?.[0].length ?? 0;
+          const paragraph = source.slice(0, extent);
+          const openers = /^:::details[ \t]+\S/gm;
+          for (let opener = openers.exec(paragraph); opener; opener = openers.exec(paragraph)) {
+            const result = detailsBlock(source, opener.index);
+            if (result.block) return opener.index;
+            if (result.stoppedAt === source.length) return undefined;
+            openers.lastIndex = result.stoppedAt;
+          }
           return undefined;
         },
         tokenizer(source) {
-          const block = detailsBlock(source);
+          const { block } = detailsBlock(source);
           if (!block) return undefined;
           return {
             type: "helpDetails",

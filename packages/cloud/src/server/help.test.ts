@@ -83,7 +83,13 @@ const helpSource = (id: string, metadata = "", body = "## Plain heading\nRead th
 
 describe("Help author contract", () => {
   test("rejects details without a title or closing line in every locale, outside code", () => {
-    for (const body of [":::details Title\nBody", ":::details\nBody\n:::", "   :::details Title\nBody", ":::details X\n".repeat(40)]) {
+    for (const body of [
+      ":::details Title\nBody",
+      ":::details\nBody\n:::",
+      "   :::details Title\nBody",
+      ":::details X\n".repeat(40),
+      ":::details Outer\n:::details Inner\nBody\n:::\n:::",
+    ]) {
       expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).toThrow(
         'Help document "start" has a :::details block without a title or closing ::: in locale "en"',
       );

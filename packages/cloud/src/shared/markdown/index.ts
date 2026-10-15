@@ -219,14 +219,33 @@ export type { HelpLinkResolver } from "../help";
 
 /** Lexer shared by rendering, startup validation and agent source conversion. */
 export const lexHelpMarkdown = (content: string, locale?: string) => markedFor("help", "widget", locale).lexer(content);
-export const walkHelpTokens = (tokens: Token[], visitor: (token: Token) => void) => markedFor("help").walkTokens(tokens, visitor);
+/**
+ * Visit tokens in the order of marked's walkTokens. Marked concatenates every visitor result into a new array per
+ * token, which grows quadratically with the number of sibling tokens in one paragraph.
+ */
+export const walkHelpTokens = (tokens: Token[], visitor: (token: Token) => void) => {
+  const childTokens = markedFor("help").defaults.extensions?.childTokens ?? {};
+  const walk = (list: readonly Token[]) => {
+    for (const token of list) {
+      visitor(token);
+      if (token.type === "table") {
+        for (const cell of token.header) walk(cell.tokens);
+        for (const row of token.rows) for (const cell of row) walk(cell.tokens);
+      } else if (token.type === "list") walk(token.items);
+      else if (childTokens[token.type])
+        for (const key of childTokens[token.type]!) walk((Reflect.get(token, key) as Token[] | Token[][]).flat(Infinity) as Token[]);
+      else if ("tokens" in token && token.tokens) walk(token.tokens);
+    }
+  };
+  walk(tokens);
+};
 
 export function renderHelpMarkdown(content: string, options: HelpMarkdownRenderOptions = {}): string {
   if (!content || typeof content !== "string") return "";
   const instance = markedFor("help", "widget", options.locale);
   const tokens = instance.lexer(content);
   const headingIds = new Map<string, number>();
-  instance.walkTokens(tokens, (token) => {
+  walkHelpTokens(tokens, (token) => {
     if (token.type === "heading") {
       const base = helpHeadingSlug(token.text.replace(headingMetaPattern, "").trim());
       const occurrence = headingIds.get(base) ?? 0;

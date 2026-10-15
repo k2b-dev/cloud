@@ -194,9 +194,9 @@ Inventory keeps the items you already created.
 
 Details start collapsed. Their full body remains searchable and is given in
 full to agents. They can contain steps, reference, and compare blocks and
-ordinary Markdown. A callout inside details fails startup: a warning or note
-belongs where the reader sees it. An opener without a title, or one that is
-never closed, fails startup.
+ordinary Markdown, but no other details. A callout inside details fails
+startup: a warning or note belongs where the reader sees it. An opener without
+a title, one that is never closed, or one with details inside fails startup.
 
 A paragraph containing only bold text becomes an eyebrow. Use it as a short
 label, not another heading.
