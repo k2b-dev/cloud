@@ -225,6 +225,35 @@ test("on a phone the table of contents is an On this page menu under the head th
   }
 }, 30_000);
 
+test("an open article keeps following the reading position when the window crosses Layout's breakpoint", async () => {
+  const page = await open("", { width: 390, height: 844 });
+  const active = "document.querySelector('.help-article-aside a[aria-current=\"location\"]')?.textContent";
+  try {
+    await page.getByRole("button", { name: "Topic 0", exact: false }).first().click();
+    await page.waitForFunction(`${active} === "Section 0"`);
+    // Wide: Layout's main column scrolls instead of the document.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.waitForFunction(() => getComputedStyle(document.querySelector(".layout-content-main")!).overflowY !== "visible");
+    await page.evaluate(() => {
+      document.querySelector<HTMLElement>(".layout-content-main")!.scrollTop = 2000;
+    });
+    await page.waitForFunction(`${active} !== "Section 0"`);
+    await page.evaluate(() => {
+      document.querySelector<HTMLElement>(".layout-content-main")!.scrollTop = 0;
+    });
+    await page.waitForFunction(`${active} === "Section 0"`);
+    // Narrow again: the document scrolls, and the contents measure against the window.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForFunction(() => getComputedStyle(document.querySelector(".layout-content-main")!).overflowY === "visible");
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForFunction(`${active} === "Section 0"`);
+    await page.evaluate(() => window.scrollTo(0, 2000));
+    await page.waitForFunction(`${active} !== "Section 0"`);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
 test("an embedded reader in a narrow pane uses one column with the menu in a wide window", async () => {
   const page = await open("?embedded");
   try {

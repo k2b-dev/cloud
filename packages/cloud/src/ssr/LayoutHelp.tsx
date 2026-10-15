@@ -200,10 +200,14 @@ const HelpShell = (props: {
   };
 
   /** Once the article body is in the document: open the requested section, or start at the top. */
-  const settleArticle = () => {
+  const syncTocScrollRoot = () => {
     const scroller = articleScroller();
     // The table of contents follows the window unless the reader scrolls in its own container.
     setTocScrollRoot(scroller instanceof HTMLElement && scroller !== document.scrollingElement ? scroller : undefined);
+  };
+
+  const settleArticle = () => {
+    syncTocScrollRoot();
     const openedSection = pendingHash ? scrollToHash(pendingHash) : false;
     pendingHash = "";
     pendingNavigation = false;
@@ -350,6 +354,15 @@ const HelpShell = (props: {
       if (view() === "article" && scrollArea) props.session.articleScrollTop = scrollArea.scrollTop;
     };
     if (props.surface === "modal") scrollArea?.addEventListener("scroll", onScroll, { passive: true });
+    // Layout's breakpoints move page scrolling between its main column and the window; the contents follow.
+    let resizeFrame: number | undefined;
+    const onResize = () => {
+      resizeFrame ??= requestAnimationFrame(() => {
+        resizeFrame = undefined;
+        if (view() === "article") syncTocScrollRoot();
+      });
+    };
+    if (props.surface === "page") window.addEventListener("resize", onResize);
     const onPopState = () => {
       const address = pageAddress();
       if (address === shownAddress) return;
@@ -364,6 +377,8 @@ const HelpShell = (props: {
     if (props.syncPageUrl) window.addEventListener("popstate", onPopState);
     onCleanup(() => {
       scrollArea?.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+      if (resizeFrame !== undefined) cancelAnimationFrame(resizeFrame);
       window.removeEventListener("popstate", onPopState);
     });
   });
