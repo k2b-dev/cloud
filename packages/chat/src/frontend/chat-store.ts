@@ -604,7 +604,9 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     },
     leave: async (id: string, successor?: string) => {
       const result = await api.leave(id, successor);
-      await sidebar(() => refetchRow(id)).catch(() => {});
+      // A chat stays readable after leaving when another grant allows it, but it is no longer the reader's chat:
+      // only the membership-filtered list says whether it belongs in the sidebar.
+      await sidebar(reloadSidebar).catch(() => {});
       return result;
     },
     people: (search: string, signal?: AbortSignal) => api.people(search, undefined, signal),

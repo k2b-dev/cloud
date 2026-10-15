@@ -1088,8 +1088,8 @@ test("member methods forward arguments, and the reader's own changes refresh tha
     ["people", "search", undefined],
   ]);
   // Each of the reader's own changes reads its chat's row again, not the whole list; another member's permission
-  // changes nothing the reader sees.
-  expect(reloads).toBe(0);
+  // changes nothing the reader sees. Leaving reads the membership-filtered list, which decides the sidebar.
+  expect(reloads).toBe(1);
   expect(details).toBe(5);
   expect(store.openConversation?.conversation?.title).toBe("Refreshed");
   store.dispose();
@@ -1153,7 +1153,7 @@ for (const operation of ["create", "updateDetails", "addMembers", "removeMember"
               : operation === "removeMember"
                 ? `DELETE /api/chat/conversations/${conversation.id}/members/access`
                 : `POST /api/chat/conversations/${conversation.id}/leave`,
-        `GET /api/chat/conversations/${conversation.id}`,
+        operation === "leave" ? "GET /api/chat/conversations" : `GET /api/chat/conversations/${conversation.id}`,
       ]);
       expect(store.openConversation?.status).toBe("live");
       expect(store.sidebar).toEqual([conversation]);
@@ -1179,6 +1179,23 @@ test("leaving the open chat reaches no-access on the refresh 404, without a live
   expect(store.openConversation?.conversation).toBeNull();
   expect(store.sidebar).toEqual([]);
   expect(connection.get("conversation").closed).toBe(true);
+  store.dispose();
+});
+
+test("leaving a chat that stays readable through another grant removes it from the sidebar", async () => {
+  let left = false;
+  const { store } = fixture({
+    leave: async () => {
+      left = true;
+      return { success: true, keptThroughGroup: false };
+    },
+    // The list holds only the reader's chats; the detail stays readable, as through a discoverable grant.
+    conversations: async () => ({ items: left ? [] : [conversation], nextCursor: null }),
+    conversation: async () => conversation,
+  });
+  expect(store.sidebar.map((row) => row.id)).toEqual([conversation.id]);
+  await store.leave(conversation.id);
+  expect(store.sidebar).toEqual([]);
   store.dispose();
 });
 
