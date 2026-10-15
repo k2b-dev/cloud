@@ -25,7 +25,7 @@ Notes:
 - `errorFallback` optionally points to a fallback module relative to `rootDir`; islands are protected without it
 - development builds use linked source maps by default; use `devSourcemap: "inline"` only for tools that require embedded maps
 - stable development entries and source maps revalidate; content-hashed chunks and all production assets use immutable caching
-- production module URLs use one content-hashed directory under `config.ssrPath`, stable across restarts and identical builds; relative imports retain the same version, and adapters reject other versions. Deploy the whole `_ssr` directory, including `_ssr/manifest.json`, next to the server bundle
+- production module URLs use one content-hashed directory under `config.ssrPath`, stable across restarts and identical builds from the same build path; relative imports retain the same version, and adapters reject other versions. Deploy the whole `_ssr` directory, including `_ssr/manifest.json`, next to the server bundle
 - the production inline loader preloads rendered islands' shared static imports after the page's stylesheets; dynamic imports stay lazy. It creates modulepreload links at runtime so the HTML preload scanner does not compete with first paint
 - `html()` accepts a synchronous render function: `html(() => <Page />)`
 - `html()` always injects framework assets, including the SSR loader and wrapper styling
