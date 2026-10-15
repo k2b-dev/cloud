@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
+import { formatShortcut } from "@k2b/ui";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { collectContextAwareCommands, registerContextAwareCommand, requestContextCommandExecution } from "./command-bridge";
-import { attachCommandShortcuts, contextCommandsWithShortcuts, shortcutLabel } from "./command-shortcuts";
+import { attachCommandShortcuts, contextCommandsWithShortcuts } from "./command-shortcuts";
 
 const command = (id: string, shortcut: string) => ({ id, title: id, description: id, shortcut, action: () => {} });
 const press = (target: EventTarget, key: string, options: KeyboardEventInit = {}) => {
@@ -126,7 +127,7 @@ test("a widget that moves with arrow keys keeps them; elsewhere an arrow shortcu
     expect(altUp(link).defaultPrevented).toBe(true);
     expect(altUp(window).defaultPrevented).toBe(true);
     expect(calls).toEqual(["page-up", "page-up"]);
-    expect(shortcutLabel("alt+arrowup")).toBe("Alt+↑");
+    expect(formatShortcut("alt+arrowup").label).toBe("Alt+↑");
   } finally {
     stops.reverse().forEach((stop) => stop());
     dom.cleanup();
@@ -160,7 +161,7 @@ test("Mac Option dead keys execute explicit modified letter shortcuts and displa
   try {
     press(window, "Dead", { code: "KeyN", metaKey: true, altKey: true });
     expect(calls).toBe(1);
-    expect(shortcutLabel("mod+alt+n")).toBe("⌥⌘N");
+    expect(formatShortcut("mod+alt+n").label).toBe("⌥⌘N");
     press(window, "n", { ctrlKey: true, altKey: true });
     expect(calls).toBe(1);
   } finally {

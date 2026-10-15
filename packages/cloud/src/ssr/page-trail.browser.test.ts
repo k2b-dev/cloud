@@ -43,10 +43,10 @@ beforeAll(async () => {
   const bundle = await Bun.build({
     entrypoints: [entry],
     files: {
-      [entry]: `import { followPageTrail, installAppWorkspaceController, installPageTitleController } from "@k2b/ui";
+      [entry]: `import { followPageTrail, formatShortcut, installAppWorkspaceController, installPageTitleController } from "@k2b/ui";
 import { layout } from "./layout-runtime";
 import { installPageTrailRuntime } from "./page-trail-runtime";
-import { attachCommandShortcuts, contextCommandsWithShortcuts, shortcutLabel } from "../browser/command-shortcuts";
+import { attachCommandShortcuts, contextCommandsWithShortcuts } from "../browser/command-shortcuts";
 import { platformMessages } from "./platform-messages";
 const t = platformMessages.resolve([document.documentElement.lang]).t;
 installAppWorkspaceController();
@@ -55,7 +55,7 @@ followPageTrail(document);
 window.layout = layout;
 installPageTrailRuntime((page) => ({ title: t.pageUp({ page }), description: t.pageUpDescription }));
 attachCommandShortcuts((command) => typeof command.action === "function" && command.action());
-window.shortcuts = () => contextCommandsWithShortcuts().filter((command) => command.shortcut).map((command) => ({ title: command.title, keys: shortcutLabel(command.shortcut) }));`,
+window.shortcuts = () => contextCommandsWithShortcuts().filter((command) => command.shortcut).map((command) => ({ title: command.title, keys: formatShortcut(command.shortcut).label }));`,
     },
     target: "browser",
     format: "iife",

@@ -56,6 +56,8 @@ for (const locale of ["en", "de"]) {
       purpose: null,
       title: "Chat",
       memberCount: 2,
+      unread: 0,
+      read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
       withGuests: false,
       peerDeactivated: false,
       rev: 1,

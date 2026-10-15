@@ -5,7 +5,7 @@ section: Build an app
 order: 170
 description: Write clear English and German labels, feedback, errors, notifications, and Help without changing product meaning.
 tags: [writing, copy, tone, english, german, i18n, errors, help]
-updated: 2026-10-09
+updated: 2026-10-14
 ---
 
 # Write product text
@@ -98,9 +98,14 @@ Each state answers the question a person has at that moment.
 | Blocking error | What is unavailable, and where can I continue? | You do not have access to this warehouse. Return to Inventory. |
 | Warning | What will the action change? | Removing this member also removes their access to the workspace. |
 
-Do not present unavailable or failed content as empty. Do not announce success
-until the server has confirmed the change. If a write succeeds but the view
-cannot refresh, say that the change was saved and offer to refresh the view.
+Do not present unavailable or failed content as empty. Do not claim an
+irreversible outcome, such as "Sent" or "Deleted permanently", until the
+server has confirmed it. A reversible change that grants no access and
+exposes no data may show at once with Undo; a message such as "Shared with
+Alice" waits for the server too. See
+[Show mutation state](/en/docs/frontend/forms-prompts-and-feedback#show-mutation-state).
+If a write succeeds but the view cannot refresh, say that the change was saved
+and offer to refresh the view.
 
 For errors, state the known fact first and a safe recovery second. Mention
 preserved work when that reduces uncertainty. Do not expose stack traces,

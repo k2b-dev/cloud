@@ -81,8 +81,16 @@ mounted:
   item, so the item shows even while the feed still coasts from a fling.
 - `isAtEnd()` tells whether new items keep the feed at the end.
 
-`onEndChange` reports when the reader reaches or leaves the end, for example
-to mark items as seen.
+`onEndChange` reports when the reader reaches or leaves the end.
+
+`onVisibleChange?: (visible: { first: T; last: T } | null) => void` reports
+changes to the first and last item whose whole height is in view. An item
+taller than the view counts while it covers the view; the callback receives
+`null` when no item is in view. It runs only when the pair of item keys changes.
+Newly shown items count only after the feed has measured them, so a fast scroll
+never reports an item at its estimated height.
+Use this range to track reading progress, together with the application's
+window visibility and focus checks.
 
 ### Separators and the marker
 

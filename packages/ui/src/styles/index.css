@@ -3902,11 +3902,13 @@
     align-items: center;
   }
 
-  .k2b-ui .k2b-app-workspace__sidebar-section {
+  /* Only the sidebar's strip drops section headers; a section in the content area, such as a phone's list page,
+     keeps its title and actions. */
+  .k2b-ui .k2b-app-workspace__sidebar .k2b-app-workspace__sidebar-section {
     flex-direction: row;
   }
 
-  .k2b-ui .k2b-app-workspace__sidebar-section-header {
+  .k2b-ui .k2b-app-workspace__sidebar .k2b-app-workspace__sidebar-section-header {
     display: none;
   }
 }
@@ -10566,11 +10568,8 @@
   object-fit: cover;
 }
 
-.k2b-ui .k2b-spotlight-button kbd {
+.k2b-ui .k2b-spotlight-button > .k2b-kbd {
   margin-left: 0.25rem;
-  color: var(--k2b-text-muted);
-  font-family: var(--k2b-font-mono);
-  font-size: 0.625rem;
 }
 
 .k2b-ui .k2b-spotlight-button[data-variant="default"] {

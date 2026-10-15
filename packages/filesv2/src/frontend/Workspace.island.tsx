@@ -18,10 +18,11 @@ import { MarksMenu, MarksSidebarItem, openMarksDialog } from "./MarksMenu";
 import { useFilesMessages } from "./messages";
 import { openShareDialog } from "./ShareDialog";
 import SharesOverview from "./SharesOverview";
+import StorageOverview from "./StorageOverview";
 import TrashView from "./TrashView";
 import { snapshotTitle } from "./trail";
 import { UploadSurface } from "./UploadPanel";
-import { editorUrl, filesUrl } from "./urls";
+import { editorUrl, filesUrl, showsOverview } from "./urls";
 import { createWorkspaceState, type WorkspaceSnapshot } from "./workspace-state";
 
 const ancestors = (path: string) => {
@@ -56,8 +57,10 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
       if (!basesResponse.ok) throw await apiError(basesResponse);
       const bases = await basesResponse.json();
       const requested = url.searchParams.get("base");
-      const selected =
-        requested && url.searchParams.get("view") !== "shares"
+      const overview = showsOverview(url.searchParams, bases.items.length);
+      const selected = overview
+        ? undefined
+        : requested && url.searchParams.get("view") !== "shares"
           ? bases.items.find((base) => base.id === requested)
           : (bases.items.find((base) => base.status === "existing") ?? bases.items[0]);
       if (requested && !selected && url.searchParams.get("view") !== "shares") throw new Error(t().missingDescription);
@@ -112,6 +115,8 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
     },
   });
   const snapshot = workspace.snapshot;
+  const overview = () => showsOverview(new URL(snapshot().source, "https://files.invalid").searchParams, snapshot().bases.items.length);
+  const hasOverview = () => snapshot().bases.items.length > 1;
   // Uploads belong to the workspace, not to a folder view: navigating or opening the editor keeps them running.
   const uploads = createFilesUploads();
   const [preserveSelection, setPreserveSelection] = createSignal(false);
@@ -174,6 +179,19 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
   onCleanup(() => dialogLifetime.abort());
   const navigation = createNavigation({
     items: () => [
+      ...(hasOverview()
+        ? [
+            {
+              id: "all-storage",
+              label: b().allStorage,
+              icon: "ti ti-layout-grid",
+              href: filesUrl(),
+              active: overview(),
+              navigation: "enhanced" as const,
+              scroll: "manual" as const,
+            },
+          ]
+        : []),
       ...snapshot().bases.items.map((base) => ({
         id: base.id,
         label: baseLabel(base, b(), locale()),
@@ -563,6 +581,12 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
           <AppWorkspace.Sidebar label={t().storage} collapsible>
             <AppWorkspace.SidebarDesktop>
               <AppWorkspace.SidebarBody scrollPreserveKey="filesv2-storage">
+                <Show when={hasOverview()}>
+                  <AppWorkspace.SidebarItem href={filesUrl()} navigation="enhanced" onNavigate={onNavigate} active={overview()}>
+                    <AppWorkspace.SidebarItemIcon icon="ti ti-layout-grid" />
+                    <AppWorkspace.SidebarItemLabel>{b().allStorage}</AppWorkspace.SidebarItemLabel>
+                  </AppWorkspace.SidebarItem>
+                </Show>
                 <AppWorkspace.NavTree
                   ariaLabel={t().storage}
                   selectedId={
@@ -658,156 +682,169 @@ export default function Workspace(props: { initial: WorkspaceSnapshot; preferenc
                   }
                 >
                   <Show
-                    when={snapshot().directory}
+                    when={!overview() || !!problem()}
                     fallback={
-                      <AppWorkspace.Main class="flex min-h-0 flex-col gap-3 p-[var(--ui-space-shell)]" aria-busy={workspace.pending()}>
-                        <Show
-                          when={!workspace.pending()}
-                          fallback={centered(() => <Placeholder state="loading" variant="panel" description={t().loadingFiles} />)}
-                        >
+                      <StorageOverview
+                        bases={snapshot().bases.items}
+                        issues={snapshot().bases.issues}
+                        onOpenRecent={openMarked}
+                        onNavigate={onNavigate}
+                      />
+                    }
+                  >
+                    <Show
+                      when={snapshot().directory}
+                      fallback={
+                        <AppWorkspace.Main class="flex min-h-0 flex-col gap-3 p-[var(--ui-space-shell)]" aria-busy={workspace.pending()}>
                           <Show
-                            when={!problem()}
-                            fallback={centered(() => (
-                              <Placeholder
-                                state="error"
-                                variant="panel"
-                                title={t().loadFailed}
-                                description={workspace.failure()?.message ?? <IssueMessage code={snapshot().errorCode} />}
-                                action={retry()}
-                              />
-                            ))}
+                            when={!workspace.pending()}
+                            fallback={centered(() => <Placeholder state="loading" variant="panel" description={t().loadingFiles} />)}
                           >
                             <Show
-                              when={selected()}
+                              when={!problem()}
                               fallback={centered(() => (
                                 <Placeholder
+                                  state="error"
                                   variant="panel"
-                                  icon="ti ti-folder-off"
-                                  title={t().noStorage}
-                                  description={
-                                    <div class="flex flex-col gap-2">
-                                      <p>{t().noStorageDescription}</p>
-                                      <For each={snapshot().bases.issues}>
-                                        {(issue) => (
-                                          <p>
-                                            <strong>{t()[issue.area]}: </strong>
-                                            <IssueMessage code={issue.code} />
-                                          </p>
-                                        )}
-                                      </For>
-                                    </div>
-                                  }
+                                  title={t().loadFailed}
+                                  description={workspace.failure()?.message ?? <IssueMessage code={snapshot().errorCode} />}
                                   action={retry()}
                                 />
                               ))}
                             >
-                              {(base) => (
-                                <Show
-                                  when={base().status === "existing"}
-                                  fallback={centered(() => (
-                                    <Placeholder
-                                      variant="panel"
-                                      state={base().status === "conflict" || base().status === "unknown" ? "error" : "empty"}
-                                      icon="ti ti-folder-off"
-                                      title={t()[base().status]}
-                                      description={<IssueMessage code={base().reason ?? base().status} />}
-                                      action={retry()}
-                                    />
-                                  ))}
-                                >
-                                  <For each={snapshot().bases.issues}>
-                                    {(issue) => (
-                                      <InlineGuidance tone="info">
-                                        <strong>{t()[issue.area]}: </strong>
-                                        <IssueMessage code={issue.code} />
-                                      </InlineGuidance>
-                                    )}
-                                  </For>
-                                </Show>
-                              )}
+                              <Show
+                                when={selected()}
+                                fallback={centered(() => (
+                                  <Placeholder
+                                    variant="panel"
+                                    icon="ti ti-folder-off"
+                                    title={t().noStorage}
+                                    description={
+                                      <div class="flex flex-col gap-2">
+                                        <p>{t().noStorageDescription}</p>
+                                        <For each={snapshot().bases.issues}>
+                                          {(issue) => (
+                                            <p>
+                                              <strong>{t()[issue.area]}: </strong>
+                                              <IssueMessage code={issue.code} />
+                                            </p>
+                                          )}
+                                        </For>
+                                      </div>
+                                    }
+                                    action={retry()}
+                                  />
+                                ))}
+                              >
+                                {(base) => (
+                                  <Show
+                                    when={base().status === "existing"}
+                                    fallback={centered(() => (
+                                      <Placeholder
+                                        variant="panel"
+                                        state={base().status === "conflict" || base().status === "unknown" ? "error" : "empty"}
+                                        icon="ti ti-folder-off"
+                                        title={t()[base().status]}
+                                        description={<IssueMessage code={base().reason ?? base().status} />}
+                                        action={retry()}
+                                      />
+                                    ))}
+                                  >
+                                    <For each={snapshot().bases.issues}>
+                                      {(issue) => (
+                                        <InlineGuidance tone="info">
+                                          <strong>{t()[issue.area]}: </strong>
+                                          <IssueMessage code={issue.code} />
+                                        </InlineGuidance>
+                                      )}
+                                    </For>
+                                  </Show>
+                                )}
+                              </Show>
                             </Show>
                           </Show>
-                        </Show>
-                      </AppWorkspace.Main>
-                    }
-                  >
-                    {(directory) => (
-                      <Browser
-                        directory={directory()}
-                        bases={snapshot().bases.items}
-                        cloudUrl={props.cloudUrl}
-                        after={after()}
-                        source={snapshot().source}
-                        detail={snapshot().detail}
-                        preferences={props.preferences}
-                        issues={snapshot().bases.issues}
-                        onSelectionSource={workspace.rememberSource}
-                        onMarksChanged={() => setMarksRevision((value) => value + 1)}
-                        onBranchRefreshReady={(refresh) => {
-                          refreshBrowserBranches = refresh;
-                        }}
-                        pending={workspace.pending()}
-                        preserveSelection={preserveSelection()}
-                        error={workspace.failure()?.message}
-                        notice={cursorNotice() ? b().cursorReset : undefined}
-                        onRetry={() => void go(retryHref(), true)}
-                        onOpenDirectory={(path) =>
-                          goTree(
-                            treeId(directory().base.id, path),
-                            filesUrl(directory().base.id, path, null, null, null, null, currentBrowse()),
-                          )
-                        }
-                        onOpenTrash={() => void go(viewUrl(directory().base.id, "trash"))}
-                        onSearch={(query) =>
-                          void go(filesUrl(directory().base.id, directory().path, null, null, query, null, currentBrowse()))
-                        }
-                        onBrowseChange={(options) =>
-                          void go(
-                            filesUrl(directory().base.id, directory().path, null, null, directory().query, directory().scope, options),
-                          )
-                        }
-                        onChanged={(selectPath) => {
-                          setMarksRevision((value) => value + 1);
-                          // Refresh every loaded tree level in place; lists are swapped only when fresh data arrives.
-                          ensureLoaded(Object.keys(folders()), true);
-                          return go(
-                            filesUrl(
-                              directory().base.id,
-                              directory().path,
-                              null,
-                              selectPath ?? null,
-                              directory().query,
-                              directory().scope,
-                              currentBrowse(),
-                            ),
-                            true,
-                          );
-                        }}
-                        onShare={(paths) =>
-                          void openShareDialog({
-                            baseId: directory().base.id,
-                            kind: "download",
-                            paths,
-                            defaultTitle:
-                              paths.length === 1
-                                ? paths[0]!.split("/").at(-1)!
-                                : `${directory().path.split("/").at(-1) || baseLabel(directory().base, b(), locale())} (${paths.length})`,
-                          })
-                        }
-                        onShareInbox={(folder) =>
-                          void openShareDialog({
-                            baseId: directory().base.id,
-                            kind: "inbox",
-                            folder,
-                            defaultTitle: folder.split("/").at(-1) || baseLabel(directory().base, b(), locale()),
-                          })
-                        }
-                        editor={snapshot().bases.editor}
-                        onEdit={(entry) => void go(editorUrl(directory().base.id, entry.path))}
-                        onNavigate={onNavigate}
-                        uploads={uploads}
-                      />
-                    )}
+                        </AppWorkspace.Main>
+                      }
+                    >
+                      {(directory) => (
+                        <Browser
+                          directory={directory()}
+                          bases={snapshot().bases.items}
+                          cloudUrl={props.cloudUrl}
+                          after={after()}
+                          source={snapshot().source}
+                          detail={snapshot().detail}
+                          preferences={props.preferences}
+                          issues={snapshot().bases.issues}
+                          onSelectionSource={workspace.rememberSource}
+                          onMarksChanged={() => setMarksRevision((value) => value + 1)}
+                          onBranchRefreshReady={(refresh) => {
+                            refreshBrowserBranches = refresh;
+                          }}
+                          pending={workspace.pending()}
+                          preserveSelection={preserveSelection()}
+                          error={workspace.failure()?.message}
+                          notice={cursorNotice() ? b().cursorReset : undefined}
+                          onRetry={() => void go(retryHref(), true)}
+                          onOpenDirectory={(path) =>
+                            goTree(
+                              treeId(directory().base.id, path),
+                              filesUrl(directory().base.id, path, null, null, null, null, currentBrowse()),
+                            )
+                          }
+                          onOpenOverview={hasOverview() ? () => void go(filesUrl()) : undefined}
+                          onOpenTrash={() => void go(viewUrl(directory().base.id, "trash"))}
+                          onSearch={(query) =>
+                            void go(filesUrl(directory().base.id, directory().path, null, null, query, null, currentBrowse()))
+                          }
+                          onBrowseChange={(options) =>
+                            void go(
+                              filesUrl(directory().base.id, directory().path, null, null, directory().query, directory().scope, options),
+                            )
+                          }
+                          onChanged={(selectPath) => {
+                            setMarksRevision((value) => value + 1);
+                            // Refresh every loaded tree level in place; lists are swapped only when fresh data arrives.
+                            ensureLoaded(Object.keys(folders()), true);
+                            return go(
+                              filesUrl(
+                                directory().base.id,
+                                directory().path,
+                                null,
+                                selectPath ?? null,
+                                directory().query,
+                                directory().scope,
+                                currentBrowse(),
+                              ),
+                              true,
+                            );
+                          }}
+                          onShare={(paths) =>
+                            void openShareDialog({
+                              baseId: directory().base.id,
+                              kind: "download",
+                              paths,
+                              defaultTitle:
+                                paths.length === 1
+                                  ? paths[0]!.split("/").at(-1)!
+                                  : `${directory().path.split("/").at(-1) || baseLabel(directory().base, b(), locale())} (${paths.length})`,
+                            })
+                          }
+                          onShareInbox={(folder) =>
+                            void openShareDialog({
+                              baseId: directory().base.id,
+                              kind: "inbox",
+                              folder,
+                              defaultTitle: folder.split("/").at(-1) || baseLabel(directory().base, b(), locale()),
+                            })
+                          }
+                          editor={snapshot().bases.editor}
+                          onEdit={(entry) => void go(editorUrl(directory().base.id, entry.path))}
+                          onNavigate={onNavigate}
+                          uploads={uploads}
+                        />
+                      )}
+                    </Show>
                   </Show>
                 </Show>
               </Show>

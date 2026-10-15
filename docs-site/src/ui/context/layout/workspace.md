@@ -218,8 +218,11 @@ phone chrome. This removes its exterior border, radius, shadow, and background
 below 48 rem. Embedded workspaces keep the default contained surface.
 
 Set `flat` on a workspace that is the page itself, such as an app's overview.
-It draws no border, corner radius, or shadow at any width, and its sidebar and
-content keep square outer corners.
+It removes the workspace's own border, corner radius, and shadow. Where the
+host shows the app area as a card, the outermost workspace is that card and
+gets its radius and frame, flat or not, so every app shows the same rounded
+card. Cloud does this from 1536 px for signed-in people and from 768 px on
+anonymous pages.
 
 Sidebar links use document navigation by default. Set `navigation="enhanced"`
 only inside an island that loads and applies the target state before committing
@@ -315,7 +318,9 @@ needs a compact header action such as creating a resource. The section owns
 the header alignment; the control still owns its accessible name and action
 behavior. Section headers and their actions are hidden with the compact rail
 and mobile section layout, so expose an equivalent reachable action in those
-compositions. With a mouse or trackpad, including a tablet with a mouse,
+compositions. A `SidebarSection` in the content area, such as a list page
+that replaces the sidebar on a phone, keeps its header and actions at every
+width. With a mouse or trackpad, including a tablet with a mouse,
 section actions stay hidden until the header is hovered or contains keyboard
 focus. Touch-only screens always show them. An open dropdown keeps its section
 action visible and interactive until the menu closes.

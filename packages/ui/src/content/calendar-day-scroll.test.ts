@@ -12,7 +12,7 @@ import {
   wheelDelta,
   wheelPixels,
 } from "./calendar-day-scroll";
-import { parseGoTo, shortcutKeys } from "./calendar-dialogs";
+import { parseGoTo } from "./calendar-dialogs";
 
 const stops = [0, 1000, 2000];
 
@@ -180,13 +180,5 @@ describe("Go to", () => {
     expect(parseGoTo("next", today)).toBeNull();
     expect(parseGoTo("February 29, 2027", today)).toBeNull();
     expect(parseGoTo("March 0", today)).toBeNull();
-  });
-
-  test("names the keys of a shortcut", () => {
-    expect(shortcutKeys("h")).toEqual(["H"]);
-    expect(shortcutKeys("shift+n").at(-1)).toBe("N");
-    expect(shortcutKeys("shift+n")).toHaveLength(2);
-    expect(shortcutKeys("arrowright")).toEqual(["→"]);
-    expect(shortcutKeys("arrowleft")).toEqual(["←"]);
   });
 });

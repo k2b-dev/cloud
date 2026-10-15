@@ -44,19 +44,19 @@ export const pruneMailConversationSelection = (
 };
 
 export const findMailFocusAfterRemoval = (params: {
-  orderedConversationIds: readonly string[];
-  activeConversationId: string | null;
-  removedConversationIds: ReadonlySet<string>;
+  orderedRowKeys: readonly string[];
+  activeRowKey: string | null;
+  removedRowKeys: ReadonlySet<string>;
 }): string | null => {
-  const activeIndex = params.activeConversationId ? params.orderedConversationIds.indexOf(params.activeConversationId) : -1;
+  const activeIndex = params.activeRowKey ? params.orderedRowKeys.indexOf(params.activeRowKey) : -1;
   const start = Math.max(activeIndex, 0);
-  for (let index = start + 1; index < params.orderedConversationIds.length; index += 1) {
-    const id = params.orderedConversationIds[index]!;
-    if (!params.removedConversationIds.has(id)) return id;
+  for (let index = start + 1; index < params.orderedRowKeys.length; index += 1) {
+    const id = params.orderedRowKeys[index]!;
+    if (!params.removedRowKeys.has(id)) return id;
   }
   for (let index = start - 1; index >= 0; index -= 1) {
-    const id = params.orderedConversationIds[index]!;
-    if (!params.removedConversationIds.has(id)) return id;
+    const id = params.orderedRowKeys[index]!;
+    if (!params.removedRowKeys.has(id)) return id;
   }
   return null;
 };

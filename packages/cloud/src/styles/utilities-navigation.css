@@ -883,19 +883,6 @@
   transition: opacity 120ms ease-out;
 }
 
-.layout-profile-preferences__appearance {
-  padding: 0.125rem 0.125rem 0.25rem;
-}
-
-.layout-profile-preferences__appearance .k2b-segmented-control {
-  width: 100%;
-}
-
-/* Content-sized segments: "Automatisch" needs more room than "Hell" in the narrow panel. */
-.layout-profile-preferences__appearance .k2b-segmented-control__option {
-  flex: 1 1 auto;
-}
-
 .dark .layout-profile-preferences__panel {
   color: var(--color-zinc-300);
 }
@@ -943,6 +930,16 @@
   .layout-profile-preferences__panel {
     transition: none;
   }
+}
+
+/* Reserves the width of the longest appearance label, so cycling never resizes the button. */
+.cloud-theme-cycle__label { display: inline-grid; justify-items: start; }
+.cloud-theme-cycle__label::before { content: attr(data-reserve-a); }
+.cloud-theme-cycle__label::after { content: attr(data-reserve-b); }
+.cloud-theme-cycle__label::before, .cloud-theme-cycle__label::after { height: 0; overflow: hidden; visibility: hidden; }
+
+@media (width < 48rem) {
+  .cloud-theme-cycle__label[data-compact] { display: none; }
 }
 
 /* MinimalLayout stacks the page content and its footer in a column at least

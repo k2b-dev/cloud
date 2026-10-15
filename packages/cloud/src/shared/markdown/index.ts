@@ -8,6 +8,7 @@
 import { markdownInfoBlocks } from "@k2b/ui";
 import { Marked, type MarkedExtension } from "marked";
 import sanitizeHtml from "sanitize-html";
+import { markdownCalloutSanitizeOptions } from "./callout-sanitizer";
 import { markdownClient } from "./client";
 import { codeExtension, plainCodeExtension } from "./extensions/code";
 import { guidedHelpExtension } from "./extensions/guided-help";
@@ -73,8 +74,10 @@ export type MarkdownRenderOptions = {
   locale?: string;
 };
 
-const sanitizeRenderedHtml = (html: string): string =>
-  sanitizeHtml(html, {
+const sanitizeRenderedHtml = (html: string): string => {
+  const callouts = markdownCalloutSanitizeOptions();
+  return sanitizeHtml(html, {
+    ...callouts,
     allowedTags: [
       ...sanitizeHtml.defaults.allowedTags,
       "annotation",
@@ -101,6 +104,7 @@ const sanitizeRenderedHtml = (html: string): string =>
       "mtext",
       "semantics",
       "span",
+      ...callouts.allowedTags,
       "sub",
       "sup",
       "table",
@@ -129,6 +133,7 @@ const sanitizeRenderedHtml = (html: string): string =>
       input: ["checked", "class", "disabled", "type"],
       math: ["xmlns"],
       pre: ["class"],
+      ...callouts.allowedAttributes,
       span: ["aria-hidden", "class", "style", "title"],
     },
     allowedSchemes: ["http", "https", "mailto", "tel", "note", "attach"],
@@ -150,6 +155,7 @@ const sanitizeRenderedHtml = (html: string): string =>
       },
     },
   });
+};
 
 /**
  * Render markdown to HTML for server-side display.

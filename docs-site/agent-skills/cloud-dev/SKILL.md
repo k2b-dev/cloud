@@ -102,9 +102,9 @@ SolidJS library remains independent of Cloud and application domains.
 - Do not recreate generic component contracts inside an application. If no
   primitive fits, surface the gap and agree with the application author
   whether to extend `@k2b/ui` or build application-owned UI.
-- Custom UI follows the same tokens, semantics, interaction, accessibility,
-  responsive, theme, and state principles. Reusable presentation belongs in
-  the library; applications retain their domain behavior.
+- Custom UI follows the same tokens, semantics, interaction, accessibility, responsive, theme, and state principles.
+  Reusable presentation belongs in the library; applications retain their domain behavior. Check every screen
+  against **Styling and accessibility** (`/en/docs/frontend/styling-and-accessibility`).
 - Give an application's landing page the shared overview pattern: either a
   sidebar-first `AppWorkspace` (`SidebarItem variant="object"` rows,
   `AppWorkspace.Main width="content"`, a `PanelHeader size="lg"` with one
@@ -116,8 +116,8 @@ SolidJS library remains independent of Cloud and application domains.
 
 - SSR owns the authorized initial snapshot; Solid islands own only browser interaction. Islands, dialogs, and
   floating windows that cannot render fail alone behind a notice (add no wrappers). Prefer typed Hono clients over raw transport calls.
-- Invalidate the canonical read after writes instead of maintaining a second
-  client-side domain model.
+- Invalidate the canonical read after writes instead of keeping a second client-side domain model. Every action
+  answers at once, optimistically or pending; Undo only if the server can reverse it (**Forms, prompts, and feedback**).
 - Keep reloadable state in the URL; automatic reloads use `reloadOnce()`, and code only an action needs loads
   in it through `importOnDemand()`. Live updates use `defineLive()` and `liveConnection()`; acknowledge after a covering snapshot.
 - Hand islands the route as a path (`requestPath(c)` from `@k2b/cloud/ssr`),

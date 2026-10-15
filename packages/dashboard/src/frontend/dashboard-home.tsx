@@ -1,11 +1,13 @@
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { DashboardWidgetSize } from "@k2b/cloud/contracts";
 import { openAppLaunchpad } from "@k2b/cloud/ssr/islands";
-import { announce, Button, Placeholder, SegmentedControl, suppressTextSelection, Tooltip, toast, useLocale } from "@k2b/ui";
+import { announce, Button, IconButton, Placeholder, SegmentedControl, suppressTextSelection, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import {
   DASHBOARD_MAX_ITEMS,
   DASHBOARD_MAX_SHORTCUTS,
+  DASHBOARD_MAX_TITLE_LENGTH,
   type DashboardAppSummary,
   type DashboardBoardEntry,
   type DashboardCatalogWidget,
@@ -13,7 +15,11 @@ import {
   type DashboardLegalLink,
   type DashboardShortcut,
   defaultDashboardBoard,
+  hasWidgetSettings,
+  newDashboardEntryId,
   restoreKeptDashboardEntries,
+  sameEntrySettings,
+  widgetRequestSettings,
 } from "../shared";
 import { openDashboardGallery } from "./dashboard-gallery";
 import { askForShortcut, DashboardShortcuts } from "./dashboard-shortcuts";
@@ -54,7 +60,7 @@ type Snapshot = { board: DashboardBoardEntry[]; shortcuts: DashboardShortcut[]; 
 
 type Press = {
   pointerId: number;
-  key: string;
+  id: string;
   tile: HTMLElement;
   x: number;
   y: number;
@@ -91,9 +97,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
   const [saving, setSaving] = createSignal(false);
   /** The board can change only in the edit mode and not while Done saves it, so what is saved is what is shown. */
   const editable = () => editing() && !saving();
-  const [tiles, setTiles] = createSignal<DashboardTiles>(
-    Object.fromEntries(props.board.map((entry) => [entry.key, { status: "loading" }])),
-  );
+  const [tiles, setTiles] = createSignal<DashboardTiles>(Object.fromEntries(props.board.map((entry) => [entry.id, { status: "loading" }])));
   const [dragged, setDragged] = createSignal<string>();
   const [fresh, setFresh] = createSignal<string>();
   let snapshot: Snapshot | undefined;
@@ -103,18 +107,39 @@ export default function DashboardHome(props: DashboardHomeProps) {
   let editButton: HTMLButtonElement | undefined;
   let doneButton: HTMLButtonElement | undefined;
 
-  const keys = () => board().map((entry) => entry.key);
+  const ids = () => board().map((entry) => entry.id);
   /** Widgets the page cannot show count too: saving keeps them. */
   const boardIsFull = () => board().length + kept().length >= DASHBOARD_MAX_ITEMS;
-  const sizeOf = (key: string): DashboardWidgetSize => board().find((entry) => entry.key === key)?.size ?? "medium";
-  const titleOf = (key: string) => catalogByKey.get(key)?.title ?? key;
-  const tileElement = (key: string) => grid?.querySelector<HTMLElement>(`.dashboard-tile[data-key="${CSS.escape(key)}"]`) ?? undefined;
+  const sizeOf = (id: string): DashboardWidgetSize => board().find((entry) => entry.id === id)?.size ?? "medium";
+  /**
+   * The widget's title and, for an entry with settings, the first resource, option, or text the person chose, so two
+   * entries of one widget have different names in every label and announcement.
+   */
+  const titleOf = (id: string) => {
+    const entry = board().find((entry) => entry.id === id);
+    const widget = catalogByKey.get(entry?.key ?? "");
+    if (!entry || !widget) return id;
+    for (const [name, field] of Object.entries(widget.settings ?? {})) {
+      const value = entry.settings?.[name];
+      const detail =
+        field.kind === "resource" && typeof value === "object" && value.type === field.type
+          ? value.title
+          : field.kind === "choice"
+            ? field.options.find((option) => option.value === value)?.label
+            : field.kind === "text" && typeof value === "string"
+              ? value.trim()
+              : undefined;
+      if (detail) return t().entryName({ title: widget.title, detail: detail.slice(0, DASHBOARD_MAX_TITLE_LENGTH) });
+    }
+    return widget.title;
+  };
+  const tileElement = (id: string) => grid?.querySelector<HTMLElement>(`.dashboard-tile[data-id="${CSS.escape(id)}"]`) ?? undefined;
 
   // ── Loading ───────────────────────────────────────────────────────────
-  // The newest request for a widget owns its frame; the size each widget was last asked in decides whether a resize
-  // asks again.
+  // The newest request owns the frame; a changed size or settings asks the entry again.
   const generation = new Map<string, number>();
-  const askedSize = new Map<string, DashboardWidgetSize>();
+  const asked = new Map<string, string>();
+  const signature = (entry: DashboardBoardEntry) => entry.size + JSON.stringify(widgetRequestSettings(entry.settings));
   const requests = new Set<AbortController>();
   const load = (entries: readonly DashboardBoardEntry[], options: { quiet?: boolean } = {}) => {
     if (entries.length === 0) return;
@@ -122,36 +147,37 @@ export default function DashboardHome(props: DashboardHomeProps) {
     requests.add(controller);
     const owned = new Map<string, number>();
     for (const entry of entries) {
-      const next = (generation.get(entry.key) ?? 0) + 1;
-      generation.set(entry.key, next);
-      owned.set(entry.key, next);
-      askedSize.set(entry.key, entry.size);
+      const next = (generation.get(entry.id) ?? 0) + 1;
+      generation.set(entry.id, next);
+      owned.set(entry.id, next);
+      asked.set(entry.id, signature(entry));
     }
     // A quiet reload keeps the widget's content until the new answer replaces it.
     setTiles((current) => ({
       ...current,
       ...Object.fromEntries(
-        entries.filter((entry) => !options.quiet || current[entry.key]?.status !== "ok").map((entry) => [entry.key, { status: "loading" }]),
+        entries.filter((entry) => !options.quiet || current[entry.id]?.status !== "ok").map((entry) => [entry.id, { status: "loading" }]),
       ),
     }));
     void loadDashboardWidgets({
       widgets: entries,
       signal: controller.signal,
       locale: locale(),
-      onTile: (key, state) => {
-        if (generation.get(key) === owned.get(key)) setTiles((current) => ({ ...current, [key]: state }));
+      onTile: (id, state) => {
+        if (generation.get(id) === owned.get(id)) setTiles((current) => ({ ...current, [id]: state }));
       },
     }).finally(() => requests.delete(controller));
   };
-  /** Asks every widget on the board that has not answered in its current size yet. */
+  /** Asks every widget on the board that has not answered in its size and settings yet. */
   const loadMissing = () =>
     load(
-      board().filter((entry) => askedSize.get(entry.key) !== entry.size),
+      board().filter((entry) => asked.get(entry.id) !== signature(entry)),
       { quiet: true },
     );
-  const retry = (key: string) => {
-    tileElement(key)?.focus({ preventScroll: true });
-    load([{ key, size: sizeOf(key) }]);
+  const retry = (id: string) => {
+    tileElement(id)?.focus({ preventScroll: true });
+    const entry = board().find((entry) => entry.id === id);
+    if (entry) load([entry]);
   };
 
   onMount(() => {
@@ -249,10 +275,10 @@ export default function DashboardHome(props: DashboardHomeProps) {
     announce(t().wasReset);
   };
 
-  const move = (key: string, to: number) => {
+  const move = (id: string, to: number) => {
     if (!editable()) return false;
     const current = board();
-    const from = current.findIndex((entry) => entry.key === key);
+    const from = current.findIndex((entry) => entry.id === id);
     if (from < 0 || to < 0 || to >= current.length || to === from) return false;
     const next = [...current];
     const [entry] = next.splice(from, 1);
@@ -260,20 +286,21 @@ export default function DashboardHome(props: DashboardHomeProps) {
     change(next);
     return true;
   };
-  const remove = (key: string) => {
+  const remove = (id: string) => {
     if (!editable()) return;
-    const index = keys().indexOf(key);
+    const index = ids().indexOf(id);
     if (index < 0) return;
-    change(board().filter((entry) => entry.key !== key));
+    const name = titleOf(id);
+    change(board().filter((entry) => entry.id !== id));
     const next = grid?.querySelectorAll<HTMLElement>(".dashboard-tile")[Math.min(index, board().length - 1)];
     (next ?? grid?.querySelector<HTMLElement>(".dashboard-add-tile"))?.focus();
-    announce(t().removed({ name: titleOf(key) }));
+    announce(t().removed({ name }));
   };
-  const resize = (key: string, size: DashboardWidgetSize) => {
+  const resize = (id: string, size: DashboardWidgetSize) => {
     if (!editable()) return;
-    change(board().map((entry) => (entry.key === key ? { key, size } : entry)));
+    change(board().map((entry) => (entry.id === id ? { ...entry, size } : entry)));
     loadMissing();
-    announce(t().resized({ name: titleOf(key), size: t()[size] }));
+    announce(t().resized({ name: titleOf(id), size: t()[size] }));
   };
 
   const refuseWhenFull = () => {
@@ -286,20 +313,64 @@ export default function DashboardHome(props: DashboardHomeProps) {
     const choice = await openDashboardGallery(
       {
         catalog: props.catalog,
-        onBoard: new Set(keys()),
-        seed: (key, size) => (askedSize.get(key) === size && tiles()[key]?.status === "ok" ? tiles()[key] : undefined),
+        onBoard: new Set(board().map((entry) => entry.key)),
+        seed: (key, size) => {
+          const entry = board().find(
+            (entry) =>
+              entry.key === key &&
+              !entry.settings &&
+              entry.size === size &&
+              asked.get(entry.id) === signature(entry) &&
+              tiles()[entry.id]?.status === "ok",
+          );
+          return entry ? tiles()[entry.id] : undefined;
+        },
       },
       locale(),
     );
-    if (!choice || saving() || keys().includes(choice.key) || refuseWhenFull()) return;
+    if (!choice || saving() || refuseWhenFull()) return;
+    if (board().some((entry) => entry.key === choice.key) && !hasWidgetSettings(catalogByKey.get(choice.key) ?? {})) return;
+    const id = newDashboardEntryId(choice.key, new Set([...board(), ...kept()].map((entry) => entry.id)));
+    const entry = { id, ...choice };
     startEdit();
-    change([...board(), choice]);
-    setFresh(choice.key);
-    load([choice]);
-    const tile = tileElement(choice.key);
+    change([...board(), entry]);
+    setFresh(id);
+    load([entry]);
+    const tile = tileElement(id);
     tile?.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" });
     tile?.focus({ preventScroll: true });
-    announce(t().added({ name: titleOf(choice.key), position: board().length, total: board().length }));
+    announce(t().added({ name: titleOf(id), position: board().length, total: board().length }));
+  };
+  const customize = async (id: string) => {
+    if (!editable()) return;
+    const entry = board().find((entry) => entry.id === id);
+    const widget = entry && catalogByKey.get(entry.key);
+    if (!entry || !widget || !hasWidgetSettings(widget)) return;
+    const dialog = await importOnDemand(() => import("./dashboard-widget-settings"));
+    if (!dialog) return;
+    try {
+      const next = await dialog.openDashboardWidgetSettings({ widget, name: titleOf(id), settings: entry.settings }, locale());
+      const current = board().find((entry) => entry.id === id);
+      // Apply without a change leaves the board as it was, also a default board the person follows.
+      if (next === undefined || !editable() || !current || sameEntrySettings(next, current.settings)) return;
+      change(
+        board().map((entry) => {
+          if (entry.id !== id) return entry;
+          const { settings: _previous, ...rest } = entry;
+          return Object.keys(next).length ? { ...rest, settings: next } : rest;
+        }),
+      );
+      loadMissing();
+      announce(t().customized({ name: titleOf(id) }));
+    } finally {
+      tileElement(id)?.querySelector<HTMLButtonElement>(".dashboard-tile__customize")?.focus({ preventScroll: true });
+    }
+  };
+  const moveBy = (id: string, offset: number, control: "forward" | "back") => {
+    const index = ids().indexOf(id);
+    if (!move(id, index + offset)) return;
+    announce(t().moved({ name: titleOf(id), position: index + offset + 1, total: board().length }));
+    tileElement(id)?.querySelector<HTMLButtonElement>(`.dashboard-tile__move[data-move="${control}"]`)?.focus({ preventScroll: true });
   };
   const addShortcut = async () => {
     if (!editable()) return;
@@ -325,22 +396,22 @@ export default function DashboardHome(props: DashboardHomeProps) {
     );
 
   // ── Keyboard ──────────────────────────────────────────────────────────
-  const onTileKeyDown = (event: KeyboardEvent, key: string) => {
+  const onTileKeyDown = (event: KeyboardEvent, id: string) => {
     if (!editable() || event.target !== event.currentTarget) return;
-    const index = keys().indexOf(key);
+    const index = ids().indexOf(id);
     if (event.key === "Delete" || event.key === "Backspace") {
       event.preventDefault();
-      remove(key);
+      remove(id);
       return;
     }
     const offset =
       event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : 0;
     if (offset === 0) return;
     event.preventDefault();
-    if (!move(key, index + offset)) return;
+    if (!move(id, index + offset)) return;
     // Moving a focused element in the document drops its focus.
-    tileElement(key)?.focus();
-    announce(t().moved({ name: titleOf(key), position: index + offset + 1, total: board().length }));
+    tileElement(id)?.focus();
+    announce(t().moved({ name: titleOf(id), position: index + offset + 1, total: board().length }));
   };
 
   // ── Pointer: long press, drag, touch ──────────────────────────────────
@@ -355,9 +426,9 @@ export default function DashboardHome(props: DashboardHomeProps) {
       drag.releaseTextSelection();
       drag.ghost.remove();
       setDragged(undefined);
-      const index = keys().indexOf(press.key);
-      announce(t().moved({ name: titleOf(press.key), position: index + 1, total: board().length }));
-      tileElement(press.key)?.focus({ preventScroll: true });
+      const index = ids().indexOf(press.id);
+      announce(t().moved({ name: titleOf(press.id), position: index + 1, total: board().length }));
+      tileElement(press.id)?.focus({ preventScroll: true });
     }
     press = undefined;
   };
@@ -366,14 +437,14 @@ export default function DashboardHome(props: DashboardHomeProps) {
     const over = document
       .elementsFromPoint(x, y)
       .map((node) => (node as HTMLElement).closest?.<HTMLElement>(".dashboard-tile"))
-      .find((tile) => tile && tile.parentElement === grid && tile.dataset.key !== press?.key);
-    const key = over?.dataset.key;
+      .find((tile) => tile && tile.parentElement === grid && tile.dataset.id !== press?.id);
+    const id = over?.dataset.id;
     // A widget that just made room may still be under the pointer; it trades places again only after the pointer left it.
-    if (!key || key === press.drag.lastOver) {
-      if (!key) press.drag.lastOver = undefined;
+    if (!id || id === press.drag.lastOver) {
+      if (!id) press.drag.lastOver = undefined;
       return;
     }
-    if (move(press.key, keys().indexOf(key))) press.drag.lastOver = key;
+    if (move(press.id, ids().indexOf(id))) press.drag.lastOver = id;
   };
   const autoScroll = (y: number) => {
     if (!press?.drag || !grid) return;
@@ -416,19 +487,19 @@ export default function DashboardHome(props: DashboardHomeProps) {
       // The widget sweeps across the greeting and the shortcuts; none of their text may turn selected.
       releaseTextSelection: suppressTextSelection(press.pointerId),
     };
-    setDragged(press.key);
+    setDragged(press.id);
   };
   const onPointerDown = (event: PointerEvent) => {
     if (!event.isPrimary || event.button > 0 || press) return;
     suppressClick = false;
     const target = event.target as HTMLElement;
     const tile = target.closest<HTMLElement>(".dashboard-tile");
-    const key = tile?.dataset.key;
-    if (!tile || !key) return;
+    const id = tile?.dataset.id;
+    if (!tile || !id) return;
     const touch = event.pointerType === "touch";
     if (!editing()) {
       if (target.closest("button, input, textarea, select, [role='radio']")) return;
-      press = { pointerId: event.pointerId, key, tile, x: event.clientX, y: event.clientY, armed: false };
+      press = { pointerId: event.pointerId, id, tile, x: event.clientX, y: event.clientY, armed: false };
       // A long press only opens the edit mode; moving then takes a new press. Browsers stop letting a page keep a
       // finger that has been held this long from scrolling, so the same press could not drag reliably.
       press.timer = setTimeout(() => {
@@ -442,7 +513,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
       return;
     }
     if (target.closest(".dashboard-tile__control") || saving()) return;
-    press = { pointerId: event.pointerId, key, tile, x: event.clientX, y: event.clientY, armed: !touch };
+    press = { pointerId: event.pointerId, id, tile, x: event.clientX, y: event.clientY, armed: !touch };
     if (touch)
       press.timer = setTimeout(() => {
         if (press) press.armed = true;
@@ -474,6 +545,13 @@ export default function DashboardHome(props: DashboardHomeProps) {
   const onTouchMove = (event: TouchEvent) => {
     if (press?.armed) event.preventDefault();
   };
+  // The finger of a long press lifts over the edit controls that appeared under it. Without this, the touch screen's
+  // emulated mouse press would focus whichever control is there instead of the widget.
+  const onTouchEnd = (event: TouchEvent) => {
+    if (!suppressClick) return;
+    suppressClick = false;
+    event.preventDefault();
+  };
   const onClickCapture = (event: MouseEvent) => {
     if (!suppressClick) return;
     suppressClick = false;
@@ -488,6 +566,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
     window.addEventListener("pointerup", onPointerEnd);
     window.addEventListener("pointercancel", onPointerEnd);
     grid?.addEventListener("touchmove", onTouchMove, { passive: false });
+    grid?.addEventListener("touchend", onTouchEnd, { passive: false });
     grid?.addEventListener("click", onClickCapture, { capture: true });
     onCleanup(() => {
       endPress();
@@ -495,49 +574,93 @@ export default function DashboardHome(props: DashboardHomeProps) {
       window.removeEventListener("pointerup", onPointerEnd);
       window.removeEventListener("pointercancel", onPointerEnd);
       grid?.removeEventListener("touchmove", onTouchMove);
+      grid?.removeEventListener("touchend", onTouchEnd);
       grid?.removeEventListener("click", onClickCapture, { capture: true });
     });
   });
 
   // ── View ──────────────────────────────────────────────────────────────
-  const Tile = (tileProps: { key: string }) => {
-    const widget = catalogByKey.get(tileProps.key)!;
-    const state = () => tiles()[tileProps.key] ?? { status: "loading" as const };
+  const Tile = (tileProps: { id: string }) => {
+    const widget = catalogByKey.get(board().find((entry) => entry.id === tileProps.id)!.key)!;
+    const first = () => ids().indexOf(tileProps.id) === 0;
+    const last = () => ids().indexOf(tileProps.id) === ids().length - 1;
+    const state = () => tiles()[tileProps.id] ?? { status: "loading" as const };
+    const name = () => titleOf(tileProps.id);
     return (
       <div
         class="dashboard-tile"
-        data-key={tileProps.key}
-        data-size={sizeOf(tileProps.key)}
+        data-id={tileProps.id}
+        data-key={widget.key}
+        data-size={sizeOf(tileProps.id)}
         data-state={state().status}
-        data-dragging={dragged() === tileProps.key ? "true" : undefined}
-        data-fresh={fresh() === tileProps.key ? "true" : undefined}
+        data-dragging={dragged() === tileProps.id ? "true" : undefined}
+        data-fresh={fresh() === tileProps.id ? "true" : undefined}
         tabIndex={editing() ? 0 : -1}
         role="group"
         aria-roledescription={t().widgetRole}
-        aria-label={t().widgetLabel({ title: widget.title, app: widget.appName })}
-        onKeyDown={(event) => onTileKeyDown(event, tileProps.key)}
+        aria-label={t().widgetLabel({ title: name(), app: widget.appName })}
+        onKeyDown={(event) => onTileKeyDown(event, tileProps.id)}
       >
         <div class="dashboard-tile__frame" inert={editing()}>
-          <DashboardWidgetFrame widget={widget} state={state()} onRetry={() => retry(tileProps.key)} />
+          <DashboardWidgetFrame widget={widget} state={state()} onRetry={() => retry(tileProps.id)} />
         </div>
         <Show when={editing()}>
           <button
             type="button"
             class="dashboard-remove dashboard-tile__remove dashboard-tile__control"
-            aria-label={t().removeNamed({ name: widget.title })}
+            aria-label={t().removeNamed({ name: name() })}
             disabled={saving()}
-            onClick={() => remove(tileProps.key)}
+            onClick={() => remove(tileProps.id)}
           >
             <i class="ti ti-x" aria-hidden="true" />
           </button>
+          <div class="dashboard-tile__tools dashboard-tile__control" role="group" aria-label={t().toolsOf({ name: name() })}>
+            <IconButton
+              size="sm"
+              class="dashboard-tile__move"
+              data-move="forward"
+              label={t().moveForwardNamed({ name: name() })}
+              tooltip={t().moveForward}
+              aria-disabled={first() || saving() ? "true" : undefined}
+              onClick={() => moveBy(tileProps.id, -1, "forward")}
+            >
+              <i class="ti ti-arrow-left" aria-hidden="true" />
+            </IconButton>
+            <IconButton
+              size="sm"
+              class="dashboard-tile__move"
+              data-move="back"
+              label={t().moveBackNamed({ name: name() })}
+              tooltip={t().moveBack}
+              aria-disabled={last() || saving() ? "true" : undefined}
+              onClick={() => moveBy(tileProps.id, 1, "back")}
+            >
+              <i class="ti ti-arrow-right" aria-hidden="true" />
+            </IconButton>
+            <Show when={hasWidgetSettings(widget)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                class="dashboard-tile__customize"
+                aria-label={t().customizeNamed({ name: name() })}
+                // A small widget shows the icon alone, so the name comes as a tooltip there.
+                tooltip={sizeOf(tileProps.id) === "small" ? t().customize : false}
+                disabled={saving()}
+                onClick={() => void customize(tileProps.id)}
+              >
+                <i class="ti ti-adjustments" aria-hidden="true" />
+                <span class="dashboard-tile__customize-label">{t().customize}</span>
+              </Button>
+            </Show>
+          </div>
           <Show when={widget.sizes.length > 1}>
             <div class="dashboard-tile__sizes dashboard-tile__control">
               <SegmentedControl<DashboardWidgetSize>
                 size="sm"
                 disabled={saving()}
-                ariaLabel={t().sizeOf({ name: widget.title })}
-                value={() => sizeOf(tileProps.key)}
-                onValueChange={(size) => resize(tileProps.key, size)}
+                ariaLabel={t().sizeOf({ name: name() })}
+                value={() => sizeOf(tileProps.id)}
+                onValueChange={(size) => resize(tileProps.id, size)}
                 options={widget.sizes.map((value) => ({ value, label: t()[value] }))}
               />
             </div>
@@ -619,7 +742,7 @@ export default function DashboardHome(props: DashboardHomeProps) {
       </p>
 
       <section ref={grid} class="dashboard-board" aria-label={t().widgetsLabel} onPointerDown={onPointerDown} onContextMenu={onContextMenu}>
-        <For each={keys()}>{(key) => <Tile key={key} />}</For>
+        <For each={ids()}>{(id) => <Tile id={id} />}</For>
         <Show when={editing()}>
           <button type="button" class="dashboard-add-tile" disabled={saving()} onClick={() => void openGallery()}>
             <i class="ti ti-plus" aria-hidden="true" />

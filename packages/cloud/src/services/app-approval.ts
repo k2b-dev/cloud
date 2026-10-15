@@ -661,7 +661,8 @@ export const createAppApprovalService = (
       };
       const result = (state: string) => ({ state, pollAfterSeconds: limits.pollSeconds });
       if (!hold) return result((await read()).state);
-      // Listen before the first read so a decision committed in between still wakes this request.
+      // Listen before the first read so a decision committed in between usually wakes this request.
+      // live() has no subscription-ready barrier, so the hint is best effort; the deadline re-read is the guarantee.
       const waiting = new AbortController();
       const ended = new Promise((resolve) => waiting.signal.addEventListener("abort", resolve, { once: true }));
       const stop = () => waiting.abort();

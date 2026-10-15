@@ -5,7 +5,7 @@ section: Contributing
 order: 1302
 description: How a change on a feature branch becomes a versioned Cloud release with images, CLI, website, PWA, and npm packages.
 tags: [contributing, release, versioning, ci]
-updated: 2026-10-10
+updated: 2026-10-14
 ---
 
 # Release process
@@ -39,6 +39,12 @@ A change to a runtime contract (configuration, routes, permissions, data
 format, deployment) needs a `feat` or `feat!` title and a note on the matching
 [Operations](/en/docs/operations) page. It lands in the next `cloud-vX.Y.Z`
 automatically.
+
+When a pull request for a built-in app shows screenshots of the UI, take them
+in light mode; use dark mode only when the change is about dark rendering. Use
+demo data, never a person's real data, and show only the states that changed
+or that a decision depends on. Pull requests are public, and one baseline
+theme lets reviewers compare screenshots across changes.
 
 ## Let release-please cut the release
 

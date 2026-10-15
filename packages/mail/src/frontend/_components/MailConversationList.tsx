@@ -40,6 +40,7 @@ import { type MailActionId, spamActionForConversation } from "./mail-actions";
 import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { mailboxHealthPresentation } from "./mail-health-presentation";
+import { mailListRowKey } from "./mail-list-projection";
 import { buildMailListHref, buildMailSelectionHref, type MailListItem, mailRouteUrl } from "./mail-navigation";
 import { createMailQuickLookLoader } from "./mail-quick-look";
 import { summarizeMailSearchExpression } from "./mail-search-builder-model";
@@ -68,6 +69,7 @@ export default function MailConversationList(props: {
   search: ResolvedMailSearchRoute;
   title: string;
   items: MailListItem[];
+  leavingKeys?: ReadonlySet<string>;
   error: MailListError | null;
   selectedConversationId: string | null;
   selectedMessageId: string | null;
@@ -344,7 +346,7 @@ export default function MailConversationList(props: {
           fallback={
             <div class="flex min-w-0 items-center gap-2">
               <div class="min-w-0 flex-1">
-                <h1 ref={listHeading} tabIndex={-1} class="truncate text-base font-semibold text-primary">
+                <h1 data-mail-list-heading ref={listHeading} tabIndex={-1} class="truncate text-base font-semibold text-primary">
                   {props.title}
                 </h1>
                 <p class="flex min-w-0 items-center gap-1 overflow-hidden text-xs text-dimmed">
@@ -620,6 +622,7 @@ export default function MailConversationList(props: {
                 {(item) => (
                   <MailConversationRow
                     item={item}
+                    leaving={props.leavingKeys?.has(mailListRowKey(item))}
                     requestUrl={requestUrl()}
                     state={{
                       selectedConversationId: props.selectedConversationId,

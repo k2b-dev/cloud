@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { adminHref, parseAdminLocation } from "./admin-location";
-import { filesUrl, pathCrumbs, referenceHref } from "./urls";
+import { filesUrl, pathCrumbs, referenceHref, showsOverview } from "./urls";
 
 test("navigation retains opaque identities and filenames as query values", () => {
   const url = new URL(filesUrl("freeipa:group:123", "Budget #1/über uns?", "next/+="), "https://cloud.test");
@@ -51,4 +51,24 @@ test("a copied stable reference links through the deep link; path refs link to t
   expect(referenceHref(baseId, { path: "Docs/a.txt", directory: false }, stable)).toBe(`/app/filesv2/ref/${encodeURIComponent(stable)}`);
   expect(referenceHref(baseId, { path: "Docs/a.txt", directory: false }, "inline")).toBe(filesUrl(baseId, "Docs", null, "Docs/a.txt"));
   expect(referenceHref(baseId, { path: "Docs", directory: true }, "inline")).toBe(filesUrl(baseId, "Docs"));
+});
+
+test("the plain Files address shows all storage only with multiple roots", () => {
+  for (const count of [0, 1, 2]) expect(showsOverview(new URLSearchParams(), count)).toBe(count > 1);
+  for (const key of ["base", "path", "file", "q"]) {
+    expect(showsOverview(new URLSearchParams({ [key]: "value" }), 2)).toBe(false);
+    expect(showsOverview(new URLSearchParams({ [key]: "" }), 2)).toBe(true);
+  }
+  expect(showsOverview(new URLSearchParams({ q: " " }), 2)).toBe(true);
+  for (const view of ["", "foo", "edit"]) {
+    expect(showsOverview(new URLSearchParams({ view }), 2)).toBe(true);
+  }
+  expect(showsOverview(new URLSearchParams({ view: "edit", file: "" }), 2)).toBe(true);
+  for (const view of ["trash", "shares", "recent", "favorites"]) {
+    expect(showsOverview(new URLSearchParams({ view }), 2)).toBe(false);
+  }
+  expect(showsOverview(new URLSearchParams({ view: "edit", file: "report.txt" }), 2)).toBe(false);
+  expect(
+    showsOverview(new URLSearchParams({ after: "cursor", sort: "modified", order: "desc", type: "files", groupFolders: "false" }), 2),
+  ).toBe(true);
 });

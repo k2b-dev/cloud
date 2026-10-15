@@ -155,7 +155,7 @@ describe("uploads in the Files workspace", () => {
     input.dispatchEvent(new Event("change", { bubbles: true }));
     await wait();
     const title = () => dom.document.querySelector(".filesv2-upload__title")?.textContent;
-    expect(title()).toBe("Uploading to “My files”");
+    expect(title()).toBe("Uploading to “Personal”");
 
     // Open the document: the folder view leaves, the editor takes its place.
     dom.root.querySelector('[role="row"].filesv2-list__row')!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
@@ -163,13 +163,13 @@ describe("uploads in the Files workspace", () => {
     expect(calls).toEqual(["open report.pdf", "bases", "editor"]);
     expect(dom.root.querySelector(".filesv2-browser")).toBeNull();
     expect(dom.root.querySelector("iframe")).not.toBeNull();
-    expect(title()).toBe("Uploading to “My files”");
+    expect(title()).toBe("Uploading to “Personal”");
 
     release();
     await wait(80);
     expect(aborted).toBeFalse();
     expect(calls).toEqual(["open report.pdf", "bases", "editor", "commit"]);
     expect(received).toBe(8);
-    expect(title()).toBe("Uploaded to “My files”");
+    expect(title()).toBe("Uploaded to “Personal”");
   });
 });

@@ -21,10 +21,12 @@ Dashboard is your personal start page and overview across Cloud. It shows widget
 
 :::reference
 - **Edit:** Choose **Edit**, or touch and hold a widget, to arrange the board. Choose **Done** to save it, or **Cancel** to keep the board as it was.
-- **Move:** Drag a widget to its new place. On a touch screen, hold it briefly first. With a keyboard, focus a widget and use the arrow keys.
+- **Move:** Choose **Move forward** or **Move back** to move a widget one place. You can also drag a widget to its new place. On a touch screen, hold it briefly first. With a keyboard, focus a widget and use the arrow keys.
 - **Size:** Choose **Small**, **Medium**, or **Large** at the bottom of a widget. A widget offers only the sizes its app supports.
 - **Remove:** Choose × on a widget, or focus it and press **Delete**.
 - **Add:** Choose **Widget** or **Add widget** to open the gallery. It shows the widgets you may use, grouped by app, with a preview of your own data in the size you choose. **Suggested for you** lists suggestions that are not on your board yet.
+- **Customize:** Widgets with settings offer **Customize**, small widgets as an icon. Choose values, then **Apply**. These values apply only to that widget. **Reset** clears your choices. **Done** saves them; **Cancel** in edit mode restores your previous choices.
+- **Several widgets:** You can add a widget with settings more than once, with different choices for each. Other widgets appear once.
 - **Default:** Returns to the default board. After **Done**, new suggestions appear on your board again by themselves.
 - **Shortcuts:** While editing, choose × on a shortcut to remove it, or **Shortcut** to add one.
 :::

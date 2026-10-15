@@ -10,6 +10,7 @@ import type { CommandState, MailCommand, RemoteMessagePrecondition } from "../co
 import { remoteMessagePreconditionSchema } from "../contracts";
 import { rediscoverProviderBinding } from "./bindings";
 import { commandStillAuthorized } from "./command-authorization";
+import { resolveUndoRequests } from "./command-undo";
 import { imapSmtpConnector, type RemoteMessageSet, type RemoteMessageState, type RemoteMutationTarget } from "./connectors";
 import type { SmtpConnectionConfig } from "./connectors/contract";
 import { checkCommandKeepProtection, keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
@@ -264,6 +265,52 @@ const remoteTarget = (message: DbRemoteMessage): RemoteMutationTarget => ({
   uid: Number(message.uid),
 });
 
+type CommandStateTarget = {
+  id: string;
+  mailbox_id: string;
+  actor_kind: string;
+  actor_id: string | null;
+  transport_metadata: JsonRecord | string;
+};
+
+export const recordCommandState = async (
+  tx: typeof sql,
+  command: CommandStateTarget,
+  state: CommandState,
+  code: string | null,
+): Promise<void> => {
+  if (state === "failed" || state === "cancelled") {
+    const projection = localStateProjectionSchema.safeParse(parseJsonRecord(command.transport_metadata).localStateProjection);
+    if (projection.success) await rollbackLocalStateProjection(tx, { id: command.id, projection: projection.data });
+  }
+  await tx`
+    INSERT INTO mail.activity_events (
+      mailbox_id, command_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata
+    )
+    VALUES (
+      ${command.mailbox_id}::uuid,
+      ${command.id}::uuid,
+      ${command.actor_kind},
+      ${command.actor_id}::uuid,
+      'command.execute',
+      ${state === "confirmed" || state === "reconciled" ? "confirmed" : state === "ambiguous" ? "requested" : "failed"},
+      'command',
+      ${command.id}::uuid,
+      ${{ state, code }}::jsonb
+    )
+  `;
+};
+
+export const notifyCommandState = async (command: Pick<CommandStateTarget, "id" | "mailbox_id">, state: CommandState): Promise<void> => {
+  mailLive.wake();
+  if (["confirmed", "failed", "cancelled", "reconciled", "needs_attention"].includes(state)) {
+    await publishMailWorkflowDependency({
+      mailboxId: command.mailbox_id,
+      dependency: { kind: "mail.command", key: command.id },
+    });
+  }
+};
+
 const commandState = async (
   command: Pick<DbCommandExecution, "id" | "attempt">,
   state: CommandState,
@@ -294,36 +341,11 @@ const commandState = async (
       RETURNING mailbox_id, actor_kind, actor_id, transport_metadata
     `;
     if (!updated) return null;
-    if (state === "failed" || state === "cancelled") {
-      const projection = localStateProjectionSchema.safeParse(parseJsonRecord(updated.transport_metadata).localStateProjection);
-      if (projection.success) await rollbackLocalStateProjection(tx, { id: command.id, projection: projection.data });
-    }
-    await tx`
-      INSERT INTO mail.activity_events (
-        mailbox_id, command_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata
-      )
-      VALUES (
-        ${updated.mailbox_id}::uuid,
-        ${command.id}::uuid,
-        ${updated.actor_kind},
-        ${updated.actor_id}::uuid,
-        'command.execute',
-        ${state === "confirmed" || state === "reconciled" ? "confirmed" : state === "ambiguous" ? "requested" : "failed"},
-        'command',
-        ${command.id}::uuid,
-        ${{ state, code }}::jsonb
-      )
-    `;
+    await recordCommandState(tx, { id: command.id, ...updated }, state, code);
     return updated;
   });
   if (!updated) return false;
-  mailLive.wake();
-  if (["confirmed", "failed", "cancelled", "reconciled", "needs_attention"].includes(state)) {
-    await publishMailWorkflowDependency({
-      mailboxId: updated.mailbox_id,
-      dependency: { kind: "mail.command", key: command.id },
-    });
-  }
+  await notifyCommandState({ id: command.id, ...updated }, state);
   return true;
 };
 
@@ -4012,15 +4034,20 @@ const runMailboxCommandTurn = async (mailboxId: string, jobHeartbeat?: () => Pro
   if (!next) return { retryAfterMs: null };
   if (next.wait_ms > 0) return { retryAfterMs: Math.min(next.wait_ms, MAILBOX_COMMAND_POLL_MS) };
   const moveSet = await pendingMoveSet(mailboxId, next.id);
-  if (moveSet.length > 1) return { retryAfterMs: (await runMoveSet(moveSet, jobHeartbeat)).busyRetryAfterMs ?? 0 };
-  const run = await executeMutationCommandWithHeartbeat(
-    next.id,
-    jobHeartbeat &&
-      (async (fence) => {
-        await jobHeartbeat();
-        await heartbeatCommandFence(fence);
-      }),
-  );
+  const run =
+    moveSet.length > 1
+      ? await runMoveSet(moveSet, jobHeartbeat)
+      : await executeMutationCommandWithHeartbeat(
+          next.id,
+          jobHeartbeat &&
+            (async (fence) => {
+              await jobHeartbeat();
+              await heartbeatCommandFence(fence);
+            }),
+        );
+  await finishUndoRequests({ commandIds: moveSet.length > 1 ? moveSet : [next.id] }).catch((error) => {
+    log.warn("Recorded Undo waits for the commands-due retry", { mailboxId, code: normalizeCode(error, "UNDO_RESOLUTION_FAILED") });
+  });
   return { retryAfterMs: run?.busyRetryAfterMs ?? 0 };
 };
 
@@ -4173,9 +4200,22 @@ export const enqueueMailCommand = async (commandId: string, kind: MailCommand["k
   }
 };
 
+export const finishUndoRequests = async (filter: { mailboxId?: string; commandIds?: string[] }): Promise<void> => {
+  const inverseIds = await resolveUndoRequests(filter);
+  if (inverseIds.length === 0) return;
+  mailLive.wake();
+  const mailboxes = await sql<{ mailbox_id: string }[]>`
+    SELECT DISTINCT mailbox_id FROM mail.commands WHERE id = ANY(${toPgUuidArray(inverseIds)}::uuid[])
+  `;
+  for (const mailbox of mailboxes) await submitMailboxCommandsJob(mailbox.mailbox_id);
+};
+
 const submitDueCommands = async (): Promise<{ mailboxes: number; maintenance: number; outbox: number; recovered: number }> => {
   const recovered = await recoverStaleExecutions();
   const maintenance = await submitDueMaintenanceCommands();
+  await finishUndoRequests({}).catch((error) => {
+    log.warn("Recorded Undo requests wait for the next commands-due run", { code: normalizeCode(error, "UNDO_RESOLUTION_FAILED") });
+  });
   const mailboxes = await sql<{ mailbox_id: string }[]>`
     SELECT mailbox_id
     FROM mail.commands

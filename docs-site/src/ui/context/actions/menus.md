@@ -129,13 +129,14 @@ something else:
 
 ```ts
 type DropdownActionBase = {
-  class?: string; disabled?: boolean; icon?: string; image?: string; label: string; description?: string;
+  class?: string; disabled?: boolean; icon?: string; image?: string; label: string; ariaLabel?: string; description?: string;
   variant?: "danger";
 };
 
 type DropdownAction =
   | (DropdownActionBase & {
       action: () => void;
+      closeOnSelect?: boolean;
       href?: never;
       external?: never;
     })
@@ -178,7 +179,9 @@ type ContextMenuProps = {
 };
 ```
 
-`DropdownActionBase` names the shared shape here; import the public `DropdownAction`, `DropdownChoice`, `DropdownSection` and `DropdownItem` types. Action callbacks return `void`; asynchronous work and its errors stay with the host. `DropdownChoice.closeOnSelect` defaults to true; ordinary actions close on activation. A section contains actions/choices, not nested sections.
+`DropdownActionBase` names the shared shape here; import the public `DropdownAction`, `DropdownChoice`, `DropdownSection` and `DropdownItem` types. Action callbacks return `void`; asynchronous work and its errors stay with the host. Actions and choices close on activation unless `closeOnSelect: false`. A section contains actions/choices, not nested sections.
+
+Use `closeOnSelect: false` for an action that changes a value in place, such as a cycling setting. Keep the item object stable and expose changing `label`, `icon`, and `ariaLabel` fields as getters: the row updates in place and keeps focus. `ariaLabel` must contain the visible label.
 
 `position` defaults to `"bottom-right"`; `align` (`"start" | "end"`) is an optional alignment override. `variant="default"`; `width` is an optional exact CSS length, and without it the menu sizes to its entries. Pair controlled `open` with `onOpenChange`, or omit both for internal state. When a key on the trigger opens a controlled menu and `onOpenChange` sets `open` right away, the focus moves to the first or last item, as in an uncontrolled menu; setting `open` from elsewhere leaves the focus where it is. `ContextMenu` has no controlled `open` prop. `DropdownItem` is also a low-level JSX export; normal consumers use the declarative `items` API above.
 
@@ -188,8 +191,9 @@ type ContextMenuProps = {
 `aria-controls` in server HTML. Enter, Space, and arrow keys open it. Arrow
 keys, Home, End, Escape, and Tab manage the open menu.
 
-Declarative actions close the visible menu before their callback runs. A state
-update in the callback therefore cannot briefly repaint stale menu content.
+Unless `closeOnSelect: false`, declarative actions close the visible menu
+before their callback runs. A state update in the callback therefore cannot
+briefly repaint stale menu content.
 Interactive menus close synchronously; `@k2b/ui` does not inherit a host's
 generic `[popover]` exit transition. Animate decorative surfaces such as
 tooltips separately instead of delaying an action menu's dismissal.

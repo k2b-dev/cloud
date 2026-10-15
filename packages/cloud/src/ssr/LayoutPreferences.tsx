@@ -12,10 +12,20 @@ export default function LayoutPreferences(props: LayoutPreferencesProps) {
   const preferences = createPreferenceController(props.initialTheme, locale);
 
   return (
-    <Dropdown.Root items={preferences.items()} label={preferences.messages().preferencesMenuLabel} position={props.position} width="14rem">
-      <Dropdown.Trigger iconOnly label={preferences.messages().preferencesMenuLabel} size="sm" variant="secondary">
-        <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
-      </Dropdown.Trigger>
-    </Dropdown.Root>
+    <>
+      <Dropdown.Root
+        items={preferences.items()}
+        label={preferences.messages().preferencesMenuLabel}
+        position={props.position}
+        width="14rem"
+      >
+        <Dropdown.Trigger iconOnly label={preferences.messages().preferencesMenuLabel} size="sm" variant="secondary">
+          <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
+        </Dropdown.Trigger>
+      </Dropdown.Root>
+      <span class="sr-only" aria-live="polite">
+        {preferences.themeAnnouncement()}
+      </span>
+    </>
   );
 }

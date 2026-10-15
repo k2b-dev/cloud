@@ -42,6 +42,21 @@ suite("chat HTTP state machine against the trimmed V5 oracle", () => {
         const accessId = (id: string) => direct.find((row) => row.user_id === id)?.access_id ?? crypto.randomUUID();
         const path = `/${chat.shortId}`;
         switch (op.type) {
+          case "read":
+            return f.request(actor.headers, `${path}/read`, "POST", { seq: op.seq });
+          case "open":
+            return f.request(actor.headers, `${path}/snapshot`);
+          case "readAll":
+            return f.request(actor.headers, "/read-all", "POST", { confirmed: true });
+          case "markUnread": {
+            const [message] =
+              op.message === undefined
+                ? []
+                : await sql<
+                    { short_id: string }[]
+                  >`SELECT short_id FROM chat.messages WHERE conversation_id = ${chat.id}::uuid AND seq = ${op.message}`;
+            return f.request(actor.headers, `${path}/unread`, "POST", message ? { message: message.short_id } : {});
+          }
           case "send":
             return f.request(actor.headers, `${path}/messages`, "POST", { clientId: op.clientId, body: op.body });
           case "details":
@@ -84,11 +99,23 @@ suite("chat HTTP state machine against the trimmed V5 oracle", () => {
         expect(head!.purpose).toBe(model.purpose);
         expect(projected.every((m) => m.rev <= Number(head!.rev))).toBeTrue();
         const parts = await sql<
-          { principal_id: string; joined_seq: string; last_read_seq: null }[]
-        >`SELECT principal_id, joined_seq, last_read_seq FROM chat.participants WHERE conversation_id = ${chat.id}::uuid ORDER BY principal_id`;
-        expect(parts.map((p) => ({ id: p.principal_id, joinedSeq: Number(p.joined_seq), lastReadSeq: p.last_read_seq }))).toEqual(
-          [...model.parts].sort(([a], [b]) => a.localeCompare(b)).map(([id, p]) => ({ id, ...p })),
-        );
+          {
+            principal_id: string;
+            joined_seq: string;
+            last_read_seq: string | null;
+            unread_from_seq: string | null;
+            origin: "direct" | "ondemand";
+          }[]
+        >`SELECT principal_id, joined_seq, last_read_seq, unread_from_seq, origin FROM chat.participants WHERE conversation_id = ${chat.id}::uuid ORDER BY principal_id`;
+        expect(
+          parts.map((p) => ({
+            id: p.principal_id,
+            joinedSeq: Number(p.joined_seq),
+            lastReadSeq: p.last_read_seq === null ? null : Number(p.last_read_seq),
+            unreadFromSeq: p.unread_from_seq === null ? null : Number(p.unread_from_seq),
+            origin: p.origin,
+          })),
+        ).toEqual([...model.parts].sort(([a], [b]) => a.localeCompare(b)).map(([id, p]) => ({ id, ...p })));
         expect((await entries()).map((e) => [e.user_id, e.permission]).sort()).toEqual([...model.members].sort());
       };
       await check();

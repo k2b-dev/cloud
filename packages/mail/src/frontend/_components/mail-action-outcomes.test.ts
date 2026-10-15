@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createMailActionOutcomes, MAIL_ACTION_OUTCOME_TTL_MS } from "./mail-action-outcomes";
+import { MAIL_ACTION_OUTCOME_TTL_MS } from "../../command-outcomes";
+import { createMailActionOutcomes } from "./mail-action-outcomes";
 
 describe("Mail action outcomes", () => {
   // Archive two conversations: one message in the Inbox, and one conversation filed in the Inbox and Projects.
@@ -186,5 +187,95 @@ describe("Mail action outcomes", () => {
         code: "REMOTE_MESSAGE_MISSING",
       },
     ]);
+  });
+});
+
+describe("Mail per-conversation settlements", () => {
+  test("settles confirmed conversations independently and restores the first failed command immediately", () => {
+    const outcomes = createMailActionOutcomes();
+    const settled: { conversationId: string; ok: boolean; expired: boolean }[] = [];
+    const failed: string[] = [];
+    outcomes.follow({
+      actionId: "trash",
+      destinationFolderId: "trash",
+      onFailure: (id) => failed.push(id),
+      onSettled: (result) => settled.push(result),
+      conversations: [
+        { conversationId: "one", label: "one", commands: [{ id: "a", state: "queued", sourceFolderId: "inbox" }] },
+        {
+          conversationId: "two",
+          label: "two",
+          commands: [
+            { id: "b", state: "queued", sourceFolderId: "inbox" },
+            { id: "c", state: "queued", sourceFolderId: "projects" },
+          ],
+        },
+      ],
+    });
+    outcomes.apply(
+      ["a", "b"],
+      [
+        { id: "a", state: "confirmed" },
+        { id: "b", state: "failed" },
+      ],
+    );
+    expect(settled).toEqual([{ conversationId: "one", ok: true, expired: false }]);
+    expect(failed).toEqual(["two"]);
+    expect(outcomes.apply(["c"], [{ id: "c", state: "confirmed" }])).toHaveLength(1);
+    expect(settled).toEqual([
+      { conversationId: "one", ok: true, expired: false },
+      { conversationId: "two", ok: false, expired: false },
+    ]);
+    expect(failed).toEqual(["two"]);
+  });
+  test("follow reports immediate success and expiry releases pending conversations even when checked", () => {
+    const outcomes = createMailActionOutcomes();
+    const settled: boolean[] = [];
+    outcomes.follow({
+      actionId: "trash",
+      destinationFolderId: null,
+      now: 0,
+      onSettled: (result) => settled.push(result.expired),
+      conversations: [
+        { conversationId: "one", label: "one", commands: [{ id: "a", state: "confirmed", sourceFolderId: "inbox" }] },
+        { conversationId: "two", label: "two", commands: [{ id: "b", state: "queued", sourceFolderId: "inbox" }] },
+      ],
+    });
+    expect(settled).toEqual([false]);
+    outcomes.apply(["b"], [{ id: "b", state: "queued" }], 1);
+    outcomes.apply([], [], MAIL_ACTION_OUTCOME_TTL_MS);
+    expect(settled).toEqual([false, true]);
+  });
+  test("Undo stops only one conversation of one invocation, without a failure report or settlement", () => {
+    const outcomes = createMailActionOutcomes();
+    const key = Symbol();
+    const settled: string[] = [];
+    const conversation = (id: string) => ({
+      conversationId: id,
+      label: id,
+      commands: [{ id, state: "queued" as const, sourceFolderId: "inbox" }],
+    });
+    outcomes.follow({
+      key,
+      actionId: "trash",
+      destinationFolderId: null,
+      onSettled: (result) => settled.push(result.conversationId),
+      conversations: [conversation("a"), conversation("b")],
+    });
+    outcomes.follow({ key: Symbol(), actionId: "trash", destinationFolderId: null, conversations: [conversation("c")] });
+    outcomes.stop(key, "a");
+    expect(outcomes.pendingCommandIds()).toEqual(["b", "c"]);
+    expect(outcomes.apply(["a"], [{ id: "a", state: "cancelled" }])).toEqual([]);
+    expect(settled).toEqual([]);
+    expect(
+      outcomes.apply(
+        ["b", "c"],
+        [
+          { id: "b", state: "confirmed" },
+          { id: "c", state: "confirmed" },
+        ],
+      ),
+    ).toEqual([]);
+    expect(settled).toEqual(["b"]);
   });
 });

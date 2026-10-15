@@ -93,8 +93,9 @@ as the note or file name, for PDF viewers to show.
 
 `renderMarkdownToPdf()` knows GitHub-flavored Markdown and the shared
 [info blocks](/en/ui/content/markdown#info-blocks) (`:::note`, `:::warning`,
-and the other types), which print as a light-tinted notice. When the
-application's documents use their own blocks, render them with the
+and the other types). They print with a type icon and a light tint. The icon
+and title use the tone colour; body text keeps the preset's text colour. When
+the application's documents use their own blocks, render them with the
 application's renderer and wrap the resulting HTML with
 `buildPresetPdfHtml()`:
 

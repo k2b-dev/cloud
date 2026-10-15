@@ -167,18 +167,21 @@ code render as they do elsewhere on the page. Close the callout with `:::` on
 its own line; a `:::` inside code or a list does not close it. Callouts inside
 lists, quotes, or another callout stay text.
 
-A callout renders as a calm [notice](/en/ui/feedback/blocks): a light tint of
-its tone, neutral text, and no icon. The optional plain-text title after the
-type is the visible heading and names the callout for everyone. Without a
-title, screen readers hear the type name in the Help document's language, and
-sighted readers see only the tint, so add a title, or start the text with a
-word such as **Risk:**, when the type matters.
+A callout shows its type's icon and a light tint. The icon and title use the
+tone colour; body text stays neutral. The icon is decorative. The optional
+plain-text title names the callout. Without a title, screen readers hear the
+type name in the Help document's language. Sighted readers see the icon and
+tint only, so add a title when the type matters.
 
 Callouts are one syntax and one look across Cloud: `MarkdownView` from
 `@k2b/ui`, the shared `markdown.render()` and `markdown.renderSync()` helpers
 from `@k2b/cloud/shared` (pass `{ locale }` to name untitled callouts in the
 reader's language), Notebooks, and Markdown PDF exports. See
 [Markdown content](/en/ui/content/markdown#info-blocks) for the exact rules.
+A Cloud renderer with its own `sanitize-html` pass spreads
+`markdownCalloutSanitizeOptions()` from `@k2b/cloud/shared` into its options,
+creating fresh options for each sanitization, so the callout icon survives
+and every other SVG is still discarded.
 
 By default these helpers render links like `MarkdownView`: a relative link is
 a reference pill with a type icon, and a web or mail link is quiet text with a

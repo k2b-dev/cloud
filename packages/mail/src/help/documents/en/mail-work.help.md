@@ -128,6 +128,8 @@ Mail collapses the quoted history of earlier messages. Choose **Show quoted text
 
 The top actions take the conversation out of the folder that you view, such as Inbox. This also applies when your newest reply is stored in Sent. In views that span folders, such as **All mail** or **Needs action**, they take it out of every folder where it is filed. Your copies in Sent and Drafts stay where they are, and so do messages in Junk, Trash, or the **All Mail** folder of Gmail. The exception is a conversation that is only there.
 
+The row leaves the list at once. You have a few seconds to choose **Undo** in the notice. Undo stops the change if Mail has not sent it to the mail server yet. Otherwise, Mail moves the conversation back. If the mail server refuses the change, the row comes back. Mail explains why and offers **Try again**. Actions you start while another is running are carried out in the order you chose them.
+
 On Gmail, folders are labels, and these views act on one label: the Inbox, when the conversation is in it.
 
 - **Archive** removes only the Inbox label and keeps your other labels and stars. A conversation outside the Inbox has nothing to archive.

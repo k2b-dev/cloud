@@ -60,9 +60,9 @@ describe("Mail conversation selection", () => {
     expect([...pruned.ids]).toEqual([ids[1]!, ids[3]!]);
     expect(
       findMailFocusAfterRemoval({
-        orderedConversationIds: ids.slice(0, 5),
-        activeConversationId: ids[2]!,
-        removedConversationIds: new Set([ids[2]!, ids[3]!]),
+        orderedRowKeys: ids.slice(0, 5),
+        activeRowKey: ids[2]!,
+        removedRowKeys: new Set([ids[2]!, ids[3]!]),
       }),
     ).toBe(ids[4]!);
   });

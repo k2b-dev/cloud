@@ -11,7 +11,7 @@ import {
   type ScheduledSendPage,
   type SenderIdentity,
 } from "../contracts";
-import { isAggregatedListing } from "../folder-display-rules";
+import { isAggregatedListing, mailListingExcludesTrashAndJunk } from "../folder-display-rules";
 import {
   MAIL_SEARCH_MATCHES_NOTHING,
   MAIL_SEARCH_PARAMETER,
@@ -31,7 +31,6 @@ import type { ConversationContentSummary } from "./conversation-summary";
 import * as conversationSummaries from "./conversation-summary";
 import * as drafts from "./drafts";
 import { localizeMailError } from "./error-messages";
-import { FOLLOW_UP_VIEWS } from "./follow-up-scope";
 import { mailLive } from "./live";
 import type { ConversationLocalTags, LocalTag } from "./local-tags";
 import * as localTags from "./local-tags";
@@ -696,7 +695,6 @@ export const loadMailboxPageData = async (params: {
   const folders = folderResult.ok ? folderResult.data : [];
   const activeSavedView = savedViewResult.ok ? (savedViewResult.data.find((view) => view.id === savedViewId) ?? null) : null;
   const listMode = params.listMode ?? "conversations";
-  const defaultAllMail = !scheduledMode && !searchExpression && !folderId && !activeView && !activeSavedView;
   const activeFolder = folders.find((folder) => folder.id === folderId);
   const draftsMode =
     !scheduledMode &&
@@ -704,10 +702,15 @@ export const loadMailboxPageData = async (params: {
     !resolvedSearch.error &&
     !!activeFolder &&
     messages.isEffectiveDraftsFolder(activeFolder, folders);
-  const excludedFolderIds =
-    defaultAllMail || (!searchExpression && activeView && FOLLOW_UP_VIEWS.includes(activeView))
-      ? folders.filter((folder) => folder.role === "trash" || folder.role === "junk").map((folder) => folder.id)
-      : [];
+  const excludedFolderIds = mailListingExcludesTrashAndJunk({
+    viewFolderId: folderId,
+    activeView,
+    hasSearch: !!searchExpression,
+    hasSavedView: !!activeSavedView,
+    scheduledMode,
+  })
+    ? folders.filter((folder) => folder.role === "trash" || folder.role === "junk").map((folder) => folder.id)
+    : [];
   const [list, scheduledPageResult, draftsPageResult] = await Promise.all([
     scheduledMode || draftsMode
       ? Promise.resolve({ items: [], nextCursor: null, error: null })

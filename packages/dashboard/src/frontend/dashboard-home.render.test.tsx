@@ -26,7 +26,7 @@ const widget = (key: string, title: string, sizes: DashboardCatalogWidget["sizes
   defaultSize: sizes.at(-1)!,
   suggest: true,
 });
-const props = (board: { key: string; size: "small" | "medium" | "large" }[]) => ({
+const props = (board: { id: string; key: string; size: "small" | "medium" | "large" }[]) => ({
   greeting: "Hallo, Mara",
   today: "Samstag, 10. Oktober",
   apps: [],
@@ -54,20 +54,21 @@ const render = (input: ReturnType<typeof props>) =>
 test("the page renders every widget of the board at its final size and loading, before any app answered", () => {
   const html = render(
     props([
-      { key: "spaces/today", size: "large" },
-      { key: "weather/current", size: "small" },
-      { key: "quotes/quote", size: "small" },
+      { id: "spaces/today", key: "spaces/today", size: "large" },
+      { id: "weather/current", key: "weather/current", size: "small" },
+      { id: "quotes/quote", key: "quotes/quote", size: "small" },
     ]),
   );
   const tiles = [...html.matchAll(/<div[^>]*class="dashboard-tile"[^>]*>/g)].map((match) => [
+    match[0].match(/data-id="([^"]+)"/)?.[1],
     match[0].match(/data-key="([^"]+)"/)?.[1],
     match[0].match(/data-size="([^"]+)"/)?.[1],
     match[0].match(/data-state="([^"]+)"/)?.[1],
   ]);
   expect(tiles).toEqual([
-    ["spaces/today", "large", "loading"],
-    ["weather/current", "small", "loading"],
-    ["quotes/quote", "small", "loading"],
+    ["spaces/today", "spaces/today", "large", "loading"],
+    ["weather/current", "weather/current", "small", "loading"],
+    ["quotes/quote", "quotes/quote", "small", "loading"],
   ]);
   // Each frame fills the cell its size reserves, with its declared title until the app answers.
   expect(html.match(/data-size="fill"/g)).toHaveLength(3);

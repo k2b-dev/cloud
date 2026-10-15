@@ -30,11 +30,12 @@ describe("editor notice blocks", () => {
     return;
   }
 
-  test("a notice outside the cursor shows its tone colour without label or icon", async () => {
+  test("a notice outside the cursor shows its decorative type icon and tone colour", async () => {
     using editor = await mount(0);
     const card = editor.root.querySelector(".k2b-notice-card");
     expect(card?.getAttribute("data-tone")).toBe("warning");
     expect(card?.getAttribute("role")).toBe("note");
+    expect(card?.querySelectorAll('svg.k2b-callout__icon[aria-hidden="true"]')).toHaveLength(1);
     expect(card?.querySelector(".k2b-sr-only")?.textContent).toBe("Warnung: ");
     expect(card?.querySelector(".k2b-notice-card__body")?.innerHTML).toBe("Back up <strong>first</strong>.");
     expect(card?.querySelector(".k2b-notice-card__icon, .k2b-notice-card__title, i")).toBeNull();

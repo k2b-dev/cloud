@@ -6,7 +6,7 @@ description: Browse storage, edit documents, use templates, and share files.
 order: 100
 ---
 
-Files brings your accessible Cloud and FreeIPA directories into one view. The label beside each storage name identifies its source.
+Files opens with **All storage**: one tile for each storage location you can reach, and your recently opened files below. Open a tile to work in that storage location. You create folders and upload files there; the overview has no create action. If you have only one storage location, Files opens directly inside it. The label beside each storage name identifies its source.
 
 ## Folder descriptions and previews {icon="file-description"}
 
@@ -20,7 +20,7 @@ The details panel shows five lines of text or five CSV records plus the header. 
 
 ## Find your way around {icon="folders"}
 
-The sidebar lists your storage locations and their folders as a tree. Your own storage appears as **My files** with your username beneath it; group storage carries the group name. The current folder is highlighted and a folder you open shows a spinner in place of its icon. Click a folder in the list to open it. The first row, **Parent folder**, names the folder above and leads there; Files shows no back arrow. The heading above the list names the current folder, and the sidebar tree shows where it lies. On a keyboard, press Backspace while the list has the focus, or Alt+↑ (⌥↑ on a Mac) anywhere on the page. Click a file to open its details panel on the right, or use the small info button at the end of any row for folders too. Close the panel with the X; that also clears the selection.
+The sidebar lists your storage locations and their folders as a tree. Your own storage appears as **Personal** with your username beneath it; group storage carries the group name. The current folder is highlighted and a folder you open shows a spinner in place of its icon. Click a folder in the list to open it. At the top level of a storage location, the first row, **All storage**, leads back to the overview when you have more than one storage location. Inside folders, **Parent folder** names the folder above and leads there. Files shows no back arrow. On a phone, the navigation menu also has **All storage** when you have more than one storage location. The heading above the list names the current folder, and the sidebar tree shows where it lies. On a keyboard, press Backspace while the list has the focus, or Alt+↑ (⌥↑ on a Mac) anywhere on the page. Click a file to open its details panel on the right, or use the small info button at the end of any row for folders too. Close the panel with the X; that also clears the selection.
 
 Choose **List**, **Grid**, or **Tree** above the list. Tree shows the whole storage location from its root with the current folder highlighted; click a folder name to make it the current folder, click its icon to expand or collapse it, several at once. New entries and uploads always go into the current folder, which every name dialog shows. Grid adds a tile size control. The browser remembers view and size per storage location. **Next page** and **First page** move through long folders; storage, folder, page, and a single selected file stay in the address bar so you can reload or bookmark.
 

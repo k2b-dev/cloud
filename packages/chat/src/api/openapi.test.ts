@@ -17,6 +17,9 @@ test("publishes every conversation operation with typed request and response sch
   const spec = SpecSchema.parse(await generateSpecs(app));
   for (const [path, method] of [
     ["/people", "get"],
+    ["/conversations/read-all", "post"],
+    ["/conversations/{conversation}/read", "post"],
+    ["/conversations/{conversation}/unread", "post"],
     ["/conversations", "post"],
     ["/conversations", "get"],
     ["/conversations/{conversation}", "get"],
@@ -68,6 +71,8 @@ test("conversation responses require the revision used to guard live summaries",
     })
     .parse(spec.paths["/api/chat/conversations/{conversation}"]?.get?.responses["200"]);
   expect(response.content["application/json"].schema.required).toContain("rev");
+  expect(response.content["application/json"].schema.required).toContain("read");
+  expect(response.content["application/json"].schema.required).toContain("unread");
   expect(response.content["application/json"].schema.properties.rev).toBeDefined();
 });
 

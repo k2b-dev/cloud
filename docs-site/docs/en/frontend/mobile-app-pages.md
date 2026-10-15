@@ -150,6 +150,10 @@ and `frame-ancestors 'none'`. In the browser, it registers the app's service
 worker, shows an offline notice, and keeps the app session alive. With
 Automatic, the status bar color follows the device's appearance.
 
+In Settings, the appearance button shows the current choice. Each tap switches
+from **Automatic** to **Light**, then **Dark**, then **Automatic** again.
+Automatic is the default and follows the device.
+
 App pages switch at once, without the cross-fade that web pages use between
 documents. A browser ignores taps while such a transition runs, so a quick
 second tap in the tab bar would be lost.

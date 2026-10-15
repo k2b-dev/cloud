@@ -150,7 +150,8 @@ export type AppWorkspaceProps = {
   class?: string;
   /** A host with its own phone chrome can use the full canvas below 48rem (768 px). */
   mobileSurface?: "contained" | "flush";
-  /** Draws no frame: no border, corner radius, or shadow, for an overview that is the page itself. */
+  /** Removes the workspace's own border, radius, and shadow for an overview that is the page itself.
+   * A host may frame the outermost workspace as its app card, as Cloud does from 1536 px on signed-in pages. */
   flat?: boolean;
   resizable?: boolean;
   /**

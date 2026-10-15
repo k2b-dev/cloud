@@ -23,7 +23,7 @@ const mount = async (locale: string) => {
       createComponent(LocaleProvider, {
         locale,
         get children() {
-          return createComponent(MinimalLayoutPreferences, { initialTheme: "light" });
+          return createComponent(MinimalLayoutPreferences, { initialTheme: "system" });
         },
       }),
     dom.root,
@@ -67,11 +67,13 @@ test("a visitor on an unsupported locale can still choose the English fallback",
   expect(reload).toHaveBeenCalledTimes(1);
 });
 
-for (const [locale, labels, appearance] of [
-  ["en", ["Light", "Dark", "Automatic"], "Appearance"],
-  ["de", ["Hell", "Dunkel", "Automatisch"], "Darstellung"],
+for (const [locale, labels, appearance, switches] of [
+  ["en", ["Light", "Dark", "Automatic"], "Appearance", "Switches to"],
+  ["de", ["Hell", "Dunkel", "Automatisch"], "Darstellung", "Wechselt zu"],
 ] as const) {
-  test(`the appearance menu persists all three choices (${locale})`, async () => {
+  test(`the appearance button cycles and persists all three choices (${locale})`, async () => {
+    document.cookie = "theme=system; path=/";
+    document.documentElement.className = "dark";
     const media = spyOn(window, "matchMedia").mockImplementation(() => ({
       matches: true,
       media: "(prefers-color-scheme: dark)",
@@ -82,30 +84,32 @@ for (const [locale, labels, appearance] of [
       removeEventListener() {},
       dispatchEvent: () => true,
     }));
+    let changes = 0;
+    const changed = () => changes++;
+    window.addEventListener("cloud:theme-preference", changed);
     try {
-      const { choose } = await mount(locale);
-      const radios = Array.from(dom.root.querySelectorAll('[role="menuitemradio"]')).slice(2);
-      expect(radios.map((item) => item.textContent?.trim())).toEqual([...labels]);
-      const trigger = dom.root.querySelectorAll("[aria-haspopup]")[1]!;
-      expect(trigger.getAttribute("aria-label")).toBe(`${appearance}: ${labels[2]}`);
-      let changes = 0;
-      window.addEventListener("cloud:theme-preference", () => changes++);
-
-      choose(labels[2]);
-      expect(document.cookie).toContain("theme=system");
-      expect(document.documentElement.className).toBe("dark");
-      expect(radios[2]!.getAttribute("aria-checked")).toBe("true");
-
-      choose(labels[1]);
-      expect(document.cookie).toContain("theme=dark");
-      expect(document.documentElement.className).toBe("dark");
-      expect(trigger.getAttribute("aria-label")).toBe(`${appearance}: ${labels[1]}`);
-      expect(changes).toBe(2);
-
-      choose(labels[0]);
-      expect(document.cookie).toContain("theme=light");
-      expect(document.documentElement.className).toBe("light");
+      await mount(locale);
+      expect(dom.root.querySelectorAll('[role="menuitemradio"]')).toHaveLength(2);
+      const button = dom.root.querySelector<HTMLButtonElement>(".cloud-theme-cycle")!;
+      expect(button.getAttribute("aria-label")).toBe(`${appearance}: ${labels[2]}. ${switches} ${labels[0]}.`);
+      expect(dom.root.querySelector('[aria-live="polite"]')?.textContent).toBe("");
+      for (const [index, value, icon, theme] of [
+        [0, "light", "ti ti-sun-high", "light"],
+        [1, "dark", "ti ti-moon", "dark"],
+        [2, "system", "ti ti-device-laptop", "dark"],
+      ] as const) {
+        button.click();
+        expect(document.cookie).toContain(`theme=${value}`);
+        expect(document.documentElement.className).toBe(theme);
+        expect(button.getAttribute("aria-label")).toBe(`${appearance}: ${labels[index]}. ${switches} ${labels[(index + 1) % 3]}.`);
+        expect(button.querySelector(".cloud-theme-cycle__label > span")?.textContent).toBe(labels[index]);
+        expect(button.querySelector("i")?.className).toBe(icon);
+        expect(dom.root.querySelector('[aria-live="polite"]')?.textContent).toBe(`${appearance}: ${labels[index]}`);
+        expect(changes).toBe(index + 1);
+        expect(dom.root.querySelector(".cloud-theme-cycle")).toBe(button);
+      }
     } finally {
+      window.removeEventListener("cloud:theme-preference", changed);
       media.mockRestore();
     }
   });

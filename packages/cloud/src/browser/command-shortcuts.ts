@@ -1,6 +1,7 @@
+import { keyboardPlatform } from "@k2b/ui";
 import { COMMANDS_CHANGED, type ContextAwareCommand, collectContextAwareCommands } from "./command-bridge";
 
-const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+const isMac = () => keyboardPlatform() === "apple";
 const modifiers = ["ctrl", "alt", "shift", "meta"] as const;
 type Combination = { key: string; ctrl: boolean; alt: boolean; shift: boolean; meta: boolean };
 
@@ -24,16 +25,6 @@ export const contextCommandsWithShortcuts = (): ContextAwareCommand[] => {
     ...command,
     shortcut: keys[index] && keys.filter((key) => key === keys[index]).length === 1 ? command.shortcut : undefined,
   }));
-};
-
-export const shortcutLabel = (shortcut: string): string => {
-  const combination = parse(shortcut);
-  if (!combination) return "";
-  const mac = isMac();
-  const names = { ctrl: mac ? "⌃" : "Ctrl", alt: mac ? "⌥" : "Alt", shift: mac ? "⇧" : "Shift", meta: mac ? "⌘" : "Meta" };
-  const arrows: Record<string, string> = { arrowup: "↑", arrowdown: "↓", arrowleft: "←", arrowright: "→" };
-  const key = arrows[combination.key] ?? combination.key.toUpperCase();
-  return [...modifiers.filter((name) => combination[name]).map((name) => names[name]), key].join(mac ? "" : "+");
 };
 
 const ARROWS = new Set(["arrowup", "arrowdown", "arrowleft", "arrowright"]);

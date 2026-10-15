@@ -230,7 +230,7 @@ describe("Cloud layouts SSR", () => {
     expect(html).toContain('href="/auth/login"');
     expect(html).toContain("Anmelden");
     expect(html).toContain("Darstellung und Sprache");
-    expect(html).toContain("Automatisch");
+    expect(html).toContain('aria-label="Darstellung: Dunkel. Wechselt zu Automatisch."');
     expect(html).toContain("English");
     expect(html).not.toContain("layout-rail-navigation");
     expect(html).not.toContain('data-layout-authenticated="true"');
@@ -312,8 +312,8 @@ describe("Cloud layouts SSR", () => {
       expect(html).toContain('href="/legal/imprint" target="_blank" rel="noopener"');
       expect(html).toContain(">Imprint</a>");
       expect(html).toContain('aria-label="Language: English"');
-      expect(html).toContain('aria-haspopup="menu"');
-      expect(html).toContain("Appearance: Automatic");
+      expect(html.match(/aria-haspopup="menu"/g)).toHaveLength(1);
+      expect(html).toContain('aria-label="Appearance: Automatic. Switches to Light."');
       expect(html).not.toContain("Appearance and language");
       expect(html).not.toContain("cloud-app-canvas");
       expect(html).not.toContain("layout-header");
@@ -330,7 +330,7 @@ describe("Cloud layouts SSR", () => {
     expect(html).toContain('aria-label="Rechtliches"');
     expect(html).toContain(">Impressum</a>");
     expect(html).toContain('aria-label="Sprache: Deutsch"');
-    expect(html).toContain("Automatisch");
+    expect(html).toContain('aria-label="Darstellung: Dunkel. Wechselt zu Automatisch."');
   });
 
   test("an explicit language choice outranks the browser language on anonymous pages", async () => {

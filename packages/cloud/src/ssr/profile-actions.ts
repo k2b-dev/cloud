@@ -31,23 +31,19 @@ export function createProfileActions(initialTheme: CloudThemePreference, appHref
   };
 
   const items = createMemo<DropdownItem[]>(() => [
-    preferences.appearance(),
+    preferences.appearanceItem,
+    preferences.languageItem(),
     {
-      items: [
-        preferences.languageItem(),
-        {
-          href: "/me",
-          icon: "ti ti-user-circle",
-          label: preferences.messages().profileSettings,
-        },
-        ...(appHref ? [{ href: appHref, icon: "ti ti-device-mobile", label: preferences.messages().app }] : []),
-        {
-          action: signOut,
-          icon: "ti ti-logout",
-          label: preferences.messages().signOut,
-          disabled: signingOut(),
-        },
-      ],
+      href: "/me",
+      icon: "ti ti-user-circle",
+      label: preferences.messages().profileSettings,
+    },
+    ...(appHref ? [{ href: appHref, icon: "ti ti-device-mobile", label: preferences.messages().app }] : []),
+    {
+      action: signOut,
+      icon: "ti ti-logout",
+      label: preferences.messages().signOut,
+      disabled: signingOut(),
     },
   ]);
 

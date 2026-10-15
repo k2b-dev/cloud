@@ -1,4 +1,16 @@
-import { type DashboardWidgetPresentation, type DashboardWidgetSize, fitWidgetSize, isDashboardWidgetSize } from "@k2b/cloud/contracts";
+import {
+  CAPABILITY_QUALIFIED_ID_MAX_LENGTH,
+  CLOUD_RESOURCE_ID_MAX_LENGTH,
+  type DashboardWidgetPresentation,
+  type DashboardWidgetSize,
+  fitWidgetSize,
+  isDashboardWidgetSize,
+  WIDGET_SETTING_NAME_MAX_LENGTH,
+  WIDGET_SETTING_TEXT_MAX_LENGTH,
+  WIDGET_SETTINGS_MAX_FIELDS,
+  type WidgetSettings,
+  type WidgetSettingsDeclaration,
+} from "@k2b/cloud/contracts";
 
 export const DASHBOARD_COOKIE = "dashboard_settings";
 
@@ -18,8 +30,12 @@ export type DashboardShortcut =
       icon: string;
     };
 
-/** One widget on a person's board. The board's order is its reading order on every device. */
-export type DashboardBoardEntry = { key: string; size: DashboardWidgetSize };
+/** A value a person set for one widget on their board. A resource keeps its title only to show it in the settings. */
+export type DashboardEntrySettingValue = string | boolean | { type: string; id: string; title?: string };
+export type DashboardEntrySettings = Record<string, DashboardEntrySettingValue>;
+
+/** One instance on a person's board: id identifies the entry, key its declaration. Order is reading order on every device. */
+export type DashboardBoardEntry = { id: string; key: string; size: DashboardWidgetSize; settings?: DashboardEntrySettings };
 
 export type DashboardSettings = {
   shortcuts: DashboardShortcut[];
@@ -40,6 +56,7 @@ export type DashboardCatalogWidget = {
   sizes: DashboardWidgetSize[];
   defaultSize: DashboardWidgetSize;
   suggest: boolean;
+  settings?: WidgetSettingsDeclaration;
 };
 
 export type DashboardAppSummary = {
@@ -60,6 +77,7 @@ export type DashboardLegalLink = {
 
 export const DASHBOARD_MAX_ITEMS = 100;
 export const DASHBOARD_MAX_SHORTCUTS = 50;
+/** Equals WIDGET_REQUEST_MAX_ID_LENGTH so every stored entry can be requested. */
 export const DASHBOARD_MAX_ID_LENGTH = 120;
 export const DASHBOARD_MAX_TITLE_LENGTH = 80;
 export const DASHBOARD_MAX_HREF_LENGTH = 2_000;
@@ -132,21 +150,104 @@ export const normalizeDashboardShortcuts = (value: unknown): DashboardShortcut[]
     : [];
 };
 
-/** A stored board, or `null` for "follows the default board". Each widget appears once, at its first place. */
+const plainObject = (value: unknown): value is Record<string, unknown> =>
+  value !== null &&
+  typeof value === "object" &&
+  (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+
+const settingName = new RegExp(`^[a-z][a-zA-Z0-9]{0,${WIDGET_SETTING_NAME_MAX_LENGTH - 1}}$`);
+const normalizeEntrySettings = (value: unknown): DashboardEntrySettings | undefined => {
+  if (!plainObject(value)) return undefined;
+  const settings: DashboardEntrySettings = {};
+  for (const [name, raw] of Object.entries(value).slice(0, WIDGET_SETTINGS_MAX_FIELDS)) {
+    if (!settingName.test(name) || name in Object.prototype) continue;
+    if (typeof raw === "boolean" || (typeof raw === "string" && raw.length <= WIDGET_SETTING_TEXT_MAX_LENGTH)) settings[name] = raw;
+    else if (
+      plainObject(raw) &&
+      typeof raw.type === "string" &&
+      raw.type.length > 0 &&
+      raw.type.length <= CAPABILITY_QUALIFIED_ID_MAX_LENGTH &&
+      typeof raw.id === "string" &&
+      raw.id.length > 0 &&
+      raw.id.length <= CLOUD_RESOURCE_ID_MAX_LENGTH
+    ) {
+      const title = typeof raw.title === "string" ? raw.title.trim().slice(0, DASHBOARD_MAX_TITLE_LENGTH) : "";
+      settings[name] = { type: raw.type, id: raw.id, ...(title ? { title } : {}) };
+    }
+  }
+  return Object.keys(settings).length ? settings : undefined;
+};
+
+/** A stored board, or null for the default board. The first entry with each id wins. */
 export const normalizeDashboardBoard = (value: unknown): DashboardBoardEntry[] | null => {
   const parsed = parseJsonString(value);
   if (!Array.isArray(parsed)) return null;
   const seen = new Set<string>();
   const board: DashboardBoardEntry[] = [];
   for (const entry of parsed) {
-    if (!entry || typeof entry !== "object") continue;
-    const { key, size } = entry as Record<string, unknown>;
-    if (!isKey(key) || !isDashboardWidgetSize(size) || seen.has(key.trim())) continue;
-    seen.add(key.trim());
-    board.push({ key: key.trim(), size });
+    if (!plainObject(entry)) continue;
+    const { key, size } = entry;
+    if (!isKey(key) || !isDashboardWidgetSize(size)) continue;
+    const id = isKey(entry.id) ? entry.id.trim() : key.trim();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const settings = normalizeEntrySettings(entry.settings);
+    board.push({ id, key: key.trim(), size, ...(settings ? { settings } : {}) });
     if (board.length === DASHBOARD_MAX_ITEMS) break;
   }
   return board;
+};
+
+/** Whether a widget offers settings. Only such a widget can be on a board more than once. */
+export const hasWidgetSettings = (widget: { settings?: WidgetSettingsDeclaration }): boolean =>
+  Object.keys(widget.settings ?? {}).length > 0;
+
+/** The id of a new board entry: the widget's key while no entry has it, so a board without repeats reads like its keys. */
+export const newDashboardEntryId = (key: string, taken: ReadonlySet<string>): string =>
+  key.length <= DASHBOARD_MAX_ID_LENGTH && !taken.has(key) ? key : crypto.randomUUID();
+
+/** Only values that still fit the declaration leave the settings dialog; choice values keep their exact spelling. */
+export const fitEntrySettings = (declaration: WidgetSettingsDeclaration, draft: DashboardEntrySettings): DashboardEntrySettings => {
+  const settings: DashboardEntrySettings = {};
+  for (const [name, field] of Object.entries(declaration)) {
+    const value = draft[name];
+    switch (field.kind) {
+      case "text":
+        if (typeof value === "string" && value.trim()) settings[name] = value.trim();
+        break;
+      case "choice":
+        if (typeof value === "string" && field.options.some((option) => option.value === value)) settings[name] = value;
+        break;
+      case "toggle":
+        if (typeof value === "boolean") settings[name] = value;
+        break;
+      case "resource":
+        if (typeof value === "object" && value.type === field.type) {
+          const title = value.title?.trim().slice(0, DASHBOARD_MAX_TITLE_LENGTH);
+          settings[name] = { type: value.type, id: value.id, ...(title ? { title } : {}) };
+        }
+        break;
+    }
+  }
+  return settings;
+};
+
+/** Unset and empty settings are equal, so applying an unchanged dialog does not edit the board. */
+export const sameEntrySettings = (a: DashboardEntrySettings | undefined, b: DashboardEntrySettings | undefined): boolean =>
+  Object.keys(a ?? {}).length === Object.keys(b ?? {}).length &&
+  Object.entries(a ?? {}).every(([name, value]) => {
+    const other = b?.[name];
+    return typeof value === "object" && typeof other === "object"
+      ? value.type === other.type && value.id === other.id && value.title === other.title
+      : value === other;
+  });
+
+/** Title snapshots are for the settings dialog only; the widget receives strict resource references. */
+export const widgetRequestSettings = (settings: DashboardEntrySettings | undefined): WidgetSettings | undefined => {
+  if (!settings || !Object.keys(settings).length) return undefined;
+  return Object.fromEntries(
+    Object.entries(settings).map(([name, value]) => [name, typeof value === "object" ? { type: value.type, id: value.id } : value]),
+  );
 };
 
 export const normalizeDashboardSettings = (value: unknown): DashboardSettings => {
@@ -161,21 +262,28 @@ const SIZE_RANK: Record<DashboardWidgetSize, number> = { large: 0, medium: 1, sm
  * default size. Large widgets come first, then medium, then small, each in catalog order, so the rows fill without
  * gaps on four columns and on two.
  */
-export const defaultDashboardBoard = (catalog: readonly DashboardCatalogWidget[]): DashboardBoardEntry[] =>
-  catalog
+export const defaultDashboardBoard = (catalog: readonly DashboardCatalogWidget[]): DashboardBoardEntry[] => {
+  const taken = new Set<string>();
+  return catalog
     .filter((widget) => widget.suggest)
     .map((widget, index) => ({ widget, index }))
     .sort((a, b) => SIZE_RANK[a.widget.defaultSize] - SIZE_RANK[b.widget.defaultSize] || a.index - b.index)
-    .map(({ widget }) => ({ key: widget.key, size: widget.defaultSize }))
-    .slice(0, DASHBOARD_MAX_ITEMS);
+    .slice(0, DASHBOARD_MAX_ITEMS)
+    .map(({ widget }) => {
+      const id = newDashboardEntryId(widget.key, taken);
+      taken.add(id);
+      return { id, key: widget.key, size: widget.defaultSize };
+    });
+};
 
-/** A saved widget the page cannot show now, and its place on the saved board. */
+/** A saved widget the page cannot show now, and its place on the board after surplus entries are dropped. */
 export type DashboardKeptEntry = DashboardBoardEntry & { index: number };
 
 /**
  * The part of a stored board the page shows, each widget in a size it offers today, and the part it cannot show now:
  * widgets of an app that is not running or that the person may no longer see. The board keeps the second part when it
- * is saved again, so an app that restarts does not lose its place on anyone's board.
+ * is saved again, so an app that restarts does not lose its place on anyone's board. A widget that offers no settings
+ * is shown once, at its first place, also when its app offered settings while the board was saved.
  */
 export const splitDashboardBoard = (
   board: readonly DashboardBoardEntry[],
@@ -184,10 +292,15 @@ export const splitDashboardBoard = (
   const byKey = new Map(catalog.map((widget) => [widget.key, widget]));
   const shown: DashboardBoardEntry[] = [];
   const kept: DashboardKeptEntry[] = [];
-  board.forEach((entry, index) => {
+  const once = new Set<string>();
+  board.forEach((entry) => {
     const widget = byKey.get(entry.key);
-    if (widget) shown.push({ key: entry.key, size: fitWidgetSize(entry.size, widget) });
-    else kept.push({ ...entry, index });
+    if (!widget) kept.push({ ...entry, index: shown.length + kept.length });
+    else if (hasWidgetSettings(widget)) shown.push({ ...entry, size: fitWidgetSize(entry.size, widget) });
+    else if (!once.has(entry.key)) {
+      once.add(entry.key);
+      shown.push({ ...entry, size: fitWidgetSize(entry.size, widget) });
+    }
   });
   return { shown, kept };
 };
@@ -198,7 +311,7 @@ export const restoreKeptDashboardEntries = (
   kept: readonly DashboardKeptEntry[],
 ): DashboardBoardEntry[] => {
   const restored = [...board];
-  for (const { key, size, index } of [...kept].sort((a, b) => a.index - b.index)) restored.splice(index, 0, { key, size });
+  for (const { index, ...entry } of [...kept].sort((a, b) => a.index - b.index)) restored.splice(index, 0, entry);
   return restored.slice(0, DASHBOARD_MAX_ITEMS);
 };
 
@@ -267,6 +380,6 @@ export const migrateLegacyDashboardLayout = (
       return { key, size, rank: ZONE_RANK[zone], index };
     })
     .sort((a, b) => a.rank - b.rank || a.index - b.index)
-    .map(({ key, size }): DashboardBoardEntry => ({ key, size }))
+    .map(({ key, size }): DashboardBoardEntry => ({ id: key, key, size }))
     .slice(0, DASHBOARD_MAX_ITEMS);
 };

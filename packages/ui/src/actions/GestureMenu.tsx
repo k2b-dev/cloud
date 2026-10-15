@@ -133,13 +133,13 @@ const swipeKind = (direction: SwipeDirection): GestureKind => (direction === "ri
 
 /**
  * The sheet's items hand their action to `run` instead of running it while the sheet closes: `dialogCore` settles the
- * sheet after it left the history, and only then may an action navigate or open the next dialog. A choice that keeps
- * the menu open runs at once.
+ * sheet after it left the history, and only then may an action navigate or open the next dialog.
+ * A choice or action that keeps the menu open runs at once.
  */
 const afterClose = (items: readonly GestureMenuItem[], run: (action: () => void) => void): GestureMenuItem[] => {
   const entry = (item: Entry): Entry => {
     const action = item.action;
-    if (!action || ("choice" in item && item.closeOnSelect === false)) return item;
+    if (!action || ("closeOnSelect" in item && item.closeOnSelect === false)) return item;
     return { ...item, action: () => run(action) };
   };
   return items.map((item) => ("items" in item ? { ...item, items: item.items.map(entry) } : entry(item)));

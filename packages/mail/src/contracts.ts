@@ -8,7 +8,7 @@ import type {
 } from "@k2b/cloud/workflows";
 import { z } from "zod";
 import { contactResolveMatchSchema, normalizedContactEmailSchema } from "./app-integration-contracts";
-import { MAX_COMMAND_OUTCOME_IDS } from "./command-outcomes";
+import { MAX_COMMAND_OUTCOME_IDS, MAX_CONVERSATION_ACTION_MESSAGES } from "./command-outcomes";
 import { RESOURCE_SHORT_ID_PATTERN } from "./resource-short-id";
 
 export const DEFAULT_CONVERSATION_REFERENCE_PATTERN = "REF-{{ short_id }}";
@@ -1274,8 +1274,7 @@ export const messageStateChangeSchema = z
   });
 export type MessageStateChange = z.infer<typeof messageStateChangeSchema>;
 
-/** The most provider messages one conversation action may change. */
-export const MAX_CONVERSATION_ACTION_MESSAGES = 500;
+export { MAX_CONVERSATION_ACTION_MESSAGES } from "./command-outcomes";
 
 const conversationTriageMessageIdsSchema = z
   .array(ResourceShortIdSchema)
@@ -1314,6 +1313,11 @@ export const conversationTriageInputSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 export type ConversationTriageInput = z.infer<typeof conversationTriageInputSchema>;
+
+export const conversationTriageUndoInputSchema = z
+  .object({ commandIds: z.array(z.uuid()).min(1).max(MAX_CONVERSATION_ACTION_MESSAGES) })
+  .strict();
+export type ConversationTriageUndoInput = z.infer<typeof conversationTriageUndoInputSchema>;
 
 export const actorCommandInputSchema = z.discriminatedUnion("kind", [
   actorCommandBaseSchema.extend({
@@ -1467,6 +1471,16 @@ export const mailCommandOutcomeSchema = z.object({
   code: z.string().nullable(),
 });
 export type MailCommandOutcome = z.infer<typeof mailCommandOutcomeSchema>;
+
+export const conversationTriageUndoOutcomeSchema = z.object({
+  id: z.uuid(),
+  outcome: z.enum(["cancelled", "reversed", "pending", "not_applied", "unavailable"]),
+  /** Only a reversed action has an inverse command for the client to follow. */
+  inverse: mailCommandOutcomeSchema.nullable(),
+});
+export type ConversationTriageUndoOutcome = z.infer<typeof conversationTriageUndoOutcomeSchema>;
+export const conversationTriageUndoResultSchema = z.object({ commands: z.array(conversationTriageUndoOutcomeSchema) });
+export type ConversationTriageUndoResult = z.infer<typeof conversationTriageUndoResultSchema>;
 
 export const operatorActionKindSchema = z.enum([
   "sync_mailbox",

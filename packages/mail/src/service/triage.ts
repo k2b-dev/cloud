@@ -1,15 +1,30 @@
-import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import { logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
-import { type ConversationTriageInput, MAX_CONVERSATION_ACTION_MESSAGES, type MailCommand } from "../contracts";
+import {
+  type ActorRef,
+  type CommandState,
+  type ConversationTriageInput,
+  type ConversationTriageUndoInput,
+  type ConversationTriageUndoOutcome,
+  type ConversationTriageUndoResult,
+  conversationTriageUndoInputSchema,
+  MAX_CONVERSATION_ACTION_MESSAGES,
+  type MailCommand,
+} from "../contracts";
 import { requireMailboxAccess, requireVisibleConversation, requireVisibleMessages } from "./access";
-import type { MailRequestContext } from "./auth";
-import { createActorCommands } from "./commands";
+import { actorRefFromRequest, type MailRequestContext } from "./auth";
+import { commandTargetVisibleTo } from "./command-authorization";
+import { finishUndoRequests, notifyCommandState, recordCommandState } from "./command-runtime";
+import { recordUndoRequests } from "./command-undo";
+import { commandActorMatches, createActorCommands } from "./commands";
 import { isKeepProtectedDestination, isKeptConversation, keepError } from "./conversation-keep-rules";
 import { resolveMailExecution } from "./execution";
 import { resolveRoleFolder } from "./folders";
 import { enqueueMailInvalidation, mailLive } from "./live";
 import { applyStateChange, providerStateChange } from "./local-state-projection";
+
+const log = logger("mail:triage");
 
 type ConversationTarget = {
   remote_message_ref_id: string;
@@ -220,4 +235,111 @@ export const createConversationTriageCommands = async (params: {
   if (!commands.ok) return commands;
   if (copies.length > 0) mailLive.wake();
   return ok({ correlationId, commands: commands.data });
+};
+
+type TriageUndoCommand = {
+  id: string;
+  mailbox_id: string;
+  state: CommandState;
+  actor_kind: ActorRef["kind"];
+  actor_id: string | null;
+  transport_metadata: Record<string, unknown> | string;
+  provider_effect_started_at: Date | string | null;
+};
+
+export const undoConversationTriageCommands = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  conversationId: string;
+  input: ConversationTriageUndoInput;
+}): Promise<Result<ConversationTriageUndoResult>> => {
+  const permission = await requireMailboxAccess(params.context, params.mailboxId, "write");
+  if (!permission.ok) return permission;
+  const visible = await requireVisibleConversation(permission.data, params.conversationId);
+  if (!visible.ok) return visible;
+  const input = conversationTriageUndoInputSchema.safeParse(params.input);
+  if (!input.success) return fail(err.badInput("Invalid command IDs"));
+  const ids = [...new Set(input.data.commandIds)];
+  const actor = actorRefFromRequest(params.context);
+  const prepared = await sql.begin(async (tx) => {
+    // Lock in a stable order, like the runtime claim, and authorize the whole request before cancelling anything.
+    const commands = await tx<TriageUndoCommand[]>`
+      SELECT c.id, c.mailbox_id, c.state, c.actor_kind, c.actor_id, c.transport_metadata, c.provider_effect_started_at
+      FROM mail.commands c
+      JOIN mail.remote_message_refs ref ON ref.id = (c.target ->> 'remoteMessageRefId')::uuid
+      JOIN mail.conversation_messages link ON link.message_id = ref.message_id
+      JOIN mail.conversations conversation ON conversation.id = link.conversation_id
+      WHERE c.id = ANY(${toPgUuidArray(ids)}::uuid[])
+        AND c.mailbox_id = ${params.mailboxId}::uuid AND c.kind = 'move'
+        AND conversation.id = ${params.conversationId}::uuid
+        AND conversation.mailbox_id = ${params.mailboxId}::uuid
+        AND ${commandTargetVisibleTo(permission.data, sql`c.kind`, sql`c.target`, params.mailboxId, sql`c.id`)}
+      ORDER BY c.id
+      FOR UPDATE OF c
+    `;
+    if (commands.length !== ids.length || commands.some((command) => !commandActorMatches(command, actor))) {
+      return fail(err.notFound("Mail command"));
+    }
+    const outcomes = new Map<string, ConversationTriageUndoOutcome>();
+    const recorded: string[] = [];
+    for (const command of commands) {
+      let outcome: ConversationTriageUndoOutcome["outcome"];
+      if (command.state === "queued" && command.provider_effect_started_at === null) {
+        await tx`
+          UPDATE mail.commands
+          SET state = 'cancelled', finished_at = now(), last_error_code = 'UNDONE',
+            last_error_message = 'The action was undone before it ran', updated_at = now()
+          WHERE id = ${command.id}::uuid AND state = 'queued' AND provider_effect_started_at IS NULL
+        `;
+        await recordCommandState(tx, command, "cancelled", "UNDONE");
+        outcome = "cancelled";
+      } else if (command.state === "failed" || command.state === "cancelled") {
+        outcome = "not_applied";
+      } else if (command.state === "needs_attention") {
+        outcome = "unavailable";
+      } else {
+        recorded.push(command.id);
+        outcome = "pending";
+      }
+      outcomes.set(command.id, { id: command.id, outcome, inverse: null });
+    }
+    await recordUndoRequests(tx, recorded, params.context);
+    return ok({ commands, outcomes, recorded });
+  });
+  if (!prepared.ok) return prepared;
+  const { commands, outcomes, recorded } = prepared.data;
+  for (const command of commands) {
+    if (outcomes.get(command.id)?.outcome === "cancelled") await notifyCommandState(command, "cancelled");
+  }
+
+  // A record that cannot be finished now stays pending; the mailbox's next command turn or the commands-due run retries it.
+  await finishUndoRequests({ mailboxId: params.mailboxId, commandIds: recorded }).catch((error) => {
+    log.warn("Recorded Undo waits for the next command turn", {
+      mailboxId: params.mailboxId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+  const records = await sql<
+    {
+      command_id: string;
+      outcome: "reversed" | "not_applied" | "unavailable" | null;
+      id: string | null;
+      state: CommandState | null;
+      code: string | null;
+    }[]
+  >`
+    SELECT request.command_id, request.outcome, inverse.id, inverse.state, inverse.last_error_code AS code
+    FROM mail.command_undo_requests request
+    LEFT JOIN mail.commands inverse ON inverse.id = request.inverse_command_id
+    WHERE request.command_id = ANY(${toPgUuidArray(recorded)}::uuid[])
+  `;
+  for (const record of records) {
+    outcomes.set(record.command_id, {
+      id: record.command_id,
+      outcome: record.outcome ?? "pending",
+      inverse:
+        record.outcome === "reversed" && record.id && record.state ? { id: record.id, state: record.state, code: record.code } : null,
+    });
+  }
+  return ok({ commands: input.data.commandIds.map((id) => outcomes.get(id)!) });
 };
