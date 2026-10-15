@@ -15,13 +15,7 @@ import {
 import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
-import {
-  type ConversationPageSchema,
-  type ConversationSchema,
-  MESSAGE_BODY_MAX,
-  type MessagePageSchema,
-  readStart,
-} from "../service/contracts";
+import { type ConversationPageSchema, type ConversationSchema, type MessagePageSchema, readStart } from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import ChatList from "./ChatList";
@@ -344,11 +338,6 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const send = async (text: string): Promise<boolean> => {
     const current = openChat();
     if (!current || !outbox || !text.trim()) return false;
-    // The server refuses longer messages; checking here keeps the text in the composer.
-    if ([...text].length > MESSAGE_BODY_MAX) {
-      toast.error(t().messageTooLong({ max: MESSAGE_BODY_MAX.toLocaleString(locale()) }));
-      return false;
-    }
     if (current.hasNewer) await store?.loadLatest();
     outbox.send(current.id, text);
     feed?.scrollToEnd();
