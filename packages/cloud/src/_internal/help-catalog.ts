@@ -84,8 +84,10 @@ export const helpAgentMarkdown = (
       const keys = String(token.keys);
       const other = formatShortcut(keys, { platform: "other", locale: article.locale });
       const apple = formatShortcut(keys, { platform: "apple", locale: article.locale }).label;
+      // Key labels such as | or ` stay text in a table cell or a sentence.
+      const escape = (text: string) => text.replace(/[\\`*_[\]|<>~]/g, "\\$&");
       // A key without a platform modifier reads by its name: "Enter", not "↵".
-      return other.label === apple ? other.name : `${other.label} (${t.apple({ shortcut: apple })})`;
+      return other.label === apple ? escape(other.name) : `${escape(other.label)} (${t.apple({ shortcut: escape(apple) })})`;
     }
     if (token.type === "helpDetails") {
       const newline = source.includes("\r\n") ? "\r\n" : "\n";

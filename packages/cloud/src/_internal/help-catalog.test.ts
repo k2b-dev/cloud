@@ -92,6 +92,14 @@ test("agent text keeps emphasis, unfolds details and resolves visible Help refer
   expect(helpAgentMarkdown(agentArticle("[text](help:hidden/private)"))).toBe("text");
 });
 
+test("agent text escapes Markdown punctuation in key names", () => {
+  expect(helpAgentMarkdown(agentArticle("| Key | Action |\n| --- | --- |\n| :kbd[mod+\\|] | Split |"))).toBe(
+    "| Key | Action |\n| --- | --- |\n| Ctrl+\\| (⌘\\| on Mac) | Split |",
+  );
+  expect(helpAgentMarkdown(agentArticle("Press :kbd[mod+`] now."))).toBe("Press Ctrl+\\` (⌘\\` on Mac) now.");
+  expect(helpAgentMarkdown(agentArticle("Press :kbd[mod+k] or :kbd[shift+/]."))).toBe("Press Ctrl+K (⌘K on Mac) or Shift+/ (⇧/ on Mac).");
+});
+
 test("agent text excludes unresolved link titles containing label delimiters", () => {
   expect(helpAgentMarkdown(agentArticle('[Read](help:hidden/private "text ](here")'))).toBe("Read");
 });
