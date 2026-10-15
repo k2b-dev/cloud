@@ -440,6 +440,37 @@ type SchemaReductionContext = {
   root: Record<string, unknown>;
   mirrorNames: Map<string, string>;
   mirrors: Record<string, Record<string, unknown>>;
+  tupleDefinitions: Map<string, boolean>;
+};
+
+const containsTuple = (value: unknown, context: SchemaReductionContext, key?: string, checking = new Set<string>()): boolean => {
+  if (key === "const" || key === "enum" || key === "default" || key === "required" || key === "type") return false;
+  if (Array.isArray(value)) return value.some((item) => containsTuple(item, context, undefined, checking));
+  if (!value || typeof value !== "object") return false;
+  if (key === "properties" || key === "$defs" || key === "definitions") {
+    return Object.values(value).some((schema) => containsTuple(schema, context, undefined, checking));
+  }
+  if (Object.hasOwn(value, "prefixItems") || Array.isArray(Reflect.get(value, "items"))) return true;
+  const reference = Reflect.get(value, "$ref");
+  const match = typeof reference === "string" ? /^#\/(\$defs|definitions)\/([^/]+)$/.exec(reference) : null;
+  if (match) {
+    const [, keyword, encodedName] = match;
+    const name = encodedName!.replace(/~1/g, "/").replace(/~0/g, "~");
+    const definitions = context.root[keyword!];
+    const identity = `${keyword}/${name}`;
+    if (definitions && typeof definitions === "object" && Object.hasOwn(definitions, name)) {
+      if (!context.tupleDefinitions.has(identity) && !checking.has(identity)) {
+        checking.add(identity);
+        const found = containsTuple(Reflect.get(definitions, name), context, undefined, checking);
+        checking.delete(identity);
+        // A nested negative may have skipped a cycle whose tuple has not been found yet.
+        if (found || checking.size === 0) context.tupleDefinitions.set(identity, found);
+        if (found) return true;
+      }
+      if (context.tupleDefinitions.get(identity)) return true;
+    }
+  }
+  return Object.entries(value).some(([childKey, childValue]) => containsTuple(childValue, context, childKey, checking));
 };
 
 const reduceSchemaValue = (value: unknown, context: SchemaReductionContext, key?: string, merged = false): unknown => {
@@ -456,7 +487,13 @@ const reduceSchemaValue = (value: unknown, context: SchemaReductionContext, key?
   const output: Record<string, unknown> = {};
   for (const [childKey, childValue] of Object.entries(value)) {
     if (!SCHEMA_KEYS.has(childKey) || (merged && childKey === "default")) continue;
-    output[childKey] = reduceSchemaValue(childValue, context, childKey, merged);
+    // Tuple widening can make surrounding union branches overlap, so their defaults belong to the app.
+    const unionMerged =
+      merged ||
+      ((childKey === "anyOf" || childKey === "oneOf") &&
+        Array.isArray(childValue) &&
+        childValue.some((branch) => containsTuple(branch, context)));
+    output[childKey] = reduceSchemaValue(childValue, context, childKey, unionMerged);
   }
   if (output.oneOf !== undefined) {
     if (output.anyOf === undefined) output.anyOf = output.oneOf;
@@ -521,7 +558,7 @@ const reduceSchemaValue = (value: unknown, context: SchemaReductionContext, key?
  * overlap; the app still validates exact tuple positions and exclusive unions.
  */
 export const reduceAiCapabilityInputSchema = (schema: Record<string, unknown>): Record<string, unknown> => {
-  const context: SchemaReductionContext = { root: schema, mirrorNames: new Map(), mirrors: {} };
+  const context: SchemaReductionContext = { root: schema, mirrorNames: new Map(), mirrors: {}, tupleDefinitions: new Map() };
   const reduced = reduceSchemaValue(schema, context) as Record<string, unknown>;
   for (const [keyword, mirrors] of Object.entries(context.mirrors)) {
     const definitions = reduced[keyword];

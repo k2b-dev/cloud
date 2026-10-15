@@ -879,6 +879,117 @@ describe("AI capability catalog", () => {
     expect(serialized).not.toContain('"items":true');
   });
 
+  test.each(["oneOf", "anyOf"])("leaves defaults to the app when tuple widening overlaps surrounding %s branches", (keyword) => {
+    const branch = (types: string[], label: string) => ({
+      type: "object",
+      properties: {
+        pair: { type: "array", prefixItems: types.map((type) => ({ type })), items: false, minItems: 2 },
+        label: { type: "string", default: label },
+      },
+      required: ["pair"],
+      additionalProperties: false,
+    });
+    const source = {
+      type: "object",
+      properties: { value: { [keyword]: [branch(["string", "number"], "A"), branch(["number", "string"], "B")] } },
+    };
+    expect(aiCapabilityInputSchema(source).parse({ value: { pair: [1, "x"] } })).toEqual({ value: { pair: [1, "x"] } });
+  });
+
+  test.each(["oneOf", "anyOf"])("keeps defaults in tuple-free %s branches", (keyword) => {
+    const source = {
+      type: "object",
+      properties: {
+        value: {
+          [keyword]: ["A", "B"].map((kind) => ({
+            type: "object",
+            properties: { kind: { type: "string", const: kind }, label: { type: "string", default: kind } },
+            required: ["kind"],
+            additionalProperties: false,
+          })),
+        },
+      },
+    };
+    expect(aiCapabilityInputSchema(source).parse({ value: { kind: "B" } })).toEqual({ value: { kind: "B", label: "B" } });
+  });
+
+  test.each(["$defs", "definitions"])("detects tuples through transitive escaped %s references in union branches", (keyword) => {
+    const branch = (name: string) => ({
+      type: "object",
+      properties: { pair: { $ref: `#/${keyword}/${name}` }, label: { type: "string", default: name } },
+      required: ["pair"],
+      additionalProperties: false,
+    });
+    const source = {
+      type: "object",
+      properties: { value: { oneOf: [branch("Alias"), branch("B")] } },
+      [keyword]: {
+        Alias: { $ref: `#/${keyword}/A~1~01` },
+        "A/~1": { type: "array", prefixItems: [{ type: "string" }, { type: "number" }], items: false, minItems: 2 },
+        B: { type: "array", items: [{ type: "number" }, { type: "string" }], additionalItems: false, minItems: 2 },
+      },
+    };
+    const schema =
+      keyword === "$defs"
+        ? aiCapabilityInputSchema(source)
+        : z.fromJSONSchema(reduceAiCapabilityInputSchema(source), { defaultTarget: "draft-7" });
+    expect(schema.parse({ value: { pair: [1, "x"] } })).toEqual({ value: { pair: [1, "x"] } });
+  });
+
+  test("drops defaults from every union branch even when only one contains a single-position tuple", () => {
+    const source = {
+      type: "object",
+      properties: {
+        value: {
+          anyOf: [
+            { type: "object", properties: { label: { type: "string", default: "A" } } },
+            { type: "array", prefixItems: [{ type: "string" }], items: false },
+          ],
+        },
+      },
+    };
+    expect(aiCapabilityInputSchema(source).parse({ value: {} })).toEqual({ value: {} });
+  });
+
+  test("ignores tuple-like data and schema map names while checking cyclic union references", () => {
+    const tupleData = { prefixItems: [], items: [] };
+    const source = {
+      type: "object",
+      properties: { value: { anyOf: [{ $ref: "#/$defs/A" }, { type: "string", default: "kept" }] } },
+      $defs: {
+        A: {
+          $ref: "#/definitions/B",
+          properties: {
+            prefixItems: { type: "string" },
+            items: { type: "string" },
+            const: { type: "string" },
+            $defs: { type: "string" },
+          },
+          $defs: { prefixItems: {}, items: {} },
+          definitions: { prefixItems: {}, items: {} },
+          const: tupleData,
+          enum: [tupleData],
+          default: tupleData,
+          required: ["prefixItems"],
+          type: ["object", "null"],
+        },
+      },
+      definitions: { B: { $ref: "#/$defs/A" } },
+    };
+    expect(reduceAiCapabilityInputSchema(source)).toHaveProperty("properties.value.anyOf.1.default", "kept");
+    const nestedTuple = structuredClone(source);
+    Object.assign(nestedTuple.$defs.A.properties.const, { type: "array", prefixItems: [] });
+    expect(reduceAiCapabilityInputSchema(nestedTuple)).not.toHaveProperty("properties.value.anyOf.1.default");
+    const sharedCycle = {
+      ...nestedTuple,
+      properties: {
+        ...nestedTuple.properties,
+        other: { anyOf: [{ $ref: "#/definitions/B" }, { type: "string", default: "kept" }] },
+      },
+    };
+    expect(reduceAiCapabilityInputSchema(sharedCycle)).not.toHaveProperty("properties.other.anyOf.1.default");
+  });
+
   test("keeps recursive defaults out of merged tuple branches", () => {
     const recursiveDefinition = (name: string) => ({
       type: "object",
