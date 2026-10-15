@@ -173,6 +173,9 @@ suite("Core AI completion notifications", () => {
       await sql`UPDATE approvals.requests SET created_at=(SELECT first_seen_at-interval '1 second' FROM notifications.definitions WHERE id=${app.notifications.approvalWaiting.id}) WHERE id=${old}::uuid`;
       expect(await service.notifyApprovalWaiting(old)).toEqual({ scanned: 0, sent: 0, failed: 0 });
       await approvals.cancel([old]);
+      const stale = await ask();
+      await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${userId}::uuid`;
+      expect(await service.notifyApprovalWaiting(stale)).toEqual({ scanned: 0, sent: 0, failed: 0 });
       const first = await ask();
       expect((await service.notifyApprovalWaiting(first)).failed).toBe(0);
       expect(await service.notifyApprovalWaiting(first)).toEqual({ scanned: 0, sent: 0, failed: 0 });

@@ -6,23 +6,25 @@ import { APPROVAL_MAX_WAIT_MS, type ApprovalRequestInput, approvals, migrateAppr
 
 databaseSuite()("platform approvals", () => {
   let userId = "",
-    strangerId = "";
+    strangerId = "",
+    epochUserId = "";
   const ids: string[] = [];
   beforeAll(async () => {
     await migrateApprovals();
     await migrateApprovals();
-    for (const role of ["owner", "stranger"]) {
+    for (const role of ["owner", "stranger", "epoch"]) {
       const uid = `approval-${role}-${crypto.randomUUID()}`;
       const [row] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,mail)
         VALUES(${uid},'local','user',${`${uid}@example.test`}) RETURNING id`;
       if (!row) throw new Error("Missing test user");
       if (role === "owner") userId = row.id;
-      else strangerId = row.id;
+      else if (role === "stranger") strangerId = row.id;
+      else epochUserId = row.id;
     }
   });
   afterAll(async () => {
     await sql`DELETE FROM audit.events WHERE target_type='approval_request' AND target_id=ANY(${toPgTextArray(ids)}::text[])`;
-    await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid,${strangerId}::uuid)`;
+    await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid,${strangerId}::uuid,${epochUserId}::uuid)`;
   });
   const input = (): ApprovalRequestInput => ({
     appId: "demo",
@@ -50,6 +52,12 @@ databaseSuite()("platform approvals", () => {
       review: record.snapshot.review ?? null,
       requester: record.snapshot.requester,
     });
+  const device = async (revoked: boolean) => {
+    const id = crypto.randomUUID();
+    await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted,revoked_at)
+      VALUES (${id}::uuid,'https://cloud.example.test',${userId}::uuid,'Phone',${JSON.stringify({ id })}::text::jsonb,false,${revoked ? new Date() : null})`;
+    return id;
+  };
   test("upgrades the phase-one CHECK once and accepts the ACP channel", async () => {
     const [original] = await sql<{ conname: string }[]>`SELECT conname FROM pg_constraint
       WHERE conrelid='approvals.requests'::regclass AND conname='requests_decided_via_check'`;
@@ -87,12 +95,6 @@ databaseSuite()("platform approvals", () => {
     await migrateApprovals();
     expect(await constraint()).toEqual(first);
     // The decision locks the active device, so a revoked device cannot decide.
-    const device = async (revoked: boolean) => {
-      const id = crypto.randomUUID();
-      await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted,revoked_at)
-        VALUES (${id}::uuid,'https://cloud.example.test',${userId}::uuid,'Phone',${JSON.stringify({ id })}::text::jsonb,false,${revoked ? new Date() : null})`;
-      return id;
-    };
     const revoked = await ask({ ...input(), assurance: "confirm" });
     expect(await approvals.decide(revoked.id, { approved: true }, { userId, via: "cloud_login", deviceId: await device(true) })).toEqual({
       ok: false,
@@ -110,6 +112,92 @@ databaseSuite()("platform approvals", () => {
         { metadata: unknown }[]
       >`SELECT metadata FROM audit.events WHERE target_type='approval_request' AND target_id=${record.id}`;
       expect(event?.metadata).toMatchObject({ decidedVia: "cloud_login", deviceId });
+    }
+  });
+
+  test("revoking the deciding device cancels its unused approval before digest checks", async () => {
+    const record = await ask();
+    const deviceId = await device(false);
+    expect(await approvals.decide(record.id, { approved: true }, { userId, via: "cloud_login", deviceId })).toMatchObject({ ok: true });
+    const [stored] = await sql<
+      { decided_device_id: string }[]
+    >`SELECT decided_device_id FROM approvals.requests WHERE id=${record.id}::uuid`;
+    expect(stored?.decided_device_id).toBe(deviceId);
+    await sql`UPDATE auth.app_devices SET revoked_at=now() WHERE id=${deviceId}::uuid`;
+    expect(
+      await approvals.consume(record.id, {
+        input: { value: "changed" },
+        review: record.snapshot.review ?? null,
+        requester: record.snapshot.requester,
+      }),
+    ).toEqual({ ok: false, code: "REVOKED" });
+    expect(await approvals.get(record.id)).toMatchObject({ status: "cancelled" });
+    expect(await consume(record)).toEqual({ ok: false, code: "NOT_APPROVED" });
+  });
+
+  test("a Cloud Login approval without a recorded device is revoked when used", async () => {
+    const record = await ask();
+    expect(
+      await approvals.decide(record.id, { approved: true }, { userId, via: "cloud_login", deviceId: await device(false) }),
+    ).toMatchObject({ ok: true });
+    await sql`UPDATE approvals.requests SET decided_device_id=NULL WHERE id=${record.id}::uuid`;
+    expect(await consume(record)).toEqual({ ok: false, code: "REVOKED" });
+    expect(await approvals.get(record.id)).toMatchObject({ status: "cancelled" });
+  });
+
+  test("signing out everywhere cancels an unused web approval", async () => {
+    const record = await ask({ ...input(), subjectId: epochUserId, approverUserId: epochUserId });
+    expect(await approvals.decide(record.id, { approved: true }, { userId: epochUserId, via: "web_session" })).toMatchObject({ ok: true });
+    await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${epochUserId}::uuid`;
+    expect(await consume(record)).toEqual({ ok: false, code: "REVOKED" });
+    expect(await approvals.get(record.id)).toMatchObject({ status: "cancelled" });
+    expect(await consume(record)).toEqual({ ok: false, code: "NOT_APPROVED" });
+  });
+
+  test("signing out everywhere expires pending decisions and conflicts when asked again", async () => {
+    for (const approved of [true, false]) {
+      const record = await ask({ ...input(), subjectId: epochUserId, approverUserId: epochUserId });
+      await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${epochUserId}::uuid`;
+      expect(await approvals.request(record.snapshot)).toEqual({ ok: false, code: "CONFLICT" });
+      expect(await approvals.decide(record.id, { approved }, { userId: epochUserId, via: "web_session" })).toEqual({
+        ok: false,
+        code: "EXPIRED",
+      });
+      expect(await approvals.get(record.id)).toMatchObject({ status: "expired" });
+      expect(await approvals.request(record.snapshot)).toEqual({ ok: false, code: "CONFLICT" });
+    }
+  });
+
+  test("the upgrade fills the epoch of pending rows once and leaves approved and later rows ended", async () => {
+    const pending = await ask(),
+      approved = await ask(),
+      terminal = await ask();
+    await approve(approved.id);
+    await approvals.cancel([terminal.id]);
+    const epoch = async (id: string) => {
+      const [row] = await sql<
+        { epoch: string | null }[]
+      >`SELECT approver_auth_epoch::text AS epoch FROM approvals.requests WHERE id=${id}::uuid`;
+      return row?.epoch;
+    };
+    const [user] = await sql<{ epoch: string }[]>`SELECT auth_epoch::text AS epoch FROM auth.users WHERE id=${userId}::uuid`;
+    await sql`ALTER TABLE approvals.requests DROP COLUMN approver_auth_epoch`.simple();
+    try {
+      await migrateApprovals();
+      expect(await epoch(pending.id)).toBe(user?.epoch);
+      expect(await epoch(approved.id)).toBeNull();
+      expect(await epoch(terminal.id)).toBeNull();
+      expect(await consume(approved)).toEqual({ ok: false, code: "REVOKED" });
+
+      await sql`UPDATE approvals.requests SET approver_auth_epoch=NULL WHERE id=${pending.id}::uuid`;
+      await migrateApprovals();
+      expect(await epoch(pending.id)).toBeNull();
+      expect(await approvals.decide(pending.id, { approved: true }, { userId, via: "web_session" })).toEqual({
+        ok: false,
+        code: "EXPIRED",
+      });
+    } finally {
+      await migrateApprovals();
     }
   });
 
@@ -233,13 +321,17 @@ databaseSuite()("platform approvals", () => {
     await sql`UPDATE approvals.requests SET expires_at=now()-interval '1 second' WHERE id=${timely.id}::uuid`;
     expect(await consume(timely)).toEqual({ ok: true });
   });
-  test("consumes once, including concurrent consumers", async () => {
-    const record = await ask();
-    await approve(record.id);
-    const results = await Promise.all([consume(record), consume(record)]);
-    expect(results.filter((result) => result.ok)).toHaveLength(1);
-    expect(results.filter((result) => !result.ok)).toEqual([{ ok: false, code: "ALREADY_CONSUMED" }]);
-    expect(await consume(record)).toEqual({ ok: false, code: "ALREADY_CONSUMED" });
+  test("web and active-device approvals consume once, including concurrent consumers", async () => {
+    for (const via of ["web_session", "cloud_login"] as const) {
+      const record = await ask();
+      const actor = { userId, via, ...(via === "cloud_login" ? { deviceId: await device(false) } : {}) };
+      expect(await approvals.decide(record.id, { approved: true }, actor)).toMatchObject({ ok: true });
+      const results = await Promise.all([consume(record), consume(record)]);
+      expect(results.filter((result) => result.ok)).toEqual([{ ok: true }]);
+      expect(results.filter((result) => !result.ok)).toEqual([{ ok: false, code: "ALREADY_CONSUMED" }]);
+      expect(await approvals.get(record.id)).toMatchObject({ status: "consumed" });
+      expect(await consume(record)).toEqual({ ok: false, code: "ALREADY_CONSUMED" });
+    }
   });
   test("the first opposite decision wins and the same decision replays without another audit event", async () => {
     const record = await ask();

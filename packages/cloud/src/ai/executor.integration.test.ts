@@ -391,7 +391,8 @@ const createExecutor = (
   });
 
 suite("AI executor integration", () => {
-  test.each(["unchanged", "changed", "used"] as const)("resumed capability approval binds the live review (%s)", async (mode) => {
+  const resumeModes = ["unchanged", "changed", "revoked", "used"] as const;
+  test.each([...resumeModes])("resumed capability approval binds the live review (%s)", async (mode) => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["demo.write"] });
     const compiled = compileCapabilities(
@@ -490,6 +491,8 @@ suite("AI executor integration", () => {
         await rememberAiToolApproval({ actorUserId: userId }, { toolName: "demo.write", approvalScope: "one" });
         review.mockResolvedValue({ message: "Changed effect", approvalScope: "one" });
       }
+      // Signing out everywhere voids the unused approval, so the call asks again with the same review.
+      if (mode === "revoked") await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${userId}::uuid`;
       if (mode === "used") {
         // An earlier run used the approval and stopped during the Action, before the call asked anything else.
         expect(
@@ -510,13 +513,16 @@ suite("AI executor integration", () => {
           "This approval was already used",
         );
         expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
-      } else if (mode === "changed") {
+      } else if (mode === "changed" || mode === "revoked") {
         expect(execute).not.toHaveBeenCalled();
         expect(await approvals.get(first.approvalId)).toMatchObject({ status: "cancelled" });
         const next = (await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id })).find(
           (row) => row.status === "pending",
         );
-        expect(next).toMatchObject({ callId: "write-1-approval-1", review: { message: "Changed effect" } });
+        expect(next).toMatchObject({
+          callId: "write-1-approval-1",
+          review: { message: mode === "changed" ? "Changed effect" : "Original effect" },
+        });
         expect(next?.approvalId).not.toBe(first.approvalId);
         expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("waiting_for_action");
       } else {
