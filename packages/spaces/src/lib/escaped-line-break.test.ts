@@ -3,7 +3,7 @@ import { hasEscapedLineBreak } from "./escaped-line-break";
 
 describe("hasEscapedLineBreak", () => {
   test("flags unescaped backslash-n outside inline code", () => {
-    for (const text of ["Caption:\\nText", "a\\r\\nb", "a\\\\\\nb", "`code` then \\n", "``unmatched \\n`"])
+    for (const text of ["Caption:\\nText", "a\\r\\nb", "a\\\\\\nb", "`code` then \\n", "``unmatched \\n`", "Escape \\` then \\n`"])
       expect(hasEscapedLineBreak(text), text).toBeTrue();
   });
 
@@ -19,6 +19,8 @@ describe("hasEscapedLineBreak", () => {
       "``split ` on \\n``",
       "a\\\\nb",
       "a\\\\\\\\nb",
+      "Escape a backtick as \\` and split on `\\n`.",
+      "\\``\\n`",
     ])
       expect(hasEscapedLineBreak(text), text).toBeFalse();
   });
