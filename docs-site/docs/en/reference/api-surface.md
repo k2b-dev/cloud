@@ -144,7 +144,7 @@ Use the capability guide to choose the narrow API:
 - [App capabilities](/en/docs/platform/capabilities): `cloudResourceHref(ref)` from `@k2b/cloud/contracts` and `cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` supply [resource permalinks](/en/docs/platform/capabilities#resource-links).
 - [Universal search](/en/docs/platform/search)
 - [Document extraction](/en/docs/platform/document-extraction)
-- [Secrets and persistent state](/en/docs/data/secrets-and-persistent-state#call-a-public-https-address): `requestPublicHttps()` for server-side requests to a URL that a person, an administrator, or remote content chooses.
+- [Secrets and persistent state](/en/docs/data/secrets-and-persistent-state#call-a-public-https-address): `requestPublicHttps()` for server-side requests to a URL that a person, an administrator, or remote content chooses; `resolvePublicNetworkAddresses()`, `NetworkTargetBlockedError`, and `pinnedNetworkLookup()` from `@k2b/cloud/services/network-security` for other transports.
 
 Raw stores, runtime starters, gateway telemetry, migrations, and platform
 composition helpers from the same barrel are maintainer APIs unless a guide

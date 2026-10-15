@@ -352,6 +352,15 @@ For S3 snapshots, enter credentials in the individual notebook's snapshot
 configuration, not invented global S3 environment keys. Files (`filesv2`) uses
 the Filegate root and lease API of Filegate 6.1 or 7.0; see [Files](/en/apps/filesv2).
 
+Cloud refuses person-chosen outbound requests from the Webhook Tester,
+workflow HTTP steps, assistant file downloads, web push, and Mail endpoints to
+loopback, private, link-local, shared, and other reserved addresses, including
+names that resolve there. A failed DNS lookup also refuses the request. An
+address in the well-known NAT64 prefix `64:ff9b::/96` is judged by the IPv4
+address it embeds, so IPv6-only servers with DNS64 still reach public IPv4
+hosts. To test an internal service, use an address that is public from the
+server.
+
 ### Keep Gotenberg offline
 
 Cloud renders all HTML offline and loads assets only from request files and

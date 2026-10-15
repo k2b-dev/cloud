@@ -16,6 +16,16 @@ describe("Firecrawl AI tools", () => {
     expect(assertPublicHttpUrl("https://example.com/path")).toBe("https://example.com/path");
   });
 
+  test("uses the platform hostname and literal policy with stable errors", () => {
+    for (const host of ["printer.local", "router.home.arpa", "metadata", "instance-data", "localhost.localdomain"]) {
+      expect(() => assertPublicHttpUrl(`https://${host}/`)).toThrow("URL host is not allowed.");
+    }
+    for (const host of ["[::ffff:127.0.0.1]", "[::ffff:7f00:1]", "[5f00::1]", "[2001:20::1]", "127.1", "2130706433", "0x7f000001"]) {
+      expect(() => assertPublicHttpUrl(`https://${host}/`)).toThrow("URL must not point to a private IP address.");
+    }
+    expect(assertPublicHttpUrl("https://[64:ff9b::808:808]/")).toBe("https://[64:ff9b::808:808]/");
+  });
+
   test("normalizes search results and omits scraped content", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const fetcher = async (url: string | URL | Request, init?: RequestInit) => {

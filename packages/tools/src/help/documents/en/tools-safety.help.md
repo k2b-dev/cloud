@@ -14,6 +14,8 @@ order: 120
 - **Internet Speed Test** exchanges data with the Cloud server to measure the connection.
 - **Webhook Tester** creates endpoints on the server and stores the request history, so that you can inspect incoming calls later.
 
+The Webhook Tester sends only to public internet addresses, refuses local, private, and other reserved network addresses, and does not follow redirects.
+
 ## Protect sensitive values {icon="point"}
 
 :::warning Webhook logs

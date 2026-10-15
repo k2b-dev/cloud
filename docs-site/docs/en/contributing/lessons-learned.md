@@ -30,6 +30,7 @@ convention still needs a check or a test.
 | Ordering and concurrency | Work for one item runs in parallel or races another writer, so results land out of order or a later step undoes an earlier one. | Convention: the order and no-drop rules in [Show mutation state](/en/docs/frontend/forms-prompts-and-feedback#show-mutation-state) ([#1148](https://github.com/k2b-dev/cloud/pull/1148)) cover actions in the browser. No shared guard covers server-side writers yet; Mail's command queue has an integration test for server-side order in `conversation-actions.integration.test.ts`, and nothing covers automation versus reconciliation ([#1142](https://github.com/k2b-dev/cloud/issues/1142)). |
 | Silent failure | Async work fails and the person sees nothing, or a progress text stays as the last word. | Convention: [Show mutation state](/en/docs/frontend/forms-prompts-and-feedback#show-mutation-state) for single actions. No shared guard covers background work yet. |
 | Foreign system contracts | Cloud sends a schema or a payload that a foreign system, such as a model provider or Filegate, does not accept. | Partial test: the chart tool schema is checked for provider shape (one root object without `oneOf`, `anyOf`, or `allOf`, and no tuple `items`) in `packages/cloud/src/ai/chart-block.test.ts` and `default-tools.test.ts`. A check of every registered capability input schema is added by the fix for [#1149](https://github.com/k2b-dev/cloud/issues/1149). |
+| Server-side request forgery | A person-chosen address reaches the server’s private network or changes between validation and connection. | Check: `network-guard` lets only the platform guard resolve host names. Test: platform address and resolution tests, plus Tools refusal and pinned-transport tests. |
 
 ## Lessons
 
@@ -109,6 +110,13 @@ convention still needs a check or a test.
 - **Root cause:** A capability input schema used a tuple, which becomes a list of item schemas in JSON Schema. The capability schema reducer passed it to the provider unchanged.
 - **Error class:** Foreign system contracts.
 - **Guard:** Pending in [#1149](https://github.com/k2b-dev/cloud/issues/1149): a provider-safe reducer and a contract test that extends the chart tool's provider-shape test to every registered capability input schema.
+
+### Webhook testing bypasses outbound address policy
+
+- **What happened:** The Webhook Tester could send requests to addresses inside the server's own network.
+- **Root cause:** Tools kept its own address classifier, which missed some IPv6 notations. A failed DNS lookup let the request through, and `fetch()` resolved the name again after the check.
+- **Error class:** Server-side request forgery.
+- **Guard:** Tools, Mail, Grids, and the Assistant web tools use the one platform guard (`resolvePublicNetworkAddresses` and `pinnedNetworkLookup`) instead of their own classifiers. The `network-guard` check fails when application code imports `node:dns` (other than SRV, MX, or TXT record lookups) or Bun's `dns`, calls `fetch()` in a file that checks hosts with the guard, or sends a `node:http` request with a pinned lookup but without `agent: false`, which an environment proxy could otherwise take over. Platform tests cover every IP literal form and failed, empty, or mixed DNS answers; Tools tests verify refusal, the pinned connection, and that redirects are not followed.
 
 ## Add a lesson
 

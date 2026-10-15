@@ -1,0 +1,101 @@
+import { describe, expect, test } from "bun:test";
+import { isUnsafeNetworkAddress, isUnsafeNetworkHostname, networkAddressFamily, parseNetworkAddress } from "./network-address";
+
+describe("network address policy", () => {
+  test.each([
+    "[::ffff:127.0.0.1]",
+    "[::ffff:7f00:1]",
+    "::ffff:7f00:1",
+    "[::1]",
+    "::",
+    "0.0.0.0",
+    "127.1",
+    "2130706433",
+    "0x7f000001",
+    "0177.0.0.1",
+    "0x7f.1",
+    "127.1.",
+    "169.254.169.254",
+    "fd00::1",
+    "fe80::1%eth0",
+    "::7f00:1",
+    "::ffff:0:7f00:1",
+    "64:ff9b::7f00:1",
+    "2002:7f00:1::1",
+    "2001:0:4136:e378::1",
+    "5f00::1",
+    "ff02::1",
+    "255.255.255.255",
+    "198.18.0.1",
+    "10.2.3.4",
+    "100.64.0.1",
+    "172.31.2.3",
+    "192.168.1.1",
+    "198.51.100.2",
+    "224.0.0.1",
+    "::1",
+    "::ffff:127.0.0.1",
+    "64:ff9b:1::1",
+    "100::1",
+    "2001::1",
+    "2001:2::1",
+    "2001:20::1",
+    "2001:db8::1",
+    "2002::1",
+    "3fff::1",
+    "fc00::1",
+    "fe80::1",
+    "fec0::1",
+    "192.0.0.1",
+    "192.0.2.1",
+    "192.88.99.1",
+    "203.0.113.1",
+    "240.0.0.1",
+    "2001:1ff::1",
+    "not-an-address",
+    "1.2.3.4.5",
+    "08",
+    "4294967296",
+    "1:2:3:4:5:6:7::8",
+    "[::1",
+    "::1]",
+    "2000::1.",
+    "[8.8.8.8]",
+  ])("refuses %s", (address) => expect(isUnsafeNetworkAddress(address)).toBe(true));
+
+  test.each(["1.1.1.1", "8.8.8.8", "64:ff9b::808:808", "::ffff:8.8.8.8", "2606:4700:4700::1111", "2001:4860:4860::8888", "0x08080808"])(
+    "allows %s",
+    (address) => expect(isUnsafeNetworkAddress(address)).toBe(false),
+  );
+
+  test.each([
+    "localhost",
+    "x.localhost",
+    "localhost.localdomain",
+    "metadata",
+    "metadata.google.internal",
+    "instance-data",
+    "x.internal",
+    "printer.local",
+    "router.home.arpa",
+    "",
+    "1.2.3.4.5",
+    "example.123",
+    "example.0xff",
+    "08",
+  ])("refuses hostname %s", (host) => expect(isUnsafeNetworkHostname(host)).toBe(true));
+
+  test("canonicalizes literals and agrees on their families", () => {
+    for (const host of ["8.8.8.8", "0x08080808", "010.010.010.010", "8.526344", "8.8.2056", "134744072", "0X8.0x080808."]) {
+      expect(parseNetworkAddress(host)).toEqual({ address: "8.8.8.8", family: 4 });
+      expect(networkAddressFamily(host)).toBe(4);
+    }
+    expect(parseNetworkAddress("[::ffff:127.0.0.1]")).toEqual({ address: "::ffff:7f00:1", family: 6 });
+    expect(networkAddressFamily("[::ffff:127.0.0.1]")).toBe(6);
+    for (const host of ["example.com", "1.2.3.4.5", "fe80::1%eth0", "1:2:3:4:5:6:7::8", "[::1", "::1]"]) {
+      expect(parseNetworkAddress(host)).toBeNull();
+      expect(networkAddressFamily(host)).toBeNull();
+    }
+    expect(isUnsafeNetworkHostname("example.com")).toBe(false);
+  });
+});

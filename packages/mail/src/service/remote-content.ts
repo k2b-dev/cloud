@@ -1,6 +1,7 @@
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { audit } from "@k2b/cloud/services";
+import { pinnedNetworkLookup } from "@k2b/cloud/services/network-security";
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
@@ -8,7 +9,7 @@ import type { RemoteContentRuleInput, RemoteContentRuleScope } from "../contract
 import { requireMailboxAccess, requireVisibleMessages } from "./access";
 import { normalizeEmailAddress, normalizeEmailDomain } from "./address-normalization";
 import { auditActorFromRequest, type MailRequestContext, type PersonalPrincipal, personalPrincipal } from "./auth";
-import { createPinnedLookup, resolvePublicEndpoint } from "./connectors/endpoint-policy";
+import { resolvePublicEndpoint } from "./connectors/endpoint-policy";
 import { resolveMailExecution } from "./execution";
 import { assessMessage } from "./security";
 
@@ -317,7 +318,9 @@ const requestRemoteImage = async (
         port,
         path: `${url.pathname}${url.search}`,
         method: "GET",
-        lookup: createPinnedLookup(endpoint),
+        lookup: pinnedNetworkLookup(endpoint.addresses),
+        // A default agent may route through an environment proxy, which would resolve the name again.
+        agent: false,
         servername: secure ? endpoint.host : undefined,
         headers: {
           Accept: "image/avif,image/webp,image/png,image/jpeg,image/gif",
