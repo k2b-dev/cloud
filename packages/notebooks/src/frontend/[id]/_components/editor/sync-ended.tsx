@@ -7,6 +7,7 @@ import { Button, IconButton, InlineGuidance, prompts, toast, useLocale } from "@
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { YjsProviderError } from "../../../lib/yjs/provider";
 import { notebookWorkspaceMessages } from "../../messages";
+import { resolveSameNotebookNoteTarget } from "./note-navigation";
 
 export type SyncEnded = { code: YjsProviderError["code"]; unsent: boolean };
 export const signInCodes = new Set<YjsProviderError["code"]>(["SESSION_EXPIRED", "LOGIN_REQUIRED"]);
@@ -64,6 +65,7 @@ export function createSyncEnded(opts: {
     ended,
     confirmLeave,
     allowLeave,
+    releaseLeave: () => setLeaveConfirmed(false),
     shouldConfirmLeave,
     end: (error: YjsProviderError): void => {
       setEnded({ code: error.code, unsent: opts.hasUnsentChanges() });
@@ -93,6 +95,7 @@ const iconFor = (code: SyncEnded["code"]) => {
 };
 
 export function SyncEndedBar(props: {
+  notebookId: string;
   ended: SyncEnded;
   sync: ReturnType<typeof createSyncEnded>;
   markdown: () => string;
@@ -147,6 +150,7 @@ export function SyncEndedBar(props: {
       if (replaying || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
       if (!link || link.target === "_blank" || link.hasAttribute("download") || link.getAttribute("href")?.startsWith("#")) return;
+      if (resolveSameNotebookNoteTarget(link.href, window.location.href, props.notebookId)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       void props.sync.confirmLeave().then((leave) => {

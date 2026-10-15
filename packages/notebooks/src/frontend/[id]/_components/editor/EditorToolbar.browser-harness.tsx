@@ -141,6 +141,7 @@ function Harness() {
           >
             {(ended) => (
               <SyncEndedBar
+                notebookId="Book01"
                 ended={ended()}
                 sync={sync}
                 markdown={() => view()?.state.doc.toString() ?? ""}

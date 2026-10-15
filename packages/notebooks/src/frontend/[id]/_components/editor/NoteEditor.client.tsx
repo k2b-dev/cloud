@@ -70,6 +70,7 @@ import { createSyncEnded, SyncEndedBar } from "./sync-ended";
 import { createTabKeyPreference } from "./tab-key-preference";
 
 const TOC_DEBOUNCE_MS = 300;
+type LeaveGuard = Pick<ReturnType<typeof createSyncEnded>, "confirmLeave" | "releaseLeave">;
 type EditorInstanceProps = {
   noteId: string;
   noteTitle: string;
@@ -138,8 +139,9 @@ export default function NoteEditor(props: Props) {
     initialHeading ? { noteId: initialEditorProps.noteId, id: initialHeading } : null,
   );
   let shownHref = window.location.href;
-  let leaveGuard: (() => Promise<boolean>) | undefined;
-  const registerLeaveGuard = (guard: () => Promise<boolean>) => {
+  let restoringShownHref = false;
+  let leaveGuard: LeaveGuard | undefined;
+  const registerLeaveGuard = (guard: LeaveGuard) => {
     leaveGuard = guard;
     return () => {
       if (leaveGuard === guard) leaveGuard = undefined;
@@ -246,20 +248,30 @@ export default function NoteEditor(props: Props) {
 
   const navigateSoft = async (href: string, push: boolean): Promise<SoftNavigationResult> => {
     const target = resolveSameNotebookNoteTarget(href, window.location.href, props.notebookId);
-    // A heading of the shown note keeps its editor; anything else replaces it and asks first while text is unsent.
-    const leaves = !target || target.noteShortId !== current().noteId;
-    if (leaves && leaveGuard && !(await leaveGuard())) {
-      if (!push) window.history.pushState(window.history.state, "", shownHref);
+    const mode = target ? requestedPresentationMode(new URL(target.canonicalHref, window.location.href).searchParams) : undefined;
+    const keepsEditor = target && target.noteShortId === current().noteId && (!mode || mode === (props.readOnly ? "readonly" : "write"));
+    const guard = keepsEditor ? undefined : leaveGuard;
+    if (guard && !(await guard.confirmLeave())) {
+      if (!push) {
+        // Without a history index, restoring the shown URL with pushState drops forward entries after it.
+        window.history.pushState(window.history.state, "", shownHref);
+        restoringShownHref = true;
+        try {
+          window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+        } finally {
+          restoringShownHref = false;
+        }
+      }
       return { kind: "superseded" };
     }
     if (!target) return { kind: "fallback" };
-    const mode = requestedPresentationMode(new URL(target.canonicalHref, window.location.href).searchParams);
     if (props.readOnly) {
       // Read-only opens another note with a page load; the open note stays, so a link to its heading opens in place.
       if (target.noteShortId !== current().noteId || (mode && mode !== "readonly")) return { kind: "fallback" };
     } else if (mode && mode !== "write") return { kind: "fallback" };
     const result = await navigation.navigate(target, push);
     if (result.kind === "applied") shownHref = result.href;
+    else if (result.kind === "superseded") guard?.releaseLeave();
     return result;
   };
 
@@ -289,6 +301,7 @@ export default function NoteEditor(props: Props) {
     };
 
     const onPopState = () => {
+      if (restoringShownHref) return;
       void navigateSoft(window.location.href, false).then((result) => {
         if (result.kind === "fallback") window.location.reload();
       });
@@ -349,7 +362,7 @@ function EditorInstance(
   props: EditorInstanceProps & {
     linkedHeading: Accessor<LinkedHeading | null>;
     startPosition: ReadingPosition | null;
-    registerLeaveGuard: (guard: () => Promise<boolean>) => () => void;
+    registerLeaveGuard: (guard: LeaveGuard) => () => void;
   },
 ) {
   const locale = useLocale();
@@ -368,7 +381,7 @@ function EditorInstance(
     resume: () => provider?.resume(),
     focusEditor: () => editorView()?.focus(),
   });
-  onCleanup(props.registerLeaveGuard(syncEnded.confirmLeave));
+  onCleanup(props.registerLeaveGuard(syncEnded));
   // The sync-ended bar replaces the toolbar, so a toolbar mounted again starts from the panel's current state.
   const [panelOpen, setPanelOpen] = createSignal(props.initialPanelOpen);
   const onPanelState = (event: Event) => {
@@ -967,6 +980,7 @@ function EditorInstance(
         >
           {(ended) => (
             <SyncEndedBar
+              notebookId={props.notebookId}
               ended={ended()}
               sync={syncEnded}
               markdown={() => ytext.toString()}

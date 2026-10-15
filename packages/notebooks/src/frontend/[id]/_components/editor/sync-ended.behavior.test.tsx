@@ -94,6 +94,7 @@ const mount = ({ pending: initialPending = true, locale = "en" } = {}) => {
         <Show when={sync.ended()}>
           {(ended) => (
             <SyncEndedBar
+              notebookId="Book01"
               sync={sync}
               ended={ended()}
               markdown={() => mirror.editorView()!.state.doc.toString()}
@@ -141,12 +142,20 @@ const mount = ({ pending: initialPending = true, locale = "en" } = {}) => {
 
 const editorHref = "/app/notebooks/Book01/notes/Note01?mode=write#heading-keep-me";
 const otherHref = "/app/notebooks/Book01/notes/Other1?mode=write";
+const beforeUnloadPrevented = () => {
+  const event = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
+};
 const mountNoteEditor = ({ pending: initialPending = true, readOnly = false } = {}) => {
   let pending = initialPending;
   const dom = createDomTestHarness();
   delegateEvents(["click"], dom.document);
-  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
-  Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: dom.window.sessionStorage });
+  const previousBindings = new Map<string, PropertyDescriptor | undefined>();
+  for (const name of ["sessionStorage", "HTMLAnchorElement", "PopStateEvent"] as const) {
+    previousBindings.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
+    Object.defineProperty(globalThis, name, { configurable: true, value: dom.window[name] });
+  }
   window.history.replaceState({ shown: true }, "", editorHref);
   const { NoteEditor, LocaleProvider, yjs, prompts } = loaded!;
   const providers: Array<{ opts: YjsProviderOptions; dispose: ReturnType<typeof mock> }> = [];
@@ -199,8 +208,10 @@ const mountNoteEditor = ({ pending: initialPending = true, readOnly = false } = 
     end: () => providers.at(-1)!.opts.onFatal?.({ code: "NOTE_LOCKED", message: "locked" }),
     [Symbol.dispose]: () => {
       dispose();
-      if (previousStorage) Object.defineProperty(globalThis, "sessionStorage", previousStorage);
-      else Reflect.deleteProperty(globalThis, "sessionStorage");
+      for (const [name, previous] of previousBindings) {
+        if (previous) Object.defineProperty(globalThis, name, previous);
+        else Reflect.deleteProperty(globalThis, name);
+      }
       provider.mockRestore();
       confirmed.mockRestore();
       dom.cleanup();
@@ -274,9 +285,17 @@ describe("sync ended editor recovery", () => {
     const view = editor.view();
     const text = view.state.doc.toString();
     editor.end();
-    window.history.replaceState({ back: true }, "", "/app/notebooks/Book01/notes/Third1?mode=write");
-    window.dispatchEvent(new Event("popstate"));
-    await flush();
+    const observedHrefs: string[] = [];
+    const followUrl = () => observedHrefs.push(window.location.pathname + window.location.search + window.location.hash);
+    window.addEventListener("popstate", followUrl);
+    try {
+      window.history.replaceState({ back: true }, "", "/app/notebooks/Book01/notes/Third1?mode=write&view=favorites");
+      window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+      await flush();
+      expect(observedHrefs).toEqual(["/app/notebooks/Book01/notes/Third1?mode=write&view=favorites", shownHref]);
+    } finally {
+      window.removeEventListener("popstate", followUrl);
+    }
     expect(editor.confirmed).toHaveBeenCalledTimes(1);
     expect(routeGet).not.toHaveBeenCalled();
     expect(window.location.pathname + window.location.search + window.location.hash).toBe(shownHref);
@@ -295,6 +314,87 @@ describe("sync ended editor recovery", () => {
     expect(editor.confirmed).not.toHaveBeenCalled();
     expect(editor.providers[0]!.dispose).not.toHaveBeenCalled();
     expect(editor.view()).toBe(view);
+  });
+
+  test.each(["/app/notebooks/Book01/notes/Note01", "/app/notebooks/Book01/notes/Note01?mode=write#heading-other"])(
+    "an anchor to the shown note keeps unsent text without asking: %s",
+    async (href) => {
+      using editor = mountNoteEditor();
+      const view = editor.view();
+      editor.end();
+      const link = document.createElement("a");
+      link.href = href;
+      editor.dom.root.append(link);
+      link.click();
+      await flush();
+      expect(editor.confirmed).not.toHaveBeenCalled();
+      expect(beforeUnloadPrevented()).toBe(true);
+      expect(editor.view()).toBe(view);
+      expect(view.state.doc.toString()).toBe(markdown);
+      expect(routeGet).not.toHaveBeenCalled();
+    },
+  );
+
+  test("an anchor to another note asks once through soft navigation and cancel keeps the editor", async () => {
+    using editor = mountNoteEditor();
+    const view = editor.view();
+    editor.end();
+    const link = document.createElement("a");
+    link.href = otherHref;
+    const clicked = mock(() => {});
+    link.addEventListener("click", clicked);
+    editor.dom.root.append(link);
+    link.click();
+    await flush();
+    // Notebook links reach their normal handlers rather than being stopped and replayed by the bar.
+    expect(clicked).toHaveBeenCalledTimes(1);
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
+    expect(editor.view()).toBe(view);
+    expect(view.state.doc.toString()).toBe(markdown);
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(editorHref);
+    expect(routeGet).not.toHaveBeenCalled();
+    expect(beforeUnloadPrevented()).toBe(true);
+  });
+
+  test("changing the shown note's presentation mode asks before document fallback", async () => {
+    using editor = mountNoteEditor();
+    editor.end();
+    const href = "/app/notebooks/Book01/notes/Note01?mode=readonly";
+    expect(await loaded!.requestSoftNoteNavigation(href)).toEqual({ kind: "superseded" });
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
+    expect(beforeUnloadPrevented()).toBe(true);
+    editor.confirmed.mockResolvedValue(true);
+    expect(await loaded!.requestSoftNoteNavigation(href)).toEqual({ kind: "fallback" });
+    expect(editor.confirmed).toHaveBeenCalledTimes(2);
+    expect(beforeUnloadPrevented()).toBe(false);
+  });
+
+  test("a confirmed navigation superseded by the shown note restores the unsent text warning", async () => {
+    using editor = mountNoteEditor();
+    const view = editor.view();
+    editor.end();
+    editor.confirmed.mockResolvedValue(true);
+    const started = Promise.withResolvers<void>();
+    const response = Promise.withResolvers<Response>();
+    routeGet.mockImplementationOnce(() => {
+      started.resolve();
+      return response.promise;
+    });
+    const leaving = loaded!.requestSoftNoteNavigation(otherHref);
+    await started.promise;
+    expect(beforeUnloadPrevented()).toBe(false);
+    expect(await loaded!.requestSoftNoteNavigation(editorHref)).toEqual({ kind: "applied", href: editorHref });
+    expect(await leaving).toEqual({ kind: "superseded" });
+    expect(beforeUnloadPrevented()).toBe(true);
+    expect(editor.view()).toBe(view);
+    expect(view.state.doc.toString()).toBe(markdown);
+    expect(editor.providers[0]!.dispose).not.toHaveBeenCalled();
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
+    response.resolve(Response.json({ kind: "fallback", reason: "superseded request" }));
+    await flush();
+    editor.confirmed.mockResolvedValue(false);
+    expect(await loaded!.requestSoftNoteNavigation(otherHref)).toEqual({ kind: "superseded" });
+    expect(editor.confirmed).toHaveBeenCalledTimes(2);
   });
 
   test("soft navigation without unsent text proceeds without a prompt", async () => {
@@ -491,24 +591,18 @@ describe("sync ended editor recovery", () => {
     expect(document.activeElement).toBe(outside);
   });
 
-  test("leaving the note with unsent changes asks first", async () => {
-    using editor = mount();
+  test("leaving the note for another route with unsent changes asks first", async () => {
+    using editor = mountNoteEditor();
     const link = document.createElement("a");
-    link.href = "/app/notebooks/Book01/Other1";
+    link.href = "/app/settings";
     let followed = 0;
     link.addEventListener("click", (event) => {
       event.preventDefault();
       followed++;
     });
     editor.dom.root.append(link);
-    const unload = () => {
-      const event = new Event("beforeunload", { cancelable: true });
-      window.dispatchEvent(event);
-      return event.defaultPrevented;
-    };
-
-    editor.end("NOTE_LOCKED");
-    expect(unload()).toBe(true);
+    editor.end();
+    expect(beforeUnloadPrevented()).toBe(true);
     link.click();
     await flush();
     expect(editor.confirmed).toHaveBeenCalledWith("Leave the note? Changes that are not saved will be lost.", {
@@ -518,16 +612,17 @@ describe("sync ended editor recovery", () => {
       confirmText: "Leave",
     });
     expect(followed).toBe(0);
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
     editor.confirmed.mockResolvedValue(true);
     link.click();
     await flush();
     expect(followed).toBe(1);
-    expect(unload()).toBe(false);
+    expect(beforeUnloadPrevented()).toBe(false);
     expect(editor.confirmed).toHaveBeenCalledTimes(2);
 
     editor.setPending(false);
     editor.confirmed.mockClear();
-    expect(unload()).toBe(false);
+    expect(beforeUnloadPrevented()).toBe(false);
     link.click();
     expect(followed).toBe(2);
     expect(editor.confirmed).not.toHaveBeenCalled();
