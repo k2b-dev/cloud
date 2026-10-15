@@ -1,4 +1,5 @@
 import { FilegateError } from "@k2b/filegate";
+import { BATCH_LIMIT } from "../contracts";
 import { FilesError } from "./errors";
 import { userPath } from "./paths";
 
@@ -8,7 +9,7 @@ export const operationError = (error: unknown): string =>
 
 /** A selected directory already includes all selected descendants. */
 export function normalizeSelection(paths: readonly string[]): string[] {
-  if (paths.length < 1 || paths.length > 100) throw new FilesError("invalid_selection");
+  if (paths.length < 1 || paths.length > BATCH_LIMIT) throw new FilesError("invalid_selection");
   const unique = [
     ...new Set(
       paths.map((path) => {

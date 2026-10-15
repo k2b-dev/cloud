@@ -676,6 +676,183 @@
   }
 }
 
+/* New folder dialog: location line, name, preview and buttons on one flat surface. Everything that changes while
+   typing stays inside reserved space (one line, a fixed preview height, a button sized for its longest label), so
+   neither the dialog nor its buttons move. */
+.filesv2-new-folder {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.filesv2-new-folder__crumb {
+  display: flex;
+  height: 1.5rem;
+  min-width: 0;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+  white-space: nowrap;
+}
+.filesv2-new-folder__crumb > i {
+  flex: none;
+  color: var(--k2b-text-muted);
+}
+.filesv2-new-folder__separator {
+  flex: none;
+  color: var(--k2b-text-muted);
+  white-space: pre;
+}
+/* Space goes to the storage name and the typed name first; the current folder's path between them gets the rest,
+   down to its ellipsis. Both paths cut at their start, so the nearest names stay readable. */
+.filesv2-new-folder__base {
+  flex: 0 1 auto;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.filesv2-new-folder__parent,
+.filesv2-new-folder__typed {
+  overflow: hidden;
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+}
+/* Starting from nothing and growing into what the other two leave: a shared shrink would cut a sliver off each of
+   them, and any sliver costs a whole ellipsis. */
+.filesv2-new-folder__parent {
+  flex: 1 1 0;
+  min-width: 1.25em;
+  max-width: max-content;
+}
+.filesv2-new-folder__typed {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--k2b-action);
+  font-weight: 500;
+  white-space: pre;
+}
+.filesv2-new-folder__preview {
+  display: flex;
+  height: 12.5rem;
+  min-height: 0;
+  flex-direction: column;
+}
+.filesv2-new-folder__summary {
+  height: 1.25rem;
+  flex: none;
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filesv2-new-folder__summary[data-tone="hint"] {
+  color: var(--k2b-text-secondary);
+  font-weight: 400;
+}
+.filesv2-new-folder__summary[data-tone="danger"] {
+  color: var(--k2b-danger-text);
+}
+/* As tall as the comma choice, so the hint and the choice swap without moving the tree above them. */
+.filesv2-new-folder__mode {
+  display: flex;
+  height: 2.5rem;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+.filesv2-new-folder__mode > .k2b-segmented-control {
+  max-width: 20rem;
+  flex: 1;
+}
+.filesv2-new-folder__tree {
+  flex: 1;
+  min-height: 0;
+  margin: 0.25rem -0.375rem;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+  scrollbar-width: thin;
+}
+.filesv2-new-folder__row {
+  --filesv2-new-folder-depth: 0;
+  display: flex;
+  height: 1.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding-inline: calc(0.375rem + var(--filesv2-new-folder-depth) * 1.125rem) 0.375rem;
+  font-size: 0.875rem;
+}
+.filesv2-new-folder__row > i {
+  flex: none;
+  color: var(--k2b-action);
+}
+.filesv2-new-folder__row > i[data-tone="muted"] {
+  color: var(--k2b-text-muted);
+}
+.filesv2-new-folder__row > i[data-tone="success"] {
+  color: var(--k2b-success-text);
+}
+.filesv2-new-folder__row > i[data-tone="danger"] {
+  color: var(--k2b-danger-text);
+}
+.filesv2-new-folder__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+.filesv2-new-folder__name[data-empty="true"] {
+  color: var(--k2b-text-muted);
+  font-style: italic;
+}
+.filesv2-new-folder__note {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filesv2-new-folder__note[data-tone="success"] {
+  color: var(--k2b-success-text);
+}
+.filesv2-new-folder__note[data-tone="danger"] {
+  color: var(--k2b-danger-text);
+}
+.filesv2-new-folder__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.filesv2-new-folder__label {
+  display: inline-grid;
+  justify-items: center;
+}
+.filesv2-new-folder__label > span,
+.filesv2-new-folder__label::after {
+  grid-area: 1 / 1;
+}
+.filesv2-new-folder__label::after {
+  content: attr(data-reserve);
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+
 /* Upload panel: one flat surface in the toast rail. Space separates header, bar, rows and footer; the only
    depth is the inset tint of the file in flight. Every size that changes with values is fixed or reserved. */
 .filesv2-upload {

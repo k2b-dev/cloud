@@ -123,7 +123,17 @@ describe("spaces container switcher loader", () => {
     const open = spyOn(prompts, "dialog").mockImplementation(
       (content) =>
         new Promise((resolve) => {
-          disposeRender = render(() => content(resolve), dom.root);
+          disposeRender = render(
+            () =>
+              content(resolve, {
+                dialog: dom.document.createElement("dialog"),
+                setModal: () => {},
+                setPosition: () => {},
+                setDismissHandler: () => {},
+                requestDismiss: async () => {},
+              }),
+            dom.root,
+          );
         }),
     );
     const view = await mount(true);

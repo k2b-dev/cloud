@@ -74,7 +74,7 @@ as `root.stableIds` in `admin inventory`. An older Files CLI plugin reads
 | `get <remote> [<local>]` | Downloads a file, or a folder as ZIP | `{path, bytes}` |
 | `zip <remote>... --out <local>` | Downloads several entries of one area as ZIP | `{path, bytes}` |
 | `put <local> <remote> [--parents] [--replace] [--expected-revision <rev>]` | Uploads one file | `{base, entry}` |
-| `mkdir [-p] <folder>` | Creates a folder | `{base, entry}` |
+| `mkdir [-p] <folder>...` | Creates folders in one area | One argument: `{base, entry}`; several: `{base, results}` |
 | `mv <source>... <destination>` | Renames or moves inside one area | `{base, entries, results}` |
 | `cp <source>... <folder>` | Copies into a folder of any area | `{base, entries, results}` |
 | `rm <entry>... --yes` | Moves entries to the trash | `{entries, results}` |
@@ -281,9 +281,18 @@ cld filesv2 trash restore me <trash-id> --json
 cld filesv2 trash restore me <trash-id> --to /Documents/recovered.pdf --json
 ```
 
-`mkdir` creates one folder below an existing parent and fails on an existing
-name. `mkdir -p` (`--parents`) creates every missing folder and accepts an
-existing folder, but not an existing file.
+`mkdir` accepts one or more folders in the same area. Without `-p`, each parent
+must exist and an existing name fails. `mkdir -p` (`--parents`) creates missing
+ancestors in one batch and reuses existing folders, including folders inside
+read-only parents. Existing files fail. A batch includes at most 100 folders,
+counting ancestors. Both modes stop at the first failure and name the folders
+already created and those not attempted.
+
+Commas are literal in CLI names. For siblings, pass separate arguments or use
+shell expansion: `cld filesv2 mkdir -p team:/2026/{Q1,Q2}`. One argument keeps
+`{base, entry}` output; several return `{base, results}` with per-folder states
+(and ancestors with `-p`). Text output lists each requested folder as Created
+or Exists.
 
 The last `mv` argument is the destination. An existing folder, a trailing `/`,
 or several sources move the sources into that folder. Otherwise, the single

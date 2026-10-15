@@ -54,6 +54,14 @@ The plus button next to the search field offers **Upload**, **Upload folder**, *
 
 The details panel of an entry offers **Open in new tab**, **Rename**, **Duplicate**, **Move to**, **Copy to**, **Share publicly**, and **Move to trash**. For a PDF, **Open in new tab** works like the one in the PDF preview. Folders additionally offer **Share as upload inbox**. The copy button in the panel header copies a Cloud reference to the clipboard that other apps understand. Where your storage supports stable file IDs, the reference keeps pointing to the same file or folder after you rename or move it. It does not open while the entry is in the trash and works again after a restore. Otherwise the reference names the location and stops working after a rename or move.
 
+## Create several folders at once {icon="folder-plus"}
+
+**New folder** shows where the folder goes: the path line above the name grows while you type. Use `/` to create folders inside each other: `A/B/C` creates three levels and reuses existing folders along the way. Commas in the last part create folders side by side: `Testdaten/Test1, Test2, Test3` creates three folders inside Testdaten. Spaces around a comma are ignored. When you type a comma, **Comma** below the preview lets you choose between **Separates folders** and **Part of the name**. It starts as a separator.
+
+The preview lists every folder before you create it. It marks folders that already exist and shows a problem next to the affected name, for example an empty name, a name listed twice, or a file with the same name. The button shows how many folders it creates. One step creates at most 100 folders, counting the folders in between. If a folder cannot be created, the dialog stays open and shows which folders were created and which were not. Correct the name and try again; folders that already exist are reused. Press Enter to create the folders and Escape to cancel. While folders are being created, the dialog stays open and cannot be cancelled.
+
+In the terminal, `cld filesv2 mkdir -p` also accepts several folders. Pass each folder as a separate argument; commas stay part of the name.
+
 ## Trash {icon="trash"}
 
 Deleting never removes anything permanently: entries move into the trash of their storage location, which appears as **Trash** at the end of the storage location's root folder. Open it to see what you deleted; **Restore** puts an entry back to its original place. An item without a recorded original location asks for a destination path including its name. Existing files are never overwritten. Pending moves remain visible until their outcome is confirmed. Use pagination for further entries. Only an administrator can empty the trash.

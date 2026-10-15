@@ -65,6 +65,7 @@ import { apiFailure, contentLease } from "./file-preview";
 import { askReplace, type FilesUploads, type ReplacePolicy } from "./files-uploads";
 import { openDestinationDialog } from "./MoveDialog";
 import { useFilesMessages } from "./messages";
+import { openNewFolderDialog } from "./NewFolderDialog";
 import { systemEntry, systemEntryLabel } from "./system-files";
 import { openTemplatePicker } from "./Templates";
 import { UploadConflict, uploadFile } from "./uploads";
@@ -645,15 +646,21 @@ export default function Browser(props: {
       .then((values) => (values && source === locationKey() ? String(values.name) : null));
   };
   const createFolder = async () => {
-    const name = await askName(b().newFolder, b().newFolderName);
-    if (!name) return;
-    const path = folder() ? `${folder()}/${name}` : name;
-    runAction(async () => {
-      const response = await apiClient.bases[":baseId"].directories.$post({ param: { baseId: baseId() }, json: { path } });
-      if (!response.ok) await apiFailure(response, t().unavailable);
-      toast.success(b().folderCreated(name));
-      refresh(path);
+    const source = locationKey();
+    const result = await openNewFolderDialog({
+      title: b().newFolder,
+      baseId: baseId(),
+      parent: folder(),
+      location: baseLabel(props.directory.base, b(), locale()),
+      onPartial: () => void refresh(),
     });
+    if (!result || source !== locationKey()) return;
+    const created = result.results.flatMap((item) => (item.state === "created" && item.entry ? [item.entry] : []));
+    const [first] = created;
+    if (first)
+      toast.success(created.length === 1 ? b().folderCreated(first.path) : b().foldersCreated({ count: created.length, name: first.path }));
+    // The first path is the folder typed directly into this one; it holds everything else that was created.
+    await refresh(result.results[0]?.path);
   };
   // An empty file has nothing to transfer, so it is created at once like a folder instead of waiting behind an upload.
   const createFile = async () => {

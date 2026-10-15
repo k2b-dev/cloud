@@ -37,6 +37,7 @@ import {
   EntryQuerySchema,
   ErrorSchema,
   FavoriteInputSchema,
+  FolderBatchInputSchema,
   MoveInputSchema,
   PathsInputSchema,
   RenameInputSchema,
@@ -147,6 +148,23 @@ const api = new Hono<AuthContext>()
     middleware.openapi({ summary: "Create a folder", ...requiresAuth }),
     v("json", DirectoryInputSchema),
     async (c) => respond(c, ok(await filesService.mkdir(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
+  )
+  .post(
+    "/bases/:baseId/directories/batch",
+    middleware.openapi({ summary: "Create several folders in one request, reusing existing ones; dryRun only checks", ...requiresAuth }),
+    v("json", FolderBatchInputSchema),
+    async (c) => {
+      const result = await filesService.mkdirs(c.get("actor"), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") });
+      return respond(
+        c,
+        ok({
+          ...result,
+          results: result.results.map((item) =>
+            item.state === "failed" && item.error ? { ...item, message: errorMessage(item.error, getLocale(c)) } : item,
+          ),
+        }),
+      );
+    },
   )
   .post(
     "/bases/:baseId/documents",
