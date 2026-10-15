@@ -452,6 +452,14 @@ const reduceSchemaValue = (value: unknown, key?: string): unknown => {
     if (!SCHEMA_KEYS.has(childKey)) continue;
     output[childKey] = reduceSchemaValue(childValue, childKey);
   }
+  if (output.oneOf !== undefined) {
+    if (output.anyOf === undefined) output.anyOf = output.oneOf;
+    else {
+      output.allOf = [...(Array.isArray(output.allOf) ? output.allOf : []), { anyOf: output.anyOf }, { anyOf: output.oneOf }];
+      delete output.anyOf;
+    }
+    delete output.oneOf;
+  }
 
   const positions = Array.isArray(output.prefixItems) ? output.prefixItems : Array.isArray(output.items) ? output.items : null;
   if (positions) {
@@ -462,7 +470,8 @@ const reduceSchemaValue = (value: unknown, key?: string): unknown => {
       (schema, index) => schemas.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(schema)) === index,
     );
     output.items = distinct.length === 0 ? {} : distinct.length === 1 ? distinct[0] : { anyOf: distinct };
-    if (rest === false && (positions.length === 0 || output.maxItems === undefined)) output.maxItems = positions.length;
+    if (rest === false)
+      output.maxItems = Math.min(typeof output.maxItems === "number" ? output.maxItems : positions.length, positions.length);
   }
   delete output.prefixItems;
   delete output.additionalItems;
@@ -474,7 +483,8 @@ const reduceSchemaValue = (value: unknown, key?: string): unknown => {
 
 /**
  * Keep the provider-useful shape while leaving authoritative validation in the target app.
- * Tuples reach the model as bounded arrays of their item schemas; mixed tuples are looser here, and the app validates the exact tuple.
+ * Tuples reach the model as bounded arrays of their item schemas and `oneOf` as `anyOf`, because loosened branches may
+ * overlap; the app still validates exact tuple positions and exclusive unions.
  */
 export const reduceAiCapabilityInputSchema = (schema: Record<string, unknown>): Record<string, unknown> =>
   reduceSchemaValue(schema) as Record<string, unknown>;

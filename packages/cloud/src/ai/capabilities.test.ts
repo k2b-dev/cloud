@@ -745,6 +745,9 @@ describe("AI capability catalog", () => {
         },
         mixed: { ...tuple, minItems: 1 },
         repeated: { type: "array", prefixItems: [string, string], items: false },
+        closedMax: { type: "array", prefixItems: [string], items: false, maxItems: 5 },
+        value: { oneOf: [tuple, { ...tuple, prefixItems: [number, string] }] },
+        bothUnions: { anyOf: [string, number], oneOf: [string, { type: "boolean" }], allOf: [{ type: "string", maxLength: 3 }] },
         rest: { type: "array", prefixItems: [string, string], items: setContent, minItems: 2 },
         boundedRest: { type: "array", prefixItems: [string], items: setContent, maxItems: 10 },
         sameRest: { type: "array", prefixItems: [string], items: string },
@@ -771,12 +774,17 @@ describe("AI capability catalog", () => {
     expect(reduced).toHaveProperty("properties.operations.anyOf.1", source.properties.operations.anyOf[1]);
     expect(reduced).toHaveProperty("properties.mixed", { type: "array", items: { anyOf: [string, number] }, minItems: 1, maxItems: 2 });
     expect(reduced).toHaveProperty("properties.repeated", { type: "array", items: string, maxItems: 2 });
+    expect(reduced).toHaveProperty("properties.closedMax", { type: "array", items: string, maxItems: 1 });
     expect(reduced).toHaveProperty("properties.rest", { type: "array", items: { anyOf: [string, setContent] }, minItems: 2 });
     expect(reduced).toHaveProperty("properties.boundedRest", { type: "array", items: { anyOf: [string, setContent] }, maxItems: 10 });
     expect(reduced).toHaveProperty("properties.sameRest", { type: "array", items: string });
     expect(reduced).toHaveProperty("properties.empty", { type: "array", items: {}, maxItems: 0 });
     expect(reduced).toHaveProperty("properties.referenced", { $ref: "#/$defs/tuple" });
     const mixedArray = { type: "array", items: { anyOf: [string, number] }, maxItems: 2 };
+    expect(reduced).toHaveProperty("properties.value.anyOf", [mixedArray, { ...mixedArray, items: { anyOf: [number, string] } }]);
+    expect(reduced).toHaveProperty("properties.bothUnions", {
+      allOf: [{ type: "string", maxLength: 3 }, { anyOf: [string, number] }, { anyOf: [string, { type: "boolean" }] }],
+    });
     expect(reduced).toHaveProperty("$defs.tuple", mixedArray);
     expect(reduced).toHaveProperty("definitions.tuple", mixedArray);
     expect(reduced).toHaveProperty("properties.legacy", { ...mixedArray, minItems: 3, maxItems: 3 });
@@ -786,10 +794,11 @@ describe("AI capability catalog", () => {
     }
     expect(reduced).toHaveProperty("properties.closedItems", { type: "array", items: {}, maxItems: 0 });
     expect(reduced).toHaveProperty("properties.openItems", { type: "array", items: {} });
-    expect(reduced).toHaveProperty("properties.nested.items.oneOf.0.allOf.0", mixedArray);
+    expect(reduced).toHaveProperty("properties.nested.items.anyOf.0.allOf.0", mixedArray);
     expect(reduced).toHaveProperty("properties.withDefault.default", { note: "kept" });
     expect(JSON.stringify(reduced)).not.toContain("prefixItems");
     expect(JSON.stringify(reduced)).not.toContain("additionalItems");
+    expect(JSON.stringify(reduced)).not.toContain("oneOf");
 
     const schema = aiCapabilityInputSchema(source);
     const operation = { kind: "set-content", content: "New content." };
@@ -798,6 +807,16 @@ describe("AI capability catalog", () => {
     expect(schema.safeParse({ operations: [operation, operation] }).success).toBe(false);
     expect(schema.safeParse({ operations: operation }).success).toBe(false);
     expect(schema.safeParse({ operations: [operation], empty: ["extra"] }).success).toBe(false);
+    expect(schema.safeParse({ operations: [operation], closedMax: ["a"] }).success).toBe(true);
+    expect(schema.safeParse({ operations: [operation], closedMax: ["a", "b"] }).success).toBe(false);
+    expect(schema.safeParse({ operations: [operation], value: ["x", 1] }).success).toBe(true);
+    expect(
+      aiCapabilityInputSchema({ type: "object", properties: { value: source.properties.value } }).safeParse({ value: ["x", 1] }).success,
+    ).toBe(true);
+    expect(schema.safeParse({ operations: [operation], bothUnions: "yes" }).success).toBe(true);
+    for (const bothUnions of [1, true, "long"]) {
+      expect(schema.safeParse({ operations: [operation], bothUnions }).success).toBe(false);
+    }
     const tool = defineTool({ name: "note_edit", description: "Edit note.", inputSchema: schema }).server(async () => ({}));
     const spec = toolToSpec(tool).inputSchema;
     expect(spec).toHaveProperty("properties.operations.anyOf.0", closedSetContent);
@@ -805,6 +824,7 @@ describe("AI capability catalog", () => {
     expect(serialized).not.toContain('"items":[');
     expect(serialized).not.toContain("additionalItems");
     expect(serialized).not.toContain("prefixItems");
+    expect(serialized).not.toContain("oneOf");
     expect(serialized).not.toContain('"items":false');
     expect(serialized).not.toContain('"items":true');
   });
