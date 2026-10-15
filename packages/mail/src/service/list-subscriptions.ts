@@ -331,6 +331,8 @@ const performOneClickRequest: OneClickTransport = async (url, addresses, timeout
           "User-Agent": "Cloud-Mail/1.0",
         },
         lookup: pinnedNetworkLookup(addresses),
+        // A default agent may route through an environment proxy, which would resolve the name again.
+        agent: false,
       },
       (incoming) => {
         let bytes = 0;

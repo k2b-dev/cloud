@@ -319,6 +319,8 @@ const requestRemoteImage = async (
         path: `${url.pathname}${url.search}`,
         method: "GET",
         lookup: pinnedNetworkLookup(endpoint.addresses),
+        // A default agent may route through an environment proxy, which would resolve the name again.
+        agent: false,
         servername: secure ? endpoint.host : undefined,
         headers: {
           Accept: "image/avif,image/webp,image/png,image/jpeg,image/gif",

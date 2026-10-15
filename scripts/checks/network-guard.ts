@@ -12,6 +12,10 @@ const owner = "packages/cloud/src/services/network-security.ts";
 const directLookup =
   /\bimport\s*\{[^}]*\b(?:lookup|resolve|resolve4|resolve6|resolveAny)\b[^}]*\}\s*from\s*["'](?:node:)?dns(?:\/promises)?["']|\bdns(?:Promises)?\.(?:lookup|resolve|resolve4|resolve6|resolveAny)\s*\(/g;
 
+const httpImport = /from\s*["'](?:node:)?https?["']/;
+const pinnedLookup = /\blookup:\s*pinnedNetworkLookup\(/g;
+const directAgent = /\bagent:\s*false\b/g;
+
 /**
  * Person-chosen outbound requests resolve through `resolvePublicNetworkAddresses`
  * and connect through `pinnedNetworkLookup`. A second resolver in an app would
@@ -32,6 +36,15 @@ export const rule: Rule = {
           file,
           line: source.slice(0, match.index).split("\n").length,
           message: "resolve outbound hosts with resolvePublicNetworkAddresses from @k2b/cloud/services/network-security",
+        });
+      }
+      // node:http and node:https may send a request through an environment proxy, which resolves the name again.
+      const pinned = [...source.matchAll(pinnedLookup)];
+      if (httpImport.test(source) && pinned.length > [...source.matchAll(directAgent)].length) {
+        findings.push({
+          file,
+          line: source.slice(0, pinned[0]?.index).split("\n").length,
+          message: "pass agent: false next to lookup: pinnedNetworkLookup(...) so no proxy resolves the host again",
         });
       }
     }

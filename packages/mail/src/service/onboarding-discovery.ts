@@ -149,6 +149,8 @@ const readPinnedHttps = async (url: URL, timeoutMs: number): Promise<string | nu
         method: "GET",
         headers: { accept: "application/xml,text/xml;q=0.9", "user-agent": "Cloud-Mail-Autoconfig/1" },
         lookup: pinnedNetworkLookup(endpoint.addresses),
+        // A default agent may route through an environment proxy, which would resolve the name again.
+        agent: false,
         timeout: timeoutMs,
       },
       (response) => {

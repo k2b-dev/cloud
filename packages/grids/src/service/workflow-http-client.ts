@@ -173,6 +173,8 @@ const sendPinnedRequest = (
       headers,
       servername: networkAddressFamily(target.url.hostname) ? undefined : normalizeHostname(target.url.hostname),
       lookup: pinnedNetworkLookup(target.addresses),
+      // A default agent may route through an environment proxy, which would resolve the name again.
+      agent: false,
     } satisfies RequestOptions & { servername?: string };
     const request = factory(options, (response) => {
       onDispatched();

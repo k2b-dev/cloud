@@ -214,9 +214,10 @@ certificate for the URL's host name.
 For transports `requestPublicHttps` cannot cover, such as IMAP, SMTP, or a
 plain-HTTP tester, resolve with `resolvePublicNetworkAddresses` from
 `@k2b/cloud/services/network-security`, catch `NetworkTargetBlockedError` for
-policy refusals, and connect through `pinnedNetworkLookup(addresses)`. This
-keeps the connection on the checked addresses; never call `fetch()` with the
-URL.
+policy refusals, and connect through `pinnedNetworkLookup(addresses)`. With
+`node:http` or `node:https`, also pass `agent: false`, because a default agent
+can route through an environment proxy that resolves the name again. This keeps
+the connection on the checked addresses; never call `fetch()` with the URL.
 
 ### Read the result
 
