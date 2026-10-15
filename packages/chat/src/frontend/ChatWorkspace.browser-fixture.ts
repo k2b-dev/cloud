@@ -17,6 +17,7 @@ import {
   MemberPreviewSchema,
   type MemberPrincipal,
   MemberQuerySchema,
+  MemberRemovalSchema,
   MemberSchema,
   type MessageViewSchema,
   PEOPLE_PAGE_SIZE,
@@ -610,7 +611,9 @@ export const startChatHarness = async () => {
                 `${viewer.name} removed ${person.name}.`,
               );
           }
-          return Response.json(SuccessSchema.parse({ success: true }));
+          return Response.json(
+            permission ? SuccessSchema.parse({ success: true }) : MemberRemovalSchema.parse({ success: true, keptThroughGroup: false }),
+          );
         }
         if (part === "leave" && request.method === "POST") {
           const { successor } = LeaveSchema.parse(await request.json());
@@ -632,7 +635,7 @@ export const startChatHarness = async () => {
           chat.members = chat.members.filter((member) => member !== own);
           refreshMembers(chat);
           revoke(id!);
-          return Response.json(SuccessSchema.parse({ success: true }));
+          return Response.json(MemberRemovalSchema.parse({ success: true, keptThroughGroup: false }));
         }
         if (part === "read" && request.method === "POST") {
           const { seq } = ReadSchema.parse(await request.json());
