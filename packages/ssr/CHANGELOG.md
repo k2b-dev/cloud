@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.15.1...npm-ssr-v0.16.0) (2026-10-15)
+
+
+### Features
+
+* **ssr:** mount island props without eval so pages run under a CSP without unsafe-eval ([#1106](https://github.com/k2b-dev/cloud/issues/1106)) ([06b0b42](https://github.com/k2b-dev/cloud/commit/06b0b4280a1dfa858ee4ee4be5b6922106659d72)), closes [#1080](https://github.com/k2b-dev/cloud/issues/1080)
+
 ## [0.15.1](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.15.0...npm-ssr-v0.15.1) (2026-10-13)
 
 
