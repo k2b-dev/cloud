@@ -407,7 +407,7 @@ export const mergeConversations = async (params: {
       const carriesKeep = await keepCarriesOver(tx, params.input.sourceConversationId, params.targetConversationId);
       const moved = await tx<{ message_id: string }[]>`
         UPDATE mail.conversation_messages
-        SET conversation_id = ${params.targetConversationId}::uuid, added_by = 'manual', status_decided_at = NULL
+        SET conversation_id = ${params.targetConversationId}::uuid, added_by = 'manual', status_decided_at = NULL, hydrated_revision = NULL
         WHERE conversation_id = ${params.input.sourceConversationId}::uuid
         RETURNING message_id
       `;
@@ -600,7 +600,7 @@ export const reassignConversationMessage = async (params: {
       const carriesKeep = await keepCarriesOver(tx, params.sourceConversationId, params.input.targetConversationId);
       const moved = await tx<{ message_id: string }[]>`
         UPDATE mail.conversation_messages
-        SET conversation_id = ${params.input.targetConversationId}::uuid, added_by = 'manual', status_decided_at = NULL
+        SET conversation_id = ${params.input.targetConversationId}::uuid, added_by = 'manual', status_decided_at = NULL, hydrated_revision = NULL
         WHERE conversation_id = ${params.sourceConversationId}::uuid
           AND message_id = ${params.messageId}::uuid
         RETURNING message_id
@@ -786,7 +786,7 @@ export const splitConversation = async (params: {
 
       const moved = await tx<{ message_id: string }[]>`
         UPDATE mail.conversation_messages
-        SET conversation_id = ${created.id}::uuid, added_by = 'manual', status_decided_at = NULL
+        SET conversation_id = ${created.id}::uuid, added_by = 'manual', status_decided_at = NULL, hydrated_revision = NULL
         WHERE conversation_id = ${params.conversationId}::uuid
           AND message_id IN (
             SELECT value::uuid FROM jsonb_array_elements_text(${params.input.messageIds}::jsonb)

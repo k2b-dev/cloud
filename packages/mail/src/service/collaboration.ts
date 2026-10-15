@@ -478,17 +478,16 @@ export const recordConversationStatusDecision = async (db: SqlClient, conversati
 
 /**
  * Locks a conversation for a workflow status step and returns its live state. `revision` is the
- * revision the step may apply at: the live one when it equals the run's revision, or when it is one
- * revision later because Mail hydrated the message that triggered the run and no other message of
- * the conversation still waits for hydration. Linking a message does not change the revision, so a
- * message that joined after the run's view is either still unhydrated or hydrated with its own
- * revision. After any other change since the run's view, `revision` stays the run's revision, so
- * the step keeps its revision conflict.
+ * revision the step may act at, or null when the conversation changed since the run's view. The
+ * step may act at the run's revision, or one revision later when Mail hydrated the message that
+ * triggered the run and no other message of the conversation still waits for hydration. Linking a
+ * message does not change the revision, so a message that joined after the run's view is either
+ * still unhydrated or hydrated with its own revision. Returns null when the conversation is gone.
  */
 export const lockWorkflowConversationStatus = async (
   db: SqlClient,
   params: { mailboxId: string; conversationId: string; expectedRevision: number; triggerMessageId: string | null },
-): Promise<{ revision: number; workStatus: ConversationCollaboration["workStatus"] } | null> => {
+): Promise<{ revision: number | null; workStatus: ConversationCollaboration["workStatus"] } | null> => {
   // Same lock order as updateWorkflowConversationCollaborationInTransaction: mailbox, then conversation.
   const [mailbox] = await db<{ id: string }[]>`
     SELECT id FROM mail.mailboxes
@@ -496,36 +495,33 @@ export const lockWorkflowConversationStatus = async (
     FOR SHARE
   `;
   if (!mailbox) return null;
-  const [current] = await db<
-    {
-      revision: string | number;
-      work_status: ConversationCollaboration["workStatus"];
-      hydrated_revision: string | number | null;
-      others_hydrated: boolean;
-    }[]
-  >`
-    SELECT conversation.revision, conversation.work_status, (
-      SELECT link.hydrated_revision FROM mail.conversation_messages link
-      WHERE link.conversation_id = conversation.id AND link.message_id = ${params.triggerMessageId}::uuid
-    ) AS hydrated_revision, NOT EXISTS (
-      SELECT 1 FROM mail.conversation_messages link
-      JOIN mail.message_contents message ON message.id = link.message_id
-      WHERE link.conversation_id = conversation.id
-        AND link.message_id IS DISTINCT FROM ${params.triggerMessageId}::uuid
-        AND message.hydration_status <> 'complete'
-    ) AS others_hydrated
-    FROM mail.conversations conversation
-    WHERE conversation.id = ${params.conversationId}::uuid AND conversation.mailbox_id = ${params.mailboxId}::uuid
-    FOR UPDATE OF conversation
+  const [current] = await db<{ revision: string | number; work_status: ConversationCollaboration["workStatus"] }[]>`
+    SELECT revision, work_status
+    FROM mail.conversations
+    WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
+    FOR UPDATE
   `;
   if (!current) return null;
   const revision = Number(current.revision);
+  if (revision === params.expectedRevision) return { revision, workStatus: current.work_status };
+  if (revision !== params.expectedRevision + 1 || !params.triggerMessageId) return { revision: null, workStatus: current.work_status };
+  // A new statement after the lock: a link that a sync committed while this step waited is visible
+  // here, and the lock keeps further links out until this transaction ends.
+  const [links] = await db<{ hydrated_revision: string | number | null; others_hydrated: boolean }[]>`
+    SELECT (
+      SELECT link.hydrated_revision FROM mail.conversation_messages link
+      WHERE link.conversation_id = ${params.conversationId}::uuid AND link.message_id = ${params.triggerMessageId}::uuid
+    ) AS hydrated_revision, NOT EXISTS (
+      SELECT 1 FROM mail.conversation_messages link
+      JOIN mail.message_contents message ON message.id = link.message_id
+      WHERE link.conversation_id = ${params.conversationId}::uuid
+        AND link.message_id <> ${params.triggerMessageId}::uuid
+        AND message.hydration_status <> 'complete'
+    ) AS others_hydrated
+  `;
   const onlyTriggerHydrated =
-    revision === params.expectedRevision + 1 &&
-    current.others_hydrated &&
-    current.hydrated_revision !== null &&
-    Number(current.hydrated_revision) === revision;
-  return { revision: onlyTriggerHydrated ? revision : params.expectedRevision, workStatus: current.work_status };
+    links?.others_hydrated === true && links.hydrated_revision !== null && Number(links.hydrated_revision) === revision;
+  return { revision: onlyTriggerHydrated ? revision : null, workStatus: current.work_status };
 };
 
 const applyConversationCollaborationInTransaction = async (params: {

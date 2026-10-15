@@ -65,7 +65,7 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   // hydration keeps that decision. Moving the message to another conversation clears the mark.
   await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS status_decided_at timestamptz`.simple();
   // The conversation revision this message's hydration produced, so a workflow that the message
-  // triggered can tell that change apart from others.
+  // triggered can tell that change apart from others. Moving the message clears it too.
   await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS hydrated_revision bigint`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
     REFERENCES mail.compose_templates(id) ON DELETE SET NULL`.simple();

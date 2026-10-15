@@ -454,7 +454,7 @@ const conversationMutation = (
               (() => {
                 throw new Error("status must resolve to a value");
               })());
-        const current =
+        const live =
           kind === "setConversationStatus"
             ? await lockWorkflowConversationStatus(tx, {
                 mailboxId: scope.mailboxId,
@@ -463,10 +463,20 @@ const conversationMutation = (
                 triggerMessageId: mailWorkflowTriggerMessageId(ctx.invocation.context),
               })
             : null;
-        // A status step compares with the live state: a status that already holds still covers the
-        // messages the conversation holds now, so their hydration keeps it.
-        if (current ? current.workStatus === value : !mailConversationTransitionChanges(conversation, kind, value)) {
-          if (current) await recordConversationStatusDecision(tx, conversationId);
+        // A status that already holds is still a decision: it covers the messages the conversation
+        // holds now, so their hydration keeps it. The run's view follows the live state.
+        if (live?.revision != null && live.workStatus === value) {
+          await recordConversationStatusDecision(tx, conversationId);
+          applyMailConversationTransition(conversation, kind, value);
+          conversation.revision = live.revision;
+          return {
+            state: "succeeded",
+            output: { action: kind, applied: false, value, conversationId: publicConversationId, revision: live.revision } as JsonObject,
+          };
+        }
+        // Without a live match, only a view that already shows the value and still matches the live
+        // status is a no-op; any other difference keeps the revision conflict.
+        if (!mailConversationTransitionChanges(conversation, kind, value) && (!live || live.workStatus === value)) {
           return { state: "succeeded", output: { action: kind, applied: false } as JsonObject };
         }
         const mutation = await updateWorkflowConversationCollaborationInTransaction({
@@ -476,7 +486,7 @@ const conversationMutation = (
           input:
             kind === "assignConversation"
               ? { expectedRevision, assigneeUserIds: typeof value === "string" ? [value] : [] }
-              : { expectedRevision: current?.revision ?? expectedRevision, workStatus: conversationWorkStatusSchema.parse(value) },
+              : { expectedRevision: live?.revision ?? expectedRevision, workStatus: conversationWorkStatusSchema.parse(value) },
           db: tx,
           activityMetadata: { workflowRunId: ctx.runId, workflowStepKey: ctx.stepKey },
         });

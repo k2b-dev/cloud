@@ -154,4 +154,31 @@ describe("Mail workflow projected state", () => {
     expect(projected.source.message.folderId).toBe("archive");
     expect(projected.source.conversation).toMatchObject({ workStatus: "done", revision: 8 });
   });
+
+  test("restores the live status and revision from a status step that found its value already set", async () => {
+    const projected = createMailWorkflowProjectedState(plan, source, {});
+    const ctx = {
+      plan,
+      evaluate: async (value: unknown) => value,
+      resolveReference: async (reference: string) => (reference === "conversation" ? projected.inputs.conversation : undefined),
+    } as unknown as WorkflowExecuteActionContext;
+    const step = {
+      kind: "action",
+      action: "setConversationStatus",
+      config: { conversation: "conversation" },
+      sourcePath: ["steps", 0],
+    } as WorkflowActionStep;
+    const completed = (output: Record<string, unknown>) =>
+      ({ state: "completed", output }) as Extract<WorkflowStepOutcome, { state: "completed" }>;
+
+    await restoreMailWorkflowProjectedState(ctx, step, completed({ action: "setConversationStatus", applied: false }));
+    expect(projected.source.conversation).toMatchObject({ workStatus: "needs_action", revision: 2 });
+
+    await restoreMailWorkflowProjectedState(
+      ctx,
+      step,
+      completed({ action: "setConversationStatus", applied: false, value: "waiting", revision: 3 }),
+    );
+    expect(projected.source.conversation).toMatchObject({ workStatus: "waiting", revision: 3 });
+  });
 });
