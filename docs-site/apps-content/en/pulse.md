@@ -93,6 +93,8 @@ reserved names, and redirects to them. An operator can allow internal targets
 with `PULSE_SCRAPE_ALLOWED_TARGETS`. Exact host entries trust every address that
 name resolves to; IP and CIDR entries allow addresses in that range. Reserved
 names such as `localhost` and names under `.internal` require an exact host entry.
+An entry covers every port and path on that host or range, and `/0` entries are
+refused. Scrapes request uncompressed responses and refuse a compressed body.
 Existing internal sources remain stored, but scrapes fail with this reason until
 the operator allows the target.
 

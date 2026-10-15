@@ -85,3 +85,24 @@ test("Pulse server fetch requires its guarded transport; browser fetch stays all
   expect(await lines("await fetch(url);", "packages/pulse/src/widget.tsx")).toEqual([]);
   expect(await lines("await fetch(url);", "packages/pulse/src/cli/client.ts")).toEqual([]);
 });
+
+test("reports qualified global fetch in Pulse server code but allows application methods", async () => {
+  const source = [
+    "await Bun.fetch(url);",
+    "await globalThis.fetch(url);",
+    "await self.fetch(url);",
+    "await app.fetch(url);",
+    "await client.fetch(url);",
+  ].join("\n");
+  expect(await lines(source, "packages/pulse/src/service/x.ts")).toEqual([1, 2, 3]);
+  expect(await lines(source)).toEqual([]);
+});
+
+test("requires a pinned lookup for node:http imports only in Pulse server code", async () => {
+  const source = 'import { request } from "node:http";';
+  expect(await lines(source, "packages/pulse/src/service/x.ts")).toEqual([1]);
+  expect(
+    await lines(`${source}\nrequest({ lookup: pinnedNetworkLookup(addresses), agent: false });`, "packages/pulse/src/service/x.ts"),
+  ).toEqual([]);
+  expect(await lines(source, "packages/demo/src/outbound.ts")).toEqual([]);
+});

@@ -133,6 +133,7 @@ export const parseNetworkAllowlist = (entries: readonly string[]): NetworkAllowl
       if (parts.length > 2 || (parts.length === 2 && !/^(0|[1-9]\d*)$/.test(parts[1] ?? ""))) throw invalid();
       const bits = parts.length === 2 ? Number(parts[1]) : width;
       if (bits > width) throw invalid();
+      if (bits === 0) throw invalid("a /0 network allows every address; list the internal hosts or ranges instead");
       const value = literal.family === 4 ? BigInt(ipv4ToNumber(literal.address)!) : ipv6ToBigInt(literal.address);
       const shift = BigInt(width - bits);
       const base = (value >> shift) << shift;

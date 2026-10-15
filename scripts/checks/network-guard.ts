@@ -36,6 +36,7 @@ const isPersonChosenServer = (path: string) =>
   !path.endsWith(".tsx") &&
   !path.includes("/cli/");
 const globalFetch = /(?<![.\w])fetch\s*\(/g;
+const pulseFetch = /(?<![.\w])(?:(?:Bun|globalThis|self)\.)?fetch\s*\(/g;
 // Options of one request object stay within a few lines of each other.
 const SAME_REQUEST_LINES = 6;
 
@@ -68,7 +69,15 @@ export const rule: Rule = {
         findings.push({ file, line: lineOf(source, match.index), message: "import pinnedNetworkLookup under its own name" });
       }
       // node:http and node:https may send a request through an environment proxy, which resolves the name again.
-      if (httpImport.test(source)) {
+      const httpMatch = source.match(httpImport);
+      if (httpMatch) {
+        if (isPersonChosenServer(path) && !source.match(pinnedCall)) {
+          findings.push({
+            file,
+            line: lineOf(source, httpMatch.index),
+            message: "Pulse server code that sends node:http requests must connect through pinnedNetworkLookup with agent: false",
+          });
+        }
         const lines = source.split("\n");
         for (const match of source.matchAll(pinnedCall)) {
           const line = lineOf(source, match.index);
@@ -83,7 +92,7 @@ export const rule: Rule = {
       }
       // fetch() resolves the name again after the check, so a checked host must not reach it.
       if (guardImport.test(source) || isPersonChosenServer(path)) {
-        for (const match of source.matchAll(globalFetch)) {
+        for (const match of source.matchAll(isPersonChosenServer(path) ? pulseFetch : globalFetch)) {
           findings.push({
             file,
             line: lineOf(source, match.index),

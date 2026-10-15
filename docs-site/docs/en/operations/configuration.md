@@ -82,7 +82,7 @@ Declared in `packages/pulse/src/env.ts`.
 
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
-| `PULSE_SCRAPE_ALLOWED_TARGETS` | list | runtime | empty list | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks that Pulse metrics sources may scrape, for example `prometheus,10.20.0.0/16`; unset allows only public endpoints. |
+| `PULSE_SCRAPE_ALLOWED_TARGETS` | list | runtime | empty list | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks that Pulse metrics sources may scrape, for example `prometheus,10.20.0.0/16`; unset allows only public endpoints. An entry covers every port on that host or range; `/0` entries and other invalid entries stop Pulse at startup. |
 
 ## Application: pwa-auth
 

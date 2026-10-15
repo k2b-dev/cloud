@@ -156,10 +156,21 @@ describe("operator network allowlist", () => {
     expect(() => parseNetworkAllowlist(["valid.test", entry, "also invalid!"])).toThrow(`"${entry}"`);
   });
 
+  test.each(["0.0.0.0/0", "::/0", "10.0.0.1/0"])("refuses all-address network %s", (entry) => {
+    expect(() => parseNetworkAllowlist([entry])).toThrow(`"${entry}"`);
+    expect(() => parseNetworkAllowlist([entry])).toThrow("a /0 network allows every address");
+  });
+
+  test("accepts /1 networks", () => {
+    expect(parseNetworkAllowlist(["0.0.0.0/1", "::/1"]).networks).toEqual([
+      { address: "0.0.0.0", family: 4, bits: 1 },
+      { address: "::", family: 6, bits: 1 },
+    ]);
+  });
+
   test("refuses host bits and names the correct canonical network", () => {
     expect(() => parseNetworkAllowlist(["10.0.0.5/8"])).toThrow("10.0.0.0/8");
     expect(() => parseNetworkAllowlist(["fd00::5/64"])).toThrow("fd00::/64");
-    expect(() => parseNetworkAllowlist(["10.0.0.1/0"])).toThrow("0.0.0.0/0");
   });
 
   test("matches IPv4 and IPv6 boundaries, mapped IPv4, and no other embeddings", () => {
@@ -179,8 +190,6 @@ describe("operator network allowlist", () => {
       expect(isAllowlistedNetworkAddress(list, address)).toBe(false);
     }
     expect(isAllowlistedNetworkAddress(parseNetworkAllowlist(["64:ff9b::/96"]), "64:ff9b::a00:5")).toBe(true);
-    expect(isAllowlistedNetworkAddress(parseNetworkAllowlist(["0.0.0.0/0"]), "255.255.255.255")).toBe(true);
-    expect(isAllowlistedNetworkAddress(parseNetworkAllowlist(["::/0"]), "fd00::1")).toBe(true);
     expect(isAllowlistedNetworkAddress(EMPTY_NETWORK_ALLOWLIST, "127.0.0.1")).toBe(false);
     expect(isAllowlistedNetworkAddress(parseNetworkAllowlist(["[::ffff:10.0.0.5]"]), "::ffff:a00:5")).toBe(true);
   });

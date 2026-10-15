@@ -229,9 +229,11 @@ entries from a person, a base editor, or remote content.
 names, strict dotted-quad IPv4, IPv6 literals (optionally bracketed), and CIDR
 networks. Host names are lowercased and lose their trailing dot. Wildcards,
 schemes, ports, paths, userinfo, IPv6 zone IDs, and legacy IPv4 forms are invalid.
-CIDR prefixes must be within the address family's width, with no host bits set;
-an invalid entry throws an error naming the entry and, for host bits, the
-correct network.
+CIDR prefixes must be between 1 and the address family's width, with no host
+bits set; a `/0` network would allow every address and is refused. An invalid
+entry throws an error naming the entry and, for host bits, the correct network.
+Entries carry no port or path, so an entry allows every service on that host or
+in that range; keep them as narrow as the use case allows.
 
 Pass the parsed `NetworkAllowlist` to
 `resolveAllowedNetworkAddresses(hostname, allowlist, lookup?)` from
