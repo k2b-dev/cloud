@@ -86,6 +86,7 @@ import {
   TaskDependentListInputSchema,
   TaskListDataSchema,
   TaskListInputSchema,
+  TaskProgressInputSchema,
   TaskSetCompletedInputSchema,
   TaskUpdateInputSchema,
   TemplateCreateInputSchema,
@@ -135,7 +136,7 @@ import { spacesPublicResources } from "./service/public-resources";
 import { CalendarReadLimitError } from "./service/recurrence";
 import * as taskWork from "./service/task-work";
 import { isTaskOverdue } from "./task-overdue";
-import { ClaimTaskSchema, ProgressTaskSchema, ReleaseTaskSchema, TaskWorkSchema } from "./work-contracts";
+import { ClaimTaskSchema, ReleaseTaskSchema, TaskWorkSchema } from "./work-contracts";
 
 const encodeCursor = (page: number): string => Buffer.from(JSON.stringify({ v: 1, page }), "utf8").toString("base64url");
 
@@ -2472,7 +2473,7 @@ export const spacesCapabilities = defineCapabilities({
       title: "Progress task work",
       description:
         "Save a full progress and handoff note under the actual user or service account identity. Supply the current claimId when claimed; the previous note remains in task activity.",
-      input: ProgressTaskSchema.extend({ itemId: ItemReadInputSchema.shape.id }),
+      input: TaskProgressInputSchema,
       data: TaskWorkSchema,
       destructive: false,
       openWorld: false,

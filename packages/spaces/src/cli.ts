@@ -39,6 +39,7 @@ import type {
   SpaceTaskDependent,
 } from "./contracts";
 import type { EventInvitationContext, EventInvitationDraft } from "./integration";
+import { hasEscapedLineBreak } from "./lib/escaped-line-break";
 import { describeTemplateDateRule, formatTemplateDate, localNow, proposeTemplateDates } from "./presentation/item-templates";
 import type { TaskWork } from "./work-contracts";
 
@@ -92,7 +93,16 @@ function spacesCommands(locale?: string) {
   const readText = async (literal: string | undefined, from: string | undefined, field: string): Promise<string | undefined> => {
     if (literal !== undefined && from !== undefined)
       throw new Error(t({ en: `Pass only one of --${field} or --from.`, de: `Übergib nur --${field} oder --from.` }));
-    if (literal !== undefined) return literal;
+    if (literal !== undefined) {
+      if (hasEscapedLineBreak(literal))
+        throw new Error(
+          t({
+            en: `--${field} contains "\\n" as two characters, not a line break. Pass multi-line text with --from <file|-> (for example a heredoc).`,
+            de: `--${field} enthält „\\n“ als zwei Zeichen statt eines Zeilenumbruchs. Übergib mehrzeiligen Text mit --from <datei|-> (zum Beispiel per Heredoc).`,
+          }),
+        );
+      return literal;
+    }
     if (from === "-") return Bun.stdin.text();
     if (from !== undefined) return readFile(expandHome(from), "utf8");
     return undefined;
@@ -683,13 +693,14 @@ function spacesCommands(locale?: string) {
                 de: `„${args.target}“ benennt keinen neuen Eintrag. Verwende <space>:<titel>.`,
               }),
             );
+          const description = await readText(flags.description, flags.from, "description");
           const container = address.kind === "path" ? address.container : address.ref;
           const space = await loadSpace(ctx, (await resolveSpace(ctx, `${container}:`)).id);
           const columnId = flags.column ? resolveColumnId(space, flags.column) : space.columns[0]?.id;
           if (!columnId) throw new Error(t({ en: `${space.name} has no column.`, de: `${space.name} hat keine Spalte.` }));
           const explicit = {
             title: title || undefined,
-            description: await readText(flags.description, flags.from, "description"),
+            description,
             startsAt: dateTime(flags.startsAt, "--starts-at"),
             endsAt: dateTime(flags.endsAt, "--ends-at", "end"),
             allDay: allDayRange(flags.startsAt, flags.endsAt),
@@ -861,11 +872,12 @@ function spacesCommands(locale?: string) {
                 de: "Übergib entweder neue Werte oder das passende --clear-Flag, nicht beides.",
               }),
             );
+          const description = await readText(flags.description, flags.from, "description");
           const item = await resolveItem(ctx, args.item);
           const space = flags.tag.length ? await loadSpace(ctx, item.spaceId) : null;
           const body: Record<string, unknown> = {
             title: flags.title,
-            description: await readText(flags.description, flags.from, "description"),
+            description,
             startsAt: dateTime(flags.startsAt, "--starts-at"),
             endsAt: dateTime(flags.endsAt, "--ends-at", "end"),
             allDay: allDayRange(flags.startsAt, flags.endsAt),
@@ -934,10 +946,11 @@ function spacesCommands(locale?: string) {
               : {},
           async run({ ctx, args, flags }) {
             const done = flags as { result?: string; from?: string; commit?: string; claimId?: string; force?: boolean };
+            const result = await readText(done.result, done.from, "result");
             const item = await resolveItem(ctx, args.item);
             const updated = await send<SpaceItem>(ctx, "POST", itemApi(item, "/completed"), {
               completed: action === "done",
-              result: await readText(done.result, done.from, "result"),
+              result,
               commit: done.commit,
               claimId: done.claimId,
               ...(done.force ? { force: true } : {}),

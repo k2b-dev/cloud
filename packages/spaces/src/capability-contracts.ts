@@ -33,7 +33,13 @@ import {
   MAX_PREPARED_EVENT_INVITATION_CALENDAR_LENGTH,
   SpacesMailDestinationSchema,
 } from "./integration";
-import { CompletionInputSchema } from "./work-contracts";
+import { hasEscapedLineBreak } from "./lib/escaped-line-break";
+import { CompletionInputSchema, ProgressTaskSchema } from "./work-contracts";
+
+const markdownInput = <Schema extends z.ZodType<string | null | undefined>>(schema: Schema) =>
+  schema.refine((text) => typeof text !== "string" || !hasEscapedLineBreak(text), {
+    message: 'Contains "\\n" as two characters; send real line breaks, and put code or paths in backticks.',
+  });
 
 const TimestampSchema = z.string().datetime({ offset: true });
 const NullableTextSchema = z.string().nullable();
@@ -365,7 +371,7 @@ const ItemRelationInputShape = {
 
 const TaskFieldsInputShape = {
   title: z.string().trim().min(1).max(200).optional().describe("Optional task title."),
-  description: z.string().max(5000).nullable().optional().describe("Optional task description; null clears it."),
+  description: markdownInput(z.string().max(5000).nullable().optional().describe("Optional task description; null clears it.")),
   deadline: TimestampSchema.nullable().optional().describe("Optional task deadline; null clears it."),
   estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable().optional().describe("Optional estimate in minutes; null clears it."),
   priority: PrioritySchema.nullable().optional().describe("Optional task priority; null clears it."),
@@ -421,8 +427,14 @@ export const TemplateDataSchema = z
     durationMinutes: EstimatedDurationMinutesSchema.nullable(),
   })
   .strict();
-export const TemplateCreateInputSchema = CreateItemTemplateSchema.safeExtend({ spaceId: SpaceIdSchema });
-export const TemplateUpdateInputSchema = UpdateItemTemplateSchema.safeExtend({ templateId: TemplateIdSchema });
+export const TemplateCreateInputSchema = CreateItemTemplateSchema.safeExtend({
+  spaceId: SpaceIdSchema,
+  description: markdownInput(CreateItemTemplateSchema.shape.description),
+});
+export const TemplateUpdateInputSchema = UpdateItemTemplateSchema.safeExtend({
+  templateId: TemplateIdSchema,
+  description: markdownInput(UpdateItemTemplateSchema.shape.description),
+});
 export const TemplateDeleteInputSchema = z.object({ templateId: TemplateIdSchema }).strict();
 export const TemplateDeleteDataSchema = z.object({ templateId: ResourceShortIdSchema, deleted: z.literal(true) }).strict();
 
@@ -439,7 +451,7 @@ export const TaskCreateInputSchema = z
     spaceId: SpaceIdSchema,
     columnId: ResourceShortIdSchema.describe("Target column ID returned by Read space for the selected Space."),
     title: z.string().trim().min(1).max(200).optional().describe("Task title; required unless the template has one."),
-    description: z.string().max(5000).optional().describe("Optional task description."),
+    description: markdownInput(z.string().max(5000).optional().describe("Optional task description.")),
     deadline: TimestampSchema.optional().describe("Optional task deadline."),
     estimatedDurationMinutes: EstimatedDurationMinutesSchema.optional().describe("Optional estimate in minutes."),
     priority: PrioritySchema.optional().describe("Optional task priority."),
@@ -469,7 +481,7 @@ export const TaskUpdateInputSchema = z
 
 const EventFieldsInputShape = {
   title: z.string().trim().min(1).max(200).optional().describe("Optional event title."),
-  description: z.string().max(5000).nullable().optional().describe("Optional event description; null clears it."),
+  description: markdownInput(z.string().max(5000).nullable().optional().describe("Optional event description; null clears it.")),
   location: z.string().max(500).nullable().optional().describe("Optional event location; null clears it."),
   url: z.string().url().max(2000).nullable().optional().describe("Optional event URL; null clears it."),
   startsAt: TimestampSchema.optional().describe("Replacement event start; provide together with endsAt."),
@@ -486,7 +498,7 @@ export const EventCreateInputSchema = z
     spaceId: SpaceIdSchema,
     columnId: ResourceShortIdSchema.describe("Target column ID returned by Read space for the selected Space."),
     title: z.string().trim().min(1).max(200).optional().describe("Event title; required unless the template has one."),
-    description: z.string().max(5000).optional().describe("Optional event description."),
+    description: markdownInput(z.string().max(5000).optional().describe("Optional event description.")),
     location: z.string().max(500).optional().describe("Optional event location."),
     url: z.string().url().max(2000).optional().describe("Optional event URL."),
     startsAt: TimestampSchema.optional().describe("Event start timestamp; required unless a template sets the time."),
@@ -530,7 +542,14 @@ export const EventUpdateInputSchema = z
   })
   .refine(validTimeRange, { message: "End time must be after start time", path: ["endsAt"] });
 
-export const TaskSetCompletedInputSchema = CompletionInputSchema.safeExtend({ itemId: ItemIdSchema }).strict();
+export const TaskProgressInputSchema = ProgressTaskSchema.extend({
+  itemId: ItemIdSchema,
+  content: markdownInput(ProgressTaskSchema.shape.content),
+});
+export const TaskSetCompletedInputSchema = CompletionInputSchema.safeExtend({
+  itemId: ItemIdSchema,
+  result: markdownInput(CompletionInputSchema.shape.result),
+}).strict();
 export const ItemDeleteInputSchema = z.object({ itemId: ItemIdSchema }).strict();
 export const ItemDeleteDataSchema = z.object({ itemId: ResourceShortIdSchema, deleted: z.literal(true) }).strict();
 
@@ -571,13 +590,13 @@ export const CommentCreateInputSchema = z
   .object({
     itemId: ItemIdSchema,
     recurrenceId: TimestampSchema.optional().describe("Optional recurring occurrence timestamp."),
-    content: z.string().trim().min(1).max(5000).describe("Comment content."),
+    content: markdownInput(z.string().trim().min(1).max(5000).describe("Comment content.")),
   })
   .strict();
 export const CommentUpdateInputSchema = z
   .object({
     commentId: ResourceShortIdSchema.describe("Stable public ID of the current user's comment."),
-    content: z.string().trim().min(1).max(5000).describe("Replacement comment content."),
+    content: markdownInput(z.string().trim().min(1).max(5000).describe("Replacement comment content.")),
   })
   .strict();
 export const CommentDeleteInputSchema = z
