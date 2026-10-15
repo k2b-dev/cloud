@@ -102,8 +102,10 @@ async function mountWithUploads(root: HTMLElement, props: BrowserProps) {
     );
   }, root);
 }
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // Let work a test left running settle before its calls are cleared, so it cannot leak into the next test.
+  await flush();
   if (storageDescriptor) Object.defineProperty(globalThis, "localStorage", storageDescriptor);
   else Reflect.deleteProperty(globalThis, "localStorage");
   calls.length = 0;
