@@ -197,7 +197,7 @@ export const sendOutgoingWebhookRequest = async (
       if (error instanceof NetworkTargetBlockedError) {
         throw new WebhookSendError("BLOCKED_TARGET", "Private, local, and link-local targets are blocked.");
       }
-      result.error = "The host name could not be resolved.";
+      result.error = controller.signal.aborted ? "The request timed out." : "The host name could not be resolved.";
       return result;
     }
 

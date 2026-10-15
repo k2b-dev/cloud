@@ -37,7 +37,7 @@ test("the total deadline also bounds a stalled DNS lookup", async () => {
   try {
     const pending = sendOutgoingWebhookRequest(input("http://missing.test/"), { resolve: () => new Promise(() => {}) });
     jest.advanceTimersByTime(10_000);
-    expect((await pending).error).toBe("The host name could not be resolved.");
+    expect((await pending).error).toBe("The request timed out.");
   } finally {
     jest.useRealTimers();
   }

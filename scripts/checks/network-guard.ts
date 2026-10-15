@@ -7,10 +7,22 @@ import type { Finding, Rule } from "./rule";
 /** The one module that resolves host names for outbound requests and checks every answer. */
 const owner = "packages/cloud/src/services/network-security.ts";
 
-// Address lookups that bypass the platform guard: `lookup`, `resolve`, `resolve4`, `resolve6`, or `resolveAny`
-// imported from node:dns, or any call through a dns namespace.
-const directLookup =
-  /\bimport\s*\{[^}]*\b(?:lookup|resolve|resolve4|resolve6|resolveAny)\b[^}]*\}\s*from\s*["'](?:node:)?dns(?:\/promises)?["']|\bdns(?:Promises)?\.(?:lookup|resolve|resolve4|resolve6|resolveAny)\s*\(/g;
+// Any route to the system resolver: static, dynamic, or required imports of node:dns, and Bun.dns.
+// Named imports of record lookups that return no addresses to connect to (SRV, MX, TXT) stay allowed.
+const dnsAccess =
+  /\bimport\s+([^;]*?)\s*from\s*["'](?:node:)?dns(?:\/promises)?["']|\b(?:require|import)\s*\(\s*["'](?:node:)?dns(?:\/promises)?["']\s*\)|\bBun\.dns\b/g;
+const recordLookups = new Set(["resolveSrv", "resolveMx", "resolveTxt"]);
+
+const allowedDnsImport = (clause: string | undefined): boolean => {
+  const named = clause?.trim().match(/^(?:type\s+)?\{([^}]*)\}$/);
+  if (!named) return false;
+  if (clause?.trim().startsWith("type")) return true;
+  return (named[1] ?? "")
+    .split(",")
+    .map((specifier) => specifier.trim())
+    .filter(Boolean)
+    .every((specifier) => specifier.startsWith("type ") || recordLookups.has(specifier.split(/\s+as\s+/)[0] ?? ""));
+};
 
 const httpImport = /from\s*["'](?:node:)?https?["']/;
 const pinnedLookup = /\blookup:\s*pinnedNetworkLookup\(/g;
@@ -31,7 +43,8 @@ export const rule: Rule = {
       const path = relative(workspaceRoot, file);
       if (path === owner || isTestFile(path)) continue;
       const source = readFileSync(file, "utf8");
-      for (const match of source.matchAll(directLookup)) {
+      for (const match of source.matchAll(dnsAccess)) {
+        if (allowedDnsImport(match[1])) continue;
         findings.push({
           file,
           line: source.slice(0, match.index).split("\n").length,
