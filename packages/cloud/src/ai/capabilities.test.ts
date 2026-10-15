@@ -937,6 +937,20 @@ describe("AI capability catalog", () => {
     expect(reduced).toHaveProperty(`$defs.D${depth - 1}.default`, "leaf");
   });
 
+  test("mirrors a root reference in merged tuple branches", () => {
+    type Node = { label?: string; pair?: [Node, { label?: string }] };
+    const Root: z.ZodType<Node> = z.lazy(() =>
+      z.object({ label: z.string().default("A"), pair: z.tuple([Root, z.object({ label: z.string().default("B") })]).optional() }),
+    );
+    const source = z.toJSONSchema(Root, { io: "input" }) as Record<string, unknown>;
+    expect(source).toHaveProperty("properties.pair.prefixItems.0", { $ref: "#" });
+    const reduced = reduceAiCapabilityInputSchema(source);
+    expect(reduced).toHaveProperty("properties.label.default", "A");
+    expect(reduced).toHaveProperty("properties.pair.items.anyOf.0", { $ref: "#/$defs/root.ai" });
+    expect(reduced).toHaveProperty(["$defs", "root.ai", "properties", "label"], { type: "string" });
+    expect(aiCapabilityInputSchema(source).parse({ pair: [{}, {}] })).toEqual({ label: "A", pair: [{}, {}] });
+  });
+
   test.each(["$defs", "definitions"])("detects tuples through transitive escaped %s references in union branches", (keyword) => {
     const branch = (name: string) => ({
       type: "object",

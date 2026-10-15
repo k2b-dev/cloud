@@ -442,6 +442,24 @@ type SchemaReductionContext = {
   mirrors: Record<string, Record<string, unknown>>;
 };
 
+/** A local reference into the input schema: the root (`#`) or one of its `$defs` or `definitions`. */
+const localReference = (
+  reference: unknown,
+  root: Record<string, unknown>,
+): { identity: string; keyword: string; name: string; schema: unknown } | null => {
+  if (reference === "#") {
+    const { $defs: _defs, definitions: _definitions, ...schema } = root;
+    return { identity: "#", keyword: "$defs", name: "root", schema };
+  }
+  const match = typeof reference === "string" ? /^#\/(\$defs|definitions)\/([^/]+)$/.exec(reference) : null;
+  if (!match) return null;
+  const [, keyword, encodedName] = match;
+  const name = encodedName!.replace(/~1/g, "/").replace(/~0/g, "~");
+  const definitions = root[keyword!];
+  if (!definitions || typeof definitions !== "object" || !Object.hasOwn(definitions, name)) return null;
+  return { identity: `${keyword}/${name}`, keyword: keyword!, name, schema: Reflect.get(definitions, name) };
+};
+
 /** Whether a raw schema reaches a tuple; `visited` keeps each definition to one visit per question. */
 const containsTuple = (value: unknown, context: SchemaReductionContext, key?: string, visited = new Set<string>()): boolean => {
   if (key === "const" || key === "enum" || key === "default" || key === "required" || key === "type") return false;
@@ -451,17 +469,10 @@ const containsTuple = (value: unknown, context: SchemaReductionContext, key?: st
     return Object.values(value).some((schema) => containsTuple(schema, context, undefined, visited));
   }
   if (Object.hasOwn(value, "prefixItems") || Array.isArray(Reflect.get(value, "items"))) return true;
-  const reference = Reflect.get(value, "$ref");
-  const match = typeof reference === "string" ? /^#\/(\$defs|definitions)\/([^/]+)$/.exec(reference) : null;
-  if (match) {
-    const [, keyword, encodedName] = match;
-    const name = encodedName!.replace(/~1/g, "/").replace(/~0/g, "~");
-    const definitions = context.root[keyword!];
-    const identity = `${keyword}/${name}`;
-    if (definitions && typeof definitions === "object" && Object.hasOwn(definitions, name) && !visited.has(identity)) {
-      visited.add(identity);
-      if (containsTuple(Reflect.get(definitions, name), context, undefined, visited)) return true;
-    }
+  const reference = localReference(Reflect.get(value, "$ref"), context.root);
+  if (reference && !visited.has(reference.identity)) {
+    visited.add(reference.identity);
+    if (containsTuple(reference.schema, context, undefined, visited)) return true;
   }
   return Object.entries(value).some(([childKey, childValue]) => containsTuple(childValue, context, childKey, visited));
 };
@@ -518,29 +529,28 @@ const reduceSchemaValue = (value: unknown, context: SchemaReductionContext, key?
   if (output.items === false) output.maxItems = 0;
   // Zod drops array bounds without an item schema, so "any item" stays an empty schema.
   if (typeof output.items === "boolean") output.items = {};
-  if (merged && typeof output.$ref === "string") {
-    const match = /^#\/(\$defs|definitions)\/([^/]+)$/.exec(output.$ref);
-    if (match) {
-      const [, keyword, encodedName] = match;
-      const name = encodedName!.replace(/~1/g, "/").replace(/~0/g, "~");
-      const definitions = context.root[keyword!];
-      const identity = `${keyword}/${name}`;
-      if (definitions && typeof definitions === "object" && Object.hasOwn(definitions, name)) {
-        const mirrors = (context.mirrors[keyword!] ??= {});
-        let mirrorName = context.mirrorNames.get(identity);
-        if (mirrorName === undefined) {
-          mirrorName = `${name}.ai`;
-          for (let suffix = 1; Object.hasOwn(definitions, mirrorName) || Object.hasOwn(mirrors, mirrorName); suffix++) {
-            mirrorName = `${name}.ai${suffix}`;
-          }
-          // Reserve the mirror before descending so recursive refs never reach default-bearing originals.
-          context.mirrorNames.set(identity, mirrorName);
-          mirrors[mirrorName] = {};
-          mirrors[mirrorName] = reduceSchemaValue(Reflect.get(definitions, name), context, undefined, true);
-        }
-        output.$ref = `#/${keyword}/${mirrorName.replace(/~/g, "~0").replace(/\//g, "~1")}`;
+  const reference = merged ? localReference(output.$ref, context.root) : null;
+  if (reference) {
+    const { identity, keyword, name } = reference;
+    const definitions = context.root[keyword];
+    const mirrors = context.mirrors[keyword] ?? {};
+    context.mirrors[keyword] = mirrors;
+    let mirrorName = context.mirrorNames.get(identity);
+    if (mirrorName === undefined) {
+      mirrorName = `${name}.ai`;
+      for (
+        let suffix = 1;
+        (definitions && typeof definitions === "object" && Object.hasOwn(definitions, mirrorName)) || Object.hasOwn(mirrors, mirrorName);
+        suffix++
+      ) {
+        mirrorName = `${name}.ai${suffix}`;
       }
+      // Reserve the mirror before descending so recursive refs never reach default-bearing originals.
+      context.mirrorNames.set(identity, mirrorName);
+      mirrors[mirrorName] = {};
+      mirrors[mirrorName] = reduceSchemaValue(reference.schema, context, undefined, true);
     }
+    output.$ref = `#/${keyword}/${mirrorName.replace(/~/g, "~0").replace(/\//g, "~1")}`;
   }
   return output;
 };
