@@ -1,10 +1,10 @@
-import { mailExactAddressSearch } from "../../search-url";
+import { MAIL_SEARCH_PARAMETER, MAX_MAIL_WORKSPACE_HREF_LENGTH, mailExactAddressSearch } from "../../search-url";
 import type { MailListItem } from "../../service/workspace";
 
 export type { MailListItem } from "../../service/workspace";
 
 export const MAIL_SEARCH_FROM_PARAMETER = "searchFrom";
-const mailViewParameters = ["view", "folder", "savedView", "scheduled", "search", "conversation", "message"];
+const mailViewParameters = ["view", "folder", "savedView", "scheduled", MAIL_SEARCH_PARAMETER, "conversation", "message"];
 
 const pickMailViewParameters = (parameters: URLSearchParams): URLSearchParams => {
   const result = new URLSearchParams();
@@ -59,14 +59,20 @@ export const buildMailListHref = (requestUrl: URL, clearSearch = false): string 
 
 /** Starts or refines a mailbox-wide search while keeping its original view and selection. */
 export const buildMailSearchHref = (requestUrl: URL, search: Record<string, string>): string => {
-  const next = new URL(buildMailListHref(requestUrl, true), requestUrl.origin);
-  for (const parameter of mailViewParameters) next.searchParams.delete(parameter);
-  next.searchParams.set(
-    MAIL_SEARCH_FROM_PARAMETER,
-    requestUrl.searchParams.get(MAIL_SEARCH_FROM_PARAMETER) ?? pickMailViewParameters(requestUrl.searchParams).toString(),
-  );
-  for (const [parameter, value] of Object.entries(search)) next.searchParams.set(parameter, value);
-  return `${next.pathname}${next.search}`;
+  const recorded = requestUrl.searchParams.get(MAIL_SEARCH_FROM_PARAMETER);
+  const origin = pickMailViewParameters(recorded === null ? requestUrl.searchParams : new URLSearchParams(recorded));
+  const build = () => {
+    const next = new URL(buildMailListHref(requestUrl, true), requestUrl.origin);
+    for (const parameter of mailViewParameters) next.searchParams.delete(parameter);
+    next.searchParams.set(MAIL_SEARCH_FROM_PARAMETER, origin.toString());
+    for (const [parameter, value] of Object.entries(search)) next.searchParams.set(parameter, value);
+    return `${next.pathname}${next.search}`;
+  };
+  const href = build();
+  if (href.length <= MAX_MAIL_WORKSPACE_HREF_LENGTH || !origin.has(MAIL_SEARCH_PARAMETER)) return href;
+  // A large starting filter plus the new search would exceed what the workspace route accepts; keep its view only.
+  origin.delete(MAIL_SEARCH_PARAMETER);
+  return build();
 };
 
 /** Returns to the search's original view, or clears older links without an origin. */

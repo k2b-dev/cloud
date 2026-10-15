@@ -378,12 +378,22 @@ describe("Mail workspace search return", () => {
     assertRoute("view=needs_action", "Needs action");
   });
 
-  test("Back after clearing shows Needs action", async () => {
+  test("Back after clearing shows the search again, and clearing it again returns to Needs action", async () => {
     mount();
     await search();
     clearButton().click();
     await settle();
+    assertRoute("view=needs_action", "Needs action");
     history.back();
+    await settle();
+    assertRoute("searchFrom=view%3Dneeds_action&q=invoice", "Search results");
+    expect(input().value).toBe("invoice");
+    history.forward();
+    await settle();
+    assertRoute("view=needs_action", "Needs action");
+    history.back();
+    await settle();
+    input().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
     await settle();
     assertRoute("view=needs_action", "Needs action");
   });

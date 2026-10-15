@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { MAIL_SEARCH_PARAMETER, parseMailSearchState, serializeMailSearchState } from "../../search-state";
+import { MAX_MAIL_WORKSPACE_HREF_LENGTH } from "../../search-url";
 import {
   buildExactParticipantSearchHref,
   buildExactSenderSearchHref,
@@ -250,6 +251,18 @@ describe("Mail search origin", () => {
       expect(next.searchParams.get("searchFrom")).toBe("view=needs_action&conversation=original");
       expect(buildMailSearchClearHref(next)).toBe(`${path}?view=needs_action&conversation=original`);
     }
+  });
+
+  test("drops a starting filter that would push the search past the workspace route limit", () => {
+    const source = url("view=needs_action");
+    source.searchParams.set("search", JSON.stringify({ query: '"'.repeat(1_000) }));
+    const href = buildMailSearchHref(source, { search: "structured" });
+    expect(href.length).toBeLessThanOrEqual(MAX_MAIL_WORKSPACE_HREF_LENGTH);
+    expect(new URL(href, source.origin).searchParams.get("searchFrom")).toBe("view=needs_action");
+    const small = url("view=needs_action&search=tag");
+    expect(new URL(buildMailSearchHref(small, { search: "structured" }), source.origin).searchParams.get("searchFrom")).toBe(
+      "view=needs_action&search=tag",
+    );
   });
 
   test("filters a hand-edited origin and restores only first allowed values", () => {

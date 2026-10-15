@@ -218,7 +218,8 @@ export default function MailConversationList(props: {
     const currentUrl = requestUrl();
     const href = buildMailSearchClearHref(currentUrl);
     if (href === `${currentUrl.pathname}${currentUrl.search}`) return;
-    void props.onOpenHref(href, currentUrl.searchParams.has("q"));
+    // A new history entry, so Back after clearing returns to the search instead of repeating the starting view.
+    void props.onOpenHref(href);
   };
 
   const applyQuickSearch = (query: string, fields: MailQuickSearchField[], replace: boolean) => {
