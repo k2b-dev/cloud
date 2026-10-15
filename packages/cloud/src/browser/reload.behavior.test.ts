@@ -84,6 +84,37 @@ else {
     }
   });
 
+  test("keeps waiting after the dialog closes while a draft the caller names is open", async () => {
+    const { reload } = modules!;
+    const dom = createDomTestHarness();
+    let reloads = 0;
+    Object.assign(dom.window.location, {
+      reload: () => {
+        reloads += 1;
+      },
+    });
+    const dialog = dom.document.createElement("dialog");
+    dialog.setAttribute("open", "");
+    const editor = dom.document.createElement("div");
+    dom.document.body.append(dialog, editor);
+    try {
+      expect(reload.reloadOnce("draft", { waitWhile: '[data-draft="true"]' })).toBe(true);
+      // A modeless window leaves the page usable, so an editor can open while the reload waits.
+      editor.setAttribute("data-draft", "true");
+      dialog.remove();
+      await Bun.sleep(10);
+      expect(reloads).toBe(0);
+      editor.setAttribute("data-draft", "false");
+      await Bun.sleep(10);
+      expect(reloads).toBe(1);
+    } finally {
+      dialog.remove();
+      editor.remove();
+      await Bun.sleep(10);
+      dom.cleanup();
+    }
+  });
+
   for (const storageFails of [false, true]) {
     test(`waits for the last dialog and ${storageFails ? "reloads even if storage later fails" : "starts the window at the deferred reload"}`, async () => {
       const { reload } = modules!;

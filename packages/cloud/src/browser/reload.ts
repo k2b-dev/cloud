@@ -12,16 +12,19 @@ export const AUTOMATIC_RELOAD_WINDOW_MS = 30_000;
 let reloadPending = false;
 
 /** Any open dialog holds the reload: a modeless window, such as global search moved aside, can sit above a modal one. */
-const dialogOpen = () => document.querySelector("dialog[open]") !== null;
+const holds = new Set(["dialog[open]"]);
+const held = () => document.querySelector([...holds].join(", ")) !== null;
 
 const storageKey = (key: string) => `cloud.reload.${key}`;
 
 /**
  * Reloads the page for an automatic reason (a live event, a failed live
  * subscription, a changed view) at most once per `key` and window in this tab.
- * Waits while a dialog is open and reloads once the last one closes, so an
- * automatic reload never discards a dialog. While it waits, the call still
- * returns `true`; a dialog that shows live data says itself that it is stale.
+ * Waits while a dialog is open, or an element matches `waitWhile` (for
+ * example an inline editor with a draft), and reloads once none is left, so an
+ * automatic reload never discards a dialog or a draft. While it waits, the call
+ * still returns `true`; a dialog that shows live data says itself that it is
+ * stale.
  *
  * Returns `false` without reloading when the same key already reloaded within
  * the window, or when `sessionStorage` is unavailable and a repeat therefore
@@ -29,7 +32,8 @@ const storageKey = (key: string) => `cloud.reload.${key}`;
  * user-initiated reload instead. Reloads after an explicit user action do not
  * need this guard.
  */
-export const reloadOnce = (key: string, options: { windowMs?: number } = {}): boolean => {
+export const reloadOnce = (key: string, options: { windowMs?: number; waitWhile?: string } = {}): boolean => {
+  if (options.waitWhile) holds.add(options.waitWhile);
   if (reloadPending) return true;
   const windowMs = options.windowMs ?? AUTOMATIC_RELOAD_WINDOW_MS;
   const now = Date.now();
@@ -41,18 +45,18 @@ export const reloadOnce = (key: string, options: { windowMs?: number } = {}): bo
   } catch {
     return false;
   }
-  if (typeof document === "undefined" || !dialogOpen()) {
+  if (typeof document === "undefined" || !held()) {
     window.location.reload();
     return true;
   }
   reloadPending = true;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const observer = new MutationObserver(() => {
-    if (timer !== undefined || dialogOpen()) return;
+    if (timer !== undefined || held()) return;
     // A task later, so the code that waited for the dialog (a confirmed delete, for example) starts its request first.
     timer = setTimeout(() => {
       timer = undefined;
-      if (dialogOpen()) return;
+      if (held()) return;
       observer.disconnect();
       reloadPending = false;
       try {
@@ -63,7 +67,8 @@ export const reloadOnce = (key: string, options: { windowMs?: number } = {}): bo
       window.location.reload();
     }, 0);
   });
-  observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["open"] });
+  // Every attribute, because a caller's `waitWhile` may match any of them.
+  observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true });
   return true;
 };
 

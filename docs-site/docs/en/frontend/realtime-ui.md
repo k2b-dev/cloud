@@ -150,8 +150,11 @@ dialog. It reloads one task after the close, so the code that waited for the
 dialog, such as a confirmed delete, starts its request first; the reload does
 not wait for that request to finish. While it waits, `reloadOnce` returns
 `true` and the page gets no live updates. A dialog that shows live data says
-itself that its updates are paused. For editors outside a dialog, the
-application must still wait until reloading will not discard a draft.
+itself that its updates are paused. For editors outside a dialog, pass a
+selector that matches an open draft as `waitWhile`, for example
+`reloadOnce(key, { waitWhile: '[data-contacts-editor="true"]' })`. The reload
+then also waits while that selector matches, including when an editor opens
+while a dialog holds the reload.
 `reloadOnce` also returns `false` when `sessionStorage` is unavailable. A
 reload that follows an explicit user action does not need the guard.
 
