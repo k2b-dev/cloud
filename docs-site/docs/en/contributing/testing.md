@@ -166,6 +166,14 @@ own, and fails when it finds none. Files that also need `CLOUD_TEST_*`
 targets, such as the OAuth consent test, run with `--integration` instead.
 `--filter` narrows the run to a package or a file name.
 
+A fake server started by a test records a request when it arrives. The page
+may have changed already, as seen in WebKit on a loaded machine. Never read
+the newest recorded request after a click or key press. Note how many requests
+have arrived before the step, wait for the request it causes, and compare that
+one. See `requests.next` in
+`packages/dashboard/src/frontend/dashboard-home.browser.test.ts`. An assertion
+that no request was sent can only cover what has already arrived.
+
 ### Run WebKit locally
 
 Playwright's WebKit needs system libraries that most Linux machines do not
