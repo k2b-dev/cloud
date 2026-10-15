@@ -930,6 +930,7 @@ const HelpShell = (props: {
                         items={articleSections()}
                         title={t().onThisPage}
                         scrollRoot={tocScrollRoot}
+                        contentRoot={() => articleContent}
                         onActiveChange={(id) => setActiveSectionId(id ?? null)}
                       />
                       <Show when={props.surface !== "modal"}>

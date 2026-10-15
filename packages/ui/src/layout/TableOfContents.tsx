@@ -11,6 +11,8 @@ export type TableOfContentsProps = {
   title?: string;
   /** Element whose scrolling decides the active section. Defaults to the window. */
   scrollRoot?: MaybeAccessor<HTMLElement | undefined>;
+  /** Element that contains the section headings. Defaults to the document. */
+  contentRoot?: MaybeAccessor<HTMLElement | undefined>;
   /** Stay in view inside the caller's layout. */
   sticky?: boolean;
   /** Called when another section becomes active. */
@@ -30,6 +32,8 @@ export function TableOfContents(props: TableOfContentsProps): JSX.Element {
     // Reading every id here makes a changed id or a store update recompute the active section.
     const ids = props.items.map((item) => item.id);
     const root = resolveMaybeAccessor(props.scrollRoot);
+    const content = resolveMaybeAccessor(props.contentRoot);
+    const heading = (id: string) => (content ? content.querySelector(`#${CSS.escape(id)}`) : document.getElementById(id));
     const target = root ?? window;
     let frame: number | undefined;
     const update = () => {
@@ -38,7 +42,7 @@ export function TableOfContents(props: TableOfContentsProps): JSX.Element {
       const top = box ? box.top + (root?.clientTop ?? 0) : 0;
       const height = root?.clientHeight ?? window.innerHeight;
       const line = top + height / 4;
-      const headings = ids.map((id) => ({ id, box: document.getElementById(id)?.getBoundingClientRect() }));
+      const headings = ids.map((id) => ({ id, box: heading(id)?.getBoundingClientRect() }));
       let next = ids[0];
       for (const heading of headings) if (heading.box && heading.box.top <= line) next = heading.id;
       const last = headings.at(-1);
@@ -61,7 +65,7 @@ export function TableOfContents(props: TableOfContentsProps): JSX.Element {
     const observed = new Set<Element | null | undefined>([
       root ?? document.documentElement,
       ...(root?.children ?? [document.body]),
-      ...ids.map((id) => document.getElementById(id)?.parentElement),
+      ...ids.map((id) => heading(id)?.parentElement),
     ]);
     for (const element of observed) if (element) observer?.observe(element);
     untrack(update);
