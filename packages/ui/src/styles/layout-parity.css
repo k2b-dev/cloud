@@ -2177,6 +2177,14 @@
     flex: 1 1 auto;
   }
 
+  /* A fixed level without a separator keeps its width; when stored widths do
+     not fit, only levels a person can resize give way, so a step stays exact. */
+  .k2b-ui
+    .k2b-app-workspace__main[data-workspace-levels]
+    > [data-workspace-level-shown~="2"][data-workspace-resizable="false"]:not([data-workspace-level-last~="2"]) {
+    flex-shrink: 0;
+  }
+
   /* The last level is raised when another level shows before it. Its
      margin box keeps the 320 px the flexible level keeps. */
   .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown~="2"] ~ [data-workspace-level-last~="2"] {
@@ -2204,6 +2212,14 @@
     width: auto;
     min-width: min(320px, 100%);
     flex: 1 1 auto;
+  }
+
+  /* A fixed level without a separator keeps its width; when stored widths do
+     not fit, only levels a person can resize give way, so a step stays exact. */
+  .k2b-ui
+    .k2b-app-workspace__main[data-workspace-levels]
+    > [data-workspace-level-shown~="3"][data-workspace-resizable="false"]:not([data-workspace-level-last~="3"]) {
+    flex-shrink: 0;
   }
 
   /* The last level is raised when another level shows before it. Its

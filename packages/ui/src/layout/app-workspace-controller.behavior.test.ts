@@ -1256,7 +1256,7 @@ describe("floating detail controller", () => {
       }
     });
 
-  test("a level without a separator keeps its rendered width for the page while a sibling resizes", () => {
+  test("a level without a separator keeps its width while a sibling resizes, and a press alone stores nothing", () => {
     Object.defineProperty(window, "matchMedia", {
       value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }),
     });
@@ -1265,14 +1265,11 @@ describe("floating detail controller", () => {
     main.className = "k2b-app-workspace__main";
     main.dataset.workspaceLevels = "";
     setRect(main, { width: 1200, height: 700 });
-    // Happy DOM has no flex layout: shrink both fixed bases into the 880 px left beside the last level.
-    const basis = (id: string, fallback: number) =>
-      Number.parseFloat(root.style.getPropertyValue(`--k2b-workspace-pane-${id}-width`)) || fallback;
-    const rendered = (id: string) => {
-      const sections = basis("sections", 720);
-      const items = basis("items", 640);
-      return ((id === "sections" ? sections : items) * 880) / Math.max(880, sections + items);
-    };
+    // Happy DOM has no flex layout. The stylesheet keeps a level without a
+    // separator at its width, so only the resizable level gives way to the
+    // 880 px left beside the last level.
+    const sectionsWidth = () =>
+      Math.min(Number.parseFloat(root.style.getPropertyValue("--k2b-workspace-pane-sections-width")) || 720, 880 - 320);
     let handle: HTMLButtonElement | undefined;
     for (const [index, id] of ["sections", "items", "item"].entries()) {
       const pane = document.createElement("section");
@@ -1282,8 +1279,8 @@ describe("floating detail controller", () => {
       pane.dataset.workspaceLevelLast = index === 2 ? "1 2 3" : "";
       pane.dataset.workspacePanelId = id;
       pane.dataset.workspaceResizable = index === 0 ? "true" : "false";
-      if (index === 2) setRect(pane, { width: 320, height: 700 });
-      else setDynamicRect(pane, () => ({ width: rendered(id), height: 700 }));
+      if (index === 0) setDynamicRect(pane, () => ({ width: sectionsWidth(), height: 700 }));
+      else setRect(pane, { width: 320, height: 700 });
       main.append(pane);
       if (index !== 0) continue;
       handle = document.createElement("button");
@@ -1305,14 +1302,17 @@ describe("floating detail controller", () => {
     });
     try {
       flushFrames();
-      const sectionsWidth = Math.round(rendered("sections"));
-      const itemsWidth = Math.round(rendered("items"));
+      expect(sectionsWidth()).toBe(560);
+      // A press and release without movement keeps the stored preference.
+      handle!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 1, clientX: 600 }));
+      window.dispatchEvent(new window.PointerEvent("pointerup", { pointerId: 1, clientX: 600 }));
+      flushFrames();
+      expect(written).toEqual([]);
+      expect(root.style.getPropertyValue("--k2b-workspace-pane-sections-width")).toBe("720px");
       dispatchKey(handle!, "ArrowLeft");
-      expect(root.style.getPropertyValue("--k2b-workspace-pane-sections-width")).toBe(`${sectionsWidth - 8}px`);
-      expect(root.style.getPropertyValue("--k2b-workspace-pane-items-width")).toBe(`${itemsWidth}px`);
-      expect(Math.round(rendered("items"))).toBe(itemsWidth);
-      // Only a level the person can resize stores its width.
-      expect(written).toEqual([expect.objectContaining({ paneWidths: { sections: sectionsWidth - 8 } })]);
+      expect(sectionsWidth()).toBe(552);
+      expect(root.style.getPropertyValue("--k2b-workspace-pane-items-width")).toBe("");
+      expect(written).toEqual([expect.objectContaining({ paneWidths: { sections: 552 } })]);
     } finally {
       dispose();
     }

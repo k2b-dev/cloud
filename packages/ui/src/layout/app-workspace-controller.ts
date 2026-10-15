@@ -1108,28 +1108,29 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     options.writeState?.(layoutState);
   };
 
-  // A level resize starts from what is on screen. When the preferred widths do
-  // not fit beside the flexible level, CSS shrinks the fixed levels, so a step
-  // from a shrunk width would land on a preference that shrinks again and jump.
-  // Every visible fixed level therefore takes its rendered width first, also
-  // one without a separator, which keeps it for this page without storing it;
-  // then they fit, and a step moves exactly by its size. All widths are
-  // measured before any is written, because each write reflows the others.
+  // A level resize starts from what is on screen. When the stored widths do
+  // not fit beside the flexible level, CSS shrinks the resizable levels (a
+  // level without a separator does not shrink), so a step from a shrunk width
+  // would land on a preference that shrinks again and jump. The visible
+  // resizable levels therefore take their rendered widths as preferences when
+  // a step really moves; then they fit, and the step moves exactly by its
+  // size. All widths are measured before any is written, because each write
+  // reflows the others.
   const settleLevels = (root: HTMLElement, handle: HTMLElement) => {
     const main = handle.closest<HTMLElement>(".k2b-app-workspace__main");
     if (!main?.hasAttribute("data-workspace-levels")) return;
-    const widths = Array.from(main.children)
-      .filter((child): child is HTMLElement => child instanceof HTMLElement && child.hasAttribute("data-workspace-level"))
-      .filter((level) => isVisible(level) && !flexibleLevel(level))
-      .map((level) => ({
-        id: safeAppWorkspacePanelId(level.dataset.workspacePanelId ?? ""),
-        stored: level.dataset.workspaceResizable === "true",
-        width: Math.round(elementSize(level, "pane")),
-      }));
-    for (const { id, stored, width } of widths) {
-      if (!id || (stored && layoutState.paneWidths?.[id] === width)) continue;
+    const widths = Array.from(main.querySelectorAll<HTMLElement>(HANDLE_SELECTOR))
+      .filter((other) => other.closest(".k2b-app-workspace__main") === main && resizeKind(other) === "pane")
+      .flatMap((other) => {
+        const panel = controlledPanel(root, other);
+        return isVisible(panel) && !flexibleLevel(panel) && panel.dataset.workspaceResizable === "true"
+          ? [{ id: panelId(other), width: Math.round(elementSize(panel, "pane")) }]
+          : [];
+      });
+    for (const { id, width } of widths) {
+      if (layoutState.paneWidths?.[id] === width) continue;
       root.style.setProperty(appWorkspacePanelVariable("pane", id), `${width}px`);
-      if (stored) layoutState = { ...layoutState, paneWidths: { ...layoutState.paneWidths, [id]: width } };
+      layoutState = { ...layoutState, paneWidths: { ...layoutState.paneWidths, [id]: width } };
     }
   };
 
@@ -1141,6 +1142,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (!active || pendingClient === null) return;
     const client = pendingClient;
     pendingClient = null;
+    // A press without movement changes no preference.
+    if (!active.moved && client !== active.startClient && active.kind === "pane") settleLevels(active.root, active.handle);
     active.moved ||= client !== active.startClient;
     const requested = active.startSize + (client - active.startClient) * active.direction;
     // Below half the smallest visible width a hideable sidebar stays at its
@@ -1203,7 +1206,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     event.preventDefault();
     stopResize();
     pendingClient = null;
-    if (kind === "pane") settleLevels(root, handle);
     const startSize = currentSize(root, handle, kind);
     active = {
       handle,
