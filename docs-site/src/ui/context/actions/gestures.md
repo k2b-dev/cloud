@@ -35,7 +35,7 @@ sheet, not in the menu that a right-click opens.
 
 `onOpen` runs right before the menu or the sheet shows its items, so the host
 can first act on what was pressed, as the month view of the
-[Calendar](/en/ui/surfaces/calendar) selects the pressed day.
+[Calendar](/en/ui/content/calendar) selects the pressed day.
 
 `tabIndex` sets the element's place in the tab order, as for `ContextMenu`.
 Keep the default in a conversation: in a [`VirtualFeed`](../content/virtual-feed),

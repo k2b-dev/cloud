@@ -25,7 +25,7 @@ choose the first time the reader should see, for example yesterday evening.
 Give the timeline a bounded height, such as the growing part of a flex
 column, and place it on a surface: day headings use the surface color.
 
-To offer the timeline as one view of a [Calendar](/en/ui/surfaces/calendar),
+To offer the timeline as one view of a [Calendar](/en/ui/content/calendar),
 add it with `customViews` and render it as the calendar's body.
 
 Without `now`, the timeline reads the clock and moves the now line every 30
