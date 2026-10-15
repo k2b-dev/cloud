@@ -7,6 +7,7 @@ import {
   APP_WORKSPACE_DRAWER_MAX,
   APP_WORKSPACE_DRAWER_MIN,
   APP_WORKSPACE_MAIN_MIN,
+  APP_WORKSPACE_PANE_DEFAULT,
   APP_WORKSPACE_PANE_MAX,
   APP_WORKSPACE_PANE_MIN,
   APP_WORKSPACE_SIDEBAR_COLLAPSED,
@@ -120,8 +121,18 @@ const controlledPanel = (root: HTMLElement, handle: HTMLElement) => {
   const panel = document.getElementById(controls);
   return panel?.closest(ROOT_SELECTOR) === root ? panel : null;
 };
-const controlsResizableRegion = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceResizeKind) =>
-  (kind === "sidebar" ? sidebarElement(root) : controlledPanel(root, handle))?.dataset.workspaceResizable === "true";
+const flexibleLevel = (pane: HTMLElement) => {
+  if (!pane.hasAttribute("data-workspace-level")) return false;
+  const widthClass = window.matchMedia("(min-width: 80rem)").matches ? "3" : window.matchMedia("(min-width: 48rem)").matches ? "2" : "1";
+  return pane.dataset.workspaceLevelLast?.split(" ").includes(widthClass) ?? false;
+};
+const controlsResizableRegion = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceResizeKind) => {
+  const panel = kind === "sidebar" ? sidebarElement(root) : controlledPanel(root, handle);
+  return (
+    panel?.dataset.workspaceResizable === "true" &&
+    (!panel.hasAttribute("data-workspace-level") || (isVisible(panel) && isVisible(handle) && !flexibleLevel(panel)))
+  );
+};
 const panelId = (handle: HTMLElement) => safeAppWorkspacePanelId(handle.dataset.workspacePanelId ?? "primary") || "primary";
 const numberData = (handle: HTMLElement, key: "workspaceDefaultSize" | "workspaceMinSize" | "workspaceMaxSize", fallback: number) => {
   const value = Number(handle.dataset[key]);
@@ -133,7 +144,11 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
   const main = kind === "pane" ? handle.closest<HTMLElement>(".k2b-app-workspace__main") : mainElement(root);
   const panes = main
     ? Array.from(main.querySelectorAll<HTMLElement>(".k2b-app-workspace__main-pane")).filter(
-        (pane) => pane.closest(".k2b-app-workspace__main") === main && !pane.classList.contains("is-primary") && isVisible(pane),
+        (pane) =>
+          pane.closest(".k2b-app-workspace__main") === main &&
+          !pane.classList.contains("is-primary") &&
+          !flexibleLevel(pane) &&
+          isVisible(pane),
       )
     : [];
   // Content ends before the detail track, so its width alone would shrink a
@@ -248,6 +263,20 @@ const reconcilePanes = (root: HTMLElement, layoutState: AppWorkspaceLayoutState,
     (handle) => resizeKind(handle) === "pane" && controlsResizableRegion(root, handle, "pane"),
   );
   if (!handles.length) return;
+
+  if (main.hasAttribute("data-workspace-levels")) {
+    // CSS owns the multi-level fit, including a flexible shown-last pane.
+    // Keep preferences intact when the window temporarily has less room.
+    for (const handle of handles) {
+      const min = numberData(handle, "workspaceMinSize", APP_WORKSPACE_PANE_MIN);
+      const max = Math.max(min, numberData(handle, "workspaceMaxSize", APP_WORKSPACE_PANE_MAX));
+      const preferred = active?.moved && active.handle === handle ? active.liveSize : layoutState.paneWidths?.[panelId(handle)];
+      if (preferred !== undefined)
+        root.style.setProperty(appWorkspacePanelVariable("pane", panelId(handle)), `${clamp(preferred, min, max)}px`);
+      updateHandleValue(root, handle, "pane", currentSize(root, handle, "pane"));
+    }
+    return;
+  }
 
   const controlled = new Set(handles.map((handle) => controlledPanel(root, handle)).filter(Boolean));
   const fixedWidth = Array.from(main.querySelectorAll<HTMLElement>(".k2b-app-workspace__main-pane"))
@@ -1028,25 +1057,31 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   const onDetailTouchEnd = (event: Event) => {
     if (detailDrag && detailDrag.source !== "pointer") finishDetailDrag(event.type === "touchcancel");
   };
-  const onDetailDoubleClick = (event: Event) => {
+  const onPanelDoubleClick = (event: Event) => {
     const handle = resizeHandle(event);
     const root = handle?.closest<HTMLElement>(ROOT_SELECTOR);
+    const kind = handle ? resizeKind(handle) : null;
     if (
       !handle ||
       !root ||
-      resizeKind(handle) !== "detail" ||
+      (kind !== "detail" && kind !== "pane") ||
       !workspaceResizable(root) ||
-      !controlsResizableRegion(root, handle, "detail")
+      !controlsResizableRegion(root, handle, kind)
     )
       return;
-    const widths = { ...layoutState.detailWidths };
+    const key = kind === "pane" ? "paneWidths" : "detailWidths";
+    const widths = { ...layoutState[key] };
     delete widths[panelId(handle)];
-    layoutState = { ...layoutState, detailWidths: widths };
-    const variable = appWorkspacePanelVariable("detail", panelId(handle));
+    layoutState = { ...layoutState, [key]: widths };
+    const variable = appWorkspacePanelVariable(kind, panelId(handle));
     root.style.removeProperty(variable);
+    // An SSR ancestor may still supply the old preference until the next request.
     if (getComputedStyle(root).getPropertyValue(variable).trim())
-      root.style.setProperty(variable, `${numberData(handle, "workspaceDefaultSize", APP_WORKSPACE_DETAIL_DEFAULT)}px`);
-    updateHandleValue(root, handle, "detail", currentSize(root, handle, "detail"));
+      root.style.setProperty(
+        variable,
+        `${numberData(handle, "workspaceDefaultSize", kind === "pane" ? APP_WORKSPACE_PANE_DEFAULT : APP_WORKSPACE_DETAIL_DEFAULT)}px`,
+      );
+    updateHandleValue(root, handle, kind, currentSize(root, handle, kind));
     options.writeState?.(layoutState);
   };
 
@@ -1376,7 +1411,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   eventRoot.addEventListener("focusin", onDetailFocusIn);
   eventRoot.addEventListener("pointerdown", onSheetPointerDown);
   eventRoot.addEventListener("click", onGrabberClick);
-  eventRoot.addEventListener("dblclick", onDetailDoubleClick);
+  eventRoot.addEventListener("dblclick", onPanelDoubleClick);
   window.addEventListener("pointermove", onSheetPointerMove);
   window.addEventListener("pointerup", onSheetPointerEnd);
   window.addEventListener("pointercancel", onSheetPointerEnd);
@@ -1422,7 +1457,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     eventRoot.removeEventListener("focusin", onDetailFocusIn);
     eventRoot.removeEventListener("pointerdown", onSheetPointerDown);
     eventRoot.removeEventListener("click", onGrabberClick);
-    eventRoot.removeEventListener("dblclick", onDetailDoubleClick);
+    eventRoot.removeEventListener("dblclick", onPanelDoubleClick);
     window.removeEventListener("pointermove", onSheetPointerMove);
     window.removeEventListener("pointerup", onSheetPointerEnd);
     window.removeEventListener("pointercancel", onSheetPointerEnd);

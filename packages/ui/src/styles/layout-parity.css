@@ -2041,6 +2041,194 @@
   }
 }
 
+/* Ordered workspace levels (`Main level`). The width decides how many levels
+   show: one below 48 rem, two below 80 rem, three from 80 rem. The selection
+   decides which: the deepest selected level and the ones above it. Each
+   decision is an attribute of the server-rendered markup, so the first frame
+   is already final and the controller moves nothing. Hidden levels stay
+   mounted. Levels never animate, so reduced motion needs no rule. */
+.k2b-ui .k2b-app-workspace__main[data-workspace-levels] {
+  flex-direction: row;
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+/* Every level keeps its own width while the flexible one keeps 320 px, and
+   starts below the same top inset as a raised level, so the titles of side by
+   side levels share one line. */
+.k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level] {
+  --k2b-workspace-pane-fit: clamp(var(--k2b-workspace-panel-min, 0px), 100% - 320px, var(--k2b-workspace-panel-size, 100%));
+  display: flex;
+  width: var(--k2b-workspace-pane-fit);
+  min-width: min(var(--k2b-workspace-panel-min, 320px), 100%);
+  flex: 0 1 var(--k2b-workspace-pane-fit);
+  flex-direction: column;
+  overflow: hidden;
+  padding-top: var(--k2b-workspace-detail-inset);
+  scrollbar-gutter: auto;
+  border-right: 0;
+}
+
+/* The head: one row of the workspace head's height, no line under it. The
+   back step sits at its start in whichever level shows first. */
+.k2b-ui .k2b-app-workspace__level-head {
+  display: flex;
+  min-width: 0;
+  min-height: 2.875rem;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding-inline: 1rem;
+}
+
+/* A 44 px target whose icon lines up with the head's content edge. */
+.k2b-ui .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+  display: none;
+  width: 2.75rem;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  min-height: 2.75rem;
+  flex: 0 0 2.75rem;
+  margin-inline: -0.75rem -0.5rem;
+}
+
+.k2b-ui .k2b-app-workspace__level-back .ti {
+  width: 1.25rem;
+  height: 1.25rem;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.k2b-ui .k2b-app-workspace__level-title {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.k2b-ui .k2b-app-workspace__level-title > :is(h2, p) {
+  overflow: hidden;
+  margin: 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-app-workspace__level-title > h2 {
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .k2b-app-workspace__level-title > p {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.k2b-ui .k2b-app-workspace__level-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-app-workspace__level-body {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.k2b-ui .k2b-app-workspace__level-body[data-scroll="false"] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown]:not([data-workspace-level-shown~="1"]) {
+    display: none;
+  }
+
+  .k2b-ui [data-workspace-level-first~="1"] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+    display: inline-flex;
+  }
+
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="1"] {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+}
+
+@media (min-width: 48rem) and (max-width: 79.999rem) {
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown]:not([data-workspace-level-shown~="2"]) {
+    display: none;
+  }
+
+  .k2b-ui [data-workspace-level-first~="2"] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+    display: inline-flex;
+  }
+
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="2"] {
+    width: auto;
+    min-width: min(320px, 100%);
+    flex: 1 1 auto;
+  }
+
+  /* The last level is raised when another level shows before it. Its
+     margin box keeps the 320 px the flexible level keeps. */
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown~="2"] ~ [data-workspace-level-last~="2"] {
+    min-width: min(320px - 2 * var(--k2b-workspace-detail-inset), 100%);
+    margin: var(--k2b-workspace-detail-inset);
+    margin-bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
+    padding-top: 0;
+    border-bottom: 0;
+    border-radius: var(--k2b-radius-surface);
+    background: var(--k2b-surface-elevated);
+    box-shadow: var(--k2b-shadow-frame);
+  }
+}
+
+@media (min-width: 80rem) {
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown]:not([data-workspace-level-shown~="3"]) {
+    display: none;
+  }
+
+  .k2b-ui [data-workspace-level-first~="3"] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+    display: inline-flex;
+  }
+
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="3"] {
+    width: auto;
+    min-width: min(320px, 100%);
+    flex: 1 1 auto;
+  }
+
+  /* The last level is raised when another level shows before it. Its
+     margin box keeps the 320 px the flexible level keeps. */
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown~="3"] ~ [data-workspace-level-last~="3"] {
+    min-width: min(320px - 2 * var(--k2b-workspace-detail-inset), 100%);
+    margin: var(--k2b-workspace-detail-inset);
+    margin-bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
+    padding-top: 0;
+    border-bottom: 0;
+    border-radius: var(--k2b-radius-surface);
+    background: var(--k2b-surface-elevated);
+    box-shadow: var(--k2b-shadow-frame);
+  }
+}
+
+/* On a touch screen a separator between levels is a 44 px target; it still
+   takes no width of its own. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > .k2b-app-workspace__resize[data-app-workspace-resize="pane"] {
+    flex-basis: 2.75rem;
+    margin-inline: -1.375rem;
+  }
+}
+
 /* These containers clip their content, so focus rings inside them are drawn
    inside the control. See the focus tokens in index.css. */
 .k2b-ui

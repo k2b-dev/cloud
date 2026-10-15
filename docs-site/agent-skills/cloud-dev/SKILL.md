@@ -105,6 +105,8 @@ SolidJS library remains independent of Cloud and application domains.
 - Custom UI follows the same tokens, semantics, interaction, accessibility, responsive, theme, and state principles.
   Reusable presentation belongs in the library; applications retain their domain behavior. Check every screen
   against **Styling and accessibility** (`/en/docs/frontend/styling-and-accessibility`).
+- A hierarchy of columns (settings areas, list and reader) uses
+  `AppWorkspace.Main level` with the selection in the URL.
 - Give an application's landing page the shared overview pattern: either a
   sidebar-first `AppWorkspace` (`SidebarItem variant="object"` rows,
   `AppWorkspace.Main width="content"`, a `PanelHeader size="lg"` with one
