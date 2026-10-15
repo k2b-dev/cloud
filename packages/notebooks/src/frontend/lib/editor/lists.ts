@@ -204,12 +204,20 @@ const taskPress = ViewPlugin.define(() => ({}), {
       if (!(event.target instanceof Element)) return;
       const checkbox = event.target.closest(".custom-list-task-marker");
       if (!checkbox || checkbox.getAttribute("type") !== "checkbox") return;
+      if (view.state.readOnly) return true;
       const line = view.state.doc.lineAt(view.posAtDOM(checkbox));
       const structure = view.state.field(listStateField).structure;
       const item = structure.items[listItemAtLine(structure, line.number)];
       if (item && item.taskFrom !== null && item.taskTo !== null) {
         view.dispatch({ changes: { from: item.taskFrom, to: item.taskTo, insert: item.checked ? "[ ]" : "[x]" } });
       }
+      return true;
+    },
+    // Cancelling mousedown does not stop the box's own toggle on click, so a read-only note keeps the box as it is.
+    click(event, view) {
+      if (!view.state.readOnly || !(event.target instanceof Element)) return;
+      if (!event.target.closest(".custom-list-task-marker")) return;
+      event.preventDefault();
       return true;
     },
   },

@@ -18,7 +18,7 @@ describe("editor checklist boxes", () => {
     return;
   }
 
-  const mount = (doc: string, caret: number) => {
+  const mount = (doc: string, caret: number, readOnly = false) => {
     const dom = createDomTestHarness();
     const transactions: Transaction[] = [];
     const view = new EditorView({
@@ -27,6 +27,7 @@ describe("editor checklist boxes", () => {
         doc,
         selection: { anchor: caret },
         extensions: [
+          EditorState.readOnly.of(readOnly),
           markdownExtension(),
           listsExtension(),
           EditorView.updateListener.of((update) => transactions.push(...update.transactions)),
@@ -156,6 +157,23 @@ describe("editor checklist boxes", () => {
         expect(transaction.selection).toBeUndefined();
       }
       expect(view.state.selection.main.head).toBe(2);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("a press on a read-only checkbox leaves the document and caret unchanged", () => {
+    const { view, transactions, press, cleanup } = mount("- [ ] task", 0, true);
+    try {
+      const event = press("task");
+      expect(event.defaultPrevented).toBe(true);
+      // A full click also runs the box's native toggle, which must not show a checked task.
+      const box = view.dom.querySelector<HTMLInputElement>(".custom-list-task-marker")!;
+      box.click();
+      expect(box.checked).toBe(false);
+      expect(view.state.doc.toString()).toBe("- [ ] task");
+      expect(view.state.selection.main.head).toBe(0);
+      expect(transactions).toHaveLength(0);
     } finally {
       cleanup();
     }

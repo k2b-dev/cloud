@@ -87,7 +87,7 @@ const devices: Record<string, BrowserContextOptions> = {
   phone: { ...phone, viewport: { width: 390, height: 844 } },
 };
 
-const open = async (device: BrowserContextOptions, options: { keyboard?: boolean } = {}) => {
+const open = async (device: BrowserContextOptions, options: { keyboard?: boolean; locale?: string } = {}) => {
   const context = await browser.newContext(device);
   if (options.keyboard) {
     await context.addInitScript(() => {
@@ -110,7 +110,9 @@ const open = async (device: BrowserContextOptions, options: { keyboard?: boolean
     });
   }
   const page = await context.newPage();
-  await page.goto(server.url.href);
+  const url = new URL(server.url.href);
+  if (options.locale) url.searchParams.set("locale", options.locale);
+  await page.goto(url.href);
   await page.waitForFunction(() => "toolbarHarness" in window);
   return page;
 };
@@ -755,6 +757,62 @@ describe.each(Object.entries(devices))("toolbar active states and keyboard navig
       }
     } finally {
       await page.context().close();
+    }
+  }, 30_000);
+});
+
+describe.each(Object.entries(devices))("sync ended toolbar layout (%s)", (_name, device) => {
+  test("both recovery bars preserve the toolbar and scroller bounds in English and German", async () => {
+    for (const locale of ["en", "de"]) {
+      const page = await open(device, { locale });
+      try {
+        await load(page, "# Keep this note\n\nUnsaved words");
+        const bounds = () =>
+          page.evaluate(() => {
+            const rect = (selector: string) => {
+              const box = document.querySelector(selector)!.getBoundingClientRect();
+              return { x: box.x, y: box.y, width: box.width, height: box.height };
+            };
+            return { row: rect(".notebooks-editor-toolbar"), scroller: rect("[data-editor-scroller]"), editor: rect(".cm-scroller") };
+          });
+        const original = await bounds();
+        const same = (actual: Awaited<ReturnType<typeof bounds>>) => {
+          for (const surface of ["row", "scroller", "editor"] as const)
+            for (const dimension of ["x", "y", "width", "height"] as const)
+              expect(Math.abs(actual[surface][dimension] - original[surface][dimension])).toBeLessThanOrEqual(0.5);
+        };
+        for (const code of ["STORAGE_EXHAUSTED", "SESSION_EXPIRED"]) {
+          await page.evaluate(async (code) => {
+            window.toolbarHarness.endSync(code, true);
+            await window.toolbarHarness.settle();
+          }, code);
+          same(await bounds());
+          const fit = await page.locator("[data-sync-ended]").evaluate((row) => {
+            const box = row.getBoundingClientRect();
+            return {
+              pageFits: document.documentElement.scrollWidth <= innerWidth,
+              controlsFit: Array.from(row.querySelectorAll("button")).every((button) => {
+                const control = button.getBoundingClientRect();
+                return (
+                  control.left >= box.left &&
+                  control.right <= box.right &&
+                  control.right <= innerWidth &&
+                  control.top >= box.top &&
+                  control.bottom <= box.bottom
+                );
+              }),
+            };
+          });
+          expect(fit).toEqual({ pageFits: true, controlsFit: true });
+          await page.evaluate(async () => {
+            window.toolbarHarness.resumeSync();
+            await window.toolbarHarness.settle();
+          });
+          same(await bounds());
+        }
+      } finally {
+        await page.context().close();
+      }
     }
   }, 30_000);
 });

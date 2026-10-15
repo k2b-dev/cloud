@@ -58,9 +58,8 @@ const NOTIFY_BATCH_SIZE = 100;
 const NOTIFY_BATCH_MAX_BYTES = 256_000;
 const NOTIFY_FLUSH_DELAY_MS = 25;
 const MAX_PENDING_MESSAGES = 200;
-const MAX_SYNC_PAYLOAD_LENGTH = 8_000_000;
 const MAX_AWARENESS_PAYLOAD_LENGTH = 256_000;
-const MAX_CLIENT_MESSAGE_LENGTH = MAX_SYNC_PAYLOAD_LENGTH + 1_000;
+const MAX_CLIENT_MESSAGE_LENGTH = notebooksYjs.maxSyncPayloadLength + 1_000;
 const BASE64_REGEX = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 const ReplayRequestMessageSchema = z.object({
@@ -76,7 +75,7 @@ const SyncPublishMessageSchema = z.object({
   type: z.literal(WS_TYPE.syncPublish),
   payload: z.object({
     noteId: z.string().regex(SHORT_ID_REGEX),
-    payload: z.string().min(1).max(MAX_SYNC_PAYLOAD_LENGTH),
+    payload: z.string().min(1).max(notebooksYjs.maxSyncPayloadLength),
   }),
 });
 

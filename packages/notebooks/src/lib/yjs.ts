@@ -65,6 +65,7 @@ export const getNotebookPresenceColor = (seed: string): string =>
   NOTEBOOKS_PRESENCE_COLORS[hashSeed(seed) % NOTEBOOKS_PRESENCE_COLORS.length]!;
 
 export const notebooksYjs = {
+  maxSyncPayloadLength: 8_000_000,
   wsType: NOTEBOOKS_YJS_WS_TYPE,
   streamCursorPattern: STREAM_CURSOR_PATTERN,
   errorCode: NOTEBOOKS_YJS_ERROR_CODE,

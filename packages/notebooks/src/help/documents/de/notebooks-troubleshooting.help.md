@@ -24,4 +24,6 @@ Bevor du die Struktur einer Notiz änderst, prüfe ihren Markdown-Quelltext und 
 
 **Bearbeiten** synchronisiert den Notiztext mit anderen Personen, die ihn bearbeiten. Gespeicherte Änderungen aktualisieren Abfragevorschauen und Buchinhalte. **Schreibgeschützt** empfängt keine gemeinsamen Textänderungen. Lade die Ansicht neu, nachdem sich der gespeicherte Quelltext geändert hat.
 
+Wenn **Bearbeiten** nicht mehr synchronisiert, etwa weil deine Sitzung abgelaufen ist oder die Notiz gelöscht wurde, bleibt die Notiz sichtbar und wird schreibgeschützt. Die Leiste unter der Notiz zeigt, ob deine Änderungen gespeichert sind. Mit **Erneut anmelden** kannst du nach der Anmeldung weiter bearbeiten. Nutze sonst **Text kopieren**, bevor du **Neu laden** wählst. Sind Änderungen nicht gespeichert, fragt Notebooks nach, bevor du die Notiz verlässt.
+
 Kann eine Buchseite nicht aktualisiert werden, bleibt ihr letzter lesbarer Inhalt sichtbar, und du kannst es erneut versuchen. Endet dein Zugriff oder verschwindet die Seite, zeigt Notebooks den alten Inhalt nicht mehr und prüft die Seite erneut. Ohne JavaScript lädst du die Seite neu, um Änderungen zu sehen.

@@ -114,7 +114,9 @@ is re-anchored from its current markdown when the editor next opens it.
 A transient live-stream failure, for example a broker failover, closes editing
 connections with `STREAM_FAILED`. The editor reconnects with backoff and its
 last cursor, so an outage does not resend stored snapshots. Only a cursor the
-broker cannot serve any more asks the editor to resync.
+broker cannot serve any more asks the editor to resync. After any reconnect,
+the editor resends edits the server has not echoed back yet, so a dropped
+connection does not lose them.
 
 An hourly `notebooks:yjs-snapshot-reconcile` schedule re-queues snapshots for
 notes whose topic head moved past their stored cursor without a settled job,
