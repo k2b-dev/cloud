@@ -463,6 +463,8 @@ const conversationMutation = (
                 triggerMessageId: mailWorkflowTriggerMessageId(ctx.invocation.context),
               })
             : null;
+        // A status step compares with the live state: a status that already holds still covers the
+        // messages the conversation holds now, so their hydration keeps it.
         if (current ? current.workStatus === value : !mailConversationTransitionChanges(conversation, kind, value)) {
           if (current) await recordConversationStatusDecision(tx, conversationId);
           return { state: "succeeded", output: { action: kind, applied: false } as JsonObject };

@@ -477,12 +477,13 @@ export const recordConversationStatusDecision = async (db: SqlClient, conversati
 };
 
 /**
- * Locks a conversation for a workflow status step and returns its live state when the step may
- * apply: at the run's revision, or one revision later when that revision came from hydrating the
- * message that triggered the run and no other message of the conversation still waits for
- * hydration. Linking a message does not change the revision, so a message that joined after the
- * run's view is either still unhydrated or hydrated with its own revision. Any other change since
- * the run's view returns null and keeps the step's revision conflict.
+ * Locks a conversation for a workflow status step and returns its live state. `revision` is the
+ * revision the step may apply at: the live one when it equals the run's revision, or when it is one
+ * revision later because Mail hydrated the message that triggered the run and no other message of
+ * the conversation still waits for hydration. Linking a message does not change the revision, so a
+ * message that joined after the run's view is either still unhydrated or hydrated with its own
+ * revision. After any other change since the run's view, `revision` stays the run's revision, so
+ * the step keeps its revision conflict.
  */
 export const lockWorkflowConversationStatus = async (
   db: SqlClient,
@@ -519,13 +520,12 @@ export const lockWorkflowConversationStatus = async (
   `;
   if (!current) return null;
   const revision = Number(current.revision);
-  return revision === params.expectedRevision ||
-    (revision === params.expectedRevision + 1 &&
-      current.others_hydrated &&
-      current.hydrated_revision !== null &&
-      Number(current.hydrated_revision) === revision)
-    ? { revision, workStatus: current.work_status }
-    : null;
+  const onlyTriggerHydrated =
+    revision === params.expectedRevision + 1 &&
+    current.others_hydrated &&
+    current.hydrated_revision !== null &&
+    Number(current.hydrated_revision) === revision;
+  return { revision: onlyTriggerHydrated ? revision : params.expectedRevision, workStatus: current.work_status };
 };
 
 const applyConversationCollaborationInTransaction = async (params: {

@@ -2536,51 +2536,56 @@ suite("incoming automations", () => {
     }, 30_000);
   }
 
-  test("keeps the revision conflict when another message joined after the run's view", async () => {
-    const key = "hydrated-first-joined";
-    const first = statusEnvelope(12041, key);
-    const firstId = await ingestEnvelope({
-      db: sql,
-      mailboxId,
-      remoteResourceId,
-      folderId: inboxFolderId,
-      message: first,
-      captureWorkflowTriggers: false,
-    });
-    await hydrateStatusMessage(firstId, first);
-    const automation = await createStatusAutomation(key);
-    try {
-      const second = statusEnvelope(12042, key, first.messageId);
-      const secondId = await ingestEnvelope({
+  for (const initiallyDone of [false, true]) {
+    // A Done view must not turn into a silent no-op while the conversation is open again.
+    test(`keeps the revision conflict when another message joined after the run's view${initiallyDone ? " of a Done conversation" : ""}`, async () => {
+      const key = initiallyDone ? "hydrated-first-joined-done" : "hydrated-first-joined";
+      const uid = initiallyDone ? 12051 : 12041;
+      const first = statusEnvelope(uid, key);
+      const firstId = await ingestEnvelope({
         db: sql,
         mailboxId,
         remoteResourceId,
         folderId: inboxFolderId,
-        message: second,
-        captureWorkflowTriggers: true,
-      });
-      const runId = await dispatchStatusRun(automation.workflowId);
-      await hydrateStatusMessage(secondId, second);
-      // A reply that joins after the run's view stays envelope-only, so it changes no revision.
-      const third = statusEnvelope(12043, key, second.messageId);
-      const thirdId = await ingestEnvelope({
-        db: sql,
-        mailboxId,
-        remoteResourceId,
-        folderId: inboxFolderId,
-        message: third,
+        message: first,
         captureWorkflowTriggers: false,
       });
-      expect((await statusConversation(thirdId)).id).toBe((await statusConversation(secondId)).id);
-      expect((await runMailWorkflow(runId)).state).toBe("finished");
-      const [run] = await sql<{ state: string; error: string | null }[]>`
+      await hydrateStatusMessage(firstId, first);
+      if (initiallyDone) await markStatusConversationDone(firstId);
+      const automation = await createStatusAutomation(key);
+      try {
+        const second = statusEnvelope(uid + 1, key, first.messageId);
+        const secondId = await ingestEnvelope({
+          db: sql,
+          mailboxId,
+          remoteResourceId,
+          folderId: inboxFolderId,
+          message: second,
+          captureWorkflowTriggers: true,
+        });
+        const runId = await dispatchStatusRun(automation.workflowId);
+        await hydrateStatusMessage(secondId, second);
+        // A reply that joins after the run's view stays envelope-only, so it changes no revision.
+        const third = statusEnvelope(uid + 2, key, second.messageId);
+        const thirdId = await ingestEnvelope({
+          db: sql,
+          mailboxId,
+          remoteResourceId,
+          folderId: inboxFolderId,
+          message: third,
+          captureWorkflowTriggers: false,
+        });
+        expect((await statusConversation(thirdId)).id).toBe((await statusConversation(secondId)).id);
+        expect((await runMailWorkflow(runId)).state).toBe("finished");
+        const [run] = await sql<{ state: string; error: string | null }[]>`
         SELECT state, error ->> 'message' AS error FROM workflows.run WHERE id = ${runId}::uuid
       `;
-      expect(run?.state).toBe("failed");
-      expect(run?.error).toContain("changed by another collaborator");
-      expect((await statusConversation(thirdId)).work_status).toBe("needs_action");
-    } finally {
-      await deleteStatusAutomation(automation.id);
-    }
-  }, 30_000);
+        expect(run?.state).toBe("failed");
+        expect(run?.error).toContain("changed by another collaborator");
+        expect((await statusConversation(thirdId)).work_status).toBe("needs_action");
+      } finally {
+        await deleteStatusAutomation(automation.id);
+      }
+    }, 30_000);
+  }
 });
