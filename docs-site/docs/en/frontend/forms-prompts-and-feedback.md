@@ -5,7 +5,7 @@ section: Frontend
 order: 880
 description: Collect input and show mutation progress, cancellation, success, and errors.
 tags: [forms, prompts, feedback]
-updated: 2026-10-14
+updated: 2026-10-15
 ---
 
 # Forms, prompts, and feedback
@@ -69,12 +69,15 @@ row. A person who sees nothing happen clicks again or leaves.
 
 | Action | Immediate answer | When the server refuses or the work fails later |
 | --- | --- | --- |
-| A change the server can reverse that grants no access and exposes no data: a toggle, an inline rename, a move, an archive, a delete to Trash | Apply it optimistically. When the item leaves the view, offer Undo in one notice. | A refusal: the item returns in its place, and a `toast.error()` names the reason, with a Retry action when repeating it is safe. An unknown outcome, such as a timeout: reconcile with the server and ask the person to check the item; offer no automatic Retry. |
-| A hard delete or another action that cannot be reversed | `prompts.confirm()`, then a pending state on the row until the server answers. No Undo. | The row returns to normal, and the error names the reason. |
+| A change the server can reverse that grants no access and exposes no data: a toggle, an inline rename, a move, an archive, a delete to Trash | Apply it optimistically. When the item leaves the view, offer Undo in one notice. | The item returns in its place, and a `toast.error()` names the reason, with a Retry action when repeating the request is safe. An unclear outcome asks the person to check the item instead. |
+| A hard delete or another destructive action that cannot be reversed | `prompts.confirm()`, then a pending state on the row until the server answers. No Undo. | The row returns to normal, and the error names the reason. |
 | An action that grants a permission or exposes new data, even when it can be reversed: sharing, a permission toggle, a move into a shared folder | A pending state on the acted element until the server answers. | An inline or toast error, as for any failed action. |
 
 A change made in a dialog, such as a rename with name rules, keeps the dialog
-open as its pending state until the server answers.
+open as its pending state until the server answers. An action that cannot be
+reversed but destroys nothing, such as sending a message, needs no
+confirmation: it keeps a pending state on the acted element until the server
+answers, and it offers no Undo.
 
 Offer Undo only where the server can really reverse the action: the item
 still exists, for example in Trash, or the server holds the queued command and
@@ -92,12 +95,26 @@ view shows the state the server kept and an error names the reason. Announce
 "Undone" only once every reversal was cancelled before sending or accepted by
 the server.
 
+When the server refuses an optimistic change or reports its failure, the
+item returns in its place. Offer Retry only when repeating the request is
+safe: it reuses the idempotency key of the first attempt, or it only sets a
+value. When such a request loses its answer, for example to a timeout or a
+network error, treat that as a failure: the item returns, and Retry repeats
+the same request. When the server reports that it cannot tell whether the
+change happened, or a request that is not safe to repeat lost its answer, the
+outcome is unclear. Reconcile with the server, ask the person to check the
+item, and offer no Retry, because repeating could apply the change twice.
+
 Mail's conversation list is the reference for removal. A deleted or archived
 conversation collapses in place, focus moves to the next row, and one notice
-offers Undo. If the server refuses the change, or the command fails later, the
-row comes back in its place with the reason and Try again. Actions on the same
-item run in the order the person chose them, and a failure of an earlier
-action never rolls back a later choice.
+offers Undo. If the server refuses the change, the request fails or loses its
+answer, or the command fails later, the row comes back in its place with the
+reason and a Retry action labeled Try again. After a failed or lost request,
+Try again repeats it with the same idempotency key. When it is unclear whether
+the mail server made the change, the notice asks the person to check the
+conversation and offers no Try again. Actions on the same item run in the
+order the person chose them, and a failure of an earlier action never rolls
+back a later choice.
 
 Do not drop an action that starts while an earlier one is pending. Disable
 only controls that would start a conflicting operation, or queue the action in
