@@ -819,6 +819,10 @@ describe("ChatWorkspace start chats and members", () => {
             const panel = page.locator("#k2b-workspace-detail-chat-info");
             const assertPanel = async () => {
               await panel.waitFor({ state: "visible" });
+              // Geometry is only final once the panel's entry transition has run; a fixed wait loses that race on a busy machine.
+              await panel.evaluate((element) =>
+                Promise.all(element.getAnimations().map((animation) => animation.finished.catch(() => undefined))),
+              );
               await page.waitForTimeout(600);
               const box = await panel.boundingBox();
               expect(box).not.toBeNull();
