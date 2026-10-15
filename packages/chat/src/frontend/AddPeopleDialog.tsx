@@ -40,13 +40,17 @@ export const openAddPeopleDialog = (props: AddPeopleProps): Promise<string | und
     },
   );
 
-/** What an addition means for the chat: who joins and sees the history, and when the chat becomes quiet. */
-export function AddPeopleSummary(props: { preview: Preview; memberCount: number }): JSX.Element {
+/**
+ * What an addition means for the chat: who joins and sees the history, and when the chat becomes quiet. Both sizes come
+ * from the server's preview, so a member count the client cached earlier cannot misplace the quiet warning.
+ */
+export function AddPeopleSummary(props: { preview: Preview }): JSX.Element {
   const t = useChatMessages();
+  const before = () => props.preview.memberCount - props.preview.joining;
   return (
     <div class="flex flex-col gap-2 text-sm" aria-live="polite">
       <p>{props.preview.joining > 0 ? t().joining({ count: props.preview.joining }) : t().alreadyMembers}</p>
-      <Show when={props.memberCount < QUIET_FROM && props.preview.memberCount >= QUIET_FROM}>
+      <Show when={before() < QUIET_FROM && props.preview.memberCount >= QUIET_FROM}>
         <p class="text-dimmed">{t().quietChat}</p>
       </Show>
       <Show when={props.preview.throughGroups >= DISCOVERABLE_FROM}>
@@ -188,7 +192,7 @@ export function AddPeopleDialog(
               <Show when={preview()} fallback={<InlineGuidance loading>{t().previewLoading}</InlineGuidance>}>
                 {(answer) => (
                   <div aria-busy={checking()}>
-                    <AddPeopleSummary preview={answer()} memberCount={props.conversation.memberCount} />
+                    <AddPeopleSummary preview={answer()} />
                   </div>
                 )}
               </Show>

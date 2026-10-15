@@ -341,8 +341,7 @@ describe("chat dialogs and info", () => {
       test(`addition summary shows the quiet warning only on crossing 20: ${before} → ${after} in ${locale}`, async () => {
         await mount(locale, () =>
           createComponent(modules!.AddPeopleSummary, {
-            memberCount: before,
-            preview: { joining: 1, memberCount: after, throughGroups: 0 },
+            preview: { joining: after - before, memberCount: after, throughGroups: 0 },
           }),
         );
         expect(dom.root.textContent).toContain(t.joining({ count: 1 }));
@@ -355,7 +354,6 @@ describe("chat dialogs and info", () => {
       test(`addition summary suggests Discoverable by only from 21 people through groups: ${groups} in ${locale}`, async () => {
         await mount(locale, () =>
           createComponent(modules!.AddPeopleSummary, {
-            memberCount: 30,
             preview: { joining: groups, memberCount: 30 + groups, throughGroups: groups },
           }),
         );
@@ -372,7 +370,8 @@ describe("chat dialogs and info", () => {
         createComponent(modules!.AddPeopleDialog, {
           setDismissHandler: () => {},
           store: store({ previewMembers }),
-          conversation: { ...conversation, memberCount: 20 },
+          // The cached count is stale (people left meanwhile); the server's preview decides whether the chat turns quiet.
+          conversation: { ...conversation, memberCount: 25 },
           guest: true,
           viewerId,
           locale,
