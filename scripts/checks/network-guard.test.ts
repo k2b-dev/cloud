@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { rule } from "./network-guard";
 
-const lines = async (source: string) => {
+const lines = async (source: string, file = "packages/demo/src/outbound.ts") => {
   const root = await mkdtemp(join(tmpdir(), "cloud-network-guard-"));
   try {
-    await writeFile(join(root, "package.json"), JSON.stringify({ workspaces: { packages: ["packages/demo"] } }));
-    const path = join(root, "packages/demo/src/outbound.ts");
+    await writeFile(join(root, "package.json"), JSON.stringify({ workspaces: { packages: ["packages/demo", "packages/pulse"] } }));
+    const path = join(root, file);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, source);
     return (await rule.run({ workspaceRoot: root, fix: false, flags: new Set() })).map((finding) => finding.line);
@@ -77,4 +77,11 @@ test("keeps fetch() away from files that check hosts with the platform guard", a
     ),
   ).toEqual([3]);
   expect(await lines("await fetch(apiUrl);")).toEqual([]);
+});
+
+test("Pulse server fetch requires its guarded transport; browser fetch stays allowed", async () => {
+  expect(await lines("await fetch(url);", "packages/pulse/src/service/x.ts")).toEqual([1]);
+  expect(await lines("await fetch(url);", "packages/pulse/src/frontend/client.ts")).toEqual([]);
+  expect(await lines("await fetch(url);", "packages/pulse/src/widget.tsx")).toEqual([]);
+  expect(await lines("await fetch(url);", "packages/pulse/src/cli/client.ts")).toEqual([]);
 });

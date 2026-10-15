@@ -86,7 +86,15 @@ application never deletes it on startup.
 
 Metrics support gauges and nonnegative counters. Type and unit are fixed per metric name within a base; conflicting input rejects the entire batch. Counter rates use observed consecutive samples and correct resets before combining series. Histogram and summary aggregation is not supported.
 
-Prometheus sources accept declared gauge/counter families and expose skipped samples in source diagnostics. Scrapes use whole-minute intervals (minimum 60 seconds), one collection timestamp, and a 15-second timeout covering both headers and body. Sources with no instance, host, or node label use the endpoint host and port as their target resource.
+Prometheus sources accept declared gauge/counter families and expose skipped samples in source diagnostics. Scrapes use whole-minute intervals (minimum 60 seconds), one collection timestamp, and a 15-second timeout covering lookup, connection, headers, and body. Sources with no instance, host, or node label use the endpoint host and port as their target resource.
+
+Pulse scrapes only public endpoints by default. It refuses internal addresses,
+reserved names, and redirects to them. An operator can allow internal targets
+with `PULSE_SCRAPE_ALLOWED_TARGETS`. Exact host entries trust every address that
+name resolves to; IP and CIDR entries allow addresses in that range. Reserved
+names such as `localhost` and names under `.internal` require an exact host entry.
+Existing internal sources remain stored, but scrapes fail with this reason until
+the operator allows the target.
 
 The initial operator scenario is 20–50 servers, approximately ten websites, 60-second sampling and 30-day raw retention. Website backends send events using secret source tokens. This is a test scenario, not a measured production capacity guarantee.
 

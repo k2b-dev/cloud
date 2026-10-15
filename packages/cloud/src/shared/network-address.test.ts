@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { isUnsafeNetworkAddress, isUnsafeNetworkHostname, networkAddressFamily, parseNetworkAddress } from "./network-address";
+import {
+  EMPTY_NETWORK_ALLOWLIST,
+  isAllowlistedNetworkAddress,
+  isUnsafeNetworkAddress,
+  isUnsafeNetworkHostname,
+  networkAddressFamily,
+  parseNetworkAddress,
+  parseNetworkAllowlist,
+} from "./network-address";
 
 describe("network address policy", () => {
   test.each([
@@ -97,5 +105,83 @@ describe("network address policy", () => {
       expect(networkAddressFamily(host)).toBeNull();
     }
     expect(isUnsafeNetworkHostname("example.com")).toBe(false);
+  });
+});
+
+describe("operator network allowlist", () => {
+  test("normalizes exact host names and strict single IP entries", () => {
+    const list = parseNetworkAllowlist(["Prometheus", "METRICS.Example.", "10.0.0.5", "[FD00::1]", "::ffff:10.0.0.5"]);
+    expect([...list.hosts]).toEqual(["prometheus", "metrics.example"]);
+    expect(list.networks).toEqual([
+      { address: "10.0.0.5", family: 4, bits: 32 },
+      { address: "fd00::1", family: 6, bits: 128 },
+      { address: "::ffff:a00:5", family: 6, bits: 128 },
+    ]);
+  });
+
+  test.each([
+    "",
+    "*.example",
+    "http://example.com",
+    "example.com:80",
+    "example.com/path",
+    "u@example.com",
+    " example.com",
+    "a_b",
+    "-x.test",
+    "x-.test",
+    "x..test",
+    "example..",
+    "127.1",
+    "0177.0.0.1",
+    "0x7f000001",
+    "2130706433",
+    "256.0.0.1",
+    "1.2.3.4.5",
+    "example.123",
+    "08",
+    "[8.8.8.8]",
+    "fe80::1%eth0",
+    "[::1",
+    "::1]",
+    "1.2.3.4/33",
+    "::/129",
+    "10.0.0.0/-1",
+    "::/1.5",
+    "::/01",
+    "::/",
+    "::/1/2",
+    "example.com/24",
+  ])("refuses invalid entry %s", (entry) => {
+    expect(() => parseNetworkAllowlist(["valid.test", entry, "also invalid!"])).toThrow(`"${entry}"`);
+  });
+
+  test("refuses host bits and names the correct canonical network", () => {
+    expect(() => parseNetworkAllowlist(["10.0.0.5/8"])).toThrow("10.0.0.0/8");
+    expect(() => parseNetworkAllowlist(["fd00::5/64"])).toThrow("fd00::/64");
+    expect(() => parseNetworkAllowlist(["10.0.0.1/0"])).toThrow("0.0.0.0/0");
+  });
+
+  test("matches IPv4 and IPv6 boundaries, mapped IPv4, and no other embeddings", () => {
+    const list = parseNetworkAllowlist(["10.0.0.0/8", "fd00::/64", "127.0.0.1/32"]);
+    for (const address of [
+      "10.0.0.0",
+      "10.255.255.255",
+      "fd00::",
+      "fd00::ffff:ffff:ffff:ffff",
+      "127.0.0.1",
+      "::ffff:10.0.0.5",
+      "[::ffff:a00:5]",
+    ]) {
+      expect(isAllowlistedNetworkAddress(list, address)).toBe(true);
+    }
+    for (const address of ["11.0.0.0", "fd00:0:0:1::", "127.0.0.2", "64:ff9b::a00:5", "2002:a00:5::", "2001::a00:5", "::a00:5", "bad"]) {
+      expect(isAllowlistedNetworkAddress(list, address)).toBe(false);
+    }
+    expect(isAllowlistedNetworkAddress(parseNetworkAllowlist(["64:ff9b::/96"]), "64:ff9b::a00:5")).toBe(true);
+    expect(isAllowlistedNetworkAddress(parseNetworkAllowlist(["0.0.0.0/0"]), "255.255.255.255")).toBe(true);
+    expect(isAllowlistedNetworkAddress(parseNetworkAllowlist(["::/0"]), "fd00::1")).toBe(true);
+    expect(isAllowlistedNetworkAddress(EMPTY_NETWORK_ALLOWLIST, "127.0.0.1")).toBe(false);
+    expect(isAllowlistedNetworkAddress(parseNetworkAllowlist(["[::ffff:10.0.0.5]"]), "::ffff:a00:5")).toBe(true);
   });
 });

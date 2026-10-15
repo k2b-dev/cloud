@@ -29,6 +29,12 @@ const pinnedCall = /\bpinnedNetworkLookup\(/g;
 const pinnedAlias = /\bpinnedNetworkLookup\s+as\b/g;
 const directAgent = /\bagent:\s*false\b/;
 const guardImport = /from\s*["']@k2b\/cloud\/services\/network-security["']|from\s*["'][./]+network-security["']/;
+const personChosenServerRoots = ["packages/pulse/src/"];
+const isPersonChosenServer = (path: string) =>
+  personChosenServerRoots.some((root) => path.startsWith(root)) &&
+  !path.includes("/frontend/") &&
+  !path.endsWith(".tsx") &&
+  !path.includes("/cli/");
 const globalFetch = /(?<![.\w])fetch\s*\(/g;
 // Options of one request object stay within a few lines of each other.
 const SAME_REQUEST_LINES = 6;
@@ -76,12 +82,14 @@ export const rule: Rule = {
         }
       }
       // fetch() resolves the name again after the check, so a checked host must not reach it.
-      if (guardImport.test(source)) {
+      if (guardImport.test(source) || isPersonChosenServer(path)) {
         for (const match of source.matchAll(globalFetch)) {
           findings.push({
             file,
             line: lineOf(source, match.index),
-            message: "connect to checked addresses with requestPublicHttps or pinnedNetworkLookup; fetch() resolves the host again",
+            message: isPersonChosenServer(path)
+              ? "Pulse server code requests person-chosen URLs; use the guarded metrics transport (resolveAllowedNetworkAddresses + pinnedNetworkLookup), never fetch()"
+              : "connect to checked addresses with requestPublicHttps or pinnedNetworkLookup; fetch() resolves the host again",
           });
         }
       }

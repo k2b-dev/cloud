@@ -30,6 +30,7 @@ Nutze diese Seite, wenn Daten fehlen, wenn sich der Zugriff ändern muss oder we
 ## Häufige Probleme beheben {icon="lifebuoy"}
 
 :::reference
+- **Eine Metrikquelle wird abgelehnt:** Pulse ruft standardmäßig nur öffentliche Endpunkte ab. Ein Betreiber kann das interne Ziel mit `PULSE_SCRAPE_ALLOWED_TARGETS` freigeben. Versuche den Abruf danach erneut.
 - **Es erscheinen keine Daten:** Prüfe zuerst die Quelle. Sie muss eine erfolgreiche Aktualisierung melden, bevor Ressourcen, Signale oder Dashboards Daten anzeigen können.
 - **Eine Abfrage liefert zu viele Treffer:** Öffne das **Inventar** oder die Signalseite. Ergänze dann Filter für `source`, `resource`, `resource_type` oder `where`.
 - **Ein Diagramm ist leer:** Prüfe Zeitraum und Aggregation. Zähler brauchen meist `rate` oder `increase`. Messwerte brauchen meist `avg` oder `latest`.

@@ -169,6 +169,9 @@ services:
   app-pulse:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-pulse:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    environment:
+      <<: *shared-env
+      PULSE_SCRAPE_ALLOWED_TARGETS: ${PULSE_SCRAPE_ALLOWED_TARGETS:-}
 
   app-proxy-auth:
     <<: *app-defaults
