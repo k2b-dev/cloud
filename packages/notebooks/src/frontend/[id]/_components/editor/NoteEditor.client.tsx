@@ -323,7 +323,11 @@ export default function NoteEditor(props: Props) {
         const mode = requestedPresentationMode(new URL(target, window.location.href).searchParams);
         if (noteTarget && !props.readOnly && (!mode || mode === "write")) {
           const result = await navigateSoft(target, true);
-          if (result.kind === "fallback") throw new Error("Note navigation failed");
+          if (result.kind === "fallback") {
+            // Search reports the failure and the note stays open, so a confirmed leave must not outlive it.
+            leaveGuard?.releaseLeave();
+            throw new Error("Note navigation failed");
+          }
           return true;
         }
         if (target !== href) {

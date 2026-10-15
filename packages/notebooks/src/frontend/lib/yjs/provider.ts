@@ -371,7 +371,8 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   const handleReplayReadyMessage = (msg: ProviderMessage): boolean => {
     if (msg.type !== WS_TYPE.replayReady) return false;
     const payload = (msg.payload ?? {}) as { noteId?: unknown };
-    if (payload.noteId !== activeNoteId) return true;
+    // A socket can still deliver queued messages after a terminal error; the editor must stay stopped.
+    if (payload.noteId !== activeNoteId || isTerminated) return true;
     replayReady = true;
     // Reading works again, but with edits still unsent only their echo proves that storage accepts writes,
     // so backoff and storage budget keep counting until then.

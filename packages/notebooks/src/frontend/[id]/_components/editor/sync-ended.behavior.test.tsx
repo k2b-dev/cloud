@@ -339,6 +339,20 @@ describe("sync ended editor recovery", () => {
     expect(observed).not.toHaveBeenCalled();
   });
 
+  test("a confirmed search navigation that fails keeps warning before unload", async () => {
+    using editor = mountNoteEditor();
+    const view = editor.view();
+    editor.end();
+    editor.confirmed.mockResolvedValue(true);
+    routeGet.mockImplementationOnce(async () => new Response(null, { status: 500 }));
+    const detail: { target: { href: string }; handled?: Promise<boolean> } = { target: { href: otherHref } };
+    window.dispatchEvent(new CustomEvent("cloud.search.navigate", { detail }));
+    await expect(detail.handled).rejects.toThrow("Note navigation failed");
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
+    expect(editor.view()).toBe(view);
+    expect(beforeUnloadPrevented()).toBe(true);
+  });
+
   test("a heading of the shown note opens in place without asking", async () => {
     using editor = mountNoteEditor();
     const view = editor.view();

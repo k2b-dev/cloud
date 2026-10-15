@@ -802,6 +802,29 @@ describe("Yjs provider unconfirmed edits", () => {
     }
   });
 
+  test("a replay ready queued behind a terminal error does not restart the editor", () => {
+    const doc = new Y.Doc();
+    const awareness = new Awareness(doc);
+    let ready = 0;
+    const provider = createYjsProvider({ doc, awareness, noteId: NOTE_ID, appUrl: "http://localhost", onReady: () => ready++ });
+    try {
+      provider.connect();
+      const socket = FakeWebSocket.instances.at(-1)!;
+      socket.open();
+      readyReplay(socket);
+      doc.getText("content").insert(0, "unsaved");
+      socket.message({ type: notebooksYjs.wsType.error, payload: { code: "SESSION_EXPIRED", message: "expired" } });
+      readyReplay(socket);
+      expect(ready).toBe(1);
+      expect(syncPublishes(socket)).toHaveLength(1);
+      expect(provider.hasUnsentChanges()).toBe(true);
+    } finally {
+      provider.dispose();
+      awareness.destroy();
+      doc.destroy();
+    }
+  });
+
   test("termination preserves a needed full resync until resume", () => {
     using editor = localEditor();
     editor.doc.getText("content").insert(0, "before replay");
