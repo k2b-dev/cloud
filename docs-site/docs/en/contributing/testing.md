@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-14
+updated: 2026-10-15
 ---
 
 # Testing
@@ -83,7 +83,9 @@ so it also waits for integration runs.
 A run whose environment sets a `CLOUD_TEST_*` target always takes the first
 slot. Integration runs stay one at a time on the machine even with several
 slots, because checkouts share the Valkey and Filegate test targets. Other
-runs take the first slot only when every other slot is busy.
+runs take the first slot only when every other slot is busy. When all slots
+are busy, a run waits for one slot picked by its process ID, so it can keep
+waiting while another slot frees up first.
 
 ## Write behavior tests
 

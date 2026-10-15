@@ -38,17 +38,18 @@ export const chooseSlot = (
 const needsSlot = (): boolean => !process.env.CI && process.env.CLOUD_HEAVY_LOCK !== "held" && Bun.which("flock") !== null;
 
 const runCommand = (command: string[], env = process.env): number => {
-  try {
-    const child = spawnSync(command, { stdio: ["inherit", "inherit", "inherit"], env });
-    return child.exitCode ?? (child.signalCode ? 128 + constants.signals[child.signalCode] : 1);
-  } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
-    console.error(`heavy.ts: command not found: ${command[0]}`);
-    return 127;
-  }
+  const child = spawnSync(command, { stdio: ["inherit", "inherit", "inherit"], env });
+  const signal = Object.entries(constants.signals).find(([name]) => name === child.signalCode)?.[1];
+  return child.exitCode ?? (signal ? 128 + signal : 1);
 };
 
 export const runInHeavySlot = (command: string[]): number => {
+  // Resolve first so a missing command fails the same way on every path, without waiting for a slot.
+  const [name = ""] = command;
+  if (!Bun.which(name)) {
+    console.error(`heavy.ts: command not found: ${name}`);
+    return 127;
+  }
   if (!needsSlot()) return runCommand(command);
   const slots = heavySlots();
   const sharesTestTargets = hasIntegrationTarget(process.env);

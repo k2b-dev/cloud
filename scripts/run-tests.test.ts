@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { hasIntegrationTarget } from "./fixtures/test-infra-env";
-import { behaviorIgnore, discoverTestSuites, listBehaviorFiles, parseArgs, selectSuites, type TestSuite } from "./run-tests";
+import { behaviorIgnore, discoverTestSuites, parseArgs, selectSuites, type TestSuite } from "./run-tests";
 
 const workspaceRoot = join(import.meta.dir, "..");
 const preload = join(workspaceRoot, "scripts", "fixtures", "test-infra.ts");

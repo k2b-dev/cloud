@@ -255,12 +255,17 @@ describe("heavy command processes", () => {
     expect(child.stderr.toString()).toContain(join(dir, ".env"));
   }, 30_000);
 
-  test("returns shell exit codes for a missing command and a signal on the bypass path", async () => {
-    const missing = start(["cloud-heavy-missing-command"], { CI: "1" });
-    const stderr = new Response(missing.stderr).text();
-    expect(await missing.exited).toBe(127);
-    expect(await stderr).toBe("heavy.ts: command not found: cloud-heavy-missing-command\n");
-    expect(await start(["sh", "-c", "kill -TERM $$"], { CI: "1" }).exited).toBe(143);
+  test("returns shell exit codes for a missing command and a signal on every path", async () => {
+    for (const overrides of [{ CI: "1" }, {}]) {
+      const missing = start(["cloud-heavy-missing-command"], overrides);
+      const stderr = new Response(missing.stderr).text();
+      expect(await missing.exited).toBe(127);
+      expect(await stderr).toBe("heavy.ts: command not found: cloud-heavy-missing-command\n");
+    }
+    expect(readdirSync(dir)).toEqual([]);
+    for (const overrides of [{ CI: "1" }, {}]) {
+      expect(await start(["sh", "-c", "kill -TERM $$"], overrides).exited).toBe(143);
+    }
   }, 30_000);
 });
 
@@ -275,4 +280,4 @@ test("heavy command help and missing arguments", () => {
   expect(child.exitCode).toBe(2);
   expect(child.stderr.toString()).toContain("Usage:");
   expect(child.stdout.toString()).toBe("");
-});
+}, 30_000);
