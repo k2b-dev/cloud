@@ -46,9 +46,9 @@ surfaces.
 | SRV | Server and HTTP | [Code and server](/en/docs/conventions/code-and-server#server-and-http-srv) |
 | ACC | Identity and access | [Access and data](/en/docs/conventions/access-and-data#identity-and-access-acc) |
 | DATA | Data and effects | [Access and data](/en/docs/conventions/access-and-data#data-and-effects-data) |
-| UI | Visual UI | Not catalogued yet |
-| IX | Interaction and feedback | Not catalogued yet |
-| A11Y | Accessibility | Not catalogued yet |
+| UI | Visual UI | [Frontend](/en/docs/conventions/frontend#visual-ui-ui) |
+| IX | Interaction and feedback | [Frontend](/en/docs/conventions/frontend#interaction-and-feedback-ix) |
+| A11Y | Accessibility | [Frontend](/en/docs/conventions/frontend#accessibility-a11y) |
 | I18N | Internationalization | Not catalogued yet |
 | DOC | Product text and Help | Not catalogued yet |
 | CLI | CLI and Assistant Skills | Not catalogued yet |

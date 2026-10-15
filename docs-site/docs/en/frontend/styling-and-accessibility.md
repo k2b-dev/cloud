@@ -5,7 +5,7 @@ section: Frontend
 order: 890
 description: Apply Cloud's visual and interaction rules without forking shared primitives.
 tags: [css, accessibility, themes, design]
-updated: 2026-10-14
+updated: 2026-10-15
 ---
 
 # Styling and accessibility
@@ -165,7 +165,10 @@ sparingly for app identity. They are Cloud integration utilities, not
 standalone `@k2b/ui` APIs and not general action or status colors.
 
 When app-owned CSS is necessary, use the semantic theme variables already
-provided by the host. A standalone `@k2b/ui` consumer can configure the
+provided by the host. The host's `--ui-focus` is a complete `box-shadow`: use
+`var(--ui-focus)` only as a `box-shadow` value, because the browser drops a
+border, outline, background, or `color-mix()` declaration that uses it as a
+color. A standalone `@k2b/ui` consumer can configure the
 documented `--k2b-*` tokens on its scoped root.
 
 Avoid fixed light backgrounds, black text, hardcoded app colors, and arbitrary
