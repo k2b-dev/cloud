@@ -305,6 +305,26 @@ describe("sync ended editor recovery", () => {
     expect(view.state.doc.toString()).toBe(text);
   });
 
+  test("a cancelled request that manages its own history leaves the address and history alone", async () => {
+    using editor = mountNoteEditor();
+    editor.end();
+    const length = window.history.length;
+    const state = window.history.state;
+    const observed = mock(() => {});
+    window.addEventListener("popstate", observed);
+    try {
+      // The sidebar asks with push: false and changes the history itself only when the note opened.
+      expect(await loaded!.requestSoftNoteNavigation(otherHref, { push: false })).toEqual({ kind: "superseded" });
+    } finally {
+      window.removeEventListener("popstate", observed);
+    }
+    expect(editor.confirmed).toHaveBeenCalledTimes(1);
+    expect(window.history.length).toBe(length);
+    expect(window.history.state).toBe(state);
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe(editorHref);
+    expect(observed).not.toHaveBeenCalled();
+  });
+
   test("a heading of the shown note opens in place without asking", async () => {
     using editor = mountNoteEditor();
     const view = editor.view();

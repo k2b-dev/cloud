@@ -246,13 +246,14 @@ export default function NoteEditor(props: Props) {
     }
   });
 
-  const navigateSoft = async (href: string, push: boolean): Promise<SoftNavigationResult> => {
+  /** `traversal`: Back or Forward already moved the history, so a cancel has to restore the shown note's address. */
+  const navigateSoft = async (href: string, push: boolean, traversal = false): Promise<SoftNavigationResult> => {
     const target = resolveSameNotebookNoteTarget(href, window.location.href, props.notebookId);
     const mode = target ? requestedPresentationMode(new URL(target.canonicalHref, window.location.href).searchParams) : undefined;
     const keepsEditor = target && target.noteShortId === current().noteId && (!mode || mode === (props.readOnly ? "readonly" : "write"));
     const guard = keepsEditor ? undefined : leaveGuard;
     if (guard && !(await guard.confirmLeave())) {
-      if (!push) {
+      if (traversal) {
         // Without a history index, restoring the shown URL with pushState drops forward entries after it.
         window.history.pushState(window.history.state, "", shownHref);
         restoringShownHref = true;
@@ -302,7 +303,7 @@ export default function NoteEditor(props: Props) {
 
     const onPopState = () => {
       if (restoringShownHref) return;
-      void navigateSoft(window.location.href, false).then((result) => {
+      void navigateSoft(window.location.href, false, true).then((result) => {
         if (result.kind === "fallback") window.location.reload();
       });
     };
