@@ -45,19 +45,37 @@ export const normalizeSkillTarget = (path: string): string => {
 export const referenceFolder = (name: string, version: string): string =>
   `references/${name}/${version.replace(/[^A-Za-z0-9._-]/g, "_").replace(/^\./, "_")}/`;
 
+/**
+ * Folder of each row's references. Different bundles with the same module and
+ * version, such as a served build and a package, each get a short digest
+ * suffix; the sanitized version never contains `+`, so names stay distinct.
+ */
+const rowFolders = (rows: readonly SkillModuleRow[]): ((row: SkillModuleRow) => string) => {
+  const digests = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const folder = referenceFolder(row.name, row.version);
+    digests.set(folder, (digests.get(folder) ?? new Set()).add(row.digest));
+  }
+  return (row) => {
+    const folder = referenceFolder(row.name, row.version);
+    return (digests.get(folder)?.size ?? 0) > 1 ? `${folder.slice(0, -1)}+${row.digest.slice(0, 12)}/` : folder;
+  };
+};
+
 const cell = (value: string): string => value.replace(/[\r\n]+/g, " ").replaceAll("|", "\\|");
 
 export const renderModulesTable = (rows: readonly SkillModuleRow[]): string => {
   if (rows.length === 0) {
     return "No module is installed for any profile yet. `cld plugins install --all` installs the modules of the current profile's Cloud and fills this table.";
   }
+  const folder = rowFolders(rows);
   const sorted = [...rows].sort((left, right) => left.profile.localeCompare(right.profile) || left.name.localeCompare(right.name));
   return [
     "| Profile | Module | Version | Summary | Start |",
     "| --- | --- | --- | --- | --- |",
     ...sorted.map(
       (row) =>
-        `| ${cell(row.profile)} | ${cell(row.name)} | ${cell(row.version)} | ${cell(row.summary)} | \`${cell(referenceFolder(row.name, row.version))}index.md\` |`,
+        `| ${cell(row.profile)} | ${cell(row.name)} | ${cell(row.version)} | ${cell(row.summary)} | \`${cell(folder(row))}index.md\` |`,
     ),
   ].join("\n");
 };
@@ -84,9 +102,10 @@ export const writeSkillTarget = async (target: string, rows: readonly SkillModul
       await mkdir(dirname(join(staging, path)), { recursive: true, mode: 0o700 });
       await writeFile(join(staging, path), path === "SKILL.md" ? renderSkill(content, rows) : content);
     }
+    const folders = rowFolders(rows);
     const copied = new Set<string>();
     for (const row of rows) {
-      const folder = referenceFolder(row.name, row.version);
+      const folder = folders(row);
       if (copied.has(folder)) continue;
       copied.add(folder);
       await cp(join(pluginStoreDirectory(root), row.digest, "references"), join(staging, folder), { recursive: true });

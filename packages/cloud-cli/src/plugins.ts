@@ -143,7 +143,16 @@ const verifyBundleDirectory = async (directory: string, manifest: CloudCliPlugin
   }
 };
 
+/** A FIFO, device, or link would block or never end a read; metadata must be a plain file. */
+const requireRegularFile = async (path: string, name: string): Promise<void> => {
+  const info = await lstat(path).catch((error) => {
+    throw new PluginError(`cannot read ${name} (${error instanceof Error ? error.message : String(error)})`);
+  });
+  if (!info.isFile()) throw new PluginError(`${name} must be a regular file.`);
+};
+
 const readPackageBundle = async (directory: string): Promise<{ manifest: CloudCliPluginManifest; bundle: string }> => {
+  await requireRegularFile(join(directory, "package.json"), "package.json");
   const raw: unknown = await readFile(join(directory, "package.json"), "utf8")
     .then(JSON.parse)
     .catch((error) => {
@@ -163,8 +172,10 @@ const readPackageBundle = async (directory: string): Promise<{ manifest: CloudCl
   let current = directory;
   for (const part of inside.split(sep)) {
     current = join(current, part);
-    if ((await lstat(current)).isSymbolicLink()) throw new PluginError(`Plugin manifest path contains a symlink: ${path}.`);
+    if ((await lstat(current).catch(() => null))?.isSymbolicLink())
+      throw new PluginError(`Plugin manifest path contains a symlink: ${path}.`);
   }
+  await requireRegularFile(current, `plugin manifest ${path}`);
   let manifest: CloudCliPluginManifest;
   try {
     manifest = parseCloudCliPluginManifest(JSON.parse(await readFile(current, "utf8")));

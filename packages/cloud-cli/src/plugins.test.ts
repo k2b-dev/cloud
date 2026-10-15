@@ -139,6 +139,33 @@ describe("package bundles", () => {
     expect(Object.keys(await readPackagePlugins(dir))).toEqual(["echo"]);
   });
 
+  test("refuses package metadata that is not a regular file instead of blocking or reading forever", async () => {
+    const fifo = (path: string) => expect(Bun.spawnSync(["mkfifo", path]).exitCode).toBe(0);
+    const packageFifo = join(await tempDir(), "package");
+    await cp(echoBuild, packageFifo, { recursive: true });
+    await rm(join(packageFifo, "package.json"));
+    fifo(join(packageFifo, "package.json"));
+    await expectPluginError(stagePlugin(packageFifo), "error", "package.json must be a regular file");
+    const packageZero = join(await tempDir(), "package");
+    await cp(echoBuild, packageZero, { recursive: true });
+    await rm(join(packageZero, "package.json"));
+    await symlink("/dev/zero", join(packageZero, "package.json"));
+    await expectPluginError(stagePlugin(packageZero), "error", "package.json must be a regular file");
+    const manifestFifo = join(await tempDir(), "package");
+    await cp(echoBuild, manifestFifo, { recursive: true });
+    await rm(join(manifestFifo, "manifest.json"));
+    fifo(join(manifestFifo, "manifest.json"));
+    await expectPluginError(stagePlugin(manifestFifo), "error", "plugin manifest manifest.json must be a regular file");
+    // tar recreates FIFO members; the archive path must refuse them as well.
+    const dir = await tempDir();
+    await cp(echoBuild, join(dir, "package"), { recursive: true });
+    await rm(join(dir, "package", "package.json"));
+    fifo(join(dir, "package", "package.json"));
+    const archive = join(dir, "fifo.tgz");
+    expect(Bun.spawnSync(["tar", "-czf", archive, "-C", dir, "package"]).exitCode).toBe(0);
+    await expectPluginError(stagePlugin(archive), "error", "package.json must be a regular file");
+  });
+
   test("validates modules and short-name metadata structurally", () => {
     const plain = { name: "inventory", summary: "Inventory", run: () => 0 };
     expect(validateCloudCliModule(plain)).toBe(plain);
@@ -344,6 +371,14 @@ describe("cld package plugins", () => {
       expect(await readdir(join(root, "store"))).toEqual(store);
     }
   }, 30_000);
+
+  test("reports missing package metadata and manifests as PluginErrors", async () => {
+    const dir = await tempDir();
+    await expectPluginError(stagePlugin(dir), "error", "cannot read package.json (");
+    await cp(echoBuild, dir, { recursive: true });
+    await rm(join(dir, "manifest.json"));
+    await expectPluginError(stagePlugin(dir), "error", "cannot read plugin manifest manifest.json (");
+  });
 
   test("tar refusals preserve archives, outside files and installed records", async () => {
     const dir = await tempDir();

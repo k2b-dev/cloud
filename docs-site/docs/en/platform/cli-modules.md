@@ -834,7 +834,10 @@ Summary, and Start. Start links to `references/<module>/<version>/index.md`.
 Package plugins appear once with Profile `*` when active in at least one
 profile, or when no profiles exist. A profile lock takes precedence over a
 package plugin of the same name. Inactive modules get no row. Profiles on
-different Clouds see their versions side by side. Unused reference folders
+different Clouds see their versions side by side. When two different bundles
+share a module name and version, such as a served build and a package, each
+folder gets a short digest suffix, `references/<module>/<version>+<digest>/`,
+so every row points at its own references. Unused reference folders
 disappear on the next sync.
 
 The targets are `skills.targets` in the `cld` config. The first `cld login`

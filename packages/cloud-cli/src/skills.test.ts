@@ -74,6 +74,41 @@ describe("cloud-cli skill targets", () => {
     }
   });
 
+  test("different bundles with the same module and version get their own reference folders", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "cld-skills-collide-"));
+    try {
+      const root = join(dir, "plugins");
+      const served = "a".repeat(128);
+      const pkg = "b".repeat(128);
+      for (const [digest, text] of [
+        [served, "# Served inventory\n"],
+        [pkg, "# Package inventory\n"],
+      ] as const) {
+        await mkdir(join(root, "store", digest, "references"), { recursive: true });
+        await writeFile(join(root, "store", digest, "references", "index.md"), text);
+      }
+      const rows = [
+        { profile: "p1", name: "inv", version: "1.0.0", summary: "Inventory", digest: served },
+        { profile: "*", name: "inv", version: "1.0.0", summary: "Inventory", digest: pkg },
+        { profile: "*", name: "mail", version: "1.0.0", summary: "Mail", digest: served },
+      ];
+      const written = await writeSkillTarget(join(dir, "skills"), rows, root);
+      const skill = await readFile(join(written, "SKILL.md"), "utf8");
+      expect(skill).toContain(`| p1 | inv | 1.0.0 | Inventory | \`references/inv/1.0.0+${"a".repeat(12)}/index.md\` |`);
+      expect(skill).toContain(`| * | inv | 1.0.0 | Inventory | \`references/inv/1.0.0+${"b".repeat(12)}/index.md\` |`);
+      expect(skill).toContain("| * | mail | 1.0.0 | Mail | `references/mail/1.0.0/index.md` |");
+      expect(await readFile(join(written, "references", "inv", `1.0.0+${"a".repeat(12)}`, "index.md"), "utf8")).toBe(
+        "# Served inventory\n",
+      );
+      expect(await readFile(join(written, "references", "inv", `1.0.0+${"b".repeat(12)}`, "index.md"), "utf8")).toBe(
+        "# Package inventory\n",
+      );
+      expect(await readdir(join(written, "references", "inv"))).toHaveLength(2);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("writes the core skill plus one reference folder per installed module version and prunes the rest", async () => {
     const dir = await mkdtemp(join(tmpdir(), "cld-skills-test-"));
     try {
