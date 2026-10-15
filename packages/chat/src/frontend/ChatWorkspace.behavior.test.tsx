@@ -101,6 +101,7 @@ describe("ChatWorkspace interactions", () => {
   const originalConsoleError = console.error;
   const consoleErrors: unknown[][] = [];
   const posted: { clientId: string; body: string }[] = [];
+  const readPosts: number[] = [];
   const snapshots = new Map<string, ReturnType<typeof ChatSnapshotSchema.parse>>();
   const pendingSnapshots = new Map<string, Promise<Response>>();
   let membersRequests = 0;
@@ -110,6 +111,7 @@ describe("ChatWorkspace interactions", () => {
     dom = createDomTestHarness();
     delegateEvents(["click", "input", "keydown"], dom.document);
     posted.length = 0;
+    readPosts.length = 0;
     snapshots.clear();
     pendingSnapshots.clear();
     membersRequests = 0;
@@ -153,6 +155,11 @@ describe("ChatWorkspace interactions", () => {
             managers: 1,
             nextCursor: null,
           });
+        }
+        if (url.pathname === "/api/chat/conversations/Chat01/read" && init?.method === "POST") {
+          const { seq } = JSON.parse(String(init.body));
+          readPosts.push(seq);
+          return Response.json({ lastReadSeq: seq, unreadFromSeq: null, joinedSeq: 0 });
         }
         if (url.pathname === "/api/chat/conversations/Chat01") return Response.json({ ...conversation, permission: "admin" });
         if (url.pathname === "/api/chat/conversations/Chat01/messages" && init?.method === "POST") {
@@ -225,6 +232,53 @@ describe("ChatWorkspace interactions", () => {
     if (!found) throw new Error(`Missing button ${label}`);
     return found;
   };
+  const mountVisibleUnread = async (phoneWidth: boolean) => {
+    const changes = new dom.window.EventTarget();
+    const phone = {
+      matches: phoneWidth,
+      addEventListener: changes.addEventListener.bind(changes),
+      removeEventListener: changes.removeEventListener.bind(changes),
+    };
+    Object.defineProperty(dom.window, "matchMedia", {
+      value: (query: string) =>
+        query === "(max-width: 47.999rem)" ? phone : { matches: false, addEventListener() {}, removeEventListener() {} },
+    });
+    Object.defineProperty(dom.document, "visibilityState", { configurable: true, value: "visible" });
+    Object.defineProperty(dom.document, "hasFocus", { configurable: true, value: () => true });
+    const unread = MessageViewSchema.parse({
+      ...message(1),
+      author: { type: "user", id: "22222222-2222-4222-8222-222222222222", name: "Alex" },
+    });
+    await mount(true, [conversation], "info", "en", "write", {
+      page: { items: [unread], seqHead: 1, rev: 1 },
+    });
+    const feed = dom.root.querySelector<HTMLElement>(".k2b-virtual-feed__viewport")!;
+    Object.defineProperty(feed, "clientHeight", { configurable: true, value: 600 });
+    feed.dispatchEvent(new Event("scroll"));
+    await settle();
+    return () => {
+      phone.matches = false;
+      changes.dispatchEvent(new dom.window.Event("change"));
+    };
+  };
+  for (const uncover of ["close", "resize"] as const) {
+    test(`phone info pauses visible unread reporting until ${uncover}`, async () => {
+      const resizeToDesktop = await mountVisibleUnread(true);
+      expect(readPosts).toEqual([]);
+      if (uncover === "close") {
+        dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
+      } else resizeToDesktop();
+      await settle();
+      expect(readPosts).toEqual([1]);
+      expect(consoleErrors).toEqual([]);
+    });
+  }
+  test("desktop info keeps reporting visible unread messages", async () => {
+    await mountVisibleUnread(false);
+    expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
+    expect(readPosts).toEqual([1]);
+    expect(consoleErrors).toEqual([]);
+  });
   test("failed send retries the same client ID and body, then shows one sent row", async () => {
     await mount(true);
     const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;

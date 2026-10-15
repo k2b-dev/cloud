@@ -210,7 +210,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // leave it, so the mark is not read away at once.
   let reporter: { chatId: string; reporter: ReturnType<typeof createReadReporter> } | undefined;
   let paused = false;
-  const reading = () => document.visibilityState === "visible" && document.hasFocus();
+  let phone: MediaQueryList | undefined;
+  const reading = () =>
+    Boolean(phone) && document.visibilityState === "visible" && document.hasFocus() && !(panel() === "info" && phone?.matches);
   // Per chat, not per change of the open chat.
   const openId = createMemo(() => openChat()?.id ?? null);
   createEffect(
@@ -440,6 +442,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
 
   onMount(() => {
+    phone = window.matchMedia("(max-width: 47.999rem)");
     const live = createChatStore({
       viewerId: props.viewerId,
       cursor: props.cursor,
@@ -508,9 +511,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       }),
     );
     const activate = () => reporter?.reporter.activate();
+    createEffect(on(panel, activate));
+    phone.addEventListener("change", activate);
     document.addEventListener("visibilitychange", activate);
     window.addEventListener("focus", activate);
     onCleanup(() => {
+      phone?.removeEventListener("change", activate);
       document.removeEventListener("visibilitychange", activate);
       window.removeEventListener("focus", activate);
       reporter?.reporter.dispose();
