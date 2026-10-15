@@ -8,10 +8,10 @@ type DetailsProps = { store: ChatDialogStore; conversation: Conversation; locale
 /** Writers change the name, icon, and purpose; a system message in the chat records each change. */
 export const openChatDetailsDialog = (props: DetailsProps): Promise<void | undefined> =>
   prompts.dialog<void>(
-    (close) => (
+    (close, context) => (
       // A prompt renders outside the workspace, so its content gets the workspace's locale again.
       <LocaleProvider locale={props.locale}>
-        <ChatDetailsDialog {...props} close={close} />
+        <ChatDetailsDialog {...props} close={close} setDismissHandler={context.setDismissHandler} />
       </LocaleProvider>
     ),
     {
@@ -21,12 +21,17 @@ export const openChatDetailsDialog = (props: DetailsProps): Promise<void | undef
     },
   );
 
-export function ChatDetailsDialog(props: DetailsProps & { close: () => void }): JSX.Element {
+export function ChatDetailsDialog(
+  props: DetailsProps & { setDismissHandler: (handler: () => void) => void; close: () => void },
+): JSX.Element {
   const t = useChatMessages();
   const [name, setName] = createSignal(props.conversation.name ?? "");
   const [icon, setIcon] = createSignal(props.conversation.icon ?? "");
   const [purpose, setPurpose] = createSignal(props.conversation.purpose ?? "");
   const [busy, setBusy] = createSignal(false);
+  props.setDismissHandler(() => {
+    if (!busy()) props.close();
+  });
   const [error, setError] = createSignal("");
   // Only changed fields go out, so an unchanged save writes no system message.
   const changes = () => {

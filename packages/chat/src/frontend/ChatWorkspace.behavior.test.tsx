@@ -418,6 +418,34 @@ describe("ChatWorkspace interactions", () => {
     ).toBe("true");
     expect(consoleErrors).toEqual([]);
   });
+  for (const initialPanel of [null, "info"] as const) {
+    test(`info link keeps ${initialPanel ?? "the closed panel"} unchanged while another chat opens`, async () => {
+      const other = { ...conversation, id: "Chat02", title: "Other chat" };
+      const pending = Promise.withResolvers<Response>();
+      pendingSnapshots.set(other.id, pending.promise);
+      await mount(true, [conversation, other], initialPanel);
+      const url = dom.window.location.href;
+      const historyLength = dom.window.history.length;
+      dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat02"]')!.click();
+      await settle();
+      expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("true");
+      expect(dom.root.querySelector(".chat-conversation__header")?.textContent).toContain(conversation.title);
+      dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
+      await settle();
+      try {
+        expect(dom.window.location.href).toBe(url);
+        expect(dom.window.history.length).toBe(historyLength);
+        expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(initialPanel === null);
+      } finally {
+        pending.resolve(Response.json({ cursor: "c.0", conversation: other, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+        await settle();
+      }
+      expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat02");
+      expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(true);
+      expect(dom.window.history.length).toBe(historyLength + 1);
+      expect(consoleErrors).toEqual([]);
+    });
+  }
   test("returning to info supersedes a pending open of another chat", async () => {
     const other = { ...conversation, id: "Chat02", title: "Other chat" };
     const pending = Promise.withResolvers<Response>();

@@ -27,10 +27,10 @@ const PREVIEW_DELAY_MS = 250;
 /** Adds people and groups; resolves with a new chat's ID when the person starts one without the history instead. */
 export const openAddPeopleDialog = (props: AddPeopleProps): Promise<string | undefined> =>
   prompts.dialog<string>(
-    (close) => (
+    (close, context) => (
       // A prompt renders outside the workspace, so its content gets the workspace's locale again.
       <LocaleProvider locale={props.locale}>
-        <AddPeopleDialog {...props} close={close} />
+        <AddPeopleDialog {...props} close={close} setDismissHandler={context.setDismissHandler} />
       </LocaleProvider>
     ),
     {
@@ -61,7 +61,9 @@ export function AddPeopleSummary(props: { preview: Preview; memberCount: number 
  * join, with groups expanded, so the counts and hints match what adding does. An unnamed chat can get a name, or
  * become a new chat without the history: that needs every current entry, so it is offered only when one page holds them.
  */
-export function AddPeopleDialog(props: AddPeopleProps & { close: (chatId?: string) => void }): JSX.Element {
+export function AddPeopleDialog(
+  props: AddPeopleProps & { setDismissHandler: (handler: () => void) => void; close: (chatId?: string) => void },
+): JSX.Element {
   const t = useChatMessages();
   const [chosen, setChosen] = createSignal<ChosenMember[]>([]);
   const [name, setName] = createSignal("");
@@ -69,7 +71,11 @@ export function AddPeopleDialog(props: AddPeopleProps & { close: (chatId?: strin
   const [checking, setChecking] = createSignal(false);
   const [previewError, setPreviewError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
+  props.setDismissHandler(() => {
+    if (!busy()) props.close();
+  });
   const [error, setError] = createSignal("");
+  const [added, setAdded] = createSignal(false);
   const unnamed = () => props.conversation.name === null;
   const principals = () => chosen().map((member) => member.principal);
 
@@ -116,25 +122,28 @@ export function AddPeopleDialog(props: AddPeopleProps & { close: (chatId?: strin
     return members.size <= MEMBER_PAGE_SIZE ? [...members.values()] : null;
   });
 
-  const ready = () => chosen().length > 0 && preview() !== null && !checking() && !previewError() && !busy();
+  const ready = () => !busy() && (added() || (chosen().length > 0 && preview() !== null && !checking() && !previewError()));
   const add = async () => {
     if (!ready()) return;
     setBusy(true);
     setError("");
     try {
-      await props.store.addMembers(props.conversation.id, principals());
-      props.onAdded?.();
+      if (!added()) {
+        await props.store.addMembers(props.conversation.id, principals());
+        setAdded(true);
+        props.onAdded?.();
+      }
       if (unnamed() && name().trim()) await props.store.updateDetails(props.conversation.id, { name: name().trim() });
       props.close();
     } catch (failure) {
-      setError(errorMessage(failure, t().requestFailed));
+      setError(added() ? t().addedNameFailed : errorMessage(failure, t().requestFailed));
     } finally {
       setBusy(false);
     }
   };
   const startFresh = async () => {
     const members = freshMembers();
-    if (!ready() || !members) return;
+    if (added() || !ready() || !members) return;
     setBusy(true);
     setError("");
     try {
@@ -166,7 +175,7 @@ export function AddPeopleDialog(props: AddPeopleProps & { close: (chatId?: strin
           chosen={chosen()}
           excluded={[{ type: "user", userId: props.viewerId }]}
           people={props.store.people}
-          disabled={busy()}
+          disabled={busy() || added()}
           onChange={setChosen}
         />
         <Show when={chosen().length > 0}>
@@ -197,13 +206,13 @@ export function AddPeopleDialog(props: AddPeopleProps & { close: (chatId?: strin
         <Button variant="secondary" disabled={busy()} onClick={() => props.close()}>
           {t().cancel}
         </Button>
-        <Show when={freshMembers()}>
+        <Show when={!added() && freshMembers()}>
           <Button variant="secondary" disabled={!ready()} onClick={() => void startFresh()}>
             {t().startWithoutHistory}
           </Button>
         </Show>
         <Button type="submit" form="chat-add-people" loading={busy()} disabled={!ready()}>
-          {t().add}
+          {added() ? t().saveName : t().add}
         </Button>
       </DialogActions>
     </div>

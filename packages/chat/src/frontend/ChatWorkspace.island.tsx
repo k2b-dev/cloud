@@ -360,6 +360,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
 
   const openInfo = (navigation?: LinkNavigateEvent) => {
+    if (opensInFlight > 0) return;
     const id = route().chatId;
     if (!id || !openChat() || panel() === "info") return;
     const messageId = route().messageId;
@@ -370,6 +371,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     else navigate(panelHref(id, "info", messageId), options);
   };
   const closeInfo = (navigation?: LinkNavigateEvent) => {
+    if (opensInFlight > 0) return;
     const id = route().chatId;
     if (!id || panel() === null) return;
     const state: unknown = history.state;

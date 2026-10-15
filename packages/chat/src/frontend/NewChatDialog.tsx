@@ -14,10 +14,10 @@ type NewChatProps = { store: ChatDialogStore; guest: boolean; viewerId: string; 
 /** Asks for the people and an optional name; resolves with the chat to open, a new one or one that already existed. */
 export const openNewChatDialog = (props: NewChatProps): Promise<string | undefined> =>
   prompts.dialog<string>(
-    (close) => (
+    (close, context) => (
       // A prompt renders outside the workspace, so its content gets the workspace's locale again.
       <LocaleProvider locale={props.locale}>
-        <NewChatDialog {...props} close={close} />
+        <NewChatDialog {...props} close={close} setDismissHandler={context.setDismissHandler} />
       </LocaleProvider>
     ),
     {
@@ -31,13 +31,18 @@ export const openNewChatDialog = (props: NewChatProps): Promise<string | undefin
  * A chat with exactly the same direct people may exist already. Then the same dialog lists those chats, the most
  * recently active first, and opening one is the main action; a second chat with the same people stays possible.
  */
-export function NewChatDialog(props: NewChatProps & { close: (chatId?: string) => void }): JSX.Element {
+export function NewChatDialog(
+  props: NewChatProps & { setDismissHandler: (handler: () => void) => void; close: (chatId?: string) => void },
+): JSX.Element {
   const t = useChatMessages();
   const locale = useLocale();
   const [chosen, setChosen] = createSignal<ChosenMember[]>([]);
   const [name, setName] = createSignal("");
   const [matches, setMatches] = createSignal<readonly Match[] | null>(null);
   const [busy, setBusy] = createSignal(false);
+  props.setDismissHandler(() => {
+    if (!busy()) props.close();
+  });
   const [error, setError] = createSignal("");
   const now = new Date();
 

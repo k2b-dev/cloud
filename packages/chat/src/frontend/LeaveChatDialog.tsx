@@ -13,10 +13,10 @@ type Member = z.infer<typeof MemberSchema>;
 /** Resolves true once the viewer has left; their open view then ends in "No access" through the live revoke. */
 export const openLeaveChatDialog = (props: LeaveProps): Promise<boolean | undefined> =>
   prompts.dialog<boolean>(
-    (close) => (
+    (close, context) => (
       // A prompt renders outside the workspace, so its content gets the workspace's locale again.
       <LocaleProvider locale={props.locale}>
-        <LeaveChatDialog {...props} close={close} />
+        <LeaveChatDialog {...props} close={close} setDismissHandler={context.setDismissHandler} />
       </LocaleProvider>
     ),
     {
@@ -31,12 +31,17 @@ export const openLeaveChatDialog = (props: LeaveProps): Promise<boolean | undefi
  * over first: the member list's manager count says when. A refusal reads the list again, so the dialog follows a
  * change someone else made in the meantime.
  */
-export function LeaveChatDialog(props: LeaveProps & { close: (left?: boolean) => void }): JSX.Element {
+export function LeaveChatDialog(
+  props: LeaveProps & { setDismissHandler: (handler: () => void) => void; close: (left?: boolean) => void },
+): JSX.Element {
   const t = useChatMessages();
   const [successor, setSuccessor] = createSignal<Member | null>(null);
   // The rows of the last search, so a choice keeps the person's avatar.
   let offered = new Map<string, Member>();
   const [busy, setBusy] = createSignal(false);
+  props.setDismissHandler(() => {
+    if (!busy()) props.close();
+  });
   const [error, setError] = createSignal("");
   const manager = () => props.conversation.permission === "admin";
   // Only a manager can be the last one, so only a manager asks.

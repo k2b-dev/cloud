@@ -26,6 +26,8 @@ export const chatMessages = i18n.define({
       archived: "Archived",
       addPeople: "Add people",
       add: "Add",
+      saveName: "Save name",
+      addedNameFailed: "The people were added, but the name could not be saved. Try saving the name again.",
       joining: ({ count }: { count: number }) =>
         count === 1 ? "1 person joins and can read the whole chat history." : `${count} people join and can read the whole chat history.`,
       alreadyMembers: "Everyone you chose is already in this chat.",
@@ -192,6 +194,8 @@ export const chatMessages = i18n.define({
       archived: "Archiviert",
       addPeople: "Personen hinzufügen",
       add: "Hinzufügen",
+      saveName: "Name speichern",
+      addedNameFailed: "Die Personen wurden hinzugefügt, aber der Name konnte nicht gespeichert werden. Versuche es erneut.",
       joining: ({ count }: { count: number }) =>
         count === 1
           ? "1 Person kommt dazu und kann den ganzen bisherigen Verlauf lesen."

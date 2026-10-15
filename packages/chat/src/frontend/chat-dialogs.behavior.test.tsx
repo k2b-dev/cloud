@@ -12,10 +12,20 @@ const load = async () => {
     const { LocaleProvider } = await import("@k2b/ui");
     const { NewChatDialog } = await import("./NewChatDialog");
     const { AddPeopleDialog, AddPeopleSummary } = await import("./AddPeopleDialog");
+    const { ChatDetailsDialog } = await import("./ChatDetailsDialog");
     const { LeaveChatDialog } = await import("./LeaveChatDialog");
     const { default: MemberPicker } = await import("./MemberPicker");
     const { default: ChatInfoPanel } = await import("./ChatInfoPanel");
-    return { LocaleProvider, NewChatDialog, AddPeopleDialog, AddPeopleSummary, LeaveChatDialog, MemberPicker, ChatInfoPanel };
+    return {
+      LocaleProvider,
+      NewChatDialog,
+      AddPeopleDialog,
+      AddPeopleSummary,
+      ChatDetailsDialog,
+      LeaveChatDialog,
+      MemberPicker,
+      ChatInfoPanel,
+    };
   } finally {
     dom.cleanup();
   }
@@ -166,6 +176,107 @@ describe("chat dialogs and info", () => {
 
   for (const locale of ["en", "de"]) {
     const t = chatMessages.resolve([locale]).t;
+    for (const kind of ["new", "add", "details", "leave"] as const) {
+      test(`${kind} dialog ignores dismissal while writing and allows it when idle in ${locale}`, async () => {
+        const pending = Promise.withResolvers<never>();
+        const close = mock<(result?: string | boolean) => void>();
+        // The prompt's default dismiss closes; registration must replace it with the busy guard.
+        let dismiss: () => void = () => close();
+        const setDismissHandler = (handler: () => void) => {
+          dismiss = handler;
+        };
+        const fake = store({
+          create: () => pending.promise,
+          addMembers: () => pending.promise,
+          updateDetails: () => pending.promise,
+          leave: () => pending.promise,
+          previewMembers: async () => ({ joining: 1, memberCount: 3, throughGroups: 0 }),
+        });
+        await mount(locale, () => {
+          const props = { store: fake, conversation, guest: true, viewerId, locale, close, setDismissHandler };
+          if (kind === "new") return createComponent(modules!.NewChatDialog, { ...props, dateConfig: { timeZone: "UTC" } });
+          if (kind === "add") return createComponent(modules!.AddPeopleDialog, props);
+          if (kind === "details") return createComponent(modules!.ChatDetailsDialog, props);
+          return createComponent(modules!.LeaveChatDialog, { ...props, conversation: { ...conversation, permission: "write" } });
+        });
+        dismiss();
+        expect(close.mock.calls).toEqual([[]]);
+        close.mockClear();
+        if (kind === "add") {
+          await chooseNora();
+          await Bun.sleep(270);
+        }
+        if (kind === "details") type(input("input"), "Changed name");
+        if (kind === "leave") button(t.leaveChat).click();
+        else dom.root.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        await settle();
+        try {
+          expect(button(t.cancel).disabled).toBe(true);
+          dismiss();
+          expect(close).not.toHaveBeenCalled();
+        } finally {
+          pending.reject(new Error("Write failed"));
+          await settle();
+        }
+        expect(dom.root.querySelector('[role="alert"]')?.textContent).toContain(t.requestFailed);
+        dismiss();
+        expect(close.mock.calls).toEqual([[]]);
+      });
+    }
+    test(`adding people keeps a failed rename separate and retries only the name in ${locale}`, async () => {
+      const addMembers = mock<ChatDialogStore["addMembers"]>(async () => ({ added: 1 }));
+      const rename = Promise.withResolvers<never>();
+      const updateDetails = mock<ChatDialogStore["updateDetails"]>(async () => {
+        if (updateDetails.mock.calls.length === 1) return rename.promise;
+        return { ...conversation, name: "New name" };
+      });
+      const onAdded = mock<() => void>();
+      const close = mock<(id?: string) => void>();
+      await mount(locale, () =>
+        createComponent(modules!.AddPeopleDialog, {
+          store: store({
+            addMembers,
+            updateDetails,
+            members: async () => ({ items: [], managers: 1, nextCursor: null }),
+            previewMembers: async () => ({ joining: 1, memberCount: 3, throughGroups: 0 }),
+          }),
+          conversation: { ...conversation, name: null },
+          guest: true,
+          viewerId,
+          locale,
+          close,
+          onAdded,
+          setDismissHandler: () => {},
+        }),
+      );
+      await chooseNora();
+      await Bun.sleep(270);
+      type(input('input:not([role="combobox"])'), "New name");
+      expect(button(t.startWithoutHistory).disabled).toBe(false);
+      dom.root.querySelector("form")!.requestSubmit();
+      await settle();
+      try {
+        expect(onAdded).toHaveBeenCalledTimes(1);
+        expect(close).not.toHaveBeenCalled();
+      } finally {
+        rename.reject(new Error("Name unavailable"));
+        await settle();
+      }
+      expect(dom.root.querySelector('[role="alert"]')?.textContent).toBe(t.addedNameFailed);
+      expect(dom.root.textContent).not.toContain(t.startWithoutHistory);
+      expect(input('[role="combobox"]').disabled).toBe(true);
+      expect(button(t.removeName({ name: "Nora" })).disabled).toBe(true);
+      expect(button(t.saveName).disabled).toBe(false);
+      dom.root.querySelector("form")!.requestSubmit();
+      await settle();
+      expect(addMembers.mock.calls).toEqual([[conversation.id, [nora.principal]]]);
+      expect(updateDetails.mock.calls).toEqual([
+        [conversation.id, { name: "New name" }],
+        [conversation.id, { name: "New name" }],
+      ]);
+      expect(onAdded).toHaveBeenCalledTimes(1);
+      expect(close.mock.calls).toEqual([[]]);
+    });
     for (const action of ["open", "create", "back"] as const) {
       test(`new chat duplicate ${action} preserves order, archive state and choice in ${locale}`, async () => {
         const matches = [
@@ -178,6 +289,7 @@ describe("chat dialogs and info", () => {
         const close = mock<(id?: string) => void>();
         await mount(locale, () =>
           createComponent(modules!.NewChatDialog, {
+            setDismissHandler: () => {},
             store: store({ create }),
             guest: true,
             viewerId,
@@ -253,6 +365,7 @@ describe("chat dialogs and info", () => {
       const previewMembers = mock<ChatDialogStore["previewMembers"]>(async () => ({ joining: 1, memberCount: 21, throughGroups: 0 }));
       await mount(locale, () =>
         createComponent(modules!.AddPeopleDialog, {
+          setDismissHandler: () => {},
           store: store({ previewMembers }),
           conversation: { ...conversation, memberCount: 20 },
           guest: true,
@@ -292,6 +405,7 @@ describe("chat dialogs and info", () => {
       const create = mock<ChatDialogStore["create"]>(async () => ({ outcome: "created", conversation }));
       await mount(locale, () =>
         createComponent(modules!.AddPeopleDialog, {
+          setDismissHandler: () => {},
           store: store({
             create,
             members: async () => ({ items: [viewer, existing, former], managers: 1, nextCursor: null }),
@@ -321,6 +435,7 @@ describe("chat dialogs and info", () => {
       const create = mock<ChatDialogStore["create"]>(unexpected);
       await mount(locale, () =>
         createComponent(modules!.AddPeopleDialog, {
+          setDismissHandler: () => {},
           store: store({
             create,
             members: async () => ({ items: [group], managers: 1, nextCursor: null }),
@@ -357,8 +472,17 @@ describe("chat dialogs and info", () => {
         });
         await mount(locale, () =>
           dialog === "add"
-            ? createComponent(modules!.AddPeopleDialog, { store: fake, conversation, guest: true, viewerId, locale, close: () => {} })
+            ? createComponent(modules!.AddPeopleDialog, {
+                setDismissHandler: () => {},
+                store: fake,
+                conversation,
+                guest: true,
+                viewerId,
+                locale,
+                close: () => {},
+              })
             : createComponent(modules!.NewChatDialog, {
+                setDismissHandler: () => {},
                 store: fake,
                 guest: true,
                 viewerId,
@@ -394,6 +518,7 @@ describe("chat dialogs and info", () => {
       });
       await mount(locale, () =>
         createComponent(modules!.LeaveChatDialog, {
+          setDismissHandler: () => {},
           store: store({ members }),
           conversation,
           viewerId,
@@ -428,6 +553,7 @@ describe("chat dialogs and info", () => {
       const leave = mock<ChatDialogStore["leave"]>(unexpected);
       await mount(locale, () =>
         createComponent(modules!.LeaveChatDialog, {
+          setDismissHandler: () => {},
           store: store({ members: async () => ({ items: [viewer, group], managers: 1, nextCursor: null }), leave }),
           conversation,
           viewerId,
@@ -473,6 +599,7 @@ describe("chat dialogs and info", () => {
         const close = mock<(left?: boolean) => void>();
         await mount(locale, () =>
           createComponent(modules!.LeaveChatDialog, {
+            setDismissHandler: () => {},
             store: store({ members, leave }),
             conversation,
             viewerId,
@@ -502,6 +629,7 @@ describe("chat dialogs and info", () => {
       const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false }));
       await mount(locale, () =>
         createComponent(modules!.LeaveChatDialog, {
+          setDismissHandler: () => {},
           store: store({ members, leave }),
           conversation: { ...conversation, permission: "write" },
           viewerId,
