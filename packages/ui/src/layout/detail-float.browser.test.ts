@@ -667,6 +667,10 @@ describe("floating workspace detail", () => {
         expect(await region.getAttribute("inert")).toBe("");
       }
       const detail = page.locator(".k2b-app-workspace__detail");
+      // The page opens with focus on its title, which is no tab stop; Shift+Tab as the first key stays inside too.
+      await page.waitForFunction(() => document.activeElement?.textContent === "Selected record");
+      await page.keyboard.press("Shift+Tab");
+      expect(await detail.evaluate((aside) => aside.contains(document.activeElement))).toBe(true);
       await detail.evaluate((aside) => {
         const stops = Array.from(
           aside.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), input:not([disabled]), [tabindex]"),

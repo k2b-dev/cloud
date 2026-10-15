@@ -426,10 +426,14 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       event.preventDefault();
       return;
     }
-    if (event.shiftKey && (document.activeElement === first || document.activeElement === panel)) {
+    // Focus can also rest on an element that is no tab stop, such as a title focused as the panel opened.
+    const active = document.activeElement;
+    const before = (element: Element | null, other: Element | null) =>
+      Boolean(element && other && element.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING);
+    if (event.shiftKey && !stops.some((stop) => before(stop, active))) {
       event.preventDefault();
       last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
+    } else if (!event.shiftKey && !stops.some((stop) => before(active, stop))) {
       event.preventDefault();
       first.focus();
     }
