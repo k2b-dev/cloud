@@ -834,16 +834,18 @@ describe("AI capability catalog", () => {
       singleReferenced: [{ a: "A" }],
       withDefault: { note: "kept" },
     });
-    expect(reduced).toHaveProperty("properties.referencedTuple.items.anyOf", [
-      { type: "object", properties: { a: string }, additionalProperties: false },
-      { type: "object", properties: { b: string }, additionalProperties: false },
-    ]);
+    expect(reduced).toHaveProperty("properties.referencedTuple.items.anyOf", [{ $ref: "#/$defs/A.ai" }, { $ref: "#/$defs/B.ai" }]);
     expect(reduced).toHaveProperty("$defs.A", A);
+    expect(reduced).toHaveProperty("$defs.B", B);
+    expect(reduced).toHaveProperty("$defs.Node", Node);
+    expect(reduced).toHaveProperty(["$defs", "A.ai"], { ...A, properties: { a: string } });
+    expect(reduced).toHaveProperty(["$defs", "B.ai"], { ...B, properties: { b: string } });
     expect(reduced).toHaveProperty("properties.directA", { $ref: "#/$defs/A" });
     expect(reduced).toHaveProperty("properties.singleReferenced.items", { $ref: "#/$defs/A" });
-    expect(reduced).toHaveProperty("properties.recursiveTuple.items.anyOf.0", {
+    expect(reduced).toHaveProperty("properties.recursiveTuple.items.anyOf.0", { $ref: "#/$defs/Node.ai" });
+    expect(reduced).toHaveProperty(["$defs", "Node.ai"], {
       ...Node,
-      properties: { ...Node.properties, label: string },
+      properties: { children: { type: "array", items: { $ref: "#/$defs/Node.ai" } }, label: string },
     });
     expect(schema.parse({ operations: [operation], defaultedTuple: [{}, {}] })).toHaveProperty("defaultedTuple", [{}, {}]);
     expect(reduced).toHaveProperty("properties.defaultedTuple.items.anyOf", [
@@ -877,36 +879,82 @@ describe("AI capability catalog", () => {
     expect(serialized).not.toContain('"items":true');
   });
 
-  test.each(["$defs", "definitions"])("inlines transitive escaped %s references only in merged tuple branches", (keyword) => {
-    const reference = `#/${keyword}/A~1~01`;
+  test("keeps recursive defaults out of merged tuple branches", () => {
+    const recursiveDefinition = (name: string) => ({
+      type: "object",
+      properties: { child: { $ref: `#/$defs/${name}` }, label: { type: "string", default: name } },
+    });
     const source = {
       type: "array",
-      prefixItems: [{ $ref: `#/${keyword}/Alias` }, { type: "number" }],
+      prefixItems: [{ $ref: "#/$defs/A" }, { $ref: "#/$defs/B" }],
       items: false,
-      [keyword]: {
-        Alias: { $ref: reference },
-        "A/~1": {
-          type: "object",
-          properties: {
-            label: { type: "string", default: "x" },
-            child: { $ref: `#/${keyword}/Alias` },
-            unknown: { $ref: `#/${keyword}/Missing` },
-            external: { $ref: "https://example.test/schema" },
-          },
+      $defs: { A: recursiveDefinition("A"), B: recursiveDefinition("B") },
+    };
+    const input = [{ child: {} }, { child: {} }];
+    const reduced = reduceAiCapabilityInputSchema(source);
+    expect(aiCapabilityInputSchema(source).parse(input)).toEqual(input);
+    expect(reduced).toHaveProperty("items.anyOf", [{ $ref: "#/$defs/A.ai" }, { $ref: "#/$defs/B.ai" }]);
+    for (const name of ["A", "B"] as const) {
+      expect(reduced).toHaveProperty(["$defs", name], source.$defs[name]);
+      expect(reduced).toHaveProperty(["$defs", `${name}.ai`], {
+        type: "object",
+        properties: { child: { $ref: `#/$defs/${name}.ai` }, label: { type: "string" } },
+      });
+    }
+    expect(reduceAiCapabilityInputSchema(source)).toEqual(reduced);
+    const schema = z.fromJSONSchema(reduced);
+    expect(schema.parse(input)).toEqual(input);
+    expect(z.fromJSONSchema(z.toJSONSchema(schema)).parse(input)).toEqual(input);
+    const tool = defineTool({ name: "recursive_tuple", description: "Parse recursive items.", inputSchema: schema }).server(
+      async () => ({}),
+    );
+    const serialized = JSON.stringify(toolToSpec(tool).inputSchema);
+    expect(serialized).not.toContain("prefixItems");
+    expect(serialized).not.toContain("additionalItems");
+    expect(serialized).not.toContain('"items":[');
+    expect(serialized).not.toContain("oneOf");
+  });
+
+  test.each(["$defs", "definitions"])("mirrors transitive escaped %s references only in merged tuple branches", (keyword) => {
+    const reference = `#/${keyword}/A~1~01`;
+    const definitions = {
+      Alias: { $ref: reference, description: "Alias definition." },
+      "Alias.ai": { type: "boolean" },
+      "Alias.ai1": { type: "null" },
+      "A/~1.ai": { type: "number" },
+      "A/~1": {
+        type: "object",
+        properties: {
+          label: { type: "string", default: "x" },
+          child: { $ref: `#/${keyword}/Alias` },
+          unknown: { $ref: `#/${keyword}/Missing` },
+          external: { $ref: "https://example.test/schema" },
+          otherLocal: { $ref: "#/properties/label" },
         },
       },
     };
+    const source = {
+      type: "array",
+      prefixItems: [{ $ref: `#/${keyword}/Alias`, description: "Alias item." }, { type: "number" }],
+      items: false,
+      [keyword]: definitions,
+    };
     const reduced = reduceAiCapabilityInputSchema(source);
-    expect(reduced).toHaveProperty("items.anyOf.0", {
-      type: "object",
-      properties: {
-        label: { type: "string" },
-        child: { $ref: `#/${keyword}/Alias` },
-        unknown: { $ref: `#/${keyword}/Missing` },
-        external: { $ref: "https://example.test/schema" },
+    expect(reduced).toHaveProperty("items.anyOf.0", { $ref: `#/${keyword}/Alias.ai2`, description: "Alias item." });
+    expect(reduced[keyword]).toEqual({
+      ...definitions,
+      "Alias.ai2": { $ref: `#/${keyword}/A~1~01.ai1`, description: "Alias definition." },
+      "A/~1.ai1": {
+        type: "object",
+        properties: {
+          label: { type: "string" },
+          child: { $ref: `#/${keyword}/Alias.ai2` },
+          unknown: { $ref: `#/${keyword}/Missing` },
+          external: { $ref: "https://example.test/schema" },
+          otherLocal: { $ref: "#/properties/label" },
+        },
       },
     });
-    expect(reduced[keyword]).toEqual(source[keyword]);
   });
 
   test("loads exact live names and exposes loaded app operations as ordinary tools", async () => {

@@ -436,21 +436,27 @@ const SCHEMA_KEYS = new Set([
   "definitions",
 ]);
 
-const reduceSchemaValue = (value: unknown, root: Record<string, unknown>, key?: string, inlining?: ReadonlySet<string>): unknown => {
+type SchemaReductionContext = {
+  root: Record<string, unknown>;
+  mirrorNames: Map<string, string>;
+  mirrors: Record<string, Record<string, unknown>>;
+};
+
+const reduceSchemaValue = (value: unknown, context: SchemaReductionContext, key?: string, merged = false): unknown => {
   if (key === "const" || key === "default") return structuredClone(value);
   if (Array.isArray(value)) {
     if (key === "required" || key === "enum" || key === "type") return structuredClone(value);
-    return value.map((item) => reduceSchemaValue(item, root, undefined, inlining));
+    return value.map((item) => reduceSchemaValue(item, context, undefined, merged));
   }
   if (!value || typeof value !== "object") return value;
   if (key === "properties" || key === "$defs" || key === "definitions") {
-    return Object.fromEntries(Object.entries(value).map(([name, schema]) => [name, reduceSchemaValue(schema, root, undefined, inlining)]));
+    return Object.fromEntries(Object.entries(value).map(([name, schema]) => [name, reduceSchemaValue(schema, context, undefined, merged)]));
   }
 
   const output: Record<string, unknown> = {};
   for (const [childKey, childValue] of Object.entries(value)) {
-    if (!SCHEMA_KEYS.has(childKey) || (inlining && childKey === "default")) continue;
-    output[childKey] = reduceSchemaValue(childValue, root, childKey, inlining);
+    if (!SCHEMA_KEYS.has(childKey) || (merged && childKey === "default")) continue;
+    output[childKey] = reduceSchemaValue(childValue, context, childKey, merged);
   }
   if (output.oneOf !== undefined) {
     if (output.anyOf === undefined) output.anyOf = output.oneOf;
@@ -468,7 +474,7 @@ const reduceSchemaValue = (value: unknown, root: Record<string, unknown>, key?: 
     const schemas = rest === undefined || rest === true ? [] : rest === false ? positions : [...positions, rest];
     // Position-erased branches must leave defaults to the app's authoritative tuple schema.
     const mergedSchemas = schemas.some((schema) => JSON.stringify(schema) !== JSON.stringify(schemas[0]))
-      ? schemas.map((schema) => reduceSchemaValue(schema, root, undefined, inlining ?? new Set()))
+      ? schemas.map((schema) => reduceSchemaValue(schema, context, undefined, true))
       : schemas;
     const distinct = mergedSchemas.filter(
       (schema, index) => mergedSchemas.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(schema)) === index,
@@ -482,19 +488,27 @@ const reduceSchemaValue = (value: unknown, root: Record<string, unknown>, key?: 
   if (output.items === false) output.maxItems = 0;
   // Zod drops array bounds without an item schema, so "any item" stays an empty schema.
   if (typeof output.items === "boolean") output.items = {};
-  // Inline only merged branches; a cycle keeps its ref and other consumers keep definition defaults.
-  if (inlining && typeof output.$ref === "string") {
+  if (merged && typeof output.$ref === "string") {
     const match = /^#\/(\$defs|definitions)\/([^/]+)$/.exec(output.$ref);
     if (match) {
       const [, keyword, encodedName] = match;
       const name = encodedName!.replace(/~1/g, "/").replace(/~0/g, "~");
-      const definitions = root[keyword!];
+      const definitions = context.root[keyword!];
       const identity = `${keyword}/${name}`;
-      if (definitions && typeof definitions === "object" && Object.hasOwn(definitions, name) && !inlining.has(identity)) {
-        const definition = Reflect.get(definitions, name);
-        const inlined = reduceSchemaValue(definition, root, undefined, new Set([...inlining, identity]));
-        delete output.$ref;
-        return Object.keys(output).length === 0 ? inlined : { allOf: [inlined, output] };
+      if (definitions && typeof definitions === "object" && Object.hasOwn(definitions, name)) {
+        const mirrors = (context.mirrors[keyword!] ??= {});
+        let mirrorName = context.mirrorNames.get(identity);
+        if (mirrorName === undefined) {
+          mirrorName = `${name}.ai`;
+          for (let suffix = 1; Object.hasOwn(definitions, mirrorName) || Object.hasOwn(mirrors, mirrorName); suffix++) {
+            mirrorName = `${name}.ai${suffix}`;
+          }
+          // Reserve the mirror before descending so recursive refs never reach default-bearing originals.
+          context.mirrorNames.set(identity, mirrorName);
+          mirrors[mirrorName] = {};
+          mirrors[mirrorName] = reduceSchemaValue(Reflect.get(definitions, name), context, undefined, true);
+        }
+        output.$ref = `#/${keyword}/${mirrorName.replace(/~/g, "~0").replace(/\//g, "~1")}`;
       }
     }
   }
@@ -506,8 +520,15 @@ const reduceSchemaValue = (value: unknown, root: Record<string, unknown>, key?: 
  * Tuples reach the model as bounded arrays of their item schemas and `oneOf` as `anyOf`, because loosened branches may
  * overlap; the app still validates exact tuple positions and exclusive unions.
  */
-export const reduceAiCapabilityInputSchema = (schema: Record<string, unknown>): Record<string, unknown> =>
-  reduceSchemaValue(schema, schema) as Record<string, unknown>;
+export const reduceAiCapabilityInputSchema = (schema: Record<string, unknown>): Record<string, unknown> => {
+  const context: SchemaReductionContext = { root: schema, mirrorNames: new Map(), mirrors: {} };
+  const reduced = reduceSchemaValue(schema, context) as Record<string, unknown>;
+  for (const [keyword, mirrors] of Object.entries(context.mirrors)) {
+    const definitions = reduced[keyword];
+    reduced[keyword] = { ...(definitions && typeof definitions === "object" ? definitions : {}), ...mirrors };
+  }
+  return reduced;
+};
 
 export const aiCapabilityInputSchema = (schema: Record<string, unknown>): z.ZodType =>
   z.fromJSONSchema(reduceAiCapabilityInputSchema(schema));
