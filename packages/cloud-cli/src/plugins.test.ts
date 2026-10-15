@@ -450,7 +450,7 @@ describe("cld package plugins", () => {
     const configB = join(dir, "b", "config.json");
     expect((await runCli(["plugins", "install", echoBuild, "--yes"], dir, configA)).exitCode).toBe(0);
     const pkg = await packInlinePlugin(join(dir, "other"), moduleSource("other"));
-    const packagesLock = join(root, "locks", "packages.lock");
+    const packagesLock = join(root, ".locks", "packages.lock");
     await mkdir(packagesLock);
     await writeFile(join(packagesLock, "owner.json"), JSON.stringify({ pid: process.pid, createdAt: 0 }));
     const pending = [runCli(["plugins", "remove", "echo"], dir, configA), runCli(["plugins", "install", pkg, "--yes"], dir, configB)];
@@ -473,7 +473,7 @@ describe("cld package plugins", () => {
     expect(Object.keys(records)).toEqual(["other"]);
     expect(await hasStoredPlugin(records.other!.digest, root)).toBe(true);
     expect(await readdir(join(root, "store"))).toEqual([records.other!.digest]);
-    expect(await readdir(join(root, "locks"))).toEqual([]);
+    expect(await readdir(join(root, ".locks"))).toEqual([]);
   }, 30_000);
 
   test("store garbage collection waits for the shared packages lock", async () => {
@@ -483,7 +483,7 @@ describe("cld package plugins", () => {
     await writeFile(config, JSON.stringify({ currentProfile: "a", profiles: { a: {}, b: {} } }));
     const unused = join(root, "store", "c".repeat(128));
     await mkdir(unused, { recursive: true });
-    const packagesLock = join(root, "locks", "packages.lock");
+    const packagesLock = join(root, ".locks", "packages.lock");
     await mkdir(packagesLock, { recursive: true });
     await writeFile(join(packagesLock, "owner.json"), JSON.stringify({ pid: process.pid, createdAt: 0 }));
     const pending = runCli(["profile", "rm", "b", "--yes"], dir);
@@ -562,9 +562,12 @@ describe("cld package plugins", () => {
     );
     await writeFile(join(legacy, "cli.js"), 'throw new Error("legacy code must not run");');
     await mkdir(join(root, "store"));
-    await mkdir(join(root, "locks"));
+    await mkdir(join(root, ".locks"));
     await mkdir(join(root, ".ignored"));
-    expect((await legacyPlugins(root)).map((p) => p.id)).toEqual(["old"]);
+    // `locks` was a valid plugin ID in the old format and must stay visible and removable.
+    await mkdir(join(root, "locks"));
+    expect((await legacyPlugins(root)).map((p) => p.id)).toEqual(["locks", "old"]);
+    expect((await runCli(["plugins", "remove", "locks"], dir)).exitCode).toBe(0);
     const list = await runCli(["plugins", "list", "--json"], dir);
     expect(JSON.parse(list.stdout).plugins).toHaveLength(1);
     expect(JSON.parse(list.stdout).plugins[0]).toMatchObject({
@@ -580,8 +583,8 @@ describe("cld package plugins", () => {
     expect((await runCli(["old"], dir)).stderr).toContain('Unknown command "old"');
     expect((await runCli(["plugins", "remove", "old"], dir)).exitCode).toBe(0);
     expect(await removePlugin("store", root)).toBe(false);
-    expect(await removePlugin("locks", root)).toBe(false);
-    expect((await stat(join(root, "locks"))).isDirectory()).toBe(true);
+    expect(await removePlugin(".locks", root)).toBe(false);
+    expect((await stat(join(root, ".locks"))).isDirectory()).toBe(true);
     expect(await removePlugin("../old", root)).toBe(false);
   });
 

@@ -43,6 +43,7 @@ import {
   legacyPlugins,
   type PackagePlugins,
   PluginError,
+  packagesLockPath,
   type PluginInfo,
   pluginsDirectory,
   readPackagePluginFile,
@@ -580,8 +581,6 @@ const withDirectoryLock = async <T>(lockPath: string, run: () => Promise<T>): Pr
 };
 
 const withConfigLock = <T>(run: () => Promise<T>): Promise<T> => withDirectoryLock(configLockPath(), run);
-/** Global package records live beside the plugins, not beside `CLD_CONFIG`; take it inside the config lock. */
-const packagesLockPath = (): string => join(pluginsDirectory(), "locks", "packages.lock");
 
 const revokeOAuthRefreshToken = async (server: string, refreshToken: string): Promise<void> => {
   const response = await fetchOAuth(joinUrl(server, "/oauth/revoke"), {
