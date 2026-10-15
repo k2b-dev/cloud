@@ -7,10 +7,10 @@ import type { Finding, Rule } from "./rule";
 /** The one module that resolves host names for outbound requests and checks every answer. */
 const owner = "packages/cloud/src/services/network-security.ts";
 
-// Any route to the system resolver: static, dynamic, or required imports of node:dns, and Bun.dns.
+// Any route to the system resolver: static, dynamic, or required imports of node:dns, and Bun's dns.
 // Named imports of record lookups that return no addresses to connect to (SRV, MX, TXT) stay allowed.
 const dnsAccess =
-  /\bimport\s+([^;]*?)\s*from\s*["'](?:node:)?dns(?:\/promises)?["']|\b(?:require|import)\s*\(\s*["'](?:node:)?dns(?:\/promises)?["']\s*\)|\bBun\.dns\b/g;
+  /\bimport\s+([^;]*?)\s*from\s*["'](?:node:)?dns(?:\/promises)?["']|\b(?:require|import)\s*\(\s*["'](?:node:)?dns(?:\/promises)?["']\s*\)|\bBun\.dns\b|\bimport\s*\{[^}]*\bdns\b[^}]*\}\s*from\s*["']bun["']/g;
 const recordLookups = new Set(["resolveSrv", "resolveMx", "resolveTxt"]);
 
 const allowedDnsImport = (clause: string | undefined): boolean => {
@@ -25,8 +25,15 @@ const allowedDnsImport = (clause: string | undefined): boolean => {
 };
 
 const httpImport = /from\s*["'](?:node:)?https?["']/;
-const pinnedLookup = /\blookup:\s*pinnedNetworkLookup\(/g;
-const directAgent = /\bagent:\s*false\b/g;
+const pinnedCall = /\bpinnedNetworkLookup\(/g;
+const pinnedAlias = /\bpinnedNetworkLookup\s+as\b/g;
+const directAgent = /\bagent:\s*false\b/;
+const guardImport = /from\s*["']@k2b\/cloud\/services\/network-security["']|from\s*["'][./]+network-security["']/;
+const globalFetch = /(?<![.\w])fetch\s*\(/g;
+// Options of one request object stay within a few lines of each other.
+const SAME_REQUEST_LINES = 6;
+
+const lineOf = (source: string, index = 0) => source.slice(0, index).split("\n").length;
 
 /**
  * Person-chosen outbound requests resolve through `resolvePublicNetworkAddresses`
@@ -47,18 +54,36 @@ export const rule: Rule = {
         if (allowedDnsImport(match[1])) continue;
         findings.push({
           file,
-          line: source.slice(0, match.index).split("\n").length,
+          line: lineOf(source, match.index),
           message: "resolve outbound hosts with resolvePublicNetworkAddresses from @k2b/cloud/services/network-security",
         });
       }
+      for (const match of source.matchAll(pinnedAlias)) {
+        findings.push({ file, line: lineOf(source, match.index), message: "import pinnedNetworkLookup under its own name" });
+      }
       // node:http and node:https may send a request through an environment proxy, which resolves the name again.
-      const pinned = [...source.matchAll(pinnedLookup)];
-      if (httpImport.test(source) && pinned.length > [...source.matchAll(directAgent)].length) {
-        findings.push({
-          file,
-          line: source.slice(0, pinned[0]?.index).split("\n").length,
-          message: "pass agent: false next to lookup: pinnedNetworkLookup(...) so no proxy resolves the host again",
-        });
+      if (httpImport.test(source)) {
+        const lines = source.split("\n");
+        for (const match of source.matchAll(pinnedCall)) {
+          const line = lineOf(source, match.index);
+          const near = lines.slice(Math.max(0, line - 1 - SAME_REQUEST_LINES), line + SAME_REQUEST_LINES).join("\n");
+          if (directAgent.test(near)) continue;
+          findings.push({
+            file,
+            line,
+            message: "pass agent: false in the same request as pinnedNetworkLookup(...) so no proxy resolves the host again",
+          });
+        }
+      }
+      // fetch() resolves the name again after the check, so a checked host must not reach it.
+      if (guardImport.test(source)) {
+        for (const match of source.matchAll(globalFetch)) {
+          findings.push({
+            file,
+            line: lineOf(source, match.index),
+            message: "connect to checked addresses with requestPublicHttps or pinnedNetworkLookup; fetch() resolves the host again",
+          });
+        }
       }
     }
     return findings;
