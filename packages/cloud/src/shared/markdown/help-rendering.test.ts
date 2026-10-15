@@ -192,6 +192,7 @@ for (const [name, source] of [
   ["indented backticks inside a fence", ":::details Example\n```md\n    ```\n:::\n```\nAfter.\n:::"],
   ["an unclosed quote fence", ":::details Title\n> ```\n> code\n\nAfter.\n:::"],
   ["an unclosed list fence", ":::details Title\n- ```\n  code\n\nAfter.\n:::"],
+  ["a tab-indented list fence", ":::details Title\n1. ~~~\n\tcode\n\t~~~\n\nAfter.\n:::"],
 ] as const) {
   test(`details keep ${name} and following prose in their body`, () => {
     const html = renderHelpMarkdown(source);

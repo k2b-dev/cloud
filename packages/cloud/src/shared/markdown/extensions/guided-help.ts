@@ -29,6 +29,15 @@ const DETAILS_OPENER = /^ {0,3}:::details\b/i;
 
 const detailsLexers = new WeakSet<Lexer>();
 
+/** The indentation column of a line prefix; a tab advances to the next multiple of four, as in Markdown. */
+const columns = (prefix: string): number => {
+  let column = 0;
+  for (const char of prefix) column = char === "\t" ? column + 4 - (column % 4) : column + 1;
+  return column;
+};
+/** The indentation after a prefix's last quote marker. */
+const indentAfterQuotes = (prefix: string): number => columns(prefix.slice(prefix.lastIndexOf(">") + 1));
+
 /**
  * A `:::details Title` block up to its own closing `:::`. One directive inside it (steps, reference, compare, a
  * callout, which stays text there) keeps its own closer; directives do not nest further, and fenced code hides
@@ -53,7 +62,7 @@ const detailsBlock = (
     const marker = FENCE.exec(text);
     const prefix = /^[ \t]*(?:>[ \t]*|(?:[-+*]|\d+[.)])[ \t]+)*/.exec(text)![0];
     const quotes = prefix.split(">").length - 1;
-    if (fence && (quotes < fence.quotes || (fence.list && text.trim() && /^[ \t>]*/.exec(text)![0].length < fence.prefix.length)))
+    if (fence && (quotes < fence.quotes || (fence.list && text.trim() && columns(/^[ \t>]*/.exec(text)![0]) < columns(fence.prefix))))
       fence = undefined;
     if (fence) {
       if (
@@ -62,7 +71,7 @@ const detailsBlock = (
         marker[2]!.length >= fence.marker.length &&
         /^[ \t]*$/.test(marker[3]!) &&
         quotes === fence.quotes &&
-        marker[1]!.length - marker[1]!.lastIndexOf(">") <= fence.prefix.length - fence.prefix.lastIndexOf(">") + 3
+        indentAfterQuotes(marker[1]!) <= indentAfterQuotes(fence.prefix) + 3
       )
         fence = undefined;
     } else if (marker && !(marker[2]![0] === "`" && marker[3]!.includes("`")))

@@ -160,6 +160,7 @@ describe("Help author contract", () => {
     ["indented backticks inside a fence", ":::details Example\n```md\n    ```\n:::\n```\nAfter.\n:::"],
     ["an unclosed quote fence", ":::details Title\n> ```\n> code\n\nAfter.\n:::"],
     ["an unclosed list fence", ":::details Title\n- ```\n  code\n\nAfter.\n:::"],
+    ["a tab-indented list fence", ":::details Q\n1. ~~~\n\tcode\n\t~~~\n\nAfter\n:::"],
   ] as const) {
     test(`accepts details with ${name}`, () => {
       expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).not.toThrow();
@@ -197,6 +198,9 @@ describe("Help author contract", () => {
       "<div>https://example.com/help:overview</div>",
       ":::note For help:contact support\nBody\n:::",
       ":::note https://example.com/help:overview\nBody\n:::",
+      "<div>mode=help:desk</div>",
+      ":::note mode=help:desk\nBody\n:::",
+      ":::reference-data\nText",
       `<div>${"a".repeat(20_000)}</div>`,
     ]) {
       expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).not.toThrow();

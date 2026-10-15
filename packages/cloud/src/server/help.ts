@@ -17,8 +17,8 @@ import {
 import { lexHelpMarkdown, markdownToPlainText, renderHelpMarkdown, walkHelpTokens } from "../shared/markdown";
 import { auth } from "./middleware/auth";
 
-// A help: target in a Markdown link or definition, an autolink, or an HTML attribute value.
-const RAW_HELP_TARGET = /(?:\]\(|\]:|<|=)\s*(?:[<"']\s*)?help:/i;
+// A help: target in a Markdown link or definition, an autolink, or an attribute value inside an HTML tag.
+const RAW_HELP_TARGET = /(?:(?:\]\(|\]:)\s*<?|<|<[^>]*\s[\w:-]+\s*=\s*["']?)\s*help:/i;
 
 const metadataSchema = z.object({
   id: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
@@ -189,7 +189,7 @@ export const defineHelp = (
           walkHelpTokens(token.tokens, (child) => {
             if (child.type === "codespan") prose = prose.replaceAll(child.raw, child.raw.replace(/[^\r\n]/g, "x"));
           });
-          const block = /^ {0,3}:::(details|steps|reference|compare)\b/m.exec(prose);
+          const block = /^ {0,3}:::(details|steps|reference|compare)(?=[ \t\r]|$)/m.exec(prose);
           if (block) {
             const missing =
               block[1] === "details" ? "a blank line before it, a title, or a closing :::" : "a blank line before it or a closing :::";

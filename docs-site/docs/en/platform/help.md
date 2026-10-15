@@ -170,9 +170,9 @@ Help supports these guided blocks:
 | `compare` | Alternatives or differences |
 | `details Question` | Collapsed reasons or special cases; a title is required |
 
-Start a `:::` block after a blank line, at the start of the document, or after
-another block. An opener directly after a text line fails startup. The block
-contains normal Markdown:
+Start a guided block after a blank line, at the start of the document, or
+after another block. An opener directly after a text line fails startup. The
+block contains normal Markdown:
 
 ```md
 :::steps
