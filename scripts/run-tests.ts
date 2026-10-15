@@ -37,7 +37,7 @@
  */
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { applyTestRuntimeEnv, dotenvLeak, noEnvFile, readTestTarget } from "./fixtures/test-infra-env";
+import { applyTestRuntimeEnv, dotenvLeak, hasIntegrationTarget, noEnvFile, readTestTarget } from "./fixtures/test-infra-env";
 import { sweepStaleTestNamespaces } from "./fixtures/test-sync";
 import { runUnderHeavyLock } from "./heavy-lock";
 
@@ -91,9 +91,6 @@ export const listBrowserFiles = async (cwd: string): Promise<string[]> =>
     const source = readFileSync(join(cwd, path), "utf8");
     return browserImport.test(source) && !integrationImport.test(source);
   });
-
-export const hasIntegrationTarget = (env: Record<string, string | undefined> = process.env): boolean =>
-  Object.entries(env).some(([key, value]) => key.startsWith("CLOUD_TEST_") && Boolean(value?.trim()));
 
 export const discoverTestSuites = async (workspaceRoot: string, options: Options = { integration: false }): Promise<TestSuite[]> => {
   const preload = ["--preload", join(workspaceRoot, "scripts", "fixtures", "test-infra.ts")];

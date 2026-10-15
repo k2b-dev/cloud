@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { cpus, totalmem } from "node:os";
 import { join } from "node:path";
+import { heavySlots } from "../heavy-lock";
 import { workspacePackages } from "../workspace";
 import { capture, type Finding, type Rule } from "./rule";
 
@@ -33,9 +34,9 @@ export const rule: Rule = {
     for (const entry of workspaces.filter((entry) => entry.builds)) await check(entry);
 
     const queue = workspaces.filter((entry) => !entry.builds);
-    // One type checker takes up to about 2 GiB; budget 8 GiB of the machine's
-    // memory per parallel workspace so a full check never fills it.
-    const parallel = Math.max(1, Math.min(cpus().length, queue.length, Math.floor(totalmem() / 2 ** 33)));
+    // One type checker takes up to about 2 GiB; budget 8 GiB per parallel workspace
+    // from this run's share of memory, since CLOUD_HEAVY_SLOTS heavy runs may run at once.
+    const parallel = Math.max(1, Math.min(cpus().length, queue.length, Math.floor(totalmem() / heavySlots() / 2 ** 33)));
     const workers = Array.from({ length: parallel }, async () => {
       for (let next = queue.shift(); next; next = queue.shift()) await check(next);
     });

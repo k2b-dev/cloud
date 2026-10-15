@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-11
+updated: 2026-10-15
 ---
 
 # Testing
@@ -32,12 +32,13 @@ lists in its scripts README, currently three manual Grids tools. The root
 `scripts/` directory is not typechecked. `bun run test` runs every workspace in
 its own process and reports the integration files it skipped.
 
-Both commands are heavy: one machine runs only one of them at a time. A second
-`bun run check` or `bun run test`, for example in another worktree, waits for
-the first and says so. Package typechecks use two checker threads each, and the
-typecheck rule runs as many of them in parallel as the machine's memory allows
-(about 8 GiB per package). CI runs without the lock. Before a pull request,
-the focused checks in [What CI runs](#what-ci-runs) are usually enough.
+Both commands are heavy: each takes one of the machine's heavy-run slots,
+waits when all are taken, and says so. By default there is one slot, so only
+one heavy run proceeds at a time. CI runs without slots. Package typechecks
+use two checker threads each, and the typecheck rule runs as many packages in
+parallel as the run's share of memory allows (about 8 GiB per parallel type
+checker). Before a pull request, the focused checks in
+[What CI runs](#what-ci-runs) are usually enough.
 
 The localization check also rejects hard-coded prose in frontends whose text
 comes only from message catalogs, currently Mail: JSX text and expressions,
@@ -51,6 +52,40 @@ built-in application passes to `app.start()` and requires a German title and
 description for every Type, Query, Action, Command, and Universal Search tag.
 The Assistant, approvals, search, and the capability catalog show these
 texts to German readers.
+
+### Heavy runs
+
+Set `CLOUD_HEAVY_SLOTS=<n>` in your shell profile to allow n heavy runs at
+once. Use about one slot per 16 GiB of memory and per 6 CPU cores, whichever
+gives fewer: 1 on a 16 GiB laptop, 2 at 32 GiB and 12 cores, or 4 at 64 GiB and
+24 cores. The typecheck rule divides the machine's memory by the slot count,
+still budgeting about 8 GiB per parallel type checker. More slots mean fewer
+type checkers per run.
+
+Run other heavy commands through
+`bun --no-env-file scripts/heavy.ts <command>`: browser test files,
+`docker build`, performance scripts, or integration files run by hand. The
+flag keeps the checkout's `.env` away from the command, and the helper
+refuses to start without it. The helper takes a slot the same way and marks
+the command with `CLOUD_HEAVY_LOCK=held`, so a nested `bun run check` or
+`bun run test` does not wait again:
+
+```bash
+bun --no-env-file scripts/heavy.ts docker build -f packages/mail/Dockerfile .
+bun --no-env-file scripts/heavy.ts bun test <file>.browser.test.ts
+```
+
+The older form
+`flock /tmp/cloud-heavy-run.lock env CLOUD_HEAVY_LOCK=held <command>` still
+works and occupies the first slot on hosts whose temp directory is `/tmp`,
+so it also waits for integration runs.
+
+A run whose environment sets a `CLOUD_TEST_*` target always takes the first
+slot. Integration runs stay one at a time on the machine even with several
+slots, because checkouts share the Valkey and Filegate test targets. Other
+runs take the first slot only when every other slot is busy. When all slots
+are busy, a run waits for one slot picked by its process ID, so it can keep
+waiting while another slot frees up first.
 
 ## Write behavior tests
 
