@@ -115,6 +115,11 @@ describe("Help author contract", () => {
       "![x](help:hidden/private)",
       '<a href="help:hidden/private">x</a>',
       '<div data-target="help:hidden/private">x</div>',
+      '<div data-target="  HELP:hidden/private">x</div>',
+      "<div>\n[private]( <help:hidden/private>)\n</div>",
+      "<div>\n[r]: <HELP:hidden/private>\n</div>",
+      ":::note [private]( <help:hidden/private>)\nBody\n:::",
+      ":::note <HELP:hidden/private>\nBody\n:::",
       "Read <a href='help:hidden/private'>x</a>.",
       "<a href=help:hidden/private>x</a>",
       "<div>\n[private](help:hidden/private)\n</div>",
@@ -157,6 +162,32 @@ describe("Help author contract", () => {
       ":::details Example\n> ```md\n> :::details Literal\n> ```\nAfter.\n:::",
     ]) {
       expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).not.toThrow();
+    }
+  });
+  test("accepts help: prose and HTTPS paths in HTML and callout titles", () => {
+    for (const body of [
+      '<a href="https://example.com/help:overview">Support</a>',
+      "<div>For help:contact support</div>",
+      "<div>https://example.com/help:overview</div>",
+      ":::note For help:contact support\nBody\n:::",
+      ":::note https://example.com/help:overview\nBody\n:::",
+      `<div>${"a".repeat(20_000)}</div>`,
+    ]) {
+      expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).not.toThrow();
+    }
+  });
+  test("rejects non-lowercase Help schemes in links, images and definitions", () => {
+    for (const scheme of ["HELP:", "Help:", "hElP:"]) {
+      for (const body of [
+        `[Private](${scheme}hidden/private)`,
+        `![Private](${scheme}hidden/private)`,
+        `[Private][r]\n\n[r]: ${scheme}hidden/private`,
+        `[r]: ${scheme}hidden/private`,
+      ]) {
+        expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).toThrow(
+          'Help document "start" has a help: link that agents cannot read in locale "en"',
+        );
+      }
     }
   });
   test("search text uses the article locale for key names", () => {

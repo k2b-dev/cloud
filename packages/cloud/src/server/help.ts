@@ -171,11 +171,13 @@ export const defineHelp = (
         new Error(
           `Help document "${document.id}" has a help: link that agents cannot read in locale "${locale}"; write it inline as [text](help:id)`,
         );
-      walkHelpTokens(lexHelpMarkdown(document.markdown, locale), (token) => {
+      const tokens = lexHelpMarkdown(document.markdown, locale);
+      if (Object.values(tokens.links).some((link) => /^help:/i.test(link.href) && !link.href.startsWith("help:"))) throw unreadableLink();
+      walkHelpTokens(tokens, (token) => {
         if (
-          (token.type === "link" && token.href.startsWith("help:") && !token.raw.startsWith("[")) ||
-          (token.type === "image" && token.href.startsWith("help:")) ||
-          (token.type === "html" && /[\w:-]+\s*=\s*(?:"[^"]*help:[^"]*"|'[^']*help:[^']*'|[^\s>"']*help:[^\s>"']*)/i.test(token.raw))
+          (token.type === "link" && /^help:/i.test(token.href) && (!token.href.startsWith("help:") || !token.raw.startsWith("["))) ||
+          (token.type === "image" && /^help:/i.test(token.href)) ||
+          (token.type === "html" && /\s[\w:-]+\s*=\s*(?:["']\s*)?help:/i.test(token.raw))
         )
           throw unreadableLink();
         if ((token.type === "paragraph" || token.type === "text") && token.tokens?.length) {
@@ -207,8 +209,8 @@ export const defineHelp = (
         if (
           (token.type === "link" && token.href.startsWith("help:")) ||
           // Markdown inside raw HTML and callout titles stays text in agent text, so its target would reach readers.
-          (token.type === "html" && /help:[a-z0-9]/i.test(token.raw)) ||
-          (token.type === "markdownInfoBlock" && typeof token.title === "string" && /help:[a-z0-9]/i.test(token.title))
+          (token.type === "html" && /(?:\]\(|\]:|<)\s*(?:<\s*)?help:/i.test(token.raw)) ||
+          (token.type === "markdownInfoBlock" && typeof token.title === "string" && /(?:\]\(|\]:|<)\s*(?:<\s*)?help:/i.test(token.title))
         )
           unconvertedLink = true;
         if (token.type === "helpKbd" || token.type === "helpLabel" || token.type === "helpDetails") unconvertedSyntax = true;

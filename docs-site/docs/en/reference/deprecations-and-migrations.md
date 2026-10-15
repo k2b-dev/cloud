@@ -28,7 +28,8 @@ fails startup when an article:
 - has a `:kbd[...]` that does not name a key;
 - has a callout inside details;
 - has a `help:` target in a reference definition, autolink, image, HTML, or
-  callout title.
+  callout title;
+- uses a Help link scheme other than lowercase `help:`, such as `HELP:`.
 
 Code spans and fenced code stay exempt. See
 [In-product Help](/en/docs/platform/help).

@@ -156,6 +156,7 @@ visibility rule as article reads. Resolved links use
 link text and expose no target address. `next` and `related` use this same
 resolution; unresolved entries are omitted. Write `help:` links inline: a reference
 definition, autolink, image, or HTML attribute with a `help:` target fails
+startup. The scheme must be lowercase `help:`; spellings such as `HELP:` fail
 startup. Help syntax that remains unconverted in agent text also fails startup.
 
 ### Use guided blocks
