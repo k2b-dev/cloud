@@ -480,6 +480,10 @@ const conversationMutation = (
         // Without a live match, only a view that already shows the value and still matches the live
         // status is a no-op; any other difference keeps the revision conflict.
         if (!mailConversationTransitionChanges(conversation, kind, value) && (!live || live.workStatus === value)) {
+          // Only cover here: a stale step must not clear a later status decision after the revision fence failed.
+          if (kind === "setConversationStatus" && live !== null && triggerMessageId !== null && (value === "done" || value === "waiting")) {
+            await recordConversationStatusDecision(tx, { conversationId, covers: true, messageId: triggerMessageId });
+          }
           return { state: "succeeded", output: { action: kind, applied: false } as JsonObject };
         }
         const mutation = await updateWorkflowConversationCollaborationInTransaction({

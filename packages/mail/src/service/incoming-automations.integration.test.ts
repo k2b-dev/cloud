@@ -2577,6 +2577,60 @@ suite("incoming automations", () => {
     }
   }, 30_000);
 
+  test("keeps Done for the triggering message when another change moved the revision before a no-op status step", async () => {
+    const first = statusEnvelope(13031, "done-noop-revision");
+    const firstId = await ingestEnvelope({
+      db: sql,
+      mailboxId,
+      remoteResourceId,
+      folderId: inboxFolderId,
+      message: first,
+      captureWorkflowTriggers: false,
+    });
+    await hydrateStatusMessage(firstId, first);
+    await markStatusConversationDone(firstId);
+    const automation = await createStatusAutomation("done-noop-revision");
+    try {
+      const reply = statusEnvelope(13032, "done-noop-revision", first.messageId);
+      const replyId = await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: reply,
+        captureWorkflowTriggers: true,
+      });
+      expect((await statusConversation(replyId)).id).toBe((await statusConversation(firstId)).id);
+      const runId = await dispatchStatusRun(automation.workflowId);
+      const conversation = await statusConversation(replyId);
+      if (ownerContext.actor.kind !== "user") throw new Error("Expected a user actor for the mailbox owner");
+      const assigned = await updateConversationCollaboration({
+        context: ownerContext,
+        mailboxId,
+        conversationId: conversation.id,
+        locale: "en",
+        input: { expectedRevision: conversation.revision, assigneeUserIds: [ownerContext.actor.user.id] },
+      });
+      if (!assigned.ok) throw new Error(assigned.error.message);
+      expect((await statusConversation(replyId)).revision).toBeGreaterThan(conversation.revision);
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished", result: { state: "succeeded" } });
+      const [run] = await sql<{ state: string }[]>`
+        SELECT state FROM workflows.run WHERE id = ${runId}::uuid
+      `;
+      expect(run?.state).toBe("succeeded");
+      const [step] = await sql<{ output: Record<string, unknown> }[]>`
+        SELECT outcome #> '{outcome,output}' AS output FROM workflows.step_outcome
+        WHERE run_id = ${runId}::uuid AND outcome #>> '{outcome,output,action}' = 'setConversationStatus'
+      `;
+      expect(step?.output).toEqual({ action: "setConversationStatus", applied: false });
+      await hydrateStatusMessage(replyId, reply);
+      expect((await statusConversation(replyId)).work_status).toBe("done");
+      expect(await reconciledStatusActivities(replyId)).toEqual([]);
+    } finally {
+      await deleteStatusAutomation(automation.id);
+    }
+  }, 30_000);
+
   for (const initiallyDone of [false, true]) {
     test(`applies an automation's status after Mail hydrated its triggering message in a longer conversation${initiallyDone ? " that was Done" : ""}`, async () => {
       const key = initiallyDone ? "hydrated-first-done" : "hydrated-first-open";
