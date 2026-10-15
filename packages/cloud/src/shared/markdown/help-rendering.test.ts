@@ -168,15 +168,54 @@ test("a later details opener closes independently while the earlier opener stays
   expect(fenced).toContain(":::details B</code>");
 });
 
-// Count regex calls and copied array elements instead of time so machine load cannot change the bound.
+test("guided blocks still interrupt the paragraph before them", () => {
+  const html = renderHelpMarkdown("Intro\n:::steps\n1. A\n:::");
+  expect(html).toStartWith("<p>Intro</p>");
+  expect(html).toContain('<div class="help-steps"><ol class="k2b-steps">');
+});
+
+test("details interrupt a one-character paragraph and start closed", () => {
+  const html = renderHelpMarkdown("X\n:::details Title\nBody\n:::");
+  expect(html.match(/<details /g)).toHaveLength(1);
+  expect(html).not.toContain(" open");
+  expect(html).toContain("<p>X</p>");
+  expect(html).toContain("<p>Body</p>\n</div></details>");
+});
+
+test("details keep container fences and following prose in their body", () => {
+  for (const prefix of ["- ", "+ ", "* ", "1. ", "1) ", "> ", "> - "]) {
+    const continuation = prefix.replace(/[^>]/g, " ");
+    for (const fence of ["```", "~~~"]) {
+      const html = renderHelpMarkdown(
+        `:::details Example\n${prefix}${fence}md\n${continuation}:::\n${continuation}${fence}\n\nAfter.\n:::`,
+      );
+      expect(html.match(/<details /g)).toHaveLength(1);
+      expect(html).toContain(":::</code>");
+      expect(html).toContain("<p>After.</p>\n</div></details>");
+    }
+  }
+  const html = renderHelpMarkdown(":::details Example\n- ```md\n  :::\n  ```\nAfter.\n:::");
+  expect(html.match(/<details /g)).toHaveLength(1);
+  expect(html).toContain("After.");
+  expect(html.indexOf("After.")).toBeLessThan(html.indexOf("</details>"));
+});
+
+// Count regex search spans and copied array elements so machine load cannot change the bound.
 const countHelpWork = (run: () => unknown): number => {
   const exec = RegExp.prototype.exec;
   const concat = Array.prototype.concat;
   let work = 0;
+  // Existing non-Help start hooks rescan suffixes; count their calls, without charging their search spans.
+  const contentStarts = new Set([/^```math/m, /\$\$/, /(?<!\$)\$(?!\$)/, /==(?!=)/, /(?<!~)~(?!~)/, /\^/].map((pattern) => pattern.source));
   try {
     RegExp.prototype.exec = function (source) {
-      work++;
-      return exec.call(this, source);
+      const start = this.global || this.sticky ? this.lastIndex : 0;
+      const match = exec.call(this, source);
+      work +=
+        !contentStarts.has(this.source) && (!this.source.startsWith("^") || this.multiline || start > 0)
+          ? Math.max(1, (match ? match.index + match[0].length : source.length) - start)
+          : 1;
+      return match;
     };
     Array.prototype.concat = function (...items) {
       work += this.length;
@@ -189,6 +228,19 @@ const countHelpWork = (run: () => unknown): number => {
   }
   return work;
 };
+test("work counter charges regex search spans and keeps anchored calls constant", () => {
+  expect(countHelpWork(() => /needle/.exec("xxxxneedle"))).toBe(10);
+  expect(countHelpWork(() => /missing/.exec("xxxxneedle"))).toBe(10);
+  expect(countHelpWork(() => /^needle/.exec("xxxxneedle"))).toBe(1);
+  expect(countHelpWork(() => /^needle/m.exec("xxxx\nneedle"))).toBe(11);
+  const global = /needle/g;
+  global.lastIndex = 4;
+  expect(countHelpWork(() => global.exec("xxxxneedle"))).toBe(6);
+  const sticky = /^needle/y;
+  sticky.lastIndex = 4;
+  expect(countHelpWork(() => sticky.exec("xxxxneedle"))).toBe(6);
+});
+
 for (const [name, size, build] of [
   ["consecutive unclosed details", 1500, (size: number) => Array.from({ length: size }, (_, index) => `:::details Q${index}\n`).join("")],
   [
@@ -196,6 +248,7 @@ for (const [name, size, build] of [
     500,
     (size: number) => Array.from({ length: size }, (_, index) => `:::details Q${index}\n\n`).join(""),
   ],
+  ["ordinary paragraphs", 300, (size: number) => "Ordinary paragraph.\n\n".repeat(size)],
   ["ordinary strong runs", 6000, (size: number) => "**a** ".repeat(size)],
   // A trailing icon exposes repeated lexing of preceding spans, even when the final output is unchanged.
   ["strong runs before a label", 150, (size: number) => `${"**a** ".repeat(size)}**b**{icon="eye-off"}`],

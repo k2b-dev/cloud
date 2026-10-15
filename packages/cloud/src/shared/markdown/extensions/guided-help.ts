@@ -21,11 +21,20 @@ const headingTitleTokens = (token: Tokens.Heading): Token[] => {
   return tokens;
 };
 
-const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+const FENCE = /^[ \t]*(?:>[ \t]*|(?:[-+*]|\d+[.)])[ \t]+)*(`{3,}|~{3,})(.*)$/;
 const DIRECTIVE_OPENER = /^ {0,3}:::(?:steps|reference|compare|details|note|info|success|warning|danger)\b/i;
 const DIRECTIVE_CLOSER = /^ {0,3}:::[ \t]*$/;
 const CALLOUT_OPENER = /^ {0,3}:::(?:note|info|success|warning|danger)\b/i;
 const DETAILS_OPENER = /^ {0,3}:::details\b/i;
+
+const detailsLexers = new WeakSet<Lexer>();
+
+const startParagraph = (source: string, lexer: Lexer): string => {
+  const rules = Lexer.rules.block[lexer.options.pedantic ? "pedantic" : lexer.options.gfm ? "gfm" : "normal"];
+  // Marked passes start hooks src.slice(1); restore a paragraph character before measuring its extent.
+  const extent = (rules.paragraph.exec(`x${source}`)?.[0].length ?? 1) - 1;
+  return source.slice(0, extent);
+};
 
 /**
  * A `:::details Title` block up to its own closing `:::`. One directive inside it (steps, reference, compare, a
@@ -165,10 +174,8 @@ export function guidedHelpExtension(): MarkedExtension {
         name: "helpDetails",
         level: "block",
         start(source) {
-          // Only openers in this paragraph can split it. Looking beyond it rescans the rest at every blank line.
-          const rules = Lexer.rules.block[this.lexer.options.pedantic ? "pedantic" : this.lexer.options.gfm ? "gfm" : "normal"];
-          const extent = rules.paragraph.exec(source)?.[0].length ?? 0;
-          const paragraph = source.slice(0, extent);
+          if (detailsLexers.has(this.lexer)) return undefined;
+          const paragraph = startParagraph(source, this.lexer);
           const openers = /^:::details[ \t]+\S/gm;
           for (let opener = openers.exec(paragraph); opener; opener = openers.exec(paragraph)) {
             const result = detailsBlock(source, opener.index);
@@ -179,17 +186,23 @@ export function guidedHelpExtension(): MarkedExtension {
           return undefined;
         },
         tokenizer(source) {
+          if (detailsLexers.has(this.lexer)) return undefined;
           const { block } = detailsBlock(source);
           if (!block) return undefined;
-          return {
-            type: "helpDetails",
-            raw: block.raw,
-            title: block.title,
-            titleTokens: this.lexer.inlineTokens(block.title),
-            callout: block.callout,
-            // The body joins this document: its links, steps, and reference blocks work as anywhere else.
-            tokens: this.lexer.blockTokens(block.body, []),
-          };
+          detailsLexers.add(this.lexer);
+          try {
+            return {
+              type: "helpDetails",
+              raw: block.raw,
+              title: block.title,
+              titleTokens: this.lexer.inlineTokens(block.title),
+              callout: block.callout,
+              // The body joins this document: its links, steps, and reference blocks work as anywhere else.
+              tokens: this.lexer.blockTokens(block.body, []),
+            };
+          } finally {
+            detailsLexers.delete(this.lexer);
+          }
         },
         renderer(token) {
           return `<details class="k2b-disclosure help-details" data-surface="plain"><summary><span>${this.parser.parseInline(token.titleTokens ?? [])}</span><i class="ti ti-chevron-down k2b-disclosure__chevron" aria-hidden="true"></i></summary><div class="k2b-disclosure__content">${this.parser.parse(token.tokens ?? [])}</div></details>`;
@@ -199,7 +212,9 @@ export function guidedHelpExtension(): MarkedExtension {
       {
         name: "guidedHelpBlock",
         level: "block",
-        start: (source) => source.match(/^:::(?:compare|reference|steps)\b/m)?.index,
+        start(source) {
+          return startParagraph(source, this.lexer).match(/^:::(?:compare|reference|steps)\b/m)?.index;
+        },
         tokenizer(source) {
           const match = /^:::(compare|reference|steps)[ \t]*\n([\s\S]*?)\n:::(?:\n|$)/.exec(source);
           return match

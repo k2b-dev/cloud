@@ -137,6 +137,28 @@ describe("Help author contract", () => {
       }),
     ).not.toThrow();
   });
+  test("accepts details after a one-character paragraph", () => {
+    const definition = defineHelp({ documents: [helpSource("start", "", "X\n:::details Title\nBody\n:::")] });
+    expect(definition.documents[0]?.html.match(/<details /g)).toHaveLength(1);
+  });
+  test("rejects details nested through Markdown containers", () => {
+    for (const body of [
+      ":::details Outer\n> :::details Inner\n> Body\n> :::\n:::",
+      ":::details Outer\n- :::details Inner\n  Body\n  :::\n:::",
+    ]) {
+      expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).toThrow(
+        'Help document "start" has a :::details block without a title or closing ::: in locale "en"',
+      );
+    }
+  });
+  test("accepts literal details in container fences inside details", () => {
+    for (const body of [
+      ":::details Example\n- ```md\n  :::details Literal\n  ```\nAfter.\n:::",
+      ":::details Example\n> ```md\n> :::details Literal\n> ```\nAfter.\n:::",
+    ]) {
+      expect(() => defineHelp({ documents: [helpSource("start", "", body)] })).not.toThrow();
+    }
+  });
   test("search text uses the article locale for key names", () => {
     const definition = defineHelp({
       baseLocale: "de",
