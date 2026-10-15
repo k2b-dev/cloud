@@ -1111,25 +1111,25 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   // A level resize starts from what is on screen. When the preferred widths do
   // not fit beside the flexible level, CSS shrinks the fixed levels, so a step
   // from a shrunk width would land on a preference that shrinks again and jump.
-  // The visible fixed levels therefore take their rendered widths as their
-  // preferences first; then they fit, and a step moves exactly by its size.
+  // Every visible fixed level therefore takes its rendered width first, also
+  // one without a separator, which keeps it for this page without storing it;
+  // then they fit, and a step moves exactly by its size. All widths are
+  // measured before any is written, because each write reflows the others.
   const settleLevels = (root: HTMLElement, handle: HTMLElement) => {
     const main = handle.closest<HTMLElement>(".k2b-app-workspace__main");
     if (!main?.hasAttribute("data-workspace-levels")) return;
-    const widths: Array<{ id: string; width: number }> = [];
-    for (const other of Array.from(main.querySelectorAll<HTMLElement>(HANDLE_SELECTOR))) {
-      if (other.closest(".k2b-app-workspace__main") !== main || resizeKind(other) !== "pane") continue;
-      const panel = controlledPanel(root, other);
-      if (!isVisible(panel) || flexibleLevel(panel)) continue;
-      const width = Math.round(elementSize(panel, "pane"));
-      const id = panelId(other);
-      widths.push({ id, width });
-    }
-    // Measure every level before changing a preference can reflow its siblings.
-    for (const { id, width } of widths) {
-      if (layoutState.paneWidths?.[id] === width) continue;
+    const widths = Array.from(main.children)
+      .filter((child): child is HTMLElement => child instanceof HTMLElement && child.hasAttribute("data-workspace-level"))
+      .filter((level) => isVisible(level) && !flexibleLevel(level))
+      .map((level) => ({
+        id: safeAppWorkspacePanelId(level.dataset.workspacePanelId ?? ""),
+        stored: level.dataset.workspaceResizable === "true",
+        width: Math.round(elementSize(level, "pane")),
+      }));
+    for (const { id, stored, width } of widths) {
+      if (!id || (stored && layoutState.paneWidths?.[id] === width)) continue;
       root.style.setProperty(appWorkspacePanelVariable("pane", id), `${width}px`);
-      layoutState = { ...layoutState, paneWidths: { ...layoutState.paneWidths, [id]: width } };
+      if (stored) layoutState = { ...layoutState, paneWidths: { ...layoutState.paneWidths, [id]: width } };
     }
   };
 

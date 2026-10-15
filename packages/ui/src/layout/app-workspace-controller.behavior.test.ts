@@ -1210,6 +1210,7 @@ describe("floating detail controller", () => {
         pane.className = `k2b-app-workspace__main-pane ${index === 2 ? "is-primary" : ""}`;
         pane.dataset.workspaceLevel = String(index + 1);
         pane.dataset.workspaceLevelLast = index === 2 ? "1 2 3" : "";
+        pane.dataset.workspacePanelId = id;
         pane.dataset.workspaceResizable = index === 2 ? "false" : "true";
         setRect(pane, { width, height: 700 });
         if (reflow && index !== 2) {
@@ -1254,6 +1255,68 @@ describe("floating detail controller", () => {
         dispose();
       }
     });
+
+  test("a level without a separator keeps its rendered width for the page while a sibling resizes", () => {
+    Object.defineProperty(window, "matchMedia", {
+      value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }),
+    });
+    const { root } = workspace({ width: 1440 });
+    const main = document.createElement("main");
+    main.className = "k2b-app-workspace__main";
+    main.dataset.workspaceLevels = "";
+    setRect(main, { width: 1200, height: 700 });
+    // Happy DOM has no flex layout: shrink both fixed bases into the 880 px left beside the last level.
+    const basis = (id: string, fallback: number) =>
+      Number.parseFloat(root.style.getPropertyValue(`--k2b-workspace-pane-${id}-width`)) || fallback;
+    const rendered = (id: string) => {
+      const sections = basis("sections", 720);
+      const items = basis("items", 640);
+      return ((id === "sections" ? sections : items) * 880) / Math.max(880, sections + items);
+    };
+    let handle: HTMLButtonElement | undefined;
+    for (const [index, id] of ["sections", "items", "item"].entries()) {
+      const pane = document.createElement("section");
+      pane.id = id;
+      pane.className = `k2b-app-workspace__main-pane ${index === 2 ? "is-primary" : ""}`;
+      pane.dataset.workspaceLevel = String(index + 1);
+      pane.dataset.workspaceLevelLast = index === 2 ? "1 2 3" : "";
+      pane.dataset.workspacePanelId = id;
+      pane.dataset.workspaceResizable = index === 0 ? "true" : "false";
+      if (index === 2) setRect(pane, { width: 320, height: 700 });
+      else setDynamicRect(pane, () => ({ width: rendered(id), height: 700 }));
+      main.append(pane);
+      if (index !== 0) continue;
+      handle = document.createElement("button");
+      handle.dataset.appWorkspaceResize = "pane";
+      handle.dataset.workspacePanelId = id;
+      handle.dataset.workspaceResizeEdge = "end";
+      handle.dataset.workspaceDefaultSize = "320";
+      handle.dataset.workspaceMinSize = "240";
+      handle.dataset.workspaceMaxSize = "720";
+      handle.setAttribute("aria-controls", id);
+      main.append(handle);
+    }
+    root.append(main);
+    const written: unknown[] = [];
+    const dispose = installAppWorkspaceController({
+      root,
+      readState: () => ({ version: 2, paneWidths: { sections: 720 } }),
+      writeState: (state) => written.push(state),
+    });
+    try {
+      flushFrames();
+      const sectionsWidth = Math.round(rendered("sections"));
+      const itemsWidth = Math.round(rendered("items"));
+      dispatchKey(handle!, "ArrowLeft");
+      expect(root.style.getPropertyValue("--k2b-workspace-pane-sections-width")).toBe(`${sectionsWidth - 8}px`);
+      expect(root.style.getPropertyValue("--k2b-workspace-pane-items-width")).toBe(`${itemsWidth}px`);
+      expect(Math.round(rendered("items"))).toBe(itemsWidth);
+      // Only a level the person can resize stores its width.
+      expect(written).toEqual([expect.objectContaining({ paneWidths: { sections: sectionsWidth - 8 } })]);
+    } finally {
+      dispose();
+    }
+  });
 
   test("double-click resets a pane and preserves other pane preferences", () => {
     const { root } = workspace({ width: 1500 });
