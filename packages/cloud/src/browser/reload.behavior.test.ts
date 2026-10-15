@@ -84,6 +84,28 @@ else {
     }
   });
 
+  test("does not wait for a modeless window, which leaves the page usable", async () => {
+    const { reload } = modules!;
+    const dom = createDomTestHarness();
+    let reloads = 0;
+    Object.assign(dom.window.location, {
+      reload: () => {
+        reloads += 1;
+      },
+    });
+    const search = dom.document.createElement("dialog");
+    search.setAttribute("open", "");
+    search.setAttribute("aria-modal", "false");
+    dom.document.body.append(search);
+    try {
+      expect(reload.reloadOnce("modeless")).toBe(true);
+      expect(reloads).toBe(1);
+    } finally {
+      search.remove();
+      dom.cleanup();
+    }
+  });
+
   test("keeps waiting after the dialog closes while a draft the caller names is open", async () => {
     const { reload } = modules!;
     const dom = createDomTestHarness();

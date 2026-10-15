@@ -11,8 +11,11 @@ export const AUTOMATIC_RELOAD_WINDOW_MS = 30_000;
 
 let reloadPending = false;
 
-/** Any open dialog holds the reload: a modeless window, such as global search moved aside, can sit above a modal one. */
-const holds = new Set(["dialog[open]"]);
+/**
+ * An open modal dialog holds the reload. A modeless window, such as global search moved aside, leaves the page
+ * usable and may stay open for long, so it does not: the page would otherwise stay stale without notice.
+ */
+const holds = new Set(['dialog[open]:not([aria-modal="false"])']);
 const held = () => document.querySelector([...holds].join(", ")) !== null;
 
 const storageKey = (key: string) => `cloud.reload.${key}`;
@@ -20,11 +23,11 @@ const storageKey = (key: string) => `cloud.reload.${key}`;
 /**
  * Reloads the page for an automatic reason (a live event, a failed live
  * subscription, a changed view) at most once per `key` and window in this tab.
- * Waits while a dialog is open, or an element matches `waitWhile` (for
+ * Waits while a modal dialog is open, or an element matches `waitWhile` (for
  * example an inline editor with a draft), and reloads once none is left, so an
- * automatic reload never discards a dialog or a draft. While it waits, the call
- * still returns `true`; a dialog that shows live data says itself that it is
- * stale.
+ * automatic reload never discards a modal dialog or a draft. While it waits,
+ * the call still returns `true`; a dialog that shows live data says itself that
+ * it is stale.
  *
  * Returns `false` without reloading when the same key already reloaded within
  * the window, or when `sessionStorage` is unavailable and a repeat therefore
