@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.25.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.24.0...npm-ui-v0.25.0) (2026-10-15)
+
+
+### Features
+
+* **chat:** keep read positions and unread counts ([#1083](https://github.com/k2b-dev/cloud/issues/1083)) ([9df2652](https://github.com/k2b-dev/cloud/commit/9df2652d330911c7cfb118d3805631c93c602b71))
+* **cloud:** switch appearance with one button that cycles Automatic, Light, Dark ([#1131](https://github.com/k2b-dev/cloud/issues/1131)) ([aefeb09](https://github.com/k2b-dev/cloud/commit/aefeb0955897b6f5b85515aa51e5e538e260bd87))
+* **filesv2:** create nested and several folders at once with a live path preview ([#1114](https://github.com/k2b-dev/cloud/issues/1114)) ([4c711eb](https://github.com/k2b-dev/cloud/commit/4c711ebc527daca4bc1f77e6c81cd75f5a7d99ef))
+* **filesv2:** start Files at an overview of all storage places ([#1129](https://github.com/k2b-dev/cloud/issues/1129)) ([6820878](https://github.com/k2b-dev/cloud/commit/6820878c14a435ac8c7a283e2359964dacc08b91)), closes [#1096](https://github.com/k2b-dev/cloud/issues/1096)
+* **notebooks:** a clear toolbar with active states, one shortcut dialect, and finer undo steps ([#1087](https://github.com/k2b-dev/cloud/issues/1087)) ([96e05ce](https://github.com/k2b-dev/cloud/commit/96e05ceda9e47cce42b977f274324b411ac446d0))
+* **spaces:** scroll the month view continuously through weeks ([#1108](https://github.com/k2b-dev/cloud/issues/1108)) ([88e5aee](https://github.com/k2b-dev/cloud/commit/88e5aeec2e59be4ecdf4af3b740aa615e9feea22)), closes [#813](https://github.com/k2b-dev/cloud/issues/813)
+* **ssr:** mount island props without eval so pages run under a CSP without unsafe-eval ([#1106](https://github.com/k2b-dev/cloud/issues/1106)) ([06b0b42](https://github.com/k2b-dev/cloud/commit/06b0b4280a1dfa858ee4ee4be5b6922106659d72)), closes [#1080](https://github.com/k2b-dev/cloud/issues/1080)
+* **ui:** add key caps, label chips, a table of contents, and callout icons ([#1134](https://github.com/k2b-dev/cloud/issues/1134)) ([ae8c68c](https://github.com/k2b-dev/cloud/commit/ae8c68c546bc188add1df26f15c4b1e553a8f777))
+
+
+### Bug Fixes
+
+* **ui:** calm sidebar hover and wrap long row names instead of scrolling them ([#1093](https://github.com/k2b-dev/cloud/issues/1093)) ([f8a0a44](https://github.com/k2b-dev/cloud/commit/f8a0a4426ff19c7e18c05805fdb88f33ae539274))
+* **ui:** keep hover and focus from moving or lifting elements ([#1162](https://github.com/k2b-dev/cloud/issues/1162)) ([2778d49](https://github.com/k2b-dev/cloud/commit/2778d4931a85d408a549b53479ffd073254c0f42))
+* **ui:** keep server-rendered month rows in place in WebKit after mount ([#1157](https://github.com/k2b-dev/cloud/issues/1157)) ([1b1561e](https://github.com/k2b-dev/cloud/commit/1b1561e9b5406c74c036b270f75f9fefae2cdf17)), closes [#1132](https://github.com/k2b-dev/cloud/issues/1132)
+* **ui:** keep the rounded app card on wide screens for flat workspaces too ([#1135](https://github.com/k2b-dev/cloud/issues/1135)) ([480faf5](https://github.com/k2b-dev/cloud/commit/480faf515983a00cd44e84c8a03f336881756124)), closes [#1088](https://github.com/k2b-dev/cloud/issues/1088)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.15.1 to 0.16.0
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 to ^0.16.0
+
 ## [0.24.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.23.0...npm-ui-v0.24.0) (2026-10-13)
 
 

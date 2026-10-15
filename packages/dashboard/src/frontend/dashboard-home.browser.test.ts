@@ -116,7 +116,42 @@ const answerAll: Answer = async (asked, write) => {
 };
 let answer: Answer = answerAll;
 let props = baseProps;
-const requests: Asked[][] = [];
+/**
+ * The widget requests in the order they arrived. The page changes before its fetch reaches this server, so a test never
+ * reads the newest one: it notes `requests.count` before a step and awaits the request that step causes with
+ * `requests.next(count)`.
+ */
+const requests = (() => {
+  const recorded: Asked[][] = [];
+  const waiters = new Set<(asked: Asked[], index: number) => void>();
+  return {
+    get count() {
+      return recorded.length;
+    },
+    push(asked: Asked[]) {
+      const index = recorded.length;
+      recorded.push(asked);
+      for (const waiter of waiters) waiter(asked, index);
+    },
+    next(from: number, matches: (asked: Asked[]) => boolean = () => true): Promise<Asked[]> {
+      const arrived = recorded.slice(from).find(matches);
+      if (arrived) return Promise.resolve(arrived);
+      return new Promise((resolve, reject) => {
+        const waiter = (asked: Asked[], index: number) => {
+          if (index < from || !matches(asked)) return;
+          clearTimeout(timer);
+          waiters.delete(waiter);
+          resolve(asked);
+        };
+        const timer = setTimeout(() => {
+          waiters.delete(waiter);
+          reject(new Error(`Timed out waiting for requests.next(${from}); arrived since ${from}: ${JSON.stringify(recorded.slice(from))}`));
+        }, 5_000);
+        waiters.add(waiter);
+      });
+    },
+  };
+})();
 const saved: DashboardSettings[] = [];
 const scripts: string[] = [];
 /** Holds the answer to a save until the test opens it. */
@@ -294,12 +329,13 @@ describe("the dashboard board in a browser", () => {
         await slow.opened;
         write(ok(asked.find((entry) => entry.key === "quotes/quote")!));
       };
+      const count = requests.count;
       const { page, close } = await open(view);
       try {
         const loading = await layout(page);
         expect(Object.values(loading.states)).toEqual(Array(5).fill("loading"));
         // Each widget is asked in the size the board shows it in.
-        expect(requests.at(-1)).toEqual(board.map(({ id, key, size }) => ({ id, key, size })));
+        expect(await requests.next(count)).toEqual(board.map(({ id, key, size }) => ({ id, key, size })));
 
         first.open();
         await waitForState(page, "notebooks/recent", "error");
@@ -311,7 +347,7 @@ describe("the dashboard board in a browser", () => {
         expect({ width: view.width, boxes: (await layout(page)).boxes }).toEqual({ width: view.width, boxes: loading.boxes });
 
         // Retrying the failed widget while the slow one still loads: the first stream ending must not fail the retry.
-        const before = requests.length;
+        const before = requests.count;
         await tile(page, "notebooks/recent").getByRole("button", { name: "Try again" }).click();
         await waitForState(page, "notebooks/recent", "loading");
         slow.open();
@@ -319,7 +355,8 @@ describe("the dashboard board in a browser", () => {
         expect((await layout(page)).states["notebooks/recent"]).toBe("loading");
         retried.open();
         await waitForState(page, "notebooks/recent", "ok");
-        expect(requests.slice(before)).toEqual([[{ id: "notebooks/recent", key: "notebooks/recent", size: "medium" }]]);
+        expect(await requests.next(before)).toEqual([{ id: "notebooks/recent", key: "notebooks/recent", size: "medium" }]);
+        expect(requests.count).toBe(before + 1);
         const done = await layout(page);
         expect(done.boxes).toEqual(loading.boxes);
         expect(done.overflow).toBeLessThanOrEqual(0);
@@ -400,10 +437,11 @@ describe("the dashboard board in a browser", () => {
         expect((await layout(page)).order).not.toContain("quotes/quote:medium");
         await announced(page, "Quote of the hour removed");
 
-        const asked = requests.length;
+        const asked = requests.count;
         await tile(page, "weather/current").getByRole("radio", { name: "Medium" }).click();
         await page.locator('.dashboard-tile[data-id="weather/current"][data-size="medium"]').waitFor();
-        expect(requests.slice(asked)).toEqual([[{ id: "weather/current", key: "weather/current", size: "medium" }]]);
+        expect(await requests.next(asked)).toEqual([{ id: "weather/current", key: "weather/current", size: "medium" }]);
+        expect(requests.count).toBe(asked + 1);
         // The old content stays while the widget answers in its new size.
         expect((await layout(page)).states["weather/current"]).toBe("ok");
 
@@ -596,6 +634,7 @@ describe("the dashboard board in a browser", () => {
       try {
         await waitForState(page, "spaces/today", "ok");
         await page.getByRole("button", { name: "Edit dashboard" }).click();
+        const count = requests.count;
         await page.getByRole("button", { name: "Add widget" }).first().click();
         const dialog = page.getByRole("dialog");
         await dialog.getByText("Suggested for you").waitFor();
@@ -615,15 +654,10 @@ describe("the dashboard board in a browser", () => {
             .evaluateAll((options) => options.map((option) => Math.round(option.getBoundingClientRect().height)));
           expect(heights).toEqual([44, 44, 44]);
         }
-        expect(requests.flat().some((entry) => entry.key === "weather/current" && entry.size === "small")).toBeTrue();
+        await requests.next(count, (asked) => asked.some((entry) => entry.key === "weather/current" && entry.size === "small"));
+        const medium = requests.count;
         await card.getByRole("radio", { name: "Medium" }).click();
-        for (
-          let tries = 0;
-          tries < 50 && !requests.flat().some((asked) => asked.key === "weather/current" && asked.size === "medium");
-          tries += 1
-        )
-          await Bun.sleep(20);
-        expect(requests.flat().some((entry) => entry.key === "weather/current" && entry.size === "medium")).toBeTrue();
+        await requests.next(medium, (asked) => asked.some((entry) => entry.key === "weather/current" && entry.size === "medium"));
 
         await card.getByRole("button", { name: "Add Weather" }).click();
         await dialog.waitFor({ state: "detached" });
@@ -777,10 +811,13 @@ describe("the dashboard board in a browser", () => {
       await dialog.getByRole("radio", { name: "Hamburg" }).waitFor();
       expect(scripts.slice(scriptStart)).toContain(settingsChunkPath);
       await dialog.getByRole("radio", { name: "Berlin" }).click();
+      const applied = requests.count;
       await dialog.getByRole("button", { name: "Apply", exact: true }).click();
       await dialog.waitFor({ state: "detached" });
       await entered.opened;
-      expect(requests.at(-1)).toEqual([{ id: "weather/current", key: "weather/current", size: "small", settings: { place: "berlin" } }]);
+      expect(await requests.next(applied)).toEqual([
+        { id: "weather/current", key: "weather/current", size: "small", settings: { place: "berlin" } },
+      ]);
       expect(await weather.getAttribute("data-state")).toBe("ok");
       expect(await weather.textContent()).toContain("14°C");
       expect(await weather.textContent()).not.toContain("Weather berlin");
@@ -794,17 +831,21 @@ describe("the dashboard board in a browser", () => {
       expect(savedBoard.find((entry) => entry.id === "weather/current")?.settings).toEqual({ place: "berlin" });
       // The server's next page snapshot carries the saved entry settings.
       props = { ...baseProps, board: savedBoard.filter((entry) => entry.key !== "stopped/app") };
+      const reloaded = requests.count;
       await page.reload();
       await tile(page, "weather/current").getByText("Weather berlin", { exact: true }).waitFor();
-      expect(requests.at(-1)?.find((entry) => entry.id === "weather/current")?.settings).toEqual({ place: "berlin" });
+      expect((await requests.next(reloaded)).find((entry) => entry.id === "weather/current")?.settings).toEqual({ place: "berlin" });
       await page.getByRole("button", { name: "Edit dashboard" }).click();
       await weather.getByRole("button", { name: "Customize Weather" }).click();
       await dialog.getByRole("radio", { name: "Hamburg" }).click();
       await dialog.getByRole("button", { name: "Apply", exact: true }).click();
       await weather.getByText("Weather hamburg", { exact: true }).waitFor();
+      const cancelled = requests.count;
       await page.getByRole("button", { name: "Cancel", exact: true }).click();
       await weather.getByText("Weather berlin", { exact: true }).waitFor();
-      expect(requests.at(-1)).toEqual([{ id: "weather/current", key: "weather/current", size: "small", settings: { place: "berlin" } }]);
+      expect(await requests.next(cancelled)).toEqual([
+        { id: "weather/current", key: "weather/current", size: "small", settings: { place: "berlin" } },
+      ]);
       await page.getByRole("button", { name: "Edit dashboard" }).click();
       const after = (await layout(page)).boxes;
       await weather.getByRole("button", { name: "Customize Weather" }).click();
@@ -837,9 +878,10 @@ describe("the dashboard board in a browser", () => {
       await tile(page, "w2").getByRole("button", { name: "Move Weather · Berlin forward", exact: true }).click();
       await announced(page, "Weather · Berlin at position 1 of 2");
       expect((await layout(page)).order).toEqual(["w2:small", "weather/current:small"]);
+      const resized = requests.count;
       await tile(page, "w2").getByRole("radio", { name: "Medium" }).click();
       await page.waitForFunction(() => document.querySelector('[data-id="w2"]')?.getAttribute("data-size") === "medium");
-      expect(requests.at(-1)).toEqual([{ ...entries[1]!, size: "medium" }]);
+      expect(await requests.next(resized)).toEqual([{ ...entries[1]!, size: "medium" }]);
       expect(await tile(page, "weather/current").getAttribute("data-size")).toBe("small");
       await tile(page, "w2").getByRole("button", { name: "Remove Weather · Berlin", exact: true }).click();
       await announced(page, "Weather · Berlin removed");
@@ -856,7 +898,7 @@ describe("the dashboard board in a browser", () => {
     });
     try {
       await waitForState(page, "weather/current", "ok");
-      const asked = requests.length;
+      const asked = requests.count;
       await page.getByRole("button", { name: "Edit dashboard" }).click();
       await tile(page, "weather/current").getByRole("button", { name: "Customize Weather", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "Customize Weather" });
@@ -866,7 +908,7 @@ describe("the dashboard board in a browser", () => {
       await page.getByRole("button", { name: "Done", exact: true }).click();
       await page.getByRole("button", { name: "Edit dashboard" }).waitFor();
       expect(saved.length).toBe(savedBefore);
-      expect(requests.length).toBe(asked);
+      expect(requests.count).toBe(asked);
     } finally {
       await close();
     }
@@ -1076,9 +1118,10 @@ describe("the dashboard board in a browser", () => {
       const retry = tile(page, "w2").getByRole("button", { name: "Try again" });
       await retry.waitFor();
       answer = answerAll;
+      const retried = requests.count;
       await retry.click();
       await tile(page, "w2").getByText("Weather berlin", { exact: true }).waitFor();
-      expect(requests.at(-1)).toEqual([configured]);
+      expect(await requests.next(retried)).toEqual([configured]);
     } finally {
       answer = answerAll;
       await close();
@@ -1107,10 +1150,10 @@ describe("the dashboard board in a browser", () => {
       await tile(page, "weather/current").getByRole("button", { name: "Customize Weather" }).click();
       let dialog = page.getByRole("dialog", { name: "Customize Weather" });
       expect(await dialog.getByRole("radio", { name: "Hamburg" }).getAttribute("aria-checked")).toBe("true");
-      const count = requests.length;
+      const count = requests.count;
       await dialog.getByRole("button", { name: "Apply", exact: true }).click();
       await dialog.waitFor({ state: "detached" });
-      expect(requests.length).toBe(count);
+      expect(requests.count).toBe(count);
       await tile(page, "spaces/today").getByRole("button", { name: "Customize Today" }).click();
       dialog = page.getByRole("dialog", { name: "Customize Today" });
       // The stored title is shown, and only the reference is sent to the widget.
@@ -1118,9 +1161,10 @@ describe("the dashboard board in a browser", () => {
       await dialog.getByRole("button", { name: "Clear Space" }).waitFor();
       expect(await dialog.getByRole("textbox", { name: "Note" }).getAttribute("maxlength")).toBe("40");
       await dialog.getByRole("textbox", { name: "Note" }).fill("  trimmed  ");
+      const entered = requests.count;
       await dialog.getByRole("textbox", { name: "Note" }).press("Enter");
       await dialog.waitFor({ state: "detached" });
-      expect(requests.at(-1)).toEqual([
+      expect(await requests.next(entered)).toEqual([
         {
           id: "spaces/today",
           key: "spaces/today",
@@ -1135,9 +1179,10 @@ describe("the dashboard board in a browser", () => {
       expect(await dialog.getByRole("switch", { name: "Show done" }).isChecked()).toBeFalse();
       expect(await dialog.getByRole("textbox", { name: "Note" }).inputValue()).toBe("");
       expect(await dialog.getByRole("button", { name: "Clear Space" }).count()).toBe(0);
+      const reset = requests.count;
       await dialog.getByRole("button", { name: "Apply", exact: true }).click();
       await dialog.waitFor({ state: "detached" });
-      expect(requests.at(-1)).toEqual([{ id: "spaces/today", key: "spaces/today", size: "large" }]);
+      expect(await requests.next(reset)).toEqual([{ id: "spaces/today", key: "spaces/today", size: "large" }]);
     } finally {
       await close();
     }

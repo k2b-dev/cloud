@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.34.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.33.0...npm-cloud-v0.34.0) (2026-10-15)
+
+
+### Features
+
+* **cli:** print a permalink for every resource in cld JSON output ([#1153](https://github.com/k2b-dev/cloud/issues/1153)) ([f3f60e3](https://github.com/k2b-dev/cloud/commit/f3f60e35d0f9f72f8f6d5ed1950ab0776ec3ffa4))
+* **cloud:** let widgets declare a few settings and get them per board entry ([#1094](https://github.com/k2b-dev/cloud/issues/1094)) ([e9273f1](https://github.com/k2b-dev/cloud/commit/e9273f16988e457e9959e33c94dfa55fcca2c520))
+* **cloud:** switch appearance with one button that cycles Automatic, Light, Dark ([#1131](https://github.com/k2b-dev/cloud/issues/1131)) ([aefeb09](https://github.com/k2b-dev/cloud/commit/aefeb0955897b6f5b85515aa51e5e538e260bd87))
+* **core:** pair the phone app by scanning a QR code on every device ([#1127](https://github.com/k2b-dev/cloud/issues/1127)) ([eb44239](https://github.com/k2b-dev/cloud/commit/eb442393cdfaa52a64f0e5aaeffe1f2d5c7a63a8)), closes [#1102](https://github.com/k2b-dev/cloud/issues/1102)
+* **dashboard:** adjust a widget's settings on the board, place a widget with settings more than once, and move widgets without dragging ([#1133](https://github.com/k2b-dev/cloud/issues/1133)) ([d756c22](https://github.com/k2b-dev/cloud/commit/d756c223b5981a9247c3e5bea8831423f0aaf0e0))
+* **ssr:** mount island props without eval so pages run under a CSP without unsafe-eval ([#1106](https://github.com/k2b-dev/cloud/issues/1106)) ([06b0b42](https://github.com/k2b-dev/cloud/commit/06b0b4280a1dfa858ee4ee4be5b6922106659d72)), closes [#1080](https://github.com/k2b-dev/cloud/issues/1080)
+* **ui:** add key caps, label chips, a table of contents, and callout icons ([#1134](https://github.com/k2b-dev/cloud/issues/1134)) ([ae8c68c](https://github.com/k2b-dev/cloud/commit/ae8c68c546bc188add1df26f15c4b1e553a8f777))
+
+
+### Bug Fixes
+
+* **cloud:** an approval no longer runs after its device was removed or the person signed out everywhere ([#1136](https://github.com/k2b-dev/cloud/issues/1136)) ([d1ac47c](https://github.com/k2b-dev/cloud/commit/d1ac47c8eadad60347ac7b24378c30536c19199f))
+* **cloud:** keep Help in its app and stop the search jump ([#1109](https://github.com/k2b-dev/cloud/issues/1109)) ([771b89c](https://github.com/k2b-dev/cloud/commit/771b89cc7cd44405e2b826400f4ed16e2231bc51))
+* **ui:** keep hover and focus from moving or lifting elements ([#1162](https://github.com/k2b-dev/cloud/issues/1162)) ([2778d49](https://github.com/k2b-dev/cloud/commit/2778d4931a85d408a549b53479ffd073254c0f42))
+* **ui:** keep the rounded app card on wide screens for flat workspaces too ([#1135](https://github.com/k2b-dev/cloud/issues/1135)) ([480faf5](https://github.com/k2b-dev/cloud/commit/480faf515983a00cd44e84c8a03f336881756124)), closes [#1088](https://github.com/k2b-dev/cloud/issues/1088)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.15.1 to 0.16.0
+    * @k2b/ui bumped from 0.24.0 to 0.25.0
+
 ## [0.33.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.32.0...npm-cloud-v0.33.0) (2026-10-13)
 
 
