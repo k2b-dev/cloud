@@ -431,12 +431,19 @@ describe("Yjs provider storage exhaustion", () => {
     }
   });
 
-  test("unsent edits keep the retry budget until storage accepts a write", () => {
+  test("unsent edits keep the retry budget and backoff until storage accepts a write", () => {
     const doc = new Y.Doc();
     const fatal: string[] = [];
     const timers: Array<() => void> = [];
+    const delays: number[] = [];
     const originalSetTimeout = globalThis.setTimeout;
-    Object.assign(globalThis, { setTimeout: (fn: () => void) => timers.push(fn) });
+    const random = spyOn(Math, "random").mockReturnValue(0);
+    Object.assign(globalThis, {
+      setTimeout: (fn: () => void, delay: number) => {
+        delays.push(delay);
+        return timers.push(fn);
+      },
+    });
     try {
       const provider = createYjsProvider({
         doc,
@@ -468,9 +475,12 @@ describe("Yjs provider storage exhaustion", () => {
       }
       expect(fatal).toEqual(["STORAGE_EXHAUSTED"]);
       expect(timers).toHaveLength(0);
+      // The retries spread over the backoff instead of stopping after a few seconds.
+      expect(delays).toEqual([2_000, 4_000, 8_000, 16_000]);
       expect(provider.hasUnsentChanges()).toBe(true);
       provider.dispose();
     } finally {
+      random.mockRestore();
       Object.assign(globalThis, { setTimeout: originalSetTimeout });
     }
   });

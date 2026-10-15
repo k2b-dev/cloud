@@ -373,9 +373,12 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     const payload = (msg.payload ?? {}) as { noteId?: unknown };
     if (payload.noteId !== activeNoteId) return true;
     replayReady = true;
-    failedConnects = 0;
-    // Reading works again, but with edits still unsent only their echo proves that storage accepts writes.
-    if (!needsFullResync && unconfirmed.size === 0) storageFailures = 0;
+    // Reading works again, but with edits still unsent only their echo proves that storage accepts writes,
+    // so backoff and storage budget keep counting until then.
+    if (!needsFullResync && unconfirmed.size === 0) {
+      failedConnects = 0;
+      storageFailures = 0;
+    }
     opts.onReady?.();
     sendLocalStateIfNeeded();
     return true;
@@ -412,6 +415,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     for (const update of payload.updates) {
       if (typeof update.payload !== "string") continue;
       if (msg.type === WS_TYPE.syncPush && unconfirmed.delete(update.payload)) {
+        failedConnects = 0;
         storageFailures = 0;
         pendingChanged();
       }
