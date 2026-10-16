@@ -174,7 +174,7 @@ describe("Cloud layouts SSR", () => {
     expect(fullWidth.canvas).not.toContain("data-layout-full-page");
     expect(fullPage.canvas).toContain('data-layout-full-page="true"');
     const css = await Bun.file(new URL("../styles/global.css", import.meta.url)).text();
-    const mobileStart = css.indexOf("@media (max-width: 767px) {");
+    const mobileStart = css.indexOf("@media not all and (min-width: 768px) {");
     const mobileShell = css.slice(mobileStart, css.indexOf("\n}", mobileStart));
     expect(mobileShell).toMatch(/html:has\(\.cloud-app-canvas:not\(\[data-layout-full-page\]\)\) \{ scrollbar-gutter: stable; \}/);
   });

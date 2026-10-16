@@ -297,8 +297,10 @@ solid-island {
    From md, signed-in people get the 56 px rail instead of the header: up to
    1023 px the app area meets the window's top, right and bottom edges, and
    from 1024 px it is a card beside the rail. Anonymous pages keep the header
-   and the card from md. */
-@media (max-width: 767px) {
+   and the card from md. Each query is the exact opposite of the next one, so
+   every width, also a fractional one under browser zoom, falls into exactly
+   one mode. */
+@media not all and (min-width: 768px) {
   .cloud-app-canvas {
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
   }
@@ -360,33 +362,35 @@ solid-island {
    The rail and the app area reach the window's edges also where the installed
    app reports safe areas, such as the status bar and the home indicator. Their
    own surfaces fill the insets, and their content stays inside them. */
-@media (min-width: 768px) and (max-width: 1023px) {
-  .cloud-app-canvas[data-layout-authenticated] {
-    padding: 0;
-  }
-  .cloud-app-canvas[data-layout-authenticated] > .layout-rail {
-    padding-top: env(safe-area-inset-top, 0px);
-    padding-bottom: calc(var(--ui-space-shell) + env(safe-area-inset-bottom, 0px));
-  }
-  .cloud-app-canvas[data-layout-authenticated] > .layout-shell-content {
-    gap: 0;
-    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 0;
-    background: var(--k2b-surface);
-  }
-  /* A regular page scrolls `main`, so its end clears the home indicator. A
-     workspace reaches the bottom edge and clears it inside its own surfaces. */
-  .cloud-app-canvas[data-layout-authenticated] .layout-content-main:not(:has(.k2b-app-workspace)) {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-  .cloud-app-canvas[data-layout-authenticated] .layout-content-main .k2b-app-workspace:not(.k2b-app-workspace *) {
-    --k2b-workspace-radius: 0px;
-    --k2b-workspace-inset-bottom: env(safe-area-inset-bottom, 0px);
-    border: 0;
-    box-shadow: none;
-  }
-  .cloud-app-canvas[data-layout-authenticated] > .layout-shell-content > :not(.layout-content-main) .k2b-notice-card {
-    border: 0;
-    border-radius: 0;
+@media (min-width: 768px) {
+  @media not all and (min-width: 1024px) {
+    .cloud-app-canvas[data-layout-authenticated] {
+      padding: 0;
+    }
+    .cloud-app-canvas[data-layout-authenticated] > .layout-rail {
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: calc(var(--ui-space-shell) + env(safe-area-inset-bottom, 0px));
+    }
+    .cloud-app-canvas[data-layout-authenticated] > .layout-shell-content {
+      gap: 0;
+      padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 0;
+      background: var(--k2b-surface);
+    }
+    /* A regular page scrolls `main`, so its end clears the home indicator. A
+       workspace reaches the bottom edge and clears it inside its own surfaces. */
+    .cloud-app-canvas[data-layout-authenticated] .layout-content-main:not(:has(.k2b-app-workspace)) {
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .cloud-app-canvas[data-layout-authenticated] .layout-content-main .k2b-app-workspace:not(.k2b-app-workspace *) {
+      --k2b-workspace-radius: 0px;
+      --k2b-workspace-inset-bottom: env(safe-area-inset-bottom, 0px);
+      border: 0;
+      box-shadow: none;
+    }
+    .cloud-app-canvas[data-layout-authenticated] > .layout-shell-content > :not(.layout-content-main) .k2b-notice-card {
+      border: 0;
+      border-radius: 0;
+    }
   }
 }
 
