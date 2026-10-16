@@ -33,8 +33,8 @@ import { ensureConversationReferenceInTransaction } from "../service/conversatio
 import { updateWorkflowConversationSummaryInTransaction } from "../service/conversation-summary";
 import { createWorkflowDraftInTransaction, createWorkflowReviewReplyDraftInTransaction } from "../service/drafts";
 import {
-  hasIncomingAutomationMessagePlacement,
-  resolveIncomingAutomationMessageTurn,
+  incomingAutomationMessageLeft,
+  resolveIncomingAutomationMessageStateTurn,
   resolveIncomingAutomationPlacementTurn,
 } from "../service/incoming-automation-order";
 import { resolveIncomingAutomationMandateCaller } from "../service/incoming-automation-workload";
@@ -365,37 +365,32 @@ const messageAction = (
           FROM mail.commands
           WHERE mailbox_id = ${scope.mailboxId}::uuid AND idempotency_key = ${ctx.effectKey} AND correlation_id = ${ctx.runId}
         `;
+        const turnParams = { db: tx, runId: ctx.runId, mailboxId: scope.mailboxId, messageId, folderId };
+        const skipped = (reason: "message_moved" | "earlier_automation", commandId?: string): ActionResult => ({
+          state: "succeeded",
+          output: { action: kind, applied: false, skipped: reason, ...(commandId ? { commandId } : {}) },
+        });
         if (issued) {
+          // The command found the message gone: another automation moved it after this step checked.
           if (
             MESSAGE_STATE_ACTIONS.has(kind) &&
             issued.state === "failed" &&
             (issued.last_error_code === "REMOTE_MESSAGE_STALE" || issued.last_error_code === "REMOTE_MESSAGE_MISSING") &&
-            !(await hasIncomingAutomationMessagePlacement({ db: tx, messageId, folderId }))
+            (await incomingAutomationMessageLeft(turnParams))
           ) {
-            const skipped: ActionResult = {
-              state: "succeeded",
-              output: { action: kind, applied: false, skipped: "message_moved", commandId: issued.id },
-            };
-            return skipped;
+            return skipped("message_moved", issued.id);
           }
           return applied(commandOutcome({ id: issued.id, state: issued.state, lastError: issued.last_error_message }));
         }
         if (PLACEMENT_ACTIONS.has(kind) || MESSAGE_STATE_ACTIONS.has(kind)) {
-          const resolveTurn = PLACEMENT_ACTIONS.has(kind) ? resolveIncomingAutomationPlacementTurn : resolveIncomingAutomationMessageTurn;
-          const turn = await resolveTurn({
-            db: tx,
-            runId: ctx.runId,
-            mailboxId: scope.mailboxId,
-            messageId,
-            folderId,
-          });
+          const turn = PLACEMENT_ACTIONS.has(kind)
+            ? await resolveIncomingAutomationPlacementTurn(turnParams)
+            : await resolveIncomingAutomationMessageStateTurn(turnParams);
           // An older automation already moved this message, or is the one that
           // decides where it goes. Ordering a move out of a folder the message
-          // has left is not this automation's failure to report.
-          if (turn.state === "skip") {
-            const skipped: ActionResult = { state: "succeeded", output: { action: kind, applied: false, skipped: turn.reason } };
-            return skipped;
-          }
+          // has left is not this automation's failure to report. An incoming
+          // automation's flag or keyword step yields the same way.
+          if (turn.state === "skip") return skipped(turn.reason);
         }
         const [target] = await tx<{ remote_message_ref_id: string }[]>`
           SELECT remote_ref.id AS remote_message_ref_id
@@ -407,7 +402,11 @@ const messageAction = (
             AND resource.mailbox_id = ${scope.mailboxId}::uuid
             AND remote_ref.stale_at IS NULL
         `;
-        if (!target) throw Object.assign(new Error("Message provider target is no longer available"), { code: "NOT_FOUND" });
+        if (!target) {
+          // A sibling's move may have finished since the turn check above.
+          if (MESSAGE_STATE_ACTIONS.has(kind) && (await incomingAutomationMessageLeft(turnParams))) return skipped("message_moved");
+          throw Object.assign(new Error("Message provider target is no longer available"), { code: "NOT_FOUND" });
+        }
         const remoteMessageRefId = target.remote_message_ref_id;
         const expectedRemoteState = projectMailWorkflowMessagePrecondition(
           mailWorkflowMessagePrecondition(ctx.invocation.context, { messageId, remoteMessageRefId, folderId }),

@@ -45,12 +45,18 @@ const loadIncomingAutomationMessagePlacement = async (params: MessagePlacementPa
   return placement;
 };
 
-export const hasIncomingAutomationMessagePlacement = async (params: MessagePlacementParams): Promise<boolean> =>
-  Boolean(await loadIncomingAutomationMessagePlacement(params));
+const incomingAutomationOfRun = async (db: SqlClient, runId: string): Promise<string | null> => {
+  const [self] = await db<{ id: string }[]>`
+    SELECT automation.id
+    FROM workflows.run run
+    JOIN mail.incoming_automations automation ON automation.workflow_id = run.workflow_id
+    WHERE run.id = ${runId}::uuid
+  `;
+  return self?.id ?? null;
+};
 
-export const resolveIncomingAutomationMessageTurn = async (
-  params: IncomingAutomationMessageTurnParams,
-): Promise<IncomingAutomationPlacementTurn> => {
+/** The first two checks of every turn: the message still sits in the frozen folder, and no other run is moving it. */
+const resolveMessageTurn = async (params: IncomingAutomationMessageTurnParams): Promise<IncomingAutomationPlacementTurn> => {
   const placement = await loadIncomingAutomationMessagePlacement(params);
   if (!placement) return { state: "skip", reason: "message_moved" };
 
@@ -70,26 +76,39 @@ export const resolveIncomingAutomationMessageTurn = async (
   return claimed ? { state: "skip", reason: "earlier_automation" } : { state: "ready" };
 };
 
+/**
+ * Whether an incoming automation's flag or keyword step still changes the message.
+ *
+ * Once the message left the frozen folder, or another run is moving it, the
+ * step skips instead of failing. It does not wait for older automations: a
+ * flag change may go before an older automation's move. Other workflows keep
+ * failing loudly, so a hand-written workflow never continues without a change
+ * it asked for.
+ */
+export const resolveIncomingAutomationMessageStateTurn = async (
+  params: IncomingAutomationMessageTurnParams,
+): Promise<IncomingAutomationPlacementTurn> =>
+  (await incomingAutomationOfRun(params.db, params.runId)) ? resolveMessageTurn(params) : { state: "ready" };
+
+/** Whether an incoming automation's message has left the frozen folder, for example moved by another automation. */
+export const incomingAutomationMessageLeft = async (params: Omit<IncomingAutomationMessageTurnParams, "mailboxId">): Promise<boolean> =>
+  Boolean(await incomingAutomationOfRun(params.db, params.runId)) && !(await loadIncomingAutomationMessagePlacement(params));
+
 export const resolveIncomingAutomationPlacementTurn = async (
   params: IncomingAutomationMessageTurnParams,
 ): Promise<IncomingAutomationPlacementTurn> => {
-  const turn = await resolveIncomingAutomationMessageTurn(params);
+  const turn = await resolveMessageTurn(params);
   if (turn.state === "skip") return turn;
 
   // A workflow that is not an incoming automation has no place in that order.
-  const [self] = await params.db<{ id: string }[]>`
-    SELECT automation.id
-    FROM workflows.run run
-    JOIN mail.incoming_automations automation ON automation.workflow_id = run.workflow_id
-    WHERE run.id = ${params.runId}::uuid
-  `;
+  const self = await incomingAutomationOfRun(params.db, params.runId);
   if (!self) return { state: "ready" };
 
   const older = await params.db<{ steps: MailAutomationStep[] | string }[]>`
     SELECT older.steps
     FROM workflows.run run
     JOIN mail.incoming_automations older ON older.workflow_id = run.workflow_id
-    JOIN mail.incoming_automations self ON self.id = ${self.id}::uuid
+    JOIN mail.incoming_automations self ON self.id = ${self}::uuid
     WHERE run.app_id = 'mail'
       AND run.scope_id = ${params.mailboxId}
       AND run.mode = 'execute'

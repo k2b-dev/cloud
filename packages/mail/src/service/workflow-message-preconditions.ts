@@ -88,7 +88,11 @@ const parseCommandJson = (value: unknown): unknown => {
   }
 };
 
-/** Only confirmed writes by other incoming automations for this receipt are expected drift. */
+/**
+ * Confirmed flag and keyword writes of the other incoming automations started by the same receipt,
+ * per command and in confirmation order. Only these are expected changes; a change by a person,
+ * another client, or another workflow stays drift.
+ */
 export const loadIncomingAutomationSiblingTransitions = async (
   db: SqlClient,
   commands: readonly {
@@ -137,9 +141,9 @@ export const loadIncomingAutomationSiblingTransitions = async (
       ON sibling_a.workflow_id = sibling_run.workflow_id
      AND sibling_a.mailbox_id = command.mailbox_id
     WHERE command.id = ANY(${toPgUuidArray(qualifying.map((command) => command.id))}::uuid[])
-      AND run.context #>> '{preconditions,message,remoteMessageRefId}' = command.target ->> 'remoteMessageRefId'
-      AND sibling_run.context #>> '{preconditions,message,remoteMessageRefId}' = run.context #>> '{preconditions,message,remoteMessageRefId}'
-      AND sibling_run.context #>> '{preconditions,message,id}' = run.context #>> '{preconditions,message,id}'
+      -- The same receipt: both runs froze the message from one event. A backfill
+      -- event froze a later state that already holds earlier writes.
+      AND sibling_run.event_id = run.event_id
     ORDER BY command.id, sibling.finished_at, sibling.id
   `;
   for (const sibling of siblings) {
