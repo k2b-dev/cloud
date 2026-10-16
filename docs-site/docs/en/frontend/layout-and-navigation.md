@@ -115,6 +115,8 @@ pages the shell turns them into the way up (see below). Anonymous pages show
 the entries as breadcrumbs in their header from 1024 px; the final breadcrumb
 has no link. A plain string is valid for a one-level title.
 
+`printHint?: string` supplies the application's final localized export or printing guidance. In regular and focus mode, `Layout` appends a screen-hidden `data-print-fallback` as the last child of the app canvas. When no `data-print-region` exists, only this fallback prints. Its default hint is “Open the item you want to print, or use the app's export.” Pass an app-specific sentence, such as “Open a note to print it, or download it as a PDF from the note's details.” See [Browser printing](/en/ui/layout/print) for marking printable content.
+
 Use `fullWidth` for a multi-column workspace. Use `fullPage` for a fill-height
 surface without the footer. Full-page and focus-mode surfaces contain viewport
 overscroll: their inner content, including embedded editors, owns scrolling

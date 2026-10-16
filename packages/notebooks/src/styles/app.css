@@ -520,6 +520,41 @@
   margin-block-start: 0;
 }
 
+/* The editor's print copy: the note as Book renders it, on paper only. The
+   editor itself is virtualized and never prints (see `note-print-copy.ts`). */
+.notebook-note-print {
+  display: none;
+}
+@media print {
+  .notebook-note-print {
+    display: block;
+  }
+  /* Paper sets the margins; the reading column fills the page. */
+  .notebook-book-content[data-print-region] {
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    font-size: 11pt;
+  }
+  /* Code, tables and formulas wrap or grow instead of hiding behind a scrollbar. */
+  .notebook-book-content pre {
+    overflow: visible;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .notebook-book-content :is(.md-table-wrap, .katex-display) {
+    overflow: visible;
+  }
+  /* A diagram prints as drawn; its source and the viewer's frame stay on screen. */
+  .notebook-book-content .notebook-book-diagram-view {
+    background: none;
+    box-shadow: none;
+  }
+  .notebook-book-content .notebook-book-mermaid > details {
+    display: none;
+  }
+}
+
 .notebook-detail-panel-header {
   view-transition-name: notebook-detail-panel;
 }

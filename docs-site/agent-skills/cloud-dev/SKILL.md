@@ -111,6 +111,7 @@ SolidJS library remains independent of Cloud and application domains.
   primary action) for many objects, or `AppOverview.Cards` of `LinkCard`s for
   few; one secondary fact per row or card. Inside one container, head its
   sidebar and phone menu with `AppWorkspace.SidebarSwitcher`.
+- Every view prints its complete content via `data-print-region` or the fallback with the app's export hint (`Layout.printHint`).
 
 ## Keep server and browser behavior coherent
 

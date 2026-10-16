@@ -52,6 +52,7 @@ export default function BookController(props: Props) {
       );
       if (!response.ok) {
         if ([401, 403, 404].includes(response.status) && !abortSignal.aborted && !pending?.settled) {
+          article?.removeAttribute("data-print-region");
           article?.replaceChildren();
           window.location.assign(pending?.href ?? window.location.href);
         }
@@ -104,6 +105,7 @@ export default function BookController(props: Props) {
     // This string is produced only by the permission-aware server renderer.
     if (html !== null) article.innerHTML = html;
     else article.textContent = metadata.tree.length ? t().selectNote : t().empty;
+    article.toggleAttribute("data-print-region", html !== null);
     article.setAttribute("aria-label", metadata.title ?? metadata.notebookName);
     const historyWarning = document.getElementById("notebook-book-history-warning");
     if (historyWarning) historyWarning.hidden = !metadata.historyIncomplete;

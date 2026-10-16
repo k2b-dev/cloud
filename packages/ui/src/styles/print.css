@@ -1,0 +1,134 @@
+/* Paper shows the page's content, never its chrome or a clipped scrollport.
+
+   A page marks what it prints with `data-print-region`. When a region exists,
+   only regions print: everything else inside `.k2b-ui` is hidden, and the
+   region's ancestors become plain blocks, so a fixed-height workspace or a
+   scrolling `Main` cannot cut the content after the first screen. A page
+   without a region prints its `data-print-fallback` element alone, a short
+   note that names a better way to print. A page with neither keeps the
+   workspace rules below: navigation, detail panels, the drawer, and toasts
+   are hidden, and the workspace grows to its content.
+
+   Nothing here changes the screen: the fallback is the only element with a
+   rule outside print, and it never shows on screen. */
+
+.k2b-ui [data-print-fallback] {
+  display: none;
+}
+
+@media print {
+  /* Only the print target prints: the regions, or the fallback without one. */
+  .k2b-ui:has([data-print-region]) :not([data-print-region], [data-print-region] *, :has([data-print-region])),
+  .k2b-ui:not(:has([data-print-region])):has([data-print-fallback])
+    :not([data-print-fallback], [data-print-fallback] *, :has([data-print-fallback])) {
+    display: none !important;
+  }
+
+  /* The target's ancestors are transparent blocks that grow with it. */
+  .k2b-ui:has([data-print-region]),
+  .k2b-ui :has([data-print-region]),
+  .k2b-ui:not(:has([data-print-region])):has([data-print-fallback]),
+  .k2b-ui:not(:has([data-print-region])) :has([data-print-fallback]) {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: none !important;
+    overflow: visible !important;
+    transform: none !important;
+    contain: none !important;
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+  }
+
+  /* A region and the scrollports inside it print at full length. */
+  .k2b-ui [data-print-region],
+  .k2b-ui [data-print-region] :is(.k2b-scroll-area, .k2b-app-workspace__main, .k2b-app-workspace__main-pane) {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+  }
+
+  .k2b-ui [data-print-region] a[href] {
+    text-decoration-line: underline;
+  }
+
+  .k2b-ui [data-print-region] :is(h1, h2, h3, h4, h5, h6) {
+    break-after: avoid;
+  }
+
+  .k2b-ui [data-print-region] :is(figure, img, pre, blockquote, tr, .k2b-notice-card) {
+    break-inside: avoid;
+  }
+
+  /* A zoomable figure prints at its fitted size, without its controls. */
+  .k2b-ui .k2b-zoom-pan__controls {
+    display: none !important;
+  }
+
+  .k2b-ui .k2b-zoom-pan__stage {
+    padding: 0 !important;
+    transform: none !important;
+  }
+
+  .k2b-ui [data-print-fallback] {
+    display: block !important;
+    max-width: 36rem;
+    color: #09090b;
+    font-size: 11pt;
+    line-height: 1.5;
+  }
+
+  .k2b-ui [data-print-fallback] > * {
+    margin: 0;
+  }
+
+  .k2b-ui [data-print-fallback] > :first-child {
+    font-weight: 600;
+  }
+
+  /* Until dark is a screen-only theme (#1274), a dark page prints as ink on white paper. */
+  :is(.k2b-ui.k2b-dark, .k2b-ui[data-theme="dark"], .dark .k2b-ui, .k2b-ui.dark)
+    :is([data-print-region], [data-print-region] *, [data-print-fallback], [data-print-fallback] *) {
+    color: #09090b !important;
+    background-color: transparent !important;
+    border-color: #d4d4d8 !important;
+  }
+
+  /* Without a target, the workspace prints its primary content at full length. */
+  .k2b-ui
+    :is(
+      .k2b-app-workspace__sidebar,
+      .k2b-app-workspace__resize,
+      .k2b-app-workspace__detail,
+      .k2b-app-workspace__drawer,
+      .k2b-app-workspace__head-toggle,
+      .k2b-toast-container,
+      dialog
+    ):not([data-print-region], :has([data-print-region])) {
+    display: none !important;
+  }
+
+  .k2b-ui :is(.k2b-app-workspace, .k2b-app-workspace__content, .k2b-app-workspace__main, .k2b-app-workspace__main-pane) {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+  }
+}

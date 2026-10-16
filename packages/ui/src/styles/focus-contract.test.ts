@@ -119,6 +119,7 @@ describe("@k2b/ui focus and color contract", () => {
       "surfaces-widgets-parity.css",
       "content-parity.css",
       "editors-parity.css",
+      "print.css",
     ]);
     expect(focused.length).toBeGreaterThan(0);
     expect(signaled.length).toBeGreaterThan(0);

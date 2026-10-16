@@ -73,6 +73,7 @@ export default function BookSurface(props: BookSurfaceProps) {
                 </div>
                 {props.html !== null ? (
                   <article
+                    data-print-region=""
                     id="notebook-book-content"
                     aria-label={props.noteTitle ?? undefined}
                     tabIndex={-1}

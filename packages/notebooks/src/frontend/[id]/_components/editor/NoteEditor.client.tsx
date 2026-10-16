@@ -65,6 +65,7 @@ import { caretFormat, sameCaretFormat } from "./editor-actions";
 import { createLinkedHeadingJump, type LinkedHeading } from "./linked-heading";
 import { createNoteNavigationCoordinator, headingFromHash, resolveSameNotebookNoteTarget } from "./note-navigation";
 import { NOTE_PREVIEW_ID } from "./note-preview";
+import { createNotePrintCopy } from "./note-print-copy";
 import { keepReadingPosition, previewReadingPosition, type ReadingPosition, scrollToReadingPosition } from "./reading-position";
 import { slashCommandsExtension } from "./slash-commands";
 import { createSyncEnded, SyncEndedBar } from "./sync-ended";
@@ -646,7 +647,10 @@ function EditorInstance(
     tocDebounceTimer = setTimeout(emitDerivedDocState, TOC_DEBOUNCE_MS);
   };
 
-  const onTextUpdate = () => scheduleDerivedEmit();
+  const onTextUpdate = () => {
+    scheduleDerivedEmit();
+    printCopy?.changed();
+  };
   ytext.observe(onTextUpdate);
 
   const onToggleRich = () =>
@@ -665,6 +669,14 @@ function EditorInstance(
 
   const exportContent = () =>
     historyIncomplete() ? `> **${t().historyIncompleteTitle}** ${t().historyIncompleteDetail}\n\n${ytext.toString()}` : ytext.toString();
+
+  let printArticle!: HTMLElement;
+  let printCopy: ReturnType<typeof createNotePrintCopy> | undefined;
+  createEffect(() => {
+    historyIncomplete();
+    locale();
+    printCopy?.changed();
+  });
 
   const onCopy = () => {
     void clipboard.copy(exportContent()).then(
@@ -822,6 +834,7 @@ function EditorInstance(
   };
 
   onMount(() => {
+    printCopy = createNotePrintCopy(printArticle, { notebookId: props.notebookId, noteId: props.noteId, markdown: exportContent, locale });
     writeSettings(props.notebookId, { lastNoteId: props.noteId });
     provider?.connect();
     const opensHeading = linkedHeadingJump.open();
@@ -903,6 +916,7 @@ function EditorInstance(
 
   onCleanup(() => {
     disposed = true;
+    printCopy?.dispose();
     for (const frame of pendingFocusFrames) cancelAnimationFrame(frame);
     pendingFocusFrames.clear();
     if (cursorIdleTimer) {
@@ -929,6 +943,7 @@ function EditorInstance(
 
   return (
     <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
+      <article ref={printArticle} class="notebook-book-content notebook-note-print" />
       {/* Once retries stop, the sync-ended bar owns the message; this notice promises retries. */}
       <Show when={storageExhausted() && !syncEnded.ended()}>
         <NoticeCard role="alert" tone="danger" title={t().storageExhaustedTitle} detail={t().storageExhaustedDetail} />

@@ -128,6 +128,7 @@ const portableSections = [
     title: "Layout",
     icon: "ti ti-layout",
     pages: [
+      page("print", "Browser printing", "ti ti-printer", "Print readable content or an application export hint without clipping."),
       page(
         "workspace",
         "AppWorkspace",

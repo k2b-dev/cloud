@@ -5,6 +5,7 @@ export const notebooksPageMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      printHint: "Open a note to print it, or download it as a PDF from the note's details.",
       start: "Start",
       notebooks: "Notebooks",
       activityLoadFailed: "Failed to load notebook activity",
@@ -65,6 +66,7 @@ export const notebooksPageMessages = i18n.define({
       activityUnknown: ({ action, notebook }: { action: string; notebook: string }) => `${action} in ${notebook}`,
     },
     de: {
+      printHint: "Öffne eine Notiz, um sie zu drucken, oder lade sie in den Details der Notiz als PDF herunter.",
       start: "Start",
       notebooks: "Notizbücher",
       activityLoadFailed: "Die Aktivitäten konnten nicht geladen werden",

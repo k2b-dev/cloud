@@ -44,6 +44,10 @@ const render = (
   );
 
 describe("Book surface", () => {
+  test("only a rendered note becomes a print region", async () => {
+    expect(await selectHtml(render(), "article#notebook-book-content[data-print-region]")).toHaveLength(1);
+    expect(await selectHtml(render(false, false, "en", null), "[data-print-region]")).toHaveLength(0);
+  });
   test.each([
     ["en", "Switch notebook"],
     ["de", "Notizbuch wechseln"],

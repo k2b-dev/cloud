@@ -1788,6 +1788,22 @@ const TableOfContentsDemo = () => {
 };
 
 const demos: DemoSection = {
+  print: () => (
+    <DemoCard
+      id="print-content"
+      chip={{ kind: "asset", name: "Browser printing", from: "@k2b/ui" }}
+      description="On paper, the marked article prints alone and its edit control stays on screen. The demo leaves the attribute out, so this page still prints as a whole."
+      code={
+        '<article data-print-region=""><h1>Field notes</h1><button class="print:hidden">Edit</button><p>The complete note.</p></article>'
+      }
+    >
+      <article>
+        <h1>Field notes</h1>
+        <Button class="print:hidden">Edit</Button>
+        <p>The complete note.</p>
+      </article>
+    </DemoCard>
+  ),
   "table-of-contents": () => (
     <DemoGrid>
       <DemoCard

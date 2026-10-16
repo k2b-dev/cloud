@@ -25,6 +25,7 @@ import { parseFullWidth, parseNavigationHidden, parseSettings } from "../_compon
 import NotebookSidebar from "../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../_components/sidebar/types";
 import WorkspaceEventBridge from "../_components/sidebar/WorkspaceEventBridge.island";
+import { notebooksPageMessages } from "../../messages";
 import { notebookWorkspaceMessages } from "../messages";
 import { projectNotebook, projectTree } from "../page-data";
 
@@ -37,6 +38,7 @@ const parsePage = (raw: string | undefined): number => {
 
 export default ssr<AuthContext>(async (c) => {
   const t = notebookWorkspaceMessages.resolve([getLocale(c)]).t;
+  const printHint = notebooksPageMessages.resolve([getLocale(c)]).t.printHint;
   const user = expectUserBackedActor(c);
   const notebookShortId = c.req.param("id")!;
   const search = (c.req.query("search") ?? "").trim();
@@ -114,6 +116,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout
+      printHint={printHint}
       c={c}
       fullPage
       title={[

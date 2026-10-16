@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { splitTopLevel } from "../styles/css-contract-test-helpers";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-surfaces-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -482,8 +483,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     for (const file of stylesheets.filter((name) => ownedSelectorFiles.has(name))) {
       const css = readFileSync(resolve(stylesDir, file), "utf8");
       for (const rule of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
-        const selectors = (rule[1]?.replace(/\/\*[\s\S]*?\*\//g, "") ?? "")
-          .split(",")
+        const selectors = splitTopLevel(rule[1]?.replace(/\/\*[\s\S]*?\*\//g, "") ?? "", ",")
           .map((raw) => raw.split(/\s+/).filter(Boolean).join(" "))
           .filter(Boolean);
         for (const selector of selectors) {
@@ -511,7 +511,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
       for (const rule of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
         const selectors = rule[1]?.replace(/\/\*[\s\S]*?\*\//g, "").trim() ?? "";
         if (!selectors || selectors.startsWith("@")) continue;
-        for (const raw of selectors.split(",")) {
+        for (const raw of splitTopLevel(selectors, ",")) {
           const scoped = raw.split(/\s+/).filter(Boolean).join(" ").replace(themePrefix, "");
           // `.k2b-data-panel > .k2b-placeholder` is composition: the container's
           // stylesheet owns it. Only rules headed by one of our own components

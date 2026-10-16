@@ -28,6 +28,7 @@ import { parseFullWidth, parseNavigationHidden, parseSettings } from "../../_com
 import NotebookSidebar from "../../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../../_components/sidebar/types";
 import WorkspaceEventBridge from "../../_components/sidebar/WorkspaceEventBridge.island";
+import { notebooksPageMessages } from "../../../messages";
 import { notebookWorkspaceMessages } from "../../messages";
 import { projectNotebook, projectTree } from "../../page-data";
 
@@ -41,6 +42,7 @@ const parsePage = (raw: string | undefined): number => {
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const t = notebookWorkspaceMessages.resolve([locale]).t;
+  const printHint = notebooksPageMessages.resolve([locale]).t.printHint;
   const formatDate = (iso: string): string => new Intl.DateTimeFormat(locale).format(new Date(iso));
   const user = expectUserBackedActor(c);
   const notebookShortId = c.req.param("id")!;
@@ -135,7 +137,7 @@ export default ssr<AuthContext>(async (c) => {
       />
     ));
     return () => (
-      <Layout c={c} fullPage fullWidth title={notebook.name}>
+      <Layout printHint={printHint} c={c} fullPage fullWidth title={notebook.name}>
         <RememberNotebook notebookId={notebook.shortId} />
         <BookSurface
           userId={ctx.userId}
@@ -233,6 +235,7 @@ export default ssr<AuthContext>(async (c) => {
   );
   return () => (
     <Layout
+      printHint={printHint}
       c={c}
       fullPage
       title={[
