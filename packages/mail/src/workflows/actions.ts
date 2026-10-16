@@ -440,7 +440,17 @@ const messageAction = (
                 idempotencyKey: ctx.effectKey,
                 correlationId: ctx.runId,
               };
-        return applied(await createCommand(ctx, scope, input));
+        const outcome = await createCommand(ctx, scope, input);
+        // The message may also have left between the lookup above and the command.
+        if (
+          outcome.state === "failed" &&
+          outcome.code === "NOT_FOUND" &&
+          MESSAGE_STATE_ACTIONS.has(kind) &&
+          (await incomingAutomationMessageLeft(turnParams))
+        ) {
+          return skipped("message_moved");
+        }
+        return applied(outcome);
       }),
   }) as ErasedWorkflowAction;
 
