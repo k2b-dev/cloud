@@ -4,7 +4,7 @@ import { type ClientRequest, IncomingMessage, type RequestOptions } from "node:h
 import { Socket } from "node:net";
 import { NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
 import { parseNetworkAllowlist } from "@k2b/cloud/shared";
-import { uploadSnapshotObjects } from "./snapshot-http";
+import { presignSnapshotObject, uploadSnapshotObjects } from "./snapshot-http";
 
 const config = {
   bucket: "bucket",
@@ -126,4 +126,29 @@ test("idle timeout destroys a stalled upload; failures do not expose transport e
       /S3 .*connection failed/,
     );
   }
+});
+
+test("signs each object right before its request so long uploads never send an expired signature", async () => {
+  const f = fixture();
+  const events: string[] = [];
+  const many = [objects[0]!, { ...objects[0]!, path: "notebooks/nb1234/latest-manifest.json" }];
+  await uploadSnapshotObjects(config, many, {
+    allowlist,
+    lookup,
+    presign: (signing, path) => {
+      events.push(`sign ${path}`);
+      return presignSnapshotObject(signing, path);
+    },
+    request: (options, callback) => {
+      events.push(`send ${new URL(String(options.path), "http://snapshots.test").pathname}`);
+      return f.request(options, callback);
+    },
+  });
+  expect(events).toEqual([
+    "sign notebooks/nb1234/latest.zip",
+    "sign notebooks/nb1234/latest.zip",
+    "send /bucket/notebooks/nb1234/latest.zip",
+    "sign notebooks/nb1234/latest-manifest.json",
+    "send /bucket/notebooks/nb1234/latest-manifest.json",
+  ]);
 });

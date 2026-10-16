@@ -15,6 +15,7 @@ export type SnapshotHttpDeps = {
   allowlist?: NetworkAllowlist;
   lookup?: NetworkLookup;
   request?: RequestFactory;
+  presign?: typeof presignSnapshotObject;
 };
 type SigningConfig = Pick<NotebookBackupConfig, "bucket" | "endpoint" | "region" | "accessKeyId" | "secretAccessKey">;
 
@@ -96,13 +97,14 @@ export const uploadSnapshotObjects = async (
   deps: SnapshotHttpDeps = {},
 ): Promise<NotebookBackupUploadResult[]> => {
   if (!objects.length) return [];
-  const urls = objects.map((object) => presignSnapshotObject(config, object.path));
-  const first = urls[0]!;
-  const addresses = await resolveAllowedNetworkAddresses(first.hostname, deps.allowlist ?? EMPTY_NETWORK_ALLOWLIST, deps.lookup);
+  const presign = deps.presign ?? presignSnapshotObject;
+  const target = presign(config, objects[0]!.path);
+  const addresses = await resolveAllowedNetworkAddresses(target.hostname, deps.allowlist ?? EMPTY_NETWORK_ALLOWLIST, deps.lookup);
   const uploaded: NotebookBackupUploadResult[] = [];
-  for (const [index, object] of objects.entries()) {
-    const url = urls[index]!;
-    if (url.origin !== first.origin) throw new Error("S3 upload target changed between objects");
+  for (const object of objects) {
+    // Sign right before each request so a long upload never sends an expired signature.
+    const url = presign(config, object.path);
+    if (url.origin !== target.origin) throw new Error("S3 upload target changed between objects");
     try {
       const bytes = await putObject(url, object, addresses, deps);
       uploaded.push({ path: object.path, bytes });
