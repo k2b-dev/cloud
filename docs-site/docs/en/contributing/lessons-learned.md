@@ -24,6 +24,7 @@ convention still needs a check or a test.
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
 | Time | A test or a render depends on today's date, the time zone, or randomness, so it passes on one day and fails on another. | Test: the Assistant sidebar test from [#1121](https://github.com/k2b-dev/cloud/pull/1121) freezes its clock. No repository check finds other tests that compare fixed dates with the real clock yet. |
+| Lease starvation under a continuous competing workload | A class of work keeps the lease while competing work retains places and retries without progress. | Test: Mail’s `provider-lease-fairness.integration.test.ts` checks command progress during continuous folder syncs, sync progress under old command backlogs, and a total order with one first waiter ([#1268](https://github.com/k2b-dev/cloud/issues/1268)). |
 | Shared subprocess lost after timeout | Bun kills a shared browser when one test times out, so later tests fail too. | Test: `packages/ui/test/browser.browser.test.ts` runs a child suite with one hung test and checks that three later tests still open pages ([#1254](https://github.com/k2b-dev/cloud/issues/1254)). |
 | Server render vs. mount | An island replaces the server HTML when it mounts; see [Know how an island mounts](/en/docs/frontend/islands-and-hydration#know-how-an-island-mounts). When the server and the browser render different markup or styles, the page moves on mount or after a reload, and WebKit can keep stale styles from before the mount. | Convention: [Know how an island mounts](/en/docs/frontend/islands-and-hydration#know-how-an-island-mounts). Test: the month view browser tests from [#1157](https://github.com/k2b-dev/cloud/pull/1157) check row places right after mount. The `@k2b/ui` sidebar reload test from [#1154](https://github.com/k2b-dev/cloud/issues/1154) compares the server frame, the frame right after mount, and the settled frame after a reload. No shared test does this for other islands yet. |
 | Layout shift | A transient state, such as a status text, a notice, or a loader, appears in the layout flow and moves its neighbors. | Convention: [Keep the layout still](/en/docs/frontend/styling-and-accessibility#keep-the-layout-still) ([#1143](https://github.com/k2b-dev/cloud/pull/1143)). Each change applies its browser-test pattern, which compares bounding boxes before and after each state change. Test: `chat-composer.browser.test.ts` checks pending slash searches and command status at desktop and phone widths. No automatic check catches every flow. |
@@ -37,6 +38,13 @@ convention still needs a check or a test.
 | Breakpoint gap | Two neighbouring media queries end at `max-width: 1023px` and start at `min-width: 1024px`. A fractional width between them, such as a zoomed window, matches neither, and the page falls back to its base rules. | Test: `packages/cloud/src/styles/shell-modes.test.ts` pins the shell queries to `min-width` and its negation `not all and (min-width: …)` ([#1255](https://github.com/k2b-dev/cloud/issues/1255)). Range syntax such as `width < 64rem` is no guard: the build lowers it to `max-width: calc(64rem - .001px)`. No check covers other style sheets yet. |
 
 ## Lessons
+
+### Folder syncs starve Mail commands on busy mailboxes
+
+- **What happened:** Moves, folder creation, and sends stayed queued for minutes while hundreds of folders kept syncing ([#1268](https://github.com/k2b-dev/cloud/issues/1268)).
+- **Root cause:** Head starts ordered individual waiters, so every older folder sync went before a command. Retained places and continuous syncs made that wait grow with the folder count.
+- **Error class:** Lease starvation under a continuous competing workload.
+- **Guard:** Commands and other provider work alternate in the lease line. `provider-lease-fairness.integration.test.ts` checks continuous syncs of many folders through the command worker, both directional turn bounds, and a seeded mixed sequence with exactly one first waiter. Existing continuation, body-batch, and bulk-move tests preserve sync progress.
 
 ### Signed-in shell fell between its two modes
 

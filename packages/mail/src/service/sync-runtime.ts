@@ -2154,8 +2154,9 @@ export const commitSyncBatch = async (params: {
 };
 
 /**
- * Imports one batch of the folder. A sync that checks for new mail goes before commands and
- * hydration of the same mailbox; a batch that continues with older mail is `background` work.
+ * Imports one batch of the folder. Syncs and background work take turns with commands of the
+ * same mailbox. A sync that checks for new mail gets a head start over background work; a batch
+ * that continues with older mail is `background` work.
  */
 export const syncFolderBatch = async (
   folderId: string,
