@@ -1767,8 +1767,8 @@ const reconcileFolderOperation = async (
 };
 
 /**
- * Takes the provider lease for one command of the mailbox. Commands wait behind folder syncs and
- * go before hydration; the mailbox keeps one place in line across its commands.
+ * Takes the provider lease for one command of the mailbox. Commands take turns with folder syncs
+ * and background work; the mailbox keeps one place in line while its commands wait.
  */
 const acquireCommandLease = (command: DbCommandExecution, resource: string) =>
   acquireProviderLease({
@@ -3636,7 +3636,7 @@ export const executeOutboxSubmissionWithHeartbeat = async (
   if (await deferSendWaitingForLogin(outboxId)) return "scheduled";
   const remoteResourceId = await loadOutboxRemoteResourceId(outboxId);
   if (!remoteResourceId) return null;
-  // A send is a user command: it waits behind folder syncs and goes before hydration.
+  // A send is a user command: it takes turns with folder syncs and background work.
   const { lock, retryAfterMs } = await acquireProviderLease({
     resource: remoteResourceId,
     waiter: `outbox:${outboxId}`,

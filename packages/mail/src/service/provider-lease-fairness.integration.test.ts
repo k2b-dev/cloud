@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
 import type { JobContext } from "@k2b/sync";
-import { sql } from "bun";
+import { redis, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, type RemoteFolder, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
@@ -22,11 +22,15 @@ import { createDraft } from "./drafts";
 import { createMailbox, updateMailbox } from "./mailboxes";
 import { runMaintenanceJob, startMaintenanceRuntime, stopMaintenanceRuntime, submitDueMaintenanceCommands } from "./maintenance-runtime";
 import { createProviderConnection } from "./provider-connections";
+import * as providerLeases from "./provider-operation-lock";
 import {
   acquireProviderLease,
   MAIL_PROVIDER_JOB_CONCURRENCY,
   MAIL_PROVIDER_OPERATION_LEASE_MS,
   mailProviderOperationMutex,
+  type ProviderLeasePriority,
+  type ProviderLeaseTurn,
+  providerBusyRetryAfterMs,
   providerLeaseWaitedFor,
   recordProviderFailure,
   recordProviderReachable,
@@ -360,7 +364,7 @@ suite("mail provider lease fairness", () => {
   };
 
   const remoteFolders = (account: string): RemoteFolder[] =>
-    [INBOX, ARCHIVE, SENT].map((path) => {
+    [...accounts.get(account)!.folders.keys()].map((path) => {
       const folder = folderOf(account, path);
       return {
         stableKey: `${path}:${folder.uidValidity}`,
@@ -368,7 +372,7 @@ suite("mail provider lease fairness", () => {
         name: path,
         delimiter: "/",
         parentPath: null,
-        role: path === INBOX ? "inbox" : path === SENT ? "sent" : "archive",
+        role: path === INBOX ? "inbox" : path === SENT ? "sent" : path === ARCHIVE ? "archive" : "other",
         subscribed: true,
         selectable: true,
         uidValidity: folder.uidValidity,
@@ -385,7 +389,7 @@ suite("mail provider lease fairness", () => {
    */
   const connect = async (
     label: string,
-    options: { condstore?: boolean; firstInboxUid?: number; uidplus?: boolean } = {},
+    options: { condstore?: boolean; firstInboxUid?: number; uidplus?: boolean; extraFolders?: number } = {},
   ): Promise<Mailbox> => {
     const account = `${label}-${suffix}@example.test`;
     const condstore = options.condstore ?? false;
@@ -394,7 +398,7 @@ suite("mail provider lease fairness", () => {
       condstore,
       uidplus: options.uidplus ?? true,
       folders: new Map(
-        [INBOX, ARCHIVE, SENT].map((path, index) => [
+        [INBOX, ARCHIVE, SENT, ...Array.from({ length: options.extraFolders ?? 0 }, (_, index) => `Folder-${index}`)].map((path, index) => [
           path,
           {
             uidValidity: String(10 + index),
@@ -786,7 +790,229 @@ suite("mail provider lease fairness", () => {
       for (const { access_id } of access) await sql`DELETE FROM auth.access WHERE id = ${access_id}::uuid`;
     }
     if (userId) await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
-  });
+  }, 30_000);
+
+  test("a command gets a turn within two sync batches on a continuously syncing mailbox with many folders", async () => {
+    const mailbox = await connect("many-folders", { extraFolders: 60 });
+    const messages = await deliverAndSync(mailbox, 151, "many-folders");
+    const paths = [...accounts.get(mailbox.account)!.folders.keys()];
+    // Start with incremental cursors in every folder, like a mailbox already in use.
+    for (const path of paths) {
+      if (path !== INBOX) await syncFolderBatch(mailbox.folderId(path), async () => undefined);
+    }
+    const starts: number[] = [];
+    const completions: number[] = [];
+    const requested = new Set<string>();
+    let commandAskedAt: number | undefined;
+    let holder = "";
+    const acquire = providerLeases.acquireProviderLease;
+    const leaseRequests = spyOn(providerLeases, "acquireProviderLease").mockImplementation(async (params) => {
+      if (params.resource === mailbox.remoteResourceId) {
+        requested.add(params.waiter);
+        if (params.priority === "command") commandAskedAt ??= performance.now();
+      }
+      const turn = await acquire(params);
+      if (params.resource === mailbox.remoteResourceId && turn.lock) holder = params.waiter;
+      return turn;
+    });
+    afterStatus = async (account) => {
+      // Moves also read STATUS for their destination baseline; only sync holders start a batch.
+      if (account !== mailbox.account || !holder.startsWith("sync-folder:")) return;
+      starts.push(performance.now());
+      // A short remote batch, with enough round trips for the other folders to line up.
+      await Bun.sleep(4 * ROUND_TRIP_MS);
+    };
+    let stopped = false;
+    const loops = paths.map(async (path) => {
+      while (!stopped) {
+        try {
+          await syncFolderBatch(mailbox.folderId(path), async () => undefined);
+          completions.push(performance.now());
+        } catch (error) {
+          if (!(error instanceof Error) || !("code" in error) || error.code !== "SYNC_BUSY") throw error;
+          await Bun.sleep(providerBusyRetryAfterMs(error));
+        }
+      }
+    });
+    const settledLoops = Promise.allSettled(loops);
+    let first: string[] = [];
+    let backlog: string[] = [];
+    try {
+      await waitFor(async () => requested.size === paths.length && starts.length >= 2, "all folders to compete for the lease");
+      first = await queueMoves(mailbox, [messages[0]!], "many-folders-first");
+      // One running batch + one further batch + the line's retry (at most 4.5 s), with host slack.
+      await waitFor(async () => (await confirmed(first)) === 1, "the command turn under continuous folder syncs", 8_000);
+      expect(commandAskedAt).toBeDefined();
+      const firstMove = moveSets.find((entry) => entry.label === "many-folders")!;
+      expect(firstMove.at - commandAskedAt!).toBeLessThan(8_000);
+      expect(starts.filter((at) => at >= commandAskedAt! && at <= firstMove.at).length).toBeLessThanOrEqual(2);
+
+      backlog = await queueMoves(mailbox, messages.slice(1), "many-folders-backlog", { startTogether: true });
+      const beforeBacklog = starts.at(-1)!;
+      await waitFor(async () => (await confirmed(backlog)) > 0, "the move backlog to start");
+      const backlogStartedAt = moveSets.find((entry) => entry.label === "many-folders" && entry.at > firstMove.at)!.at;
+      await waitFor(
+        async () => completions.some((at) => at > backlogStartedAt) && (await pending(backlog)) > 0,
+        "a sync batch to complete while commands remain queued",
+      );
+      await waitFor(async () => (await confirmed(backlog)) === 150, "the backlog to drain while syncs continue");
+      const sets = moveSets.filter((entry) => entry.label === "many-folders" && entry.at > firstMove.at);
+      expect(sets.length).toBeGreaterThanOrEqual(3);
+      await waitFor(async () => starts.at(-1)! > sets.at(-1)!.at, "the sync after the last move set");
+      const syncs = starts.filter((at) => at >= beforeBacklog);
+      for (let index = 1; index < syncs.length; index += 1) {
+        expect(sets.filter((entry) => entry.at > syncs[index - 1]! && entry.at < syncs[index]!).length).toBeLessThanOrEqual(1);
+      }
+    } finally {
+      stopped = true;
+      const ended = await settledLoops;
+      afterStatus = null;
+      leaseRequests.mockRestore();
+      // A failed reproduction must not leave commands competing with later tests.
+      const queued = [...first, ...backlog];
+      if (queued.length) await waitFor(async () => (await pending(queued)) === 0, "the test's remaining commands to finish");
+      for (const result of ended) if (result.status === "rejected") throw result.reason;
+    }
+  }, 120_000);
+
+  /** All waiters retry at the line's delay; old command places model an existing backlog. */
+  const checkTurnBound = async (waitingPriority: "sync" | "command", competing: string[]): Promise<void> => {
+    const resource = crypto.randomUUID();
+    const priority = waitingPriority === "command" ? "sync" : "command";
+    const take = (waiter: string, kind: ProviderLeasePriority) =>
+      acquireProviderLease({ resource, waiter, priority: kind, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+    const holder = await take("holder", priority);
+    if (!holder.lock) throw new Error("Initial holder did not acquire the lease");
+    let stopped = false;
+    let acquired = false;
+    const turns: string[] = [];
+    const running: Promise<void>[] = [];
+    try {
+      const initial: ProviderLeaseTurn[] = [];
+      for (const waiter of competing) initial.push(await take(waiter, priority));
+      if (priority === "command") {
+        // Earlier commands retain places older than the sync/command head-start difference.
+        const places = `mail:provider-lease-line:{${resource}}:places`;
+        for (const waiter of competing) await redis.send("ZINCRBY", [places, "-45000", waiter]);
+      }
+      let waiting = await take("later", waitingPriority);
+      expect(waiting.lock).toBeNull();
+      running.push(
+        ...competing.map(async (waiter, index) => {
+          let turn = initial[index]!;
+          while (!stopped) {
+            if (turn.lock) {
+              try {
+                turns.push(waiter);
+                await Bun.sleep(50);
+              } finally {
+                await releaseProviderLease(turn.lock);
+              }
+            } else await Bun.sleep(turn.retryAfterMs);
+            if (!stopped) {
+              turn = await take(waiter, priority);
+              if (stopped && turn.lock) await releaseProviderLease(turn.lock);
+            }
+          }
+        }),
+      );
+      running.push(
+        (async () => {
+          while (!stopped && !waiting.lock) {
+            await Bun.sleep(waiting.retryAfterMs);
+            if (!stopped) waiting = await take("later", waitingPriority);
+          }
+          if (waiting.lock) {
+            acquired = true;
+            await releaseProviderLease(waiting.lock);
+          }
+        })(),
+      );
+      await Bun.sleep(50);
+      await releaseProviderLease(holder.lock);
+      await waitFor(async () => acquired || turns.length > 1, "the later waiter or two competing turns", 10_000);
+      expect(turns.length).toBeLessThanOrEqual(1);
+      expect(acquired).toBe(true);
+    } finally {
+      stopped = true;
+      await releaseProviderLease(holder.lock);
+      await Promise.all(running);
+    }
+  };
+
+  test("a command behind forty sync waiters waits for at most one further sync turn", async () => {
+    await checkTurnBound(
+      "command",
+      Array.from({ length: 40 }, (_, index) => `sync-folder:${index}`),
+    );
+  }, 20_000);
+
+  test("a folder sync behind old command and outbox places waits for at most one command turn", async () => {
+    await checkTurnBound("sync", ["commands:mailbox", ...Array.from({ length: 5 }, (_, index) => `outbox:${index}`)]);
+  }, 20_000);
+
+  test("a seeded mixed lease line always has exactly one present waiter first", async () => {
+    const resource = crypto.randomUUID();
+    const prefix = `mail:provider-lease-line:{${resource}}`;
+    const waiters = new Map<string, ProviderLeasePriority>();
+    let seed = 1268;
+    const next = (size: number) => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed % size;
+    };
+    const take = (waiter: string, priority: ProviderLeasePriority) =>
+      acquireProviderLease({ resource, waiter, priority, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS, keepPlace: true });
+    try {
+      for (let step = 0; step < 100; step += 1) {
+        const waiter = `waiter:${next(9)}`;
+        const action = next(4);
+        if (action === 0 && waiters.size > 1 && waiters.has(waiter)) {
+          // Expired jobs leave their places through the line's normal gone cleanup.
+          await redis.send("ZADD", [`${prefix}:present`, String(Date.now() - 2 * MAIL_PROVIDER_OPERATION_LEASE_MS), waiter]);
+          waiters.delete(waiter);
+        } else {
+          const priority = (["sync", "command", "background"] as const)[next(3)]!;
+          waiters.set(waiter, priority);
+        }
+        // Register joins and priority changes while the lease is occupied, without recording a turn.
+        const held = await mailProviderOperationMutex().acquire({ resource, ttlMs: MAIL_PROVIDER_OPERATION_LEASE_MS });
+        if (!held) throw new Error("The mixed sequence leaked a lease");
+        try {
+          for (const [name, priority] of waiters) expect((await take(name, priority)).lock).toBeNull();
+        } finally {
+          await releaseProviderLease(held);
+        }
+        const turn: unknown = await redis.send("HMGET", [`${prefix}:turn`, "waiter", "priority"]);
+        if (!Array.isArray(turn)) throw new Error("Invalid turn snapshot");
+        const restoreTurn = async () => {
+          await redis.send("DEL", [`${prefix}:turn`]);
+          if (turn[0]) await redis.send("HSET", [`${prefix}:turn`, "waiter", String(turn[0]), "priority", String(turn[1])]);
+        };
+        const winners: string[] = [];
+        for (const [name, priority] of waiters) {
+          // Each candidate sees the same free-lease order. A successful probe must not change the
+          // next candidate's last turn or remove its own place (keepPlace also exercises barriers).
+          await restoreTurn();
+          const candidate = await take(name, priority);
+          if (candidate.lock) {
+            winners.push(name);
+            await releaseProviderLease(candidate.lock);
+          }
+        }
+        expect(winners).toHaveLength(1);
+        await restoreTurn();
+        const winner = winners[0]!;
+        const actual = await take(winner, waiters.get(winner)!);
+        expect(actual.lock).not.toBeNull();
+        if (actual.lock) await releaseProviderLease(actual.lock);
+      }
+    } finally {
+      await redis.send(
+        "DEL",
+        ["places", "present", "priorities", "turn"].map((key) => `${prefix}:${key}`),
+      );
+    }
+  }, 20_000);
 
   test("new mail arrives within one folder sync while a few hundred moves drain, and other mailboxes keep working", async () => {
     // An older account on a server with CONDSTORE: every move raises INBOX's HIGHESTMODSEQ, so each
