@@ -33,10 +33,10 @@ test("the real SDK commit uses the slow budget and the wrapper preserves explici
     deadlines.push(ms);
     return new AbortController().signal;
   });
-  const calls: { url: string; signal: AbortSignal | null | undefined }[] = [];
+  const calls: { url: string; signal: AbortSignal | null | undefined; idle: number | boolean | undefined }[] = [];
   const transport: typeof fetch = Object.assign(
-    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      calls.push({ url: String(input), signal: init?.signal });
+    async (input: Parameters<typeof fetch>[0], init?: BunFetchRequestInit) => {
+      calls.push({ url: String(input), signal: init?.signal, idle: init?.timeout });
       return Response.json({ path: "file.txt" });
     },
     { preconnect: fetch.preconnect },
@@ -45,6 +45,8 @@ test("the real SDK commit uses the slow budget and the wrapper preserves explici
     const wrapped = filegateApiFetch(transport);
     await new Filegate({ baseUrl: "https://filegate.test", token: "test", fetch: wrapped }).root("cloud").commitSession("session-id");
     expect(calls[0]?.url).toBe(`${prefix}/session-id/commit`);
+    // Bun's socket idle timer must not end the commit before its budget.
+    expect(calls[0]?.idle).toBe(slow);
     expect(deadlines).toEqual([slow]);
     const signal = new AbortController().signal;
     await wrapped(`${prefix}/session-id/commit`, { method: "POST", signal });

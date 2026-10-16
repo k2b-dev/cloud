@@ -99,8 +99,12 @@ export function filegateCallTimeoutMs(input: Parameters<typeof fetch>[0], init?:
 
 export function filegateApiFetch(transport: typeof fetch = fetch): typeof fetch {
   return Object.assign(
-    (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
-      transport(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(filegateCallTimeoutMs(input, init)) }),
+    (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      if (init?.signal) return transport(input, init);
+      const budget = filegateCallTimeoutMs(input, init);
+      // Bun's own socket idle timer (5 min by default) would otherwise end a silent slow call first.
+      return transport(input, { ...init, signal: AbortSignal.timeout(budget), timeout: budget });
+    },
     { preconnect: transport.preconnect },
   );
 }
