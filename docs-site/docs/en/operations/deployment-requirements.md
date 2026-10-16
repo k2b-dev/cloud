@@ -349,11 +349,13 @@ egress is needed from Core, while Mail needs access to its mailbox providers.
 | City search | `weather.geo_url` pointing to the supported Geo API | Dev supplies a Geo container (`http://geo:4000` internally), but an administrator must still set the Geo API URL in Weather settings. An empty URL returns `WEATHER_CITY_SEARCH_NOT_CONFIGURED` (500); Geo service failures return `WEATHER_CITY_SEARCH_UNAVAILABLE` (500). Capability errors point to `weather.forecast.current` / `weather.forecast.get` with `source.kind = "coordinates"`; forecast access is a separate dependency. |
 
 For S3 snapshots, enter credentials in the individual notebook's snapshot
-configuration, not invented global S3 environment keys. Files (`filesv2`) uses
+configuration, not invented global S3 credential environment keys. Snapshots upload
+to public storage by default; internal S3-compatible storage requires an operator
+allowlist as described below. Files (`filesv2`) uses
 the Filegate root and lease API of Filegate 6.1 or 7.0; see [Files](/en/apps/filesv2).
 
 Cloud refuses person-chosen outbound requests from the Webhook Tester,
-workflow HTTP steps, assistant file downloads, web push, Mail endpoints, and Pulse metrics sources to
+workflow HTTP steps, assistant file downloads, web push, Mail endpoints, Pulse metrics sources, and Notebook S3 snapshots to
 loopback, private, link-local, shared, and other reserved addresses, including
 names that resolve there. A failed DNS lookup also refuses the request. An
 address in the well-known NAT64 prefix `64:ff9b::/96` is judged by the IPv4
@@ -377,6 +379,21 @@ fail with a clear reason until the operator adds their targets to
 request uncompressed responses (`Accept-Encoding: identity`). An endpoint or
 proxy that compresses the response anyway fails with an unsupported content
 encoding error; turn off forced compression for `/metrics`.
+
+Notebooks operators can allow internal S3-compatible storage with
+`NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` in the Notebooks container environment.
+Use the narrowest entry: an exact host name, one IP address, or the smallest
+required CIDR range. Host entries trust all validated addresses for that exact
+name; reserved names need a host entry. Each entry covers every port and path
+on the host or range. `/0` and other invalid entries stop Notebooks at startup.
+Failed and empty lookups still refuse an upload, even for listed names.
+
+After this update, existing snapshot configurations that point at internal
+storage fail with the reason "This S3 endpoint is on an internal network..."
+and code `NOTEBOOK_SNAPSHOT_TARGET_BLOCKED` until the operator allows the
+target. Settings and credentials stay stored. Snapshots now upload with
+presigned PUT requests; object identities and paths stay the same. Redirects
+are refused.
 
 ### Keep Gotenberg offline
 

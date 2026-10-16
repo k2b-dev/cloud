@@ -221,6 +221,7 @@ export type {
 
 export {
   NetworkTargetBlockedError,
+  isNetworkTargetBlocked,
   pinnedNetworkLookup,
   resolvePublicNetworkAddresses,
   resolveAllowedNetworkAddresses,

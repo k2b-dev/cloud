@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { EMPTY_NETWORK_ALLOWLIST, isUnsafeNetworkAddress, parseNetworkAllowlist } from "../shared/network-address";
 import {
+  isNetworkTargetBlocked,
   NetworkTargetBlockedError,
   type PublicNetworkAddress,
   pinnedNetworkLookup,
@@ -192,4 +193,26 @@ describe("allowlisted network resolution", () => {
       resolveAllowedNetworkAddresses("other.test", list, async () => [{ address: "127.0.0.1", family: 4 }]),
     ).rejects.toBeInstanceOf(NetworkTargetBlockedError);
   });
+});
+
+test("save-time policy hint refuses only known blocked targets", async () => {
+  const allowlist = EMPTY_NETWORK_ALLOWLIST;
+  expect(await isNetworkTargetBlocked("127.0.0.1", allowlist)).toBe(true);
+  expect(
+    await isNetworkTargetBlocked("example.test", allowlist, {
+      resolve: async () => {
+        throw new NetworkTargetBlockedError("Blocked");
+      },
+    }),
+  ).toBe(true);
+  expect(
+    await isNetworkTargetBlocked("example.test", allowlist, {
+      resolve: async () => {
+        throw new Error("Lookup failed");
+      },
+    }),
+  ).toBe(false);
+  expect(await isNetworkTargetBlocked("example.test", allowlist, { resolve: async () => [] })).toBe(false);
+  expect(await isNetworkTargetBlocked("example.test", allowlist, { resolve: () => new Promise(() => {}), timeoutMs: 1 })).toBe(false);
+  expect(await isNetworkTargetBlocked("127.0.0.1", parseNetworkAllowlist(["127.0.0.1"]))).toBe(false);
 });

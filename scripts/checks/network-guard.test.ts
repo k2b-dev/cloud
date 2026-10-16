@@ -7,7 +7,10 @@ import { rule } from "./network-guard";
 const lines = async (source: string, file = "packages/demo/src/outbound.ts") => {
   const root = await mkdtemp(join(tmpdir(), "cloud-network-guard-"));
   try {
-    await writeFile(join(root, "package.json"), JSON.stringify({ workspaces: { packages: ["packages/demo", "packages/pulse"] } }));
+    await writeFile(
+      join(root, "package.json"),
+      JSON.stringify({ workspaces: { packages: ["packages/demo", "packages/pulse", "packages/notebooks"] } }),
+    );
     const path = join(root, file);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, source);
@@ -105,4 +108,29 @@ test("requires a pinned lookup for node:http imports only in Pulse server code",
     await lines(`${source}\nrequest({ lookup: pinnedNetworkLookup(addresses), agent: false });`, "packages/pulse/src/service/x.ts"),
   ).toEqual([]);
   expect(await lines(source, "packages/demo/src/outbound.ts")).toEqual([]);
+});
+
+test("Notebooks server requests require the guard, including S3 SDK I/O", async () => {
+  const file = "packages/notebooks/src/service/snapshots.ts";
+  expect(await lines("new Bun.S3Client(options).write(key, body);", file)).toEqual([1]);
+  expect(await lines("await fetch(url);", file)).toEqual([1]);
+  for (const source of [
+    "Bun.s3.write(key, body);",
+    'import { s3 } from "bun";',
+    'import { S3Client } from "bun";\nnew S3Client(options).file(key);',
+  ]) {
+    expect((await lines(source, file)).length).toBeGreaterThan(0);
+  }
+  expect(
+    await lines("new Bun.S3Client(options).presign(key);\nrequest({ lookup: pinnedNetworkLookup(addresses), agent: false });", file),
+  ).toEqual([]);
+  expect(
+    await lines(
+      'import { S3Client } from "bun";\nnew S3Client(options).presign(key);\nrequest({ lookup: pinnedNetworkLookup(addresses), agent: false });',
+      file,
+    ),
+  ).toEqual([]);
+  expect(
+    await lines("new Bun.S3Client(options).write(key, body);\nrequest({ lookup: pinnedNetworkLookup(addresses), agent: false });", file),
+  ).toEqual([1]);
 });

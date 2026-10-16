@@ -29,14 +29,14 @@ const pinnedCall = /\bpinnedNetworkLookup\(/g;
 const pinnedAlias = /\bpinnedNetworkLookup\s+as\b/g;
 const directAgent = /\bagent:\s*false\b/;
 const guardImport = /from\s*["']@k2b\/cloud\/services\/network-security["']|from\s*["'][./]+network-security["']/;
-const personChosenServerRoots = ["packages/pulse/src/"];
+const personChosenServerRoots = ["packages/pulse/src/", "packages/notebooks/src/"];
 const isPersonChosenServer = (path: string) =>
   personChosenServerRoots.some((root) => path.startsWith(root)) &&
   !path.includes("/frontend/") &&
   !path.endsWith(".tsx") &&
   !path.includes("/cli/");
 const globalFetch = /(?<![.\w])fetch\s*\(/g;
-const pulseFetch = /(?<![.\w])(?:(?:Bun|globalThis|self)\.)?fetch\s*\(/g;
+const personChosenFetch = /(?<![.\w])(?:(?:Bun|globalThis|self)\.)?fetch\s*\(/g;
 // Options of one request object stay within a few lines of each other.
 const SAME_REQUEST_LINES = 6;
 
@@ -75,7 +75,7 @@ export const rule: Rule = {
           findings.push({
             file,
             line: lineOf(source, httpMatch.index),
-            message: "Pulse server code that sends node:http requests must connect through pinnedNetworkLookup with agent: false",
+            message: "Server code that sends node:http requests must connect through pinnedNetworkLookup with agent: false",
           });
         }
         const lines = source.split("\n");
@@ -90,14 +90,29 @@ export const rule: Rule = {
           });
         }
       }
+      // SDK clients resolve independently. In these roots allow S3 only for local
+      // presigning beside a pinned transport, with no SDK I/O methods in the file.
+      if (isPersonChosenServer(path)) {
+        const s3 = /\bBun\.s3\b|\bBun\.S3Client\b|\bnew\s+S3Client\b|\bimport\s*\{[^}]*\b(?:s3|S3Client)\b[^}]*\}\s*from\s*["']bun["']/g;
+        const sdkIO = /\.(?:write|file|delete|exists|list|stat|size|unlink)\s*\(/;
+        for (const match of source.matchAll(s3)) {
+          if (!/\bBun\.s3\b|\bs3\b/.test(match[0]) && source.match(pinnedCall) && /\.presign\s*\(/.test(source) && !sdkIO.test(source))
+            continue;
+          findings.push({
+            file,
+            line: lineOf(source, match.index),
+            message: "S3 clients may only presign beside a pinned transport; SDK network I/O bypasses the guard",
+          });
+        }
+      }
       // fetch() resolves the name again after the check, so a checked host must not reach it.
       if (guardImport.test(source) || isPersonChosenServer(path)) {
-        for (const match of source.matchAll(isPersonChosenServer(path) ? pulseFetch : globalFetch)) {
+        for (const match of source.matchAll(isPersonChosenServer(path) ? personChosenFetch : globalFetch)) {
           findings.push({
             file,
             line: lineOf(source, match.index),
             message: isPersonChosenServer(path)
-              ? "Pulse server code requests person-chosen URLs; use the guarded metrics transport (resolveAllowedNetworkAddresses + pinnedNetworkLookup), never fetch()"
+              ? "Server code requests person-chosen URLs; use a guarded transport (resolveAllowedNetworkAddresses + pinnedNetworkLookup), never fetch()"
               : "connect to checked addresses with requestPublicHttps or pinnedNetworkLookup; fetch() resolves the host again",
           });
         }
