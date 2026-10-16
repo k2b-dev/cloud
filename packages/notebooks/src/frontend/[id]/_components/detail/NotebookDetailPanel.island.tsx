@@ -134,6 +134,8 @@ type ActivityPage = { data: NoteActivityItem[]; nextCursor: string | null };
 /** Activity rows before "n more": enough to see what happened lately without pushing the panel's end away. */
 const NEWEST_ACTIVITY = 4;
 const ACTIVITY_PAGE_SIZE = 10;
+/** How long a manual reconnect shows progress before the button can be used again. */
+const RECONNECT_SETTLE_MS = 5_000;
 const NO_AUTHORS: NoteAuthors = { createdBy: null, lastEditedBy: null };
 const REFERENCE_ICONS: Partial<Record<NamedBlockSummary["type"], string>> = {
   table: "ti-table",
@@ -380,13 +382,22 @@ export default function NotebookDetailPanel(props: Props) {
     window.dispatchEvent(new CustomEvent(NAMED_BLOCK_SCROLL_EVENT, { detail: block }));
   };
 
+  // A manual attempt shows its progress until the connection is back or the attempt had time to fail, so the
+  // button never stays busy after a failed try.
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   const reconnect = () => {
     setReconnecting(true);
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => setReconnecting(false), RECONNECT_SETTLE_MS);
     window.dispatchEvent(new CustomEvent(RECONNECT_EVENT));
   };
   createEffect(() => {
-    if (sync().connected) setReconnecting(false);
+    if (sync().connected) {
+      clearTimeout(reconnectTimer);
+      setReconnecting(false);
+    }
   });
+  onCleanup(() => clearTimeout(reconnectTimer));
 
   onMount(() => {
     const onDuplicate = (event: Event) => {
@@ -917,13 +928,28 @@ export default function NotebookDetailPanel(props: Props) {
                 </div>
               </Show>
               <For each={visibleActivity()}>{(item) => <ActivityRow item={item} />}</For>
-              <Show when={activityExpanded() && noteActivity.hasMore()}>
+              {/* An older page that failed keeps the loaded rows and says so where "Load older" was. */}
+              <Show when={noteActivity.error() && activityItems().length > 0}>
+                <div class="notebook-activity-error" role="alert">
+                  <i class="ti ti-alert-circle" aria-hidden="true" />
+                  <span>{t().activityLoadShort}</span>
+                  <Button variant="text" size="xs" onClick={() => void noteActivity.loadMore()}>
+                    {t().retry}
+                  </Button>
+                </div>
+              </Show>
+              {/* Older pages stay reachable even when the loaded rows all fit, for example after a sparse page. */}
+              <Show when={!noteActivity.error() && noteActivity.hasMore() && (activityExpanded() || hiddenActivity() === 0)}>
                 <DetailPanel.Action
                   type="button"
                   leading={<i class={`ti ${noteActivity.loadingMore() ? "ti-loader-2 k2b-spin" : "ti-dots"}`} aria-hidden="true" />}
                   title={t().loadOlder}
                   disabled={noteActivity.loadingMore()}
-                  onClick={() => void noteActivity.loadMore()}
+                  onClick={() => {
+                    // Loaded older rows should show, so a collapsed list opens first.
+                    setActivityExpanded(true);
+                    void noteActivity.loadMore();
+                  }}
                 />
               </Show>
               <Show when={activityExpanded() || hiddenActivity() > 0}>

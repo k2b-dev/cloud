@@ -564,8 +564,14 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     if (next && props.phone === "sheet" && prefersMenuSheet()) {
       if (sheetOpen) return;
       sheetOpen = true;
+      // The sheet is this menu's open state: the trigger reports it and the owner hears both ends.
+      setInternalOpen(true);
+      props.onOpenChange?.(true);
       void openMenuSheet({ items: props.items, label: props.label ?? messages().dropdownMenu, locale: locale() }).finally(() => {
         sheetOpen = false;
+        setInternalOpen(false);
+        props.onOpenChange?.(false);
+        props.onClose?.();
       });
       return;
     }

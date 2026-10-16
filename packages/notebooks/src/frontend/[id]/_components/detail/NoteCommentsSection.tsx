@@ -24,6 +24,8 @@ type Props = {
 const PER_PAGE = 30;
 /** Comments shown before "n older": the newest few, so the panel's other sections stay in reach. */
 const NEWEST = 3;
+/** Pages an activity link may load to find its comment: ten pages of 30 cover 300 comments. */
+const REVEAL_MAX_PAGES = 10;
 const sourceFor = (notebookId: string, noteId: string) => `${notebookId}:${noteId}`;
 const parseSource = (source: string) => {
   const [notebookId, noteId] = source.split(":");
@@ -98,22 +100,28 @@ export default function NoteCommentsSection(props: Props) {
     setExpanded(false);
   });
 
-  // The activity list links to a comment: unfold the list when it is older, then bring it into view.
+  // The activity list links to a comment: page it in when it is older than the loaded pages, unfold the list when
+  // it is folded away, then bring it into view. Paging stops after a bounded number of pages.
   onMount(() => {
-    const reveal = (event: Event) => {
-      const detail = (event as CustomEvent<RevealCommentEventDetail>).detail;
-      const index = commentsPage().items.findIndex((comment) => comment.id === detail?.commentId);
+    const reveal = async (event: Event) => {
+      const commentId = (event as CustomEvent<RevealCommentEventDetail>).detail?.commentId ?? null;
+      const indexOf = () => (commentId ? commentsPage().items.findIndex((comment) => comment.id === commentId) : -1);
+      for (let page = 0; commentId && indexOf() < 0 && commentsPage().hasNext && page < REVEAL_MAX_PAGES; page++) {
+        await commentsQuery.loadMore();
+      }
+      const index = indexOf();
       if (index >= 0 && index < commentsPage().items.length - NEWEST) setExpanded(true);
       queueMicrotask(() => {
         const target =
-          (detail?.commentId ? document.querySelector<HTMLElement>(`[data-note-comment="${CSS.escape(detail.commentId)}"]`) : null) ??
+          (index >= 0 && commentId ? document.querySelector<HTMLElement>(`[data-note-comment="${CSS.escape(commentId)}"]`) : null) ??
           document.querySelector<HTMLElement>("[data-note-comments]");
         target?.scrollIntoView({ block: "nearest" });
         target?.focus({ preventScroll: true });
       });
     };
-    window.addEventListener(REVEAL_COMMENT_EVENT, reveal);
-    onCleanup(() => window.removeEventListener(REVEAL_COMMENT_EVENT, reveal));
+    const listener = (event: Event) => void reveal(event);
+    window.addEventListener(REVEAL_COMMENT_EVENT, listener);
+    onCleanup(() => window.removeEventListener(REVEAL_COMMENT_EVENT, listener));
   });
 
   const exactTime = (value: string) => dates.formatDateTime(value, props.dateConfig);

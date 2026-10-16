@@ -235,4 +235,91 @@ describe("Note comment feedback", () => {
       errors.mockRestore();
     }
   });
+
+  test("an activity link pages in its comment, unfolds and focuses it, with a ten-page search limit", async () => {
+    const { setSystemTime } = await import("bun:test");
+    const { REVEAL_COMMENT_EVENT } = await import("./events");
+    const { LocaleProvider } = await import("@k2b/ui");
+    const { default: NoteCommentsSection } = await import("./NoteCommentsSection");
+    const now = "2026-10-16T19:30:00.000Z";
+    setSystemTime(new Date(now));
+    const comment = (id: string): PublicNoteComment => ({
+      id,
+      notebookId: "Book01",
+      noteId: "Note01",
+      authorUserId: "jana",
+      authorDisplayName: "Jana Berger",
+      authorAvatarHash: null,
+      content: `Comment ${id}`,
+      createdAt: "2026-10-03T10:00:00.000Z",
+      updatedAt: "2026-10-03T10:00:00.000Z",
+      canEdit: false,
+      canDelete: false,
+    });
+    const pages: number[] = [];
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: RequestInfo | URL) => {
+          const url = new URL(String(input), "http://localhost");
+          expect(url.pathname).toBe("/api/notebooks/Book01/notes/Note01/comments/page");
+          const page = Number(url.searchParams.get("page"));
+          pages.push(page);
+          return Response.json({
+            ...emptyPage,
+            page,
+            total: 400,
+            hasNext: page < 14,
+            items: [comment(page === 3 ? "target" : `page${page}`)],
+          });
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    // The DOM harness binds browser globals individually; comment links also need CSS.escape.
+    const previousCSS = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+    Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
+    const dispose = render(
+      () =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(NoteCommentsSection, {
+              notebookId: "Book01",
+              noteId: "Note01",
+              currentUserId,
+              canWrite: true,
+              initialCommentsPage: {
+                ...emptyPage,
+                total: 400,
+                hasNext: true,
+                items: [comment("newest"), comment("middle"), comment("oldest-loaded")],
+              },
+              dateConfig: { locale: "de", timeZone: "UTC" },
+            });
+          },
+        }),
+      dom.root,
+    );
+    try {
+      expect(dom.root.querySelectorAll("[data-note-comment]")).toHaveLength(3);
+      window.dispatchEvent(new CustomEvent(REVEAL_COMMENT_EVENT, { detail: { commentId: "target" } }));
+      await until(() => dom.document.activeElement?.getAttribute("data-note-comment") === "target");
+      const target = dom.root.querySelector('[data-note-comment="target"]');
+      expect(target).not.toBeNull();
+      expect(dom.document.activeElement).toBe(target);
+      expect(pages).toEqual([2, 3]);
+      expect(dom.root.querySelectorAll("[data-note-comment]")).toHaveLength(5);
+
+      // An eleventh page remains available, but a missing comment stops the search after ten.
+      window.dispatchEvent(new CustomEvent(REVEAL_COMMENT_EVENT, { detail: { commentId: "missing" } }));
+      await until(() => dom.document.activeElement === dom.root.querySelector("[data-note-comments]"));
+      expect(pages).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+    } finally {
+      dispose();
+      fetch.mockRestore();
+      if (previousCSS) Object.defineProperty(globalThis, "CSS", previousCSS);
+      else Reflect.deleteProperty(globalThis, "CSS");
+      setSystemTime();
+    }
+  });
 });
