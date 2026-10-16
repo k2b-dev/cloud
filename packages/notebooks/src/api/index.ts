@@ -372,6 +372,9 @@ const GraphNodeSchema = z.object({
   id: ResourceShortIdSchema,
   title: z.string(),
   inDegree: z.number().int().min(0),
+  parentId: ResourceShortIdSchema.nullable(),
+  position: z.number().int(),
+  updatedAt: z.string(),
 });
 
 const GraphEdgeSchema = z.object({
