@@ -79,8 +79,8 @@ html:has(.cloud-app-canvas[data-layout-full-page="true"]) {
 /* The authenticated rail is part of the canvas. Keeping it transparent also
    covers shell-only routes such as 404 pages that have no app workspace. */
 .cloud-app-canvas > .layout-rail {
-  width: calc(2.5rem + var(--ui-space-shell));
-  margin-inline-start: calc(-1 * var(--ui-space-shell));
+  width: calc(3.5rem + env(safe-area-inset-left, 0px));
+  padding-left: env(safe-area-inset-left, 0px);
   background-color: transparent !important;
   background-image: none !important;
 }
@@ -294,10 +294,10 @@ solid-island {
 }
 
 /* Cloud has three shell modes. Phones, below md, get the header and no rail.
-   From md, signed-in people get the rail instead of the header: up to 2xl the
-   app area meets the window's top, right and bottom edges, and from 2xl it is
-   a card with the shell spacing. Anonymous pages keep the header and the card
-   from md. */
+   From md, signed-in people get the 56 px rail instead of the header: up to
+   1023 px the app area meets the window's top, right and bottom edges, and
+   from 1024 px it is a card beside the rail. Anonymous pages keep the header
+   and the card from md. */
 @media (max-width: 767px) {
   .cloud-app-canvas {
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
@@ -360,15 +360,13 @@ solid-island {
    The rail and the app area reach the window's edges also where the installed
    app reports safe areas, such as the status bar and the home indicator. Their
    own surfaces fill the insets, and their content stays inside them. */
-@media (min-width: 768px) and (max-width: 1535px) {
+@media (min-width: 768px) and (max-width: 1023px) {
   .cloud-app-canvas[data-layout-authenticated] {
     padding: 0;
   }
   .cloud-app-canvas[data-layout-authenticated] > .layout-rail {
-    width: calc(3rem + env(safe-area-inset-left, 0px));
-    margin-inline-start: 0;
-    padding: env(safe-area-inset-top, 0px) 0 calc(var(--ui-space-shell) + env(safe-area-inset-bottom, 0px))
-      env(safe-area-inset-left, 0px);
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: calc(var(--ui-space-shell) + env(safe-area-inset-bottom, 0px));
   }
   .cloud-app-canvas[data-layout-authenticated] > .layout-shell-content {
     gap: 0;
@@ -389,6 +387,36 @@ solid-island {
   .cloud-app-canvas[data-layout-authenticated] > .layout-shell-content > :not(.layout-content-main) .k2b-notice-card {
     border: 0;
     border-radius: 0;
+  }
+}
+
+/* Signed-in card: from 1024 px the app area is a card on the app canvas beside
+   the rail, as on laptops. Its spacing and radius grow with the window, from
+   4 to 8 px and from 10 to 14 px at 1440 px, the wide card from there on. The
+   rail starts at the window's left edge and moves down with the card. In the
+   installed app the card and the rail stay below the status bar; the card keeps
+   its spacing at the bottom, and its surfaces keep their content above the
+   home indicator, as in the flush range. */
+@media (min-width: 1024px) {
+  .cloud-app-canvas[data-layout-authenticated] {
+    --cloud-card-inset: clamp(0.25rem, calc(0.25rem + (100vw - 64rem) / 104), 0.5rem);
+    --cloud-card-radius: clamp(0.625rem, calc(0.625rem + (100vw - 64rem) / 104), 0.875rem);
+    --cloud-card-inset-bottom: max(0px, env(safe-area-inset-bottom, 0px) - var(--cloud-card-inset));
+    padding: max(var(--cloud-card-inset), env(safe-area-inset-top, 0px)) max(var(--cloud-card-inset), env(safe-area-inset-right, 0px))
+      var(--cloud-card-inset) 0;
+  }
+  .cloud-app-canvas[data-layout-authenticated] > .layout-rail {
+    padding-bottom: var(--cloud-card-inset-bottom);
+  }
+  .cloud-app-canvas[data-layout-authenticated] > .layout-shell-content {
+    gap: var(--cloud-card-inset);
+  }
+  .cloud-app-canvas[data-layout-authenticated] .layout-content-main:not(:has(.k2b-app-workspace)) {
+    padding-bottom: var(--cloud-card-inset-bottom);
+  }
+  .cloud-app-canvas[data-layout-authenticated] .layout-content-main .k2b-app-workspace:not(.k2b-app-workspace *) {
+    --k2b-workspace-radius: var(--cloud-card-radius);
+    --k2b-workspace-inset-bottom: var(--cloud-card-inset-bottom);
   }
 }
 

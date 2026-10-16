@@ -750,10 +750,12 @@
   @apply text-[0.6875rem] font-medium normal-case tracking-normal mb-5 text-dimmed select-none;
 }
 
+/* A rail control: a 44 px target with a 20 px icon, six of them across in the
+   56 px rail. */
 @utility rail-item {
   border-right: 0;
   border-radius: var(--ui-radius-surface);
-  @apply w-8 h-8;
+  @apply w-11 h-11 text-xl;
   @apply flex items-center justify-center text-dimmed;
   @apply transition-[background-color,color] duration-150 ease-out;
 
@@ -793,6 +795,12 @@
   text-align: center;
   white-space: nowrap;
   pointer-events: none;
+}
+
+/* On the corner of the rail icon, not of its 44 px target. */
+.rail-item > .cloud-app-badge {
+  top: 0.25rem;
+  right: 0.1875rem;
 }
 
 .app-icon > .cloud-app-badge {
@@ -841,8 +849,8 @@
 .layout-profile-preferences__link,
 .layout-profile-preferences__dropdown-trigger {
   display: none;
-  width: 2rem;
-  height: 2rem;
+  width: 2.75rem;
+  height: 2.75rem;
   align-items: center;
   justify-content: center;
   padding: 0;
