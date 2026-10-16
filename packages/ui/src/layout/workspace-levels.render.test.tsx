@@ -148,7 +148,7 @@ describe("AppWorkspace ordered levels SSR", () => {
   });
   // A second read of a JSX prop builds it again, so the client cannot hydrate
   // the server markup. Each slot renders exactly once.
-  test("builds the description and actions once", () => {
+  test("builds the description and actions once, and not for a closed level", () => {
     let built = 0;
     const counted = (text: string) => () => {
       built += 1;
@@ -167,8 +167,18 @@ describe("AppWorkspace ordered levels SSR", () => {
           },
           children: "Content",
         },
+        {
+          id: "closed",
+          label: "Closed",
+          open: false,
+          get actions() {
+            return createComponent(counted("Closed controls"), {});
+          },
+          children: "Closed content",
+        },
       ]),
     );
+    expect(html).not.toContain("Closed controls");
     expect(html).toContain("<p>Quiet description</p>");
     expect(html).toContain('class="k2b-app-workspace__level-actions">Controls');
     expect(built).toBe(2);

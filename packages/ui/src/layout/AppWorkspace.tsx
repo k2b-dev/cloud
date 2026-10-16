@@ -525,6 +525,28 @@ function AppWorkspaceMainPane(props: AppWorkspaceMainPaneProps): JSX.Element {
   } satisfies MainPaneSlot as unknown as JSX.Element;
 }
 
+/** A level's head; `children` is its back step. It mounts and cleans up with its open pane. */
+function LevelHead(props: { label: string; description?: JSX.Element; actions?: JSX.Element; children: JSX.Element }): JSX.Element {
+  // Read each slot once: every read of a JSX prop builds it again, and the
+  // server and the client would then disagree on hydration keys.
+  const description = children(() => props.description);
+  const actions = children(() => props.actions);
+  return (
+    <header class="k2b-app-workspace__level-head">
+      {props.children}
+      <div class="k2b-app-workspace__level-title">
+        <h2>{props.label}</h2>
+        <Show when={description()}>
+          <p>{description()}</p>
+        </Show>
+      </div>
+      <Show when={actions()}>
+        <div class="k2b-app-workspace__level-actions">{actions()}</div>
+      </Show>
+    </header>
+  );
+}
+
 function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
   const rootResizable = useContext(ResizeContext);
   const workspaceMessages = useWorkspaceMessages();
@@ -630,10 +652,6 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
             }
             const pane = region.slot;
             const levelIndex = () => levels().indexOf(pane) + 1;
-            // Read each head slot once: every read of a JSX prop builds it again,
-            // and the server and the client would then disagree on hydration keys.
-            const description = children(() => (levelsMode() ? pane.props.description : undefined));
-            const actions = children(() => (levelsMode() ? pane.props.actions : undefined));
             const levelAttr = (kind: "shown" | "first" | "last" | "handle") =>
               levelsMode() ? levelClasses(levelIndex(), kind) : undefined;
             const panelId = assertStableUiId(pane.props.id, "AppWorkspace.MainPane id");
@@ -694,7 +712,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                 >
                   {levelsMode() ? (
                     <>
-                      <header class="k2b-app-workspace__level-head">
+                      <LevelHead label={pane.props.label} description={pane.props.description} actions={pane.props.actions}>
                         <Show when={levelIndex() > 1 && depth() > 1}>
                           <IconButtonLink
                             class="k2b-app-workspace__level-back"
@@ -706,16 +724,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                             <i class="ti ti-chevron-left" aria-hidden="true" />
                           </IconButtonLink>
                         </Show>
-                        <div class="k2b-app-workspace__level-title">
-                          <h2>{pane.props.label}</h2>
-                          <Show when={description()}>
-                            <p>{description()}</p>
-                          </Show>
-                        </div>
-                        <Show when={actions()}>
-                          <div class="k2b-app-workspace__level-actions">{actions()}</div>
-                        </Show>
-                      </header>
+                      </LevelHead>
                       <div
                         class="k2b-app-workspace__level-body"
                         data-scroll={pane.props.scroll === false ? "false" : undefined}
