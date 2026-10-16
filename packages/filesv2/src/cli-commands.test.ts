@@ -1,13 +1,18 @@
-import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloudCliContext, CloudCliFlags, CloudCliOutputMode } from "@k2b/cloud/cli";
 import { sha256 } from "@k2b/filegate/utils";
 import { hc } from "hono/client";
-import filesCli from "./cli";
 import { type BaseSummary, type FileEntry, FolderBatchInputSchema, type FolderResult } from "./contracts";
 import { entryRefId, parseEntryRefId } from "./resource-ref";
+
+// Exercise the real retry budget without waiting for production backoff delays.
+const uploadRetry = await import("./upload-retry");
+mock.module("./upload-retry", () => ({ ...uploadRetry, UPLOAD_RETRY_DELAYS_MS: [1, 1, 1, 1, 1] }));
+const { default: filesCli } = await import("./cli");
+const originalFetch = globalThis.fetch;
 
 /**
  * Every user-level command against an in-memory Files API and Filegate. Cloud
@@ -373,6 +378,8 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  globalThis.fetch = originalFetch;
+  mock.restore();
   server.stop(true);
   for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true });
 });
@@ -738,6 +745,7 @@ test.each(
   const nativeFetch = globalThis.fetch;
   const nativeTimeout = AbortSignal.timeout;
   const deadlines: number[] = [];
+  let stalledRequests = 0;
   const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
     deadlines.push(ms);
     return nativeTimeout(40);
@@ -745,6 +753,7 @@ test.each(
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       if (new URL(String(input)).pathname.includes(route)) {
+        stalledRequests++;
         if (stall === "body" || stall === "503 body")
           return new Response(
             new ReadableStream({
@@ -778,6 +787,7 @@ test.each(
     expect(performance.now() - started).toBeLessThan(2000);
     expect(deadlines.every((ms) => ms === 60_000)).toBe(true);
     expect(deadlines.length).toBeGreaterThanOrEqual(2);
+    expect(stalledRequests).toBe(route === "/uploads" ? 12 : 2);
     expect(sessions.size).toBe(0);
   } finally {
     globalThis.fetch = nativeFetch;
@@ -789,8 +799,8 @@ test.each(["text", "json", "jsonl"] as const)("put keeps stdout unchanged and re
   const local = join(await directory(), "report.txt");
   await writeFile(local, "report");
   const descriptor = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
-  Object.defineProperty(process.stderr, "isTTY", { configurable: true, value: false });
   try {
+    Object.defineProperty(process.stderr, "isTTY", { configurable: true, value: false });
     const uploaded = await cli(["put", local, "me:/Documents/report.txt"], {}, output);
     expect(uploaded.err).toBe(output === "text" ? "Uploading report.txt\nFinishing upload…\nUpload done." : "");
     expect(uploaded.out).toBe(
@@ -830,7 +840,7 @@ test("a stalled put gives a plain error without lease details", async () => {
     expect(message).toBe("No response from the file server.");
     expect(message).not.toContain(LEASE);
     expect(message).not.toContain(server.url.href);
-    expect(attempts).toBe(1);
+    expect(attempts).toBe(6);
   } finally {
     globalThis.fetch = nativeFetch;
     timeout.mockRestore();

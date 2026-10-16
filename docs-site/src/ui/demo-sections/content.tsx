@@ -20,6 +20,7 @@ import {
   FilterChip,
   Format,
   InlineGuidance,
+  installInputModeController,
   Kbd,
   LabelChip,
   Lightbox,
@@ -1509,6 +1510,28 @@ const IntlDemo = () => (
   </DemoCard>
 );
 
+const KbdHintDemo = () => {
+  onMount(() => onCleanup(installInputModeController()));
+  return (
+    <DemoCard
+      id="kbd-hint"
+      chip={{ kind: "component", name: "Kbd", from: "@k2b/ui" }}
+      description="A keyboard hint. Press a key outside a text field and it appears in its reserved place."
+      code={`onMount(() => onCleanup(installInputModeController()));
+
+<div style={{ display: "flex", "align-items": "center", gap: "1rem" }}>
+  <span>Search</span>
+  <Kbd keys="mod+k" class="k2b-kbd-hint" />
+</div>`}
+    >
+      <div style={{ display: "flex", "align-items": "center", gap: "1rem" }}>
+        <span>Search</span>
+        <Kbd keys="mod+k" class="k2b-kbd-hint" />
+      </div>
+    </DemoCard>
+  );
+};
+
 const demos: DemoSection = {
   kbd: () => (
     <DemoGrid>
@@ -1548,6 +1571,7 @@ const demos: DemoSection = {
           <Kbd keys="space" platform="apple" />
         </LocaleProvider>
       </DemoCard>
+      <KbdHintDemo />
     </DemoGrid>
   ),
   "label-chip": () => (

@@ -100,18 +100,22 @@
 }
 
 @media (any-hover: hover) {
-  .tools-image-converter-card__selection,
-  .tools-image-converter-card__actions {
+  :where(html:not([data-k2b-input="touch"])) .tools-image-converter-card__selection,
+  :where(html:not([data-k2b-input="touch"])) .tools-image-converter-card__actions {
     opacity: 0;
   }
+}
+:where(html[data-k2b-input="trackpad"]) .tools-image-converter-card__selection,
+:where(html[data-k2b-input="trackpad"]) .tools-image-converter-card__actions {
+  opacity: 0;
+}
 
-  .tools-image-converter-card:hover .tools-image-converter-card__selection,
-  .tools-image-converter-card:hover .tools-image-converter-card__actions,
-  .tools-image-converter-card:focus-within .tools-image-converter-card__selection,
-  .tools-image-converter-card:focus-within .tools-image-converter-card__actions,
-  .tools-image-converter-card[data-selection-active="true"] .tools-image-converter-card__selection {
-    opacity: 1;
-  }
+.tools-image-converter-card:hover .tools-image-converter-card__selection,
+.tools-image-converter-card:hover .tools-image-converter-card__actions,
+.tools-image-converter-card:focus-within .tools-image-converter-card__selection,
+.tools-image-converter-card:focus-within .tools-image-converter-card__actions,
+.tools-image-converter-card[data-selection-active="true"] .tools-image-converter-card__selection {
+  opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {

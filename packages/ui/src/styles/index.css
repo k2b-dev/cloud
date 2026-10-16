@@ -3214,16 +3214,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 @media (any-hover: hover) {
-  .k2b-ui .k2b-discussion__item-actions[data-visibility="progressive"] {
+  :where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-discussion__item-actions[data-visibility="progressive"] {
     opacity: 0;
-    transition: opacity 120ms ease-out;
+    transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
   }
+}
+:where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-discussion__item-actions[data-visibility="progressive"] {
+  opacity: 0;
+  transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
+}
 
-  .k2b-ui .k2b-discussion__item:hover .k2b-discussion__item-actions[data-visibility="progressive"],
-  .k2b-ui .k2b-discussion__item:focus-within .k2b-discussion__item-actions[data-visibility="progressive"],
-  .k2b-ui .k2b-discussion__item-actions[data-visibility="progressive"]:has([aria-expanded="true"]) {
-    opacity: 1;
-  }
+.k2b-ui .k2b-discussion__item:hover .k2b-discussion__item-actions[data-visibility="progressive"],
+.k2b-ui .k2b-discussion__item:focus-within .k2b-discussion__item-actions[data-visibility="progressive"],
+.k2b-ui .k2b-discussion__item-actions[data-visibility="progressive"]:has([aria-expanded="true"]) {
+  opacity: 1;
 }
 
 .k2b-ui .k2b-detail-panel__section-header .k2b-detail-panel__section-copy,
@@ -3401,19 +3405,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 @media (any-hover: hover) {
-  .k2b-ui .k2b-detail-panel__action-secondary,
-  .k2b-ui .k2b-detail-panel__action-menu-trigger {
+  :where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-detail-panel__action-secondary,
+  :where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-detail-panel__action-menu-trigger {
     opacity: 0;
-    transition: opacity 120ms ease-out;
+    transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
   }
+}
+:where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-detail-panel__action-secondary,
+:where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-detail-panel__action-menu-trigger {
+  opacity: 0;
+  transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
+}
 
-  .k2b-ui .k2b-detail-panel__action-row:hover .k2b-detail-panel__action-secondary,
-  .k2b-ui .k2b-detail-panel__action-row:focus-within .k2b-detail-panel__action-secondary,
-  .k2b-ui .k2b-detail-panel__action-row:hover .k2b-detail-panel__action-menu-trigger,
-  .k2b-ui .k2b-detail-panel__action-row:focus-within .k2b-detail-panel__action-menu-trigger,
-  .k2b-ui .k2b-detail-panel__action-menu-trigger[aria-expanded="true"] {
-    opacity: 1;
-  }
+.k2b-ui .k2b-detail-panel__action-row:hover .k2b-detail-panel__action-secondary,
+.k2b-ui .k2b-detail-panel__action-row:focus-within .k2b-detail-panel__action-secondary,
+.k2b-ui .k2b-detail-panel__action-row:hover .k2b-detail-panel__action-menu-trigger,
+.k2b-ui .k2b-detail-panel__action-row:focus-within .k2b-detail-panel__action-menu-trigger,
+.k2b-ui .k2b-detail-panel__action-menu-trigger[aria-expanded="true"] {
+  opacity: 1;
 }
 
 .k2b-ui .k2b-detail-panel__action > .k2b-button__label {
@@ -4517,69 +4526,109 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding-inline-end: 0.125rem;
 }
 
-/* Row actions: once any pointer can hover, such as a mouse on a tablet whose
-   primary pointer is the finger, a row shows its hover actions only while it is
-   hovered, focused, current, or has its menu open. The current row keeps them,
-   so a finger still reaches them; a touch-only screen shows them on every row. */
+/* Row actions follow input mode: touch keeps actions visible; mouse or
+   trackpad reveals them on hover, focus, the current row, or an open menu.
+   Before input, any-hover supplies the default. Boxes stay reserved. */
 @media (any-hover: hover) {
-  .k2b-ui .k2b-app-workspace__sidebar-section-actions {
+  :where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-app-workspace__sidebar-section-actions {
     opacity: 0;
     pointer-events: none;
   }
+}
+:where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-app-workspace__sidebar-section-actions {
+  opacity: 0;
+  pointer-events: none;
+}
 
-  .k2b-ui
-    .k2b-app-workspace__sidebar-section-header:is(:hover, :focus-within, :has(.k2b-dropdown__trigger[aria-expanded="true"]))
-    > .k2b-app-workspace__sidebar-section-actions {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  /* Hidden metadata keeps its box, so revealing it never narrows the label
-     onto another line. */
-  .k2b-ui .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
+/* Hidden metadata keeps its box, so revealing it never narrows the label
+   onto another line. */
+@media (any-hover: hover) {
+  :where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
     visibility: hidden;
   }
+}
+:where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
+  visibility: hidden;
+}
 
-  /* Hidden hover actions keep their box, so revealing them moves nothing, and
-     stay out of the tab order and the accessibility tree until they show. */
+/* Hidden hover actions keep their box, so revealing them moves nothing, and
+   stay out of the tab order and the accessibility tree until they show.
+   Where any pointer can hover, sidebar row actions overlay the row's label
+   and counts, so touch input keeps the reveal set too: the current row keeps
+   its actions for a finger, and the other rows keep their text and counts. */
+@media (any-hover: hover) {
   .k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
     visibility: hidden;
   }
+}
+:where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
+  visibility: hidden;
+}
 
-  .k2b-ui .k2b-app-workspace__sidebar-item:is(:hover, :focus-within) .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
-    visibility: visible;
+@media (any-hover: hover) {
+  .k2b-ui .k2b-app-workspace__sidebar-item > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"] {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
   }
+}
+:where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-app-workspace__sidebar-item > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"] {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
+}
 
-  .k2b-ui .k2b-app-workspace__sidebar-item:is(:hover, :focus-within, .is-active, :has(> [aria-current="page"])) .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
-    visibility: visible;
-  }
+.k2b-ui
+  .k2b-app-workspace__sidebar-section-header:is(:hover, :focus-within, :has(.k2b-dropdown__trigger[aria-expanded="true"]))
+  > .k2b-app-workspace__sidebar-section-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
 
-  /* Roving focus rests on the tree node, which also contains its children's
-     rows: the node reveals only its own row, and not while focus is in a
-     child. Focus within, rather than on, the node keeps the actions shown
-     while Tab moves from the node into them; the browser drops focus aimed at
-     a trigger hidden at that moment. */
-  .k2b-ui
-    .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
-    > .k2b-app-workspace__nav-tree-row
-    .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
-    visibility: visible;
-  }
+.k2b-ui .k2b-app-workspace__sidebar-item:is(:hover, :focus-within) .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
+  visibility: visible;
+}
 
-  .k2b-ui
-    .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
-    > .k2b-app-workspace__nav-tree-row
-    .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
-    visibility: visible;
-  }
+.k2b-ui .k2b-app-workspace__sidebar-item:is(:hover, :focus-within, .is-active, :has(> [aria-current="page"])) .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
+  visibility: visible;
+}
 
-  /* A menu opened from hover actions renders in the top layer, outside the
-     row's hover and focus. Its trigger stays until the menu closes; hiding it
-     would stop rendering the menu while the pointer travels into it. */
-  .k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:has([aria-haspopup][aria-expanded="true"]) {
-    visibility: visible;
-  }
+/* Roving focus rests on the tree node, which also contains its children's
+   rows: the node reveals only its own row, and not while focus is in a
+   child. Focus within, rather than on, the node keeps the actions shown
+   while Tab moves from the node into them; the browser drops focus aimed at
+   a trigger hidden at that moment. */
+.k2b-ui
+  .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
+  > .k2b-app-workspace__nav-tree-row
+  .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"] {
+  visibility: visible;
+}
 
+.k2b-ui
+  .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
+  > .k2b-app-workspace__nav-tree-row
+  .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
+  visibility: visible;
+}
+
+/* A menu opened from hover actions renders in the top layer, outside the
+   row's hover and focus. Its trigger stays until the menu closes; hiding it
+   would stop rendering the menu while the pointer travels into it. */
+.k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]:has([aria-haspopup][aria-expanded="true"]) {
+  visibility: visible;
+}
+
+.k2b-ui
+  .k2b-app-workspace__sidebar-item:where(:hover, :focus-within, .is-active, :has(> [aria-current="page"]), :has(.k2b-app-workspace__sidebar-preview:popover-open))
+  > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The overlay layout follows the pointer capability, never the recorded input
+   mode, so a mode change moves nothing. */
+@media (any-hover: hover) {
   /* Hover actions that end the row overlay its trailing edge, before a tree
      row's chevron: they take no width from the label, and while they show,
      the text under them fades as it does under a single hover action. */
@@ -4639,9 +4688,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     inset-block: 0;
     inset-inline-end: 0;
     margin-block: auto;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 120ms ease;
   }
 
   .k2b-ui
@@ -4659,13 +4705,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     )
     > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger])) {
     position: static;
-  }
-
-  .k2b-ui
-    .k2b-app-workspace__sidebar-item:where(:hover, :focus-within, .is-active, :has(> [aria-current="page"]), :has(.k2b-app-workspace__sidebar-preview:popover-open))
-    > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"] {
-    opacity: 1;
-    pointer-events: auto;
   }
 
   .k2b-ui
@@ -4692,7 +4731,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
   /* Without a touch screen, an action preview opens on hover, so its button
      shows only to the keyboard. It then overlays the row's end and takes the
-     place of the control before it, which stays one Tab stop earlier. */
+     place of the control before it, which stays one Tab stop earlier. This
+     follows the pointer capability, not the input mode: a pen on such a
+     screen must not show both buttons in one place. */
   @media not all and (any-pointer: coarse) {
     .k2b-ui
       .k2b-app-workspace__sidebar-item
@@ -11197,18 +11238,21 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 @media (any-hover: hover) {
-  .k2b-ui .k2b-description-list[data-action-visibility="progressive"] .k2b-description-list__action {
+  :where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-description-list[data-action-visibility="progressive"] .k2b-description-list__action {
     opacity: 0;
   }
+}
+:where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-description-list[data-action-visibility="progressive"] .k2b-description-list__action {
+  opacity: 0;
+}
 
-  .k2b-ui .k2b-description-list[data-action-visibility="progressive"] .k2b-description-list__item:hover .k2b-description-list__action,
-  .k2b-ui
-    .k2b-description-list[data-action-visibility="progressive"]
-    .k2b-description-list__item:focus-within
-    .k2b-description-list__action,
-  .k2b-ui .k2b-description-list[data-action-visibility="progressive"] .k2b-description-list__action:has([aria-expanded="true"]) {
-    opacity: 1;
-  }
+.k2b-ui .k2b-description-list[data-action-visibility="progressive"] .k2b-description-list__item:hover .k2b-description-list__action,
+.k2b-ui
+  .k2b-description-list[data-action-visibility="progressive"]
+  .k2b-description-list__item:focus-within
+  .k2b-description-list__action,
+.k2b-ui .k2b-description-list[data-action-visibility="progressive"] .k2b-description-list__action:has([aria-expanded="true"]) {
+  opacity: 1;
 }
 
 @media (max-width: 48rem) {
@@ -11265,9 +11309,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    `k2b-progressive-action` inside a `k2b-progressive-row` follows the same rule
    as the row actions of the components. Do not nest progressive rows. */
 @media (any-hover: hover) {
-  .k2b-ui .k2b-progressive-action { opacity:0; transition:opacity 120ms ease-out; }
-  .k2b-ui .k2b-progressive-row:is(:hover, :focus-within) .k2b-progressive-action,
-  .k2b-ui .k2b-progressive-action:is(:focus-within, :has([aria-expanded="true"])) { opacity:1; }
+  :where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-progressive-action {
+    opacity:0; transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
+  }
+}
+:where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-progressive-action {
+  opacity:0; transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+
+.k2b-ui .k2b-progressive-row:is(:hover, :focus-within) .k2b-progressive-action,
+.k2b-ui .k2b-progressive-action:is(:focus-within, :has([aria-expanded="true"])) {
+  opacity:1;
 }
 
 /* Tab controls keep overflow separate from fixed actions. */
@@ -11275,10 +11327,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-tabs__item { display:flex; flex:none; align-items:center; min-width:0; }
 .k2b-ui .k2b-tabs__trailing { flex:none; }
 .k2b-ui .k2b-tabs__list .k2b-tabs__close { padding:.25rem; min-height:1.5rem; border:0; margin:0; }
-/* Like row actions: hidden only once any pointer can hover, and the selected tab keeps its close button for a finger. */
+/* Like row actions: input mode controls the rest state; the selected tab keeps its close button. */
 @media (any-hover: hover) {
-  .k2b-ui .k2b-tabs__list .k2b-tabs__close { opacity:0; }
-  .k2b-ui .k2b-tabs__item:is(:hover, :focus-within, :has(> [aria-selected="true"])) .k2b-tabs__close { opacity:1; }
+  :where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-tabs__list .k2b-tabs__close {
+    opacity:0;
+  }
+}
+:where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-tabs__list .k2b-tabs__close {
+  opacity:0;
+}
+
+.k2b-ui .k2b-tabs__item:is(:hover, :focus-within, :has(> [aria-selected="true"])) .k2b-tabs__close {
+  opacity:1;
 }
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__list { padding-bottom:0; border:0; box-shadow:none; }
 .k2b-ui .k2b-tabs[data-variant="pill"] .k2b-tabs__item { border-radius:.75rem; padding-right:.25rem; background:var(--k2b-surface-canvas); }

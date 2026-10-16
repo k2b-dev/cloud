@@ -200,6 +200,7 @@ export const catalogContextFiles = Object.fromEntries(Object.entries(catalogCont
 
 export const standaloneUiContextFiles = {
   "getting-started.md": "Portable package installation, style scoping, theming, and SSR setup guide.",
+  "input-mode.md": "Pointer input modes, persistent keyboard hints, and the installInputModeController helper.",
   "motion.md": "Motion tokens, interaction budgets, reduced motion, and the prefersReducedMotion helper.",
   "focus.md": "Focus ring placement inside clipping containers, focus tokens, and the k2b-focus-inset class.",
   "overview.md": "Catalog landing-page context rendered by the collection root.",

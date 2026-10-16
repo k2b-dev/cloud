@@ -44,7 +44,7 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
   // The same queue and panel as in the workspace: one batch, byte-weighted progress, failed files retried in place.
   const uploads = createUploadQueue<null>({
     reason: (error) => uploadFailureReason(error, u()),
-    upload: async (_, { file }, { signal, onProgress }) => {
+    upload: async (_, { file }, { signal, onProgress, alive }) => {
       const start = await browserUploadKey(["public", props.token], file);
       let session: UploadSession | undefined;
       let committing = false;
@@ -54,6 +54,7 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
           { init: { signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]) } },
         );
         if (!opened.ok) throw await uploadResponseFailure(opened, u().failed);
+        alive();
         session = await opened.json();
         if (session.state === "aborted" || session.state === "expired") start.finish();
         await transferUpload(file, session, {

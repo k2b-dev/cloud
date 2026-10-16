@@ -7,31 +7,35 @@ import { createDomTestHarness } from "./dom";
 // Once the pointer leaves the row on its way to the menu, the row no longer matches :hover, and
 // Chromium does not carry :focus-within out of the top-layer menu into the row. The test loads the
 // rules that still apply in that state: the hover-pointer hide rule and the open-menu reveal rule.
+// Without a recorded input mode (no `data-k2b-input` on <html>), the hover-pointer rest rule hides.
 const HOVER_POINTER = "@media (any-hover: hover)";
+const NO_TOUCH = ':where(html:not([data-k2b-input="touch"])) ';
 const shippedRules = readShippedCssRules(resolve(import.meta.dir, "../src/styles"));
-const hoverActionRules = shippedRules
-  .filter(
-    (rule) =>
-      rule.context === HOVER_POINTER &&
-      rule.selector.startsWith('.k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]'),
+/** The default rules: hover-pointer rest rules for the default input mode and the unconditional reveals. */
+const defaultRules = shippedRules.filter(
+  (rule) =>
+    (rule.context === HOVER_POINTER && (rule.selector.startsWith(NO_TOUCH) || !rule.selector.includes("data-k2b-input"))) ||
+    (rule.context === "" && !rule.selector.includes("data-k2b-input")),
+);
+const css = (rule: { context: string; selector: string; body: string }, selector = rule.selector) =>
+  rule.context ? `${rule.context} { ${selector} { ${rule.body} } }` : `${selector} { ${rule.body} }`;
+const hoverActionRules = defaultRules
+  .filter((rule) =>
+    rule.selector.replace(NO_TOUCH, "").startsWith('.k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]'),
   )
-  .map((rule) => `${HOVER_POINTER} { ${rule.selector} { ${rule.body} } }`)
+  .map((rule) => css(rule))
   .join("\n");
 
 // Happy DOM matches neither :hover nor :focus-within. Browsers apply both to the hovered or focused
 // element and its ancestors; the nested-tree test marks that chain with attributes and loads every
 // hover-pointer rule that decides whether hover accessories render, with the marks in their place.
-const accessoryDisplayRules = shippedRules
+const accessoryDisplayRules = defaultRules
   .filter(
     (rule) =>
-      rule.context === HOVER_POINTER &&
       rule.selector.includes('[data-visibility="hover"]') &&
       (cssDeclarations(rule.body).has("display") || cssDeclarations(rule.body).has("visibility")),
   )
-  .map((rule) => {
-    const selector = rule.selector.replaceAll(":hover", "[data-hover]").replaceAll(":focus-within", "[data-focus-within]");
-    return `${HOVER_POINTER} { ${selector} { ${rule.body} } }`;
-  })
+  .map((rule) => css(rule, rule.selector.replaceAll(":hover", "[data-hover]").replaceAll(":focus-within", "[data-focus-within]")))
   .join("\n");
 
 // Happy DOM has no popover implementation. Browsers fire `toggle` from a later task, after

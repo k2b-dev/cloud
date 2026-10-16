@@ -54,6 +54,15 @@ const flat = () => ["Inbox", "Projects", "Shared"].map((title) => c(AppWorkspace
   get actions() { return actions(title); },
   get children() { return c(AppWorkspace.SidebarItemLabel, { children: title }); },
 }));
+// An object row whose count sits where its hover actions overlay, as Mail's mailbox rows do.
+const objectRow = () => c(AppWorkspace.SidebarItem, {
+  href: "#Mailbox", variant: "object", class: "object-row",
+  get actions() { return actions("Mailbox"); },
+  get children() { return [
+    c(AppWorkspace.SidebarItemLabel, { children: "Mailbox" }),
+    c(AppWorkspace.SidebarItemMeta, { children: "12" }),
+  ]; },
+});
 const details = () => [
   c(DetailPanel, { get children() { return c(DetailPanel.Action, {
     title: "Attachment", href: "#attachment", menuItems: items, menuLabel: "Actions for Attachment",
@@ -91,7 +100,7 @@ render(() => c(AppWorkspace, {
       get children() { return c(AppWorkspace.SidebarBody, {
         get children() { return [
           c(AppWorkspace.SidebarSection, { title: "Notes", get children() { return tree(); } }),
-          c(AppWorkspace.SidebarSection, { title: "Spaces", get children() { return flat(); } }),
+          c(AppWorkspace.SidebarSection, { title: "Spaces", get children() { return [...flat(), objectRow()]; } }),
         ]; },
       }); },
     }); } }),
@@ -119,7 +128,8 @@ const rowSelector = [
   ".k2b-tabs__item",
   ".k2b-progressive-row",
 ].join(", ");
-const titles = ["Archive", "Draft", "Notes", "Inbox", "Projects", "Shared", "Attachment", "Comment", "Owner", "Custom"];
+const sidebarTitles = ["Archive", "Draft", "Notes", "Inbox", "Projects", "Shared", "Mailbox"];
+const titles = [...sidebarTitles, "Attachment", "Comment", "Owner", "Custom"];
 const names = [...titles.map((title) => `Actions for ${title}`), "Delete Attachment", "Close Overview tab", "Close Report tab"];
 const current = ["Actions for Notes", "Actions for Projects", "Close Overview tab"];
 const inspect = (page: Page) =>
@@ -218,6 +228,44 @@ describe("@k2b/ui row action reveal", () => {
       test(environment["any-hover"] === "hover" ? "shows only the current rows' actions at rest" : "shows every row's actions", () => {
         expectVisibility(rest, idle);
       });
+
+      test("touch and trackpad override media without changing any row or trigger box", async () => {
+        try {
+          for (const mode of ["touch", "trackpad"] as const) {
+            await park();
+            await page.evaluate((mode) => document.documentElement.setAttribute("data-k2b-input", mode), mode);
+            // Where any pointer can hover, sidebar actions overlay the row's text and counts, so touch keeps their
+            // reveal set there; every other row action shows at rest on touch.
+            const overlaid = environment["any-hover"] === "hover" ? sidebarTitles.map((title) => `Actions for ${title}`) : [];
+            const idle = mode === "touch" ? names.filter((name) => !overlaid.includes(name) || current.includes(name)) : current;
+            const state = await inspect(page);
+            expectVisibility(state, idle);
+            expectGeometry(state, rest);
+            // Rows at rest keep their full text and counts in every mode: nothing fades under hidden actions.
+            const paint = await page.evaluate(() => ({
+              count: getComputedStyle(document.querySelector(".object-row .k2b-app-workspace__sidebar-item-meta")!).opacity,
+              fades: [...document.querySelectorAll(".k2b-app-workspace__sidebar-item:not(.is-active):not(:has(> [aria-current]))")]
+                .map((row) => row.querySelector(":scope > .k2b-app-workspace__sidebar-item-main"))
+                .filter((main) => main !== null)
+                .map((main) => getComputedStyle(main).getPropertyValue("--k2b-sidebar-item-fade-inset").trim()),
+            }));
+            expect(paint.count, `${mode} count`).toBe("1");
+            expect(paint.fades.length).toBeGreaterThan(0);
+            for (const fade of paint.fades) expect(["", "0", "0px", "0rem"], `${mode} fade`).toContain(fade);
+            // A sidebar row and an application-owned row cover both visibility and opacity.
+            for (const name of ["Actions for Inbox", "Actions for Custom"]) {
+              const box = rest[names.indexOf(name)]!.rowBox;
+              await page.mouse.move(box[0]! + box[2]! / 2, box[1]! + box[3]! / 2);
+              const hovered = await inspect(page);
+              expectVisibility(hovered, [...idle, name]);
+              expectGeometry(hovered, rest);
+            }
+          }
+        } finally {
+          await park();
+          await page.evaluate(() => document.documentElement.removeAttribute("data-k2b-input"));
+        }
+      }, 30_000);
 
       for (const target of targets) {
         test(`${target.name} reveals on hover, focus${target.menu ? ", and an open menu" : ""} without layout shifts`, async () => {

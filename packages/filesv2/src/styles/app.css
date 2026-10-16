@@ -1042,6 +1042,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A wait is not a failure: a calm reason under the name, and a still warning icon where the ring turns while it waits. */
+.filesv2-upload-row[data-wait] .filesv2-upload-row__reason {
+  color: var(--k2b-text-secondary);
+}
+.filesv2-upload-row[data-wait]:not([data-wait="retrying"]) .filesv2-upload-row__status {
+  color: var(--k2b-warning-text);
+}
 .k2b-ui .filesv2-upload-row .k2b-icon-button[data-variant="ghost"] {
   color: var(--k2b-text-muted);
 }

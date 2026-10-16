@@ -188,8 +188,17 @@ Retries and lease renewal are bounded. Target resolution, folder creation with
 `--parents`, session opening, and commit have a 60 s deadline. Transfer control
 requests have a 30 s deadline; each segment PUT gets 60 s plus its body size at
 64 KiB/s (about 0.5 Mbit/s), the slowest supported uplink. The deadline covers
-the whole request, including its response body. One expired deadline ends the
-transfer without another attempt.
+the whole request, including its response body. A deadline ends that attempt.
+
+`put` retries network failures, stalled requests, and busy answers up to five
+times, waiting 2, 5, 15, 30, and 60 s, or a larger Retry-After. Every attempt
+reopens the same Filegate session with the same upload ID and resumes from
+acknowledged segments. HTTP 429 with Retry-After waits as requested without
+spending that budget, at most ten times per run; without Retry-After it
+counts as busy. Retry-After above five minutes is not waited out. Other
+server errors and final answers are not retried automatically. When the
+budget is exhausted, the command exits non-zero and keeps the upload ID, so
+rerunning the unchanged command resumes. A rerun starts a fresh retry budget.
 
 A Cloud deadline reports "No response from Cloud within 60 seconds."
 Transfer failures report "No response from the file server.", "No connection
@@ -199,13 +208,16 @@ The busy message covers HTTP 408, 502, 503, and 504. HTTP 429 reports
 reports "No connection to Cloud." Other Cloud server errors keep the server's
 message with its status prefix. Other Filegate failures, including HTTP 500,
 report "Filegate upload failed." Cancellation reports "Upload cancelled."
-These messages follow the CLI language.
+These messages follow the CLI language. SIGINT or SIGTERM also ends a retry
+wait immediately and reports cancellation.
 
 In text mode, `put` writes progress to stderr. A terminal shows acknowledged
 bytes and percent on one updating line, followed by finishing and done messages.
 A long file name is shortened so the line fits the terminal width.
-Without a terminal, it prints only the uploading, finishing, and done phases.
-`--json` and `--jsonl` print no progress. Standard output keeps the command result.
+Each automatic wait adds one reason and retry delay on stderr, followed by
+another uploading phase line before progress resumes. Without a terminal,
+it prints the phase and wait lines. `--json` and `--jsonl` print no progress
+or wait lines. Standard output keeps the command result.
 
 Interruption before commit requests an abort. The key is kept until that abort
 is confirmed. The CLI stores one logical upload ID in its active profile before

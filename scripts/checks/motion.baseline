@@ -197,10 +197,6 @@ packages/ui/src/styles/index.css | literal | 120ms
 packages/ui/src/styles/index.css | literal | 120ms
 packages/ui/src/styles/index.css | literal | 120ms
 packages/ui/src/styles/index.css | literal | 120ms
-packages/ui/src/styles/index.css | literal | 120ms
-packages/ui/src/styles/index.css | literal | 120ms
-packages/ui/src/styles/index.css | literal | 120ms
-packages/ui/src/styles/index.css | literal | 120ms
 packages/ui/src/styles/index.css | literal | 150ms
 packages/ui/src/styles/index.css | literal | 150ms
 packages/ui/src/styles/index.css | literal | 150ms
@@ -289,11 +285,7 @@ packages/ui/src/styles/index.css | literal | ease
 packages/ui/src/styles/index.css | literal | ease
 packages/ui/src/styles/index.css | literal | ease
 packages/ui/src/styles/index.css | literal | ease
-packages/ui/src/styles/index.css | literal | ease
 packages/ui/src/styles/index.css | literal | ease-in-out
-packages/ui/src/styles/index.css | literal | ease-out
-packages/ui/src/styles/index.css | literal | ease-out
-packages/ui/src/styles/index.css | literal | ease-out
 packages/ui/src/styles/index.css | literal | ease-out
 packages/ui/src/styles/index.css | literal | ease-out
 packages/ui/src/styles/index.css | literal | ease-out

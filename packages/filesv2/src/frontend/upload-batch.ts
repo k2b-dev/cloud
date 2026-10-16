@@ -6,6 +6,11 @@
 
 export type UploadStatus = "pending" | "working" | "success" | "failed" | "skipped" | "cancelled";
 export type UploadPhase = "running" | "done" | "errors" | "cancelled";
+/**
+ * Why the file in flight is not moving forward: the network is gone, the queue waits before it tries again after no
+ * response, a busy file server or too many uploads, or such a new try runs. Each wait keeps the same upload session.
+ */
+export type UploadWait = "network" | "stalled" | "busy" | "rate_limited" | "retrying";
 
 export type UploadRow = {
   id: number;
@@ -18,6 +23,8 @@ export type UploadRow = {
   status: UploadStatus;
   /** The last failure. It stays while a retry waits or runs, so cancelling the retry returns the file to it. */
   reason: string | null;
+  /** Set only while the row is working and its upload waits or tries again; cleared when the row settles. */
+  wait: UploadWait | null;
   group: number;
 };
 
@@ -50,6 +57,8 @@ export type UploadAnnouncement =
   | { kind: "progress"; percent: number; done: number; count: number }
   | { kind: "failed"; name: string; reason: string }
   | { kind: "retrying"; count: number; name: string }
+  | { kind: "offline" }
+  | { kind: "online" }
   | { kind: "finished"; done: number; count: number; failed: number; skipped: number }
   | { kind: "cancelled"; done: number; count: number };
 
@@ -123,7 +132,7 @@ export const appendFiles = (
   for (const file of files) {
     const id = batch.rows.length;
     const name = baseName(file.path);
-    batch.rows.push({ id, path: file.path, name, size: file.size, sent: 0, status: "pending", reason: null, group });
+    batch.rows.push({ id, path: file.path, name, size: file.size, sent: 0, status: "pending", reason: null, wait: null, group });
     batch.names[name] = (batch.names[name] ?? 0) + 1;
     batch.queue.push(id);
     batch.count++;
@@ -149,7 +158,18 @@ export const startRow = (batch: UploadBatch, id: number) => {
   const row = batch.rows[id]!;
   row.status = "working";
   row.sent = 0;
+  row.wait = null;
   batch.active = id;
+};
+
+/** The wait of the file in flight. Entering and leaving the network wait are said once, not on every new try. */
+export const waitRow = (batch: UploadBatch, id: number, wait: UploadWait | null): UploadAnnouncement | null => {
+  const row = batch.rows[id]!;
+  if (row.status !== "working" || row.wait === wait) return null;
+  const was = row.wait;
+  row.wait = wait;
+  if (wait === "network") return { kind: "offline" };
+  return was === "network" ? { kind: "online" } : null;
 };
 
 export const reportProgress = (batch: UploadBatch, id: number, bytes: number): UploadAnnouncement | null => {
@@ -168,6 +188,7 @@ export const finishRow = (
   if (row.status !== "working") return null;
   if (batch.active === id) batch.active = null;
   row.status = outcome.status;
+  row.wait = null;
   if (outcome.status !== "failed") row.reason = null;
   if (outcome.status === "success") {
     row.sent = row.size;
@@ -207,6 +228,7 @@ export const retryRows = (batch: UploadBatch, ids?: readonly number[]): UploadAn
   for (const row of rows) {
     row.status = "pending";
     row.sent = 0;
+    row.wait = null;
     batch.failed--;
     batch.failedBytes -= row.size;
     batch.queue.push(row.id);
@@ -225,6 +247,7 @@ export const cancelBatch = (batch: UploadBatch): UploadAnnouncement | null => {
   for (const row of batch.rows) {
     if (row.status !== "pending" && row.status !== "working") continue;
     row.sent = 0;
+    row.wait = null;
     if (row.reason === null) {
       row.status = "cancelled";
       continue;
