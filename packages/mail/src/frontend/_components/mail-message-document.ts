@@ -293,7 +293,10 @@ export const buildMessageDocument = (
         const isLink = element.tagName === "A";
         if (effective === null) {
           // A background image stays as authored, so it and everything on it keep the light design and surface.
-          if (original.backgroundImage) set("background-color", effectiveBackground(element, false));
+          // Only the outermost image gets a backing; nested ones already sit on the preserved design.
+          if (original.backgroundImage && effectiveBackground(element.parentElement, true) !== null) {
+            set("background-color", effectiveBackground(element, false));
+          }
           const color = original.color || parseColor(isLink ? "#1677c8" : "#18181b");
           set("color", color);
           foregrounds.set(element, color);
