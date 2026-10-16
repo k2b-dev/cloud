@@ -8,9 +8,9 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { z } from "zod";
 import type { AccessEntry } from "@/contracts";
 import { SpaceSettingsContextSchema } from "@/settings-context";
-import { LiveClientMessageSchema, type LiveServerMessage } from "../../../../../../cloud/src/events/live-protocol";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
 
 // Keep the island plugin in the child process, with a scratch root that resolves this package's dependencies.
@@ -73,9 +73,17 @@ const added: AccessEntry = {
   createdAt: TIME,
 };
 
+// The live wire frames this flow uses. Apps reach the protocol only through `@k2b/cloud/browser/live`, so the
+// fake server spells out its side here.
+const LiveClientFrame = z.discriminatedUnion("t", [
+  z.object({ t: z.literal("sub"), id: z.string(), channel: z.string(), scope: z.unknown(), after: z.string().optional() }),
+  z.object({ t: z.literal("unsub"), id: z.string() }),
+]);
+type LiveServerFrame = { t: "ready"; id: string; cursor: string } | { t: "event"; id: string; cursor: string; data: unknown };
+
 type SocketData = { subscription?: string };
 const sockets = new Set<ServerWebSocket<SocketData>>();
-const send = (socket: ServerWebSocket<SocketData>, frame: LiveServerMessage) => socket.send(JSON.stringify(frame));
+const send = (socket: ServerWebSocket<SocketData>, frame: LiveServerFrame) => socket.send(JSON.stringify(frame));
 let grant = Promise.withResolvers<void>();
 let postHeld = false;
 let eventsSent = 0;
@@ -133,7 +141,7 @@ beforeAll(async () => {
         sockets.delete(socket);
       },
       message(socket, data) {
-        const frame = LiveClientMessageSchema.parse(JSON.parse(String(data)));
+        const frame = LiveClientFrame.parse(JSON.parse(String(data)));
         if (frame.t === "unsub") {
           delete socket.data.subscription;
           return;
