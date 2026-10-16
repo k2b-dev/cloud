@@ -6,6 +6,82 @@ const convert = (html: string, options: { maxBytes?: number; signal?: AbortSigna
   htmlToReadableMarkdown(new TextEncoder().encode(html), { baseUrl, maxBytes: 1024 * 1024, ...options });
 
 describe("readable HTML", () => {
+  test.each([
+    ["paragraph", "<p>", "</p>", "", ""],
+    ["link", '<a href="/guide">', "</a>", "[", "](https://example.test/guide)"],
+    ["heading", "<h2>", "</h2>", "## ", ""],
+    ["table cell", "<table><tr><td>", "</td></tr></table>", "| ", " |\n| --- |"],
+    ["caption", "<table><caption>", "</caption></table>", "", ""],
+  ])("escapes only HTML-like less-than signs in ordinary %s text", async (_name, start, end, prefix, suffix) => {
+    expect(await convert(`${start}Use &lt;Widget&gt; instead of &lt;Legacy&gt;. a &lt; b${end}`)).toBe(
+      `${prefix}Use \\<Widget> instead of \\<Legacy>. a < b${suffix}\n`,
+    );
+    expect(await convert(`${start}&lt;/div&gt; &lt;!doctype&gt; &lt;?xml&gt; &lt;3 &lt;= &lt;. &lt;${end}`)).toBe(
+      `${prefix}\\</div> \\<!doctype> \\<?xml> <3 <= <. <${suffix}\n`,
+    );
+    expect(await convert(`${start}<code>&lt;div&gt;</code>${end}`)).toBe(`${prefix}\`<div>\`${suffix}\n`);
+  });
+
+  test("escapes literal markup in image alt text and fallback titles while preserving preformatted code", async () => {
+    expect(await convert('<p><img src="/pic" alt="&lt;Widget&gt;"></p>')).toBe("![\\<Widget>](https://example.test/pic)\n");
+    expect(await convert('<h2><img src="/pic" alt="&lt;Widget&gt;"></h2>')).toBe("## ![\\<Widget>](https://example.test/pic)\n");
+    expect(await convert("<title>&lt;Widget&gt;</title><pre>&lt;div&gt;</pre>")).toBe("# \\<Widget>\n\n```\n<div>\n```\n");
+  });
+
+  test.each([
+    ["heading", "<h2>", "</h2>", "## ", ""],
+    ["link", '<a href="/guide">', "</a>", "[", "](https://example.test/guide)"],
+    ["table cell", "<table><tr><td>", "</td></tr></table>", "| ", " |\n| --- |"],
+    ["caption", "<table><caption>", "</caption></table>", "", ""],
+  ])("keeps break and block boundaries inside inline code in a %s", async (_name, start, end, prefix, suffix) => {
+    for (const separator of ["<br>", "<address></address>"]) {
+      expect(await convert(`${start}<code>git status${separator}git diff</code>${end}`)).toBe(
+        `${prefix}\`git status git diff\`${suffix}\n`,
+      );
+    }
+  });
+
+  test("pads every data row and its separator to the widest row, including later rows", async () => {
+    expect(await convert("<table><tr><th>Name</th></tr><tr><td>A</td><td>IMPORTANT</td></tr></table>")).toBe(
+      "| Name |  |\n| --- | --- |\n| A | IMPORTANT |\n",
+    );
+    expect(await convert("<table><tr><td>A</td><td>B</td></tr><tr><td>C</td></tr><tr><td>D</td><td>E</td><td>F</td></tr></table>")).toBe(
+      "| A | B |  |\n| --- | --- | --- |\n| C |  |  |\n| D | E | F |\n",
+    );
+  });
+
+  test("charges buffered rows and widening against the output budget and flushes them on truncation", async () => {
+    const stringify = spyOn(URL.prototype, "toString");
+    try {
+      const html = "<table><tr><th>Name</th></tr>" + '<tr><td>A</td><td><a href="/x">IMPORTANT</a></td></tr>'.repeat(10_000) + "</table>";
+      const result = await htmlToReadableMarkdown(new TextEncoder().encode(html), {
+        baseUrl,
+        maxBytes: 1024,
+        maxInputBytes: Buffer.byteLength(html),
+      });
+      expect(result).toStartWith("| Name |  |\n| --- | --- |\n| A | [IMPORTANT](https://example.test/x) |\n");
+      expect(result).toEndWith("\n[Readable copy truncated at the file size limit.]\n");
+      expect(Buffer.byteLength(result)).toBeLessThanOrEqual(1024);
+      expect(stringify.mock.calls.length).toBeLessThan(60);
+    } finally {
+      stringify.mockRestore();
+    }
+    const html = "<table>" + "<tr><td>A</td></tr>".repeat(30) + "<tr>" + "<td>B</td>".repeat(100) + "</tr></table>";
+    const result = await htmlToReadableMarkdown(new TextEncoder().encode(html), {
+      baseUrl,
+      maxBytes: 1024,
+      maxInputBytes: Buffer.byteLength(html),
+    });
+    expect(result).toContain("[Readable copy truncated at the file size limit.]");
+    expect(Buffer.byteLength(result)).toBeLessThanOrEqual(1024);
+    const rows = result
+      .trim()
+      .split("\n")
+      .filter((line) => line.startsWith("|"));
+    expect(rows).toHaveLength(32);
+    expect(new Set(rows.map((line) => line.split("|").length)).size).toBe(1);
+  });
+
   test("implicitly closes list items through paragraphs and inline frames", async () => {
     expect(await convert("<ul><li hidden><p>Hidden<li><p>Visible</ul>")).toBe("- Visible\n");
     expect(await convert("<ul><li><p>First<li><p>Second</ul>")).toBe("- First\n\n- Second\n");

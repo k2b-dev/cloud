@@ -192,6 +192,10 @@ type TagEvent = { kind: "open" | "close"; name: string; attrs: Record<string, st
 type Event = TagEvent | { kind: "text"; text: string };
 type Span = { start: number; end: number };
 
+// Entity decoding and input chunks can split '<' from the following tag-like text.
+const escapeText = (text: string, next?: Event): string =>
+  text.replace(/<(?=[a-z/!?])/gi, "\\<").replace(/<$/, next?.kind === "text" && /^[a-z/!?]/i.test(next.text) ? "\\<" : "<");
+
 /** One budget for parsing, span scans and all render calls. Synchronous parsing
  * checks it between bounded input chunks; rendering checks it between events. */
 class WorkBudget {
@@ -273,10 +277,10 @@ const renderInline = async (
     pendingSpace = false;
     parts.push(value);
   };
-  const text = (value: string, ticks?: BacktickRun) => {
+  const text = (value: string, ticks?: BacktickRun, next?: Event) => {
     const asCode = ticks !== undefined;
     plain.push(value);
-    const normalized = value.replace(/\s+/gu, " ");
+    const normalized = (asCode ? value : escapeText(value, next)).replace(/\s+/gu, " ");
     const content = normalized.trim();
     if (content) {
       if (normalized.startsWith(" ")) pendingSpace = true;
@@ -295,15 +299,20 @@ const renderInline = async (
       if (event.kind === "text") {
         code.parts.push(event.text);
         countBackticks(event.text, code.ticks);
-      } else if (event.kind === "open") code.depth++;
-      else if (--code.depth === 0) {
+      } else if (event.kind === "open") {
+        code.depth++;
+        if (blocks.has(event.name) || event.name === "br") {
+          code.parts.push(" ");
+          code.ticks.trailing = 0;
+        }
+      } else if (--code.depth === 0) {
         text(code.parts.join(""), code.ticks);
         code = undefined;
       }
       continue;
     }
     if (event.kind === "text") {
-      text(event.text);
+      text(event.text, undefined, index + 1 < end ? events[index + 1] : undefined);
       continue;
     }
     const open = event.kind === "open";
@@ -345,7 +354,7 @@ const renderInline = async (
       const alt = collapse(event.attrs.alt ?? "");
       const url = linkUrl(event.attrs.src, baseUrl, true);
       if (alt && url) {
-        append(`![${escapeLabel(alt)}](${url})`);
+        append(`![${escapeLabel(escapeText(alt))}](${url})`);
         plain.push(alt);
         characters += alt.length;
       }
@@ -652,7 +661,8 @@ const render = async (
     | { name: string; depth: number; parts: string[]; lang: string; firstCode: boolean; start: number; ticks: BacktickRun }
     | undefined;
   const tables: boolean[] = [];
-  let row: { cells: string[]; size: number; lastReserved: number } | undefined;
+  let row: { cells: string[]; lastReserved: number } | undefined;
+  let table: { rows: string[][]; width: number; bytes: number; contentBytes: number } | undefined;
   // Expiration row indexes avoid allocating or counting down one entry per spanned row.
   const rowspans = new Map<number, number>();
   let cellStart: number | undefined;
@@ -660,8 +670,7 @@ const render = async (
   let rowspan = 1;
   let captionStart: number | undefined;
   let tableRows = 0;
-  let tableHeader = false;
-  const remaining = () => Math.max(0, options.maxBytes - size - NOTICE_BYTES);
+  const remaining = () => Math.max(0, options.maxBytes - size - (table?.bytes ?? 0) - NOTICE_BYTES);
   const append = (text: string) => {
     if (!text || truncated) return;
     const next = Buffer.byteLength(text);
@@ -703,8 +712,8 @@ const render = async (
     );
     lineStart = verbatim ? text.endsWith("\n") : false;
   };
-  const text = (value: string) => {
-    const normalized = value.replace(/\s+/gu, " ");
+  const text = (value: string, next?: Event) => {
+    const normalized = escapeText(value, next).replace(/\s+/gu, " ");
     const trimmed = normalized.trim();
     if (trimmed) {
       if (normalized.startsWith(" ") && !lineStart && !pendingBreak) pendingSpace = true;
@@ -713,34 +722,58 @@ const render = async (
     }
     if (normalized.endsWith(" ")) pendingSpace = true;
   };
+  // Reserve the complete padded table, including the current row and separator.
+  // A wider cell charges all earlier rows in O(1); padding is materialized only on flush.
+  const cellCost = (bytes: number): number => {
+    if (!row || !table) return Infinity;
+    const width = Math.max(table.width, row.cells.length + 1);
+    const rows = table.rows.length + 1;
+    const item = items.at(-1);
+    const prefixBytes = Buffer.byteLength("> ".repeat(Math.min(quoteDepth, 6)) + (item?.indent ?? ""));
+    const leadingBytes = (parts.length ? pendingBreak : 0) + (item?.marker ? item.marker.length - item.indent.length : 0);
+    return table.contentBytes + bytes + rows * (3 * width + 2) + 6 * width + 2 + (rows + 1) * prefixBytes + leadingBytes - table.bytes;
+  };
   const addCell = (markdown: string): boolean => {
-    if (!row) return false;
-    const bytes = Buffer.byteLength(markdown) + 3;
-    if (row.size + bytes > remaining()) {
+    if (!row || !table) return false;
+    const bytes = Buffer.byteLength(markdown);
+    const cost = cellCost(bytes);
+    if (cost > remaining()) {
       limited = true;
       return false;
     }
     row.cells.push(markdown);
-    row.size += bytes;
+    table.width = Math.max(table.width, row.cells.length);
+    table.bytes += cost;
+    table.contentBytes += bytes;
     return true;
   };
   const finishRow = () => {
     if (!row) return;
     while (!limited && row.cells.length <= row.lastReserved) addCell("");
-    if (row.cells.length) {
-      write(`| ${row.cells.join(" | ")} |`);
-      boundary(1);
-      if (!tableHeader) {
-        write(`| ${row.cells.map(() => "---").join(" | ")} |`);
-        boundary(1);
-        tableHeader = true;
-      }
-    }
+    if (row.cells.length) table?.rows.push(row.cells);
     tableRows++;
     row = undefined;
   };
+  const flushTable = async () => {
+    finishRow();
+    const buffered = table;
+    table = undefined;
+    if (!buffered) return;
+    for (let index = 0; index < buffered.rows.length; index++) {
+      const cells = buffered.rows[index]!;
+      while (cells.length < buffered.width) cells.push("");
+      const markdown = `| ${cells.join(" | ")} |`;
+      if (budget.used(markdown.length)) await budget.yield();
+      write(markdown);
+      boundary(1);
+      if (index === 0) {
+        write(`| ${Array(buffered.width).fill("---").join(" | ")} |`);
+        boundary(1);
+      }
+    }
+  };
   if (title) {
-    write(`# ${title}`);
+    write(`# ${escapeText(title)}`);
     boundary();
   }
   for (let index = span.start; index < span.end && !truncated && !limited; index++) {
@@ -800,18 +833,19 @@ const render = async (
       continue;
     }
     if (event.kind === "text") {
-      if (tables.at(-1) !== false) text(event.text);
+      if (tables.at(-1) !== false) text(event.text, index + 1 < span.end ? events[index + 1] : undefined);
       continue;
     }
     const { name, attrs } = event;
     const open = event.kind === "open";
     if (name === "table") {
+      if (!open && tables.at(-1) === false) await flushTable();
       boundary();
       if (open) {
         tables.push(event.layout ?? false);
         if (!event.layout) {
           tableRows = 0;
-          tableHeader = false;
+          table = { rows: [], width: 0, bytes: 0, contentBytes: 0 };
           rowspans.clear();
           row = undefined;
           cellStart = undefined;
@@ -836,7 +870,7 @@ const render = async (
         }
       } else if (name === "tr") {
         if (open) {
-          row = { cells: [], size: 1, lastReserved: -1 };
+          row = { cells: [], lastReserved: -1 };
           for (const [column, until] of rowspans) {
             if (until <= tableRows) rowspans.delete(column);
             else row.lastReserved = Math.max(row.lastReserved, column);
@@ -859,7 +893,7 @@ const render = async (
             index,
             options.baseUrl,
             budget,
-            Math.max(0, remaining() - row.size - 3),
+            Math.max(0, remaining() - cellCost(0)),
           );
           for (let offset = 0; offset < colspan; offset++) {
             const column = row.cells.length;
@@ -890,7 +924,7 @@ const render = async (
       const alt = collapse(attrs.alt ?? "");
       const url = linkUrl(attrs.src, options.baseUrl, true);
       if (alt && url) {
-        write(`![${escapeLabel(alt)}](${url})`);
+        write(`![${escapeLabel(escapeText(alt))}](${url})`);
         readable = true;
       }
     } else if (name === "ul" || name === "ol") {
@@ -919,6 +953,7 @@ const render = async (
       boundary();
     } else if (blocks.has(name) || name === "td" || name === "th") boundary();
   }
+  if (table) await flushTable();
   options.signal?.throwIfAborted();
   truncated ||= limited;
   if (!readable && !truncated) return "";
