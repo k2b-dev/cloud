@@ -9,11 +9,26 @@ import { type ToastHandle, toast } from "@k2b/ui";
  */
 export const AUTOMATIC_RELOAD_WINDOW_MS = 30_000;
 
+let reloadPending = false;
+/** One notice at a time: every deferred reload has the same remedy. */
+let pageChanged: ToastHandle | undefined;
+
+/**
+ * An open modal dialog holds the reload. A modeless window, such as global search moved aside, leaves the page
+ * usable and may stay open for long, so it does not: the page would otherwise stay stale without notice.
+ */
+const modalOpen = () => document.querySelector('dialog[open]:not([aria-modal="false"])') !== null;
+
 const storageKey = (key: string) => `cloud.reload.${key}`;
 
 /**
  * Reloads the page for an automatic reason (a live event, a failed live
  * subscription, a changed view) at most once per `key` and window in this tab.
+ * While a modal dialog is open, it does not reload: once the last one closes,
+ * it shows a notice with a reload action. The person may have confirmed work
+ * in that dialog whose request a reload would cancel, so only they reload.
+ * The call returns `true` in both cases; a dialog that shows live data says
+ * itself that it is stale.
  *
  * Returns `false` without reloading when the same key already reloaded within
  * the window, or when `sessionStorage` is unavailable and a repeat therefore
@@ -22,6 +37,7 @@ const storageKey = (key: string) => `cloud.reload.${key}`;
  * need this guard.
  */
 export const reloadOnce = (key: string, options: { windowMs?: number } = {}): boolean => {
+  if (reloadPending) return true;
   const windowMs = options.windowMs ?? AUTOMATIC_RELOAD_WINDOW_MS;
   const now = Date.now();
   try {
@@ -32,7 +48,20 @@ export const reloadOnce = (key: string, options: { windowMs?: number } = {}): bo
   } catch {
     return false;
   }
-  window.location.reload();
+  if (typeof document === "undefined" || !modalOpen()) {
+    window.location.reload();
+    return true;
+  }
+  reloadPending = true;
+  const observer = new MutationObserver(() => {
+    if (modalOpen()) return;
+    observer.disconnect();
+    reloadPending = false;
+    const t = reloadMessages.resolve([document.documentElement.lang || "en"]).t;
+    pageChanged?.dismiss();
+    pageChanged = toast(t.pageChanged, { duration: 0, action: { label: t.reload, onClick: () => window.location.reload() } });
+  });
+  observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["open", "aria-modal"] });
   return true;
 };
 
@@ -41,10 +70,12 @@ const reloadMessages = i18n.define({
   messages: {
     en: {
       codeUnavailable: "Part of this page could not load. Reload the page and try again.",
+      pageChanged: "This page changed. Reload it to see the latest version.",
       reload: "Reload",
     },
     de: {
       codeUnavailable: "Ein Teil dieser Seite konnte nicht geladen werden. Lade die Seite neu und versuche es erneut.",
+      pageChanged: "Diese Seite hat sich geändert. Lade sie neu, um den aktuellen Stand zu sehen.",
       reload: "Neu laden",
     },
   },

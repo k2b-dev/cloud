@@ -33,6 +33,7 @@ export default function PrincipalPicker(props: {
   allowAuthenticated?: boolean;
   allowServiceAccounts?: boolean;
   disabled?: boolean;
+  readOnly?: boolean;
   /** `serviceAccountKind` is set for service accounts so a new row can show the same kind as the result. */
   onSelect: (principal: Principal, display: { displayName: string; serviceAccountKind?: ServiceAccountKind }) => void;
 }) {
@@ -100,6 +101,7 @@ export default function PrincipalPicker(props: {
   return (
     <Combobox
       disabled={props.disabled}
+      readOnly={props.readOnly}
       placeholder={
         props.allowAuthenticated !== false || props.allowPublic
           ? props.allowServiceAccounts

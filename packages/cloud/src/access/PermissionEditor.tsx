@@ -1,14 +1,14 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { IconButton, Placeholder, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
-import { createMemo, For, Show } from "solid-js";
-import { createStore } from "solid-js/store";
+import { announce, IconButton, Placeholder, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind } from "../contracts/shared";
 import { groupDisplayName } from "../shared/account-display";
 import { createGroupCoverage, type GroupCoverage, GroupCoveragePanel, GroupCoverageToggle } from "./GroupCoverage";
 import { isManagerEntry } from "./managers";
 import { accessMessages } from "./messages";
-import PrincipalPicker from "./PrincipalPicker";
+import PrincipalPicker, { principalKey } from "./PrincipalPicker";
 import { serviceAccountKindDisplay } from "./service-account-kind";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -180,6 +180,12 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   // A store keeps each row's identity across level changes, so an expanded member list stays open. It holds
   // copies: store writes go into the objects themselves, and the caller's entries are not the editor's to change.
   const [entries, setEntries] = createStore<AccessEntry[]>(props.initialEntries.map((entry) => ({ ...entry })));
+  const [pending, setPending] = createSignal<string | null>(null);
+  const grantPending = () => pending() !== null;
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
   const canEdit = () => props.canEdit !== false;
   const allowPublic = () => props.allowPublic === true;
   const allowAuthenticated = () => props.allowAuthenticated !== false;
@@ -196,18 +202,38 @@ export default function PermissionEditor(props: PermissionEditorProps) {
     }
   }
 
-  const grantMut = mutation.create({
-    mutation: async (data: {
-      principal: Principal;
-      permission: GrantableLevel;
-      scope: string | undefined;
-      display: { displayName: string; serviceAccountKind?: ServiceAccountKind };
-    }) => props.grantAccess(data.principal, data.permission, data.display, data.scope),
-    onSuccess: (newEntry) => {
-      setEntries(entries.length, { ...newEntry });
-    },
-    onError: (err) => prompts.error(err.message),
-  });
+  const grant = async (principal: Principal, display: { displayName: string; serviceAccountKind?: ServiceAccountKind }) => {
+    if (disposed || grantPending() || updateMut.loading() || revokeMut.loading()) return;
+    const key = principalKey(principal);
+    if (entries.some((entry) => principalKey(entry.principal) === key)) return;
+    const first = allowed(principal)[0];
+    if (!first) return;
+    const id = `pending:${key}`;
+    setPending(id);
+    setEntries(entries.length, {
+      id,
+      principal,
+      permission: first.level,
+      scope: first.scope,
+      createdAt: new Date().toISOString(),
+      ...display,
+    });
+    try {
+      const entry = await props.grantAccess(principal, first.level, display, first.scope);
+      if (disposed) return;
+      const index = entries.findIndex((entry) => entry.id === id);
+      if (index !== -1) setEntries(index, reconcile({ ...entry }));
+      announce(t().accessGranted({ name: display.displayName }));
+    } catch (err) {
+      if (!disposed) setEntries((current) => current.filter((entry) => entry.id !== id));
+      // Prompts are global, so a grant that fails after its dialog closed still says so.
+      if (!(typeof err === "object" && err !== null && "name" in err && err.name === "AbortError")) {
+        prompts.error(err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      if (!disposed) setPending(null);
+    }
+  };
 
   type LevelChange = { accessId: string; permission: GrantableLevel; scope: string | undefined };
   const updateMut = mutation.create<LevelChange, LevelChange>({
@@ -239,11 +265,12 @@ export default function PermissionEditor(props: PermissionEditorProps) {
     },
     onError: (err) => prompts.error(err.message),
   });
-  const busy = () => grantMut.loading() || updateMut.loading() || revokeMut.loading();
+  const busy = () => grantPending() || updateMut.loading() || revokeMut.loading();
   // The service refuses to remove the last manager; the row says so up front.
   const lastManagerId = createMemo(() => {
     // A grant on part of the resource never manages it.
-    const managers = (props.effectiveEntries?.(entries) ?? entries).filter((entry) => !entry.scope && isManagerEntry(entry));
+    const granted = entries.filter((entry) => entry.id !== pending());
+    const managers = (props.effectiveEntries?.(granted) ?? granted).filter((entry) => !entry.scope && isManagerEntry(entry));
     return managers.length === 1 ? managers[0]!.id : null;
   });
 
@@ -260,6 +287,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
                 entry={entry}
                 coverage={coverage}
                 canEdit={canEdit()}
+                pending={entry.id === pending()}
                 disabled={busy()}
                 lastManager={entry.id === lastManagerId()}
                 allowed={allowed(entry.principal)}
@@ -288,11 +316,9 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           allowPublic={allowPublic()}
           allowAuthenticated={allowAuthenticated()}
           allowServiceAccounts={props.allowServiceAccounts}
-          disabled={busy()}
-          onSelect={(principal, display) => {
-            const first = allowed(principal)[0];
-            if (first && !busy()) grantMut.mutate({ principal, permission: first.level, scope: first.scope, display });
-          }}
+          readOnly={grantPending()}
+          disabled={updateMut.loading() || revokeMut.loading()}
+          onSelect={(principal, display) => void grant(principal, display)}
         />
       </Show>
     </div>
@@ -307,6 +333,7 @@ function AccessEntryRow(props: {
   entry: AccessEntry;
   canEdit: boolean;
   disabled: boolean;
+  pending?: boolean;
   /** The only entry that manages the resource: it keeps its level and cannot be removed. */
   lastManager: boolean;
   allowed: ResolvedLevel[];
@@ -326,14 +353,14 @@ function AccessEntryRow(props: {
   const manageLabel = () => resolveEntryDisplay("admin", undefined, props.allowed, t()).label;
   const removeLabel = () => (props.lastManager ? t().lastManager({ level: manageLabel() }) : t().remove({ name: displayName() }));
   const isInteractive = () =>
-    props.canEdit && !props.disabled && !props.singlePicker && props.allowed.some((option) => option.key === entryKey());
+    props.canEdit && !props.disabled && !props.pending && !props.singlePicker && props.allowed.some((option) => option.key === entryKey());
 
   const badgeClass =
     "flex min-h-7 items-center gap-1 rounded-full border border-transparent bg-[var(--ui-surface-muted)] px-2.5 py-1 text-xs text-secondary";
 
   const badgeContent = (
     <>
-      <i class={`ti ${display().icon}`} />
+      <i class={props.pending ? "ti ti-loader-2 animate-spin" : `ti ${display().icon}`} />
       <span>{display().label}</span>
       <Show when={isInteractive()}>
         <i class="ti ti-chevron-down text-[10px]" />
@@ -343,7 +370,7 @@ function AccessEntryRow(props: {
 
   return (
     <div>
-      <div class="group/access-row flex items-center gap-2 py-1.5">
+      <div class="group/access-row flex items-center gap-2 py-1.5" aria-busy={props.pending ? "true" : undefined}>
         <Show
           when={props.entry.principal.type === "user"}
           fallback={
@@ -381,7 +408,9 @@ function AccessEntryRow(props: {
           >
             {(label) => <span class="truncate text-xs text-dimmed">({label()})</span>}
           </Show>
-          <Show when={props.coverage}>{(coverage) => <GroupCoverageToggle coverage={coverage()} groupName={displayName()} />}</Show>
+          <Show when={props.coverage}>
+            {(coverage) => <GroupCoverageToggle coverage={coverage()} groupName={displayName()} disabled={props.pending} />}
+          </Show>
         </div>
 
         {/* Permission badge — interactive single-value picker when editable,
@@ -422,7 +451,7 @@ function AccessEntryRow(props: {
               variant="ghost"
               size="xs"
               onClick={props.onRevoke}
-              disabled={props.disabled || props.lastManager}
+              disabled={props.disabled || props.pending || props.lastManager}
               aria-label={t().remove({ name: displayName() })}
               // A disabled button takes no focus and touch has no hover, so the reason also reaches assistive technology.
               aria-description={props.lastManager ? removeLabel() : undefined}

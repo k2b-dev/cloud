@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 import type { AccessEntry, Principal, ServiceAccountKind } from "../contracts/shared";
@@ -138,7 +138,7 @@ describe("PermissionEditor service accounts", () => {
         }
 
         options.find((element) => element.textContent?.includes("Found agent"))!.click();
-        await waitFor(() => rowOf("Found agent") !== undefined, "the new agent row");
+        await waitFor(() => rowOf("Found agent")?.hasAttribute("aria-busy") === false, "the granted agent row");
         expect(granted).toEqual([{ principal: { type: "service_account", serviceAccountId: "found-agent" }, kind: "agent" }]);
         const added = rowOf("Found agent")!;
         expect(added.querySelector("i.ti-robot")).not.toBeNull();
@@ -658,4 +658,238 @@ describe("PermissionEditor group coverage", () => {
       dom.cleanup();
     }
   });
+});
+
+describe("PermissionEditor pending grants", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+
+  const renderEditor = async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = Object.assign(
+      async () => {
+        fetchCalls += 1;
+        return Response.json({
+          items: ["Jonas Weber", "Lea Sommer"].map((displayName, index) => ({
+            kind: "user",
+            user: { id: `user-${index}`, uid: `user-${index}`, displayName, mail: null },
+          })),
+        });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const { default: PermissionEditor } = await import("./PermissionEditor");
+    const grants: { resolve: (entry: AccessEntry) => void; reject: (error: Error) => void; entry: AccessEntry }[] = [];
+    setSystemTime(new Date("2026-10-15T07:00:00.000Z"));
+    delegateEvents(["input", "click", "keydown"], dom.document);
+    const dispose = render(
+      () => (
+        <PermissionEditor
+          initialEntries={[grant("manager", { type: "user", userId: "mara" }, "admin", "Mara Lind")]}
+          allowedLevels={["admin", "read"]}
+          allowAuthenticated={false}
+          grantAccess={(principal, permission, display) =>
+            new Promise<AccessEntry>((resolve, reject) => {
+              grants.push({ resolve, reject, entry: grant(`real-${grants.length}`, principal, permission, display?.displayName) });
+            })
+          }
+          updateAccess={async () => {}}
+          revokeAccess={async () => {}}
+        />
+      ),
+      dom.root,
+    );
+    const rows = () => Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row"));
+    const rowOf = (name: string) => rows().find((row) => row.textContent?.includes(name));
+    const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+    const pick = async (name: string) => {
+      input.focus();
+      input.value = name.slice(0, 2);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(
+        () =>
+          input.getAttribute("aria-expanded") === "true" &&
+          Array.from(dom.root.querySelectorAll("[role=option]")).some((option) => option.textContent?.includes(name)),
+        "the user result",
+      );
+      Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role=option]"))
+        .find((option) => option.textContent?.includes(name))!
+        .click();
+      return grants.length;
+    };
+    return {
+      dom,
+      grants,
+      fetchCalls: () => fetchCalls,
+      rows,
+      rowOf,
+      input,
+      pick,
+      dispose,
+      done: async () => {
+        dispose();
+        // Close the error prompt before restoring the DOM globals.
+        dom.document.querySelector<HTMLButtonElement>("dialog button")?.click();
+        await Bun.sleep(10);
+        globalThis.fetch = originalFetch;
+        setSystemTime();
+        dom.cleanup();
+      },
+    };
+  };
+
+  test("a pending grant keeps focus and blocks new picks until it finishes", async () => {
+    const view = await renderEditor();
+    const { dom, grants, rows, rowOf, input, pick } = view;
+    const disabledChanges: MutationRecord[] = [];
+    const observer = new MutationObserver((records) => disabledChanges.push(...records));
+    observer.observe(input, { attributes: true, attributeFilter: ["disabled"] });
+    try {
+      // Capture the call count during selection, before a queued microtask could start.
+      expect(await pick("Jonas Weber")).toBe(1);
+      const firstRow = rowOf("Jonas Weber")!;
+      expect(firstRow).toBeDefined();
+      expect(firstRow.getAttribute("aria-busy")).toBe("true");
+      expect(firstRow.querySelector(".ti-loader-2.animate-spin")).not.toBeNull();
+      expect(firstRow.textContent).toContain("Manage");
+      expect(grants).toHaveLength(1);
+      expect(input.disabled).toBe(false);
+      expect(input.readOnly).toBe(true);
+      expect(input.getAttribute("aria-readonly")).toBe("true");
+      expect(dom.document.activeElement).toBe(input);
+      for (const row of rows()) {
+        expect(row.querySelector<HTMLButtonElement>('button[aria-label^="Remove "]')!.disabled).toBe(true);
+        expect(row.querySelectorAll("[role=menuitemradio]:not(:disabled)")).toHaveLength(0);
+      }
+      // A pending manager cannot unlock the only saved manager.
+      expect(rowOf("Mara Lind")!.querySelector<HTMLButtonElement>('button[aria-label="Remove Mara Lind"]')!.disabled).toBe(true);
+      const requests = view.fetchCalls();
+      input.value = "Le";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      input.click();
+      await Bun.sleep(200);
+      expect(input.value).toBe("");
+      expect(input.getAttribute("aria-expanded")).toBe("false");
+      expect(view.fetchCalls()).toBe(requests);
+      expect(rowOf("Lea Sommer")).toBeUndefined();
+      expect(grants).toHaveLength(1);
+
+      grants[0]!.resolve(grants[0]!.entry);
+      await waitFor(() => rowOf("Jonas Weber")?.hasAttribute("aria-busy") === false, "the final row");
+      expect(rowOf("Jonas Weber")).toBe(firstRow);
+      expect(rows()).toHaveLength(2);
+      expect(firstRow.querySelector(".ti-loader-2.animate-spin")).toBeNull();
+      expect(firstRow.querySelector<HTMLButtonElement>('button[aria-label="Remove Jonas Weber"]')!.disabled).toBe(false);
+      expect(input.readOnly).toBe(false);
+      expect(input.hasAttribute("aria-readonly")).toBe(false);
+      expect(dom.document.activeElement).toBe(input);
+      await waitFor(() => dom.document.querySelector("[data-k2b-live]")?.textContent?.includes("Jonas Weber") === true, "the announcement");
+
+      await pick("Lea Sommer");
+      expect(grants).toHaveLength(2);
+      expect(rowOf("Lea Sommer")!.getAttribute("aria-busy")).toBe("true");
+      expect(input.readOnly).toBe(true);
+      grants[1]!.resolve(grants[1]!.entry);
+      await waitFor(() => rowOf("Lea Sommer")?.hasAttribute("aria-busy") === false, "the second final row");
+      expect(input.readOnly).toBe(false);
+      expect(dom.document.activeElement).toBe(input);
+      expect(rows().map((row) => row.querySelector(".truncate")?.textContent)).toEqual(["Mara Lind", "Jonas Weber", "Lea Sommer"]);
+      expect(disabledChanges).toHaveLength(0);
+    } finally {
+      observer.disconnect();
+      await view.done();
+    }
+  });
+
+  test("a failed grant removes its row, shows the error, and makes the picker editable", async () => {
+    const view = await renderEditor();
+    const { dom, grants, rowOf, input, pick } = view;
+    try {
+      await pick("Jonas Weber");
+      expect(rowOf("Jonas Weber")!.getAttribute("aria-busy")).toBe("true");
+      grants[0]!.reject(new Error("Grant was refused"));
+      await waitFor(() => !rowOf("Jonas Weber"), "the failed row to disappear");
+      await waitFor(
+        () => dom.document.querySelector("dialog[open]")?.textContent?.includes("Grant was refused") === true,
+        "the error prompt",
+      );
+      expect(input.disabled).toBe(false);
+      expect(input.readOnly).toBe(false);
+      expect(input.hasAttribute("aria-readonly")).toBe(false);
+      expect(dom.document.querySelectorAll("[data-k2b-live]")).toHaveLength(0);
+      dom.document.querySelector<HTMLButtonElement>("dialog button")!.click();
+      await pick("Jonas Weber");
+      expect(grants).toHaveLength(2);
+      grants[1]!.resolve(grants[1]!.entry);
+      await waitFor(() => rowOf("Jonas Weber")?.hasAttribute("aria-busy") === false, "the retried grant");
+    } finally {
+      await view.done();
+    }
+  });
+
+  test("ignores stale duplicate options while pending and after success", async () => {
+    const view = await renderEditor();
+    const { dom, grants, rows, rowOf, pick } = view;
+    try {
+      await pick("Jonas Weber");
+      expect(rowOf("Jonas Weber")!.getAttribute("aria-busy")).toBe("true");
+      const stale = dom.root.querySelector<HTMLButtonElement>("[role=option]")!;
+      stale.click();
+      expect(rows()).toHaveLength(2);
+      expect(grants).toHaveLength(1);
+      grants[0]!.resolve(grants[0]!.entry);
+      await waitFor(() => rowOf("Jonas Weber")?.hasAttribute("aria-busy") === false, "the saved grant");
+      // Before another lookup replaces the options, the old result still exists.
+      stale.click();
+      expect(rows()).toHaveLength(2);
+      expect(grants).toHaveLength(1);
+    } finally {
+      await view.done();
+    }
+  });
+
+  test("an AbortError removes its pending row without a prompt", async () => {
+    const view = await renderEditor();
+    const { dom, grants, rowOf, input, pick } = view;
+    try {
+      await pick("Jonas Weber");
+      expect(rowOf("Jonas Weber")!.getAttribute("aria-busy")).toBe("true");
+      grants[0]!.reject(new DOMException("Grant was cancelled", "AbortError"));
+      await waitFor(() => !rowOf("Jonas Weber"), "the cancelled row to disappear");
+      expect(input.readOnly).toBe(false);
+      expect(input.disabled).toBe(false);
+      expect(dom.document.activeElement).toBe(input);
+      expect(dom.document.querySelector("dialog[open]")).toBeNull();
+      expect(dom.document.querySelectorAll("[data-k2b-live]")).toHaveLength(0);
+    } finally {
+      await view.done();
+    }
+  });
+
+  for (const fail of [false, true]) {
+    test(`after disposal a late grant ${fail ? "failure still shows its error" : "success stays silent"}`, async () => {
+      const view = await renderEditor();
+      const { dom, grants, pick } = view;
+      try {
+        await pick("Jonas Weber");
+        expect(view.rowOf("Jonas Weber")?.getAttribute("aria-busy")).toBe("true");
+        view.dispose();
+        if (fail) grants[0]!.reject(new Error("Late grant failure"));
+        else grants[0]!.resolve(grants[0]!.entry);
+        await Bun.sleep(10);
+        // Closing the dialog while the grant saves must not hide that it failed.
+        expect(dom.document.querySelector("dialog[open]")?.textContent?.includes("Late grant failure") === true).toBe(fail);
+        expect(dom.document.querySelectorAll("[data-k2b-live]")).toHaveLength(0);
+        expect(grants).toHaveLength(1);
+      } finally {
+        await view.done();
+      }
+    });
+  }
 });
