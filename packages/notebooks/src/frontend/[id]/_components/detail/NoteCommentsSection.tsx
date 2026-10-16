@@ -107,7 +107,10 @@ export default function NoteCommentsSection(props: Props) {
       const commentId = (event as CustomEvent<RevealCommentEventDetail>).detail?.commentId ?? null;
       const indexOf = () => (commentId ? commentsPage().items.findIndex((comment) => comment.id === commentId) : -1);
       for (let page = 0; commentId && indexOf() < 0 && commentsPage().hasNext && page < REVEAL_MAX_PAGES; page++) {
+        const loaded = commentsPage().items.length;
         await commentsQuery.loadMore();
+        // A failed or empty page stops here; the list's own error row offers the retry.
+        if (commentsQuery.error() || commentsPage().items.length === loaded) break;
       }
       const index = indexOf();
       if (index >= 0 && index < commentsPage().items.length - NEWEST) setExpanded(true);

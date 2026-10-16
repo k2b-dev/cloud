@@ -2,18 +2,19 @@ import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import {
   isNotebookActivityAction,
+  NOTEBOOK_ACTIVITY_ACTIONS,
+  type NoteAuthors,
   type NotebookActivityAction,
   type NotebookActivityActor,
-  type NoteAuthors,
 } from "../lib/activity-actions";
 import { buildNotebookVisibleAccessCondition } from "./access";
 
 export {
-  NOTEBOOK_ACTIVITY_ACTIONS,
   isNotebookActivityAction,
+  NOTEBOOK_ACTIVITY_ACTIONS,
+  type NoteAuthors,
   type NotebookActivityAction,
   type NotebookActivityActor,
-  type NoteAuthors,
 } from "../lib/activity-actions";
 
 export type NotebookActivityEvent = {
@@ -186,7 +187,9 @@ export const list = async (params: {
   });
   const cursor = decodeActivityCursor(params.cursor);
   const limit = Math.min(Math.max(params.limit ?? 30, 1), MAX_PAGE_SIZE);
-  const actions = params.actions ? toPgTextArray([...params.actions]) : null;
+  // Only actions this version can name are listed, filtered before the limit, so every page is full and its
+  // cursor always leads to older supported events, even after a rollback left newer unknown actions behind.
+  const actions = toPgTextArray([...(params.actions ?? NOTEBOOK_ACTIVITY_ACTIONS)]);
   const rows = await sql<ActivityRow[]>`
     SELECT
       activity.id,
@@ -235,7 +238,7 @@ export const list = async (params: {
     }
       AND (${params.notebookId ?? null}::uuid IS NULL OR activity.notebook_id = ${params.notebookId ?? null}::uuid)
       AND (${params.noteId ?? null}::uuid IS NULL OR activity.note_id = ${params.noteId ?? null}::uuid)
-      AND (${actions}::text[] IS NULL OR activity.action = ANY(${actions}::text[]))
+      AND activity.action = ANY(${actions}::text[])
       AND (
         ${cursor?.lastOccurredAt ?? null}::timestamptz IS NULL
         OR (activity.last_occurred_at, activity.id) <

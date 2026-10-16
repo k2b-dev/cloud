@@ -322,4 +322,64 @@ describe("Note comment feedback", () => {
       setSystemTime();
     }
   });
+
+  test("an activity link stops paging when an older page fails, and leaves the retry to the list", async () => {
+    const { REVEAL_COMMENT_EVENT } = await import("./events");
+    const requests: number[] = [];
+    const fetch = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(
+        async (input: RequestInfo | URL) => {
+          requests.push(Number(new URL(String(input), "http://localhost").searchParams.get("page")));
+          return Response.json({ message: "Unavailable" }, { status: 503 });
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    );
+    const previousCSS = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+    Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
+    const { LocaleProvider } = await import("@k2b/ui");
+    const { default: NoteCommentsSection } = await import("./NoteCommentsSection");
+    const comment: PublicNoteComment = {
+      id: "newest",
+      notebookId: "Book01",
+      noteId: "Note01",
+      authorUserId: "jana",
+      authorDisplayName: "Jana Berger",
+      authorAvatarHash: null,
+      content: "Newest",
+      createdAt: "2026-10-03T10:00:00.000Z",
+      updatedAt: "2026-10-03T10:00:00.000Z",
+      canEdit: false,
+      canDelete: false,
+    };
+    const dispose = render(
+      () =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(NoteCommentsSection, {
+              notebookId: "Book01",
+              noteId: "Note01",
+              currentUserId,
+              canWrite: true,
+              initialCommentsPage: { ...emptyPage, total: 60, hasNext: true, items: [comment] },
+              dateConfig: { locale: "de", timeZone: "UTC", base: "2026-10-16T19:30:00.000Z" },
+            });
+          },
+        }),
+      dom.root,
+    );
+    try {
+      window.dispatchEvent(new CustomEvent(REVEAL_COMMENT_EVENT, { detail: { commentId: "older" } }));
+      await until(() => dom.document.activeElement === dom.root.querySelector("[data-note-comments]"));
+      // One failed request, not ten in a row; the list shows the failure with its own retry.
+      expect(requests).toEqual([2]);
+      expect(dom.root.querySelector('[role="alert"]')).not.toBeNull();
+    } finally {
+      dispose();
+      fetch.mockRestore();
+      if (previousCSS) Object.defineProperty(globalThis, "CSS", previousCSS);
+      else Reflect.deleteProperty(globalThis, "CSS");
+    }
+  });
 });

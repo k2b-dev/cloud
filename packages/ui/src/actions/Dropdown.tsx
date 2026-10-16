@@ -488,6 +488,8 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
   const messages = useUiMessages();
   const locale = useLocale();
   let sheetOpen = false;
+  /** Closes an open phone sheet when the menu goes, so no sheet outlives its owner. */
+  const disposed = new AbortController();
   const id = createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "-");
   const menuId = `k2b-dropdown-${id}`;
   const [internalOpen, setInternalOpen] = createSignal(false);
@@ -567,7 +569,12 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
       // The sheet is this menu's open state: the trigger reports it and the owner hears both ends.
       setInternalOpen(true);
       props.onOpenChange?.(true);
-      void openMenuSheet({ items: props.items, label: props.label ?? messages().dropdownMenu, locale: locale() }).finally(() => {
+      void openMenuSheet({
+        items: props.items,
+        label: props.label ?? messages().dropdownMenu,
+        locale: locale(),
+        signal: disposed.signal,
+      }).finally(() => {
         sheetOpen = false;
         setInternalOpen(false);
         props.onOpenChange?.(false);
@@ -634,6 +641,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     if (props.open) open(false);
     onCleanup(detachViewportListeners);
   });
+  onCleanup(() => disposed.abort());
 
   return (
     <DropdownContext.Provider value={context}>

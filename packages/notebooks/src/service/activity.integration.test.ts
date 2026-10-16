@@ -69,26 +69,33 @@ databaseTest("note authors resolve creation, latest edits and restores, with leg
   expect(await noteAuthors({ noteId: crypto.randomUUID() })).toEqual({ createdBy: null, lastEditedBy: null });
 });
 
-databaseTest("unknown actions are skipped while cursors advance across completely unknown pages; action filters stay bounded", async () => {
-  await sql`DELETE FROM notebooks.activity_events WHERE note_id = ${noteId}::uuid`;
-  const createdId = await record({ notebookId, noteId, action: "note.created", actor: { kind: "user", id: creatorId }, occurredAt: start });
-  const editedId = await record({ notebookId, noteId, action: "note.edited", actor: { kind: "user", id: editorId }, occurredAt: later });
-  for (let index = 0; index < 3; index++) {
-    await sql`INSERT INTO notebooks.activity_events (notebook_id, note_id, actor_kind, action, created_at, last_occurred_at)
+databaseTest(
+  "unknown actions never fill a page, so paging always reaches older supported events; action filters stay bounded",
+  async () => {
+    await sql`DELETE FROM notebooks.activity_events WHERE note_id = ${noteId}::uuid`;
+    const createdId = await record({
+      notebookId,
+      noteId,
+      action: "note.created",
+      actor: { kind: "user", id: creatorId },
+      occurredAt: start,
+    });
+    const editedId = await record({ notebookId, noteId, action: "note.edited", actor: { kind: "user", id: editorId }, occurredAt: later });
+    for (let index = 0; index < 3; index++) {
+      await sql`INSERT INTO notebooks.activity_events (notebook_id, note_id, actor_kind, action, created_at, last_occurred_at)
       VALUES (${notebookId}::uuid, ${noteId}::uuid, 'system', 'note.moved', ${latest}, ${latest})`;
-  }
-  const params = { bypassAccess: true, noteId, limit: 2 };
-  const first = await list(params);
-  expect(first.items).toEqual([]);
-  expect(first.nextCursor).not.toBeNull();
-  const second = await list({ ...params, cursor: first.nextCursor! });
-  expect(second.items.map(({ id }) => id)).toEqual([editedId]);
-  expect(second.nextCursor).not.toBeNull();
-  const third = await list({ ...params, cursor: second.nextCursor! });
-  expect(third.items.map(({ id }) => id)).toEqual([createdId]);
-  expect(third.nextCursor).toBeNull();
-  const filtered = await list({ ...params, actions: ["note.created"] });
-  expect(filtered.items.map(({ id }) => id)).toEqual([createdId]);
-  expect(filtered.nextCursor).toBeNull();
-  expect(await list({ ...params, actions: [] })).toEqual({ items: [], nextCursor: null });
-});
+    }
+    const params = { bypassAccess: true, noteId, limit: 1 };
+    // Newer unknown rows (left by a rollback) are filtered before the limit: the first page is the newest supported event.
+    const first = await list(params);
+    expect(first.items.map(({ id }) => id)).toEqual([editedId]);
+    expect(first.nextCursor).not.toBeNull();
+    const second = await list({ ...params, cursor: first.nextCursor! });
+    expect(second.items.map(({ id }) => id)).toEqual([createdId]);
+    expect(second.nextCursor).toBeNull();
+    const filtered = await list({ ...params, actions: ["note.created"] });
+    expect(filtered.items.map(({ id }) => id)).toEqual([createdId]);
+    expect(filtered.nextCursor).toBeNull();
+    expect(await list({ ...params, actions: [] })).toEqual({ items: [], nextCursor: null });
+  },
+);
