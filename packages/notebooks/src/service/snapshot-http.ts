@@ -39,8 +39,9 @@ const providerError = (status: number, body: Buffer): Error => {
       /&(?:lt|gt|amp|quot|apos);/g,
       (entity) => ({ "&lt;": "<", "&gt;": ">", "&amp;": "&", "&quot;": '"', "&apos;": "'" })[entity] ?? entity,
     );
-  const code = xml.match(/<Code>\s*([^<]*?)\s*<\/Code>/)?.[1];
-  const message = xml.match(/<Message>\s*([^<]*?)\s*<\/Message>/)?.[1];
+  // One unambiguous capture per field keeps matching linear on malformed bodies; trim afterwards.
+  const code = xml.match(/<Code>([^<]*)<\/Code>/)?.[1]?.trim();
+  const message = xml.match(/<Message>([^<]*)<\/Message>/)?.[1]?.trim();
   const detail = [code, message]
     .filter((text): text is string => Boolean(text))
     .map(decode)

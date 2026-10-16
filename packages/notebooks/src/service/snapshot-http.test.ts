@@ -114,6 +114,11 @@ test("redirects fail after one request", async () => {
 test("S3 error messages are readable and bounded", async () => {
   const f = fixture(403, ["<Error><Code>AccessDenied</Code><Message>Check bucket &amp; key.</Message></Error>"]);
   await expect(uploadSnapshotObjects(config, objects, { ...f, allowlist, lookup })).rejects.toThrow("AccessDenied: Check bucket & key.");
+  const padded = fixture(403, ["<Error><Code>\n  AccessDenied \n</Code><Message>  Denied.  </Message></Error>"]);
+  await expect(uploadSnapshotObjects(config, objects, { ...padded, allowlist, lookup })).rejects.toThrow("HTTP 403: AccessDenied: Denied.");
+  // Unclosed fields padded with whitespace must parse in linear time (a backtracking pattern takes minutes here).
+  const unclosed = fixture(503, [`<Error><Code>${" ".repeat(30 * 1024)}<Message>${" ".repeat(30 * 1024)}`]);
+  await expect(uploadSnapshotObjects(config, objects, { ...unclosed, allowlist, lookup })).rejects.toThrow(/^Failed to upload .*HTTP 503$/);
   const large = fixture(503, [" ".repeat(64 * 1024)], { stall: true });
   await expect(uploadSnapshotObjects(config, objects, { ...large, allowlist, lookup })).rejects.toThrow("HTTP 503");
   expect(large.destroyed()).toBe(1);
