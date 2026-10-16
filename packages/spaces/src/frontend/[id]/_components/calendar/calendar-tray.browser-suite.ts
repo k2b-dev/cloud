@@ -447,18 +447,35 @@ describe(`Spaces task tray in ${browserName}`, () => {
   }, 60_000);
 
   test("reaches the tray right after the day with the keyboard", async () => {
+    viewRequests.splice(0);
     const page = await open(desktop);
-    // The last stop of the calendar, wherever its day ends.
-    await page.evaluate(() => {
-      const calendar = document.querySelector(".k2b-content-calendar")!;
-      const stops = [...calendar.querySelectorAll<HTMLElement>("a[href], button, input, [tabindex]:not([tabindex='-1'])")].filter(
-        (element) => !element.closest("[data-spaces-task-tray]") && element.getClientRects().length > 0,
-      );
-      stops.at(-1)!.focus();
-    });
-    await page.keyboard.press("Tab");
-    expect(await focusedInTray(page)).toBe("Als erledigt markieren: Vertrag Stadtwerke gegenzeichnen");
-    await page.context().close();
+    try {
+      // The last stop of the calendar, wherever its day ends.
+      // Focusing it scrolls the day stream to its end, which loads later days into the run it belongs to.
+      await page.evaluate(() => {
+        const calendar = document.querySelector(".k2b-content-calendar")!;
+        const stops = [...calendar.querySelectorAll<HTMLElement>("a[href], button, input, [tabindex]:not([tabindex='-1'])")].filter(
+          (element) => !element.closest("[data-spaces-task-tray]") && element.getClientRects().length > 0,
+        );
+        const last = stops.at(-1)!;
+        last.setAttribute("data-last-stop", "");
+        last.focus();
+      });
+      await requested((href) => href.includes("view=calendar") && href.includes("cv=day"));
+      await page.locator(".k2b-content-calendar:not([aria-busy])").waitFor();
+      expect(
+        await page.evaluate(() => {
+          const active = document.activeElement;
+          return active?.hasAttribute("data-last-stop")
+            ? "the calendar's last stop"
+            : `${active?.tagName}.${active?.className}: ${active?.textContent?.slice(0, 100)}`;
+        }),
+      ).toBe("the calendar's last stop");
+      await page.keyboard.press("Tab");
+      expect(await focusedInTray(page)).toBe("Als erledigt markieren: Vertrag Stadtwerke gegenzeichnen");
+    } finally {
+      await page.context().close();
+    }
   }, 60_000);
 
   test("keeps keyboard focus in the tray when a task checked off there leaves it", async () => {
