@@ -544,6 +544,12 @@ describe("readable HTML", () => {
     expect(result).toContain("A\n\n| B |\n| --- |\n\nC");
   });
 
+  test("ends omitted table parts at a new row group and keeps spaces around inline code", async () => {
+    expect(await convert("<table><tbody><tr><td>One<tbody><tr><td>Two</table>")).toBe("| One |\n| --- |\n| Two |\n");
+    expect(await convert("<table><tr><td>A<span>B<tr><td>C</table>")).toBe("| AB |\n| --- |\n| C |\n");
+    expect(await convert("<p>Run<code> npm </code>now</p>")).toBe("Run `npm` now\n");
+  });
+
   test("keeps head templates inert and line breaks inside preformatted code", async () => {
     expect(await convert("<head><template><main>INERT</main></template></head><body><main>Actual article</main></body>")).toBe(
       "Actual article\n",

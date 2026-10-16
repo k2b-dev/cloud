@@ -121,6 +121,15 @@ const specialTags = new Set(
   ),
 );
 const buttonScopeTags = new Set("applet caption html table td th marquee object template button".split(" "));
+const tablePartCloses = new Map([
+  ["thead", ["thead", "tbody", "tfoot", "tr", "td", "th"]],
+  ["tbody", ["thead", "tbody", "tfoot", "tr", "td", "th"]],
+  ["tfoot", ["thead", "tbody", "tfoot", "tr", "td", "th"]],
+  ["tr", ["tr", "td", "th"]],
+  ["td", ["td", "th"]],
+  ["th", ["td", "th"]],
+]);
+const tableParts = new Set(tablePartCloses.keys());
 const impliedCloses = new Map<string, Set<string>>();
 for (const name of "address article aside blockquote details div dl fieldset figcaption figure footer form header hr main nav ol p pre section table ul".split(
   " ",
@@ -463,6 +472,16 @@ export const htmlToReadableMarkdown = async (
       const target = Math.max(lastOpen.get("dd") ?? -1, lastOpen.get("dt") ?? -1);
       const stop = Math.max(specialIndices.at(-1) ?? -1, lastOpen.get("li") ?? -1);
       if (target > stop) while (stack.length > target) closeTop();
+    } else if (tableParts.has(name)) {
+      // A new row group, row or cell ends the open parts of the current table that it replaces, even when
+      // their end tags were omitted and other elements are still open inside them.
+      const table = lastOpen.get("table") ?? -1;
+      let target = Number.POSITIVE_INFINITY;
+      for (const part of tablePartCloses.get(name)!) {
+        const index = lastOpen.get(part) ?? -1;
+        if (index > table) target = Math.min(target, index);
+      }
+      if (target !== Number.POSITIVE_INFINITY) while (stack.length > target) closeTop();
     }
     if (closes?.has("p") || name === "li" || name === "dd" || name === "dt") {
       const p = lastOpen.get("p") ?? -1;
@@ -807,7 +826,10 @@ const render = async (
         } else if (capture.name === "code") {
           const fence = backticks(capture.ticks, 1);
           const pad = value.startsWith("`") || value.endsWith("`") ? " " : "";
+          // Whitespace at the edges of the code separates it from the surrounding words.
+          if (value && /^\s/u.test(raw)) pendingSpace = true;
           if (value) write(`${fence}${pad}${value}${pad}${fence}`);
+          if (value && /\s$/u.test(raw)) pendingSpace = true;
         } else {
           const inline = await renderInline(
             events,
