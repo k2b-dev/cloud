@@ -22,17 +22,97 @@ const requestDeadline = (init?: RequestInit) => {
   return PUT_BASE_DEADLINE + (bytes / MIN_UPLOAD_BYTES_PER_SECOND) * 1000;
 };
 
-export type UploadTransferKind = "stalled" | "network" | "busy" | "final";
+export type UploadTransferKind = "stalled" | "network" | "busy" | "rate_limited" | "server" | "final";
 export class UploadTransferError extends Error {
   constructor(
     message: string,
     readonly kind: UploadTransferKind,
     cause: unknown,
     readonly retryAfter?: number,
+    readonly origin: "filegate" | "cloud" = "filegate",
+    readonly code?: string,
   ) {
     super(message, { cause });
     this.name = "UploadTransferError";
   }
+}
+
+/** Both transports use the same outcome table; retry timing belongs to their caller. */
+export function uploadFailureKind(status: number): UploadTransferKind {
+  if ([408, 502, 503, 504].includes(status)) return "busy";
+  if (status === 429) return "rate_limited";
+  return status >= 500 && status < 600 ? "server" : "final";
+}
+
+export function isTransientUploadFailure(error: unknown): error is UploadTransferError {
+  return error instanceof UploadTransferError && error.kind !== "final";
+}
+
+function retryAfterMs(headers: Headers): number | undefined {
+  const requested = headers.get("Retry-After");
+  if (requested === null) return;
+  const seconds = Number(requested);
+  const ms = Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : Date.parse(requested) - Date.now();
+  return Number.isFinite(ms) ? Math.max(0, ms) : undefined;
+}
+
+export async function uploadResponseFailure(
+  response: { status: number; headers: Headers; json: () => Promise<unknown> },
+  fallback: string,
+): Promise<UploadTransferError> {
+  const kind = uploadFailureKind(response.status);
+  const retryAfter = retryAfterMs(response.headers);
+  const body = await response.json().catch(() => null);
+  const code = typeof body === "object" && body !== null && "code" in body && typeof body.code === "string" ? body.code : undefined;
+  const message =
+    typeof body === "object" && body !== null && "message" in body && typeof body.message === "string" ? body.message : fallback;
+  return new UploadTransferError(
+    message,
+    kind,
+    response,
+    kind === "busy" || kind === "rate_limited" ? retryAfter : undefined,
+    "cloud",
+    code,
+  );
+}
+
+/** The caller's cancellation is distinct from a control request's own deadline. */
+export function uploadRequestFailure(error: unknown, fallback: string, signal: AbortSignal): unknown {
+  if (signal.aborted) throw error;
+  if (error instanceof UploadTransferError) return error;
+  if (error instanceof DOMException && error.name === "TimeoutError")
+    return new UploadTransferError(fallback, "stalled", error, undefined, "cloud");
+  if (error instanceof TypeError || (typeof navigator !== "undefined" && navigator.onLine === false))
+    return new UploadTransferError(fallback, "network", error, undefined, "cloud");
+  return error;
+}
+
+// Cloud no longer holds a usable session for these answers, so there is nothing to abort.
+const CLOSED_CODES = ["upload_closed", "receipt_unknown", "upload_changed"];
+// Filegate refused publication, so the sent commit is not ambiguous and the session is still open.
+const PUBLICATION_CONFLICTS = ["write_conflict", "path_conflict"];
+
+/**
+ * What an adapter does with its Filegate session and resume key after a failure: `keep` both so a retry resumes,
+ * `drop` the key, or `abort` the session and drop the key once the abort is confirmed.
+ * Only an explicit cancel or a final answer ends a session, and a sent commit is never aborted unless Filegate refused publication.
+ */
+export function uploadFailureAction(
+  error: unknown,
+  state: { session?: Pick<UploadSession, "state">; committing: boolean; cancelled: boolean },
+): "keep" | "drop" | "abort" {
+  const open = state.session?.state === "open";
+  if (state.cancelled) return open && !state.committing ? "abort" : "keep";
+  if (isTransientUploadFailure(error)) return "keep";
+  const final = error instanceof UploadTransferError ? error : undefined;
+  // Before the session exists, only a final answer proves that the key opened nothing; a lost response stays safe.
+  if (!state.session) return final ? "drop" : "keep";
+  if (state.committing) {
+    if (!final) return "keep";
+    return open && PUBLICATION_CONFLICTS.includes(final.code ?? "") ? "abort" : "drop";
+  }
+  if (final?.origin === "cloud" && CLOSED_CODES.includes(final.code ?? "")) return "drop";
+  return open ? "abort" : "keep";
 }
 
 /** Cloud bounds requests and renews authorization; Filegate owns paging, verification and transport retries. */
@@ -70,12 +150,7 @@ export async function transferUpload(
       networkError = undefined;
       try {
         const response = await fetch(input, { ...init, signal });
-        const requested = response.headers.get("Retry-After");
-        if (requested !== null) {
-          const seconds = Number(requested);
-          const milliseconds = Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : Date.parse(requested) - Date.now();
-          if (Number.isFinite(milliseconds)) retryAfter = Math.max(0, milliseconds);
-        }
+        retryAfter = retryAfterMs(response.headers);
         const body = await response.arrayBuffer().catch((error: unknown) => {
           if (response.ok) throw error;
           return null;
@@ -117,18 +192,24 @@ export async function transferUpload(
       return;
     } catch (error) {
       options.signal.throwIfAborted();
+      if (error instanceof UploadTransferError) throw error;
       if (deadlineExpired.signal.aborted) throw new UploadTransferError(options.failure, "stalled", deadlineExpired.signal.reason);
       // No second transport retry loop: SDK honors Retry-After, cancellation and replayability.
       if (!(error instanceof FilegateError && error.status === 401 && error.code === "expired_capability") || renewals >= 3) {
-        const kind: UploadTransferKind =
+        const kind =
           error instanceof FilegateError
-            ? [408, 429, 502, 503, 504].includes(error.status)
-              ? "busy"
-              : "final"
-            : error instanceof TypeError && error === networkError
+            ? uploadFailureKind(error.status)
+            : (error instanceof TypeError && error === networkError) || (typeof navigator !== "undefined" && navigator.onLine === false)
               ? "network"
               : "final";
-        throw new UploadTransferError(options.failure, kind, error, kind === "busy" ? retryAfter : undefined);
+        throw new UploadTransferError(
+          options.failure,
+          kind,
+          error,
+          kind === "busy" || kind === "rate_limited" ? retryAfter : undefined,
+          "filegate",
+          error instanceof FilegateError ? error.code : undefined,
+        );
       }
       renewals++;
       url = (await options.renew(session.id, AbortSignal.any([options.signal, AbortSignal.timeout(60_000)]))).url;

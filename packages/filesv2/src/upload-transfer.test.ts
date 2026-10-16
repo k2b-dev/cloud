@@ -1,14 +1,24 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { createServer, type Socket } from "node:net";
 import { FilegateError } from "@k2b/filegate/utils";
 import type { UploadSession } from "./contracts";
-import { transferUpload, UploadTransferError } from "./upload-transfer";
+import {
+  isTransientUploadFailure,
+  transferUpload,
+  UploadTransferError,
+  uploadFailureAction,
+  uploadFailureKind,
+  uploadRequestFailure,
+  uploadResponseFailure,
+} from "./upload-transfer";
 
 const nativeFetch = globalThis.fetch;
 const nativeTimeout = AbortSignal.timeout;
 let restoreTimeout = () => {};
 const controllers: AbortController[] = [];
+beforeEach(() => setSystemTime(new Date("2026-10-15T00:00:00Z")));
 afterEach(() => {
+  setSystemTime();
   for (const controller of controllers.splice(0)) controller.abort();
   restoreTimeout();
   globalThis.fetch = nativeFetch;
@@ -142,7 +152,7 @@ async function transferError(run: Promise<void>): Promise<UploadTransferError> {
   throw new Error("Expected transfer failure");
 }
 
-test.each([500, 501])("a PUT answered with %s is final after one attempt without Retry-After", async (code) => {
+test.each([500, 501])("a PUT answered with %s is a server failure without multiplying transport retries", async (code) => {
   let puts = 0;
   mockFetch(async (input, init) => {
     if (init?.method === "PUT") {
@@ -152,13 +162,13 @@ test.each([500, 501])("a PUT answered with %s is final after one attempt without
     return Response.json(new URL(String(input)).searchParams.has("segments") ? { items: [] } : status(1));
   });
   const error = await transferError(transferUpload(new Blob(["a"]), { ...session, size: 1 }, options()));
-  expect(error.kind).toBe("final");
+  expect(error.kind).toBe("server");
   expect(error.cause).toBeInstanceOf(FilegateError);
   expect(error.retryAfter).toBeUndefined();
   expect(puts).toBe(1);
 });
 
-test.each([408, 429, 502, 503, 504])("a PUT answered with %s stays busy with Retry-After", async (code) => {
+test.each([408, 502, 503, 504])("a PUT answered with %s stays busy with Retry-After", async (code) => {
   mockFetch(async (input, init) => {
     if (init?.method === "PUT") return Response.json({ error: "busy" }, { status: code, headers: { "Retry-After": "5" } });
     return Response.json(new URL(String(input)).searchParams.has("segments") ? { items: [] } : status(1));
@@ -237,9 +247,9 @@ test("a finished request's deadline cannot abort a later request", async () => {
 
 test.each([
   { code: 503, body: "upload_capacity", header: "0", kind: "busy", attempts: 3, retryAfter: 0 },
-  { code: 429, body: "busy", header: "5", kind: "busy", attempts: 1, retryAfter: 5000 },
+  { code: 429, body: "busy", header: "5", kind: "rate_limited", attempts: 1, retryAfter: 5000 },
   { code: 408, body: "timeout", header: null, kind: "busy", attempts: 1, retryAfter: undefined },
-  { code: 500, body: "server_error", header: "invalid", kind: "final", attempts: 1, retryAfter: undefined },
+  { code: 500, body: "server_error", header: "invalid", kind: "server", attempts: 1, retryAfter: undefined },
   { code: 400, body: "bad_request", header: null, kind: "final", attempts: 1, retryAfter: undefined },
 ])("HTTP $code is $kind after $attempts attempts", async ({ code, body, header, kind, attempts, retryAfter }) => {
   let requests = 0;
@@ -257,7 +267,7 @@ test.each([
 test.each([
   { code: 429, header: "60", attempts: 1, retryAfter: 60_000 },
   { code: 503, header: "0", attempts: 3, retryAfter: 0 },
-])("HTTP $code with an unreadable body is busy after $attempts attempts", async ({ code, header, attempts, retryAfter }) => {
+])("HTTP $code with an unreadable body is classified after $attempts attempts", async ({ code, header, attempts, retryAfter }) => {
   let requests = 0;
   mockFetch(async () => {
     requests++;
@@ -272,7 +282,7 @@ test.each([
     );
   });
   const error = await transferError(transferUpload(new Blob([]), session, options()));
-  expect(error.kind).toBe("busy");
+  expect(error.kind).toBe(code === 429 ? "rate_limited" : "busy");
   expect(error.retryAfter).toBe(retryAfter);
   expect(error.cause).toBeInstanceOf(FilegateError);
   expect(requests).toBe(attempts);
@@ -294,7 +304,7 @@ test("Retry-After HTTP dates are retained in milliseconds", async () => {
   try {
     mockFetch(async () => Response.json({ error: "busy" }, { status: 429, headers: { "Retry-After": "Thu, 15 Oct 2026 00:00:05 GMT" } }));
     const error = await transferError(transferUpload(new Blob([]), session, options()));
-    expect(error.kind).toBe("busy");
+    expect(error.kind).toBe("rate_limited");
     expect(error.retryAfter).toBe(5000);
   } finally {
     now.mockRestore();
@@ -481,4 +491,106 @@ test("every direct Filegate transfer uses transferUpload's deadline request func
   expect(owners, "Every direct Filegate transfer must go through transferUpload's deadline request function").toEqual([
     "upload-transfer.ts",
   ]);
+});
+
+test.each([
+  [408, "busy"],
+  [502, "busy"],
+  [503, "busy"],
+  [504, "busy"],
+  [429, "rate_limited"],
+  [500, "server"],
+  [501, "server"],
+  [400, "final"],
+  [401, "final"],
+  [403, "final"],
+  [404, "final"],
+  [409, "final"],
+  [412, "final"],
+  [413, "final"],
+] as const)("shared status table classifies %s as %s", (status, kind) => {
+  expect(uploadFailureKind(status)).toBe(kind);
+});
+
+test("Cloud response failures retain domain codes, messages and origin", async () => {
+  const error = await uploadResponseFailure(
+    Response.json({ code: "write_conflict", message: "File changed" }, { status: 409 }),
+    "fallback",
+  );
+  expect(error).toMatchObject({ kind: "final", code: "write_conflict", origin: "cloud", message: "File changed" });
+  expect(isTransientUploadFailure(error)).toBe(false);
+});
+
+test("platform rate limits need no domain code and retain Retry-After", async () => {
+  const error = await uploadResponseFailure(
+    Response.json({ message: "Rate limit exceeded" }, { status: 429, headers: { "Retry-After": "12" } }),
+    "fallback",
+  );
+  expect(error).toMatchObject({ kind: "rate_limited", origin: "cloud", message: "Rate limit exceeded", retryAfter: 12000 });
+  expect(error.code).toBeUndefined();
+  expect(isTransientUploadFailure(error)).toBe(true);
+});
+
+test("non-JSON gateway failures use the fallback and HTTP-date Retry-After", async () => {
+  const error = await uploadResponseFailure(
+    new Response("Bad gateway", { status: 502, headers: { "Retry-After": "Thu, 15 Oct 2026 00:00:05 GMT" } }),
+    "No answer",
+  );
+  expect(error).toMatchObject({ kind: "busy", origin: "cloud", message: "No answer", retryAfter: 5000 });
+  expect(await uploadResponseFailure(Response.json({ message: 7, code: 9 }, { status: 500 }), "fallback")).toMatchObject({
+    kind: "server",
+    message: "fallback",
+  });
+});
+
+test("Cloud request failures distinguish deadlines, network errors, cancellation and unknown errors", () => {
+  const signal = new AbortController().signal;
+  expect(uploadRequestFailure(new DOMException("timeout", "TimeoutError"), "failed", signal)).toMatchObject({
+    kind: "stalled",
+    origin: "cloud",
+  });
+  expect(uploadRequestFailure(new TypeError("fetch failed"), "failed", signal)).toMatchObject({ kind: "network", origin: "cloud" });
+  const unknown = new Error("unknown");
+  expect(uploadRequestFailure(unknown, "failed", signal)).toBe(unknown);
+  const classified = new UploadTransferError("busy", "busy", unknown, 42, "cloud");
+  expect(uploadRequestFailure(classified, "failed", signal)).toBe(classified);
+  const cancelled = new AbortController();
+  cancelled.abort();
+  expect(() => uploadRequestFailure(unknown, "failed", cancelled.signal)).toThrow(unknown);
+});
+
+test("a classified Cloud lease failure passes through without losing its kind or origin", async () => {
+  mockFetch(async () => Response.json({ error: "expired_capability" }, { status: 401 }));
+  const failure = await uploadResponseFailure(Response.json({ code: "operation_busy", message: "busy" }, { status: 503 }), "failed");
+  await expect(
+    transferUpload(new Blob([]), session, {
+      ...options(),
+      renew: async () => {
+        throw failure;
+      },
+    }),
+  ).rejects.toBe(failure);
+});
+
+test("one failure policy keeps transient sessions, ends final ones, and never aborts a sent commit", () => {
+  const open = { state: "open" as const };
+  const fail = (kind: "busy" | "final", code?: string, origin: "cloud" | "filegate" = "cloud") =>
+    new UploadTransferError("failed", kind, null, undefined, origin, code);
+  const action = (error: unknown, state: Partial<Parameters<typeof uploadFailureAction>[1]>) =>
+    uploadFailureAction(error, { committing: false, cancelled: false, ...state });
+  // Before a session exists: a lost or temporary start answer keeps the key, a final one drops it.
+  expect(action(fail("busy"), {})).toBe("keep");
+  expect(action(fail("final", "path_conflict"), {})).toBe("drop");
+  expect(action(new Error("unknown"), {})).toBe("keep");
+  // During the transfer: temporary keeps, final aborts, a closed or unknown session only drops the key.
+  expect(action(fail("busy", "upload_capacity", "filegate"), { session: open })).toBe("keep");
+  expect(action(fail("final", undefined, "filegate"), { session: open })).toBe("abort");
+  expect(action(fail("final", "receipt_unknown"), { session: open })).toBe("drop");
+  expect(action(new Error("local file changed"), { session: open })).toBe("abort");
+  expect(action(fail("busy"), { session: open, cancelled: true })).toBe("abort");
+  // After the commit was sent: only a definite publication conflict aborts.
+  expect(action(fail("busy"), { session: open, committing: true })).toBe("keep");
+  expect(action(new DOMException("lost", "AbortError"), { session: open, committing: true, cancelled: true })).toBe("keep");
+  expect(action(fail("final", "write_conflict"), { session: open, committing: true })).toBe("abort");
+  expect(action(fail("final", "upload_changed"), { session: open, committing: true })).toBe("drop");
 });
