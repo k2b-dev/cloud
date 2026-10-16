@@ -152,6 +152,26 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
           isVisible(pane),
       )
     : [];
+  const separatorSize =
+    kind === "pane" && main
+      ? Array.from(main.querySelectorAll<HTMLElement>(`.k2b-app-workspace__resize${HANDLE_SELECTOR}`))
+          .filter(
+            (separator) =>
+              separator.closest(".k2b-app-workspace__main") === main && resizeKind(separator) === "pane" && isVisible(separator),
+          )
+          .reduce((total, separator) => {
+            const style = getComputedStyle(separator);
+            return (
+              total +
+              Math.max(
+                0,
+                separator.getBoundingClientRect().width +
+                  (Number.parseFloat(style.marginLeft) || 0) +
+                  (Number.parseFloat(style.marginRight) || 0),
+              )
+            );
+          }, 0)
+      : 0;
   // Content ends before the detail track, so its width alone would shrink a
   // persisted panel again on every reconciliation. Measure from Content's
   // start to the workspace's inner end: this includes the detail column and
@@ -187,7 +207,7 @@ const sizeLimits = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceRe
       kind === "detail"
         ? 8
         : kind === "pane"
-          ? panes.reduce((total, pane) => total + (pane === controlled ? 0 : elementSize(pane, "pane")), 0)
+          ? panes.reduce((total, pane) => total + (pane === controlled ? 0 : elementSize(pane, "pane")), 0) + separatorSize
           : 0,
     min: numberData(handle, "workspaceMinSize", defaultMin),
     max: numberData(handle, "workspaceMaxSize", defaultMax),
@@ -1422,6 +1442,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           for (const record of records) {
             if (
               record.type === "attributes" &&
+              record.attributeName === "hidden" &&
               record.target instanceof HTMLElement &&
               record.target.matches(detailSelector) &&
               !details.has(record.target)
@@ -1468,7 +1489,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   mutationObserver?.observe(eventRoot, {
     attributes: true,
     attributeOldValue: true,
-    attributeFilter: ["hidden"],
+    attributeFilter: ["hidden", "data-workspace-level-shown"],
     childList: true,
     subtree: true,
   });

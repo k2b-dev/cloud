@@ -122,10 +122,16 @@ phone the one level is flat. Levels do not animate.
 Resize earlier levels by dragging their separators or using Left/Right (8 px),
 Shift+Left/Right (32 px), Home (minimum), and End (maximum). Double-click a
 separator to reset that pane to its default size. On a touch screen a separator
-is a 44 px target, and level heads end 24 px before their edge so their
-actions stay clear of it. `defaultSize`, `minSize`, and `maxSize` use pixels; the
+is a 44 px gap of its own between two levels, so a tap on the edge of a row
+never starts a resize. `defaultSize`, `minSize`, and `maxSize` use pixels; the
 default limits are 240–640 px. Available space may reduce the maximum, because
 the last level keeps 320 px.
+
+A resize starts from the widths on screen. When the window is too narrow for
+the stored widths, the shown levels give way; the first step on a separator
+then stores the widths they show, so the step moves by exactly its size and a
+reload shows the same columns. Their wider widths from a larger window are
+replaced.
 
 Persist the full state from `onLayoutChange`. Restore it through `layoutState`
 or `AppWorkspace.LayoutStateProvider`, and apply `appWorkspaceLayoutStyle`

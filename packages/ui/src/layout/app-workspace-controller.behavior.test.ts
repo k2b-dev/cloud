@@ -1187,6 +1187,130 @@ describe("floating detail controller", () => {
     }
   });
 
+  test("pane limits reserve only the layout contribution of visible level separators in the same Main", () => {
+    Object.defineProperty(window, "matchMedia", {
+      value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }),
+    });
+    const { root } = workspace({ width: 1440 });
+    const main = document.createElement("main");
+    main.className = "k2b-app-workspace__main";
+    main.dataset.workspaceLevels = "";
+    setRect(main, { width: 1200, height: 700 });
+    const handles: HTMLButtonElement[] = [];
+    for (const [index, id] of ["sections", "items", "item"].entries()) {
+      const pane = document.createElement("section");
+      pane.id = id;
+      pane.className = "k2b-app-workspace__main-pane";
+      pane.dataset.workspaceLevel = String(index + 1);
+      pane.dataset.workspaceLevelLast = index === 2 ? "1 2 3" : "";
+      pane.dataset.workspaceResizable = index === 2 ? "false" : "true";
+      setRect(pane, { width: index === 0 ? 320 : 400, height: 700 });
+      main.append(pane);
+      if (index === 2) continue;
+      const handle = document.createElement("button");
+      handle.className = "k2b-app-workspace__resize";
+      handle.dataset.appWorkspaceResize = "pane";
+      handle.dataset.workspacePanelId = id;
+      handle.dataset.workspaceMinSize = "240";
+      handle.dataset.workspaceMaxSize = "720";
+      handle.setAttribute("aria-controls", id);
+      handle.style.marginLeft = handle.style.marginRight = index === 0 ? "0px" : "-10px";
+      setRect(handle, { width: index === 0 ? 44 : 20, height: 700 });
+      main.append(handle);
+      handles.push(handle);
+    }
+    const nested = document.createElement("main");
+    nested.className = "k2b-app-workspace__main";
+    main.append(nested);
+    for (const parent of [main, nested]) {
+      const separator = document.createElement("button");
+      separator.className = "k2b-app-workspace__resize";
+      separator.dataset.appWorkspaceResize = "pane";
+      separator.style.marginLeft = separator.style.marginRight = "0px";
+      separator.hidden = parent === main;
+      setRect(separator, { width: 44, height: 700 });
+      parent.append(separator);
+    }
+    root.append(main);
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      flushFrames();
+      expect(handles[0]!.getAttribute("aria-valuemax")).toBe("436"); // 1200 - 400 - 320 - 44
+      // Negative margins cancel the mouse separator's width entirely.
+      setRect(handles[0]!, { width: 20, height: 700 });
+      handles[0]!.style.marginLeft = handles[0]!.style.marginRight = "-10px";
+      resizeObservers.forEach((observer) => observer.trigger());
+      flushFrames();
+      expect(handles[0]!.getAttribute("aria-valuemax")).toBe("480");
+      // Every visible separator contributes, including the sibling's.
+      setRect(handles[1]!, { width: 44, height: 700 });
+      handles[1]!.style.marginLeft = handles[1]!.style.marginRight = "0px";
+      resizeObservers.forEach((observer) => observer.trigger());
+      flushFrames();
+      expect(handles[0]!.getAttribute("aria-valuemax")).toBe("436");
+    } finally {
+      dispose();
+    }
+  });
+
+  test("level visibility changes reconcile separator values without a detail transition", async () => {
+    Object.defineProperty(window, "matchMedia", {
+      value: (query: string) => ({ matches: query === "(min-width: 48rem)", addEventListener() {}, removeEventListener() {} }),
+    });
+    const { root } = workspace({ width: 1024 });
+    const main = document.createElement("main");
+    main.className = "k2b-app-workspace__main";
+    main.dataset.workspaceLevels = "";
+    setRect(main, { width: 816, height: 700 });
+    const pane = document.createElement("section");
+    pane.id = "sections";
+    pane.className = "k2b-app-workspace__main-pane";
+    pane.dataset.workspaceLevel = "1";
+    pane.dataset.workspaceLevelShown = "1 2 3";
+    pane.dataset.workspaceResizable = "true";
+    // Happy DOM has no flex layout: mimic the width after switching levels.
+    setDynamicRect(pane, () => ({ width: pane.dataset.workspaceLevelShown === "2 3" ? 360 : 300, height: 700 }));
+    const handle = document.createElement("button");
+    handle.className = "k2b-app-workspace__resize";
+    handle.dataset.appWorkspaceResize = "pane";
+    handle.dataset.workspacePanelId = "sections";
+    handle.setAttribute("aria-controls", pane.id);
+    main.append(pane, handle);
+    root.append(main);
+    const detail = document.createElement("aside");
+    detail.className = "k2b-app-workspace__detail";
+    let detailVisibilityReads = 0;
+    // detailTransition reads hidden even when visibility has not changed.
+    Object.defineProperty(detail, "hidden", {
+      get: () => {
+        detailVisibilityReads++;
+        return false;
+      },
+    });
+    root.append(detail);
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      flushFrames();
+      flushFrames();
+      expect(handle.getAttribute("aria-valuenow")).toBe("300");
+      detailVisibilityReads = 0;
+      pane.dataset.workspaceLevelShown = "2 3";
+      await window.happyDOM.whenAsyncComplete();
+      expect(frames.size).toBe(1);
+      flushFrames();
+      expect(handle.getAttribute("aria-valuenow")).toBe("360");
+      expect(detailVisibilityReads).toBe(0);
+      // The newly observed attribute must not enter the detail transition path,
+      // even when it is set on a detail element.
+      detail.dataset.workspaceLevelShown = "2 3";
+      await window.happyDOM.whenAsyncComplete();
+      flushFrames();
+      expect(detailVisibilityReads).toBe(0);
+    } finally {
+      dispose();
+    }
+  });
+
   for (const reflow of [false, true])
     test(`keyboard resizing settles CSS-shrunk fixed levels to their rendered widths${reflow ? " through flex reflow" : ""}`, () => {
       Object.defineProperty(window, "matchMedia", {

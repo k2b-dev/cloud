@@ -372,27 +372,59 @@ for (const width of [1440, 1920])
     }
   }, 30000);
 
-// A separator between levels reaches half its target into the level before;
-// on a touch screen that is 22 px, so the head's actions must end before it.
+// A mouse separator reaches 10 px into each level, so a level head's actions
+// end before it. On a touch screen the 44 px separator takes a width of its
+// own: a tap on the edge of a row in either level never lands on it, and
+// before a raised level it takes the place of that level's 8 px inset.
 for (const touch of [false, true])
-  test(`${touch ? "touch" : "mouse"}: level head actions stay clear of the separator`, async () => {
-    const context = await browser!.newContext({ viewport: { width: 1440, height: 900 }, hasTouch: touch });
-    try {
-      const page = await context.newPage();
-      await page.goto(`${origin}/?level=item`);
-      await page.waitForSelector('body[data-ready="true"]');
-      const result = await page.evaluate(() => ({
-        coarse: matchMedia("(any-pointer: coarse)").matches,
-        action: document.querySelector("[data-test-action]")!.getBoundingClientRect().right,
-        separator: document.querySelector('[data-app-workspace-resize="pane"][data-workspace-panel-id="items"]')!.getBoundingClientRect(),
-      }));
-      expect(result.coarse).toBe(touch);
-      expect(Math.round(result.separator.width)).toBe(touch ? 44 : 20);
-      expect(result.action).toBeLessThanOrEqual(result.separator.left);
-    } finally {
-      await context.close();
-    }
-  });
+  for (const width of [1024, 1440])
+    test(`${touch ? "touch" : "mouse"} at ${width}: level separators stay clear of the levels' content`, async () => {
+      const context = await browser!.newContext({ viewport: { width, height: 900 }, hasTouch: touch });
+      try {
+        const page = await context.newPage();
+        await page.goto(`${origin}/?level=item`);
+        await page.waitForSelector('body[data-ready="true"]');
+        const result = await page.evaluate(() => {
+          const shown = (selector: string) =>
+            [...document.querySelectorAll<HTMLElement>(selector)].filter((element) => getComputedStyle(element).display !== "none");
+          const levels = shown("[data-workspace-level]");
+          const separators = shown('[data-app-workspace-resize="pane"]');
+          return {
+            coarse: matchMedia("(any-pointer: coarse)").matches,
+            action: document.querySelector("[data-test-action]")!.getBoundingClientRect().right,
+            gaps: separators.map((separator, index) => {
+              const box = separator.getBoundingClientRect();
+              const before = levels[index]!.getBoundingClientRect();
+              const after = levels[index + 1]!.getBoundingClientRect();
+              const y = after.top + after.height / 2;
+              return {
+                width: Math.round(box.width),
+                left: box.left,
+                before: before.right,
+                after: after.left,
+                gap: Math.round(after.left - before.right),
+                edges: [document.elementFromPoint(before.right - 2, y), document.elementFromPoint(after.left + 2, y)].map(
+                  (element) => element?.closest('[data-app-workspace-resize="pane"]') !== null,
+                ),
+              };
+            }),
+          };
+        });
+        expect(result.coarse).toBe(touch);
+        expect(result.gaps).toHaveLength(width === 1440 ? 2 : 1);
+        expect(result.action).toBeLessThanOrEqual(result.gaps.at(-1)!.left);
+        for (const gap of result.gaps) {
+          expect(gap.width).toBe(touch ? 44 : 20);
+          if (!touch) continue;
+          expect(gap.left).toBeGreaterThanOrEqual(gap.before - 0.5);
+          expect(gap.left + gap.width).toBeLessThanOrEqual(gap.after + 0.5);
+          expect(gap.gap).toBe(44);
+          expect(gap.edges).toEqual([false, false]);
+        }
+      } finally {
+        await context.close();
+      }
+    });
 
 // The viewport decides how many levels show. When Main has less room than
 // they need, for example in a narrower host, it scrolls sideways and the
@@ -467,3 +499,32 @@ for (const width of [390, 1024])
       await page.close();
     }
   });
+
+// A separator that an enhanced level change shows was hidden at the last
+// measurement; it must announce its live value and limits before it is focused.
+test("1024px: a separator shown by an enhanced level change announces its live limits", async () => {
+  const page = await browser!.newPage({ viewport: { width: 1024, height: 900 } });
+  try {
+    await page.context().addCookies([
+      {
+        name: "levels_layout",
+        value: encodeURIComponent(JSON.stringify({ version: 2, paneWidths: { sections: 400 } })),
+        url: origin,
+      },
+    ]);
+    await page.goto(`${origin}/?level=item&nav=enhanced`);
+    await page.waitForSelector('body[data-ready="true"]');
+    await page.locator(".k2b-app-workspace__level-back:visible").click();
+    await page.waitForURL("**/?level=items");
+    await frames(page);
+    const separator = page.locator('[data-app-workspace-resize="pane"][data-workspace-panel-id="sections"]');
+    const announced = () =>
+      separator.evaluate((element) => ["aria-valuenow", "aria-valuemin", "aria-valuemax"].map((name) => element.getAttribute(name)));
+    const before = await announced();
+    await separator.focus();
+    expect(before).toEqual(await announced());
+    expect(before[0]).toBe("400");
+  } finally {
+    await page.close();
+  }
+});
