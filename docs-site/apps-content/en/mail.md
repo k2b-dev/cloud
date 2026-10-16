@@ -40,8 +40,8 @@ enter the mailbox. If settings cannot load, the mailbox opens directly.
 - Use incoming automations, automatic replies, or reviewed workflows for
   recurring mailbox work. One incoming automation can mark mail read and then
   move it, and its conditions can exclude senders, domains, or text. When several
-  automations match, the oldest decides the folder, and a later one skips a read
-  or keyword step for mail that has already moved.
+  automations match, the oldest decides the folder, and an automation skips a
+  read or keyword step for mail that has moved or is being moved.
 
 Provider folders and message flags can appear in other mail clients. Cloud-only
 collaboration fields stay in Mail.

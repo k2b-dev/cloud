@@ -22,9 +22,11 @@ import { snapshotMailWorkflowCatalog } from "../workflows/catalog";
 import { grantMailboxAccess, listMailboxAccess, revokeMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { executeMutationCommand } from "./command-runtime";
+import * as mailCommands from "./commands";
 import type { ConnectorEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors/imap-smtp";
 import { updateConversationCollaboration } from "./conversation-assignments";
+import * as incomingAutomationOrder from "./incoming-automation-order";
 import {
   incomingAutomationMessageLeft,
   resolveIncomingAutomationMessageStateTurn,
@@ -1175,6 +1177,8 @@ suite("incoming automations", () => {
     "read first",
     "move first",
     "already moved",
+    "moved before lookup",
+    "moved during command creation",
     "external move",
     "external move before sync",
     "keywords",
@@ -1198,7 +1202,9 @@ suite("incoming automations", () => {
           ? [{ kind: "add_keyword", keyword: "beta" }]
           : [
               { kind: "mark_read" },
-              ...(["read first", "move first"].includes(scenario) ? [{ kind: "move_to_folder" as const, folderId: inbox.short_id }] : []),
+              ...(["read first", "move first", "moved before lookup", "moved during command creation"].includes(scenario)
+                ? [{ kind: "move_to_folder" as const, folderId: inbox.short_id }]
+                : []),
             ];
       const older = await createIncomingAutomation({
         context: ownerContext,
@@ -1330,8 +1336,59 @@ suite("incoming automations", () => {
           destinationUids: new Map(messages.uids.map((uid) => [uid, 9201 + scenarioIndex])),
         };
       });
+      const originalMessageStateTurn = incomingAutomationOrder.resolveIncomingAutomationMessageStateTurn;
+      const messageStateTurn =
+        scenario === "moved before lookup" ? spyOn(incomingAutomationOrder, "resolveIncomingAutomationMessageStateTurn") : undefined;
+      const originalCreateWorkflowCommand = mailCommands.createWorkflowCommand;
+      const createWorkflowCommand = scenario === "moved during command creation" ? spyOn(mailCommands, "createWorkflowCommand") : undefined;
       try {
-        if (scenario === "already moved" || scenario === "move first") {
+        if (scenario === "moved before lookup" || scenario === "moved during command creation") {
+          const [target] = await sql<{ message_id: string; remote_message_ref_id: string }[]>`
+            SELECT context #>> '{preconditions,message,id}' AS message_id,
+                   context #>> '{preconditions,message,remoteMessageRefId}' AS remote_message_ref_id
+            FROM workflows.run WHERE id = ${newerRunId}::uuid
+          `;
+          if (!target) throw new Error("Missing incoming automation message target");
+          const retirePlacement = async () => {
+            // A sibling's move retires the source ref and placement between these checks.
+            await sql`UPDATE mail.remote_message_refs SET stale_at = now() WHERE id = ${target.remote_message_ref_id}::uuid`;
+            await sql`UPDATE mail.message_placements SET deleted_at = now() WHERE remote_message_ref_id = ${target.remote_message_ref_id}::uuid`;
+          };
+          messageStateTurn?.mockImplementation(async (params) => {
+            expect(params.runId).toBe(newerRunId);
+            const turn = await originalMessageStateTurn(params);
+            expect(turn).toEqual({ state: "ready" });
+            await retirePlacement();
+            return turn;
+          });
+          createWorkflowCommand?.mockImplementation(async (params) => {
+            expect(params.input.correlationId).toBe(newerRunId);
+            expect(params.input.kind).toBe("change_message_state");
+            // The action found the target; command creation must now observe it gone.
+            await retirePlacement();
+            const command = await originalCreateWorkflowCommand(params);
+            expect(command).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+            return command;
+          });
+          await runSucceeded(newerRunId);
+          expect(await outputFor(newerRunId, "addFlag")).toEqual({ action: "addFlag", applied: false, skipped: "message_moved" });
+          expect(await outputFor(newerRunId, "moveMessage")).toEqual({ action: "moveMessage", applied: false, skipped: "message_moved" });
+          expect(await commandsFor(newerRunId)).toEqual([]);
+          if (messageStateTurn) expect(messageStateTurn).toHaveBeenCalledTimes(1);
+          if (createWorkflowCommand) expect(createWorkflowCommand).toHaveBeenCalledTimes(1);
+          expect(
+            await incomingAutomationMessageLeft({
+              db: sql,
+              runId: crypto.randomUUID(),
+              messageId: target.message_id,
+              folderId: inboxFolderId,
+            }),
+          ).toBe(false);
+          await runSucceeded(olderRunId);
+          expect(await commandsFor(olderRunId)).toEqual([]);
+          expect(change).not.toHaveBeenCalled();
+          expect(move).not.toHaveBeenCalled();
+        } else if (scenario === "already moved" || scenario === "move first") {
           await runWaiting(olderRunId);
           const [moveCommand] = await commandsFor(olderRunId);
           if (!moveCommand) throw new Error("Missing move command");
@@ -1501,6 +1558,8 @@ suite("incoming automations", () => {
           expect(newerRun?.state).toBe("succeeded");
         }
       } finally {
+        createWorkflowCommand?.mockRestore();
+        messageStateTurn?.mockRestore();
         move.mockRestore();
         status.mockRestore();
         change.mockRestore();
