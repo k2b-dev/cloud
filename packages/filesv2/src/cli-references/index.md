@@ -194,11 +194,13 @@ transfer without another attempt.
 A Cloud deadline reports "No response from Cloud within 60 seconds."
 Transfer failures report "No response from the file server.", "No connection
 to the file server.", or "The file server is busy. Try again later."
-Other transfer failures report "Filegate upload failed." Cancellation reports
+The busy message covers HTTP 408, 429, 502, 503, and 504; other transfer
+failures, such as HTTP 500, report "Filegate upload failed." Cancellation reports
 "Upload cancelled." These messages follow the CLI language.
 
 In text mode, `put` writes progress to stderr. A terminal shows acknowledged
 bytes and percent on one updating line, followed by finishing and done messages.
+A long file name is shortened so the line fits the terminal width.
 Without a terminal, it prints only the uploading, finishing, and done phases.
 `--json` and `--jsonl` print no progress. Standard output keeps the command result.
 
