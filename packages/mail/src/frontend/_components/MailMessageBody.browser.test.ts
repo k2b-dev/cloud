@@ -109,7 +109,7 @@ const server = Bun.serve({
       `<!doctype html><html class="${dark ? "dark" : ""}"><head><style>
       .bg-white { background-color: white; }
       .bg-transparent, .dark [class~="dark:bg-transparent"] { background-color: transparent; }
-    </style></head><body${dark ? ' style="margin:0;background:#11151b;color:#f4f4f5"' : ""}><div id="root"></div><script src="/harness.js"></script></body></html>`,
+    </style></head><body style="margin:0;${dark ? "background:#11151b;color:#f4f4f5" : "background:#ffffff;color:#18181b"}"><div id="root"></div><script src="/harness.js"></script></body></html>`,
       {
         headers: { "Content-Type": "text/html" },
       },
@@ -459,6 +459,7 @@ describe("HTML mail colors", () => {
 <div id="dark-gradient" style="background:linear-gradient(#111111,#111111);color:#ffffff">Dark gradient</div>
 <div id="light-gradient" style="background-image:linear-gradient(#fef3c7,#fef3c7)"><span id="gradient-text">Default text</span> <a id="gradient-link" href="https://example.com">Default link</a></div>
 <div id="gray" style="background:#999999">Default text <a id="gray-link" href="https://example.com">Default link</a></div>
+<div id="outer-gray" style="background:#999999">Outer text<div id="inner-white" style="background:#ffffff">Inner text</div></div>
 <div id="translucent-gray" style="background:rgba(153,153,153,.9);color:#000000">Translucent gray</div>
 <div id="nested-gray" style="background:#999999"><div id="translucent-black" style="background:rgba(0,0,0,.8);color:#ffffff">Nested translucent black</div></div>`;
     await withOpenedMessage(
@@ -483,6 +484,37 @@ describe("HTML mail colors", () => {
         expect(errors).toEqual([]);
       },
       { html: content, theme: "light", colors: "adapted" },
+    );
+  }, 30_000);
+
+  test("adds a logo plate when switching to dark after images load in light", async () => {
+    await withOpenedMessage(
+      false,
+      async ({ page, frame, errors }) => {
+        await waitForMode(frame, false);
+        await visibleImages(frame, 4);
+        expect(await frame.locator('img[alt="logo"]').evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+          "rgba(0, 0, 0, 0)",
+        );
+        await updateTheme(page, "dark");
+        await waitForMode(frame, true);
+        expect(
+          await frame
+            .locator("img")
+            .evaluateAll((elements) =>
+              Object.fromEntries(elements.map((element) => [element.getAttribute("alt"), getComputedStyle(element).backgroundColor])),
+            ),
+        ).toEqual({
+          logo: "rgb(255, 255, 255)",
+          photo: "rgba(0, 0, 0, 0)",
+          spacer: "rgba(0, 0, 0, 0)",
+          icon: "rgba(0, 0, 0, 0)",
+          blocked: "rgba(0, 0, 0, 0)",
+        });
+        await assertNoReload(page);
+        expect(errors).toEqual([]);
+      },
+      { html: newsletter, attachments: newsletterAttachments, theme: "light", colors: "adapted" },
     );
   }, 30_000);
 

@@ -270,6 +270,13 @@ export const buildMessageDocument = (
         return [...surface.slice(0, 3), 1];
       };
       const imageAnalysis = new Map();
+      const needsImagePlate = (image) => {
+        const analysis = imageAnalysis.get(image);
+        if (!analysis || analysis.transparentShare < 0.05 || analysis.opaqueColors.length === 0) return false;
+        const darkInk = analysis.opaqueColors.filter((color) => contrast(color, background) < 3).length;
+        return darkInk >= analysis.opaqueColors.length * 0.3;
+      };
+      const foregrounds = new Map();
       let currentMode = "light";
       const restoreStyle = (element, original) => {
         // Reading first flushes pending inline style writes, which engines may otherwise serialize back as style="".
@@ -285,15 +292,18 @@ export const buildMessageDocument = (
         const effective = effectiveBackground(element, true);
         const isLink = element.tagName === "A";
         if (effective === null) {
-          set("color", original.color || parseColor(isLink ? "#1677c8" : "#18181b"));
+          const color = original.color || parseColor(isLink ? "#1677c8" : "#18181b");
+          set("color", color);
+          foregrounds.set(element, color);
           return;
         }
-        if (original.color) set("color", adaptText(original.color, effective));
-        else if (isLink || [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim())) {
-          const base = isLink ? parseColor(document.documentElement.style.getPropertyValue("--mail-dark-link")) : text;
-          if (contrast(base, effective) < 4.5) set("color", adaptText(base, effective));
-        }
-        if (imageAnalysis.get(element)?.needsPlate) {
+        const base = original.color || (isLink
+          ? parseColor(document.documentElement.style.getPropertyValue("--mail-dark-link"))
+          : foregrounds.get(element.parentElement) || text);
+        const color = adaptText(base, effective);
+        if (original.color || contrast(base, effective) < 4.5) set("color", color);
+        foregrounds.set(element, color);
+        if (needsImagePlate(element)) {
           const originalEffective = effectiveBackground(element, false);
           if (originalEffective && luminance(originalEffective) > 0.4 && cssColor(effective) !== cssColor(originalEffective)) {
             set("background-color", originalEffective);
@@ -302,7 +312,7 @@ export const buildMessageDocument = (
       };
       const analyzeImage = (image) => {
         if (!image.complete || image.naturalWidth === 0) return;
-        let needsPlate = false;
+        let analysis = null;
         try {
           const sample = document.createElement("canvas");
           const scale = Math.min(1, 64 / Math.max(image.naturalWidth, image.naturalHeight));
@@ -311,19 +321,17 @@ export const buildMessageDocument = (
           const pixels = sample.getContext("2d", { willReadFrequently: true });
           pixels.drawImage(image, 0, 0, sample.width, sample.height);
           const data = pixels.getImageData(0, 0, sample.width, sample.height).data;
-          let transparent = 0, opaque = 0, darkInk = 0;
+          let transparent = 0;
+          const opaqueColors = [];
           for (let index = 0; index < data.length; index += 4) {
             if (data[index + 3] < 128) transparent++;
-            else {
-              opaque++;
-              if (contrast([data[index], data[index + 1], data[index + 2]], background) < 3) darkInk++;
-            }
+            else opaqueColors.push([data[index], data[index + 1], data[index + 2]]);
           }
-          needsPlate = transparent >= sample.width * sample.height * 0.05 && opaque > 0 && darkInk >= opaque * 0.3;
+          analysis = { transparentShare: transparent / (sample.width * sample.height), opaqueColors };
         } catch {
           // Unreadable pixels leave the image unchanged.
         }
-        imageAnalysis.set(image, { needsPlate });
+        imageAnalysis.set(image, analysis);
         if (currentMode === "dark") applyDarkStyles(image, originals.get(image));
       };
       for (const image of root.querySelectorAll("img")) {
@@ -332,6 +340,7 @@ export const buildMessageDocument = (
       }
       const applyMode = (mode) => {
         currentMode = mode;
+        foregrounds.clear();
         document.documentElement.classList.toggle("mail-dark", mode === "dark");
         if (mode === "dark") {
           document.documentElement.style.setProperty("--mail-dark-text", cssColor(text));
