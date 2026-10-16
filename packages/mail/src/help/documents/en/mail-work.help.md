@@ -75,7 +75,7 @@ Use **Show later** when the next review depends on a date or time. Choose when t
 
 Mail sets the next step this way:
 
-- New incoming mail always changes the conversation to **Needs action** and removes it from **Later**.
+- New incoming mail changes the conversation to **Needs action** and removes it from **Later**. When you mark a conversation **Done** or set a **Show later** time, this also covers the messages that Mail still loads. An automation that sets **Done** or **Waiting for reply** covers only the message that started it. Other incoming mail sets **Needs action** again.
 - A human reply or reply-all changes it to **Waiting for reply**, but only after Mail confirms the delivery.
 - A new message that you write in Cloud starts a conversation in **Waiting for reply**. So does a message that Mail finds in your Sent folder from another email client.
 - Mail from your own address that arrives in the Inbox starts in **Needs action**. An example is a contact form that sends in the name of your mailbox.

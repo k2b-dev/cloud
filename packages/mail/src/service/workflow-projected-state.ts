@@ -203,8 +203,9 @@ export const restoreMailWorkflowProjectedState = async (
     return;
   }
 
+  // A status step that found its value already set still reports the live revision it saw.
   if (
-    output.applied === true &&
+    (output.applied === true || (output.action === "setConversationStatus" && output.value !== undefined)) &&
     (output.action === "assignConversation" || output.action === "setConversationStatus" || output.action === "setConversationSummary")
   ) {
     const conversation = await restoredObject(ctx, step, config, "conversation");
