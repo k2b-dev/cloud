@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.26.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.25.0...npm-ui-v0.26.0) (2026-10-16)
+
+
+### Features
+
+* **ui:** one motion vocabulary and one reduced-motion switch for every animation ([#1208](https://github.com/k2b-dev/cloud/issues/1208)) ([b24836b](https://github.com/k2b-dev/cloud/commit/b24836b49ce9d936fae3c8ef9262e734125df2f7))
+
+
+### Bug Fixes
+
+* **spaces:** keep the space settings open when a person is added ([#1222](https://github.com/k2b-dev/cloud/issues/1222)) ([3de096b](https://github.com/k2b-dev/cloud/commit/3de096badaa71c54d0f7ca5ef3acf6668f2c003c))
+* **ui:** keep the app sidebar list in place after a reload ([#1197](https://github.com/k2b-dev/cloud/issues/1197)) ([1486c00](https://github.com/k2b-dev/cloud/commit/1486c002c832f7095058890f473452fa73d478dc))
+
 ## [0.25.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.24.0...npm-ui-v0.25.0) (2026-10-15)
 
 
