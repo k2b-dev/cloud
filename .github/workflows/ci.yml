@@ -59,6 +59,9 @@ jobs:
       bundles: ${{ steps.filter.outputs.bundles }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The parent lets the fallback below still recognize a release commit.
+          fetch-depth: 2
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -69,7 +72,13 @@ jobs:
         run: |
           set -euo pipefail
           apps=$(bun scripts/workspace.ts apps | xargs)
-          all() { for key in cloud grids ui docs images packed webkit; do echo "$key=true" >> "$GITHUB_OUTPUT"; done; echo "bundles=$apps" >> "$GITHUB_OUTPUT"; }
+          # Without the base, a commit that changes the release manifest against its parent still
+          # gets the release checks. Without a parent, it gets them too: they are only stricter.
+          all() {
+            for key in cloud grids ui docs images packed webkit; do echo "$key=true" >> "$GITHUB_OUTPUT"; done
+            echo "bundles=$apps" >> "$GITHUB_OUTPUT"
+            echo "release=$(git diff --quiet HEAD^1 HEAD -- .release-please-manifest.json 2>/dev/null && echo false || echo true)" | tee -a "$GITHUB_OUTPUT"
+          }
           if [[ "$EVENT" == "workflow_dispatch" || -z "$BASE" || "$BASE" == "0000000000000000000000000000000000000000" ]]; then
             all; exit 0
           fi
