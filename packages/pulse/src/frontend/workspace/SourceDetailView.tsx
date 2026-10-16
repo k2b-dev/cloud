@@ -2,6 +2,7 @@ import { type ResourceApiKey, ResourceApiKeys, type ResourceApiKeysProps } from 
 import { Button, DataTable, type DataTableColumn, DescriptionList, DetailPanel, IconButton, Tooltip, useLocale } from "@k2b/ui";
 import { type JSX, Show } from "solid-js";
 import type { PulseSource, PulseSourceScrape } from "../../contracts";
+import { localizedSourceError } from "../../messages";
 import { usePulseMessages } from "../use-messages";
 import { compactDateWithDelta, type PulseDateContext } from "./helpers";
 
@@ -80,7 +81,7 @@ export default function SourceDetailView(props: Props) {
       ? [
           {
             term: t().error,
-            description: <span class="break-all text-red-600 dark:text-red-300">{props.source.lastError}</span>,
+            description: <span class="break-all text-red-600 dark:text-red-300">{localizedSourceError(props.source.lastError, t())}</span>,
           },
         ]
       : []),

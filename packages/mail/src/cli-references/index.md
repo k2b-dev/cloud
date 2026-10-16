@@ -597,7 +597,7 @@ cld --json mail conversation activity <conversation-id>
 
 Assign many conversations at once with [`assign`](#triage-conversations). It exits with status 1 when any conversation was not found in the mailbox.
 
-People can mark a conversation with `--done` or clear Done with `--reopen`. Mail derives `needs_action` and `waiting` from verified mail flow: incoming mail needs action, while a confirmed human reply and a new message the mailbox sends wait for someone else. A reply scheduled for later counts once it is sent, and mail that arrived after Send keeps the conversation in `needs_action`. Automatic or ambiguous mail does not invent a next step. Done and reopen clear an active snooze, so change completion and snooze in separate commands.
+People can mark a conversation with `--done` or clear Done with `--reopen`. Mail derives `needs_action` and `waiting` from verified mail flow: incoming mail needs action, while a confirmed human reply and a new message the mailbox sends wait for someone else. Done or a snooze that a person sets also covers the messages whose content Mail still loads. A `done` or `waiting` status that an automation sets covers only the message that started the automation. Other incoming mail derives `needs_action` again once Mail has loaded it. A reply scheduled for later counts once it is sent, and mail that arrived after Send keeps the conversation in `needs_action`. Automatic or ambiguous mail does not invent a next step. Done and reopen clear an active snooze, so change completion and snooze in separate commands.
 
 Resolve permission-scoped Contacts from server-derived conversation participants:
 

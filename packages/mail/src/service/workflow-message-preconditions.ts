@@ -5,6 +5,11 @@ import type { MailWorkflowMessageStateTransition } from "./workflow-projected-st
 const object = (value: WorkflowJsonValue | undefined): Record<string, WorkflowJsonValue> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value : null;
 
+export const mailWorkflowTriggerMessageId = (context: Record<string, WorkflowJsonValue> | undefined): string | null => {
+  const message = object(object(context?.preconditions)?.message);
+  return typeof message?.id === "string" ? message.id : null;
+};
+
 export const mailWorkflowMessagePrecondition = (
   context: Record<string, WorkflowJsonValue> | undefined,
   target: { messageId: string; remoteMessageRefId: string; folderId: string },

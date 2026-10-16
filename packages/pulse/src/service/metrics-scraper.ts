@@ -2,10 +2,9 @@ import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { decryptSecret, logger } from "@k2b/cloud/services";
 import { sql, type TransactionSQL } from "bun";
 import type { MetricType, PulseIngestBatch, PulseMetric } from "../contracts";
-
 import { requireBaseActive } from "./access-control";
+import { type MetricsHttpDeps, requestMetrics } from "./metrics-http";
 
-const MAX_SCRAPE_RESPONSE_BYTES = 10 * 1024 * 1024;
 const MAX_SCRAPE_SAMPLES = 50_000;
 const PROMETHEUS_TYPE_LINE = /^# TYPE\s+(\S+)\s+(\S+)/;
 const PROMETHEUS_SAMPLE_LINE =
@@ -18,6 +17,7 @@ const log = logger("pulse:metrics-scraper");
 type IngestCounts = { metrics: number; events: number; states: number };
 type MetricsScraperDeps = {
   database?: typeof sql;
+  http?: MetricsHttpDeps;
   ingestBatch: (params: {
     baseId: string;
     sourceId: string;
@@ -155,26 +155,6 @@ const recordSourceScrape = async (
   }
 };
 
-const readScrapeResponseText = async (response: Response): Promise<Result<string>> => {
-  if (!response.body) return ok(await response.text());
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let size = 0;
-  const chunks: string[] = [];
-  while (true) {
-    const chunk = await reader.read();
-    if (chunk.done) break;
-    size += chunk.value.byteLength;
-    if (size > MAX_SCRAPE_RESPONSE_BYTES) {
-      await reader.cancel();
-      return fail(err.badInput(`Metrics endpoint response exceeds ${Math.round(MAX_SCRAPE_RESPONSE_BYTES / 1024 / 1024)} MB`));
-    }
-    chunks.push(decoder.decode(chunk.value, { stream: true }));
-  }
-  chunks.push(decoder.decode());
-  return ok(chunks.join(""));
-};
-
 const unescapePrometheusLabelValue = (value: string): string =>
   value
     .replace(/\\\\/g, "\u0000")
@@ -289,33 +269,24 @@ const buildMetricsScrapeHeaders = async (bearerTokenEncrypted: string | null): P
   return headers;
 };
 
-export const fetchPrometheusMetrics = async (source: MetricsSourceConfig, timeoutMs = 15_000): Promise<Result<ParsedMetrics>> => {
+export const fetchPrometheusMetrics = async (
+  source: MetricsSourceConfig,
+  timeoutMs = 15_000,
+  deps: MetricsHttpDeps = {},
+): Promise<Result<ParsedMetrics>> => {
   const headers = await buildMetricsScrapeHeaders(source.bearerTokenEncrypted);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(source.endpointUrl, { headers, signal: controller.signal });
-    if (!response.ok) {
-      await response.body?.cancel();
-      return fail(err.internal(`Metrics endpoint returned HTTP ${response.status}`));
-    }
-    const textResult = await readScrapeResponseText(response);
-    if (!textResult.ok) return fail(textResult.error);
-    const parsed = parsePrometheusMetrics(textResult.data, new URL(source.endpointUrl).host);
-    if (parsed.metrics.length === 0)
-      return fail(err.badInput(`Metrics endpoint returned no supported samples (${parsed.skippedSamples} skipped)`));
-    if (parsed.metrics.length + parsed.skippedSamples > MAX_SCRAPE_SAMPLES) {
-      return fail(err.badInput(`Metrics endpoint exceeds the ${MAX_SCRAPE_SAMPLES} sample limit`));
-    }
-    return ok(parsed);
-  } finally {
-    clearTimeout(timeout);
-  }
+  const response = await requestMetrics(source.endpointUrl, headers.Authorization, timeoutMs, deps);
+  if (!response.ok) return response;
+  const parsed = parsePrometheusMetrics(response.data, new URL(source.endpointUrl).host);
+  if (parsed.metrics.length === 0)
+    return fail(err.badInput(`Metrics endpoint returned no supported samples (${parsed.skippedSamples} skipped)`));
+  if (parsed.metrics.length + parsed.skippedSamples > MAX_SCRAPE_SAMPLES)
+    return fail(err.badInput(`Metrics endpoint exceeds the ${MAX_SCRAPE_SAMPLES} sample limit`));
+  return ok(parsed);
 };
 
 const metricsScrapeErrorMessage = (scrapeError: unknown): string => {
   if (scrapeError instanceof DOMException && scrapeError.name === "AbortError") return "Metrics scrape timed out after 15 seconds";
-  if (scrapeError instanceof Error) return scrapeError.message;
   return "Metrics scrape failed";
 };
 
@@ -370,7 +341,7 @@ const scrapeSource = async (
   // body) are scrape outcomes: recorded on the source and returned as `fail`.
   let metricsResult: Result<ParsedMetrics>;
   try {
-    metricsResult = await fetchPrometheusMetrics(source);
+    metricsResult = await fetchPrometheusMetrics(source, 15_000, deps.http);
   } catch (scrapeError) {
     metricsResult = fail(err.internal(metricsScrapeErrorMessage(scrapeError)));
   }

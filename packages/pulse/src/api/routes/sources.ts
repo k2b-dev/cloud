@@ -1,4 +1,4 @@
-import { type AuthContext, auth, jsonResponse, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, respond, v } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -20,6 +20,12 @@ import {
   requireUserBackedActor,
   requireUuidParam,
 } from "../shared";
+import { localizedScrapeResult } from "../source-errors";
+
+const sourceInputErrorResponse = jsonResponse(
+  z.object({ code: z.string(), message: z.string() }),
+  "Invalid input, including PULSE_SCRAPE_TARGET_BLOCKED for a disallowed internal target",
+);
 
 const routes = new Hono<AuthContext>()
   .get(
@@ -43,7 +49,7 @@ const routes = new Hono<AuthContext>()
     describeRoute({
       tags: ["Pulse"],
       summary: "Create a Pulse source",
-      responses: { 201: jsonResponse(SourceSchema, "Created Pulse source") },
+      responses: { 201: jsonResponse(SourceSchema, "Created Pulse source"), 400: sourceInputErrorResponse },
     }),
     v("json", CreateSourceSchema),
     async (c) => {
@@ -51,20 +57,40 @@ const routes = new Hono<AuthContext>()
       if (!baseId.ok) return respond(c, baseId.result);
       return respond(
         c,
-        projectResult(pulseService.source.create({ baseId: baseId.value, user: requestAccessScope(c), ...c.req.valid("json") }), (item) =>
-          projectSources([item]).then(([value]) => value!),
+        localizedScrapeResult(
+          projectResult(pulseService.source.create({ baseId: baseId.value, user: requestAccessScope(c), ...c.req.valid("json") }), (item) =>
+            projectSources([item]).then(([value]) => value!),
+          ),
+          getLocale(c),
         ),
         201,
       );
     },
   )
-  .post("/bases/:baseId/sources/:sourceId/scrape", async (c) => {
-    const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
-    if (!baseId.ok) return respond(c, baseId.result);
-    const sourceId = await requireBaseResourceParam(c.req.param("sourceId"), "source ID", "sources", baseId.value);
-    if (!sourceId.ok) return respond(c, sourceId.result);
-    return respond(c, pulseService.source.scrape({ baseId: baseId.value, sourceId: sourceId.value, user: requestAccessScope(c) }));
-  })
+  .post(
+    "/bases/:baseId/sources/:sourceId/scrape",
+    describeRoute({
+      tags: ["Pulse"],
+      summary: "Scrape a Pulse metrics source",
+      responses: {
+        200: jsonResponse(z.object({ metrics: z.number(), events: z.number(), states: z.number() }), "Scraped sample counts"),
+        400: sourceInputErrorResponse,
+      },
+    }),
+    async (c) => {
+      const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
+      if (!baseId.ok) return respond(c, baseId.result);
+      const sourceId = await requireBaseResourceParam(c.req.param("sourceId"), "source ID", "sources", baseId.value);
+      if (!sourceId.ok) return respond(c, sourceId.result);
+      return respond(
+        c,
+        localizedScrapeResult(
+          pulseService.source.scrape({ baseId: baseId.value, sourceId: sourceId.value, user: requestAccessScope(c) }),
+          getLocale(c),
+        ),
+      );
+    },
+  )
   .get(
     "/bases/:baseId/sources/:sourceId/scrapes",
     describeRoute({
@@ -156,7 +182,7 @@ const routes = new Hono<AuthContext>()
     describeRoute({
       tags: ["Pulse"],
       summary: "Update a Pulse source",
-      responses: { 200: jsonResponse(SourceSchema, "Updated Pulse source") },
+      responses: { 200: jsonResponse(SourceSchema, "Updated Pulse source"), 400: sourceInputErrorResponse },
     }),
     v("json", UpdateSourceSchema),
     async (c) => {
@@ -166,14 +192,17 @@ const routes = new Hono<AuthContext>()
       if (!sourceId.ok) return respond(c, sourceId.result);
       return respond(
         c,
-        projectResult(
-          pulseService.source.update({
-            baseId: baseId.value,
-            sourceId: sourceId.value,
-            user: requestAccessScope(c),
-            ...c.req.valid("json"),
-          }),
-          (item) => projectSources([item]).then(([value]) => value!),
+        localizedScrapeResult(
+          projectResult(
+            pulseService.source.update({
+              baseId: baseId.value,
+              sourceId: sourceId.value,
+              user: requestAccessScope(c),
+              ...c.req.valid("json"),
+            }),
+            (item) => projectSources([item]).then(([value]) => value!),
+          ),
+          getLocale(c),
         ),
       );
     },

@@ -5,6 +5,7 @@ import { sql } from "bun";
 import type { PulseSource, PulseSourceScrape, SourceKind } from "../contracts";
 import { withShortId } from "../lib/short-id";
 import { type AccessScope, requireBaseAccess, requireBaseActive, type UserScope } from "./access-control";
+import { checkScrapeTarget } from "./scrape-target";
 import { iso, isoNullable } from "./telemetry-values";
 
 export const PULSE_APP_ID = "pulse";
@@ -199,6 +200,11 @@ export const createSource = async (params: {
   const endpointUrl = normalizeEndpointUrl(params.endpointUrl);
   if (params.kind === "metrics" && !endpointUrl) return fail(err.badInput("A valid metrics endpoint URL is required"));
 
+  if (params.kind === "metrics" && endpointUrl) {
+    const target = await checkScrapeTarget(endpointUrl);
+    if (!target.ok) return target;
+  }
+
   const row = await withShortId("source", async (shortId) => {
     const [created] = await sql<SourceRow[]>`
     INSERT INTO pulse.sources (
@@ -268,6 +274,10 @@ const sourceUpdateBearerToken = async (existing: SourceRow, bearerToken: string 
 const normalizeSourceUpdateValues = async (params: UpdateSourceParams, existing: SourceRow): Promise<Result<SourceUpdateValues>> => {
   const endpointUrl = sourceUpdateEndpointUrl(existing, params.endpointUrl);
   if (existing.kind === "metrics" && !endpointUrl) return fail(err.badInput("A valid metrics endpoint URL is required"));
+  if (existing.kind === "metrics" && endpointUrl && endpointUrl !== existing.endpoint_url) {
+    const target = await checkScrapeTarget(endpointUrl);
+    if (!target.ok) return target;
+  }
   return ok({
     name: sourceUpdateName(existing, params.name),
     enabled: params.enabled ?? existing.enabled,

@@ -457,6 +457,80 @@ export const getConversationCollaboration = async (params: {
 
 type ConversationCollaborationMutation = CollaborationMutation<ConversationCollaboration> & { addedUserIds: string[] };
 
+/**
+ * The latest decision that covers a still unhydrated link, or changes its status or snooze, wins:
+ * Done, Waiting, and a future snooze cover it; Needs action, reopening, and clearing a snooze
+ * release it only when the status or snooze changes. A no-op release is not a decision because
+ * it does not move the revision that fences older automation steps.
+ * The caller holds the conversation row lock. Update only visible, unhydrated links, limited to
+ * messageId when supplied. A conversation timestamp cannot express which links the decision saw.
+ * onlyUndecided lets a stale workflow step cover a link without overriding a newer decision.
+ */
+export const recordConversationStatusDecision = async (
+  db: SqlClient,
+  params: { conversationId: string; covers: boolean; messageId?: string; onlyUndecided?: boolean },
+): Promise<void> => {
+  await db`
+    UPDATE mail.conversation_messages link
+    SET status_covered = ${params.covers}
+    FROM mail.message_contents message
+    WHERE link.conversation_id = ${params.conversationId}::uuid
+      AND (${params.messageId ?? null}::uuid IS NULL OR link.message_id = ${params.messageId ?? null}::uuid)
+      AND message.id = link.message_id
+      AND message.hydration_status <> 'complete'
+      AND link.status_covered IS DISTINCT FROM ${params.covers}
+      AND (${params.onlyUndecided === true} = false OR link.status_covered IS NULL)
+  `;
+};
+
+/**
+ * Locks a conversation for a workflow status step and returns its live state. `revision` is the
+ * revision the step may act at, or null when the conversation changed since the run's view. The
+ * step may act at the run's revision, or one revision later when Mail hydrated the message that
+ * triggered the run and no other message of the conversation still waits for hydration. Linking a
+ * message does not change the revision, so a message that joined after the run's view is either
+ * still unhydrated or hydrated with its own revision. Returns null when the conversation is gone.
+ */
+export const lockWorkflowConversationStatus = async (
+  db: SqlClient,
+  params: { mailboxId: string; conversationId: string; expectedRevision: number; triggerMessageId: string | null },
+): Promise<{ revision: number | null; workStatus: ConversationCollaboration["workStatus"] } | null> => {
+  // Same lock order as updateWorkflowConversationCollaborationInTransaction: mailbox, then conversation.
+  const [mailbox] = await db<{ id: string }[]>`
+    SELECT id FROM mail.mailboxes
+    WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL
+    FOR SHARE
+  `;
+  if (!mailbox) return null;
+  const [current] = await db<{ revision: string | number; work_status: ConversationCollaboration["workStatus"] }[]>`
+    SELECT revision, work_status
+    FROM mail.conversations
+    WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
+    FOR UPDATE
+  `;
+  if (!current) return null;
+  const revision = Number(current.revision);
+  if (revision === params.expectedRevision) return { revision, workStatus: current.work_status };
+  if (revision !== params.expectedRevision + 1 || !params.triggerMessageId) return { revision: null, workStatus: current.work_status };
+  // A new statement after the lock: a link that a sync committed while this step waited is visible
+  // here, and the lock keeps further links out until this transaction ends.
+  const [links] = await db<{ hydrated_revision: string | number | null; others_hydrated: boolean }[]>`
+    SELECT (
+      SELECT link.hydrated_revision FROM mail.conversation_messages link
+      WHERE link.conversation_id = ${params.conversationId}::uuid AND link.message_id = ${params.triggerMessageId}::uuid
+    ) AS hydrated_revision, NOT EXISTS (
+      SELECT 1 FROM mail.conversation_messages link
+      JOIN mail.message_contents message ON message.id = link.message_id
+      WHERE link.conversation_id = ${params.conversationId}::uuid
+        AND link.message_id <> ${params.triggerMessageId}::uuid
+        AND message.hydration_status <> 'complete'
+    ) AS others_hydrated
+  `;
+  const onlyTriggerHydrated =
+    links?.others_hydrated === true && links.hydrated_revision !== null && Number(links.hydrated_revision) === revision;
+  return { revision: onlyTriggerHydrated ? revision : null, workStatus: current.work_status };
+};
+
 const applyConversationCollaborationInTransaction = async (params: {
   context: MailRequestContext | null;
   mailboxId: string;
@@ -466,6 +540,8 @@ const applyConversationCollaborationInTransaction = async (params: {
   actorOverride?: ActorRef;
   activityMetadata?: Record<string, unknown>;
   assigneesToValidate?: readonly string[];
+  // undefined: person/API, all links; string: workflow trigger only; null: no trigger, record nothing.
+  statusDecisionMessageId?: string | null;
 }): Promise<Result<ConversationCollaborationMutation>> => {
   const [current] = await params.db<CollaborationRow[]>`
     SELECT
@@ -557,6 +633,10 @@ const applyConversationCollaborationInTransaction = async (params: {
     if (nextStatus === "done") return fail(err.badInput("A completed conversation cannot be snoozed"));
   }
 
+  const covers =
+    ("workStatus" in params.input && (params.input.workStatus === "done" || params.input.workStatus === "waiting")) ||
+    ("completion" in params.input && params.input.completion === "done") ||
+    Boolean(requestedSnooze);
   const assigneesChanged =
     nextAssigneeIds.length !== currentAssigneeIds.length || nextAssigneeIds.some((id) => !currentAssigneeIds.includes(id));
   const completionChanged = "completion" in params.input && params.input.completion !== undefined;
@@ -566,7 +646,21 @@ const applyConversationCollaborationInTransaction = async (params: {
       : requestedSnooze === undefined
         ? toNullableIso(current.snoozed_until)
         : requestedSnooze;
-  const unchanged = !assigneesChanged && nextStatus === current.work_status && nextSnoozedUntil === toNullableIso(current.snoozed_until);
+  const statusOrSnoozeChanged = nextStatus !== current.work_status || nextSnoozedUntil !== toNullableIso(current.snoozed_until);
+  if (
+    params.statusDecisionMessageId !== null &&
+    (covers || statusOrSnoozeChanged) &&
+    (("workStatus" in params.input && params.input.workStatus) ||
+      ("completion" in params.input && params.input.completion !== undefined) ||
+      params.input.snoozedUntil !== undefined)
+  ) {
+    await recordConversationStatusDecision(params.db, {
+      conversationId: params.conversationId,
+      covers,
+      messageId: params.statusDecisionMessageId,
+    });
+  }
+  const unchanged = !assigneesChanged && !statusOrSnoozeChanged;
   if (unchanged) {
     const state = await loadCollaboration(params.mailboxId, params.conversationId, params.db);
     return state ? ok({ value: state, event: null, addedUserIds: [] }) : fail(err.notFound("Conversation"));
@@ -647,6 +741,7 @@ export const updateWorkflowConversationCollaborationInTransaction = async (param
   mailboxId: string;
   workflowVersionId: string;
   conversationId: string;
+  triggerMessageId: string | null;
   input: WorkflowConversationCollaborationInput;
   db: SqlClient;
   activityMetadata?: Record<string, unknown>;
@@ -660,6 +755,7 @@ export const updateWorkflowConversationCollaborationInTransaction = async (param
   return applyConversationCollaborationInTransaction({
     ...params,
     context: null,
+    statusDecisionMessageId: params.triggerMessageId,
     actorOverride: { kind: "workflow", workflowVersionId: params.workflowVersionId },
   });
 };

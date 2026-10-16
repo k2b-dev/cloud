@@ -61,6 +61,13 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * older Mail image, which records no version for them, still starts on it.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  // NULL = no status decision since Mail linked the message; true = a decision covers it and its
+  // hydration keeps the status; false = a later decision released it. Moving the message to another
+  // conversation resets it to NULL.
+  await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS status_covered boolean`.simple();
+  // The conversation revision this message's hydration produced, so a workflow that the message
+  // triggered can tell that change apart from others. Moving the message clears it too.
+  await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS hydrated_revision bigint`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
     REFERENCES mail.compose_templates(id) ON DELETE SET NULL`.simple();
   await tx`

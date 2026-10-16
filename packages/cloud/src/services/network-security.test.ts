@@ -1,9 +1,10 @@
 import { describe, expect, mock, test } from "bun:test";
-import { isUnsafeNetworkAddress } from "../shared/network-address";
+import { EMPTY_NETWORK_ALLOWLIST, isUnsafeNetworkAddress, parseNetworkAllowlist } from "../shared/network-address";
 import {
   NetworkTargetBlockedError,
   type PublicNetworkAddress,
   pinnedNetworkLookup,
+  resolveAllowedNetworkAddresses,
   resolvePublicNetworkAddresses,
 } from "./network-security";
 
@@ -123,5 +124,72 @@ describe("fail-closed network resolution and pinned sockets", () => {
     });
     pinnedNetworkLookup([addresses[0]!])("never-resolve.test", { family: 6 }, (error) => expect(error?.code).toBe("ENOTFOUND"));
     pinnedNetworkLookup([])("never-resolve.test", { all: true }, (error) => expect(error?.code).toBe("ENOTFOUND"));
+  });
+});
+
+describe("allowlisted network resolution", () => {
+  test.each(["127.0.0.1", "10.0.0.5", "::1", "fd00::1", "::ffff:127.0.0.1", "[::ffff:7f00:1]"])(
+    "empty allowlist refuses %s",
+    async (host) => {
+      await expect(resolveAllowedNetworkAddresses(host, EMPTY_NETWORK_ALLOWLIST)).rejects.toBeInstanceOf(NetworkTargetBlockedError);
+    },
+  );
+
+  test("allows a network literal and DNS answers only when every answer is public or allowed", async () => {
+    const list = parseNetworkAllowlist(["10.0.0.0/8"]);
+    await expect(resolveAllowedNetworkAddresses("10.0.0.5", list)).resolves.toEqual([{ address: "10.0.0.5", family: 4 }]);
+    await expect(
+      resolveAllowedNetworkAddresses("metrics.test", list, async () => [
+        { address: "10.0.0.5", family: 4 },
+        { address: "8.8.8.8", family: 4 },
+      ]),
+    ).resolves.toHaveLength(2);
+    await expect(
+      resolveAllowedNetworkAddresses("metrics.test", list, async () => [
+        { address: "10.0.0.5", family: 4 },
+        { address: "192.168.0.1", family: 4 },
+      ]),
+    ).rejects.toBeInstanceOf(NetworkTargetBlockedError);
+    await expect(resolveAllowedNetworkAddresses("::ffff:10.0.0.5", list)).resolves.toHaveLength(1);
+    await expect(resolveAllowedNetworkAddresses("64:ff9b::a00:5", list)).rejects.toBeInstanceOf(NetworkTargetBlockedError);
+  });
+
+  test.each(["localhost", "metrics.internal", "metrics.local"])("reserved name %s requires an exact host entry", async (host) => {
+    const lookup = async () => [{ address: "10.0.0.5", family: 4 }];
+    await expect(resolveAllowedNetworkAddresses(host, parseNetworkAllowlist(["10.0.0.0/8"]), lookup)).rejects.toBeInstanceOf(
+      NetworkTargetBlockedError,
+    );
+    await expect(resolveAllowedNetworkAddresses(host.toUpperCase() + ".", parseNetworkAllowlist([host]), lookup)).resolves.toHaveLength(1);
+  });
+
+  test("exact host trust never skips DNS failures, empty answers or address validation", async () => {
+    const list = parseNetworkAllowlist(["metrics.test"]);
+    for (const lookup of [
+      async () => {
+        throw new Error("no DNS");
+      },
+      async () => [],
+    ]) {
+      try {
+        await resolveAllowedNetworkAddresses("metrics.test", list, lookup);
+        throw new Error("expected lookup to fail");
+      } catch (error) {
+        expect(error).toBeInstanceOf(Error);
+        expect(error).not.toBeInstanceOf(NetworkTargetBlockedError);
+        expect(error instanceof Error ? error.message : "").not.toBe("expected lookup to fail");
+      }
+    }
+    for (const answer of [
+      { address: "bad", family: 4 },
+      { address: "127.0.0.1", family: 9 },
+      { address: "::1", family: 4 },
+    ]) {
+      await expect(resolveAllowedNetworkAddresses("metrics.test", list, async () => [answer])).rejects.toBeInstanceOf(
+        NetworkTargetBlockedError,
+      );
+    }
+    await expect(
+      resolveAllowedNetworkAddresses("other.test", list, async () => [{ address: "127.0.0.1", family: 4 }]),
+    ).rejects.toBeInstanceOf(NetworkTargetBlockedError);
   });
 });
