@@ -155,6 +155,9 @@ services:
   app-notebooks:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-notebooks:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    environment:
+      <<: *shared-env
+      NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS: ${NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS:-}
 
   app-oauth:
     <<: *app-defaults

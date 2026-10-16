@@ -3,6 +3,20 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.43.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.42.0...cloud-v0.43.0) (2026-10-16)
+
+
+### Features
+
+* **pulse:** scrape only public metrics endpoints unless the operator allows internal targets ([#1218](https://github.com/k2b-dev/cloud/issues/1218)) ([9bdeaaf](https://github.com/k2b-dev/cloud/commit/9bdeaaf281855a8237617b9900c4f01cc22846e8))
+
+
+### Bug Fixes
+
+* **mail:** keep a status set by an automation or a person when Mail finishes loading the message ([#1217](https://github.com/k2b-dev/cloud/issues/1217)) ([e01cf14](https://github.com/k2b-dev/cloud/commit/e01cf146813b67da7dd5e87dade879585c95ba96))
+* **spaces:** keep the space settings open when a person is added ([#1222](https://github.com/k2b-dev/cloud/issues/1222)) ([3de096b](https://github.com/k2b-dev/cloud/commit/3de096badaa71c54d0f7ca5ef3acf6668f2c003c))
+* **ui:** keep the app sidebar list in place after a reload ([#1197](https://github.com/k2b-dev/cloud/issues/1197)) ([1486c00](https://github.com/k2b-dev/cloud/commit/1486c002c832f7095058890f473452fa73d478dc))
+
 ## [0.42.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.41.0...cloud-v0.42.0) (2026-10-15)
 
 

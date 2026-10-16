@@ -77,3 +77,5 @@ Für diese Personen bleiben **Löschen** und **Notiz sperren** im Notizmenü sic
 - **Daten → Export und Snapshots:** Braucht Zugriff **Verwalten**. Übertragbare ZIP-Exporte, die Einrichtung von S3-Snapshots, manuelle Uploads und die letzten Snapshot-Läufe. Speichere die Snapshot-Einrichtung über die Fußleiste.
 - **Verwaltung → Endgültig löschen:** Braucht Zugriff **Verwalten**. Aktionen, die Daten zerstören, etwa das Löschen des Notizbuchs und seiner Notizen.
 :::
+
+S3-Snapshots gehen standardmäßig nur an öffentlichen Speicher. Für internen Speicher muss ein Betreiber das Ziel freigeben. Lehnt Notizbücher das Ziel ab, siehst du den Grund beim Speichern der Einrichtung oder beim Start eines Snapshots.

@@ -164,7 +164,10 @@ services:
   app-notebooks:
     <<: *app
     container_name: app-notebooks
-    environment: { <<: *env, APP_ID: notebooks }
+    environment:
+      <<: *env
+      APP_ID: notebooks
+      NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS: ${NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS:-}
     profiles: [extra]
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src

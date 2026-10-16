@@ -77,3 +77,5 @@ For these people, **Delete** and **Lock note** in the note menu stay visible but
 - **Data → Export & snapshots:** Requires **Manage** access. Portable ZIP exports, the S3 snapshot setup, manual uploads, and recent snapshot runs. Save the snapshot setup with the footer.
 - **Lifecycle → Danger zone:** Requires **Manage** access. Actions that destroy data, such as deleting the notebook and its notes.
 :::
+
+S3 snapshots go only to public storage by default. To use internal storage, an operator must allow the target. If Notebooks refuses the target, you see the reason when you save the setup or run a snapshot.

@@ -235,6 +235,10 @@ entry throws an error naming the entry and, for host bits, the correct network.
 Entries carry no port or path, so an entry allows every service on that host or
 in that range; keep them as narrow as the use case allows.
 
+Use `parseNetworkAllowlistEnv(variable, entries)` from `@k2b/cloud/shared`
+for env registry values. It applies the same parser and prefixes errors with
+the variable name, so invalid operator configuration is clear at startup.
+
 Pass the parsed `NetworkAllowlist` to
 `resolveAllowedNetworkAddresses(hostname, allowlist, lookup?)` from
 `@k2b/cloud/services/network-security`, then connect through
@@ -254,7 +258,17 @@ against IPv4 entries. Other embeddings, including NAT64 `64:ff9b::/96`, 6to4,
 Teredo, and IPv4-compatible IPv6, require an IPv6 entry. Network entries never
 trust host names. `resolvePublicNetworkAddresses` retains the empty-allowlist
 policy. Pulse uses this contract for metrics sources and rechecks every
-redirect with the same operator allowlist.
+redirect with the same operator allowlist. Notebooks uses it for S3 snapshots:
+Bun signs locally, and a pinned transport sends the presigned PUT requests.
+
+For a save-time policy check, use
+`isNetworkTargetBlocked(hostname, allowlist, { resolve?, timeoutMs? })` from
+`@k2b/cloud/services/network-security` (also exported by `@k2b/cloud/services`).
+It returns `true` only for `NetworkTargetBlockedError`. A failed lookup or the
+five-second default timeout returns `false`, so an unavailable service can be
+saved. The timer is cleared when the check finishes. This hint never permits a
+request: resolve, validate and pin again on every run, refusing failed or empty
+lookups. `resolve` and `timeoutMs` can be injected for focused tests.
 
 ### Read the result
 
