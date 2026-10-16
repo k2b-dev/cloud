@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   chatCommandKey,
   chatCommandMatches,
+  chatCommandRank,
   conversationEnterAction,
   executeChatAction,
   foldChatSearchText,
@@ -194,6 +195,13 @@ describe("command discovery", () => {
       expect(chatCommandMatches(command, query)).toBe(true);
     expect(chatCommandMatches(command, "fork")).toBe(false);
     expect(chatCommandMatches({ name: "a", description: "", keywords: ["älter"] }, "alter")).toBe(true);
+  });
+  test("ranks label, name and keyword matches before description-only matches", () => {
+    const fork = { name: "fork", label: "Fork chat", description: "New chat from the latest response", keywords: ["fork"] };
+    expect(chatCommandRank(fork, "fork")).toBe(0);
+    expect(chatCommandRank(fork, "new")).toBe(1);
+    expect(chatCommandRank(fork, "xyz")).toBe(-1);
+    expect(chatCommandRank(fork, " ")).toBe(0);
   });
   test("uses the explicit stable key, defaulting to name", () => {
     expect(chatCommandKey({ id: "stable", name: "compact", description: "" })).toBe("stable");

@@ -296,6 +296,36 @@ test("slash discovery matches labels, names, keywords and accents", async () => 
   }
 });
 
+test("a command named by the query outranks one whose description only mentions it, so Enter picks it", async () => {
+  const chosen: string[] = [];
+  const command = (name: string, label: string, description: string, keywords: string[]): ChatCommand => ({
+    name,
+    label,
+    description,
+    keywords,
+    action: () => void chosen.push(name),
+  });
+  for (const [query, fork, newChat] of [
+    [
+      "new",
+      command("fork", "Fork chat", "New chat from the latest response, with this draft", ["fork"]),
+      command("new", "New chat", "Start empty", ["new"]),
+    ],
+    [
+      "neu",
+      command("fork", "Chat abzweigen", "Neuer Chat ab der letzten Antwort", ["abzweigen"]),
+      command("new", "Neuer Chat", "Leer anfangen", ["neu"]),
+    ],
+  ] as const) {
+    const h = await slash({ commands: [fork, newChat] });
+    h.type(`/${query}`);
+    expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual([newChat.label, fork.label]);
+    h.key("Enter");
+    await Promise.resolve();
+    expect(chosen.pop()).toBe("new");
+  }
+});
+
 test("unavailable rows explain themselves, remain reachable, and announce instead of acting or sending", async () => {
   let calls = 0;
   const h = await slash({

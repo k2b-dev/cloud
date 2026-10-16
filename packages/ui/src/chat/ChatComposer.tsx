@@ -35,7 +35,7 @@ import { useUiMessages } from "../intl/messages";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
 import {
   chatCommandKey,
-  chatCommandMatches,
+  chatCommandRank,
   conversationEnterAction,
   executeChatAction,
   nextChatCommandIndex,
@@ -316,14 +316,18 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const token = commandQuery();
     if (!token) return [];
     const seen = new Set<string>();
-    return [...(props.commands ?? []).filter((command) => chatCommandMatches(command, token.query)), ...searchResults()].filter(
-      (command) => {
-        const key = chatCommandKey(command);
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      },
-    );
+    // Matches by label, name or keyword come first, so the top row (what Enter picks) is the command the person named.
+    const local = (props.commands ?? [])
+      .map((command) => ({ command, rank: chatCommandRank(command, token.query) }))
+      .filter(({ rank }) => rank >= 0)
+      .sort((a, b) => a.rank - b.rank)
+      .map(({ command }) => command);
+    return [...local, ...searchResults()].filter((command) => {
+      const key = chatCommandKey(command);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   });
   const currentCommandQuery = createMemo(() => caretCommandToken()?.query);
   createEffect(() => {

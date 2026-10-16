@@ -149,7 +149,8 @@ type ChatPasteHandler = (event: ClipboardEvent & { currentTarget: HTMLTextAreaEl
 ```
 
 Static commands match their label, name, keywords, or description, ignoring
-case and accents. `id` defaults to `name` and identifies the row across result
+case and accents. Matches by label, name, or keyword come before matches by
+description alone, in declaration order otherwise. `id` defaults to `name` and identifies the row across result
 updates; static matches precede server results, with the first row per key
 winning. `searchCommands` supplies already filtered rows. The list keeps its
 previous server rows while loading the next results. Arrow selection stays on
