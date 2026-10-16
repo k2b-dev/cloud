@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-13
+updated: 2026-10-16
 ---
 
 # App capabilities
@@ -285,6 +285,10 @@ together with the localized app name from the app's own `presentation`. An
 entry without a translation shows its base text, so a missing locale never
 hides a capability. Translate at least the title and description of every
 Type, Query, Action, Command, and search tag.
+
+Cloud's Assistant and chat presentation surfaces word every app through its
+own presentation and never treat one app differently by its ID, name, or tool
+name, so built-in and third-party apps read the same.
 
 The model always receives the base presentation, and so do the tools the
 [MCP server](/en/docs/platform/mcp) lists. Tool names, titles, descriptions,

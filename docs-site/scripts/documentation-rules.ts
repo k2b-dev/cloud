@@ -109,6 +109,26 @@ const tableCells = (line: string): string[] => {
   return cells;
 };
 
+/** Tables whose first header cell matches, including headers for column validation. */
+function* conventionTableRows(prose: string, firstColumn: string) {
+  let inTable = false;
+  const lines = prose.split(/\r?\n/);
+  for (const [index, line] of lines.entries()) {
+    if (!line.includes("|")) {
+      inTable = false;
+      continue;
+    }
+    const cells = tableCells(line);
+    const header =
+      cells[0] === firstColumn &&
+      lines[index + 1]?.includes("|") &&
+      tableCells(lines[index + 1] ?? "").every((cell) => /^:?-+:?$/.test(cell));
+    if (header) inTable = true;
+    if (!inTable || cells.every((cell) => /^:?-+:?$/.test(cell))) continue;
+    yield { cells, line: index + 1, header: Boolean(header) };
+  }
+}
+
 /** Validate catalog rows and consecutive IDs across the selected pages. */
 export const conventionCatalogErrors = (pages: readonly { file: string; prose: string }[]): string[] => {
   const errors: string[] = [];
@@ -116,27 +136,14 @@ export const conventionCatalogErrors = (pages: readonly { file: string; prose: s
   const ids = new Map<string, Set<number>>();
 
   for (const page of pages) {
-    let inCatalog = false;
-    const lines = page.prose.split(/\r?\n/);
-    for (const [index, line] of lines.entries()) {
-      if (!line.includes("|")) {
-        inCatalog = false;
-        continue;
-      }
-      const cells = tableCells(line);
-      const location = `${page.file}:${index + 1}`;
-      if (
-        cells[0] === "ID" &&
-        lines[index + 1]?.includes("|") &&
-        tableCells(lines[index + 1] ?? "").every((cell) => /^:?-+:?$/.test(cell))
-      ) {
-        inCatalog = true;
+    for (const { cells, line, header } of conventionTableRows(page.prose, "ID")) {
+      const location = `${page.file}:${line}`;
+      if (header) {
         if (cells.length !== conventionColumns.length || cells.some((cell, index) => cell !== conventionColumns[index])) {
           errors.push(`${location}: convention table must use the columns ID | Rule | Why | How to check | Canonical`);
         }
         continue;
       }
-      if (!inCatalog || cells.every((cell) => /^:?-+:?$/.test(cell))) continue;
 
       const id = cells[0] ?? "";
       if (cells.length !== conventionColumns.length) {
@@ -179,6 +186,53 @@ export const conventionCatalogErrors = (pages: readonly { file: string; prose: s
         );
       }
     }
+  }
+  return errors;
+};
+
+/** Require every convention prefix and a matching index link, even during partial checks. */
+export const conventionCoverageErrors = (pages: readonly { file: string; route: string; prose: string }[]): string[] => {
+  const errors: string[] = [];
+  const prefixesByRoute = new Map<string, Set<string>>();
+  for (const page of pages) {
+    const prefixes = new Set<string>();
+    for (const { cells, header } of conventionTableRows(page.prose, "ID")) {
+      if (!header && conventionId.test(cells[0] ?? "")) prefixes.add(cells[0].split("-")[0]);
+    }
+    prefixesByRoute.set(page.route, prefixes);
+  }
+  for (const prefix of conventionPrefixes) {
+    if (![...prefixesByRoute.values()].some((prefixes) => prefixes.has(prefix))) {
+      errors.push(`convention prefix ${prefix} has no row on any conventions page`);
+    }
+  }
+
+  const index = pages.find((page) => page.route === "/en/docs/conventions");
+  if (!index) {
+    errors.push("convention index page /en/docs/conventions is missing");
+    return errors;
+  }
+  const rows = [...conventionTableRows(index.prose, "Prefix")];
+  if (rows.length === 0) errors.push(`${index.file}: convention index prefix table is missing`);
+  const indexed = new Set<string>();
+  for (const { cells, line, header } of rows) {
+    if (header) continue;
+    const prefix = cells[0] ?? "";
+    const location = `${index.file}:${line}`;
+    if (!conventionPrefixes.some((known) => known === prefix)) {
+      errors.push(`${location}: convention index has unknown prefix '${prefix}'`);
+    }
+    indexed.add(prefix);
+    const links = [...(cells[2] ?? "").matchAll(/\[[^\]]+\]\(([^)\s]+)\)/g)];
+    const route = (links[0]?.[1] ?? "").split("#", 1)[0];
+    if (links.length !== 1 || !/^\/en\/docs\/conventions\/[^/#]+$/.test(route)) {
+      errors.push(`${location}: convention index prefix ${prefix} needs exactly one conventions page link`);
+    } else if (!prefixesByRoute.get(route)?.has(prefix)) {
+      errors.push(`${location}: convention index prefix ${prefix} links to ${route}, which has no ${prefix} rows`);
+    }
+  }
+  for (const prefix of conventionPrefixes) {
+    if (!indexed.has(prefix)) errors.push(`${index.file}: convention index has no prefix row for ${prefix}`);
   }
   return errors;
 };
