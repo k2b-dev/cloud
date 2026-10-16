@@ -38,10 +38,10 @@ the app area and its frame shows in the card spacing. A page without a
 workspace shows its content on the app background, so scroll the content in a
 `ScrollArea` and do not wrap it in an opaque surface that fills the app area.
 
-From 768 px the app bar holds Home, the apps, the app grid, search, help, and
-the profile avatar. Its controls are 44 px targets. Between the app bar and
-the app area there is no line: the app bar shows the app background, and the
-app area is one opaque surface.
+From 768 px the app bar holds Home, the button that hides the sidebar, the
+apps, the app grid, search, help, and the profile avatar. Its controls are
+44 px targets. Between the app bar and the app area there is no line: the app
+bar shows the app background, and the app area is one opaque surface.
 Global announcements and account notices stay above the app as a strip across
 the app area; from 768 to 1023 px it has no radius or border.
 
@@ -79,6 +79,21 @@ with `scroll={false}` on Main and no vertical scroller around it; a reserved
 scrollbar gutter would widen the gap before the panel beyond
 `--k2b-workspace-detail-inset`.
 See [Add contextual detail](/en/docs/frontend/application-shells#add-contextual-detail).
+
+### Hide the app bar and navigation
+
+From 768 px, **Hide sidebar** below Home in the app bar or `Cmd+\` (`Ctrl+\`
+on other systems) hides the app bar. From 1024 px, it also hides the outermost
+workspace's sidebar; from 768 to 1023 px that sidebar is an overlay behind the
+workspace head's button anyway. The shortcut is listed under keyboard
+shortcuts in Help. The **Show sidebar** button at the bottom start corner
+of the app area, the same shortcut, or a drag from the left edge on a touch
+screen shows them again. The browser remembers the choice in a cookie, so a
+reload shows the same page. Phones ignore it. On keyboard layouts without a
+direct backslash key, such as German, use the button.
+
+Applications need no code. Keep actions people need available outside the
+sidebar too, through the application's own links.
 
 ## Render the application layout
 

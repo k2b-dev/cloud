@@ -123,6 +123,7 @@ const server = new Hono()
         createComponent(Layout, {
           c: c as unknown as LayoutContextArg,
           title: [{ title: "Badges", href: "/app/badges" }, { title: c.req.query("title") ?? "Badges" }],
+          focusMode: c.req.query("focusMode") === "true",
           children: "Signed-in content",
         }),
     ),
@@ -147,6 +148,31 @@ const server = new Hono()
   );
 
 describe("Cloud layouts SSR", () => {
+  test("server-renders shell focus only on signed-in pages outside focusMode", async () => {
+    const spies = [
+      spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+      spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    ];
+    try {
+      for (const [path, cookie, hidden, controls] of [
+        ["/signed-in", "cloud_shell_focus=1", true, true],
+        ["/signed-in", "", false, true],
+        ["/layout", "cloud_shell_focus=1", false, false],
+        ["/signed-in?focusMode=true", "cloud_shell_focus=1", false, false],
+      ] as const) {
+        const response = await server.request(path, { headers: { Cookie: cookie } });
+        expect(response.status).toBe(200);
+        const html = await response.text();
+        expect(html.includes('data-shell-focus="true"'), path + " focus").toBe(hidden);
+        expect(html.includes('data-cloud-shell-focus-toggle="hide"'), path + " hide").toBe(controls);
+        expect(html.includes('data-cloud-shell-focus-toggle="show"'), path + " show").toBe(controls);
+        expect(html.includes('class="cloud-shell-show"')).toBe(controls);
+        expect(html.includes("data-cloud-shell-reveal")).toBe(controls);
+      }
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
   test("full-page workspaces contain outer viewport overscroll", async () => {
     const html = await (await server.request("/layout")).text();
     expect(html).toContain('data-layout-full-page="true"');
