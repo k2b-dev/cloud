@@ -121,12 +121,6 @@ describe("MailMessageBody sizing", () => {
     expect(applied).toEqual(["dark", "light"]);
   });
 
-  test("analyzes loaded images before adding a dark-mode backing plate", () => {
-    const document = buildMessageDocument("<img>", "test-channel");
-    expect(document).toContain('image.addEventListener("load", () => analyzeImage(image))');
-    expect(document).not.toContain("imageColors");
-  });
-
   test("disables navigation inside contained messages", () => {
     const document = buildMessageDocument('<a href="https://lookalike.example">Open</a>', "test-channel", true);
 

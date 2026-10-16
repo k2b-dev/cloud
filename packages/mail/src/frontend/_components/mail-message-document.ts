@@ -69,7 +69,7 @@ export const buildMessageDocument = (
     a { color: #1677c8; }
     details.mail-quoted-history { margin-top: 12px; }
     details.mail-quoted-history > :not(summary),
-    details.mail-quoted-history > summary { color: color-mix(in srgb, currentColor 65%, transparent); }
+    details.mail-quoted-history > summary { color: var(--mail-quote-text, color-mix(in srgb, currentColor 65%, transparent)); }
     details.mail-quoted-history > summary { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px 4px 6px; border-radius: 6px; font-size: 12px; font-weight: 500; line-height: 16px; list-style: none; cursor: pointer; user-select: none; transition: background-color 120ms ease, color 120ms ease; }
     details.mail-quoted-history > summary::-webkit-details-marker { display: none; }
     details.mail-quoted-history > summary:hover { background: color-mix(in srgb, currentColor 6%, transparent); color: inherit; }
@@ -82,7 +82,7 @@ export const buildMessageDocument = (
     details.mail-quoted-history[open] > summary .mail-quoted-show { visibility: hidden; }
     @media (prefers-reduced-motion: reduce) { details.mail-quoted-history > summary, details.mail-quoted-history > summary > svg { transition: none; } }
     details.mail-quoted-history > blockquote,
-    details.mail-quoted-history > div { margin: 8px 0 0; padding-left: 12px; border-left: 2px solid color-mix(in srgb, currentColor 25%, transparent); }
+    details.mail-quoted-history > div { margin: 8px 0 0; padding-left: 12px; border-left: 2px solid var(--mail-quote-border, color-mix(in srgb, currentColor 25%, transparent)); }
     #mail-message-root { display: flow-root; min-height: 0; }
   </style>
 </head>
@@ -226,38 +226,49 @@ export const buildMessageDocument = (
         }
         return result;
       };
-      const elements = [root, ...root.querySelectorAll("*")];
-      // Sentinels distinguish inherited defaults from the sender's own colors.
-      const bodyStyle = document.body.getAttribute("style");
-      document.body.style.color = "rgb(1, 2, 3)";
-      const sentinel = document.createElement("style");
-      sentinel.textContent = "a { color: rgb(1, 2, 4); }";
-      document.head.append(sentinel);
-      const originals = new Map();
       const white = parseColor("rgb(255, 255, 255)");
-      for (const element of elements) {
-        const computed = getComputedStyle(element);
-        const color = computed.color;
-        const fill = parseColor(computed.backgroundColor);
-        const borders = [];
-        for (const side of ["top", "right", "bottom", "left"]) {
-          const width = parseFloat(computed.getPropertyValue("border-" + side + "-width"));
-          const style = computed.getPropertyValue("border-" + side + "-style");
-          if (width > 0 && !["none", "hidden"].includes(style)) {
-            borders.push(["border-" + side + "-color", parseColor(computed.getPropertyValue("border-" + side + "-color"))]);
+      // Light mode never changes the document, so the analysis waits for the first dark apply.
+      let originals = null;
+      const captureOriginals = () => {
+        const elements = [root, ...root.querySelectorAll("*")];
+        // Sentinels tell inherited defaults apart from the sender's own colors. The quote
+        // dimming is the frame's own rule, so it follows the sentinel during the capture.
+        const bodyStyle = document.body.getAttribute("style");
+        document.body.style.color = "rgb(1, 2, 3)";
+        const sentinel = document.createElement("style");
+        // Transitions are off so computed colors show the sentinel at once.
+        sentinel.textContent =
+          ":root { --mail-quote-text: currentColor; --mail-quote-border: currentColor; } * { transition: none !important; } a { color: rgb(1, 2, 4); }";
+        document.head.append(sentinel);
+        const captured = new Map();
+        for (const element of elements) {
+          const computed = getComputedStyle(element);
+          const color = computed.color;
+          const fill = parseColor(computed.backgroundColor);
+          // Borders and decorations without their own color follow the text and need no change.
+          const own = (value) => (value === color ? null : parseColor(value));
+          const borders = [];
+          for (const side of ["top", "right", "bottom", "left"]) {
+            const width = parseFloat(computed.getPropertyValue("border-" + side + "-width"));
+            const style = computed.getPropertyValue("border-" + side + "-style");
+            const border = own(computed.getPropertyValue("border-" + side + "-color"));
+            if (border && width > 0 && !["none", "hidden"].includes(style)) borders.push(["border-" + side + "-color", border]);
           }
+          captured.set(element, {
+            style: element.getAttribute("style"),
+            color: color === "rgb(1, 2, 3)" || color === "rgb(1, 2, 4)" ? null : parseColor(color),
+            decoration: own(computed.textDecorationColor),
+            textShadow: computed.textShadow !== "none",
+            background: fill[3] > 0 ? fill : null,
+            backgroundImage: computed.backgroundImage !== "none",
+            borders,
+          });
         }
-        originals.set(element, {
-          style: element.getAttribute("style"),
-          color: color === "rgb(1, 2, 3)" || color === "rgb(1, 2, 4)" ? null : parseColor(color),
-          background: fill[3] > 0 ? fill : null,
-          backgroundImage: computed.backgroundImage !== "none",
-          borders,
-        });
-      }
-      sentinel.remove();
-      if (bodyStyle === null) document.body.removeAttribute("style");
-      else document.body.setAttribute("style", bodyStyle);
+        sentinel.remove();
+        if (bodyStyle === null) document.body.removeAttribute("style");
+        else document.body.setAttribute("style", bodyStyle);
+        return captured;
+      };
       const effectiveBackground = (element, adapted) => {
         const layers = [];
         for (let current = element; current; current = current.parentElement) {
@@ -304,12 +315,20 @@ export const buildMessageDocument = (
         }
         if (original.background) set("background-color", adaptBackground(original.background));
         for (const [property, color] of original.borders) set(property, adaptBackground(color));
+        const inherited = foregrounds.get(element.parentElement) || text;
+        // Quoted history is dimmed by the frame's own rule, which keeps following the adapted text.
+        const quotePart = element.parentElement?.matches("details.mail-quoted-history");
         const base = original.color || (isLink
           ? parseColor(document.documentElement.style.getPropertyValue("--mail-dark-link"))
-          : foregrounds.get(element.parentElement) || text);
+          : quotePart ? [...inherited.slice(0, 3), inherited[3] * 0.65] : inherited);
         const color = adaptText(base, effective);
         if (original.color || color !== base) set("color", color);
         foregrounds.set(element, color);
+        if (original.decoration) set("text-decoration-color", adaptText(original.decoration, effective));
+        // A shadow drawn for light text on a light surface turns into a halo around adapted text.
+        if (original.textShadow && cssColor(color) !== cssColor(original.color || parseColor("#18181b"))) {
+          element.style.setProperty("text-shadow", "none", "important");
+        }
         if (needsImagePlate(element)) {
           const originalEffective = effectiveBackground(element, false);
           if (luminance(originalEffective) > 0.4 && cssColor(effective) !== cssColor(originalEffective)) {
@@ -339,22 +358,30 @@ export const buildMessageDocument = (
           // Unreadable pixels leave the image unchanged.
         }
         imageAnalysis.set(image, analysis);
-        if (currentMode === "dark") applyDarkStyles(image, originals.get(image));
       };
-      for (const image of root.querySelectorAll("img")) {
-        image.addEventListener("load", () => analyzeImage(image));
-        analyzeImage(image);
+      const images = [...root.querySelectorAll("img")];
+      for (const image of images) {
+        image.addEventListener("load", () => {
+          // Pixels are read only for dark mode; a later dark apply reads the new source.
+          imageAnalysis.delete(image);
+          if (currentMode !== "dark") return;
+          analyzeImage(image);
+          applyDarkStyles(image, originals.get(image));
+        });
       }
       const applyMode = (mode) => {
         currentMode = mode;
         foregrounds.clear();
+        // The capture reads the light document, so it runs before the dark class applies.
+        if (mode === "dark") originals ??= captureOriginals();
         document.documentElement.classList.toggle("mail-dark", mode === "dark");
         if (mode === "dark") {
+          for (const image of images) if (!imageAnalysis.has(image)) analyzeImage(image);
           document.documentElement.style.setProperty("--mail-dark-text", cssColor(text));
           document.documentElement.style.setProperty("--mail-dark-link", cssColor(adaptText(parseColor("#1677c8"), background)));
           for (const [element, original] of originals) applyDarkStyles(element, original);
         } else {
-          for (const [element, original] of originals) restoreStyle(element, original);
+          for (const [element, original] of originals ?? []) restoreStyle(element, original);
           document.documentElement.style.removeProperty("--mail-dark-text");
           document.documentElement.style.removeProperty("--mail-dark-link");
         }

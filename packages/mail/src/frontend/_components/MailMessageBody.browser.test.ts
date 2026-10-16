@@ -644,6 +644,76 @@ describe("HTML mail colors", () => {
     );
   }, 30_000);
 
+  test("keeps colors that follow the text color in step with the adapted text", async () => {
+    const content = `<p id="reply">Reply</p><blockquote type="cite"><p id="quoted">Earlier message</p></blockquote>
+<div id="plain-border" style="border:1px solid">Plain border</div>
+<a id="underlined" href="https://example.com" style="color:#111111;text-decoration:underline;text-decoration-color:#000000">Underlined</a>
+<p id="embossed" style="color:#333333;text-shadow:0 1px 0 #ffffff">Embossed</p>`;
+    await withOpenedMessage(
+      false,
+      async ({ page, frame, errors }) => {
+        await waitForMode(frame, false);
+        const lightStyles = await frame
+          .locator("[id]")
+          .evaluateAll((elements) => elements.map((element) => [element.id, element.getAttribute("style")]));
+        await updateTheme(page, "dark");
+        await waitForMode(frame, true);
+        // A fresh quote part shows what the frame's own rule gives with the adapted text.
+        const quoteColors = () =>
+          frame.evaluate(() => {
+            const details = document.querySelector("details.mail-quoted-history")!;
+            const fresh = document.createElement("blockquote");
+            details.append(fresh);
+            const expected = { color: getComputedStyle(fresh).color, border: getComputedStyle(fresh).borderLeftColor };
+            fresh.remove();
+            const quote = getComputedStyle(details.querySelector("blockquote")!);
+            return {
+              expected,
+              quote: quote.color,
+              quoted: getComputedStyle(document.querySelector("#quoted")!).color,
+              border: quote.borderLeftColor,
+              toggle: getComputedStyle(details.querySelector("summary")!).color,
+            };
+          });
+        const dark = await quoteColors();
+        expect(dark.quote).toBe(dark.expected.color);
+        expect(dark.quoted).toBe(dark.expected.color);
+        expect(dark.border).toBe(dark.expected.border);
+        expect(dark.quote).not.toBe(await frame.locator("#reply").evaluate((element) => getComputedStyle(element).color));
+        // The toggle eases its color, so it reaches the dimmed text color after its transition.
+        await frame.waitForFunction(
+          (expected) => getComputedStyle(document.querySelector("details.mail-quoted-history > summary")!).color === expected,
+          dark.expected.color,
+        );
+        const followers = await frame.evaluate(() => {
+          const style = (selector: string) => getComputedStyle(document.querySelector(selector)!);
+          return {
+            border: style("#plain-border").borderTopColor,
+            text: style("#plain-border").color,
+            underline: style("#underlined").textDecorationColor,
+            shadow: style("#embossed").textShadow,
+          };
+        });
+        expect(followers.border).toBe(followers.text);
+        expect(followers.underline).toBe("rgb(255, 255, 255)");
+        expect(followers.shadow).toBe("none");
+        await assertAdaptedContrast(frame);
+        await updateTheme(page, "light");
+        await waitForMode(frame, false);
+        expect(
+          await frame.locator("[id]").evaluateAll((elements) => elements.map((element) => [element.id, element.getAttribute("style")])),
+        ).toEqual(lightStyles);
+        const light = await quoteColors();
+        expect(light.quote).toBe(light.expected.color);
+        expect(light.border).toBe(light.expected.border);
+        expect(light.quote).not.toBe(dark.quote);
+        await assertNoReload(page);
+        expect(errors).toEqual([]);
+      },
+      { html: content, theme: "light", colors: "adapted" },
+    );
+  }, 30_000);
+
   test("keeps background images and readable author colors on their original surface", async () => {
     const content = `<style>a { color: #374151; }</style><div style="background:#fef3c7"><div id="gradient" style="background-image:linear-gradient(#fef3c7,#fef3c7);color:#374151"><p>Readable text <a href="https://example.com">Author link</a></p></div></div>`;
     await withOpenedMessage(
