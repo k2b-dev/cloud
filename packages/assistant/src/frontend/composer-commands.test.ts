@@ -521,7 +521,24 @@ test("session loader reuses promises, merges states newest first, and aborts onl
 });
 
 for (const retryOpening of [1, 2]) {
-  for (const statuses of [["offline"], [500], [200], [404], [409], [429], [408], [400], ["offline", 429], ["offline", 408]] as const) {
+  for (const [statuses, reusesKey] of [
+    [["offline"], true],
+    [[500], true],
+    [[200], false],
+    [[404], false],
+    [[409], false],
+    [[429], true],
+    [[408], true],
+    [[400], false],
+    [["offline", 429], true],
+    [["offline", 408], true],
+    [["offline", 409], true],
+    [[500, 409], true],
+    [[408, 409], true],
+    [[429, 409], true],
+    [["offline", 404], false],
+    [["offline", 200], false],
+  ] as const) {
     test(`task start after ${statuses.join(" then ")} uses the correct key in opening ${retryOpening}`, async () => {
       const task = taskFixture(0);
       spyOn(assistantApi, "listChatTasks").mockImplementation(async ({ state }) => (state === "active" ? [task] : []));
@@ -573,8 +590,7 @@ for (const retryOpening of [1, 2]) {
         }
         await run(retryOpening);
         const retryKey = key(statuses.length);
-        const status = statuses[statuses.length - 1]!;
-        if (status === "offline" || status === 408 || status === 429 || status >= 500) expect(retryKey).toBe(previousKey);
+        if (reusesKey) expect(retryKey).toBe(previousKey);
         else expect(retryKey).not.toBe(previousKey);
         // The successful retry settles the logical start, including a replayed occurrence.
         await run(retryOpening + 1);

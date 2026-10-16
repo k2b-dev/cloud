@@ -161,7 +161,7 @@ export const overviewSkills = (skills: readonly AiSkillSummary[]) => skills.filt
 
 /** Owns discovery per opening and pending task starts across openings for one composer. */
 export function createAssistantCommandSession() {
-  const pendingRunKeys = new Map<string, string>();
+  const pendingRunKeys = new Map<string, { key: string; uncertain: boolean }>();
   let latest:
     | {
         session: number;
@@ -171,12 +171,19 @@ export function createAssistantCommandSession() {
     | undefined;
   return {
     runKey(taskId: string) {
-      const key = pendingRunKeys.get(taskId) ?? crypto.randomUUID().replaceAll("-", "");
-      pendingRunKeys.set(taskId, key);
-      return key;
+      let pending = pendingRunKeys.get(taskId);
+      if (!pending) {
+        pending = { key: crypto.randomUUID().replaceAll("-", ""), uncertain: false };
+        pendingRunKeys.set(taskId, pending);
+      }
+      return pending.key;
     },
-    settleRun(taskId: string) {
-      pendingRunKeys.delete(taskId);
+    runUncertain(taskId: string) {
+      const pending = pendingRunKeys.get(taskId);
+      if (pending) pending.uncertain = true;
+    },
+    settleRun(taskId: string, { force = false }: { force?: boolean } = {}) {
+      if (force || !pendingRunKeys.get(taskId)?.uncertain) pendingRunKeys.delete(taskId);
     },
     load(session: number) {
       if (latest?.session === session) return latest.data;
@@ -437,12 +444,22 @@ export async function assistantComposerCommands(input: {
               ? async () => {
                   try {
                     await assistantApi.runChatTask(task.id, { idempotencyKey: input.sessionLoader.runKey(task.id) });
-                    input.sessionLoader.settleRun(task.id);
+                    input.sessionLoader.settleRun(task.id, { force: true });
                     return { done: copy.commandTaskRunning({ title }) };
                   } catch (error) {
-                    // Network failures, 408, 429, and 5xx leave the outcome unknown; retries must replay the same start.
-                    if (error instanceof AssistantTaskRunError && error.status < 500 && error.status !== 408 && error.status !== 429)
-                      input.sessionLoader.settleRun(task.id);
+                    // Network failures, 408, 429, and 5xx make this key uncertain. Later 4xx cannot
+                    // disprove an earlier start; only success or a missing task settles an uncertain key.
+                    if (
+                      error instanceof AssistantTaskRunError &&
+                      error.status >= 400 &&
+                      error.status < 500 &&
+                      error.status !== 408 &&
+                      error.status !== 429
+                    ) {
+                      input.sessionLoader.settleRun(task.id, { force: error.status === 404 });
+                    } else {
+                      input.sessionLoader.runUncertain(task.id);
+                    }
                     const reason =
                       error instanceof AssistantTaskRunError
                         ? error.status === 409
