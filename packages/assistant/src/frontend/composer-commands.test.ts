@@ -274,7 +274,7 @@ test("built-in reasons reflect prerequisites before a running response, and acti
   }
 });
 
-test("model selection explains recording after running and before missing models", () => {
+test("while recording, choose model narrows to the model list instead of opening the replaced control", () => {
   for (const locale of ["en", "de"]) {
     const copy = assistantCopyFor(locale);
     const input = {
@@ -291,11 +291,10 @@ test("model selection explains recording after running and before missing models
       newChat: async () => {},
     };
     const model = (state: Partial<typeof input>) => builtInCommands({ ...input, ...state }).find((row) => row.id === "model")!;
-    expect(model({}).reason).toBe(copy.commandModelNeedsRecordingDone);
+    expect(model({})).toMatchObject({ scope: "model", reason: undefined, action: undefined });
     expect(model({ running: true }).reason).toBe(copy.commandNeedsIdle);
-    expect(model({ models: [] }).reason).toBe(copy.commandModelNeedsRecordingDone);
-    expect(model({ recording: false, models: [] }).reason).toBe(copy.commandNoModel);
-    expect(model({ recording: false }).reason).toBeUndefined();
+    expect(model({ models: [] }).reason).toBe(copy.commandNoModel);
+    expect(model({ recording: false }).action).toBeFunction();
   }
 });
 

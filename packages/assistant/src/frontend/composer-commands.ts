@@ -70,17 +70,14 @@ export function assistantBuiltInCommands(input: {
       keywords: ["model", "modell", "ki", "ai", "llm"],
       scope: "model",
       hiddenUntilSearch: input.models.length === 0,
-      reason: input.running
-        ? t.commandNeedsIdle
-        : input.recording
-          ? t.commandModelNeedsRecordingDone
-          : input.models.length === 0
-            ? t.commandNoModel
-            : undefined,
-      action: async (ctx) => {
-        const id = await ctx.openModelSelection();
-        return id ? { done: t.commandModelChosen({ name: input.models.find((model) => model.id === id)?.label ?? id }) } : "cancelled";
-      },
+      reason: input.running ? t.commandNeedsIdle : input.models.length === 0 ? t.commandNoModel : undefined,
+      // A recording replaces the composer's model control; Enter then narrows to the model list instead.
+      action: input.recording
+        ? undefined
+        : async (ctx) => {
+            const id = await ctx.openModelSelection();
+            return id ? { done: t.commandModelChosen({ name: input.models.find((model) => model.id === id)?.label ?? id }) } : "cancelled";
+          },
     },
     {
       id: "project",

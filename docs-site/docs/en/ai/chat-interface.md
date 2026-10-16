@@ -1188,8 +1188,8 @@ The **This chat** entries are **Choose model**, **Assign to project**,
 Choose model opens the composer's model menu. Type `/model ` or `/modell ` to
 list models directly; a check marks the current model. Choosing another model
 applies it to this chat and confirms the choice. You can change models once the
-current response finishes, or after you stop a dictation recording. Assign to
-project opens the Project list.
+current response finishes. While you record a dictation, Choose model lists the
+models instead of opening the menu. Assign to project opens the Project list.
 The names `/compact`, `/fork`, and `/new` still find those actions. Compact chat
 summarizes older history to free up room. Fork chat starts from the latest
 assistant response and brings your draft along. New chat starts empty and keeps
