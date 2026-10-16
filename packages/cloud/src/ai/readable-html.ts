@@ -236,6 +236,17 @@ class WorkBudget {
 
 const isPermalink = (text: string): boolean => text.length <= 4 && [...text].length <= 2 && !/[\p{L}\p{N}]/u.test(text);
 
+const linkable = (href: string | undefined, baseUrl: URL, image = false): boolean => {
+  if (!href || href.trim().startsWith("#")) return false;
+  try {
+    // Relative-reference validity depends on the base protocol, not its host or path.
+    const url = new URL(href, `${baseUrl.protocol}//x/`);
+    return url.protocol === "http:" || url.protocol === "https:" || (!image && url.protocol === "mailto:");
+  } catch {
+    return false;
+  }
+};
+
 const linkUrl = (href: string | undefined, baseUrl: URL, image = false): string | undefined => {
   if (!href || href.trim().startsWith("#")) return;
   try {
@@ -283,7 +294,16 @@ const renderInline = async (
   let size = 0;
   let truncated = false;
   let link:
-    | { index: number; url?: string; characters: number; plainIndex: number; leadingSpace: boolean; spaceBefore: boolean; size: number }
+    | {
+        index: number;
+        href?: string;
+        fragment: boolean;
+        characters: number;
+        plainIndex: number;
+        leadingSpace: boolean;
+        spaceBefore: boolean;
+        size: number;
+      }
     | undefined;
   let code: { depth: number; parts: string[]; ticks: BacktickRun } | undefined;
   const fits = (bytes: number): boolean => {
@@ -317,7 +337,7 @@ const renderInline = async (
       const pad = asCode && (content.startsWith("`") || content.endsWith("`")) ? " " : "";
       const markdown = asCode ? `${fence}${pad}${content}${pad}${fence}` : content;
       // Code spans bind tighter than link brackets, so their content stays verbatim inside a label.
-      append(link?.url && !asCode ? escapeLabel(markdown) : markdown);
+      append(link && !link.fragment && !asCode ? escapeLabel(markdown) : markdown);
       characters += content.length;
     }
     if (normalized.endsWith(" ")) pendingSpace = true;
@@ -349,11 +369,13 @@ const renderInline = async (
     if (event.name === "code" && open) code = { depth: 1, parts: [], ticks: { longest: 0, trailing: 0 } };
     else if (event.name === "a") {
       if (open && !link) {
-        const url = linkUrl(event.attrs.href, baseUrl);
-        if (url || event.attrs.href?.trim().startsWith("#")) {
+        const href = event.attrs.href;
+        const fragment = href?.trim().startsWith("#") ?? false;
+        if (fragment || linkable(href, baseUrl)) {
           link = {
             index: parts.length,
-            url,
+            href,
+            fragment,
             characters,
             plainIndex: plain.length,
             leadingSpace: pendingSpace,
@@ -364,15 +386,16 @@ const renderInline = async (
           parts.push("");
         }
       } else if (!open && link) {
-        if (!link.url && isPermalink(collapse(plain.slice(link.plainIndex).join("")))) {
+        if (link.fragment && isPermalink(collapse(plain.slice(link.plainIndex).join("")))) {
           parts.length = link.index;
           plain.length = link.plainIndex;
           characters = link.characters;
           size = link.size;
           pendingSpace = link.spaceBefore;
         } else if (characters > link.characters) {
-          const prefix = (link.leadingSpace && link.index > 0 ? " " : "") + (link.url ? "[" : "");
-          const suffix = link.url ? `](${link.url})` : "";
+          const url = link.fragment ? undefined : linkUrl(link.href, baseUrl);
+          const prefix = (link.leadingSpace && link.index > 0 ? " " : "") + (url ? "[" : "");
+          const suffix = url ? `](${url})` : "";
           if (fits(Buffer.byteLength(prefix) + Buffer.byteLength(suffix))) {
             parts[link.index] = prefix;
             if (suffix) parts.push(suffix);
@@ -382,8 +405,9 @@ const renderInline = async (
       }
     } else if (event.name === "img" && open) {
       const alt = collapse(event.attrs.alt ?? "");
+      if (!alt) continue;
       const url = linkUrl(event.attrs.src, baseUrl, true);
-      if (alt && url) {
+      if (url) {
         append(`![${escapeLabel(escapeText(alt.slice(0, Math.max(0, maxBytes - size) + 1)))}](${url})`);
         plain.push(alt);
         characters += alt.length;
@@ -623,7 +647,7 @@ export const htmlToReadableMarkdown = async (
       const event = events[index]!;
       if (budget.used(event.kind === "text" ? event.text.length : 0)) await budget.yield();
       if (event.kind === "text" && /\S/u.test(event.text)) return true;
-      if (event.kind === "open" && event.name === "img" && collapse(event.attrs.alt ?? "") && linkUrl(event.attrs.src, baseUrl, true))
+      if (event.kind === "open" && event.name === "img" && collapse(event.attrs.alt ?? "") && linkable(event.attrs.src, baseUrl, true))
         return true;
     }
     return false;
@@ -662,7 +686,13 @@ const hasRenderedH1 = async (events: Event[], span: Span, baseUrl: URL, budget: 
       if (event.kind === "text") value = event.text;
       else if (codeDepth) codeDepth += event.kind === "open" ? 1 : -1;
       else if (event.kind === "open" && event.name === "code") codeDepth = 1;
-      else if (event.kind === "open" && event.name === "img" && linkUrl(event.attrs.src, baseUrl, true)) value = event.attrs.alt ?? "";
+      else if (
+        event.kind === "open" &&
+        event.name === "img" &&
+        /\S/u.test(event.attrs.alt ?? "") &&
+        linkable(event.attrs.src, baseUrl, true)
+      )
+        value = event.attrs.alt ?? "";
       else if (blocks.has(event.name) || inlineBoundaries.has(event.name)) value = " ";
       if (fragment) {
         if (value) fragment.parts.push(value);
@@ -976,8 +1006,9 @@ const render = async (
     }
     if (name === "img" && open) {
       const alt = collapse(attrs.alt ?? "");
+      if (!alt) continue;
       const url = linkUrl(attrs.src, options.baseUrl, true);
-      if (alt && url) {
+      if (url) {
         write(`![${escapeLabel(escapeText(alt.slice(0, Math.max(0, options.maxBytes - size) + 1)))}](${url})`);
         readable = true;
       }

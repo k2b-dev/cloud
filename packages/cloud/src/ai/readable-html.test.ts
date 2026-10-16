@@ -323,6 +323,58 @@ describe("readable HTML", () => {
   });
 
   test.each([
+    ["images without alt", "", "<img src=a>", "", false],
+    ["empty links", "", "<a href=a></a>", "", false],
+    ["h1 images without alt", "", "<h1><img src=a></h1>", "", false],
+    ["heading permalinks", "", "<h1><a href=#><img alt=# src=a></a></h1>", "", true],
+    ["inline images without alt", "<h2>", "<img src=a>", "</h2>", false],
+    ["inline empty links", "<h2>", "<a href=a></a>", "</h2>", false],
+    ["cell images without alt", "<table><tr><td>", "<img src=a>", "</td></tr></table>", false],
+    ["cell empty links", "<table><tr><td>", "<a href=a></a>", "</td></tr></table>", false],
+    ["images with alt", "", "<img alt=Picture src=a>", "", true],
+    ["links with labels", "", "<a href=a>Link</a>", "", true],
+    ["heading images", "<h2>", "<img alt=Picture src=a>", "</h2>", true],
+    ["heading links", "<h2>", "<a href=a>Link</a>", "</h2>", true],
+    ["cell images", "<table><tr><td>", "<img alt=Picture src=a>", "</td></tr></table>", true],
+    ["cell links", "<table><tr><td>", "<a href=a>Link</a>", "</td></tr></table>", true],
+    ["caption images", "<table><caption>", "<img alt=Picture src=a>", "</caption></table>", true],
+    ["caption links", "<table><caption>", "<a href=a>Link</a>", "</caption></table>", true],
+    ["link images", "<a href=outer>", "<img alt=Picture src=a>", "</a>", true],
+  ])("bounds long-base URL construction for %s", async (_name, start, reference, end, truncated) => {
+    const html = `<base href="https://example.test/${"x".repeat(2 * 1024 * 1024)}/"><title>Fallback</title><main>${start}${reference.repeat(2000)}${end}<p>Text</p></main>`;
+    const OriginalURL = globalThis.URL;
+    let resolutions = 0;
+    globalThis.URL = class extends OriginalURL {
+      constructor(href: string | URL, base?: string | URL) {
+        if ((typeof base === "string" ? base.length : (base?.href.length ?? 0)) > 1024 * 1024) {
+          resolutions++;
+          // Fail deterministically without paying for repeated multi-megabyte copies on a regression.
+          if (resolutions > 1) throw new Error("Repeated long-base resolution");
+        }
+        super(href, base);
+      }
+    };
+    let result: string;
+    try {
+      result = await htmlToReadableMarkdown(Buffer.from(html), {
+        baseUrl,
+        maxBytes: 64 * 1024,
+        maxInputBytes: Buffer.byteLength(html),
+      });
+      expect(resolutions).toBeLessThanOrEqual(1);
+    } finally {
+      globalThis.URL = OriginalURL;
+    }
+    expect(Buffer.byteLength(result)).toBeLessThanOrEqual(64 * 1024);
+    if (truncated) expect(result).toEndWith("\n[Readable copy truncated at the file size limit.]\n");
+    else {
+      expect(result).toContain("Text");
+      expect(result).not.toContain("[Readable copy truncated at the file size limit.]");
+      expect(resolutions).toBe(0);
+    }
+  });
+
+  test.each([
     ["heading", "<h2>", "</h2>"],
     ["table cell", "<table><tr><td>", "</td></tr></table>"],
     ["caption", "<table><caption>", "</caption><tr><td>End</td></tr></table>"],
