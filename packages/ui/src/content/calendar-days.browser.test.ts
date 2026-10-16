@@ -234,6 +234,45 @@ const dayStart = (page: Page, key: string) =>
   );
 
 describe(`Calendar day and week views in ${browserName}`, () => {
+  test("the day view keeps the focus on a run of empty days while days join it at either end", async () => {
+    const page = await open(desktop);
+    try {
+      // The fixture starts with October 2–4 empty and ends with October 28–30 empty.
+      for (const edge of ["later", "earlier"] as const) {
+        const runs = page.locator("[data-calendar-group][data-empty]");
+        const run = edge === "later" ? runs.last() : runs.first();
+        expect(await run.getAttribute("data-calendar-keys")).toContain(edge === "later" ? "2026-10-30" : "2026-10-02");
+        const title = await run.locator(".k2b-calendar-days__run").textContent();
+        const button = run.locator(".k2b-calendar-days__empty");
+        await button.focus();
+        await button.evaluate((element, edge) => element.setAttribute("data-empty-stop", edge), edge);
+        await page.evaluate(
+          (from) => (window as unknown as Fixture).setRange(from, "2026-11-07"),
+          edge === "later" ? "2026-10-02" : "2026-09-25",
+        );
+        await page.waitForFunction(
+          (key) =>
+            [...document.querySelectorAll("[data-calendar-group][data-empty]")].some((run) =>
+              run.getAttribute("data-calendar-keys")?.split(",").includes(key),
+            ),
+          edge === "later" ? "2026-11-06" : "2026-09-25",
+        );
+        expect(
+          await page.evaluate((edge) => {
+            const active = document.activeElement;
+            return active?.isConnected && active.getAttribute("data-empty-stop") === edge
+              ? "the run's button"
+              : `${active?.tagName}.${active?.className}: ${active?.textContent?.slice(0, 100)}`;
+          }, edge),
+        ).toBe("the run's button");
+        expect(await run.locator(".k2b-calendar-days__summary").textContent()).toBe("10 days");
+        expect(await run.locator(".k2b-calendar-days__run").textContent()).not.toBe(title);
+      }
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("the day view keeps a focused event when the clock updates its free time", async () => {
     const page = await open(desktop, { runningClock: true });
     try {

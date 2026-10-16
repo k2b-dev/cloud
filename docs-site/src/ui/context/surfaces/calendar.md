@@ -276,7 +276,9 @@ and the visible hours.
 - **The day view** is one scroll through the loaded days with each day's
   heading on top while the day is in view. Runs of empty days merge into one
   row, "Nothing planned", that opens them; today, the day of `date`, and a day
-  that Go to finds inside such a run never fold. The wheel slows
+  that Go to finds inside such a run never fold. When loaded days join a run
+  at either end, it stays the same row, so its focused "Nothing planned"
+  button keeps focus. The wheel slows
   down within 72 px of a day start, and a scroll that rests within 40 px (88 px
   after a finger) glides onto it; a line at the top of the heading fills while
   the start passes. The previous and next buttons glide to the day before or

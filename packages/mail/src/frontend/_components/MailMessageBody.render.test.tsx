@@ -16,6 +16,8 @@ const [{ default: MailMessageBody }, { LocaleProvider }] = await Promise.all([im
 const renderBody = (linksDisabled = false) =>
   renderToString(() =>
     createComponent(MailMessageBody, {
+      theme: "light",
+      colors: "adapted",
       mailboxId: "Box001",
       messageId: "Msg001",
       format: "plain",
@@ -34,6 +36,8 @@ const renderLocalizedHtmlBody = (locale: string) =>
       locale,
       get children() {
         return createComponent(MailMessageBody, {
+          theme: "light",
+          colors: "adapted",
           mailboxId: "Box001",
           messageId: "Msg001",
           format: "html",
@@ -86,6 +90,8 @@ describe("blocked remote images", () => {
     const image = "00000000-0000-4000-8000-000000000001";
     const html = renderToString(() =>
       createComponent(MailMessageBody, {
+        theme: "light",
+        colors: "adapted",
         mailboxId: "Box001",
         messageId: "Msg001",
         format: "html",
@@ -107,6 +113,8 @@ describe("HTML mail message frame", () => {
   test("lets links open as normal tabs while the message itself stays sandboxed", () => {
     const html = renderToString(() =>
       createComponent(MailMessageBody, {
+        theme: "light",
+        colors: "adapted",
         mailboxId: "Box001",
         messageId: "Msg001",
         format: "html",
@@ -121,8 +129,26 @@ describe("HTML mail message frame", () => {
     const sandbox = /<iframe[^>]*\ssandbox="([^"]*)"/.exec(html)?.[1]?.split(" ") ?? [];
     // A tab opened from the frame would inherit its sandbox, and Safari then blocks sites that send
     // Cross-Origin-Opener-Policy. Escaping applies only to the new tab, not to the message.
-    expect(sandbox).toContain("allow-popups-to-escape-sandbox");
+    expect(sandbox).toEqual(["allow-scripts", "allow-popups", "allow-popups-to-escape-sandbox"]);
     expect(sandbox).not.toContain("allow-same-origin");
     expect(sandbox).not.toContain("allow-top-navigation");
   });
+});
+
+test("does not render a whitespace-only plain alternative", () => {
+  const html = renderToString(() =>
+    createComponent(MailMessageBody, {
+      theme: "dark",
+      colors: "adapted",
+      mailboxId: "Box001",
+      messageId: "Msg001",
+      format: "plain",
+      html: null,
+      plainText: "\n ",
+      attachments: [],
+      remoteContent: { imageIds: [], allowedByRule: false, sender: null, domain: null },
+      onSelectionChange: () => {},
+    }),
+  );
+  expect(html).not.toContain("<pre");
 });

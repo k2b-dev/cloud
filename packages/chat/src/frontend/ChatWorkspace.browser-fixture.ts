@@ -1,25 +1,50 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ServerWebSocket } from "bun";
-import type { z } from "zod";
+import { z } from "zod";
 import {
-  type ConversationSchema,
+  AddMembersSchema,
+  ChangeSchema,
+  ConversationSchema,
+  CreateConversationSchema,
+  CreateOutcomeSchema,
+  ExistingMatchSchema,
+  LeaveSchema,
+  MAX_EXISTING_MATCHES,
   MarkUnreadSchema,
+  MEMBER_PAGE_SIZE,
+  MemberPageSchema,
+  MemberPreviewSchema,
+  type MemberPrincipal,
+  MemberQuerySchema,
+  MemberRemovalSchema,
+  MemberSchema,
   type MessageViewSchema,
+  PEOPLE_PAGE_SIZE,
+  PeoplePageSchema,
+  PeopleQuerySchema,
+  PermissionSchema,
   READ_ALL_BATCH,
   READ_ALL_CONFIRM_FROM,
   ReadAllSchema,
   ReadSchema,
   readStart,
   SendMessageSchema,
+  SuccessSchema,
+  type SystemMessage,
   UNREAD_CAP,
+  UpdateConversationSchema,
+  UpdateMemberSchema,
 } from "../service/contracts";
 import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 type Message = z.infer<typeof MessageViewSchema>;
 type Person = { id: string; name: string };
-type Chat = { conversation: Conversation; messages: Message[] };
+type Group = { id: string; name: string; size: number };
+type Member = z.infer<typeof MemberSchema>;
+type Permission = z.infer<typeof PermissionSchema>;
+type Chat = { conversation: Conversation; messages: Message[]; members: Member[]; archived: boolean };
 type Subscription = { socket: ServerWebSocket<unknown>; id: string; channel: string; scope: { conversation?: string } };
 
 export const viewer: Person = { id: "11111111-1111-4111-8111-111111111111", name: "Robin Example" };
@@ -93,13 +118,62 @@ export const startChatHarness = async () => {
     fonts(),
   ]);
   const chats = new Map<string, Chat>();
+  const people = new Map([viewer, nora, tobias].map((person) => [person.id, person]));
+  const groups = new Map<string, Group>();
   const subscriptions: Subscription[] = [];
   const events: { cursor: number; channel: string; chat: string; data: unknown }[] = [];
   let cursor = 0;
   let nextChat = 0;
+  let nextAccess = 0;
+  let nextPerson = 0;
   let failing = 0;
   const reads: { chat: string; seq: number }[] = [];
   const posted: { chat: string; clientId: string; body: string }[] = [];
+
+  const principalId = (principal: MemberPrincipal) => (principal.type === "user" ? principal.userId : principal.groupId);
+  const makeMember = (principal: MemberPrincipal, permission: Permission, addedAt: string): Member => {
+    const id = principalId(principal);
+    const group = principal.type === "group" ? groups.get(id) : undefined;
+    return MemberSchema.parse({
+      accessId: `aaaaaaaa-aaaa-4aaa-8aaa-${String(++nextAccess).padStart(12, "0")}`,
+      principal,
+      displayName: principal.type === "user" ? people.get(id)!.name : group!.name,
+      guest: false,
+      deactivated: false,
+      groupSize: group?.size ?? null,
+      permission,
+      addedAt,
+    });
+  };
+  const managers = (chat: Chat) =>
+    chat.members.filter((member) => member.principal.type === "user" && !member.deactivated && member.permission === "admin").length;
+  const refreshMembers = (chat: Chat) => {
+    const others = chat.members.filter((member) => member.principal.type !== "user" || member.principal.userId !== viewer.id);
+    const derived =
+      others.length === 0
+        ? "You"
+        : others.length === 1
+          ? others[0]!.displayName
+          : // Like the server's titles: three names, then an ellipsis.
+            [
+              ...others
+                .slice(0, 3)
+                .map((member) => (member.principal.type === "group" ? member.displayName : member.displayName.split(" ")[0])),
+              ...(others.length > 3 ? ["…"] : []),
+            ].join(", ");
+    chat.conversation = {
+      ...chat.conversation,
+      title: chat.conversation.name ?? derived,
+      memberCount: chat.members.reduce((count, member) => count + (member.groupSize ?? 1), 0),
+    };
+  };
+  const joiningMembers = (chat: Chat, members: MemberPrincipal[]) =>
+    members.filter(
+      (principal) =>
+        !chat.members.some(
+          (member) => member.principal.type === principal.type && principalId(member.principal) === principalId(principal),
+        ),
+    );
 
   const deliver = (channel: string, chat: string, data: unknown) => {
     cursor += 1;
@@ -202,6 +276,17 @@ export const startChatHarness = async () => {
       mention: false,
     });
   };
+  const announce = (chat: string, system: SystemMessage, text: string) => {
+    const message = append(chat, viewer, "", new Date(chats.get(chat)!.conversation.lastActivityAt), "system");
+    message.system = system;
+    message.systemText = text;
+    publish(message);
+  };
+  const revoke = (chat: string) => {
+    publish(append(chat, nora, "", new Date(), "system"));
+    chats.delete(chat);
+    deliver("me", chat, { type: "membership", conversationId: chat });
+  };
 
   /** A chat with `count` messages, alternating between the viewer and the others, one every `spacing` minutes. */
   const addChat = (options: {
@@ -210,12 +295,16 @@ export const startChatHarness = async () => {
     count: number;
     end: Date;
     spacing?: number;
-    permission?: "read" | "write";
+    permission?: Permission;
     unread?: number;
   }) => {
     const id = chatId(++nextChat);
+    for (const person of options.members) people.set(person.id, person);
+    const members = [...new Map([viewer, ...options.members].map((person) => [person.id, person])).values()];
     const others = options.members.filter((member) => member.id !== viewer.id);
-    const title = options.name ?? (others.length === 1 ? others[0]!.name : others.map((member) => member.name.split(" ")[0]).join(", "));
+    const title =
+      options.name ??
+      (others.length === 0 ? "You" : others.length === 1 ? others[0]!.name : others.map((member) => member.name.split(" ")[0]).join(", "));
     const spacing = (options.spacing ?? 3) * 60_000;
     const start = new Date(options.end.getTime() - options.count * spacing);
     chats.set(id, {
@@ -225,18 +314,26 @@ export const startChatHarness = async () => {
         icon: null,
         purpose: null,
         title,
-        memberCount: options.members.length,
+        memberCount: members.length,
         unread: 0,
         read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
         withGuests: false,
         peerDeactivated: false,
         rev: 0,
-        permission: options.permission ?? "write",
+        permission: options.permission ?? "admin",
         createdAt: start.toISOString(),
         lastActivityAt: start.toISOString(),
         lastMessage: null,
       },
       messages: [],
+      members: members.map((person) =>
+        makeMember(
+          { type: "user", userId: person.id },
+          person.id === viewer.id ? (options.permission ?? "admin") : "write",
+          start.toISOString(),
+        ),
+      ),
+      archived: false,
     });
     append(id, viewer, "", start, "system");
     const lines = [
@@ -299,7 +396,90 @@ export const startChatHarness = async () => {
       if (url.pathname === "/fonts.css") return new Response(fontAssets.css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
       if (url.pathname === "/tabler-icons.woff2") return new Response(Bun.file(fontAssets.icons));
       if (url.pathname.startsWith("/fonts/")) return new Response(Bun.file(resolve(uiDist, `.${url.pathname}`)));
-      if (url.pathname === "/api/chat/conversations") return Response.json(list());
+      if (url.pathname === "/api/accounts/entities" && request.method === "GET") {
+        const search = (url.searchParams.get("search") ?? "").toLowerCase();
+        const kinds = (url.searchParams.get("kinds") ?? "user,group").split(",");
+        const excludedUsers = (url.searchParams.get("exclude_user_ids") ?? "").split(",");
+        const excludedGroups = (url.searchParams.get("exclude_group_ids") ?? "").split(",");
+        const items = [
+          ...[...people.values()]
+            .filter((person) => kinds.includes("user") && !excludedUsers.includes(person.id) && person.name.toLowerCase().includes(search))
+            .map((person) => ({
+              kind: "user",
+              user: { id: person.id, displayName: person.name, uid: person.name.toLowerCase().replaceAll(" ", "."), mail: null },
+            })),
+          ...[...groups.values()]
+            .filter((group) => kinds.includes("group") && !excludedGroups.includes(group.id) && group.name.toLowerCase().includes(search))
+            .map((group) => ({ kind: "group", group: { id: group.id, name: group.name, description: null } })),
+        ];
+        return Response.json({ items: items.slice(0, 10), pagination: { total: items.length, page: 1, per_page: 10, has_next: false } });
+      }
+      if (url.pathname === "/api/chat/people" && request.method === "GET") {
+        const { search, cursor } = PeopleQuerySchema.parse(Object.fromEntries(url.searchParams));
+        const coMembers = new Set(
+          [...chats.values()].flatMap((chat) =>
+            chat.members.flatMap((member) => (member.principal.type === "user" ? [member.principal.userId] : [])),
+          ),
+        );
+        const matches = [...people.values()]
+          .filter(
+            (person) =>
+              person.id !== viewer.id && coMembers.has(person.id) && person.name.toLowerCase().includes(search?.toLowerCase() ?? ""),
+          )
+          .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || a.id.localeCompare(b.id))
+          .filter(
+            (person) =>
+              !cursor ||
+              person.name.toLowerCase().localeCompare(cursor.name) > 0 ||
+              (person.name.toLowerCase() === cursor.name && person.id > cursor.id),
+          );
+        const items = matches.slice(0, PEOPLE_PAGE_SIZE).map((person) => ({ id: person.id, displayName: person.name }));
+        const last = items.at(-1);
+        return Response.json(
+          PeoplePageSchema.parse({
+            items,
+            nextCursor:
+              matches.length > PEOPLE_PAGE_SIZE && last ? JSON.stringify({ name: last.displayName.toLowerCase(), id: last.id }) : null,
+          }),
+        );
+      }
+      if (url.pathname === "/api/chat/conversations" && request.method === "GET") return Response.json(list());
+      if (url.pathname === "/api/chat/conversations" && request.method === "POST") {
+        const input = CreateConversationSchema.parse(await request.json());
+        const direct = new Set([viewer.id, ...input.members.flatMap((principal) => (principal.type === "user" ? [principal.userId] : []))]);
+        if (!input.allowDuplicate && input.members.every((principal) => principal.type === "user")) {
+          const matches = [...chats.values()]
+            .filter(
+              (chat) =>
+                chat.members.length === direct.size &&
+                chat.members.every((member) => member.principal.type === "user" && direct.has(member.principal.userId)),
+            )
+            .sort(
+              (a, b) =>
+                b.conversation.lastActivityAt.localeCompare(a.conversation.lastActivityAt) ||
+                b.conversation.id.localeCompare(a.conversation.id),
+            )
+            .slice(0, MAX_EXISTING_MATCHES)
+            .map((chat) => ExistingMatchSchema.parse({ ...chat.conversation, archived: chat.archived }));
+          if (matches.length) return Response.json(CreateOutcomeSchema.parse({ outcome: "existing", matches }));
+        }
+        const latest = [...chats.values()].reduce((at, chat) => Math.max(at, Date.parse(chat.conversation.lastActivityAt)), 0);
+        const id = addChat({
+          members: [...direct].map((id) => people.get(id)!),
+          name: input.name ?? undefined,
+          count: 1,
+          end: new Date(latest + 1),
+          spacing: 0,
+        });
+        const chat = chats.get(id)!;
+        chat.conversation = { ...chat.conversation, icon: input.icon ?? null, purpose: input.purpose ?? null };
+        for (const principal of input.members.filter((principal) => principal.type === "group"))
+          chat.members.push(makeMember(principal, "write", chat.conversation.createdAt));
+        refreshMembers(chat);
+        publish(chat.messages[0]!);
+        deliver("me", id, { type: "membership", conversationId: id });
+        return Response.json(CreateOutcomeSchema.parse({ outcome: "created", conversation: chat.conversation }), { status: 201 });
+      }
       if (url.pathname === "/api/chat/conversations/read-all" && request.method === "POST") {
         const { confirmed } = ReadAllSchema.parse(await request.json());
         const candidates = () =>
@@ -315,11 +495,148 @@ export const startChatHarness = async () => {
         for (const chat of batch) read(chat.conversation.id, chat.messages.length);
         return Response.json({ outcome: "done", marked: batch.length, more: candidates().length > 0 });
       }
-      const match = /^\/api\/chat\/conversations\/([^/]+)(?:\/([a-z]+))?$/.exec(url.pathname);
+      const match = /^\/api\/chat\/conversations\/([^/]+)(?:\/([a-z]+)(?:\/([^/]+))?)?$/.exec(url.pathname);
       if (match) {
-        const [, id, part] = match;
+        const [, id, part, accessId] = match;
         const chat = chats.get(id!);
         if (!chat) return Response.json({ code: "NOT_FOUND", message: "Chat not found." }, { status: 404 });
+        if ((request.method === "PATCH" && !part) || (part === "members" && request.method !== "GET")) {
+          if (chat.conversation.permission !== "admin")
+            return Response.json({ code: "FORBIDDEN", message: "Manage permission is required." }, { status: 403 });
+        }
+        if (!part && request.method === "PATCH") {
+          const input = UpdateConversationSchema.parse(await request.json());
+          chat.conversation = {
+            ...chat.conversation,
+            ...(input.name !== undefined ? { name: input.name } : {}),
+            ...(input.icon !== undefined ? { icon: input.icon } : {}),
+            ...(input.purpose !== undefined ? { purpose: input.purpose } : {}),
+          };
+          refreshMembers(chat);
+          announce(id!, { code: "details_changed", params: input }, `${viewer.name} changed the chat details.`);
+          return Response.json(ConversationSchema.parse(chat.conversation));
+        }
+        if (part === "members" && !accessId && request.method === "GET") {
+          const { q, cursor } = MemberQuerySchema.parse(Object.fromEntries(url.searchParams));
+          const matches = chat.members
+            .filter((member) => member.displayName.toLowerCase().includes(q?.toLowerCase() ?? ""))
+            .sort((a, b) => a.displayName.toLowerCase().localeCompare(b.displayName.toLowerCase()) || a.accessId.localeCompare(b.accessId))
+            .filter(
+              (member) =>
+                !cursor ||
+                member.displayName.toLowerCase().localeCompare(cursor.name) > 0 ||
+                (member.displayName.toLowerCase() === cursor.name && member.accessId > cursor.id),
+            );
+          const own = chat.members.find((member) => member.principal.type === "user" && member.principal.userId === viewer.id);
+          const items = matches.slice(0, MEMBER_PAGE_SIZE);
+          const last = items.at(-1);
+          return Response.json(
+            MemberPageSchema.parse({
+              items,
+              nextCursor:
+                matches.length > MEMBER_PAGE_SIZE && last
+                  ? JSON.stringify({ name: last.displayName.toLowerCase(), id: last.accessId })
+                  : null,
+              managers: managers(chat),
+              self: own ? { accessId: own.accessId, permission: own.permission, active: !own.deactivated } : null,
+            }),
+          );
+        }
+        if (part === "members" && request.method === "POST" && (!accessId || accessId === "preview")) {
+          const { members } = AddMembersSchema.parse(await request.json());
+          const additions = joiningMembers(chat, members);
+          const throughGroups = additions.reduce(
+            (count, principal) => count + (principal.type === "group" ? groups.get(principal.groupId)!.size : 0),
+            0,
+          );
+          const joining = additions.filter((principal) => principal.type === "user").length + throughGroups;
+          if (accessId === "preview")
+            return Response.json(
+              MemberPreviewSchema.parse({ joining, throughGroups, memberCount: chat.conversation.memberCount + joining }),
+            );
+          const added = additions.map((principal) => makeMember(principal, "write", chat.conversation.lastActivityAt));
+          chat.members.push(...added);
+          refreshMembers(chat);
+          const users = added
+            .filter((member) => member.principal.type === "user")
+            .map((member) => ({ id: principalId(member.principal), name: member.displayName }));
+          const addedGroups = added
+            .filter((member) => member.principal.type === "group")
+            .map((member) => ({ id: principalId(member.principal), name: member.displayName }));
+          if (users.length)
+            announce(
+              id!,
+              { code: "members_added", params: { members: users } },
+              `${viewer.name} added ${users.map((person) => person.name).join(", ")}.`,
+            );
+          if (addedGroups.length)
+            announce(
+              id!,
+              { code: "groups_added", params: { groups: addedGroups } },
+              `${viewer.name} added ${addedGroups.map((group) => group.name).join(", ")}.`,
+            );
+          return Response.json(ChangeSchema.parse({ added: added.length }));
+        }
+        if (part === "members" && accessId && (request.method === "PATCH" || request.method === "DELETE")) {
+          const member = chat.members.find((entry) => entry.accessId === accessId);
+          if (!member) return Response.json({ code: "NOT_FOUND", message: "Member not found." }, { status: 404 });
+          const permission = request.method === "PATCH" ? UpdateMemberSchema.parse(await request.json()).permission : null;
+          if (
+            member.principal.type === "user" &&
+            !member.deactivated &&
+            member.permission === "admin" &&
+            permission !== "admin" &&
+            managers(chat) === 1
+          )
+            return Response.json(
+              { code: "LAST_MANAGER", message: "The chat must keep at least one member with Manage permission." },
+              { status: 409 },
+            );
+          const person = { id: principalId(member.principal), name: member.displayName };
+          if (permission) {
+            member.permission = permission;
+            if (member.principal.type === "user" && member.principal.userId === viewer.id)
+              chat.conversation = { ...chat.conversation, permission };
+            announce(id!, { code: "permission_changed", params: { member: person, permission } }, `${person.name}'s permission changed.`);
+          } else {
+            chat.members = chat.members.filter((entry) => entry !== member);
+            refreshMembers(chat);
+            if (member.principal.type === "user" && member.principal.userId === viewer.id) revoke(id!);
+            else
+              announce(
+                id!,
+                member.principal.type === "group"
+                  ? { code: "group_removed", params: { group: person } }
+                  : { code: "member_removed", params: { member: person } },
+                `${viewer.name} removed ${person.name}.`,
+              );
+          }
+          return Response.json(
+            permission ? SuccessSchema.parse({ success: true }) : MemberRemovalSchema.parse({ success: true, keptThroughGroup: false }),
+          );
+        }
+        if (part === "leave" && request.method === "POST") {
+          const { successor } = LeaveSchema.parse(await request.json());
+          const own = chat.members.find((member) => member.principal.type === "user" && member.principal.userId === viewer.id)!;
+          const lastManager = own.permission === "admin" && !own.deactivated && managers(chat) === 1;
+          if (lastManager && !successor)
+            return Response.json(
+              { code: "CONFLICT", message: "Choose another direct member as successor before leaving as the last manager." },
+              { status: 409 },
+            );
+          const next = successor
+            ? chat.members.find(
+                (member) => member.accessId === successor && member !== own && member.principal.type === "user" && !member.deactivated,
+              )
+            : undefined;
+          if (successor && !next)
+            return Response.json({ code: "BAD_INPUT", message: "Choose another direct member as successor." }, { status: 400 });
+          if (lastManager && next) next.permission = "admin";
+          chat.members = chat.members.filter((member) => member !== own);
+          refreshMembers(chat);
+          revoke(id!);
+          return Response.json(MemberRemovalSchema.parse({ success: true, keptThroughGroup: false }));
+        }
         if (part === "read" && request.method === "POST") {
           const { seq } = ReadSchema.parse(await request.json());
           reads.push({ chat: id!, seq });
@@ -362,15 +679,17 @@ export const startChatHarness = async () => {
     },
     websocket: {
       message(socket, raw) {
-        const frame = JSON.parse(String(raw)) as {
-          t: string;
-          id: string;
-          channel: string;
-          scope: { conversation?: string };
-          after?: string;
-        };
+        const frame = z
+          .object({
+            t: z.string(),
+            id: z.string(),
+            channel: z.string().optional(),
+            scope: z.object({ conversation: z.string().optional() }).optional(),
+            after: z.string().optional(),
+          })
+          .parse(JSON.parse(String(raw)));
         if (frame.t === "sub") {
-          subscriptions.push({ socket, id: frame.id, channel: frame.channel, scope: frame.scope ?? {} });
+          subscriptions.push({ socket, id: frame.id, channel: frame.channel!, scope: frame.scope ?? {} });
           const after = Number(frame.after?.slice(2) ?? cursor);
           socket.send(JSON.stringify({ t: "ready", id: frame.id, cursor: `c.${after}` }));
           for (const event of events) {
@@ -398,6 +717,41 @@ export const startChatHarness = async () => {
   return {
     url: server.url.href,
     addChat,
+    /** Adds a person to the directory available to the member pickers. */
+    addPerson: (person: Person) => {
+      people.set(person.id, person);
+    },
+    /** Adds a group with a deterministic size to the directory. */
+    addGroup: (group: Group) => {
+      groups.set(group.id, group);
+    },
+    /** Adds `count` deterministic direct members with Write permission. */
+    seedMembers: (chat: string, count: number) => {
+      const entry = chats.get(chat)!;
+      const existing = entry.members.filter((member) => member.displayName.startsWith("Member ")).length;
+      for (let index = 1; index <= count; index += 1) {
+        const person = {
+          id: `bbbbbbbb-bbbb-4bbb-8bbb-${String(++nextPerson).padStart(12, "0")}`,
+          name: `Member ${String(existing + index).padStart(3, "0")}`,
+        };
+        people.set(person.id, person);
+        entry.members.push(makeMember({ type: "user", userId: person.id }, "write", entry.conversation.createdAt));
+      }
+      refreshMembers(entry);
+    },
+    /** Sets the viewer's direct permission and the conversation's projected permission. */
+    setPermission: (chat: string, permission: Permission) => {
+      const entry = chats.get(chat)!;
+      const own = entry.members.find((member) => member.principal.type === "user" && member.principal.userId === viewer.id)!;
+      own.permission = PermissionSchema.parse(permission);
+      entry.conversation = { ...entry.conversation, permission: own.permission };
+    },
+    /** Sets the viewer's archived flag reported by duplicate-chat matches. */
+    archive: (chat: string, archived: boolean) => {
+      chats.get(chat)!.archived = archived;
+    },
+    /** Returns the current member entries for assertions. */
+    members: (chat: string): Member[] => chats.get(chat)?.members ?? [],
     posted,
     reads,
     /** Advances the viewer's read state on another device, without recording a page report. */
@@ -405,6 +759,11 @@ export const startChatHarness = async () => {
     /** Isolates scenarios; IDs stay unique so a closing page cannot report against a later chat. */
     reset: () => {
       chats.clear();
+      people.clear();
+      for (const person of [viewer, nora, tobias]) people.set(person.id, person);
+      groups.clear();
+      nextAccess = 0;
+      nextPerson = 0;
       events.length = 0;
       reads.length = 0;
       posted.length = 0;
@@ -427,22 +786,25 @@ export const startChatHarness = async () => {
     rename: (chat: string, title: string) => {
       const entry = chats.get(chat)!;
       entry.conversation = { ...entry.conversation, name: title, title };
-      publish(append(chat, viewer, "", new Date(), "system"));
+      announce(chat, { code: "details_changed", params: { name: title } }, `${viewer.name} changed the chat details.`);
     },
     /** Announces a system message and then answers 404 for the chat, as removing the reader does. */
-    revoke: (chat: string) => {
-      publish(append(chat, nora, "", new Date(), "system"));
-      chats.delete(chat);
-    },
+    revoke,
     messageId,
     /** The island's props for an address, as the server renders them. */
-    props: (address: { chat?: string; message?: string }, now: Date): ChatWorkspaceProps => {
+    props: (
+      address: { chat?: string; message?: string; panel?: string },
+      now: Date,
+      options: { guest?: boolean } = {},
+    ): ChatWorkspaceProps => {
       const open = address.chat ? snapshot(address.chat, address.message ?? null) : null;
       return {
         cursor: `c.${cursor}`,
         sidebar: list(),
         open: open && { conversation: open.conversation, page: open.page, focus: open.focus },
         chatId: address.chat ?? null,
+        guest: options.guest ?? false,
+        panel: open && address.panel === "info" ? "info" : null,
         viewerId: viewer.id,
         dateConfig: { locale: "en", timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
         now: now.toISOString(),

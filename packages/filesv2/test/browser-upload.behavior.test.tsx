@@ -1,4 +1,5 @@
-import { afterEach, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import { sha256 } from "@k2b/filegate/utils";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -8,22 +9,41 @@ const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStor
 const calls: string[] = [];
 const targetBases = new Set<string>();
 let openStatus = 200;
+let commitCode = "";
+const existingNames = new Set<string>();
+const starts: { path: string; onConflict: string; idempotencyKey: string }[] = [];
+let holdDirectories = false;
+const nativeTimeout = AbortSignal.timeout;
+let restoreTimeout = () => {};
 mock.module("../src/api/client", () => ({
   apiClient: {
     bases: {
       ":baseId": {
         entry: { $get: () => new Promise(() => {}) },
         directories: {
-          $post: async (input: { param: { baseId: string }; json: { path: string } }) => {
+          $post: async (input: { param: { baseId: string }; json: { path: string } }, options?: { init?: { signal?: AbortSignal } }) => {
             targetBases.add(input.param.baseId);
             calls.push(`mkdir ${input.json.path}`);
+            if (holdDirectories)
+              return new Promise<Response>((_, reject) => {
+                const signal = options?.init?.signal;
+                signal?.throwIfAborted();
+                signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+              });
             return Response.json({ base: initial.base, entry: { name: "", path: input.json.path, directory: true } });
           },
         },
         uploads: {
-          $post: async (input: { param: { baseId: string }; json: { path: string; size: number; onConflict: string } }) => {
+          $post: async (input: {
+            param: { baseId: string };
+            json: { path: string; size: number; onConflict: string; idempotencyKey: string };
+          }) => {
             targetBases.add(input.param.baseId);
             calls.push(`open ${input.json.path} ${input.json.size} ${input.json.onConflict}`);
+            starts.push(input.json);
+            if (openStatus === 429)
+              return Response.json({ message: "Rate limit exceeded" }, { status: 429, headers: { "Retry-After": "5" } });
+            if (existingNames.has(input.json.path)) return Response.json({ code: "path_conflict", message: "exists" }, { status: 409 });
             if (openStatus !== 200) return Response.json({ code: "path_conflict", message: "exists" }, { status: openStatus });
             return Response.json({
               id: "s1",
@@ -39,6 +59,8 @@ mock.module("../src/api/client", () => ({
             commit: {
               $post: async () => {
                 calls.push("commit");
+                if (commitCode)
+                  return Response.json({ code: commitCode, message: "This file changed. Check it before replacing." }, { status: 409 });
                 return Response.json({ base: initial.base, entry: { ...file, size: 6 } });
               },
             },
@@ -93,14 +115,23 @@ async function mountWithUploads(root: HTMLElement, props: BrowserProps) {
     );
   }, root);
 }
-afterEach(() => {
+beforeEach(() => setSystemTime(new Date("2026-10-15T00:00:00Z")));
+afterEach(async () => {
+  setSystemTime();
   cleanup();
+  // Let work a test left running settle before its calls are cleared, so it cannot leak into the next test.
+  await flush();
   if (storageDescriptor) Object.defineProperty(globalThis, "localStorage", storageDescriptor);
   else Reflect.deleteProperty(globalThis, "localStorage");
   calls.length = 0;
   targetBases.clear();
   received = 0;
   openStatus = 200;
+  commitCode = "";
+  starts.length = 0;
+  existingNames.clear();
+  holdDirectories = false;
+  restoreTimeout();
   globalThis.fetch = originalFetch;
 });
 
@@ -531,4 +562,154 @@ test("a new empty file is created at once instead of waiting behind a running up
   // The running batch is untouched: the new file is not a row behind it.
   expect(dom.document.querySelector(".filesv2-upload__count")?.textContent).toBe("0 of 1 file");
   expect([...dom.document.querySelectorAll(".k2b-toast__description")].map((node) => node.textContent)).toContain("notes.md created.");
+});
+
+test("a folder request with no response fails its group visibly and the next group continues", async () => {
+  const dom = await mountBrowser();
+  const deadlines: number[] = [];
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+    deadlines.push(ms);
+    return nativeTimeout(40);
+  });
+  restoreTimeout = () => timeout.mockRestore();
+  holdDirectories = true;
+  pickFolder(dom, ["Photos/first.txt", "Photos/second.txt"]);
+  await flush();
+  expect(deadlines).toEqual([60_000]);
+  expect(calls).toEqual(["mkdir Documents/Photos"]);
+  const rows = [...dom.document.querySelectorAll('.filesv2-upload-row[data-status="failed"]')];
+  expect(rows).toHaveLength(2);
+  expect(rows.map((row) => row.querySelector(".filesv2-upload-row__reason")?.textContent)).toEqual([
+    "No response from the server",
+    "No response from the server",
+  ]);
+  expect(dom.document.querySelector(".filesv2-upload")?.getAttribute("data-phase")).toBe("errors");
+  const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]:not([webkitdirectory])')!;
+  Object.defineProperty(input, "files", { configurable: true, value: [new File([], "next.txt")] });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await flush();
+  expect(calls).toEqual(["mkdir Documents/Photos", "open Documents/next.txt 0 error", "commit"]);
+  expect(dom.document.querySelectorAll('.filesv2-upload-row[data-status="success"]')).toHaveLength(1);
+});
+
+const uploadKeys = () =>
+  Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)!).filter((key) => key.startsWith("filesv2:upload:"));
+const pickFiles = (dom: ReturnType<typeof createDomTestHarness>, files: File[]) => {
+  const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]:not([webkitdirectory])')!;
+  Object.defineProperty(input, "files", { configurable: true, value: files });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+};
+const retryFailed = (dom: ReturnType<typeof createDomTestHarness>) => {
+  dom.document.querySelector<HTMLButtonElement>('button[aria-label^="Try again:"]')!.click();
+};
+
+test("Only new files leaves no resume keys for the five existing names", async () => {
+  const dom = await mountBrowser();
+  const files = Array.from({ length: 5 }, (_, i) => new File([], `file-${i}.txt`, { lastModified: 123 }));
+  pickFiles(dom, files);
+  await flush();
+  expect(calls.filter((call) => call === "commit")).toHaveLength(5);
+  for (const file of files) existingNames.add(`Documents/${file.name}`);
+  pickFiles(dom, [...files, new File([], "new.txt", { lastModified: 123 })]);
+  await flush();
+  answer(dom, "Upload only the 5 new files");
+  await flush();
+  // The panel renders only its visible rows, so the requests show what happened: one question, five skips, one new file.
+  expect(calls.slice(10)).toEqual([
+    ...files.map((file) => `open Documents/${file.name} 0 error`),
+    "open Documents/new.txt 0 error",
+    "commit",
+  ]);
+  expect(uploadKeys()).toEqual([]);
+});
+
+test("a commit write conflict asks exactly once and replacement uses a fresh overwrite key", async () => {
+  const dom = await mountBrowser();
+  commitCode = "write_conflict";
+  const questions = new Set<Element>();
+  const observer = new MutationObserver(() => {
+    for (const dialog of dom.document.querySelectorAll("dialog")) questions.add(dialog);
+  });
+  observer.observe(dom.document.body, { childList: true, subtree: true });
+  try {
+    pickFiles(dom, [new File([], "notes.txt", { lastModified: 123 })]);
+    await flush();
+    expect(calls).toContain("abort");
+    expect(dom.document.querySelector("dialog")?.textContent).toContain("notes.txt");
+    answer(dom, "Replace existing");
+    await flush();
+    expect(starts.map((start) => start.onConflict)).toEqual(["error", "overwrite"]);
+    expect(starts[1]!.idempotencyKey).not.toBe(starts[0]!.idempotencyKey);
+    expect(dom.document.querySelector("dialog")).toBeNull();
+    expect(questions.size).toBe(1);
+    expect(dom.document.querySelector('.filesv2-upload-row[data-status="failed"] .filesv2-upload-row__reason')?.textContent).toBe(
+      "This file changed. Check it before replacing.",
+    );
+    expect(uploadKeys()).toEqual([]);
+  } finally {
+    observer.disconnect();
+  }
+});
+
+test("receipt_unknown fails visibly and Try again uses a new upload key", async () => {
+  const dom = await mountBrowser();
+  commitCode = "receipt_unknown";
+  pickFiles(dom, [new File([], "notes.txt", { lastModified: 123 })]);
+  await flush();
+  expect(dom.document.querySelectorAll('.filesv2-upload-row[data-status="failed"]')).toHaveLength(1);
+  expect(calls).not.toContain("abort");
+  expect(uploadKeys()).toEqual([]);
+  commitCode = "";
+  retryFailed(dom);
+  await flush();
+  expect(starts).toHaveLength(2);
+  expect(starts[1]!.idempotencyKey).not.toBe(starts[0]!.idempotencyKey);
+  expect(dom.document.querySelectorAll('.filesv2-upload-row[data-status="success"]')).toHaveLength(1);
+});
+
+test("Filegate capacity preserves progress and Try again reuses the upload key", async () => {
+  const dom = await mountBrowser();
+  let busy = true;
+  const accepted = new Map<number, string>();
+  const puts: number[] = [];
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.searchParams.has("segments")) return Response.json({ items: [...accepted].map(([index, hash]) => ({ index, hash })) });
+      if (init?.method === "PUT") {
+        const index = Number(url.searchParams.get("segment"));
+        puts.push(index);
+        if (busy && index === 1)
+          return Response.json({ error: "upload_capacity", message: "capacity" }, { status: 503, headers: { "Retry-After": "5" } });
+        const bytes = await new Response(init.body).arrayBuffer();
+        accepted.set(index, await sha256(bytes));
+        received += bytes.byteLength;
+      }
+      return Response.json({ id: "s1", root: "cloud", size: 6, chunkSize: 4, state: "open", received });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  pickFiles(dom, [new File(["abcdef"], "notes.txt", { lastModified: 123 })]);
+  await flush();
+  expect(dom.document.querySelector(".filesv2-upload-row__reason")?.textContent).toBe("The file server is busy");
+  expect(calls).not.toContain("abort");
+  expect(uploadKeys()).toHaveLength(1);
+  expect(received).toBe(4);
+  busy = false;
+  retryFailed(dom);
+  await flush();
+  expect(starts).toHaveLength(2);
+  expect(puts).toEqual([0, 1, 1]);
+  expect(starts[1]!.idempotencyKey).toBe(starts[0]!.idempotencyKey);
+  expect(dom.document.querySelectorAll('.filesv2-upload-row[data-status="success"]')).toHaveLength(1);
+});
+
+test("a platform rate limit names the cause and keeps the upload key", async () => {
+  const dom = await mountBrowser();
+  openStatus = 429;
+  pickFiles(dom, [new File([], "notes.txt", { lastModified: 123 })]);
+  await flush();
+  expect(dom.document.querySelector(".filesv2-upload-row__reason")?.textContent).toBe("Too many uploads in a short time");
+  expect(uploadKeys()).toHaveLength(1);
+  expect(calls).not.toContain("abort");
 });

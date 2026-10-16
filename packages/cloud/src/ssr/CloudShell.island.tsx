@@ -9,6 +9,7 @@ import type { LayoutBreadcrumb } from "./layout-runtime";
 import ProfilePreferences from "./ProfilePreferences";
 import { platformMessages } from "./platform-messages";
 import RailApps from "./RailApps";
+import ShellFocusToggle from "./ShellFocusToggle";
 import { useShellData } from "./shell-data";
 
 type CloudShellProps =
@@ -32,6 +33,7 @@ function RailNavigation(props: { currentPath: string }) {
   createEffect(() => setAppLaunchpadContext(data.apps, data.legalLinks, profile));
   return (
     <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label={t().apps}>
+      <ShellFocusToggle variant="rail" />
       <RailApps apps={data.apps} settings={data.rail} currentPath={props.currentPath} />
       <AppLaunchpadButton profile={profile} apps={data.apps} legalLinks={data.legalLinks} variant="rail" label={t().openApps} />
       <div class="mt-auto shrink-0 flex flex-col items-center gap-1">

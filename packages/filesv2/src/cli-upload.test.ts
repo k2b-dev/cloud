@@ -1,13 +1,21 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { CloudCliContext } from "@k2b/cloud/cli";
 import { sha256 } from "@k2b/filegate/utils";
+import type { Hono } from "hono";
+import { hc } from "hono/client";
+import filesCli from "./cli";
 import { uploadFile } from "./cli-upload";
 import type { EntryResult, UploadSession } from "./contracts";
+import { UploadTransferError, uploadResponseFailure } from "./upload-transfer";
 
+const originalFetch = globalThis.fetch;
 const defaults = new Map<string, string>();
+const errors: string[] = [];
 const ctx = {
+  error: (value: string) => void errors.push(value),
   getDefault: async (key: string) => defaults.get(key),
   setDefault: async (key: string, value: string | undefined) => {
     if (value === undefined) defaults.delete(key);
@@ -17,15 +25,19 @@ const ctx = {
 };
 const directories: string[] = [];
 const servers: ReturnType<typeof Bun.serve>[] = [];
+beforeEach(() => setSystemTime(new Date("2026-10-15T00:00:00Z")));
 afterEach(async () => {
+  setSystemTime();
+  globalThis.fetch = originalFetch;
   defaults.clear();
+  errors.length = 0;
   for (const server of servers.splice(0)) server.stop(true);
   for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true });
 });
-async function file(contents: string) {
+async function file(contents: string, name = "file") {
   const dir = await mkdtemp(join(tmpdir(), "filesv2-upload-"));
   directories.push(dir);
-  const path = join(dir, "file");
+  const path = join(dir, name);
   await writeFile(path, contents);
   return path;
 }
@@ -249,4 +261,346 @@ test("lost start responses retain the durable key and committed replay transfers
   });
   expect(replayed).toEqual(result);
   expect(defaults.size).toBe(0);
+});
+
+test.each(["en", "de"])("TTY progress uses acknowledged bytes, throttles updates, and always shows 100 percent (%s)", async (locale) => {
+  const local = await file("abcdefghijklmnopqrst");
+  const descriptor = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+  const nativeFetch = globalThis.fetch;
+  const start = Date.UTC(2026, 9, 15);
+  const now = spyOn(Date, "now").mockReturnValue(start);
+  let received = 0;
+  let put = 0;
+  Object.defineProperty(process.stderr, "isTTY", { configurable: true, value: true });
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (new URL(String(input)).searchParams.has("segments")) return Response.json({ items: [] });
+      if (init?.method === "PUT") {
+        received += 4;
+        now.mockReturnValue(start + [100, 999, 1000, 1100, 1101][put++]!);
+      }
+      return Response.json({ id: "session", root: "cloud", size: 20, chunkSize: 4, state: "open", received });
+    },
+    { preconnect: nativeFetch.preconnect },
+  );
+  try {
+    await uploadFile({ ...ctx, options: { ...ctx.options, output: "text", locale } }, local, {
+      scope: "base/path/error",
+      open: async () => session("https://filegate.test/lease?token=secret", 20),
+      renew: async () => {
+        throw new Error("must not renew");
+      },
+      commit: async () => {
+        expect(errors.at(-2)).toEndWith("(100 %)");
+        return result;
+      },
+      abort: async () => {
+        throw new Error("must not abort");
+      },
+    });
+    const uploading = locale === "de" ? "Hochladen" : "Uploading";
+    const of = locale === "de" ? "von" : "of";
+    expect(errors).toEqual([
+      `${uploading} file`,
+      `\x1b[1A\x1b[2K${uploading} file: 0.0 MiB ${of} 0.0 MiB (0 %)`,
+      `\x1b[1A\x1b[2K${uploading} file: 0.0 MiB ${of} 0.0 MiB (60 %)`,
+      `\x1b[1A\x1b[2K${uploading} file: 0.0 MiB ${of} 0.0 MiB (100 %)`,
+      locale === "de" ? "Upload abschließen…" : "Finishing upload…",
+      locale === "de" ? "Upload abgeschlossen." : "Upload done.",
+    ]);
+  } finally {
+    globalThis.fetch = nativeFetch;
+    now.mockRestore();
+    if (descriptor) Object.defineProperty(process.stderr, "isTTY", descriptor);
+    else Reflect.deleteProperty(process.stderr, "isTTY");
+  }
+});
+
+test.each([50, 0, undefined])("TTY upload lines fit the terminal and preserve progress amounts (columns: %s)", async (columns) => {
+  const name = `${"写真😀".repeat(12)}.txt`;
+  const local = await file("abc", name);
+  const ttyDescriptor = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+  const columnsDescriptor = Object.getOwnPropertyDescriptor(process.stderr, "columns");
+  Object.defineProperty(process.stderr, "isTTY", { configurable: true, value: true });
+  Object.defineProperty(process.stderr, "columns", { configurable: true, value: columns });
+  try {
+    await uploadFile({ ...ctx, options: { ...ctx.options, output: "text" } }, local, {
+      scope: "base/path/error",
+      open: async () => ({ ...session("https://filegate.test/unused", 3), state: "committed" }),
+      renew: async () => {
+        throw new Error("must not renew");
+      },
+      commit: async () => result,
+      abort: async () => {
+        throw new Error("must not abort");
+      },
+    });
+    expect(errors).toHaveLength(4);
+    const prefix = "\x1b[1A\x1b[2K";
+    const amount = ": 0.0 MiB of 0.0 MiB (100 %)";
+    expect(errors[1]).toStartWith(prefix);
+    expect(errors[1]).toEndWith(amount);
+    if (columns) {
+      for (const line of errors) expect(Bun.stringWidth(line.replace(prefix, ""))).toBeLessThanOrEqual(columns - 1);
+      expect(errors[0]).toEndWith("…");
+      expect(errors[1]).toContain(`…${amount}`);
+    } else {
+      expect(errors[0]).toBe(`Uploading ${name}`);
+      expect(errors[1]).toBe(`${prefix}Uploading ${name}${amount}`);
+    }
+  } finally {
+    if (ttyDescriptor) Object.defineProperty(process.stderr, "isTTY", ttyDescriptor);
+    else Reflect.deleteProperty(process.stderr, "isTTY");
+    if (columnsDescriptor) Object.defineProperty(process.stderr, "columns", columnsDescriptor);
+    else Reflect.deleteProperty(process.stderr, "columns");
+  }
+});
+
+test.each([
+  { kind: "busy", en: "The file server is busy. Try again later.", de: "Der Dateiserver ist ausgelastet. Versuche es später erneut." },
+  { kind: "network", en: "No connection to the file server.", de: "Keine Verbindung zum Dateiserver." },
+  { kind: "stalled", en: "No response from the file server.", de: "Keine Antwort vom Dateiserver." },
+])("CLI localizes $kind transfer failures while preserving the session", async ({ kind, en, de }) => {
+  const local = await file("");
+  const nativeFetch = globalThis.fetch;
+  const nativeTimeout = AbortSignal.timeout;
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => nativeTimeout(Math.min(ms, 40)));
+  let aborts = 0;
+  globalThis.fetch = Object.assign(
+    async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (kind === "network") throw new TypeError("https://filegate.test/lease?token=secret");
+      if (kind === "busy") return Response.json({ error: "busy" }, { status: 503, headers: { "Retry-After": "5" } });
+      return new Promise<Response>((_, reject) => {
+        init?.signal?.throwIfAborted();
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      });
+    },
+    { preconnect: nativeFetch.preconnect },
+  );
+  try {
+    for (const [locale, message] of [
+      ["en", en],
+      ["de", de],
+    ]) {
+      await expect(
+        uploadFile({ ...ctx, options: { ...ctx.options, locale } }, local, {
+          scope: "base/path/error",
+          open: async () => session("https://filegate.test/lease?token=secret", 0),
+          renew: async () => {
+            throw new Error("must not renew");
+          },
+          commit: async () => {
+            throw new Error("must not commit");
+          },
+          abort: async () => {
+            aborts++;
+          },
+        }),
+      ).rejects.toThrow(message);
+    }
+    expect(aborts).toBe(0);
+    expect(defaults.size).toBe(1);
+    expect(errors).toEqual([]);
+  } finally {
+    globalThis.fetch = nativeFetch;
+    timeout.mockRestore();
+  }
+});
+
+test.each(["open", "commit"])("CLI localizes a Cloud %s deadline without aborting an uncertain result", async (phase) => {
+  const local = await file("");
+  const nativeTimeout = AbortSignal.timeout;
+  const deadlines: number[] = [];
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+    deadlines.push(ms);
+    return nativeTimeout(40);
+  });
+  const pending = (signal: AbortSignal): Promise<never> =>
+    new Promise((_, reject) => {
+      signal.throwIfAborted();
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+  try {
+    for (const [locale, message] of [
+      ["en", "No response from Cloud within 60 seconds."],
+      ["de", "Keine Antwort von Cloud innerhalb von 60 Sekunden."],
+    ]) {
+      await expect(
+        uploadFile({ ...ctx, options: { ...ctx.options, locale } }, local, {
+          scope: "base/path/error",
+          open: async (_size, signal) =>
+            phase === "open" ? pending(signal) : { ...session("https://filegate.test/unused", 0), state: "committed" },
+          renew: async () => {
+            throw new Error("must not renew");
+          },
+          commit: async (_id, signal) => pending(signal),
+          abort: async () => {
+            throw new Error("must not abort an uncertain result");
+          },
+        }),
+      ).rejects.toThrow(message);
+    }
+    expect(deadlines).toEqual(phase === "open" ? [60_000, 60_000] : [60_000, 60_000, 60_000, 60_000]);
+  } finally {
+    timeout.mockRestore();
+  }
+});
+
+test("a failed abort after a final transfer error keeps the resume key", async () => {
+  const local = await file("");
+  globalThis.fetch = Object.assign(async () => Response.json({ error: "segment_mismatch" }, { status: 409 }), {
+    preconnect: originalFetch.preconnect,
+  });
+  let aborts = 0;
+  await expect(
+    uploadFile(ctx, local, {
+      scope: "abort-fails",
+      open: async () => session("https://filegate.test/lease", 0),
+      renew: async () => {
+        throw new Error("must not renew");
+      },
+      commit: async () => {
+        throw new Error("must not commit");
+      },
+      abort: async () => {
+        aborts++;
+        throw await uploadResponseFailure(Response.json({ message: "unavailable" }, { status: 500 }), "failed");
+      },
+    }),
+  ).rejects.toMatchObject({ cause: { kind: "final", origin: "filegate" } });
+  expect(aborts).toBe(1);
+  expect(defaults.size).toBe(1);
+});
+
+test("a transient 503 transfer failure keeps the resume key without aborting", async () => {
+  const local = await file("");
+  globalThis.fetch = Object.assign(
+    async () => Response.json({ error: "upload_capacity" }, { status: 503, headers: { "Retry-After": "5" } }),
+    { preconnect: originalFetch.preconnect },
+  );
+  let aborts = 0;
+  let caught: unknown;
+  try {
+    await uploadFile(ctx, local, {
+      scope: "capacity",
+      open: async () => session("https://filegate.test/lease", 0),
+      renew: async () => {
+        throw new Error("must not renew");
+      },
+      commit: async () => {
+        throw new Error("must not commit");
+      },
+      abort: async () => {
+        aborts++;
+      },
+    });
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBeInstanceOf(Error);
+  expect(caught).toHaveProperty("cause", expect.any(UploadTransferError));
+  expect(caught).toHaveProperty("cause.kind", "busy");
+  expect(aborts).toBe(0);
+  expect(defaults.size).toBe(1);
+});
+
+test.each([
+  {
+    status: 429,
+    kind: "rate_limited",
+    en: "Too many uploads in a short time. Try again later.",
+    de: "Zu viele Uploads in kurzer Zeit. Versuche es später erneut.",
+  },
+  { status: 500, kind: "server", en: "500 server broke", de: "500 server broke" },
+  { status: 409, kind: "final", en: "409 session closed", de: "409 session closed" },
+])("CLI preserves Cloud $kind causes and localized messages", async ({ status, kind, en, de }) => {
+  const local = await file("");
+  for (const [locale, message] of [
+    ["en", en],
+    ["de", de],
+  ]) {
+    const failure = await uploadResponseFailure(
+      Response.json({ message: status === 409 ? "session closed" : "server broke" }, { status }),
+      "failed",
+    );
+    failure.message = `${status} ${failure.message}`;
+    await expect(
+      uploadFile({ ...ctx, options: { ...ctx.options, locale } }, local, {
+        scope: "cloud",
+        open: async () => {
+          throw failure;
+        },
+        renew: async () => {
+          throw new Error("must not renew");
+        },
+        commit: async () => {
+          throw new Error("must not commit");
+        },
+        abort: async () => {
+          throw new Error("must not abort");
+        },
+      }),
+    ).rejects.toMatchObject({ message, cause: { kind, origin: "cloud" } });
+    expect(defaults.size).toBe(kind === "final" ? 0 : 1);
+  }
+});
+
+test.each(["en", "de"])("CLI names a Cloud network failure (%s) and keeps its key", async (locale) => {
+  const local = await file("");
+  await expect(
+    uploadFile({ ...ctx, options: { ...ctx.options, locale } }, local, {
+      scope: "cloud-network",
+      open: async () => {
+        throw new TypeError("fetch failed");
+      },
+      renew: async () => {
+        throw new Error("must not renew");
+      },
+      commit: async () => {
+        throw new Error("must not commit");
+      },
+      abort: async () => {
+        throw new Error("must not abort");
+      },
+    }),
+  ).rejects.toMatchObject({
+    message: locale === "de" ? "Keine Verbindung zu Cloud." : "No connection to Cloud.",
+    cause: { kind: "network", origin: "cloud" },
+  });
+  expect(defaults.size).toBe(1);
+});
+
+test.each([200, 500])("put removes its resume key only when the real abort callback confirms success (%s)", async (abortStatus) => {
+  const local = await file("");
+  let aborts = 0;
+  globalThis.fetch = Object.assign(async () => Response.json({ error: "segment_mismatch" }, { status: 409 }), {
+    preconnect: originalFetch.preconnect,
+  });
+  const context: CloudCliContext = {
+    ...ctx,
+    args: ["put", local, "cloud:users:11111111-1111-4111-8111-111111111111:/file"],
+    flags: {},
+    createApiClient: <TApi extends Hono>(basePath: string) =>
+      hc<TApi>(`https://cloud.test${basePath}`, {
+        fetch: async (input: Parameters<typeof fetch>[0]) => {
+          if (String(input).endsWith("/abort")) {
+            aborts++;
+            return Response.json({ code: "internal", message: "Abort failed" }, { status: abortStatus });
+          }
+          return Response.json(session("https://filegate.test/lease", 0));
+        },
+      }),
+    fetch: async () => {
+      throw new Error("unexpected fetch");
+    },
+    readJson: async (response) => response.json(),
+    print: () => {},
+    write: async () => {},
+    json: () => {},
+    jsonLine: () => {},
+    table: () => {},
+  };
+  await expect(filesCli.run(context)).rejects.toMatchObject({ cause: { kind: "final", origin: "filegate" } });
+  expect(aborts).toBe(1);
+  expect(defaults.size).toBe(abortStatus === 200 ? 0 : 1);
 });

@@ -27,7 +27,12 @@ const [draft, setDraft] = createSignal("");
 const [hint, setHint] = createSignal(undefined);
 const [dictation, setDictation] = createSignal(null);
 window.sent = [];
-window.fixture = { setHint, setDictation, setDraft };
+let resolveSearch;
+let searches = 0;
+window.fixture = { setHint, setDictation, setDraft,
+  resolveSearch: (rows) => resolveSearch?.(rows),
+  searchCount: () => searches,
+};
 
 render(
   () =>
@@ -50,7 +55,14 @@ render(
             },
           }),
           createComponent(Chat.Composer, {
-            variant: "conversation",
+            variant: options.mode === "slash" ? "default" : "conversation",
+            commands: options.mode === "slash" ? [
+              { id: "alpha", name: "alpha", label: "Alpha", description: "First local command", keywords: ["q", "qu"] },
+              { id: "blocked", name: "blocked", label: "Blocked", description: "Unused", keywords: ["q", "qu"], reason: "Available after the first response" },
+              { name: "fail", description: "Reject this action", action: async () => { throw new Error("Please try again"); } },
+              { name: "done", description: "Finish this action", action: async () => ({ done: "All done" }) },
+            ] : undefined,
+            searchCommands: options.mode === "slash" ? () => new Promise((resolve) => { searches++; resolveSearch = resolve; }) : undefined,
             get value() {
               return draft();
             },
@@ -90,6 +102,8 @@ if (!build.success) throw new AggregateError(build.logs, "Could not bundle the C
 const script = await build.outputs[0]!.text();
 
 type Fixture = {
+  resolveSearch: (rows: { id?: string; name: string; description: string }[]) => void;
+  searchCount: () => number;
   setHint: (hint: string | undefined) => void;
   setDictation: (state: string | null) => void;
   setDraft: (value: string) => void;
@@ -108,11 +122,21 @@ afterAll(async () => {
 const height = 800;
 
 const open = async (
-  options: { width?: number; locale?: "en" | "de"; dark?: boolean; submitDelay?: number; attach?: "files" | "menu" | "none" } = {},
+  options: {
+    mode?: "slash";
+    /** Installs Playwright's clock before the page loads; it follows real time until a test moves it. */
+    clock?: boolean;
+    width?: number;
+    locale?: "en" | "de";
+    dark?: boolean;
+    submitDelay?: number;
+    attach?: "files" | "menu" | "none";
+  } = {},
   context: BrowserContextOptions = {},
 ): Promise<Page> => {
   const width = options.width ?? 720;
   const page = await (await browser.newContext({ viewport: { width, height }, ...context })).newPage();
+  if (options.clock) await page.clock.install({ time: new Date("2026-10-15T12:00:00Z") });
   await page.route(`${assets}**`, (route) =>
     route.fulfill({ path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)) }),
   );
@@ -456,4 +480,78 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
       }
     }
   }, 30_000);
+});
+
+const slashBoxes = (page: Page, option = false) =>
+  page.evaluate((option) => {
+    const box = (selector: string) => {
+      const rect = document.querySelector(selector)!.getBoundingClientRect();
+      return [rect.left, rect.top, rect.width, rect.height].map(Math.round);
+    };
+    return { field: box("textarea"), composer: box(".k2b-chat-composer"), ...(option ? { firstOption: box('[role="option"]') } : {}) };
+  }, option);
+
+describe(`default slash ChatComposer in ${browserName}`, () => {
+  for (const width of [1440, 390]) {
+    test(`pending search retains option ids and field and option boxes at ${width}px`, async () => {
+      const page = await open({ mode: "slash", width });
+      try {
+        const field = page.locator("textarea").first();
+        await field.fill("/q");
+        await page.waitForFunction(() => fixture.searchCount() === 1);
+        await page.evaluate(() => fixture.resolveSearch([{ id: "server", name: "Server", description: "Previous result" }]));
+        await page.locator('[role="option"]').filter({ hasText: "Previous result" }).waitFor();
+        await frames(page, 2);
+        const ids = await page.locator('[role="option"]').evaluateAll((rows) => rows.map((row) => row.id));
+        const before = await slashBoxes(page, true);
+        await field.press("End");
+        await page.keyboard.type("u");
+        await page.waitForFunction(() => fixture.searchCount() === 2);
+        expect(await page.locator('[role="option"]').evaluateAll((rows) => rows.map((row) => row.id))).toEqual(ids);
+        expect(await slashBoxes(page, true)).toEqual(before);
+        expect(await page.locator('[role="listbox"]').getAttribute("aria-busy")).toBe("true");
+        expect(await page.locator(".k2b-chat-composer__loading").count()).toBe(0);
+        await page.evaluate(() => fixture.resolveSearch([{ id: "replacement", name: "Replacement", description: "New result" }]));
+        await page.locator('[role="option"]').filter({ hasText: "New result" }).waitFor();
+        expect(await page.locator('[role="option"]').filter({ hasText: "Previous result" }).count()).toBe(0);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`error and done status never move the field or composer and hide behind suggestions at ${width}px`, async () => {
+      const page = await open({ mode: "slash", width, clock: true });
+      try {
+        const field = page.locator("textarea").first();
+        await field.fill("/fail");
+        await frames(page, 2);
+        const before = await slashBoxes(page);
+        await field.press("Enter");
+        const status = page.locator('.k2b-chat-composer__status-line[data-tone="error"]');
+        await status.waitFor();
+        expect(await status.textContent()).toBe("Please try again");
+        expect(await field.inputValue()).toBe("/fail");
+        expect(await slashBoxes(page)).toEqual(before);
+        await field.click();
+        expect(await page.locator('[role="listbox"]').isVisible()).toBe(true);
+        expect(await page.locator(".k2b-chat-composer__status-line").count()).toBe(0);
+        await field.press("Escape");
+        expect(await status.isVisible()).toBe(true);
+        await field.fill("/done");
+        await frames(page, 2);
+        const beforeDone = await slashBoxes(page);
+        await field.press("Enter");
+        await page.locator('.k2b-chat-composer__status-line[data-tone="done"]').waitFor();
+        expect(await slashBoxes(page)).toEqual(beforeDone);
+        await field.fill("/done");
+        expect(await page.locator(".k2b-chat-composer__status-line").count()).toBe(0);
+        await field.press("Escape");
+        expect(await page.locator(".k2b-chat-composer__status-line").textContent()).toBe("All done");
+        await page.clock.fastForward(3_100);
+        expect(await page.locator(".k2b-chat-composer__status-line").count()).toBe(0);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+  }
 });

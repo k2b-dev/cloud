@@ -6,7 +6,27 @@ description: What Chat shows and where administrators check its state.
 order: 100
 ---
 
-Chat is for conversations with other people.
+Chat is for conversations with other people and notes for yourself.
+
+## Start a chat {icon="message-plus"}
+
+:::steps
+1. Choose **New chat**.
+2. Choose the people for the chat.
+3. Enter a name if you want one.
+4. Choose **Start chat**.
+:::
+
+With a full account, you can also choose groups. As a guest, choose from people you already share a chat with.
+These people must be direct members of a shared chat.
+
+If a chat with exactly these people exists, choose **Open existing** to use it.
+Choose **Create a new chat anyway** to start another one with the same people.
+
+## Keep notes for yourself {icon="notes"}
+
+Start a chat without choosing anyone else. Without a name, this chat is called **You**.
+Use it as a notepad across your devices.
 
 ## Overview {icon="layout-grid"}
 

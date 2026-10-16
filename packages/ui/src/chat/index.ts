@@ -10,7 +10,14 @@ import { ChatActivity, ChatContextUsage, ChatMessage } from "./ChatPrimitives";
 import { ChatRoot } from "./ChatRoot";
 import { ChatTimeline } from "./ChatTimeline";
 
-export type { ChatCommand, ChatCommandContext, ChatComposerProps, ChatFileSelection, ChatPasteHandler } from "./ChatComposer";
+export type {
+  ChatCommand,
+  ChatCommandContext,
+  ChatCommandResult,
+  ChatComposerProps,
+  ChatFileSelection,
+  ChatPasteHandler,
+} from "./ChatComposer";
 export type { ChatActivityProps, ChatContextUsageProps, ChatMessageProps } from "./ChatPrimitives";
 export { formatChatTokens } from "./ChatPrimitives";
 export type { ChatRootProps } from "./ChatRoot";

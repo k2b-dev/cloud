@@ -809,6 +809,14 @@ describe("the dashboard board in a browser", () => {
       await weather.getByRole("button", { name: "Customize Weather" }).click();
       const dialog = page.getByRole("dialog", { name: "Customize Weather" });
       await dialog.getByRole("radio", { name: "Hamburg" }).waitFor();
+      await page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== "running"));
+      expect(await dialog.getAttribute("class")).toContain("k2b-bottom-sheet-frame is-adaptive");
+      expect(await dialog.locator(".k2b-bottom-sheet__handle").isVisible()).toBe(false);
+      const frame = await dialog.boundingBox();
+      const viewport = page.viewportSize()!;
+      expect(Math.abs(frame!.x + frame!.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(1);
+      expect(Math.abs(frame!.y + frame!.height / 2 - viewport.height / 2)).toBeLessThanOrEqual(1);
+
       expect(scripts.slice(scriptStart)).toContain(settingsChunkPath);
       await dialog.getByRole("radio", { name: "Berlin" }).click();
       const applied = requests.count;
@@ -1021,7 +1029,11 @@ describe("the dashboard board in a browser", () => {
       expect(controls.filter((box) => box.width < 44 || box.height < 44)).toEqual([]);
       await tile(page, "weather/current").getByRole("button", { name: "Customize Weather" }).click();
       await page.getByRole("dialog", { name: "Customize Weather" }).waitFor();
-      expect(await page.locator(".k2b-bottom-sheet-frame").count()).toBe(1);
+      expect(await page.locator(".k2b-bottom-sheet-frame.is-adaptive").count()).toBe(1);
+      expect(await page.locator(".k2b-bottom-sheet__handle").isVisible()).toBe(true);
+      await page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== "running"));
+      const frame = (await page.getByRole("dialog").boundingBox())!;
+      expect(frame.y + frame.height).toBe(page.viewportSize()!.height);
       await page.keyboard.press("Escape");
       await page.getByRole("dialog").waitFor({ state: "detached" });
       await tile(page, "spaces/today").getByRole("button", { name: "Customize Today" }).click();

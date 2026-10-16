@@ -97,6 +97,17 @@ Open overlays through the shared components and `dialogCore` to get this
 behavior. If your own code moves focus back after a pointer action, use
 `element.focus({ focusVisible: false })`.
 
+## Keep focus while content refreshes
+
+Key rendered lists by a stable identity: an item id, or, for a derived group
+such as a run of empty days, the identity of the group it continues. Never
+key an element by content that a refresh or a load changes. A refresh that
+keeps an item keeps its element and focus.
+
+When the focused item leaves, move focus to a sensible neighbor, as the
+Spaces task tray does when a task is checked off. Do not leave focus on the
+page body.
+
 ## Forced colors
 
 In forced-colors mode, rings use the system color. Controls that show focus

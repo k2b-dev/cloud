@@ -123,6 +123,7 @@ const server = new Hono()
         createComponent(Layout, {
           c: c as unknown as LayoutContextArg,
           title: [{ title: "Badges", href: "/app/badges" }, { title: c.req.query("title") ?? "Badges" }],
+          focusMode: c.req.query("focusMode") === "true",
           children: "Signed-in content",
         }),
     ),
@@ -147,6 +148,31 @@ const server = new Hono()
   );
 
 describe("Cloud layouts SSR", () => {
+  test("server-renders shell focus only on signed-in pages outside focusMode", async () => {
+    const spies = [
+      spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+      spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    ];
+    try {
+      for (const [path, cookie, hidden, controls] of [
+        ["/signed-in", "cloud_shell_focus=1", true, true],
+        ["/signed-in", "", false, true],
+        ["/layout", "cloud_shell_focus=1", false, false],
+        ["/signed-in?focusMode=true", "cloud_shell_focus=1", false, false],
+      ] as const) {
+        const response = await server.request(path, { headers: { Cookie: cookie } });
+        expect(response.status).toBe(200);
+        const html = await response.text();
+        expect(html.includes('data-shell-focus="true"'), path + " focus").toBe(hidden);
+        expect(html.includes('data-cloud-shell-focus-toggle="hide"'), path + " hide").toBe(controls);
+        expect(html.includes('data-cloud-shell-focus-toggle="show"'), path + " show").toBe(controls);
+        expect(html.includes('class="cloud-shell-show"')).toBe(controls);
+        expect(html.includes("data-cloud-shell-reveal")).toBe(controls);
+      }
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
   test("full-page workspaces contain outer viewport overscroll", async () => {
     const html = await (await server.request("/layout")).text();
     expect(html).toContain('data-layout-full-page="true"');
@@ -174,7 +200,7 @@ describe("Cloud layouts SSR", () => {
     expect(fullWidth.canvas).not.toContain("data-layout-full-page");
     expect(fullPage.canvas).toContain('data-layout-full-page="true"');
     const css = await Bun.file(new URL("../styles/global.css", import.meta.url)).text();
-    const mobileStart = css.indexOf("@media (max-width: 767px) {");
+    const mobileStart = css.indexOf("@media not all and (min-width: 768px) {");
     const mobileShell = css.slice(mobileStart, css.indexOf("\n}", mobileStart));
     expect(mobileShell).toMatch(/html:has\(\.cloud-app-canvas:not\(\[data-layout-full-page\]\)\) \{ scrollbar-gutter: stable; \}/);
   });
@@ -266,7 +292,7 @@ describe("Cloud layouts SSR", () => {
     expect(html.match(/<header[^>]*class="(layout-header[^"]*)"/)?.[1]).toContain("md:hidden");
     expect(html).not.toContain("hidden min-w-0 items-center lg:flex");
     expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
-    expect(html).toContain('class="layout-rail hidden w-10 shrink-0 flex-col md:flex"');
+    expect(html).toContain('class="layout-rail hidden w-14 shrink-0 flex-col md:flex"');
     // The rail's Home link and the phone header's Home link stay server markup.
     const chrome = withoutIslands(html);
     expect(chrome).toMatch(/<aside class="layout-rail[^"]*"><div class="layout-rail-logo[^"]*"><a href="\/" aria-label="Home">/);

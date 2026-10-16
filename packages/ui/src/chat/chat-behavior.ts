@@ -1,3 +1,4 @@
+import type { ChatCommand } from "./ChatComposer";
 import type { ChatAction } from "./types";
 
 export const nextChatCommandIndex = (index: number, length: number, direction: 1 | -1): number =>
@@ -82,3 +83,22 @@ export const conversationEnterAction = (
   if (key.shiftKey || key.altKey || context.touchOnly || context.inCodeBlock || context.sendKey === "mod-enter") return "newline";
   return "send";
 };
+
+/** Case- and accent-insensitive text for command discovery. */
+export const foldChatSearchText = (text: string): string => text.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/ß/g, "ss");
+
+export const chatCommandKey = (command: ChatCommand): string => command.id ?? command.name;
+
+/**
+ * How well a static command matches: 0 by its label, name or a keyword, 1 by its description only, -1 not at all.
+ * A description that mentions another command's name ("New chat from …") never outranks that command.
+ */
+export const chatCommandRank = (command: ChatCommand, query: string): number => {
+  const folded = foldChatSearchText(query).trim();
+  if (!folded) return 0;
+  const has = (text: string) => foldChatSearchText(text).includes(folded);
+  if ([command.label ?? "", command.name, ...(command.keywords ?? [])].some(has)) return 0;
+  return has(command.description) ? 1 : -1;
+};
+
+export const chatCommandMatches = (command: ChatCommand, query: string): boolean => chatCommandRank(command, query) >= 0;

@@ -61,14 +61,14 @@ const MailComposerHistoryBody = (props: { mailboxId: string; message: MessageSum
         >
           {(message) => {
             const linksDisabled = () => message().security?.linksDisabled === true;
-            const format = (): "plain" | "html" => (message().plainText ? "plain" : "html");
+            const format = (): "plain" | "html" => (message().plainText?.trim() ? "plain" : "html");
             return (
               <div class="flex flex-col gap-3">
                 <Show when={message().security && message().security?.risk !== "none"}>
                   <NoticeCard tone="warning">{t().unsafeMessage}</NoticeCard>
                 </Show>
                 <Show
-                  when={message().plainText || message().sanitizedHtml}
+                  when={message().plainText?.trim() || message().sanitizedHtml}
                   fallback={
                     <Placeholder
                       state={message().hydrationStatus === "failed" ? "error" : "empty"}
@@ -82,6 +82,8 @@ const MailComposerHistoryBody = (props: { mailboxId: string; message: MessageSum
                       mailboxId={props.mailboxId}
                       messageId={message().id}
                       format={format()}
+                      theme={null}
+                      colors="original"
                       html={message().sanitizedHtml}
                       plainText={message().plainText}
                       attachments={message().attachments}

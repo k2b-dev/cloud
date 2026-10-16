@@ -1,4 +1,4 @@
-import { afterEach, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, expect, mock, setSystemTime, test } from "bun:test";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { PublicShare } from "../src/contracts";
@@ -7,6 +7,9 @@ let creates = 0,
   commits = 0,
   aborts = 0;
 let commitFails = false;
+let commitStatus = 200;
+let startCode = "";
+let openSession = false;
 let startKey = "";
 mock.module("../src/frontend/public-client", () => ({
   publicClient: {
@@ -17,12 +20,14 @@ mock.module("../src/frontend/public-client", () => ({
             $post: async (input: { json: { idempotencyKey: string } }) => {
               creates++;
               startKey = input.json.idempotencyKey;
+              if (startCode) return Response.json({ code: startCode, message: "Upload changed" }, { status: 409 });
               return Response.json({
                 id: "s1",
                 path: "file",
                 size: 0,
                 chunkSize: 8 * 1024 * 1024,
-                state: "committed",
+                state: openSession ? "open" : "committed",
+                ...(openSession ? { url: "https://files.test/lease/s1" } : {}),
                 expires: "2099-01-01",
               });
             },
@@ -30,6 +35,7 @@ mock.module("../src/frontend/public-client", () => ({
               commit: {
                 $post: async () => {
                   commits++;
+                  if (commitStatus !== 200) return Response.json({ message: "unavailable" }, { status: commitStatus });
                   if (commitFails) throw new Error("lost commit response");
                   return Response.json({ name: "file.txt" });
                 },
@@ -66,8 +72,17 @@ const share: PublicShare = {
   uploadedNames: [],
 };
 let cleanup = () => {};
+const resumeKeys = () =>
+  Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)!).filter((key) => key.startsWith("filesv2:upload:"));
 const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+const nativeFetch = globalThis.fetch;
+beforeEach(() => setSystemTime(new Date("2026-10-15T00:00:00Z")));
 afterEach(() => {
+  setSystemTime();
+  globalThis.fetch = nativeFetch;
+  startCode = "";
+  commitStatus = 200;
+  openSession = false;
   cleanup();
   creates = 0;
   commits = 0;
@@ -119,7 +134,7 @@ test("public inbox keeps its durable start key after an ambiguous commit and nev
   expect(commits).toBe(1);
   expect(aborts).toBe(0);
   const key = startKey;
-  expect(localStorage.length).toBe(1);
+  expect(resumeKeys()).toHaveLength(1);
   commitFails = false;
   input.dispatchEvent(new Event("change", { bubbles: true }));
   await flush();
@@ -149,4 +164,37 @@ test("a file over the inbox limit is named once and never becomes a row that cou
   expect(
     [...dom.document.querySelectorAll("[data-k2b-toast]:not([data-custom]) .k2b-toast__description")].map((node) => node.textContent),
   ).toEqual(["“video.mp4” exceeds the inbox's per-file limit."]);
+});
+
+test("public inbox keeps an open session after transient commit failure and drops final start keys", async () => {
+  const dom = createDomTestHarness();
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
+  globalThis.fetch = Object.assign(
+    async () => Response.json({ id: "s1", root: "cloud", size: 0, chunkSize: 8 * 1024 * 1024, state: "open", received: 0 }),
+    { preconnect: nativeFetch.preconnect },
+  );
+  const { default: PublicInbox } = await import("../src/frontend/PublicInbox.island");
+  const dispose = render(() => <PublicInbox token="public-secret" share={share} />, dom.root);
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
+  openSession = true;
+  commitStatus = 503;
+  const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]')!;
+  Object.defineProperty(input, "files", { configurable: true, value: [new File([], "file.txt", { lastModified: 123 })] });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await flush();
+  expect(commits).toBe(1);
+  expect(aborts).toBe(0);
+  expect(resumeKeys()).toHaveLength(1);
+  const original = startKey;
+  startCode = "upload_changed";
+  dom.document.querySelector<HTMLButtonElement>('button[aria-label^="Try again:"]')!.click();
+  await flush();
+  expect(creates).toBe(2);
+  expect(startKey).toBe(original);
+  expect(localStorage.length).toBe(0);
+  expect(aborts).toBe(0);
+  expect(dom.document.querySelector(".filesv2-upload-row__reason")?.textContent).toBe("Upload changed");
 });

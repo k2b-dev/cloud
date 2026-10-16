@@ -6,7 +6,7 @@
  * `SKILL.md` and references embedded in this `cld` release, plus
  * `references/<module>/<version>/` copied from the plugin store for every
  * module a profile has installed. `SKILL.md` carries a generated table from
- * profile to module, version, and reference folder. The folder is rebuilt as
+ * profile to module, version, summary, and reference index. The folder is rebuilt as
  * a whole on every change, so versions no profile uses disappear.
  */
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
@@ -25,7 +25,7 @@ export const CLAUDE_SKILL_TARGET = "~/.claude/skills";
 export type SkillsConfig = { targets: string[] };
 
 /** One installed module of one profile, as a row of the generated table. */
-export type SkillModuleRow = { profile: string; name: string; version: string; digest: string };
+export type SkillModuleRow = { profile: string; name: string; version: string; summary: string; digest: string };
 
 const MODULES_START = "<!-- cld:modules -->";
 const MODULES_END = "<!-- /cld:modules -->";
@@ -42,17 +42,41 @@ export const normalizeSkillTarget = (path: string): string => {
 };
 
 /** Folder name of one module version; versions are opaque strings from the manifest. */
-export const referenceFolder = (name: string, version: string): string => `references/${name}/${version.replace(/[^A-Za-z0-9._-]/g, "_")}/`;
+export const referenceFolder = (name: string, version: string): string =>
+  `references/${name}/${version.replace(/[^A-Za-z0-9._-]/g, "_").replace(/^\./, "_")}/`;
+
+/**
+ * Folder of each row's references. Different bundles with the same module and
+ * version, such as a served build and a package, each get a short digest
+ * suffix; the sanitized version never contains `+`, so names stay distinct.
+ */
+const rowFolders = (rows: readonly SkillModuleRow[]): ((row: SkillModuleRow) => string) => {
+  const digests = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const folder = referenceFolder(row.name, row.version);
+    digests.set(folder, (digests.get(folder) ?? new Set()).add(row.digest));
+  }
+  return (row) => {
+    const folder = referenceFolder(row.name, row.version);
+    return (digests.get(folder)?.size ?? 0) > 1 ? `${folder.slice(0, -1)}+${row.digest.slice(0, 12)}/` : folder;
+  };
+};
+
+const cell = (value: string): string => value.replace(/[\r\n]+/g, " ").replaceAll("|", "\\|");
 
 export const renderModulesTable = (rows: readonly SkillModuleRow[]): string => {
   if (rows.length === 0) {
     return "No module is installed for any profile yet. `cld plugins install --all` installs the modules of the current profile's Cloud and fills this table.";
   }
+  const folder = rowFolders(rows);
   const sorted = [...rows].sort((left, right) => left.profile.localeCompare(right.profile) || left.name.localeCompare(right.name));
   return [
-    "| Profile | Module | Version | Reference folder |",
-    "| --- | --- | --- | --- |",
-    ...sorted.map((row) => `| ${row.profile} | ${row.name} | ${row.version} | \`${referenceFolder(row.name, row.version)}\` |`),
+    "| Profile | Module | Version | Summary | Start |",
+    "| --- | --- | --- | --- | --- |",
+    ...sorted.map(
+      (row) =>
+        `| ${cell(row.profile)} | ${cell(row.name)} | ${cell(row.version)} | ${cell(row.summary)} | \`${cell(folder(row))}index.md\` |`,
+    ),
   ].join("\n");
 };
 
@@ -78,9 +102,10 @@ export const writeSkillTarget = async (target: string, rows: readonly SkillModul
       await mkdir(dirname(join(staging, path)), { recursive: true, mode: 0o700 });
       await writeFile(join(staging, path), path === "SKILL.md" ? renderSkill(content, rows) : content);
     }
+    const folders = rowFolders(rows);
     const copied = new Set<string>();
     for (const row of rows) {
-      const folder = referenceFolder(row.name, row.version);
+      const folder = folders(row);
       if (copied.has(folder)) continue;
       copied.add(folder);
       await cp(join(pluginStoreDirectory(root), row.digest, "references"), join(staging, folder), { recursive: true });

@@ -54,6 +54,11 @@ import { loadSenderIdentityTransportRuntimeById } from "./sender-identity-transp
 import { enqueueFolderSync } from "./sync-runtime";
 import { normalizeWorkflowKeywords } from "./workflow-data";
 import { publishMailWorkflowDependency } from "./workflow-dependencies";
+import {
+  loadIncomingAutomationSiblingTransitions,
+  messageStatePayloadSchema,
+  projectMailWorkflowMessagePrecondition,
+} from "./workflow-message-preconditions";
 
 const log = logger("mail:commands");
 const STALE_EXECUTION_MINUTES = 10;
@@ -762,12 +767,6 @@ type MutationRuntime = Awaited<ReturnType<typeof loadPinnedRuntime>>;
 type MutationTarget = z.infer<typeof sourceTargetSchema>;
 
 const flagsPayloadSchema = z.object({ flags: z.array(z.string().min(1).max(100)).max(100) });
-const messageStatePayloadSchema = z.object({
-  addFlags: z.array(z.enum(["seen", "answered", "flagged", "draft"])).max(4),
-  removeFlags: z.array(z.enum(["seen", "answered", "flagged", "draft"])).max(4),
-  addKeywords: z.array(z.string().min(1).max(100)).max(100),
-  removeKeywords: z.array(z.string().min(1).max(100)).max(100),
-});
 
 const IMAP_SYSTEM_FLAGS = {
   seen: "\\Seen",
@@ -1092,12 +1091,20 @@ const moveMessageSet = async (params: {
   );
   const current = await imapSmtpConnector.getMessageStates(runtime, sourceSet(moves));
   await assertLeaseActive();
+  const siblingTransitions = await loadIncomingAutomationSiblingTransitions(
+    sql,
+    moves.map((move) => move.command),
+  );
   const started: FreshMove[] = [];
   for (const move of moves) {
     try {
       const state = current.get(Number(move.source.uid)) ?? MISSING_REMOTE_MESSAGE;
       assertRemoteIdentity(state, move.source);
-      assertRemoteMessagePrecondition(state, move.target.expectedRemoteState);
+      const expected = move.target.expectedRemoteState;
+      assertRemoteMessagePrecondition(
+        state,
+        expected ? projectMailWorkflowMessagePrecondition(expected, siblingTransitions.get(move.command.id) ?? []) : undefined,
+      );
       // Checks the command's lease, workflow run, and access once more and marks its effect.
       await beginProviderEffect(move.command);
       started.push(move);
@@ -1180,6 +1187,13 @@ const executeFreshMutation = async (command: DbCommandExecution, assertLeaseActi
   const binding = await loadPinnedBinding(command);
   const runtime = await loadPinnedRuntime(binding);
   const target = sourceTargetSchema.parse(parseJsonRecord(command.target));
+  const siblingTransitions = await loadIncomingAutomationSiblingTransitions(sql, [command]);
+  if (target.expectedRemoteState) {
+    target.expectedRemoteState = projectMailWorkflowMessagePrecondition(
+      target.expectedRemoteState,
+      siblingTransitions.get(command.id) ?? [],
+    );
+  }
   const source = await loadRemoteMessage(command, target);
   const remote = remoteTarget(source);
   // One connection carries every provider step of the command, from the identity checks to the verification.
@@ -1753,8 +1767,8 @@ const reconcileFolderOperation = async (
 };
 
 /**
- * Takes the provider lease for one command of the mailbox. Commands wait behind folder syncs and
- * go before hydration; the mailbox keeps one place in line across its commands.
+ * Takes the provider lease for one command of the mailbox. Commands take turns with folder syncs
+ * and background work; the mailbox keeps one place in line while its commands wait.
  */
 const acquireCommandLease = (command: DbCommandExecution, resource: string) =>
   acquireProviderLease({
@@ -3622,7 +3636,7 @@ export const executeOutboxSubmissionWithHeartbeat = async (
   if (await deferSendWaitingForLogin(outboxId)) return "scheduled";
   const remoteResourceId = await loadOutboxRemoteResourceId(outboxId);
   if (!remoteResourceId) return null;
-  // A send is a user command: it waits behind folder syncs and goes before hydration.
+  // A send is a user command: it takes turns with folder syncs and background work.
   const { lock, retryAfterMs } = await acquireProviderLease({
     resource: remoteResourceId,
     waiter: `outbox:${outboxId}`,

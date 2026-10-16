@@ -32,7 +32,11 @@ import {
 import { ensureConversationReferenceInTransaction } from "../service/conversation-reference";
 import { updateWorkflowConversationSummaryInTransaction } from "../service/conversation-summary";
 import { createWorkflowDraftInTransaction, createWorkflowReviewReplyDraftInTransaction } from "../service/drafts";
-import { resolveIncomingAutomationPlacementTurn } from "../service/incoming-automation-order";
+import {
+  incomingAutomationMessageLeft,
+  resolveIncomingAutomationMessageStateTurn,
+  resolveIncomingAutomationPlacementTurn,
+} from "../service/incoming-automation-order";
 import { resolveIncomingAutomationMandateCaller } from "../service/incoming-automation-workload";
 import { updateWorkflowConversationLocalTagInTransaction } from "../service/local-tags";
 import { parseMessageProtocolFacts } from "../service/message-protocol";
@@ -42,6 +46,7 @@ import { mailWorkflowActionFailure } from "../service/workflow-action-errors";
 import { withMailWorkflowCollaborationEvent } from "../service/workflow-collaboration-events";
 import { mailWorkflowDependencyDeadline } from "../service/workflow-dependencies";
 import {
+  mailWorkflowConversationLinkView,
   mailWorkflowMessagePrecondition,
   mailWorkflowTriggerMessageId,
   projectMailWorkflowMessagePrecondition,
@@ -299,6 +304,7 @@ const createCommand = async (ctx: WorkflowActionContext, scope: MailRunScope, in
   return command.ok ? commandOutcome(command.data) : resultFailure(command.error);
 };
 
+const MESSAGE_STATE_ACTIONS = new Set(["addFlag", "removeFlag", "addKeyword", "removeKeyword"]);
 /** Actions that change where a message sits, and therefore run one at a time. */
 const PLACEMENT_ACTIONS = new Set(["moveMessage", "archiveMessage", "trashMessage", "junkMessage"]);
 
@@ -353,27 +359,39 @@ const messageAction = (
         // takes the outcome of the command it already issued. That command may
         // have moved the message already, so the checks below would no longer
         // find it where the step did.
-        const [issued] = await tx<{ id: string; state: MailCommand["state"]; last_error_message: string | null }[]>`
-          SELECT id::text, state, last_error_message
+        const [issued] = await tx<
+          { id: string; state: MailCommand["state"]; last_error_code: string | null; last_error_message: string | null }[]
+        >`
+          SELECT id::text, state, last_error_code, last_error_message
           FROM mail.commands
           WHERE mailbox_id = ${scope.mailboxId}::uuid AND idempotency_key = ${ctx.effectKey} AND correlation_id = ${ctx.runId}
         `;
-        if (issued) return applied(commandOutcome({ id: issued.id, state: issued.state, lastError: issued.last_error_message }));
-        if (PLACEMENT_ACTIONS.has(kind)) {
-          const turn = await resolveIncomingAutomationPlacementTurn({
-            db: tx,
-            runId: ctx.runId,
-            mailboxId: scope.mailboxId,
-            messageId,
-            folderId,
-          });
+        const turnParams = { db: tx, runId: ctx.runId, mailboxId: scope.mailboxId, messageId, folderId };
+        const skipped = (reason: "message_moved" | "earlier_automation", commandId?: string): ActionResult => ({
+          state: "succeeded",
+          output: { action: kind, applied: false, skipped: reason, ...(commandId ? { commandId } : {}) },
+        });
+        if (issued) {
+          // The command found the message gone: another automation moved it after this step checked.
+          if (
+            MESSAGE_STATE_ACTIONS.has(kind) &&
+            issued.state === "failed" &&
+            (issued.last_error_code === "REMOTE_MESSAGE_STALE" || issued.last_error_code === "REMOTE_MESSAGE_MISSING") &&
+            (await incomingAutomationMessageLeft(turnParams))
+          ) {
+            return skipped("message_moved", issued.id);
+          }
+          return applied(commandOutcome({ id: issued.id, state: issued.state, lastError: issued.last_error_message }));
+        }
+        if (PLACEMENT_ACTIONS.has(kind) || MESSAGE_STATE_ACTIONS.has(kind)) {
+          const turn = PLACEMENT_ACTIONS.has(kind)
+            ? await resolveIncomingAutomationPlacementTurn(turnParams)
+            : await resolveIncomingAutomationMessageStateTurn(turnParams);
           // An older automation already moved this message, or is the one that
           // decides where it goes. Ordering a move out of a folder the message
-          // has left is not this automation's failure to report.
-          if (turn.state === "skip") {
-            const skipped: ActionResult = { state: "succeeded", output: { action: kind, applied: false, skipped: turn.reason } };
-            return skipped;
-          }
+          // has left is not this automation's failure to report. An incoming
+          // automation's flag or keyword step yields the same way.
+          if (turn.state === "skip") return skipped(turn.reason);
         }
         const [target] = await tx<{ remote_message_ref_id: string }[]>`
           SELECT remote_ref.id AS remote_message_ref_id
@@ -385,7 +403,11 @@ const messageAction = (
             AND resource.mailbox_id = ${scope.mailboxId}::uuid
             AND remote_ref.stale_at IS NULL
         `;
-        if (!target) throw Object.assign(new Error("Message provider target is no longer available"), { code: "NOT_FOUND" });
+        if (!target) {
+          // A sibling's move may have finished since the turn check above.
+          if (MESSAGE_STATE_ACTIONS.has(kind) && (await incomingAutomationMessageLeft(turnParams))) return skipped("message_moved");
+          throw Object.assign(new Error("Message provider target is no longer available"), { code: "NOT_FOUND" });
+        }
         const remoteMessageRefId = target.remote_message_ref_id;
         const expectedRemoteState = projectMailWorkflowMessagePrecondition(
           mailWorkflowMessagePrecondition(ctx.invocation.context, { messageId, remoteMessageRefId, folderId }),
@@ -419,7 +441,17 @@ const messageAction = (
                 idempotencyKey: ctx.effectKey,
                 correlationId: ctx.runId,
               };
-        return applied(await createCommand(ctx, scope, input));
+        const outcome = await createCommand(ctx, scope, input);
+        // The message may also have left between the lookup above and the command.
+        if (
+          outcome.state === "failed" &&
+          outcome.code === "NOT_FOUND" &&
+          MESSAGE_STATE_ACTIONS.has(kind) &&
+          (await incomingAutomationMessageLeft(turnParams))
+        ) {
+          return skipped("message_moved");
+        }
+        return applied(outcome);
       }),
   }) as ErasedWorkflowAction;
 
@@ -462,6 +494,7 @@ const conversationMutation = (
                 conversationId,
                 expectedRevision,
                 triggerMessageId,
+                viewLinks: mailWorkflowConversationLinkView(ctx.invocation.context, conversationId),
               })
             : null;
         // Done or Waiting that already holds still covers its triggering message during hydration.

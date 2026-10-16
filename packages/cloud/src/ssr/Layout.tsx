@@ -2,6 +2,7 @@ import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, appWorkspaceLayoutStyle, LocaleProvider, NoticeCard, PageTrailProvider } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { readAppWorkspaceLayoutCookie, resolveAppWorkspaceLayoutForSidebar } from "../_internal/app-workspace-state";
+import { readShellFocusCookie } from "../_internal/shell-focus";
 import { resolveNavMatch } from "../contracts/app"; // ==========================
 import { isPwaShellAvailable } from "../contracts/pwa";
 import { defaultRailPreferences } from "../contracts/rail-preferences";
@@ -25,6 +26,7 @@ import { platformMessages } from "./platform-messages";
 import { sortRailApps } from "./rail-navigation";
 import { requestPath } from "./request-path";
 import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
+import ShellFocusToggle from "./ShellFocusToggle";
 import ShellRuntime from "./ShellRuntime.island";
 import { type ShellData, ShellDataProvider } from "./shell-data";
 
@@ -187,6 +189,8 @@ export default function Layout(props: LayoutProps) {
     ? { title: pageTitle, ancestors: [] }
     : derivePageTrail(title ?? appName, currentRoute?.prefix, appName, `${pathname}${new URL(c.req.raw.url).search}`);
   const showRail = !!user;
+  // The app bar and the app's navigation hidden with Cmd/Ctrl+\ or the sidebar buttons; phones ignore it in CSS.
+  const shellFocus = showRail && readShellFocusCookie(cookie);
   // The profile menu offers the mobile app only while the installation runs it.
   const appHref = user && isPwaShellAvailable(runtime.apps) ? "/me/app" : undefined;
   const profileName = user?.displayName || user?.uid || "?";
@@ -248,11 +252,13 @@ export default function Layout(props: LayoutProps) {
         data-page-trail-title-only={titleOnly ? "" : undefined}
         data-layout-full-page={fullPage ? "true" : undefined}
         data-layout-authenticated={showRail ? "true" : undefined}
+        data-shell-focus={shellFocus ? "true" : undefined}
         data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
       >
         <ShellRuntime
           workspace={{ appId: currentApp?.id }}
           pageTrail
+          focus={showRail}
           help={runtimeHelp}
           commands={{ searchResources: !!user }}
           push={!!user}
@@ -265,6 +271,8 @@ export default function Layout(props: LayoutProps) {
         />
         <ShellDataProvider data={shellData}>
           {showRail && <LayoutRail currentPath={requestPath(c)} />}
+          {showRail && <ShellFocusToggle variant="float" />}
+          {showRail && <div class="cloud-shell-reveal" data-cloud-shell-reveal="" aria-hidden="true" />}
           <div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col">
             <LayoutHeader
               authenticated={showRail}

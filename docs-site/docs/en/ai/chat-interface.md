@@ -152,6 +152,10 @@ Assistant also links every Cloud resource it mentions in an answer when the
 resource result or supplied context provides an exact open or edit URL. It
 never constructs a Cloud resource URL from an ID.
 
+A scheme-less answer link starting with `app/` or `open/` opens as the
+root-relative Cloud path (`/app/...`, `/open/...`), so a dropped leading slash
+still opens the resource; other links stay as written.
+
 The attachment does not copy resource contents into the draft and does not
 grant access. The model receives only the resource reference and presentation
 metadata, and must read the resource through the owning application's
@@ -445,6 +449,8 @@ provider's own message never appears. A turn that failed before the model
 answered, or right after an accepted survey answer, shows the notice where its
 progress stood, under the same timeline id; this includes a request forwarded
 from another chat.
+A turn whose last step failed and that ends without an answer also fails and
+shows this notice.
 Screen readers hear the notice once when the turn they followed fails.
 
 When the failed turn is the chat's newest, no turn runs, and a new turn can
@@ -1143,14 +1149,23 @@ tasks restore the plan automatically; switching chats resets the disclosure.
 
 Assistant recognizes `/` at a word boundary anywhere in the composer. Type a
 name, or narrow the suggestions with `/skill`, `/app`, `/file`, or `/project`
-followed by a search term. Select with the arrow keys and Enter or Tab; Escape
-closes the menu without changing the draft. URLs, paths, and code remain text.
-Suggestions temporarily replace the task list above the composer. Each result
-occupies one line; closing the menu restores the task list and its open state.
+followed by a search term. Move with the arrow keys and choose with plain Enter
+or Tab. Shift+Enter adds a line, Shift+Tab moves focus back, and Ctrl/⌘+Enter
+sends. Escape closes the menu for this `/`, even if you keep typing in the same
+command. URLs, paths, and code remain text. Suggestions temporarily replace the
+task list; closing the menu restores it and its open state. Results stay visible
+while the next search loads.
 
-`/compact`, `/fork`, and `/new` use the existing chat actions. Fork starts from
-the latest assistant response. Commands preserve the surrounding draft. Skills,
-Studio apps, and files insert highlighted references. Editing a reference's
+The built-in actions are **Compact chat**, **Fork chat**, and **New chat**.
+Their old names `/compact`, `/fork`, and `/new` still find them. Compact chat
+summarizes older history to free up room. Fork chat starts from the latest
+assistant response and brings your draft along. New chat starts empty and keeps
+the previous chat in the list. An unavailable command explains why. Selecting
+it leaves the menu open. Cancelling a command keeps `/…` in your unchanged
+draft; failures restore it too and show a message above the composer until the
+next edit or command.
+Commands preserve the surrounding draft. Skills, Studio apps, and files insert
+highlighted references. Editing a reference's
 label turns it into ordinary text; undo restores its identity. Saving and
 reopening a draft preserves references, including versioned conversation files.
 Project file references name a read-only path in the current Project.

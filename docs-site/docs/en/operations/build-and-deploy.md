@@ -29,6 +29,8 @@ The output is written to `dist/`:
 dist/
 ├── server.js
 ├── _ssr/
+│   ├── manifest.json
+│   └── <island>.js
 ├── assets/
 ├── cli/
 │   └── inventory/
@@ -98,9 +100,17 @@ artifact. The build sets `WORKSPACE_ROOT` and `DIST_DIR` before importing it.
 
 The build precompresses supported static files with Brotli and gzip.
 
-SSR serves island modules under an application-scoped version directory,
-such as `/inventory/_ssr/<version>/<island>.js`. The files remain flat in
-`dist/_ssr/`; the SSR adapter resolves the URL and serves compressed siblings.
+Island URLs are `/inventory/_ssr/<content-hash>/<island>.js`. The hash covers
+built island JavaScript, so it stays stable across restarts and releases that
+do not change the application's island code, preserving browser caches. Build
+from a fixed path, such as the Docker `WORKDIR`, because lazy chunk names
+depend on it. Files remain flat in `dist/_ssr/`; the SSR adapter serves
+compressed siblings. Copy the whole `_ssr` directory into the image, including
+the build output `dist/_ssr/manifest.json`. The server fails with a clear
+error when `_ssr` exists without the manifest. The production inline loader
+preloads rendered islands' shared static imports after the page's stylesheets.
+It creates modulepreload links at runtime so the HTML preload scanner does not
+compete with first paint.
 Rebuild affected application images when updating SSR so entry modules and lazy
 chunks come from the same build.
 

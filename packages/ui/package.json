@@ -37,7 +37,7 @@
     "check:declarations": "bun run scripts/check-declarations.ts",
     "fixture:build": "bun run build && NODE_ENV=production bun run fixture/scripts/build.ts",
     "fixture:typecheck": "tsc -p fixture/tsconfig.json --noEmit --pretty false",
-    "test": "bun run build && bun test --path-ignore-patterns '**/*.behavior.test.*' src scripts && bun run scripts/check-packed-consumer.ts",
+    "test": "bun run build && bun test --path-ignore-patterns '**/*.behavior.test.*' src scripts test/browser.browser.test.ts && bun run scripts/check-packed-consumer.ts",
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false && bun run check:declarations && bun run typecheck:dom",
     "typecheck:dom": "tsc -p test/tsconfig.json --noEmit --pretty false",
     "prepack": "bun run build"
@@ -51,7 +51,7 @@
     "qr-scanner": "1.4.2"
   },
   "peerDependencies": {
-    "@k2b/ssr": "^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0",
+    "@k2b/ssr": "^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0",
     "solid-js": "^1.9.10"
   },
   "devDependencies": {

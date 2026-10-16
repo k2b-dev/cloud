@@ -1,14 +1,14 @@
 import { Button, FileDropTarget, FileDropzone, Format, InlineGuidance, toast } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
-import type { PublicShare } from "../contracts";
-import { transferUpload } from "../upload-transfer";
+import type { PublicShare, UploadSession } from "../contracts";
+import { transferUpload, uploadFailureAction, uploadRequestFailure, uploadResponseFailure } from "../upload-transfer";
 import { useBrowserMessages } from "./browser-messages";
 import { apiFailure } from "./file-preview";
 import { useFilesMessages } from "./messages";
 import { publicClient } from "./public-client";
 import { UploadSurface } from "./UploadPanel";
 import { browserUploadKey } from "./upload-key";
-import { useUploadMessages } from "./upload-messages";
+import { uploadFailureReason, useUploadMessages } from "./upload-messages";
 import { createUploadQueue } from "./upload-queue";
 
 /** Anonymous uploads: Cloud opens a session per file, the browser streams to Filegate, Cloud commits. */
@@ -43,29 +43,34 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
   const [uploaded, setUploaded] = createSignal<string[]>([]);
   // The same queue and panel as in the workspace: one batch, byte-weighted progress, failed files retried in place.
   const uploads = createUploadQueue<null>({
-    reason: (error) => (error instanceof Error && error.message ? error.message : u().failed),
+    reason: (error) => uploadFailureReason(error, u()),
     upload: async (_, { file }, { signal, onProgress }) => {
       const start = await browserUploadKey(["public", props.token], file);
-      const opened = await publicClient.inbox[":token"].api.uploads.$post(
-        { param, json: { name: file.name, size: file.size, idempotencyKey: start.idempotencyKey } },
-        { init: { signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]) } },
-      );
-      if (!opened.ok) await apiFailure(opened, u().failed);
-      const session = await opened.json();
+      let session: UploadSession | undefined;
       let committing = false;
       try {
+        const opened = await publicClient.inbox[":token"].api.uploads.$post(
+          { param, json: { name: file.name, size: file.size, idempotencyKey: start.idempotencyKey } },
+          { init: { signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]) } },
+        );
+        if (!opened.ok) throw await uploadResponseFailure(opened, u().failed);
+        session = await opened.json();
         if (session.state === "aborted" || session.state === "expired") start.finish();
         await transferUpload(file, session, {
           signal,
           failure: u().failed,
           onProgress,
           renew: async (id, renewSignal) => {
-            const renewed = await publicClient.inbox[":token"].api.uploads[":id"].lease.$post(
-              { param: { ...param, id } },
-              { init: { signal: renewSignal } },
-            );
-            if (!renewed.ok) return apiFailure(renewed, u().failed);
-            return renewed.json();
+            try {
+              const renewed = await publicClient.inbox[":token"].api.uploads[":id"].lease.$post(
+                { param: { ...param, id } },
+                { init: { signal: renewSignal } },
+              );
+              if (!renewed.ok) throw await uploadResponseFailure(renewed, u().failed);
+              return await renewed.json();
+            } catch (error) {
+              throw uploadRequestFailure(error, u().failed, signal);
+            }
           },
         });
         signal.throwIfAborted();
@@ -74,18 +79,22 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
           { param: { ...param, id: session.id } },
           { init: { signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]) } },
         );
-        if (!committed.ok) await apiFailure(committed, u().failed);
+        if (!committed.ok) throw await uploadResponseFailure(committed, u().failed);
         const result = await committed.json();
         start.finish();
         setUploaded((current) => [...current, result.name]);
         if (props.share.showUploadNames) await loadNames();
         return { status: "uploaded", path: result.name };
-      } catch (error) {
-        if (session.state === "open" && !committing)
+      } catch (caught) {
+        const error = signal.aborted ? caught : uploadRequestFailure(caught, u().failed, signal);
+        const action = uploadFailureAction(error, { session, committing, cancelled: signal.aborted });
+        if (action === "drop") start.finish();
+        if (action === "abort" && session)
           await publicClient.inbox[":token"].api.uploads[":id"].abort
             .$post({ param: { ...param, id: session.id } }, { init: { signal: AbortSignal.timeout(5_000) } })
-            .then((response) => {
-              if (response.ok) start.finish();
+            .then(async (response) => {
+              if (!response.ok) throw await uploadResponseFailure(response, u().failed);
+              start.finish();
             })
             .catch(() => {});
         throw error;

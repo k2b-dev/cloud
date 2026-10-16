@@ -9,7 +9,7 @@ export default function LayoutRail(props: { currentPath: string }) {
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
   return (
-    <aside class="layout-rail hidden w-10 shrink-0 flex-col md:flex">
+    <aside class="layout-rail hidden w-14 shrink-0 flex-col md:flex">
       <div class="layout-rail-logo flex h-[2.875rem] shrink-0 items-center justify-center">
         <a href="/" aria-label={t().home}>
           <img src="/branding/logo" alt="Logo" class="h-5 w-5" />

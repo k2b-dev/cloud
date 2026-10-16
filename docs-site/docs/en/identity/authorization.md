@@ -531,6 +531,11 @@ the manager it hides and offer a change the service refuses.
 Rows for all signed-in users and for the public always show the editor's
 localized label, whatever `displayName` the entry carries.
 
+A member list of your own that loads its entries page by page cannot count the
+managers it shows. Let its service return the number of managers, counted the
+way its `ensureManagerRemains()` check counts them, and lock a row when
+`isManagerEntry(row)` from `@k2b/cloud/access/ui` is true and that number is 1.
+
 ### Show service-account kinds
 
 Editor rows and picker results show one icon and label per service-account

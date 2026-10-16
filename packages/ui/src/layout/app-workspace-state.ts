@@ -28,6 +28,10 @@ export const APP_WORKSPACE_PANE_DEFAULT = 320;
 export const APP_WORKSPACE_PANE_MIN = 240;
 export const APP_WORKSPACE_PANE_MAX = 640;
 
+/** Persistence envelope; each pane still applies its own runtime limits. */
+const APP_WORKSPACE_PANE_STATE_MIN = 160;
+const APP_WORKSPACE_PANE_STATE_MAX = 960;
+
 export type AppWorkspaceResizeKind = "sidebar" | "pane" | "detail" | "drawer";
 
 export const appWorkspaceResizeLimits = (options: {
@@ -132,7 +136,7 @@ export const normalizeAppWorkspaceLayoutState = (value: unknown): AppWorkspaceLa
   // Keyed panel maps only exist from version 2 on; a version-1 payload that
   // carries them was not written by this component and is not trusted.
   const legacy = candidate.version === 1;
-  const paneWidths = legacy ? undefined : normalizeSizes(candidate.paneWidths, APP_WORKSPACE_PANE_MIN, APP_WORKSPACE_PANE_MAX);
+  const paneWidths = legacy ? undefined : normalizeSizes(candidate.paneWidths, APP_WORKSPACE_PANE_STATE_MIN, APP_WORKSPACE_PANE_STATE_MAX);
   const detailWidths = legacy
     ? (() => {
         const width = finiteSize(candidate.detailWidth, APP_WORKSPACE_DETAIL_MIN, APP_WORKSPACE_DETAIL_MAX);

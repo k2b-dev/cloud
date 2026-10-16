@@ -163,6 +163,8 @@ The incoming-automation file is strict: unknown fields are rejected. An invalid 
 - An `if` condition references an earlier AI `sourceStepId`: use `equals` for generated text or single classification and `includes` for multi-classification. Its `value` accepts 1–500 characters and must name a declared choice for classification. Both `then` and `else` are step arrays of at most 12 items.
 - A definition starts with 1–20 top-level steps, contains at most 40 steps across branches, has at most 4 branch levels, and makes at most 10 AI calls. One reachable path may change flags and keywords before at most one placement (`junk`, `trash`, or `move_to_folder`); put `mark_read` and `add_keyword` before that placement. Repeated flag or keyword actions are allowed. No provider message change may follow the placement. A path may contain one assignment, one status change, and one summary replacement; it cannot add the same local tag twice. Consecutive `if` steps are on the same path because both can match; put mutually exclusive actions in the `then` and `else` branches of one `if`. `set_status` is a local status change, not a provider message action, so it can share a path with `mark_read`.
 
+When several incoming automations match, the oldest decides the folder; an automation skips read or keyword steps when the message has left its folder or a move of it is pending, and confirmed sibling flag or keyword changes count as expected state.
+
 Automations apply to incoming mail only; positive sender-address conditions cannot target a mailbox's own active identities. Negated sender conditions can exclude those identities. Destructive flows must restrict every possible match to an external sender or domain and reject configured internal domains, subdomains, and unsafe parent domains. `automation get` exposes the exact generated workflow YAML.
 
 Preview sender-scoped work before changing existing messages. Sender moves and incoming automations compare only the first From address. Sender moves require one; an automation's `is_not` sender condition also matches a message without a From address, while `is` does not:
@@ -215,12 +217,12 @@ Spaces actions use an encrypted, revocable delegation created for the configurin
 A mailbox has one optional reference-number configuration. Set its permanent format before a workflow allocates references:
 
 ```bash
-cld --json mail reference config set \
+cld --json mail reference-number config set \
   --pattern 'SUP-{{ year }}-{{ sequence | pad_start: 6 }}' \
   --enable \
   --include-in-reply-subjects
 
-cld --json mail reference config show
+cld --json mail reference-number config show
 ```
 
 The pattern uses Liquid and must output exactly one identity value: `short_id`, `uuid`, `uuid_v7`, `ulid`, or `sequence`. Date values `year`, `month`, `month_name`, and `day` may appear alongside it. Use `{{ sequence | pad_start: 6 }}` to pad a sequence. The default is `REF-{{ short_id }}`. Changing the pattern affects only future allocations; existing references remain immutable and searchable.
@@ -228,9 +230,9 @@ The pattern uses Liquid and must output exactly one identity value: `short_id`, 
 Allocation is idempotent for each conversation:
 
 ```bash
-cld --json mail reference ensure <conversation-id> --idempotency-key support-import-42
-cld --json mail reference list <conversation-id>
-cld --json mail reference find SUP-2026-000042
+cld --json mail reference-number ensure <conversation-id> --idempotency-key support-import-42
+cld --json mail reference-number list <conversation-id>
+cld --json mail reference-number find SUP-2026-000042
 ```
 
 Use `--disable` to stop new allocations without removing existing values. Use `--exclude-from-reply-subjects` when new human and automatic replies should keep their original subject. A workflow controls when allocation happens; the mailbox configuration controls only the sequence and reply-subject behavior.
@@ -544,7 +546,7 @@ Creating versions and activating or deactivating workflows requires mailbox `adm
 
 Runs use the active version's mailbox-owned authority, so removing the activating administrator's later personal access does not silently disable approved automation. Deactivation or replacement prevents new runs. Runs already accepted retain their pinned version and authority; cancel them centrally to stop unfinished work.
 
-Provider actions create idempotent Mail commands. On one message, any number of flag or keyword changes may precede one move, copy, archive, trash, or junk action; no provider action may follow that placement. The first action checks the frozen provider state; later actions account for this run's confirmed changes and still reject other flag or keyword drift. Two incoming automations that both change the same message on the provider can still conflict: a flag change by one can make the other's move fail with `REMOTE_STATE_CHANGED`, and a move by one can make the other's later flag change fail. Put such changes in one automation. A step may wait for a command or message hydration. Durable outcomes survive retries; lease generations fence stale workers; dependency completion wakes waiting runs. Ambiguous provider outcomes become `needs_attention` rather than being blindly repeated.
+Provider actions create idempotent Mail commands. On one message, any number of flag or keyword changes may precede one move, copy, archive, trash, or junk action; no provider action may follow that placement. The first action checks the frozen provider state; later actions account for this run's confirmed changes. Flag or keyword changes that another incoming automation confirmed on the message after the run captured it count as expected state. Other drift, such as a change by a person or another client, still fails with `REMOTE_STATE_CHANGED`. A flag or keyword step of an incoming automation returns `applied: false` with `skipped: "message_moved"` if the message has left the folder, including when its queued command found the message gone and sync has retired it; until sync has seen another client's move, the step fails. It returns `skipped: "earlier_automation"` if a move of the message is pending. The skipped Mark as read does not happen in these cases. Put read and move in one automation to guarantee both. A step may wait for a command or message hydration. Durable outcomes survive retries; lease generations fence stale workers; dependency completion wakes waiting runs. Ambiguous provider outcomes become `needs_attention` rather than being blindly repeated.
 
 A step that waits for its command is checked again every 30 seconds. The check runs the step under a new execution generation, and the step keeps waiting for the command it already created. When the command finishes, the step takes its result, also when its move already took the message out of the folder where the step found it. A command is cancelled with `WORKFLOW_CANCELED` only when its run was canceled or has ended, or when its step finished without it. If the provider change may already have started, the command becomes `needs_attention` instead.
 
@@ -590,6 +592,6 @@ The Mail API manages definitions and activations only. Runtime observability and
 | Automatic replies | `automatic-reply list|create|update` |
 | Sender cleanup | `sender preview`, `sender move` |
 | Incoming automations | `automation catalog|list|get|create|update|delete`, `automation backfill start|status|cancel` |
-| References | `reference config show|set`, `reference list|ensure|find` |
+| References | `reference-number config show|set`, `reference-number list|ensure|find` |
 | Workflow lifecycle | `workflow list|get|validate|create|update|export|activate|deactivate`, `workflow version list|get|create|restore` |
 | Runtime operations | `cld admin workflows health|runs|show|cancel|effects|resolve|events` |

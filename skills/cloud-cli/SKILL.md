@@ -14,7 +14,7 @@ Use `cld` to work with the user's Cloud content from a terminal. It handles sign
 1. Install the app modules first: `cld plugins install --all`, or `cld plugins install apps <module>` for the one the task needs, with `apps` for step 3. Until then `cld` has no app commands and the [Installed modules](#installed-modules) table below is empty. `cld plugins list` shows what the Cloud serves and what needs an update.
 2. If that reports no configured server or no sign-in, sign in with `cld login --server <Cloud URL>`, or with `--device` on a machine without a browser, such as a server reached over SSH, then install. Inspect or switch profiles with `cld profile list` and `cld profile use <name>`. Read [Sign-in and profiles](references/sign-in.md) for details.
 3. Run `cld apps list --json` before choosing an app command. It shows the live Cloud apps available to the current user; use `--search <text>` to narrow the list.
-4. Run `cld <app> reference`, then `cld <app> help` or `cld <app> <command> --help` for an unfamiliar operation. Help never runs a command, so `cld logout --help` or `cld profile set --help` is safe too. Every app module, built-in or third-party, is a `cld` plugin served by the Cloud; a missing one says `run cld plugins install <name>`.
+4. Run `cld <app> reference`, then `cld <app> help` or `cld <app> <command> --help` for an unfamiliar operation. Help never runs a command, so `cld logout --help` or `cld profile set --help` is safe too. Every installed module carries references, whether served by a Cloud or installed as a package; a missing one says `run cld plugins install <name>`.
 5. Use the default profile unless the task names another instance; pass `--profile <name>` only when needed.
 
 ## How every `cld` module is organized
@@ -59,7 +59,7 @@ Start with the reference named here; it holds the exact syntax and the safe work
 - File uploads such as `cld filesv2 put` and `cld notebooks attach` store the bytes as they are and convert nothing. Create a file in its final format locally with a tool available on the machine, then upload it.
 - Ask the user for content you do not have, such as names, figures, or dates. Do not fill a note or file with invented data.
 - Do not delete content, revoke access, or perform another destructive action without an explicit user request. Check command help for any required confirmation first.
-- A plugin the user's Cloud serves may be installed with `cld plugins install <name>` when the task needs it. Install or remove a package plugin (path, `.tgz`, `npm:`) only when the user asks for that exact package or path; it runs unsandboxed with the user's Cloud credentials, so confirm the package, version, and source shown by `cld plugins install` before you pass `--yes`.
+- A plugin the user's Cloud serves may be installed with `cld plugins install <name>` when the task needs it. Install or remove a package plugin (path, `.tgz`, `npm:`) only when the user asks for that exact package or path; it runs unsandboxed with the user's Cloud credentials, so confirm the package, version, source, and reference count shown by `cld plugins install` before you pass `--yes`.
 
 ## References
 
@@ -72,7 +72,7 @@ Every module ships its own reference with the plugin. Run `cld <module> referenc
 
 ## Installed modules
 
-`cld` keeps this table current: every profile, the modules installed for it, their versions, and the folder with that version's references. Read the reference folder of the profile you operate; `cld <module> reference [file]` prints the same files.
+`cld` keeps this table current after every plugin install, update, and removal. The columns are Profile (`*` for package plugins), Module, Version, Summary, and Start. Open the Start file for the module and profile you operate. Package plugins carry references too; `cld <module> reference [file]` prints the same files for every installed module.
 
 <!-- cld:modules -->
 No module is installed for any profile yet. `cld plugins install --all` installs the modules of the current profile's Cloud and fills this table.

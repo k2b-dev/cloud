@@ -65,7 +65,7 @@ render(() => createComponent(PageTrailProvider, { trail:{title:"Devices",ancesto
     createComponent(AppWorkspace.Content, { get children() { return [
       createComponent(AppWorkspace.Main, { class:"fixture-main", scroll:!params.has("trail") && !params.has("table"), get children() { return mainContent(); } }),
       createComponent(AppWorkspace.Detail, {
-        id:"record", width:params.get("width") || "md", get open() { return open(); }, onClose:params.has("fixed") ? undefined : close, onStep:direction => {
+        id:"record", phone:params.has("phone-page") ? "page" : "sheet", width:params.get("width") || "md", get open() { return open(); }, onClose:params.has("fixed") ? undefined : close, onStep:direction => {
           document.body.dataset.steps = String(Number(document.body.dataset.steps || 0) + direction);
           const count = document.querySelectorAll('[id^="row-"]').length;
           selected = Math.max(0, Math.min(count - 1, selected + direction));
@@ -107,7 +107,7 @@ afterAll(async () => {
 const load = async (width: number, height: number, params = "", options: BrowserContextOptions = {}) => {
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce", ...options });
   await page.setContent(
-    // Flush by default, as Cloud's shell is up to 1535 px; `card` frames the workspace as Cloud does from 1536 px.
+    // Flush by default, as Cloud's shell is up to 1023 px; `card` frames the workspace as Cloud does from 1024 px.
     `<!doctype html><html lang="en"><head><style>${css}</style><style>${
       new URLSearchParams(params).has("card")
         ? "#app{box-sizing:border-box;padding:0.5rem}"
@@ -594,6 +594,148 @@ describe("floating workspace detail", () => {
       }
     });
   }
+  test("390×844: a phone page fills the viewport without sheet space or gestures and Escape closes it", async () => {
+    const page = await load(390, 844, "phone-page=1", { hasTouch: true });
+    try {
+      const mainState = () =>
+        page.locator(".k2b-app-workspace__main").evaluate((main) => ({
+          height: main.clientHeight,
+          scrollHeight: main.scrollHeight,
+          scrollTop: main.scrollTop,
+          padding: getComputedStyle(main).scrollPaddingBottom,
+          after: getComputedStyle(main, "::after").content,
+        }));
+      await page.locator("#row-30").scrollIntoViewIfNeeded();
+      const before = await mainState();
+      await page.locator("#row-30").click();
+      await settlePanel(page);
+      const shape = await geometry(page);
+      expect(shape.detail).toMatchObject({ top: 0, left: 0, width: 390, height: 844, bottom: 844 });
+      expect(shape.full).toBeNull();
+      expect(await page.locator(".k2b-app-workspace__detail-grabber").isVisible()).toBe(false);
+      expect(await mainState()).toEqual(before);
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Selected record");
+      const header = page.locator(".k2b-detail-panel__header");
+      expect(await header.evaluate((element) => getComputedStyle(element).touchAction)).not.toBe("none");
+      const box = await header.boundingBox();
+      const x = box!.x + 30,
+        y = box!.y + box!.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x, y + 140, { steps: 8 });
+      expect((await geometry(page)).detail).toEqual(shape.detail);
+      await page.mouse.up();
+      await settlePanel(page);
+      expect((await geometry(page)).detail).toEqual(shape.detail);
+      expect(await page.locator("body").getAttribute("data-closes")).toBeNull();
+      if (browserName !== "webkit") {
+        for (const type of ["touchstart", "touchmove", "touchend"]) {
+          await header.evaluate((element, type) => {
+            const sample = new Touch({ identifier: 1, target: element, clientX: 100, clientY: type === "touchstart" ? 20 : 180 });
+            element.dispatchEvent(
+              new TouchEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                touches: type === "touchend" ? [] : [sample],
+                changedTouches: [sample],
+              }),
+            );
+          }, type);
+        }
+        await settlePanel(page);
+        expect((await geometry(page)).detail).toEqual(shape.detail);
+        expect(await page.locator("body").getAttribute("data-closes")).toBeNull();
+      }
+      await page.keyboard.press("Escape");
+      await settlePanel(page);
+      expect(await page.locator("body").getAttribute("data-closes")).toBe("1");
+      expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(false);
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe("row-30");
+      expect(await page.locator("[data-k2b-app-workspace] [inert]").count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+  });
+  test("390×844: a phone page isolates workspace focus and releases only its own inert on Escape", async () => {
+    const page = await load(390, 844, "phone-page=1");
+    try {
+      // The application's own inert must survive opening and closing the page.
+      await page.locator(".k2b-app-workspace__sidebar").evaluate((sidebar) => sidebar.setAttribute("inert", ""));
+      await openRow(page);
+      expect(await page.locator(".k2b-app-workspace__main").getAttribute("inert")).toBe("");
+      for (const region of await page.locator(".k2b-app-workspace__sidebar, .k2b-app-workspace__head").all()) {
+        expect(await region.getAttribute("inert")).toBe("");
+      }
+      const detail = page.locator(".k2b-app-workspace__detail");
+      // The page opens with focus on its title, which is no tab stop; Shift+Tab as the first key stays inside too.
+      await page.waitForFunction(() => document.activeElement?.textContent === "Selected record");
+      await page.keyboard.press("Shift+Tab");
+      expect(await detail.evaluate((aside) => aside.contains(document.activeElement))).toBe(true);
+      // Focus on the body, as after loading with the page open, enters the page in both directions, past chrome
+      // outside the workspace that the page covers.
+      await page.evaluate(() => {
+        const chrome = (id: string) => Object.assign(document.createElement("button"), { id, textContent: id });
+        document.body.prepend(chrome("chrome-before"));
+        document.body.append(chrome("chrome-after"));
+      });
+      for (const key of ["Tab", "Shift+Tab"]) {
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+        await page.keyboard.press(key);
+        expect(await detail.evaluate((aside) => aside.contains(document.activeElement))).toBe(true);
+      }
+      await detail.evaluate((aside) => {
+        const stops = Array.from(
+          aside.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), input:not([disabled]), [tabindex]"),
+        ).filter((element) => element.tabIndex >= 0 && element.getClientRects().length > 0 && !element.closest("[inert]"));
+        stops.at(-1)!.focus();
+      });
+      for (const key of ["Tab", "Tab", "Shift+Tab", "F6"]) {
+        await page.keyboard.press(key);
+        expect(await detail.evaluate((aside) => aside.contains(document.activeElement))).toBe(true);
+      }
+      await page.keyboard.press("Escape");
+      await settlePanel(page);
+      expect(await detail.isVisible()).toBe(false);
+      expect(
+        await page.locator("[data-k2b-app-workspace] [inert]").evaluateAll((regions) => regions.map((region) => region.className)),
+      ).toEqual([await page.locator(".k2b-app-workspace__sidebar").getAttribute("class")]);
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe("row-0");
+    } finally {
+      await page.close();
+    }
+  });
+  test("390×844: resizing an open phone page to desktop releases workspace inert", async () => {
+    const page = await load(390, 844, "phone-page=1");
+    try {
+      await openRow(page);
+      expect(await page.locator(".k2b-app-workspace__main").getAttribute("inert")).toBe("");
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.waitForFunction(() => !document.querySelector("[data-k2b-app-workspace] [inert]"));
+      expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+  test("1440px: phone page detail keeps the normal floating desktop geometry", async () => {
+    const sheet = await load(1440, 900);
+    const page = await load(1440, 900, "phone-page=1");
+    try {
+      await openRow(sheet);
+      await openRow(page);
+      expect((await geometry(page)).detail).toEqual((await geometry(sheet)).detail);
+      expect((await geometry(page)).main).toEqual((await geometry(sheet)).main);
+      expect((await geometry(page)).detail.top).toBe(8);
+      expect(await page.locator("[data-k2b-app-workspace] [inert]").count()).toBe(0);
+      expect(await page.locator(".k2b-app-workspace__detail-grabber").isVisible()).toBe(false);
+      await page.keyboard.press("Escape");
+      await settlePanel(page);
+      expect(await page.locator("body").getAttribute("data-closes")).toBe("1");
+    } finally {
+      await sheet.close();
+      await page.close();
+    }
+  });
   test("390×844: the half sheet sits on the window's bottom edge, Main's last row scrolls above it, and the grabber toggles detents", async () => {
     const page = await load(390, 844);
     try {

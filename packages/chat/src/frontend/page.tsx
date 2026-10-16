@@ -1,4 +1,4 @@
-import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, getDateConfig, getLocale, getUserBackedActor } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { chatMessages } from "../messages";
@@ -33,6 +33,8 @@ export default ssr<AuthContext>(async (c) => {
         sidebar={view.sidebar}
         open={view.open}
         chatId={chatId}
+        guest={getUserBackedActor(c)?.profile === "guest"}
+        panel={chatId && view.open && c.req.query("panel") === "info" ? "info" : null}
         viewerId={accessSubject.userId}
         dateConfig={getDateConfig(c)}
         now={new Date().toISOString()}

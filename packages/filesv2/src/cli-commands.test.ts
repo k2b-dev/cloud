@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -718,4 +718,121 @@ test("favorites and edit-url use addresses; recent-style rows print addresses", 
   expect(url.json.url).toBe(
     `${server.url.origin}/app/filesv2?base=${encodeURIComponent(home.id)}&path=Documents&file=Documents%2Fnotes.txt&view=edit`,
   );
+});
+
+test.each(
+  [
+    { name: "put target resolution", route: "/api/filesv2/bases", command: "put", parents: false },
+    { name: "put parents", route: "/directories/batch", command: "put", parents: true },
+    { name: "mkdir parents", route: "/directories/batch", command: "mkdir", parents: true },
+    { name: "file ID resolution", route: "/entries/", command: "stat", parents: false },
+    { name: "put session opening", route: "/uploads", command: "put", parents: false },
+  ].flatMap((target) => [
+    { ...target, stall: "response" },
+    { ...target, stall: "body" },
+    { ...target, stall: "503 body" },
+  ]),
+)("$name has a localized Cloud deadline when the $stall stalls", async ({ route, command, parents, stall }) => {
+  const local = join(await directory(), "report.txt");
+  await writeFile(local, "report");
+  const nativeFetch = globalThis.fetch;
+  const nativeTimeout = AbortSignal.timeout;
+  const deadlines: number[] = [];
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+    deadlines.push(ms);
+    return nativeTimeout(40);
+  });
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (new URL(String(input)).pathname.includes(route)) {
+        if (stall === "body" || stall === "503 body")
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode('{"items":'));
+                init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason), { once: true });
+              },
+            }),
+            { status: stall === "503 body" ? 503 : 200, headers: { "content-type": "application/json" } },
+          );
+        return new Promise<Response>((_, reject) => {
+          init?.signal?.throwIfAborted();
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+        });
+      }
+      return nativeFetch(input, init);
+    },
+    { preconnect: nativeFetch.preconnect },
+  );
+  try {
+    const args =
+      command === "put"
+        ? ["put", local, "me:/New/report.txt"]
+        : command === "mkdir"
+          ? ["mkdir", "me:/New/Child"]
+          : ["stat", entryRefId(home.id, "Documents/notes.txt")!];
+    const flags: CloudCliFlags = parents ? { parents: true } : {};
+    const started = performance.now();
+    expect(await failure(args, flags)).toBe("No response from Cloud within 60 seconds.");
+    expect(await failure(args, flags, "de")).toBe("Keine Antwort von Cloud innerhalb von 60 Sekunden.");
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(deadlines.every((ms) => ms === 60_000)).toBe(true);
+    expect(deadlines.length).toBeGreaterThanOrEqual(2);
+    expect(sessions.size).toBe(0);
+  } finally {
+    globalThis.fetch = nativeFetch;
+    timeout.mockRestore();
+  }
+});
+
+test.each(["text", "json", "jsonl"] as const)("put keeps stdout unchanged and reports phases only in text mode (%s)", async (output) => {
+  const local = join(await directory(), "report.txt");
+  await writeFile(local, "report");
+  const descriptor = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+  Object.defineProperty(process.stderr, "isTTY", { configurable: true, value: false });
+  try {
+    const uploaded = await cli(["put", local, "me:/Documents/report.txt"], {}, output);
+    expect(uploaded.err).toBe(output === "text" ? "Uploading report.txt\nFinishing upload…\nUpload done." : "");
+    expect(uploaded.out).toBe(
+      output === "text"
+        ? `Uploaded: me:/Documents/report.txt (6 bytes) ${server.url.origin}/open/filesv2.entry/~${entryRefId(home.id, "Documents/report.txt")}`
+        : "",
+    );
+    if (output !== "text") expect(uploaded.json.entry.path).toBe("Documents/report.txt");
+  } finally {
+    if (descriptor) Object.defineProperty(process.stderr, "isTTY", descriptor);
+    else Reflect.deleteProperty(process.stderr, "isTTY");
+  }
+});
+
+test("a stalled put gives a plain error without lease details", async () => {
+  const local = join(await directory(), "report.txt");
+  await writeFile(local, "report");
+  const nativeFetch = globalThis.fetch;
+  const nativeTimeout = AbortSignal.timeout;
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => nativeTimeout(Math.min(ms, 100)));
+  let attempts = 0;
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (new URL(String(input)).pathname.startsWith("/transfer/")) {
+        attempts++;
+        return new Promise<Response>((_, reject) => {
+          init?.signal?.throwIfAborted();
+          init?.signal?.addEventListener("abort", () => reject(new TypeError(String(input))), { once: true });
+        });
+      }
+      return nativeFetch(input, init);
+    },
+    { preconnect: nativeFetch.preconnect },
+  );
+  try {
+    const message = await failure(["put", local, "me:/Documents/report.txt"]);
+    expect(message).toBe("No response from the file server.");
+    expect(message).not.toContain(LEASE);
+    expect(message).not.toContain(server.url.href);
+    expect(attempts).toBe(1);
+  } finally {
+    globalThis.fetch = nativeFetch;
+    timeout.mockRestore();
+  }
 });

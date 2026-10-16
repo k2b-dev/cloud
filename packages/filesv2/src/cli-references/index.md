@@ -184,11 +184,41 @@ replacing. A stale `--expected-revision` is a `write_conflict`. Unmanaged
 `idempotency_conflict` means the
 upload ID was reused with different parameters; inspect the original operation.
 `operation_conflict` and `write_conflict` do not authorize overwriting.
-Retries and lease renewal are bounded; interruption before commit requests an
-abort. The CLI stores one logical upload ID in its active profile before
-requesting a session. Repeating the same command with unchanged local file
-metadata, target, and conflict policy reuses it. Terminal receipts last seven
-days; after that, an uncertain outcome needs inspection rather than a new ID.
+Retries and lease renewal are bounded. Target resolution, folder creation with
+`--parents`, session opening, and commit have a 60 s deadline. Transfer control
+requests have a 30 s deadline; each segment PUT gets 60 s plus its body size at
+64 KiB/s (about 0.5 Mbit/s), the slowest supported uplink. The deadline covers
+the whole request, including its response body. One expired deadline ends the
+transfer without another attempt.
+
+A Cloud deadline reports "No response from Cloud within 60 seconds."
+Transfer failures report "No response from the file server.", "No connection
+to the file server.", or "The file server is busy. Try again later."
+The busy message covers HTTP 408, 502, 503, and 504. HTTP 429 reports
+"Too many uploads in a short time. Try again later." A Cloud network failure
+reports "No connection to Cloud." Other Cloud server errors keep the server's
+message with its status prefix. Other Filegate failures, including HTTP 500,
+report "Filegate upload failed." Cancellation reports "Upload cancelled."
+These messages follow the CLI language.
+
+In text mode, `put` writes progress to stderr. A terminal shows acknowledged
+bytes and percent on one updating line, followed by finishing and done messages.
+A long file name is shortened so the line fits the terminal width.
+Without a terminal, it prints only the uploading, finishing, and done phases.
+`--json` and `--jsonl` print no progress. Standard output keeps the command result.
+
+Interruption before commit requests an abort. The key is kept until that abort
+is confirmed. The CLI stores one logical upload ID in its active profile before
+requesting a session. Temporary failures keep the session and ID. Running the
+same command again with unchanged local file metadata, target, and conflict
+policy resumes from acknowledged segments. A lost commit answer also keeps
+the ID, so retry can recover the result. Final start answers discard the ID.
+Final failures before commit discard an open session through a confirmed abort;
+a closed, unknown, or changed session drops the ID directly. A definite name or
+write conflict at commit also aborts the unpublished session and drops the ID
+only after confirmation. Other final commit answers drop the ID without aborting.
+Terminal receipts last seven days. Check the destination after an uncertain
+result before starting a different upload.
 
 ## Upload local files
 

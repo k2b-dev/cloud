@@ -259,8 +259,13 @@ for (const view of [
   { name: "desktop", width: 1280, height: 800, touch: false },
   { name: "phone", width: 390, height: 844, touch: true },
 ] as const)
-  for (const theme of ["light", "dark"] as const)
-    test(`a failed turn keeps its results in place and ends with its reason and Continue (${view.name}, ${theme})`, async () => {
+  for (const { theme, failureCode } of [
+    { theme: "light", failureCode: "model_unavailable" },
+    { theme: "dark", failureCode: "model_unavailable" },
+    { theme: "light", failureCode: "tool_failed" },
+    { theme: "dark", failureCode: "tool_failed" },
+  ] as const)
+    test(`a failed turn keeps its results in place and ends with its reason and Continue (${failureCode}, ${view.name}, ${theme})`, async () => {
       const context = await browser.newContext({
         viewport: { width: view.width, height: view.height },
         isMobile: view.touch,
@@ -272,6 +277,7 @@ for (const view of [
         await page.clock.setFixedTime(new Date("2026-10-07T10:00:00Z"));
         const de = theme === "dark";
         await page.goto(`http://127.0.0.1:${server.port}/?lang=${de ? "de" : "en"}&theme=${theme}`);
+        const failedStep = failureCode === "tool_failed";
         const card = { title: "Revenue Q1–Q3", value: "1.2 M", caption: "Gross, without refunds" };
         const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/orders.csv" } };
         const shown = { id: "tool-card", kind: "tool" as const, callId: "card", name: "card", args: card };
@@ -298,9 +304,26 @@ for (const view of [
         await emit(page, { ...base, seq: 1, type: "turn_started", modelProfileId: "m", providerModel: "m", blocks: [] });
         // The person's message is in the chat before the turn ends, as the controller keeps it.
         await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
-        await emit(page, { ...base, seq: 3, type: "block_set", block: { ...read, status: "completed", result: "id,total" } });
+        await emit(page, {
+          ...base,
+          seq: 3,
+          type: "block_set",
+          block: {
+            ...read,
+            status: failedStep ? "failed" : "completed",
+            result: failedStep ? "Read failed" : "id,total",
+            isError: failedStep,
+          },
+        });
         await emit(page, { ...base, seq: 4, type: "block_set", block: { ...shown, status: "completed", result: { displayed: true } } });
-        await emit(page, { ...base, seq: 5, type: "block_delta", blockId: "text-1", blockKind: "text", delta: "Now I build the report." });
+        await emit(page, {
+          ...base,
+          seq: 5,
+          type: "block_delta",
+          blockId: "text-1",
+          blockKind: "text",
+          delta: "Now I build the report.",
+        });
         const box = (selector: string) =>
           page.evaluate((query) => {
             const content = document.querySelector(".k2b-chat-timeline__content")!.getBoundingClientRect();
@@ -316,22 +339,29 @@ for (const view of [
           seq: 6,
           type: "turn_finished",
           status: "failed",
-          error: "The model service did not answer.",
+          error: failedStep ? "A step failed, and the model stopped without an answer." : "The model service did not answer.",
           messages: [
             request,
             stored(11, {
               role: "assistant",
               content: [
+                ...(failedStep ? [{ type: "text" as const, text: "Now I build the report." }] : []),
                 { type: "tool_call", id: "read", name: "read_file", args: read.args },
                 { type: "tool_call", id: "card", name: "card", args: card },
               ],
             }),
-            stored(12, { role: "tool_result", callId: "read", name: "read_file", result: "id,total", isError: false }),
+            stored(12, {
+              role: "tool_result",
+              callId: "read",
+              name: "read_file",
+              result: failedStep ? "Read failed" : "id,total",
+              isError: failedStep,
+            }),
             stored(13, { role: "tool_result", callId: "card", name: "card", result: { displayed: true }, isError: false }),
             stored(
               14,
-              { role: "assistant", content: [{ type: "text", text: "Now I build the report." }] },
-              { loopDoneReason: "error", meta: { turnError: { code: "model_unavailable" } }, createdAt: "2026-10-07T10:00:00.000Z" },
+              { role: "assistant", content: failedStep ? [] : [{ type: "text", text: "Now I build the report." }] },
+              { loopDoneReason: "error", meta: { turnError: { code: failureCode } }, createdAt: "2026-10-07T10:00:00.000Z" },
             ),
           ],
         });
@@ -344,6 +374,19 @@ for (const view of [
         expect(notice![0]! + notice![2]!).toBeLessThanOrEqual(Math.ceil(view.width));
         const text = await page.locator(".ai-turn__notice").innerText();
         expect(text).toContain(de ? "Die Antwort wurde abgebrochen." : "The answer was interrupted.");
+        expect(text).toContain(
+          failedStep
+            ? de
+              ? "Ein Schritt ist fehlgeschlagen, und das Modell hat danach nicht geantwortet."
+              : "A step failed, and the model stopped without an answer."
+            : de
+              ? "Der KI-Dienst hat nicht geantwortet."
+              : "The model service did not answer.",
+        );
+        expect(
+          await page.evaluate(() => document.querySelector(".ai-turn")?.lastElementChild === document.querySelector(".ai-turn__notice")),
+        ).toBe(true);
+        expect(await page.getByRole("button", { name: de ? "Weiterarbeiten" : "Continue", exact: true }).isVisible()).toBe(true);
         expect(await page.locator(".ai-turn-work").innerText()).toContain(de ? "4 Min. gearbeitet" : "Worked 4 min");
         expect(await page.locator(".k2b-chat-timeline__content").innerText()).not.toContain("Now I build the report.");
         expect(
