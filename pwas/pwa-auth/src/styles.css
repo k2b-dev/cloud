@@ -123,12 +123,81 @@ body {
   overflow-wrap: anywhere;
   font-size: 0.875rem;
 }
+/* A sign-in decision: the explanation, then the code as the one thing to compare. The request, a hidden
+   sizer with the longest ending, and the ending itself share one grid cell, so an ending never resizes it. */
+.auth-decision {
+  display: grid;
+}
+.auth-decision > * {
+  grid-area: 1 / 1;
+}
+.auth-decision[data-ended] > .auth-decision__request,
+.auth-decision > .auth-decision__sizer {
+  visibility: hidden;
+}
+/* A compact ending: it has to fit the place of the explanation and the code. */
+.auth-decision .auth-action-result {
+  gap: 0.5rem;
+  min-height: 0;
+  padding-block: 0;
+}
+.auth-decision .auth-action-result__icon {
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 0;
+  font-size: 1.5rem;
+}
+.auth-decision .auth-action-result h3 {
+  font-size: 1.125rem;
+}
+.auth-decision__request {
+  display: grid;
+  align-content: start;
+  gap: 1.25rem;
+}
+.auth-decision__request > p {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
 .auth-comparison {
-  font-size: 2.5rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5em;
+  min-height: 6.5rem;
+  padding: 1.25rem 1rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text);
+  font-family: var(--k2b-font-mono);
+  font-size: 2.75rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.2em;
-  text-align: center;
-  padding: 1rem 0;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+}
+/* Both choices share the row; a label too long for half of it moves the main action above. Done takes
+   their place after an ending, in the same grid cell. */
+.auth-decision-actions {
+  display: grid;
+  width: 100%;
+}
+.auth-decision-actions > * {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-wrap: wrap-reverse;
+  align-items: end;
+  gap: 0.5rem;
+}
+.auth-decision-actions[data-ended] > .auth-decision-actions__choices,
+.auth-decision-actions:not([data-ended]) > .auth-decision-actions__done {
+  visibility: hidden;
+}
+.auth-decision-actions .k2b-button {
+  flex: 1 1 9rem;
+  min-height: 44px;
 }
 .auth-clouds {
   width: 100%;

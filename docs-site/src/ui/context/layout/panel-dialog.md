@@ -10,6 +10,9 @@ forced-color mode.
 
 It does not open a dialog, own form state, validate fields, or save data.
 
+For a short dialog that should become a sheet on phones, use
+[`bottomSheetAdaptiveOptions`](/en/ui/layout/bottom-sheet#sheet-or-dialog).
+
 ## Use PanelDialog
 
 Use it for editors with several related field groups or a stable action footer.

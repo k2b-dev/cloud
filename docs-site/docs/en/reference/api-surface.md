@@ -409,7 +409,9 @@ island. See [Application shells](/en/docs/frontend/application-shells#supply-mob
 
 The standalone UI exports `createNavigation`, `Navigation`, `NavigationItem`,
 `NavigationController`, `NavigationOptions`, `NavigationProps`,
-`findNavigationItem`, `BottomSheet`, `BottomSheetProps`, and `bottomSheetOptions`.
+`findNavigationItem`, `BottomSheet`, `BottomSheetProps`, `bottomSheetOptions`, and
+`bottomSheetAdaptiveOptions`. See [BottomSheet](/en/ui/layout/bottom-sheet) for
+choosing a bottom-edge sheet or an adaptive decision dialog.
 
 
 `@k2b/cloud/browser/commands` exports `openCommand`, `registerCommandHandler`,

@@ -1,7 +1,7 @@
 import { type AccountCategory, AppLoginStartResultSchema, AppLoginStatusSchema } from "@k2b/cloud/contracts";
 import { cookies } from "@k2b/stdlib/browser";
 import { Button, ButtonLink, NoticeCard, Placeholder, TextInput, useLocale } from "@k2b/ui";
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import { FREEIPA_APP_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "../app-approval/client";
@@ -175,7 +175,10 @@ export default function AppLoginForm(props: {
               <div class="text-center" role="status" aria-live="polite">
                 <p class="text-sm text-dimmed">{t().waiting}</p>
                 <span class="sr-only">{t().comparison}</span>
-                <p class="py-6 text-4xl sm:text-5xl font-mono tabular-nums tracking-widest">{request().comparison}</p>
+                {/* Grouped by three like Cloud Login shows it, so the two codes read the same at a glance. */}
+                <p class="flex justify-center gap-4 py-6 text-4xl sm:text-5xl font-mono tabular-nums tracking-widest">
+                  <For each={request().comparison.match(/.{1,3}/g) ?? [request().comparison]}>{(group) => <span>{group}</span>}</For>
+                </p>
               </div>
               <Button
                 variant="secondary"

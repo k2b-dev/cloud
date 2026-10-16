@@ -421,8 +421,8 @@ const mergeVerifiedDuplicate = async (params: {
   }
   if (current.conversation_id && !canonical.conversation_id) {
     await params.db`
-      INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by, created_at)
-      SELECT conversation_id, ${canonical.id}::uuid, position, added_by, created_at
+      INSERT INTO mail.conversation_messages (conversation_id, message_id, position, added_by, created_at, linked_xid, link_seq)
+      SELECT conversation_id, ${canonical.id}::uuid, position, added_by, created_at, linked_xid, link_seq
       FROM mail.conversation_messages
       WHERE message_id = ${params.messageId}::uuid
       ON CONFLICT DO NOTHING

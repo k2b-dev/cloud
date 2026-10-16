@@ -68,7 +68,7 @@ export {
   serializeAppWorkspaceLayoutState,
   shouldCollapseAppWorkspaceSidebar,
 } from "./app-workspace-state";
-export { type BottomSheetProps, bottomSheetOptions, default as BottomSheet } from "./BottomSheet";
+export { type BottomSheetProps, bottomSheetAdaptiveOptions, bottomSheetOptions, default as BottomSheet } from "./BottomSheet";
 export type { DataPanelProps } from "./DataPanel";
 export { DataPanel } from "./DataPanel";
 export type {

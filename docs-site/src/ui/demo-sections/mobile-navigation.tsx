@@ -1,6 +1,7 @@
 import {
   BottomSheet,
   Button,
+  bottomSheetAdaptiveOptions,
   bottomSheetOptions,
   confirmDiscardIfDirty,
   createNavigation,
@@ -137,14 +138,43 @@ export function BottomSheetDemo() {
         </BottomSheet>
       );
     }, bottomSheetOptions);
+  const openDecision = () =>
+    dialogCore.open<void>(
+      (close, context) => (
+        <BottomSheet onDismiss={context.requestDismiss}>
+          <BottomSheet.Header title="Apply changes?" />
+          <BottomSheet.Body>These changes will be visible to everyone in the workspace.</BottomSheet.Body>
+          <BottomSheet.Footer>
+            <Button variant="secondary" onClick={() => close()}>
+              Cancel
+            </Button>
+            <Button onClick={() => close()}>Apply changes</Button>
+          </BottomSheet.Footer>
+        </BottomSheet>
+      ),
+      bottomSheetAdaptiveOptions,
+    );
   return (
     <DemoCard
       id="bottom-sheet"
       chip={{ kind: "component", name: "BottomSheet", from: "@k2b/ui" }}
-      description="A bottom-edge dialog with guarded dismissal, a touch handle, safe-area spacing and the shared focus trap. Enter a draft to exercise the discard guard."
-      code={`dialogCore.open((close, context) => <BottomSheet onDismiss={context.requestDismiss}>\n  <BottomSheet.Header title="Details" close={context.requestDismiss} />\n  <BottomSheet.Body>Content</BottomSheet.Body>\n</BottomSheet>, bottomSheetOptions);`}
+      description="A bottom-edge sheet with guarded dismissal, plus a short decision that becomes a centered dialog from tablet width. Enter a draft to exercise the discard guard, or resize the open decision."
+      code={`dialogCore.open((close, context) => <BottomSheet onDismiss={context.requestDismiss}>\n  <BottomSheet.Header title="Details" close={context.requestDismiss} />\n  <BottomSheet.Body>Content</BottomSheet.Body>\n</BottomSheet>, bottomSheetOptions);
+
+// A decision switches in place from sheet to dialog at 48rem.
+dialogCore.open((close, context) => (
+  <BottomSheet onDismiss={context.requestDismiss}>
+    <BottomSheet.Header title="Apply changes?" />
+    <BottomSheet.Body>These changes will be visible to everyone in the workspace.</BottomSheet.Body>
+    <BottomSheet.Footer>
+      <Button variant="secondary" onClick={() => close()}>Cancel</Button>
+      <Button onClick={() => close()}>Apply changes</Button>
+    </BottomSheet.Footer>
+  </BottomSheet>
+), bottomSheetAdaptiveOptions);`}
     >
       <Button onClick={() => void open()}>Open bottom sheet</Button>
+      <Button onClick={() => void openDecision()}>Open sheet or dialog</Button>
     </DemoCard>
   );
 }

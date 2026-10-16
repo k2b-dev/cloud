@@ -363,6 +363,33 @@ suite("mail baseline schema", () => {
     }
   });
 
+  test("orders conversation links with an uncached sequence, added without rewriting the links", async () => {
+    await migrate();
+    // Dropping the column also drops the sequence it owns, as in a database installed before them.
+    await sql`ALTER TABLE mail.conversation_messages DROP COLUMN link_seq, DROP COLUMN linked_xid`;
+    const storage = async () =>
+      (await sql<{ file: number }[]>`SELECT relfilenode::int AS file FROM pg_class WHERE oid = 'mail.conversation_messages'::regclass`)[0]!
+        .file;
+    const before = await storage();
+    await migrate();
+    await migrate();
+    // The workflow status fence reads the sequence's last value; a cached block would let a later
+    // link of the view's own transaction count as seen.
+    const [sequence] = await sql<{ cache_size: string; owner: string | null }[]>`
+      SELECT s.cache_size::text, (
+        SELECT a.attname FROM pg_depend d
+        JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+        WHERE d.objid = 'mail.conversation_link_seq'::regclass AND d.deptype = 'a'
+      )::text AS owner
+      FROM pg_sequences s WHERE s.schemaname = 'mail' AND s.sequencename = 'conversation_link_seq'
+    `;
+    expect({ cacheSize: sequence?.cache_size, owner: sequence?.owner, rewritten: (await storage()) !== before }).toEqual({
+      cacheSize: "1",
+      owner: "link_seq",
+      rewritten: false,
+    });
+  });
+
   test("lets a database installed before queue sender verifications as commands", async () => {
     await migrate();
     await sql`ALTER TABLE mail.commands DROP CONSTRAINT commands_kind_check`;
