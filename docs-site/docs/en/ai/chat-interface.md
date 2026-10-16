@@ -1179,14 +1179,17 @@ Switching lists clears previous results. Screen readers announce the number
 of suggestions once the search settles.
 
 The Skills overview shows the first four enabled Skills. If there are more,
-**All N Skills** narrows to the full Skill list with Enter or Tab.
+**All N Skills** narrows to the full Skill list with Enter or Tab. If the Skill
+list fails to load, **Skills could not be loaded** with **Try again** takes the
+place of the Skills; the other sections stay. Choosing it loads the list again.
 
 The **This chat** entries are **Choose model**, **Assign to project**,
 **Compact chat**, **Fork chat**, **Search this chat**, and **New chat**.
 Choose model opens the composer's model menu. Type `/model ` or `/modell ` to
 list models directly; a check marks the current model. Choosing another model
 applies it to this chat and confirms the choice. You can change models once the
-current response finishes. Assign to project opens the Project list.
+current response finishes, or after you stop a dictation recording. Assign to
+project opens the Project list.
 The names `/compact`, `/fork`, and `/new` still find those actions. Compact chat
 summarizes older history to free up room. Fork chat starts from the latest
 assistant response and brings your draft along. New chat starts empty and keeps
@@ -1213,7 +1216,8 @@ inserts nothing.
 Choosing an active task runs it now. The composer shows a starting status while
 the request is pending and a running status only after the server accepts the
 run. The result arrives in the scheduled task's chat. A failed request restores
-`/…` and explains the failure. Paused tasks ask you to resume them first;
+`/…` and explains the failure in plain words: the task already runs, no longer
+exists, was started too often, was not accepted, or the server is unreachable. Paused tasks ask you to resume them first;
 tasks that need attention explain that you must intervene before they can run.
 Selecting either sends no run request.
 

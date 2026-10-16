@@ -76,7 +76,7 @@ const mount = async (
     skills?: AiSkillSummary[];
     tasks?: AiChatTaskView[];
     tasksFail?: () => boolean;
-    skillsFail?: boolean;
+    skillsFail?: () => boolean;
     scheduledTaskSkills?: AiSkillSummary[];
     scheduledTaskSkillsFail?: () => boolean;
     post?: () => Promise<Response>;
@@ -117,7 +117,7 @@ const mount = async (
               });
         }
         if (url.pathname.startsWith("/api/ai/skills"))
-          return options.skillsFail
+          return options.skillsFail?.()
             ? Response.json({ message: "Skills offline" }, { status: 500 })
             : Response.json({ skills: options.skills ?? skills });
         if (url.pathname.includes("artifacts"))
@@ -170,6 +170,7 @@ const mount = async (
           copy,
           projectComposer: false,
           running: state() === "running",
+          recording: false,
           models,
           selectedModelId: selectedModel(),
           hasMessages: !options.empty,
@@ -355,16 +356,43 @@ test("task running status appears only after the deferred server acceptance", as
   expect(h.value()).toBe("");
 });
 
-test.each([500, 409])("task HTTP %s restores the token and reports the localized reason", async (status) => {
-  const h = await mount({ value: "/routine Bericht 6", post: async () => Response.json({ message: "Server unavailable." }, { status }) });
-  h.mark("Bericht 6");
-  h.key("Enter");
-  await flush();
-  expect(h.value()).toBe("/routine Bericht 6");
-  expect(h.status()).toBe(
-    `„Bericht 6“ ist nicht gestartet: ${status === 409 ? "sie läuft schon oder ist nicht mehr aktiv" : "Server unavailable"}. Dein Entwurf ist unverändert.`,
-  );
-});
+test.each([409, 404, 429, 500, "offline"] as const)(
+  "task failure %s restores the token and reports the localized reason",
+  async (status) => {
+    const { assistantCopyFor } = await import("./ui-copy");
+    const copy = assistantCopyFor("de");
+    const rawMessage = "Raw upstream failure.";
+    const h = await mount({
+      value: "/routine Bericht 6",
+      post: async () => {
+        if (status === "offline") throw new TypeError(rawMessage);
+        return Response.json({ message: rawMessage }, { status });
+      },
+    });
+    h.mark("Bericht 6");
+    h.key("Enter");
+    await flush();
+    expect(h.value()).toBe("/routine Bericht 6");
+    expect(h.status()).toBe(
+      copy.commandTaskRunFailed({
+        title: "Bericht 6",
+        reason:
+          status === 409
+            ? copy.commandTaskAlreadyRunning
+            : status === 404
+              ? copy.commandTaskGone
+              : status === 429
+                ? copy.commandTaskTooMany
+                : status === 500
+                  ? copy.commandTaskNotAccepted
+                  : copy.commandTaskOffline,
+      }) +
+        " " +
+        copy.draftUnchanged,
+    );
+    expect(h.status()).not.toContain(rawMessage);
+  },
+);
 
 test.each(["paused", "needs_attention"] as const)("%s task explains its reason and sends no POST", async (state) => {
   const h = await mount({ value: "/routine ", tasks: [{ ...tasks[0]!, state }] });
@@ -452,14 +480,33 @@ test.each([
   expect(h.row("Bericht 6")).toBeDefined();
 });
 
-test("full Skill-list failure uses the composer's search error", async () => {
-  const h = await mount({ skillsFail: true });
-  expect(h.row("Neue geplante Aufgabe")).toBeUndefined();
-  expect(h.root.querySelector('[role="listbox"] [role="status"]')).not.toBeNull();
+test("full Skill-list failure keeps other sections and retries Skills with Enter", async () => {
+  let fail = true;
+  const h = await mount({ skillsFail: () => fail });
+  const skillGets = () => h.requests.filter(({ url }) => url.pathname === "/api/ai/skills" && !url.search);
+  expect(skillGets()).toHaveLength(1);
+  expect(h.row("Neue geplante Aufgabe")).toBeDefined();
+  expect(h.row("Bericht 6")).toBeDefined();
+  expect(h.row("Bericht 2")).toBeDefined();
+  expect(h.row("Modell wählen")).toBeDefined();
+  expect(h.row("Studio app")).toBeDefined();
+  expect(h.row("Skills konnten nicht geladen werden").querySelector("small")?.textContent).toBe("Erneut versuchen");
+  expect(h.row("Alle 6 Skills")).toBeUndefined();
+  fail = false;
+  h.mark("Skills konnten nicht geladen werden");
+  h.key("Enter");
+  await settled();
+  expect(h.value()).toBe("/");
+  expect(skillGets()).toHaveLength(2);
+  expect(h.row("Skills konnten nicht geladen werden")).toBeUndefined();
+  expect(h.row("Skill 0")).toBeDefined();
+  expect(h.row("Alle 6 Skills")).toBeDefined();
+  expect(h.row("Neue geplante Aufgabe")).toBeDefined();
+  expect(h.row("Bericht 6")).toBeDefined();
 });
 
 test("a failed full Skill list does not prevent task rows or the scheduled Skill reference", async () => {
-  const h = await mount({ value: "/routine ", skillsFail: true });
+  const h = await mount({ value: "/routine ", skillsFail: () => true });
   expect(h.row("Bericht 6")).toBeDefined();
   expect(h.row("Geplante Aufgaben konnten nicht geladen werden")).toBeUndefined();
   h.mark("Neue geplante Aufgabe");

@@ -40,8 +40,8 @@ const assistantComposerCommands = (
     isRunning: () => false,
     ...input,
   });
-const assistantBuiltInCommands = (input: Omit<Parameters<typeof builtInCommands>[0], "models" | "searchChat">) =>
-  builtInCommands({ models: [{ id: "model", label: "Current" }], searchChat() {}, ...input });
+const assistantBuiltInCommands = (input: Omit<Parameters<typeof builtInCommands>[0], "models" | "searchChat" | "recording">) =>
+  builtInCommands({ models: [{ id: "model", label: "Current" }], searchChat() {}, recording: false, ...input });
 const context = { setValue() {}, submit() {}, focus() {}, openModelSelection: async () => null };
 
 const project: AiProject = {
@@ -271,6 +271,31 @@ test("built-in reasons reflect prerequisites before a running response, and acti
             "Forked, but your draft was not saved in the new chat: Oops.",
           ],
     );
+  }
+});
+
+test("model selection explains recording after running and before missing models", () => {
+  for (const locale of ["en", "de"]) {
+    const copy = assistantCopyFor(locale);
+    const input = {
+      copy,
+      projectComposer: false,
+      running: false,
+      recording: true,
+      hasMessages: true,
+      hasAssistantMessage: true,
+      models: [{ id: "model", label: "Current" }],
+      searchChat() {},
+      compact: async () => {},
+      fork: async () => {},
+      newChat: async () => {},
+    };
+    const model = (state: Partial<typeof input>) => builtInCommands({ ...input, ...state }).find((row) => row.id === "model")!;
+    expect(model({}).reason).toBe(copy.commandModelNeedsRecordingDone);
+    expect(model({ running: true }).reason).toBe(copy.commandNeedsIdle);
+    expect(model({ models: [] }).reason).toBe(copy.commandModelNeedsRecordingDone);
+    expect(model({ recording: false, models: [] }).reason).toBe(copy.commandNoModel);
+    expect(model({ recording: false }).reason).toBeUndefined();
   }
 });
 
@@ -536,6 +561,55 @@ test("task matches append after thirty references; overview limits tasks indepen
   } finally {
     loader.dispose();
   }
+});
+
+test("Skills retry stays ahead of the reference limit and preserves task rows", async () => {
+  const { artifactClient } = await import("../artifacts/client");
+  spyOn(artifactClient, "list").mockResolvedValue({
+    items: Array.from({ length: 40 }, (_, i) => ({
+      id: `app-${i}`,
+      title: `App ${i}`,
+      description: "",
+      kind: "app",
+      icon: "",
+      revision: 1,
+      permission: "read",
+      updatedAt: "",
+      publishedRevision: 1,
+      forkedFromId: null,
+      forkedFromRevision: null,
+    })),
+    page: 1,
+    hasNext: false,
+  });
+  spyOn(assistantApi, "listSkills").mockRejectedValue(new Error("Skills offline"));
+  spyOn(assistantApi, "findSkillsByName").mockResolvedValue([
+    { ...skillFixture(0), name: "scheduled-tasks", source: { appId: "assistant", appName: "Assistant" } },
+  ]);
+  spyOn(assistantApi, "listChatTasks").mockImplementation(async ({ state }) => (state === "active" ? [taskFixture(0)] : []));
+  const rows = await assistantComposerCommands({
+    query: "",
+    signal: new AbortController().signal,
+    locale: "en",
+    projects: [],
+    running: false,
+    assignProject: async () => {},
+  });
+  const copy = assistantCopyFor("en");
+  expect(rows.filter((row) => row.section === "skills")).toEqual([
+    {
+      id: "skills-retry",
+      name: "skills-retry",
+      section: "skills",
+      label: copy.commandSkillsFailed,
+      description: copy.commandTryAgain,
+      icon: "ti ti-alert-circle",
+      searchAgain: true,
+    },
+  ]);
+  expect(rows.filter((row) => row.section === "apps")).toHaveLength(29);
+  expect(rows.filter((row) => row.section === "tasks").map((row) => row.id)).toEqual(["task-new", "task:task-0"]);
+  expect(rows.find((row) => row.id === "task-new")?.mention).toBeDefined();
 });
 
 test("model scope shares forgiving matching and runs the injected setter", async () => {

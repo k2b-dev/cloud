@@ -47,6 +47,7 @@ export function assistantBuiltInCommands(input: {
   projectComposer: boolean;
   projectName?: string | null;
   running: boolean;
+  recording: boolean;
   hasMessages: boolean;
   hasAssistantMessage: boolean;
   models: readonly ChatModelOption[];
@@ -69,7 +70,13 @@ export function assistantBuiltInCommands(input: {
       keywords: ["model", "modell", "ki", "ai", "llm"],
       scope: "model",
       hiddenUntilSearch: input.models.length === 0,
-      reason: input.running ? t.commandNeedsIdle : input.models.length === 0 ? t.commandNoModel : undefined,
+      reason: input.running
+        ? t.commandNeedsIdle
+        : input.recording
+          ? t.commandModelNeedsRecordingDone
+          : input.models.length === 0
+            ? t.commandNoModel
+            : undefined,
       action: async (ctx) => {
         const id = await ctx.openModelSelection();
         return id ? { done: t.commandModelChosen({ name: input.models.find((model) => model.id === id)?.label ?? id }) } : "cancelled";
@@ -169,7 +176,7 @@ export function createAssistantCommandSession() {
       if (latest?.session === session) return latest.data;
       latest?.abort.abort();
       const abort = new AbortController();
-      // A failed load is `null`: the overview reports it, the tasks section offers a retry row.
+      // A failed load is `null`: each section offers its own retry row.
       const skills = assistantApi.listSkills(abort.signal).catch(() => null);
       const scheduledTaskSkills = assistantApi.findSkillsByName("scheduled-tasks", abort.signal).catch(() => null);
       const tasks = Promise.all(
@@ -276,9 +283,17 @@ export async function assistantComposerCommands(input: {
       : null,
   ]);
   const allSkills = sessionData?.skills;
-  // The overview's Skills come from the full list; without it the composer shows its load error, as before.
-  if (overview && !allSkills) throw new Error("Failed to load skills");
   const results: ChatCommand[] = [];
+  if (overview && allSkills === null)
+    results.push({
+      id: "skills-retry",
+      name: "skills-retry",
+      section: "skills",
+      label: copy.commandSkillsFailed,
+      description: copy.commandTryAgain,
+      icon: "ti ti-alert-circle",
+      searchAgain: true,
+    });
   for (const skill of overview ? overviewSkills(allSkills ?? []) : searchedSkills) {
     if (!skill.enabled) continue;
     results.push(
@@ -417,11 +432,15 @@ export async function assistantComposerCommands(input: {
                     return { done: copy.commandTaskRunning({ title }) };
                   } catch (error) {
                     const reason =
-                      error instanceof AssistantTaskRunError && error.status === 409
-                        ? copy.commandTaskAlreadyRunning
-                        : error instanceof Error
-                          ? error.message.trimEnd().replace(/\.+$/u, "")
-                          : String(error).trimEnd().replace(/\.+$/u, "");
+                      error instanceof AssistantTaskRunError
+                        ? error.status === 409
+                          ? copy.commandTaskAlreadyRunning
+                          : error.status === 404
+                            ? copy.commandTaskGone
+                            : error.status === 429
+                              ? copy.commandTaskTooMany
+                              : copy.commandTaskNotAccepted
+                        : copy.commandTaskOffline;
                     throw new Error(copy.commandTaskRunFailed({ title, reason }) + " " + copy.draftUnchanged);
                   }
                 }

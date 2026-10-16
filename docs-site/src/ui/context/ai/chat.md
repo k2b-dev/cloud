@@ -243,8 +243,10 @@ currently marked by the arrow keys.
 Command actions can call `await context.openModelSelection()` to open the
 composer's own model control. It resolves with the chosen model id after
 `onModelChange` runs, or `null` on Escape, outside close, or an unavailable
-control (including running, no models, or no change callback). The control
-stays usable while that command awaits a choice. Return `"cancelled"` on null
+control (including running, no models, no change callback, or `footerContent`
+replacing the footer). Give the command a `reason` for the states your
+application knows, so it never resolves `null` silently. The control stays
+usable while that command awaits a choice. Return `"cancelled"` on null
 to restore the token. The action's normal completion restores field focus.
 
 Set `reason` when a command is unavailable. It replaces the description and is

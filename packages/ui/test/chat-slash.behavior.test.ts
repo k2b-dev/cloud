@@ -1060,6 +1060,73 @@ test("model selection is unavailable without a usable control and while running"
   }
 });
 
+test("footer content creates one component across run changes and cancels model selection", async () => {
+  const dom = createHarness();
+  slashCleanups.push(dom.cleanup);
+  const { ChatComposer } = await import("../src/chat/ChatComposer");
+  const [value, setValue] = createSignal("/model");
+  const [state, setState] = createSignal<ChatComposerProps["state"]>("idle");
+  let created = 0;
+  let chosen: string | null | undefined;
+  const Footer = () => {
+    created++;
+    const content = dom.document.createElement("div");
+    content.textContent = "Recording";
+    return content;
+  };
+  const dispose = render(
+    () =>
+      createComponent(ChatComposer, {
+        get value() {
+          return value();
+        },
+        onValueChange: setValue,
+        onSubmit() {},
+        get state() {
+          return state();
+        },
+        get footerContent() {
+          return createComponent(Footer, {});
+        },
+        models: [{ id: "a", label: "Alpha" }],
+        onModelChange() {
+          throw new Error("Must not change model during recording");
+        },
+        commands: [
+          {
+            name: "model",
+            description: "",
+            action: async (ctx) => {
+              chosen = await ctx.openModelSelection();
+              return "cancelled" as const;
+            },
+          },
+        ],
+      }),
+    dom.root,
+  );
+  slashCleanups.push(dispose);
+  const footer = dom.root.querySelector(".k2b-chat-composer__footer")!;
+  const content = footer.firstElementChild;
+  expect(created).toBe(1);
+  expect(footer.textContent).toBe("Recording");
+  for (const next of ["running", "idle", "running", "idle"] as const) {
+    setState(next);
+    await flush();
+    expect(created).toBe(1);
+    expect(footer.firstElementChild).toBe(content);
+  }
+  const input = dom.root.querySelector("textarea")!;
+  input.setSelectionRange(value().length, value().length);
+  input.click();
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  await flush();
+  expect(chosen).toBeNull();
+  expect(value()).toBe("/model");
+  expect(dom.root.querySelector(".k2b-chat-composer__model")).toBeNull();
+  expect(created).toBe(1);
+});
+
 test("a model command cancels when a run starts while its control is open", async () => {
   const [state, setState] = createSignal<ChatComposerProps["state"]>("idle");
   let chosen: string | null | undefined;

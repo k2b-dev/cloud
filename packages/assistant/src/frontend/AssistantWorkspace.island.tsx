@@ -1480,6 +1480,7 @@ export default function AssistantWorkspace(props: Props) {
                 ? (projects().find((project) => project.id === chat.conversation()?.projectId)?.name ?? "")
                 : undefined),
             running: chat.running(),
+            recording: dictation.recording(),
             models: aiChatModelOptions(props.models),
             selectedModelId: selectedModelId(),
             searchChat,

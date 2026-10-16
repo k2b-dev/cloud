@@ -247,6 +247,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const accessory = children(() => props.accessory);
   const hasAccessory = () => hasContent(accessory.toArray());
   const hint = children(() => props.hint);
+  const footer = children(() => props.footerContent);
   const messages = useUiMessages();
   const markdownToolbarMessages = useMarkdownToolbarMessages();
   const chatMessages = useChatMessages();
@@ -331,7 +332,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     resolve?.(id);
   };
   const usableModelControl = () =>
-    !conversation() && !props.footerContent && !props.disabled && !running() && Boolean(props.models?.length && props.onModelChange);
+    !conversation() && !footer() && !props.disabled && !running() && Boolean(props.models?.length && props.onModelChange);
   const openModelSelection = (): Promise<string | null> => {
     if (!usableModelControl()) return Promise.resolve(null);
     finishModelSelection(null);
@@ -1701,7 +1702,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
               <footer class="k2b-chat-composer__footer">
                 <Show
-                  when={props.footerContent}
+                  when={footer()}
                   fallback={
                     <>
                       <div class="k2b-chat-composer__tools">
@@ -1773,7 +1774,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                     </>
                   }
                 >
-                  {(content) => content()}
+                  {footer()}
                 </Show>
               </footer>
             </>
