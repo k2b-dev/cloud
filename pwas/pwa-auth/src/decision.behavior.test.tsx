@@ -173,6 +173,12 @@ test("an expired sign-in stays open with its ending and focused Done", async () 
     expect(status.textContent).toContain(authMessages.resolve(["en"]).t.requestExpired);
     const done = dialog.querySelector<HTMLButtonElement>(".auth-decision-actions__done button")!;
     expect(document.activeElement).toBe(done);
+    // Later clock ticks leave focus where the person moved it.
+    const handle = dialog.querySelector<HTMLButtonElement>(".k2b-bottom-sheet__handle")!;
+    handle.focus();
+    setNow(Date.parse("2026-10-16T12:01:05.000Z"));
+    await Bun.sleep(30);
+    expect(document.activeElement).toBe(handle);
     done.click();
     await Bun.sleep(30);
     expect(document.querySelector("dialog[open]")).toBeNull();

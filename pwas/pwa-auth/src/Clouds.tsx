@@ -51,7 +51,8 @@ function Decision(props: {
     // An expired request stays open with its ending, so the code never vanishes without a word.
     if (!busy() && !error() && !expired() && !pending) props.close();
   });
-  const ending = (): "uncertain" | "expired" | undefined => (error() ? "uncertain" : expired() ? "expired" : undefined);
+  // A memo, so effects run when the ending changes, not on every clock tick.
+  const ending = createMemo((): "uncertain" | "expired" | undefined => (error() ? "uncertain" : expired() ? "expired" : undefined));
   const endings = {
     uncertain: { icon: "ti ti-alert-triangle", title: () => t().actionUncertainTitle, text: () => t().loginUncertain },
     expired: { icon: "ti ti-clock", title: () => t().actionExpiredTitle, text: () => t().requestExpired },
