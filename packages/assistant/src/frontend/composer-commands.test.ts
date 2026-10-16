@@ -1051,3 +1051,19 @@ test("schedule helpers retain dialog wording and provide localized inline schedu
     setSystemTime();
   }
 });
+
+test("the empty Skill scope shows the full list while task discovery is still pending", async () => {
+  const skill = { ...skillFixture(0), enabled: true };
+  spyOn(assistantApi, "listSkills").mockResolvedValue([skill]);
+  spyOn(assistantApi, "listChatTasks").mockImplementation(() => new Promise(() => {}));
+  const rows = await assistantComposerCommands({
+    query: "",
+    scope: "skill",
+    signal: new AbortController().signal,
+    locale: "en",
+    projects: [],
+    running: false,
+    assignProject: async () => {},
+  });
+  expect(rows.map((row) => row.label)).toEqual([skill.name]);
+});

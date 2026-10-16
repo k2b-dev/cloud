@@ -243,10 +243,16 @@ export function createAssistantCommandSession() {
     | {
         session: number;
         abort: AbortController;
+        skills: Promise<AiSkillSummary[] | null>;
         data: Promise<{ skills: AiSkillSummary[] | null; scheduledTaskSkills: AiSkillSummary[] | null; tasks: AiChatTaskView[] | null }>;
       }
     | undefined;
   return {
+    /** The opening's full Skill list alone, so the Skill scope never waits for task discovery. */
+    loadSkills(session: number) {
+      this.load(session);
+      return latest!.skills;
+    },
     load(session: number) {
       if (latest?.session === session) return latest.data;
       latest?.abort.abort();
@@ -267,7 +273,7 @@ export function createAssistantCommandSession() {
         scheduledTaskSkills,
         tasks,
       }));
-      latest = { session, abort, data };
+      latest = { session, abort, skills, data };
       return data;
     },
     dispose() {
@@ -349,7 +355,7 @@ export async function assistantComposerCommands(input: {
   const overview = !category && !query;
   const fullSkillScope = category === "skill" && !query;
   const [sessionData, searchedSkills, apps, chatFiles, project] = await Promise.all([
-    wants("task") || fullSkillScope ? input.sessionLoader.load(input.session) : null,
+    wants("task") ? input.sessionLoader.load(input.session) : null,
     wants("skill") && !overview && !fullSkillScope ? assistantApi.listSkills(input.signal, query.slice(0, 200)) : [],
     wants("app") ? artifactClient.list(1, query.slice(0, 120), input.signal, input.conversationId) : null,
     (category === "file" || (!category && query.length > 0)) && input.conversationId
@@ -359,7 +365,7 @@ export async function assistantComposerCommands(input: {
       ? assistantApi.loadProjectContext(input.projectId, input.signal)
       : null,
   ]);
-  const allSkills = sessionData?.skills;
+  const allSkills = fullSkillScope ? await input.sessionLoader.loadSkills(input.session) : sessionData?.skills;
   const results: ChatCommand[] = [];
   if ((overview || fullSkillScope) && allSkills === null)
     results.push({
