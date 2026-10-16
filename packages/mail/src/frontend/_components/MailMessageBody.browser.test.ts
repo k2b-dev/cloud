@@ -466,7 +466,8 @@ describe("HTML mail colors", () => {
 <div id="nested-gray" style="background:#999999"><div id="translucent-black" style="background:rgba(0,0,0,.8);color:#ffffff">Nested translucent black</div></div>
 <div id="clear-gradient" style="background:linear-gradient(rgba(255,255,255,.2),rgba(255,255,255,.2))"><span id="clear-gradient-text">Clear gradient</span></div>
 <div id="fade-gradient" style="background:linear-gradient(transparent,rgba(255,255,255,.1));color:#18181b">Fade gradient</div>
-<p id="translucent-text" style="color:rgba(0,0,195,.6)">Translucent text</p>`;
+<p id="translucent-text" style="color:rgba(0,0,195,.6)">Translucent text</p>
+<div style="background:linear-gradient(#ffffff,#ffffff)"><div id="panel" style="background:rgba(255,255,255,.9);color:#000000">Panel text</div><div id="panel-default" style="background:rgba(255,255,255,.95)">Panel default</div></div>`;
     await withOpenedMessage(
       false,
       async ({ page, frame, errors }) => {
@@ -484,6 +485,11 @@ describe("HTML mail colors", () => {
           expect(await frame.locator(id).evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgb(255, 255, 255)");
         }
         expect(await frame.locator("#clear-gradient-text").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(24, 24, 27)");
+        // Translucent panels on a gradient keep their authored light fill and text.
+        expect(
+          await frame.locator("#panel").evaluate((element) => [getComputedStyle(element).backgroundColor, getComputedStyle(element).color]),
+        ).toEqual(["rgba(255, 255, 255, 0.9)", "rgb(0, 0, 0)"]);
+        expect(await frame.locator("#panel-default").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(24, 24, 27)");
         await assertAdaptedContrast(frame);
         await updateTheme(page, "light");
         await waitForMode(frame, false);

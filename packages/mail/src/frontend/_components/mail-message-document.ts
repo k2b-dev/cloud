@@ -289,18 +289,18 @@ export const buildMessageDocument = (
       const applyDarkStyles = (element, original) => {
         restoreStyle(element, original);
         const set = (property, value) => element.style.setProperty(property, cssColor(value), "important");
-        if (original.background && !original.backgroundImage) set("background-color", adaptBackground(original.background));
-        // A background image stays as authored, so it keeps the light surface it was designed on.
-        if (original.backgroundImage) set("background-color", effectiveBackground(element, false));
-        for (const [property, color] of original.borders) set(property, adaptBackground(color));
         const effective = effectiveBackground(element, true);
         const isLink = element.tagName === "A";
         if (effective === null) {
+          // A background image stays as authored, so it and everything on it keep the light design and surface.
+          if (original.backgroundImage) set("background-color", effectiveBackground(element, false));
           const color = original.color || parseColor(isLink ? "#1677c8" : "#18181b");
           set("color", color);
           foregrounds.set(element, color);
           return;
         }
+        if (original.background) set("background-color", adaptBackground(original.background));
+        for (const [property, color] of original.borders) set(property, adaptBackground(color));
         const base = original.color || (isLink
           ? parseColor(document.documentElement.style.getPropertyValue("--mail-dark-link"))
           : foregrounds.get(element.parentElement) || text);
