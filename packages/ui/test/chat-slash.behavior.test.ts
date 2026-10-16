@@ -589,6 +589,37 @@ test("rejection restores token, announces once in the persistent status, and cle
   expect(status.textContent).toBe("");
 });
 
+test("a failure stays with its draft: switching drafts clears it, a later failure still shows", async () => {
+  let reject!: (error: Error) => void;
+  const h = await slash({
+    value: "/fail",
+    commands: [
+      {
+        name: "fail",
+        description: "Fails",
+        action: () =>
+          new Promise((_resolve, fail) => {
+            reject = fail;
+          }),
+      },
+    ],
+  });
+  h.key("Enter");
+  reject(new Error("First failure"));
+  await flush();
+  expect(h.status().querySelector('[data-tone="error"]')?.textContent).toBe("First failure");
+  h.setDraftKey("second");
+  await flush();
+  expect(h.status().textContent).toBe("");
+  h.type("/fail");
+  h.key("Enter");
+  h.setDraftKey("third");
+  reject(new Error("Late failure"));
+  await flush();
+  // Reported where the person is now rather than lost; the draft it came from is not restored.
+  expect(h.status().querySelector('[data-tone="error"]')?.textContent).toBe("Late failure");
+});
+
 test("a rejected command never overwrites an edited draft or a different draft", async () => {
   for (const change of ["edit", "draft"] as const) {
     let reject!: (error: Error) => void;

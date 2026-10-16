@@ -410,6 +410,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       setClosedAt(undefined);
       setSearchResults([]);
       setSearchResultsQuery(undefined);
+      // A failure belongs to the draft it happened in; success notes may follow a command into the chat it opened.
+      if (commandStatus()?.tone === "error") showCommandStatus();
     });
   });
   const snapshot = () => ({ value: props.value, mentions: [...mentions()], caret: textareaRef?.selectionStart ?? 0 });

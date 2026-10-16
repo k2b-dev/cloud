@@ -578,6 +578,7 @@ const copy = i18n.define({
       forkDescription: "New chat from the latest response, with this draft",
       forkBusy: "Forking chat …",
       forkDone: "Forked. Your draft came along.",
+      forkDraftNotSaved: ({ reason }: { reason: string }) => `Forked, but your draft was not saved in the new chat: ${reason}.`,
       newChatLabel: "New chat",
       newChatDescription: "Start empty; this chat stays in the list",
       commandNeedsChat: "Available inside a chat",
@@ -630,6 +631,8 @@ const copy = i18n.define({
       forkDescription: "Neuer Chat ab der letzten Antwort, mit diesem Entwurf",
       forkBusy: "Chat wird abgezweigt …",
       forkDone: "Abgezweigt. Dein Entwurf ist mitgekommen.",
+      forkDraftNotSaved: ({ reason }: { reason: string }) =>
+        `Abgezweigt, aber dein Entwurf wurde im neuen Chat nicht gespeichert: ${reason}.`,
       newChatLabel: "Neuer Chat",
       newChatDescription: "Leer anfangen; dieser Chat bleibt in der Liste",
       commandNeedsChat: "Geht erst in einem Chat",

@@ -169,7 +169,8 @@ when the draft is unchanged. Rejections use the same restoration guard, and a
 restored draft leaves no undo step behind. The caret returns after the token
 and the list stays closed until the next edit.
 The persistent status line shows `busyLabel` while working, `{ done }` for
-about three seconds, and a failure message until the next edit or command.
+about three seconds, and a failure message until the next edit, the next
+command, or a switch to another draft.
 Command failures are reported once there, without calling `onError`.
 The visible status hides while suggestions are open and takes no layout space.
 

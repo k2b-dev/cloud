@@ -1370,11 +1370,11 @@ export default function AssistantWorkspace(props: Props) {
     const projectComposer = () => Boolean(composerProps.projectId);
     // In the chat the command started in, it takes over the controller's error so the failure is reported once,
     // in the composer status line. After the person moved on, that error belongs to the other chat and stays there.
-    const commandFailure = (key: string, message: (input: { reason: string }) => string) => {
+    const commandFailure = (key: string, message: (input: { reason: string }) => string, draftUnchanged = true) => {
       if (sessionKey() !== key) return new Error(message({ reason: t().chatActionFailed.replace(/\.+$/, "") }));
       const failed = message({ reason: (chat.error() ?? t().chatActionFailed).replace(/\.+$/, "") });
       chat.setError(null);
-      return new Error(`${failed} ${commandCopy().draftUnchanged}`);
+      return new Error(draftUnchanged ? `${failed} ${commandCopy().draftUnchanged}` : failed);
     };
     return (
       <>
@@ -1481,7 +1481,8 @@ export default function AssistantWorkspace(props: Props) {
               if (!fork) throw fail();
               hydrateComposer(fork.id, { ...fork.draft, content: saved.content });
               editComposerSession(session(fork.id));
-              if (!(await saveComposer(fork.id, fork.id))) throw fail();
+              // The fork exists and is open now; only saving the copied draft there failed.
+              if (!(await saveComposer(fork.id, fork.id))) throw commandFailure(fork.id, commandCopy().forkDraftNotSaved, false);
               if (chat.activeConversationId() === fork.id) focusComposer();
               return { done: commandCopy().forkDone };
             },

@@ -170,6 +170,7 @@ test("built-in reasons reflect prerequisites before a running response, and acti
       copy.forkFailed({ reason: "Oops" }),
       copy.newChatFailed({ reason: "Oops" }),
       copy.draftUnchanged,
+      copy.forkDraftNotSaved({ reason: "Oops" }),
     ]).toEqual(
       locale === "de"
         ? [
@@ -177,12 +178,14 @@ test("built-in reasons reflect prerequisites before a running response, and acti
             "Abzweigen hat nicht geklappt: Oops.",
             "Neuen Chat starten hat nicht geklappt: Oops.",
             "Dein Entwurf ist unverändert.",
+            "Abgezweigt, aber dein Entwurf wurde im neuen Chat nicht gespeichert: Oops.",
           ]
         : [
             "Compacting did not work: Oops.",
             "Forking did not work: Oops.",
             "Starting a new chat did not work: Oops.",
             "Your draft is unchanged.",
+            "Forked, but your draft was not saved in the new chat: Oops.",
           ],
     );
   }
