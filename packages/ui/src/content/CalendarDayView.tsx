@@ -54,7 +54,6 @@ import {
   type TimeViewProps,
 } from "./calendar-time-view";
 
-const groupId = (group: DayGroup) => (group.kind === "day" ? `d:${group.key}` : `e:${group.keys.join(",")}`);
 const groupFirst = (group: DayGroup) => (group.kind === "day" ? group.key : group.keys[0]!);
 
 /**
@@ -87,8 +86,22 @@ export const CalendarDayView = (props: TimeViewProps) => {
     dayGroups(keys(), (key) => view.dayOf(key).empty, new Set([view.nowKey(), view.anchorKey(), ...unfolded()])),
   );
   const unfold = (keys: readonly string[]) => setUnfolded((value) => new Set([...value, ...keys]));
-  const groupIds = createMemo(() => groups().map(groupId));
-  const groupsById = createMemo(() => new Map(groups().map((group) => [groupId(group), group])));
+  let runs = 0;
+  // Keep a run's identity so focus on its button survives days joining it at either end.
+  const entries = createMemo<Array<{ id: string; group: DayGroup }>>((previous) => {
+    const taken = new Set<string>();
+    return groups().map((group) => {
+      if (group.kind === "day") return { id: `d:${group.key}`, group };
+      const continued = previous.find(
+        ({ id, group: old }) => old.kind === "empty" && !taken.has(id) && old.keys.some((key) => group.keys.includes(key)),
+      );
+      const id = continued?.id ?? `e:${++runs}`;
+      taken.add(id);
+      return { id, group };
+    });
+  }, []);
+  const groupIds = createMemo(() => entries().map(({ id }) => id));
+  const groupsById = createMemo(() => new Map(entries().map(({ id, group }) => [id, group])));
 
   // Where each group starts in the scroll, measured after every change of the groups and on resize.
   let sections: HTMLElement[] = [];
