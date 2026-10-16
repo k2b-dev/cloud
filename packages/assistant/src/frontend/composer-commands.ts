@@ -175,6 +175,9 @@ export function createAssistantTaskRunKeys() {
       const pending = pendingRunKeys.get(taskId);
       if (pending) pending.uncertain = true;
     },
+    isUncertain(taskId: string) {
+      return pendingRunKeys.get(taskId)?.uncertain === true;
+    },
     settleRun(taskId: string, { force = false }: { force?: boolean } = {}) {
       if (force || !pendingRunKeys.get(taskId)?.uncertain) pendingRunKeys.delete(taskId);
     },
@@ -453,33 +456,29 @@ export async function assistantComposerCommands(input: {
                     input.runKeys.settleRun(task.id, { force: true });
                     return { done: copy.commandTaskRunning({ title }) };
                   } catch (error) {
-                    // Network failures, 408, 429, and 5xx make this key uncertain. Later 4xx cannot
-                    // disprove an earlier start; only success or a missing task settles an uncertain key.
-                    if (
-                      error instanceof AssistantTaskRunError &&
-                      error.status >= 400 &&
-                      error.status < 500 &&
-                      error.status !== 408 &&
-                      error.status !== 429
-                    ) {
-                      input.runKeys.settleRun(task.id, { force: error.status === 404 });
-                    } else {
-                      input.runKeys.runUncertain(task.id);
-                    }
-                    // Without an answer the start may have happened; say so instead of "did not start".
-                    if (!(error instanceof AssistantTaskRunError) || error.status >= 500 || error.status === 408) {
-                      const reason = error instanceof AssistantTaskRunError ? copy.commandTaskNoAnswer : copy.commandTaskOffline;
-                      throw new Error(copy.commandTaskRunUnconfirmed({ title, reason }) + " " + copy.draftUnchanged);
-                    }
+                    const status = error instanceof AssistantTaskRunError ? error.status : undefined;
+                    // A lost answer (network, 5xx) may hide an accepted start: keep its key and mark it uncertain.
+                    // 408 and 429 were not processed but cannot disprove an earlier start, so they keep the key as is.
+                    // Other 4xx settle a key that never had an unknown outcome; 404 always settles.
+                    if (status === undefined || status >= 500) input.runKeys.runUncertain(task.id);
+                    else if (status !== 408 && status !== 429) input.runKeys.settleRun(task.id, { force: status === 404 });
                     const reason =
-                      error.status === 409
-                        ? copy.commandTaskAlreadyRunning
-                        : error.status === 404
-                          ? copy.commandTaskGone
-                          : error.status === 429
-                            ? copy.commandTaskTooMany
-                            : copy.commandTaskNotAccepted;
-                    throw new Error(copy.commandTaskRunFailed({ title, reason }) + " " + copy.draftUnchanged);
+                      status === undefined
+                        ? copy.commandTaskOffline
+                        : status >= 500
+                          ? copy.commandTaskNoAnswer
+                          : status === 409
+                            ? copy.commandTaskAlreadyRunning
+                            : status === 404
+                              ? copy.commandTaskGone
+                              : status === 429
+                                ? copy.commandTaskTooMany
+                                : copy.commandTaskNotAccepted;
+                    // While an earlier or this attempt may have started the task, never claim it did not start.
+                    const message = input.runKeys.isUncertain(task.id)
+                      ? copy.commandTaskRunUnconfirmed({ title, reason })
+                      : copy.commandTaskRunFailed({ title, reason });
+                    throw new Error(message + " " + copy.draftUnchanged);
                   }
                 }
               : undefined,

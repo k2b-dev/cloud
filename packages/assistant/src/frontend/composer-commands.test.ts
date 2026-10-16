@@ -536,8 +536,8 @@ for (const retryOpening of [1, 2]) {
     [["offline", 408], true],
     [["offline", 409], true],
     [[500, 409], true],
-    [[408, 409], true],
-    [[429, 409], true],
+    [[408, 409], false],
+    [[429, 409], false],
     [["offline", 404], false],
     [["offline", 200], false],
   ] as const) {

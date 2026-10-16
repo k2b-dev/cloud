@@ -376,7 +376,7 @@ test.each([409, 404, 429, 403, 500, 408, "offline"] as const)(
     h.key("Enter");
     await flush();
     expect(h.value()).toBe("/routine Bericht 6");
-    const unconfirmed = status === 500 || status === 408 || status === "offline";
+    const unconfirmed = status === 500 || status === "offline";
     expect(h.status()).toBe(
       (unconfirmed
         ? copy.commandTaskRunUnconfirmed({
@@ -400,6 +400,36 @@ test.each([409, 404, 429, 403, 500, 408, "offline"] as const)(
     expect(h.status()).not.toContain(rawMessage);
   },
 );
+
+test("after a lost answer, a rejected retry still says the start is unconfirmed", async () => {
+  const { assistantCopyFor } = await import("./ui-copy");
+  const copy = assistantCopyFor("de");
+  const answers = ["offline", 429, 409] as const;
+  let attempt = 0;
+  const h = await mount({
+    value: "/routine Bericht 6",
+    post: async () => {
+      const answer = answers[attempt++]!;
+      if (answer === "offline") throw new TypeError("Response lost");
+      return Response.json({ message: "Raw" }, { status: answer });
+    },
+  });
+  for (const [index, answer] of answers.entries()) {
+    if (index > 0) {
+      // Choose the task again from a fresh `/`.
+      h.type("");
+      h.type("/routine Bericht 6");
+      await settled();
+    }
+    h.mark("Bericht 6");
+    h.key("Enter");
+    await flush();
+    expect(h.value()).toBe("/routine Bericht 6");
+    const reason =
+      answer === "offline" ? copy.commandTaskOffline : answer === 429 ? copy.commandTaskTooMany : copy.commandTaskAlreadyRunning;
+    expect(h.status()).toBe(copy.commandTaskRunUnconfirmed({ title: "Bericht 6", reason }) + " " + copy.draftUnchanged);
+  }
+});
 
 test.each(["paused", "needs_attention"] as const)("%s task explains its reason and sends no POST", async (state) => {
   const h = await mount({ value: "/routine ", tasks: [{ ...tasks[0]!, state }] });
