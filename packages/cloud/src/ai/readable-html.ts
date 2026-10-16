@@ -1,0 +1,744 @@
+import { createRequire } from "node:module";
+import type * as Htmlparser2 from "htmlparser2";
+
+// sanitize-html loads this ESM-only package with require(). A static import would also place it in the static ESM
+// graph, and Bun rejects that require() while the module is still linking ("require() async module"), depending
+// on which importer evaluates first. Loading it through require() here keeps one synchronous path for both.
+const { Parser }: typeof Htmlparser2 = createRequire(import.meta.url)("htmlparser2");
+
+const CHUNK_BYTES = 256 * 1024;
+const TRUNCATED = "[Readable copy truncated at the file size limit.]";
+const droppedTags = new Set(
+  "head script style noscript template svg math iframe object embed canvas video audio form button select textarea input dialog nav aside".split(
+    " ",
+  ),
+);
+const blocks = new Set(
+  "p div section article main li blockquote pre table tr dl dt dd figure figcaption address details summary hr".split(" "),
+);
+const inlineBoundaries = new Set("br ul ol td th".split(" "));
+const layoutBlocks = new Set("p div section article main ul ol li blockquote pre h1 h2 h3 h4 h5 h6 dl figure hr".split(" "));
+const droppedRoles = new Set("navigation banner contentinfo complementary search dialog alertdialog".split(" "));
+const collapse = (text: string): string => text.replace(/\s+/gu, " ").trim();
+const escapeLabel = (text: string): string => text.replace(/[\[\]]/g, "\\$&");
+const language = (classes = ""): string => {
+  for (const token of classes.split(/\s+/u)) {
+    if (token.length <= 100 && /^(?:language|lang)-[\w+-]+$/.test(token)) return token.slice(token.indexOf("-") + 1);
+  }
+  return "";
+};
+const hidden = (attrs: Record<string, string>): boolean => {
+  if (!("hidden" in attrs || "aria-hidden" in attrs || "role" in attrs || "id" in attrs || "class" in attrs)) return false;
+  if ("hidden" in attrs || attrs["aria-hidden"]?.toLowerCase() === "true") return true;
+  if (
+    (attrs.role ?? "")
+      .toLowerCase()
+      .split(/\s+/u)
+      .some((role) => droppedRoles.has(role))
+  )
+    return true;
+  for (const value of [attrs.id ?? "", attrs.class ?? ""]) {
+    for (const token of value.split(/\s+/u)) {
+      if (token.length > 100) continue;
+      if (
+        /^(cookie|cookies|consent|gdpr|cmp)([-_]?(banner|notice|bar|popup|modal|dialog|overlay|wall|layer|consent|container))?$/i.test(
+          token,
+        )
+      )
+        return true;
+      if (/cookie-banner|cookie-consent|consent-banner/i.test(token)) return true;
+    }
+  }
+  return false;
+};
+const charset = (value: string): string | undefined => {
+  for (const parameter of value.split(";")) {
+    const equals = parameter.indexOf("=");
+    if (equals < 0 || parameter.slice(0, equals).trim().toLowerCase() !== "charset") continue;
+    const label = parameter.slice(equals + 1).trim();
+    const quote = label[0];
+    return (quote === '"' || quote === "'") && label.endsWith(quote) ? label.slice(1, -1) : label;
+  }
+  return;
+};
+const decoderFor = (bytes: Uint8Array, contentType?: string): TextDecoder => {
+  let label = charset(contentType ?? "");
+  if (!label) {
+    const prefix = new TextDecoder("windows-1252").decode(bytes.subarray(0, 1024));
+    const meta = new Parser({
+      onopentag(name, attrs) {
+        if (name !== "meta" || label) return;
+        label = attrs.charset || (attrs["http-equiv"]?.toLowerCase() === "content-type" ? charset(attrs.content ?? "") : undefined);
+      },
+    });
+    meta.end(prefix);
+  }
+  try {
+    return new TextDecoder(label || "utf-8");
+  } catch {
+    return new TextDecoder("utf-8");
+  }
+};
+
+const voidTags = new Set(
+  "area base basefont br col command embed frame hr img input isindex keygen link meta param source track wbr".split(" "),
+);
+const impliedCloses = new Map<string, Set<string>>();
+for (const name of "address article aside blockquote details div dl fieldset figcaption figure footer form header hr main nav ol p pre section table ul".split(
+  " ",
+)) {
+  impliedCloses.set(name, new Set(["p"]));
+}
+for (const name of "h1 h2 h3 h4 h5 h6".split(" ")) impliedCloses.set(name, new Set("h1 h2 h3 h4 h5 h6 p".split(" ")));
+for (const name of "select input output button datalist textarea".split(" "))
+  impliedCloses.set(name, new Set("input option optgroup select button datalist textarea".split(" ")));
+for (const [name, closes] of [
+  ["tr", "tr th td"],
+  ["th", "th"],
+  ["td", "thead th td"],
+  ["body", "head link script"],
+  ["a", "a"],
+  ["li", "li"],
+  ["option", "option"],
+  ["optgroup", "optgroup option"],
+  ["dd", "dd dt"],
+  ["dt", "dd dt"],
+  ["rt", "rt rp"],
+  ["rp", "rt rp"],
+  ["tbody", "thead tbody"],
+  ["tfoot", "thead tbody"],
+])
+  impliedCloses.set(name!, new Set(closes!.split(" ")));
+
+/** Parser's normal HTML stack uses unshift/shift and indexOf, quadratic at hostile depths.
+ * The supported void-element hook keeps that stack empty. We balance the flat events
+ * ourselves with push/pop and a last-open index per tag, including HTML implied closes.
+ * Raw-text handling, attributes and entity decoding still belong to htmlparser2.
+ */
+class FlatHtmlParser extends Parser {
+  private openName = "";
+  constructor(
+    onOpen: (name: string, attrs: Record<string, string>) => void,
+    onText: (text: string) => void,
+    private readonly onCloseName: (name: string) => void,
+    private readonly sourceSlice: (start: number, end: number) => string,
+    onEnd: () => void,
+  ) {
+    super({ onopentag: onOpen, ontext: onText, onend: onEnd }, { decodeEntities: true });
+  }
+  protected override isVoidElement(): boolean {
+    return true;
+  }
+  override onopentagname(start: number, end: number): void {
+    this.openName = this.sourceSlice(start, end).toLowerCase();
+    super.onopentagname(start, end);
+  }
+  override onselfclosingtag(end: number): void {
+    super.onselfclosingtag(end);
+    // HTML ignores a slash on ordinary tags, especially <script/> and <style/>.
+    // Foreign roots are self-closing even though the library's own stack is empty.
+    if (this.openName === "svg" || this.openName === "math") this.onCloseName(this.openName);
+  }
+  override onclosetag(start: number, end: number): void {
+    this.endIndex = end;
+    this.onCloseName(this.sourceSlice(start, end).toLowerCase());
+    this.startIndex = end + 1;
+  }
+}
+
+type TagEvent = { kind: "open" | "close"; name: string; attrs: Record<string, string>; layout?: boolean };
+type Event = TagEvent | { kind: "text"; text: string };
+type Span = { start: number; end: number };
+
+/** One budget for parsing, span scans and all render calls. Synchronous parsing
+ * checks it between bounded input chunks; rendering checks it between events. */
+class WorkBudget {
+  private events = 0;
+  private characters = 0;
+  constructor(private readonly signal?: AbortSignal) {}
+  used(characters = 0): boolean {
+    this.events++;
+    this.characters += characters;
+    return this.events >= 4096 || this.characters >= CHUNK_BYTES;
+  }
+  async yield(): Promise<void> {
+    this.events = 0;
+    this.characters = 0;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    this.signal?.throwIfAborted();
+  }
+}
+
+const isPermalink = (text: string): boolean => text.length <= 4 && [...text].length <= 2 && !/[\p{L}\p{N}]/u.test(text);
+
+const linkUrl = (href: string | undefined, baseUrl: URL, image = false): string | undefined => {
+  if (!href || href.trim().startsWith("#")) return;
+  try {
+    const url = new URL(href, baseUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:" && (image || url.protocol !== "mailto:")) return;
+    return url.toString().replace(/[() ]/g, (char) => (char === "(" ? "%28" : char === ")" ? "%29" : "%20"));
+  } catch {
+    return;
+  }
+};
+type BacktickRun = { longest: number; trailing: number };
+const countBackticks = (text: string, run: BacktickRun): void => {
+  for (const char of text) {
+    run.trailing = char === "`" ? run.trailing + 1 : 0;
+    run.longest = Math.max(run.longest, run.trailing);
+  }
+};
+const backticks = (run: BacktickRun, minimum: number): string => "`".repeat(Math.max(minimum, run.longest + 1));
+
+/** Render one inline span once. Placeholder delimiters avoid copying nested link text. */
+const renderInline = async (
+  events: Event[],
+  start: number,
+  end: number,
+  baseUrl: URL,
+  budget: WorkBudget,
+): Promise<{ markdown: string; text: string }> => {
+  const parts: string[] = [];
+  const plain: string[] = [];
+  let pendingSpace = false;
+  let characters = 0;
+  let link:
+    | { index: number; url?: string; characters: number; plainIndex: number; leadingSpace: boolean; spaceBefore: boolean }
+    | undefined;
+  let code: { depth: number; parts: string[]; ticks: BacktickRun } | undefined;
+  const append = (value: string) => {
+    if (pendingSpace && parts.length) {
+      if (link && characters === link.characters) link.leadingSpace = true;
+      else parts.push(" ");
+    }
+    pendingSpace = false;
+    parts.push(value);
+  };
+  const text = (value: string, ticks?: BacktickRun) => {
+    const asCode = ticks !== undefined;
+    plain.push(value);
+    const normalized = value.replace(/\s+/gu, " ");
+    const content = normalized.trim();
+    if (content) {
+      if (normalized.startsWith(" ")) pendingSpace = true;
+      const fence = ticks ? backticks(ticks, 1) : "";
+      const pad = asCode && (content.startsWith("`") || content.endsWith("`")) ? " " : "";
+      const markdown = asCode ? `${fence}${pad}${content}${pad}${fence}` : content;
+      append(link?.url ? escapeLabel(markdown) : markdown);
+      characters += content.length;
+    }
+    if (normalized.endsWith(" ")) pendingSpace = true;
+  };
+  for (let index = start; index < end; index++) {
+    const event = events[index]!;
+    if (budget.used(event.kind === "text" ? event.text.length : 0)) await budget.yield();
+    if (code) {
+      if (event.kind === "text") {
+        code.parts.push(event.text);
+        countBackticks(event.text, code.ticks);
+      } else if (event.kind === "open") code.depth++;
+      else if (--code.depth === 0) {
+        text(code.parts.join(""), code.ticks);
+        code = undefined;
+      }
+      continue;
+    }
+    if (event.kind === "text") {
+      text(event.text);
+      continue;
+    }
+    const open = event.kind === "open";
+    if (event.name === "code" && open) code = { depth: 1, parts: [], ticks: { longest: 0, trailing: 0 } };
+    else if (event.name === "a") {
+      if (open && !link) {
+        const url = linkUrl(event.attrs.href, baseUrl);
+        if (url || event.attrs.href?.trim().startsWith("#")) {
+          link = {
+            index: parts.length,
+            url,
+            characters,
+            plainIndex: plain.length,
+            leadingSpace: pendingSpace,
+            spaceBefore: pendingSpace,
+          };
+          pendingSpace = false;
+          parts.push("");
+        }
+      } else if (!open && link) {
+        if (!link.url && isPermalink(collapse(plain.slice(link.plainIndex).join("")))) {
+          parts.length = link.index;
+          plain.length = link.plainIndex;
+          characters = link.characters;
+          pendingSpace = link.spaceBefore;
+        } else if (characters > link.characters) {
+          parts[link.index] = (link.leadingSpace && link.index > 0 ? " " : "") + (link.url ? "[" : "");
+          if (link.url) parts.push(`](${link.url})`);
+        } else pendingSpace ||= link.leadingSpace;
+        link = undefined;
+      }
+    } else if (event.name === "img" && open) {
+      const alt = collapse(event.attrs.alt ?? "");
+      const url = linkUrl(event.attrs.src, baseUrl, true);
+      if (alt && url) {
+        append(`![${escapeLabel(alt)}](${url})`);
+        plain.push(alt);
+        characters += alt.length;
+      }
+    } else if (blocks.has(event.name) || inlineBoundaries.has(event.name)) {
+      pendingSpace = true;
+      plain.push(" ");
+    }
+  }
+  return { markdown: parts.join("").trim(), text: collapse(plain.join("")) };
+};
+
+/** A flat stream of parser events; no DOM, recursive rendering, or ancestor walks. */
+export const htmlToReadableMarkdown = async (
+  bytes: Uint8Array,
+  options: { baseUrl: URL; contentType?: string; maxBytes: number; signal?: AbortSignal },
+): Promise<string> => {
+  options.signal?.throwIfAborted();
+  const events: Event[] = [];
+  const budget = new WorkBudget(options.signal);
+  const emptyAttrs = {};
+  type Table = { event: TagEvent; cells: number };
+  const tables: Table[] = [];
+  type Frame = {
+    name: string;
+    previous?: number;
+    skip: boolean;
+    region: boolean;
+    main?: Span;
+    article?: Span;
+    title: boolean;
+    head: boolean;
+    table?: Table;
+    cell?: Table;
+  };
+  const stack: Frame[] = [];
+  const lastOpen = new Map<string, number>();
+  // Tag-name offsets increase monotonically. Keep decoded chunks without repeatedly
+  // concatenating them; even an oversized tag name spanning chunks is copied only once.
+  const chunks: { start: number; text: string }[] = [];
+  let decodedLength = 0;
+  let closeChunk = 0;
+  const sourceSlice = (start: number, end: number): string => {
+    while (closeChunk < chunks.length && chunks[closeChunk]!.start + chunks[closeChunk]!.text.length <= start) closeChunk++;
+    const parts: string[] = [];
+    for (let index = closeChunk; index < chunks.length && chunks[index]!.start < end; index++) {
+      const chunk = chunks[index]!;
+      parts.push(chunk.text.slice(Math.max(0, start - chunk.start), end - chunk.start));
+    }
+    return parts.join("");
+  };
+  const titleParts: string[] = [];
+  let skipDepth = 0;
+  let regionDepth = 0;
+  let mainDepth = 0;
+  let titleDepth = 0;
+  let main: Span | undefined;
+  let articles: Span | undefined;
+  const closeTop = () => {
+    const frame = stack.pop();
+    if (!frame) return;
+    if (frame.previous === undefined) lastOpen.delete(frame.name);
+    else lastOpen.set(frame.name, frame.previous);
+    if (!frame.skip) {
+      if (frame.cell) frame.cell.cells--;
+      if (frame.table) tables.pop();
+      events.push({ kind: "close", name: frame.name, attrs: emptyAttrs });
+      if (frame.main) frame.main.end = events.length;
+      if (frame.article && articles) articles.end = events.length;
+      if (frame.name === "main") mainDepth--;
+    }
+    if (frame.title) titleDepth--;
+    if (frame.skip) skipDepth--;
+    if (frame.region) regionDepth--;
+  };
+  const open = (name: string, attrs: Record<string, string>) => {
+    if (name === "form" && lastOpen.has(name)) return;
+    const closes = impliedCloses.get(name);
+    while (stack.length && closes?.has(stack.at(-1)!.name)) closeTop();
+    const isHidden = hidden(attrs);
+    const title =
+      name === "title" &&
+      titleDepth === 0 &&
+      titleParts.length === 0 &&
+      !isHidden &&
+      (skipDepth === 0 || (stack.at(-1)?.head === true && skipDepth === 1));
+    const skip =
+      skipDepth > 0 ||
+      name === "title" ||
+      droppedTags.has(name) ||
+      isHidden ||
+      ((name === "header" || name === "footer") && regionDepth === 0);
+    const region = !skip && (name === "main" || name === "article");
+    const frame: Frame = {
+      name,
+      previous: lastOpen.get(name),
+      skip,
+      region,
+      title,
+      head: name === "head" && skipDepth === 0 && !isHidden,
+    };
+    if (title) titleDepth++;
+    if (skip) skipDepth++;
+    if (region) regionDepth++;
+    if (!skip) {
+      if (name === "main") {
+        if (!main && mainDepth === 0) frame.main = main = { start: events.length, end: events.length };
+        mainDepth++;
+      }
+      if (name === "article") {
+        const span = { start: events.length, end: events.length };
+        articles ??= span;
+        frame.article = span;
+      }
+      const table = tables.at(-1);
+      if (table?.cells && (name === "table" || layoutBlocks.has(name))) table.event.layout = true;
+      const event: TagEvent = { kind: "open", name, attrs };
+      if (name === "table") {
+        frame.table = { event, cells: 0 };
+        tables.push(frame.table);
+      } else if (table && (name === "td" || name === "th")) {
+        frame.cell = table;
+        table.cells++;
+      }
+      events.push(event);
+    }
+    lastOpen.set(name, stack.length);
+    stack.push(frame);
+    if (voidTags.has(name)) closeTop();
+  };
+  const parser = new FlatHtmlParser(
+    open,
+    (text) => {
+      if (titleDepth) titleParts.push(text);
+      else if (!skipDepth) events.push({ kind: "text", text });
+    },
+    (name) => {
+      const index = lastOpen.get(name);
+      if (index !== undefined) while (stack.length > index) closeTop();
+      else if (name === "br") open("br", {});
+      else if (name === "p") {
+        open("p", {});
+        closeTop();
+      }
+    },
+    sourceSlice,
+    () => {
+      while (stack.length) closeTop();
+    },
+  );
+  const feed = (text: string) => {
+    chunks.push({ start: decodedLength, text });
+    decodedLength += text.length;
+    parser.write(text);
+  };
+  const decoder = decoderFor(bytes.subarray(0, options.maxBytes), options.contentType);
+  const length = Math.min(bytes.byteLength, options.maxBytes);
+  for (let offset = 0; offset < length; offset += CHUNK_BYTES) {
+    options.signal?.throwIfAborted();
+    feed(decoder.decode(bytes.subarray(offset, Math.min(offset + CHUNK_BYTES, length)), { stream: true }));
+    if (budget.used(Math.min(CHUNK_BYTES, length - offset))) await budget.yield();
+  }
+  options.signal?.throwIfAborted();
+  feed(decoder.decode());
+  parser.end();
+  const hasText = async (span: Span): Promise<boolean> => {
+    for (let index = span.start; index < span.end; index++) {
+      const event = events[index]!;
+      if (budget.used(event.kind === "text" ? event.text.length : 0)) await budget.yield();
+      if (event.kind === "text" && /\S/u.test(event.text)) return true;
+      if (
+        event.kind === "open" &&
+        event.name === "img" &&
+        collapse(event.attrs.alt ?? "") &&
+        linkUrl(event.attrs.src, options.baseUrl, true)
+      )
+        return true;
+    }
+    return false;
+  };
+  const whole = { start: 0, end: events.length };
+  const selected = main && (await hasText(main)) ? main : articles && (await hasText(articles)) ? articles : whole;
+  if (!(await hasText(selected))) return "";
+  const title = collapse(titleParts.join(""));
+  const heading = title && !(await hasRenderedH1(events, selected, options.baseUrl, budget)) ? title : "";
+  return render(events, selected, heading, { ...options, inputTruncated: bytes.byteLength > length }, budget);
+};
+
+/** Scan the selected span once, following the render captures. An h1 inside
+ * code, a link or a data cell is inline content, not a rendered heading. */
+const hasRenderedH1 = async (events: Event[], span: Span, baseUrl: URL, budget: WorkBudget): Promise<boolean> => {
+  let headingDepth = 0;
+  let skipDepth = 0;
+  let codeDepth = 0;
+  let fragment: { depth: number; parts: string[] } | undefined;
+  for (let index = span.start; index < span.end; index++) {
+    const event = events[index]!;
+    if (budget.used(event.kind === "text" ? event.text.length : 0)) await budget.yield();
+    if (skipDepth) {
+      if (event.kind === "open") skipDepth++;
+      else if (event.kind === "close") skipDepth--;
+      continue;
+    }
+    if (headingDepth) {
+      if (event.kind === "open") headingDepth++;
+      else if (event.kind === "close") headingDepth--;
+      if (!codeDepth && event.kind === "open" && event.name === "a" && event.attrs.href?.trim().startsWith("#")) {
+        fragment = { depth: headingDepth, parts: [] };
+        continue;
+      }
+      let value = "";
+      if (event.kind === "text") value = event.text;
+      else if (codeDepth) codeDepth += event.kind === "open" ? 1 : -1;
+      else if (event.kind === "open" && event.name === "code") codeDepth = 1;
+      else if (event.kind === "open" && event.name === "img" && linkUrl(event.attrs.src, baseUrl, true)) value = event.attrs.alt ?? "";
+      else if (blocks.has(event.name) || inlineBoundaries.has(event.name)) value = " ";
+      if (fragment) {
+        if (value) fragment.parts.push(value);
+        if (headingDepth < fragment.depth) {
+          const label = collapse(fragment.parts.join(""));
+          if (label && !isPermalink(label)) return true;
+          fragment = undefined;
+        }
+      } else if (/\S/u.test(value)) return true;
+    } else if (event.kind === "open") {
+      if (event.name === "h1") headingDepth = 1;
+      else if (
+        event.name === "pre" ||
+        event.name === "code" ||
+        event.name === "a" ||
+        /^h[2-6]$/.test(event.name) ||
+        (event.name === "table" && !event.layout)
+      )
+        skipDepth = 1;
+    }
+  }
+  return false;
+};
+
+const render = async (
+  events: Event[],
+  span: Span,
+  title: string,
+  options: { baseUrl: URL; maxBytes: number; signal?: AbortSignal; inputTruncated: boolean },
+  budget: WorkBudget,
+): Promise<string> => {
+  const parts: string[] = [];
+  let size = 0;
+  let truncated = false;
+  let pendingBreak = 0;
+  let pendingSpace = false;
+  let lineStart = true;
+  let quoteDepth = 0;
+  let readable = false;
+  const lists: { ordered: boolean; next: number }[] = [];
+  const items: { prefix: string }[] = [];
+  let capture:
+    | { name: string; depth: number; parts: string[]; lang: string; firstCode: boolean; start: number; ticks: BacktickRun }
+    | undefined;
+  const tables: boolean[] = [];
+  let row: string[] | undefined;
+  let cellStart: number | undefined;
+  let tableRows = 0;
+  const append = (text: string) => {
+    if (!text || truncated) return;
+    const next = Buffer.byteLength(text);
+    if (size + next > options.maxBytes) {
+      // Retain at most one extra bounded piece; final byte clipping also reserves the notice.
+      const remaining = Math.max(0, options.maxBytes - size);
+      parts.push(text.slice(0, remaining));
+      truncated = true;
+      return;
+    }
+    parts.push(text);
+    size += next;
+  };
+  const boundary = (count = 2) => {
+    pendingBreak = Math.max(pendingBreak, count);
+    pendingSpace = false;
+  };
+  const write = (text: string, verbatim = false) => {
+    if (!text) return;
+    if (pendingBreak && parts.length) {
+      append("\n".repeat(pendingBreak));
+      lineStart = true;
+    }
+    pendingBreak = 0;
+    if (lineStart) {
+      const item = items.at(-1);
+      append("> ".repeat(Math.min(quoteDepth, 6)) + (item?.prefix ?? ""));
+      if (item) item.prefix = "";
+    } else if (pendingSpace) append(" ");
+    pendingSpace = false;
+    const quote = "> ".repeat(Math.min(quoteDepth, 6));
+    append(
+      quote && text.includes("\n")
+        ? text
+            .split("\n")
+            .map((line, index) => (index && line ? quote + line : line))
+            .join("\n")
+        : text,
+    );
+    lineStart = verbatim ? text.endsWith("\n") : false;
+  };
+  const text = (value: string) => {
+    const normalized = value.replace(/\s+/gu, " ");
+    const trimmed = normalized.trim();
+    if (trimmed) {
+      if (normalized.startsWith(" ") && !lineStart && !pendingBreak) pendingSpace = true;
+      write(trimmed);
+      readable = true;
+    }
+    if (normalized.endsWith(" ")) pendingSpace = true;
+  };
+  if (title) {
+    write(`# ${title}`);
+    boundary();
+  }
+  for (let index = span.start; index < span.end && !truncated; index++) {
+    const event = events[index]!;
+    if (budget.used(event.kind === "text" ? event.text.length : 0)) await budget.yield();
+    if (capture) {
+      if (event.kind === "text") {
+        capture.parts.push(event.text);
+        if (capture.name === "pre" || capture.name === "code") countBackticks(event.text, capture.ticks);
+      } else if (event.kind === "open") {
+        capture.depth++;
+        if (capture.name === "pre" && event.name === "code" && !capture.firstCode) {
+          capture.lang ||= language(event.attrs.class);
+          capture.firstCode = true;
+        }
+        if (capture.name !== "pre" && (blocks.has(event.name) || event.name === "br")) {
+          capture.parts.push(" ");
+          capture.ticks.trailing = 0;
+        }
+      } else if (--capture.depth === 0) {
+        const raw = capture.parts.join("");
+        const value = capture.name === "pre" || capture.name === "code" ? collapse(raw) : "";
+        if (capture.name === "pre") {
+          const fence = backticks(capture.ticks, 3);
+          boundary();
+          write(`${fence}${capture.lang}\n${raw}${raw.endsWith("\n") ? "" : "\n"}${fence}`, true);
+          boundary();
+        } else if (capture.name === "code") {
+          const fence = backticks(capture.ticks, 1);
+          const pad = value.startsWith("`") || value.endsWith("`") ? " " : "";
+          if (value) write(`${fence}${pad}${value}${pad}${fence}`);
+        } else {
+          const inline = await renderInline(
+            events,
+            capture.name === "a" ? capture.start : capture.start + 1,
+            capture.name === "a" ? index + 1 : index,
+            options.baseUrl,
+            budget,
+          );
+          if (inline.text) {
+            if (capture.name === "a" && /^\s/u.test(raw)) pendingSpace = true;
+            if (capture.name !== "a") boundary();
+            write(capture.name === "a" ? inline.markdown : `${"#".repeat(Number(capture.name[1]))} ${inline.markdown}`);
+            if (capture.name !== "a") boundary();
+          }
+          if (inline.text) readable = true;
+          if (capture.name === "a" && /\s$/u.test(raw)) pendingSpace = true;
+        }
+        if (value && (capture.name === "pre" || capture.name === "code")) readable = true;
+        capture = undefined;
+      }
+      continue;
+    }
+    if (event.kind === "text") {
+      if (tables.at(-1) !== false) text(event.text);
+      continue;
+    }
+    const { name, attrs } = event;
+    const open = event.kind === "open";
+    if (name === "table") {
+      boundary();
+      if (open) {
+        tables.push(event.layout ?? false);
+        if (!event.layout) {
+          tableRows = 0;
+          row = undefined;
+          cellStart = undefined;
+        }
+      } else tables.pop();
+      continue;
+    }
+    if (tables.at(-1) === false) {
+      if (name === "tr") {
+        if (open) row = [];
+        else if (row?.length) {
+          write(`| ${row.join(" | ")} |`);
+          boundary(1);
+          if (tableRows++ === 0) {
+            write(`| ${row.map(() => "---").join(" | ")} |`);
+            boundary(1);
+          }
+          row = undefined;
+        }
+      } else if (name === "td" || name === "th") {
+        if (open) cellStart = index + 1;
+        else {
+          const inline = await renderInline(events, cellStart ?? index, index, options.baseUrl, budget);
+          row?.push(inline.markdown.replace(/\|/g, "\\|"));
+          if (inline.text) readable = true;
+          cellStart = undefined;
+        }
+      }
+      continue;
+    }
+    if (open && (name === "pre" || name === "code" || name === "a" || /^h[1-6]$/.test(name))) {
+      capture = {
+        name,
+        depth: 1,
+        parts: [],
+        lang: name === "pre" ? language(attrs.class) : "",
+        firstCode: false,
+        start: index,
+        ticks: { longest: 0, trailing: 0 },
+      };
+      continue;
+    }
+    if (name === "img" && open) {
+      const alt = collapse(attrs.alt ?? "");
+      const url = linkUrl(attrs.src, options.baseUrl, true);
+      if (alt && url) {
+        write(`![${escapeLabel(alt)}](${url})`);
+        readable = true;
+      }
+    } else if (name === "ul" || name === "ol") {
+      boundary(1);
+      if (open) {
+        const start = attrs.start ?? "";
+        lists.push({ ordered: name === "ol", next: /^-?\d{1,6}$/.test(start) ? Number(start) : 1 });
+      } else lists.pop();
+    } else if (name === "li") {
+      boundary(1);
+      if (open) {
+        const list = lists.at(-1);
+        items.push({ prefix: "  ".repeat(Math.min(Math.max(0, lists.length - 1), 6)) + (list?.ordered ? `${list.next++}. ` : "- ") });
+      } else items.pop();
+    } else if (name === "blockquote") {
+      boundary();
+      quoteDepth = Math.max(0, quoteDepth + (open ? 1 : -1));
+    } else if (name === "br" && open) {
+      pendingBreak = Math.min(2, pendingBreak + 1);
+      pendingSpace = false;
+    } else if (name === "hr" && open) {
+      boundary();
+      write("---");
+      boundary();
+    } else if (blocks.has(name) || name === "td" || name === "th") boundary();
+  }
+  options.signal?.throwIfAborted();
+  if (!readable && !truncated) return "";
+  const result = parts.join("").trim();
+  if (!truncated && !options.inputTruncated && Buffer.byteLength(result) + 1 <= options.maxBytes) return `${result}\n`;
+  // The notice itself is the minimum possible result when maxBytes is smaller than it.
+  const outputBudget = Math.max(0, options.maxBytes - Buffer.byteLength(TRUNCATED) - 3);
+  const prefix = new TextDecoder().decode(Buffer.from(result).subarray(0, outputBudget), { stream: true }).trimEnd();
+  return `${prefix ? `${prefix}\n\n` : ""}${TRUNCATED}\n`;
+};

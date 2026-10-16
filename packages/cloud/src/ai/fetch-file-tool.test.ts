@@ -4,9 +4,11 @@ import type { ClientRequest, IncomingMessage } from "node:http";
 import {
   buildPinnedFetchFileRequestOptions,
   CloudAiFetchFileInputSchema,
+  CloudAiFetchFileOutputSchema,
   downloadPublicFile,
   runCloudAiFetchFile,
 } from "./fetch-file-tool";
+import { AiFileWriteError } from "./file-content-version";
 import { aiFileStore } from "./files-store";
 
 const publicAddress = { address: "203.0.114.10", family: 4 as const };
@@ -274,6 +276,145 @@ describe("fetch_file AI tool", () => {
     } finally {
       aiFileStore.createAssistantFile = originalCreate;
     }
+  });
+
+  test.each([
+    ["page.HTML", "page.md", "text/html"],
+    ["page.htm", "page.md", "text/html"],
+    ["page.xhtml", "page.md", "application/xhtml+xml"],
+    ["page.xht", "page.md", "application/xhtml+xml"],
+    ["news", "news.md", "text/html"],
+    ["page.php", "page.php.md", "text/html"],
+  ])("stores a readable copy of %s against the final redirect URL", async (filename, markdownName, mediaType) => {
+    const originalCreate = aiFileStore.createAssistantFile;
+    const calls: Parameters<typeof originalCreate>[0][] = [];
+    const html = new TextEncoder().encode('<head><title>Page</title></head><article><p>Article <a href="../x">link</a></p></article>');
+    aiFileStore.createAssistantFile = async (input) => {
+      calls.push(input);
+      return {
+        // The Markdown name must follow the canonical raw stat, including a uniqueness suffix.
+        path: calls.length === 1 ? `/imports/unique-${filename}` : `/imports/unique-${markdownName}`,
+        size: input.bytes.byteLength,
+        mediaType: input.mediaType!,
+        origin: "assistant",
+        updatedAt: "2026-08-21T12:00:00.000Z",
+        version: 1,
+      };
+    };
+    try {
+      const requested: string[] = [];
+      const result = await runCloudAiFetchFile(
+        { url: "https://files.example/old/source", filename },
+        { conversationId: "conversation-1" },
+        {
+          resolve: async () => [publicAddress],
+          requestPublicFile: async (url) => {
+            requested.push(url.toString());
+            return requested.length === 1
+              ? { statusCode: 302, headers: { location: "/final/deep/page.html" }, bytes: new Uint8Array() }
+              : { statusCode: 200, headers: { "content-type": `${mediaType}; charset=utf-8` }, bytes: html };
+          },
+        },
+      );
+      expect(requested).toEqual(["https://files.example/old/source", "https://files.example/final/deep/page.html"]);
+      expect(calls).toHaveLength(2);
+      expect(calls[0]).toMatchObject({ path: `/imports/${filename}`, mediaType, bytes: html });
+      expect(calls[1]).toMatchObject({
+        conversationId: "conversation-1",
+        path: `/imports/unique-${markdownName}`,
+        mediaType: "text/markdown",
+      });
+      expect(new TextDecoder().decode(calls[1]!.bytes)).toContain("[link](https://files.example/final/x)");
+      expect(result).toMatchObject({
+        path: `/imports/unique-${filename}`,
+        size: html.byteLength,
+        mediaType,
+        url: "https://files.example/final/deep/page.html",
+        readable: { path: `/imports/unique-${markdownName}`, size: calls[1]!.bytes.byteLength },
+      });
+      expect(result.readable?.note).toContain("Read this path first");
+      expect(CloudAiFetchFileOutputSchema.parse(result)).toEqual(result);
+    } finally {
+      aiFileStore.createAssistantFile = originalCreate;
+    }
+  });
+
+  test.each(["image/png", "application/pdf", "text/html"])("keeps only the raw file for %s without readable text", async (mediaType) => {
+    const originalCreate = aiFileStore.createAssistantFile;
+    let writes = 0;
+    aiFileStore.createAssistantFile = async (input) => {
+      writes++;
+      return {
+        path: input.path,
+        size: input.bytes.byteLength,
+        mediaType: input.mediaType!,
+        origin: "assistant",
+        updatedAt: "2026-08-21T12:00:00.000Z",
+        version: 1,
+      };
+    };
+    try {
+      const result = await runCloudAiFetchFile(
+        { url: "https://files.example/source" },
+        { conversationId: "conversation-1" },
+        {
+          resolve: async () => [publicAddress],
+          requestPublicFile: async () => ({
+            statusCode: 200,
+            headers: { "content-type": mediaType },
+            bytes: new TextEncoder().encode("<script>secret</script>"),
+          }),
+        },
+      );
+      expect(writes).toBe(1);
+      expect(result.readable).toBeUndefined();
+      expect(CloudAiFetchFileOutputSchema.parse(result)).toEqual(result);
+    } finally {
+      aiFileStore.createAssistantFile = originalCreate;
+    }
+  });
+
+  test.each(["quota", "abort"])("preserves a successful raw import after a readable-copy %s failure", async (failure) => {
+    const originalCreate = aiFileStore.createAssistantFile;
+    let writes = 0;
+    const controller = new AbortController();
+    aiFileStore.createAssistantFile = async (input) => {
+      writes++;
+      if (writes === 2) throw new AiFileWriteError("STORAGE_FULL", "Conversation storage limit exceeded.");
+      if (failure === "abort") controller.abort(new Error("cancelled after raw write"));
+      return {
+        path: input.path,
+        size: input.bytes.byteLength,
+        mediaType: input.mediaType!,
+        origin: "assistant",
+        updatedAt: "2026-08-21T12:00:00.000Z",
+        version: 1,
+      };
+    };
+    try {
+      const result = await runCloudAiFetchFile(
+        { url: "https://files.example/page.html" },
+        { conversationId: "conversation-1", signal: controller.signal },
+        {
+          resolve: async () => [publicAddress],
+          requestPublicFile: async () => ({
+            statusCode: 200,
+            headers: { "content-type": "text/html" },
+            bytes: new TextEncoder().encode("<p>Readable text</p>"),
+          }),
+        },
+      );
+      expect(writes).toBe(failure === "quota" ? 2 : 1);
+      expect(result).toMatchObject({ path: "/imports/page.html", mediaType: "text/html" });
+      expect(result.readable).toBeUndefined();
+    } finally {
+      aiFileStore.createAssistantFile = originalCreate;
+    }
+  });
+
+  test("accepts stored tool results from before readable copies existed", () => {
+    const oldResult = { path: "/imports/page.html", size: 100, mediaType: "text/html", url: "https://example.test/page.html" };
+    expect(CloudAiFetchFileOutputSchema.parse(oldResult)).toEqual(oldResult);
   });
 
   test("requires a conversation context before downloading", async () => {

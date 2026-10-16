@@ -1,0 +1,346 @@
+import { describe, expect, test } from "bun:test";
+import { htmlToReadableMarkdown } from "./readable-html";
+
+const baseUrl = new URL("https://example.test/articles/2026/page.html");
+const convert = (html: string, options: { maxBytes?: number; signal?: AbortSignal } = {}) =>
+  htmlToReadableMarkdown(new TextEncoder().encode(html), { baseUrl, maxBytes: 1024 * 1024, ...options });
+
+describe("readable HTML", () => {
+  test("loads in the same process as sanitize-html, whichever module is imported first", () => {
+    const emailHtml = new URL("../shared/email-html.ts", import.meta.url).pathname;
+    const readableHtml = new URL("./readable-html.ts", import.meta.url).pathname;
+    for (const [first, second] of [
+      [emailHtml, readableHtml],
+      [readableHtml, emailHtml],
+    ]) {
+      const run = Bun.spawnSync([process.execPath, "-e", `import ${JSON.stringify(first)}; import ${JSON.stringify(second)};`], {
+        stderr: "pipe",
+      });
+      expect(run.stderr.toString()).not.toContain("require() async module");
+      expect(run.exitCode).toBe(0);
+    }
+  });
+
+  test("extracts an article and renders readable Markdown without page chrome or executable content", async () => {
+    const result = await convert(`<!doctype html><html><head><title> A &amp; B </title><meta name="description" content="META">
+      <script>HEAD_SCRIPT</script><style>HEAD_STYLE</style></head><body>
+      <header>SITE_HEADER</header><nav>NAVIGATION</nav><aside>ASIDE</aside>
+      <div id="cookie-banner">COOKIE<div>COOKIE_CHILD</div></div>
+      <article><header><h1>A &amp; B</h1><p>Article header</p></header>
+      <h2> A subtitle </h2><p>First <b>paragraph</b> &amp; entities.</p>
+      <ul><li>One</li><li>Two<ul><li>Nested</li></ul></li></ul><ol start="3"><li>Three</li><li>Four</li></ol>
+      <p><a href="../x">Relative</a> <a href="/y">Root</a> <a href="//cdn.example.test/z">CDN</a></p>
+      <table><tr><th>A</th><th>B</th></tr><tr><td>one | two</td><td><p>three</p><p>four</p></td></tr></table>
+      <pre><code class="language-ts">const x = 1;\n  console.log(x);</code></pre>
+      <script>BODY_SCRIPT</script><style>BODY_STYLE</style><noscript>NOSCRIPT</noscript>
+      </article><footer>FOOTER</footer></body></html>`);
+    expect(result).toStartWith("# A & B\n\nArticle header\n");
+    expect(result).not.toContain("# A & B\n\n# A & B");
+    for (const snippet of [
+      "## A subtitle",
+      "First paragraph & entities.",
+      "- One\n- Two\n  - Nested",
+      "3. Three\n4. Four",
+      "[Relative](https://example.test/articles/x)",
+      "[Root](https://example.test/y)",
+      "[CDN](https://cdn.example.test/z)",
+      "A\n\nB\n\none | two\n\nthree\n\nfour",
+      "```ts\nconst x = 1;\n  console.log(x);\n```",
+    ])
+      expect(result).toContain(snippet);
+    for (const forbidden of [
+      "META",
+      "HEAD_SCRIPT",
+      "HEAD_STYLE",
+      "BODY_SCRIPT",
+      "BODY_STYLE",
+      "NOSCRIPT",
+      "NAVIGATION",
+      "SITE_HEADER",
+      "FOOTER",
+      "ASIDE",
+      "COOKIE",
+    ])
+      expect(result).not.toContain(forbidden);
+    expect(result).toEndWith("\n");
+  });
+
+  test("prefers the first outermost main, falls back to all articles, then body", async () => {
+    expect(await convert("outside<article>Article</article><main>Main<main>Nested</main></main><main>Later</main>after")).toBe(
+      "Main\n\nNested\n",
+    );
+    expect(await convert("chrome<article>First</article><div>between</div><article>Last</article>end")).toBe("First\n\nbetween\n\nLast\n");
+    expect(await convert("<main> </main><article>Fallback</article>chrome")).toBe("Fallback\n");
+    expect(await convert("before<body><div>Body</div><p>paragraph</p></body>after")).toBe("before\n\nBody\n\nparagraph\n\nafter\n");
+  });
+
+  test("keeps content h1 headings and omits the page title whenever the selected content has one", async () => {
+    expect(
+      await convert(
+        "<head><title> My TITLE </title></head><article><header><h1>my\n title</h1></header><p>Text</p><h1>My TITLE</h1></article>",
+      ),
+    ).toBe("# my title\n\nText\n\n# My TITLE\n");
+    expect(await convert("<article><header><h1>Article title</h1></header>Text</article>")).toBe("# Article title\n\nText\n");
+    expect(await convert("<title>Markdown - Wikipedia</title><main><h1>Markdown</h1><p>Text</p></main>")).toBe("# Markdown\n\nText\n");
+    expect(await convert("<title>Page title</title><h1>Outside</h1><main><h2>Section</h2><p>Text</p></main>")).toBe(
+      "# Page title\n\n## Section\n\nText\n",
+    );
+    expect(
+      await convert('<title>Fallback</title><main><h1 hidden>Hidden</h1><h1> </h1><h1><a href="#h">#</a></h1><p>Text</p></main>'),
+    ).toBe("# Fallback\n\nText\n");
+    expect(await convert('<title>Page title</title><main><h1><img src="/p.png" alt="Picture"></h1></main>')).toBe(
+      "# ![Picture](https://example.test/p.png)\n",
+    );
+    expect(await convert("<title>Page title</title><main><pre><h1>Code</h1></pre><p>Text</p></main>")).toBe(
+      "# Page title\n\n```\nCode\n```\n\nText\n",
+    );
+    expect(await convert("<title>Title</title><h1>Title</h1>")).toBe("# Title\n");
+    expect(await convert("<title>Title</title><h1><b><h1> </h1>Content</b></h1>")).toBe("# Content\n");
+    expect(await convert('<title>Fallback</title><h1><code><img src="/p.png" alt="Ignored"></code></h1><p>Text</p>')).toBe(
+      "# Fallback\n\nText\n",
+    );
+  });
+
+  test("skips hidden subtrees, roles, banners and media without desynchronizing void or implied closes", async () => {
+    const html = `<main><p hidden>HIDDEN<p>visible<input hidden><p aria-hidden="true">ARIA</p>
+      <div role="navigation">ROLE</div><div class="cmp-overlay">CMP</div><div class="some-cookie-consent-box">COOKIE</div>
+      <div class="${"x".repeat(200)}">long class</div>
+      <template>TEMPLATE</template><svg><text>SVG</text></svg><math>MATH</math><iframe>IFRAME</iframe><object>OBJECT</object>
+      <embed>after embed<canvas>CANVAS</canvas><video>VIDEO</video><audio>AUDIO</audio><form>FORM<button>BUTTON</button></form>
+      <select><option>SELECT</option></select><textarea>TEXTAREA</textarea><dialog>DIALOG</dialog><footer>article-free footer</footer></main>`;
+    const result = await convert(html);
+    expect(result).toContain("visible");
+    expect(result).toContain("long class");
+    expect(result).toContain("after embed");
+    expect(result).toContain("article-free footer");
+    for (const value of [
+      "HIDDEN",
+      "ARIA",
+      "ROLE",
+      "CMP",
+      "COOKIE",
+      "TEMPLATE",
+      "SVG",
+      "MATH",
+      "IFRAME",
+      "OBJECT",
+      "CANVAS",
+      "VIDEO",
+      "AUDIO",
+      "FORM",
+      "BUTTON",
+      "SELECT",
+      "TEXTAREA",
+      "DIALOG",
+    ])
+      expect(result).not.toContain(value);
+  });
+
+  test("handles unclosed tags, stray end tags, and unclosed scripts", async () => {
+    expect(await convert("</div></nav><article><p>Good<p>Still good<script>SECRET <p>LEAK")).toBe("Good\n\nStill good\n");
+    expect(await convert("<nav><img src=x><br>NO</nav><p>Yes")).toBe("Yes\n");
+    expect(await convert("<script/>SECRET<script>LEAK")).toBe("");
+    expect(await convert("<style/>SECRET</style><p>Yes</p>")).toBe("Yes\n");
+  });
+
+  test("balances self-closing dropped tags and article spans crossing ancestor boundaries", async () => {
+    expect(await convert("<svg/><input hidden/><article>First</article><article>Last</article>")).toBe("First\n\nLast\n");
+    expect(await convert("<blockquote><article>First</article></blockquote><article>Last</article>")).toBe("First\n\nLast\n");
+    expect(await convert("<table><tr><td><article>First</article></td></tr></table><article>Last</article>")).toContain("Last");
+  });
+
+  test("renders inline links, code and images in headings and table cells", async () => {
+    const result = await convert(
+      '<title>Title</title><h1>Ti<b>tle</b></h1><h2><a href="/guide">A [guide]</a> <code>x``y</code></h2><table><tr><td><a href="/source">Source</a></td><td><code>a</code><img alt="pic" src="/pic.png"></td></tr></table>',
+    );
+    expect(result).not.toContain("\n# Title");
+    expect(result).toContain("## [A \\[guide\\]](https://example.test/guide) ```x``y```");
+    expect(result).toContain("| [Source](https://example.test/source) | `a`![pic](https://example.test/pic.png) |");
+  });
+
+  test("returns empty for an empty body, only scripts, or a title alone", async () => {
+    for (const html of [
+      "",
+      "<body> </body>",
+      "<title>Title</title><body></body>",
+      "<script>secret</script>",
+      "<title>Title</title><script>secret</script>",
+    ])
+      expect(await convert(html)).toBe("");
+  });
+
+  test("filters unsafe and same-page fragment links and renders escaped labels and images", async () => {
+    const result = await convert(`<p><a href="javascript:alert(1)">safe text</a> <a href="data:text/html,x">data</a>
+      <a href="#here">here</a> <a href="mailto:a@example.test">Mail</a> <a href="/a(b) c">[label]</a>
+      <a href="/empty"></a><img alt=" A [picture] " src="//cdn.example.test/a.png"><img alt="" src="/no"><img alt="bad" src="javascript:x"></p>`);
+    expect(result).toContain("safe text data here [Mail](mailto:a@example.test)");
+    expect(result).toContain("[\\[label\\]](https://example.test/a%28b%29%20c)");
+    expect(result).toContain("![A \\[picture\\]](https://cdn.example.test/a.png)");
+    for (const value of ["javascript:", "data:text", "/empty", "/no", "bad"]) expect(result).not.toContain(value);
+  });
+
+  test("trims link labels and preserves whitespace as an outer word separator", async () => {
+    expect(await convert("<p>Before<a href=x> Learn more </a>after</p>")).toBe(
+      "Before [Learn more](https://example.test/articles/2026/x) after\n",
+    );
+    expect(await convert("<h2>Before<a href=x> <b>Learn</b> more </a>after</h2>")).toBe(
+      "## Before [Learn more](https://example.test/articles/2026/x) after\n",
+    );
+    expect(await convert("<table><tr><td>Before<a href=x> Learn more </a>after</td></tr></table>")).toBe(
+      "| Before [Learn more](https://example.test/articles/2026/x) after |\n| --- |\n",
+    );
+  });
+
+  test("omits short symbolic fragment permalinks while retaining other fragment labels", async () => {
+    for (const symbol of ["#", "¶", "§", "🔗", "#¶", "🔗🔗"]) {
+      expect(await convert(`<h2>Run tests<a href="#run-tests"> ${symbol} </a></h2>`)).toBe("## Run tests\n");
+      expect(await convert(`<p>Before<a href="#here"><b>${symbol}</b></a>after</p>`)).toBe("Beforeafter\n");
+    }
+    for (const label of ["A", "é", "字", "1", "١", "###", "Read more"]) {
+      expect(await convert(`<h2>See <a href="#here">${label}</a></h2>`)).toBe(`## See ${label}\n`);
+    }
+    expect(await convert('<h2>Run<a href="/run">#</a></h2>')).toBe("## Run[#](https://example.test/run)\n");
+    expect(await convert('<p>Before <a href="#here">#</a>after</p>')).toBe("Before after\n");
+    expect(await convert('<title>Fallback</title><h1><a href="#here">Read more</a></h1>')).toBe("# Read more\n");
+    expect(await convert('<p><a href="#here">[More]</a></p>')).toBe("[More]\n");
+  });
+
+  test("renders layout table cells as normal blocks including lists, headings and links", async () => {
+    expect(
+      await convert(
+        '<title>Site</title><table><tr><td><p>First</p><p>Second</p></td><td><h1>Links</h1><ul><li><a href="/x">Item</a></li><li>Next</li></ul></td></tr></table>',
+      ),
+    ).toBe("First\n\nSecond\n\n# Links\n\n- [Item](https://example.test/x)\n- Next\n");
+  });
+
+  test("renders data tables within layout tables and keeps adjacent data tables independent", async () => {
+    const data = "<table><tr><th>Name</th><th>Value</th></tr><tr><td>A</td><td>one | two</td></tr></table>";
+    const markdown = "| Name | Value |\n| --- | --- |\n| A | one \\| two |";
+    expect(await convert(data)).toBe(`${markdown}\n`);
+    expect(await convert(`<table><tr><td><p>Before</p>${data}<p>After</p></td><td>${data}</td></tr></table>`)).toBe(
+      `Before\n\n${markdown}\n\nAfter\n\n${markdown}\n`,
+    );
+  });
+
+  test("keeps explicit line breaks and does not attach an empty list marker to later text", async () => {
+    expect(await convert("<p>one<br>two<br><br>three</p>")).toBe("one\ntwo\n\nthree\n");
+    expect(await convert("<ul><li></li></ul><p>outside</p>")).toBe("outside\n");
+    expect(await convert("<ul><li><ul><li></li></ul>outer</li></ul>")).toBe("- outer\n");
+  });
+
+  test("uses sufficiently long code fences, preserves nested data tables and caps blockquote prefixes", async () => {
+    const result = await convert(
+      '<p><code>a``b</code></p><pre class="lang-js">a```b\n  c</pre><blockquote><p>quote<br>next</p></blockquote><table><tr><td>A<table><tr><td>B</td></tr></table>C</td></tr></table>',
+    );
+    expect(result).toContain("```a``b```");
+    expect(result).toContain("````js\na```b\n  c\n````");
+    expect(result).toContain("> quote\n> next");
+    expect(result).toContain("A\n\n| B |\n| --- |\n\nC");
+  });
+
+  test("decodes header and meta charsets, prioritizes headers, and falls back for unsupported labels", async () => {
+    const latin = (text: string) => Uint8Array.from(text, (char) => char.charCodeAt(0));
+    for (const html of [
+      "<p>Grüße äöü</p>",
+      '<meta charset="ISO-8859-1"><p>Grüße äöü</p>',
+      '<meta http-equiv="content-type" content="text/html; charset=windows-1252"><p>Grüße äöü</p>',
+    ]) {
+      expect(
+        await htmlToReadableMarkdown(latin(html), {
+          baseUrl,
+          maxBytes: 4096,
+          contentType: html.startsWith("<p>") ? 'text/html; charset="windows-1252"' : undefined,
+        }),
+      ).toBe("Grüße äöü\n");
+    }
+    expect(
+      await htmlToReadableMarkdown(latin('<meta charset="utf-8"><p>ä</p>'), {
+        baseUrl,
+        maxBytes: 4096,
+        contentType: "text/html; charset=ISO-8859-1",
+      }),
+    ).toBe("ä\n");
+    expect(
+      await htmlToReadableMarkdown(new TextEncoder().encode("<p>ü</p>"), {
+        baseUrl,
+        maxBytes: 4096,
+        contentType: "text/html; charset=unsupported",
+      }),
+    ).toBe("ü\n");
+  });
+
+  test("bounds output with deeply nested blocks, lists, blockquotes and layout tables", async () => {
+    expect(await convert("<div>".repeat(50_000) + "text" + "</div>".repeat(50_000))).toBe("text\n");
+    const lists = await convert("<ul><li>".repeat(20_000) + "text" + "</li></ul>".repeat(20_000));
+    expect(lists.length).toBeLessThan(40);
+    expect(lists).toContain("text");
+    const quotes = await convert("<blockquote>".repeat(20_000) + "text" + "</blockquote>".repeat(20_000));
+    expect(quotes.length).toBeLessThan(40);
+    const tables = await convert("<table><tr><td>".repeat(20_000) + "text" + "</td></tr></table>".repeat(20_000));
+    expect(tables).toBe("| text |\n| --- |\n");
+  }, 10_000);
+
+  test("clips UTF-8 output and input at the byte limit and appends the truncation notice", async () => {
+    const result = await convert("<p>" + "ü".repeat(200) + "</p>", { maxBytes: 100 });
+    expect(result).toEndWith("\n[Readable copy truncated at the file size limit.]\n");
+    expect(Buffer.byteLength(result)).toBeLessThanOrEqual(100);
+    expect(result).not.toContain("�");
+    const prefix = "<p>hello</p>";
+    expect(await convert(prefix + "secret".repeat(100), { maxBytes: prefix.length })).not.toContain("secret");
+  });
+
+  test("caps Markdown expansion even when the complete HTML fits the input limit", async () => {
+    const html = '<a href="/x">link</a>'.repeat(6);
+    expect(Buffer.byteLength(html)).toBeLessThanOrEqual(128);
+    const result = await convert(html, { maxBytes: 128 });
+    expect(result).toContain("[Readable copy truncated at the file size limit.]");
+    expect(Buffer.byteLength(result)).toBeLessThanOrEqual(128);
+  });
+
+  test("counts code backticks across parser chunks", async () => {
+    const result = await convert("<pre>" + "x".repeat(256 * 1024 - 7) + "````y</pre>");
+    expect(result).toStartWith("`````\n");
+    expect(result).toEndWith("````y\n`````\n");
+  });
+
+  test("shares the work budget across short headings, links and cells without yielding per call", async () => {
+    let yielded = false;
+    const immediate = setImmediate(() => {
+      yielded = true;
+    });
+    try {
+      await convert("<h2><a href=x>Heading</a></h2><table><tr><td><a href=x>Cell</a></td></tr></table>".repeat(8));
+      expect(yielded).toBe(false);
+      // The input fits in one parse chunk. Rendering must still yield as many
+      // individually small inline spans exhaust the shared event budget.
+      const html = "<a href=x>Link</a>".repeat(8000);
+      expect(Buffer.byteLength(html)).toBeLessThan(256 * 1024);
+      const controller = new AbortController();
+      const abort = setImmediate(() => controller.abort(new Error("during render")));
+      try {
+        await expect(convert(html, { signal: controller.signal })).rejects.toThrow("during render");
+      } finally {
+        clearImmediate(abort);
+      }
+      expect(yielded).toBe(true);
+    } finally {
+      clearImmediate(immediate);
+    }
+  });
+
+  test("streams decoding across chunks, yields and rejects when aborted", async () => {
+    const html = "<p>" + "x".repeat(256 * 1024 - 4) + "ü</p>";
+    let yielded = false;
+    setImmediate(() => {
+      yielded = true;
+    });
+    expect(await convert(html)).toContain("ü");
+    expect(yielded).toBe(true);
+    const controller = new AbortController();
+    controller.abort(new Error("cancelled"));
+    await expect(convert("<p>hello</p>", { signal: controller.signal })).rejects.toThrow("cancelled");
+    const during = new AbortController();
+    setImmediate(() => during.abort(new Error("during conversion")));
+    await expect(convert(html, { signal: during.signal })).rejects.toThrow("during conversion");
+  });
+});

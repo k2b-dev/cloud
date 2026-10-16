@@ -167,8 +167,9 @@ paths.
 The default tool source keeps discovery, Help, `fetch_file`, `read_file`,
 `calculate`, and `view_image` available. Configured `web_search` and
 `web_extract` are also always available together. `fetch_file` imports one
-exact public HTTPS source into the conversation; it does not browse
-repositories, authenticate to a website, or reach private network targets.
+exact public HTTPS source into the conversation, with a readable Markdown copy
+for web pages; it does not browse repositories, authenticate to a website, or
+reach private network targets.
 `calculate` stays loaded because, whenever a turn offers it, the system
 prompt requires it for every amount, sum, or other number the model derives
 itself. A conversation with a fixed tool scope that excludes it, or a model
