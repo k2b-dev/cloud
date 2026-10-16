@@ -81,6 +81,7 @@ import layoutTabBar from "./layout/tab-bar.md" with { type: "text" };
 import layoutTableOfContents from "./layout/table-of-contents.md" with { type: "text" };
 import layoutWorkspace from "./layout/workspace.md" with { type: "text" };
 import inputMarkdownEditor from "./markdown-editor.md" with { type: "text" };
+import surfaceAvatarStack from "./surfaces/avatar-stack.md" with { type: "text" };
 import surfaceBaseStylesheet from "./surfaces/base-stylesheet.md" with { type: "text" };
 import contentCalendar from "./surfaces/calendar.md" with { type: "text" };
 import surfaceCards from "./surfaces/cards.md" with { type: "text" };
@@ -150,6 +151,7 @@ const catalogContextSources = {
   "surfaces/paper": { file: "surfaces/paper.md", content: surfacePaper },
   "surfaces/empty-states": { file: "surfaces/empty-states.md", content: surfaceEmptyStates },
   "surfaces/details": { file: "surfaces/details.md", content: surfaceDetails },
+  "surfaces/avatar-stack": { file: "surfaces/avatar-stack.md", content: surfaceAvatarStack },
   "surfaces/cards": { file: "surfaces/cards.md", content: surfaceCards },
   "surfaces/progress": { file: "surfaces/progress.md", content: surfaceProgress },
   "surfaces/stats": { file: "surfaces/stats.md", content: surfaceStats },

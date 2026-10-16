@@ -84,6 +84,7 @@ function fixtures(permission: PermissionLevel, defaultPresentationMode: Presenta
   track(spyOn(notebooksService.note, "getByShortId")).mockResolvedValue(currentNote);
   track(spyOn(noteStore, "getWithContentByShortId")).mockResolvedValue(currentNote);
   track(spyOn(notebooksService.note, "getWithContentByShortId")).mockResolvedValue(currentNote);
+  track(spyOn(notebooksService.activity, "noteAuthors")).mockResolvedValue({ createdBy: null, lastEditedBy: null });
   track(spyOn(notebooksService.attachment, "count")).mockResolvedValue(0);
   track(spyOn(notebooksService.tag, "listForNotebook")).mockResolvedValue([{ tag: "team", count: 1 }]);
   track(spyOn(notebooksService.note.favorites, "listIds")).mockResolvedValue([]);

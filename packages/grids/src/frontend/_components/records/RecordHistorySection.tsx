@@ -1,5 +1,6 @@
+import { CloudAvatar } from "@k2b/cloud/account/ui";
 import type { DateContext } from "@k2b/stdlib";
-import { Avatar, DetailPanel, IconButton, Placeholder, Tooltip, useLocale } from "@k2b/ui";
+import { DetailPanel, IconButton, Placeholder, Tooltip, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import type { PublicRecordHistoryEntry as RecordHistoryEntry } from "../../../api/public-audit";
 import type { PublicField as Field } from "../../../api/public-dto";
@@ -135,13 +136,10 @@ export function RecordHistoryList(props: HistoryProps) {
                     {(name) => (
                       <span class="inline-flex min-w-0 items-center gap-1 text-dimmed">
                         {t().by}
-                        <Avatar
-                          name={name()}
-                          src={
-                            entry.userId && entry.userAvatarHash
-                              ? `/api/accounts/users/${encodeURIComponent(entry.userId)}/avatar?rev=${encodeURIComponent(entry.userAvatarHash)}`
-                              : null
-                          }
+                        <CloudAvatar
+                          username={name()}
+                          userId={entry.userId}
+                          avatarHash={entry.userAvatarHash}
                           size="xs"
                           class="h-4! w-4! text-[8px]!"
                         />

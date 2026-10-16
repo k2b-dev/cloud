@@ -394,7 +394,7 @@ describe("Spaces item detail panel", () => {
   test("uses the comment count as the empty state without duplicate copy", () => {
     const html = renderPanel({ initialCommentsPage: { items: [], page: 1, perPage: 50, total: 0, hasNext: false } });
 
-    expect(html).toContain('class="k2b-discussion__count">0</span>');
+    expect(html).toContain('class="k2b-detail-panel__none">None yet</span>');
     expect(html).not.toContain("No comments yet.");
   });
 

@@ -1,6 +1,7 @@
+import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Avatar, announce, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast } from "@k2b/ui";
+import { announce, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceComment } from "@/contracts";
@@ -159,13 +160,10 @@ export default function CommentsSection(props: Props) {
           {(comment) => (
             <Discussion.Item
               avatar={
-                <Avatar
-                  name={comment.userName ?? t.unknownUser}
-                  src={
-                    comment.userId && comment.userAvatarHash
-                      ? `/api/accounts/users/${encodeURIComponent(comment.userId)}/avatar?rev=${encodeURIComponent(comment.userAvatarHash)}`
-                      : undefined
-                  }
+                <CloudAvatar
+                  username={comment.userName ?? t.unknownUser}
+                  userId={comment.userId}
+                  avatarHash={comment.userAvatarHash}
                   size="xs"
                 />
               }

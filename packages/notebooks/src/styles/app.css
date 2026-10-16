@@ -304,7 +304,7 @@
    one above, so a zoomed window with a fractional width never shows a switch
    that changes nothing. */
 @media not all and (min-width: 64rem) {
-  .k2b-ui :is(.k2b-detail-panel__section, .k2b-switch-field).notebooks-full-width-option {
+  .k2b-ui .k2b-switch-field.notebooks-full-width-option {
     display: none;
   }
 }

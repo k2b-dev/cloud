@@ -577,15 +577,16 @@ test("null saved text keeps the editor's single empty line", async () => {
 });
 
 for (const mode of ["write", "readonly"] as const) {
-  test(`${mode}: the first HTML renders full width and its checked panel switch from the cookie`, async () => {
+  test(`${mode}: the first HTML renders full width and seeds Ansicht from the cookie`, async () => {
     for (const fullWidth of [false, true]) {
       const html = await renderNotebookWithNotes(fullWidth ? { fullWidth: true } : {}, mode);
       const surfaces = await select(html, ".notebook-document-surface");
       expect(surfaces).toHaveLength(1);
       expect(surfaces[0]?.attributes["data-full-width"]).toBe(fullWidth ? "" : undefined);
-      const switches = await select(html, '.notebooks-full-width-option input[role="switch"]');
-      expect(switches).toHaveLength(1);
-      expect(switches[0]?.attributes.checked !== undefined).toBe(fullWidth);
+      const [panel] = await select(html, 'solid-island[data-file="NotebookDetailPanel.island.tsx"]');
+      expect(islandProps(panel?.attributes["data-props"]).fullWidth).toBe(fullWidth);
+      expect(await select(html, ".notebook-view-menu__trigger")).toHaveLength(1);
+      expect(await select(html, '.notebooks-full-width-option input[role="switch"]')).toHaveLength(0);
     }
   });
 }

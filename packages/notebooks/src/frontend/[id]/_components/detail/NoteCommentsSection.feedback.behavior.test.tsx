@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../../ui/test/dom";
+import type { PublicNoteComment } from "../../../../api/public-resources";
 
 const flush = async () => {
   await Promise.resolve();
@@ -39,21 +40,71 @@ describe("Note comment feedback", () => {
     dom.cleanup();
   });
 
-  const renderSection = async () => {
+  const renderSection = async (items: PublicNoteComment[] = [], locale = "en") => {
+    const { LocaleProvider } = await import("@k2b/ui");
     const { default: NoteCommentsSection } = await import("./NoteCommentsSection");
     return render(
       () =>
-        createComponent(NoteCommentsSection, {
-          notebookId: "Book01",
-          noteId: "Note01",
-          currentUserId,
-          canWrite: true,
-          initialCommentsPage: emptyPage,
-          dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(NoteCommentsSection, {
+              notebookId: "Book01",
+              noteId: "Note01",
+              currentUserId,
+              canWrite: true,
+              initialCommentsPage: { ...emptyPage, items, total: items.length },
+              dateConfig: { locale, timeZone: "Europe/Berlin", ...{ base: "2026-10-16T19:30:00.000Z" } },
+            });
+          },
         }),
       dom.root,
     );
   };
+
+  test("German comments fold to the newest three, call the viewer Du and open the composer below the list", async () => {
+    const comments = Array.from(
+      { length: 5 },
+      (_, index): PublicNoteComment => ({
+        id: `comment${index}`,
+        notebookId: "Book01",
+        noteId: "Note01",
+        authorUserId: index === 4 ? currentUserId : "jana",
+        authorDisplayName: index === 4 ? "Tom Sample" : "Jana Berger",
+        authorAvatarHash: null,
+        content: `Kommentar ${index}`,
+        createdAt: `2026-10-03T10:0${index}:00.000Z`,
+        updatedAt: `2026-10-03T10:0${index}:00.000Z`,
+        canEdit: index === 4,
+        canDelete: index === 4,
+      }),
+    ).reverse();
+    const dispose = await renderSection(comments, "de");
+    try {
+      expect([...dom.root.querySelectorAll(".k2b-discussion__entry > header > strong")].map((author) => author.textContent)).toEqual([
+        "Jana Berger",
+        "Jana Berger",
+        "Du",
+      ]);
+      expect([...dom.root.querySelectorAll(".k2b-discussion__item")].map((item) => item.textContent)).toEqual([
+        expect.stringContaining("Kommentar 2"),
+        expect.stringContaining("Kommentar 3"),
+        expect.stringContaining("Kommentar 4"),
+      ]);
+      const older = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent?.trim() === "2 ältere anzeigen",
+      )!;
+      older.click();
+      expect(dom.root.querySelectorAll(".k2b-discussion__item")).toHaveLength(5);
+      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Kommentieren")!.click();
+      await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
+      const list = dom.root.querySelector(".k2b-discussion__list")!;
+      const composer = dom.root.querySelector(".k2b-discussion__composer")!;
+      expect(Boolean(list.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    } finally {
+      dispose();
+    }
+  });
 
   test("a rejected comment stays in the composer with the reason under it", async () => {
     answer = rejectPosts;
@@ -63,7 +114,7 @@ describe("Note comment feedback", () => {
     const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
     const dispose = await renderSection();
     try {
-      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Add comment"))!.click();
+      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Comment"))!.click();
       await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
       const composer = dom.root.querySelector<HTMLTextAreaElement>(".k2b-discussion__composer textarea")!;
       composer.value = "Link the budget sheet here.";
@@ -122,7 +173,7 @@ describe("Note comment feedback", () => {
       textarea.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     };
     try {
-      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Add comment"))!.click();
+      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Comment"))!.click();
       await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
       submit(dom.root.querySelector<HTMLTextAreaElement>(".k2b-discussion__composer textarea")!, "Link the budget sheet here.");
       await until(() => Boolean(dom.root.querySelector('button[aria-label="Edit comment"]')));
@@ -169,7 +220,7 @@ describe("Note comment feedback", () => {
     dom.document.querySelector("[data-k2b-live]")?.remove();
     const dispose = await renderSection();
     try {
-      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Add comment"))!.click();
+      [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Comment"))!.click();
       await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
       const composer = dom.root.querySelector<HTMLTextAreaElement>(".k2b-discussion__composer textarea")!;
       composer.value = "Link the budget sheet here.";

@@ -3,7 +3,13 @@ import { AppWorkspace, LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import type { PublicNoteComment } from "../../../../api/public-resources";
 import type { NoteAuthors } from "../../../../lib/activity-actions";
-import { ACTIVE_HEADING_EVENT, PRESENCE_EVENT, PRESENCE_LOCATIONS_EVENT, type PresenceLocationsEventDetail, SYNC_STATE_EVENT } from "./events";
+import {
+  ACTIVE_HEADING_EVENT,
+  PRESENCE_EVENT,
+  PRESENCE_LOCATIONS_EVENT,
+  type PresenceLocationsEventDetail,
+  SYNC_STATE_EVENT,
+} from "./events";
 import NotebookDetailPanel from "./NotebookDetailPanel.island";
 import type { TocItem } from "./toc";
 
@@ -17,11 +23,7 @@ export type DetailPanelHarness = {
   heading: (id: string | null) => void;
 };
 
-declare global {
-  interface Window {
-    harness: DetailPanelHarness;
-  }
-}
+declare const window: Omit<Window, "harness"> & { harness: DetailPanelHarness };
 
 const params = new URLSearchParams(location.search);
 const state = params.get("state") ?? "standard";
@@ -38,7 +40,15 @@ const TOM = "00000000-0000-4000-8000-000000000005";
 const LENA = "00000000-0000-4000-8000-000000000006";
 const CAN = "00000000-0000-4000-8000-000000000007";
 
-const comment = (id: string, userId: string, name: string, avatar: boolean, minutes: number, content: string, edited = false): PublicNoteComment => ({
+const comment = (
+  id: string,
+  userId: string,
+  name: string,
+  avatar: boolean,
+  minutes: number,
+  content: string,
+  edited = false,
+): PublicNoteComment => ({
   id,
   notebookId: "book01",
   noteId: "note01",
@@ -105,7 +115,10 @@ const empty = state === "empty";
 const comments = empty ? [] : many ? manyComments : fewComments;
 const jana = { kind: "user" as const, id: JANA, displayName: "Jana Berger", avatarHash: "h1" };
 const authors: NoteAuthors = empty
-  ? { createdBy: { kind: "user", id: ME, displayName: "Anna Becker", avatarHash: "h1" }, lastEditedBy: { kind: "user", id: ME, displayName: "Anna Becker", avatarHash: "h1" } }
+  ? {
+      createdBy: { kind: "user", id: ME, displayName: "Anna Becker", avatarHash: "h1" },
+      lastEditedBy: { kind: "user", id: ME, displayName: "Anna Becker", avatarHash: "h1" },
+    }
   : { createdBy: jana, lastEditedBy: jana };
 
 const participant = (userId: string, displayName: string, avatar: boolean, peerCount = 1): NotebookPresenceParticipant => ({
@@ -170,16 +183,46 @@ render(
             attachments={
               many
                 ? [
-                    { id: "a1", kind: "file", filename: "Rampenplan.pdf", notebookId: "book01", mimeType: "application/pdf", sizeBytes: 98_304, createdBy: JANA, createdAt: minutesAgo(400) },
-                    { id: "a2", kind: "file", filename: "Lieferantenliste.xlsx", notebookId: "book01", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", sizeBytes: 18_432, createdBy: JANA, createdAt: minutesAgo(400) },
+                    {
+                      id: "a1",
+                      kind: "file",
+                      filename: "Rampenplan.pdf",
+                      notebookId: "book01",
+                      mimeType: "application/pdf",
+                      sizeBytes: 98_304,
+                      createdBy: JANA,
+                      createdAt: minutesAgo(400),
+                    },
+                    {
+                      id: "a2",
+                      kind: "file",
+                      filename: "Lieferantenliste.xlsx",
+                      notebookId: "book01",
+                      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                      sizeBytes: 18_432,
+                      createdBy: JANA,
+                      createdAt: minutesAgo(400),
+                    },
                   ]
                 : []
             }
             backlinks={
               many
                 ? [
-                    { noteId: "n2", title: "Onboarding", notebookId: "book01", notebookName: "Handbuch Logistik", updatedAt: minutesAgo(30) },
-                    { noteId: "n3", title: "Inventur 2026", notebookId: "book01", notebookName: "Handbuch Logistik", updatedAt: minutesAgo(30) },
+                    {
+                      noteId: "n2",
+                      title: "Onboarding",
+                      notebookId: "book01",
+                      notebookName: "Handbuch Logistik",
+                      updatedAt: minutesAgo(30),
+                    },
+                    {
+                      noteId: "n3",
+                      title: "Inventur 2026",
+                      notebookId: "book01",
+                      notebookName: "Handbuch Logistik",
+                      updatedAt: minutesAgo(30),
+                    },
                     { noteId: "n4", title: "Retouren", notebookId: "book02", notebookName: "Handbuch Versand", updatedAt: minutesAgo(30) },
                   ]
                 : []
@@ -206,7 +249,7 @@ render(
             currentUserId={ME}
             noteAuthors={authors}
             initialCommentsPage={{ items: [...comments].reverse(), page: 1, perPage: 30, total: comments.length, hasNext: false }}
-            dateConfig={{ locale: "de", timeZone: "Europe/Berlin" }}
+            dateConfig={{ locale: "de", timeZone: "Europe/Berlin", ...{ base: "2026-10-16T19:30:00.000Z" } }}
           />
         </AppWorkspace.Content>
       </AppWorkspace>

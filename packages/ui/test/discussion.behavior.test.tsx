@@ -112,7 +112,8 @@ describe("@k2b/ui Discussion behavior", () => {
 
     expect(loads).toBe(1);
     expect(dom.root.textContent).not.toContain("No comments");
-    expect(dom.root.querySelector(".k2b-discussion__count")?.textContent).toBe("0");
+    // An empty discussion reads "None yet" in its header instead of a bare zero.
+    expect(dom.root.querySelector(".k2b-detail-panel__none")?.textContent).toBe("None yet");
 
     dispose();
     let retryCalls = 0;

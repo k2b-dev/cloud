@@ -234,7 +234,7 @@ const measure = () => {
     Array.from(document.querySelectorAll(`#${id} :is(.k2b-detail-panel__section-header, .k2b-discussion__header)`)).map((header) => {
       const title = header.querySelector("h3")!;
       const icon = header.querySelector(":is(.k2b-detail-panel__section-icon, .k2b-discussion__icon)")!;
-      const meta = header.querySelector(":is(.k2b-detail-panel__section-meta, .k2b-discussion__count)");
+      const meta = header.querySelector(":is(.k2b-detail-panel__section-meta, .k2b-count-chip, .k2b-detail-panel__none)");
       const titleStyle = style(title);
       return {
         title: title.textContent,
@@ -243,8 +243,8 @@ const measure = () => {
         titleLeft: box(title).left,
         height: box(header).height,
         type: [titleStyle.fontSize, titleStyle.fontWeight, titleStyle.textTransform, titleStyle.letterSpacing, titleStyle.color].join(" "),
-        metaRight: meta ? box(meta).right : null,
-        metaType: meta ? [style(meta).fontSize, style(meta).color].join(" ") : null,
+        metaGap: meta ? Math.round(box(meta).left - box(title).right) : null,
+        metaType: meta ? [style(meta).fontSize, style(meta).color, meta.className].join(" ") : null,
       };
     });
   const discussionHeader = (id: string) => box(document.querySelector(`#${id} .k2b-discussion__header`)!).top;
@@ -423,13 +423,13 @@ describe("DetailPanel sections and Discussion share one frame", () => {
             for (const key of ["iconLeft", "iconColor", "titleLeft", "height", "type"] as const)
               expect(new Set(headings.map((heading) => heading[key])).size, key).toBe(1);
             expect(headings[0]!.type).toContain(" none normal ");
-            // The count sits at the trailing edge of the heading like a section's meta.
-            const counted = headings.filter((heading) => heading.metaRight !== null);
-            expect(new Set(counted.map((heading) => heading.metaType)).size).toBe(1);
+            // A count sits right after its title, in one chip style, whether in a section or a discussion.
+            const counted = headings.filter((heading) => heading.metaGap !== null);
+            expect(counted.length).toBeGreaterThan(1);
+            expect(new Set(counted.map((heading) => heading.metaGap))).toEqual(new Set([8]));
+            const chips = counted.filter((heading) => heading.metaType?.includes("k2b-count-chip"));
+            expect(new Set(chips.map((heading) => heading.metaType)).size).toBeLessThanOrEqual(1);
           }
-          expect(result.headings.find((heading) => heading.title === "Attachments")!.metaRight).toBe(
-            result.composerHeadings.find((heading) => heading.title === "Comments")!.metaRight,
-          );
 
           // Loading, a first comment, a second comment, or an open composer move nothing above the comments.
           const reference = result.blocks.loading;
@@ -451,9 +451,11 @@ describe("DetailPanel sections and Discussion share one frame", () => {
           // In a group, the discussion's icon sits in the sections' column and the spacing between
           // neighbours matches; inside a section it adds no frame or inset of its own.
           expect(new Set(result.grouped.map((entry) => entry.iconLeft)).size).toBe(1);
-          expect(result.grouped.map((entry) => entry.headerOffset)).toEqual([8, 12, 12]);
+          // In the floating host, one gap separates every block, so no section carries padding of its own.
+          expect(result.grouped.map((entry) => entry.headerOffset)).toEqual([0, 0, 0]);
           expect(result.grouped.every((entry) => entry.background === "rgba(0, 0, 0, 0)")).toBe(true);
-          expect(result.inSection).toEqual({ left: 0, padding: "0px 0px", background: "rgba(0, 0, 0, 0)", border: "0px" });
+          // Inside a section it starts on the section's text edge, after the icon column, and adds no inset of its own.
+          expect(result.inSection).toEqual({ left: 30, padding: "0px 0px", background: "rgba(0, 0, 0, 0)", border: "0px" });
 
           // Hosted in a tinted dialog group, the lone section and the discussion are frames like a
           // group: their field wells are recessed again instead of white on the white frame.

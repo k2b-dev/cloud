@@ -57,7 +57,7 @@ describe("DetailPanel", () => {
     );
 
     expect(html).toContain('class="k2b-detail-panel"');
-    expect(html).toContain('<h2 title="Invoice review">Invoice review</h2>');
+    expect(html).toContain("<h2>Invoice review</h2>");
     expect(html).toContain('data-identity="true"');
     expect(html).toContain('class="k2b-detail-panel__header-leading"');
     expect(html).toContain('class="k2b-detail-panel__supporting"');
@@ -255,7 +255,7 @@ describe("DetailPanel", () => {
     expect(actionHoverRule).toContain("color: var(--k2b-text);");
     expect(actionHoverRule).toContain("background: transparent;");
     // The hover fill is a pseudo element reaching into the gutter, so the row's text never moves.
-    const bleedRule = css.match(/\.k2b-ui \.k2b-button\.k2b-detail-panel__action::before \{([^}]*)\}/)?.[1] ?? "";
+    const bleedRule = css.match(/\.k2b-ui \.k2b-detail-panel__action > \.k2b-button__label::before \{([^}]*)\}/)?.[1] ?? "";
     expect(bleedRule).toContain("inset-inline: -0.5rem;");
     expect(bleedRule).toContain("pointer-events: none;");
     const menuHoverRule =
@@ -323,7 +323,9 @@ describe("DetailPanel", () => {
         },
       }),
     );
-    expect(html).toMatch(/<h3 id="[^"]+">Comments<\/h3><span class="k2b-count-chip">3<\/span><\/div><\/div><div class="k2b-detail-panel__section-actions">Comment<\/div>/);
+    expect(html).toMatch(
+      /<h3 id="[^"]+">Comments<\/h3><span class="k2b-count-chip">3<\/span><\/div><\/div><div class="k2b-detail-panel__section-actions">Comment<\/div>/,
+    );
     expect(html).toMatch(/Links<\/h3><span class="k2b-detail-panel__none">None yet<\/span>/);
     expect(html).toMatch(/Tasks<\/h3><span class="k2b-detail-panel__section-meta">2 of 4 done<\/span>/);
     // The current row is exposed to assistive technology, not only by color.

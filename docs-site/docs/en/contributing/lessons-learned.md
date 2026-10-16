@@ -296,6 +296,13 @@ convention still needs a check or a test.
 - **Error class:** An open string enum mapped to UI text through a raw-key fallback.
 - **Guard:** Notebooks uses a typed action union, an exhaustive English/German activity catalog, and neutral unknown-action labels. `activity-messages.test.ts` scans service activity literals and checks both actor forms and fallbacks; `activity.integration.test.ts` checks filtered paging past unknown stored actions.
 
+### A panel command had no owner
+
+- **What happened:** Duplicate in the Notebooks panel emitted an event without starting the copy flow.
+- **Root cause:** The prompt, copy request, and navigation belonged to the note tree, while the panel had only an event name.
+- **Error class:** A browser event without a mounted consumer.
+- **Guard:** `duplicate-note.behavior.test.tsx` exercises the panel with no tree and with two trees, plus cancellation, errors, permissions, and listener cleanup. Both entry points use the same copy flow; only the panel handles its event.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its

@@ -37,6 +37,7 @@ import type { Attachment } from "../editor/attachments-client";
 import { formatBytes } from "../editor/attachments-client";
 import { setDetailPanelOpen } from "../settings/NotebookSettingsStore";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
+import { useDuplicateNote } from "./duplicate-note";
 import {
   ACTIVE_HEADING_EVENT,
   type ActiveHeadingEventDetail,
@@ -160,6 +161,7 @@ const REFERENCE_ICONS: Partial<Record<NamedBlockSummary["type"], string>> = {
 export default function NotebookDetailPanel(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
+  const duplicateNote = useDuplicateNote(props.notebookId);
   const [open, setOpen] = createSignal(props.initiallyOpen);
   const [tocItems, setTocItems] = createSignal<TocItem[]>(props.tocItems);
   const [activeHeading, setActiveHeading] = createSignal<string | null>(null);
@@ -387,6 +389,12 @@ export default function NotebookDetailPanel(props: Props) {
   });
 
   onMount(() => {
+    const onDuplicate = (event: Event) => {
+      const detail = (event as CustomEvent<{ noteId: string }>).detail;
+      if (props.canWrite && detail?.noteId === noteId()) void duplicateNote.duplicate(detail.noteId);
+    };
+    window.addEventListener(DUPLICATE_NOTE_EVENT, onDuplicate);
+    onCleanup(() => window.removeEventListener(DUPLICATE_NOTE_EVENT, onDuplicate));
     const onTocUpdate = (event: Event) => {
       const detail = (event as CustomEvent<TocItem[]>).detail;
       if (Array.isArray(detail)) setTocItems(detail);
@@ -523,9 +531,7 @@ export default function NotebookDetailPanel(props: Props) {
         src: cloudAvatarSource(participant.userId, participant.avatarHash),
         self,
         detailIcon: self ? undefined : writing ? "ti ti-pencil" : "ti ti-eye",
-        detail: self
-          ? (heading ?? undefined)
-          : [writing ? t().presenceWriting : t().presenceReading, heading].filter(Boolean).join(" · "),
+        detail: self ? (heading ?? undefined) : [writing ? t().presenceWriting : t().presenceReading, heading].filter(Boolean).join(" · "),
         trailing: participant.peerCount > 1 ? t().tabs({ count: participant.peerCount }) : undefined,
         onSelect:
           !self && location?.writing
@@ -572,7 +578,9 @@ export default function NotebookDetailPanel(props: Props) {
     item.action.startsWith("comment.") ? undefined : buildVersionsUrl(props.notebookId, noteId());
   const revealComment = (item: NoteActivityItem) => {
     const commentId = typeof item.metadata.commentId === "string" ? item.metadata.commentId : null;
-    window.dispatchEvent(new CustomEvent(REVEAL_COMMENT_EVENT, { detail: { commentId: item.action === "comment.deleted" ? null : commentId } }));
+    window.dispatchEvent(
+      new CustomEvent(REVEAL_COMMENT_EVENT, { detail: { commentId: item.action === "comment.deleted" ? null : commentId } }),
+    );
   };
 
   // ── Pieces ────────────────────────────────────────────────────────────
@@ -580,7 +588,7 @@ export default function NotebookDetailPanel(props: Props) {
   /** A relative time with its exact date on hover and keyboard focus. */
   const Time = (timeProps: { value: string; focusable?: boolean }): JSX.Element => (
     <Tooltip.Anchor content={exact(timeProps.value)} class="notebook-time">
-      <time datetime={timeProps.value} tabIndex={timeProps.focusable ? 0 : undefined} aria-label={exact(timeProps.value)}>
+      <time datetime={timeProps.value} tabIndex={timeProps.focusable ? 0 : undefined}>
         {relative(timeProps.value)}
       </time>
     </Tooltip.Anchor>
@@ -725,7 +733,14 @@ export default function NotebookDetailPanel(props: Props) {
                     }
                   >
                     <Tooltip.Anchor content={t().needsConnection} class="notebook-detail-actions__ai">
-                      <Button size="sm" variant="ai" type="button" class="w-full" disabled aria-label={`${t().editWithAi}: ${t().needsConnection}`}>
+                      <Button
+                        size="sm"
+                        variant="ai"
+                        type="button"
+                        class="w-full"
+                        disabled
+                        aria-label={`${t().editWithAi}: ${t().needsConnection}`}
+                      >
                         <i class="ti ti-sparkles" aria-hidden="true" /> {t().editWithAi}
                       </Button>
                     </Tooltip.Anchor>
@@ -817,13 +832,7 @@ export default function NotebookDetailPanel(props: Props) {
           </Show>
 
           <Show when={visibleAttachments().length > 0 || attachmentMetadata.error()}>
-            <DetailPanel.Section
-              title={t().attachments}
-              icon="ti ti-paperclip"
-              count={visibleAttachments().length}
-              collapsible
-              defaultOpen
-            >
+            <DetailPanel.Section title={t().attachments} icon="ti ti-paperclip" count={visibleAttachments().length} collapsible defaultOpen>
               <div class="notebook-panel-rows">
                 <Show when={attachmentMetadata.error()}>
                   <DetailPanel.Action

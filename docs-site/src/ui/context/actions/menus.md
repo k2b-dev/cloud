@@ -58,6 +58,12 @@ and 12rem minimum width. Trigger styling is configured separately.
 </Dropdown.Root>
 ```
 
+Set `phone="sheet"` on `Dropdown.Root` to open the same items in a bottom sheet
+below 48rem. The default `phone="menu"` keeps the menu beside its trigger.
+A controlled dropdown (`open` supplied) always stays a menu. Choices with
+`closeOnSelect: false` keep the sheet open, with reactive checked state, just
+as they do in the desktop menu. The inherited UI locale follows into the sheet.
+
 ## Items and sections
 
 Both components accept `DropdownItem[]`. An item is one of:
@@ -86,7 +92,7 @@ for a form or richer workflow. Use `Select`, `MultiSelectInput`, `SelectChip`,
 or `FilterChip` when the interaction edits a value or filter.
 
 `Dropdown.Root` accepts `items`, `open`, `onOpenChange`, `position`, `align`,
-`width`, `class`, `menuClass`, `label`, `disabled`, and `onClose`.
+`width`, `class`, `menuClass`, `label`, `disabled`, `phone`, and `onClose`.
 `Dropdown.Trigger` owns the native button and its SSR-visible menu semantics.
 Use its normal button appearance by default. Set `appearance="plain"` only
 when a specialized component class owns the complete visual treatment.
@@ -169,7 +175,7 @@ type DropdownProps = {
   items: readonly DropdownItem[]; children: JSX.Element;
   position?: DropdownPosition | (() => DropdownPosition); variant?: "default" | "touch"; width?: string;
   class?: string; menuClass?: string; onClose?: () => void; open?: boolean;
-  onOpenChange?: (open: boolean) => void; disabled?: boolean; label?: string; align?: "start" | "end";
+  onOpenChange?: (open: boolean) => void; disabled?: boolean; label?: string; align?: "start" | "end"; phone?: "menu" | "sheet";
 };
 
 type ContextMenuProps = {

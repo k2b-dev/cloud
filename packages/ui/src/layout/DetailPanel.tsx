@@ -144,6 +144,12 @@ type DetailPanelComponent = ((props: DetailPanelProps) => JSX.Element) & {
 
 const classNames = (base: string, extra?: string): string => (extra ? `${base} ${extra}` : base);
 
+const showTruncatedTitle = (event: PointerEvent & { currentTarget: HTMLHeadingElement }) => {
+  const heading = event.currentTarget;
+  if (heading.scrollHeight > heading.clientHeight + 1) heading.title = heading.textContent ?? "";
+  else heading.removeAttribute("title");
+};
+
 const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => (
   <header class={classNames("k2b-detail-panel__header", props.class)}>
     <div class="k2b-detail-panel__header-main" data-identity={props.icon || props.leading ? "true" : undefined}>
@@ -158,8 +164,8 @@ const DetailPanelHeader = (props: DetailPanelHeaderProps): JSX.Element => (
         <div class="k2b-detail-panel__header-leading">{props.leading}</div>
       </Show>
       <div class="k2b-detail-panel__heading">
-        {/* A long title wraps to two lines and ends with an ellipsis; the native hint shows all of it. */}
-        <h2 title={typeof props.title === "string" ? props.title : undefined}>{props.title}</h2>
+        {/* A long title wraps to two lines and ends with an ellipsis; then the native hint shows all of it. */}
+        <h2 onPointerEnter={showTruncatedTitle}>{props.title}</h2>
         <Show when={props.subtitle || props.meta}>
           <div class="k2b-detail-panel__supporting">
             <Show when={props.subtitle}>

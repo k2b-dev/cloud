@@ -49,7 +49,7 @@ const PersonRows = (props: { people: readonly AvatarStackPerson[]; choose: (pers
   const row = (person: AvatarStackPerson) => {
     const content = (
       <>
-        <Avatar name={person.name} src={person.src} icon={person.icon} shape={person.shape} size="sm" class="k2b-avatar-stack__row-avatar" />
+        <Avatar name={person.name} src={person.src} icon={person.icon} shape={person.shape} size="sm" />
         <span class="k2b-avatar-stack__row-copy">
           <span class="k2b-avatar-stack__row-name">
             <span>{person.name}</span>

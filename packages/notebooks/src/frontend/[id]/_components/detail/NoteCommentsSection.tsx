@@ -1,5 +1,5 @@
-import { type DateContext, dates, type Paginated } from "@k2b/stdlib";
 import { CloudAvatar } from "@k2b/cloud/account/ui";
+import { type DateContext, dates, type Paginated } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import { announce, Button, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
@@ -287,7 +287,7 @@ export default function NoteCommentsSection(props: Props) {
                   timestamp={
                     <Tooltip.Anchor content={exactTime(comment.createdAt)}>
                       {/* Focusable, so the exact date also shows from the keyboard. */}
-                      <time dateTime={comment.createdAt} tabIndex={0} aria-label={exactTime(comment.createdAt)}>
+                      <time dateTime={comment.createdAt} tabIndex={0}>
                         {dates.formatDateTimeRelative(comment.createdAt, props.dateConfig)}
                       </time>
                     </Tooltip.Anchor>
