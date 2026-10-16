@@ -527,6 +527,19 @@ export type CloudAiChartColumn = { id: string; label: string; numeric: boolean }
 export type CloudAiChartRow = { key: string; cells: Record<string, string>; values: Record<string, string | number> };
 export type CloudAiChartTable = { columns: CloudAiChartColumn[]; rows: CloudAiChartRow[] };
 
+/** The first text column titles the tooltip; the other columns become rows, matching the table in every host. */
+export function cloudAiChartTooltip(
+  columns: CloudAiChartColumn[],
+  row: CloudAiChartRow,
+): { title?: string; rows: { label: string; value: string }[] } {
+  const [first, ...rest] = columns;
+  const named = first && !first.numeric;
+  return {
+    title: named ? row.cells[first.id] : undefined,
+    rows: (named ? rest : columns).map((column) => ({ label: column.label, value: row.cells[column.id] ?? "" })),
+  };
+}
+
 /**
  * Builds the data table mark by mark, in the order the renderer emits them, so the chat block fills it from the same
  * drawing that shows the chart.
@@ -534,6 +547,7 @@ export type CloudAiChartTable = { columns: CloudAiChartColumn[]; rows: CloudAiCh
 export function cloudAiChartRows(input: CloudAiChartInput, locale: string) {
   const t = labels.resolve([locale]).t;
   const format = formats(input, locale);
+  const valueFormat = input.tooltip?.format ? cloudAiNumberFormatters(input.tooltip.format, locale).value : format.value;
   const series = seriesOf(input);
   const countFormat = cloudAiNumberFormatters(undefined, locale).value;
   const percent = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
@@ -579,21 +593,27 @@ export function cloudAiChartRows(input: CloudAiChartInput, locale: string) {
         );
       } else if (field.key === "y") {
         const header =
+          input.tooltip?.label ??
           (input.kind === "line" || input.kind === "scatter" ? input.yAxis?.label : undefined) ??
           (input.kind === "sparkline" || input.kind === "stat" ? t.value : "Y");
-        cell("y", header, value, format.value(value));
+        cell("y", header, value, valueFormat(value));
       } else if (field.key === "value")
-        cell("value", (input.kind === "bar" ? input.yAxis?.label : undefined) ?? t.value, value, `${format.value(value)}${unit}`);
-      else if (field.key === "delta") cell("delta", t.delta, value, `${value > 0 ? "+" : ""}${format.value(value)}`);
+        cell(
+          "value",
+          input.tooltip?.label ?? (input.kind === "bar" ? input.yAxis?.label : undefined) ?? t.value,
+          value,
+          `${valueFormat(value)}${unit}`,
+        );
+      else if (field.key === "delta") cell("delta", t.delta, value, `${value > 0 ? "+" : ""}${valueFormat(value)}`);
       else if (field.key === "q1" || field.key === "q2" || field.key === "q3" || field.key === "whiskerLow" || field.key === "whiskerHigh")
-        cell(field.key, t[field.key], value, format.value(value));
+        cell(field.key, t[field.key], value, valueFormat(value));
       else if (field.key === "percent") cell("percent", t.share, value, percent.format(value / 100));
       else if (field.key === "from" || field.key === "to" || field.key === "count" || field.key === "min" || field.key === "max")
         cell(
           field.key,
           t[field.key],
           value,
-          `${field.key === "count" ? countFormat(value) : format.value(value)}${field.key === "min" || field.key === "max" ? unit : ""}`,
+          `${field.key === "count" ? countFormat(value) : valueFormat(value)}${field.key === "min" || field.key === "max" ? unit : ""}`,
         );
     }
     const row = { key: cloudAiChartMarkKey(datum), cells, values };

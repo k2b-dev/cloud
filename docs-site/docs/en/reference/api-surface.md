@@ -251,11 +251,15 @@ Server integrations save run results with `createAiConversationView` and receive
 [Tools and approvals](/en/docs/ai/tools-and-approvals) for validation and groups.
 
 Custom chart hosts use browser exports `cloudAiChartRenderOptions`,
-`cloudAiChartLegend`, `cloudAiChartRows`, `cloudAiChartTable`, `cloudAiChartMarkKey`,
-`cloudAiChartReferenceMark`, `cloudAiChartXValueFormat`, `cloudAiNumberFormatters`,
-`cloudAiChartMarks` and `chartDrawingIssue`, with `CloudAiChartColumn`,
-`CloudAiChartRow` and `CloudAiChartTable`. These map validated chart input to
-rendering, legend, comparison marks and locale-formatted rows. `ChartExplorer`
+`cloudAiChartLegend`, `cloudAiChartRows`, `cloudAiChartTable`, `cloudAiChartTooltip`,
+`cloudAiChartMarkKey`, `cloudAiChartReferenceMark`, `cloudAiChartXValueFormat`,
+`cloudAiNumberFormatters`, `cloudAiChartMarks` and `chartDrawingIssue`, with
+`CloudAiChartColumn`, `CloudAiChartRow` and `CloudAiChartTable`. These map
+validated chart input to rendering, legend, comparison marks and locale-formatted
+rows; `cloudAiChartTooltip(columns, row)` turns a row into the tooltip the chat
+shows, so every host tells the same story. A chart's optional
+`tooltip: {label?, format?}` names and formats the value in tooltips and table
+rows; axes keep their own formats. `ChartExplorer`
 from `@k2b/ui` accepts `legend` entries typed as `ChartLegendEntry`
 (`{label, color, style?, reference?}`) for a wrapping legend inside its fixed
 height; see [Chart presentation and controls](/en/ui/content/charts#chart-presentation-and-controls).

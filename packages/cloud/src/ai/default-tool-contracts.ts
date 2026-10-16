@@ -59,6 +59,9 @@ export const cloudAiChartKindSchema = () =>
 
 const chartParts = (limits = true) => {
   const ChartLabel = limits ? z.string().trim().min(1).max(80) : z.union([z.string(), z.number().transform(String)]);
+  const ChartTooltip = z
+    .strictObject({ label: ChartLabel.optional(), format: cloudAiNumberFormatSchema().optional() })
+    .describe("All kinds: what tooltips and the data table call the value and how they format it; axes keep their own format.");
   // Missing observations stay numeric so the renderer can omit them with its finite-value checks.
   const ChartNumber = limits
     ? z.number()
@@ -96,6 +99,7 @@ const chartParts = (limits = true) => {
   );
   return {
     ChartLabel,
+    ChartTooltip,
     ChartNumber,
     list,
     ChartReferences,
@@ -148,6 +152,7 @@ const chartKinds = (limits = true) => {
     ChartBins,
     ChartCategory,
     ChartCommon,
+    ChartTooltip,
     ChartLabel,
     ChartPoints,
     ChartSeries,
@@ -159,11 +164,12 @@ const chartKinds = (limits = true) => {
     ChartCell,
     ChartBarGauge,
   } = chartParts(limits);
+  const ChartKindCommon = { ...ChartCommon, tooltip: ChartTooltip.optional() };
   const numberFormat = cloudAiNumberFormatSchema();
   return z.discriminatedUnion("kind", [
     z.object({
       kind: z.literal("bar"),
-      ...ChartCommon,
+      ...ChartKindCommon,
       data: list(ChartCategory, 1, CLOUD_AI_CHART_MAX_VALUES),
       yAxis: ChartAxis.optional(),
       colorByBar: z.boolean().optional(),
@@ -173,7 +179,7 @@ const chartKinds = (limits = true) => {
     }),
     z.object({
       kind: z.literal("line"),
-      ...ChartCommon,
+      ...ChartKindCommon,
       series: list(
         ChartSeries(
           limits
@@ -192,7 +198,7 @@ const chartKinds = (limits = true) => {
     }),
     z.object({
       kind: z.literal("scatter"),
-      ...ChartCommon,
+      ...ChartKindCommon,
       series: list(ChartSeries(limits ? ChartPoints.min(1) : ChartPoints), 1, CLOUD_AI_CHART_MAX_SERIES),
       xAxis: ChartAxis.optional(),
       yAxis: ChartAxis.optional(),
@@ -201,7 +207,7 @@ const chartKinds = (limits = true) => {
     }),
     z.object({
       kind: z.enum(["pie", "donut"]),
-      ...ChartCommon,
+      ...ChartKindCommon,
       data: list(ChartSlice, 1, CLOUD_AI_CHART_MAX_VALUES),
       legend: z.boolean().optional(),
       showLabels: z.boolean().optional(),
@@ -209,14 +215,14 @@ const chartKinds = (limits = true) => {
     }),
     z.object({
       kind: z.literal("histogram"),
-      ...ChartCommon,
+      ...ChartKindCommon,
       data: list(ChartNumber, 1, CLOUD_AI_CHART_MAX_VALUES),
       bins: ChartBins.optional(),
       references: ChartReferences.optional(),
     }),
     z.object({
       kind: z.literal("gauge"),
-      ...ChartCommon,
+      ...ChartKindCommon,
       value: ChartNumber,
       min: z.number().optional(),
       max: z.number().optional(),
@@ -227,20 +233,20 @@ const chartKinds = (limits = true) => {
     }),
     z.object({
       kind: z.literal("sparkline"),
-      ...ChartCommon,
+      ...ChartKindCommon,
       data: list(ChartNumber, 2, CLOUD_AI_CHART_MAX_VALUES),
       area: z.boolean().optional(),
     }),
     z.object({
       kind: z.literal("boxplot"),
-      ...ChartCommon,
+      ...ChartKindCommon,
       data: list(ChartBox, 1, CLOUD_AI_CHART_MAX_VALUES),
       yAxis: ChartAxis.optional(),
       references: ChartReferences.optional(),
     }),
     z.object({
       kind: z.literal("heatmap"),
-      ...ChartCommon,
+      ...ChartKindCommon,
       data: list(ChartCell, 1, CLOUD_AI_VIEW_MAX_MARKS),
       format: numberFormat.optional(),
       showValues: z.boolean().optional(),
@@ -249,7 +255,7 @@ const chartKinds = (limits = true) => {
     }),
     z.object({
       kind: z.literal("barGauge"),
-      ...ChartCommon,
+      ...ChartKindCommon,
       // The shared renderer draws 280 units high and a bar gauge row is 28 units, so 8 rows fit without a taller drawing.
       data: list(ChartBarGauge, 1, CLOUD_AI_CHART_MAX_SERIES, `Use at most ${CLOUD_AI_CHART_MAX_SERIES} bar gauge items.`),
       min: z.number().optional(),
@@ -260,7 +266,7 @@ const chartKinds = (limits = true) => {
     }),
     z.object({
       kind: z.literal("stat"),
-      ...ChartCommon,
+      ...ChartKindCommon,
       value: ChartNumber,
       format: numberFormat.optional(),
       unit: ChartUnit.optional(),
@@ -336,11 +342,22 @@ export const cloudAiGroupSchema = () => {
 };
 
 const flatChartSchema = () => {
-  const { ChartAxis, ChartBins, ChartCommon, ChartLabel, ChartPoints, ChartSeries, ChartReferences, ChartThresholds, ChartUnit } =
-    chartParts();
+  const {
+    ChartAxis,
+    ChartBins,
+    ChartCommon,
+    ChartLabel,
+    ChartPoints,
+    ChartSeries,
+    ChartReferences,
+    ChartThresholds,
+    ChartUnit,
+    ChartTooltip,
+  } = chartParts();
   return z.object({
     kind: cloudAiChartKindSchema().optional().describe("Single charts: kind. Omit for groups."),
     ...ChartCommon,
+    tooltip: ChartTooltip.optional(),
     // One item object preserves every kind's fields before canonical validation; unions would strip overlapping items.
     data: z
       .union([

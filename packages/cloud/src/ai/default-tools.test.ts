@@ -2,7 +2,14 @@ import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { z } from "zod";
 import { coreSettings } from "../services";
 import * as credentials from "./credentials";
-import { type CloudAiChartInput, CloudAiChartInputSchema, parseCloudAiChartInput } from "./default-tool-contracts";
+import {
+  type CloudAiChartInput,
+  CloudAiChartInputSchema,
+  cloudAiAppChartSchema,
+  cloudAiChartSchema,
+  cloudAiGroupSchema,
+  parseCloudAiChartInput,
+} from "./default-tool-contracts";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiModelAccess } from "./model-access";
 import * as settings from "./settings";
@@ -138,6 +145,47 @@ for (const [provider, boundaries, expected, code] of [
 
 describe("flat chart tool schema", () => {
   const bar = { kind: "bar", title: "B", data: [{ label: "A", value: 1 }] } satisfies CloudAiChartInput;
+  test("every chart schema preserves tooltip options for every kind", () => {
+    const tooltip = { label: "Umsatz", format: { style: "currency", currency: "EUR" } } satisfies NonNullable<CloudAiChartInput["tooltip"]>;
+    const points = [
+      {
+        data: [
+          { x: 1, y: 1 },
+          { x: 2, y: 2 },
+        ],
+      },
+    ];
+    const inputs = [
+      bar,
+      { kind: "line", title: "L", series: points },
+      { kind: "scatter", title: "S", series: points },
+      { ...bar, kind: "pie" },
+      { ...bar, kind: "donut" },
+      { kind: "histogram", title: "H", data: [1, 2, 3] },
+      { kind: "gauge", title: "G", value: 1 },
+      { kind: "sparkline", title: "S", data: [1, 2] },
+      { kind: "boxplot", title: "B", data: [{ label: "A", values: [1, 2, 3] }] },
+      { kind: "heatmap", title: "H", data: [{ x: "A", y: "B", value: 1 }] },
+      { ...bar, kind: "barGauge" },
+      { kind: "stat", title: "S", value: 1 },
+    ];
+    for (const schema of [cloudAiChartSchema(), CloudAiChartInputSchema, cloudAiAppChartSchema()]) {
+      for (const input of inputs) expect(schema.parse({ ...input, tooltip })).toHaveProperty("tooltip", tooltip);
+      for (const tooltip of [{}, { label: "Umsatz" }, { format: { unit: "kWh", decimals: 1 } }])
+        expect(schema.parse({ ...bar, tooltip })).toEqual({ ...bar, tooltip });
+    }
+  });
+  test("tooltip is strict, uses number formats, and belongs to charts inside groups", () => {
+    for (const tooltip of [{ unknown: true }, { format: { style: "currency" } }, { format: { date: "day" } }])
+      for (const schema of [cloudAiChartSchema(), CloudAiChartInputSchema, cloudAiAppChartSchema()])
+        expect(schema.safeParse({ ...bar, tooltip }).success).toBe(false);
+    const tooltip = { label: "Umsatz", format: { style: "currency", currency: "EUR" } } satisfies NonNullable<CloudAiChartInput["tooltip"]>;
+    const group = { title: "G", charts: [{ ...bar, tooltip }, bar] };
+    for (const schema of [cloudAiGroupSchema(), CloudAiChartInputSchema]) {
+      expect(schema.parse(group)).toEqual(group);
+      expect(schema.safeParse({ ...group, tooltip }).success).toBe(false);
+    }
+  });
   test("accepts old arguments and exactly one of kind or charts", () => {
     expect(CloudAiChartInputSchema.parse(bar)).toEqual(bar);
     const group = { title: "G", charts: [bar, bar], layout: "grid" as const, linkX: false };

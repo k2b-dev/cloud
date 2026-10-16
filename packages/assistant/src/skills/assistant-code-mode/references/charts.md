@@ -47,6 +47,14 @@ still works on axes and values. Without a format, values use the viewer's locale
 With `showValues` on bars, y ticks use the value format. Pie and donut slices
 show shares; a value format does not change them.
 
+All kinds also accept `tooltip: {label?, format?}` as plain data. `label` names
+the numeric value or y column in tooltips and the data table; `format` takes the
+number format above, without date formats or functions. For example,
+`tooltip: {label: "Umsatz", format: {style: "currency", currency: "EUR"}}`.
+Counts, shares, x values and axis ticks keep their formats; a kind's `unit`
+remains appended. Chat hosts use this field for tooltips and Copy data;
+`cloud.chart()` preserves it without changing the SVG drawing.
+
 x may be a number, `Date` or ISO date string. `YYYY`, `YYYY-MM`, `YYYY-MM-DD` and
 date-times without an offset (`T` or a space, fractions dropped) stay the
 wall-clock time as written. Dates and strings with an offset become the viewer's
