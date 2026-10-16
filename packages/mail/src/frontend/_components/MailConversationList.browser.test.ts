@@ -1021,10 +1021,10 @@ describe("Mail row actions", () => {
       let page: Awaited<ReturnType<typeof load>>;
       let rest: Awaited<ReturnType<typeof state>>;
       /** Cv0001 has the matched attachment's download link besides its menu; Cv0002 only its menu. */
-      const expectRows = (visible: string | null) =>
+      const expectRows = (visible: string | null, hidesAtRest = hides) =>
         state(page).then((rows) => {
           for (const [index, row] of rows.entries()) {
-            const actions = !hides || row.id === visible ? 1 : 0;
+            const actions = !hidesAtRest || row.id === visible ? 1 : 0;
             expect(row.time, row.id).toBe(1 - actions);
             expect(row.actions, row.id).toEqual(Array(row.id === "Cv0001" ? 2 : 1).fill(actions));
             // Only opacity changes; nothing in the rows moves.
@@ -1072,6 +1072,26 @@ describe("Mail row actions", () => {
         await blur(page);
         await expectRows(null);
         expect(page.errors).toEqual([]);
+      }, 30_000);
+
+      test("follows the recorded input mode: touch shows the actions in place of the time, trackpad on hover", async () => {
+        const mode = (value: string | null) =>
+          page.evaluate((value) => {
+            if (value) document.documentElement.setAttribute("data-k2b-input", value);
+            else document.documentElement.removeAttribute("data-k2b-input");
+          }, value);
+        try {
+          await mode("touch");
+          await expectRows(null, false);
+          await mode("trackpad");
+          await expectRows(null, true);
+          await pointAt(page, row("Cv0001"));
+          await expectRows("Cv0001", true);
+          await away(page);
+        } finally {
+          await mode(null);
+        }
+        await expectRows(null);
       }, 30_000);
     });
   }

@@ -30,6 +30,12 @@ const stylesPath = resolve(packageRoot, "dist/styles.css");
 if (!existsSync(stylesPath)) throw new Error("dist/styles.css is missing — run `bun run build` before this test");
 const styles = readFileSync(stylesPath, "utf8");
 
+// Hosts use this utility without any package component emitting it.
+test("ships the keyboard hint utility with a reserved box", () => {
+  expect(styles).toMatch(/\.k2b-kbd-hint\s*\{[^}]*visibility:\s*hidden/);
+  expect(styles).toMatch(/:where\(html\[data-k2b-kbd=["']?on["']?\]\)\s+\.k2b-ui\s+\.k2b-kbd-hint\s*\{[^}]*visibility:\s*visible/);
+});
+
 const walk = (dir: string): string[] =>
   readdirSync(dir).flatMap((entry) => {
     const path = join(dir, entry);

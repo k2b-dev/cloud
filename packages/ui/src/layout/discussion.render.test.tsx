@@ -110,6 +110,8 @@ describe("Discussion", () => {
 
     expect(actionRule).toContain("opacity: 1");
     expect(css).toContain("@media (any-hover: hover)");
+    expect(css).toContain(':where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-discussion__item-actions');
+    expect(css).toContain(':where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-discussion__item-actions');
     expect(css).toContain('.k2b-discussion__item-actions[data-visibility="progressive"]');
     expect(css).toContain(".k2b-discussion__item:focus-within");
     expect(discussionRule).toContain("background: var(--k2b-surface)");

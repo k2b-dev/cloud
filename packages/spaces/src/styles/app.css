@@ -85,8 +85,16 @@
 .k2b-ui .spaces-dependency__remove { flex: none; margin-inline-end: -.25rem; color: var(--k2b-text-muted); }
 .k2b-ui .spaces-dependency__remove:not(:disabled):hover { color: var(--k2b-danger-text); background: transparent; }
 @media (any-hover: hover) {
-  .k2b-ui .spaces-dependency__remove { opacity: 0; transition: opacity 120ms ease-out; }
-  .k2b-ui .spaces-dependency:hover .spaces-dependency__remove, .k2b-ui .spaces-dependency:focus-within .spaces-dependency__remove { opacity: 1; }
+  :where(html:not([data-k2b-input="touch"])) .k2b-ui .spaces-dependency__remove {
+    opacity: 0; transition: opacity 120ms ease-out;
+  }
+}
+:where(html[data-k2b-input="trackpad"]) .k2b-ui .spaces-dependency__remove {
+  opacity: 0; transition: opacity 120ms ease-out;
+}
+
+.k2b-ui .spaces-dependency:hover .spaces-dependency__remove, .k2b-ui .spaces-dependency:focus-within .spaces-dependency__remove {
+  opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {
   .spaces-dependency__link::before, .k2b-ui .spaces-dependency__remove { transition: none; }

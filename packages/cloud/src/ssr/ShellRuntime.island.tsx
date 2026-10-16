@@ -2,6 +2,7 @@ import type { HelpDocumentManifest } from "@k2b/cloud/shared";
 import {
   followPageTrail,
   installAppWorkspaceController,
+  installInputModeController,
   installPageTitleController,
   serializeAppWorkspaceLayoutState,
   useLocale,
@@ -66,6 +67,7 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
   onMount(() => syncTimezoneCookie(true));
+  onMount(() => onCleanup(installInputModeController()));
 
   if (props.workspace) {
     onMount(() => {

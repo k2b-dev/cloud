@@ -219,6 +219,43 @@ describe("@k2b/ui row action reveal", () => {
         expectVisibility(rest, idle);
       });
 
+      test("touch and trackpad override media without changing any row or trigger box", async () => {
+        try {
+          for (const mode of ["touch", "trackpad"] as const) {
+            await park();
+            await page.evaluate((mode) => document.documentElement.setAttribute("data-k2b-input", mode), mode);
+            const idle = mode === "touch" ? names : current;
+            const state = await inspect(page);
+            expectVisibility(state, idle);
+            expectGeometry(state, rest);
+            if (mode === "touch" && environment["any-hover"] === "hover") {
+              // The actions overlay each row's end, so every row's text fades under them as on the current row.
+              const fades = await page.evaluate(() =>
+                [...document.querySelectorAll(".k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions)")].map(
+                  (row) =>
+                    getComputedStyle(row.querySelector(".k2b-app-workspace__sidebar-item-main")!)
+                      .getPropertyValue("--k2b-sidebar-item-fade-inset")
+                      .trim(),
+                ),
+              );
+              expect(fades.length).toBeGreaterThan(0);
+              for (const fade of fades) expect(fade).toBe("2.5rem");
+            }
+            // A sidebar row and an application-owned row cover both visibility and opacity.
+            for (const name of ["Actions for Inbox", "Actions for Custom"]) {
+              const box = rest[names.indexOf(name)]!.rowBox;
+              await page.mouse.move(box[0]! + box[2]! / 2, box[1]! + box[3]! / 2);
+              const hovered = await inspect(page);
+              expectVisibility(hovered, [...idle, name]);
+              expectGeometry(hovered, rest);
+            }
+          }
+        } finally {
+          await park();
+          await page.evaluate(() => document.documentElement.removeAttribute("data-k2b-input"));
+        }
+      }, 30_000);
+
       for (const target of targets) {
         test(`${target.name} reveals on hover, focus${target.menu ? ", and an open menu" : ""} without layout shifts`, async () => {
           await park();

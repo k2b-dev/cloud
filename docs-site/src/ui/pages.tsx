@@ -3,6 +3,7 @@ import { fibelHtml } from "../ssr";
 import { uiCatalogEntries } from "./catalog";
 import focusMarkdown from "./context/focus.md" with { type: "text" };
 import gettingStartedMarkdown from "./context/getting-started.md" with { type: "text" };
+import inputModeMarkdown from "./context/input-mode.md" with { type: "text" };
 import motionMarkdown from "./context/motion.md" with { type: "text" };
 import overviewMarkdown from "./context/overview.md" with { type: "text" };
 import { UiCatalogOverview, UiComponentShowcase } from "./UiCatalogPage";
@@ -95,6 +96,32 @@ export const uiPages = [
           <p>{page.meta.description}</p>
         </header>
         <section class="ui-reference-body" aria-label="Motion guide">
+          <div class="ui-documentation fibel-prose" innerHTML={content.html} />
+        </section>
+      </article>
+    ),
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/input-mode",
+    title: "Input mode",
+    navTitle: "Input mode",
+    description: "Pointer input modes and keyboard hints without layout changes.",
+    section: "Start",
+    order: 5,
+    layout: "full",
+    content: inputModeMarkdown,
+    component: ({ content, page }) => (
+      <article class="ui-showcase ui-reference-showcase">
+        <header class="ui-reference-heading">
+          <div class="ui-page-heading">
+            <p>@k2b/ui</p>
+            <h1>{page.meta.title}</h1>
+          </div>
+          <p>{page.meta.description}</p>
+        </header>
+        <section class="ui-reference-body" aria-label="Input mode guide">
           <div class="ui-documentation fibel-prose" innerHTML={content.html} />
         </section>
       </article>

@@ -2,6 +2,7 @@ export * from "./actions";
 export * from "./chat";
 export * from "./content";
 export * from "./feedback";
+export { installInputModeController } from "./input-mode";
 export * from "./inputs";
 export { suppressTextSelection } from "./internal/text-selection";
 export * from "./intl";

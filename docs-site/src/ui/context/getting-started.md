@@ -223,13 +223,14 @@ optional action or its wrapper:
 </li>
 ```
 
-As soon as any pointer can hover, including a mouse on a tablet, the action
-stays hidden until its item is hovered or keyboard-focused, or until a menu it
-opened is open. Touch-only screens always show it. Hiding changes only the
-opacity, so nothing moves. Do not nest progressive rows, and do not build the
-same rule from `(hover: hover)`, `(hover: none)`, `(pointer: fine)`, or
-Tailwind's `hover:` and `group-hover:` variants: they describe only the
-primary pointer, which stays the finger on a tablet with a mouse.
+Touch input keeps actions visible. Mouse or trackpad input hides them until
+the row is hovered, focused, or has an open menu; shared components also keep
+current-row actions visible where supported. Before input, `any-hover`
+supplies the default: hovering pointers hide actions at rest, touch-only
+screens show them. Only opacity changes, so nothing moves. Do not nest
+progressive rows. See [Input mode](/en/ui/input-mode) to start the controller
+and write custom rules. Primary-pointer queries and Tailwind's `hover:` or
+`group-hover:` variants miss a tablet's secondary mouse.
 
 ## Choose a control
 

@@ -546,24 +546,21 @@
     color: var(--color-zinc-500);
   }
 
-  /* The row actions (k2b-progressive-action) cover the time: a touch-only
-     screen always shows them, and once any pointer can hover they show only
-     on the hovered or focused row and while their menu is open. */
+  /* Row actions cover the time: touch input always shows them; mouse and
+     trackpad reveal them on hover, focus, or an open menu. Before input,
+     any-hover supplies the default. */
   .mail-list-entry:focus-within .mail-list-time {
     opacity: 0;
   }
 
   @media (any-hover: none) {
-    .mail-list-time {
+    :where(html:not([data-k2b-input="trackpad"])) .mail-list-time {
       opacity: 0;
     }
   }
 
-  @media (any-hover: hover) {
-    .mail-list-entry:is(:hover, :has(.k2b-progressive-action [aria-expanded="true"])) .mail-list-time {
-      opacity: 0;
-    }
-  }
+  :where(html[data-k2b-input="touch"]) .mail-list-time { opacity: 0; }
+  .mail-list-entry:is(:hover, :has(.k2b-progressive-action [aria-expanded="true"])) .mail-list-time { opacity: 0; }
 
   .mail-list-meta-icons {
     display: flex;
