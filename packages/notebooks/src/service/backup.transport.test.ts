@@ -137,6 +137,28 @@ for (const host of ["127.0.0.1", "snapshots.test"]) {
   });
 }
 
+test("a 2xx answer completes the upload even when the endpoint never ends its body", async () => {
+  let requests = 0;
+  await withServer(
+    (req, res) => {
+      requests++;
+      req.resume();
+      req.on("end", () => {
+        res.writeHead(200);
+        res.write("still sending");
+      });
+    },
+    async (port) => {
+      expect(
+        await uploadSnapshotObjects({ ...config, endpoint: `http://127.0.0.1:${port}` }, objects, {
+          allowlist: parseNetworkAllowlist(["127.0.0.1"]),
+        }),
+      ).toHaveLength(3);
+      expect(requests).toBe(3);
+    },
+  );
+});
+
 test("redirects fail without requesting the Location", async () => {
   let requests = 0;
   await withServer(

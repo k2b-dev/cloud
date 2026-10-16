@@ -10,6 +10,7 @@ import { EMPTY_NETWORK_ALLOWLIST, type NetworkAllowlist, networkAddressFamily, n
 import type { NotebookBackupConfig, NotebookBackupObject, NotebookBackupUploadResult } from "./backup";
 
 const MAX_ERROR_BYTES = 64 * 1024;
+const IDLE_TIMEOUT_MS = 60_000;
 type RequestFactory = (options: RequestOptions, callback: (response: IncomingMessage) => void) => ClientRequest;
 export type SnapshotHttpDeps = {
   allowlist?: NetworkAllowlist;
@@ -65,28 +66,39 @@ const putObject = (url: URL, object: NotebookBackupObject, addresses: PublicNetw
       } satisfies RequestOptions & { servername?: string },
       (response) => {
         const status = response.statusCode ?? 0;
-        const success = status >= 200 && status < 300;
+        if (status >= 200 && status < 300) {
+          // S3 answers a PUT with headers only; never wait for a body the endpoint might keep sending.
+          resolve(body.length);
+          response.destroy();
+          return;
+        }
         const chunks: Buffer[] = [];
         let size = 0;
-        const finish = () => (success ? resolve(body.length) : reject(providerError(status, Buffer.concat(chunks, size))));
+        const finish = () => {
+          clearTimeout(deadline);
+          reject(providerError(status, Buffer.concat(chunks, size)));
+          response.destroy();
+          request.destroy();
+        };
+        // An error body is only a hint: stop after 64 KiB or one idle-timeout budget, whichever comes first.
+        const deadline = setTimeout(finish, IDLE_TIMEOUT_MS);
         response.on("data", (chunk: Buffer | string) => {
-          if (success) return;
           const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
           const remaining = MAX_ERROR_BYTES - size;
           chunks.push(buffer.subarray(0, remaining));
           size += Math.min(remaining, buffer.length);
-          if (size === MAX_ERROR_BYTES) {
-            finish();
-            response.destroy();
-            request.destroy();
-          }
+          if (size === MAX_ERROR_BYTES) finish();
         });
         response.once("end", finish);
-        response.once("error", () => reject(new Error("S3 response connection failed")));
-        response.once("aborted", () => reject(new Error("S3 response connection failed")));
+        const failed = () => {
+          clearTimeout(deadline);
+          reject(new Error("S3 response connection failed"));
+        };
+        response.once("error", failed);
+        response.once("aborted", failed);
       },
     );
-    request.setTimeout(60_000, () => request.destroy(new Error("S3 upload timed out without progress")));
+    request.setTimeout(IDLE_TIMEOUT_MS, () => request.destroy(new Error("S3 upload timed out without progress")));
     request.once("error", () => reject(new Error("S3 upload connection failed or timed out")));
     request.end(body);
   });

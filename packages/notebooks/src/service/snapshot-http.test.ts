@@ -14,7 +14,11 @@ const config = {
   secretAccessKey: "test-secret",
 };
 const objects = [{ path: "notebooks/nb1234/latest.zip", contentType: "application/zip", content: new Uint8Array([1, 2, 255]) }];
-const fixture = (status = 200, chunks = [""], options: { stall?: boolean; error?: boolean; aborted?: boolean } = {}) => {
+const fixture = (
+  status = 200,
+  chunks = [""],
+  options: { stall?: boolean; error?: boolean; aborted?: boolean; noResponse?: boolean } = {},
+) => {
   const sent: RequestOptions[] = [];
   const bodies: Buffer[] = [];
   let timeout: (() => void) | undefined;
@@ -38,6 +42,7 @@ const fixture = (status = 200, chunks = [""], options: { stall?: boolean; error?
           outgoing.emit("error", new Error("SECRET"));
           return;
         }
+        if (options.noResponse) return;
         const response = new IncomingMessage(new Socket());
         response.statusCode = status;
         callback(response);
@@ -114,15 +119,21 @@ test("S3 error messages are readable and bounded", async () => {
   expect(large.destroyed()).toBe(1);
 });
 
+test("a 2xx answer settles at its headers even when the endpoint keeps sending", async () => {
+  expect(await uploadSnapshotObjects(config, objects, { ...fixture(200, ["x"], { stall: true }), allowlist, lookup })).toEqual([
+    { path: objects[0]!.path, bytes: 3 },
+  ]);
+});
+
 test("idle timeout destroys a stalled upload; failures do not expose transport errors", async () => {
-  const f = fixture(200, [], { stall: true });
+  const f = fixture(200, [], { noResponse: true });
   const promise = uploadSnapshotObjects(config, objects, { ...f, allowlist, lookup });
   await new Promise((resolve) => setTimeout(resolve, 0));
   f.expire();
   await expect(promise).rejects.toThrow("S3 upload connection failed or timed out");
   expect(f.destroyed()).toBe(1);
   for (const options of [{ error: true }, { aborted: true }]) {
-    await expect(uploadSnapshotObjects(config, objects, { ...fixture(200, [], options), allowlist, lookup })).rejects.toThrow(
+    await expect(uploadSnapshotObjects(config, objects, { ...fixture(500, [], options), allowlist, lookup })).rejects.toThrow(
       /S3 .*connection failed/,
     );
   }
