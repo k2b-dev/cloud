@@ -1368,11 +1368,13 @@ export default function AssistantWorkspace(props: Props) {
   const AssistantComposer = (composerProps: { projectId?: string; projectName?: string }) => {
     const sessionKey = () => (composerProps.projectId ? projectComposerKey(composerProps.projectId) : composerSessionKey());
     const projectComposer = () => Boolean(composerProps.projectId);
-    // Takes over the controller's error so a failed command is reported once, in the composer status line.
+    // In the chat the command started in, it takes over the controller's error so the failure is reported once,
+    // in the composer status line. After the person moved on, that error belongs to the other chat and stays there.
     const commandFailure = (key: string, message: (input: { reason: string }) => string) => {
+      if (sessionKey() !== key) return new Error(message({ reason: t().chatActionFailed.replace(/\.+$/, "") }));
       const failed = message({ reason: (chat.error() ?? t().chatActionFailed).replace(/\.+$/, "") });
       chat.setError(null);
-      return new Error(sessionKey() === key ? `${failed} ${commandCopy().draftUnchanged}` : failed);
+      return new Error(`${failed} ${commandCopy().draftUnchanged}`);
     };
     return (
       <>
