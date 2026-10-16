@@ -549,6 +549,9 @@ describe("readable HTML", () => {
     expect(await convert("<table><tr><td>A<span>B<tr><td>C</table>")).toBe("| AB |\n| --- |\n| C |\n");
     expect(await convert("<p>Run<code> npm </code>now</p>")).toBe("Run `npm` now\n");
     expect(await convert("<p><code>a</code><code>b</code></p>")).toBe("`a` `b`\n");
+    expect(await convert('<p><a href="/api"><code>items[0]</code> [all]</a></p>')).toBe(
+      "[`items[0]` \\[all\\]](https://example.test/api)\n",
+    );
     expect(await convert("<h2><code>a</code><code>b</code></h2>")).toBe("## `a` `b`\n");
   });
 

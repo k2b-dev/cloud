@@ -298,7 +298,8 @@ const renderInline = async (
       const fence = ticks ? backticks(ticks, 1) : "";
       const pad = asCode && (content.startsWith("`") || content.endsWith("`")) ? " " : "";
       const markdown = asCode ? `${fence}${pad}${content}${pad}${fence}` : content;
-      append(link?.url ? escapeLabel(markdown) : markdown);
+      // Code spans bind tighter than link brackets, so their content stays verbatim inside a label.
+      append(link?.url && !asCode ? escapeLabel(markdown) : markdown);
       characters += content.length;
     }
     if (normalized.endsWith(" ")) pendingSpace = true;
