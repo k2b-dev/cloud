@@ -17,5 +17,11 @@ test("the shell modes cover every width exactly once", async () => {
     "(min-width: 768px)",
     "not all and (min-width: 1024px)",
     "(min-width: 1024px)",
+    // Focus state follows the same boundaries; only its reveal strip needs a coarse pointer.
+    "(min-width: 768px)",
+    "(min-width: 768px) and (pointer: coarse)",
+    "(min-width: 768px)",
+    "not all and (min-width: 1024px)",
+    "(min-width: 1024px)",
   ]);
 });
