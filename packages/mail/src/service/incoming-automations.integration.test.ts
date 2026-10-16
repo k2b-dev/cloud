@@ -49,8 +49,10 @@ import {
   updateIncomingAutomation,
   validateDestructiveIncomingAutomationsForMailbox,
 } from "./incoming-automations";
+import { loadMailboxTransportFence } from "./mailbox-transport-fence";
 import { createMailbox } from "./mailboxes";
-import { hydrateMessageFromSource } from "./message-hydration";
+import { executeMaintenanceCommand } from "./maintenance-runtime";
+import { hydrateMessageFromSource, recordMissingMessageSources } from "./message-hydration";
 import { ingestEnvelope } from "./sync-runtime";
 import { loadMailWorkflowCatalog } from "./workflow-catalog-service";
 import { workflowSnapshotQuery } from "./workflow-data";
@@ -3068,10 +3070,71 @@ suite("incoming automations", () => {
     }, 30_000);
   }
 
-  for (const restored of ["link", "view"] as const) {
-    test(`handles a restored ${restored} with a future transaction ID`, async () => {
+  test("reopens Done when a newer permanently failed backlog message hydrates after operator repair", async () => {
+    const key = "linked-backlog-newer-repaired";
+    const first: ConnectorEnvelope = {
+      ...statusEnvelope(14101, key),
+      sentAt: new Date("2026-10-01T08:02:00.000Z"),
+      internalDate: new Date("2026-10-01T08:02:00.000Z"),
+    };
+    const firstId = await ingestEnvelope({
+      db: sql,
+      mailboxId,
+      remoteResourceId,
+      folderId: inboxFolderId,
+      message: first,
+      captureWorkflowTriggers: false,
+    });
+    const fence = await loadMailboxTransportFence(remoteResourceId);
+    if (!fence) throw new Error("Mailbox transport fence was not found");
+    // Exhaust the five missing-source attempts; the source can become available after repair.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      expect(await recordMissingMessageSources([firstId], fence)).toEqual([firstId]);
+    }
+    const [failed] = await sql<{ hydration_status: string; hydration_attempt: number; hydration_error_code: string }[]>`
+      SELECT hydration_status, hydration_attempt, hydration_error_code FROM mail.message_contents WHERE id = ${firstId}::uuid
+    `;
+    expect(failed).toEqual({ hydration_status: "failed", hydration_attempt: 5, hydration_error_code: "MESSAGE_SOURCE_MISSING" });
+    const automation = await createStatusAutomation(key);
+    try {
+      const second = statusEnvelope(14102, key, first.messageId);
+      const secondId = await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: second,
+        captureWorkflowTriggers: true,
+      });
+      expect((await statusConversation(secondId)).id).toBe((await statusConversation(firstId)).id);
+      const runId = await dispatchStatusRun(automation.workflowId);
+      await hydrateStatusMessage(secondId, second);
+      expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished", result: { state: "succeeded" } });
+      expect((await statusConversation(secondId)).work_status).toBe("done");
+
+      const repair = await mailCommands.createMaintenanceCommand({
+        context: ownerContext,
+        mailboxId,
+        input: { kind: "hydrate_missing", idempotencyKey: `${key}-${suffix}` },
+        enqueue: false,
+      });
+      if (!repair.ok) throw new Error(repair.error.message);
+      expect(await executeMaintenanceCommand(repair.data.id, undefined, { enqueueWork: false })).toBe("confirmed");
+      const [pending] = await sql<{ hydration_status: string; hydration_attempt: number }[]>`
+        SELECT hydration_status, hydration_attempt FROM mail.message_contents WHERE id = ${firstId}::uuid
+      `;
+      expect(pending).toEqual({ hydration_status: "envelope", hydration_attempt: 0 });
+      await hydrateStatusMessage(firstId, first);
+      expect((await statusConversation(firstId)).work_status).toBe("needs_action");
+    } finally {
+      await deleteStatusAutomation(automation.id);
+    }
+  }, 30_000);
+
+  for (const restored of ["link", "view", "both"] as const) {
+    test(`keeps the conflict for restored transaction IDs (${restored})`, async () => {
       const key = `linked-restore-${restored}`;
-      const uid = restored === "link" ? 14061 : 14071;
+      const uid = { link: 14061, view: 14071, both: 14081 }[restored];
       const first = statusEnvelope(uid, key);
       const firstId = await ingestEnvelope({
         db: sql,
@@ -3084,8 +3147,8 @@ suite("incoming automations", () => {
       const automation = await createStatusAutomation(key);
       try {
         // Exercise the real A/B status path without restoring a cluster: only persisted xid metadata
-        // is changed. A future link xid is old data; a future view snapshot cannot describe this cluster.
-        if (restored === "link") {
+        // is changed. Unknown link or view provenance must keep the conflict.
+        if (restored !== "view") {
           await sql`
             UPDATE mail.conversation_messages
             SET linked_xid = ((pg_snapshot_xmax(pg_current_snapshot())::text::numeric + 1000000)::text)::xid8
@@ -3113,6 +3176,14 @@ suite("incoming automations", () => {
                 pg_snapshot_xmax(pg_current_snapshot())::text::numeric + 1000000)))
             WHERE id = ${runId}::uuid
           `;
+        } else if (restored === "both") {
+          // A restored view can look old here even though the link joined after it in the old cluster.
+          await sql`
+            UPDATE workflows.run
+            SET context = jsonb_set(context, '{preconditions,conversation,linkView,snapshot}',
+              to_jsonb(format('%s:%s:', 1, 2)))
+            WHERE id = ${runId}::uuid
+          `;
         }
         await hydrateStatusMessage(secondId, second);
         const before = await statusConversation(secondId);
@@ -3122,14 +3193,9 @@ suite("incoming automations", () => {
         const [run] = await sql<{ state: string; error: string | null }[]>`
           SELECT state, error ->> 'message' AS error FROM workflows.run WHERE id = ${runId}::uuid
         `;
-        if (restored === "view") {
-          expect(run?.state).toBe("failed");
-          expect(run?.error).toContain("changed by another collaborator");
-          expect(await statusConversation(secondId)).toEqual(before);
-        } else {
-          expect(run).toEqual({ state: "succeeded", error: null });
-          expect((await statusConversation(secondId)).work_status).toBe("done");
-        }
+        expect(run?.state).toBe("failed");
+        expect(run?.error).toContain("changed by another collaborator");
+        expect(await statusConversation(secondId)).toEqual(before);
       } finally {
         await deleteStatusAutomation(automation.id);
       }
@@ -3228,6 +3294,11 @@ suite("incoming automations", () => {
     const automation = await createStatusAutomation(key);
     const linked = Promise.withResolvers<string>();
     const release = Promise.withResolvers<void>();
+    let barrierTimedOut = false;
+    const barrierDeadline = setTimeout(() => {
+      barrierTimedOut = true;
+      release.resolve();
+    }, 15_000);
     // Folder sync can insert a link under FK KEY SHARE without locking the conversation for update.
     // Both replies reference the committed first message, so B need not wait for C's uncommitted rows.
     const transaction = sql.begin(async (tx) => {
@@ -3244,6 +3315,7 @@ suite("incoming automations", () => {
         });
         linked.resolve(thirdId);
         await release.promise;
+        if (barrierTimedOut) throw new Error("In-flight link barrier exceeded its 15-second deadline");
       } catch (error) {
         linked.reject(error);
         throw error;
@@ -3276,6 +3348,7 @@ suite("incoming automations", () => {
       expect(await statusConversation(secondId)).toEqual(before);
       expect(before.work_status).toBe("needs_action");
     } finally {
+      clearTimeout(barrierDeadline);
       release.resolve();
       try {
         await transaction;

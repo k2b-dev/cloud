@@ -490,7 +490,7 @@ export const recordConversationStatusDecision = async (
  * Seen links committed before the view or were linked earlier by its own transaction.
  * Links without an xid predate tracking. Snapshot visibility gives commit order.
  * The link sequence orders the view's own writes.
- * A future view snapshot is unusable after a restore. Future link xids count as old links.
+ * A link or view from another cluster after a logical restore keeps the conflict.
  * A wrong admission could only give the result the exact-revision path already gives.
  * An unknown keeps the conflict. Returns null when the conversation is gone.
  */
@@ -535,9 +535,6 @@ export const lockWorkflowConversationStatus = async (
           AND pg_snapshot_xmax(${params.viewLinks?.snapshot ?? null}::pg_snapshot) <= pg_snapshot_xmax(pg_current_snapshot())
           AND (
             link.linked_xid IS NULL
-            -- A logical restore does not preserve xids. No transaction in this cluster can
-            -- have an xid at or above its current xmax, so this is a link from before the view.
-            OR link.linked_xid >= pg_snapshot_xmax(pg_current_snapshot())
             OR (
               link.linked_xid = ${params.viewLinks?.xid ?? null}::xid8
               AND link.link_seq <= ${params.viewLinks?.seq ?? null}::bigint
