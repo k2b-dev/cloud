@@ -23,6 +23,7 @@ import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import { type AiCapabilityCatalogEntry, createAiToolResolver, createRunToolStore } from "./capabilities";
 import { AiCapabilityExecutionError, executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
+import { isFailedTool } from "./chat/tool-groups";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { AiChatTaskAuthorityError, aiChatTasks } from "./chat-tasks";
 import { createCloudCompactFn } from "./compaction";
@@ -132,6 +133,17 @@ const toolRoundState = (messages: AiStoredMessage[]): { issued: number; complete
     issued: rounds.length,
     completed: rounds.filter((callIds) => callIds.every((callId) => completedCallIds.has(callId))).length,
   };
+};
+
+const lastToolRoundFailed = (messages: AiStoredMessage[], blocks: AiTurnBlock[]): boolean => {
+  const latest = messages.findLast(({ message }) => message.role === "assistant")?.message;
+  if (latest?.role !== "assistant") return false;
+  const callIds = new Set(latest.content.flatMap((block) => (block.type === "tool_call" ? [block.id] : [])));
+  // A worker may have stored a malformed call but crashed before its error result; load repairs that result without an event.
+  return (
+    [...callIds].some(isMalformedToolCallId) ||
+    blocks.some((block) => block.kind === "tool" && callIds.has(block.callId) && isFailedTool(block))
+  );
 };
 
 const indexConversationResources = async (input: Parameters<typeof aiConversations.indexConversationResources>[0]): Promise<void> => {
@@ -1500,6 +1512,7 @@ export class AiTurnExecutor {
     const outcome = await this.driveChatLoop({
       loop,
       pipeline,
+      initialRoundFailed: lastToolRoundFailed(turnMessages, turnBlocks),
       conversationId,
       turnId,
       abortController,
@@ -1572,6 +1585,7 @@ export class AiTurnExecutor {
   private async driveChatLoop(input: {
     loop: NessiLoop;
     pipeline: StreamPipeline;
+    initialRoundFailed: boolean;
     conversationId: string;
     turnId: string;
     abortController: AbortController;
@@ -1613,6 +1627,10 @@ export class AiTurnExecutor {
     } = input;
     const stopHeartbeat = this.startHeartbeat(conversationId, turnId, abortController);
     let lastIssueMessage: string | null = null;
+    let lastResponse: AssistantMessage | undefined;
+    let roundFailed = input.initialRoundFailed;
+    let followedFailedRound = false;
+    const malformedCallIds = new Set<string>();
 
     try {
       for await (const event of loop) {
@@ -1672,6 +1690,7 @@ export class AiTurnExecutor {
             .noteToolCompleted({ turnId, callId: event.callId, isError: event.isError })
             .catch(() => log.warn("AI tool audit write failed", { code: "tool_audit_complete_failed", turnId, callId: event.callId }));
           const toolBlock = pipeline.blocks.find((block) => block.kind === "tool" && block.callId === event.callId);
+          if (toolBlock?.kind === "tool" && isFailedTool(toolBlock)) roundFailed = true;
           // The policy keys calls by the name the model called, as the persisted calls it seeds from.
           noteToolCall(
             toolBlock?.kind === "tool"
@@ -1687,20 +1706,44 @@ export class AiTurnExecutor {
             result: event.result,
             isError: event.isError === true,
           });
-        } else if (event.type === "turn_end" && !abortController.signal.aborted && isToolRound(event.message)) {
-          noteToolRound();
+        } else if (event.type === "turn_end") {
+          lastResponse = event.message;
+          followedFailedRound = roundFailed;
+          const calls = new Set(event.message.content.flatMap((block) => (block.type === "tool_call" ? [block.id] : [])));
+          // nessi closes a round after executing its tools. Malformed calls have stored failed blocks,
+          // but are added by Cloud's store wrapper, so they are absent from the event's message.
+          roundFailed = pipeline.blocks.some(
+            (block) => block.kind === "tool" && (calls.has(block.callId) || malformedCallIds.has(block.callId)) && isFailedTool(block),
+          );
+          malformedCallIds.clear();
+          if (!abortController.signal.aborted && isToolRound(event.message)) noteToolRound();
         } else if (event.type === "issue") {
+          if (event.issue.kind === "malformed_tool_call" && event.issue.callId) malformedCallIds.add(event.issue.callId);
           lastIssueMessage = event.issue.message;
           log.warn("AI turn issue", { conversationId, turnId, kind: event.issue.kind, message: event.issue.message });
         } else if (event.type === "loop_end") {
+          const stoppedAfterFailure =
+            event.reason === "stop" &&
+            !abortController.signal.aborted &&
+            followedFailedRound &&
+            lastResponse !== undefined &&
+            !lastResponse.content.some((block) => block.type === "tool_call" || (block.type === "text" && block.text.trim() !== ""));
+          const doneReason = stoppedAfterFailure ? "error" : event.reason;
           const aggregate = await withDurableTurnTiming(turnId, event.aggregate);
           if (aggregate.assistantMessageCount > 0) {
             await aiConversations
-              .setLatestAssistantLoopAggregate({ conversationId, loopId: turnId, aggregate, doneReason: event.reason })
+              .setLatestAssistantLoopAggregate({ conversationId, loopId: turnId, aggregate, doneReason })
               .catch(() => undefined);
           }
           const timing = aggregate.timing;
           if (event.reason === "aborted") return { kind: "finished", status: "aborted", failure: null, timing };
+          if (stoppedAfterFailure)
+            return {
+              kind: "finished",
+              status: "failed",
+              failure: { error: { code: "tool_failed" }, detail: "The model stopped without an answer after a failed tool call." },
+              timing,
+            };
           if (event.reason === "stop") return { kind: "finished", status: "completed", failure: null, timing };
           const detail = lastIssueMessage ?? `AI turn ended: ${event.reason}`;
           const reason: AiTurnFailureReason =
