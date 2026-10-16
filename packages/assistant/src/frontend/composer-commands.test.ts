@@ -556,6 +556,17 @@ test("task run keys load lazily and preserve uncertain starts across a page relo
   expect(storage.getItem("k2b.assistant.taskRunKeys")).toBe("[]");
 });
 
+test("a key restored after a reload during a pending start counts as uncertain", () => {
+  const storage = createRunKeyStorage();
+  const key = createAssistantTaskRunKeys(storage).runKey("task-1");
+  // The page reloads before the answer arrives, so no outcome was recorded.
+  const reloaded = createAssistantTaskRunKeys(storage);
+  expect(reloaded.isUncertain("task-1")).toBe(true);
+  // A later conflict cannot prove the first start failed.
+  reloaded.settleRun("task-1");
+  expect(reloaded.runKey("task-1")).toBe(key);
+});
+
 test.each(["invalid JSON", "null", "{}", "42"])("task run keys ignore corrupt storage: %s", (content) => {
   const storage = createRunKeyStorage(content);
   const runKeys = createAssistantTaskRunKeys(storage);

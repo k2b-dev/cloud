@@ -190,7 +190,8 @@ export function createAssistantTaskRunKeys(storage?: Pick<Storage, "getItem" | "
           "uncertain" in entry &&
           typeof entry.uncertain === "boolean"
         ) {
-          pendingRunKeys.set(entry.taskId, { key: entry.key, uncertain: entry.uncertain });
+          // A key restored after a reload may belong to a request whose answer never arrived.
+          pendingRunKeys.set(entry.taskId, { key: entry.key, uncertain: true });
           trim();
         }
       }
