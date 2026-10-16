@@ -395,8 +395,19 @@ authorization headers. Cloud resolves and pins a public network address,
 repeats that check for every bounded redirect, and enforces both declared and
 streamed byte limits. The result is an assistant-owned conversation file below
 `/imports`; inspect it with `read_file` or `view_image`, then use `present` when
-the user should receive the original file. The tool does not clone or browse a
-repository, authenticate to a website, or reach private network targets.
+the user should receive the original file. For an HTML page, Cloud also stores
+readable Markdown of the main content next to the raw file: title, headings,
+paragraphs, lists, tables, and absolute links, without scripts, styles, or
+navigation. The result returns this copy as `readable.path` and tells the model
+to read it first. The raw HTML stays unchanged. The copy uses the same bounds
+as other documents converted to Markdown: Cloud reads at most the first 20 MiB
+of the page and keeps the copy within 1 MiB, ending a longer copy with a
+truncation note. A page that needs more parser state than the conversion budget
+is converted up to that point and ends with the truncation note. If the copy cannot be stored
+(for example, because of the conversation quota), or the page has no readable
+text, the result contains only the raw file. Both copies are untrusted data.
+The tool does not clone or browse a repository, authenticate to a website, or
+reach private network targets.
 Download failures appear as a short category such as **File not found**,
 **Authorization required**, or **File server error**, followed by an actionable
 explanation; the activity disclosure retains the requested URL and full tool

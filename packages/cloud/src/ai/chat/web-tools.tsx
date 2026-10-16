@@ -136,15 +136,22 @@ export function WebExtractToolBlock(props: { block: ToolBlock }) {
   );
 }
 
-type FetchFileResult = { path: string; size: number; mediaType: string; url: string };
+type FetchFileResult = { path: string; size: number; mediaType: string; url: string; readablePath?: string };
 
+/** Results stored before readable copies existed have no `readable` field and still render. */
 const fetchFileResult = (value: unknown): FetchFileResult | null =>
   isRecord(value) &&
   typeof value.path === "string" &&
   typeof value.size === "number" &&
   typeof value.mediaType === "string" &&
   typeof value.url === "string"
-    ? { path: value.path, size: value.size, mediaType: value.mediaType, url: value.url }
+    ? {
+        path: value.path,
+        size: value.size,
+        mediaType: value.mediaType,
+        url: value.url,
+        ...(isRecord(value.readable) && typeof value.readable.path === "string" ? { readablePath: value.readable.path } : {}),
+      }
     : null;
 
 const filenameOf = (value: string): string => {
@@ -158,6 +165,8 @@ const filenameOf = (value: string): string => {
 
 /** Imported web file: source identity, useful metadata, and chat path without raw tool JSON. */
 export function FetchFileToolBlock(props: { block: ToolBlock }) {
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
   const sourceUrl = () => (isRecord(props.block.args) && typeof props.block.args.url === "string" ? props.block.args.url : "");
   const result = () => fetchFileResult(props.block.result);
   const displayName = () => filenameOf(result()?.path ?? sourceUrl()) || "file";
@@ -172,7 +181,7 @@ export function FetchFileToolBlock(props: { block: ToolBlock }) {
       when={props.block.status === "completed" && result()}
       fallback={
         <Chat.Activity
-          label={`Fetching ${displayName()}`}
+          label={t().fetchingFile({ name: displayName() })}
           description={domainOf(sourceUrl())}
           leading={<Favicon url={sourceUrl()} fallbackIcon="ti ti-world-download" />}
           busy
@@ -183,19 +192,27 @@ export function FetchFileToolBlock(props: { block: ToolBlock }) {
         <AiToolActivity
           blockId={props.block.id}
           leading={<Favicon url={sourceUrl() || file().url} fallbackIcon="ti ti-world-download" />}
-          label={`Fetched ${displayName()}`}
+          label={t().fetchedFile({ name: displayName() })}
           description={description()}
           bodyInset={false}
         >
           <dl class="grid w-full min-w-0 grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-md bg-zinc-100/70 px-2 py-1.5 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
-            <dt class="font-medium text-dimmed">Source</dt>
+            <dt class="font-medium text-dimmed">{t().fetchSource}</dt>
             <dd class="min-w-0 truncate">
               <a href={file().url} target="_blank" rel="noreferrer noopener" class="text-secondary hover:text-primary">
                 {file().url}
               </a>
             </dd>
-            <dt class="font-medium text-dimmed">Saved as</dt>
+            <dt class="font-medium text-dimmed">{t().fetchSavedAs}</dt>
             <dd class="min-w-0 truncate text-secondary">{file().path}</dd>
+            <Show when={file().readablePath}>
+              {(readablePath) => (
+                <>
+                  <dt class="font-medium text-dimmed">{t().fetchReadableCopy}</dt>
+                  <dd class="min-w-0 truncate text-secondary">{readablePath()}</dd>
+                </>
+              )}
+            </Show>
           </dl>
         </AiToolActivity>
       )}

@@ -789,8 +789,49 @@ describe("capability tool presentation", () => {
     expect(html).toContain('src="https://github.com/favicon.ico"');
     expect(html).toContain("https://raw.githubusercontent.com/example/repo/main/guide.pdf");
     expect(html).toContain("/imports/guide.pdf");
+    expect(html).not.toContain("Readable copy");
     expect(html).not.toContain(">Input</p>");
     expect(html).not.toContain(">Response</p>");
+  });
+
+  test("shows the readable copy of a fetched web page next to the raw file, in the inherited locale", () => {
+    const completed: AiTurnBlock = {
+      id: "fetch-page-completed",
+      kind: "tool",
+      callId: "fetch-call-3",
+      name: "fetch_file",
+      args: { url: "https://news.example/story.html" },
+      status: "completed",
+      result: {
+        path: "/imports/story.html",
+        size: 4096,
+        mediaType: "text/html",
+        url: "https://news.example/story.html",
+        readable: { path: "/imports/story.md", size: 900, note: "Read this path first." },
+      },
+      isError: false,
+    };
+    const render = (locale: string) =>
+      renderToString(() =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(AiTurnBlockView, { block: completed, turnId: "turn-fetch" });
+          },
+        }),
+      );
+
+    const english = render("en");
+    expect(english).toContain("Fetched story.html");
+    expect(english).toContain(">Saved as</dt>");
+    expect(english).toContain(">Readable copy</dt>");
+    expect(english).toContain("/imports/story.md");
+
+    const german = render("de");
+    expect(german).toContain("Heruntergeladen: story.html");
+    expect(german).toContain(">Quelle</dt>");
+    expect(german).toContain(">Gespeichert als</dt>");
+    expect(german).toContain(">Lesbare Kopie</dt>");
   });
 
   test("keeps the app identity on approval prompts", () => {

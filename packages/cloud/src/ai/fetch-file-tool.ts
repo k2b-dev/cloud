@@ -1,9 +1,11 @@
 import type { ClientRequest, IncomingHttpHeaders, IncomingMessage } from "node:http";
 import { type RequestOptions as HttpsRequestOptions, request as httpsRequest } from "node:https";
 import { z } from "zod";
+import { DOCUMENT_EXTRACTION_MAX_INPUT_BYTES, DOCUMENT_EXTRACTION_MAX_OUTPUT_BYTES } from "../services/document-extraction";
 import { type PublicNetworkAddress, resolvePublicNetworkAddresses } from "../services/network-security";
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, aiFileStore, guessAiMediaType, normalizeAiFilePath } from "./files-store";
 import { authorizeWebRead } from "./firecrawl-tools";
+import { htmlToReadableMarkdown } from "./readable-html";
 import { defineAiTool } from "./tools";
 
 const FETCH_FILE_MAX_REDIRECTS = 5;
@@ -38,6 +40,7 @@ export const CloudAiFetchFileOutputSchema = z.object({
   size: z.number().int().nonnegative(),
   mediaType: z.string(),
   url: z.string().url(),
+  readable: z.object({ path: z.string(), size: z.number().int().nonnegative(), note: z.string() }).optional(),
 });
 
 const publicHttpsUrl = (rawUrl: string): URL => {
@@ -309,20 +312,51 @@ export const runCloudAiFetchFile = async (
     bytes: downloaded.bytes,
     mediaType: responseMediaType(downloaded.headers, path),
   });
-  return { path: stat.path, size: stat.size, mediaType: stat.mediaType, url: downloaded.url.toString() };
+  const result = { path: stat.path, size: stat.size, mediaType: stat.mediaType, url: downloaded.url.toString() };
+  if (stat.mediaType !== "text/html" && stat.mediaType !== "application/xhtml+xml") return result;
+  try {
+    const contentType = downloaded.headers["content-type"];
+    const markdown = await htmlToReadableMarkdown(downloaded.bytes, {
+      baseUrl: downloaded.url,
+      contentType: Array.isArray(contentType) ? contentType[0] : contentType,
+      // The same bounds as any other document converted to Markdown for the model.
+      maxInputBytes: DOCUMENT_EXTRACTION_MAX_INPUT_BYTES,
+      maxBytes: DOCUMENT_EXTRACTION_MAX_OUTPUT_BYTES,
+      signal: context.signal,
+    });
+    if (!markdown) return result;
+    const basename = stat.path.slice(stat.path.lastIndexOf("/") + 1).replace(/\.(?:html?|xhtml|xht)$/i, "");
+    const readable = await aiFileStore.createAssistantFile({
+      conversationId: context.conversationId,
+      path: `/imports/${basename}.md`,
+      bytes: new TextEncoder().encode(markdown),
+      mediaType: "text/markdown",
+    });
+    return {
+      ...result,
+      readable: {
+        path: readable.path,
+        size: readable.size,
+        note: "Readable Markdown of the page's main content. Read this path first; use the raw path only when you need the HTML markup.",
+      },
+    };
+  } catch {
+    // The raw import already succeeded; a readable copy is best-effort, including on cancellation.
+    return result;
+  }
 };
 
 export const createCloudAiFetchFileTool = (dependencies: FetchFileDependencies = {}) =>
   defineAiTool({
     name: "fetch_file",
     description:
-      "Download one exact public HTTPS file URL into the current conversation. Use this for images, raw GitHub files, documents, or other source files the user wants inspected. This does not browse or clone repositories, authenticate to websites, or fetch private network targets. After downloading, inspect the returned path with read_file or view_image and use present when the user should receive the file.",
+      "Download one exact public HTTPS file URL into this conversation for inspection. Supports images, documents, raw repository files, and web pages; no repository browsing, website authentication, or private network access. For web pages, read readable.path (main-content Markdown) first with read_file when returned; use raw HTML only when markup matters. Inspect other returned paths with read_file or view_image and use present to deliver files.",
     inputSchema: CloudAiFetchFileInputSchema,
     outputSchema: CloudAiFetchFileOutputSchema,
     approval: "never",
     timeoutMs: 90_000,
     promptHint:
-      "fetch an exact public HTTPS source file into the chat when the user provides a file link; inspect it with read_file or view_image and present it when useful.",
+      "fetch an exact public HTTPS source file into the chat; for web pages read readable.path (main-content Markdown) first with read_file when returned; use raw HTML only when markup matters. Inspect other files with read_file or view_image; present when useful.",
   }).server(async (input, context) => {
     const url = publicHttpsUrl(input.url);
     const allowedForChat = await authorizeWebRead("file", url.toString(), context);
