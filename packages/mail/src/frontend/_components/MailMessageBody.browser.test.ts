@@ -128,6 +128,8 @@ type OpenMessageOptions = {
   colors?: MessageColors;
   pageQuery?: string;
   colorScheme?: BrowserContextOptions["colorScheme"];
+  reducedMotion?: BrowserContextOptions["reducedMotion"];
+  hostMotion?: "reduced";
 };
 
 const withOpenedMessage = async (
@@ -137,13 +139,14 @@ const withOpenedMessage = async (
 ): Promise<void> => {
   const browser = await launchBrowser();
   try {
-    const page = await browser.newPage({ colorScheme: options.colorScheme });
+    const page = await browser.newPage({ colorScheme: options.colorScheme, reducedMotion: options.reducedMotion });
     const errors: string[] = [];
     page.on("console", (message) => {
       if (message.type() === "error" && !message.text().includes("502")) errors.push(message.text());
     });
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(server.url.href + (options.pageQuery ?? ""));
+    if (options.hostMotion) await page.evaluate(() => document.documentElement.setAttribute("data-k2b-motion", "reduced"));
     await page.evaluate(
       ({ html, attachments, remoteIds, allowedByRule, theme, colors }) =>
         window.mountMailMessageBody({
@@ -204,6 +207,63 @@ const imageStates = (frame: Frame) =>
   frame.evaluate(() => Object.fromEntries(Array.from(document.images).map((image) => [image.alt, image.naturalWidth > 0])));
 
 describe("HTML mail message frame", () => {
+  test("follows the host's motion choice before and after the frame loads", async () => {
+    await withOpenedMessage(
+      false,
+      async ({ page, frame, errors }) => {
+        const expectMotion = async (reduced: boolean) => {
+          await frame.waitForFunction(
+            (reduced) => (document.documentElement.getAttribute("data-k2b-motion") === "reduced") === reduced,
+            reduced,
+            { timeout: 5_000 },
+          );
+          const transitions = await frame.locator("details.mail-quoted-history > summary").evaluate((summary) => ({
+            summary: getComputedStyle(summary).transitionDuration,
+            chevron: getComputedStyle(summary.querySelector("svg")!).transitionDuration,
+          }));
+          expect(transitions).toEqual({ summary: reduced ? "0s" : "0.12s, 0.12s", chevron: reduced ? "0s" : "0.16s" });
+        };
+        await expectMotion(true);
+        await page.evaluate(() => document.documentElement.removeAttribute("data-k2b-motion"));
+        await expectMotion(false);
+        await page.evaluate(() => document.documentElement.setAttribute("data-k2b-motion", "reduced"));
+        await expectMotion(true);
+        expect(errors).toEqual([]);
+      },
+      { reducedMotion: "no-preference", hostMotion: "reduced" },
+    );
+  }, 30_000);
+
+  test("ignores a motion message sent by the frame to itself", async () => {
+    await withOpenedMessage(
+      false,
+      async ({ page, frame, errors }) => {
+        await settleFrame(page);
+        await frame.evaluate(
+          () =>
+            new Promise<void>((resolve) => {
+              const received = (event: MessageEvent) => {
+                if (event.source !== window || event.data?.type !== "motion") return;
+                window.removeEventListener("message", received);
+                resolve();
+              };
+              window.addEventListener("message", received);
+              window.postMessage(
+                { source: "cloud-mail-host", channel: "mail-message-Msg001", type: "motion", value: { reduced: true } },
+                "*",
+              );
+            }),
+        );
+        expect(await frame.evaluate(() => document.documentElement.hasAttribute("data-k2b-motion"))).toBe(false);
+        expect(
+          await frame.locator("details.mail-quoted-history > summary > svg").evaluate((svg) => getComputedStyle(svg).transitionDuration),
+        ).toBe("0.16s");
+        expect(errors).toEqual([]);
+      },
+      { reducedMotion: "no-preference" },
+    );
+  }, 30_000);
+
   test("toggles quoted text with a chevron that keeps the toggle in place", async () => {
     await withOpenedMessage(false, async ({ frame, errors }) => {
       const summary = frame.locator("details.mail-quoted-history > summary");

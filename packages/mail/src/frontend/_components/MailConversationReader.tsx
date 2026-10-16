@@ -15,6 +15,7 @@ import {
   IconButtonLink,
   NoticeCard,
   Placeholder,
+  prefersReducedMotion,
   prompts,
   ScrollArea,
   Select,
@@ -259,7 +260,7 @@ export default function MailConversationReader(props: {
     setExpandedMessages((current) => new Set(current).add(newest.id));
     setPendingNewMessages(0);
     followingNewest = true;
-    scheduleReaderScroll({ selectionKey: props.selectionKey, messageId: newest.id, behavior: "smooth" });
+    scheduleReaderScroll({ selectionKey: props.selectionKey, messageId: newest.id, behavior: prefersReducedMotion() ? "auto" : "smooth" });
   };
 
   const editConversationSummary = async () => {

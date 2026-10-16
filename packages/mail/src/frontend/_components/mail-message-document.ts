@@ -81,6 +81,8 @@ export const buildMessageDocument = (
     details.mail-quoted-history:not([open]) > summary .mail-quoted-hide,
     details.mail-quoted-history[open] > summary .mail-quoted-show { visibility: hidden; }
     @media (prefers-reduced-motion: reduce) { details.mail-quoted-history > summary, details.mail-quoted-history > summary > svg { transition: none; } }
+    html[data-k2b-motion="reduced"] details.mail-quoted-history > summary,
+    html[data-k2b-motion="reduced"] details.mail-quoted-history > summary > svg { transition: none; }
     details.mail-quoted-history > blockquote,
     details.mail-quoted-history > div { margin: 8px 0 0; padding-left: 12px; border-left: 2px solid var(--mail-quote-border, color-mix(in srgb, currentColor 25%, transparent)); }
     #mail-message-root { display: flow-root; min-height: 0; }
@@ -435,6 +437,11 @@ export const buildMessageDocument = (
           }
         }
       };
+      const setMotion = (value) => {
+        if (!value || typeof value !== "object" || typeof value.reduced !== "boolean") return;
+        if (value.reduced) document.documentElement.setAttribute("data-k2b-motion", "reduced");
+        else document.documentElement.removeAttribute("data-k2b-motion");
+      };
       addEventListener("message", (event) => {
         const data = event.data;
         if (event.source !== parent || !data || data.source !== "cloud-mail-host" || data.channel !== channel) return;
@@ -442,6 +449,7 @@ export const buildMessageDocument = (
         if (data.type === "images") showImages(data.value);
         if (data.type === "quotes") openQuotes(data.value);
         if (data.type === "appearance") setAppearance(data.value);
+        if (data.type === "motion") setMotion(data.value);
       });
       if (root) new ResizeObserver(reportHeight).observe(root);
       reportHeight();

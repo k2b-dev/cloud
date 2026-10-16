@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Motion choice ignored | JavaScript or a separate document animates despite the person's reduced-motion choice. | Tests: `MailConversationReader.behavior.test.tsx` checks the choice at jump time; `MailMessageBody.browser.test.ts` checks initial and live propagation into the sandboxed message and rejects frame-originated motion messages ([#1230](https://github.com/k2b-dev/cloud/issues/1230)). |
 | Workspace-only export | A published package imports code that exists only in the workspace copy of a pinned sibling; workspace links hide the missing export. | Check: the `packed` CI job runs with `--release` on the release pull request and in the merge queue, resolving already published sibling pins from npm. Convention: [refresh the release PR after the last feature PR merges](/en/docs/contributing/release-process#let-release-please-cut-the-release). |
 | Time | A test or a render depends on today's date, the time zone, or randomness, so it passes on one day and fails on another. | Test: the Assistant sidebar test from [#1121](https://github.com/k2b-dev/cloud/pull/1121) freezes its clock. No repository check finds other tests that compare fixed dates with the real clock yet. |
 | Lease starvation under a continuous competing workload | A class of work keeps the lease while competing work retains places and retries without progress. | Test: Mail’s `provider-lease-fairness.integration.test.ts` checks command progress during continuous folder syncs, sync progress under old command backlogs, and a total order with one first waiter ([#1268](https://github.com/k2b-dev/cloud/issues/1268)). |
@@ -42,6 +43,13 @@ convention still needs a check or a test.
 | Theme in print | The screen theme reaches paper: dark-theme text and surfaces print on white paper, or print rules show what the screen hides on purpose. | Test: the Mail printing browser test in `MailConversationList.browser.test.ts` prints a dark and a light conversation through Print conversation in Chromium and WebKit. It checks contrast against the printed surface, the sender rows, and the single quote label ([#1175](https://github.com/k2b-dev/cloud/issues/1175)). No shared guard yet: native printing still prints the dark theme on every other page ([#1274](https://github.com/k2b-dev/cloud/issues/1274)). |
 
 ## Lessons
+
+### Mail ignored the person's reduced-motion choice
+
+- **What happened:** Jumping to newest and the HTML message's quoted-text toggle still animated with Reduce motion enabled ([#1230](https://github.com/k2b-dev/cloud/issues/1230)).
+- **Root cause:** The jump always requested smooth scrolling, and the sandboxed message only checked the OS setting rather than receiving the host's attribute.
+- **Error class:** Motion choice ignored.
+- **Guard:** The reader behavior test changes the choice before clicking. The message browser tests cover the initial choice, live changes in both directions, restored transitions, and rejection of frame-originated motion messages.
 
 ### One network drop failed the rest of an upload batch
 
