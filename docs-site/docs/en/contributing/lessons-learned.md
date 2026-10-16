@@ -24,6 +24,7 @@ convention still needs a check or a test.
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
 | Time | A test or a render depends on today's date, the time zone, or randomness, so it passes on one day and fails on another. | Test: the Assistant sidebar test from [#1121](https://github.com/k2b-dev/cloud/pull/1121) freezes its clock. No repository check finds other tests that compare fixed dates with the real clock yet. |
+| Shared subprocess lost after timeout | Bun kills a shared browser when one test times out, so later tests fail too. | Test: `packages/ui/test/browser.browser.test.ts` runs a child suite with one hung test and checks that three later tests still open pages ([#1254](https://github.com/k2b-dev/cloud/issues/1254)). |
 | Server render vs. mount | An island replaces the server HTML when it mounts; see [Know how an island mounts](/en/docs/frontend/islands-and-hydration#know-how-an-island-mounts). When the server and the browser render different markup or styles, the page moves on mount or after a reload, and WebKit can keep stale styles from before the mount. | Convention: [Know how an island mounts](/en/docs/frontend/islands-and-hydration#know-how-an-island-mounts). Test: the month view browser tests from [#1157](https://github.com/k2b-dev/cloud/pull/1157) check row places right after mount. The `@k2b/ui` sidebar reload test from [#1154](https://github.com/k2b-dev/cloud/issues/1154) compares the server frame, the frame right after mount, and the settled frame after a reload. No shared test does this for other islands yet. |
 | Layout shift | A transient state, such as a status text, a notice, or a loader, appears in the layout flow and moves its neighbors. | Convention: [Keep the layout still](/en/docs/frontend/styling-and-accessibility#keep-the-layout-still) ([#1143](https://github.com/k2b-dev/cloud/pull/1143)). Each change applies its browser-test pattern, which compares bounding boxes before and after each state change. No automatic check yet. |
 | Focus lost on refresh | A list keys an element by derived content instead of a stable identity. When its data refreshes or grows, the list re-creates the focused element and focus falls to the page body. | Tests: `packages/ui/src/content/calendar-days.browser.test.ts` — "the day view keeps the focus on a run of empty days while days join it at either end" and "the day view keeps a focused event when the clock updates its free time"; Spaces tray — "keeps keyboard focus on a task of the tray while a refresh brings the same tasks again" and "reaches the tray right after the day with the keyboard". Convention: [A11Y-16](/en/docs/conventions/frontend#accessibility-a11y), with [Keep focus while content refreshes](/en/ui/focus#keep-focus-while-content-refreshes). No automatic check yet. |
@@ -35,6 +36,13 @@ convention still needs a check or a test.
 | Escaped text input | An agent writes `\n` as two characters through a shell argument or double-escaped JSON, and the text is stored and shown with a literal backslash. | Test: Spaces rejects such inline CLI text and capability text inputs ([#1178](https://github.com/k2b-dev/cloud/issues/1178)). No shared guard covers inline text in other apps, such as `cld notebooks write --content`, yet ([#1193](https://github.com/k2b-dev/cloud/issues/1193)). |
 
 ## Lessons
+
+### One hung browser test failed the rest of its file
+
+- **What happened:** One timeout in the bare dialog suite caused 20 later browser tests to fail ([#1254](https://github.com/k2b-dev/cloud/issues/1254)).
+- **Root cause:** Bun's timeout cleanup sends SIGTERM to every subprocess the test process started, including the shared browser. A browser still shutting down can report itself connected while page creation fails with a protocol error.
+- **Error class:** Shared subprocess lost after timeout.
+- **Guard:** `packages/ui/test/browser.browser.test.ts` checks that only the hung test fails and three later tests pass. For local launches, it also checks that Bun killed the browser. The launcher replaces a disconnected browser or retries a failed page or context creation once. Pages and contexts must be opened per test.
 
 ### Workspace pane widths change after reload
 

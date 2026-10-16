@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-10-15
+updated: 2026-10-16
 ---
 
 # Testing
@@ -165,6 +165,13 @@ test.
 own, and fails when it finds none. Files that also need `CLOUD_TEST_*`
 targets, such as the OAuth consent test, run with `--integration` instead.
 `--filter` narrows the run to a package or a file name.
+
+When a test times out, `bun test` stops every process the test file started,
+including the shared browser. `launchBrowser()` starts a new browser for the
+next `newPage()` or `newContext()`, so one hung test fails alone. Open pages
+and contexts in each test, not in `beforeAll`: a page kept across tests closes
+with its browser. `packages/ui/test/browser.browser.test.ts` guards this
+recovery.
 
 A fake server started by a test records a request when it arrives. The page
 may have changed already, as seen in WebKit on a loaded machine. Never read

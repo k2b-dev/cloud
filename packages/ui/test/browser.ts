@@ -11,15 +11,72 @@ export const browserName: "chromium" | "webkit" = (() => {
   return name;
 })();
 
-/**
- * Starts the browser of a Playwright test in the engine `TEST_BROWSER`
- * selects. With `TEST_BROWSER_ENDPOINT`, the WebSocket address of a
- * `playwright run-server`, it connects to that server instead, so a machine
- * without the engine's system libraries runs it in the Playwright image.
- */
-export const launchBrowser = (options: LaunchOptions = {}): Promise<Browser> => {
+const start = (options: LaunchOptions): Promise<Browser> => {
   const type = browserName === "webkit" ? webkit : chromium;
   const endpoint = process.env.TEST_BROWSER_ENDPOINT?.trim();
   if (!endpoint) return type.launch(options);
   return type.connect(endpoint, { timeout: options.timeout, headers: { "x-playwright-launch-options": JSON.stringify(options) } });
+};
+
+/**
+ * Starts the browser in the engine `TEST_BROWSER` selects, or connects to
+ * `TEST_BROWSER_ENDPOINT`, the WebSocket address of a `playwright run-server`.
+ * Bun's timeout cleanup kills the shared browser. Replace it on the next
+ * newPage() or newContext() so one failing test fails only itself (#1254).
+ * Pages or contexts kept across tests die with their browser; open them per
+ * test, not in beforeAll.
+ */
+export const launchBrowser = async (options: LaunchOptions = {}): Promise<Browser> => {
+  let current = await start(options);
+  let closed = false;
+  let replacement: Promise<Browser> | undefined;
+
+  const replace = (old: Browser): Promise<Browser> => {
+    if (closed || old !== current) return Promise.resolve(current);
+    replacement ??= start(options)
+      .then(async (browser) => {
+        current = browser;
+        void old.close().catch(() => {});
+        // close() may have run while the replacement was starting.
+        if (closed) await browser.close();
+        return browser;
+      })
+      .finally(() => {
+        replacement = undefined;
+      });
+    return replacement;
+  };
+
+  /**
+   * Opens a page or a context in a running browser. A browser that Bun is
+   * still killing can report itself connected and fail with a protocol error
+   * first, so a failed call alone replaces it and tries once more.
+   */
+  const open = async <T>(call: (browser: Browser) => Promise<T>): Promise<T> => {
+    let browser = current;
+    if (!closed && !browser.isConnected()) browser = await replace(browser);
+    try {
+      return await call(browser);
+    } catch (error) {
+      if (closed) throw error;
+      return call(await replace(browser));
+    }
+  };
+  const newPage: Browser["newPage"] = (pageOptions) => open((browser) => browser.newPage(pageOptions));
+  const newContext: Browser["newContext"] = (contextOptions) => open((browser) => browser.newContext(contextOptions));
+
+  const close: Browser["close"] = async (closeOptions) => {
+    closed = true;
+    await current.close(closeOptions);
+  };
+
+  return new Proxy(current, {
+    get(_target, key) {
+      if (key === "newPage") return newPage;
+      if (key === "newContext") return newContext;
+      if (key === "close") return close;
+      const value: unknown = Reflect.get(current, key, current);
+      return typeof value === "function" ? value.bind(current) : value;
+    },
+  });
 };
