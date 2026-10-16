@@ -217,10 +217,10 @@ complete or genuinely blocked. Retrieved emails, webpages, user files, Help,
 capability results, ordinary tool output, Project context, and memories remain
 data rather than instructions. Project instructions and the Project context
 manifest are copied into the durable turn configuration. Current Project access
-is checked again before execution; edits affect the next turn. The runtime still
-treats a provider `stop` as
-a completed turn; it does not infer unfinished work from model text or trigger
-language-dependent automatic retries.
+is checked again before execution; edits affect the next turn. The runtime normally
+treats a provider `stop` as a completed turn (see [Failed turns](#failed-turns)
+for an empty response after a failed tool call). It does not infer unfinished
+work from model text or trigger language-dependent automatic retries.
 
 ### Conversation titles
 
@@ -702,6 +702,11 @@ A provider that stops an answer itself ends the turn as failed with
 `provider_stopped`: a gateway error, malformed call, content filter or refusal
 can cause this, and Cloud cannot tell them apart. Its tool calls are never
 executed, including on a later resume, so the chat offers **Continue**.
+A loop that ends normally but whose final response has no text and no tool call
+right after a round with a failed tool call fails with `tool_failed`;
+rejected approvals do not count as failures. Worker recovery restores this
+state from the latest stored assistant round, including repaired malformed
+calls. A later text answer still completes the turn.
 
 Each model `turn_start` has one `turn_end`, including errors and cancellation.
 `turn_end` carries the partial assistant message with `stopReason: "error"` or
@@ -719,6 +724,7 @@ stable and never translated; clients word it in their reader's language:
 | `code` | Meaning | A new message can continue |
 | --- | --- | --- |
 | `provider_stopped` | The provider ended the answer early, for example a gateway error, malformed tool call, content filter or refusal | yes |
+| `tool_failed` | A tool call failed and the model's next response ended without text or a tool call | yes |
 | `model_unavailable` | The model service failed or timed out, also after its retries | yes |
 | `quota_exhausted` | The user's AI usage limit for the period is used up, or its usage could not be measured | no |
 | `context_full` | The chat no longer fits the model, also after compaction | no |
