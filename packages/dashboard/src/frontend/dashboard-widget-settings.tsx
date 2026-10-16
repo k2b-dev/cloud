@@ -3,11 +3,9 @@ import { WIDGET_SETTING_TEXT_MAX_LENGTH, type WidgetSettingField } from "@k2b/cl
 import {
   BottomSheet,
   Button,
-  bottomSheetOptions,
+  bottomSheetAdaptiveOptions,
   dialogCore,
   IconButton,
-  PanelDialog,
-  panelDialogOptions,
   SegmentedControl,
   Select,
   Switch,
@@ -21,7 +19,6 @@ import {
   type DashboardEntrySettingValue,
   fitEntrySettings,
 } from "../shared";
-import { DASHBOARD_PHONE_QUERY } from "./dashboard-gallery";
 import { type DashboardMessages, dashboardMessages } from "./messages";
 
 /** A choice with at most this many options shows them side by side; more open as a list. */
@@ -138,7 +135,6 @@ export const openDashboardWidgetSettings = (
   const title = t.customizeTitle({ name: props.name });
   const subtitle = t.customizeSubtitle({ app: props.widget.appName });
   const fields = Object.entries(props.widget.settings ?? {});
-  const phone = window.matchMedia(DASHBOARD_PHONE_QUERY).matches;
   return dialogCore.open<DashboardEntrySettings>(
     (close, context) => {
       const dismiss = () => void context.requestDismiss();
@@ -186,20 +182,14 @@ export const openDashboardWidgetSettings = (
           </div>
         </>
       );
-      return phone ? (
+      return (
         <BottomSheet onDismiss={dismiss}>
           <BottomSheet.Header title={title} subtitle={subtitle} close={dismiss} />
           <BottomSheet.Body>{form}</BottomSheet.Body>
           <BottomSheet.Footer>{footer}</BottomSheet.Footer>
         </BottomSheet>
-      ) : (
-        <PanelDialog>
-          <PanelDialog.Header title={title} subtitle={subtitle} close={dismiss} />
-          <PanelDialog.Body>{form}</PanelDialog.Body>
-          <PanelDialog.Footer>{footer}</PanelDialog.Footer>
-        </PanelDialog>
       );
     },
-    { ...(phone ? bottomSheetOptions : panelDialogOptions), history: true, ariaLabel: title },
+    { ...bottomSheetAdaptiveOptions, history: true, ariaLabel: title },
   );
 };

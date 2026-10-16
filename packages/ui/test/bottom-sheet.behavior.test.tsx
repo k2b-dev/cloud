@@ -120,4 +120,15 @@ describe("BottomSheet", () => {
     await result;
     dom.cleanup();
   });
+  test("adaptive options preserve sheet content and focus and add the adaptive panel class", async () => {
+    const dom = createDomTestHarness();
+    try {
+      const { bottomSheetOptions, bottomSheetAdaptiveOptions } = await import("../src/layout/BottomSheet");
+      expect(bottomSheetAdaptiveOptions.contentClassName).toBe(bottomSheetOptions.contentClassName);
+      expect(bottomSheetAdaptiveOptions.initialFocus).toBe(bottomSheetOptions.initialFocus);
+      expect(bottomSheetAdaptiveOptions.panelClassName).toBe(`${bottomSheetOptions.panelClassName} is-adaptive`);
+    } finally {
+      dom.cleanup();
+    }
+  });
 });

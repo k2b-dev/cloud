@@ -23,6 +23,14 @@ export const bottomSheetOptions = {
   initialFocus: sheetInitialFocus,
 } satisfies OpenDialogOptions;
 
+/** A sheet on phones and a centered dialog from 48rem up, for decisions and forms; menus keep
+ * `bottomSheetOptions`. The stylesheet picks the mode with the phone media query, so the first
+ * frame is already right and a rotation or resize switches it in place, without a remount. */
+export const bottomSheetAdaptiveOptions = {
+  ...bottomSheetOptions,
+  panelClassName: `${bottomSheetOptions.panelClassName} is-adaptive`,
+} satisfies OpenDialogOptions;
+
 export type BottomSheetProps = {
   children: JSX.Element;
   /** Pass dialogCore's render context requestDismiss, never the completion callback. */

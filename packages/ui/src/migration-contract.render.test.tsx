@@ -13,6 +13,8 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const {
   AppOverview,
+  bottomSheetOptions,
+  bottomSheetAdaptiveOptions,
   createFormState,
   DataPanel,
   NotFoundState,
@@ -28,6 +30,11 @@ const {
 } = await import("./index");
 
 describe("@k2b/ui complete Cloud UI migrations", () => {
+  test("exports both bottom sheet presentations from the public entry point", () => {
+    expect(bottomSheetOptions.panelClassName).toBe("k2b-dialog k2b-bottom-sheet-frame");
+    expect(bottomSheetAdaptiveOptions.panelClassName).toBe(`${bottomSheetOptions.panelClassName} is-adaptive`);
+  });
+
   test("renders the complete overview composition", () => {
     const html = renderToString(() =>
       createComponent(AppOverview, {
