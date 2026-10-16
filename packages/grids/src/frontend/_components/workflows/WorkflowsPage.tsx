@@ -695,7 +695,7 @@ export default function WorkflowsPage(props: Props) {
       fallback={
         <div class="flex min-h-0 flex-1">
           <Placeholder
-            surface="paper"
+            variant="panel"
             class="flex-1"
             title={t().noWorkflows}
             description={props.editMode ? t().createWorkflowSidebar : t().enableEditMode}

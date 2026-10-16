@@ -7,8 +7,10 @@ The application owns the content and which regions are open.
 The frame owns its surface hierarchy: `Main` uses the base surface, while the
 navigation and bottom drawer use the subtle surface. Detail is a raised floating
 surface.
-Applications should keep region wrappers transparent and add cards or panels
-only where the content needs another visual level.
+Keep region wrappers transparent. A view that fills `Main`—a canvas, graph,
+editor, or empty state—is `Main`'s surface and draws no radius or border of its
+own. Cards and table frames inset with `Main`'s padding stay allowed where the
+content needs another visual level.
 
 ## Use AppWorkspace
 
@@ -420,7 +422,10 @@ The sidebar compound members cover these jobs:
 
 Desktop sidebars are action-first: begin with primary actions or navigation,
 not a repeated application title. Put persistent secondary navigation in
-`SidebarFooter`; when Settings exists, it is the final footer item. The host owns the mobile trigger and application identity.
+`SidebarFooter` as `SidebarItem` rows with an icon and visible label, like the
+tree rows above them. Use it for app-level destinations such as Attachments and
+Settings; when Settings exists, it is the final footer item. The host owns the
+mobile trigger and application identity.
 
 Pass labelled shared controls through `SidebarSection.actions` when a section
 needs a compact header action such as creating a resource. The section owns

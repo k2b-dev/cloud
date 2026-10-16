@@ -4,6 +4,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import * as cloudServices from "@k2b/cloud/services";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../../../tests/fixtures/rail-snapshot";
+import { selectHtml } from "../../../../../../tests/fixtures/select-html";
 import { notebooksService } from "../../../service";
 import "../_components/detail/ssr-test-plugin";
 
@@ -70,7 +71,7 @@ test("readers cannot enter the attachments workspace through a direct URL", asyn
   expect(attachments).not.toHaveBeenCalled();
 });
 
-test("attachment search and pagination preserve an author's explicit presentation", async () => {
+test("attachments render their current sidebar destination and unframed empty panel, preserving search and presentation", async () => {
   spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
@@ -98,11 +99,21 @@ test("attachment search and pagination preserve an author's explicit presentatio
   });
   app.get("/app/notebooks/:id/attachments", ...handler);
   for (const mode of ["write", "readonly"]) {
-    const response = await app.request(`https://cloud.example.test/app/notebooks/book01/attachments?mode=${mode}&search=team`);
-    expect(response.status).toBe(200);
-    const html = await response.text();
-    expect(html).toContain(`/app/notebooks/book01/attachments?mode=${mode}&amp;search=team&amp;page=2`);
-    expect(html).toContain(`/app/notebooks/book01/attachments?mode=${mode}`);
+    for (const search of ["", "&search=team"]) {
+      const response = await app.request(`https://cloud.example.test/app/notebooks/book01/attachments?mode=${mode}${search}`);
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html).toContain(`/app/notebooks/book01/attachments?mode=${mode}${search ? "&amp;search=team" : ""}&amp;page=2`);
+      expect(html).toContain(`/app/notebooks/book01/attachments?mode=${mode}`);
+      const current = await selectHtml(html, '.notebook-sidebar-foot [aria-current="page"]');
+      expect(current).toHaveLength(1);
+      expect(current[0]?.attributes.href).toBe(`/app/notebooks/book01/attachments?mode=${mode}`);
+      expect(current[0]?.text).toContain("Attachments");
+      const empty = await selectHtml(html, '.k2b-app-workspace__main .k2b-placeholder[data-variant="panel"]');
+      expect(empty).toHaveLength(1);
+      expect(empty[0]?.attributes["data-surface"]).not.toBe("paper");
+      expect(empty[0]?.text).toContain(search ? "No attachments match “team”." : "No attachments yet");
+    }
   }
 });
 

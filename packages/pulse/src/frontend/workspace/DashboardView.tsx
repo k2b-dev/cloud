@@ -476,12 +476,7 @@ export const DashboardContent = (props: {
     <Show
       when={currentConfig()}
       fallback={
-        <Placeholder
-          surface="paper"
-          variant="panel"
-          class="flex-1"
-          description={props.empty ?? "Open the dashboard editor to add the first widget."}
-        />
+        <Placeholder variant="panel" class="flex-1" description={props.empty ?? "Open the dashboard editor to add the first widget."} />
       }
     >
       {(config) => (

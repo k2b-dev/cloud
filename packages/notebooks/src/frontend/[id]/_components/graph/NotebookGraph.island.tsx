@@ -300,7 +300,8 @@ export default function NotebookGraph(props: Props) {
   });
 
   return (
-    <div class="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-[var(--ui-radius-surface)] border border-[var(--ui-border)] bg-[var(--ui-surface)]">
+    // The graph is the workspace's own surface: no second border or corner inside the app card.
+    <div class="relative min-h-0 min-w-0 flex-1 overflow-hidden">
       <Show when={simNodes.length > 0} fallback={<EmptyState />}>
         <Tooltip.Anchor content={t().closeGraph}>
           <IconButtonLink tooltip={false} href={closeHref()} size="sm" class="absolute left-2 top-2 z-10" label={t().closeGraph}>

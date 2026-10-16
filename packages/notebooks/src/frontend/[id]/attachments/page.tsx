@@ -126,7 +126,7 @@ export default ssr<AuthContext>(async (c) => {
       <RememberNotebook notebookId={notebook.shortId} />
       <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
         <WorkspaceEventBridge notebookId={notebook.shortId} appUrl={appUrl} initialCursor={workspaceCursor} />
-        <NotebookSidebar ctx={ctx} />
+        <NotebookSidebar ctx={ctx} current="attachments" />
         <AppWorkspace.Content>
           <AppWorkspace.Main class="flex-col p-[var(--ui-space-shell)]" scroll={false}>
             {/* Search bar across the full content width. The breadcrumb already

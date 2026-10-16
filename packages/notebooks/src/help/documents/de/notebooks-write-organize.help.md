@@ -254,6 +254,7 @@ Im Editor erscheinen die Bedienelemente, wenn du auf das Diagramm zeigst oder es
 - **Aktionen der Vorschau:** Die Vorschau bietet **Herunterladen**. PDFs bieten zusätzlich **In neuem Tab öffnen**, Text- und JSON-Dateien **Kopieren**.
 - **Andere Dateien:** Notebooks lädt andere Dateien wie Archive, Audio und Video nach einer Bestätigung herunter. Das gilt auch für sehr große Dateien und für Bilder, die die Notiz nicht anzeigen kann.
 - **Wo das funktioniert:** Du öffnest Anhänge im Editor, in der Buchansicht, im Detailbereich und in der Anhangsübersicht.
+- **Alle Dateien des Notizbuchs:** Öffne **Anhänge** unten in der Seitenleiste des Notizbuchs. Dort siehst und durchsuchst du alle Dateien des Notizbuchs.
 :::
 
 **Übersichtsnotiz mit Links**
