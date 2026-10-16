@@ -52,6 +52,34 @@ export const resolveAllowedNetworkAddresses = async (
   return normalized;
 };
 
+/** Save-time hint only: every request must still resolve, validate and pin its target. */
+export const isNetworkTargetBlocked = async (
+  hostname: string,
+  allowlist: NetworkAllowlist,
+  {
+    resolve = resolveAllowedNetworkAddresses,
+    timeoutMs = 5000,
+  }: {
+    resolve?: typeof resolveAllowedNetworkAddresses;
+    timeoutMs?: number;
+  } = {},
+): Promise<boolean> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      resolve(hostname, allowlist),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+    return false;
+  } catch (error) {
+    return error instanceof NetworkTargetBlockedError;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 export const resolvePublicNetworkAddresses = (rawHostname: string, lookup?: NetworkLookup): Promise<PublicNetworkAddress[]> =>
   resolveAllowedNetworkAddresses(rawHostname, EMPTY_NETWORK_ALLOWLIST, lookup);
 

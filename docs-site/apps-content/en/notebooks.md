@@ -429,3 +429,18 @@ Files keeps originals. HEIC, AVIF, TIFF, SVG, video, GIF, BMP, and unknown
 formats remain unchanged and can retain metadata. Previously uploaded images
 are not rewritten. See [Image upload privacy](/en/docs/platform/image-upload-privacy)
 for the supported formats and limits.
+
+## Operate S3 snapshots
+
+Notebook S3 snapshots upload only to public storage by default. For internal
+S3-compatible storage, set `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` in the Notebooks
+container environment. Use the narrowest entry: an exact host name, a single
+IP address, or the smallest required CIDR range. Each entry covers every port
+and path on the host or range. `/0` and other invalid entries stop Notebooks
+at startup. Failed or empty lookups still refuse uploads.
+
+A refused target returns `NOTEBOOK_SNAPSHOT_TARGET_BLOCKED` (HTTP 400) with:
+"This S3 endpoint is on an internal network. Notebook snapshots go only to
+public storage unless an operator allows this target." Existing configurations
+and credentials stay stored; uploads fail with this reason until the operator
+allows the target. A notebook admin can always turn snapshots off.
