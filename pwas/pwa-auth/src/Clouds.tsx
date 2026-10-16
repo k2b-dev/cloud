@@ -48,7 +48,8 @@ function Decision(props: {
   };
   createEffect(() => {
     const pending = props.auth.states()[props.binding.id]?.requests.some((r) => r.requestId === props.request.requestId);
-    if (!busy() && !error() && (!pending || expired())) props.close();
+    // An expired request stays open with its ending, so the code never vanishes without a word.
+    if (!busy() && !error() && !expired() && !pending) props.close();
   });
   const ending = (): "uncertain" | "expired" | undefined => (error() ? "uncertain" : expired() ? "expired" : undefined);
   const endings = {
