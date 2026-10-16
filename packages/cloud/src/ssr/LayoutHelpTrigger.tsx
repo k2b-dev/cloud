@@ -31,7 +31,7 @@ export default function LayoutHelpTrigger(props: LayoutHelpTriggerProps) {
         delay={0}
         content={t().helpShortcut}
       >
-        <i class={`${action.busy() ? "ti ti-loader-2 animate-spin" : "ti ti-help-circle"} text-base`} />
+        <i class={`${action.busy() ? "ti ti-loader-2 animate-spin" : "ti ti-help-circle"} text-xl`} />
       </Tooltip.Trigger>
     );
 

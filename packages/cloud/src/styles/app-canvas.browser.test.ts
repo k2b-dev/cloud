@@ -55,7 +55,7 @@ const canvasBackground = async (theme: "light" | "dark", width: number, authenti
 
 // Signed in, the gradient shows behind the app bar from md; anonymous pages show it around their cards.
 test("phones get the flat surface in both themes and the app gradient starts at md", async () => {
-  const widths = [390, 767, 768, 1440, 1536];
+  const widths = [390, 767, 768, 1024, 1440, 1536];
   const actual = [];
   for (const authenticated of [false, true]) {
     for (const theme of ["light", "dark"] as const) {
@@ -74,19 +74,23 @@ test("phones get the flat surface in both themes and the app gradient starts at 
 
 // The signed-in shell of Layout.tsx and LayoutRail.tsx. The workspace opens its
 // compact sidebar overlay, so the sidebar is measurable in portrait too.
-const loadShell = async (width: number, height: number, workspace = false) => {
+const loadShell = async (width: number, height: number, workspace = false, authenticated = true) => {
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce" });
   await page.setContent(`<!doctype html><html><head><style>${insetCss}</style></head><body>
-    <div data-layout-authenticated="true" class="cloud-app-canvas relative flex w-full min-h-dvh md:h-dvh md:overflow-hidden">
-      <aside class="layout-rail hidden w-10 shrink-0 flex-col md:flex">
+    <div ${authenticated ? 'data-layout-authenticated="true"' : ""} class="cloud-app-canvas relative flex w-full min-h-dvh md:h-dvh md:overflow-hidden">
+      ${
+        authenticated
+          ? `<aside class="layout-rail hidden w-14 shrink-0 flex-col md:flex">
         <div class="layout-rail-logo flex h-[2.875rem] shrink-0 items-center justify-center">
           <a href="/" aria-label="Home"><span class="block h-5 w-5"></span></a>
         </div>
         <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label="Apps">
-          <a href="/app">App</a>
-          <div class="mt-auto shrink-0 flex flex-col items-center gap-1"><a id="rail-bottom" href="/me">Profile</a></div>
+          <a class="rail-item" href="/app">App</a>
+          <div class="mt-auto shrink-0 flex flex-col items-center gap-1"><a class="rail-item" id="rail-bottom" href="/me">Profile</a></div>
         </nav>
-      </aside>
+      </aside>`
+          : ""
+      }
       <div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col">
         <main class="layout-content-main min-h-0 min-w-0 flex-1 md:overflow-auto md:[scrollbar-gutter:stable]">
           ${
@@ -105,9 +109,13 @@ const loadShell = async (width: number, height: number, workspace = false) => {
 };
 
 for (const [width, height] of [
-  [1180, 820],
-  [820, 1180],
+  [834, 1194],
+  [1194, 834],
+  [1440, 900],
 ] as const) {
+  const card = width >= 1024;
+  // The card keeps whole pixels: 6 px at 1194 px, 8 px from 1440 px.
+  const inset = card ? Math.round(Math.min(8, 4 + (width - 1024) / 104)) : 0;
   test(`${width}×${height}: regular shell fills the safe areas and scrolls above the home indicator`, async () => {
     const page = await loadShell(width, height);
     try {
@@ -138,18 +146,20 @@ for (const [width, height] of [
           scrollTop: main.scrollTop,
         };
       });
-      expect(shape.padding).toEqual(["0px", "0px", "0px", "0px"]);
+      const padding = shape.padding.map(Number.parseFloat);
+      for (const [index, expected] of (card ? [24, 12, inset, 0] : [0, 0, 0, 0]).entries())
+        expect(Math.abs(padding[index]! - expected)).toBeLessThanOrEqual(0.05);
       expect(shape.rail.left).toBeCloseTo(0, 1);
-      expect(shape.rail.top).toBeCloseTo(0, 1);
-      expect(shape.rail.bottom).toBeCloseTo(height, 1);
-      expect(shape.rail.width).toBeCloseTo(48 + 16, 1);
+      expect(shape.rail.top).toBeCloseTo(card ? 24 : 0, 1);
+      expect(Math.abs(shape.rail.bottom - (height - inset))).toBeLessThanOrEqual(0.05);
+      expect(shape.rail.width).toBeCloseTo(56 + 16, 1);
       expect(shape.logo.top).toBeGreaterThanOrEqual(24);
       expect(shape.logo.left).toBeGreaterThanOrEqual(16);
-      expect(shape.railBottom).toBeLessThanOrEqual(height - 20 - shape.shellSpacing + 1);
-      expect(shape.shell.top).toBeCloseTo(0, 1);
-      expect(shape.shell.right).toBeCloseTo(width, 1);
-      expect(shape.shell.bottom).toBeCloseTo(height, 1);
-      expect(shape.mainBottom).toBeCloseTo(height, 1);
+      expect(shape.railBottom).toBeLessThanOrEqual(height - 20 - (card ? 0 : shape.shellSpacing) + 1);
+      expect(shape.shell.top).toBeCloseTo(card ? 24 : 0, 1);
+      expect(shape.shell.right).toBeCloseTo(width - (card ? 12 : 0), 1);
+      expect(Math.abs(shape.shell.bottom - (height - inset))).toBeLessThanOrEqual(0.05);
+      expect(Math.abs(shape.mainBottom - (height - inset))).toBeLessThanOrEqual(0.05);
       expect(shape.scrollTop).toBeGreaterThan(0);
       expect(Math.abs(shape.lastBottom - (height - 20))).toBeLessThanOrEqual(1);
     } finally {
@@ -172,12 +182,12 @@ for (const [width, height] of [
           mainPadding: getComputedStyle(document.querySelector(".layout-content-main")!).paddingBottom,
         };
       });
-      expect(shape.workspace.bottom).toBeCloseTo(height, 1);
+      expect(Math.abs(shape.workspace.bottom - (height - inset))).toBeLessThanOrEqual(0.05);
       expect(shape.mainPadding).toBe("0px");
       for (const surface of [shape.main, shape.sidebar]) {
-        expect(surface.bottom).toBeCloseTo(height, 1);
-        expect(surface.border).toBe(20);
-        expect(surface.bottom - surface.border).toBeCloseTo(height - 20, 1);
+        expect(Math.abs(surface.bottom - (height - inset))).toBeLessThanOrEqual(1);
+        expect(Math.abs(surface.border - (20 - inset))).toBeLessThanOrEqual(0.05);
+        expect(Math.abs(surface.bottom - surface.border - (height - 20))).toBeLessThanOrEqual(1);
       }
     } finally {
       await page.close();
@@ -185,9 +195,9 @@ for (const [width, height] of [
   }, 30_000);
 }
 
-for (const width of [390, 1536]) {
-  test(`${width}px: phone and card shell padding stay unchanged with safe areas`, async () => {
-    const page = await loadShell(width, 820);
+for (const width of [390, 1440]) {
+  test(`${width}px: phone and anonymous shell padding stay unchanged with safe areas`, async () => {
+    const page = await loadShell(width, 820, false, width === 390);
     try {
       const shape = await page.evaluate(() => {
         const canvas = document.querySelector(".cloud-app-canvas")!;
