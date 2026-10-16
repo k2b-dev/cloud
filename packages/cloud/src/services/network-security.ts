@@ -1,6 +1,14 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import type { LookupFunction } from "node:net";
-import { isUnsafeNetworkAddress, isUnsafeNetworkHostname, normalizeNetworkHostname, parseNetworkAddress } from "../shared/network-address";
+import {
+  EMPTY_NETWORK_ALLOWLIST,
+  isAllowlistedNetworkAddress,
+  isUnsafeNetworkAddress,
+  isUnsafeNetworkHostname,
+  type NetworkAllowlist,
+  normalizeNetworkHostname,
+  parseNetworkAddress,
+} from "../shared/network-address";
 
 export type PublicNetworkAddress = { address: string; family: 4 | 6 };
 export type NetworkLookup = (
@@ -15,12 +23,14 @@ export class NetworkTargetBlockedError extends Error {
   }
 }
 
-export const resolvePublicNetworkAddresses = async (
+export const resolveAllowedNetworkAddresses = async (
   rawHostname: string,
+  allowlist: NetworkAllowlist,
   lookup: NetworkLookup = (hostname) => dnsLookup(hostname, { all: true, verbatim: true }),
 ): Promise<PublicNetworkAddress[]> => {
   const hostname = normalizeNetworkHostname(rawHostname);
-  if (isUnsafeNetworkHostname(rawHostname)) throw new NetworkTargetBlockedError("Network target host is not allowed");
+  const trustedHost = allowlist.hosts.has(hostname);
+  if (!trustedHost && isUnsafeNetworkHostname(rawHostname)) throw new NetworkTargetBlockedError("Network target host is not allowed");
 
   const literal = parseNetworkAddress(rawHostname);
   const addresses = literal ? [literal] : await lookup(hostname, { all: true, verbatim: true });
@@ -33,11 +43,17 @@ export const resolvePublicNetworkAddresses = async (
     if (!literal || literal.family !== entry.family) throw new NetworkTargetBlockedError("Network target returned an invalid address");
     return literal;
   });
-  if (normalized.some((entry) => isUnsafeNetworkAddress(entry.address))) {
+  if (
+    !trustedHost &&
+    normalized.some((entry) => isUnsafeNetworkAddress(entry.address) && !isAllowlistedNetworkAddress(allowlist, entry.address))
+  ) {
     throw new NetworkTargetBlockedError("Network target resolved to a private or reserved address");
   }
   return normalized;
 };
+
+export const resolvePublicNetworkAddresses = (rawHostname: string, lookup?: NetworkLookup): Promise<PublicNetworkAddress[]> =>
+  resolveAllowedNetworkAddresses(rawHostname, EMPTY_NETWORK_ALLOWLIST, lookup);
 
 /** Socket lookup using only addresses already checked by the public resolver. */
 export const pinnedNetworkLookup =

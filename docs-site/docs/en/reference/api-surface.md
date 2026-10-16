@@ -145,6 +145,7 @@ Use the capability guide to choose the narrow API:
 - [Universal search](/en/docs/platform/search)
 - [Document extraction](/en/docs/platform/document-extraction)
 - [Secrets and persistent state](/en/docs/data/secrets-and-persistent-state#call-a-public-https-address): `requestPublicHttps()` for server-side requests to a URL that a person, an administrator, or remote content chooses; `resolvePublicNetworkAddresses()`, `NetworkTargetBlockedError`, and `pinnedNetworkLookup()` from `@k2b/cloud/services/network-security` for other transports.
+- [Operator-approved internal targets](/en/docs/data/secrets-and-persistent-state#allow-operator-approved-internal-targets): Internal transports use `resolveAllowedNetworkAddresses()` from the same entry point with a `NetworkAllowlist` parsed by `parseNetworkAllowlist()` from `@k2b/cloud/shared`; `isAllowlistedNetworkAddress()` there matches IP networks without DNS. Entries come only from the application's operator-controlled env registry: exact host names, strict IPv4/IPv6, or canonical CIDRs. Host entries trust all validated answers; reserved names require a host entry. IPv4-mapped IPv6 also matches IPv4 networks; NAT64 and other embeddings require IPv6 entries. Failed or empty lookups still refuse.
 
 Raw stores, runtime starters, gateway telemetry, migrations, and platform
 composition helpers from the same barrel are maintainer APIs unless a guide

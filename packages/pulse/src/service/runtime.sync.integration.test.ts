@@ -61,6 +61,8 @@ syncTest(
       }
       throw Error("Runtime proof timed out");
     };
+    const previousTargets = process.env.PULSE_SCRAPE_ALLOWED_TARGETS;
+    process.env.PULSE_SCRAPE_ALLOWED_TARGETS = "127.0.0.0/8";
     bindProcessSync(sync);
     try {
       await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${baseId}::uuid,${baseShort},'Runtime proof')`;
@@ -169,6 +171,8 @@ syncTest(
       await pulseRuntime.stop();
       await sync.drain({ timeoutMs: 5000 });
       unbindProcessSync();
+      if (previousTargets === undefined) delete process.env.PULSE_SCRAPE_ALLOWED_TARGETS;
+      else process.env.PULSE_SCRAPE_ALLOWED_TARGETS = previousTargets;
       exporter.stop(true);
       await sql.unsafe(`DROP TRIGGER IF EXISTS ${trigger} ON pulse.metric_samples`);
       await sql.unsafe(`DROP FUNCTION IF EXISTS ${fn}()`);

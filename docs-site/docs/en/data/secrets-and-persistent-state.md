@@ -219,6 +219,43 @@ policy refusals, and connect through `pinnedNetworkLookup(addresses)`. With
 can route through an environment proxy that resolves the name again. This keeps
 the connection on the checked addresses; never call `fetch()` with the URL.
 
+### Allow operator-approved internal targets
+
+When an application must reach internal services, declare an explicit allowlist
+in its environment registry. Only operators may set it. Never accept allowlist
+entries from a person, a base editor, or remote content.
+
+`parseNetworkAllowlist(entries)` from `@k2b/cloud/shared` accepts exact DNS host
+names, strict dotted-quad IPv4, IPv6 literals (optionally bracketed), and CIDR
+networks. Host names are lowercased and lose their trailing dot. Wildcards,
+schemes, ports, paths, userinfo, IPv6 zone IDs, and legacy IPv4 forms are invalid.
+CIDR prefixes must be between 1 and the address family's width, with no host
+bits set; a `/0` network would allow every address and is refused. An invalid
+entry throws an error naming the entry and, for host bits, the correct network.
+Entries carry no port or path, so an entry allows every service on that host or
+in that range; keep them as narrow as the use case allows.
+
+Pass the parsed `NetworkAllowlist` to
+`resolveAllowedNetworkAddresses(hostname, allowlist, lookup?)` from
+`@k2b/cloud/services/network-security`, then connect through
+`pinnedNetworkLookup` with `agent: false`. An exact host entry trusts every
+validated address returned for that name, including internal addresses. Without
+a host entry, every answer must be public or in an allowed network. A single
+unlisted internal answer refuses the request. Reserved names such as
+`localhost`, `.local`, and `.internal` names require an exact host entry, even
+when their addresses match an allowed network. Failed and empty lookups still
+refuse, including for listed names; they throw an ordinary error rather than
+`NetworkTargetBlockedError`. Invalid addresses and unsupported families refuse
+even for listed names.
+
+`isAllowlistedNetworkAddress(allowlist, address)` performs pure IP network
+matching without DNS. IPv4-mapped IPv6 addresses also match their embedded IPv4
+against IPv4 entries. Other embeddings, including NAT64 `64:ff9b::/96`, 6to4,
+Teredo, and IPv4-compatible IPv6, require an IPv6 entry. Network entries never
+trust host names. `resolvePublicNetworkAddresses` retains the empty-allowlist
+policy. Pulse uses this contract for metrics sources and rechecks every
+redirect with the same operator allowlist.
+
 ### Read the result
 
 The result contains `status`, a bounded `body` as bytes, and selected response

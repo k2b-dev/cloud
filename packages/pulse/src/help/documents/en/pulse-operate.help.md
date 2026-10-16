@@ -30,6 +30,7 @@ Use this page when data is missing, when access must change, or when a public di
 ## Fix common problems {icon="lifebuoy"}
 
 :::reference
+- **A metrics source is refused:** Pulse scrapes only public endpoints by default. Ask an operator to allow the internal target with `PULSE_SCRAPE_ALLOWED_TARGETS`. Then retry the source.
 - **No data appears:** Check the source first. It must report a successful update before resources, signals, or dashboards can show data.
 - **A query matches too much:** Open **Inventory** or the signal page. Then add `source`, `resource`, `resource_type`, or `where` filters.
 - **A chart is empty:** Check the time range and the aggregation. Counters usually need `rate` or `increase`. Gauges usually need `avg` or `latest`.

@@ -1,12 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { err, fail, ok } from "@k2b/cloud/server";
+import { parseNetworkAllowlist } from "@k2b/cloud/shared";
 import { SQL, sql } from "bun";
 import { testInfra } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
+import { resolvePulseMessages } from "../messages";
 import { ingestBatch } from "./ingest-writer";
 import { runMetricsSourceScrape } from "./metrics-scraper";
 import { dueMetricsSources } from "./runtime";
 
+const http = { allowlist: parseNetworkAllowlist(["127.0.0.0/8"]) };
 const enabled = testInfra.database !== undefined;
 const postgresTest = enabled ? test : test.skip;
 
@@ -45,20 +48,20 @@ describe("metrics scrape outcomes", () => {
   postgresTest("records endpoint and input failures as scrape outcomes but throws on ingest infrastructure failures", async () => {
     const rejected = await runMetricsSourceScrape(
       { baseId, sourceId },
-      { ingestBatch: async () => fail(err.badInput("Metric series limit reached")) },
+      { http, ingestBatch: async () => fail(err.badInput("Metric series limit reached")) },
     );
     expect(rejected).toMatchObject({ ok: false, error: { status: 400 } });
     expect(await lastError()).toBe("Metric series limit reached");
 
     await expect(
-      runMetricsSourceScrape({ baseId, sourceId }, { ingestBatch: async () => fail(err.internal("Failed to ingest Pulse batch")) }),
+      runMetricsSourceScrape({ baseId, sourceId }, { http, ingestBatch: async () => fail(err.internal("Failed to ingest Pulse batch")) }),
     ).rejects.toThrow("Metrics ingest failed: Failed to ingest Pulse batch");
     // Infrastructure failures are left to the job retry; the source keeps its last real outcome.
     expect(await lastError()).toBe("Metric series limit reached");
 
     const accepted = await runMetricsSourceScrape(
       { baseId, sourceId },
-      { ingestBatch: async ({ batch }) => ok({ metrics: batch.metrics?.length ?? 0, events: 0, states: 0 }) },
+      { http, ingestBatch: async ({ batch }) => ok({ metrics: batch.metrics?.length ?? 0, events: 0, states: 0 }) },
     );
     expect(accepted).toEqual({ ok: true, data: { metrics: 1, events: 0, states: 0 } });
     expect(await lastError()).toBeNull();
@@ -67,7 +70,7 @@ describe("metrics scrape outcomes", () => {
     unreachableEndpoint?.stop(true);
     const unreachable = await runMetricsSourceScrape(
       { baseId, sourceId },
-      { ingestBatch: async () => ok({ metrics: 0, events: 0, states: 0 }) },
+      { http, ingestBatch: async () => ok({ metrics: 0, events: 0, states: 0 }) },
     );
     expect(unreachable.ok).toBe(false);
     expect(await lastError()).not.toBeNull();
@@ -95,13 +98,13 @@ postgresTest(
       const start = Math.floor(Date.now() / 60000) * 60000;
       for (const slotTs of [start, start + 60000, start + 120000]) {
         expect((await dueMetricsSources(slotTs)).some((row) => row.id === source)).toBe(true);
-        const result = await runMetricsSourceScrape({ baseId: base, sourceId: source, slotTs }, { database, ingestBatch });
+        const result = await runMetricsSourceScrape({ baseId: base, sourceId: source, slotTs }, { http, database, ingestBatch });
         expect(result.ok).toBe(true);
         expect((await dueMetricsSources(slotTs)).some((row) => row.id === source)).toBe(false);
       }
       expect(requests).toBe(3);
       const results = await Promise.all(
-        [0, 1, 2].map(() => runMetricsSourceScrape({ baseId: base, sourceId: source }, { database, ingestBatch })),
+        [0, 1, 2].map(() => runMetricsSourceScrape({ baseId: base, sourceId: source }, { http, database, ingestBatch })),
       );
       expect(results.every((result) => result.ok)).toBe(true);
       const [count] = await sql`SELECT count(*)::int AS count FROM pulse.metric_samples WHERE base_id=${base}::uuid`;
@@ -117,17 +120,17 @@ postgresTest(
           return new Response("# TYPE probe gauge\nprobe 2\n");
         },
       });
-      const first = runMetricsSourceScrape({ baseId: base, sourceId: source }, { ingestBatch });
+      const first = runMetricsSourceScrape({ baseId: base, sourceId: source }, { http, ingestBatch });
       try {
         await entered.promise;
-        const overlapping = await runMetricsSourceScrape({ baseId: base, sourceId: source }, { ingestBatch });
+        const overlapping = await runMetricsSourceScrape({ baseId: base, sourceId: source }, { http, ingestBatch });
         expect(overlapping).toMatchObject({ ok: false, error: { status: 409 } });
       } finally {
         release.resolve();
         await first;
       }
       await sql`UPDATE pulse.sources SET enabled=false WHERE id=${source}::uuid`;
-      expect((await runMetricsSourceScrape({ baseId: base, sourceId: source }, { ingestBatch })).ok).toBe(false);
+      expect((await runMetricsSourceScrape({ baseId: base, sourceId: source }, { http, ingestBatch })).ok).toBe(false);
     } finally {
       await database.close();
       server.stop(true);
@@ -136,3 +139,29 @@ postgresTest(
   },
   60000,
 );
+
+postgresTest("refused scrapes retain their rows and store the English catalog message in both diagnostics", async () => {
+  const base = crypto.randomUUID(),
+    source = crypto.randomUUID();
+  await sql`INSERT INTO pulse.bases(id, short_id, name) VALUES(${base}::uuid, ${newShortId()}, 'Blocked scrape')`;
+  await sql`INSERT INTO pulse.sources(id, short_id, base_id, kind, name, endpoint_url) VALUES(${source}::uuid, ${newShortId()}, ${base}::uuid, 'metrics', 'Internal', 'http://127.0.0.1:1/metrics')`;
+  try {
+    const result = await runMetricsSourceScrape(
+      { baseId: base, sourceId: source },
+      {
+        http: { allowlist: parseNetworkAllowlist([]) },
+        ingestBatch: async () => {
+          throw new Error("must not ingest");
+        },
+      },
+    );
+    const message = resolvePulseMessages("en").t.scrapeTargetBlocked;
+    expect(result).toMatchObject({ ok: false, error: { code: "PULSE_SCRAPE_TARGET_BLOCKED", message } });
+    const [row] = await sql`SELECT last_error FROM pulse.sources WHERE id=${source}::uuid`;
+    expect(row.last_error).toBe(message);
+    const [scrape] = await sql`SELECT error_message FROM pulse.source_scrapes WHERE source_id=${source}::uuid`;
+    expect(scrape.error_message).toBe(message);
+  } finally {
+    await sql`DELETE FROM pulse.bases WHERE id=${base}::uuid`;
+  }
+});

@@ -218,3 +218,11 @@ export type {
   MailPage,
   MailServiceError,
 } from "../contracts/outgoing-mail";
+
+export {
+  NetworkTargetBlockedError,
+  pinnedNetworkLookup,
+  resolvePublicNetworkAddresses,
+  resolveAllowedNetworkAddresses,
+} from "./network-security";
+export type { NetworkLookup, PublicNetworkAddress } from "./network-security";

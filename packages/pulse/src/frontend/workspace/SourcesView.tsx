@@ -2,7 +2,7 @@ import type { ResourceApiKey, ResourceApiKeysProps } from "@k2b/cloud/access/ui"
 import { Button, DataTable, type DataTableColumn, TextInput, useLocale } from "@k2b/ui";
 import { type Accessor, type JSX, Show } from "solid-js";
 import type { PulseSource, PulseSourceScrape } from "../../contracts";
-import type { pulseMessages } from "../../messages";
+import { localizedSourceError, type pulseMessages } from "../../messages";
 import { usePulseMessages } from "../use-messages";
 import { compactDateWithDelta, type PulseDateContext, sourceKindIcon, sourceStatus } from "./helpers";
 import SourceDetailView from "./SourceDetailView";
@@ -196,7 +196,7 @@ export function SourcesDetailPanel(props: SourcesViewProps) {
     if (col.id === "error") {
       return (
         <span class={scrape.errorMessage ? "line-clamp-2 text-xs text-red-600 dark:text-red-300" : "text-xs text-dimmed"}>
-          {scrape.errorMessage ?? "-"}
+          {localizedSourceError(scrape.errorMessage, t()) ?? "-"}
         </span>
       );
     }

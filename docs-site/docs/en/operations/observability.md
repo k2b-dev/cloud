@@ -291,6 +291,10 @@ Use **Admin > Observability > Metrics** to create a dedicated scrape token.
 Send it as a Bearer token to `/metrics` from Pulse or a Prometheus-compatible
 collector. The token is restricted to metrics; anonymous requests are rejected.
 
+If Pulse reaches `/metrics` through an internal address, add the exact host to
+`PULSE_SCRAPE_ALLOWED_TARGETS` in the Pulse container environment. For example,
+allow the gateway service name when that is the host in the metrics source URL.
+
 Gateway Ops caches each snapshot for 15 seconds and shares concurrent refreshes.
 Collectors have bounded response times. A timed-out collector keeps its execution
 slot until its underlying work finishes; later scrapes report it unavailable

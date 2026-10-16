@@ -305,7 +305,10 @@ services:
   app-pulse:
     <<: *app
     container_name: app-pulse
-    environment: { <<: *env, APP_ID: pulse }
+    environment:
+      <<: *env
+      APP_ID: pulse
+      PULSE_SCRAPE_ALLOWED_TARGETS: ${PULSE_SCRAPE_ALLOWED_TARGETS:-}
     profiles: [extra]
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { parseNetworkAllowlist } from "@k2b/cloud/shared";
 import { fetchPrometheusMetrics, parsePrometheusMetrics } from "./metrics-scraper";
 
 describe("Pulse Prometheus metrics scraper", () => {
@@ -71,9 +72,11 @@ value{note="line\\nquote\\"slash\\\\"} -1.25e3
     });
     const start = Date.now();
     try {
-      await expect(
-        fetchPrometheusMetrics({ endpointUrl: `http://127.0.0.1:${endpoint.port}/metrics`, bearerTokenEncrypted: null }, 100),
-      ).rejects.toThrow();
+      expect(
+        await fetchPrometheusMetrics({ endpointUrl: `http://127.0.0.1:${endpoint.port}/metrics`, bearerTokenEncrypted: null }, 100, {
+          allowlist: parseNetworkAllowlist(["127.0.0.0/8"]),
+        }),
+      ).toMatchObject({ ok: false, error: { message: "Metrics scrape timed out after 15 seconds" } });
       expect(Date.now() - start).toBeLessThan(2000);
     } finally {
       endpoint.stop(true);
