@@ -152,6 +152,10 @@ Assistant also links every Cloud resource it mentions in an answer when the
 resource result or supplied context provides an exact open or edit URL. It
 never constructs a Cloud resource URL from an ID.
 
+A scheme-less answer link starting with `app/` or `open/` opens as the
+root-relative Cloud path (`/app/...`, `/open/...`), so a dropped leading slash
+still opens the resource; other links stay as written.
+
 The attachment does not copy resource contents into the draft and does not
 grant access. The model receives only the resource reference and presentation
 metadata, and must read the resource through the owning application's
