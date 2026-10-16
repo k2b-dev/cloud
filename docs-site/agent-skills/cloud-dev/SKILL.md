@@ -98,15 +98,13 @@ Cloud and every application are equal consumers of `@k2b/ui`. The standalone
 SolidJS library remains independent of Cloud and application domains.
 
 - Use existing `@k2b/ui` components whenever they express the required
-  control, feedback, surface, or layout behavior.
+  control, feedback, surface, or layout behavior. A hierarchy of columns (settings areas, list and reader) uses `AppWorkspace.Main level` with the selection in the URL.
 - Do not recreate generic component contracts inside an application. If no
   primitive fits, surface the gap and agree with the application author
   whether to extend `@k2b/ui` or build application-owned UI.
 - Custom UI follows the same tokens, semantics, interaction, accessibility, responsive, theme, and state principles.
   Reusable presentation belongs in the library; applications retain their domain behavior. Check every screen
   against **Styling and accessibility** (`/en/docs/frontend/styling-and-accessibility`).
-- A hierarchy of columns (settings areas, list and reader) uses
-  `AppWorkspace.Main level` with the selection in the URL.
 - Give an application's landing page the shared overview pattern: either a
   sidebar-first `AppWorkspace` (`SidebarItem variant="object"` rows,
   `AppWorkspace.Main width="content"`, a `PanelHeader size="lg"` with one

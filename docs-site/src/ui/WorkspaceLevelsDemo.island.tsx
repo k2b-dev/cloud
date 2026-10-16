@@ -5,8 +5,8 @@ import {
   Button,
   DescriptionList,
   Placeholder,
-  serializeAppWorkspaceLayoutState,
   StatusBadge,
+  serializeAppWorkspaceLayoutState,
 } from "@k2b/ui";
 import { For, Show } from "solid-js";
 
