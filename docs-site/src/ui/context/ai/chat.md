@@ -162,8 +162,9 @@ list open, perform no action, and announce the reason. Legacy `disabled` still
 prevents selection and keeps the description.
 
 An action returning `"cancelled"` restores the exact `/…` token and mentions
-when the draft is unchanged. Rejections use the same restoration guard. The
-caret returns after the token and the list stays closed until the next edit.
+when the draft is unchanged. Rejections use the same restoration guard, and a
+restored draft leaves no undo step behind. The caret returns after the token
+and the list stays closed until the next edit.
 The persistent status line shows `busyLabel` while working, `{ done }` for
 about three seconds, and a failure message for about six seconds or until the
 next edit. Command failures are reported once there, without calling `onError`.
