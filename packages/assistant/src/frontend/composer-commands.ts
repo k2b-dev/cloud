@@ -1,8 +1,67 @@
 import type { AiProject } from "@k2b/cloud/ai";
 import { type AiComposerAttachment, aiChatAttachments } from "@k2b/cloud/ai/ui";
-import type { ChatCommand } from "@k2b/ui";
+import type { ChatCommand, ChatCommandResult } from "@k2b/ui";
 import { assistantApi } from "../api/client";
 import { artifactClient } from "../artifacts/client";
+import { type AssistantCopy, assistantCopyFor } from "./ui-copy";
+
+export function assistantBuiltInCommands(input: {
+  copy: AssistantCopy;
+  projectComposer: boolean;
+  running: boolean;
+  hasMessages: boolean;
+  hasAssistantMessage: boolean;
+  compact: () => Promise<ChatCommandResult>;
+  fork: () => Promise<ChatCommandResult>;
+  newChat: () => Promise<ChatCommandResult>;
+}): ChatCommand[] {
+  const t = input.copy;
+  return [
+    {
+      id: "compact",
+      name: "compact",
+      icon: "ti ti-fold",
+      label: t.compactLabel,
+      keywords: ["compact", "kompaktieren", "kontext", "zusammenfassen", "platz"],
+      description: t.compactDescription,
+      busyLabel: t.compactBusy,
+      reason: input.projectComposer
+        ? t.commandNeedsChat
+        : !input.hasMessages
+          ? t.commandNeedsMessages
+          : input.running
+            ? t.commandNeedsIdle
+            : undefined,
+      action: input.compact,
+    },
+    {
+      id: "fork",
+      name: "fork",
+      icon: "ti ti-git-fork",
+      label: t.forkLabel,
+      keywords: ["fork", "abzweigen", "kopie", "verzweigen", "branch"],
+      description: t.forkDescription,
+      busyLabel: t.forkBusy,
+      reason: input.projectComposer
+        ? t.commandNeedsChat
+        : !input.hasAssistantMessage
+          ? t.commandNeedsAnswer
+          : input.running
+            ? t.commandNeedsIdle
+            : undefined,
+      action: input.fork,
+    },
+    {
+      id: "new",
+      name: "new",
+      icon: "ti ti-plus",
+      label: t.newChatLabel,
+      keywords: ["new", "neu", "chat", "leer"],
+      description: t.newChatDescription,
+      action: input.newChat,
+    },
+  ];
+}
 
 /** Only explicit selection inserts a reference or performs an action. */
 export async function assistantComposerCommands(input: {
@@ -15,13 +74,15 @@ export async function assistantComposerCommands(input: {
   assignProject: (projectId: string) => Promise<void>;
   running: boolean;
 }): Promise<ChatCommand[]> {
-  const de = input.locale.startsWith("de");
+  const copy = assistantCopyFor(input.locale);
   const match = /^(skill|app|file|project)(?:\s+(.*))?$/i.exec(input.query);
   const category = match?.[1]?.toLowerCase();
   const query = (match ? (match[2] ?? "") : input.query).trim().toLowerCase();
   const includes = (text: string) => text.toLowerCase().includes(query);
   const wants = (kind: string) => !category || category === kind;
+  // The attachment id is the row key: two files named "report.md" in different folders stay two rows.
   const reference = (name: string, description: string, attachment: AiComposerAttachment): ChatCommand => ({
+    id: attachment.id,
     name,
     label: name,
     description,
@@ -63,7 +124,7 @@ export async function assistantComposerCommands(input: {
   for (const file of chatFiles) {
     if (!includes(file.path)) continue;
     results.push(
-      reference(file.path.split("/").at(-1) || file.path, `${de ? "Chat-Datei" : "Chat file"} · ${file.path}`, {
+      reference(file.path.split("/").at(-1) || file.path, `${copy.chatFileDescription} · ${file.path}`, {
         kind: "stored-file",
         id: `file:${file.path}:${file.version}`,
         name: file.path.split("/").at(-1) || file.path,
@@ -78,25 +139,18 @@ export async function assistantComposerCommands(input: {
   for (const file of project?.files ?? []) {
     if (!includes(file.path)) continue;
     const path = `/project/${file.path.replace(/^\/+/, "")}`;
-    results.push(
-      reference(path, de ? "Projektdatei" : "Project file", { kind: "project-file", id: path, path, name: path, icon: "ti ti-file" }),
-    );
+    results.push(reference(path, copy.projectFileDescription, { kind: "project-file", id: path, path, name: path, icon: "ti ti-file" }));
   }
   if (wants("project") && !input.projectId)
     for (const project of input.projects) {
       if (!includes(`${project.name} ${project.description}`)) continue;
       results.push({
+        id: `project:${project.id}`,
         name: project.name,
         label: project.name,
         icon: project.icon || "ti ti-folders",
-        disabled: input.running,
-        description: input.running
-          ? de
-            ? "Nach der laufenden Antwort verfügbar"
-            : "Available after the current response"
-          : de
-            ? "Chat diesem Projekt zuordnen"
-            : "Assign this chat to Project",
+        reason: input.running ? copy.commandNeedsIdle : undefined,
+        description: copy.assignProjectDescription,
         action: () => input.assignProject(project.id),
       });
     }

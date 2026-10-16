@@ -1,4 +1,5 @@
 import {
+  batch,
   children,
   createEffect,
   createMemo,
@@ -32,7 +33,15 @@ import { useSelectMessages } from "../inputs/select-messages";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
-import { conversationEnterAction, executeChatAction, nextChatCommandIndex, reportChatFailure, runChatSubmission } from "./chat-behavior";
+import {
+  chatCommandKey,
+  chatCommandRank,
+  conversationEnterAction,
+  executeChatAction,
+  nextChatCommandIndex,
+  reportChatFailure,
+  runChatSubmission,
+} from "./chat-behavior";
 import { useChatMessages } from "./chat-messages";
 import { chatCommandQuery, chatMentionSegments, reconcileChatMentions } from "./composer-document";
 import type {
@@ -48,6 +57,7 @@ import type {
 } from "./types";
 
 const composerMaxInputHeight = 309;
+const commandDoneMs = 3_000;
 /** Emoji suggestions for a `:shortcode`, as many as fit the list without scrolling on a phone. */
 const emojiSuggestionLimit = 8;
 // Keep editor undo text within approximately 2 MiB, plus the current edit.
@@ -59,11 +69,23 @@ export type ChatCommandContext = {
   focus: () => void;
 };
 
+/** An action can cancel and restore its token, or report a short completion message. */
+export type ChatCommandResult = void | "cancelled" | { done: string };
+
 export type ChatCommand = {
+  /** Stable row key for option ids, marking and de-duplication. Defaults to `name`. */
+  id?: string;
   name: string;
   description: string;
   icon?: string;
-  action?: (context: ChatCommandContext) => void | Promise<void>;
+  /** Extra search words, for example in German and English. */
+  keywords?: readonly string[];
+  /** Unavailable now; this short reason replaces the description. */
+  reason?: string;
+  /** Shown in the status line while the action runs. */
+  busyLabel?: string;
+  /** Failures restore an unchanged draft and appear once in the status line, without calling `onError`. */
+  action?: (context: ChatCommandContext) => ChatCommandResult | Promise<ChatCommandResult>;
   /** Selecting a reference inserts its display name and retains its opaque payload. */
   mention?: ChatAttachment;
   label?: string;
@@ -198,7 +220,36 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const selectMessages = useSelectMessages();
   const commandListId = `k2b-chat-commands-${createUniqueId().replace(/[^A-Za-z0-9_-]/g, "-")}`;
   const formatGroupId = `${commandListId}-format`;
+  // Emoji suggestions keep their index-based selection and ids.
   const [selectedCommandIndex, setSelectedCommandIndex] = createSignal(0);
+  const [activeCommandKey, setActiveCommandKey] = createSignal<string>();
+  const [commandMoved, setCommandMoved] = createSignal(false);
+  const commandIds = new Map<string, number>();
+  let commandIdCounter = 0;
+  const commandOptionId = (command: ChatCommand) => {
+    const key = chatCommandKey(command);
+    if (!commandIds.has(key)) commandIds.set(key, commandIdCounter++);
+    return `${commandListId}-c${commandIds.get(key)}`;
+  };
+  const [closedAt, setClosedAt] = createSignal<number>();
+  // Where the pending native edit starts; a selection replaced as a whole starts at its beginning.
+  let inputStart: number | undefined;
+  const [commandStatus, setCommandStatus] = createSignal<{ tone: "busy" | "done" | "error"; text: string }>();
+  const [announcement, setAnnouncement] = createSignal<{ text: string }>();
+  let statusTimer: ReturnType<typeof setTimeout> | undefined;
+  let disposed = false;
+  const showCommandStatus = (status?: { tone: "busy" | "done" | "error"; text: string }) => {
+    if (disposed) return;
+    clearTimeout(statusTimer);
+    setCommandStatus(status);
+    if (status?.tone === "done") {
+      statusTimer = setTimeout(() => setCommandStatus(undefined), commandDoneMs);
+    }
+  };
+  onCleanup(() => {
+    disposed = true;
+    clearTimeout(statusTimer);
+  });
   const [addingFiles, setAddingFiles] = createSignal(false);
   const [submitting, setSubmitting] = createSignal(false);
   let composerRef: HTMLElement | undefined;
@@ -223,6 +274,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const [dismissed, setDismissed] = createSignal(false);
   const [composing, setComposing] = createSignal(false);
   const [searchResults, setSearchResults] = createSignal<readonly ChatCommand[]>([]);
+  const [searchResultsQuery, setSearchResultsQuery] = createSignal<string>();
   const [searching, setSearching] = createSignal(false);
   const [searchError, setSearchError] = createSignal(false);
   const [executing, setExecuting] = createSignal(false);
@@ -244,14 +296,50 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     return token && index ? suggestEmoji(index, token.query, emojiSuggestionLimit) : [];
   });
   const emojiOpen = () => emojiMatches().length > 0;
-  const commandQuery = createMemo(() => (dismissed() || composing() ? null : chatCommandQuery(props.value, caret(), selectionEnd())));
-  const commandMatches = createMemo(() => {
+  const caretCommandToken = createMemo(() => chatCommandQuery(props.value, caret(), selectionEnd()));
+  const caretCommandStart = createMemo(() => caretCommandToken()?.start);
+  // Retained server rows belong to one `/`: they go when it does or when another `/` starts.
+  createEffect(() => {
+    caretCommandStart();
+    setSearchResults([]);
+    setSearchResultsQuery(undefined);
+  });
+  // Escape closes the list for one `/` character, wherever the caret or selection goes; only that `/` going away ends it.
+  createEffect(() => {
+    const closed = closedAt();
+    if (closed !== undefined && props.value[closed] !== "/") setClosedAt(undefined);
+  });
+  const commandQuery = createMemo(() => {
+    const token = caretCommandToken();
+    return dismissed() || composing() || token?.start === closedAt() ? null : token;
+  });
+  // Matches by label, name or keyword come first, so the top row (what Enter picks) is the command the person named.
+  const localCommandMatches = createMemo(() => {
     const token = commandQuery();
     if (!token) return [];
-    return [
-      ...(props.commands ?? []).filter((command) => command.name.toLowerCase().includes(token.query.toLowerCase())),
-      ...searchResults(),
-    ];
+    return (props.commands ?? [])
+      .map((command) => ({ command, rank: chatCommandRank(command, token.query) }))
+      .filter(({ rank }) => rank >= 0)
+      .sort((a, b) => a.rank - b.rank)
+      .map(({ command }) => command);
+  });
+  const commandMatches = createMemo(() => {
+    if (!commandQuery()) return [];
+    const seen = new Set<string>();
+    return [...localCommandMatches(), ...searchResults()].filter((command) => {
+      const key = chatCommandKey(command);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  });
+  const currentCommandQuery = createMemo(() => caretCommandToken()?.query);
+  // Arrow marking belongs to one token in one draft; another draft or `/` starts at the top row again.
+  createEffect(() => {
+    props.draftKey;
+    caretCommandStart();
+    currentCommandQuery();
+    setCommandMoved(false);
   });
   const commandsOpen = () => Boolean(!emojiOpen() && commandQuery() && (props.commands?.length || props.searchCommands));
   const suggestionsOpen = () => commandsOpen() || emojiOpen();
@@ -281,8 +369,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     });
   });
   createEffect(() => {
+    props.draftKey;
     const token = commandQuery();
-    setSearchResults([]);
     setSearchError(false);
     if (!token || !props.searchCommands) {
       setSearching(false);
@@ -291,12 +379,22 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const abort = new AbortController();
     setSearching(true);
     const timer = setTimeout(() => {
-      Promise.resolve(props.searchCommands!(token.query, abort.signal))
+      Promise.resolve()
+        .then(() => props.searchCommands!(token.query, abort.signal))
         .then((results) => {
-          if (!abort.signal.aborted) setSearchResults(results);
+          if (!abort.signal.aborted) {
+            batch(() => {
+              setSearchResults(results);
+              setSearchResultsQuery(token.query);
+            });
+          }
         })
         .catch(() => {
-          if (!abort.signal.aborted) setSearchError(true);
+          if (!abort.signal.aborted) {
+            setSearchResults([]);
+            setSearchResultsQuery(undefined);
+            setSearchError(true);
+          }
         })
         .finally(() => {
           if (!abort.signal.aborted) setSearching(false);
@@ -315,6 +413,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       history.length = 0;
       historyIndex = -1;
       setDismissed(true);
+      setClosedAt(undefined);
+      setSearchResults([]);
+      setSearchResultsQuery(undefined);
+      // A failure belongs to the draft it happened in; success notes may follow a command into the chat it opened.
+      if (commandStatus()?.tone === "error") showCommandStatus();
     });
   });
   const snapshot = () => ({ value: props.value, mentions: [...mentions()], caret: textareaRef?.selectionStart ?? 0 });
@@ -331,6 +434,15 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     }
   };
   const edit = (value: string, nextMentions = reconcileChatMentions(props.value, value, mentions())) => {
+    if (commandStatus()?.tone === "error") showCommandStatus();
+    // An edit that starts at or before the closed `/` (select all, then type `/`) replaces it; the new `/` may open again.
+    const closed = closedAt();
+    if (closed !== undefined) {
+      let same = 0;
+      while (same <= closed && props.value[same] === value[same]) same++;
+      if (Math.min(same, inputStart ?? same) <= closed) setClosedAt(undefined);
+    }
+    inputStart = undefined;
     record();
     props.onValueChange(value);
     props.onMentionsChange?.(nextMentions);
@@ -350,10 +462,25 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     });
   };
   const syncCaret = () => {
-    setCaret(textareaRef?.selectionStart ?? props.value.length);
-    setSelectionEnd(textareaRef?.selectionEnd ?? props.value.length);
+    // One update, so no effect sees a half-moved selection (it would read as "no `/` here" and reopen a closed list).
+    batch(() => {
+      setCaret(textareaRef?.selectionStart ?? props.value.length);
+      setSelectionEnd(textareaRef?.selectionEnd ?? props.value.length);
+    });
   };
-  const selectedCommand = () => commandMatches()[selectedCommandIndex()];
+  const selectedCommand = createMemo(() => {
+    const rows = commandMatches();
+    return (commandMoved() && rows.find((command) => chatCommandKey(command) === activeCommandKey())) || rows[0];
+  });
+  const selectedCommandKey = createMemo(() => {
+    const command = selectedCommand();
+    return command ? chatCommandKey(command) : undefined;
+  });
+  createEffect(() => {
+    if (!commandsOpen()) commandIds.clear();
+    selectedCommandKey();
+    setAnnouncement(undefined);
+  });
   const busy = () => Boolean(props.disabled || stopping() || state() === "submitting" || executing() || addingFiles());
   const blocked = () => busy() || submitting();
   /** The conversation field stays editable while a message is sent, so it keeps the focus and a phone its keyboard. */
@@ -423,18 +550,16 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   });
 
   createEffect(() => {
-    commandMatches();
     emojiMatches();
     setSelectedCommandIndex(0);
   });
 
   createEffect(() => {
-    const index = selectedCommandIndex();
-    commandMatches();
-    emojiMatches();
+    const command = selectedCommand();
+    const id = emojiOpen() ? `${commandListId}-${selectedCommandIndex()}` : command ? commandOptionId(command) : undefined;
     queueMicrotask(() => {
       const list = commandListRef;
-      const item = list?.querySelector<HTMLElement>(`[id="${commandListId}-${index}"]`);
+      const item = id ? list?.querySelector<HTMLElement>(`[id="${id}"]`) : undefined;
       if (!list || !item?.isConnected) return;
       if (item.offsetTop < list.scrollTop) list.scrollTop = item.offsetTop;
       else if (item.offsetTop + item.offsetHeight > list.scrollTop + list.clientHeight) {
@@ -555,7 +680,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
   const executeCommand = async (command: ChatCommand) => {
     const token = commandQuery();
-    if (!token || command.disabled || blocked()) return;
+    if (!token || blocked()) return;
+    if (command.disabled || command.reason) {
+      // A new object each time, so choosing the same row again inserts and announces its reason again.
+      setAnnouncement(command.reason ? { text: command.reason } : undefined);
+      return;
+    }
     const previous = snapshot();
     const key = props.draftKey;
     const replacement = command.mention ? command.mention.name + " " : "";
@@ -563,32 +693,56 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const nextMentions = reconcileChatMentions(props.value, nextValue, mentions());
     if (command.mention)
       nextMentions.push({ start: token.start, end: token.start + command.mention.name.length, attachment: command.mention });
+    // A cancelled or failed command leaves no undo step behind: restoring puts the history back as well.
+    const previousHistory = { entries: [...history], index: historyIndex };
     edit(nextValue, nextMentions);
     setDismissed(true);
     setExecuting(true);
     let submitRequested = false;
+    let restored = false;
+    const restore = () => {
+      if (props.draftKey !== key || props.value !== nextValue) return;
+      setDismissed(true);
+      props.onValueChange(previous.value);
+      props.onMentionsChange?.(previous.mentions);
+      history.splice(0, history.length, ...previousHistory.entries);
+      historyIndex = previousHistory.index;
+      restored = true;
+    };
+    showCommandStatus(command.busyLabel ? { tone: "busy", text: command.busyLabel } : undefined);
     try {
-      await command.action?.({
+      const result = await command.action?.({
         setValue: (value) => edit(value),
         submit: () => {
           submitRequested = true;
         },
         focus,
       });
+      if (result === "cancelled") {
+        submitRequested = false;
+        restore();
+        showCommandStatus();
+      } else if (result) {
+        showCommandStatus({ tone: "done", text: result.done });
+      }
     } catch (error) {
       submitRequested = false;
-      if (props.draftKey === key && props.value === nextValue) {
-        props.onValueChange(previous.value);
-        props.onMentionsChange?.(previous.mentions);
-      }
-      props.onError?.(error);
+      restore();
+      // An unmounted composer has no status line left; the app's error channel keeps the failure from going silent.
+      if (disposed) props.onError?.(error);
+      else
+        showCommandStatus({ tone: "error", text: error instanceof Error && error.message ? error.message : chatMessages().commandFailed });
     } finally {
+      if (commandStatus()?.tone === "busy") showCommandStatus();
       setExecuting(false);
     }
     if (submitRequested && props.draftKey === key) await submit();
     queueMicrotask(() => {
       if (props.draftKey !== key) return;
-      textareaRef?.setSelectionRange(token.start + replacement.length, token.start + replacement.length);
+      if (restored || props.value === nextValue) {
+        const position = restored ? token.end : token.start + replacement.length;
+        textareaRef?.setSelectionRange(position, position);
+      }
       syncCaret();
       autoResize();
       focus();
@@ -667,19 +821,27 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     if (commandsOpen()) {
       if (event.key === "ArrowUp" || event.key === "ArrowDown") {
         event.preventDefault();
-        setSelectedCommandIndex((index) => nextChatCommandIndex(index, matches.length, event.key === "ArrowUp" ? -1 : 1));
+        const index = matches.indexOf(selectedCommand()!);
+        const next = matches[nextChatCommandIndex(index, matches.length, event.key === "ArrowUp" ? -1 : 1)];
+        setActiveCommandKey(next ? chatCommandKey(next) : undefined);
+        setCommandMoved(true);
+        setAnnouncement(undefined);
         return;
       }
       // Ctrl/⌘+Enter sends, also while suggestions are open.
-      if ((event.key === "Tab" || (event.key === "Enter" && !event.ctrlKey && !event.metaKey)) && matches.length > 0) {
+      const plain = !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey;
+      if (plain && (event.key === "Tab" || event.key === "Enter") && matches.length > 0) {
         event.preventDefault();
         const command = selectedCommand();
+        // A server row answering an earlier query may no longer match; wait for fresh results. Local rows match now.
+        const staleServerRow = command && !localCommandMatches().includes(command) && searchResultsQuery() !== commandQuery()?.query;
+        if (staleServerRow) return;
         if (command) void executeCommand(command);
         return;
       }
       if (event.key === "Escape") {
         event.preventDefault();
-        setDismissed(true);
+        setClosedAt(commandQuery()?.start);
         return;
       }
     }
@@ -1046,13 +1208,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         aria-controls={suggestionsOpen() ? commandListId : undefined}
         aria-expanded={suggestionsOpen() ? "true" : undefined}
         aria-activedescendant={
-          (emojiOpen() ? emojiMatches()[selectedCommandIndex()] : selectedCommand())
-            ? `${commandListId}-${selectedCommandIndex()}`
-            : undefined
+          emojiOpen() ? `${commandListId}-${selectedCommandIndex()}` : selectedCommand() ? commandOptionId(selectedCommand()!) : undefined
         }
         onInput={(event) => {
-          edit(event.currentTarget.value);
-          syncCaret();
+          batch(() => {
+            edit(event.currentTarget.value);
+            syncCaret();
+          });
           autoResize();
           const input = event as InputEvent;
           if (input.inputType === "insertText" && input.data === ":") queueMicrotask(completeShortcode);
@@ -1082,6 +1244,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           if (highlightRef && textareaRef) highlightRef.scrollTop = textareaRef.scrollTop;
         }}
         onBeforeInput={(event) => {
+          inputStart = event.currentTarget.selectionStart;
           if (event.inputType === "historyUndo" || event.inputType === "historyRedo") {
             event.preventDefault();
             restoreHistory(event.inputType === "historyUndo" ? -1 : 1);
@@ -1144,27 +1307,35 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                 class="k2b-chat-composer__commands"
                 role="listbox"
                 aria-label={chatMessages().commands}
+                aria-busy={searching() ? "true" : undefined}
               >
                 <For each={commandMatches()}>
-                  {(command, index) => (
+                  {(command) => (
                     <button
-                      id={`${commandListId}-${index()}`}
+                      id={commandOptionId(command)}
                       type="button"
                       role="option"
                       tabIndex={-1}
-                      aria-selected={index() === selectedCommandIndex()}
-                      aria-disabled={command.disabled}
-                      data-active={index() === selectedCommandIndex() ? "true" : undefined}
+                      aria-selected={selectedCommand() === command}
+                      aria-disabled={Boolean(command.disabled || command.reason)}
+                      aria-describedby={command.reason ? `${commandOptionId(command)}-reason` : undefined}
+                      data-reason={command.reason ? "true" : undefined}
+                      data-active={selectedCommand() === command ? "true" : undefined}
                       onPointerDown={(event) => event.preventDefault()}
-                      onClick={() => void executeCommand(command)}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        void executeCommand(command);
+                      }}
                     >
                       <i class={command.icon ?? "ti ti-slash"} aria-hidden="true" />
                       <strong>{command.label ?? `/${command.name}`}</strong>
-                      <small>{command.description}</small>
+                      <small id={command.reason ? `${commandOptionId(command)}-reason` : undefined}>
+                        {command.reason ?? command.description}
+                      </small>
                     </button>
                   )}
                 </For>
-                <Show when={searching()}>
+                <Show when={searching() && commandMatches().length === 0}>
                   <div role="status" class="k2b-chat-composer__loading">
                     <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
                     <strong>{messages().loading}</strong>
@@ -1409,6 +1580,24 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           )}
         </Show>
       </section>
+      <div class="k2b-chat-composer__status" role="status">
+        <Show when={!suggestionsOpen() && commandStatus()}>
+          {(status) => (
+            <div class="k2b-chat-composer__status-line" data-tone={status().tone}>
+              <i
+                aria-hidden="true"
+                class={
+                  status().tone === "busy" ? "ti ti-loader-2 k2b-spin" : status().tone === "done" ? "ti ti-check" : "ti ti-alert-circle"
+                }
+              />
+              <span>{status().text}</span>
+            </div>
+          )}
+        </Show>
+        <Show when={suggestionsOpen() && announcement()} keyed>
+          {(announced) => <span class="k2b-sr-only">{announced.text}</span>}
+        </Show>
+      </div>
     </div>
   );
 }

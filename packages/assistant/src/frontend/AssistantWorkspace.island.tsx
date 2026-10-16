@@ -111,7 +111,7 @@ import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
 import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
-import { assistantComposerCommands } from "./composer-commands";
+import { assistantBuiltInCommands, assistantComposerCommands } from "./composer-commands";
 import {
   confirmComposerSave,
   editComposerSession,
@@ -122,7 +122,7 @@ import {
 import { isPlainChat } from "./conversation-view";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
-import { useAssistantText } from "./ui-copy";
+import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
 type Status = {
   ok: boolean;
@@ -181,6 +181,7 @@ type ProjectViewState = {
 export default function AssistantWorkspace(props: Props) {
   const locale = useLocale();
   const contextText = useAssistantText();
+  const commandCopy = useAssistantCopy();
   const artifactWorkspace = createArtifactWorkspace(props.initialWorkspaceHref);
   const [workspaceMounted, setWorkspaceMounted] = createSignal(false);
   const openContextView = (view: ContextView) =>
@@ -1367,6 +1368,14 @@ export default function AssistantWorkspace(props: Props) {
   const AssistantComposer = (composerProps: { projectId?: string; projectName?: string }) => {
     const sessionKey = () => (composerProps.projectId ? projectComposerKey(composerProps.projectId) : composerSessionKey());
     const projectComposer = () => Boolean(composerProps.projectId);
+    // In the chat the command started in, it takes over the controller's error so the failure is reported once,
+    // in the composer status line. After the person moved on, that error belongs to the other chat and stays there.
+    const commandFailure = (key: string, message: (input: { reason: string }) => string, draftUnchanged = true) => {
+      if (sessionKey() !== key) return new Error(message({ reason: t().chatActionFailed.replace(/\.+$/, "") }));
+      const failed = message({ reason: (chat.error() ?? t().chatActionFailed).replace(/\.+$/, "") });
+      chat.setError(null);
+      return new Error(draftUnchanged ? `${failed} ${commandCopy().draftUnchanged}` : failed);
+    };
     return (
       <>
         <Show when={!projectComposer() ? chat.activeConversationId() : null}>
@@ -1447,50 +1456,48 @@ export default function AssistantWorkspace(props: Props) {
           draftKey={sessionKey()}
           mentions={mentionsFor(sessionKey())}
           onMentionsChange={(mentions) => setMentionsFor(sessionKey(), mentions)}
-          commands={[
-            {
-              name: "compact",
-              description: locale().startsWith("de") ? "Chat-Kontext kompaktieren" : "Compact chat context",
-              icon: "ti ti-fold",
-              disabled: projectComposer() || chat.running() || !chat.messages().length,
-              action: async () => {
-                if (!(await chat.compactConversation({ modelProfileId: selectedModelId() || undefined })))
-                  throw new Error(t().chatActionFailed);
-              },
+          commands={assistantBuiltInCommands({
+            copy: commandCopy(),
+            projectComposer: projectComposer(),
+            running: chat.running(),
+            hasMessages: chat.messages().length > 0,
+            hasAssistantMessage: chat.messages().some((message) => message.message.role === "assistant"),
+            compact: async () => {
+              const key = sessionKey();
+              if (!(await chat.compactConversation({ modelProfileId: selectedModelId() || undefined })))
+                throw commandFailure(key, commandCopy().compactFailed);
+              // The request queues a compaction turn; the chat shows its progress and result, so this only says it started.
+              return { done: commandCopy().compactDone };
             },
-            {
-              name: "fork",
-              description: locale().startsWith("de") ? "Chat ab der letzten Antwort abzweigen" : "Fork at the latest response",
-              icon: "ti ti-git-fork",
-              disabled: projectComposer() || chat.running() || !chat.messages().some((message) => message.message.role === "assistant"),
-              action: async () => {
-                const target = [...chat.messages()].reverse().find((message) => message.message.role === "assistant");
-                if (!target) return;
-                const key = sessionKey();
-                const saved = await saveComposer(key, key);
-                if (!saved) throw new Error(t().chatActionFailed);
-                if (sessionKey() !== key) return;
-                const fork = await chat.forkMessage(target.id, {});
-                if (!fork) throw new Error(t().chatActionFailed);
-                hydrateComposer(fork.id, { ...fork.draft, content: saved.content });
-                editComposerSession(session(fork.id));
-                if (!(await saveComposer(fork.id, fork.id))) throw new Error(t().chatActionFailed);
-                if (chat.activeConversationId() === fork.id) focusComposer();
-              },
+            fork: async () => {
+              const key = sessionKey();
+              const fail = () => commandFailure(key, commandCopy().forkFailed);
+              const target = [...chat.messages()].reverse().find((message) => message.message.role === "assistant");
+              if (!target) return "cancelled";
+              const saved = await saveComposer(key, key);
+              if (!saved) throw fail();
+              if (sessionKey() !== key) return "cancelled";
+              const fork = await chat.forkMessage(target.id, {});
+              if (!fork) throw fail();
+              hydrateComposer(fork.id, { ...fork.draft, content: saved.content });
+              editComposerSession(session(fork.id));
+              // The fork exists and is open now; only saving the copied draft there failed.
+              if (!(await saveComposer(fork.id, fork.id))) throw commandFailure(fork.id, commandCopy().forkDraftNotSaved, false);
+              if (chat.activeConversationId() === fork.id) focusComposer();
+              return { done: commandCopy().forkDone };
             },
-            {
-              name: "new",
-              description: locale().startsWith("de") ? "Neuen Chat öffnen" : "Open a new chat",
-              icon: "ti ti-plus",
-              action: async () => {
-                const key = sessionKey();
-                if (chat.activeConversationId() && !projectComposer() && !(await saveComposer(key, key)))
-                  throw new Error(t().chatActionFailed);
-                if (sessionKey() !== key) return;
-                await createAndFocusConversation();
-              },
+            newChat: async () => {
+              const key = sessionKey();
+              const title = projectComposer() ? undefined : chat.conversation()?.title;
+              const hasRemainingDraft = Boolean(composerDraft(key).trim());
+              if (chat.activeConversationId() && !projectComposer() && !(await saveComposer(key, key)))
+                throw commandFailure(key, commandCopy().newChatFailed);
+              if (sessionKey() !== key) return "cancelled";
+              // A failed creation resolves to null; report it instead of a success line.
+              if (!(await createAndFocusConversation())) throw commandFailure(key, commandCopy().newChatFailed);
+              if (title && hasRemainingDraft) return { done: commandCopy().newChatDraftKept({ title }) };
             },
-          ]}
+          })}
           searchCommands={(query, signal) =>
             assistantComposerCommands({
               query,

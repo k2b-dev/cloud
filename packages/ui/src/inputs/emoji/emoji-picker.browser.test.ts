@@ -244,7 +244,8 @@ describe(`EmojiPicker in ${browserName}`, () => {
     await page.keyboard.type("heart");
     expect(await parts(page)).toEqual(before);
     await page.keyboard.type("xyzzy");
-    expect(await page.getByRole("status").textContent()).toBe("No emoji found");
+    // The composer keeps its own (empty) command status region on the page, so read the picker's.
+    expect(await page.locator(".k2b-emoji-picker").getByRole("status").textContent()).toBe("No emoji found");
     expect(await parts(page)).toEqual(before);
     await page.getByRole("button", { name: "Skin tone" }).click();
     expect(await parts(page)).toEqual(before);
