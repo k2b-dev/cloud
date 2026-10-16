@@ -4623,47 +4623,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   pointer-events: auto;
 }
 
-/* Hover-only previews yield to touch input and preserve their keyboard slot. */
-@media not all and (any-pointer: coarse) {
-  @media (any-hover: hover) {
-    :where(html:not([data-k2b-input="touch"])) .k2b-ui
-      .k2b-app-workspace__sidebar-item
-      > .k2b-app-workspace__sidebar-item-action.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):not(:focus-visible) {
-      opacity: 0;
-      pointer-events: none;
-    }
-  }
-  :where(html[data-k2b-input="trackpad"]) .k2b-ui
-    .k2b-app-workspace__sidebar-item
-    > .k2b-app-workspace__sidebar-item-action.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):not(:focus-visible) {
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  @media (any-hover: hover) {
-    :where(html:not([data-k2b-input="touch"])) .k2b-ui
-      .k2b-app-workspace__sidebar-item
-      > .k2b-app-workspace__sidebar-item-action:has(+ .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible),
-    :where(html:not([data-k2b-input="touch"])) .k2b-ui
-      .k2b-app-workspace__sidebar-item
-      > .k2b-app-workspace__sidebar-item-actions:has(+ .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible)
-      > :nth-last-child(1 of :not([popover])) {
-      opacity: 0;
-      pointer-events: none;
-    }
-  }
-  :where(html[data-k2b-input="trackpad"]) .k2b-ui
-    .k2b-app-workspace__sidebar-item
-    > .k2b-app-workspace__sidebar-item-action:has(+ .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible),
-  :where(html[data-k2b-input="trackpad"]) .k2b-ui
-    .k2b-app-workspace__sidebar-item
-    > .k2b-app-workspace__sidebar-item-actions:has(+ .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible)
-    > :nth-last-child(1 of :not([popover])) {
-    opacity: 0;
-    pointer-events: none;
-  }
-}
-
 /* The overlay layout follows the pointer capability, never the recorded input
    mode, so a mode change moves nothing. Touch input shows the actions on every
    row at rest, so the text and count under them fade on every row too. */
@@ -4768,7 +4727,30 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     --k2b-sidebar-item-fade-inset: 4.25rem;
   }
 
+  /* Without a touch screen, an action preview opens on hover, so its button
+     shows only to the keyboard. It then overlays the row's end and takes the
+     place of the control before it, which stays one Tab stop earlier. This
+     follows the pointer capability, not the input mode: a pen on such a
+     screen must not show both buttons in one place. */
   @media not all and (any-pointer: coarse) {
+    .k2b-ui
+      .k2b-app-workspace__sidebar-item
+      > .k2b-app-workspace__sidebar-item-action.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):not(:focus-visible) {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .k2b-ui
+      .k2b-app-workspace__sidebar-item
+      > .k2b-app-workspace__sidebar-item-action:has(+ .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible),
+    .k2b-ui
+      .k2b-app-workspace__sidebar-item
+      > .k2b-app-workspace__sidebar-item-actions:has(+ .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible)
+      > :nth-last-child(1 of :not([popover])) {
+      opacity: 0;
+      pointer-events: none;
+    }
+
     .k2b-ui
       .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]):focus-visible)
       > .k2b-app-workspace__sidebar-item-main {

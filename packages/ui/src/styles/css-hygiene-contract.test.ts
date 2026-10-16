@@ -41,9 +41,18 @@ describe("@k2b/ui stylesheet hygiene", () => {
     // A primary-pointer query misses a tablet with a mouse, whether it hides or shows the actions.
     const primaryPointer = /\((?:hover:\s*(?:hover|none)|pointer:\s*(?:fine|coarse))\)/;
     expect(rules.filter((rule) => rowAction.test(rule.selector) && primaryPointer.test(rule.context))).toEqual([]);
+    // Without a coarse pointer a preview opens on hover, so its button and the action before it share one slot and
+    // only one of them shows. That follows the pointer capability, never the input mode: a pen on such a screen
+    // records touch and would otherwise show both buttons in one place.
+    const previewSlot = (rule: (typeof rules)[number]) =>
+      rule.selector.includes("sidebar-preview-trigger") && rule.context.includes("not all and (any-pointer: coarse)");
+    const previewSlotHides = rules.filter((rule) => previewSlot(rule) && cssDeclarations(rule.body).get("opacity")?.includes("0"));
+    expect(previewSlotHides.length).toBeGreaterThanOrEqual(2);
+    for (const rule of previewSlotHides) expect(rule.selector, rule.selector).not.toContain("data-k2b-input");
     const hides = rules.filter((rule) => {
       const declarations = cssDeclarations(rule.body);
       return (
+        !previewSlot(rule) &&
         // Object-row counts yield to overlaid actions; they are not actions themselves.
         !rule.selector.endsWith(" .k2b-app-workspace__sidebar-item-meta") &&
         rowAction.test(rule.selector) &&
