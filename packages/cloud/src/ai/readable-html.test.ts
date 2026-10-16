@@ -29,6 +29,43 @@ describe("readable HTML", () => {
     ).toBe("| X | A |  |\n| --- | --- | --- |\n| B |  |  |\n|  |  |  |\n\n| C |\n| --- |\n");
   });
 
+  test("closes either kind of table cell before the other opens", async () => {
+    for (const cells of ["<td>A<th>B", "<th>A<td>B"]) {
+      expect(await convert(`<table><tr>${cells}</tr></table>`)).toBe("| A | B |\n| --- | --- |\n");
+    }
+  });
+
+  test("ends rowspan reservations at each row group boundary", async () => {
+    for (const group of ["thead", "tbody", "tfoot"]) {
+      for (const rowspan of ["0", "5"]) {
+        expect(
+          await convert(
+            `<table><${group}><tr><td rowspan="${rowspan}">A</td><td>B</td></tr><tr><td>C</td></tr></${group}><tbody><tr><td>D</td><td>E</td></tr></tbody></table>`,
+          ),
+        ).toBe("| A | B |\n| --- | --- |\n|  | C |\n| D | E |\n");
+      }
+    }
+    // Closing a group also ends spans before subsequent rows without an explicit group.
+    expect(await convert('<table><tbody><tr><td rowspan="0">A</td></tr></tbody><tr><td>B</td></tr></table>')).toBe(
+      "| A |\n| --- |\n| B |\n",
+    );
+    // An opening group also ends spans from preceding rows without an explicit group.
+    expect(await convert('<table><tr><td rowspan="0">A</td></tr><tbody><tr><td>B</td></tr></tbody></table>')).toBe(
+      "| A |\n| --- |\n| B |\n",
+    );
+  });
+
+  test("indents list continuation paragraphs, nested lists and every line of fenced code", async () => {
+    expect(await convert("<ul><li><p>First</p><p>Second</p></li></ul>")).toBe("- First\n\n  Second\n");
+    expect(await convert('<ol start="10"><li>First<ul><li>Nested<p>Continuation</p></li></ul><p>Last</p></li></ol>')).toBe(
+      "10. First\n    - Nested\n\n      Continuation\n\n    Last\n",
+    );
+    expect(await convert('<ul><li>First<pre class="language-js">one\n  two</pre><p>Last<br>line</p></li></ul>')).toBe(
+      "- First\n\n  ```js\n  one\n    two\n  ```\n\n  Last\n  line\n",
+    );
+    expect(await convert("<ul><li><pre>one\ntwo</pre></li></ul>")).toBe("- ```\n  one\n  two\n  ```\n");
+  });
+
   test("parses integer spans, defaults invalid values and clamps colspans", async () => {
     for (const value of ["invalid", "-2", "0"]) {
       expect(await convert(`<table><tr><td colspan="${value}">A</td><td>B</td></tr></table>`)).toBe("| A | B |\n| --- | --- |\n");
@@ -451,6 +488,54 @@ describe("readable HTML", () => {
     const tables = await convert("<table><tr><td>".repeat(20_000) + "text" + "</td></tr></table>".repeat(20_000));
     expect(tables).toBe("| text |\n| --- |\n");
   }, 10_000);
+
+  test.each(["<p>Kept</p>", "<main><h1>Kept"])(
+    "finishes retained frames when the parser state budget is exhausted after %s",
+    async (prefix) => {
+      const html = prefix + "<i>".repeat(600_000) + "<p>Beyond budget</p>";
+      const result = await htmlToReadableMarkdown(new TextEncoder().encode(html), {
+        baseUrl,
+        maxBytes: 1024 * 1024,
+        maxInputBytes: 20 * 1024 * 1024,
+      });
+      expect(result).toBe(`${prefix.includes("<h1>") ? "# " : ""}Kept\n\n[Readable copy truncated at the file size limit.]\n`);
+    },
+  );
+
+  test.each(["<i>x", "<span>x</span>"])(
+    "bounds retained state for a flood of %s",
+    async (tag) => {
+      const result = await htmlToReadableMarkdown(new TextEncoder().encode(tag.repeat(3_000_000)), {
+        baseUrl,
+        maxBytes: 1024 * 1024,
+        maxInputBytes: 20 * 1024 * 1024,
+      });
+      expect(result).toStartWith("x".repeat(100));
+      expect(result).toEndWith("\n[Readable copy truncated at the file size limit.]\n");
+      // State, rather than the 1 MiB output cap, must stop these tag-dense inputs.
+      expect(Buffer.byteLength(result)).toBeLessThan(600_000);
+    },
+    10_000,
+  );
+
+  test.each(["<i>x", "<span>x</span>"])("retains text without spending event pairs on %s", async (tag) => {
+    const result = await htmlToReadableMarkdown(new TextEncoder().encode(tag.repeat(200_000)), {
+      baseUrl,
+      maxBytes: 1024 * 1024,
+      maxInputBytes: 20 * 1024 * 1024,
+    });
+    expect(result).toBe("x".repeat(200_000) + "\n");
+  });
+
+  test("skips formatting events consistently inside every renderer capture", async () => {
+    const format = (text: string) => `<span class="${"x".repeat(200)}"><i><custom-tag>${text}</custom-tag></i></span>`;
+    expect(
+      await convert(
+        `<h1>${format("Heading")}</h1><p><a href="x">${format("Link")}</a> <code>${format("Code")}</code></p><pre>${format("Pre")}</pre><table><tr><td>${format("Cell")}</td></tr></table>`,
+      ),
+    ).toBe("# Heading\n\n[Link](https://example.test/articles/2026/x) `Code`\n\n```\nPre\n```\n\n| Cell |\n| --- |\n");
+    expect(await convert("<p>Before<span hidden><b>Hidden</b></span>After</p>")).toBe("BeforeAfter\n");
+  });
 
   test("clips UTF-8 output and input at the byte limit and appends the truncation notice", async () => {
     const result = await convert("<p>" + "ü".repeat(200) + "</p>", { maxBytes: 100 });

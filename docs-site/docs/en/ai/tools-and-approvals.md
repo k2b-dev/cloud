@@ -402,7 +402,8 @@ navigation. The result returns this copy as `readable.path` and tells the model
 to read it first. The raw HTML stays unchanged. The copy uses the same bounds
 as other documents converted to Markdown: Cloud reads at most the first 20 MiB
 of the page and keeps the copy within 1 MiB, ending a longer copy with a
-truncation note. If the copy cannot be stored
+truncation note. A page that needs more parser state than the conversion budget
+is converted up to that point and ends with the truncation note. If the copy cannot be stored
 (for example, because of the conversation quota), or the page has no readable
 text, the result contains only the raw file. Both copies are untrusted data.
 The tool does not clone or browse a repository, authenticate to a website, or

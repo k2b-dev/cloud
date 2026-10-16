@@ -7,6 +7,11 @@ import type * as Htmlparser2 from "htmlparser2";
 const { Parser }: typeof Htmlparser2 = require("htmlparser2");
 
 const CHUNK_BYTES = 256 * 1024;
+// Bun 1.4.2 GC heap deltas, including decoded chunks: nested/flat floods ~52/57 B/item,
+// attributed images ~154 B/item. Reserve 256 B/item: 128 MiB / 256 = 524,288 items.
+// This leaves 384 MiB of the 512 MiB conversion allowance for the 20 MiB input,
+// up to 40 MiB of decoded text, runtime, transient allocations and rendering.
+const MAX_PARSER_ITEMS = (128 * 1024 * 1024) / 256;
 const TRUNCATED = "[Readable copy truncated at the file size limit.]";
 const NOTICE_BYTES = Buffer.byteLength(TRUNCATED) + 3;
 const headTags = new Set("title meta link style script noscript base template head".split(" "));
@@ -20,6 +25,22 @@ const blocks = new Set(
 );
 const inlineBoundaries = new Set("br ul ol td th".split(" "));
 const layoutBlocks = new Set("p div section article main ul ol li blockquote pre h1 h2 h3 h4 h5 h6 dl figure hr".split(" "));
+const renderedTags = new Set([...blocks, ...inlineBoundaries, ..."a img code h1 h2 h3 h4 h5 h6 caption thead tbody tfoot".split(" ")]);
+const retainedAttrs = new Map([
+  ["a", ["href"]],
+  ["img", ["src", "alt"]],
+  ["pre", ["class"]],
+  ["code", ["class"]],
+  ["ol", ["start"]],
+  ["td", ["colspan", "rowspan"]],
+  ["th", ["colspan", "rowspan"]],
+]);
+const emptyAttrs: Record<string, string> = {};
+const SKIP = 1;
+const TITLE = 2;
+const HEAD = 4;
+const EMIT = 8;
+const MAIN = 16;
 const droppedRoles = new Set("navigation banner contentinfo complementary search dialog alertdialog".split(" "));
 const collapse = (text: string): string => text.replace(/\s+/gu, " ").trim();
 const escapeLabel = (text: string): string => text.replace(/[\[\]]/g, "\\$&");
@@ -103,7 +124,7 @@ for (const name of "select input output button datalist textarea".split(" "))
   impliedCloses.set(name, new Set("input option optgroup select button datalist textarea".split(" ")));
 for (const [name, closes] of [
   ["tr", "tr th td"],
-  ["th", "th"],
+  ["th", "th td"],
   ["td", "thead th td"],
   ["body", "head link script"],
   ["a", "a"],
@@ -131,11 +152,10 @@ class FlatHtmlParser extends Parser {
     onText: (text: string) => void,
     private readonly onCloseName: (name: string) => void,
     private readonly sourceSlice: (start: number, end: number) => string,
-    onEnd: () => void,
     private readonly xml: boolean,
   ) {
     super(
-      { onopentag: onOpen, ontext: onText, onend: onEnd },
+      { onopentag: onOpen, ontext: onText },
       { decodeEntities: true, xmlMode: xml, lowerCaseTags: true, lowerCaseAttributeNames: true },
     );
   }
@@ -340,21 +360,10 @@ export const htmlToReadableMarkdown = async (
   const budget = new WorkBudget(options.signal);
   let baseUrl = options.baseUrl;
   let hasBaseHref = false;
-  const emptyAttrs = {};
   type Table = { event: TagEvent; cells: number };
   const tables: Table[] = [];
-  type Frame = {
-    name: string;
-    previous?: number;
-    skip: boolean;
-    region: boolean;
-    main?: Span;
-    article?: Span;
-    title: boolean;
-    head: boolean;
-    table?: Table;
-    cell?: Table;
-  };
+  // Flags and a shared table slot avoid separate optional fields on every element.
+  type Frame = { name: string; previous: number | undefined; flags: number; table: Table | undefined };
   const stack: Frame[] = [];
   const lastOpen = new Map<string, number>();
   // Tag-name offsets increase monotonically. Keep decoded chunks without repeatedly
@@ -378,22 +387,31 @@ export const htmlToReadableMarkdown = async (
   let titleDepth = 0;
   let main: Span | undefined;
   let articles: Span | undefined;
+  let stateTruncated = false;
+  const retain = (count: number): boolean => {
+    if (events.length + stack.length + titleParts.length + count <= MAX_PARSER_ITEMS) return true;
+    stateTruncated = true;
+    parser.pause();
+    return false;
+  };
   const closeTop = () => {
     const frame = stack.pop();
     if (!frame) return;
     if (frame.previous === undefined) lastOpen.delete(frame.name);
     else lastOpen.set(frame.name, frame.previous);
-    if (!frame.skip) {
-      if (frame.cell) frame.cell.cells--;
-      if (frame.table) tables.pop();
-      events.push({ kind: "close", name: frame.name, attrs: emptyAttrs });
-      if (frame.main) frame.main.end = events.length;
-      if (frame.article && articles) articles.end = events.length;
+    if (!(frame.flags & SKIP)) {
+      if (frame.table) {
+        if (frame.name === "table") tables.pop();
+        else frame.table.cells--;
+      }
+      if (frame.flags & EMIT) events.push({ kind: "close", name: frame.name, attrs: emptyAttrs });
+      if (frame.flags & MAIN && main) main.end = events.length;
+      if (frame.name === "article" && articles) articles.end = events.length;
       if (frame.name === "main") mainDepth--;
+      if (frame.name === "main" || frame.name === "article") regionDepth--;
     }
-    if (frame.title) titleDepth--;
-    if (frame.skip) skipDepth--;
-    if (frame.region) regionDepth--;
+    if (frame.flags & TITLE) titleDepth--;
+    if (frame.flags & SKIP) skipDepth--;
   };
   const closeHead = () => {
     const index = lastOpen.get("head");
@@ -419,7 +437,7 @@ export const htmlToReadableMarkdown = async (
       titleDepth === 0 &&
       titleParts.length === 0 &&
       !isHidden &&
-      (skipDepth === 0 || (stack.at(-1)?.head === true && skipDepth === 1));
+      (skipDepth === 0 || (((stack.at(-1)?.flags ?? 0) & HEAD) !== 0 && skipDepth === 1));
     const skip =
       skipDepth > 0 ||
       name === "title" ||
@@ -427,38 +445,48 @@ export const htmlToReadableMarkdown = async (
       isHidden ||
       ((name === "header" || name === "footer") && regionDepth === 0);
     const region = !skip && (name === "main" || name === "article");
+    const emit = !skip && renderedTags.has(name);
+    if (!retain(emit ? 2 : 1)) return;
     const frame: Frame = {
       name,
       previous: lastOpen.get(name),
-      skip,
-      region,
-      title,
-      head: name === "head" && skipDepth === 0 && !isHidden,
+      flags: (skip ? SKIP : 0) | (title ? TITLE : 0) | (name === "head" && skipDepth === 0 && !isHidden ? HEAD : 0) | (emit ? EMIT : 0),
+      table: undefined,
     };
     if (title) titleDepth++;
     if (skip) skipDepth++;
     if (region) regionDepth++;
     if (!skip) {
       if (name === "main") {
-        if (!main && mainDepth === 0) frame.main = main = { start: events.length, end: events.length };
+        if (!main && mainDepth === 0) {
+          frame.flags |= MAIN;
+          main = { start: events.length, end: events.length };
+        }
         mainDepth++;
       }
       if (name === "article") {
         const span = { start: events.length, end: events.length };
         articles ??= span;
-        frame.article = span;
       }
       const table = tables.at(-1);
       if (table?.cells && (name === "table" || layoutBlocks.has(name))) table.event.layout = true;
-      const event: TagEvent = { kind: "open", name, attrs };
-      if (name === "table") {
-        frame.table = { event, cells: 0 };
-        tables.push(frame.table);
-      } else if (table && (name === "td" || name === "th")) {
-        frame.cell = table;
-        table.cells++;
+      if (emit) {
+        let eventAttrs = emptyAttrs;
+        for (const key of retainedAttrs.get(name) ?? []) {
+          if (attrs[key] === undefined) continue;
+          if (eventAttrs === emptyAttrs) eventAttrs = {};
+          eventAttrs[key] = attrs[key];
+        }
+        const event: TagEvent = { kind: "open", name, attrs: eventAttrs };
+        if (name === "table") {
+          frame.table = { event, cells: 0 };
+          tables.push(frame.table);
+        } else if (table && (name === "td" || name === "th")) {
+          frame.table = table;
+          table.cells++;
+        }
+        events.push(event);
       }
-      events.push(event);
     }
     lastOpen.set(name, stack.length);
     stack.push(frame);
@@ -468,22 +496,19 @@ export const htmlToReadableMarkdown = async (
     open,
     (text) => {
       if (stack.at(-1)?.name === "head" && /\S/u.test(text)) closeHead();
-      if (titleDepth) titleParts.push(text);
-      else if (!skipDepth) events.push({ kind: "text", text });
+      if (titleDepth && retain(1)) titleParts.push(text);
+      else if (!skipDepth && retain(1)) events.push({ kind: "text", text });
     },
     (name) => {
       const index = lastOpen.get(name);
       if (index !== undefined) while (stack.length > index) closeTop();
-      else if (name === "br") open("br", {});
+      else if (name === "br") open("br", emptyAttrs);
       else if (name === "p") {
-        open("p", {});
+        open("p", emptyAttrs);
         closeTop();
       }
     },
     sourceSlice,
-    () => {
-      while (stack.length) closeTop();
-    },
     options.contentType?.split(";", 1)[0]?.trim().toLowerCase() === "application/xhtml+xml",
   );
   const feed = (text: string) => {
@@ -493,14 +518,18 @@ export const htmlToReadableMarkdown = async (
   };
   const length = Math.min(bytes.byteLength, options.maxInputBytes ?? options.maxBytes);
   const decoder = decoderFor(bytes.subarray(0, length), options.contentType);
-  for (let offset = 0; offset < length; offset += CHUNK_BYTES) {
+  for (let offset = 0; offset < length && !stateTruncated; offset += CHUNK_BYTES) {
     options.signal?.throwIfAborted();
     feed(decoder.decode(bytes.subarray(offset, Math.min(offset + CHUNK_BYTES, length)), { stream: true }));
     if (budget.used(Math.min(CHUNK_BYTES, length - offset))) await budget.yield();
   }
   options.signal?.throwIfAborted();
-  feed(decoder.decode());
-  parser.end();
+  if (!stateTruncated) {
+    feed(decoder.decode());
+    parser.end();
+  }
+  // Closing a frame replaces it with at most one event, so finishing cannot exceed the budget.
+  while (stack.length) closeTop();
   const hasText = async (span: Span): Promise<boolean> => {
     for (let index = span.start; index < span.end; index++) {
       const event = events[index]!;
@@ -516,7 +545,7 @@ export const htmlToReadableMarkdown = async (
   if (!(await hasText(selected))) return "";
   const title = collapse(titleParts.join(""));
   const heading = title && !(await hasRenderedH1(events, selected, baseUrl, budget)) ? title : "";
-  return render(events, selected, heading, { ...options, baseUrl, inputTruncated: bytes.byteLength > length }, budget);
+  return render(events, selected, heading, { ...options, baseUrl, inputTruncated: stateTruncated || bytes.byteLength > length }, budget);
 };
 
 /** Scan the selected span once, following the render captures. An h1 inside
@@ -587,7 +616,7 @@ const render = async (
   let quoteDepth = 0;
   let readable = false;
   const lists: { ordered: boolean; next: number }[] = [];
-  const items: { prefix: string }[] = [];
+  const items: { marker: string; indent: string }[] = [];
   let capture:
     | { name: string; depth: number; parts: string[]; lang: string; firstCode: boolean; start: number; ticks: BacktickRun }
     | undefined;
@@ -628,16 +657,16 @@ const render = async (
     pendingBreak = 0;
     if (lineStart) {
       const item = items.at(-1);
-      append("> ".repeat(Math.min(quoteDepth, 6)) + (item?.prefix ?? ""));
-      if (item) item.prefix = "";
+      append("> ".repeat(Math.min(quoteDepth, 6)) + (item ? item.marker || item.indent : ""));
+      if (item) item.marker = "";
     } else if (pendingSpace) append(" ");
     pendingSpace = false;
-    const quote = "> ".repeat(Math.min(quoteDepth, 6));
+    const continuation = "> ".repeat(Math.min(quoteDepth, 6)) + (items.at(-1)?.indent ?? "");
     append(
-      quote && text.includes("\n")
+      continuation && text.includes("\n")
         ? text
             .split("\n")
-            .map((line, index) => (index && line ? quote + line : line))
+            .map((line, index) => (index && line ? continuation + line : line))
             .join("\n")
         : text,
     );
@@ -757,7 +786,8 @@ const render = async (
       continue;
     }
     if (tables.at(-1) === false) {
-      if (name === "caption") {
+      if (name === "thead" || name === "tbody" || name === "tfoot") rowspans.clear();
+      else if (name === "caption") {
         if (open) captionStart = index + 1;
         else {
           const inline = await renderInline(events, captionStart ?? index, index, options.baseUrl, budget, remaining());
@@ -839,7 +869,9 @@ const render = async (
       boundary(1);
       if (open) {
         const list = lists.at(-1);
-        items.push({ prefix: "  ".repeat(Math.min(Math.max(0, lists.length - 1), 6)) + (list?.ordered ? `${list.next++}. ` : "- ") });
+        const indent = items[Math.min(items.length, 6) - 1]?.indent ?? "";
+        const marker = list?.ordered ? `${list.next++}. ` : "- ";
+        items.push({ marker: indent + marker, indent: indent + " ".repeat(marker.length) });
       } else items.pop();
     } else if (name === "blockquote") {
       boundary();
