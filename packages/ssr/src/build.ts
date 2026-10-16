@@ -5,8 +5,9 @@
 
 import { Glob } from "bun";
 import { existsSync } from "fs";
-import { readdir, stat, unlink } from "fs/promises";
-import { join, relative, resolve } from "path";
+import { mkdir, readdir, stat, unlink } from "fs/promises";
+import { basename, join, relative, resolve } from "path";
+import { ASSET_MANIFEST, type AssetManifest } from "./adapter/utils";
 import { canonicalFilePath, ISLAND_ID_LENGTH, islandIdFromFile, toStableKey } from "./island-id";
 import { transform } from "./transform";
 
@@ -150,6 +151,45 @@ export const dedupeSharedChunkExports = async (outdir: string, verbose: boolean)
   return fixedChunks;
 };
 
+/**
+ * Records the content version of the emitted JavaScript and the static import
+ * closure of each entry. Dynamic imports stay out, so pages preload only what
+ * an entry always loads.
+ */
+const writeAssetManifest = async (
+  outdir: string,
+  ids: readonly string[],
+  outputs: readonly Bun.BuildArtifact[],
+  metafile: Bun.BuildMetafile | undefined,
+): Promise<void> => {
+  const hasher = new Bun.CryptoHasher("sha256");
+  const files = outputs.map((output) => basename(output.path)).filter((file) => file.endsWith(".js"));
+  for (const file of files.sort()) {
+    hasher.update(file).update("\0");
+    hasher.update(await Bun.file(join(outdir, file)).arrayBuffer()).update("\0");
+  }
+
+  const graph = new Map(Object.entries(metafile?.outputs ?? {}).map(([path, output]) => [basename(path), output]));
+  const entries: AssetManifest["entries"] = {};
+  for (const id of [...ids].sort()) {
+    const entry = `${id}.js`;
+    const closure = new Set([entry]);
+    // for...of also visits files added while iterating.
+    for (const current of closure) {
+      for (const edge of graph.get(current)?.imports ?? []) {
+        const target = basename(edge.path);
+        if (edge.kind !== "dynamic-import" && graph.has(target)) closure.add(target);
+      }
+    }
+    closure.delete(entry);
+    entries[id] = [entry, ...[...closure].sort()];
+  }
+
+  await mkdir(outdir, { recursive: true });
+  const manifest: AssetManifest = { version: hasher.digest("hex").slice(0, 16), entries };
+  await Bun.write(join(outdir, ASSET_MANIFEST), JSON.stringify(manifest));
+};
+
 export const buildIslands = async (options: {
   pattern: string;
   outdir: string;
@@ -191,6 +231,7 @@ export const buildIslands = async (options: {
 
   if (!files.size) {
     if (existsSync(outdir)) await removeStaleBuildAssets(outdir, []);
+    if (!dev) await writeAssetManifest(outdir, [], [], undefined);
     if (verbose) console.log("No island/client files found.");
     return;
   }
@@ -298,6 +339,12 @@ export const buildIslands = async (options: {
 
     if (!dev) {
       await dedupeSharedChunkExports(outdir, verbose);
+      await writeAssetManifest(
+        outdir,
+        components.map((c) => c.id),
+        result.outputs,
+        result.metafile,
+      );
     } else if (verbose) {
       console.log("Skipped shared-chunk export rewrite in dev mode.");
     }

@@ -26,7 +26,9 @@ import {
 A click, typing, or Arrow Up/Down opens the results. Focus alone, whether from
 Tab or a dialog focusing the field as it opens, leaves the results closed so
 Escape can close the enclosing dialog. While the results are open, Escape
-closes only them.
+closes only them, and Enter selects the active result or does nothing: it never
+submits an enclosing form, so a person who types a name and presses Enter
+does not send a half-finished choice.
 
 `fetchData(query, signal)` runs immediately with the current query when a click
 or Arrow Up/Down opens the results, and after a 150 ms debounce while the user

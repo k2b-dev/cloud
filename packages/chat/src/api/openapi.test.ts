@@ -26,6 +26,7 @@ test("publishes every conversation operation with typed request and response sch
     ["/conversations/{conversation}", "patch"],
     ["/conversations/{conversation}/members", "get"],
     ["/conversations/{conversation}/members", "post"],
+    ["/conversations/{conversation}/members/preview", "post"],
     ["/conversations/{conversation}/members/{accessId}", "patch"],
     ["/conversations/{conversation}/members/{accessId}", "delete"],
     ["/conversations/{conversation}/leave", "post"],
@@ -85,4 +86,57 @@ test("snapshot documents its canonical response and hidden-chat 404", async () =
     .object({ content: z.object({ "application/json": z.object({ schema: z.object({ required: z.array(z.string()) }) }) }) })
     .parse(operation?.responses["200"]);
   expect(response.content["application/json"].schema.required).toEqual(["cursor", "conversation", "page", "focus"]);
+});
+
+test("member list documents name search and opaque keyset cursors", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const parameters = z
+    .array(z.object({ name: z.string(), in: z.string() }))
+    .parse(spec.paths["/api/chat/conversations/{conversation}/members"]?.get?.parameters);
+  expect(parameters).toContainEqual({ name: "q", in: "query" });
+  expect(parameters).toContainEqual({ name: "cursor", in: "query" });
+  const response = z
+    .object({
+      content: z.object({
+        "application/json": z.object({
+          schema: z.object({ required: z.array(z.string()), properties: z.record(z.string(), z.unknown()) }),
+        }),
+      }),
+    })
+    .parse(spec.paths["/api/chat/conversations/{conversation}/members"]?.get?.responses["200"]);
+  expect(response.content["application/json"].schema.required).toEqual(["items", "nextCursor", "managers", "self"]);
+  expect(response.content["application/json"].schema.properties.self).toMatchObject({
+    anyOf: [
+      {
+        type: "object",
+        required: ["accessId", "permission", "active"],
+        properties: {
+          accessId: { type: "string", format: "uuid" },
+          permission: { type: "string", enum: ["read", "write", "admin"] },
+          active: { type: "boolean" },
+        },
+      },
+      { type: "null" },
+    ],
+  });
+});
+
+test("member removal and leave require the group access outcome", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  for (const [path, method] of [
+    ["/api/chat/conversations/{conversation}/members/{accessId}", "delete"],
+    ["/api/chat/conversations/{conversation}/leave", "post"],
+  ] as const) {
+    const response = z
+      .object({
+        content: z.object({
+          "application/json": z.object({
+            schema: z.object({ required: z.array(z.string()), properties: z.record(z.string(), z.unknown()) }),
+          }),
+        }),
+      })
+      .parse(spec.paths[path]?.[method]?.responses["200"]);
+    expect(response.content["application/json"].schema.required).toEqual(["success", "keptThroughGroup"]);
+    expect(response.content["application/json"].schema.properties.keptThroughGroup).toMatchObject({ type: "boolean" });
+  }
 });

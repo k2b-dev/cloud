@@ -66,7 +66,7 @@ SPA routing.
 - Monorepo support via `rootDir`
 - Public path mounting via `basePath` for microfrontends
 - Stable file-path-based island IDs (collision-safe across workspace packages)
-- Production module cache busting (`/_ssr/<buildTimestamp>/*.js`)
+- Production content-hashed module directories (`/_ssr/<contentHash>/<id>.js`)
 - Linked development source maps and validator-aware asset delivery
 - Stale generated island assets removed after successful builds
 - Visibility-aware development reload with cross-tab SSE coordination
@@ -415,7 +415,8 @@ Use the same configuration in development and production. Files outside `rootDir
 - `errorFallback` replaces the presentation of the default island error boundary. Islands are protected without it; see [Error handling in islands](#error-handling-in-islands).
 - `basePath` moves SSR assets and dev endpoints under that prefix, e.g. `/docs/_ssr`.
 - Development builds emit linked source maps by default. Use `"inline"` only when a tool requires embedded maps, or `"none"` to disable them.
-- In production, all modules share a build timestamp directory (`/_ssr/<version>/<id>.js`). Relative lazy imports inherit that directory, so each module has one URL. Files stay flat on disk; adapters serve only the current build version.
+- In production, all modules share a content-hashed directory (`/_ssr/<contentHash>/<id>.js`), stable across restarts and identical builds from the same build path (lazy chunk names depend on it). Relative lazy imports inherit that directory, so each module has one URL. Files stay flat on disk; adapters serve only the current version. Deploy the whole `_ssr` directory, including `_ssr/manifest.json`, next to the server bundle.
+- The production inline loader preloads rendered islands' shared static imports after the page's stylesheets; dynamic imports stay lazy. It creates modulepreload links at runtime so the HTML preload scanner does not compete with first paint.
 - All adapters stream island assets from `Bun.file`. Production assets under the versioned path and content-hashed development chunks are immutable; stable development entries and source maps use validators for inexpensive freshness checks.
 - Production adapters serve adjacent `.br` or `.gz` files when accepted by the request, preserving the original MIME type and varying caches by `Accept-Encoding`. Generate these siblings in the application build; the adapter does not compress responses at runtime. Development always serves the original file to avoid stale compressed copies.
 

@@ -86,9 +86,11 @@ export function Combobox(props: ComboboxProps): JSX.Element {
       event.preventDefault();
       if (!popover.open()) open();
       else focus(nextEnabledChoiceIndex(options(), focusedIndex(), event.key === "ArrowDown" ? 1 : -1));
-    } else if (event.key === "Enter" && popover.open() && options()[focusedIndex()]) {
+    } else if (event.key === "Enter" && popover.open()) {
+      // While the results are open, Enter belongs to them: it never submits an enclosing form, even with no option active.
       event.preventDefault();
-      select(options()[focusedIndex()]!);
+      const option = options()[focusedIndex()];
+      if (option) select(option);
     } else if ((event.key === "Escape" || event.key === "Tab") && popover.open()) {
       // Escape is only ours while the list is open; otherwise it has to reach an
       // enclosing dialog or drawer.

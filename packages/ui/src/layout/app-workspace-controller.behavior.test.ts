@@ -695,6 +695,108 @@ const detailTouch = (target: HTMLElement, type: string, x: number, y: number) =>
   return event;
 };
 
+describe("phone page workspace isolation", () => {
+  const viewport = (matches = true) => {
+    const changes = new window.EventTarget();
+    const phone = {
+      matches,
+      addEventListener: changes.addEventListener.bind(changes),
+      removeEventListener: changes.removeEventListener.bind(changes),
+    };
+    Object.defineProperty(window, "matchMedia", {
+      value: (query: string) =>
+        query === "(max-width: 47.999rem)" ? phone : { matches: false, addEventListener() {}, removeEventListener() {} },
+    });
+    return (matches: boolean) => {
+      phone.matches = matches;
+      changes.dispatchEvent(new window.Event("change"));
+    };
+  };
+
+  test("isolates only the workspace path, preserves application inert, and restores focus on close", async () => {
+    viewport();
+    const { root, content, main, aside, sidebar, item, close, handle } = detailWorkspace({ open: false });
+    aside.dataset.workspaceDetailPhone = "page";
+    sidebar.setAttribute("inert", "");
+    const head = document.createElement("header");
+    root.prepend(head);
+    const island = document.createElement("solid-island");
+    const client = document.createElement("solid-client");
+    const sibling = document.createElement("button");
+    const innerSibling = document.createElement("button");
+    content.append(island);
+    island.append(sibling, client);
+    client.append(innerSibling, aside);
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    const dispose = installAppWorkspaceController({ root });
+    try {
+      item.focus();
+      rememberPointer(item);
+      aside.hidden = false;
+      await window.happyDOM.whenAsyncComplete();
+      const touched = [main, handle, head, sibling, innerSibling];
+      for (const region of touched) expect(region.hasAttribute("inert")).toBe(true);
+      for (const region of [root, content, island, client, aside, outside]) expect(region.hasAttribute("inert")).toBe(false);
+      // Repeated observer runs must not forget which attributes belong to the controller.
+      aside.append(document.createElement("span"));
+      await window.happyDOM.whenAsyncComplete();
+      close.focus();
+      aside.addEventListener(APP_WORKSPACE_DETAIL_CLOSE_EVENT, () => {
+        aside.hidden = true;
+      });
+      detailKey(close, "Escape");
+      await window.happyDOM.whenAsyncComplete();
+      for (const region of touched) expect(region.hasAttribute("inert")).toBe(false);
+      expect(sidebar.hasAttribute("inert")).toBe(true);
+      expect(document.activeElement === item).toBe(true);
+    } finally {
+      dispose();
+    }
+  });
+
+  test("leaves sheets and desktop alone, then releases phone isolation on resize, removal, and disposal", async () => {
+    const setPhone = viewport(false);
+    const { root, main, aside, sidebar } = detailWorkspace();
+    aside.dataset.workspaceDetailPhone = "page";
+    const dispose = installAppWorkspaceController({ root: document });
+    try {
+      expect(root.querySelector("[inert]")).toBeNull();
+      setPhone(true);
+      expect(main.hasAttribute("inert")).toBe(true);
+      setPhone(false);
+      expect(root.querySelector("[inert]")).toBeNull();
+      delete aside.dataset.workspaceDetailPhone;
+      setPhone(true);
+      expect(root.querySelector("[inert]")).toBeNull();
+      aside.dataset.workspaceDetailPhone = "page";
+      setPhone(true);
+      const added = document.createElement("button");
+      main.parentElement!.append(added);
+      await window.happyDOM.whenAsyncComplete();
+      expect(added.hasAttribute("inert")).toBe(true);
+      aside.remove();
+      await window.happyDOM.whenAsyncComplete();
+      expect(root.querySelector("[inert]")).toBeNull();
+      main.parentElement!.append(aside);
+      await window.happyDOM.whenAsyncComplete();
+      expect(sidebar.hasAttribute("inert")).toBe(true);
+      root.remove();
+      await window.happyDOM.whenAsyncComplete();
+      expect(root.querySelector("[inert]")).toBeNull();
+      document.body.append(root);
+      await window.happyDOM.whenAsyncComplete();
+      expect(main.hasAttribute("inert")).toBe(true);
+    } finally {
+      dispose();
+    }
+    expect(root.querySelector("[inert]")).toBeNull();
+    setPhone(false);
+    setPhone(true);
+    expect(root.querySelector("[inert]")).toBeNull();
+  });
+});
+
 describe("floating detail controller", () => {
   test("enables motion after two frames, including inserted roots, and cancels it on disposal", async () => {
     const { root } = detailWorkspace();

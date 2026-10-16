@@ -161,11 +161,15 @@ microtask after that stack. An island-error event fails the load. The
 
 The probe and static inspector depend on today's SSR internals:
 clear-and-render mounting, the inline `const p=` loader, and
-`_ssr/<mtime>/<file>` asset paths. Hydration without clear-and-render, hashed
-asset URLs, or an asset manifest need a harness update in the same change;
-until then, mounting or asset resolution fails loudly. A replacement probe
-must observe the same point, the end of each initial island's synchronous
-mount, so before/after comparisons keep TTI's meaning.
+`_ssr/<content-hash>/<file>` asset paths. Content hashing needs no harness
+change: the loader keeps its `const p=` shape and exactly one segment sits
+between `_ssr/` and the file. The loader's preload list contains no import
+expressions, so the static inspector's module set stays unchanged; the harness
+needed no change. Hydration without
+clear-and-render or a different loader/path shape needs a harness update in
+the same change; until then, mounting or asset resolution fails loudly. A
+replacement probe must observe the same point, the end of each initial
+island's synchronous mount, so before/after comparisons keep TTI's meaning.
 
 FCP, LCP, CLS, resource timings, and long tasks come from performance entries
 collected until the observation stops, in the same step that ends it. CLS is

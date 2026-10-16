@@ -112,3 +112,87 @@
   display: flex;
   grid-row: 2;
 }
+
+/* The chat's own actions end the title row; the row keeps its height with or without them. */
+.chat-conversation__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline-start: auto;
+}
+
+/* A chat dialog's body scrolls under the prompt's header while its actions stay in view. Like the standard prompt
+   body, it reaches into the dialog's padding so focus rings at its sides are not cut off. */
+.chat-dialog {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+.chat-dialog__body {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 1rem;
+  margin-inline: -0.625rem;
+  padding: 0.25rem 0.625rem;
+  overflow-y: auto;
+}
+.chat-dialog__actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+.chat-match {
+  width: 100%;
+}
+.chat-match__time {
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A member like a permission editor row: avatar, the name with quiet markers on the same line, the level, and the
+   removal. Name and markers share the line, each shrinking to an equal share, so every row has the same height. */
+.chat-member-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+  padding-block: 0.375rem;
+}
+.chat-member-row__name {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  grid-auto-columns: minmax(0, max-content);
+  grid-auto-flow: column;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+.chat-member-row__remove-slot {
+  display: inline-flex;
+  width: 1.75rem;
+  flex: none;
+  justify-content: center;
+}
+/* Removal stays quiet until the row is engaged where a pointer can hover; touch screens always show it. Only the
+   opacity changes, so nothing moves; the @k2b/ui motion tokens make it instant under reduced motion. */
+@media (hover: hover) and (min-width: 40rem) {
+  .chat-member-row .chat-member-row__remove {
+    opacity: 0;
+    transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
+  }
+  .chat-member-row:is(:hover, :focus-within) .chat-member-row__remove {
+    opacity: 1;
+  }
+}
+.chat-info__purpose {
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}

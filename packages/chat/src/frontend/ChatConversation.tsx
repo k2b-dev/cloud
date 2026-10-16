@@ -41,6 +41,8 @@ export type ChatFeedItem = {
 };
 
 export type ChatConversationProps = {
+  /** The chat's own commands at the end of the header, such as its info. */
+  actions?: JSX.Element;
   chatId: string;
   title: string;
   memberCount: number;
@@ -163,6 +165,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             </Button>
           )}
         </Show>
+        <div class="chat-conversation__actions">{props.actions}</div>
       </header>
       <VirtualFeed
         class="chat-conversation__feed"

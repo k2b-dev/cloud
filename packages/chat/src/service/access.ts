@@ -116,7 +116,7 @@ export const memberUsers = (conversationId: string | SQLQuery, db: typeof sql = 
     SELECT ug.user_id FROM member_groups g JOIN auth.user_groups_v2 ug ON ug.group_id = g.id
   )
 `;
-export const groupUsers = (groupId: string, db: typeof sql = sql) => db`
+export const groupUsers = (groupId: string | SQLQuery, db: typeof sql = sql) => db`
   WITH RECURSIVE member_groups(id, provider) AS (
     SELECT id, provider FROM auth.groups WHERE id = ${groupId}::uuid
     UNION

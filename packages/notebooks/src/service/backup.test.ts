@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildNotebookBackupPaths,
+  checkSnapshotTarget,
   createNotebookBackupManifest,
   describeSnapshotError,
   type NotebookBackupConfig,
   type NotebookBackupObject,
+  snapshotAllowlist,
   validateSnapshotEndpoint,
 } from "./backup";
 import type { NotebookExport } from "./export";
@@ -109,5 +111,67 @@ describe("notebook S3 backup", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.message).toContain("http or https");
+  });
+});
+
+test("snapshot save checks refuse known internal targets with a stable code", async () => {
+  const { NetworkTargetBlockedError } = await import("@k2b/cloud/services/network-security");
+  expect(
+    await checkSnapshotTarget(config, {
+      resolve: async () => {
+        throw new NetworkTargetBlockedError("Blocked");
+      },
+    }),
+  ).toMatchObject({ ok: false, error: { code: "NOTEBOOK_SNAPSHOT_TARGET_BLOCKED", status: 400 } });
+  expect(
+    (
+      await checkSnapshotTarget(config, {
+        resolve: async () => {
+          throw new Error("Lookup failed");
+        },
+      })
+    ).ok,
+  ).toBe(true);
+  expect((await checkSnapshotTarget(config, { resolve: () => new Promise(() => {}), timeoutMs: 1 })).ok).toBe(true);
+  let checked = false;
+  expect(
+    (
+      await checkSnapshotTarget(
+        { ...config, enabled: false },
+        {
+          resolve: async () => {
+            checked = true;
+            throw new Error("Must not check");
+          },
+        },
+      )
+    ).ok,
+  ).toBe(true);
+  expect(checked).toBe(false);
+});
+
+test("snapshot allowlist validates operator configuration with its variable name", () => {
+  const original = process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS;
+  try {
+    process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS = "0.0.0.0/0";
+    expect(snapshotAllowlist).toThrow("NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS: Invalid network allowlist entry");
+  } finally {
+    if (original === undefined) delete process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS;
+    else process.env.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS = original;
+  }
+});
+
+test("save checks use the signed URL hostname, including the default AWS region", async () => {
+  const hosts: string[] = [];
+  const resolve = async (hostname: string) => {
+    hosts.push(hostname);
+    return [];
+  };
+  expect((await checkSnapshotTarget({ ...config, endpoint: "", region: "eu-central-1" }, { resolve })).ok).toBe(true);
+  expect((await checkSnapshotTarget({ ...config, endpoint: "https://snapshots.test:9000" }, { resolve })).ok).toBe(true);
+  expect(hosts).toEqual(["s3.eu-central-1.amazonaws.com", "snapshots.test"]);
+  expect(await checkSnapshotTarget({ ...config, endpoint: "", region: "a/b" }, { resolve })).toMatchObject({
+    ok: false,
+    error: { status: 400 },
   });
 });

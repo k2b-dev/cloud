@@ -48,7 +48,7 @@ const server = new Hono<{ Variables: { runtime: RuntimeContext } }>()
     return app.ssr.error(c, 403, { layout: "pwa" });
   });
 
-/** Cache-busting stamps change on every start. */
+/** Normalize CSS cache-busting stamps and the SSR version 0 used without island output. */
 const stable = (html: string) => html.replace(/\?v=\d+/g, "?v=*").replace(/\/_ssr\/\d+/g, "/_ssr/*");
 
 /** The web document as it was before app pages existed. It must never change through the app's head. */

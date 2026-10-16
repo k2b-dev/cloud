@@ -39,6 +39,8 @@ const props = (): ChatWorkspaceProps => ({
   sidebar: { items: [], nextCursor: null },
   open: null,
   chatId: null,
+  guest: false,
+  panel: null,
   viewerId,
   dateConfig: { timeZone: "UTC", firstDayOfWeek: 1 },
   now,
