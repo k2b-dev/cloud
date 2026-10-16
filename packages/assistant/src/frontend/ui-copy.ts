@@ -570,6 +570,17 @@ const copy = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      commandSkills: "Skills",
+      commandFiles: "Files in this chat",
+      commandApps: "Studio apps",
+      commandChat: "This chat",
+      commandProjects: "Projects",
+      assignProjectLabel: "Assign to project",
+      assignProjectHint: "Use a project's instructions and files",
+      commandAlreadyProject: ({ name }: { name: string }) =>
+        name ? `Already belongs to project “${name}”` : "Already belongs to a project",
+      commandChatAlreadyProject: ({ name }: { name?: string }) =>
+        name ? `This chat already belongs to “${name}”` : "This chat already belongs to a project",
       compactLabel: "Compact chat",
       compactDescription: "Summarize older history to free up room",
       compactBusy: "Compacting chat …",
@@ -623,6 +634,16 @@ const copy = i18n.define({
         `${count === 1 ? "1 run" : `${count} runs`} · page ${page} of ${pages}`,
     },
     de: {
+      commandSkills: "Skills",
+      commandFiles: "Dateien in diesem Chat",
+      commandApps: "Studio-Apps",
+      commandChat: "Dieser Chat",
+      commandProjects: "Projekte",
+      assignProjectLabel: "Projekt zuordnen",
+      assignProjectHint: "Anweisungen und Dateien eines Projekts nutzen",
+      commandAlreadyProject: ({ name }: { name: string }) => (name ? `Gehört schon zu Projekt „${name}“` : "Gehört schon zu einem Projekt"),
+      commandChatAlreadyProject: ({ name }: { name?: string }) =>
+        name ? `Dieser Chat gehört schon zu „${name}“` : "Dieser Chat gehört schon zu einem Projekt",
       compactLabel: "Chat kompaktieren",
       compactDescription: "Älteren Verlauf zusammenfassen, damit wieder Platz ist",
       compactBusy: "Chat wird kompaktiert …",

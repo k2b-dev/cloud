@@ -4,7 +4,8 @@ import { chatCommandQuery, reconcileChatMentions } from "./composer-document";
 test("slash uses the caret anywhere and rejects paths, URLs and code", () => {
   expect(chatCommandQuery("Use /sk then continue", 7)).toEqual({ start: 4, end: 7, query: "sk" });
   expect(chatCommandQuery("First\n/app invoice", 18)?.query).toBe("app invoice");
-  for (const text of ["https://host", "/usr/local", "`/skill", "```\n/skill"]) expect(chatCommandQuery(text, text.length)).toBeNull();
+  for (const text of ["50 / 2", "/ ", "/\tword", "https://host", "/usr/local", "`/skill", "```\n/skill"])
+    expect(chatCommandQuery(text, text.length)).toBeNull();
   expect(chatCommandQuery("/skill", 6, 2)).toBeNull();
 });
 

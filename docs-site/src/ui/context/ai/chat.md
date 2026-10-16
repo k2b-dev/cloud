@@ -135,9 +135,14 @@ type ChatCommandResult = void | "cancelled" | { done: string };
 type ChatCommand = {
   id?: string; name: string; description: string; icon?: string; label?: string;
   keywords?: readonly string[]; reason?: string; busyLabel?: string; disabled?: boolean;
+  section?: string; scope?: string; hiddenUntilSearch?: boolean; app?: string;
   action?: (context: ChatCommandContext) => ChatCommandResult | Promise<ChatCommandResult>;
   mention?: ChatAttachment;
 };
+
+type ChatCommandSection = { id: string; label: string; searched?: boolean; searchOnly?: boolean };
+type ChatCommandScope = { id: string; title: string; words: readonly string[] };
+type ChatCommandSearch = { scope?: string };
 
 type ChatFileSelection = {
   onSelect: (files: readonly File[]) => void | Promise<void>; onError?: (error: unknown) => void;
@@ -148,16 +153,69 @@ type ChatPasteHandler = (event: ClipboardEvent & { currentTarget: HTMLTextAreaEl
 
 ```
 
-Static commands match their label, name, keywords, or description, ignoring
-case and accents. Matches by label, name, or keyword come before matches by
-description alone, in declaration order otherwise. `id` defaults to `name` and identifies the row across result
-updates; static matches precede server results, with the first row per key
-winning. `searchCommands` supplies already filtered rows. The list keeps its
-previous server rows while loading the next results. Arrow selection stays on
-the same key when results arrive; typing selects the top match again.
-While the next results load, Enter and Tab ignore a server row from the
-previous query; clicking a visible row still chooses it, and static matches stay
-available.
+Give `commandSections` in display order and each command a `section` id. The
+order stays fixed while searching. The overview keeps consumer row order;
+searching ranks rows inside each section. Commands without a known section
+appear at the end without a heading. Without `commandSections`, the list stays
+flat. Each `id` (defaulting to `name`) appears once among visible matches: the
+first section wins, then a matching static row wins over a server row in the
+same section. A static row without a match never hides a fresh server result.
+
+Search ignores case, accents and German umlauts (`ä=a`, `ß=ss`). Its ranking
+ladder is: title starts with query, title word starts with query, title contains
+query, keyword starts with query, `app` starts with query, description word
+starts with query (3+ characters), then one typo in a title word or keyword
+prefix (4+ characters). The title is `label ?? name`; when a label exists,
+`name` remains a search word alongside `keywords`. `app` is searchable and is
+not displayed. Equal ranks keep static rows first, then server rows, each in
+consumer order.
+
+`searchCommands(query, signal, { scope })` runs after a 120 ms debounce. Fresh
+server results remain visible even without a local match, after matching rows.
+Retained results from an earlier query must match the new query; changing scope
+clears them. Marking follows the top row until an arrow key moves it, then
+stays on that entry while results arrive. Typing starts at the top again.
+Enter and Tab wait for fresh server rows; clicks may choose retained matching
+rows. Local matches remain available while loading.
+
+Use `commandScopes` for first-word narrowing. Only a word followed by
+whitespace can resolve: an exact word wins if unique. Otherwise, with at least
+three letters, the scope with the shortest extension wins; a tie resolves to
+nothing. Both paths ignore case and accents. A resolved scope shows one group
+with `scope.title`, containing only server rows. The search callback receives
+the rest of the query and `{ scope: scope.id }`; otherwise it receives the whole
+query and `{ scope: undefined }`.
+
+Tab on a command with `scope` replaces the query after `/` with that scope's
+`words[0]` and a space, through normal undoable editing. Enter runs its action or
+inserts its mention; a scope-only row also narrows on Enter. An unavailable
+row keeps its reason and never narrows.
+
+Set `hiddenUntilSearch` for rows that do not apply to the current context.
+They are absent from the overview and appear with their reason when matched;
+scoped results do not hide them. A `searched` section shows a quiet heading
+spinner while loading. An empty section gets a heading and placeholder only
+before the first search settles for this slash token and scope, or when retained
+results still contain a row for that section. Other empty sections stay hidden
+while the next query loads. A resolved scope always keeps its title and shows a
+placeholder while loading without rows. Placeholders are skipped by arrow keys.
+A `searchOnly` section, such as
+files of the current chat, is absent from the overview, placeholder included,
+and appears while searching or narrowed.
+
+A settled empty list says `Nothing found for “<query>”`. A scope with no search
+text uses the generic empty message. After an unmatched query settles, a
+trailing space closes the list for that `/` and leaves ordinary text. Resolving
+a scope keeps it open. `/ ` opens nothing, so `50 / 2` stays arithmetic.
+A separate polite screen-reader status announces the number of suggestions
+350 ms after the visible model settles, without repeating the same text for
+the same query. Action status and unavailable reasons use their own region.
+
+Each row shows a title and at most one description or reason beneath it. Both
+wrap; nothing is truncated. The title match is bold. Rows have no preview,
+badges, key hints, or `/name` suffix. Groups have labelled headings; arrow keys
+wrap across all rows and skip placeholders. Emoji suggestions keep their own
+markup and selection behavior.
 
 Set `reason` when a command is unavailable. It replaces the description and is
 associated with the option for screen readers. Enter, Tab, and click keep the
@@ -226,7 +284,8 @@ type ChatComposerProps = {
   onPaste?: ChatPasteHandler; menuActions?: readonly ChatAction[]; models?: readonly ChatModelOption[];
   selectedModelId?: string | null; onModelChange?: (modelId: string) => void;
   commands?: readonly ChatCommand[]; contextUsage?: ChatContextUsageData;
-  searchCommands?: (query: string, signal: AbortSignal) => Promise<readonly ChatCommand[]>;
+  commandSections?: readonly ChatCommandSection[]; commandScopes?: readonly ChatCommandScope[];
+  searchCommands?: (query: string, signal: AbortSignal, search: ChatCommandSearch) => Promise<readonly ChatCommand[]>;
   mentions?: readonly ChatMention[]; onMentionsChange?: (mentions: readonly ChatMention[]) => void;
   accessory?: JSX.Element; draftKey?: unknown;
   contextActions?: readonly ChatAction[]; contextPopupAction?: ChatAction; footerTools?: JSX.Element; modelDetails?: JSX.Element;
@@ -409,7 +468,7 @@ circle: it keeps the trigger's box and is not interactive.
 ### Composer commands and mentions
 
 Use `commands` for local actions or reference choices, and `searchCommands(query,
-signal)` for asynchronous discovery. Commands match at the caret, including in
+signal, { scope })` for asynchronous discovery. Commands match at the caret, including in
 the middle of a draft. A long command name or description wraps in the
 suggestion list instead of ending in an ellipsis. A reference choice supplies `mention: ChatAttachment`;
 control its ranges with `mentions` and `onMentionsChange`. The submitted text is
