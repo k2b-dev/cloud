@@ -9,6 +9,7 @@ import { releaseDueSnoozes } from "./collaboration";
 import type { ConnectorEnvelope, ConnectorProtocolFacts } from "./connectors";
 import { updateConversationCollaboration } from "./conversation-assignments";
 import { refreshConversationTimeline } from "./conversation-timeline";
+import { splitConversation } from "./conversations";
 import { createMailbox } from "./mailboxes";
 import { createBlobReadable } from "./message-blobs";
 import { hydrateMessageFromSource } from "./message-hydration";
@@ -166,6 +167,52 @@ suite("mail conversation work-state projection", () => {
     });
     return body;
   };
+
+  test("a split gives the moved link a new transaction and link order and clears its status decision", async () => {
+    const first = envelope({
+      uid: 151,
+      messageId: `<split-xid-first-${suffix}@example.test>`,
+      inReplyTo: null,
+      from: `split-xid-${suffix}@example.test`,
+      to: "support@example.test",
+      date: new Date("2026-10-01T10:00:00.000Z"),
+    });
+    const firstId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: first });
+    const reply = envelope({
+      uid: 152,
+      messageId: `<split-xid-reply-${suffix}@example.test>`,
+      inReplyTo: first.messageId,
+      from: `split-xid-${suffix}@example.test`,
+      to: "support@example.test",
+      date: new Date("2026-10-01T10:01:00.000Z"),
+    });
+    const replyId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: reply });
+    const conversation = await conversationForMessage(firstId);
+    expect((await conversationForMessage(replyId)).id).toBe(conversation.id);
+    const [before] = await sql<{ linked_xid: string; link_seq: string }[]>`
+      UPDATE mail.conversation_messages SET status_covered = true, hydrated_revision = 1
+      WHERE message_id = ${replyId}::uuid RETURNING linked_xid::text, link_seq::text
+    `;
+    expect(before?.linked_xid).toMatch(/^\d+$/);
+    expect(before?.link_seq).toMatch(/^\d+$/);
+    const split = await splitConversation({
+      context,
+      mailboxId,
+      conversationId: conversation.id,
+      input: { messageIds: [replyId], expectedRevision: conversation.revision, reason: "Separate request", confirm: true },
+    });
+    expect(split.ok).toBe(true);
+    if (!split.ok) throw new Error(split.error.message);
+    const [after] = await sql<{ linked_xid: string; link_seq: string; status_covered: boolean | null; hydrated_revision: number | null }[]>`
+      SELECT linked_xid::text, link_seq::text, status_covered, hydrated_revision FROM mail.conversation_messages WHERE message_id = ${replyId}::uuid
+    `;
+    expect(after?.linked_xid).toMatch(/^\d+$/);
+    expect(after?.linked_xid).not.toBe(before?.linked_xid);
+    expect(after?.link_seq).toMatch(/^\d+$/);
+    expect(BigInt(after!.link_seq)).toBeGreaterThan(BigInt(before!.link_seq));
+    expect(after?.status_covered).toBeNull();
+    expect(after?.hydrated_revision).toBeNull();
+  });
 
   test("projects verified inbound, automatic, and human replies deterministically", async () => {
     const initialMessageId = `<work-state-inbound-${suffix}@example.test>`;

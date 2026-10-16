@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
 import { sql } from "bun";
 import type { RemoteMessagePrecondition } from "../contracts";
 import {
   loadIncomingAutomationSiblingTransitions,
   mailMessageStatePayloadTransitions,
+  mailWorkflowConversationLinkView,
   mailWorkflowMessagePrecondition,
   projectMailWorkflowMessagePrecondition,
 } from "./workflow-message-preconditions";
@@ -243,5 +245,75 @@ describe("incoming automation sibling transition loading", () => {
       { field: "keywords", add: true, value: "alpha" },
     ]);
     expect(loaded.get(second.id)).toEqual([{ field: "keywords", add: true, value: "beta" }]);
+  });
+});
+
+describe("Mail workflow conversation link views", () => {
+  const conversationId = "00000000-0000-4000-8000-000000000001";
+  const valid = { snapshot: "10:20:11,15", xid: "19", seq: "42" };
+  const contextFor = (linkView: WorkflowJsonValue) => ({ preconditions: { conversation: { id: conversationId, revision: 1, linkView } } });
+
+  test("returns a valid view only for the matching internal conversation", () => {
+    for (const snapshot of ["10:20:", "10:20:11", "10:20:11,15"]) {
+      for (const xid of [null, "19", "9007199254740993"]) {
+        const linkView = { snapshot, xid, seq: "9007199254740994" };
+        expect(mailWorkflowConversationLinkView(contextFor(linkView), conversationId)).toEqual(linkView);
+        expect(mailWorkflowConversationLinkView(contextFor(linkView), "other-conversation")).toBeNull();
+      }
+    }
+    expect(mailWorkflowConversationLinkView(contextFor({ ...valid, seq: "0" }), conversationId)?.seq).toBe("0");
+  });
+
+  test("returns null for contexts captured without a complete link view", () => {
+    const incompleteViews: WorkflowJsonValue[] = [
+      null,
+      42,
+      "10:20:",
+      [],
+      {},
+      { snapshot: valid.snapshot, xid: null },
+      { snapshot: valid.snapshot, seq: "42" },
+      { xid: "19", seq: "42" },
+    ];
+    const contexts: (Record<string, WorkflowJsonValue> | undefined)[] = [
+      undefined,
+      {},
+      { preconditions: {} },
+      { preconditions: { conversation: null } },
+      { preconditions: { conversation: { id: conversationId, revision: 1 } } },
+      { preconditions: { conversation: { id: conversationId, linkSnapshot: valid.snapshot } } },
+      ...incompleteViews.map(contextFor),
+    ];
+    for (const context of contexts) {
+      expect(mailWorkflowConversationLinkView(context, conversationId)).toBeNull();
+    }
+  });
+
+  test("rejects malformed snapshot values", () => {
+    for (const snapshot of [
+      null,
+      42,
+      {},
+      [],
+      "",
+      "10:20",
+      "10:20:\n",
+      "-1:20:",
+      "10:20:11,",
+      "10:20:11,,15",
+      "10:20:11:15",
+      " 10:20:",
+      "10:20:sql",
+    ]) {
+      expect(mailWorkflowConversationLinkView(contextFor({ ...valid, snapshot }), conversationId)).toBeNull();
+    }
+  });
+
+  test("rejects malformed xids and link orders", () => {
+    for (const value of [42, {}, [], "", "-1", "1.5", "1e3", " 19", "19 ", "19\n", "sql"]) {
+      expect(mailWorkflowConversationLinkView(contextFor({ ...valid, xid: value }), conversationId)).toBeNull();
+      expect(mailWorkflowConversationLinkView(contextFor({ ...valid, seq: value }), conversationId)).toBeNull();
+    }
+    expect(mailWorkflowConversationLinkView(contextFor({ ...valid, seq: null }), conversationId)).toBeNull();
   });
 });

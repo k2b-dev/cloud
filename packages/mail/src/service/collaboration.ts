@@ -484,16 +484,26 @@ export const recordConversationStatusDecision = async (
 };
 
 /**
- * Locks a conversation for a workflow status step and returns its live state. `revision` is the
- * revision the step may act at, or null when the conversation changed since the run's view. The
- * step may act at the run's revision, or one revision later when Mail hydrated the message that
- * triggered the run and no other message of the conversation still waits for hydration. Linking a
- * message does not change the revision, so a message that joined after the run's view is either
- * still unhydrated or hydrated with its own revision. Returns null when the conversation is gone.
+ * Locks a conversation and returns the revision a workflow status step may act at.
+ * The exact revision always applies. One revision later applies only after the trigger's
+ * hydration, when every other unhydrated link was seen by the view.
+ * A seen link got its sequence number before the view read the sequence, and either its
+ * transaction committed before the view's snapshot or it is the view's own write. Links without
+ * an xid predate tracking. Neither a timestamp nor the sequence alone gives commit order; the
+ * snapshot does. The sequence survives a logical restore, transaction IDs do not, so a link
+ * created after the view never counts as seen, and an xid from another cluster keeps the conflict.
+ * A wrong admission could only give the result the exact-revision path already gives.
+ * An unknown keeps the conflict. Returns null when the conversation is gone.
  */
 export const lockWorkflowConversationStatus = async (
   db: SqlClient,
-  params: { mailboxId: string; conversationId: string; expectedRevision: number; triggerMessageId: string | null },
+  params: {
+    mailboxId: string;
+    conversationId: string;
+    expectedRevision: number;
+    triggerMessageId: string | null;
+    viewLinks: { snapshot: string; xid: string | null; seq: string } | null;
+  },
 ): Promise<{ revision: number | null; workStatus: ConversationCollaboration["workStatus"] } | null> => {
   // Same lock order as updateWorkflowConversationCollaborationInTransaction: mailbox, then conversation.
   const [mailbox] = await db<{ id: string }[]>`
@@ -514,20 +524,35 @@ export const lockWorkflowConversationStatus = async (
   if (revision !== params.expectedRevision + 1 || !params.triggerMessageId) return { revision: null, workStatus: current.work_status };
   // A new statement after the lock: a link that a sync committed while this step waited is visible
   // here, and the lock keeps further links out until this transaction ends.
-  const [links] = await db<{ hydrated_revision: string | number | null; others_hydrated: boolean }[]>`
-    SELECT (
-      SELECT link.hydrated_revision FROM mail.conversation_messages link
-      WHERE link.conversation_id = ${params.conversationId}::uuid AND link.message_id = ${params.triggerMessageId}::uuid
-    ) AS hydrated_revision, NOT EXISTS (
+  const [links] = await db<{ hydrated_revision: string | number | null; others_seen: boolean }[]>`
+    SELECT trigger_link.hydrated_revision, NOT EXISTS (
       SELECT 1 FROM mail.conversation_messages link
       JOIN mail.message_contents message ON message.id = link.message_id
       WHERE link.conversation_id = ${params.conversationId}::uuid
         AND link.message_id <> ${params.triggerMessageId}::uuid
         AND message.hydration_status <> 'complete'
-    ) AS others_hydrated
+        AND NOT COALESCE(
+          ${params.viewLinks?.snapshot ?? null}::pg_snapshot IS NOT NULL
+          AND pg_snapshot_xmax(${params.viewLinks?.snapshot ?? null}::pg_snapshot) <= pg_snapshot_xmax(pg_current_snapshot())
+          AND (
+            link.linked_xid IS NULL
+            OR (
+              -- Linked before the view read the sequence, and by then committed or its own write.
+              link.link_seq <= ${params.viewLinks?.seq ?? null}::bigint
+              AND (
+                link.linked_xid = ${params.viewLinks?.xid ?? null}::xid8
+                OR pg_visible_in_snapshot(link.linked_xid, ${params.viewLinks?.snapshot ?? null}::pg_snapshot)
+              )
+            )
+          ), false
+        )
+    ) AS others_seen
+    FROM mail.conversation_messages trigger_link
+    WHERE trigger_link.conversation_id = ${params.conversationId}::uuid
+      AND trigger_link.message_id = ${params.triggerMessageId}::uuid
   `;
   const onlyTriggerHydrated =
-    links?.others_hydrated === true && links.hydrated_revision !== null && Number(links.hydrated_revision) === revision;
+    links?.others_seen === true && links.hydrated_revision !== null && Number(links.hydrated_revision) === revision;
   return { revision: onlyTriggerHydrated ? revision : null, workStatus: current.work_status };
 };
 

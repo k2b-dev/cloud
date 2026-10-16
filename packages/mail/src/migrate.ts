@@ -68,6 +68,18 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   // The conversation revision this message's hydration produced, so a workflow that the message
   // triggered can tell that change apart from others. Moving the message clears it too.
   await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS hydrated_revision bigint`.simple();
+  // The transaction that linked the message to this conversation. Add the default separately so
+  // existing links stay NULL (linked before this column) without a table rewrite.
+  await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS linked_xid xid8`.simple();
+  await tx`ALTER TABLE mail.conversation_messages ALTER COLUMN linked_xid SET DEFAULT pg_current_xact_id()`.simple();
+  // Order links within one transaction; keep existing rows NULL without rewriting the table.
+  // Migrations and runtime use the same role, which owns this sequence and can call nextval.
+  // The workflow status fence needs CACHE 1 and no setval rewind: a cached block would hand a
+  // later link of the view's own transaction a value at or below the sequence the view read.
+  await tx`CREATE SEQUENCE IF NOT EXISTS mail.conversation_link_seq AS bigint CACHE 1`.simple();
+  await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS link_seq bigint`.simple();
+  await tx`ALTER SEQUENCE mail.conversation_link_seq OWNED BY mail.conversation_messages.link_seq`.simple();
+  await tx`ALTER TABLE mail.conversation_messages ALTER COLUMN link_seq SET DEFAULT nextval('mail.conversation_link_seq')`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
     REFERENCES mail.compose_templates(id) ON DELETE SET NULL`.simple();
   await tx`
