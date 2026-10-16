@@ -654,6 +654,40 @@ describe("@k2b/ui action runtime behavior", () => {
     dom.cleanup();
   });
 
+  test.each(["disabled", "loading"] as const)("a %s SelectChip stays closed when its owner opens it", async (state) => {
+    const dom = createDomTestHarness();
+    installPopoverStub();
+    const { SelectChip } = await import("../src/inputs/SelectChip");
+    const changes: string[] = [];
+
+    const dispose = render(
+      () =>
+        createComponent(SelectChip, {
+          "aria-label": "Model",
+          value: "a",
+          open: true,
+          onOpenChange: () => {},
+          [state]: true,
+          onValueChange: (value: string) => changes.push(value),
+          options: [
+            { value: "a", label: "A" },
+            { value: "b", label: "B" },
+          ],
+        }),
+      dom.root,
+    );
+    await flush();
+
+    const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-dropdown__trigger");
+    expect(trigger?.disabled).toBe(true);
+    expect(trigger?.getAttribute("aria-expanded")).toBe("false");
+    expect(dom.root.querySelector<HTMLElement>(".k2b-dropdown__menu")?.matches(":popover-open")).toBe(false);
+    expect(changes).toEqual([]);
+
+    dispose();
+    dom.cleanup();
+  });
+
   test("attaches ContextMenu globals only while open and ignores menu scroll", async () => {
     const dom = createDomTestHarness();
     const extraGlobals = new Map<string, PropertyDescriptor | undefined>();

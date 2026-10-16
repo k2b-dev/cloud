@@ -92,8 +92,10 @@ export function SelectChip<T extends string | number = string>(props: SelectChip
       disabled={disabled()}
     >
       <Dropdown.Root
-        open={props.open}
+        // A controlled `open` cannot bypass a disabled or saving chip.
+        open={props.open === undefined ? undefined : props.open && !disabled()}
         onOpenChange={props.onOpenChange}
+        disabled={disabled()}
         position={props.position ?? "bottom-right"}
         /* Cloud opens this menu at `w-40`; the stylesheet keeps that as its floor. */
         width={props.menuWidth}
