@@ -236,8 +236,16 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   };
 
   type LevelChange = { accessId: string; permission: GrantableLevel; scope: string | undefined };
+  // The row whose change is saving: it shows the chosen level with a spinner, the other rows wait.
+  const [updating, setUpdating] = createSignal<LevelChange | null>(null);
+  const [revoking, setRevoking] = createSignal<string | null>(null);
+  const updatingRow = (accessId: string) => {
+    const change = updating();
+    return change?.accessId === accessId ? change : undefined;
+  };
   const updateMut = mutation.create<LevelChange, LevelChange>({
     mutation: async (data) => {
+      setUpdating(data);
       await props.updateAccess(data.accessId, data.permission, data.scope);
       return data;
     },
@@ -247,6 +255,9 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       }
     },
     onError: (err) => prompts.error(err.message),
+    onFinally: () => {
+      if (!disposed) setUpdating(null);
+    },
   });
 
   const revokeMut = mutation.create<string | null, AccessEntry>({
@@ -257,6 +268,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
         variant: "danger",
       });
       if (!confirmed) return null;
+      setRevoking(entry.id);
       await props.revokeAccess(entry.id);
       return entry.id;
     },
@@ -264,6 +276,9 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       if (accessId) setEntries((current) => current.filter((entry) => entry.id !== accessId));
     },
     onError: (err) => prompts.error(err.message),
+    onFinally: () => {
+      if (!disposed) setRevoking(null);
+    },
   });
   const busy = () => grantPending() || updateMut.loading() || revokeMut.loading();
   // The service refuses to remove the last manager; the row says so up front.
@@ -288,6 +303,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
                 coverage={coverage}
                 canEdit={canEdit()}
                 pending={entry.id === pending()}
+                updating={updatingRow(entry.id)}
+                revoking={entry.id === revoking()}
                 disabled={busy()}
                 lastManager={entry.id === lastManagerId()}
                 allowed={allowed(entry.principal)}
@@ -332,8 +349,14 @@ export default function PermissionEditor(props: PermissionEditorProps) {
 function AccessEntryRow(props: {
   entry: AccessEntry;
   canEdit: boolean;
+  /** Another change is saving: the row keeps its controls, disabled. */
   disabled: boolean;
+  /** This row's grant is saving. */
   pending?: boolean;
+  /** This row's level change is saving. */
+  updating?: { permission: GrantableLevel; scope: string | undefined };
+  /** This row's removal is saving. */
+  revoking?: boolean;
   /** The only entry that manages the resource: it keeps its level and cannot be removed. */
   lastManager: boolean;
   allowed: ResolvedLevel[];
@@ -352,8 +375,14 @@ function AccessEntryRow(props: {
   const display = () => resolveEntryDisplay(props.entry.permission, props.entry.scope, props.allowed, t());
   const manageLabel = () => resolveEntryDisplay("admin", undefined, props.allowed, t()).label;
   const removeLabel = () => (props.lastManager ? t().lastManager({ level: manageLabel() }) : t().remove({ name: displayName() }));
-  const isInteractive = () =>
-    props.canEdit && !props.disabled && !props.pending && !props.singlePicker && props.allowed.some((option) => option.key === entryKey());
+  // Whether the row offers a picker depends only on what the viewer may do, never on a change in flight, so a
+  // saving change never swaps the picker for the badge and the rows keep their size.
+  const hasPicker = () => props.canEdit && !props.singlePicker && props.allowed.some((option) => option.key === entryKey());
+  const saving = () => props.pending || props.updating !== undefined || props.revoking === true;
+  // While a level change saves, the picker already shows the chosen level.
+  const shownKey = () => (props.updating ? levelKey(props.updating.permission, props.updating.scope) : entryKey());
+  const shownDisplay = () =>
+    props.updating ? resolveEntryDisplay(props.updating.permission, props.updating.scope, props.allowed, t()) : display();
 
   const badgeClass =
     "flex min-h-7 items-center gap-1 rounded-full border border-transparent bg-[var(--ui-surface-muted)] px-2.5 py-1 text-xs text-secondary";
@@ -362,15 +391,12 @@ function AccessEntryRow(props: {
     <>
       <i class={props.pending ? "ti ti-loader-2 animate-spin" : `ti ${display().icon}`} />
       <span>{display().label}</span>
-      <Show when={isInteractive()}>
-        <i class="ti ti-chevron-down text-[10px]" />
-      </Show>
     </>
   );
 
   return (
     <div>
-      <div class="group/access-row flex items-center gap-2 py-1.5" aria-busy={props.pending ? "true" : undefined}>
+      <div class="group/access-row flex items-center gap-2 py-1.5" aria-busy={saving() ? "true" : undefined}>
         <Show
           when={props.entry.principal.type === "user"}
           fallback={
@@ -415,10 +441,12 @@ function AccessEntryRow(props: {
 
         {/* Permission badge — interactive single-value picker when editable,
           plain span otherwise. */}
-        <Show when={isInteractive()} fallback={<span class={`${badgeClass} cursor-default`}>{badgeContent}</span>}>
+        <Show when={hasPicker()} fallback={<span class={`${badgeClass} cursor-default`}>{badgeContent}</span>}>
           <SelectChip
             aria-label={t().permissionFor({ name: displayName() })}
-            value={entryKey}
+            value={shownKey}
+            disabled={props.disabled}
+            loading={props.pending || props.updating !== undefined}
             options={props.allowed.map((option) => {
               const locked = props.lastManager && (option.level !== "admin" || option.scope !== undefined);
               return {
@@ -429,7 +457,7 @@ function AccessEntryRow(props: {
                 description: locked ? t().lastManagerOption({ level: manageLabel() }) : option.description,
               };
             })}
-            icon={`ti ${display().icon}`}
+            icon={`ti ${shownDisplay().icon}`}
             position="bottom-left"
             onValueChange={(key) => {
               const option = props.allowed.find((candidate) => candidate.key === key);
@@ -452,6 +480,7 @@ function AccessEntryRow(props: {
               size="xs"
               onClick={props.onRevoke}
               disabled={props.disabled || props.pending || props.lastManager}
+              loading={props.revoking}
               aria-label={t().remove({ name: displayName() })}
               // A disabled button takes no focus and touch has no hover, so the reason also reaches assistive technology.
               aria-description={props.lastManager ? removeLabel() : undefined}
