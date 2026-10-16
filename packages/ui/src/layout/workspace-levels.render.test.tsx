@@ -146,6 +146,33 @@ describe("AppWorkspace ordered levels SSR", () => {
     expect(html).toContain('class="k2b-app-workspace__level-body" data-scroll="false"');
     expect(attributes(html, "section", "aria-label")[0]?.["aria-label"]).toBe("Title");
   });
+  // A second read of a JSX prop builds it again, so the client cannot hydrate
+  // the server markup. Each slot renders exactly once.
+  test("builds the description and actions once", () => {
+    let built = 0;
+    const counted = (text: string) => () => {
+      built += 1;
+      return text;
+    };
+    const html = renderToString(() =>
+      main({ level: "one" }, [
+        {
+          id: "one",
+          label: "Title",
+          get description() {
+            return createComponent(counted("Quiet description"), {});
+          },
+          get actions() {
+            return createComponent(counted("Controls"), {});
+          },
+          children: "Content",
+        },
+      ]),
+    );
+    expect(html).toContain("<p>Quiet description</p>");
+    expect(html).toContain('class="k2b-app-workspace__level-actions">Controls');
+    expect(built).toBe(2);
+  });
   for (const accessor of [false, true])
     test(`restores clamped separator values from ${accessor ? "layoutState" : "LayoutStateProvider"}`, () => {
       const state = {

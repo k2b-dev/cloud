@@ -630,6 +630,10 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
             }
             const pane = region.slot;
             const levelIndex = () => levels().indexOf(pane) + 1;
+            // Read each head slot once: every read of a JSX prop builds it again,
+            // and the server and the client would then disagree on hydration keys.
+            const description = children(() => (levelsMode() ? pane.props.description : undefined));
+            const actions = children(() => (levelsMode() ? pane.props.actions : undefined));
             const levelAttr = (kind: "shown" | "first" | "last" | "handle") =>
               levelsMode() ? levelClasses(levelIndex(), kind) : undefined;
             const panelId = assertStableUiId(pane.props.id, "AppWorkspace.MainPane id");
@@ -704,12 +708,12 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                         </Show>
                         <div class="k2b-app-workspace__level-title">
                           <h2>{pane.props.label}</h2>
-                          <Show when={pane.props.description}>
-                            <p>{pane.props.description}</p>
+                          <Show when={description()}>
+                            <p>{description()}</p>
                           </Show>
                         </div>
-                        <Show when={pane.props.actions}>
-                          <div class="k2b-app-workspace__level-actions">{pane.props.actions}</div>
+                        <Show when={actions()}>
+                          <div class="k2b-app-workspace__level-actions">{actions()}</div>
                         </Show>
                       </header>
                       <div
