@@ -159,16 +159,9 @@ export function assistantBuiltInCommands(input: {
 export const OVERVIEW_SKILL_COUNT = 4;
 export const overviewSkills = (skills: readonly AiSkillSummary[]) => skills.filter((skill) => skill.enabled).slice(0, OVERVIEW_SKILL_COUNT);
 
-/** Owns discovery per opening and pending task starts across openings for one composer. */
-export function createAssistantCommandSession() {
+/** Keeps pending task starts across composer remounts within one workspace. */
+export function createAssistantTaskRunKeys() {
   const pendingRunKeys = new Map<string, { key: string; uncertain: boolean }>();
-  let latest:
-    | {
-        session: number;
-        abort: AbortController;
-        data: Promise<{ skills: AiSkillSummary[] | null; scheduledTaskSkills: AiSkillSummary[] | null; tasks: AiChatTaskView[] | null }>;
-      }
-    | undefined;
   return {
     runKey(taskId: string) {
       let pending = pendingRunKeys.get(taskId);
@@ -185,6 +178,19 @@ export function createAssistantCommandSession() {
     settleRun(taskId: string, { force = false }: { force?: boolean } = {}) {
       if (force || !pendingRunKeys.get(taskId)?.uncertain) pendingRunKeys.delete(taskId);
     },
+  };
+}
+
+/** Owns discovery per opening for one composer. */
+export function createAssistantCommandSession() {
+  let latest:
+    | {
+        session: number;
+        abort: AbortController;
+        data: Promise<{ skills: AiSkillSummary[] | null; scheduledTaskSkills: AiSkillSummary[] | null; tasks: AiChatTaskView[] | null }>;
+      }
+    | undefined;
+  return {
     load(session: number) {
       if (latest?.session === session) return latest.data;
       latest?.abort.abort();
@@ -210,7 +216,6 @@ export function createAssistantCommandSession() {
     },
     dispose() {
       latest?.abort.abort();
-      pendingRunKeys.clear();
     },
   };
 }
@@ -233,6 +238,7 @@ export async function assistantComposerCommands(input: {
   query: string;
   session: number;
   sessionLoader: ReturnType<typeof createAssistantCommandSession>;
+  runKeys: ReturnType<typeof createAssistantTaskRunKeys>;
   models: readonly ChatModelOption[];
   selectedModelId?: string | null;
   chooseModel: (id: string) => void;
@@ -443,8 +449,8 @@ export async function assistantComposerCommands(input: {
             task.state === "active"
               ? async () => {
                   try {
-                    await assistantApi.runChatTask(task.id, { idempotencyKey: input.sessionLoader.runKey(task.id) });
-                    input.sessionLoader.settleRun(task.id, { force: true });
+                    await assistantApi.runChatTask(task.id, { idempotencyKey: input.runKeys.runKey(task.id) });
+                    input.runKeys.settleRun(task.id, { force: true });
                     return { done: copy.commandTaskRunning({ title }) };
                   } catch (error) {
                     // Network failures, 408, 429, and 5xx make this key uncertain. Later 4xx cannot
@@ -456,9 +462,9 @@ export async function assistantComposerCommands(input: {
                       error.status !== 408 &&
                       error.status !== 429
                     ) {
-                      input.sessionLoader.settleRun(task.id, { force: error.status === 404 });
+                      input.runKeys.settleRun(task.id, { force: error.status === 404 });
                     } else {
-                      input.sessionLoader.runUncertain(task.id);
+                      input.runKeys.runUncertain(task.id);
                     }
                     const reason =
                       error instanceof AssistantTaskRunError

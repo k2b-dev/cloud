@@ -94,6 +94,7 @@ const mount = async (
     assistantCommandSections,
     assistantComposerCommands,
     createAssistantCommandSession,
+    createAssistantTaskRunKeys,
   } = await import("./composer-commands");
   const { assistantCopyFor } = await import("./ui-copy");
   const requests: { url: URL; init?: RequestInit }[] = [];
@@ -134,6 +135,7 @@ const mount = async (
   );
   cleanups.push(() => fetchMock.mockRestore());
   const loader = createAssistantCommandSession();
+  const runKeys = createAssistantTaskRunKeys();
   cleanups.push(() => loader.dispose());
   const [value, setValue] = createSignal(options.value ?? "/");
   const [selectedModel, setSelectedModel] = createSignal("alpha");
@@ -189,6 +191,7 @@ const mount = async (
             session: search.opening,
             scope: search.scope,
             sessionLoader: loader,
+            runKeys,
             models,
             selectedModelId: selectedModel(),
             chooseModel,

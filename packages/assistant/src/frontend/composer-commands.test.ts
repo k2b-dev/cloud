@@ -16,6 +16,7 @@ const {
   assistantCommandScopes,
   assistantCommandSections,
   createAssistantCommandSession,
+  createAssistantTaskRunKeys,
   overviewSkills,
 } = await import("./composer-commands");
 
@@ -30,11 +31,12 @@ afterEach(() => {
   setSystemTime();
 });
 const assistantComposerCommands = (
-  input: Omit<Parameters<typeof searchCommands>[0], "session" | "sessionLoader" | "models" | "chooseModel" | "isRunning">,
+  input: Omit<Parameters<typeof searchCommands>[0], "session" | "sessionLoader" | "runKeys" | "models" | "chooseModel" | "isRunning">,
 ) =>
   searchCommands({
     session: 1,
     sessionLoader: createAssistantCommandSession(),
+    runKeys: createAssistantTaskRunKeys(),
     models: [],
     chooseModel() {},
     isRunning: () => false,
@@ -556,6 +558,7 @@ for (const retryOpening of [1, 2]) {
       const loader = createAssistantCommandSession();
       const input = {
         sessionLoader: loader,
+        runKeys: createAssistantTaskRunKeys(),
         models: [],
         chooseModel() {},
         isRunning: () => false,
@@ -602,6 +605,51 @@ for (const retryOpening of [1, 2]) {
   }
 }
 
+test("task start reuses an uncertain key after disposing and remounting the composer session", async () => {
+  const task = taskFixture(0);
+  spyOn(assistantApi, "listChatTasks").mockImplementation(async ({ state }) => (state === "active" ? [task] : []));
+  const post = spyOn(globalThis, "fetch").mockRejectedValueOnce(new TypeError("Response lost")).mockResolvedValue(Response.json({}));
+  const runKeys = createAssistantTaskRunKeys();
+  const input = {
+    runKeys,
+    session: 1,
+    models: [],
+    chooseModel() {},
+    isRunning: () => false,
+    query: "",
+    scope: "task",
+    signal: new AbortController().signal,
+    locale: "en",
+    projects: [],
+    running: false,
+    assignProject: async () => {},
+  };
+  const run = async (sessionLoader: ReturnType<typeof createAssistantCommandSession>) => {
+    const rows = await searchCommands({ ...input, sessionLoader });
+    return rows.find((row) => row.id === `task:${task.id}`)!.action!(context);
+  };
+  const firstSession = createAssistantCommandSession();
+  try {
+    await expect(run(firstSession)).rejects.toThrow();
+  } finally {
+    firstSession.dispose();
+  }
+  const remountedSession = createAssistantCommandSession();
+  try {
+    await run(remountedSession);
+    expect(post).toHaveBeenCalledTimes(2);
+    const keys = post.mock.calls.map(([url, init]) => {
+      expect(url).toBe(`/api/ai/tasks/${task.id}/run`);
+      expect(init?.method).toBe("POST");
+      return new Headers(init?.headers).get("Idempotency-Key");
+    });
+    expect(keys[0]).toMatch(/^[a-f0-9]{32}$/);
+    expect(keys[1]).toBe(keys[0]);
+  } finally {
+    remountedSession.dispose();
+  }
+});
+
 test("task matches append after thirty references; overview limits tasks independently", async () => {
   const { artifactClient } = await import("../artifacts/client");
   spyOn(artifactClient, "list").mockResolvedValue({ items: [], page: 1, hasNext: false });
@@ -613,6 +661,7 @@ test("task matches append after thirty references; overview limits tasks indepen
   const input = {
     session: 1,
     sessionLoader: loader,
+    runKeys: createAssistantTaskRunKeys(),
     models: [],
     chooseModel() {},
     isRunning: () => false,
@@ -653,6 +702,7 @@ test.each(["en", "de"])("All Skills lists every enabled Skill from the opening's
   const input = {
     session: 1,
     sessionLoader: loader,
+    runKeys: createAssistantTaskRunKeys(),
     models: [],
     chooseModel() {},
     isRunning: () => false,
@@ -763,6 +813,7 @@ test("model scope shares forgiving matching and runs the injected setter", async
   const input = {
     session: 1,
     sessionLoader: loader,
+    runKeys: createAssistantTaskRunKeys(),
     models: [
       { id: "a", label: "Übersetzer" },
       { id: "b", label: "Beta" },
@@ -808,6 +859,7 @@ test.each(["model", "project", "skill", "file", "app"])("%s scope does not await
     const rows = await searchCommands({
       session: 1,
       sessionLoader: loader,
+      runKeys: createAssistantTaskRunKeys(),
       query: scope === "skill" ? "invoice" : "",
       scope,
       signal: new AbortController().signal,

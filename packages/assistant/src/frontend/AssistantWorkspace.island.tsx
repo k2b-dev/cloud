@@ -116,6 +116,7 @@ import {
   assistantCommandSections,
   assistantComposerCommands,
   createAssistantCommandSession,
+  createAssistantTaskRunKeys,
 } from "./composer-commands";
 import {
   confirmComposerSave,
@@ -188,6 +189,7 @@ export default function AssistantWorkspace(props: Props) {
   const locale = useLocale();
   const contextText = useAssistantText();
   const commandCopy = useAssistantCopy();
+  const runKeys = createAssistantTaskRunKeys();
   const artifactWorkspace = createArtifactWorkspace(props.initialWorkspaceHref);
   const [workspaceMounted, setWorkspaceMounted] = createSignal(false);
   const openContextView = (view: ContextView) =>
@@ -1528,6 +1530,7 @@ export default function AssistantWorkspace(props: Props) {
               scope: search.scope,
               session: search.opening,
               sessionLoader: commandSession,
+              runKeys,
               models: aiChatModelOptions(props.models),
               selectedModelId: selectedModelId(),
               chooseModel: setSelectedModelId,
