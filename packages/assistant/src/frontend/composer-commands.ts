@@ -159,16 +159,21 @@ export function assistantBuiltInCommands(input: {
 export const OVERVIEW_SKILL_COUNT = 4;
 export const overviewSkills = (skills: readonly AiSkillSummary[]) => skills.filter((skill) => skill.enabled).slice(0, OVERVIEW_SKILL_COUNT);
 
+/** The menu lists at most three task states of 100 each, so one key per listable task fits. */
+export const MAX_PENDING_RUN_KEYS = 300;
+
 /** Keeps pending task starts across composer remounts and reloads in one tab. */
 export function createAssistantTaskRunKeys(storage?: Pick<Storage, "getItem" | "setItem">) {
   const storageKey = "k2b.assistant.taskRunKeys";
   const pendingRunKeys = new Map<string, { key: string; uncertain: boolean }>();
   let loaded = false;
+  // Oldest first, and keys without an unknown outcome before the ones that guard against a duplicate start.
   const trim = () => {
-    for (const taskId of pendingRunKeys.keys()) {
-      if (pendingRunKeys.size <= 50) break;
-      pendingRunKeys.delete(taskId);
-    }
+    for (const uncertain of [false, true])
+      for (const [taskId, pending] of pendingRunKeys) {
+        if (pendingRunKeys.size <= MAX_PENDING_RUN_KEYS) return;
+        if (pending.uncertain === uncertain) pendingRunKeys.delete(taskId);
+      }
   };
   const load = () => {
     if (loaded) return;

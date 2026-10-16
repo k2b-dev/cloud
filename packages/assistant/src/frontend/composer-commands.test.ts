@@ -17,6 +17,7 @@ const {
   assistantCommandSections,
   createAssistantCommandSession,
   createAssistantTaskRunKeys,
+  MAX_PENDING_RUN_KEYS,
   overviewSkills,
 } = await import("./composer-commands");
 
@@ -620,33 +621,36 @@ test.each(["getItem", "setItem"] as const)("task run keys keep working in memory
   expect(runKeys.runKey("task-1")).not.toBe(key);
 });
 
-test("task run keys retain at most 50 tasks and evict by insertion order", () => {
+test("task run keys stay bounded and evict settled-unknown keys before uncertain ones", () => {
   const storage = createRunKeyStorage();
   const runKeys = createAssistantTaskRunKeys(storage);
-  const oldest = runKeys.runKey("task-0");
-  const nextOldest = runKeys.runKey("task-1");
-  for (let i = 2; i < 50; i++) runKeys.runKey(`task-${i}`);
-  // Reading or updating an old entry does not make it a newer insertion.
-  expect(runKeys.runKey("task-0")).toBe(oldest);
+  const uncertain = runKeys.runKey("task-0");
   runKeys.runUncertain("task-0");
-  runKeys.runKey("task-50");
-  expect(runKeys.isUncertain("task-0")).toBe(false);
-  expect(runKeys.runKey("task-1")).toBe(nextOldest);
+  const pending = runKeys.runKey("task-1");
+  for (let i = 2; i < MAX_PENDING_RUN_KEYS; i++) runKeys.runKey(`task-${i}`);
+  runKeys.runKey(`task-${MAX_PENDING_RUN_KEYS}`);
+  // The oldest key without an unknown outcome goes first; the uncertain one survives.
+  expect(runKeys.runKey("task-0")).toBe(uncertain);
+  expect(runKeys.isUncertain("task-0")).toBe(true);
   const entries: unknown = JSON.parse(storage.getItem("k2b.assistant.taskRunKeys") ?? "null");
-  expect(entries).toHaveLength(50);
+  expect(entries).toHaveLength(MAX_PENDING_RUN_KEYS);
   const reloaded = createAssistantTaskRunKeys(storage);
-  expect(reloaded.runKey("task-1")).toBe(nextOldest);
-  expect(reloaded.runKey("task-0")).not.toBe(oldest);
+  expect(reloaded.runKey("task-0")).toBe(uncertain);
+  expect(reloaded.runKey("task-1")).not.toBe(pending);
 });
 
 test("task run keys also bound entries loaded from storage", () => {
-  const entries = Array.from({ length: 52 }, (_, i) => ({ taskId: `task-${i}`, key: i.toString(16).padStart(32, "0"), uncertain: true }));
+  const entries = Array.from({ length: MAX_PENDING_RUN_KEYS + 2 }, (_, i) => ({
+    taskId: `task-${i}`,
+    key: i.toString(16).padStart(32, "0"),
+    uncertain: true,
+  }));
   const storage = createRunKeyStorage(JSON.stringify(entries));
   const runKeys = createAssistantTaskRunKeys(storage);
   expect(runKeys.isUncertain("task-0")).toBe(false);
   expect(runKeys.isUncertain("task-1")).toBe(false);
   expect(runKeys.isUncertain("task-2")).toBe(true);
-  expect(runKeys.runKey("task-51")).toBe(entries[51]!.key);
+  expect(runKeys.runKey(`task-${MAX_PENDING_RUN_KEYS + 1}`)).toBe(entries[MAX_PENDING_RUN_KEYS + 1]!.key);
 });
 
 test.each([{}, null, { state: "unknown" }, { state: 1 }, { state: null }])(
