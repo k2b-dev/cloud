@@ -238,8 +238,9 @@ let probeLeaseUntil = 0;
 /**
  * Takes the provider lease of a remote mailbox when it is `waiter`'s turn. Waiters line up by
  * priority and by how long they have waited. Each acquired lease records a turn: commands and
- * other provider work alternate while both are present. The last holder's continuation keeps
- * its natural place between batches; other jobs line up anew after their turn. A waiting
+ * other provider work alternate while both are present. The last holder keeps its natural place
+ * when it asks again, so a folder's next batch, or the mailbox's next command after a command
+ * turn, is not moved back; other jobs line up anew after their turn. A waiting
  * command waits for at most the running operation and one further sync or background batch;
  * a waiting folder sync waits for at most one command turn. A job that does not get the lease
  * keeps its place and retries after `retryAfterMs`; `waiter` must stay the same across those tries. A
