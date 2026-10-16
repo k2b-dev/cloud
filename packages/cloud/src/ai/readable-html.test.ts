@@ -7,6 +7,126 @@ const convert = (html: string, options: { maxBytes?: number; signal?: AbortSigna
 
 describe("readable HTML", () => {
   test.each([
+    ["list code", "<ul><li><pre>", "a\n", "</pre></li></ul>"],
+    ["pre class", '<pre class="', "a ", ' language-js">x</pre>'],
+    ["div class", '<div class="', "a ", '">x</div>'],
+    ["div id", '<div id="', "a ", '">x</div>'],
+    ["div role", '<div role="', "a ", '">x</div>'],
+  ])("bounds splitting oversized %s values before allocating token or line arrays", async (name, start, fill, end) => {
+    const html = start + fill.repeat((3 * 1024 * 1024) / fill.length) + end;
+    const split = spyOn(String.prototype, "split");
+    let result: string;
+    try {
+      result = await htmlToReadableMarkdown(Buffer.from(html), { baseUrl, maxBytes: 64 * 1024, maxInputBytes: Buffer.byteLength(html) });
+      expect(split.mock.contexts.every((value) => String(value).length <= 2 * 1024 * 1024)).toBe(true);
+    } finally {
+      split.mockRestore();
+    }
+    if (name === "list code") {
+      expect(result).toStartWith("- ```\n  a\n");
+      expect(result).toEndWith("\n[Readable copy truncated at the file size limit.]\n");
+      expect(Buffer.byteLength(result)).toBeLessThanOrEqual(64 * 1024);
+    } else expect(result).toBe(name === "pre class" ? "```js\nx\n```\n" : "x\n");
+  });
+
+  test.each([
+    ["code", "<code>", "a\n", "</code>"],
+    ["inline code", "<h2><code>", "a\n", "</code></h2>"],
+    ["image alt", '<img src="/x" alt="', "[]", '">'],
+    ["inline image alt", '<h2><img src="/x" alt="', "[]", '"></h2>'],
+    ["title", "<title>", "a\n", "</title><p>x</p>"],
+    ["link URL", '<a href="https://example.test/', "(", '">x</a>'],
+  ])("bounds replacement allocations for oversized %s", async (_name, start, fill, end) => {
+    const html = start + fill.repeat((3 * 1024 * 1024) / fill.length) + end;
+    const replace = spyOn(String.prototype, "replace");
+    try {
+      const result = await htmlToReadableMarkdown(Buffer.from(html), {
+        baseUrl,
+        maxBytes: 64 * 1024,
+        maxInputBytes: Buffer.byteLength(html),
+      });
+      expect(replace.mock.contexts.every((value) => String(value).length <= 2 * 1024 * 1024)).toBe(true);
+      expect(result).toEndWith("\n[Readable copy truncated at the file size limit.]\n");
+      expect(Buffer.byteLength(result)).toBeLessThanOrEqual(64 * 1024);
+    } finally {
+      replace.mockRestore();
+    }
+  });
+
+  test.each(["<pre>", "<code>", "<h2><code>"])("bounds backtick fence allocation inside %s", async (start) => {
+    const html = start + "`".repeat(3 * 1024 * 1024) + "</code></pre></h2>";
+    const original = String.prototype.repeat;
+    const repeat = spyOn(String.prototype, "repeat").mockImplementation(function (this: string, count: number) {
+      expect(this.length * count).toBeLessThanOrEqual(64 * 1024 + 1);
+      return original.call(this, count);
+    });
+    try {
+      const result = await htmlToReadableMarkdown(Buffer.from(html), {
+        baseUrl,
+        maxBytes: 64 * 1024,
+        maxInputBytes: Buffer.byteLength(html),
+      });
+      expect(result).toEndWith("\n[Readable copy truncated at the file size limit.]\n");
+      expect(Buffer.byteLength(result)).toBeLessThanOrEqual(64 * 1024);
+    } finally {
+      repeat.mockRestore();
+    }
+  });
+
+  test("normalizes whitespace across capture chunks without losing content that fits", async () => {
+    const prefix = "x".repeat(256 * 1024 - 1);
+    expect(await convert(`<code>${prefix} \n\t y</code>`)).toBe(`\`${prefix} y\`\n`);
+    const whitespace = " \n".repeat(200_000);
+    expect(await convert(`<h2><code>${whitespace}x${whitespace}</code></h2>`)).toBe("## `x`\n");
+    expect(await convert(`<img src="/x" alt="${whitespace}x">`)).toBe("![x](https://example.test/x)\n");
+  });
+
+  test("ignores long attribute tokens and still recognizes later language and hidden tokens", async () => {
+    expect(await convert(`<pre class="${"language-" + "x".repeat(100)}\tlang-js">x</pre>`)).toBe("```js\nx\n```\n");
+    for (const attr of ["id", "class", "role"]) {
+      const token = attr === "role" ? "NAVIGATION" : "cookie-banner";
+      expect(await convert(`<div ${attr}="${"x".repeat(101)}\u00a0${token}">hidden</div><p>x</p>`)).toBe("x\n");
+      expect(await convert(`<div ${attr}="${token + "x".repeat(101)}">x</div>`)).toBe("x\n");
+    }
+  });
+
+  test("keeps section headers and footers while dropping page chrome", async () => {
+    expect(
+      await convert(
+        "<title>Site</title><body><header>SITE</header><section><header><h2>Section title</h2><p>intro</p></header><p>x</p><footer>section foot</footer></section><footer>PAGE FOOTER</footer></body>",
+      ),
+    ).toBe("# Site\n\n## Section title\n\nintro\n\nx\n\nsection foot\n");
+  });
+
+  test("selects role main and keeps its header heading without a duplicate site title", async () => {
+    expect(
+      await convert(
+        '<title>Site</title><body><header>SITE</header><p>outside</p><div role="main"><header><h1>Post</h1></header><p>x</p></div><main>Later</main><footer>PAGE FOOTER</footer></body>',
+      ),
+    ).toBe("# Post\n\nx\n");
+  });
+
+  test.each(["article", "region"])("balances role %s header scope through explicit and implied closes", async (role) => {
+    expect(
+      await convert(`<div role="${role}"><header><h2>Heading</h2></header><footer>local</footer></div><header>CHROME</header><p>x</p>`),
+    ).toBe("## Heading\n\nlocal\n\nx\n");
+    expect(await convert(`<p role="${role}"><span>intro<section><header><h2>Heading</h2></header></section><footer>CHROME</footer>`)).toBe(
+      "intro\n\n## Heading\n",
+    );
+  });
+
+  test("balances mixed main tags and roles and retains the first outermost candidate", async () => {
+    expect(await convert('<div role="MAIN"><main>First</main><header><h1>Post</h1></header></div><main>Later</main>')).toBe(
+      "First\n\n# Post\n",
+    );
+    expect(await convert('<main><div role="main">First</div><footer>local</footer></main><div role="main">Later</div>')).toBe(
+      "First\n\nlocal\n",
+    );
+    expect(await convert('<div role="main"> </div><article>Fallback</article>chrome')).toBe("Fallback\n");
+    expect(await convert('<p role="main">First<div role="main">Later</div>')).toBe("First\n");
+  });
+
+  test.each([
     ["paragraph", "<p>", "</p>", "", ""],
     ["link", '<a href="/guide">', "</a>", "[", "](https://example.test/guide)"],
     ["heading", "<h2>", "</h2>", "## ", ""],

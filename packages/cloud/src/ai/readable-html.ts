@@ -41,11 +41,25 @@ const TITLE = 2;
 const HEAD = 4;
 const EMIT = 8;
 const MAIN = 16;
+const REGION = 32;
+const MAIN_REGION = 64;
 const droppedRoles = new Set("navigation banner contentinfo complementary search dialog alertdialog".split(" "));
-const collapse = (text: string): string => text.replace(/\s+/gu, " ").trim();
+// Bound replace()'s transient match storage even when a capture or attribute spans the whole input.
+const normalizeSpace = (text: string): string => {
+  if (text.length <= CHUNK_BYTES) return text.replace(/\s+/gu, " ");
+  const parts: string[] = [];
+  let space = false;
+  for (let offset = 0; offset < text.length; offset += CHUNK_BYTES) {
+    const part = text.slice(offset, offset + CHUNK_BYTES).replace(/\s+/gu, " ");
+    parts.push(space && part.startsWith(" ") ? part.slice(1) : part);
+    space = part.endsWith(" ");
+  }
+  return parts.join("");
+};
+const collapse = (text: string): string => normalizeSpace(text).trim();
 const escapeLabel = (text: string): string => text.replace(/[\[\]]/g, "\\$&");
 const language = (classes = ""): string => {
-  for (const token of classes.split(/\s+/u)) {
+  for (const [token] of classes.matchAll(/\S+/gu)) {
     if (token.length <= 100 && /^(?:language|lang)-[\w+-]+$/.test(token)) return token.slice(token.indexOf("-") + 1);
   }
   return "";
@@ -53,15 +67,11 @@ const language = (classes = ""): string => {
 const hidden = (attrs: Record<string, string>): boolean => {
   if (!("hidden" in attrs || "aria-hidden" in attrs || "role" in attrs || "id" in attrs || "class" in attrs)) return false;
   if ("hidden" in attrs || attrs["aria-hidden"]?.toLowerCase() === "true") return true;
-  if (
-    (attrs.role ?? "")
-      .toLowerCase()
-      .split(/\s+/u)
-      .some((role) => droppedRoles.has(role))
-  )
-    return true;
+  for (const [role] of (attrs.role ?? "").matchAll(/\S+/gu)) {
+    if (role.length <= 100 && droppedRoles.has(role.toLowerCase())) return true;
+  }
   for (const value of [attrs.id ?? "", attrs.class ?? ""]) {
-    for (const token of value.split(/\s+/u)) {
+    for (const [token] of value.matchAll(/\S+/gu)) {
       if (token.length > 100) continue;
       if (
         /^(cookie|cookies|consent|gdpr|cmp)([-_]?(banner|notice|bar|popup|modal|dialog|overlay|wall|layer|consent|container))?$/i.test(
@@ -75,7 +85,7 @@ const hidden = (attrs: Record<string, string>): boolean => {
   return false;
 };
 const charset = (value: string): string | undefined => {
-  for (const parameter of value.split(";")) {
+  for (const [parameter] of value.matchAll(/[^;]+/g)) {
     const equals = parameter.indexOf("=");
     if (equals < 0 || parameter.slice(0, equals).trim().toLowerCase() !== "charset") continue;
     const label = parameter.slice(equals + 1).trim();
@@ -231,7 +241,14 @@ const linkUrl = (href: string | undefined, baseUrl: URL, image = false): string 
   try {
     const url = new URL(href, baseUrl);
     if (url.protocol !== "http:" && url.protocol !== "https:" && (image || url.protocol !== "mailto:")) return;
-    return url.toString().replace(/[() ]/g, (char) => (char === "(" ? "%28" : char === ")" ? "%29" : "%20"));
+    const value = url.toString();
+    const parts: string[] = [];
+    for (let offset = 0; offset < value.length; offset += CHUNK_BYTES) {
+      parts.push(
+        value.slice(offset, offset + CHUNK_BYTES).replace(/[() ]/g, (char) => (char === "(" ? "%28" : char === ")" ? "%29" : "%20")),
+      );
+    }
+    return parts.join("");
   } catch {
     return;
   }
@@ -243,7 +260,8 @@ const countBackticks = (text: string, run: BacktickRun): void => {
     run.longest = Math.max(run.longest, run.trailing);
   }
 };
-const backticks = (run: BacktickRun, minimum: number): string => "`".repeat(Math.max(minimum, run.longest + 1));
+const backticks = (run: BacktickRun, minimum: number, maxCharacters: number): string =>
+  "`".repeat(Math.min(maxCharacters, Math.max(minimum, run.longest + 1)));
 const cellSpan = (value: string | undefined, minimum: number, maximum: number): number => {
   const parsed = Number.parseInt(value ?? "", 10);
   return Number.isNaN(parsed) || parsed < 0 ? 1 : Math.min(maximum, Math.max(minimum, parsed));
@@ -289,13 +307,13 @@ const renderInline = async (
   const text = (value: string, ticks?: BacktickRun, next?: Event) => {
     const asCode = ticks !== undefined;
     plain.push(value);
-    const normalized = (asCode ? value : escapeText(value, next)).replace(/\s+/gu, " ");
+    const normalized = normalizeSpace(asCode ? value : escapeText(value, next));
     const content = normalized.trim();
     if (content) {
       if (normalized.startsWith(" ")) pendingSpace = true;
       // Two touching code spans would read as one span with stray backticks.
       if (asCode && parts.at(-1)?.endsWith("`")) pendingSpace = true;
-      const fence = ticks ? backticks(ticks, 1) : "";
+      const fence = ticks ? backticks(ticks, 1, Math.max(0, maxBytes - size) + 1) : "";
       const pad = asCode && (content.startsWith("`") || content.endsWith("`")) ? " " : "";
       const markdown = asCode ? `${fence}${pad}${content}${pad}${fence}` : content;
       // Code spans bind tighter than link brackets, so their content stays verbatim inside a label.
@@ -366,7 +384,7 @@ const renderInline = async (
       const alt = collapse(event.attrs.alt ?? "");
       const url = linkUrl(event.attrs.src, baseUrl, true);
       if (alt && url) {
-        append(`![${escapeLabel(escapeText(alt))}](${url})`);
+        append(`![${escapeLabel(escapeText(alt.slice(0, Math.max(0, maxBytes - size) + 1)))}](${url})`);
         plain.push(alt);
         characters += alt.length;
       }
@@ -440,8 +458,8 @@ export const htmlToReadableMarkdown = async (
       if (frame.flags & EMIT) events.push({ kind: "close", name: frame.name, attrs: emptyAttrs });
       if (frame.flags & MAIN && main) main.end = events.length;
       if (frame.name === "article" && articles) articles.end = events.length;
-      if (frame.name === "main") mainDepth--;
-      if (frame.name === "main" || frame.name === "article") regionDepth--;
+      if (frame.flags & MAIN_REGION) mainDepth--;
+      if (frame.flags & REGION) regionDepth--;
     }
     if (frame.flags & TITLE) titleDepth--;
     if (frame.flags & SKIP) skipDepth--;
@@ -504,20 +522,28 @@ export const htmlToReadableMarkdown = async (
       droppedTags.has(name) ||
       isHidden ||
       ((name === "header" || name === "footer") && regionDepth === 0);
-    const region = !skip && (name === "main" || name === "article");
+    const isMain = name === "main" || /(?:^|\s)main(?:\s|$)/iu.test(attrs.role ?? "");
+    const region =
+      !skip && (isMain || name === "article" || name === "section" || /(?:^|\s)(?:article|region)(?:\s|$)/iu.test(attrs.role ?? ""));
     const emit = !skip && renderedTags.has(name);
     if (!retain(emit ? 2 : 1)) return;
     const frame: Frame = {
       name,
       previous: lastOpen.get(name),
-      flags: (skip ? SKIP : 0) | (title ? TITLE : 0) | (name === "head" && skipDepth === 0 && !isHidden ? HEAD : 0) | (emit ? EMIT : 0),
+      flags:
+        (skip ? SKIP : 0) |
+        (title ? TITLE : 0) |
+        (name === "head" && skipDepth === 0 && !isHidden ? HEAD : 0) |
+        (emit ? EMIT : 0) |
+        (region ? REGION : 0),
       table: undefined,
     };
     if (title) titleDepth++;
     if (skip) skipDepth++;
     if (region) regionDepth++;
     if (!skip) {
-      if (name === "main") {
+      if (isMain) {
+        frame.flags |= MAIN_REGION;
         if (!main && mainDepth === 0) {
           frame.flags |= MAIN;
           main = { start: events.length, end: events.length };
@@ -723,6 +749,8 @@ const render = async (
       if (item) item.marker = "";
     } else if (pendingSpace) append(" ");
     pendingSpace = false;
+    // One extra character lets append() detect overflow and retain the truncation notice.
+    text = text.slice(0, Math.max(0, options.maxBytes - size) + 1);
     const continuation = "> ".repeat(Math.min(quoteDepth, 6)) + (items.at(-1)?.indent ?? "");
     append(
       continuation && text.includes("\n")
@@ -735,7 +763,7 @@ const render = async (
     lineStart = verbatim ? text.endsWith("\n") : false;
   };
   const text = (value: string, next?: Event) => {
-    const normalized = escapeText(value, next).replace(/\s+/gu, " ");
+    const normalized = normalizeSpace(escapeText(value, next));
     const trimmed = normalized.trim();
     if (trimmed) {
       if (normalized.startsWith(" ") && !lineStart && !pendingBreak) pendingSpace = true;
@@ -795,7 +823,7 @@ const render = async (
     }
   };
   if (title) {
-    write(`# ${escapeText(title)}`);
+    write(`# ${escapeText(title.slice(0, Math.max(0, options.maxBytes - size) + 1))}`);
     boundary();
   }
   for (let index = span.start; index < span.end && !truncated && !limited; index++) {
@@ -820,14 +848,14 @@ const render = async (
         }
       } else if (--capture.depth === 0) {
         const raw = capture.parts.join("");
-        const value = capture.name === "pre" || capture.name === "code" ? collapse(raw) : "";
+        const value = capture.name === "code" ? collapse(raw) : "";
         if (capture.name === "pre") {
-          const fence = backticks(capture.ticks, 3);
+          const fence = backticks(capture.ticks, 3, Math.max(0, options.maxBytes - size) + 1);
           boundary();
           write(`${fence}${capture.lang}\n${raw}${raw.endsWith("\n") ? "" : "\n"}${fence}`, true);
           boundary();
         } else if (capture.name === "code") {
-          const fence = backticks(capture.ticks, 1);
+          const fence = backticks(capture.ticks, 1, Math.max(0, options.maxBytes - size) + 1);
           const pad = value.startsWith("`") || value.endsWith("`") ? " " : "";
           // Whitespace at the edges of the code separates it from the surrounding words; two touching code
           // spans would read as one span with stray backticks.
@@ -853,7 +881,7 @@ const render = async (
           if (capture.name === "a" && /\s$/u.test(raw)) pendingSpace = true;
           limited ||= inline.truncated;
         }
-        if (value && (capture.name === "pre" || capture.name === "code")) readable = true;
+        if ((capture.name === "pre" && /\S/u.test(raw)) || (capture.name === "code" && value)) readable = true;
         capture = undefined;
       }
       continue;
@@ -950,7 +978,7 @@ const render = async (
       const alt = collapse(attrs.alt ?? "");
       const url = linkUrl(attrs.src, options.baseUrl, true);
       if (alt && url) {
-        write(`![${escapeLabel(escapeText(alt))}](${url})`);
+        write(`![${escapeLabel(escapeText(alt.slice(0, Math.max(0, options.maxBytes - size) + 1)))}](${url})`);
         readable = true;
       }
     } else if (name === "ul" || name === "ol") {
