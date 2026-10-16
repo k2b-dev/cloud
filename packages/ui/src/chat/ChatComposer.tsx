@@ -346,12 +346,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     setSearchResults([]);
     setSearchResultsQuery(undefined);
   });
+  const localCommands = createMemo(() => props.commands ?? []);
   const commandModel = createMemo(() =>
     chatCommandListModel({
       query: commandQuery()?.query ?? "",
       scopes: props.commandScopes,
       sections: props.commandSections,
-      commands: props.commands ?? [],
+      commands: localCommands(),
       searchResults: searchResultsScope() === parsedCommandQuery().scope?.id ? searchResults() : [],
       searchResultsFresh: searchResultsQuery() === commandQuery()?.query && searchResultsScope() === parsedCommandQuery().scope?.id,
       searchSettled: searchResultsQuery() !== undefined && searchResultsScope() === parsedCommandQuery().scope?.id,
@@ -367,7 +368,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     currentCommandQuery();
     setCommandMoved(false);
   });
-  const commandsOpen = () => Boolean(!emojiOpen() && commandQuery() && (props.commands?.length || props.searchCommands));
+  const commandsOpen = () => Boolean(!emojiOpen() && commandQuery() && (localCommands().length || props.searchCommands));
   const suggestionsOpen = () => commandsOpen() || emojiOpen();
   createEffect(() => {
     if (!suggestionsOpen()) return;

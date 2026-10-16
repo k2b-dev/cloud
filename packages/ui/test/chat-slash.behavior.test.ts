@@ -405,6 +405,36 @@ const deferredSearch = () => {
   };
 };
 
+test("search completion preserves manually scrolled local options from a commands getter", async () => {
+  const search = deferredSearch();
+  const h = await slash({
+    ...search,
+    get commands() {
+      return Array.from({ length: 20 }, (_, index) => ({ name: `Command ${index}`, description: "Local" }));
+    },
+  });
+  const list = h.root.querySelector<HTMLDivElement>('[role="listbox"]')!;
+  Object.defineProperty(list, "clientHeight", { value: 200 });
+  // Happy DOM has no layout; options move with the list's scroll position, including after a remount.
+  const geometry = spyOn(h.window.HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    const index = h.rows().findIndex((row) => row === this);
+    return new h.window.DOMRect(0, index < 0 ? 0 : index * 40 - list.scrollTop, 320, index < 0 ? 200 : 40);
+  });
+  slashCleanups.push(() => geometry.mockRestore());
+  await Bun.sleep(140);
+  await flush();
+  expect(search.requests).toHaveLength(1);
+  const rows = h.rows();
+  expect(rows).toHaveLength(20);
+  list.scrollTop = 120;
+  list.dispatchEvent(new Event("scroll"));
+  search.requests[0]!.resolve([]);
+  await flush();
+  expect(list.scrollTop).toBe(120);
+  expect(h.rows()).toHaveLength(rows.length);
+  h.rows().forEach((row, index) => expect(row).toBe(rows[index]!));
+});
+
 test.each(["Enter", "Tab"])("%s chooses a static command from a getter while search is pending", async (key) => {
   let chosen = 0;
   const make = (): ChatCommand[] => [{ name: "new", label: "Neuer Chat", description: "", action: () => void chosen++ }];
