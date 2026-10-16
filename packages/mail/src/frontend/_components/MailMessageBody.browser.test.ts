@@ -649,6 +649,7 @@ describe("HTML mail colors", () => {
 <div id="plain-border" style="border:1px solid">Plain border</div>
 <a id="underlined" href="https://example.com" style="color:#111111;text-decoration:underline;text-decoration-color:#000000">Underlined</a>
 <p id="embossed" style="color:#333333;text-shadow:0 1px 0 #ffffff">Embossed</p>
+<del id="withdrawn" style="color:#000000;text-decoration-color:#000000">Withdrawn offer</del>
 <div style="color:#1f2937"><p id="authored-reply">Authored reply</p><blockquote type="cite"><p id="authored-quoted">Authored quote</p></blockquote></div>`;
     await withOpenedMessage(
       false,
@@ -693,11 +694,14 @@ describe("HTML mail colors", () => {
             text: style("#plain-border").color,
             underline: style("#underlined").textDecorationColor,
             shadow: style("#embossed").textShadow,
+            withdrawn: [style("#withdrawn").color, style("#withdrawn").textDecorationColor],
           };
         });
         expect(followers.border).toBe(followers.text);
         expect(followers.underline).toBe("rgb(255, 255, 255)");
         expect(followers.shadow).toBe("none");
+        expect(followers.withdrawn[1]).toBe(followers.withdrawn[0]!);
+        expect(followers.withdrawn[0]).not.toBe("rgb(0, 0, 0)");
         // Under a sender color the quote is dimmed from the adapted color, and its toggle still lights up on hover.
         const authoredReply = await frame.locator("#authored-reply").evaluate((element) => getComputedStyle(element).color);
         expect(authoredReply).toMatch(/^rgb\(/);

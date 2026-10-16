@@ -247,7 +247,7 @@ export const buildMessageDocument = (
           const color = computed.color;
           colors.set(element, color);
           const fill = parseColor(computed.backgroundColor);
-          // Borders and decorations without their own color follow the text and need no change.
+          // Borders without their own color follow the text and need no change.
           const own = (value) => (value === color ? null : parseColor(value));
           const borders = [];
           for (const side of ["top", "right", "bottom", "left"]) {
@@ -261,7 +261,9 @@ export const buildMessageDocument = (
             color: color === "rgb(1, 2, 3)" || color === "rgb(1, 2, 4)" ? null : parseColor(color),
             // The same color as the parent may be inherited, so it follows the parent's adapted color.
             followsParent: colors.get(element.parentElement) === color,
-            decoration: own(computed.textDecorationColor),
+            // A decoration in the text color may still be explicit, so it is set along with the text.
+            decoration:
+              computed.textDecorationLine === "none" ? null : computed.textDecorationColor === color ? "text" : own(computed.textDecorationColor),
             textShadow: computed.textShadow !== "none",
             background: fill[3] > 0 ? fill : null,
             backgroundImage: computed.backgroundImage !== "none",
@@ -335,10 +337,13 @@ export const buildMessageDocument = (
               ? inherited
               : original.color;
         const color = adaptText(base, effective);
-        if (quoteDimmed && color === base) parent.style.setProperty("--mail-quote-text", cssColor(base));
-        else if (color !== base || (original.color !== null && !frameOwned)) set("color", color);
+        const setsColor = !(quoteDimmed && color === base) && (color !== base || (original.color !== null && !frameOwned));
+        if (setsColor) set("color", color);
+        else if (quoteDimmed) parent.style.setProperty("--mail-quote-text", cssColor(base));
         foregrounds.set(element, color);
-        if (original.decoration) set("text-decoration-color", adaptText(original.decoration, effective));
+        if (original.decoration === "text") {
+          if (setsColor) set("text-decoration-color", color);
+        } else if (original.decoration) set("text-decoration-color", adaptText(original.decoration, effective));
         // A shadow drawn for light text on a light surface turns into a halo around adapted text.
         if (original.textShadow && cssColor(color) !== cssColor(original.color || parseColor("#18181b"))) {
           element.style.setProperty("text-shadow", "none", "important");
