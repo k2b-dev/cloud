@@ -546,6 +546,11 @@ test("Escape closes this slash through more typing; another slash opens", async 
   h.key("Escape");
   h.type("/com");
   expect(Boolean(h.root.querySelector('[role="listbox"]'))).toBe(false);
+  // Moving the caret inside the same token keeps it closed, so Enter cannot run the dismissed command.
+  h.input.setSelectionRange(2, 2);
+  h.input.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowLeft", bubbles: true }));
+  expect(Boolean(h.root.querySelector('[role="listbox"]'))).toBe(false);
+  h.input.setSelectionRange(4, 4);
   h.type("/com /c");
   expect(h.rows()).toHaveLength(1);
 });

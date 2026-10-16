@@ -233,6 +233,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     return `${commandListId}-c${commandIds.get(key)}`;
   };
   const [closedAt, setClosedAt] = createSignal<number>();
+  // Where the pending native edit starts; a selection replaced as a whole starts at its beginning.
+  let inputStart: number | undefined;
   const [commandStatus, setCommandStatus] = createSignal<{ tone: "busy" | "done" | "error"; text: string }>();
   const [announcement, setAnnouncement] = createSignal<{ text: string }>();
   let statusTimer: ReturnType<typeof setTimeout> | undefined;
@@ -408,6 +410,14 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   };
   const edit = (value: string, nextMentions = reconcileChatMentions(props.value, value, mentions())) => {
     if (commandStatus()?.tone === "error") showCommandStatus();
+    // An edit that starts at or before the closed `/` (select all, then type `/`) replaces it; the new `/` may open again.
+    const closed = closedAt();
+    if (closed !== undefined) {
+      let same = 0;
+      while (same <= closed && props.value[same] === value[same]) same++;
+      if (Math.min(same, inputStart ?? same) <= closed) setClosedAt(undefined);
+    }
+    inputStart = undefined;
     record();
     props.onValueChange(value);
     props.onMentionsChange?.(nextMentions);
@@ -427,8 +437,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     });
   };
   const syncCaret = () => {
-    setCaret(textareaRef?.selectionStart ?? props.value.length);
-    setSelectionEnd(textareaRef?.selectionEnd ?? props.value.length);
+    // One update, so no effect sees a half-moved selection (it would read as "no `/` here" and reopen a closed list).
+    batch(() => {
+      setCaret(textareaRef?.selectionStart ?? props.value.length);
+      setSelectionEnd(textareaRef?.selectionEnd ?? props.value.length);
+    });
   };
   const selectedCommand = createMemo(() => {
     const rows = commandMatches();
@@ -1196,6 +1209,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           if (highlightRef && textareaRef) highlightRef.scrollTop = textareaRef.scrollTop;
         }}
         onBeforeInput={(event) => {
+          inputStart = event.currentTarget.selectionStart;
           if (event.inputType === "historyUndo" || event.inputType === "historyRedo") {
             event.preventDefault();
             restoreHistory(event.inputType === "historyUndo" ? -1 : 1);

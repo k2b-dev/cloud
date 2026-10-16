@@ -74,14 +74,15 @@ export async function assistantComposerCommands(input: {
   assignProject: (projectId: string) => Promise<void>;
   running: boolean;
 }): Promise<ChatCommand[]> {
-  const de = input.locale.startsWith("de");
   const copy = assistantCopyFor(input.locale);
   const match = /^(skill|app|file|project)(?:\s+(.*))?$/i.exec(input.query);
   const category = match?.[1]?.toLowerCase();
   const query = (match ? (match[2] ?? "") : input.query).trim().toLowerCase();
   const includes = (text: string) => text.toLowerCase().includes(query);
   const wants = (kind: string) => !category || category === kind;
+  // The attachment id is the row key: two files named "report.md" in different folders stay two rows.
   const reference = (name: string, description: string, attachment: AiComposerAttachment): ChatCommand => ({
+    id: attachment.id,
     name,
     label: name,
     description,
@@ -123,7 +124,7 @@ export async function assistantComposerCommands(input: {
   for (const file of chatFiles) {
     if (!includes(file.path)) continue;
     results.push(
-      reference(file.path.split("/").at(-1) || file.path, `${de ? "Chat-Datei" : "Chat file"} · ${file.path}`, {
+      reference(file.path.split("/").at(-1) || file.path, `${copy.chatFileDescription} · ${file.path}`, {
         kind: "stored-file",
         id: `file:${file.path}:${file.version}`,
         name: file.path.split("/").at(-1) || file.path,
@@ -138,14 +139,13 @@ export async function assistantComposerCommands(input: {
   for (const file of project?.files ?? []) {
     if (!includes(file.path)) continue;
     const path = `/project/${file.path.replace(/^\/+/, "")}`;
-    results.push(
-      reference(path, de ? "Projektdatei" : "Project file", { kind: "project-file", id: path, path, name: path, icon: "ti ti-file" }),
-    );
+    results.push(reference(path, copy.projectFileDescription, { kind: "project-file", id: path, path, name: path, icon: "ti ti-file" }));
   }
   if (wants("project") && !input.projectId)
     for (const project of input.projects) {
       if (!includes(`${project.name} ${project.description}`)) continue;
       results.push({
+        id: `project:${project.id}`,
         name: project.name,
         label: project.name,
         icon: project.icon || "ti ti-folders",

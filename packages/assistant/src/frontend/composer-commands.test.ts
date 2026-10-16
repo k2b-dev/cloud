@@ -79,6 +79,39 @@ test("Skills are explicit stable references; disabled Skills are excluded", asyn
   expect(commands[0]?.mention?.data).toMatchObject({ kind: "resource", ref: { type: "core.ai.skill", id: "Sk1234" } });
 });
 
+test("same-named files and Projects keep distinct row ids, so the composer does not merge them", async () => {
+  const file: Awaited<ReturnType<typeof assistantApi.listChatFiles>>[number] = {
+    path: "/a/report.md",
+    version: 1,
+    size: 3,
+    mediaType: "text/markdown",
+    origin: "assistant",
+    updatedAt: "",
+  };
+  spyOn(assistantApi, "listChatFiles").mockResolvedValue([file, { ...file, path: "/b/report.md" }]);
+  const commands = await assistantComposerCommands({
+    query: "file report",
+    signal: new AbortController().signal,
+    locale: "de",
+    conversationId: "chat-1",
+    projects: [],
+    running: false,
+    assignProject: async () => {},
+  });
+  expect(commands.map((command) => command.name)).toEqual(["report.md", "report.md"]);
+  expect(commands.map((command) => command.description)).toEqual(["Chat-Datei · /a/report.md", "Chat-Datei · /b/report.md"]);
+  expect(new Set(commands.map((command) => command.id)).size).toBe(2);
+  const projects = await assistantComposerCommands({
+    query: "project inv",
+    signal: new AbortController().signal,
+    locale: "en",
+    projects: [project, { ...project, id: "project-2" }],
+    running: false,
+    assignProject: async () => {},
+  });
+  expect(projects.map((command) => command.id)).toEqual(["project:project-1", "project:project-2"]);
+});
+
 test("built-ins have plain localized labels, retain old names and multilingual search words", () => {
   for (const locale of ["de", "en"]) {
     const commands = assistantBuiltInCommands({
