@@ -32,6 +32,16 @@ const input: MailMessage = {
   headers: { "X-Test": "bulk" },
 };
 suiteFor("database", "nats")("atomic bulk mail and paced Core delivery", () => {
+  let originalTargets: string | undefined;
+  beforeEach(() => {
+    originalTargets = process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
+    process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "127.0.0.1";
+  });
+  afterEach(() => {
+    if (originalTargets === undefined) delete process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
+    else process.env.OUTGOING_MAIL_ALLOWED_TARGETS = originalTargets;
+  });
+
   let fresh: Awaited<ReturnType<typeof useFreshDatabase>>;
   let connection: Awaited<ReturnType<typeof connectTestNats>>;
   let sync: Sync;

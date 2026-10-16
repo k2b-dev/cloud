@@ -72,19 +72,21 @@ async function result<T>(
     if (error instanceof DatabaseError) {
       const t = artifactMessages.resolve([context.locale]).t;
       const message =
-        error.code === "DB_UNREACHABLE"
-          ? t.DB_UNREACHABLE
-          : error.code === "DB_TIMEOUT"
-            ? t.DB_TIMEOUT
-            : error.code === "DB_AUTH_FAILED"
-              ? t.DB_AUTH_FAILED
-              : error.code === "DB_NOT_CONFIGURED"
-                ? t.DB_NOT_CONFIGURED
-                : error.code === "DB_NOT_CONNECTED"
-                  ? t.DB_NOT_CONNECTED
-                  : error.code === "DB_RESULT_TOO_LARGE"
-                    ? t.DB_RESULT_TOO_LARGE
-                    : error.code;
+        error.code === "DB_TARGET_BLOCKED"
+          ? t.DB_TARGET_BLOCKED
+          : error.code === "DB_UNREACHABLE"
+            ? t.DB_UNREACHABLE
+            : error.code === "DB_TIMEOUT"
+              ? t.DB_TIMEOUT
+              : error.code === "DB_AUTH_FAILED"
+                ? t.DB_AUTH_FAILED
+                : error.code === "DB_NOT_CONFIGURED"
+                  ? t.DB_NOT_CONFIGURED
+                  : error.code === "DB_NOT_CONNECTED"
+                    ? t.DB_NOT_CONNECTED
+                    : error.code === "DB_RESULT_TOO_LARGE"
+                      ? t.DB_RESULT_TOO_LARGE
+                      : error.code;
       return fail({ code: error.code, status: error.status === 502 ? 500 : error.status, message });
     }
     if (error instanceof ArtifactError)

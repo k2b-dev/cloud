@@ -1,6 +1,12 @@
 import { defineEnv, envList, envString } from "@k2b/cloud/config";
 
 export const appEnv = defineEnv({
+  GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS: {
+    schema: envList,
+    default: [],
+    scope: "runtime",
+    doc: "Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for health webhooks; unset allows only public targets, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup.",
+  },
   NATS_ADMIN_SERVERS: {
     schema: envList,
     default: [],

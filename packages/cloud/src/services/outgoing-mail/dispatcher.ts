@@ -136,7 +136,10 @@ export const attemptOutgoingMail = async (row: MessageRow, signal?: AbortSignal)
       socket.once("connect", () => {
         if (attempt.signal.aborted) socket.destroy();
       });
-      const transport = buildMailTransport(credentials, socket);
+      const transport = await buildMailTransport(credentials, socket, attempt.signal).catch((error: unknown) => {
+        socket.destroy();
+        throw error;
+      });
       const stop = () => {
         socket.destroy();
         transport.close();

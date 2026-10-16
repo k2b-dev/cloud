@@ -102,7 +102,7 @@ export function SqlConsole(props: {
       >
         <Show when={status()?.configured} fallback={<NoticeCard tone="warning" title={t().DB_NOT_CONFIGURED} />}>
           <Show when={status()?.unavailable}>
-            <NoticeCard tone="warning" title={t().DB_UNREACHABLE} />
+            <NoticeCard tone="warning" title={status()?.unavailable === "DB_TARGET_BLOCKED" ? t().DB_TARGET_BLOCKED : t().DB_UNREACHABLE} />
           </Show>
           <Show
             when={status()?.connected}

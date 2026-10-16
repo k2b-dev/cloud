@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { smtpSink } from "../../../../../scripts/fixtures/smtp-sink";
 import { databaseSuite, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
@@ -37,6 +37,16 @@ const app = (id: string, declared = true): AppRegistryEntry => ({
   platformPermissions: declared ? ["mail:send"] : [],
 });
 databaseSuite()("outgoing mail store and delivery", () => {
+  let originalTargets: string | undefined;
+  beforeEach(() => {
+    originalTargets = process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
+    process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "127.0.0.1";
+  });
+  afterEach(() => {
+    if (originalTargets === undefined) delete process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
+    else process.env.OUTGOING_MAIL_ALLOWED_TARGETS = originalTargets;
+  });
+
   const prefix = `test-${crypto.randomUUID().slice(0, 8)}`;
   const a = `${prefix}-a`,
     b = `${prefix}-b`,

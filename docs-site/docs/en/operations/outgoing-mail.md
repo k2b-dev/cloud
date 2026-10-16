@@ -25,6 +25,14 @@ profile test sends use the installation's `app.name`.
 Profile and sender names are limited to 120 characters, sender addresses and
 SMTP usernames to 320, SMTP hosts to 253, and SMTP passwords to 16384.
 
+SMTP and bounce IMAP allow only public targets by default; the operator can
+allow internal hosts with `OUTGOING_MAIL_ALLOWED_TARGETS` in the Core container
+(exact host names, IPs or CIDRs; an explicit value replaces the empty default).
+Invalid entries including `/0` stop Core at startup. A blocked SMTP attempt
+records `smtp_failed` and retries until its deadline; test sends report the same
+operator-facing reason. Bounce collection reports the refusal through its
+existing check error path.
+
 Save a configuration file such as `sender.json`:
 
 ```json

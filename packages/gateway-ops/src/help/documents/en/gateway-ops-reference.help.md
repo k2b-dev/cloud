@@ -10,6 +10,8 @@ Gateway Ops summarizes platform signals. It does not list raw Redis keys. For lo
 
 ## Read the health states {icon="point"}
 
+Internal webhook targets require the operator to set `GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` in Gateway Ops; the default permits only public targets, and redirects are never followed.
+
 :::reference
 - **OK:** The apps in scope are online, and their status is fresh enough for the gateway health check.
 - **Warning:** An app is reachable but reports stale health information or another degraded state.

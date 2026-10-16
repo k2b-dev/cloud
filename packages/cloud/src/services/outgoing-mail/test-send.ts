@@ -17,8 +17,9 @@ export const outgoingMailTest = {
     const event = { ...context, action: "outgoing_mail.profile.test", target: { type: "outgoing_mail_profile", id: key } };
     // Fail before the external effect if audit storage is unavailable.
     await audit.record({ ...event, outcome: "allowed" });
-    const transport = buildMailTransport(profile);
+    let transport: Awaited<ReturnType<typeof buildMailTransport>> | undefined;
     try {
+      transport = await buildMailTransport(profile);
       await transport.sendMail({
         from: { address: profile.fromAddress, name: profile.fromName ?? (await get<string>("app.name")) },
         to: recipient,
@@ -34,7 +35,7 @@ export const outgoingMailTest = {
       await audit.recordResultAfterSideEffect({ ...event, result: { ok: false, error: { code: "smtp_failed", message, status: 500 } } });
       throw new OutgoingMailError("smtp_failed", message, 502);
     } finally {
-      transport.close();
+      transport?.close();
     }
   },
 };

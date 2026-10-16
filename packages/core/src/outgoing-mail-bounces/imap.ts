@@ -1,4 +1,4 @@
-import { isIP } from "node:net";
+import { resolveMailHost } from "@k2b/cloud/services/outgoing-mail/resolve-host";
 import { type ImapMailProfile, resolveImapMailCredentials } from "@k2b/cloud/services/outgoing-mail/store";
 import { ImapFlow } from "imapflow";
 import { DSN_PART_BYTES } from "./parser";
@@ -27,14 +27,16 @@ export const createImapBounceMailbox = (profile: ImapMailProfile, signal: AbortS
   return {
     async open(folder, options) {
       signal.throwIfAborted();
+      const target = await resolveMailHost(profile.imap.host, signal);
       const password = await resolveImapMailCredentials(profile);
       signal.throwIfAborted();
       client = new ImapFlow({
-        host: profile.imap.host,
+        host: target.address,
+        servername: target.servername,
         port: profile.imap.port,
         secure: profile.imap.secure,
         ...(!profile.imap.secure ? { doSTARTTLS: true } : {}),
-        ...(isIP(profile.imap.host) ? { tls: { servername: undefined } } : {}),
+        tls: { servername: target.servername },
         auth: { user: profile.imap.user, pass: password ?? undefined },
         logger: false,
         logRaw: false,
