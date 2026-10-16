@@ -180,6 +180,7 @@ const load = async (
     items?: MailListItem[];
     toolbarActions?: MailListHarnessOptions["toolbarActions"];
     deletedOnServer?: boolean;
+    plainText?: string;
     /** Serves this stylesheet in place of the compiled one. */
     css?: string;
   } = {},
@@ -216,6 +217,7 @@ const load = async (
     requestUrl: options.requestUrl,
     toolbarActions: options.toolbarActions,
     deletedOnServer: options.deletedOnServer,
+    plainText: options.plainText,
   } satisfies MailListHarnessOptions);
   await page.clock.pauseAt(NOW + 60_000);
   return Object.assign(page, { errors, requests });
@@ -1195,4 +1197,109 @@ describe("Mail search returns to the view it started from", () => {
       }, 30_000);
     }
   }
+});
+
+describe("Mail conversation printing", () => {
+  const plainText = "Thanks, see below.\n\n> Earlier question about the invoice\n> with a second line";
+  /** What the reader prints, as the conversation's Print action prepares the page for it. */
+  const printed = {
+    subject: "[data-mail-print-root] h1",
+    sender: "[data-mail-print-root] [data-mail-message-header] .font-semibold",
+    date: "[data-mail-print-root] [data-mail-message-header] time",
+    body: "[data-mail-print-root] [data-mail-message-id] pre:not(details pre)",
+    quote: "[data-mail-print-root] [data-mail-message-id] details pre",
+  };
+  /** Whether each part takes part in the rendering, and its text color as red, green, and blue. */
+  const inks = (page: Page) =>
+    page.evaluate((selectors) => {
+      const canvas = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+      const ink = (color: string) => {
+        // The canvas resolves every CSS color syntax, oklch() included, to sRGB.
+        canvas.clearRect(0, 0, 1, 1);
+        canvas.fillStyle = color;
+        canvas.fillRect(0, 0, 1, 1);
+        return [...canvas.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+      };
+      return Object.fromEntries(
+        Object.entries(selectors).map(([part, selector]) => {
+          const element = document.querySelector(selector);
+          return [
+            part,
+            element ? { shown: element.checkVisibility({ visibilityProperty: true }), ink: ink(getComputedStyle(element).color) } : null,
+          ];
+        }),
+      );
+    }, printed);
+  /** WCAG contrast of a text color against white paper. */
+  const contrastOnPaper = (ink: number[]) => {
+    const [red, green, blue] = ink.map((channel) => {
+      const value = channel / 255;
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    }) as [number, number, number];
+    return 1.05 / (0.2126 * red + 0.7152 * green + 0.0722 * blue + 0.05);
+  };
+  /** The labels of the quoted-text toggle that a reader of the paper would see. */
+  const quoteLabels = (page: Page) =>
+    page.evaluate(() =>
+      [...document.querySelectorAll("[data-mail-print-root] details summary .inline-grid > span")]
+        .filter((label) => label.checkVisibility({ visibilityProperty: true }))
+        .map((label) => label.textContent),
+    );
+  const open = async (theme: "light" | "dark") => {
+    const page = await load({ reader: true, theme, selectedConversationId: "Cv0001", plainText });
+    await page.waitForSelector(printed.body);
+    return page;
+  };
+  const print = async (page: Page) => {
+    await page.evaluate(() => document.body.classList.add("mail-printing-conversation"));
+    await page.emulateMedia({ media: "print" });
+  };
+
+  test("prints a dark conversation as dark text on white paper, with its sender row and one quote label", async () => {
+    const page = await open("dark");
+    try {
+      const screen = await inks(page);
+      await page.evaluate(() => document.body.classList.add("mail-printing-conversation"));
+      // Nothing changes on screen while the print dialog is open.
+      expect(await inks(page)).toEqual(screen);
+      await page.emulateMedia({ media: "print" });
+
+      const paper = await inks(page);
+      for (const part of ["subject", "sender", "date", "body"] as const) {
+        expect({ part, shown: paper[part]?.shown }).toEqual({ part, shown: true });
+        expect(contrastOnPaper(paper[part]!.ink)).toBeGreaterThanOrEqual(7);
+      }
+      expect(await quoteLabels(page)).toEqual(["Show quoted text"]);
+
+      // Quoted text the person opened prints too, under its one current label.
+      await page.evaluate(() => {
+        document.querySelector<HTMLDetailsElement>("[data-mail-print-root] details")!.open = true;
+      });
+      expect(await quoteLabels(page)).toEqual(["Hide quoted text"]);
+      const quote = (await inks(page)).quote!;
+      expect(quote.shown).toBe(true);
+      expect(contrastOnPaper(quote.ink)).toBeGreaterThanOrEqual(7);
+      expect(page.errors).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test("prints a light conversation in the colors it shows", async () => {
+    const page = await open("light");
+    try {
+      const screen = await inks(page);
+      await print(page);
+      const paper = await inks(page);
+      expect(paper.subject).toEqual(screen.subject);
+      expect(paper.body).toEqual(screen.body);
+      // The sender row prints in its own colors; the secondary date stays lighter than the name.
+      expect(paper.sender).toEqual({ ...screen.sender!, shown: true });
+      expect(paper.date).toEqual({ ...screen.date!, shown: true });
+      expect(paper.date!.ink).not.toEqual(paper.sender!.ink);
+      expect(await quoteLabels(page)).toEqual(["Show quoted text"]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
 });

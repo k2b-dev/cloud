@@ -29,6 +29,8 @@ export type MailListHarnessOptions = {
   toolbarActions?: MailConversationToolbarActionId[];
   /** The mail server deleted the messages of kept conversations, so the reader shows Cloud's copies. */
   deletedOnServer?: boolean;
+  /** Replaces the body of plain text messages, for example with quoted text. */
+  plainText?: string;
 };
 
 declare global {
@@ -51,7 +53,7 @@ const mailbox = { id: "Box001", name: "Example Club", health: "healthy" } as unk
 const noop = () => {};
 
 /** One message per conversation; even rows have an HTML body in its frame, odd rows a plain text body. */
-const detailFor = (item: MailListItem | undefined, deletedOnServer = false) => {
+const detailFor = (item: MailListItem | undefined, deletedOnServer = false, plainText?: string) => {
   if (!item?.conversationId) return { selectedConversationId: null, subject: "", messages: [] as MessageDetail[] };
   const html = Number(item.conversationId.slice(2)) % 2 === 0;
   const message: MessageDetail = {
@@ -74,7 +76,7 @@ const detailFor = (item: MailListItem | undefined, deletedOnServer = false) => {
     deletedOnServer: deletedOnServer && item.kept,
     contentType: html ? "text/html" : "text/plain",
     sizeBytes: 64,
-    plainText: `Body of ${item.subject}`,
+    plainText: (!html && plainText) || `Body of ${item.subject}`,
     sanitizedHtml: html ? `<p>Body of ${item.subject}</p>` : null,
     forwardText: "",
     selectedHeaders: {},
@@ -102,6 +104,7 @@ window.mountMailList = (options) => {
     detailFor(
       options.items.find((item) => item.conversationId === selected()),
       options.deletedOnServer,
+      options.plainText,
     ),
   );
   // Keeping arrives with the next snapshot, like the workspace's: the open row's state decides the reader's.
@@ -123,6 +126,7 @@ window.mountMailList = (options) => {
           detailFor(
             list.items.find((item) => item.conversationId === conversationId),
             options.deletedOnServer,
+            options.plainText,
           ),
         ),
       );
