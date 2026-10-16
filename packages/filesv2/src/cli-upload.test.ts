@@ -25,10 +25,10 @@ afterEach(async () => {
   for (const server of servers.splice(0)) server.stop(true);
   for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true });
 });
-async function file(contents: string) {
+async function file(contents: string, name = "file") {
   const dir = await mkdtemp(join(tmpdir(), "filesv2-upload-"));
   directories.push(dir);
-  const path = join(dir, "file");
+  const path = join(dir, name);
   await writeFile(path, contents);
   return path;
 }
@@ -304,6 +304,46 @@ test.each(["en", "de"])("TTY progress uses acknowledged bytes, throttles updates
     now.mockRestore();
     if (descriptor) Object.defineProperty(process.stderr, "isTTY", descriptor);
     else Reflect.deleteProperty(process.stderr, "isTTY");
+  }
+});
+
+test.each([50, 0, undefined])("TTY upload lines fit the terminal and preserve progress amounts (columns: %s)", async (columns) => {
+  const name = `${"写真😀".repeat(12)}.txt`;
+  const local = await file("abc", name);
+  const ttyDescriptor = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+  const columnsDescriptor = Object.getOwnPropertyDescriptor(process.stderr, "columns");
+  Object.defineProperty(process.stderr, "isTTY", { configurable: true, value: true });
+  Object.defineProperty(process.stderr, "columns", { configurable: true, value: columns });
+  try {
+    await uploadFile({ ...ctx, options: { ...ctx.options, output: "text" } }, local, {
+      scope: "base/path/error",
+      open: async () => ({ ...session("https://filegate.test/unused", 3), state: "committed" }),
+      renew: async () => {
+        throw new Error("must not renew");
+      },
+      commit: async () => result,
+      abort: async () => {
+        throw new Error("must not abort");
+      },
+    });
+    expect(errors).toHaveLength(4);
+    const prefix = "\x1b[1A\x1b[2K";
+    const amount = ": 0.0 MiB of 0.0 MiB (100 %)";
+    expect(errors[1]).toStartWith(prefix);
+    expect(errors[1]).toEndWith(amount);
+    if (columns) {
+      for (const line of errors) expect(Bun.stringWidth(line.replace(prefix, ""))).toBeLessThanOrEqual(columns - 1);
+      expect(errors[0]).toEndWith("…");
+      expect(errors[1]).toContain(`…${amount}`);
+    } else {
+      expect(errors[0]).toBe(`Uploading ${name}`);
+      expect(errors[1]).toBe(`${prefix}Uploading ${name}${amount}`);
+    }
+  } finally {
+    if (ttyDescriptor) Object.defineProperty(process.stderr, "isTTY", ttyDescriptor);
+    else Reflect.deleteProperty(process.stderr, "isTTY");
+    if (columnsDescriptor) Object.defineProperty(process.stderr, "columns", columnsDescriptor);
+    else Reflect.deleteProperty(process.stderr, "columns");
   }
 });
 

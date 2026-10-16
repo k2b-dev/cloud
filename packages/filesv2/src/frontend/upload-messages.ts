@@ -48,6 +48,7 @@ const messages = i18n.define({
       failed: "Could not be uploaded",
       offline: "No connection",
       stalled: "No response from the file server",
+      serverStalled: "No response from the server",
       busy: "The file server is busy",
       announce: (said: UploadAnnouncement | { kind: "failures"; count: number }): string => {
         switch (said.kind) {
@@ -110,6 +111,7 @@ const messages = i18n.define({
       failed: "Konnte nicht hochgeladen werden",
       offline: "Keine Verbindung",
       stalled: "Keine Antwort vom Dateiserver",
+      serverStalled: "Keine Antwort vom Server",
       busy: "Der Dateiserver ist ausgelastet",
       announce: (said: UploadAnnouncement | { kind: "failures"; count: number }): string => {
         switch (said.kind) {
@@ -146,7 +148,7 @@ export function uploadFailureReason(error: unknown, t: ReturnType<typeof message
     if (error.kind === "network") return t.offline;
     return error.message || t.failed;
   }
-  if (error instanceof DOMException && error.name === "TimeoutError") return t.stalled;
+  if (error instanceof DOMException && error.name === "TimeoutError") return t.serverStalled;
   return error instanceof Error && error.message && error.message !== "path_conflict" ? error.message : t.failed;
 }
 

@@ -142,6 +142,32 @@ async function transferError(run: Promise<void>): Promise<UploadTransferError> {
   throw new Error("Expected transfer failure");
 }
 
+test.each([500, 501])("a PUT answered with %s is final after one attempt without Retry-After", async (code) => {
+  let puts = 0;
+  mockFetch(async (input, init) => {
+    if (init?.method === "PUT") {
+      puts++;
+      return Response.json({ error: "internal_error", message: "lease-secret" }, { status: code, headers: { "Retry-After": "5" } });
+    }
+    return Response.json(new URL(String(input)).searchParams.has("segments") ? { items: [] } : status(1));
+  });
+  const error = await transferError(transferUpload(new Blob(["a"]), { ...session, size: 1 }, options()));
+  expect(error.kind).toBe("final");
+  expect(error.cause).toBeInstanceOf(FilegateError);
+  expect(error.retryAfter).toBeUndefined();
+  expect(puts).toBe(1);
+});
+
+test.each([408, 429, 502, 503, 504])("a PUT answered with %s stays busy with Retry-After", async (code) => {
+  mockFetch(async (input, init) => {
+    if (init?.method === "PUT") return Response.json({ error: "busy" }, { status: code, headers: { "Retry-After": "5" } });
+    return Response.json(new URL(String(input)).searchParams.has("segments") ? { items: [] } : status(1));
+  });
+  const error = await transferError(transferUpload(new Blob(["a"]), { ...session, size: 1 }, options()));
+  expect(error.kind).toBe("busy");
+  expect(error.retryAfter).toBe(5000);
+});
+
 test.each(["status", "segments", "PUT"])("a stalled %s request ends the transfer after one attempt", async (target) => {
   const deadlines = shortenDeadlines();
   const file = new Blob([new Uint8Array(8 * 1024 * 1024)]);
@@ -213,7 +239,7 @@ test.each([
   { code: 503, body: "upload_capacity", header: "0", kind: "busy", attempts: 3, retryAfter: 0 },
   { code: 429, body: "busy", header: "5", kind: "busy", attempts: 1, retryAfter: 5000 },
   { code: 408, body: "timeout", header: null, kind: "busy", attempts: 1, retryAfter: undefined },
-  { code: 500, body: "server_error", header: "invalid", kind: "busy", attempts: 1, retryAfter: undefined },
+  { code: 500, body: "server_error", header: "invalid", kind: "final", attempts: 1, retryAfter: undefined },
   { code: 400, body: "bad_request", header: null, kind: "final", attempts: 1, retryAfter: undefined },
 ])("HTTP $code is $kind after $attempts attempts", async ({ code, body, header, kind, attempts, retryAfter }) => {
   let requests = 0;

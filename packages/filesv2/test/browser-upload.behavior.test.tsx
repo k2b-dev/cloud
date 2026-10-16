@@ -562,8 +562,8 @@ test("a folder request with no response fails its group visibly and the next gro
   const rows = [...dom.document.querySelectorAll('.filesv2-upload-row[data-status="failed"]')];
   expect(rows).toHaveLength(2);
   expect(rows.map((row) => row.querySelector(".filesv2-upload-row__reason")?.textContent)).toEqual([
-    "No response from the file server",
-    "No response from the file server",
+    "No response from the server",
+    "No response from the server",
   ]);
   expect(dom.document.querySelector(".filesv2-upload")?.getAttribute("data-phase")).toBe("errors");
   const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]:not([webkitdirectory])')!;

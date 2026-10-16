@@ -143,6 +143,9 @@ Existing names ask before being replaced. Every transfer request has a deadline
 sized for the slowest supported uplink of about 0.5 Mbit/s (64 KiB/s), so a
 request the file server never answers fails the file with a reason and the batch
 continues with the next file.
+Browser failures distinguish “No response from the server” for Cloud requests
+from “No response from the file server” for transfers. Only HTTP 408, 429, 502,
+503, and 504 report that the file server is busy; other HTTP failures are final.
 
 ## Create folders
 

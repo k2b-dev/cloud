@@ -122,7 +122,7 @@ export async function transferUpload(
       if (!(error instanceof FilegateError && error.status === 401 && error.code === "expired_capability") || renewals >= 3) {
         const kind: UploadTransferKind =
           error instanceof FilegateError
-            ? error.status === 408 || error.status === 429 || error.status >= 500
+            ? [408, 429, 502, 503, 504].includes(error.status)
               ? "busy"
               : "final"
             : error instanceof TypeError && error === networkError

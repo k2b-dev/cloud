@@ -45,7 +45,20 @@ export async function uploadFile(
     let lastProgress = -Infinity;
     let lastBytes = -1;
     const uploading = cliText(ctx, { en: "Uploading", de: "Hochladen" });
-    if (textProgress) ctx.error(`${uploading} ${name}`);
+    const line = (suffix = "") => {
+      let displayName = name;
+      const columns = tty && process.stderr.columns;
+      if (columns && Bun.stringWidth(`${uploading} ${name}${suffix}`) > columns - 1) {
+        displayName = "";
+        for (const character of name) {
+          if (Bun.stringWidth(`${uploading} ${displayName}${character}…${suffix}`) > columns - 1) break;
+          displayName += character;
+        }
+        displayName += "…";
+      }
+      return `${uploading} ${displayName}${suffix}`;
+    };
+    if (textProgress) ctx.error(line());
     const progress = (bytes: number) => {
       if (!tty || bytes === lastBytes) return;
       const now = Date.now();
@@ -54,7 +67,7 @@ export async function uploadFile(
       const percent = info.size === 0 ? 100 : Math.floor((bytes / info.size) * 100);
       const amount = cliText(ctx, { en: `${mib(bytes)} of ${mib(info.size)}`, de: `${mib(bytes)} von ${mib(info.size)}` });
       // Replace the previous line, starting with the phase line, so a terminal shows one updating line.
-      ctx.error(`\x1b[1A\x1b[2K${uploading} ${name}: ${amount} (${percent} %)`);
+      ctx.error(`\x1b[1A\x1b[2K${line(`: ${amount} (${percent} %)`)}`);
       lastProgress = now;
       lastBytes = bytes;
     };
