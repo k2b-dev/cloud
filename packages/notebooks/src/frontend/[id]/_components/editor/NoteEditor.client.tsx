@@ -33,12 +33,6 @@ import { notebookWorkspaceMessages } from "../../messages";
 import {
   ACTIVE_HEADING_EVENT,
   type ActiveHeadingEventDetail,
-  SYNC_STATE_EVENT,
-  SYNC_STATE_REQUEST_EVENT,
-  RECONNECT_EVENT,
-  PRESENCE_LOCATIONS_EVENT,
-  JUMP_TO_PARTICIPANT_EVENT,
-  type JumpToParticipantEventDetail,
   ATTACHMENTS_UPDATE_EVENT,
   DETAIL_PANEL_STATE_EVENT,
   EDITOR_COPY_EVENT,
@@ -46,13 +40,19 @@ import {
   EDITOR_INSERT_ATTACHMENT_EVENT,
   EDITOR_PDF_EVENT,
   type EditorPdfEventDetail,
+  JUMP_TO_PARTICIPANT_EVENT,
+  type JumpToParticipantEventDetail,
   NAMED_BLOCK_SCROLL_EVENT,
   NAMED_BLOCKS_UPDATE_EVENT,
   NOTE_SOFT_NAVIGATED_EVENT,
   NOTE_TITLE_CHANGED_EVENT,
   PRESENCE_EVENT,
+  PRESENCE_LOCATIONS_EVENT,
+  RECONNECT_EVENT,
   RICH_MODE_CHANGED_EVENT,
   SIDEBAR_FILTER_CHANGED_EVENT,
+  SYNC_STATE_EVENT,
+  SYNC_STATE_REQUEST_EVENT,
   TASKS_UPDATE_EVENT,
   TOC_SCROLL_EVENT,
   TOC_UPDATE_EVENT,
@@ -76,11 +76,11 @@ import { createLinkedHeadingJump, type LinkedHeading } from "./linked-heading";
 import { createNoteNavigationCoordinator, headingFromHash, resolveSameNotebookNoteTarget } from "./note-navigation";
 import { NOTE_PREVIEW_ID } from "./note-preview";
 import { createNotePrintCopy } from "./note-print-copy";
+import { participantCursors, presenceLocations } from "./presence-locations";
 import { keepReadingPosition, previewReadingPosition, type ReadingPosition, scrollToReadingPosition } from "./reading-position";
 import { slashCommandsExtension } from "./slash-commands";
-import { participantCursors, presenceLocations } from "./presence-locations";
-import { createSyncStateBridge } from "./sync-state";
 import { createSyncEnded, SyncEndedBar } from "./sync-ended";
+import { createSyncStateBridge } from "./sync-state";
 import { createTabKeyPreference } from "./tab-key-preference";
 
 const TOC_DEBOUNCE_MS = 300;
@@ -694,6 +694,8 @@ function EditorInstance(
   // twice would scan a large note twice per debounce tick.)
   const emitDerivedDocState = () => {
     const md = ytext.toString();
+    headingLines = extractHeadingLines(md);
+    schedulePanelLocations();
     const title = deriveNoteTitle(md);
     if (title !== lastDerivedTitle) {
       lastDerivedTitle = title;
@@ -719,10 +721,10 @@ function EditorInstance(
     tocDebounceTimer = setTimeout(emitDerivedDocState, TOC_DEBOUNCE_MS);
   };
 
+  // Typing only restarts the debounce; the heading index and the people's sections follow with the outline, so a
+  // long note is not parsed again on every keystroke or remote update.
   const onTextUpdate = () => {
-    headingLines = extractHeadingLines(ytext.toString());
     scheduleDerivedEmit();
-    schedulePanelLocations();
     printCopy?.changed();
   };
   ytext.observe(onTextUpdate);

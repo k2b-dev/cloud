@@ -17,4 +17,14 @@ describe("Note editor surface", () => {
       /onMouseDown=\{\(event\) => \{\s*if \(props\.readOnly \|\| !pressMissedEditor\(event\)\) return;\s*event\.preventDefault\(\);\s*if \(focusEditor\(0, "end"\)\)/,
     );
   });
+  test("parses the note for headings only in the debounced pass, never on every text update", async () => {
+    // A long note took about half a second per parse; the text observer only restarts the debounce.
+    const source = await Bun.file(resolve(import.meta.dir, "NoteEditor.client.tsx")).text();
+    const observer = source.match(/const onTextUpdate = \(\) => \{([\s\S]*?)\n {2}\};/)?.[1] ?? "";
+    expect(observer).toContain("scheduleDerivedEmit()");
+    expect(observer).not.toMatch(/extractHeadingLines|toString\(\)|schedulePanelLocations/);
+    expect(source).toMatch(
+      /const emitDerivedDocState = \(\) => \{\s*const md = ytext\.toString\(\);\s*headingLines = extractHeadingLines\(md\);/,
+    );
+  });
 });

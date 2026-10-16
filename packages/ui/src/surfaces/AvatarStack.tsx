@@ -1,4 +1,4 @@
-import { createSignal, createUniqueId, For, type JSX, onCleanup, Show } from "solid-js";
+import { createSignal, createUniqueId, For, Index, type JSX, onCleanup, Show } from "solid-js";
 import { dropdownPosition } from "../actions/Dropdown";
 import { prefersMenuSheet } from "../actions/menu-sheet";
 import { dialogCore } from "../feedback/dialog-core";
@@ -46,33 +46,34 @@ export type AvatarStackProps = {
 const PersonRows = (props: { people: readonly AvatarStackPerson[]; choose: (person: AvatarStackPerson) => void }): JSX.Element => {
   const others = () => props.people.filter((person) => !person.self);
   const selves = () => props.people.filter((person) => person.self);
-  const row = (person: AvatarStackPerson) => {
+  // Rows update in place as people move between sections, so a focused row keeps its focus while the list is open.
+  const row = (person: () => AvatarStackPerson) => {
     const content = (
       <>
-        <Avatar name={person.name} src={person.src} icon={person.icon} shape={person.shape} size="sm" />
+        <Avatar name={person().name} src={person().src} icon={person().icon} shape={person().shape} size="sm" />
         <span class="k2b-avatar-stack__row-copy">
           <span class="k2b-avatar-stack__row-name">
-            <span>{person.name}</span>
-            <Show when={person.badge}>
-              <span class="k2b-avatar-stack__row-badge">{person.badge}</span>
+            <span>{person().name}</span>
+            <Show when={person().badge}>
+              <span class="k2b-avatar-stack__row-badge">{person().badge}</span>
             </Show>
           </span>
-          <Show when={person.detail}>
+          <Show when={person().detail}>
             <span class="k2b-avatar-stack__row-detail">
-              <Show when={person.detailIcon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-              <span>{person.detail}</span>
+              <Show when={person().detailIcon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+              <span>{person().detail}</span>
             </span>
           </Show>
         </span>
-        <Show when={person.trailing}>
-          <span class="k2b-avatar-stack__row-trailing">{person.trailing}</span>
+        <Show when={person().trailing}>
+          <span class="k2b-avatar-stack__row-trailing">{person().trailing}</span>
         </Show>
       </>
     );
     return (
-      <li data-self={person.self ? "true" : undefined}>
-        <Show when={person.onSelect} fallback={<div class="k2b-avatar-stack__row">{content}</div>}>
-          <button type="button" class="k2b-avatar-stack__row" onClick={() => props.choose(person)}>
+      <li data-self={person().self ? "true" : undefined}>
+        <Show when={Boolean(person().onSelect)} fallback={<div class="k2b-avatar-stack__row">{content}</div>}>
+          <button type="button" class="k2b-avatar-stack__row" onClick={() => props.choose(person())}>
             {content}
           </button>
         </Show>
@@ -81,8 +82,8 @@ const PersonRows = (props: { people: readonly AvatarStackPerson[]; choose: (pers
   };
   return (
     <ul class="k2b-avatar-stack__rows">
-      <For each={others()}>{row}</For>
-      <For each={selves()}>{row}</For>
+      <Index each={others()}>{row}</Index>
+      <Index each={selves()}>{row}</Index>
     </ul>
   );
 };
