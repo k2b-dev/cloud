@@ -3,7 +3,15 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { checkDocumentation } from "./check-documentation";
-import { conventionCatalogErrors, headingContractErrors, metadataErrors, uiHeadingIds, uiLinkError } from "./documentation-rules";
+import {
+  conventionCatalogErrors,
+  conventionCoverageErrors,
+  conventionPrefixes,
+  headingContractErrors,
+  metadataErrors,
+  uiHeadingIds,
+  uiLinkError,
+} from "./documentation-rules";
 
 const validMeta = {
   title: "Page",
@@ -162,9 +170,10 @@ describe("convention catalog", () => {
       const result = await checkDocumentation({ docsRoot, requestedPaths: [files[0]] });
       expect(result.checked).toBe(1);
       expect(result.indexed).toBe(2);
-      expect(result.errors).toHaveLength(1);
-      expect(result.errors[0]).toContain("b.md:15: duplicate convention ID 'SRV-01' (first in");
-      expect(result.errors[0]).toContain("a.md:15)");
+      const errors = result.errors.filter((error) => !/convention (?:prefix |index )/.test(error));
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain("b.md:15: duplicate convention ID 'SRV-01' (first in");
+      expect(errors[0]).toContain("a.md:15)");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -177,6 +186,90 @@ describe("convention catalog", () => {
         { file: "two.md", prose: catalog(row("SRV-02").replace("Return a Result.", "Retired. Use SRV-01."), row("ACC-01")) },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe("convention coverage", () => {
+  const page = (name: string, prose: string) => ({
+    file: `${name}.md`,
+    route: `/en/docs/conventions${name === "index" ? "" : `/${name}`}`,
+    prose,
+  });
+  const prefixTable = (prefixes: readonly string[] = conventionPrefixes) =>
+    [
+      "| Prefix | Area | Page |",
+      "| --- | --- | --- |",
+      ...prefixes.map((prefix) => `| ${prefix} | Area | [Rules](/en/docs/conventions/rules#area) |`),
+    ].join("\n");
+  const complete = () => [page("index", prefixTable()), page("rules", catalog(...conventionPrefixes.map((prefix) => row(`${prefix}-01`))))];
+
+  test("reports exactly the missing prefix", () => {
+    const pages = complete();
+    pages[1].prose = catalog(...conventionPrefixes.filter((prefix) => prefix !== "REL").map((prefix) => row(`${prefix}-01`)));
+    const errors = conventionCoverageErrors(pages);
+    expect(errors.filter((error) => error.startsWith("convention prefix "))).toEqual([
+      "convention prefix REL has no row on any conventions page",
+    ]);
+    expect(errors).toEqual([
+      "convention prefix REL has no row on any conventions page",
+      "index.md:14: convention index prefix REL links to /en/docs/conventions/rules, which has no REL rows",
+    ]);
+  });
+
+  test("reports an index row without a conventions link", () => {
+    const pages = complete();
+    pages[0].prose = pages[0].prose.replace("[Rules](/en/docs/conventions/rules#area)", "Not catalogued yet");
+    expect(conventionCoverageErrors(pages)).toEqual(["index.md:3: convention index prefix CODE needs exactly one conventions page link"]);
+  });
+
+  test("reports a link to a page without the prefix's rows", () => {
+    const pages = complete();
+    pages[0].prose = pages[0].prose.replace("conventions/rules#area", "conventions/other#area");
+    pages.push(page("other", catalog(row("SRV-02"))));
+    expect(conventionCoverageErrors(pages)).toEqual([
+      "index.md:3: convention index prefix CODE links to /en/docs/conventions/other, which has no CODE rows",
+    ]);
+  });
+
+  test("accepts every prefix and matching index links", () => {
+    expect(conventionCoverageErrors(complete())).toEqual([]);
+  });
+
+  test("reports a missing index row", () => {
+    const pages = complete();
+    pages[0].prose = prefixTable(conventionPrefixes.filter((prefix) => prefix !== "REL"));
+    expect(conventionCoverageErrors(pages)).toEqual(["index.md: convention index has no prefix row for REL"]);
+  });
+
+  test("requires the index and its prefix table", () => {
+    expect(conventionCoverageErrors(complete().slice(1))).toEqual(["convention index page /en/docs/conventions is missing"]);
+    const pages = complete();
+    pages[0].prose = "# Index";
+    expect(conventionCoverageErrors(pages)).toEqual([
+      "index.md: convention index prefix table is missing",
+      ...conventionPrefixes.map((prefix) => `index.md: convention index has no prefix row for ${prefix}`),
+    ]);
+    expect(conventionCoverageErrors([])).toContain("convention prefix REL has no row on any conventions page");
+  });
+
+  test("reports unknown prefixes and multiple or non-catalog links", () => {
+    const pages = complete();
+    pages[0].prose += "\n| UNKNOWN | Area | [Rules](/en/docs/conventions/rules) |";
+    expect(conventionCoverageErrors(pages)).toEqual([
+      "index.md:15: convention index has unknown prefix 'UNKNOWN'",
+      "index.md:15: convention index prefix UNKNOWN links to /en/docs/conventions/rules, which has no UNKNOWN rows",
+    ]);
+    for (const link of [
+      "[Index](/en/docs/conventions)",
+      "[Build](/en/docs/build)",
+      "[One](/en/docs/conventions/rules) [Two](/en/docs/conventions/other)",
+    ]) {
+      const fixture = complete();
+      fixture[0].prose = fixture[0].prose.replace("[Rules](/en/docs/conventions/rules#area)", link);
+      expect(conventionCoverageErrors(fixture)).toEqual([
+        "index.md:3: convention index prefix CODE needs exactly one conventions page link",
+      ]);
+    }
   });
 });
 

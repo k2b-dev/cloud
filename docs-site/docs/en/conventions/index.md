@@ -5,7 +5,7 @@ section: Conventions
 order: 1280
 description: Review an application with a checklist index of Cloud's public rules.
 tags: [conventions, audit, checklist, review]
-updated: 2026-10-15
+updated: 2026-10-16
 ---
 
 # Conventions for Cloud applications
@@ -49,15 +49,11 @@ surfaces.
 | UI | Visual UI | [Frontend](/en/docs/conventions/frontend#visual-ui-ui) |
 | IX | Interaction and feedback | [Frontend](/en/docs/conventions/frontend#interaction-and-feedback-ix) |
 | A11Y | Accessibility | [Frontend](/en/docs/conventions/frontend#accessibility-a11y) |
-| I18N | Internationalization | Not catalogued yet |
-| DOC | Product text and Help | Not catalogued yet |
-| CLI | CLI and Assistant Skills | Not catalogued yet |
-| TEST | Testing | Not catalogued yet |
-| REL | Release and deployment | Not catalogued yet |
-
-Until those areas are catalogued, use [Frontend](/en/docs/frontend), the
-[UI catalog](/en/ui), [Build an application](/en/docs/build), and
-[Testing](/en/docs/contributing/testing) as their canonical sources.
+| I18N | Internationalization | [Text and Help](/en/docs/conventions/text-and-help#internationalization-i18n) |
+| DOC | Product text and Help | [Text and Help](/en/docs/conventions/text-and-help#product-text-and-help-doc) |
+| CLI | CLI and Assistant Skills | [CLI, tests, and release](/en/docs/conventions/cli-tests-release#cli-and-assistant-skills-cli) |
+| TEST | Testing | [CLI, tests, and release](/en/docs/conventions/cli-tests-release#testing-test) |
+| REL | Release and deployment | [CLI, tests, and release](/en/docs/conventions/cli-tests-release#release-and-deployment-rel) |
 
 ## Use the checks
 
@@ -75,5 +71,7 @@ to verify the rule against the application's actual behavior.
 Maintainers change the canonical page first, then its catalog row. Never
 renumber IDs; retire dropped rules instead of deleting their rows.
 `bun run --cwd docs-site check:docs` enforces ID format, uniqueness, no gaps,
-exactly five cells, and exactly one canonical link per row. Escape literal
-pipes as `\|`, including inside code spans.
+exactly five cells, and exactly one canonical link per row; it also requires
+every prefix to have at least one row and every prefix-table row to link to the
+conventions page that holds that prefix's rows. Escape literal pipes as `\|`,
+including inside code spans.
