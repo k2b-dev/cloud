@@ -63,8 +63,15 @@ const charset = (value: string): string | undefined => {
   }
   return;
 };
+/** A byte order mark wins over header and meta declarations, as in the HTML encoding sniffing algorithm. */
+const bomCharset = (bytes: Uint8Array): string | undefined => {
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return "utf-8";
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return "utf-16be";
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return "utf-16le";
+  return;
+};
 const decoderFor = (bytes: Uint8Array, contentType?: string): TextDecoder => {
-  let label = charset(contentType ?? "");
+  let label = bomCharset(bytes) ?? charset(contentType ?? "");
   if (!label) {
     const prefix = new TextDecoder("windows-1252").decode(bytes.subarray(0, 1024));
     const meta = new Parser({

@@ -393,6 +393,23 @@ describe("readable HTML", () => {
     expect(result).toContain("A\n\n| B |\n| --- |\n\nC");
   });
 
+  test("lets a byte order mark win over header and meta charsets", async () => {
+    const html = '<meta charset="windows-1252"><p>Grüße äöü</p>';
+    const utf16 = (littleEndian: boolean) => {
+      const bytes = new Uint8Array(2 + html.length * 2);
+      const view = new DataView(bytes.buffer);
+      view.setUint16(0, 0xfeff, littleEndian);
+      for (let index = 0; index < html.length; index++) view.setUint16(2 + index * 2, html.charCodeAt(index), littleEndian);
+      return bytes;
+    };
+    const utf8 = new Uint8Array([0xef, 0xbb, 0xbf, ...new TextEncoder().encode(html)]);
+    for (const bytes of [utf8, utf16(true), utf16(false)]) {
+      expect(await htmlToReadableMarkdown(bytes, { baseUrl, maxBytes: 4096, contentType: "text/html; charset=ISO-8859-1" })).toBe(
+        "Grüße äöü\n",
+      );
+    }
+  });
+
   test("decodes header and meta charsets, prioritizes headers, and falls back for unsupported labels", async () => {
     const latin = (text: string) => Uint8Array.from(text, (char) => char.charCodeAt(0));
     for (const html of [
