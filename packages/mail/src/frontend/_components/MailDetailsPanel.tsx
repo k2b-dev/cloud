@@ -1,4 +1,3 @@
-import { cloudAvatarSource } from "@k2b/cloud/account/ui";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { SAVE_FILES_ICON, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
@@ -64,6 +63,10 @@ import {
   reconcileReminder,
 } from "./mail-details-reconciliation";
 import { createRetryToasts } from "./mail-feedback";
+
+// Local on purpose: `@k2b/cloud/account/ui` would pull Zod into the mailbox's first load (mailbox-first-load.test.ts).
+const cloudAvatarSource = (userId: string | null | undefined, avatarHash: string | null | undefined): string | undefined =>
+  userId && avatarHash ? `/api/accounts/users/${encodeURIComponent(userId)}/avatar?rev=${encodeURIComponent(avatarHash)}` : undefined;
 
 type InspectorTab = "headers" | "source";
 

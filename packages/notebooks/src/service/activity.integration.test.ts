@@ -4,6 +4,9 @@ import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
 import { list, noteAuthors, record } from "./activity";
 
+const AVATAR_HASH = "a".repeat(64);
+const AVATAR_DATA_URL = "data:image/png;base64,iVBORw0KGgo=";
+
 const databaseTest = testFor("database");
 const notebookId = crypto.randomUUID();
 const noteId = crypto.randomUUID();
@@ -22,8 +25,9 @@ beforeAll(async () => {
     [creatorId, "Jana Berger"],
     [editorId, "Last Editor"],
   ]) {
-    await sql`INSERT INTO auth.users (id, uid, display_name, avatar_hash, provider, profile)
-      VALUES (${id}::uuid, ${`activity-${id}`}, ${name}, 'avatar', 'local', 'user')`;
+    // The schema keeps a picture and its 64-hex hash together.
+    await sql`INSERT INTO auth.users (id, uid, display_name, avatar_data_url, avatar_hash, provider, profile)
+      VALUES (${id}::uuid, ${`activity-${id}`}, ${name}, ${AVATAR_DATA_URL}, ${AVATAR_HASH}, 'local', 'user')`;
   }
   await sql`INSERT INTO notebooks.notebooks (id, short_id, name) VALUES (${notebookId}::uuid, ${shortId()}, 'Activity test')`;
   await sql`INSERT INTO notebooks.notes (id, short_id, notebook_id, title, created_by)
@@ -36,7 +40,7 @@ afterAll(async () => {
   await sql`DELETE FROM auth.users WHERE id IN (${creatorId}::uuid, ${editorId}::uuid)`;
 });
 
-const creator = { kind: "user", id: creatorId, displayName: "Jana Berger", avatarHash: "avatar" } as const;
+const creator = { kind: "user", id: creatorId, displayName: "Jana Berger", avatarHash: AVATAR_HASH } as const;
 
 databaseTest("note authors resolve creation, latest edits and restores, with legacy and former-actor fallbacks", async () => {
   expect(await noteAuthors({ noteId })).toEqual({ createdBy: creator, lastEditedBy: creator });
