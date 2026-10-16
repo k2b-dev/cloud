@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.27.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.26.0...npm-ui-v0.27.0) (2026-10-16)
+
+
+### Features
+
+* **chat:** start chats and manage members from the full view ([#1252](https://github.com/k2b-dev/cloud/issues/1252)) ([dc04b5c](https://github.com/k2b-dev/cloud/commit/dc04b5ce4c929d7db1b4ec1c809431c46c9ae13d))
+* **cloud:** show the app as a rounded card from 1024 px with a 56 px rail on every tablet and desktop width ([#1261](https://github.com/k2b-dev/cloud/issues/1261)) ([52e392e](https://github.com/k2b-dev/cloud/commit/52e392e2ba945c3fe47e8d05377f1c16c19b7d7f))
+* **ssr:** content-hashed island asset URLs and modulepreload for the page's island modules ([#1219](https://github.com/k2b-dev/cloud/issues/1219)) ([a254388](https://github.com/k2b-dev/cloud/commit/a254388aad6301f3d8afe57e41cd1e0a33fcdc9f))
+* **ui:** group the slash menu into fixed sections with forgiving German and English search ([#1276](https://github.com/k2b-dev/cloud/issues/1276)) ([42f7894](https://github.com/k2b-dev/cloud/commit/42f7894bdb47d37e51d2769185bb0831baacd841))
+* **ui:** keep the slash list steady, find commands by German words, and say why one is unavailable ([#1264](https://github.com/k2b-dev/cloud/issues/1264)) ([907e798](https://github.com/k2b-dev/cloud/commit/907e79811fe337e011cee5f61dbf14f93592af78))
+* **ui:** show bottom sheets as a centered dialog on tablets, starting with Cloud Login approvals ([#1270](https://github.com/k2b-dev/cloud/issues/1270)) ([af93a95](https://github.com/k2b-dev/cloud/commit/af93a95d5b9f5f48104ada493ba2095e59ccc4a6))
+* **ui:** workspace columns that collapse by width, with a fixed back step and resizable widths ([#1249](https://github.com/k2b-dev/cloud/issues/1249)) ([144f2ab](https://github.com/k2b-dev/cloud/commit/144f2abc0afc8e2af014f60fa8a173226dffe238))
+
+
+### Bug Fixes
+
+* **ui:** keep focus on a day view run of empty days while days load into it ([#1245](https://github.com/k2b-dev/cloud/issues/1245)) ([df01d61](https://github.com/k2b-dev/cloud/commit/df01d61995e59bbd6d3a253b033c3368d5b86e9c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @k2b/ssr bumped from 0.16.0 to 0.17.0
+  * peerDependencies
+    * @k2b/ssr bumped from ^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 to ^0.17.0
+
 ## [0.26.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.25.0...npm-ui-v0.26.0) (2026-10-16)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.16.0...npm-ssr-v0.17.0) (2026-10-16)
+
+
+### Features
+
+* **ssr:** content-hashed island asset URLs and modulepreload for the page's island modules ([#1219](https://github.com/k2b-dev/cloud/issues/1219)) ([a254388](https://github.com/k2b-dev/cloud/commit/a254388aad6301f3d8afe57e41cd1e0a33fcdc9f))
+
 ## [0.16.0](https://github.com/k2b-dev/cloud/compare/npm-ssr-v0.15.1...npm-ssr-v0.16.0) (2026-10-15)
 
 
