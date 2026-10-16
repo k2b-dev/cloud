@@ -11,8 +11,9 @@ import type { JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 // @ts-ignore - Bun text import
 import devClientCode from "./adapter/client.js" with { type: "text" };
-import { getAssetPrefix, getReloadId, normalizeBasePath, toSsrPath } from "./adapter/utils";
+import { getReloadId, normalizeBasePath, readAssetManifest, toSsrPath } from "./adapter/utils";
 import { buildIslands, type DevSourcemap } from "./build";
+import { ISLAND_ID_LENGTH } from "./island-id";
 import { resolveIslandImport } from "./island-resolve";
 import { transform } from "./transform";
 
@@ -24,6 +25,9 @@ export type { IslandErrorProps } from "./mount";
 
 /** Glob pattern for island/client component files */
 const COMPONENT_PATTERN = "**/*.{island,client}.tsx";
+
+/** Wrapper tags as the SSR transform emits them; data-id is their first attribute. */
+const RENDERED_COMPONENT = new RegExp(`<solid-(?:island|client) data-id="([a-f0-9]{${ISLAND_ID_LENGTH}})"`, "g");
 
 // ============================================================================
 // Types
@@ -150,8 +154,6 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
 
   const islandDisplayStyle = "<style>solid-client,solid-island{display:contents}</style>";
 
-  // Hydration script - dynamically loads island/client bundles based on DOM
-  const hydrationScript = `<script type="module">const p=${JSON.stringify(ssrPath + getAssetPrefix(dev))};document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`;
   const devConfigScript = `<script>globalThis.__SSR_CONFIG=${JSON.stringify({ ssrPath, reloadId: getReloadId() })}</script>`;
 
   // HTML renderer
@@ -161,6 +163,26 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
     }
 
     const body = renderToString(render);
+
+    // Production reads the manifest on first render; build scripts create configs before islands exist.
+    const manifest = dev ? undefined : readAssetManifest(config);
+    const assetPath = manifest ? `${ssrPath}/${manifest.version}` : ssrPath;
+    // The loader preloads the rendered entries' shared static imports next to the entry imports, so the chain is one
+    // level deep. It runs after script-blocking stylesheets, keeping the preload scanner from competing with first paint.
+    const entries = new Set<string>();
+    const preloads = new Set<string>();
+    if (manifest) {
+      for (const [, id = ""] of body.matchAll(RENDERED_COMPONENT)) {
+        entries.add(`${id}.js`);
+        for (const file of manifest.entries[id] ?? []) preloads.add(file);
+      }
+    }
+    const shared = [...preloads].filter((file) => !entries.has(file));
+    const preload = shared.length
+      ? `${JSON.stringify(shared)}.forEach(f=>{const l=document.createElement('link');l.rel='modulepreload';l.href=p+'/'+f;document.head.append(l)});`
+      : "";
+    // Hydration script - dynamically loads island/client bundles based on DOM
+    const hydrationScript = `<script type="module">const p=${JSON.stringify(assetPath)};${preload}document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`;
 
     // Framework-injected assets
     let scripts = `${islandDisplayStyle}\n${hydrationScript}`;

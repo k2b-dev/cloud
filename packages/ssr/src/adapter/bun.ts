@@ -3,7 +3,7 @@
  * Serves island chunks from _ssr and dev tools endpoints.
  */
 import type { SsrConfig } from "../index";
-import { createAssetResponse, createPingResponse, createReloadResponse, getAssetPrefix, getSsrDir } from "./utils";
+import { createAssetResponse, createPingResponse, createReloadResponse, getAssetPrefix, getSsrDir, notFound } from "./utils";
 
 type RouteHandler = (req: Request) => Response | Promise<Response>;
 type Routes = Record<string, RouteHandler>;
@@ -25,7 +25,6 @@ type Routes = Record<string, RouteHandler>;
 export const routes = (config: SsrConfig): Routes => {
   const { dev, ssrPath } = config;
   const ssrDir = getSsrDir(config);
-  const assetPath = ssrPath + getAssetPrefix(dev);
 
   const devRoutes: Routes = dev
     ? {
@@ -35,13 +34,16 @@ export const routes = (config: SsrConfig): Routes => {
     : {};
 
   const serveAsset: RouteHandler = (req) => {
-    const filename = new URL(req.url).pathname.slice(assetPath.length + 1);
+    const filename = new URL(req.url).pathname.slice(ssrPath.length + 1);
     return createAssetResponse(req, ssrDir, filename, dev);
   };
-
-  return {
-    ...devRoutes,
-    [`${assetPath}/*.js`]: serveAsset,
-    [`${assetPath}/*.js.map`]: serveAsset,
+  // The route key cannot name the version: the manifest is read per request.
+  const serveVersionedAsset: RouteHandler = (req) => {
+    const [version, filename = ""] = new URL(req.url).pathname.slice(ssrPath.length + 1).split("/");
+    return `/${version}` === getAssetPrefix(config) ? createAssetResponse(req, ssrDir, filename, dev) : notFound();
   };
+
+  return dev
+    ? { ...devRoutes, [`${ssrPath}/*.js`]: serveAsset, [`${ssrPath}/*.js.map`]: serveAsset }
+    : { [`${ssrPath}/:version/:filename`]: serveVersionedAsset };
 };
