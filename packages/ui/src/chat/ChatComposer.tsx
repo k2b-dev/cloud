@@ -331,8 +331,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     setChoosingModel(false);
     resolve?.(id);
   };
+  const blockedBesidesCommand = () => Boolean(props.disabled || stopping() || state() === "submitting" || addingFiles() || submitting());
   const usableModelControl = () =>
-    !conversation() && !footer() && !props.disabled && !running() && Boolean(props.models?.length && props.onModelChange);
+    !conversation() && !footer() && !blockedBesidesCommand() && !running() && Boolean(props.models?.length && props.onModelChange);
   const openModelSelection = (): Promise<string | null> => {
     if (!usableModelControl()) return Promise.resolve(null);
     finishModelSelection(null);
@@ -1736,7 +1737,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                                   if (!modelOpen()) finishModelSelection(null);
                                 });
                             }}
-                            disabled={props.disabled || (blocked() && !choosingModel()) || running() || !props.onModelChange}
+                            disabled={(choosingModel() ? blockedBesidesCommand() : blocked()) || running() || !props.onModelChange}
                             onValueChange={(modelId) => {
                               props.onModelChange?.(modelId);
                               finishModelSelection(modelId);

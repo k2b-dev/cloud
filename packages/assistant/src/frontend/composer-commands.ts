@@ -440,8 +440,9 @@ export async function assistantComposerCommands(input: {
                     input.sessionLoader.settleRun(task.id);
                     return { done: copy.commandTaskRunning({ title }) };
                   } catch (error) {
-                    // Network failures and 5xx responses leave the outcome unknown; retries must replay the same start.
-                    if (error instanceof AssistantTaskRunError && error.status < 500) input.sessionLoader.settleRun(task.id);
+                    // Network failures, 408, 429, and 5xx leave the outcome unknown; retries must replay the same start.
+                    if (error instanceof AssistantTaskRunError && error.status < 500 && error.status !== 408 && error.status !== 429)
+                      input.sessionLoader.settleRun(task.id);
                     const reason =
                       error instanceof AssistantTaskRunError
                         ? error.status === 409

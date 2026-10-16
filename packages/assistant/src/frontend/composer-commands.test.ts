@@ -521,16 +521,15 @@ test("session loader reuses promises, merges states newest first, and aborts onl
 });
 
 for (const retryOpening of [1, 2]) {
-  test.each(["offline", 500, 200, 404, 409, 429, 400] as const)(
-    `task start after %s uses the correct key in opening ${retryOpening}`,
-    async (status) => {
+  for (const statuses of [["offline"], [500], [200], [404], [409], [429], [408], [400], ["offline", 429], ["offline", 408]] as const) {
+    test(`task start after ${statuses.join(" then ")} uses the correct key in opening ${retryOpening}`, async () => {
       const task = taskFixture(0);
       spyOn(assistantApi, "listChatTasks").mockImplementation(async ({ state }) => (state === "active" ? [task] : []));
       let attempts = 0;
       const post = spyOn(globalThis, "fetch").mockImplementation(
         Object.assign(
           async () => {
-            if (attempts++ > 0) return Response.json({});
+            const status = statuses[attempts++] ?? 200;
             if (status === "offline") throw new TypeError("Response lost");
             return Response.json({}, { status });
           },
@@ -564,21 +563,27 @@ for (const retryOpening of [1, 2]) {
         return value;
       };
       try {
-        if (status === 200) await run(1);
-        else await expect(run(1)).rejects.toThrow();
-        const firstKey = key(0);
+        let previousKey: string | null = null;
+        for (const [attempt, status] of statuses.entries()) {
+          if (status === 200) await run(attempt === 0 ? 1 : retryOpening);
+          else await expect(run(attempt === 0 ? 1 : retryOpening)).rejects.toThrow();
+          const currentKey = key(attempt);
+          if (previousKey) expect(currentKey).toBe(previousKey);
+          previousKey = currentKey;
+        }
         await run(retryOpening);
-        const retryKey = key(1);
-        if (status === "offline" || status >= 500) expect(retryKey).toBe(firstKey);
-        else expect(retryKey).not.toBe(firstKey);
+        const retryKey = key(statuses.length);
+        const status = statuses[statuses.length - 1]!;
+        if (status === "offline" || status === 408 || status === 429 || status >= 500) expect(retryKey).toBe(previousKey);
+        else expect(retryKey).not.toBe(previousKey);
         // The successful retry settles the logical start, including a replayed occurrence.
         await run(retryOpening + 1);
-        expect(key(2)).not.toBe(retryKey);
+        expect(key(statuses.length + 1)).not.toBe(retryKey);
       } finally {
         loader.dispose();
       }
-    },
-  );
+    });
+  }
 }
 
 test("task matches append after thirty references; overview limits tasks independently", async () => {

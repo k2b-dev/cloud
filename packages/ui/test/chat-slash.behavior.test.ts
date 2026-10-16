@@ -1158,6 +1158,50 @@ test("a model command cancels when a run starts while its control is open", asyn
   expect(h.root.querySelector<HTMLButtonElement>(".k2b-chat-composer__model button")!.disabled).toBe(true);
 });
 
+test.each(["submitting", "stopping"] as const)("a model command cancels when the composer becomes %s", async (nextState) => {
+  const [state, setState] = createSignal<ChatComposerProps["state"]>("idle");
+  let chosen: string | null | undefined;
+  let result: "cancelled" | undefined;
+  const changes: string[] = [];
+  const h = await slash({
+    get state() {
+      return state();
+    },
+    value: "/model",
+    models: [{ id: "a", label: "Alpha" }],
+    onModelChange(id) {
+      changes.push(id);
+    },
+    commands: [
+      {
+        name: "model",
+        description: "",
+        action: async (ctx) => {
+          chosen = await ctx.openModelSelection();
+          result = "cancelled";
+          return result;
+        },
+      },
+    ],
+  });
+  h.key("Enter");
+  await flush();
+  const menu = h.root.querySelector<HTMLElement>('[role="menu"]')!;
+  const chip = h.root.querySelector<HTMLButtonElement>(".k2b-chat-composer__model button")!;
+  expect(menu.matches(":popover-open")).toBe(true);
+  expect(chip.disabled).toBe(false);
+  expect(chosen).toBeUndefined();
+  expect(h.value()).toBe("");
+  setState(nextState);
+  await flush();
+  expect(chosen).toBeNull();
+  expect(result).toBe("cancelled");
+  expect(h.value()).toBe("/model");
+  expect(menu.matches(":popover-open")).toBe(false);
+  expect(chip.disabled).toBe(true);
+  expect(changes).toEqual([]);
+});
+
 test.each(["en", "de"])("selected rows show a check and accessible %s selected text", async (locale) => {
   const h = await slash(
     {
