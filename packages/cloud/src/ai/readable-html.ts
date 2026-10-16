@@ -113,6 +113,14 @@ const decoderFor = (bytes: Uint8Array, contentType?: string): TextDecoder => {
 const voidTags = new Set(
   "area base basefont br col command embed frame hr img input isindex keygen link meta param source track wbr".split(" "),
 );
+// HTML special elements, except address/div/p/li/dd/dt and void elements. These
+// stop implied li/dd/dt closes; paragraph closes use button scope instead.
+const specialTags = new Set(
+  "applet article aside bgsound blockquote body button caption center colgroup details dir dl fieldset figcaption figure footer form frameset h1 h2 h3 h4 h5 h6 head header hgroup html iframe listing main marquee menu nav noembed noframes noscript object ol plaintext pre script search section select style summary table tbody td template textarea tfoot th thead title tr ul xmp".split(
+    " ",
+  ),
+);
+const buttonScopeTags = new Set("applet caption html table td th marquee object template button".split(" "));
 const impliedCloses = new Map<string, Set<string>>();
 for (const name of "address article aside blockquote details div dl fieldset figcaption figure footer form header hr main nav ol p pre section table ul".split(
   " ",
@@ -366,6 +374,8 @@ export const htmlToReadableMarkdown = async (
   type Frame = { name: string; previous: number | undefined; flags: number; table: Table | undefined };
   const stack: Frame[] = [];
   const lastOpen = new Map<string, number>();
+  const specialIndices: number[] = [];
+  const buttonScopeIndices: number[] = [];
   // Tag-name offsets increase monotonically. Keep decoded chunks without repeatedly
   // concatenating them; even an oversized tag name spanning chunks is copied only once.
   const chunks: { start: number; text: string }[] = [];
@@ -397,6 +407,8 @@ export const htmlToReadableMarkdown = async (
   const closeTop = () => {
     const frame = stack.pop();
     if (!frame) return;
+    if (specialIndices.at(-1) === stack.length) specialIndices.pop();
+    if (buttonScopeIndices.at(-1) === stack.length) buttonScopeIndices.pop();
     if (frame.previous === undefined) lastOpen.delete(frame.name);
     else lastOpen.set(frame.name, frame.previous);
     if (!(frame.flags & SKIP)) {
@@ -432,6 +444,21 @@ export const htmlToReadableMarkdown = async (
     }
     if (name === "form" && lastOpen.has(name)) return;
     const closes = impliedCloses.get(name);
+    // Scope checks use only cached indices. Popping each frame once keeps even
+    // repeated unmatched item opens at hostile depths amortized linear.
+    if (name === "li") {
+      const li = lastOpen.get("li") ?? -1;
+      const stop = Math.max(specialIndices.at(-1) ?? -1, lastOpen.get("dd") ?? -1, lastOpen.get("dt") ?? -1);
+      if (li > stop) while (stack.length > li) closeTop();
+    } else if (name === "dd" || name === "dt") {
+      const target = Math.max(lastOpen.get("dd") ?? -1, lastOpen.get("dt") ?? -1);
+      const stop = Math.max(specialIndices.at(-1) ?? -1, lastOpen.get("li") ?? -1);
+      if (target > stop) while (stack.length > target) closeTop();
+    }
+    if (closes?.has("p") || name === "li" || name === "dd" || name === "dt") {
+      const p = lastOpen.get("p") ?? -1;
+      if (p > (buttonScopeIndices.at(-1) ?? -1)) while (stack.length > p) closeTop();
+    }
     while (stack.length && closes?.has(stack.at(-1)!.name)) closeTop();
     const isHidden = hidden(attrs);
     const title =
@@ -491,6 +518,8 @@ export const htmlToReadableMarkdown = async (
       }
     }
     lastOpen.set(name, stack.length);
+    if (specialTags.has(name)) specialIndices.push(stack.length);
+    if (buttonScopeTags.has(name)) buttonScopeIndices.push(stack.length);
     stack.push(frame);
     if (voidTags.has(name)) closeTop();
   };

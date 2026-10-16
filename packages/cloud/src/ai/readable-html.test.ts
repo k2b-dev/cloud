@@ -6,6 +6,44 @@ const convert = (html: string, options: { maxBytes?: number; signal?: AbortSigna
   htmlToReadableMarkdown(new TextEncoder().encode(html), { baseUrl, maxBytes: 1024 * 1024, ...options });
 
 describe("readable HTML", () => {
+  test("implicitly closes list items through paragraphs and inline frames", async () => {
+    expect(await convert("<ul><li hidden><p>Hidden<li><p>Visible</ul>")).toBe("- Visible\n");
+    expect(await convert("<ul><li><p>First<li><p>Second</ul>")).toBe("- First\n\n- Second\n");
+    expect(await convert("<ul><li hidden><div><span>Hidden<li>Visible</ul>")).toBe("- Visible\n");
+  });
+
+  test("implicitly closes definition items through paragraphs and inline frames", async () => {
+    expect(await convert("<dl><dt><p>Term<dd>Def</dl>")).toBe("Term\n\nDef\n");
+    expect(await convert("<dl><dt hidden><p>Term<dd>Def</dl>")).toBe("Def\n");
+    expect(await convert("<dl><dd hidden><span>Hidden<dt>Term<dd>Def</dl>")).toBe("Term\n\nDef\n");
+  });
+
+  test("implicitly closes paragraphs through inline frames before blocks and items", async () => {
+    expect(await convert("<p>A<span>B<div>C</div></span>")).toBe("AB\n\nC\n");
+    expect(await convert("<p hidden>A<span>B<div>C</div></span>")).toBe("C\n");
+    for (const tag of ["li", "dd", "dt", "h1", "h2", "h3", "h4", "h5", "h6"]) {
+      const prefix = tag === "li" ? "- " : tag.startsWith("h") ? `${"#".repeat(Number(tag[1]))} ` : "";
+      expect(await convert(`<p hidden>A<span>B<${tag}>C</${tag}></span>`)).toBe(`${prefix}C\n`);
+    }
+  });
+
+  test("respects special-element and button-scope boundaries and removes them on close", async () => {
+    expect(await convert("<ul><li hidden><blockquote><p>Hidden<li>Still hidden</blockquote></li><li>Visible</ul>")).toBe("- Visible\n");
+    expect(await convert("<ul><li hidden><blockquote></blockquote><p>Hidden<li>Visible</ul>")).toBe("- Visible\n");
+    expect(await convert("<dl><dt hidden><li><p>Hidden<dd>Still hidden</li></dt><dd>Visible</dl>")).toBe("Visible\n");
+    expect(await convert("<ul><li hidden><dd><p>Hidden<li>Still hidden</dd></li><li>Visible</ul>")).toBe("- Visible\n");
+    expect(await convert("<p hidden><button><span><div>Hidden</div></span></button></p><p>Visible")).toBe("Visible\n");
+    expect(await convert("<button></button><p hidden><span><div>Visible</div>")).toBe("Visible\n");
+  });
+
+  test.each([
+    ["list items", "<ul>" + "<div>".repeat(100_000) + "</li><li>x".repeat(100_000), "- x\n".repeat(100_000)],
+    ["paragraphs", "<p>" + "<span>".repeat(100_000) + "<div>y</div>".repeat(100_000), "y\n\n".repeat(99_999) + "y\n"],
+  ])("balances implied %s closes at adversarial depth in linear time", async (_name, html, expected) => {
+    const bytes = new TextEncoder().encode(html);
+    expect(await htmlToReadableMarkdown(bytes, { baseUrl, maxBytes: 1024 * 1024, maxInputBytes: bytes.byteLength })).toBe(expected);
+  });
+
   test("implicitly closes head before body elements or direct non-whitespace text", async () => {
     expect(await convert("<head><title>Title</title><main><p>Body</p></main>")).toBe("# Title\n\nBody\n");
     expect(await convert("<html><head><title>T</title>Hello <p>World</p>")).toBe("# T\n\nHello\n\nWorld\n");
