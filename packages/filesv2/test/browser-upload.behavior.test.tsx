@@ -1,4 +1,4 @@
-import { afterEach, expect, mock, test } from "bun:test";
+import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -8,15 +8,24 @@ const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStor
 const calls: string[] = [];
 const targetBases = new Set<string>();
 let openStatus = 200;
+let holdDirectories = false;
+const nativeTimeout = AbortSignal.timeout;
+let restoreTimeout = () => {};
 mock.module("../src/api/client", () => ({
   apiClient: {
     bases: {
       ":baseId": {
         entry: { $get: () => new Promise(() => {}) },
         directories: {
-          $post: async (input: { param: { baseId: string }; json: { path: string } }) => {
+          $post: async (input: { param: { baseId: string }; json: { path: string } }, options?: { init?: { signal?: AbortSignal } }) => {
             targetBases.add(input.param.baseId);
             calls.push(`mkdir ${input.json.path}`);
+            if (holdDirectories)
+              return new Promise<Response>((_, reject) => {
+                const signal = options?.init?.signal;
+                signal?.throwIfAborted();
+                signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+              });
             return Response.json({ base: initial.base, entry: { name: "", path: input.json.path, directory: true } });
           },
         },
@@ -93,14 +102,18 @@ async function mountWithUploads(root: HTMLElement, props: BrowserProps) {
     );
   }, root);
 }
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // Let work a test left running settle before its calls are cleared, so it cannot leak into the next test.
+  await flush();
   if (storageDescriptor) Object.defineProperty(globalThis, "localStorage", storageDescriptor);
   else Reflect.deleteProperty(globalThis, "localStorage");
   calls.length = 0;
   targetBases.clear();
   received = 0;
   openStatus = 200;
+  holdDirectories = false;
+  restoreTimeout();
   globalThis.fetch = originalFetch;
 });
 
@@ -531,4 +544,32 @@ test("a new empty file is created at once instead of waiting behind a running up
   // The running batch is untouched: the new file is not a row behind it.
   expect(dom.document.querySelector(".filesv2-upload__count")?.textContent).toBe("0 of 1 file");
   expect([...dom.document.querySelectorAll(".k2b-toast__description")].map((node) => node.textContent)).toContain("notes.md created.");
+});
+
+test("a folder request with no response fails its group visibly and the next group continues", async () => {
+  const dom = await mountBrowser();
+  const deadlines: number[] = [];
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+    deadlines.push(ms);
+    return nativeTimeout(40);
+  });
+  restoreTimeout = () => timeout.mockRestore();
+  holdDirectories = true;
+  pickFolder(dom, ["Photos/first.txt", "Photos/second.txt"]);
+  await flush();
+  expect(deadlines).toEqual([60_000]);
+  expect(calls).toEqual(["mkdir Documents/Photos"]);
+  const rows = [...dom.document.querySelectorAll('.filesv2-upload-row[data-status="failed"]')];
+  expect(rows).toHaveLength(2);
+  expect(rows.map((row) => row.querySelector(".filesv2-upload-row__reason")?.textContent)).toEqual([
+    "No response from the server",
+    "No response from the server",
+  ]);
+  expect(dom.document.querySelector(".filesv2-upload")?.getAttribute("data-phase")).toBe("errors");
+  const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]:not([webkitdirectory])')!;
+  Object.defineProperty(input, "files", { configurable: true, value: [new File([], "next.txt")] });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await flush();
+  expect(calls).toEqual(["mkdir Documents/Photos", "open Documents/next.txt 0 error", "commit"]);
+  expect(dom.document.querySelectorAll('.filesv2-upload-row[data-status="success"]')).toHaveLength(1);
 });

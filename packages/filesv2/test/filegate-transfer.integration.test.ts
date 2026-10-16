@@ -1,8 +1,9 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { Filegate, FilegateError, type RootClient } from "@k2b/filegate";
 import { DirectSession, putDirect } from "@k2b/filegate/utils";
 import { suiteFor, testInfra } from "../../../scripts/fixtures/test-infra";
+import { transferUpload, UploadTransferError } from "../src/upload-transfer";
 import { localFilegateToken } from "./private-database";
 
 // Runs against the configured test Filegate in its own prefix. Never use application fixtures.
@@ -94,6 +95,114 @@ suite("actual Filegate 7.0.0 transfer contract (isolated local prefix)", () => {
     expect((await root.session(opened.session.id)).state).toBe("committed");
     expect(await (await root.contentRaw(path)).text()).toBe("abc");
   });
+
+  test.each([false, true])("Cloud transfer uploads exact bytes across segments (resume: %s)", async (resume) => {
+    const path = `${prefix}/${resume ? "cloud-resume" : "cloud-transfer"}.bin`;
+    const bytes = Uint8Array.from({ length: 8 * 1024 * 1024 + 17 }, (_, index) => index % 251);
+    const blob = new Blob([bytes]);
+    const opened = await root.createSession(path, blob.size, { allowAbort: true, idempotencyKey: randomUUID() });
+    pending.add(opened.session.id);
+    const chunkSize = opened.session.chunkSize;
+    expect(blob.size).toBeGreaterThan(chunkSize);
+    const direct = new DirectSession(opened.lease!.url, transfer);
+    if (resume) {
+      await direct.put(0, blob.slice(0, chunkSize));
+      expect((await direct.status()).received).toBe(chunkSize);
+    }
+    const controller = new AbortController();
+    const nativeFetch = globalThis.fetch;
+    const putSegments: number[] = [];
+    const requestSignals: (AbortSignal | null | undefined)[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        requestSignals.push(init?.signal);
+        expect(init?.credentials).toBe("omit");
+        expect(init?.redirect).toBe("error");
+        expect(new Headers(init?.headers).has("authorization")).toBe(false);
+        if (init?.method === "PUT") putSegments.push(Number(new URL(String(input)).searchParams.get("segment")));
+        return nativeFetch(input, init);
+      },
+      { preconnect: nativeFetch.preconnect },
+    );
+    try {
+      await transferUpload(
+        blob,
+        { ...opened.session, url: opened.lease!.url },
+        {
+          signal: controller.signal,
+          failure: "Upload failed",
+          renew: (id) => root.sessionLease(id, { expiresIn: 60, allowAbort: true }),
+        },
+      );
+      expect(requestSignals.length).toBeGreaterThan(0);
+      for (const signal of requestSignals) {
+        expect(signal).toBeInstanceOf(AbortSignal);
+        expect(signal).not.toBe(controller.signal);
+      }
+      expect(putSegments).toEqual(resume ? [1] : [0, 1]);
+    } finally {
+      controller.abort();
+      globalThis.fetch = nativeFetch;
+    }
+    await root.commitSession(opened.session.id);
+    pending.delete(opened.session.id);
+    expect(new Uint8Array(await (await root.contentRaw(path)).arrayBuffer())).toEqual(bytes);
+  });
+
+  test("Cloud transfer stops after one stalled segment and retains acknowledged bytes", async () => {
+    const blob = new Blob([new Uint8Array(8 * 1024 * 1024 + 17)]);
+    const opened = await root.createSession(`${prefix}/cloud-stalled.bin`, blob.size, { allowAbort: true, idempotencyKey: randomUUID() });
+    pending.add(opened.session.id);
+    expect(blob.size).toBeGreaterThan(opened.session.chunkSize);
+    const nativeFetch = globalThis.fetch;
+    const nativeTimeout = AbortSignal.timeout;
+    const deadlineMs = 3000;
+    const deadline = spyOn(AbortSignal, "timeout").mockImplementation((ms) => nativeTimeout(Math.min(ms, deadlineMs)));
+    const controller = new AbortController();
+    let hungPuts = 0;
+    let hungAt = 0;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "PUT" && new URL(String(input)).searchParams.get("segment") === "1") {
+          hungPuts++;
+          if (hungPuts === 1) hungAt = performance.now();
+          return new Promise<Response>((_, reject) => {
+            init.signal?.throwIfAborted();
+            init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+          });
+        }
+        return nativeFetch(input, init);
+      },
+      { preconnect: nativeFetch.preconnect },
+    );
+    try {
+      let caught: unknown;
+      try {
+        await transferUpload(
+          blob,
+          { ...opened.session, url: opened.lease!.url },
+          {
+            signal: AbortSignal.any([controller.signal, nativeTimeout(12_000)]),
+            failure: "Upload failed",
+            renew: (id) => root.sessionLease(id, { expiresIn: 60, allowAbort: true }),
+          },
+        );
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(UploadTransferError);
+      expect(caught).toHaveProperty("kind", "stalled");
+      expect(hungPuts).toBe(1);
+      expect(performance.now() - hungAt).toBeLessThan(deadlineMs + 2000);
+    } finally {
+      controller.abort();
+      globalThis.fetch = nativeFetch;
+      deadline.mockRestore();
+    }
+    const status = await root.session(opened.session.id);
+    expect(status.state).toBe("open");
+    expect(status.received).toBe(opened.session.chunkSize);
+  }, 15_000);
 
   test("abort retains an explicit terminal receipt and cannot be committed", async () => {
     const opened = await root.createSession(`${prefix}/aborted.txt`, 0, { allowAbort: true });

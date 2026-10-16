@@ -8,7 +8,7 @@ import { useFilesMessages } from "./messages";
 import { publicClient } from "./public-client";
 import { UploadSurface } from "./UploadPanel";
 import { browserUploadKey } from "./upload-key";
-import { useUploadMessages } from "./upload-messages";
+import { uploadFailureReason, useUploadMessages } from "./upload-messages";
 import { createUploadQueue } from "./upload-queue";
 
 /** Anonymous uploads: Cloud opens a session per file, the browser streams to Filegate, Cloud commits. */
@@ -43,7 +43,7 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
   const [uploaded, setUploaded] = createSignal<string[]>([]);
   // The same queue and panel as in the workspace: one batch, byte-weighted progress, failed files retried in place.
   const uploads = createUploadQueue<null>({
-    reason: (error) => (error instanceof Error && error.message ? error.message : u().failed),
+    reason: (error) => uploadFailureReason(error, u()),
     upload: async (_, { file }, { signal, onProgress }) => {
       const start = await browserUploadKey(["public", props.token], file);
       const opened = await publicClient.inbox[":token"].api.uploads.$post(

@@ -1,5 +1,6 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
+import { UploadTransferError } from "../upload-transfer";
 import type { UploadAnnouncement, UploadStatus } from "./upload-batch";
 
 const enFiles = (n: number) => (n === 1 ? "1 file" : `${n} files`);
@@ -46,6 +47,9 @@ const messages = i18n.define({
         })[status],
       failed: "Could not be uploaded",
       offline: "No connection",
+      stalled: "No response from the file server",
+      serverStalled: "No response from the server",
+      busy: "The file server is busy",
       announce: (said: UploadAnnouncement | { kind: "failures"; count: number }): string => {
         switch (said.kind) {
           case "started":
@@ -106,6 +110,9 @@ const messages = i18n.define({
         })[status],
       failed: "Konnte nicht hochgeladen werden",
       offline: "Keine Verbindung",
+      stalled: "Keine Antwort vom Dateiserver",
+      serverStalled: "Keine Antwort vom Server",
+      busy: "Der Dateiserver ist ausgelastet",
       announce: (said: UploadAnnouncement | { kind: "failures"; count: number }): string => {
         switch (said.kind) {
           case "started":
@@ -132,6 +139,18 @@ const messages = i18n.define({
     },
   },
 });
+
+export function uploadFailureReason(error: unknown, t: ReturnType<typeof messages.resolve>["t"]): string {
+  if (typeof navigator !== "undefined" && !navigator.onLine) return t.offline;
+  if (error instanceof UploadTransferError) {
+    if (error.kind === "stalled") return t.stalled;
+    if (error.kind === "busy") return t.busy;
+    if (error.kind === "network") return t.offline;
+    return error.message || t.failed;
+  }
+  if (error instanceof DOMException && error.name === "TimeoutError") return t.serverStalled;
+  return error instanceof Error && error.message && error.message !== "path_conflict" ? error.message : t.failed;
+}
 
 export const useUploadMessages = () => {
   const locale = useLocale();
