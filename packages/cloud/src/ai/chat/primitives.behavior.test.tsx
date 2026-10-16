@@ -3,6 +3,42 @@ import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 
+(isServer ? test.skip : test)("Assistant roots resource links before resolving chat files", async () => {
+  const dom = createDomTestHarness();
+  const { markdown } = await import("../../shared");
+  const { AssistantMarkdownBlock } = await import("./primitives");
+  const { AiChatActionsProvider } = await import("./message-actions");
+  const html = markdown.renderSync("[Note](app/notebooks/n1/notes/x) [Report](/report.md) [Web](https://example.com)");
+  const resolved: string[] = [];
+  const dispose = render(
+    () => (
+      <AiChatActionsProvider
+        actions={{
+          resolveFileLink: (href) => {
+            resolved.push(href);
+            return href === "/report.md" ? { path: href, href: "/app/assistant?workspace=file" } : null;
+          },
+        }}
+      >
+        <AssistantMarkdownBlock html={html} />
+      </AiChatActionsProvider>
+    ),
+    dom.root,
+  );
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const links = dom.root.querySelectorAll("a");
+    expect(links[0]!.getAttribute("href")).toBe("/app/notebooks/n1/notes/x");
+    expect(links[1]!.getAttribute("href")).toBe("/app/assistant?workspace=file");
+    expect(links[1]!.hasAttribute("target")).toBe(false);
+    expect(links[2]!.getAttribute("href")).toBe("https://example.com");
+    expect(resolved).toEqual(["/app/notebooks/n1/notes/x", "/report.md", "https://example.com"]);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
 (isServer ? test.skip : test)("Markdown file links follow the current manifest, streaming text and ordinary click semantics", async () => {
   const dom = createDomTestHarness();
   const { AssistantMarkdownBlock } = await import("./primitives");
