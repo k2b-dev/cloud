@@ -2,10 +2,20 @@ import { describe, expect, test } from "bun:test";
 import { htmlToReadableMarkdown } from "./readable-html";
 
 const baseUrl = new URL("https://example.test/articles/2026/page.html");
-const convert = (html: string, options: { maxBytes?: number; signal?: AbortSignal } = {}) =>
+const convert = (html: string, options: { maxBytes?: number; signal?: AbortSignal; contentType?: string } = {}) =>
   htmlToReadableMarkdown(new TextEncoder().encode(html), { baseUrl, maxBytes: 1024 * 1024, ...options });
 
 describe("readable HTML", () => {
+  test("bundles htmlparser2 into the server output", async () => {
+    const build = await Bun.build({
+      entrypoints: [new URL("./readable-html.ts", import.meta.url).pathname],
+      target: "bun",
+    });
+    expect(build.success).toBe(true);
+    expect(build.outputs).toHaveLength(1);
+    expect(await build.outputs[0]!.text()).not.toMatch(/["']htmlparser2["']/);
+  });
+
   test("loads in the same process as sanitize-html, whichever module is imported first", () => {
     const emailHtml = new URL("../shared/email-html.ts", import.meta.url).pathname;
     const readableHtml = new URL("./readable-html.ts", import.meta.url).pathname;
@@ -149,6 +159,17 @@ describe("readable HTML", () => {
     expect(await convert("<table><tr><td><article>First</article></td></tr></table><article>Last</article>")).toContain("Last");
   });
 
+  test("closes XHTML non-void elements immediately without closing void elements twice", async () => {
+    const html = '<p>Before</p><script src="/app.js" /><p>After</p>';
+    for (const contentType of ["application/xhtml+xml", " Application/XHTML+XML ; charset=utf-8"]) {
+      expect(await convert(html, { contentType })).toBe("Before\n\nAfter\n");
+      expect(await convert('<p>Before<div/>After <a href="x"/>outside<br/>next</p>', { contentType })).toBe(
+        "Before\n\nAfter outside\nnext\n",
+      );
+    }
+    expect(await convert(html, { contentType: "text/html; charset=utf-8" })).toBe("Before\n");
+  });
+
   test("renders inline links, code and images in headings and table cells", async () => {
     const result = await convert(
       '<title>Title</title><h1>Ti<b>tle</b></h1><h2><a href="/guide">A [guide]</a> <code>x``y</code></h2><table><tr><td><a href="/source">Source</a></td><td><code>a</code><img alt="pic" src="/pic.png"></td></tr></table>',
@@ -177,6 +198,29 @@ describe("readable HTML", () => {
     expect(result).toContain("[\\[label\\]](https://example.test/a%28b%29%20c)");
     expect(result).toContain("![A \\[picture\\]](https://cdn.example.test/a.png)");
     for (const value of ["javascript:", "data:text", "/empty", "/no", "bad"]) expect(result).not.toContain(value);
+  });
+
+  test("uses the first base href, including in the skipped head, for links and images", async () => {
+    expect(await convert('<head><base href="https://cdn.example.org/docs/"></head><body><a href="guide.html">Guide</a></body>')).toBe(
+      "[Guide](https://cdn.example.org/docs/guide.html)\n",
+    );
+    expect(
+      await convert(
+        '<head><base target="_blank"><base href="../assets/"><base href="https://ignored.test/"></head><h1><a href="guide.html">Guide</a></h1><p><img src="pic.png" alt="Picture"></p><table><tr><td><a href="data.html">Data</a></td></tr></table>',
+      ),
+    ).toBe(
+      "# [Guide](https://example.test/articles/assets/guide.html)\n\n![Picture](https://example.test/articles/assets/pic.png)\n\n| [Data](https://example.test/articles/assets/data.html) |\n| --- |\n",
+    );
+  });
+
+  test("ignores unsafe or invalid base hrefs without accepting a later base", async () => {
+    for (const href of ["javascript:alert(1)", "http://[", "mailto:a@example.test"]) {
+      expect(
+        await convert(
+          `<head><base href="${href}"><base href="https://ignored.test/"></head><p><a href="guide.html">Guide</a><img src="pic.png" alt="Picture"></p>`,
+        ),
+      ).toBe("[Guide](https://example.test/articles/2026/guide.html)![Picture](https://example.test/articles/2026/pic.png)\n");
+    }
   });
 
   test("trims link labels and preserves whitespace as an outer word separator", async () => {
@@ -220,6 +264,24 @@ describe("readable HTML", () => {
     expect(await convert(`<table><tr><td><p>Before</p>${data}<p>After</p></td><td>${data}</td></tr></table>`)).toBe(
       `Before\n\n${markdown}\n\nAfter\n\n${markdown}\n`,
     );
+  });
+
+  test("renders data table captions as inline Markdown paragraphs before the rows", async () => {
+    expect(
+      await convert(
+        '<p>Before</p><table><caption> All amounts\n in <code>thousands</code> of <a href="/eur">EUR</a> </caption><tr><th>Year</th><th>Amount</th></tr><tr><td>2026</td><td>42</td></tr></table><p>After</p>',
+      ),
+    ).toBe(
+      "Before\n\nAll amounts in `thousands` of [EUR](https://example.test/eur)\n\n| Year | Amount |\n| --- | --- |\n| 2026 | 42 |\n\nAfter\n",
+    );
+    expect(
+      await convert(
+        "<table><caption>All amounts in thousands of EUR</caption><tr><td>42</td></tr></table><table><tr><td>Next</td></tr></table>",
+      ),
+    ).toBe("All amounts in thousands of EUR\n\n| 42 |\n| --- |\n\n| Next |\n| --- |\n");
+    expect(
+      await convert("<table><caption>All amounts in thousands of EUR</caption><tr><td><p>First</p><p>Second</p></td></tr></table>"),
+    ).toBe("All amounts in thousands of EUR\n\nFirst\n\nSecond\n");
   });
 
   test("keeps explicit line breaks and does not attach an empty list marker to later text", async () => {

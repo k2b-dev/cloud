@@ -1,10 +1,10 @@
-import { createRequire } from "node:module";
 import type * as Htmlparser2 from "htmlparser2";
 
 // sanitize-html loads this ESM-only package with require(). A static import would also place it in the static ESM
 // graph, and Bun rejects that require() while the module is still linking ("require() async module"), depending
-// on which importer evaluates first. Loading it through require() here keeps one synchronous path for both.
-const { Parser }: typeof Htmlparser2 = createRequire(import.meta.url)("htmlparser2");
+// on which importer evaluates first. A plain require() keeps one synchronous path for both, and the bundler still
+// sees it and ships the package in the server bundle.
+const { Parser }: typeof Htmlparser2 = require("htmlparser2");
 
 const CHUNK_BYTES = 256 * 1024;
 const TRUNCATED = "[Readable copy truncated at the file size limit.]";
@@ -123,8 +123,12 @@ class FlatHtmlParser extends Parser {
     private readonly onCloseName: (name: string) => void,
     private readonly sourceSlice: (start: number, end: number) => string,
     onEnd: () => void,
+    private readonly xml: boolean,
   ) {
-    super({ onopentag: onOpen, ontext: onText, onend: onEnd }, { decodeEntities: true });
+    super(
+      { onopentag: onOpen, ontext: onText, onend: onEnd },
+      { decodeEntities: true, xmlMode: xml, lowerCaseTags: true, lowerCaseAttributeNames: true },
+    );
   }
   protected override isVoidElement(): boolean {
     return true;
@@ -136,8 +140,9 @@ class FlatHtmlParser extends Parser {
   override onselfclosingtag(end: number): void {
     super.onselfclosingtag(end);
     // HTML ignores a slash on ordinary tags, especially <script/> and <style/>.
-    // Foreign roots are self-closing even though the library's own stack is empty.
-    if (this.openName === "svg" || this.openName === "math") this.onCloseName(this.openName);
+    // XHTML and foreign roots close immediately even though the library's own stack is empty.
+    // open() already closes void tags; closing br twice would add an extra break.
+    if ((this.xml || this.openName === "svg" || this.openName === "math") && !voidTags.has(this.openName)) this.onCloseName(this.openName);
   }
   override onclosetag(start: number, end: number): void {
     this.endIndex = end;
@@ -300,6 +305,8 @@ export const htmlToReadableMarkdown = async (
   options.signal?.throwIfAborted();
   const events: Event[] = [];
   const budget = new WorkBudget(options.signal);
+  let baseUrl = options.baseUrl;
+  let hasBaseHref = false;
   const emptyAttrs = {};
   type Table = { event: TagEvent; cells: number };
   const tables: Table[] = [];
@@ -356,6 +363,15 @@ export const htmlToReadableMarkdown = async (
     if (frame.region) regionDepth--;
   };
   const open = (name: string, attrs: Record<string, string>) => {
+    if (name === "base" && attrs.href !== undefined && !hasBaseHref) {
+      hasBaseHref = true;
+      try {
+        const resolved = new URL(attrs.href, options.baseUrl);
+        if (resolved.protocol === "http:" || resolved.protocol === "https:") baseUrl = resolved;
+      } catch {
+        // Ignore malformed document base URLs.
+      }
+    }
     if (name === "form" && lastOpen.has(name)) return;
     const closes = impliedCloses.get(name);
     while (stack.length && closes?.has(stack.at(-1)!.name)) closeTop();
@@ -429,6 +445,7 @@ export const htmlToReadableMarkdown = async (
     () => {
       while (stack.length) closeTop();
     },
+    options.contentType?.split(";", 1)[0]?.trim().toLowerCase() === "application/xhtml+xml",
   );
   const feed = (text: string) => {
     chunks.push({ start: decodedLength, text });
@@ -450,12 +467,7 @@ export const htmlToReadableMarkdown = async (
       const event = events[index]!;
       if (budget.used(event.kind === "text" ? event.text.length : 0)) await budget.yield();
       if (event.kind === "text" && /\S/u.test(event.text)) return true;
-      if (
-        event.kind === "open" &&
-        event.name === "img" &&
-        collapse(event.attrs.alt ?? "") &&
-        linkUrl(event.attrs.src, options.baseUrl, true)
-      )
+      if (event.kind === "open" && event.name === "img" && collapse(event.attrs.alt ?? "") && linkUrl(event.attrs.src, baseUrl, true))
         return true;
     }
     return false;
@@ -464,8 +476,8 @@ export const htmlToReadableMarkdown = async (
   const selected = main && (await hasText(main)) ? main : articles && (await hasText(articles)) ? articles : whole;
   if (!(await hasText(selected))) return "";
   const title = collapse(titleParts.join(""));
-  const heading = title && !(await hasRenderedH1(events, selected, options.baseUrl, budget)) ? title : "";
-  return render(events, selected, heading, { ...options, inputTruncated: bytes.byteLength > length }, budget);
+  const heading = title && !(await hasRenderedH1(events, selected, baseUrl, budget)) ? title : "";
+  return render(events, selected, heading, { ...options, baseUrl, inputTruncated: bytes.byteLength > length }, budget);
 };
 
 /** Scan the selected span once, following the render captures. An h1 inside
@@ -542,6 +554,7 @@ const render = async (
   const tables: boolean[] = [];
   let row: string[] | undefined;
   let cellStart: number | undefined;
+  let captionStart: number | undefined;
   let tableRows = 0;
   const append = (text: string) => {
     if (!text || truncated) return;
@@ -668,7 +681,19 @@ const render = async (
       continue;
     }
     if (tables.at(-1) === false) {
-      if (name === "tr") {
+      if (name === "caption") {
+        if (open) captionStart = index + 1;
+        else {
+          const inline = await renderInline(events, captionStart ?? index, index, options.baseUrl, budget);
+          if (inline.text) {
+            boundary();
+            write(inline.markdown);
+            boundary();
+            readable = true;
+          }
+          captionStart = undefined;
+        }
+      } else if (name === "tr") {
         if (open) row = [];
         else if (row?.length) {
           write(`| ${row.join(" | ")} |`);
