@@ -423,11 +423,13 @@ describe("PermissionEditor scoped levels", () => {
       levelsOf("Ana Roth")
         .find((item) => item.textContent?.startsWith("Assigned: edit"))!
         .click();
-      await waitFor(() => chosen("Ana Roth").startsWith("Assigned: edit"), "the scoped level");
+      await waitFor(() => !rowOf("Ana Roth").hasAttribute("aria-busy"), "the saved scoped level");
+      expect(chosen("Ana Roth")).toStartWith("Assigned: edit");
       levelsOf("Lya Meyer")
         .find((item) => item.textContent?.startsWith("View"))!
         .click();
-      await waitFor(() => chosen("Lya Meyer").startsWith("View"), "the whole-resource level");
+      await waitFor(() => !rowOf("Lya Meyer").hasAttribute("aria-busy"), "the saved whole-resource level");
+      expect(chosen("Lya Meyer")).toStartWith("View");
       expect(updates).toEqual([
         { accessId: "ana", permission: "write", scope: "assigned" },
         { accessId: "lym", permission: "read" },
@@ -755,7 +757,7 @@ describe("PermissionEditor pending grants", () => {
       const firstRow = rowOf("Jonas Weber")!;
       expect(firstRow).toBeDefined();
       expect(firstRow.getAttribute("aria-busy")).toBe("true");
-      expect(firstRow.querySelector(".ti-loader-2.animate-spin")).not.toBeNull();
+      expect(firstRow.querySelector("button.k2b-select-chip .ti-loader-2.k2b-spin")).not.toBeNull();
       expect(firstRow.textContent).toContain("Manage");
       expect(grants).toHaveLength(1);
       expect(input.disabled).toBe(false);
@@ -764,7 +766,7 @@ describe("PermissionEditor pending grants", () => {
       expect(dom.document.activeElement).toBe(input);
       for (const row of rows()) {
         expect(row.querySelector<HTMLButtonElement>('button[aria-label^="Remove "]')!.disabled).toBe(true);
-        expect(row.querySelectorAll("[role=menuitemradio]:not(:disabled)")).toHaveLength(0);
+        expect(row.querySelector<HTMLButtonElement>("button.k2b-select-chip")!.disabled).toBe(true);
       }
       // A pending manager cannot unlock the only saved manager.
       expect(rowOf("Mara Lind")!.querySelector<HTMLButtonElement>('button[aria-label="Remove Mara Lind"]')!.disabled).toBe(true);
@@ -784,7 +786,7 @@ describe("PermissionEditor pending grants", () => {
       await waitFor(() => rowOf("Jonas Weber")?.hasAttribute("aria-busy") === false, "the final row");
       expect(rowOf("Jonas Weber")).toBe(firstRow);
       expect(rows()).toHaveLength(2);
-      expect(firstRow.querySelector(".ti-loader-2.animate-spin")).toBeNull();
+      expect(firstRow.querySelector("button.k2b-select-chip .ti-loader-2.k2b-spin")).toBeNull();
       expect(firstRow.querySelector<HTMLButtonElement>('button[aria-label="Remove Jonas Weber"]')!.disabled).toBe(false);
       expect(input.readOnly).toBe(false);
       expect(input.hasAttribute("aria-readonly")).toBe(false);
@@ -892,4 +894,140 @@ describe("PermissionEditor pending grants", () => {
       }
     });
   }
+});
+
+describe("PermissionEditor pending controls", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+
+  const deferred = () => {
+    let resolve!: () => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<void>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    return { promise, resolve, reject };
+  };
+
+  const setup = async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    const { default: PermissionEditor } = await import("./PermissionEditor");
+    const { prompts } = await import("@k2b/ui");
+    const update = deferred();
+    const revoke = deferred();
+    const originalConfirm = prompts.confirm;
+    const originalError = prompts.error;
+    const errors: string[] = [];
+    prompts.confirm = async () => true;
+    prompts.error = async (message) => {
+      errors.push(String(message));
+    };
+    delegateEvents(["click"], dom.document);
+    const dispose = render(
+      () => (
+        <PermissionEditor
+          initialEntries={[
+            grant("manager", { type: "user", userId: "mara" }, "admin", "Mara Lind"),
+            grant("lea", { type: "user", userId: "lea" }, "read", "Lea Sommer"),
+            grant("jonas", { type: "user", userId: "jonas" }, "read", "Jonas Weber"),
+          ]}
+          grantAccess={async () => {
+            throw new Error("Not used");
+          }}
+          updateAccess={() => update.promise}
+          revokeAccess={() => revoke.promise}
+        />
+      ),
+      dom.root,
+    );
+    const rows = Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row"));
+    const triggers = rows.map((row) => row.querySelector<HTMLButtonElement>("button.k2b-select-chip")!);
+    const assertControls = (disabled: boolean) => {
+      rows.forEach((row, index) => {
+        expect(row.querySelector("button.k2b-select-chip") === triggers[index]!).toBe(true);
+        expect(triggers[index]!.disabled).toBe(disabled);
+        expect(row.querySelector("span.cursor-default")).toBeNull();
+      });
+    };
+    const chooseEdit = () =>
+      Array.from(rows[1]!.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
+        .find((item) => item.textContent?.startsWith("Edit"))!
+        .click();
+    return {
+      dom,
+      update,
+      revoke,
+      rows,
+      triggers,
+      errors,
+      assertControls,
+      chooseEdit,
+      done: () => {
+        dispose();
+        prompts.confirm = originalConfirm;
+        prompts.error = originalError;
+        dom.cleanup();
+      },
+    };
+  };
+
+  test("a pending update keeps every picker and shows progress and the chosen level only on its row", async () => {
+    const view = await setup();
+    try {
+      view.assertControls(false);
+      view.chooseEdit();
+      view.assertControls(true);
+      expect(view.rows.map((row) => row.getAttribute("aria-busy"))).toEqual([null, "true", null]);
+      expect(view.triggers.map((chip) => chip.querySelectorAll(".ti-loader-2.k2b-spin").length)).toEqual([0, 1, 0]);
+      expect(view.triggers[1]!.textContent).toBe("Edit");
+      view.update.resolve();
+      await waitFor(() => !view.rows[1]!.hasAttribute("aria-busy"), "the saved update");
+      view.assertControls(false);
+      expect(view.triggers[1]!.textContent).toBe("Edit");
+      expect(view.dom.root.querySelector(".ti-loader-2")).toBeNull();
+    } finally {
+      view.done();
+    }
+  });
+
+  test("a failed update restores the stored level and enables the same pickers with an error", async () => {
+    const view = await setup();
+    try {
+      view.chooseEdit();
+      expect(view.triggers[1]!.textContent).toBe("Edit");
+      view.assertControls(true);
+      view.update.reject(new Error("Could not save access"));
+      await waitFor(() => !view.rows[1]!.hasAttribute("aria-busy"), "the failed update");
+      view.assertControls(false);
+      expect(view.triggers[1]!.textContent).toBe("View");
+      expect(view.errors).toEqual(["Could not save access"]);
+    } finally {
+      view.done();
+    }
+  });
+
+  test("a confirmed pending revoke loads only its remove button and keeps every picker", async () => {
+    const view = await setup();
+    try {
+      const remove = view.rows.map((row) => row.querySelector<HTMLButtonElement>('button[aria-label^="Remove "]')!);
+      remove[1]!.click();
+      await waitFor(() => remove[1]!.getAttribute("aria-busy") === "true", "the confirmed revoke");
+      view.assertControls(true);
+      expect(view.rows.map((row) => row.getAttribute("aria-busy"))).toEqual([null, "true", null]);
+      expect(remove.map((button) => button.querySelectorAll(".ti-loader-2").length)).toEqual([0, 1, 0]);
+      expect(view.triggers.map((chip) => chip.querySelectorAll(".ti-loader-2").length)).toEqual([0, 0, 0]);
+      view.revoke.resolve();
+      await waitFor(() => !view.rows[1]!.isConnected, "the removed row");
+      for (const index of [0, 2]) {
+        expect(view.rows[index]!.querySelector("button.k2b-select-chip") === view.triggers[index]!).toBe(true);
+        expect(view.triggers[index]!.disabled).toBe(false);
+      }
+    } finally {
+      view.done();
+    }
+  });
 });

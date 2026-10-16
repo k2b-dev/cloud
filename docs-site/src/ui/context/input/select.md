@@ -241,6 +241,15 @@ as model or environment selectors. The menu sizes to its options, at least
 `10rem`, and long options wrap at the viewport; `menuWidth` sets an exact width
 instead.
 
+Set `loading` while a selection saves. The trigger stays the same size, is
+`disabled` and marked `aria-busy="true"`, and shows a spinner in place of its
+chevron. The icon-only form uses the button's centered busy overlay. With
+reduced motion, the spinner stands still. Report the result or an error where
+the page reports results; the busy state does not announce the outcome.
+A disabled button loses keyboard focus. When a chip that had focus is
+disabled, by `disabled` or `loading`, focus returns to it once it is enabled
+again, unless focus moved somewhere else in the meantime.
+
 Selection popovers dismiss synchronously. Do not add a generic host-level
 `[popover]` display or overlay transition around them; `@k2b/ui` explicitly
 keeps interactive choice surfaces immediate.
@@ -365,7 +374,7 @@ type SelectChipOption<T extends string | number = string> = {
 
 type SelectChipProps<T extends string | number = string> = ValueFieldProps<T> & {
   value: MaybeAccessor<T>; options: SelectChipOption<T>[]; icon?: string; iconOnly?: boolean;
-  size?: ButtonSize; placeholder?: string; position?: DropdownPosition; menuWidth?: string; name?: string;
+  size?: ButtonSize; placeholder?: string; position?: DropdownPosition; menuWidth?: string; name?: string; loading?: boolean;
 };
 ```
 

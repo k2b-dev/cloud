@@ -473,6 +473,45 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(labelRule).toContain("white-space: nowrap");
   });
 
+  test("a loading select chip keeps its label and replaces only the chevron", () => {
+    const html = renderToString(() =>
+      createComponent(SelectChip, {
+        value: "read",
+        loading: true,
+        "aria-label": "Permission",
+        icon: "ti ti-eye",
+        options: [{ value: "read", label: "View" }],
+      }),
+    );
+    const trigger = html.match(/<button[^>]*class="[^"]*k2b-select-chip[^>]*>.*?<\/button>/s)![0];
+    expect(trigger).toContain('aria-busy="true"');
+    expect(trigger).toMatch(/\sdisabled(?:[= >])/);
+    expect(trigger).toContain("ti ti-eye");
+    expect(trigger).toContain('<span>View</span><i class="ti ti-loader-2 k2b-spin" aria-hidden="true"');
+    expect(trigger).not.toContain("ti-chevron-down");
+    expect(trigger).not.toContain("k2b-button__busy");
+  });
+
+  test("an icon-only loading select chip uses the button busy overlay", () => {
+    const html = renderToString(() =>
+      createComponent(SelectChip, {
+        value: "read",
+        loading: true,
+        iconOnly: true,
+        "aria-label": "Permission",
+        icon: "ti ti-eye",
+        options: [{ value: "read", label: "View" }],
+      }),
+    );
+    const trigger = html.match(/<button[^>]*>.*?<\/button>/s)![0];
+    expect(trigger).toContain('aria-busy="true"');
+    expect(trigger).toMatch(/\sdisabled(?:[= >])/);
+    expect(trigger).toContain("k2b-button__busy");
+    expect(trigger).toContain("ti ti-eye");
+    expect(trigger).toContain("ti ti-loader-2 k2b-spin");
+    expect(trigger).not.toContain("ti-chevron-down");
+  });
+
   test("renders an icon-only select chip as a labelled radio-menu trigger", () => {
     const html = renderToString(() =>
       createComponent(SelectChip, {
