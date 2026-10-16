@@ -25,6 +25,7 @@ describe("command ranking", () => {
       commands: [...entries].reverse().map((entry) => ({ ...entry, section: "one" })),
       searchResults: [],
       searchResultsFresh: true,
+      searchSettled: true,
       searching: false,
     });
     expect(ranked.rows.map((row) => row.command.name)).toEqual(entries.map((entry) => entry.name));
@@ -77,7 +78,16 @@ const sections = [
   { id: "second", label: "Second" },
 ];
 const model = (extra: Partial<Parameters<typeof chatCommandListModel>[0]> = {}) =>
-  chatCommandListModel({ query: "", sections, commands: [], searchResults: [], searchResultsFresh: true, searching: false, ...extra });
+  chatCommandListModel({
+    query: "",
+    sections,
+    commands: [],
+    searchResults: [],
+    searchResultsFresh: true,
+    searchSettled: true,
+    searching: false,
+    ...extra,
+  });
 const names = (rows: ReturnType<typeof model>["rows"]) => rows.map((row) => row.command.name);
 
 describe("section list model", () => {
@@ -101,6 +111,45 @@ describe("section list model", () => {
     const searchResults = [command("Earlier", { id: "same", section: "first" }), command("Server", { id: "local", section: "first" })];
     expect(names(model({ commands, searchResults }).rows)).toEqual(["Static", "Earlier"]);
     expect(names(model({ commands: [command("Unknown", { section: "unknown" }), command("Plain")] }).rows)).toEqual(["Unknown", "Plain"]);
+  });
+  test.each(["skills", "apps"])("a non-matching static row in %s cannot swallow a fresh server copy", (section) => {
+    const result = model({
+      query: "zzz",
+      sections: [
+        { id: "skills", label: "Skills" },
+        { id: "apps", label: "Apps" },
+      ],
+      commands: [command("Static", { id: "a", section })],
+      searchResults: [command("Server", { id: "a", section: "apps" })],
+    });
+    expect(result.groups.map((group) => group.section?.id)).toEqual(["apps"]);
+    expect(names(result.rows)).toEqual(["Server"]);
+    expect(result.rows[0]?.server).toBe(true);
+  });
+  test("settled Assistant-like sections keep only chat or a placeholder for a filtered retained skill", () => {
+    const input = {
+      query: "neu",
+      sections: [
+        { id: "skills", label: "Skills", searched: true },
+        { id: "files", label: "Files", searched: true, searchOnly: true },
+        { id: "apps", label: "Apps", searched: true },
+        { id: "chat", label: "Dieser Chat" },
+      ],
+      commands: [command("Neuer Chat", { section: "chat" })],
+      searchSettled: true,
+      searchResultsFresh: false,
+      searching: true,
+    };
+    const empty = model({ ...input, searchResults: [] });
+    expect(empty.groups.map((group) => group.section?.id)).toEqual(["chat"]);
+    expect(empty.groups.some((group) => group.placeholder)).toBe(false);
+    const retained = model({ ...input, searchResults: [command("Invoices", { section: "skills" })] });
+    expect(retained.groups.map((group) => group.section?.id)).toEqual(["skills", "chat"]);
+    expect(retained.groups[0]).toMatchObject({ loading: true, placeholder: true, rows: [] });
+    expect(names(retained.rows)).toEqual(["Neuer Chat"]);
+    const matching = model({ ...input, searchResults: [command("Neu", { section: "skills" })] });
+    expect(matching.groups[0]).toMatchObject({ loading: true, placeholder: false });
+    expect(names(matching.groups[0]!.rows)).toEqual(["Neu"]);
   });
   test("not applicable rows appear with their reason only when searched", () => {
     const hidden = command("Compact", { hiddenUntilSearch: true, reason: "Needs messages", section: "second" });
@@ -140,14 +189,15 @@ describe("section list model", () => {
       "Hidden",
     ]);
   });
-  test("only loading searched sections without rows get placeholders; empty means settled without rows", () => {
+  test("loading searched sections reserve empty space only before a search settles or for retained rows", () => {
     for (const query of ["", "xylo"]) {
-      const result = model({ query, searching: true });
+      const result = model({ query, searching: true, searchSettled: false });
       expect(result.groups[0]).toMatchObject({ section: sections[0], loading: true, placeholder: true });
       expect(result.rows).toEqual([]);
       expect(result.empty).toBe(false);
       expect(result.groups.filter((group) => group.placeholder)).toHaveLength(1);
     }
+    expect(model({ query: "xylo", searching: true }).groups).toEqual([]);
     expect(model({ searching: true, commands: [command("Kept", { section: "first" })] }).groups[0]?.placeholder).toBe(false);
     expect(model().empty).toBe(true);
     expect(model().groups.every((group) => !group.placeholder)).toBe(true);
@@ -169,6 +219,7 @@ test("a search-only section stays out of the overview, placeholder included, and
     commands: [command("New chat", { section: "chat" })],
     searchResults: [command("report.pdf", { section: "files" })],
     searchResultsFresh: true,
+    searchSettled: true,
     searching: true,
   };
   const overview = chatCommandListModel({ ...input, query: "" });

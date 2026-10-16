@@ -82,7 +82,7 @@ export function parseChatCommandQuery(query: string, scopes: readonly ChatComman
   return scope ? { scope, query: match![2]!.trimStart() } : { query };
 }
 
-export type ChatCommandRow = { command: ChatCommand; highlight?: readonly [number, number] };
+export type ChatCommandRow = { command: ChatCommand; server: boolean; highlight?: readonly [number, number] };
 type Group = { section?: ChatCommandSection; scopeTitle?: string; rows: ChatCommandRow[]; loading: boolean; placeholder: boolean };
 
 export function chatCommandListModel(input: {
@@ -92,6 +92,7 @@ export function chatCommandListModel(input: {
   commands: readonly ChatCommand[];
   searchResults: readonly ChatCommand[];
   searchResultsFresh: boolean;
+  searchSettled: boolean;
   searching: boolean;
 }): { scope?: ChatCommandScope; groups: Group[]; rows: ChatCommandRow[]; empty: boolean } {
   const { scope, query: rawQuery } = parseChatCommandQuery(input.query, input.scopes ?? []);
@@ -109,16 +110,14 @@ export function chatCommandListModel(input: {
         { rows: [], loading: !input.sections?.length && input.searching, placeholder: false },
       ];
   const bySection = new Map(groups.map((group, index) => [group.section?.id, index]));
-  const buckets = groups.map(() => new Map<string, { command: ChatCommand; server: boolean }>());
+  const buckets: { command: ChatCommand; server: boolean }[][] = groups.map(() => []);
   for (const [commands, server] of [
     [scope ? [] : input.commands, false],
     [input.searchResults, true],
   ] as const) {
     for (const command of commands) {
       const index = scope ? 0 : (bySection.get(command.section) ?? groups.length - 1);
-      const bucket = buckets[index]!;
-      const key = chatCommandKey(command);
-      if (!bucket.has(key)) bucket.set(key, { command, server });
+      buckets[index]!.push({ command, server });
     }
   }
   const seen = new Set<string>();
@@ -126,20 +125,22 @@ export function chatCommandListModel(input: {
     // A search-only section is absent from the overview, rows and placeholder included.
     if (overview && group.section?.searchOnly) continue;
     const ranked: (ChatCommandRow & { rank: number })[] = [];
-    for (const [key, { command, server }] of buckets[index]!) {
+    for (const { command, server } of buckets[index]!) {
+      const key = chatCommandKey(command);
       if (seen.has(key)) continue;
-      seen.add(key);
       if (overview && command.hiddenUntilSearch) continue;
       const match = rankPrepared(prepare(command), query);
       if (!overview && !match && !(server && input.searchResultsFresh)) continue;
-      ranked.push({ command, highlight: match?.highlight, rank: match?.rank ?? Infinity });
+      seen.add(key);
+      ranked.push({ command, server, highlight: match?.highlight, rank: match?.rank ?? Infinity });
     }
     if (!overview) ranked.sort((a, b) => a.rank - b.rank);
-    group.rows = ranked.map(({ command, highlight }) => ({ command, highlight }));
-    group.placeholder = group.loading && group.rows.length === 0;
+    group.rows = ranked.map(({ command, server, highlight }) => ({ command, server, highlight }));
+    group.placeholder =
+      group.loading && group.rows.length === 0 && Boolean(scope || !input.searchSettled || buckets[index]!.some((entry) => entry.server));
   }
   // A section without rows has no heading, also in the overview; a scope always shows its title.
-  const visible = groups.filter((group) => scope || group.rows.length || group.loading);
+  const visible = groups.filter((group) => scope || group.rows.length || group.placeholder);
   const rows = visible.flatMap((group) => group.rows);
   return { scope, groups: visible, rows, empty: rows.length === 0 && !input.searching };
 }

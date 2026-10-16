@@ -157,8 +157,9 @@ Give `commandSections` in display order and each command a `section` id. The
 order stays fixed while searching. The overview keeps consumer row order;
 searching ranks rows inside each section. Commands without a known section
 appear at the end without a heading. Without `commandSections`, the list stays
-flat. Each `id` (defaulting to `name`) appears once: the first section wins,
-then a static row wins over a server row in the same section.
+flat. Each `id` (defaulting to `name`) appears once among visible matches: the
+first section wins, then a matching static row wins over a server row in the
+same section. A static row without a match never hides a fresh server result.
 
 Search ignores case, accents and German umlauts (`ä=a`, `ß=ss`). Its ranking
 ladder is: title starts with query, title word starts with query, title contains
@@ -193,8 +194,12 @@ row keeps its reason and never narrows.
 Set `hiddenUntilSearch` for rows that do not apply to the current context.
 They are absent from the overview and appear with their reason when matched;
 scoped results do not hide them. A `searched` section shows a quiet heading
-spinner while loading and one placeholder when it has no rows to keep. Scope
-groups use the same loading behavior. Placeholders are skipped by arrow keys. A `searchOnly` section, such as
+spinner while loading. An empty section gets a heading and placeholder only
+before the first search settles for this slash token and scope, or when retained
+results still contain a row for that section. Other empty sections stay hidden
+while the next query loads. A resolved scope always keeps its title and shows a
+placeholder while loading without rows. Placeholders are skipped by arrow keys.
+A `searchOnly` section, such as
 files of the current chat, is absent from the overview, placeholder included,
 and appears while searching or narrowed.
 

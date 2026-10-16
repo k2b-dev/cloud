@@ -234,6 +234,9 @@ const slash = async (options: Partial<ChatComposerProps> = {}) => {
     () =>
       createComponent(ChatComposer, {
         ...options,
+        get commands() {
+          return options.commands;
+        },
         get value() {
           return value();
         },
@@ -401,6 +404,44 @@ const deferredSearch = () => {
       }),
   };
 };
+
+test.each(["Enter", "Tab"])("%s chooses a static command from a getter while search is pending", async (key) => {
+  let chosen = 0;
+  const make = (): ChatCommand[] => [{ name: "new", label: "Neuer Chat", description: "", action: () => void chosen++ }];
+  const search = deferredSearch();
+  const h = await slash({
+    ...search,
+    get commands() {
+      return make();
+    },
+  });
+  h.type("/neu");
+  await Bun.sleep(140);
+  expect(search.requests).toHaveLength(1);
+  expect(h.rows()).toHaveLength(1);
+  expect(h.key(key).defaultPrevented).toBe(true);
+  await flush();
+  expect(chosen).toBe(1);
+  expect(h.value()).toBe("");
+});
+
+test("settled empty sections stay hidden while searching, show Loading, and reset for another slash token", async () => {
+  const search = deferredSearch();
+  const h = await slash({ ...search, value: "/a", commandSections: [{ id: "skills", label: "Skills", searched: true }] });
+  expect(h.root.querySelector(".k2b-chat-composer__command-placeholder")).not.toBeNull();
+  expect(h.root.querySelector(".k2b-chat-composer__loading")).toBeNull();
+  await Bun.sleep(140);
+  search.requests[0]!.resolve([]);
+  await flush();
+  h.type("/ab");
+  expect(h.root.querySelectorAll('[role="listbox"] [role="group"]')).toHaveLength(0);
+  expect(h.root.querySelector(".k2b-chat-composer__loading")?.textContent).toBe("Loading...");
+  h.type("plain");
+  h.type("/");
+  expect(h.root.querySelector('[role="group"] [role="presentation"]')?.textContent).toBe("Skills");
+  expect(h.root.querySelector(".k2b-chat-composer__command-placeholder")).not.toBeNull();
+  expect(h.root.querySelector(".k2b-chat-composer__loading")).toBeNull();
+});
 
 test.each(["Enter", "Tab"])("%s cannot choose a retained server row until fresh results arrive", async (key) => {
   const chosen: string[] = [];

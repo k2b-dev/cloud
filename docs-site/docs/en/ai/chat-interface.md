@@ -1159,6 +1159,9 @@ or narrow by typing one of these words followed by a space:
 | Projects | `projekt`, `projekte`, `project`, `projects` |
 | Studio apps | `app`, `apps`, `studio` |
 
+The full words also list their category without a trailing space, including
+`/project` and `/projekt` for Projects.
+
 For example, `/skill invoice` searches Skills. Exact words win; from three
 letters, the shortest completion wins when unique. Move with the arrow keys
 and choose with plain Enter or Tab. Tab on a narrowing row writes its word;

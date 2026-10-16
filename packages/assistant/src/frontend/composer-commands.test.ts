@@ -54,6 +54,47 @@ test("Project scope selection assigns once and explains an existing assignment",
   expect((await assistantComposerCommands({ ...input, running: true }))[0]?.reason).toBe("Available when the response is done");
 });
 
+test.each(["project", "projekt"])("legacy /%s lists projects without searching other categories", async (query) => {
+  const { artifactClient } = await import("../artifacts/client");
+  const listSkills = spyOn(assistantApi, "listSkills").mockResolvedValue([
+    {
+      id: "matching-skill",
+      shortId: "Sk1234",
+      name: query,
+      description: query,
+      permission: "read",
+      enabled: true,
+      revision: 1,
+      source: null,
+      manualOnly: false,
+      referenceCount: 0,
+      createdAt: "",
+      updatedAt: "",
+    },
+  ]);
+  const apps = spyOn(artifactClient, "list").mockResolvedValue({ items: [], page: 1, hasNext: false });
+  const files = spyOn(assistantApi, "listChatFiles").mockResolvedValue([]);
+  const assigned: string[] = [];
+  const commands = await assistantComposerCommands({
+    query,
+    signal: new AbortController().signal,
+    locale: query === "projekt" ? "de" : "en",
+    conversationId: "chat-1",
+    projects: [project],
+    running: false,
+    assignProject: async (id) => {
+      assigned.push(id);
+    },
+  });
+  expect(commands.map((command) => command.id)).toEqual([`project:${project.id}`]);
+  expect(commands[0]?.label).toBe(project.name);
+  expect(listSkills).not.toHaveBeenCalled();
+  expect(apps).not.toHaveBeenCalled();
+  expect(files).not.toHaveBeenCalled();
+  await commands[0]!.action?.({ setValue() {}, submit() {}, focus() {} });
+  expect(assigned).toEqual([project.id]);
+});
+
 test("Skills are explicit stable references; disabled Skills are excluded", async () => {
   const skill = {
     id: "skill-1",
@@ -240,6 +281,7 @@ test("sections and bilingual scope words agree, with each locale's narrowing wor
       commands,
       searchResults: [],
       searchResultsFresh: true,
+      searchSettled: true,
       searching: false,
     });
     expect(result.rows[0]?.command).toMatchObject({ id: "project", scope: "project" });
@@ -317,7 +359,7 @@ test("assigned chats hide project assignment until searched and project scope ex
     reason: "Gehört schon zu Projekt „Invoices“",
   });
   const { chatCommandListModel } = await import("../../../ui/src/chat/command-search");
-  const input = { commands, searchResults: [], searchResultsFresh: true, searching: false };
+  const input = { commands, searchResults: [], searchResultsFresh: true, searchSettled: true, searching: false };
   expect(chatCommandListModel({ ...input, query: "" }).rows.some((row) => row.command.id === "project")).toBe(false);
   expect(chatCommandListModel({ ...input, query: "projekt" }).rows[0]?.command.reason).toBe("Gehört schon zu Projekt „Invoices“");
   const rows = await assistantComposerCommands({

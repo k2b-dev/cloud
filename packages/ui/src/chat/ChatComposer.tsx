@@ -76,7 +76,7 @@ export type ChatCommandResult = void | "cancelled" | { done: string };
 export type ChatCommandSection = {
   id: string;
   label: string;
-  /** Rows come from `searchCommands`: loading shows a quiet heading indicator and a placeholder when no rows remain. */
+  /** Rows come from `searchCommands`: loading keeps a heading spinner; empty placeholders reserve the first search or retained rows. */
   searched?: boolean;
   /** Only while searching or narrowed: absent from the overview (empty query), including its loading placeholder. */
   searchOnly?: boolean;
@@ -354,6 +354,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       commands: props.commands ?? [],
       searchResults: searchResultsScope() === parsedCommandQuery().scope?.id ? searchResults() : [],
       searchResultsFresh: searchResultsQuery() === commandQuery()?.query && searchResultsScope() === parsedCommandQuery().scope?.id,
+      searchSettled: searchResultsQuery() !== undefined && searchResultsScope() === parsedCommandQuery().scope?.id,
       searching: searching(),
     }),
   );
@@ -911,8 +912,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         event.preventDefault();
         const command = selectedCommand();
         // A server row answering an earlier query may no longer match; wait for fresh results. Local rows match now.
+        const row = commandModel().rows.find((row) => chatCommandKey(row.command) === selectedCommandKey());
         const staleServerRow =
-          command && (commandModel().scope || !(props.commands ?? []).includes(command)) && searchResultsQuery() !== commandQuery()?.query;
+          row?.server && (searchResultsQuery() !== commandQuery()?.query || searchResultsScope() !== parsedCommandQuery().scope?.id);
         if (staleServerRow) return;
         if (command) void executeCommand(command, event.key === "Tab");
         return;

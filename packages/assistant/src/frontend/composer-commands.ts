@@ -118,9 +118,7 @@ export async function assistantComposerCommands(input: {
 }): Promise<ChatCommand[]> {
   const copy = assistantCopyFor(input.locale);
   const legacyScope = !input.scope
-    ? assistantCommandScopes(copy, input.locale).find(
-        (scope) => scope.id !== "project" && scope.words.includes(input.query.trim().toLowerCase()),
-      )
+    ? assistantCommandScopes(copy, input.locale).find((scope) => scope.words.includes(input.query.trim().toLowerCase()))
     : undefined;
   const category = input.scope ?? legacyScope?.id;
   const query = (legacyScope ? "" : input.query).trim().toLowerCase();
