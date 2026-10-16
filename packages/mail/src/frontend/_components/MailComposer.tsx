@@ -371,10 +371,17 @@ export default function MailComposer(props: {
       multiple: true,
       maxBytes: MAX_DRAFT_ATTACHMENT_BYTES,
       context: async (signal) => {
-        const module = await importOnDemand(() => import("./mail-attachment-context"));
-        return module ? module.resolveAttachmentContext({ directory: contactDirectory.resolve, recipients, signal }) : { refs: [] };
+        try {
+          const module = await importOnDemand(() => import("./mail-attachment-context"));
+          signal.throwIfAborted();
+          if (!module) throw new Error(t().attachmentContextFailed);
+          return await module.resolveAttachmentContext({ directory: contactDirectory.resolve, recipients, signal });
+        } catch {
+          signal.throwIfAborted();
+          throw new Error(t().attachmentContextFailed);
+        }
       },
-      noMatchingFiles: t().noMatchingAttachments,
+      ...(recipients.length > 0 ? { noMatchingFiles: t().noMatchingAttachments } : {}),
     });
     if (files.length > 0 && editable() && !disposed) void attachments.addFiles(files);
   };

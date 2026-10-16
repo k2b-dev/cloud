@@ -45,11 +45,17 @@ with a compatible `resolve` Query. For the configured directory app, it prefers
 the mapped Query. Otherwise it prefers `contact.resolve`, then the only
 compatible Query; apps with several compatible Queries and no preferred match
 are skipped. If the catalog cannot be read, Mail uses the configured directory
-alone. Individual lookup failures contribute no hints.
+alone. Individual lookup failures contribute no hints. If no contact app
+answered, or the catalog failed with no configured fallback, Mail shows an error
+with **Try again** instead of claiming there are no matches.
 
 Mail passes only the matching returned `ref`s to
 [file providers that accept context](/en/docs/platform/file-providers#offer-matching-files),
 never the email addresses. A ref grants no access to contacts or files.
+
+For operators: every visible app with a compatible `resolve` Query receives the
+draft's To, Cc, and Bcc addresses when someone opens a file provider that accepts
+context, so install only contact apps you trust with recipient addresses.
 
 ## Implement the functions
 

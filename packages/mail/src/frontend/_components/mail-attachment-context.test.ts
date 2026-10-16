@@ -73,6 +73,7 @@ describe("attachment recipient context", () => {
     ];
     const cursors: (string | undefined)[] = [];
     const calls: ContactDirectoryTarget[] = [];
+    const lookupTimeouts: AbortController[] = [];
     let active = 0;
     let peak = 0;
     const context = await resolveAttachmentContext(
@@ -82,7 +83,11 @@ describe("attachment recipient context", () => {
           cursors.push(options?.cursor);
           return options?.cursor ? catalog(apps.slice(4)) : catalog(apps.slice(0, 4), "page2");
         },
-        timeout: () => AbortSignal.timeout(1),
+        timeout: () => {
+          const controller = new AbortController();
+          lookupTimeouts.push(controller);
+          return controller.signal;
+        },
         resolve: async (target, input, bounded) => {
           expect(input).toEqual({ emails: ["b@example.test", "a@example.test"], limit: 50 });
           expect(target).not.toBeNull();
@@ -90,7 +95,8 @@ describe("attachment recipient context", () => {
           peak = Math.max(peak, ++active);
           try {
             if (target!.appId === "slow") {
-              await new Promise((_, reject) => bounded!.addEventListener("abort", () => reject(bounded!.reason), { once: true }));
+              lookupTimeouts.at(-1)!.abort(new DOMException("Timed out", "TimeoutError"));
+              throw bounded!.reason;
             }
             await Promise.resolve();
             if (target!.appId === "failed") throw new Error("Refused");
@@ -167,7 +173,7 @@ describe("attachment recipient context", () => {
     expect(context).toEqual({ refs: [] });
   });
 
-  test("no recipients makes no network call; no configured fallback returns no refs", async () => {
+  test("no recipients makes no network call; catalog failure without a configured fallback rejects", async () => {
     let calls = 0;
     const noNetwork: Dependencies = {
       listCatalog: async () => {
@@ -181,8 +187,95 @@ describe("attachment recipient context", () => {
     };
     expect(await resolveAttachmentContext({ directory, recipients: [], signal: signal() }, noNetwork)).toEqual({ refs: [] });
     expect(calls).toBe(0);
-    expect(await resolveAttachmentContext({ directory: null, recipients, signal: signal() }, noNetwork)).toEqual({ refs: [] });
+    await expect(resolveAttachmentContext({ directory: null, recipients, signal: signal() }, noNetwork)).rejects.toMatchObject({
+      name: "Error",
+    });
     expect(calls).toBe(1);
+  });
+
+  test("every lookup failing or returning after its deadline rejects with a non-abort Error", async () => {
+    for (const lateResult of [false, true]) {
+      const deadline = new AbortController();
+      await expect(
+        resolveAttachmentContext(
+          { directory, recipients, signal: signal() },
+          {
+            listCatalog: async () => catalog([app("contacts"), app("customers")]),
+            timeout: () => deadline.signal,
+            resolve: async () => {
+              if (!lateResult) throw new Error("Refused");
+              deadline.abort(new DOMException("Timed out", "TimeoutError"));
+              return resolution([]);
+            },
+          },
+        ),
+      ).rejects.toMatchObject({ name: "Error" });
+    }
+  });
+
+  test("one failing contact app does not suppress another app's refs or successful empty result", async () => {
+    for (const items of [[item("customers.customer", "b", "b@example.test")], []]) {
+      const context = await resolveAttachmentContext(
+        { directory, recipients, signal: signal() },
+        {
+          listCatalog: async () => catalog([app("contacts"), app("customers")]),
+          resolve: async (target) => {
+            if (target?.appId === "contacts") throw new Error("Offline");
+            return resolution(items);
+          },
+        },
+      );
+      expect(context).toEqual({ refs: items.map((match) => match.ref) });
+    }
+  });
+
+  test("one catalog deadline covers all pages and falls back to the configured directory", async () => {
+    for (const fallback of [directory, null]) {
+      const deadline = new AbortController();
+      const started = Promise.withResolvers<void>();
+      let reads = 0;
+      let deadlines = 0;
+      const pending = resolveAttachmentContext(
+        { directory: fallback, recipients, signal: signal() },
+        {
+          catalogTimeout: () => {
+            deadlines++;
+            return deadline.signal;
+          },
+          listCatalog: async (options) => {
+            if (++reads === 1) return catalog([app("customers")], "page2");
+            return new Promise<never>((_, reject) => {
+              options?.signal?.addEventListener("abort", () => reject(options.signal?.reason), { once: true });
+              started.resolve();
+            });
+          },
+          resolve: async (target) => {
+            expect(target).toEqual(directory);
+            return resolution([item("contacts.contact", "b", "b@example.test")]);
+          },
+        },
+      );
+      await started.promise;
+      deadline.abort(new DOMException("Timed out", "TimeoutError"));
+      if (fallback) expect(await pending).toEqual({ refs: [{ type: "contacts.contact", id: "b" }] });
+      else await expect(pending).rejects.toMatchObject({ name: "Error" });
+      expect(reads).toBe(2);
+      expect(deadlines).toBe(1);
+    }
+  });
+
+  test("a readable catalog without a compatible contact app returns no refs", async () => {
+    expect(
+      await resolveAttachmentContext(
+        { directory: null, recipients, signal: signal() },
+        {
+          listCatalog: async () => catalog([app("unrelated", [])]),
+          resolve: async () => {
+            throw new Error("Must not run");
+          },
+        },
+      ),
+    ).toEqual({ refs: [] });
   });
 
   test("caps normalized recipient emails at 25", async () => {
@@ -199,7 +292,7 @@ describe("attachment recipient context", () => {
     );
   });
 
-  test("only caller cancellation rejects, during catalog discovery or a provider lookup", async () => {
+  test("caller cancellation preserves its reason during catalog discovery or a provider lookup", async () => {
     for (const stage of ["catalog", "resolve"]) {
       const controller = new AbortController();
       const started = Promise.withResolvers<void>();
@@ -216,8 +309,9 @@ describe("attachment recipient context", () => {
         },
       );
       await started.promise;
-      controller.abort();
-      await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      const reason = new Error("Caller cancelled");
+      controller.abort(reason);
+      await expect(pending).rejects.toBe(reason);
     }
   });
 });

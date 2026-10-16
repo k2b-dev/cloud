@@ -34,6 +34,7 @@ export const resolveAttachmentContext = async (
     listCatalog?: typeof listCapabilityCatalog;
     resolve?: typeof resolveContacts;
     timeout?: () => AbortSignal;
+    catalogTimeout?: () => AbortSignal;
   } = {},
 ): Promise<FileProviderContext> => {
   const { directory, signal } = input;
@@ -44,11 +45,13 @@ export const resolveAttachmentContext = async (
   const resolve = deps.resolve ?? resolveContacts;
   let targets: ContactDirectoryTarget[];
   try {
+    const catalogSignal = AbortSignal.any([signal, deps.catalogTimeout?.() ?? AbortSignal.timeout(5_000)]);
     const apps: CatalogApp[] = [];
     let cursor: string | undefined;
     do {
-      const result = await listCatalog({ limit: 25, cursor, signal });
-      signal.throwIfAborted();
+      catalogSignal.throwIfAborted();
+      const result = await listCatalog({ limit: 25, cursor, signal: catalogSignal });
+      catalogSignal.throwIfAborted();
       if (!result.ok) throw new Error(result.error.message);
       apps.push(...result.data.apps);
       const next = result.data.page.hasMore ? result.data.page.nextCursor : undefined;
@@ -70,7 +73,8 @@ export const resolveAttachmentContext = async (
     ];
   } catch {
     signal.throwIfAborted();
-    targets = directory ? [directory] : [];
+    if (!directory) throw new Error("Could not discover contact apps");
+    targets = [directory];
   }
 
   const results: Awaited<ReturnType<typeof resolveContacts>>["data"]["items"][] = new Array(targets.length);
@@ -92,6 +96,7 @@ export const resolveAttachmentContext = async (
   };
   await Promise.all(Array.from({ length: Math.min(4, targets.length) }, worker));
   signal.throwIfAborted();
+  if (targets.length > 0 && !results.some((items) => items !== undefined)) throw new Error("No contact app answered");
   const refs: FileProviderContext["refs"] = [];
   const seen = new Set<string>();
   for (const email of emails) {

@@ -312,10 +312,14 @@ domTest("failed lazy context shows Try again and retries resolution before listi
     view.row("Invoices")!.click();
     await waitForChooser(() => Boolean(view.button("Try again")));
     expect(view.dom.root.textContent).toContain("This folder could not be loaded");
+    expect(view.dom.root.textContent).toContain("Lookup failed");
+    expect(resolutions).toBe(1);
     expect(view.calls).toHaveLength(0);
     view.button("Try again")!.click();
     await waitForChooser(() => Boolean(view.row("Invoice c1.pdf")));
     expect(resolutions).toBe(2);
+    expect(view.calls).toHaveLength(1);
+    expect(view.calls[0]!.input.context).toEqual({ refs: [customer] });
   } finally {
     await settle();
     view.cleanup();

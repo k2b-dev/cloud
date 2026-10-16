@@ -74,7 +74,9 @@ chats and Projects attach files this way.
   `{ refs: [{ type: "customers.customer", id: "c1" }] }`. Pass an object or an
   async function `(signal) => Promise<FileProviderContext>`. The function runs
   lazily when someone opens a supporting provider. A successful result is kept
-  for this chooser; a failure shows **Try again** and lets it run again.
+  for this chooser. If the function cannot determine the context, it should
+  reject instead of returning empty refs, so the chooser shows **Try again**
+  and lets it run again instead of showing "No matching files".
   The chooser drops invalid and duplicate refs (same type and ID), keeping the
   first 20. Only providers whose `list` explicitly accepts compatible `context`
   receive it; other providers keep listing as before. Refs are hints, never

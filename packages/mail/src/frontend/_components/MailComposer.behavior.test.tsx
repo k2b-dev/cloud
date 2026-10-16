@@ -311,6 +311,51 @@ describe("MailComposer signature choice", () => {
     }
   });
 
+  test("attachment context failures show the localized message and preserve caller cancellation", async () => {
+    const files = await import("@k2b/cloud/browser/files");
+    const capabilities = await import("@k2b/cloud/capabilities");
+    const reload = await import("@k2b/cloud/browser/reload");
+    const chooseFiles = spyOn(files, "chooseFiles").mockResolvedValue([]);
+    const listCatalog = spyOn(capabilities, "listCapabilityCatalog").mockRejectedValue(new Error("Offline"));
+    try {
+      await mount("de");
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Dateien anhängen"]')!.click();
+      const options = chooseFiles.mock.calls[0]![0]!;
+      if (typeof options.context !== "function") throw new Error("Missing lazy context");
+      await expect(options.context(new AbortController().signal)).rejects.toThrow(
+        "Die Kontakte dieser Empfänger konnten nicht nachgeschlagen werden",
+      );
+      const importOnDemand = spyOn(reload, "importOnDemand").mockResolvedValue(undefined);
+      try {
+        await expect(options.context(new AbortController().signal)).rejects.toThrow(
+          "Die Kontakte dieser Empfänger konnten nicht nachgeschlagen werden",
+        );
+        const controller = new AbortController();
+        const reason = new Error("Caller cancelled");
+        controller.abort(reason);
+        await expect(options.context(controller.signal)).rejects.toBe(reason);
+      } finally {
+        importOnDemand.mockRestore();
+      }
+    } finally {
+      chooseFiles.mockRestore();
+      listCatalog.mockRestore();
+    }
+  });
+
+  test("Attach files without recipients keeps the chooser's generic empty title", async () => {
+    const files = await import("@k2b/cloud/browser/files");
+    const chooseFiles = spyOn(files, "chooseFiles").mockResolvedValue([]);
+    try {
+      await mount("en", { ...initialDraft, to: [], cc: [], bcc: [] });
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Attach files"]')!.click();
+      expect(chooseFiles).toHaveBeenCalledTimes(1);
+      expect(chooseFiles.mock.calls[0]![0]).not.toHaveProperty("noMatchingFiles");
+    } finally {
+      chooseFiles.mockRestore();
+    }
+  });
+
   test("shows the draft choice and sends null in the next autosave and preview after No signature", async () => {
     await mount();
     expect(trigger().textContent).toContain("Personal signature");
