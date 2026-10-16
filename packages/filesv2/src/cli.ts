@@ -25,7 +25,7 @@ import {
 } from "./cli-address";
 import { adminCommands } from "./cli-admin";
 import { downloadFile, readFile } from "./cli-download";
-import { cloudRequestError, REQUEST_TIMEOUT_MS } from "./cli-request";
+import { cloudRequest, readWithin } from "./cli-request";
 import { templateCommands } from "./cli-templates";
 import { uploadFile } from "./cli-upload";
 import {
@@ -177,14 +177,9 @@ function filesCommands(locale?: string) {
         }),
       ),
     ].sort((a, b) => a.split("/").length - b.split("/").length);
-    // The deadline also bounds a response body that stalls after its headers.
-    const result = await api(ctx)
-      .bases[":baseId"].directories.batch.$post(
-        { param: { baseId }, json: { paths } },
-        { init: { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } },
-      )
-      .then((response) => ctx.readJson<FolderBatchResult>(response))
-      .catch((error: unknown) => cloudRequestError(ctx, error));
+    const result = await cloudRequest<FolderBatchResult>(ctx, (signal) =>
+      api(ctx).bases[":baseId"].directories.batch.$post({ param: { baseId }, json: { paths } }, { init: { signal } }),
+    );
     const failed = result.results.find((item) => item.state === "failed");
     if (failed) throw folderFailure(result.results, `${failed.path}: ${failed.message ?? failed.error}`);
     return result;
@@ -522,8 +517,10 @@ function filesCommands(locale?: string) {
           const result = await uploadFile(ctx, args.local, {
             scope: JSON.stringify([ctx.options.profile, target.baseId, path, flags.replace, flags.expectedRevision]),
             open: async (size, signal, idempotencyKey) =>
-              ctx.readJson<UploadSession>(
-                await api(ctx).bases[":baseId"].uploads.$post(
+              readWithin<UploadSession>(
+                ctx,
+                signal,
+                api(ctx).bases[":baseId"].uploads.$post(
                   {
                     param: baseParam,
                     json: {
@@ -538,12 +535,16 @@ function filesCommands(locale?: string) {
                 ),
               ),
             renew: async (id, signal) =>
-              ctx.readJson<UploadLease>(
-                await api(ctx).bases[":baseId"].uploads[":id"].lease.$post({ param: { ...baseParam, id } }, { init: { signal } }),
+              readWithin<UploadLease>(
+                ctx,
+                signal,
+                api(ctx).bases[":baseId"].uploads[":id"].lease.$post({ param: { ...baseParam, id } }, { init: { signal } }),
               ),
             commit: async (id, signal) =>
-              ctx.readJson<EntryResult>(
-                await api(ctx).bases[":baseId"].uploads[":id"].commit.$post({ param: { ...baseParam, id } }, { init: { signal } }),
+              readWithin<EntryResult>(
+                ctx,
+                signal,
+                api(ctx).bases[":baseId"].uploads[":id"].commit.$post({ param: { ...baseParam, id } }, { init: { signal } }),
               ),
             abort: async (id, signal) => {
               await api(ctx).bases[":baseId"].uploads[":id"].abort.$post({ param: { ...baseParam, id } }, { init: { signal } });

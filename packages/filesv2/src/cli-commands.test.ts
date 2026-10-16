@@ -720,12 +720,18 @@ test("favorites and edit-url use addresses; recent-style rows print addresses", 
   );
 });
 
-test.each([
-  { name: "put target resolution", route: "/api/filesv2/bases", command: "put", parents: false },
-  { name: "put parents", route: "/directories/batch", command: "put", parents: true },
-  { name: "mkdir parents", route: "/directories/batch", command: "mkdir", parents: true },
-  { name: "file ID resolution", route: "/entries/", command: "stat", parents: false },
-])("$name has a localized Cloud deadline", async ({ route, command, parents }) => {
+test.each(
+  [
+    { name: "put target resolution", route: "/api/filesv2/bases", command: "put", parents: false },
+    { name: "put parents", route: "/directories/batch", command: "put", parents: true },
+    { name: "mkdir parents", route: "/directories/batch", command: "mkdir", parents: true },
+    { name: "file ID resolution", route: "/entries/", command: "stat", parents: false },
+    { name: "put session opening", route: "/uploads", command: "put", parents: false },
+  ].flatMap((target) => [
+    { ...target, stall: "response" },
+    { ...target, stall: "body" },
+  ]),
+)("$name has a localized Cloud deadline when the $stall stalls", async ({ route, command, parents, stall }) => {
   const local = join(await directory(), "report.txt");
   await writeFile(local, "report");
   const nativeFetch = globalThis.fetch;
@@ -738,6 +744,16 @@ test.each([
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       if (new URL(String(input)).pathname.includes(route)) {
+        if (stall === "body")
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode('{"items":'));
+                init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason), { once: true });
+              },
+            }),
+            { headers: { "content-type": "application/json" } },
+          );
         return new Promise<Response>((_, reject) => {
           init?.signal?.throwIfAborted();
           init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
