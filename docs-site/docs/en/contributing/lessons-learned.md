@@ -33,8 +33,16 @@ convention still needs a check or a test.
 | Foreign system contracts | Cloud sends a schema or a payload that a foreign system, such as a model provider or Filegate, does not accept. | Partial test: the chart tool schema is checked for provider shape (one root object without `oneOf`, `anyOf`, or `allOf`, and no tuple `items`) in `packages/cloud/src/ai/chart-block.test.ts` and `default-tools.test.ts`. Test: `tests/capability-tool-schemas.test.ts` builds every app's capability tools the way the Assistant does and checks the same provider shape for each input schema ([#1149](https://github.com/k2b-dev/cloud/issues/1149)). No guard covers Filegate payloads yet. |
 | Server-side request forgery | A person-chosen address reaches the server’s private network or changes between validation and connection. | Check: `network-guard` lets only the platform guard resolve host names. It also rejects global `fetch()` in Pulse server code. Test: platform allowlist and resolution tests, plus Tools and Pulse refusal, redirect, and pinned-transport tests. |
 | Escaped text input | An agent writes `\n` as two characters through a shell argument or double-escaped JSON, and the text is stored and shown with a literal backslash. | Test: Spaces rejects such inline CLI text and capability text inputs ([#1178](https://github.com/k2b-dev/cloud/issues/1178)). No shared guard covers inline text in other apps, such as `cld notebooks write --content`, yet ([#1193](https://github.com/k2b-dev/cloud/issues/1193)). |
+| Breakpoint gap | Two neighbouring media queries end at `max-width: 1023px` and start at `min-width: 1024px`. A fractional width between them, such as a zoomed window, matches neither, and the page falls back to its base rules. | Test: `packages/cloud/src/styles/shell-modes.test.ts` pins the shell queries to `min-width` and its negation `not all and (min-width: …)` ([#1255](https://github.com/k2b-dev/cloud/issues/1255)). Range syntax such as `width < 64rem` is no guard: the build lowers it to `max-width: calc(64rem - .001px)`. No check covers other style sheets yet. |
 
 ## Lessons
+
+### Signed-in shell fell between its two modes
+
+- **What happened:** While the card moved from 1536 px to 1024 px, review found that a width between 1023 and 1024 CSS pixels, such as a 1126 px window at 110 % zoom, matched neither the flush mode nor the card. The rail then moved 8 px to the right and the card took the base spacing. The phone mode had the same gap at 767 and 768 px ([#1255](https://github.com/k2b-dev/cloud/issues/1255)).
+- **Root cause:** The flush mode ended at `max-width: 1023px` and the card started at `min-width: 1024px`. Playwright snaps viewports and frames to whole pixels, so no browser test reached the gap.
+- **Error class:** Breakpoint gap.
+- **Guard:** Each shell query in `global.css` states only `min-width`, negated with `not all and` for the range below. `shell-modes.test.ts` pins these queries.
 
 ### Workspace pane widths change after reload
 
