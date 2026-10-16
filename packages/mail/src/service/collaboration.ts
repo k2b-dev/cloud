@@ -484,14 +484,15 @@ export const recordConversationStatusDecision = async (
 };
 
 /**
- * Locks a conversation for a workflow status step and returns its live state. `revision` is the
- * revision the step may act at, or null when the conversation changed since the run's view. The
- * step may act at the run's revision, or one revision later when Mail hydrated the message that
- * triggered the run and every other unhydrated message was already linked in the run's view.
- * Linking a message does not change the revision. Snapshot visibility tells whether a link was
- * committed before the view; a timestamp or sequence cannot tell when its transaction committed.
- * Older runs without a snapshot still conflict on any other unhydrated message. Returns null when
- * the conversation is gone.
+ * Locks a conversation and returns the revision a workflow status step may act at.
+ * The exact revision always applies. One revision later applies only after the trigger's
+ * hydration, when every other unhydrated link was seen by the view.
+ * Seen links committed before the view or were linked earlier by its own transaction.
+ * Links without an xid predate tracking. Snapshot visibility gives commit order.
+ * The link sequence orders the view's own writes.
+ * A future view snapshot is unusable after a restore. Future link xids count as old links.
+ * A wrong admission could only give the result the exact-revision path already gives.
+ * An unknown keeps the conflict. Returns null when the conversation is gone.
  */
 export const lockWorkflowConversationStatus = async (
   db: SqlClient,
@@ -500,7 +501,7 @@ export const lockWorkflowConversationStatus = async (
     conversationId: string;
     expectedRevision: number;
     triggerMessageId: string | null;
-    viewLinkSnapshot: string | null;
+    viewLinks: { snapshot: string; xid: string | null; seq: string } | null;
   },
 ): Promise<{ revision: number | null; workStatus: ConversationCollaboration["workStatus"] } | null> => {
   // Same lock order as updateWorkflowConversationCollaborationInTransaction: mailbox, then conversation.
@@ -530,12 +531,21 @@ export const lockWorkflowConversationStatus = async (
         AND link.message_id <> ${params.triggerMessageId}::uuid
         AND message.hydration_status <> 'complete'
         AND NOT COALESCE(
-          ${params.viewLinkSnapshot}::text IS NOT NULL AND (
+          ${params.viewLinks?.snapshot ?? null}::pg_snapshot IS NOT NULL
+          AND pg_snapshot_xmax(${params.viewLinks?.snapshot ?? null}::pg_snapshot) <= pg_snapshot_xmax(pg_current_snapshot())
+          AND (
             link.linked_xid IS NULL
-            -- Links committed with the trigger's link count as seen. In a sync batch that is the
-            -- view's own transaction, which snapshot visibility does not report reliably.
-            OR link.linked_xid = trigger_link.linked_xid
-            OR pg_visible_in_snapshot(link.linked_xid, ${params.viewLinkSnapshot}::pg_snapshot)
+            -- A logical restore does not preserve xids. No transaction in this cluster can
+            -- have an xid at or above its current xmax, so this is a link from before the view.
+            OR link.linked_xid >= pg_snapshot_xmax(pg_current_snapshot())
+            OR (
+              link.linked_xid = ${params.viewLinks?.xid ?? null}::xid8
+              AND link.link_seq <= ${params.viewLinks?.seq ?? null}::bigint
+            )
+            OR (
+              link.linked_xid IS DISTINCT FROM ${params.viewLinks?.xid ?? null}::xid8
+              AND pg_visible_in_snapshot(link.linked_xid, ${params.viewLinks?.snapshot ?? null}::pg_snapshot)
+            )
           ), false
         )
     ) AS others_seen

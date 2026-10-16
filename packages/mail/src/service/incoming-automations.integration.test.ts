@@ -3068,6 +3068,150 @@ suite("incoming automations", () => {
     }, 30_000);
   }
 
+  for (const restored of ["link", "view"] as const) {
+    test(`handles a restored ${restored} with a future transaction ID`, async () => {
+      const key = `linked-restore-${restored}`;
+      const uid = restored === "link" ? 14061 : 14071;
+      const first = statusEnvelope(uid, key);
+      const firstId = await ingestEnvelope({
+        db: sql,
+        mailboxId,
+        remoteResourceId,
+        folderId: inboxFolderId,
+        message: first,
+        captureWorkflowTriggers: false,
+      });
+      const automation = await createStatusAutomation(key);
+      try {
+        // Exercise the real A/B status path without restoring a cluster: only persisted xid metadata
+        // is changed. A future link xid is old data; a future view snapshot cannot describe this cluster.
+        if (restored === "link") {
+          await sql`
+            UPDATE mail.conversation_messages
+            SET linked_xid = ((pg_snapshot_xmax(pg_current_snapshot())::text::numeric + 1000000)::text)::xid8
+            WHERE message_id = ${firstId}::uuid
+          `;
+        }
+        const second = statusEnvelope(uid + 1, key, first.messageId);
+        const secondId = await ingestEnvelope({
+          db: sql,
+          mailboxId,
+          remoteResourceId,
+          folderId: inboxFolderId,
+          message: second,
+          captureWorkflowTriggers: true,
+        });
+        const conversation = await statusConversation(secondId);
+        expect((await statusConversation(firstId)).id).toBe(conversation.id);
+        const runId = await dispatchStatusRun(automation.workflowId);
+        if (restored === "view") {
+          await sql`
+            UPDATE workflows.run
+            SET context = jsonb_set(context, '{preconditions,conversation,linkView,snapshot}',
+              to_jsonb(format('%s:%s:',
+                pg_snapshot_xmax(pg_current_snapshot()),
+                pg_snapshot_xmax(pg_current_snapshot())::text::numeric + 1000000)))
+            WHERE id = ${runId}::uuid
+          `;
+        }
+        await hydrateStatusMessage(secondId, second);
+        const before = await statusConversation(secondId);
+        expect(before.revision).toBe(conversation.revision + 1);
+        expect(before.work_status).toBe("needs_action");
+        expect((await runMailWorkflow(runId)).state).toBe("finished");
+        const [run] = await sql<{ state: string; error: string | null }[]>`
+          SELECT state, error ->> 'message' AS error FROM workflows.run WHERE id = ${runId}::uuid
+        `;
+        if (restored === "view") {
+          expect(run?.state).toBe("failed");
+          expect(run?.error).toContain("changed by another collaborator");
+          expect(await statusConversation(secondId)).toEqual(before);
+        } else {
+          expect(run).toEqual({ state: "succeeded", error: null });
+          expect((await statusConversation(secondId)).work_status).toBe("done");
+        }
+      } finally {
+        await deleteStatusAutomation(automation.id);
+      }
+    }, 30_000);
+  }
+
+  for (const later of [false, true]) {
+    test(`fences links in the view's own transaction${later ? " with a later reply" : " without a later reply"}`, async () => {
+      const key = later ? "linked-same-tx-later" : "linked-same-tx-before";
+      const uid = later ? 14051 : 14041;
+      const first = statusEnvelope(uid, key);
+      const second = statusEnvelope(uid + 1, key, first.messageId);
+      const automation = await createStatusAutomation(key);
+      try {
+        const { firstId, secondId, thirdId } = await sql.begin(async (tx) => {
+          await tx`SET LOCAL lock_timeout = '5s'`;
+          await tx`SET LOCAL statement_timeout = '20s'`;
+          const firstId = await ingestEnvelope({
+            db: tx,
+            mailboxId,
+            remoteResourceId,
+            folderId: inboxFolderId,
+            message: first,
+            captureWorkflowTriggers: false,
+          });
+          // emitMessageReceived freezes B's view here, before this same sync transaction links C.
+          const secondId = await ingestEnvelope({
+            db: tx,
+            mailboxId,
+            remoteResourceId,
+            folderId: inboxFolderId,
+            message: second,
+            captureWorkflowTriggers: true,
+          });
+          const thirdId = later
+            ? await ingestEnvelope({
+                db: tx,
+                mailboxId,
+                remoteResourceId,
+                folderId: inboxFolderId,
+                message: {
+                  ...statusEnvelope(uid + 2, key, second.messageId),
+                  sentAt: new Date("2026-10-01T08:02:00.000Z"),
+                  internalDate: new Date("2026-10-01T08:02:00.000Z"),
+                },
+                captureWorkflowTriggers: false,
+              })
+            : null;
+          return { firstId, secondId, thirdId };
+        });
+        const conversation = await statusConversation(secondId);
+        expect((await statusConversation(firstId)).id).toBe(conversation.id);
+        if (thirdId) expect((await statusConversation(thirdId)).id).toBe(conversation.id);
+        const [links] = await sql<{ transactions: number; links: number }[]>`
+          SELECT count(DISTINCT linked_xid)::int AS transactions, count(*)::int AS links
+          FROM mail.conversation_messages WHERE conversation_id = ${conversation.id}::uuid
+        `;
+        expect(links).toEqual({ transactions: 1, links: later ? 3 : 2 });
+        const runId = await dispatchStatusRun(automation.workflowId);
+        await hydrateStatusMessage(secondId, second);
+        const before = await statusConversation(secondId);
+        // Only B's hydration may advance the revision; A and C remain unhydrated.
+        expect(before.revision).toBe(conversation.revision + 1);
+        expect(before.work_status).toBe("needs_action");
+        expect((await runMailWorkflow(runId)).state).toBe("finished");
+        const [run] = await sql<{ state: string; error: string | null }[]>`
+          SELECT state, error ->> 'message' AS error FROM workflows.run WHERE id = ${runId}::uuid
+        `;
+        if (later) {
+          expect(run?.state).toBe("failed");
+          expect(run?.error).toContain("changed by another collaborator");
+          expect(await statusConversation(secondId)).toEqual(before);
+        } else {
+          expect(run).toEqual({ state: "succeeded", error: null });
+          expect((await statusConversation(secondId)).work_status).toBe("done");
+        }
+      } finally {
+        await deleteStatusAutomation(automation.id);
+      }
+    }, 30_000);
+  }
+
   test("keeps the conflict for a link in flight during the run's view that commits afterward", async () => {
     const key = "linked-backlog-in-flight";
     const first = statusEnvelope(14031, key);
@@ -3088,6 +3232,8 @@ suite("incoming automations", () => {
     // Both replies reference the committed first message, so B need not wait for C's uncommitted rows.
     const transaction = sql.begin(async (tx) => {
       try {
+        await tx`SET LOCAL lock_timeout = '5s'`;
+        await tx`SET LOCAL statement_timeout = '20s'`;
         const thirdId = await ingestEnvelope({
           db: tx,
           mailboxId,
@@ -3103,6 +3249,7 @@ suite("incoming automations", () => {
         throw error;
       }
     });
+    void transaction.catch(linked.reject);
     try {
       const thirdId = await linked.promise;
       const second = statusEnvelope(14032, key, first.messageId);

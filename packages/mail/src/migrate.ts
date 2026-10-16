@@ -72,6 +72,11 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   // existing links stay NULL (linked before this column) without a table rewrite.
   await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS linked_xid xid8`.simple();
   await tx`ALTER TABLE mail.conversation_messages ALTER COLUMN linked_xid SET DEFAULT pg_current_xact_id()`.simple();
+  // Order links within one transaction; keep existing rows NULL without rewriting the table.
+  // Migrations and runtime use the same role, which owns this sequence and can call nextval.
+  await tx`CREATE SEQUENCE IF NOT EXISTS mail.conversation_link_seq`.simple();
+  await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS link_seq bigint`.simple();
+  await tx`ALTER TABLE mail.conversation_messages ALTER COLUMN link_seq SET DEFAULT nextval('mail.conversation_link_seq')`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
     REFERENCES mail.compose_templates(id) ON DELETE SET NULL`.simple();
   await tx`

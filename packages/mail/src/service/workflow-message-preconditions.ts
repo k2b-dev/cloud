@@ -13,14 +13,24 @@ export const mailWorkflowTriggerMessageId = (context: Record<string, WorkflowJso
   return typeof message?.id === "string" ? message.id : null;
 };
 
-export const mailWorkflowConversationLinkSnapshot = (
+export const mailWorkflowConversationLinkView = (
   context: Record<string, WorkflowJsonValue> | undefined,
   conversationId: string,
-): string | null => {
+): { snapshot: string; xid: string | null; seq: string } | null => {
   const conversation = object(object(context?.preconditions)?.conversation);
-  if (conversation?.id !== conversationId || typeof conversation.linkSnapshot !== "string") return null;
-  // pg_snapshot text: xmin:xmax:xip,...
-  return /^\d+:\d+:(\d+(,\d+)*)?$/u.test(conversation.linkSnapshot) ? conversation.linkSnapshot : null;
+  if (conversation?.id !== conversationId) return null;
+  const view = object(conversation.linkView);
+  // pg_snapshot text: xmin:xmax:xip,...; xid and sequence stay strings to preserve precision.
+  if (
+    !view ||
+    typeof view.snapshot !== "string" ||
+    !/^\d+:\d+:(\d+(,\d+)*)?$/u.test(view.snapshot) ||
+    (view.xid !== null && (typeof view.xid !== "string" || !/^\d+$/u.test(view.xid))) ||
+    typeof view.seq !== "string" ||
+    !/^\d+$/u.test(view.seq)
+  )
+    return null;
+  return { snapshot: view.snapshot, xid: view.xid, seq: view.seq };
 };
 
 export const mailWorkflowMessagePrecondition = (

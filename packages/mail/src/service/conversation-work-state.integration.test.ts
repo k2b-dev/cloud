@@ -168,7 +168,7 @@ suite("mail conversation work-state projection", () => {
     return body;
   };
 
-  test("a split gives the moved link a new transaction and clears its status decision", async () => {
+  test("a split gives the moved link a new transaction and link order and clears its status decision", async () => {
     const first = envelope({
       uid: 151,
       messageId: `<split-xid-first-${suffix}@example.test>`,
@@ -189,11 +189,12 @@ suite("mail conversation work-state projection", () => {
     const replyId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: reply });
     const conversation = await conversationForMessage(firstId);
     expect((await conversationForMessage(replyId)).id).toBe(conversation.id);
-    const [before] = await sql<{ linked_xid: string }[]>`
+    const [before] = await sql<{ linked_xid: string; link_seq: string }[]>`
       UPDATE mail.conversation_messages SET status_covered = true, hydrated_revision = 1
-      WHERE message_id = ${replyId}::uuid RETURNING linked_xid::text
+      WHERE message_id = ${replyId}::uuid RETURNING linked_xid::text, link_seq::text
     `;
     expect(before?.linked_xid).toMatch(/^\d+$/);
+    expect(before?.link_seq).toMatch(/^\d+$/);
     const split = await splitConversation({
       context,
       mailboxId,
@@ -202,11 +203,13 @@ suite("mail conversation work-state projection", () => {
     });
     expect(split.ok).toBe(true);
     if (!split.ok) throw new Error(split.error.message);
-    const [after] = await sql<{ linked_xid: string; status_covered: boolean | null; hydrated_revision: number | null }[]>`
-      SELECT linked_xid::text, status_covered, hydrated_revision FROM mail.conversation_messages WHERE message_id = ${replyId}::uuid
+    const [after] = await sql<{ linked_xid: string; link_seq: string; status_covered: boolean | null; hydrated_revision: number | null }[]>`
+      SELECT linked_xid::text, link_seq::text, status_covered, hydrated_revision FROM mail.conversation_messages WHERE message_id = ${replyId}::uuid
     `;
     expect(after?.linked_xid).toMatch(/^\d+$/);
     expect(after?.linked_xid).not.toBe(before?.linked_xid);
+    expect(after?.link_seq).toMatch(/^\d+$/);
+    expect(BigInt(after!.link_seq)).toBeGreaterThan(BigInt(before!.link_seq));
     expect(after?.status_covered).toBeNull();
     expect(after?.hydrated_revision).toBeNull();
   });
