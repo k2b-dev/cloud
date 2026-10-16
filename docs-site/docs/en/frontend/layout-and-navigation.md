@@ -28,9 +28,8 @@ when people navigate.
 | Width | Signed-in pages | Anonymous pages |
 | --- | --- | --- |
 | Below 768 px (phones) | Header with Home, the app name, help, search, and the app menu; no app bar | Flat header with Home, the app name, help, search, the app grid on app pages, theme and language, and sign-in |
-| 768 to 1023 px (tablets) | No header. The app bar runs down the left edge, and the app area meets the window's top, right, and bottom edges without spacing, radius, shadow, or border | The same header controls; header, content, and footer as cards on the app background |
-| 1024 to 1535 px (laptops) | Same as above | Header with breadcrumbs, theme and language, and sign-in; cards on the app background |
-| From 1536 px | No header. The app area is a card with 8 px spacing on the app background | Same as above |
+| 768 to 1023 px (tablets) | No header. The 56 px app bar runs down the left edge, and the app area meets the window's top, right, and bottom edges without spacing, radius, shadow, or border | The same header controls; header, content, and footer as cards on the app background |
+| From 1024 px | No header. The 56 px app bar sits on the app background. The app area is a card whose spacing grows from 4 px at 1024 px to 8 px at 1440 px and whose radius grows from 10 px to 14 px. Wider windows keep those dimensions | Header with breadcrumbs, theme and language, and sign-in; cards on the app background |
 
 Where the app area is a card, the outermost workspace is that card. It has
 rounded corners and the card's frame, also when it is `flat`. Render that
@@ -40,19 +39,22 @@ workspace shows its content on the app background, so scroll the content in a
 `ScrollArea` and do not wrap it in an opaque surface that fills the app area.
 
 From 768 px the app bar holds Home, the apps, the app grid, search, help, and
-the profile avatar. Between the app bar and the app area there is no line:
-the app bar shows the app background, and the app area is one opaque surface.
+the profile avatar. Its controls are 44 px targets. Between the app bar and
+the app area there is no line: the app bar shows the app background, and the
+app area is one opaque surface.
 Global announcements and account notices stay above the app as a strip across
-the app area; from 768 to 1535 px it has no radius or border.
+the app area; from 768 to 1023 px it has no radius or border.
 
 The installed app on a tablet reports safe areas, such as the status bar and
-the home indicator. From 768 to 1535 px the app bar and the app area still
+the home indicator. From 768 to 1023 px the app bar and the app area still
 reach the window's edges. The app bar fills those areas with the app
 background, and the app area fills them with its surface. Their content stays
 inside the safe areas: a regular page scrolls to its end above the home
 indicator, and `AppWorkspace` keeps the content of its sidebar, panes, and
-drawer above it. Below 768 px the whole canvas keeps the safe areas as padding,
-because it is one flat surface there.
+drawer above it. From 1024 px the card and app bar stay below the status bar,
+the card keeps its spacing at the bottom, and its surfaces keep their content
+above the home indicator. Below 768 px the whole canvas keeps the safe areas
+as padding, because it is one flat surface there.
 
 Applications need no changes for any of this. `AppWorkspace` adds its compact
 navigation between 768 and 1023 px on its own; see

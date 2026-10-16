@@ -99,7 +99,7 @@ right, and bottom. Main keeps at least 320 px. Give Main 0.5 rem padding so
 its surfaces end one gap before the panel with their own rounded corners.
 From 1024 px the workspace lets the panel's shadow extend beyond its edges.
 On coarse pointers from 768 to 1023 px, a closable detail overlays Main as a
-drawer. The host’s app card from 1536 px surrounds this same workspace geometry.
+drawer. The host’s app card from 1024 px surrounds this same workspace geometry.
 
 In an island or client component, pass `onClose` the panel’s existing close or
 deselect action. Escape and dismissal gestures then use that action too.

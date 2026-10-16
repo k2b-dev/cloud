@@ -54,7 +54,7 @@ const inLocale = (render: () => JSX.Element) =>
   );
 
 const rail = () =>
-  `<aside class="layout-rail flex w-10 shrink-0 flex-col" style="height:20rem"><nav class="flex min-h-0 flex-1 flex-col items-center gap-1">${inLocale(
+  `<aside class="layout-rail flex w-14 shrink-0 flex-col" style="height:20rem"><nav class="flex min-h-0 flex-1 flex-col items-center gap-1">${inLocale(
     () => createComponent(RailApps, { apps, settings: { revision: 0, visibility: {}, shortcuts: [] }, currentPath: "/app/chat" }),
   )}</nav></aside>`;
 const grid = (surface: "panel" | "sheet") =>
@@ -87,6 +87,14 @@ const badgeEffect = async (markup: string, iconSelector: string, viewport: { wid
           for (const badge of Array.from(document.querySelectorAll<HTMLElement>(".cloud-app-badge"))) {
             const box = badge.getBoundingClientRect();
             if (box.width < 12 || box.height < 12) clipped.push(`${text}: badge is ${box.width}x${box.height}`);
+            if (badge.parentElement!.matches(".rail-item")) {
+              const item = badge.parentElement!.getBoundingClientRect();
+              const rail = badge.closest(".layout-rail")!.getBoundingClientRect();
+              if (rail.width !== 56 || item.width !== 44 || item.height !== 44 || item.left < rail.left || item.right > rail.right)
+                clipped.push(`${text}: rail target is outside the 56 px rail or is not 44x44`);
+              if (box.left < item.left || box.right > item.right || box.top < item.top || box.bottom > item.bottom)
+                clipped.push(`${text}: badge is outside its item`);
+            }
             for (let parent = badge.parentElement; parent; parent = parent.parentElement) {
               const style = getComputedStyle(parent);
               if (style.overflowX === "visible" && style.overflowY === "visible") continue;
@@ -108,7 +116,14 @@ const badgeEffect = async (markup: string, iconSelector: string, viewport: { wid
 };
 
 test("a badge in the rail moves no icon and is not cut off by the rail's scroller", async () => {
-  expect(await badgeEffect(rail(), ".rail-item", { width: 1280, height: 800 })).toEqual({ icons: 4, moved: [], clipped: [] });
+  for (const [width, height] of [
+    [768, 1024],
+    [834, 1194],
+    [1194, 834],
+    [1440, 900],
+    [1920, 1080],
+  ] as const)
+    expect(await badgeEffect(rail(), ".rail-item", { width, height })).toEqual({ icons: 4, moved: [], clipped: [] });
 }, 30_000);
 
 test("a badge in the app grid moves no icon or label, on desktop and on a phone", async () => {

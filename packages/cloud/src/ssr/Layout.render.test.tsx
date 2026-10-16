@@ -266,7 +266,7 @@ describe("Cloud layouts SSR", () => {
     expect(html.match(/<header[^>]*class="(layout-header[^"]*)"/)?.[1]).toContain("md:hidden");
     expect(html).not.toContain("hidden min-w-0 items-center lg:flex");
     expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
-    expect(html).toContain('class="layout-rail hidden w-10 shrink-0 flex-col md:flex"');
+    expect(html).toContain('class="layout-rail hidden w-14 shrink-0 flex-col md:flex"');
     // The rail's Home link and the phone header's Home link stay server markup.
     const chrome = withoutIslands(html);
     expect(chrome).toMatch(/<aside class="layout-rail[^"]*"><div class="layout-rail-logo[^"]*"><a href="\/" aria-label="Home">/);

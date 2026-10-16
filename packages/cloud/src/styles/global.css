@@ -392,15 +392,16 @@ solid-island {
 
 /* Signed-in card: from 1024 px the app area is a card on the app canvas beside
    the rail, as on laptops. Its spacing and radius grow with the window, from
-   4 to 8 px and from 10 to 14 px at 1440 px, the wide card from there on. The
+   4 to 8 px and from 10 to 14 px at 1440 px, the wide card from there on, in
+   whole pixels, so the card and its columns keep whole widths. The
    rail starts at the window's left edge and moves down with the card. In the
    installed app the card and the rail stay below the status bar; the card keeps
    its spacing at the bottom, and its surfaces keep their content above the
    home indicator, as in the flush range. */
 @media (min-width: 1024px) {
   .cloud-app-canvas[data-layout-authenticated] {
-    --cloud-card-inset: clamp(0.25rem, calc(0.25rem + (100vw - 64rem) / 104), 0.5rem);
-    --cloud-card-radius: clamp(0.625rem, calc(0.625rem + (100vw - 64rem) / 104), 0.875rem);
+    --cloud-card-inset: round(clamp(0.25rem, calc(0.25rem + (100vw - 64rem) / 104), 0.5rem), 1px);
+    --cloud-card-radius: round(clamp(0.625rem, calc(0.625rem + (100vw - 64rem) / 104), 0.875rem), 1px);
     --cloud-card-inset-bottom: max(0px, env(safe-area-inset-bottom, 0px) - var(--cloud-card-inset));
     padding: max(var(--cloud-card-inset), env(safe-area-inset-top, 0px)) max(var(--cloud-card-inset), env(safe-area-inset-right, 0px))
       var(--cloud-card-inset) 0;
