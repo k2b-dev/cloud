@@ -32,6 +32,8 @@ export const estimateInitialMessageBodyHeight = (plainText: string | null, html:
 const escapeHtmlAttribute = (value: string): string =>
   value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
+export type MessageAppearanceMode = "light" | "dark" | "auto";
+
 export type QuotedTextLabels = { show: string; hide: string };
 
 export const buildMessageDocument = (
@@ -40,7 +42,9 @@ export const buildMessageDocument = (
   linksDisabled = false,
   locale = "en",
   quotedTextLabels: QuotedTextLabels = { show: "Show quoted text", hide: "Hide quoted text" },
+  initialMode: MessageAppearanceMode = "light",
 ): string => {
+  const initialModeLiteral = JSON.stringify(initialMode).replaceAll("<", "\\u003c");
   const channelLiteral = JSON.stringify(channel).replaceAll("<", "\\u003c");
   const quotedTextLabelsLiteral = JSON.stringify(quotedTextLabels).replaceAll("<", "\\u003c");
   const linksDisabledLiteral = linksDisabled ? "true" : "false";
@@ -52,9 +56,12 @@ export const buildMessageDocument = (
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'nonce-${scriptNonce}'; form-action 'none'; base-uri 'none'; object-src 'none'">
   <meta name="referrer" content="no-referrer">
   <style>
-    :root { color-scheme: only light; }
+    html:not(.mail-dark) { color-scheme: only light; }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; background: #fff; color: #18181b; font: 14px/1.55 system-ui, sans-serif; overflow-wrap: anywhere; }
+    html.mail-dark { color-scheme: dark; }
+    html.mail-dark, html.mail-dark body { background: transparent; color: var(--mail-dark-text, #f4f4f5); }
+    html.mail-dark a { color: var(--mail-dark-link); }
     body { padding: 1px; }
     img { max-width: 100%; height: auto; }
     table { max-width: 100%; border-collapse: collapse; }
@@ -84,6 +91,7 @@ export const buildMessageDocument = (
     (() => {
       "use strict";
       const channel = ${channelLiteral};
+      const initialMode = ${initialModeLiteral};
       const linksDisabled = ${linksDisabledLiteral};
       const post = (type, value) => parent.postMessage({ source: "cloud-mail-message", channel, type, value }, "*");
       const quotedTextLabels = ${quotedTextLabelsLiteral};
@@ -150,6 +158,185 @@ export const buildMessageDocument = (
       });
       const root = document.getElementById("mail-message-root");
       const reportHeight = () => post("height", Math.ceil((root?.getBoundingClientRect().height || 0) + 2));
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      const parsedColors = new Map();
+      const parseColor = (value) => {
+        if (!parsedColors.has(value)) {
+          context.clearRect(0, 0, 1, 1);
+          context.fillStyle = "rgba(0, 0, 0, 0)";
+          context.fillStyle = value;
+          context.fillRect(0, 0, 1, 1);
+          const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+          parsedColors.set(value, [r, g, b, a / 255]);
+        }
+        return parsedColors.get(value);
+      };
+      const cssColor = ([r, g, b, a]) => "rgba(" + [Math.round(r), Math.round(g), Math.round(b), a].join(", ") + ")";
+      const luminance = (color) => {
+        const linear = color.slice(0, 3).map((value) => {
+          const c = value / 255;
+          return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+        });
+        return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+      };
+      const contrast = (first, second) => {
+        const a = luminance(first), b = luminance(second);
+        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      };
+      const rgbToHsl = (color) => {
+        const [r, g, b] = color.map((value) => value / 255);
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        const delta = max - min, lightness = (max + min) / 2;
+        if (delta === 0) return [0, 0, lightness];
+        const hue = max === r ? ((g - b) / delta + 6) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+        return [hue / 6, delta / (1 - Math.abs(2 * lightness - 1)), lightness];
+      };
+      const hslToRgb = ([h, s, l], alpha) => {
+        const chroma = (1 - Math.abs(2 * l - 1)) * s;
+        const x = chroma * (1 - Math.abs((h * 6) % 2 - 1));
+        const sector = Math.floor(h * 6) % 6;
+        const rgb = [[chroma, x, 0], [x, chroma, 0], [0, chroma, x], [0, x, chroma], [x, 0, chroma], [chroma, 0, x]][sector];
+        return [...rgb.map((value) => Math.round((value + l - chroma / 2) * 255)), alpha];
+      };
+      const mix = (first, second, amount) => [
+        ...first.slice(0, 3).map((value, index) => value * (1 - amount) + second[index] * amount),
+        second[3],
+      ];
+      let background = parseColor("#11151b");
+      let text = parseColor("#f4f4f5");
+      const adaptBackground = (color) => {
+        if (luminance(color) <= 0.4) return color;
+        const [h, s, l] = rgbToHsl(color);
+        return mix(background, hslToRgb([h, s * 0.6, 0.35], color[3]), Math.max(0, Math.min((1 - l) * 2.5, 1)));
+      };
+      const adaptText = (color, effectiveBackground) => {
+        if (contrast(color, effectiveBackground) >= 4.5) return color;
+        const [h, s, l] = rgbToHsl(color);
+        let lightness = 1 - l;
+        let result = hslToRgb([h, s, lightness], color[3]);
+        const direction = luminance(effectiveBackground) <= 0.4 ? 1 : -1;
+        while (contrast(result, effectiveBackground) < 4.5 && (direction > 0 ? lightness < 1 : lightness > 0)) {
+          lightness = Math.max(0, Math.min(1, lightness + direction * 0.05));
+          result = hslToRgb([h, s, lightness], color[3]);
+        }
+        return result;
+      };
+      const elements = [root, ...root.querySelectorAll("*")];
+      // Sentinels distinguish inherited defaults from the sender's own colors.
+      const bodyStyle = document.body.getAttribute("style");
+      document.body.style.color = "rgb(1, 2, 3)";
+      const sentinel = document.createElement("style");
+      sentinel.textContent = "a { color: rgb(1, 2, 4); }";
+      document.head.append(sentinel);
+      const originals = new Map();
+      const white = parseColor("rgb(255, 255, 255)");
+      for (const element of elements) {
+        const computed = getComputedStyle(element);
+        const color = computed.color;
+        const fill = parseColor(computed.backgroundColor);
+        const parent = originals.get(element.parentElement);
+        const originalEffectiveBackground = fill[3] === 1 ? fill : parent?.originalEffectiveBackground || white;
+        const borders = [];
+        for (const side of ["top", "right", "bottom", "left"]) {
+          const width = parseFloat(computed.getPropertyValue("border-" + side + "-width"));
+          const style = computed.getPropertyValue("border-" + side + "-style");
+          if (width > 0 && !["none", "hidden"].includes(style)) {
+            borders.push(["border-" + side + "-color", parseColor(computed.getPropertyValue("border-" + side + "-color"))]);
+          }
+        }
+        originals.set(element, {
+          style: element.getAttribute("style"),
+          color: color === "rgb(1, 2, 3)" || color === "rgb(1, 2, 4)" ? null : parseColor(color),
+          background: fill[3] > 0 ? fill : null,
+          backgroundImage: computed.backgroundImage !== "none",
+          borders,
+          originalEffectiveBackground,
+        });
+      }
+      sentinel.remove();
+      if (bodyStyle === null) document.body.removeAttribute("style");
+      else document.body.setAttribute("style", bodyStyle);
+      const effectiveBackground = (element) => {
+        for (let current = element; current; current = current.parentElement) {
+          const original = originals.get(current);
+          if (original?.backgroundImage) return original.originalEffectiveBackground;
+          if (original?.background?.[3] === 1) return adaptBackground(original.background);
+        }
+        return background;
+      };
+      const imageAnalysis = new Map();
+      let currentMode = "light";
+      const restoreStyle = (element, original) => {
+        if (original.style === null) element.removeAttribute("style");
+        else element.setAttribute("style", original.style);
+      };
+      const applyDarkStyles = (element, original) => {
+        restoreStyle(element, original);
+        const set = (property, value) => element.style.setProperty(property, cssColor(value), "important");
+        if (original.background && !original.backgroundImage) set("background-color", adaptBackground(original.background));
+        for (const [property, color] of original.borders) set(property, adaptBackground(color));
+        const effective = effectiveBackground(element);
+        if (original.color) set("color", adaptText(original.color, effective));
+        if (imageAnalysis.get(element)?.needsPlate && luminance(original.originalEffectiveBackground) > 0.4 &&
+            cssColor(effective) !== cssColor(original.originalEffectiveBackground)) {
+          set("background-color", original.originalEffectiveBackground);
+        }
+      };
+      const analyzeImage = (image) => {
+        if (!image.complete || image.naturalWidth === 0) return;
+        let needsPlate = false;
+        try {
+          const sample = document.createElement("canvas");
+          const scale = Math.min(1, 64 / Math.max(image.naturalWidth, image.naturalHeight));
+          sample.width = Math.max(1, Math.round(image.naturalWidth * scale));
+          sample.height = Math.max(1, Math.round(image.naturalHeight * scale));
+          const pixels = sample.getContext("2d", { willReadFrequently: true });
+          pixels.drawImage(image, 0, 0, sample.width, sample.height);
+          const data = pixels.getImageData(0, 0, sample.width, sample.height).data;
+          let transparent = 0, opaque = 0, darkInk = 0;
+          for (let index = 0; index < data.length; index += 4) {
+            if (data[index + 3] < 128) transparent++;
+            else {
+              opaque++;
+              if (contrast([data[index], data[index + 1], data[index + 2]], background) < 3) darkInk++;
+            }
+          }
+          needsPlate = transparent >= sample.width * sample.height * 0.05 && opaque > 0 && darkInk >= opaque * 0.3;
+        } catch {
+          // Unreadable pixels leave the image unchanged.
+        }
+        imageAnalysis.set(image, { needsPlate });
+        if (currentMode === "dark") applyDarkStyles(image, originals.get(image));
+      };
+      for (const image of root.querySelectorAll("img")) {
+        image.addEventListener("load", () => analyzeImage(image));
+        analyzeImage(image);
+      }
+      const applyMode = (mode) => {
+        currentMode = mode;
+        document.documentElement.classList.toggle("mail-dark", mode === "dark");
+        if (mode === "dark") {
+          document.documentElement.style.setProperty("--mail-dark-text", cssColor(text));
+          document.documentElement.style.setProperty("--mail-dark-link", cssColor(adaptText(parseColor("#1677c8"), background)));
+          for (const [element, original] of originals) applyDarkStyles(element, original);
+        } else {
+          for (const [element, original] of originals) restoreStyle(element, original);
+          document.documentElement.style.removeProperty("--mail-dark-text");
+          document.documentElement.style.removeProperty("--mail-dark-link");
+        }
+        reportHeight();
+      };
+      const setAppearance = (value) => {
+        if (!value || (value.mode !== "light" && value.mode !== "dark")) return;
+        const validColor = (color) => color === null || (typeof color === "string" && color.length < 200);
+        if (!validColor(value.text) || !validColor(value.background)) return;
+        text = parseColor(value.text || "#f4f4f5");
+        background = parseColor(value.background || "#11151b");
+        applyMode(value.mode);
+      };
+      applyMode(initialMode === "auto" ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : initialMode);
       // The parent delivers permission-checked image bytes; object URLs must
       // be created here because this opaque origin cannot load parent blob URLs.
       const shownImages = new Set();
@@ -173,6 +360,7 @@ export const buildMessageDocument = (
         if (data.type === "measure") reportHeight();
         if (data.type === "images") showImages(data.value);
         if (data.type === "quotes") openQuotes(data.value);
+        if (data.type === "appearance") setAppearance(data.value);
       });
       if (root) new ResizeObserver(reportHeight).observe(root);
       reportHeight();

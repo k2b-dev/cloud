@@ -37,6 +37,8 @@ export const mailMessageMessages = i18n.define({
       display: "Display",
       viewHtml: "View as HTML",
       viewPlain: "View as plain text",
+      showOriginalColors: "Show original colors",
+      adaptColorsToDarkMode: "Adapt colors to dark mode",
       outgoingMessage: "Outgoing message",
       deletedOnServer: "Deleted on the server, kept in Cloud",
       deletedOnServerHint: "The mail server no longer has this message. Cloud shows its own copy because the conversation is kept.",
@@ -94,6 +96,8 @@ export const mailMessageMessages = i18n.define({
       display: "Darstellung",
       viewHtml: "Als HTML anzeigen",
       viewPlain: "Als reinen Text anzeigen",
+      showOriginalColors: "Originalfarben anzeigen",
+      adaptColorsToDarkMode: "Farben an den dunklen Modus anpassen",
       outgoingMessage: "Ausgehende Nachricht",
       deletedOnServer: "Auf dem Server gelöscht, in Cloud aufbewahrt",
       deletedOnServerHint:

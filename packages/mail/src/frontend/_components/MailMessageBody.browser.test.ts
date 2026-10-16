@@ -1,10 +1,50 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import type { Frame, Page } from "playwright";
+import { deflateSync } from "node:zlib";
+import type { BrowserContextOptions, Frame, Page } from "playwright";
 import { launchBrowser } from "../../../../ui/test/browser";
 import type {} from "./MailMessageBody.browser-harness";
+import type { MessageColors } from "./mail-message-presentation";
 
 // A 1x1 PNG; natural width 1 proves the frame decoded delivered image bytes.
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC", "base64");
+const crcTable = Array.from({ length: 256 }, (_, value) => {
+  for (let bit = 0; bit < 8; bit++) value = (value >>> 1) ^ (value & 1 ? 0xedb88320 : 0);
+  return value >>> 0;
+});
+const encodePng = (pixel: (x: number, y: number) => number[]) => {
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    let crc = 0xffffffff;
+    for (const byte of body) crc = (crc >>> 8) ^ crcTable[(crc ^ byte) & 255]!;
+    const length = Buffer.alloc(4),
+      checksum = Buffer.alloc(4);
+    length.writeUInt32BE(data.length);
+    checksum.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+    return Buffer.concat([length, body, checksum]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(16, 0);
+  header.writeUInt32BE(16, 4);
+  header[8] = 8;
+  header[9] = 6;
+  const rows = Buffer.alloc(16 * 65);
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) rows.set(pixel(x, y), y * 65 + 1 + x * 4);
+  }
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk("IHDR", header),
+    chunk("IDAT", deflateSync(rows)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+};
+const square = (x: number, y: number) => x >= 4 && x < 12 && y >= 4 && y < 12;
+const attachmentImages = new Map([
+  ["logo", encodePng((x, y) => [0, 0, 0, square(x, y) ? 255 : 0])],
+  ["photo", encodePng(() => [147, 197, 253, 255])],
+  ["spacer", encodePng(() => [0, 0, 0, 0])],
+  ["icon", encodePng((x, y) => [249, 115, 22, square(x, y) ? 255 : 0])],
+]);
 const remoteIds = Array.from({ length: 6 }, (_, index) => `00000000-0000-4000-8000-00000000000${index + 1}`);
 const failingId = remoteIds[5]!;
 const html = [
@@ -56,15 +96,24 @@ const server = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
   fetch(request) {
-    const { pathname } = new URL(request.url);
+    const { pathname, searchParams } = new URL(request.url);
     if (pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript" } });
     if (pathname.startsWith("/api/mail/mailboxes/Box001/messages/Msg001/remote-images/")) {
       return pathname.endsWith(failingId) ? new Response("Upstream failed", { status: 502 }) : new Response(PNG, { headers: imageHeaders });
     }
-    if (pathname.startsWith("/api/mail/mailboxes/Box001/messages/Msg001/attachments/")) return new Response(PNG, { headers: imageHeaders });
-    return new Response('<!doctype html><html><body><div id="root"></div><script src="/harness.js"></script></body></html>', {
-      headers: { "Content-Type": "text/html" },
-    });
+    if (pathname.startsWith("/api/mail/mailboxes/Box001/messages/Msg001/attachments/")) {
+      return new Response(attachmentImages.get(pathname.split("/").at(-1)!) ?? PNG, { headers: imageHeaders });
+    }
+    const dark = searchParams.get("theme") === "dark";
+    return new Response(
+      `<!doctype html><html class="${dark ? "dark" : ""}"><head><style>
+      .bg-white { background-color: white; }
+      .bg-transparent, .dark [class~="dark:bg-transparent"] { background-color: transparent; }
+    </style></head><body${dark ? ' style="margin:0;background:#11151b;color:#f4f4f5"' : ""}><div id="root"></div><script src="/harness.js"></script></body></html>`,
+      {
+        headers: { "Content-Type": "text/html" },
+      },
+    );
   },
 });
 
@@ -72,31 +121,53 @@ afterAll(() => server.stop(true));
 
 type OpenedMessage = { page: Page; frame: Frame; errors: string[] };
 
-const withOpenedMessage = async (allowedByRule: boolean, run: (message: OpenedMessage) => Promise<void>): Promise<void> => {
+type OpenMessageOptions = {
+  html?: string;
+  attachments?: Parameters<Window["mountMailMessageBody"]>[0]["attachments"];
+  theme?: "light" | "dark" | null;
+  colors?: MessageColors;
+  pageQuery?: string;
+  colorScheme?: BrowserContextOptions["colorScheme"];
+};
+
+const withOpenedMessage = async (
+  allowedByRule: boolean,
+  run: (message: OpenedMessage) => Promise<void>,
+  options: OpenMessageOptions = {},
+): Promise<void> => {
   const browser = await launchBrowser();
   try {
-    const page = await browser.newPage();
+    const page = await browser.newPage({ colorScheme: options.colorScheme });
     const errors: string[] = [];
     page.on("console", (message) => {
       if (message.type() === "error" && !message.text().includes("502")) errors.push(message.text());
     });
     page.on("pageerror", (error) => errors.push(error.message));
-    await page.goto(server.url.href);
+    await page.goto(server.url.href + (options.pageQuery ?? ""));
     await page.evaluate(
-      ({ html, remoteIds, allowedByRule }) =>
+      ({ html, attachments, remoteIds, allowedByRule, theme, colors }) =>
         window.mountMailMessageBody({
           mailboxId: "Box001",
           messageId: "Msg001",
           format: "html",
+          theme,
+          colors,
           html,
           plainText: null,
-          attachments: [
-            { id: "Att001", contentId: "<logo@example.com>", contentType: "image/png", sizeBytes: 100 },
-            { id: "Att002", contentId: "<Banner@example.com>", contentType: "image/png", sizeBytes: 100 },
-          ],
+          attachments,
           remoteContent: { imageIds: remoteIds, allowedByRule, sender: "sender@example.com", domain: "example.com" },
         }),
-      { html, remoteIds, allowedByRule },
+      {
+        html: options.html ?? html,
+        attachments: options.attachments ?? [
+          { id: "Att001", contentId: "<logo@example.com>", contentType: "image/png", sizeBytes: 100 },
+          { id: "Att002", contentId: "<Banner@example.com>", contentType: "image/png", sizeBytes: 100 },
+        ],
+        remoteIds,
+        allowedByRule,
+        theme: options.theme === undefined ? "light" : options.theme,
+        colors: options.colors ?? "adapted",
+      },
     );
     const frame = await (await page.waitForSelector("iframe")).contentFrame();
     if (!frame) throw new Error("Message frame did not load");
@@ -279,5 +350,227 @@ describe("HTML mail message frame", () => {
       expect(trace.srcdocChanges).toBe(0);
       expect(errors).toEqual([]);
     });
+  }, 30_000);
+});
+
+const newsletterAttachments = [...attachmentImages].map(([id, image]) => ({
+  id,
+  contentId: `<${id}@example.com>`,
+  contentType: "image/png",
+  sizeBytes: image.length,
+}));
+const newsletter = `
+<table bgcolor="#f3f4f6"><tr><td>
+  <table id="card" style="background:#ffffff;border:1px solid #e5e7eb"><tr><td>
+    <img alt="logo" src="cid:Logo%40Example.com">
+    <h1 style="color:#111827">Monthly news</h1>
+    <p id="paragraph" style="color:#374151">The latest news. <a id="link" href="https://example.com" style="color:#2563eb">Read more</a></p>
+    <p>Default text. <a href="https://example.com">Default link</a></p>
+    <table><tr><td id="button" bgcolor="#2563eb"><a href="https://example.com" style="color:#ffffff">Open newsletter</a></td></tr></table>
+    <p id="note" style="background:#fef3c7;color:#92400e">A useful note.</p>
+    <p style="color:#6b7280">Newsletter footer</p>
+    <div id="dark-block" style="background:#0f172a;color:#e2e8f0">Designed for dark mode. <a href="https://example.com" style="color:#a5b4fc">Details</a></div>
+    <img alt="photo" src="cid:photo@example.com">
+    <img alt="spacer" src="cid:spacer@example.com">
+    <img alt="icon" src="cid:icon@example.com">
+    <img alt="blocked" data-mail-remote-image="${remoteIds[0]}" width="120" height="40">
+  </td></tr></table>
+</td></tr></table>`;
+
+const waitForMode = (frame: Frame, dark: boolean) =>
+  frame.waitForFunction((dark) => document.documentElement.classList.contains("mail-dark") === dark, dark);
+
+const assertAdaptedContrast = async (frame: Frame) => {
+  const failures = await frame.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext("2d", { willReadFrequently: true })!;
+    const colors = new Map<string, number[]>();
+    const parse = (color: string) => {
+      if (!colors.has(color)) {
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        colors.set(color, [...context.getImageData(0, 0, 1, 1).data]);
+      }
+      return colors.get(color)!;
+    };
+    const luminance = (color: number[]) => {
+      const [r, g, b] = color.slice(0, 3).map((value) => {
+        const c = value / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return r! * 0.2126 + g! * 0.7152 + b! * 0.0722;
+    };
+    return [...document.querySelectorAll("#mail-message-root *")].flatMap((element) => {
+      if (![...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())) return [];
+      let background = parse("#11151b");
+      for (let ancestor: Element | null = element; ancestor; ancestor = ancestor.parentElement) {
+        const color = parse(getComputedStyle(ancestor).backgroundColor);
+        if (color[3] === 255) {
+          background = color;
+          break;
+        }
+      }
+      const foreground = parse(getComputedStyle(element).color);
+      const first = luminance(foreground),
+        second = luminance(background);
+      const contrast = (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+      return contrast >= 4.5 ? [] : [{ text: element.textContent, foreground, background, contrast }];
+    });
+  });
+  expect(failures).toEqual([]);
+};
+
+const assertOriginalColors = async (page: Page, frame: Frame) => {
+  await waitForMode(frame, false);
+  expect(await frame.locator("#card").evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgb(255, 255, 255)");
+  expect(await frame.locator("#paragraph").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(55, 65, 81)");
+  expect(await frame.locator("#link").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(37, 99, 235)");
+  expect(await frame.locator("#card").getAttribute("style")).toBe("background:#ffffff;border:1px solid #e5e7eb");
+  expect(await frame.locator('img[alt="logo"]').getAttribute("style")).toBeNull();
+  expect(
+    await frame.locator("img").evaluateAll((elements) => elements.map((element) => getComputedStyle(element).backgroundColor)),
+  ).toEqual(Array(5).fill("rgba(0, 0, 0, 0)"));
+  expect(await page.locator("iframe").evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgb(255, 255, 255)");
+};
+
+const assertNoReload = async (page: Page) => {
+  const trace = await page.evaluate(() => window.mailMessageBodyTrace);
+  expect(trace.srcdocChanges).toBe(0);
+  expect(trace.loads).toHaveLength(1);
+};
+
+const updateTheme = (page: Page, theme: "light" | "dark") =>
+  page.evaluate((theme) => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    document.body.style.backgroundColor = theme === "dark" ? "#11151b" : "#ffffff";
+    document.body.style.color = theme === "dark" ? "#f4f4f5" : "#18181b";
+    window.updateMailMessageBody({ theme });
+  }, theme);
+
+describe("HTML mail colors", () => {
+  test("adapts newsletter colors for contrast and preserves dark designs and images", async () => {
+    await withOpenedMessage(
+      false,
+      async ({ page, frame, errors }) => {
+        await waitForMode(frame, true);
+        await visibleImages(frame, 4);
+        await assertAdaptedContrast(frame);
+        expect(await frame.locator("#button").evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgb(37, 99, 235)");
+        expect(await frame.locator("#button a").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(255, 255, 255)");
+        expect(
+          await frame
+            .locator("#dark-block")
+            .evaluate((element) => ({ background: getComputedStyle(element).backgroundColor, color: getComputedStyle(element).color })),
+        ).toEqual({ background: "rgb(15, 23, 42)", color: "rgb(226, 232, 240)" });
+        expect(await frame.locator("img").evaluateAll((elements) => elements.map((element) => getComputedStyle(element).filter))).toEqual(
+          Array(5).fill("none"),
+        );
+        expect(
+          await frame
+            .locator("img")
+            .evaluateAll((elements) =>
+              Object.fromEntries(elements.map((element) => [element.getAttribute("alt"), getComputedStyle(element).backgroundColor])),
+            ),
+        ).toEqual({
+          logo: "rgb(255, 255, 255)",
+          photo: "rgba(0, 0, 0, 0)",
+          spacer: "rgba(0, 0, 0, 0)",
+          icon: "rgba(0, 0, 0, 0)",
+          blocked: "rgba(0, 0, 0, 0)",
+        });
+        expect(await frame.locator('img[alt="blocked"]').getAttribute("src")).toBeNull();
+        expect(await page.locator("iframe").evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+        await assertNoReload(page);
+        expect(errors).toEqual([]);
+      },
+      { html: newsletter, attachments: newsletterAttachments, theme: "dark", colors: "adapted", pageQuery: "?theme=dark" },
+    );
+  }, 30_000);
+
+  for (const variant of [
+    { theme: "light", colors: "adapted" },
+    { theme: "dark", colors: "original" },
+  ] as const) {
+    test(`${variant.theme} with ${variant.colors} colors preserves the original document`, async () => {
+      await withOpenedMessage(
+        false,
+        async ({ page, frame, errors }) => {
+          await visibleImages(frame, 4);
+          await assertOriginalColors(page, frame);
+          expect(errors).toEqual([]);
+        },
+        { html: newsletter, attachments: newsletterAttachments, ...variant, pageQuery: variant.theme === "dark" ? "?theme=dark" : "" },
+      );
+    }, 30_000);
+  }
+
+  test("switches themes and original colors without replacing srcdoc or reloading", async () => {
+    await withOpenedMessage(
+      false,
+      async ({ page, frame, errors }) => {
+        await visibleImages(frame, 4);
+        await assertOriginalColors(page, frame);
+        await assertNoReload(page);
+        await updateTheme(page, "dark");
+        await waitForMode(frame, true);
+        await assertAdaptedContrast(frame);
+        await assertNoReload(page);
+        await page.evaluate(() => window.updateMailMessageBody({ colors: "original" }));
+        await assertOriginalColors(page, frame);
+        await assertNoReload(page);
+        await page.evaluate(() => window.updateMailMessageBody({ colors: "adapted" }));
+        await waitForMode(frame, true);
+        await assertAdaptedContrast(frame);
+        await updateTheme(page, "light");
+        await assertOriginalColors(page, frame);
+        await updateTheme(page, "dark");
+        await waitForMode(frame, true);
+        expect(await frame.locator('img[alt="logo"]').evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+          "rgb(255, 255, 255)",
+        );
+        await assertNoReload(page);
+        expect(errors).toEqual([]);
+      },
+      { html: newsletter, attachments: newsletterAttachments },
+    );
+  }, 30_000);
+
+  test("resolves auto from the device scheme before the host knows its theme", async () => {
+    await withOpenedMessage(
+      false,
+      async ({ page, frame, errors }) => {
+        await waitForMode(frame, true);
+        await visibleImages(frame, 4);
+        await assertAdaptedContrast(frame);
+        expect(await page.locator("iframe").evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+        await updateTheme(page, "light");
+        await assertOriginalColors(page, frame);
+        await assertNoReload(page);
+        expect(errors).toEqual([]);
+      },
+      { html: newsletter, attachments: newsletterAttachments, theme: null, pageQuery: "?theme=dark", colorScheme: "dark" },
+    );
+  }, 30_000);
+
+  test("keeps background images and readable author colors on their original surface", async () => {
+    const content = `<style>a { color: #374151; }</style><div style="background:#fef3c7"><div id="gradient" style="background-image:linear-gradient(#fef3c7,#fef3c7);color:#374151"><p>Readable text <a href="https://example.com">Author link</a></p></div></div>`;
+    await withOpenedMessage(
+      false,
+      async ({ frame, errors }) => {
+        await waitForMode(frame, true);
+        const gradient = await frame.locator("#gradient").evaluate((element) => {
+          const computed = getComputedStyle(element);
+          return { image: computed.backgroundImage, color: computed.color, background: computed.backgroundColor };
+        });
+        expect(gradient.image).toContain("linear-gradient");
+        expect(gradient.color).toBe("rgb(55, 65, 81)");
+        expect(gradient.background).toBe("rgba(0, 0, 0, 0)");
+        expect(await frame.locator("a").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(55, 65, 81)");
+        expect(errors).toEqual([]);
+      },
+      { html: content, theme: "dark", pageQuery: "?theme=dark" },
+    );
   }, 30_000);
 });
