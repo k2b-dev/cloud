@@ -7,6 +7,7 @@ import { launchBrowser } from "../../../ui/test/browser";
 import { compileCapabilityManifest } from "../capabilities/testing";
 import { type CapabilityInvocationResult, type CapabilityQueryDefinition, defineCapabilities } from "../contracts/capabilities";
 import {
+  FileProviderContextListInputSchema,
   type FileProviderEntry,
   FileProviderListDataSchema,
   FileProviderListInputSchema,
@@ -80,6 +81,18 @@ const providerApp = (appId: string, appName: string, appIcon: string) => ({
   ),
 });
 const drive = providerApp("drive", "Drive", "ti ti-cloud");
+// Invoices accepts caller context and has invoices only for customer c1; it shows nothing without that customer.
+const invoices = {
+  ...providerApp("invoices", "Invoices", "ti ti-receipt"),
+  manifest: compileCapabilityManifest(
+    "invoices",
+    defineCapabilities({
+      protocolVersion: 2,
+      queries: { "folder.list": { ...listQuery, input: FileProviderContextListInputSchema }, "file.read": readQuery },
+      fileProvider: { list: "folder.list", read: "file.read" },
+    }),
+  ),
+};
 // IDs only have to be unique within one provider: Vault also has a file "notes".
 const vault = providerApp("vault", "Vault", "ti ti-lock");
 const notes = {
@@ -146,6 +159,12 @@ const answer = async (request: Request): Promise<Response> => {
   if (operation === "folder.list") {
     const { input } = (await request.json()) as { input: { parent?: string; query?: string } };
     queries.push(input);
+    if (app === "invoices") {
+      const refs = (input as { context?: { refs: { type: string; id: string }[] } }).context?.refs ?? [];
+      const customers = refs.filter((ref) => ref.type === "customers.customer" && ref.id === "c1").map((ref) => ref.id);
+      const items = customers.map((id) => file(`invoice-${id}`, `Invoice ${id}.pdf`, `invoice ${id}`));
+      return json({ data: { writable: false, items, next: null } });
+    }
     if (input.parent === "team") return json({ code: "FORBIDDEN", message: "No access" }, 403);
     if (input.parent === "broken" && brokenAnswers++ === 0) return json({ code: "APP_UNAVAILABLE", message: "Down" }, 503);
     const items = (trees[app]?.[input.parent ?? ""] ?? []).filter((entry) => !input.query || entry.name.includes(input.query));
@@ -560,6 +579,36 @@ describe("choosing files in a browser", () => {
       await row(page, "notes.txt").waitFor();
     } finally {
       await close();
+    }
+  }, 60_000);
+
+  test("context reaches only the provider that accepts it, which shows its customer's files or a calm empty root in place", async () => {
+    catalogApps = [drive, invoices];
+    const title = "No matching files for these recipients";
+    const other = await open(desktop, `?customer=c2&noMatching=${encodeURIComponent(title)}`);
+    try {
+      await attach(other.page);
+      const frame = await dialogBox(other.page);
+      await row(other.page, "Invoices").click();
+      await other.page.getByText(title).waitFor();
+      expect(queries.at(-1)).toEqual({ context: { refs: [{ type: "customers.customer", id: "c2" }] }, limit: 50 });
+      expect(await dialogBox(other.page)).toEqual(frame);
+      await other.page.getByRole("button", { name: "Choose another source" }).click();
+      await row(other.page, "Drive").click();
+      await row(other.page, "Home").waitFor();
+      // Drive's list input is closed and names no context, so it never receives one.
+      expect(queries.at(-1)).toEqual({ limit: 50 });
+    } finally {
+      await other.close();
+    }
+    const matching = await open(desktop, "?customer=c1");
+    try {
+      await attach(matching.page);
+      await row(matching.page, "Invoices").click();
+      await row(matching.page, "Invoice c1.pdf").waitFor();
+      expect(await rowNames(matching.page)).toEqual(["Invoice c1.pdf"]);
+    } finally {
+      await matching.close();
     }
   }, 60_000);
 

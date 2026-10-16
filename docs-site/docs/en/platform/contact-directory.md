@@ -5,7 +5,7 @@ section: Platform services
 order: 557
 description: Implement the provider-neutral contact-directory contract so Mail can use your application for recipients and participant contacts.
 tags: [capabilities, contacts, mail, contracts]
-updated: 2026-09-23
+updated: 2026-10-16
 ---
 
 # Provide a contact directory
@@ -26,7 +26,7 @@ input and result schemas are compatible with the contract.
 | Function | Kind | Input schema | Result schema | Mail needs it for | Contacts ID |
 | --- | --- | --- | --- | --- | --- |
 | `suggest` | Query | `ContactDirectorySuggestInputSchema` | `ContactDirectorySuggestDataSchema` | Recipient suggestions. Required. | `contact.suggest` |
-| `resolve` | Query | `ContactDirectoryResolveInputSchema` | `ContactDirectoryResolveDataSchema` | Participant contacts in conversation details, related Mail, and Assistant drafts. Required. | `contact.resolve` |
+| `resolve` | Query | `ContactDirectoryResolveInputSchema` | `ContactDirectoryResolveDataSchema` | Participant contacts in conversation details, related Mail, Assistant drafts, and attachment file context. Required. | `contact.resolve` |
 | `read` | Query | `ContactDirectoryReadInputSchema` | `ContactDirectoryContactSchema` | **Compose email** from a contact reference. Optional. | `contact.read` |
 | `listWritableBooks` | Query | `ContactDirectoryBookListInputSchema` | `ContactDirectoryBookListDataSchema` | Choosing where **New contact** saves. Optional. | `book.list` |
 | `create` | Action | `ContactDirectoryCreateInputSchema` | `ContactDirectoryCreateDataSchema` | **New contact** in conversation details. Optional. | `contact.create` |
@@ -39,6 +39,17 @@ result.
 A *book* is whatever groups your contacts: an address book, a customer segment,
 or a single fixed collection. Every contact returns a `bookId` and, in `resolve`
 results, a `bookName`.
+
+When someone attaches files, Mail looks up the recipients in every visible app
+with a compatible `resolve` Query. For the configured directory app, it prefers
+the mapped Query. Otherwise it prefers `contact.resolve`, then the only
+compatible Query; apps with several compatible Queries and no preferred match
+are skipped. If the catalog cannot be read, Mail uses the configured directory
+alone. Individual lookup failures contribute no hints.
+
+Mail passes only the matching returned `ref`s to
+[file providers that accept context](/en/docs/platform/file-providers#offer-matching-files),
+never the email addresses. A ref grants no access to contacts or files.
 
 ## Implement the functions
 

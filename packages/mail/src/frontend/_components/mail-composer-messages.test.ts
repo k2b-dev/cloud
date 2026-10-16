@@ -12,6 +12,11 @@ describe("Mail composer message catalog", () => {
     expect(messages.deliveryReceiptUnsupported).toContain("SMTP-Server");
   });
 
+  test("localizes the attachment context empty state", () => {
+    expect(mailComposerMessages.resolve(["en"]).t.noMatchingAttachments).toBe("No matching files for these recipients");
+    expect(mailComposerMessages.resolve(["de"]).t.noMatchingAttachments).toBe("Keine passenden Dateien für diese Empfänger");
+  });
+
   test("falls back to English for unsupported locales", () => {
     expect(mailComposerMessages.resolve(["fr"]).t.newMessage).toBe("New message");
   });

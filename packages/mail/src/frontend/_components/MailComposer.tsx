@@ -365,7 +365,17 @@ export default function MailComposer(props: {
   const uploadsInProgress = () => uploads().some((upload) => upload.file !== null);
   /** From this device or from a Cloud app; either way the files take the same upload path, limits, and progress. */
   const chooseAttachments = async () => {
-    const files = await chooseFiles({ multiple: true, maxBytes: MAX_DRAFT_ATTACHMENT_BYTES });
+    const current = content();
+    const recipients = [...current.to, ...current.cc, ...current.bcc].map((recipient) => ({ ...recipient }));
+    const files = await chooseFiles({
+      multiple: true,
+      maxBytes: MAX_DRAFT_ATTACHMENT_BYTES,
+      context: async (signal) => {
+        const module = await importOnDemand(() => import("./mail-attachment-context"));
+        return module ? module.resolveAttachmentContext({ directory: contactDirectory.resolve, recipients, signal }) : { refs: [] };
+      },
+      noMatchingFiles: t().noMatchingAttachments,
+    });
     if (files.length > 0 && editable() && !disposed) void attachments.addFiles(files);
   };
   const [surface, setSurface] = createSignal<HTMLDivElement>();

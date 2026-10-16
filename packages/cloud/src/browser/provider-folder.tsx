@@ -1,7 +1,8 @@
 import { timed } from "@k2b/stdlib/solid";
 import { announce, Button, IconButton, Placeholder, TextInput } from "@k2b/ui";
 import { batch, createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
-import type { FileProviderEntry } from "../contracts/file-provider";
+import { CloudResourceRefSchema } from "../contracts/capabilities";
+import { FILE_PROVIDER_CONTEXT_MAX_REFS, type FileProviderContext, type FileProviderEntry } from "../contracts/file-provider";
 import type { fileChooserMessages } from "./file-chooser-messages";
 import { type FileProviderCaller, FileProviderError, type FileProviderSource, listProviderFolder } from "./file-providers";
 
@@ -18,7 +19,12 @@ const EMPTY_PAGES_FOLLOWED = 5;
  * and its load state. `settled` runs after a folder has loaded or the source list is back, so the dialog can move
  * focus to its first row.
  */
-export const createProviderFolder = (props: { caller: () => FileProviderCaller; t: () => Messages; settled: () => void }) => {
+export const createProviderFolder = (props: {
+  caller: () => FileProviderCaller;
+  t: () => Messages;
+  settled: () => void;
+  context?: FileProviderContext | ((signal: AbortSignal) => Promise<FileProviderContext>);
+}) => {
   const [location, setLocation] = createSignal<FolderLocation>(null);
   const [filter, setFilter] = createSignal("");
   const [query, setQuery] = createSignal("");
@@ -27,6 +33,26 @@ export const createProviderFolder = (props: { caller: () => FileProviderCaller; 
   const [writable, setWritable] = createSignal(false);
   const [status, setStatus] = createSignal<"loading" | "ready" | "more" | "error">("ready");
   const [error, setError] = createSignal<FileProviderError | null>(null);
+  const [contextual, setContextual] = createSignal(false);
+  let resolvedContext: FileProviderContext | undefined;
+  const contextFor = async (signal: AbortSignal): Promise<FileProviderContext> => {
+    if (resolvedContext) return resolvedContext;
+    const raw = typeof props.context === "function" ? await props.context(signal) : props.context;
+    signal.throwIfAborted();
+    const refs: FileProviderContext["refs"] = [];
+    const seen = new Set<string>();
+    for (const value of raw?.refs ?? []) {
+      const parsed = CloudResourceRefSchema.safeParse(value);
+      if (!parsed.success) continue;
+      const key = JSON.stringify([parsed.data.type, parsed.data.id]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      refs.push(parsed.data);
+      if (refs.length === FILE_PROVIDER_CONTEXT_MAX_REFS) break;
+    }
+    resolvedContext = { refs };
+    return resolvedContext;
+  };
   let request: AbortController | undefined;
   onCleanup(() => request?.abort());
 
@@ -48,12 +74,15 @@ export const createProviderFolder = (props: { caller: () => FileProviderCaller; 
     setStatus(more ? "more" : "loading");
     setError(null);
     try {
+      const context = current.provider.context === true && props.context !== undefined ? await contextFor(pending.signal) : undefined;
+      if (pending.signal.aborted) return;
+      setContextual(context !== undefined);
       let cursor = more ? (next() ?? undefined) : undefined;
       let followed = 0;
       for (;;) {
         const page = await listProviderFolder(
           current.provider,
-          { parent: current.trail.at(-1)?.id, query: query() || undefined, cursor },
+          { parent: current.trail.at(-1)?.id, query: query() || undefined, cursor, context },
           props.caller(),
           pending.signal,
         );
@@ -103,6 +132,7 @@ export const createProviderFolder = (props: { caller: () => FileProviderCaller; 
       setFilter("");
       setQuery("");
       setLocation(target);
+      setContextual(false);
       setItems([]);
       setNext(null);
       setWritable(false);
@@ -138,6 +168,7 @@ export const createProviderFolder = (props: { caller: () => FileProviderCaller; 
 
   return {
     location,
+    contextual,
     filter,
     query,
     items,
@@ -236,7 +267,12 @@ export function FolderToolbar(props: { folder: ProviderFolder; t: () => Messages
  * One folder in the dialog body: loading, the error with Try again or Up, the empty folder, no matches, or `children`
  * with Load more below while the folder continues.
  */
-export function FolderContents(props: { folder: ProviderFolder; t: () => Messages; children: JSX.Element }): JSX.Element {
+export function FolderContents(props: {
+  folder: ProviderFolder;
+  t: () => Messages;
+  noMatchingFiles?: string;
+  children: JSX.Element;
+}): JSX.Element {
   const folder = props.folder;
   return (
     <Switch>
@@ -268,7 +304,24 @@ export function FolderContents(props: { folder: ProviderFolder; t: () => Message
       <Match when={folder.items().length === 0 && !folder.next()}>
         <Show
           when={folder.query()}
-          fallback={<Placeholder variant="panel" class="cloud-file-chooser__state" icon="ti ti-folder" title={props.t().emptyFolder} />}
+          fallback={
+            <Show
+              when={folder.contextual() && folder.location()?.trail.length === 1}
+              fallback={<Placeholder variant="panel" class="cloud-file-chooser__state" icon="ti ti-folder" title={props.t().emptyFolder} />}
+            >
+              <Placeholder
+                variant="panel"
+                class="cloud-file-chooser__state"
+                icon="ti ti-file-search"
+                title={props.noMatchingFiles ?? props.t().noMatchingFiles}
+                action={
+                  <Button size="sm" variant="secondary" onClick={() => folder.navigate(null)}>
+                    {props.t().otherSource}
+                  </Button>
+                }
+              />
+            </Show>
+          }
         >
           <Placeholder
             variant="panel"

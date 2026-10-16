@@ -1,5 +1,7 @@
 import { expect, spyOn, test } from "bun:test";
-import { isServer } from "solid-js/web";
+import { isServer, render } from "solid-js/web";
+import type { ChooseFilesOptions } from "./FileChooser";
+import type { FileProviderContext } from "../contracts/file-provider";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { FileProviderSource } from "./file-providers";
 
@@ -10,6 +12,7 @@ const drive: FileProviderSource = {
   name: "Drive",
   icon: "ti ti-folders",
   list: "folder.list",
+  context: false,
   read: "file.read",
   maxBytes: 1_000,
 };
@@ -178,4 +181,218 @@ domTest("a discovery chunk failure is silent during prefetch and retryable in th
     error.mockRestore();
     dom.cleanup();
   }
+});
+
+const waitForChooser = async (condition: () => boolean) => {
+  for (let attempt = 0; attempt < 100 && !condition(); attempt++) await settle();
+  expect(condition()).toBe(true);
+};
+
+const invoices: FileProviderSource = { ...drive, appId: "invoices", name: "Invoices", context: true };
+const customer = { type: "customers.customer", id: "c1" };
+
+/** Real chooser and capability transport; invoices decides which files match. */
+const contextualChooser = async (options: ChooseFilesOptions, locale = "en") => {
+  const dom = createDomTestHarness();
+  const [{ FileChooser }, { LocaleProvider }] = await Promise.all([import("./FileChooser"), import("@k2b/ui")]);
+  const calls: { app: string; input: { parent?: string; query?: string; cursor?: string; context?: FileProviderContext } }[] = [];
+  const fetch = async (url: string | URL | Request, init?: RequestInit) => {
+    const app = String(url).includes("/invoices/") ? "invoices" : "drive";
+    const { input } = JSON.parse(String(init?.body));
+    calls.push({ app, input });
+    const matching =
+      app === "invoices" &&
+      input.context?.refs.some((ref: { type: string; id: string }) => ref.type === customer.type && ref.id === customer.id);
+    const items =
+      !matching || input.parent || input.query
+        ? []
+        : [
+            { kind: "folder", id: "archive", name: "Archive" },
+            { kind: "file", id: "invoice", name: "Invoice c1.pdf", size: 1 },
+          ];
+    return Response.json({ data: { writable: false, items, next: null } });
+  };
+  const dispose = render(
+    () => (
+      <LocaleProvider locale={locale}>
+        <FileChooser
+          options={options}
+          providers={() => ({ state: "ready", providers: [invoices, drive] })}
+          retryProviders={() => {}}
+          caller={() => ({ locale, fetch })}
+          close={() => {}}
+        />
+      </LocaleProvider>
+    ),
+    dom.root,
+  );
+  const row = (name: string) =>
+    [...dom.document.querySelectorAll<HTMLElement>('[role="gridcell"]')].find((cell) => cell.textContent?.includes(name));
+  const button = (name: string) =>
+    [...dom.document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === name);
+  return {
+    dom,
+    calls,
+    row,
+    button,
+    cleanup: () => {
+      dispose();
+      dom.cleanup();
+    },
+  };
+};
+
+domTest("matching invoices list files and successful lazy context is reused across folders and providers", async () => {
+  let resolutions = 0;
+  const view = await contextualChooser({
+    context: async () => {
+      resolutions++;
+      return { refs: [customer] };
+    },
+  });
+  try {
+    view.row("Drive")!.click();
+    await waitForChooser(() => view.calls.length === 1);
+    expect(resolutions).toBe(0);
+    expect(view.calls[0]!.input).not.toHaveProperty("context");
+    view.button("Sources")!.click();
+    view.row("Invoices")!.click();
+    await waitForChooser(() => Boolean(view.row("Invoice c1.pdf")));
+    view.row("Archive")!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    await waitForChooser(() => Boolean(view.dom.root.textContent?.includes("This folder is empty")));
+    expect(view.dom.root.textContent).not.toContain("No matching files");
+    view.button("Sources")!.click();
+    view.row("Invoices")!.click();
+    await waitForChooser(() => Boolean(view.row("Invoice c1.pdf")));
+    expect(resolutions).toBe(1);
+    expect(
+      view.calls
+        .filter((call) => call.app === "invoices")
+        .every((call) => JSON.stringify(call.input.context) === JSON.stringify({ refs: [customer] })),
+    ).toBe(true);
+  } finally {
+    await settle();
+    view.cleanup();
+  }
+});
+
+domTest("contextual empty roots use the custom, default, and German titles and return to sources", async () => {
+  for (const [locale, title, action, custom] of [
+    ["en", "No matching files for these recipients", "Choose another source", true],
+    ["en", "No matching files", "Choose another source", false],
+    ["de", "Keine passenden Dateien", "Andere Quelle wählen", false],
+  ] as const) {
+    const view = await contextualChooser(
+      { context: { refs: [{ ...customer, id: "other" }] }, ...(custom ? { noMatchingFiles: title } : {}) },
+      locale,
+    );
+    try {
+      view.row("Invoices")!.click();
+      await waitForChooser(() => Boolean(view.button(action)));
+      expect(view.dom.root.textContent).toContain(title);
+      view.button(action)!.click();
+      expect(view.row("Drive")).toBeDefined();
+      expect(view.row("Invoices")).toBeDefined();
+    } finally {
+      await settle();
+      view.cleanup();
+    }
+  }
+});
+
+domTest("failed lazy context shows Try again and retries resolution before listing", async () => {
+  let resolutions = 0;
+  const view = await contextualChooser({
+    context: async () => {
+      if (++resolutions === 1) throw new Error("Lookup failed");
+      return { refs: [customer] };
+    },
+  });
+  try {
+    view.row("Invoices")!.click();
+    await waitForChooser(() => Boolean(view.button("Try again")));
+    expect(view.dom.root.textContent).toContain("This folder could not be loaded");
+    expect(view.calls).toHaveLength(0);
+    view.button("Try again")!.click();
+    await waitForChooser(() => Boolean(view.row("Invoice c1.pdf")));
+    expect(resolutions).toBe(2);
+  } finally {
+    await settle();
+    view.cleanup();
+  }
+});
+
+domTest("normalizes context refs once, dropping duplicates and invalid refs and capping at twenty", async () => {
+  const refs = [
+    customer,
+    customer,
+    { type: "invalid", id: "" },
+    ...Array.from({ length: 30 }, (_, index) => ({ ...customer, id: `c${index + 2}` })),
+  ];
+  const view = await contextualChooser({ context: { refs } });
+  try {
+    view.row("Invoices")!.click();
+    await waitForChooser(() => view.calls.length === 1);
+    expect(view.calls[0]!.input.context?.refs).toEqual([customer, ...refs.slice(3, 22)]);
+  } finally {
+    await settle();
+    view.cleanup();
+  }
+});
+
+domTest("without caller context an empty supporting provider keeps the ordinary empty state", async () => {
+  const view = await contextualChooser({});
+  try {
+    view.row("Invoices")!.click();
+    await waitForChooser(() => Boolean(view.dom.root.textContent?.includes("This folder is empty")));
+    expect(view.calls[0]!.input).not.toHaveProperty("context");
+    expect(view.button("Choose another source")).toBeUndefined();
+  } finally {
+    await settle();
+    view.cleanup();
+  }
+});
+
+domTest("a name filter keeps its own empty state after receiving caller context", async () => {
+  const view = await contextualChooser({ context: { refs: [customer] }, noMatchingFiles: "Recipient matches" });
+  try {
+    view.row("Invoices")!.click();
+    await waitForChooser(() => Boolean(view.row("Invoice c1.pdf")));
+    const filter = view.dom.root.querySelector<HTMLInputElement>('input[type="search"]')!;
+    filter.value = "missing";
+    filter.dispatchEvent(new Event("input", { bubbles: true }));
+    for (let attempt = 0; attempt < 100 && !view.button("Clear filter"); attempt++) await Bun.sleep(5);
+    expect(view.dom.root.textContent).toContain("Nothing matches “missing”");
+    expect(view.dom.root.textContent).not.toContain("Recipient matches");
+    expect(view.calls.at(-1)!.input.context).toEqual({ refs: [customer] });
+  } finally {
+    await settle();
+    view.cleanup();
+  }
+});
+
+domTest("navigation and closing abort lazy context silently without listing a stale folder", async () => {
+  let pendingSignal: AbortSignal | undefined;
+  const view = await contextualChooser({
+    context: (signal) => {
+      pendingSignal = signal;
+      return new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+    },
+  });
+  try {
+    view.row("Invoices")!.click();
+    expect(pendingSignal?.aborted).toBe(false);
+    view.button("Sources")!.click();
+    expect(pendingSignal?.aborted).toBe(true);
+    view.row("Drive")!.click();
+    await waitForChooser(() => Boolean(view.dom.root.textContent?.includes("This folder is empty")));
+    expect(view.calls.map((call) => call.app)).toEqual(["drive"]);
+    expect(view.button("Try again")).toBeUndefined();
+    view.button("Sources")!.click();
+    view.row("Invoices")!.click();
+  } finally {
+    await settle();
+    view.cleanup();
+  }
+  expect(pendingSignal?.aborted).toBe(true);
 });

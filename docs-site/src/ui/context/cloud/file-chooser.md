@@ -37,6 +37,14 @@ import { chooseFiles } from "@k2b/cloud/browser/files";
   `maxBytes` and the provider's read limit; larger files are shown disabled
   with that limit. When the selected files add up to more, the status says
   so and **Add** stays disabled. Device files are not checked here.
+- `context` names what the person works on as resource refs, for example
+  the contacts a mail goes to, as `{ refs }` or as an async function that
+  runs only when someone opens a provider that accepts it. Only such
+  providers receive it, and they decide which files match. Refs are hints,
+  never access.
+- `noMatchingFiles` titles the empty root of a provider that received
+  `context`, for example **No matching files for these recipients**. It
+  defaults to **No matching files**.
 - `signal` closes the chooser and resolves `[]`. While the device's own
   dialog is open, an abort resolves `[]` at once and a later pick is dropped.
 
@@ -56,7 +64,8 @@ the name, and its size and date, plus up to three provider tags as chips.
 A tap or click on a file toggles it; folders open. **Load more** continues
 long folders.
 
-States are loading, empty folder, no matches with **Clear filter**, no access
+States are loading, empty folder, no matching files for the caller's
+`context` with **Choose another source**, no matches with **Clear filter**, no access
 and folder gone with **Up**, provider not available, and offline, the last two
 with **Try again**. After **Add**, each file shows its progress. At most two
 files download at once. **Cancel** stops them and returns to the folder with

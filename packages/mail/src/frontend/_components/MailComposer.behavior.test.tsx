@@ -1,6 +1,9 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { z } from "zod";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { contactDirectory, defineCapabilities } from "@k2b/cloud/contracts";
+import { MAX_DRAFT_ATTACHMENT_BYTES } from "../../contracts";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
 import {
   composePreviewInputSchema,
@@ -227,6 +230,86 @@ describe("MailComposer signature choice", () => {
     expect(option).toBeDefined();
     option!.click();
   };
+
+  test("Attach files passes localized context and resolves the click-time To, Cc and Bcc snapshot lazily", async () => {
+    const files = await import("@k2b/cloud/browser/files");
+    const capabilities = await import("@k2b/cloud/capabilities");
+    const chooseFiles = spyOn(files, "chooseFiles").mockResolvedValue([]);
+    const listCatalog = spyOn(capabilities, "listCapabilityCatalog").mockResolvedValue({
+      ok: true,
+      data: {
+        protocolVersion: 2,
+        apps: [
+          {
+            appId: "customers",
+            appName: "Customers",
+            appIcon: "ti ti-users",
+            appDescription: "",
+            manifest: compileCapabilityManifest(
+              "customers",
+              defineCapabilities({
+                protocolVersion: 2,
+                queries: {
+                  "customer.match": {
+                    title: "Match customers",
+                    description: "Resolve readable customers.",
+                    openWorld: false,
+                    input: contactDirectory.resolve.input,
+                    data: contactDirectory.resolve.data,
+                    run: async () => ({ ok: false, error: { code: "INTERNAL", message: "Not called", status: 500 } }),
+                  },
+                },
+              }),
+            ),
+          },
+        ],
+        page: { hasMore: false },
+      },
+    });
+    const invoke = spyOn(capabilities, "invokeCapabilityWithDataSchema").mockResolvedValue({
+      ok: true,
+      data: { data: { items: [{ ref: { type: "customers.customer", id: "c1" }, matchedEmails: ["recipient@example.test"] }] } },
+    });
+    try {
+      await mount("de", {
+        ...initialDraft,
+        cc: [{ name: null, address: "cc@example.test" }],
+        bcc: [{ name: null, address: "bcc@example.test" }],
+      });
+      const attach = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Dateien anhängen"]');
+      expect(attach).not.toBeNull();
+      attach!.click();
+      // chooseFiles must run in the click handler, before an import or a contact lookup.
+      expect(chooseFiles).toHaveBeenCalledTimes(1);
+      expect(listCatalog).not.toHaveBeenCalled();
+      expect(invoke).not.toHaveBeenCalled();
+      const options = chooseFiles.mock.calls[0]![0]!;
+      expect(options).toMatchObject({
+        multiple: true,
+        maxBytes: MAX_DRAFT_ATTACHMENT_BYTES,
+        noMatchingFiles: "Keine passenden Dateien für diese Empfänger",
+      });
+      expect(typeof options.context).toBe("function");
+      const toInput = dom.root.querySelector<HTMLInputElement>(".mail-recipient-input input");
+      expect(toInput).not.toBeNull();
+      toInput!.value = "changed@example.test";
+      toInput!.dispatchEvent(new Event("input", { bubbles: true }));
+      toInput!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      expect(dom.root.textContent).toContain("changed@example.test");
+      if (typeof options.context !== "function") throw new Error("Missing lazy context");
+      expect(await options.context(new AbortController().signal)).toEqual({ refs: [{ type: "customers.customer", id: "c1" }] });
+      expect(invoke.mock.calls[0]![0]).toMatchObject({
+        appId: "customers",
+        capabilityId: "customer.match",
+        kind: "query",
+        input: { emails: ["recipient@example.test", "cc@example.test", "bcc@example.test"], limit: 50 },
+      });
+    } finally {
+      chooseFiles.mockRestore();
+      listCatalog.mockRestore();
+      invoke.mockRestore();
+    }
+  });
 
   test("shows the draft choice and sends null in the next autosave and preview after No signature", async () => {
     await mount();

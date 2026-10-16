@@ -14,6 +14,9 @@ import {
 } from "./capabilities";
 import { capabilityContractIssues } from "./capability-compatibility";
 import {
+  FileProviderContextSchema,
+  FileProviderContextListInputSchema,
+  fileProviderAcceptsContext,
   FileProviderEntrySchema,
   FileProviderListDataSchema,
   FileProviderListInputSchema,
@@ -260,5 +263,54 @@ describe("file providers in Core", () => {
     const localized = resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "de");
     expect(localized.queries.find((query) => query.localId === "folder.list")?.title).toBe("Ordner lesen");
     expect(localized.fileProvider).toEqual(compiled.manifest.fileProvider);
+  });
+});
+
+describe("file-provider caller context", () => {
+  test("keeps the base input strict and bounds resource hints", () => {
+    const ref = { type: "customers.customer", id: "c1" };
+    expect(FileProviderListInputSchema.safeParse({ context: { refs: [] } }).success).toBe(false);
+    expect(FileProviderContextSchema.parse({ refs: [] })).toEqual({ refs: [] });
+    expect(FileProviderContextSchema.safeParse({ refs: Array(20).fill(ref) }).success).toBe(true);
+    for (const invalid of [
+      { refs: Array(21).fill(ref) },
+      { refs: [], extra: true },
+      { refs: [{ ...ref, id: "" }] },
+      { refs: [{ type: "invalid", id: "c1" }] },
+    ]) {
+      expect(FileProviderContextSchema.safeParse(invalid).success).toBe(false);
+    }
+  });
+
+  test("requires an explicit compatible context property without changing base compatibility", () => {
+    const manifestFor = (input: z.ZodType) =>
+      compileCapabilityManifest(
+        "drive",
+        provider({
+          queries: { "folder.list": { ...list, input }, "file.read": read },
+        }),
+      );
+    const contextual = manifestFor(FileProviderContextListInputSchema);
+    expect(fileProviderIssues(contextual)).toEqual([]);
+    expect(fileProviderAcceptsContext(contextual)).toBe(true);
+    expect(fileProviderAcceptsContext(manifestFor(FileProviderListInputSchema))).toBe(false);
+    const loose = manifestFor(FileProviderListInputSchema);
+    loose.queries.find((query) => query.localId === "folder.list")!.inputSchema = z.toJSONSchema(FileProviderListInputSchema.loose(), {
+      io: "input",
+    });
+    expect(fileProviderAcceptsContext(loose)).toBe(false);
+    expect(
+      fileProviderAcceptsContext(
+        manifestFor(FileProviderListInputSchema.extend({ context: z.string().optional().describe("Incompatible context.") })),
+      ),
+    ).toBe(false);
+    expect(fileProviderAcceptsContext({ ...contextual, fileProvider: undefined })).toBe(false);
+    expect(fileProviderAcceptsContext({ ...contextual, queries: [] })).toBe(false);
+    // Published JSON schemas may put the input behind a root $ref.
+    const operation = contextual.queries.find((query) => query.localId === "folder.list")!;
+    operation.inputSchema = { $ref: "#/$defs/List", $defs: { List: operation.inputSchema } };
+    expect(fileProviderAcceptsContext(contextual)).toBe(true);
+    operation.inputSchema = { $ref: "#/$defs/List", $defs: { List: { $ref: "#/$defs/List" } } };
+    expect(fileProviderAcceptsContext(contextual)).toBe(false);
   });
 });
