@@ -608,7 +608,7 @@ test.skipIf(isServer)("changing the conversation during the seed-store import dr
   }
 });
 
-test.skipIf(isServer)("under Automatic both bodies render until the theme is known, and the shown one stays mounted", async () => {
+test.skipIf(isServer)("under Automatic the HTML frame stays mounted while the theme changes light to dark and back", async () => {
   const dom = createDomTestHarness();
   const { MailConversationReader } = modules!;
   const both: MessageDetail = {
@@ -633,21 +633,18 @@ test.skipIf(isServer)("under Automatic both bodies render until the theme is kno
   try {
     const variant = (format: "html" | "plain") =>
       dom.root.querySelector<HTMLElement>(`[data-mail-message-id="Msg001"] [data-mail-body-format="${format}"]`);
-    await waitFor(() => variant("plain") !== null);
-    // The <html> class picks one before the first paint: light shows HTML, dark shows plain text.
-    expect(variant("html")?.className).toBe("contents dark:hidden");
-    expect(variant("plain")?.className).toBe("hidden dark:contents");
-
-    const plain = variant("plain");
-    setTheme("dark");
-    await waitFor(() => variant("html") === null);
-    expect(variant("plain")).toBe(plain);
-    expect(variant("plain")?.className).toBe("contents");
-
-    // A later live switch swaps the format as before.
-    setTheme("light");
-    await waitFor(() => variant("plain") === null);
-    expect(variant("html")?.className).toBe("contents");
+    await waitFor(() => variant("html") !== null);
+    const html = variant("html");
+    const frame = html?.querySelector("iframe");
+    expect(frame).not.toBeNull();
+    for (const next of ["light", "dark", "light"] as const) {
+      setTheme(next);
+      await Bun.sleep(5);
+      expect(variant("html")).toBe(html);
+      expect(variant("html")?.querySelector("iframe")).toBe(frame);
+      expect(variant("html")?.className).toBe("contents");
+      expect(variant("plain")).toBeNull();
+    }
   } finally {
     dispose();
     dom.cleanup();
@@ -680,6 +677,92 @@ test.skipIf(isServer)("queued actions keep triage available while structure cont
     expect(menuItem("Tags")?.disabled).toBe(true);
   } finally {
     dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("message display actions toggle colors on the same frame and keep the format override", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const [theme, setTheme] = createSignal<"light" | "dark">("dark");
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        messages: [{ ...envelopeOnly, hydrationStatus: "complete", plainText: "Plain message", sanitizedHtml: "<p>HTML message</p>" }],
+        get theme() {
+          return theme();
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const card = () => dom.root.querySelector('[data-mail-message-id="Msg001"]')!;
+    const action = (label: string) =>
+      [...card().querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent?.trim() === label);
+    const frame = card().querySelector("iframe")!;
+    const source = frame.getAttribute("srcdoc");
+    await waitFor(() => action("Show original colors") !== undefined);
+    action("Show original colors")!.click();
+    await waitFor(() => action("Adapt colors to dark mode") !== undefined);
+    expect(card().querySelector("iframe")).toBe(frame);
+    expect(frame.classList.contains("bg-white")).toBe(true);
+    expect(frame.getAttribute("srcdoc")).toBe(source);
+    action("Adapt colors to dark mode")!.click();
+    await waitFor(() => action("Show original colors") !== undefined);
+    expect(card().querySelector("iframe")).toBe(frame);
+    expect(frame.classList.contains("bg-transparent")).toBe(true);
+    expect(frame.getAttribute("srcdoc")).toBe(source);
+    action("View as plain text")!.click();
+    await waitFor(() => card().querySelector('[data-mail-body-format="plain"]') !== null);
+    expect(card().querySelector("iframe")).toBeNull();
+    expect(action("Show original colors")).toBeUndefined();
+    setTheme("light");
+    await Bun.sleep(5);
+    expect(card().querySelector('[data-mail-body-format="plain"]')).not.toBeNull();
+    action("View as HTML")!.click();
+    await waitFor(() => card().querySelector("iframe") !== null);
+    expect(card().querySelectorAll("[data-mail-body-format]")).toHaveLength(1);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("printing uses original HTML colors and restores dark mode afterward", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const print = spyOn(window, "print").mockImplementation(() => {});
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        theme: "dark",
+        readingFormat: "automatic",
+        messages: [{ ...envelopeOnly, hydrationStatus: "complete", plainText: "", sanitizedHtml: "<p>HTML message</p>" }],
+      }),
+    dom.root,
+  );
+  try {
+    const frame = dom.root.querySelector("iframe")!;
+    expect(frame.classList.contains("bg-transparent")).toBe(true);
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="More conversation actions"]')!.click();
+    const printAction = () =>
+      [...dom.document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+        (item) => item.textContent?.trim() === "Print conversation",
+      );
+    await waitFor(() => printAction() !== undefined);
+    printAction()!.click();
+    await waitFor(() => print.mock.calls.length === 1);
+    expect(frame.classList.contains("bg-white")).toBe(true);
+    expect(frame.classList.contains("bg-transparent")).toBe(false);
+    window.dispatchEvent(new Event("afterprint"));
+    await waitFor(() => frame.classList.contains("bg-transparent"));
+    expect(frame.classList.contains("bg-white")).toBe(false);
+    expect(dom.root.querySelector("iframe")).toBe(frame);
+  } finally {
+    dispose();
+    print.mockRestore();
     dom.cleanup();
   }
 });
