@@ -4,7 +4,7 @@ import { transferUpload } from "../upload-transfer";
 import { apiFailure } from "./file-preview";
 import { browserUploadKey } from "./upload-key";
 
-const requestSignal = (signal: AbortSignal) => AbortSignal.any([signal, AbortSignal.timeout(60_000)]);
+export const requestSignal = (signal: AbortSignal) => AbortSignal.any([signal, AbortSignal.timeout(60_000)]);
 export class UploadConflict extends Error {
   constructor(readonly fileName: string) {
     super("path_conflict");

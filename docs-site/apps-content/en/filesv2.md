@@ -139,7 +139,13 @@ the bound destination, write options, and execution identity before issuing the
 session. Retrying that same upload recovers the existing session or its retained
 result instead of publishing a second file. Filegate retains terminal receipts
 for seven days; after that, a missing receipt remains an uncertain outcome.
-Existing names ask before being replaced.
+Existing names ask before being replaced. Every transfer request has a deadline
+sized for the slowest supported uplink of about 0.5 Mbit/s (64 KiB/s), so a
+request the file server never answers fails the file with a reason and the batch
+continues with the next file.
+Browser failures distinguish “No response from the server” for Cloud requests
+from “No response from the file server” for transfers. Only HTTP 408, 429, 502,
+503, and 504 report that the file server is busy; other HTTP failures are final.
 
 ## Create folders
 
@@ -629,11 +635,14 @@ Rebuild and statistics commands affect the entire Filegate
 root, including paths outside the configured prefix.
 
 Uploads read bounded file segments from disk and send them directly to Filegate,
-with bounded retries and lease renewal. Cancellation requests an abort before
-commit. Retrying the same command with the unchanged local file and destination
-reuses the persisted upload identity within the receipt window. A lost commit
-response may already represent a published file; do not switch to a new upload
-identity to bypass an uncertain result.
+with bounded retries and lease renewal. Each transfer request has a deadline
+sized for about 0.5 Mbit/s (64 KiB/s). In text mode, `put` writes progress to
+stderr; it writes no progress with `--json` or `--jsonl`.
+Cancellation requests an abort before commit. Retrying the same command with
+the unchanged local file and destination reuses the persisted upload identity
+within the receipt window. A lost commit response may already represent a
+published file; do not switch to a new upload identity to bypass an uncertain
+result.
 
 ## Current scope
 
