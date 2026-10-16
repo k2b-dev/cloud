@@ -4552,9 +4552,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* Hidden hover actions keep their box, so revealing them moves nothing, and
-   stay out of the tab order and the accessibility tree until they show. */
+   stay out of the tab order and the accessibility tree until they show.
+   Where any pointer can hover, sidebar row actions overlay the row's label
+   and counts, so touch input keeps the reveal set too: the current row keeps
+   its actions for a finger, and the other rows keep their text and counts. */
 @media (any-hover: hover) {
-  :where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
+  .k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"] {
     visibility: hidden;
   }
 }
@@ -4563,7 +4566,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 @media (any-hover: hover) {
-  :where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-app-workspace__sidebar-item > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"] {
+  .k2b-ui .k2b-app-workspace__sidebar-item > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"] {
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
@@ -4624,8 +4627,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* The overlay layout follows the pointer capability, never the recorded input
-   mode, so a mode change moves nothing. Touch input shows the actions on every
-   row at rest, so the text and count under them fade on every row too. */
+   mode, so a mode change moves nothing. */
 @media (any-hover: hover) {
   /* Hover actions that end the row overlay its trailing edge, before a tree
      row's chevron: they take no width from the label, and while they show,
@@ -4649,7 +4651,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
   .k2b-ui
     :is(
-      .k2b-app-workspace__sidebar-item:is(:hover, :focus-within, .is-active, :has(> [aria-current="page"]), :where(html[data-k2b-input="touch"] *)),
+      .k2b-app-workspace__sidebar-item:is(:hover, :focus-within, .is-active, :has(> [aria-current="page"])),
       .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
         > .k2b-app-workspace__nav-tree-row,
       .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions [aria-haspopup][aria-expanded="true"])
@@ -4662,7 +4664,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
   .k2b-ui
     :is(
-      .k2b-app-workspace__sidebar-item:is(:hover, :focus-within, .is-active, :has(> [aria-current="page"]), :where(html[data-k2b-input="touch"] *)),
+      .k2b-app-workspace__sidebar-item:is(:hover, :focus-within, .is-active, :has(> [aria-current="page"])),
       .k2b-app-workspace__nav-tree-node:focus-within:not(:has(> .k2b-app-workspace__nav-tree-group:focus-within))
         > .k2b-app-workspace__nav-tree-row,
       .k2b-app-workspace__sidebar-item:has(> .k2b-app-workspace__sidebar-item-actions [aria-haspopup][aria-expanded="true"])
@@ -4709,7 +4711,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     .k2b-app-workspace__sidebar-item:not(
       [data-has-actions="true"],
       :has(> .k2b-app-workspace__sidebar-item-action:not([data-visibility="hover"]))
-    ):where(:hover, :focus-within, .is-active, :has(> [aria-current="page"]), :has(.k2b-app-workspace__sidebar-preview:popover-open), :where(html[data-k2b-input="touch"] *)):has(
+    ):where(:hover, :focus-within, .is-active, :has(> [aria-current="page"]), :has(.k2b-app-workspace__sidebar-preview:popover-open)):has(
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger:not([data-row-trigger]))
     )
     > .k2b-app-workspace__sidebar-item-main {
@@ -4720,7 +4722,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     .k2b-app-workspace__sidebar-item:not(
       [data-has-actions="true"],
       :has(> .k2b-app-workspace__sidebar-item-action:not([data-visibility="hover"]))
-    ):where(:hover, :focus-within, .is-active, :has(> [aria-current="page"]), :has(.k2b-app-workspace__sidebar-preview:popover-open), :where(html[data-k2b-input="touch"] *)):has(
+    ):where(:hover, :focus-within, .is-active, :has(> [aria-current="page"]), :has(.k2b-app-workspace__sidebar-preview:popover-open)):has(
       > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]:not(.k2b-app-workspace__sidebar-preview-trigger)
     ):has(> .k2b-app-workspace__sidebar-preview-trigger[data-row-trigger])
     > .k2b-app-workspace__sidebar-item-main {
@@ -4799,7 +4801,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui
     .k2b-app-workspace__sidebar-item[data-variant="object"]:has(
       > .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]
-    ):is(:hover, :focus-within, .is-active, :has(> [aria-current="page"]), :where(html[data-k2b-input="touch"] *))
+    ):is(:hover, :focus-within, .is-active, :has(> [aria-current="page"]))
     .k2b-app-workspace__sidebar-item-meta {
     opacity: 0;
   }

@@ -388,13 +388,14 @@ loading, error, and dark treatments.
   [Focus rings](/en/ui/focus).
 - Progressive actions follow input mode: touch keeps them visible; mouse or
   trackpad reveals them on hover, focus, or an open menu. Sidebar actions also
-  show on the current row, and close controls on the selected tab. Before
-  input, `any-hover` supplies the default. Add `k2b-progressive-row` and
-  `k2b-progressive-action` to your own rows and actions. Custom rest rules need
-  the media and attribute pair from [Input mode](/en/ui/input-mode); mode
-  changes only opacity, visibility, or pointer-events of reserved boxes.
-  Primary-pointer queries and Tailwind hover variants miss a tablet's
-  secondary mouse.
+  show on the current row, and close controls on the selected tab. Where any
+  pointer can hover, sidebar actions overlay their row's text, so touch keeps
+  that reveal for them. Before input, `any-hover` supplies the default. Add
+  `k2b-progressive-row` and `k2b-progressive-action` to your own rows and
+  actions. Custom rest rules need the media and attribute pair from
+  [Input mode](/en/ui/input-mode); mode changes only opacity, visibility, or
+  pointer-events of reserved boxes. Primary-pointer queries and Tailwind hover
+  variants miss a tablet's secondary mouse.
 - Use `InlineGuidance` for a short local hint, action error, or loading message
   while the affected content remains visible. Use its `loading` prop for inline
   progress rather than assembling a spinner and text.

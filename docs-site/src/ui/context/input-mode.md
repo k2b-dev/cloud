@@ -9,6 +9,12 @@ keyboard hints follow how the person works.
 | `data-k2b-input="trackpad"` | The latest pointer was a mouse or trackpad. Row actions show on hover. |
 | `data-k2b-kbd="on"` | A key was pressed outside a text field. Keyboard hints show. |
 
+AppWorkspace sidebar rows are the exception on a screen where any pointer can
+hover, such as a touch laptop or an iPad with a trackpad. There, their actions
+overlay the end of the label and the counts, so touch input keeps the same
+reveal as a mouse: the current row shows its actions for a finger, and the
+other rows keep their text and counts.
+
 Pointer down and pointer move update the input mode from `pointerType`,
 including on an iPad with a trackpad. Compatibility mouse events after a tap
 do not change it. Typing in a text field, AltGraph characters, composition,

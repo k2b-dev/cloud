@@ -14,7 +14,7 @@ const shippedRules = readShippedCssRules(resolve(import.meta.dir, "../src/styles
 /** The default rules: hover-pointer rest rules for the default input mode and the unconditional reveals. */
 const defaultRules = shippedRules.filter(
   (rule) =>
-    (rule.context === HOVER_POINTER && rule.selector.startsWith(NO_TOUCH)) ||
+    (rule.context === HOVER_POINTER && (rule.selector.startsWith(NO_TOUCH) || !rule.selector.includes("data-k2b-input"))) ||
     (rule.context === "" && !rule.selector.includes("data-k2b-input")),
 );
 const css = (rule: { context: string; selector: string; body: string }, selector = rule.selector) =>

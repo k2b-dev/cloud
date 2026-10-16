@@ -16,6 +16,13 @@ describe("@k2b/ui stylesheet hygiene", () => {
     const hoverPointer = "@media (any-hover: hover)";
     const fallback = ':where(html:not([data-k2b-input="touch"])) ';
     const trackpad = ':where(html[data-k2b-input="trackpad"]) ';
+    // Where any pointer can hover, sidebar row actions overlay the label and counts. Touch input keeps their reveal
+    // set (hover, focus, current row, open menu); showing them on every row would hide every row's text and counts.
+    const overlaid: ReadonlySet<string> = new Set([
+      '.k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]',
+      '.k2b-ui .k2b-app-workspace__sidebar-item > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]',
+    ]);
+    const restPrefix = (selector: string) => (overlaid.has(selector) ? "" : fallback);
     for (const [selector, property, value] of [
       [".k2b-ui .k2b-app-workspace__sidebar-section-actions", "opacity", "0"],
       ['.k2b-ui .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"]', "visibility", "hidden"],
@@ -28,7 +35,7 @@ describe("@k2b/ui stylesheet hygiene", () => {
       [".k2b-ui .k2b-tabs__list .k2b-tabs__close", "opacity", "0"],
       [".k2b-ui .k2b-progressive-action", "opacity", "0"],
     ] as const) {
-      const rule = rules.find((candidate) => candidate.selector === fallback + selector && candidate.context === hoverPointer);
+      const rule = rules.find((candidate) => candidate.selector === restPrefix(selector) + selector && candidate.context === hoverPointer);
       expect(rule, selector).toBeDefined();
       expect(cssDeclarations(rule!.body).get(property)).toEqual([value]);
       const twin = rules.find((candidate) => candidate.selector === trackpad + selector && candidate.context === "");
@@ -62,14 +69,14 @@ describe("@k2b/ui stylesheet hygiene", () => {
       );
     });
     for (const rule of hides) {
-      const isMedia = rule.selector.startsWith(fallback);
-      expect(isMedia || rule.selector.startsWith(trackpad), rule.selector).toBe(true);
+      const isMedia = !rule.selector.startsWith(trackpad);
+      const base = isMedia ? rule.selector.replace(fallback, "") : rule.selector.slice(trackpad.length);
+      expect(rule.selector, rule.selector).toBe(isMedia ? restPrefix(base) + base : trackpad + base);
       expect(rule.context.includes(hoverPointer), rule.selector).toBe(isMedia);
       const twin = rules.find(
         (candidate) =>
           candidate.file === rule.file &&
-          candidate.selector ===
-            (isMedia ? trackpad + rule.selector.slice(fallback.length) : fallback + rule.selector.slice(trackpad.length)) &&
+          candidate.selector === (isMedia ? trackpad + base : restPrefix(base) + base) &&
           candidate.context ===
             (isMedia
               ? rule.context
@@ -81,8 +88,10 @@ describe("@k2b/ui stylesheet hygiene", () => {
       expect(twin, rule.selector).toBeDefined();
       expect(cssDeclarations(twin!.body)).toEqual(cssDeclarations(rule.body));
     }
-    // Only paint may depend on mode; boxes stay reserved. The sidebar fade inset only moves a mask gradient.
-    const paint = ["opacity", "visibility", "pointer-events", "transition", "--k2b-sidebar-item-fade-inset"];
+    // Only paint may depend on mode; boxes stay reserved. The sidebar fade and object-row counts follow the overlaid
+    // actions, never the mode, so touch input cannot hide every row's text.
+    const paint = ["opacity", "visibility", "pointer-events", "transition"];
+    expect(rules.filter((rule) => /data-k2b-input/.test(rule.selector) && /sidebar-item-(?:main|meta)$/.test(rule.selector))).toEqual([]);
     for (const rule of rules.filter((rule) => /data-k2b-(?:input|kbd)/.test(rule.selector))) {
       const declarations = cssDeclarations(rule.body);
       expect(

@@ -355,8 +355,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     )?.[1];
     expect(overlay).toContain("position: absolute");
     expect(overlay).toContain("inset-inline-end: 0");
-    const hiddenMeta = css.match(
-      /\):is\(:hover, :focus-within, \.is-active, :has\(> \[aria-current="page"\]\), :where\(html\[data-k2b-input="touch"\] \*\)\)\s*\.k2b-app-workspace__sidebar-item-meta \{([^}]*)\}/,
+    const hiddenMeta = block.match(
+      /\):is\(:hover, :focus-within, \.is-active, :has\(> \[aria-current="page"\]\)\)\s*\.k2b-app-workspace__sidebar-item-meta \{([^}]*)\}/,
     )?.[1];
     // Opacity keeps the counts' visually hidden text in the accessibility tree.
     expect(hiddenMeta).toContain("opacity: 0");
