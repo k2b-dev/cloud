@@ -619,14 +619,25 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
   // A level change can hide the control that made it: the back step, or a row
   // of a list that a phone no longer shows. Focus then moves to the title of
   // the selected level, so keyboard and screen reader users keep their place.
+  // The back step to the first level unmounts, and focus has left with it by
+  // the time the level changes, so pressing it is remembered.
   let mainElement: HTMLDivElement | undefined;
+  let backStepFocused = false;
+  const navigateBack = (event: LinkNavigateEvent) => {
+    backStepFocused = Boolean(mainElement?.contains(document.activeElement));
+    return props.onLevelNavigate?.(event);
+  };
   createEffect(
     on(
       () => (levelsMode() ? depth() : 0),
       (current) => {
+        const pressedBack = backStepFocused;
+        backStepFocused = false;
         const focused = document.activeElement;
-        if (!current || !mainElement || !(focused instanceof HTMLElement) || !mainElement.contains(focused)) return;
-        if (focused.getClientRects().length > 0) return;
+        if (!current || !mainElement) return;
+        const lost = pressedBack && (!focused || focused === document.body);
+        const hidden = focused instanceof HTMLElement && mainElement.contains(focused) && focused.getClientRects().length === 0;
+        if (!lost && !hidden) return;
         mainElement
           .querySelector<HTMLElement>(`:scope > [data-workspace-level="${current}"] > .k2b-app-workspace__level-head h2`)
           ?.focus({ preventScroll: true });
@@ -739,7 +750,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
                             href={levels()[depth() - 2]?.props.href}
                             label={workspaceMessages().backTo({ page: levels()[levelIndex() - 2]?.props.label ?? "" })}
                             navigation={props.onLevelNavigate ? "enhanced" : "document"}
-                            onNavigate={props.onLevelNavigate}
+                            onNavigate={props.onLevelNavigate ? navigateBack : undefined}
                           >
                             <i class="ti ti-chevron-left" aria-hidden="true" />
                           </IconButtonLink>

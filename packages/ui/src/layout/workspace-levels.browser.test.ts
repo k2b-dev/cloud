@@ -452,6 +452,17 @@ for (const width of [390, 1024])
         };
       });
       expect(focused).toEqual({ tag: "H2", text: "Items", level: "items", visible: true });
+      if (width < 768) {
+        // The last back step unmounts with the first level's selection; focus still lands on a title.
+        await page.locator(".k2b-app-workspace__level-back:visible").focus();
+        await page.keyboard.press("Enter");
+        await page.waitForURL("**/?level=sections");
+        await frames(page);
+        expect(await page.evaluate(() => [document.activeElement?.tagName, document.activeElement?.textContent])).toEqual([
+          "H2",
+          "Sections",
+        ]);
+      }
     } finally {
       await page.close();
     }
