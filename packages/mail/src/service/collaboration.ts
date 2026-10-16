@@ -532,7 +532,8 @@ export const lockWorkflowConversationStatus = async (
         AND NOT COALESCE(
           ${params.viewLinkSnapshot}::text IS NOT NULL AND (
             link.linked_xid IS NULL
-            -- The view can see links in its own transaction, which snapshot visibility may omit.
+            -- Links committed with the trigger's link count as seen. In a sync batch that is the
+            -- view's own transaction, which snapshot visibility does not report reliably.
             OR link.linked_xid = trigger_link.linked_xid
             OR pg_visible_in_snapshot(link.linked_xid, ${params.viewLinkSnapshot}::pg_snapshot)
           ), false
