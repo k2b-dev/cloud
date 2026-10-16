@@ -30,7 +30,7 @@ const registryMetadata = z.object({ versions: z.record(z.string(), z.object({}))
 
 const isPublished = async (name: string, version: string): Promise<boolean> => {
   try {
-    const response = await fetch(`https://registry.npmjs.org/${name.replace("/", "%2f")}`, {
+    const response = await fetch(`https://registry.npmjs.org/${name.replaceAll("/", "%2f")}`, {
       headers: { Accept: "application/vnd.npm.install-v1+json" },
       signal: AbortSignal.timeout(30_000),
     });
