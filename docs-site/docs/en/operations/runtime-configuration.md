@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-10-11
+updated: 2026-10-16
 ---
 
 # Runtime configuration
@@ -113,8 +113,10 @@ The repository's development and production Compose files accept
 `CLOUD_APP_CREDENTIAL` and supply the private service origins. The input name
 is not a runtime variable read by Mail.
 
-> Losing or changing `APP_SECRET` makes existing encrypted settings and
-> credentials unreadable. Store and rotate it as a deployment secret.
+> Keep `APP_SECRET` stable and back it up. Cloud has no built-in key rotation;
+> changing it makes encrypted values unreadable and can overwrite stored
+> settings at startup. See
+> [Keep the encryption key stable](/en/docs/data/secrets-and-persistent-state#keep-the-encryption-key-stable).
 
 `app.start()` refuses to boot without `APP_SECRET`.
 

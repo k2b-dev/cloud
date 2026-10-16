@@ -4,8 +4,8 @@ navTitle: Secrets and state
 section: Data
 order: 440
 description: Store sensitive configuration and durable application state in the correct platform service.
-tags: [data, secrets, settings, valkey, storage, https, ssrf]
-updated: 2026-10-09
+tags: [data, secrets, encryption, settings, valkey, storage, https, ssrf]
+updated: 2026-10-16
 ---
 
 # Secrets and persistent state
@@ -109,13 +109,100 @@ const value = await secrets.decrypt<{
 Return metadata and a `configured` boolean to the browser. Never return the
 encrypted value as a substitute for redaction.
 
+`secrets.encrypt` uses the same key and format as encrypted settings: JSON
+encrypted with AES-256-GCM. Key material comes from trimmed `APP_SECRET`: an
+even-length hexadecimal value is used directly; any other value is hashed with
+SHA-256. Any application with the same `APP_SECRET` and database access can
+decrypt these values. This protects against database-only access, such as dumps
+and backups, but does not isolate secrets from other applications in the
+deployment.
+
+## Share a secret between applications
+
+All settings rows live in one deployment-wide table, but each key belongs to
+the one application that declares it in `defineApp({ settings })`. The typed
+`app.settings` API and request snapshot expose only that application's keys and
+platform settings. Writes to undeclared keys throw `Unknown setting`.
+
+Do not use a setting for a credential that several applications must read, such
+as storage credentials shared by a suite of standalone apps. Use an encrypted
+application table instead. One application owns the table: it creates the table
+in its migration and writes the rows. The other applications read the rows and
+decrypt them with `secrets.decrypt`.
+
+For example, the owner writes a credential and a reader reports missing or
+unreadable credentials as an explicit state:
+
+```ts
+import { sql } from "bun";
+import { secrets } from "@k2b/cloud/services";
+
+// Owner application, after its migration created the table.
+const encrypted = await secrets.encrypt({ apiKey: input.apiKey });
+await sql`
+  INSERT INTO storage.shared_credentials (name, value_encrypted)
+  VALUES (${input.name}, ${encrypted})
+  ON CONFLICT (name)
+  DO UPDATE SET value_encrypted = EXCLUDED.value_encrypted
+`;
+
+// Reader application, inside the server operation that needs the secret.
+async function readCredential(name: string) {
+  const [row] = await sql<{ value_encrypted: string }[]>`
+    SELECT value_encrypted FROM storage.shared_credentials
+    WHERE name = ${name}
+  `;
+  if (!row) return { status: "missing" };
+
+  try {
+    const credential = await secrets.decrypt<{ apiKey: string }>(
+      row.value_encrypted,
+    );
+    return { status: "ready", credential };
+  } catch {
+    // The writer used another APP_SECRET. Show this state
+    // instead of failing silently.
+    return { status: "unreadable" };
+  }
+}
+```
+
+The owner's migration must create `name` as a unique key and `value_encrypted`
+as a text column. Keep decrypted credentials on the server.
+
+> Every application that reads the table must run with exactly the same
+> `APP_SECRET` value as the writer. With a different value, `secrets.decrypt`
+> throws. Start readers only after the owner's setup has created the table.
+
 ## Keep the encryption key stable
 
-Every application instance must use the same `APP_SECRET`.
+Every application instance must use the same stable `APP_SECRET`. Cloud has no
+built-in rotation or previous-key fallback.
 
-Changing or losing it makes stored settings and encrypted application values
-unreadable. Back up the key separately from the database and restrict access to
-both.
+After a key change, `secrets.decrypt` throws for existing encrypted application
+values. Settings reads silently ignore rows they cannot decrypt and use
+`envFallback` or the default instead.
+
+At startup, Cloud overwrites an unreadable setting when its `envBootstrap`
+returns a value from the environment. It encrypts that value with the current
+key, losing the old stored value. Examples include `app.url` from `APP_URL` and
+`gotenberg.url` from `GOTENBERG_URL`. A single container started with a different
+`APP_SECRET` can do this to shared platform settings.
+
+Some applications also derive short-lived signatures from `APP_SECRET`, such as
+Grids pagination cursors and Files editor links. Those stop working after a key
+change.
+
+Rotating the key requires an offline migration:
+
+1. Stop every application.
+2. Decrypt every stored value with the old key and encrypt it with the new key:
+   all settings rows and every encrypted application column.
+3. Start all applications with the new `APP_SECRET` value.
+
+Cloud has no tool for this migration. Losing the old key makes existing
+encrypted values unrecoverable. Back up the key separately from the database
+and restrict access to both.
 
 Cloud refuses to start without `APP_SECRET`.
 
