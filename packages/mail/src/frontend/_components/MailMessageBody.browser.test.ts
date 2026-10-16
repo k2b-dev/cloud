@@ -369,7 +369,7 @@ const newsletter = `
     <table><tr><td id="button" bgcolor="#2563eb"><a href="https://example.com" style="color:#ffffff">Open newsletter</a></td></tr></table>
     <p id="note" style="background:#fef3c7;color:#92400e">A useful note.</p>
     <p style="color:#6b7280">Newsletter footer</p>
-    <div id="dark-block" style="background:#0f172a;color:#e2e8f0">Designed for dark mode. <a href="https://example.com" style="color:#a5b4fc">Details</a></div>
+    <div id="dark-block" style="background:#0f172a;color:#e2e8f0;border:1px solid #ffffff">Designed for dark mode. <a href="https://example.com" style="color:#a5b4fc">Details</a></div>
     <img alt="photo" src="cid:photo@example.com">
     <img alt="spacer" src="cid:spacer@example.com">
     <img alt="icon" src="cid:icon@example.com">
@@ -550,10 +550,13 @@ describe("HTML mail colors", () => {
         expect(await frame.locator("#button").evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgb(37, 99, 235)");
         expect(await frame.locator("#button a").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(255, 255, 255)");
         expect(
-          await frame
-            .locator("#dark-block")
-            .evaluate((element) => ({ background: getComputedStyle(element).backgroundColor, color: getComputedStyle(element).color })),
-        ).toEqual({ background: "rgb(15, 23, 42)", color: "rgb(226, 232, 240)" });
+          await frame.locator("#dark-block").evaluate((element) => {
+            const computed = getComputedStyle(element);
+            return { background: computed.backgroundColor, color: computed.color, border: computed.borderTopColor };
+          }),
+        ).toEqual({ background: "rgb(15, 23, 42)", color: "rgb(226, 232, 240)", border: "rgb(255, 255, 255)" });
+        // A light card's separator darkens with the card instead of turning into a bright outline.
+        expect(await frame.locator("#card").evaluate((element) => getComputedStyle(element).borderTopColor)).not.toBe("rgb(229, 231, 235)");
         expect(await frame.locator("img").evaluateAll((elements) => elements.map((element) => getComputedStyle(element).filter))).toEqual(
           Array(5).fill("none"),
         );

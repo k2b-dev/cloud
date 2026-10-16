@@ -320,7 +320,10 @@ export const buildMessageDocument = (
           return;
         }
         if (original.background) set("background-color", adaptBackground(original.background));
-        for (const [property, color] of original.borders) set(property, adaptBackground(color));
+        // Borders drawn on a surface that is already dark were designed for it and stay as authored.
+        if (original.borders.length > 0 && luminance(effectiveBackground(element, false)) > 0.4) {
+          for (const [property, color] of original.borders) set(property, adaptBackground(color));
+        }
         const parent = element.parentElement;
         const inherited = foregrounds.get(parent) || text;
         const follows = original.color === null || original.followsParent;
