@@ -103,7 +103,7 @@ test(
         alias: null,
         shortcuts: {},
         inactive: [],
-        app: null,
+        app: "@k2b-test/cld-plugin-echo",
         installed: "1.0.0",
         available: null,
         status: "ok",
@@ -133,7 +133,7 @@ test(
         expect(skills.exitCode, skills.stderr).toBe(0);
         const skill = await Bun.file(join(skillsDir, "cloud-cli", "SKILL.md")).text();
         expect(skill).toContain("name: cloud-cli");
-        expect(skill).toContain("| work | echo | 1.0.0 | `references/echo/1.0.0/` |");
+        expect(skill).toContain("| work | echo | 1.0.0 | Echo the host CLI context (test plugin). | `references/echo/1.0.0/index.md` |");
         expect(await Bun.file(join(skillsDir, "cloud-cli", "references", "sign-in.md")).exists()).toBe(true);
         await Bun.write(join(directory, "config.json"), "{}");
       } finally {

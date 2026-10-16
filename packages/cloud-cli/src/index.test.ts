@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { packInlinePlugin } from "../test/fixtures/build-plugin";
 import { installFirstPartyModules } from "../test/fixtures/first-party";
 import { LOGIN_PAGE_CSP } from "./login-page";
 
@@ -606,19 +607,17 @@ describe("cloud CLI OAuth session handling", () => {
 
   test("delivers multi-megabyte JSON to a slow reader before exiting with the command's code", async () => {
     const dir = await createTempDir();
-    const pluginDir = join(dir, "cloud", "cld", "plugins", "bulk");
-    await mkdir(join(pluginDir, "dist"), { recursive: true });
-    await writeFile(
-      join(pluginDir, "package.json"),
-      JSON.stringify({ name: "bulk", version: "1.0.0", cld: { apiVersion: 1, entry: "dist/cli.js" } }),
-    );
-    await writeFile(
-      join(pluginDir, "dist", "cli.js"),
+    const pluginDir = join(dir, "package-bulk");
+    await packInlinePlugin(
+      pluginDir,
       `export default { name: "bulk", summary: "Bulk output", requiresCloud: false, run: (ctx) => {
         ctx.json({ items: Array.from({ length: 20000 }, (_, id) => ({ id, subject: "x".repeat(200) })) });
         return 3;
       } };`,
     );
+
+    const installBulk = await runCli(join(dir, "config.json"), ["plugins", "install", pluginDir, "--yes"], { XDG_CONFIG_HOME: dir });
+    expect(installBulk.exitCode, installBulk.stderr).toBe(0);
 
     const proc = startCli(join(dir, "config.json"), ["plugins", "run", "bulk"], { XDG_CONFIG_HOME: dir });
     const chunks: Uint8Array[] = [];
@@ -1347,22 +1346,20 @@ describe("cloud CLI OAuth session handling", () => {
   test.skipIf(process.platform === "win32")("openUrl validates links, checks the host, and silently reports opener results", async () => {
     const dir = await createTempDir();
     const configPath = join(dir, "config.json");
-    const pluginDir = join(dir, "cloud", "cld", "plugins", "browser");
+    const pluginDir = join(dir, "package-browser");
     const binDir = join(dir, "bin");
     const logPath = join(dir, "browser.log");
-    await mkdir(join(pluginDir, "dist"), { recursive: true });
     await mkdir(binDir);
-    await writeFile(
-      join(pluginDir, "package.json"),
-      JSON.stringify({ name: "browser", version: "1.0.0", cld: { apiVersion: 1, entry: "dist/cli.js" } }),
-    );
-    await writeFile(
-      join(pluginDir, "dist", "cli.js"),
+    await packInlinePlugin(
+      pluginDir,
       `export default { name: "browser", summary: "Open a link", requiresCloud: false, run: async (ctx) => {
         ctx.json({ opened: await ctx.openUrl(ctx.args[0]), locale: ctx.options.locale ?? null });
         return 0;
       } };`,
     );
+
+    const installBrowser = await runCli(join(dir, "config.json"), ["plugins", "install", pluginDir, "--yes"], { XDG_CONFIG_HOME: dir });
+    expect(installBrowser.exitCode, installBrowser.stderr).toBe(0);
     await writeFile(
       join(binDir, process.platform === "darwin" ? "open" : "xdg-open"),
       `#!/bin/sh
@@ -1415,19 +1412,17 @@ exit "$BROWSER_EXIT"
     const server = startMockServer(state);
     const dir = await createTempDir();
     const configPath = join(dir, "config.json");
-    const pluginDir = join(dir, "cloud", "cld", "plugins", "cookies");
-    await mkdir(join(pluginDir, "dist"), { recursive: true });
-    await writeFile(
-      join(pluginDir, "package.json"),
-      JSON.stringify({ name: "cookies", version: "1.0.0", cld: { apiVersion: 1, entry: "dist/cli.js" } }),
-    );
-    await writeFile(
-      join(pluginDir, "dist", "cli.js"),
+    const pluginDir = join(dir, "package-cookies");
+    await packInlinePlugin(
+      pluginDir,
       `export default { name: "cookies", summary: "Own cookie", run: async (ctx) => {
         await ctx.fetch("/api/me", { headers: { Cookie: "a=b" } });
         return 0;
       } };`,
     );
+
+    const installCookies = await runCli(join(dir, "config.json"), ["plugins", "install", pluginDir, "--yes"], { XDG_CONFIG_HOME: dir });
+    expect(installCookies.exitCode, installCookies.stderr).toBe(0);
     const cloud = ["--server", `http://127.0.0.1:${server.port}`, "--token", "test-token"];
 
     try {

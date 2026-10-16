@@ -5,7 +5,7 @@ section: Platform services
 order: 595
 description: Expose application operations through the shared cld command-line interface.
 tags: [cli, cld, automation, plugins]
-updated: 2026-09-30
+updated: 2026-10-15
 ---
 
 # Application CLI modules
@@ -733,51 +733,65 @@ server's authorization.
 
 ## Ship a module as a plugin
 
-A module can also ship as a package, for example a public command set that
-does not belong to one application, or a module under development. Such a
-plugin is an npm package, a `.tgz` archive of one, or a local directory
-with a `package.json` that declares the plugin manifest:
+Authors without a Cloud application can ship a module as an npm package,
+a `.tgz` archive, or a local directory. Use the same verified bundle format
+that applications serve. The source package needs string `name` and `version`
+fields in `package.json`. The module exports `defineCliCommands()` as its
+default export. Its `name` becomes the command and plugin ID.
+
+Pack the module and its Markdown references from the source package directory:
+
+```sh
+bun run node_modules/@k2b/cloud/scripts/cli-pack.ts src/cli.ts --references references --out dist/plugin
+npm publish dist/plugin
+# Or create an archive:
+npm pack ./dist/plugin
+```
+
+Inside the Cloud monorepo, run `bun run packages/cloud/scripts/cli-pack.ts`
+with the same arguments. The references directory must contain `index.md`.
+Nested Markdown files keep their paths. The script uses the application plugin
+builder and bundles dependencies into one ESM file, including `@k2b/cloud/cli`.
+`cld` installs no plugin dependencies.
+
+The output contains:
+
+```text
+package.json
+manifest.json
+cli.js
+references/index.md
+references/guides/setup.md
+```
+
+The generated `package.json` declares the bundle manifest:
 
 ```json
 {
   "name": "@example/inventory-cli",
   "version": "1.4.0",
   "type": "module",
-  "files": ["dist"],
-  "cld": {
-    "apiVersion": 1,
-    "entry": "dist/cli.js"
-  }
+  "cld": { "manifest": "manifest.json" }
 }
 ```
 
-| Field | Rule |
-| --- | --- |
-| `name`, `version` | Required. Shown by `cld plugins list`. |
-| `cld.apiVersion` | Required. `1` is the `CloudCliModule` contract of `@k2b/cloud/cli`. |
-| `cld.entry` | Required. Relative path to an ESM file inside the package. |
+The manifest's `app` and `version` match the package name and version.
+`cld.manifest` is a relative file path inside the package. Its parent directory
+holds the bundle. The manifest lists `cli.js` and every reference with its
+size and SHA-512, and carries the digest of that file list.
 
-The entry's default export is the module from `defineCliCommands()`. Its
-`name` becomes the command, `cld inventory …`, and the plugin's ID.
+The output directory must be absent, empty, or a previous pack output containing
+only `package.json`, `manifest.json`, `cli.js`, and `references`, with
+`cld.manifest` equal to `"manifest.json"`. Repacking removes previous output
+first, so stale files disappear. Other non-empty directories are refused.
+The output must not equal or contain the current directory, module file, or
+references directory.
 
-The names of the top-level commands (`help`, `version`, `login`, `logout`,
-`auth`, `profile`, `update`, `plugins`) are reserved, and `reference` is
-reserved as the first argument of every served module. `cld plugins install`
-refuses a plugin whose ID matches a reserved name. Choose a distinct ID, such
-as your application ID.
-
-Bundle the entry into one self-contained file. `cld` does not install plugin
-dependencies, so the bundle carries its own copy of `@k2b/cloud/cli`:
-
-```sh
-bun build src/cli.ts --target bun --format esm --outfile dist/cli.js
-```
-
-`cld` checks the module's shape, not its package copy. Any `@k2b/cloud`
-version that produces the `apiVersion: 1` module shape works.
-
-Release the plugin package together with the application. Command names,
-flags, and JSON output stay stable syntax across plugin versions.
+Top-level commands (`help`, `version`, `login`, `logout`, `auth`, `profile`,
+`update`, `plugins`, `skills`) are reserved. `reference` is reserved as the first
+argument of every installed module, so `defineCliCommands()` refuses a
+top-level `reference` command. Installing a reserved module name is
+refused. Command names, flags, and JSON output stay stable across versions.
 
 ## Install a plugin
 
@@ -806,7 +820,7 @@ successfully lists the Cloud's plugins. `cld help` shows active
 aliases beside module names and lists command shortcuts. Package plugins do
 not get short names.
 
-`cld <module> reference [file]` prints a served plugin's skill references:
+`cld <module> reference [file]` prints every installed module's skill references:
 `index.md` by default, or one of the further files it links to. Agents read
 them before using an unfamiliar module.
 
@@ -815,9 +829,16 @@ them before using an unfamiliar module.
 `cld` also writes the `cloud-cli` agent skill to disk. The core `SKILL.md`,
 `references/sign-in.md`, and `references/plugins.md` are embedded in the `cld`
 release; the installed modules add `references/<module>/<version>/` from the
-plugin store, and `SKILL.md` gets a generated table from profile to module,
-version, and reference folder. Profiles on different Clouds therefore see
-different versions side by side, and a version no profile uses disappears.
+shared plugin store. `SKILL.md` gets a table with Profile, Module, Version,
+Summary, and Start. Start links to `references/<module>/<version>/index.md`.
+Package plugins appear once with Profile `*` when active in at least one
+profile, or when no profiles exist. A profile lock takes precedence over a
+package plugin of the same name. Inactive modules get no row. Profiles on
+different Clouds see their versions side by side. When two different bundles
+share a module name and version, such as a served build and a package, each
+folder gets a short digest suffix, `references/<module>/<version>+<digest>/`,
+so every row points at its own references. Unused reference folders
+disappear on the next sync.
 
 The targets are `skills.targets` in the `cld` config. The first `cld login`
 asks whether to write the skill to `~/.agents/skills` and also to
@@ -847,12 +868,13 @@ plugin then goes to a content-addressed store,
 `$XDG_CONFIG_HOME/cloud/cld/plugins/store/<digest>/`, and the profile locks
 the module's app, version, and digest in the `cld` config. Profiles for
 different Clouds can use different versions of the same module; identical
-versions are stored once, and a version that no profile locks is deleted.
+versions are stored once. A version is deleted only when no profile lock or
+package record uses it.
 Without `XDG_CONFIG_HOME`, the directory is `~/.config/cloud/cld/plugins/`.
 
 `cld profile rm <name>` removes a profile together with its lock. It signs the
 profile out first, revoking an OAuth login like `cld logout`, then deletes the
-versions no remaining profile locks and rewrites the skill. It asks for
+versions no remaining profile lock or package record uses and rewrites the skill. It asks for
 confirmation, or needs `--yes` without a terminal, and refuses the current
 profile while other profiles exist; `cld profile use <other>` selects another
 one first.
@@ -881,14 +903,37 @@ checks the tarball against the registry's `sha512` integrity value. To install
 from a private registry, download the archive with `npm pack <package>` and
 install the `.tgz` file.
 
-Before it places a package plugin, `cld` checks the manifest and shows the
-package, version, and source. It asks for confirmation unless you pass
-`--yes`, and without a terminal it requires `--yes`. It then loads the module
-and installs it under `cloud/cld/plugins/<id>/`. Installing the same ID again
-replaces it. You can also place an unpacked plugin directory there by hand;
-`cld plugins list` shows its source as `manual`. A package plugin and a plugin
-that a profile locks cannot share a name; remove one before you install the
-other.
+Before confirmation, `cld` checks the package and bundle manifest, API
+compatibility, package name and version, reference file list, and name
+conflicts. It refuses symlinks anywhere in the bundle and unlisted reference
+files. Files outside the bundle directory are ignored.
+
+The confirmation shows the package, version, resolved source, module name,
+and reference count. It states that the plugin runs inside `cld` with the
+user's Cloud credentials. Without a terminal, installation requires `--yes`.
+Plugin code runs only after confirmation.
+
+Package and served plugins use the same verification: exact size and SHA-512
+for every listed file, manifest digest, and module shape and name. A mismatch
+leaves the installation untouched. Both live in `plugins/store/<digest>/`.
+Global package records live in `plugins/packages.json`, independent of profiles
+and `CLD_CONFIG`. Installing the same module again replaces its record and
+removes an old-format directory of that ID. Skill targets sync automatically
+after package install and removal too.
+
+Removing or replacing a package deletes only its own old bundle, and only if
+no profile lock in the current config or remaining package record uses it.
+Other unused bundles are removed at the next served plugin change or profile
+removal.
+
+Old packages with `cld.apiVersion` and `cld.entry` are refused. Their authors
+must re-pack with `cli-pack.ts` and publish the new package. Existing
+`plugins/<id>/` directories are listed as `incompatible` and never loaded.
+Remove them with `cld plugins remove <id>`.
+
+Update a package plugin by installing its new package again with
+`cld plugins install <source>`. A package plugin and a profile-locked plugin
+cannot be installed with the same name; remove one before installing the other.
 
 `cld plugins list` shows the profile (`*` for package plugins), name, app,
 installed and available version, status, and source. The SHORT NAMES column
@@ -900,14 +945,14 @@ The status values are:
 
 | Status | Meaning |
 | --- | --- |
-| `ok` | The installed plugin is current, or the package plugin loads. |
+| `ok` | The installed plugin is current, or the package record has an entry in the store. |
 | `available` | The Cloud serves the plugin; it is not installed. |
 | `update available` | The Cloud serves a different version than the profile locks. |
 | `not served` | The profile locks a plugin that the Cloud no longer serves. |
 | `unknown` | The Cloud could not be reached. |
 | `shadowed` | A later `cld` release added a built-in command with the same name. It takes precedence for `cld <id>`; run the plugin with `cld plugins run <id>`. |
-| `incompatible` | The package names a plugin API version that this `cld` does not support. |
-| `error` | The package manifest, the entry, or the module is invalid, or the entry fails to load. |
+| `incompatible` | An old-format package directory must be re-packed by its author. |
+| `error` | A package record points to a missing store entry. Reinstall from its recorded source. |
 
 A plugin's commands run as `cld <name> …`. `cld plugins run <name> …` runs the
 same command tree and always reaches the plugin, even when it is shadowed, so a
@@ -915,7 +960,7 @@ new built-in command never makes an installed plugin unreachable. Use it in
 scripts that must keep working across `cld` upgrades.
 
 `cld help` lists the current profile's plugins and the package plugins, and
-prints one warning line on stderr for each package plugin that it skips. A
+prints one warning line on stderr for each old-format directory it skips. A
 broken plugin fails only its own commands. The top-level commands never load
 plugins.
 
