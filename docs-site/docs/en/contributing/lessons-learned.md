@@ -148,6 +148,13 @@ convention still needs a check or a test.
 - **Error class:** Server-side request forgery.
 - **Guard:** Pulse validates and pins each request and redirect through `resolveAllowedNetworkAddresses` and `pinnedNetworkLookup`. Only the operator env registry can allow internal targets. The `network-guard` check rejects global `fetch()` in Pulse and Notebooks server code. SDK clients that resolve their own hosts cannot be pinned: use them only to sign locally, then send through a pinned transport. Platform and Pulse tests cover allowlist parsing, all DNS answers, blocked targets, redirect credentials, byte limits, and the total deadline.
 
+### Incoming Mail automations invalidate each other's commands
+
+- **What happened:** Matching incoming automations could fail when one marked a message read and another moved it ([#1036](https://github.com/k2b-dev/cloud/issues/1036)).
+- **Root cause:** Flag and keyword steps did not check another run's move, and provider preconditions projected only the current run's writes.
+- **Error class:** Ordering and concurrency.
+- **Guard:** `incoming-automations.integration.test.ts` covers both read/move orders, already moved messages, moves that land while a read command is created, queued reads that find the message gone, and sibling keywords. Another client's move that sync has not seen yet still fails the read. Only writes that other incoming automations confirmed after the run captured the message extend expected state; external drift still fails. `workflow-message-preconditions.test.ts` checks transition order and modseq retention without writes.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its

@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
+import { sql } from "bun";
 import type { RemoteMessagePrecondition } from "../contracts";
-import { mailWorkflowMessagePrecondition, projectMailWorkflowMessagePrecondition } from "./workflow-message-preconditions";
+import {
+  loadIncomingAutomationSiblingTransitions,
+  mailMessageStatePayloadTransitions,
+  mailWorkflowMessagePrecondition,
+  projectMailWorkflowMessagePrecondition,
+} from "./workflow-message-preconditions";
 import {
   applyMailMessageTransition,
   mailWorkflowMessageStateTransitions,
@@ -134,5 +140,108 @@ test("restored message aliases use the canonical target projection across action
     modseq: undefined,
     flags: ["seen"],
     keywords: [],
+  });
+});
+
+test("converts confirmed state payloads in provider operation order", () => {
+  expect(
+    mailMessageStatePayloadTransitions({
+      addFlags: ["seen", "answered"],
+      removeFlags: ["flagged"],
+      addKeywords: ["alpha", "beta"],
+      removeKeywords: ["review"],
+    }),
+  ).toEqual([
+    { field: "flags", add: true, value: "seen" },
+    { field: "flags", add: true, value: "answered" },
+    { field: "flags", add: false, value: "flagged" },
+    { field: "keywords", add: true, value: "alpha" },
+    { field: "keywords", add: true, value: "beta" },
+    { field: "keywords", add: false, value: "review" },
+  ]);
+});
+
+test("retains modseq without sibling writes and drops it only when a transition applies", () => {
+  const frozen: RemoteMessagePrecondition = { modseq: "42", flags: [], keywords: [] };
+  expect(
+    projectMailWorkflowMessagePrecondition(
+      frozen,
+      mailMessageStatePayloadTransitions({
+        addFlags: [],
+        removeFlags: [],
+        addKeywords: [],
+        removeKeywords: [],
+      }),
+    ),
+  ).toBe(frozen);
+  expect(
+    projectMailWorkflowMessagePrecondition(
+      frozen,
+      mailMessageStatePayloadTransitions({
+        addFlags: ["seen"],
+        removeFlags: [],
+        addKeywords: ["alpha"],
+        removeKeywords: [],
+      }),
+    ),
+  ).toEqual({ modseq: undefined, flags: ["seen"], keywords: ["alpha"] });
+  expect(frozen).toEqual({ modseq: "42", flags: [], keywords: [] });
+});
+
+describe("incoming automation sibling transition loading", () => {
+  const command = {
+    id: "00000000-0000-4000-8000-000000000001",
+    mailbox_id: "00000000-0000-4000-8000-000000000002",
+    actor_kind: "workflow",
+    actor_id: "00000000-0000-4000-8000-000000000003",
+    correlation_id: "00000000-0000-4000-8000-000000000004",
+    target: {
+      remoteMessageRefId: "00000000-0000-4000-8000-000000000005",
+      expectedRemoteState: { modseq: "1", flags: [], keywords: [] },
+    },
+  };
+
+  test("does not query for commands without a workflow UUID and frozen remote state", async () => {
+    const db = new Proxy(sql, {
+      apply: () => {
+        throw new Error("Unexpected SQL query");
+      },
+    });
+    for (const commands of [
+      [],
+      [{ ...command, actor_kind: "user" }],
+      [{ ...command, correlation_id: "not-a-run-id" }],
+      [{ ...command, correlation_id: null }],
+      [{ ...command, target: { remoteMessageRefId: command.target.remoteMessageRefId } }],
+      [{ ...command, target: { expectedRemoteState: command.target.expectedRemoteState } }],
+      [{ ...command, target: "invalid JSON" }],
+    ]) {
+      expect((await loadIncomingAutomationSiblingTransitions(db, commands)).size).toBe(0);
+    }
+  });
+
+  test("loads a whole command set once, keeps confirmation order, and ignores invalid payloads", async () => {
+    const second = { ...command, id: "00000000-0000-4000-8000-000000000006", target: JSON.stringify(command.target) };
+    let queries = 0;
+    const db = new Proxy(sql, {
+      apply: () => {
+        queries++;
+        return Promise.resolve([
+          { command_id: command.id, payload: { addFlags: ["seen"], removeFlags: [], addKeywords: [], removeKeywords: [] } },
+          { command_id: command.id, payload: "invalid JSON" },
+          { command_id: command.id, payload: { addFlags: ["unsupported"], removeFlags: [], addKeywords: [], removeKeywords: [] } },
+          { command_id: command.id, payload: { addFlags: [], removeFlags: ["seen"], addKeywords: ["alpha"], removeKeywords: [] } },
+          { command_id: second.id, payload: JSON.stringify({ addFlags: [], removeFlags: [], addKeywords: ["beta"], removeKeywords: [] }) },
+        ]);
+      },
+    });
+    const loaded = await loadIncomingAutomationSiblingTransitions(db, [command, second]);
+    expect(queries).toBe(1);
+    expect(loaded.get(command.id)).toEqual([
+      { field: "flags", add: true, value: "seen" },
+      { field: "flags", add: false, value: "seen" },
+      { field: "keywords", add: true, value: "alpha" },
+    ]);
+    expect(loaded.get(second.id)).toEqual([{ field: "keywords", add: true, value: "beta" }]);
   });
 });
