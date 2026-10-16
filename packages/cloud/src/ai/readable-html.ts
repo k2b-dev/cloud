@@ -418,8 +418,10 @@ export const htmlToReadableMarkdown = async (
     if (index !== undefined) while (stack.length > index) closeTop();
   };
   const open = (name: string, attrs: Record<string, string>) => {
-    if (!headTags.has(name)) closeHead();
-    if (name === "base" && attrs.href !== undefined && !hasBaseHref) {
+    // Template content is inert: it neither ends the head nor sets the document base.
+    const inert = lastOpen.has("template");
+    if (!headTags.has(name) && !inert) closeHead();
+    if (name === "base" && attrs.href !== undefined && !hasBaseHref && !inert) {
       hasBaseHref = true;
       try {
         const resolved = new URL(attrs.href, options.baseUrl);
@@ -725,7 +727,10 @@ const render = async (
           capture.lang ||= language(event.attrs.class);
           capture.firstCode = true;
         }
-        if (capture.name !== "pre" && (blocks.has(event.name) || event.name === "br")) {
+        if (capture.name === "pre" && event.name === "br") {
+          capture.parts.push("\n");
+          capture.ticks.trailing = 0;
+        } else if (capture.name !== "pre" && (blocks.has(event.name) || event.name === "br")) {
           capture.parts.push(" ");
           capture.ticks.trailing = 0;
         }

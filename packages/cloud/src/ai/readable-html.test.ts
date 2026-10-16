@@ -430,6 +430,18 @@ describe("readable HTML", () => {
     expect(result).toContain("A\n\n| B |\n| --- |\n\nC");
   });
 
+  test("keeps head templates inert and line breaks inside preformatted code", async () => {
+    expect(await convert("<head><template><main>INERT</main></template></head><body><main>Actual article</main></body>")).toBe(
+      "Actual article\n",
+    );
+    expect(
+      await convert(
+        '<head><template><base href="https://wrong.test/"></template><base href="https://right.test/"></head><p><a href="guide">Guide</a></p>',
+      ),
+    ).toBe("[Guide](https://right.test/guide)\n");
+    expect(await convert("<pre><code>npm install<br>npm test</code></pre>")).toBe("```\nnpm install\nnpm test\n```\n");
+  });
+
   test("lets a byte order mark win over header and meta charsets", async () => {
     const html = '<meta charset="windows-1252"><p>Grüße äöü</p>';
     const utf16 = (littleEndian: boolean) => {
