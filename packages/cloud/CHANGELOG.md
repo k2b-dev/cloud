@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.37.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.36.0...npm-cloud-v0.37.0) (2026-10-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** `cld plugins install` refuses package plugins in the old `cld.apiVersion`/`cld.entry` format, and already installed old-format directories are listed as `incompatible` and no longer load. Authors re-pack with `bun run node_modules/@k2b/cloud/scripts/cli-pack.ts <module.ts> --references <dir> --out <dir>` and republish. Users reinstall with `cld plugins install <source>` and remove old directories with `cld plugins remove <id>`. `cld mail reference …` is now `cld mail reference-number …` with unchanged flags and output.
+
+### Features
+
+* **ai:** show a visible reason when the Assistant stops without an answer after a failed step ([#1256](https://github.com/k2b-dev/cloud/issues/1256)) ([d6b8764](https://github.com/k2b-dev/cloud/commit/d6b87643e1fde4bc210db0900f5e06b2911351f2)), closes [#1150](https://github.com/k2b-dev/cloud/issues/1150)
+* **chat:** start chats and manage members from the full view ([#1252](https://github.com/k2b-dev/cloud/issues/1252)) ([dc04b5c](https://github.com/k2b-dev/cloud/commit/dc04b5ce4c929d7db1b4ec1c809431c46c9ae13d))
+* **cli:** package plugins ship skill references in the same verified bundle as served plugins ([#1227](https://github.com/k2b-dev/cloud/issues/1227)) ([f951e96](https://github.com/k2b-dev/cloud/commit/f951e967437834941fe48b9a91803b63265e9a1c))
+* **cloud:** hide the app bar and app navigation with Cmd/Ctrl+\ and bring them back from the left edge ([#1272](https://github.com/k2b-dev/cloud/issues/1272)) ([5994db9](https://github.com/k2b-dev/cloud/commit/5994db9f1e5568641e8be43d5c5c678571e80a92))
+* **cloud:** show the app as a rounded card from 1024 px with a 56 px rail on every tablet and desktop width ([#1261](https://github.com/k2b-dev/cloud/issues/1261)) ([52e392e](https://github.com/k2b-dev/cloud/commit/52e392e2ba945c3fe47e8d05377f1c16c19b7d7f))
+* **notebooks:** send snapshot uploads only to public storage unless the operator allows internal targets ([#1243](https://github.com/k2b-dev/cloud/issues/1243)) ([c7336a3](https://github.com/k2b-dev/cloud/commit/c7336a37c613d6852a5979615f75ec1e282680ad))
+* **ssr:** content-hashed island asset URLs and modulepreload for the page's island modules ([#1219](https://github.com/k2b-dev/cloud/issues/1219)) ([a254388](https://github.com/k2b-dev/cloud/commit/a254388aad6301f3d8afe57e41cd1e0a33fcdc9f))
+
+
+### Bug Fixes
+
+* **ai:** open Cloud resource links in Assistant answers even when the model drops the leading slash ([#1262](https://github.com/k2b-dev/cloud/issues/1262)) ([5de9eb6](https://github.com/k2b-dev/cloud/commit/5de9eb6c5f80cd340b4159505624dfe451cab15a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ssr bumped from 0.16.0 to 0.17.0
+    * @k2b/ui bumped from 0.26.0 to 0.27.0
+
 ## [0.36.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.35.0...npm-cloud-v0.36.0) (2026-10-16)
 
 
