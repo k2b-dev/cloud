@@ -25,6 +25,8 @@ export type BookNavigatorProps = {
   tree: BookTreeNode[];
   tags: { tag: string; count: number }[];
   activeTag?: string;
+  /** The current Book address; Write keeps its query (sidebar filters) and only switches the mode. */
+  currentHref: string;
   canWrite?: boolean;
   locked?: boolean;
   /** The notebook navigation preference: a hidden contents list renders no page titles at all. */
@@ -59,7 +61,7 @@ export default function BookNavigator(props: BookNavigatorProps) {
     const update = (event: Event) => {
       const next = (event as CustomEvent<BookMetadata>).detail;
       const opened = next.selectedNoteId !== state().selectedNoteId;
-      setState({ ...props, ...next, activeTag: next.activeTag });
+      setState({ ...props, ...next, activeTag: next.activeTag, currentHref: next.href });
       if (opened) setExpanded((current) => [...new Set([...current, ...(ancestorIds(next.tree, next.selectedNoteId) ?? [])])]);
     };
     window.addEventListener(BOOK_SNAPSHOT_EVENT, update);
@@ -76,19 +78,32 @@ export default function BookNavigator(props: BookNavigatorProps) {
         {node.children.length > 0 ? items(node.children) : undefined}
       </AppWorkspace.NavTree.Item>
     ));
+  // A writer leaves Book from the top of the navigation: an unlocked note opens in Write, the
+  // same target as the floating edit button; without a note or with a locked one, the read-only workspace.
+  // Both entries fill the same slot, so switching between them never moves the contents list.
+  const workspaceEntry = () => {
+    const current = state();
+    if (!current.canWrite) return null;
+    if (current.selectedNoteId && !current.locked)
+      return { label: t().write, icon: "ti ti-pencil", href: withPresentationMode(current.currentHref, "write") };
+    return {
+      label: t().openWorkspace,
+      icon: "ti ti-layout-sidebar",
+      href: withPresentationMode(
+        current.selectedNoteId ? buildNoteUrl(props.notebookId, current.selectedNoteId) : `/app/notebooks/${props.notebookId}`,
+        "readonly",
+      ),
+    };
+  };
   const navigation = () => (
     <>
-      {state().canWrite && (!state().selectedNoteId || state().locked) && (
-        <AppWorkspace.SidebarItem
-          href={withPresentationMode(
-            state().selectedNoteId ? buildNoteUrl(props.notebookId, state().selectedNoteId!) : `/app/notebooks/${props.notebookId}`,
-            "readonly",
-          )}
-          icon="ti ti-layout-sidebar"
-        >
-          {t().openWorkspace}
-        </AppWorkspace.SidebarItem>
-      )}
+      <Show when={workspaceEntry()}>
+        {(entry) => (
+          <AppWorkspace.SidebarItem href={entry().href} icon={entry().icon}>
+            {entry().label}
+          </AppWorkspace.SidebarItem>
+        )}
+      </Show>
       <AppWorkspace.SidebarSection title={t().notes}>
         <Show
           when={state().tree.length > 0}
@@ -145,19 +160,7 @@ export default function BookNavigator(props: BookNavigatorProps) {
   const mobileNavigation = createNavigation({
     switcher,
     items: () => [
-      ...(state().canWrite && (!state().selectedNoteId || state().locked)
-        ? [
-            {
-              id: "workspace",
-              label: t().openWorkspace,
-              icon: "ti ti-layout-sidebar",
-              href: withPresentationMode(
-                state().selectedNoteId ? buildNoteUrl(props.notebookId, state().selectedNoteId!) : `/app/notebooks/${props.notebookId}`,
-                "readonly",
-              ),
-            },
-          ]
-        : []),
+      ...[workspaceEntry()].flatMap((entry) => (entry ? [{ id: "workspace", ...entry }] : [])),
       { id: "notes", label: t().notes, children: state().tree.map(noteEntry) },
       ...(state().tags.length
         ? [

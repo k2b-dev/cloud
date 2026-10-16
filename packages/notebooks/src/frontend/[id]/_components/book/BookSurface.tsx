@@ -37,6 +37,7 @@ export default function BookSurface(props: BookSurfaceProps) {
           tree={props.tree}
           tags={props.tags}
           activeTag={props.activeTag}
+          currentHref={props.currentHref}
           canWrite={props.canWrite}
           locked={props.locked}
           navigationHidden={props.navigationHidden}
