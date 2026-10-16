@@ -160,7 +160,10 @@ test.each(["write_conflict", "path_conflict"])(
     globalThis.fetch = Object.assign(normalTransfer, { preconnect: originalFetch.preconnect });
     commitFailure = true;
     commitCode = code;
-    await expect(uploadFile("base", "file", new Blob(["abc"]), options())).rejects.toBeInstanceOf(UploadConflict);
+    const conflict = uploadFile("base", "file", new Blob(["abc"]), options());
+    await expect(conflict).rejects.toBeInstanceOf(UploadConflict);
+    // Callers that show the error, such as a Markdown copy, get Cloud's localized message instead of the code.
+    await expect(conflict).rejects.toMatchObject({ fileName: "file", message: "permission changed" });
     expect(aborts).toBe(1);
     expect(storage.size).toBe(0);
     await expect(

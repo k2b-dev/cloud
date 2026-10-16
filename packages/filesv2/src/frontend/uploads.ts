@@ -4,9 +4,13 @@ import { transferUpload, UploadTransferError, uploadFailureAction, uploadRequest
 import { browserUploadKey } from "./upload-key";
 
 export const requestSignal = (signal: AbortSignal) => AbortSignal.any([signal, AbortSignal.timeout(60_000)]);
+/** Carries Cloud's localized conflict message for callers that show it instead of asking to replace. */
 export class UploadConflict extends Error {
-  constructor(readonly fileName: string) {
-    super("path_conflict");
+  constructor(
+    readonly fileName: string,
+    message: string,
+  ) {
+    super(message);
   }
 }
 /** One file: Cloud authorizes sessions; bytes go directly to Filegate. Three consecutive retries bound failures without limiting healthy long transfers. */
@@ -88,7 +92,7 @@ export async function uploadFile(
       error.origin === "cloud" &&
       ((!session && error.code === "path_conflict") || (committing && ["path_conflict", "write_conflict"].includes(error.code ?? "")))
     )
-      throw new UploadConflict(path.split("/").at(-1)!);
+      throw new UploadConflict(path.split("/").at(-1)!, error.message);
     throw error;
   }
 }

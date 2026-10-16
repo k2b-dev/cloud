@@ -50,18 +50,34 @@ test("retention keeps the exact boundary, prunes older entries and preserves oth
   expect(storage.get("other:upload:old")).toBe("untouched");
 });
 
-test("legacy UUIDs are adopted once and expire a full retention after adoption", async () => {
+test("legacy UUIDs are adopted as created now and expire a full retention after the last start", async () => {
   const file = new Blob(["a"]);
   const first = await browserUploadKey(["private"], file);
   const key = [...storage.keys()][0]!;
   storage.set(key, first.idempotencyKey);
   expect((await browserUploadKey(["private"], file)).idempotencyKey).toBe(first.idempotencyKey);
   expect(JSON.parse(storage.get(key)!)).toEqual({ id: first.idempotencyKey, at: now });
-  setSystemTime(now + UPLOAD_KEY_RETENTION_MS);
-  expect((await browserUploadKey(["private"], file)).idempotencyKey).toBe(first.idempotencyKey);
-  expect(JSON.parse(storage.get(key)!).at).toBe(now);
   setSystemTime(now + UPLOAD_KEY_RETENTION_MS + 1);
   expect((await browserUploadKey(["private"], file)).idempotencyKey).not.toBe(first.idempotencyKey);
+});
+
+test("a full storage still adopts legacy keys and reuses existing ones without throwing", async () => {
+  const legacy = crypto.randomUUID();
+  storage.set("filesv2:upload:legacy", legacy);
+  const first = await browserUploadKey(["private"], new Blob(["a"]));
+  const setItem = localStorage.setItem;
+  storage.set("filesv2:upload:legacy", legacy);
+  localStorage.setItem = () => {
+    throw new DOMException("full", "QuotaExceededError");
+  };
+  try {
+    expect((await browserUploadKey(["private"], new Blob(["a"]))).idempotencyKey).toBe(first.idempotencyKey);
+    expect(storage.get("filesv2:upload:legacy")).toBe(legacy);
+    // Issuing a new key still fails before the start request.
+    await expect(browserUploadKey(["other"], new Blob(["a"]))).rejects.toThrow("full");
+  } finally {
+    localStorage.setItem = setItem;
+  }
 });
 
 test("corrupt entries are removed without skipping keys during pruning", async () => {
@@ -78,10 +94,12 @@ test("corrupt entries are removed without skipping keys during pruning", async (
   expect([...storage.keys()].some((key) => key.includes("bad-"))).toBe(false);
 });
 
-test("reuse preserves the original issuance timestamp", async () => {
+test("each start refreshes the timestamp, so a session opened by a late retry is never pruned early", async () => {
   const first = await browserUploadKey(["private"], new Blob(["a"]));
-  setSystemTime(now + 1000);
+  setSystemTime(now + 3 * 24 * 60 * 60 * 1000);
   const retry = await browserUploadKey(["private"], new Blob(["a"]));
   expect(retry.idempotencyKey).toBe(first.idempotencyKey);
-  expect(JSON.parse([...storage.values()][0]!).at).toBe(now);
+  expect(JSON.parse([...storage.values()][0]!).at).toBe(now + 3 * 24 * 60 * 60 * 1000);
+  setSystemTime(now + 3 * 24 * 60 * 60 * 1000 + UPLOAD_KEY_RETENTION_MS);
+  expect((await browserUploadKey(["private"], new Blob(["a"]))).idempotencyKey).toBe(first.idempotencyKey);
 });

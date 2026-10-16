@@ -10,7 +10,10 @@ function uploadKeys(now: number) {
     if (!key?.startsWith(prefix)) continue;
     const value = localStorage.getItem(key);
     if (value && uuid.test(value)) {
-      localStorage.setItem(key, JSON.stringify({ id: value, at: now }));
+      // Counting a legacy key as created now never prunes it early; a full storage keeps the bare value for the next start.
+      try {
+        localStorage.setItem(key, JSON.stringify({ id: value, at: now }));
+      } catch {}
       entries.set(key, value);
       continue;
     }
@@ -44,7 +47,13 @@ export async function browserUploadKey(scope: readonly unknown[], file: Blob) {
   const now = Date.now();
   const stored = uploadKeys(now).get(storageKey);
   const idempotencyKey = stored ?? crypto.randomUUID();
+  const entry = JSON.stringify({ id: idempotencyKey, at: now });
   // Failure must happen before issuance; an in-memory fallback would lose the durable guarantee.
-  if (!stored) localStorage.setItem(storageKey, JSON.stringify({ id: idempotencyKey, at: now }));
+  if (!stored) localStorage.setItem(storageKey, entry);
+  else
+    try {
+      // Retention counts from the latest start, which a session created by this start can never predate.
+      localStorage.setItem(storageKey, entry);
+    } catch {}
   return { idempotencyKey, finish: () => localStorage.removeItem(storageKey) };
 }
