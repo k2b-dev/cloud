@@ -404,14 +404,18 @@ const assertAdaptedContrast = async (frame: Frame) => {
     };
     return [...document.querySelectorAll("#mail-message-root *")].flatMap((element) => {
       if (![...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())) return [];
-      let background = parse("#11151b");
+      const layers: number[][] = [];
       for (let ancestor: Element | null = element; ancestor; ancestor = ancestor.parentElement) {
-        const color = parse(getComputedStyle(ancestor).backgroundColor);
-        if (color[3] === 255) {
-          background = color;
-          break;
-        }
+        const computed = getComputedStyle(ancestor);
+        if (computed.backgroundImage !== "none") return [];
+        const color = parse(computed.backgroundColor);
+        if (color[3]! > 0) layers.push(color);
+        if (color[3] === 255) break;
       }
+      const background = layers.reverse().reduce((below, layer) => {
+        const alpha = layer[3]! / 255;
+        return below.map((value, index) => (index < 3 ? value * (1 - alpha) + layer[index]! * alpha : 255));
+      }, parse("#11151b"));
       const foreground = parse(getComputedStyle(element).color);
       const first = luminance(foreground),
         second = luminance(background);
@@ -428,8 +432,7 @@ const assertOriginalColors = async (page: Page, frame: Frame) => {
   expect(await frame.locator("#paragraph").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(55, 65, 81)");
   expect(await frame.locator("#link").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(37, 99, 235)");
   expect(await frame.locator("#card").getAttribute("style")).toBe("background:#ffffff;border:1px solid #e5e7eb");
-  // Chromium may keep an emptied style attribute after CSSOM writes; an empty one restores the original as well.
-  expect((await frame.locator('img[alt="logo"]').getAttribute("style")) ?? "").toBe("");
+  expect(await frame.locator('img[alt="logo"]').getAttribute("style")).toBeNull();
   expect(
     await frame.locator("img").evaluateAll((elements) => elements.map((element) => getComputedStyle(element).backgroundColor)),
   ).toEqual(Array(5).fill("rgba(0, 0, 0, 0)"));
@@ -451,6 +454,38 @@ const updateTheme = (page: Page, theme: "light" | "dark") =>
   }, theme);
 
 describe("HTML mail colors", () => {
+  test("keeps text readable over gradients and translucent fills and restores original styles", async () => {
+    const content = `
+<div id="dark-gradient" style="background:linear-gradient(#111111,#111111);color:#ffffff">Dark gradient</div>
+<div id="light-gradient" style="background-image:linear-gradient(#fef3c7,#fef3c7)"><span id="gradient-text">Default text</span> <a id="gradient-link" href="https://example.com">Default link</a></div>
+<div id="gray" style="background:#999999">Default text <a id="gray-link" href="https://example.com">Default link</a></div>
+<div id="translucent-gray" style="background:rgba(153,153,153,.9);color:#000000">Translucent gray</div>
+<div id="nested-gray" style="background:#999999"><div id="translucent-black" style="background:rgba(0,0,0,.8);color:#ffffff">Nested translucent black</div></div>`;
+    await withOpenedMessage(
+      false,
+      async ({ page, frame, errors }) => {
+        await waitForMode(frame, false);
+        const originalStyles = await frame
+          .locator("[id]")
+          .evaluateAll((elements) => elements.map((element) => [element.id, element.getAttribute("style")]));
+        await updateTheme(page, "dark");
+        await waitForMode(frame, true);
+        expect(await frame.locator("#dark-gradient").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(255, 255, 255)");
+        expect(await frame.locator("#gradient-text").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(24, 24, 27)");
+        expect(await frame.locator("#gradient-link").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(22, 119, 200)");
+        await assertAdaptedContrast(frame);
+        await updateTheme(page, "light");
+        await waitForMode(frame, false);
+        expect(
+          await frame.locator("[id]").evaluateAll((elements) => elements.map((element) => [element.id, element.getAttribute("style")])),
+        ).toEqual(originalStyles);
+        await assertNoReload(page);
+        expect(errors).toEqual([]);
+      },
+      { html: content, theme: "light", colors: "adapted" },
+    );
+  }, 30_000);
+
   test("adapts newsletter colors for contrast and preserves dark designs and images", async () => {
     await withOpenedMessage(
       false,

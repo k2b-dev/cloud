@@ -216,7 +216,8 @@ export const buildMessageDocument = (
         const [h, s, l] = rgbToHsl(color);
         let lightness = 1 - l;
         let result = hslToRgb([h, s, lightness], color[3]);
-        const direction = luminance(effectiveBackground) <= 0.4 ? 1 : -1;
+        // Mid-tone surfaces reach more contrast with dark text, so move toward the stronger extreme.
+        const direction = contrast([255, 255, 255], effectiveBackground) >= contrast([0, 0, 0], effectiveBackground) ? 1 : -1;
         while (contrast(result, effectiveBackground) < 4.5 && (direction > 0 ? lightness < 1 : lightness > 0)) {
           lightness = Math.max(0, Math.min(1, lightness + direction * 0.05));
           result = hslToRgb([h, s, lightness], color[3]);
@@ -236,8 +237,6 @@ export const buildMessageDocument = (
         const computed = getComputedStyle(element);
         const color = computed.color;
         const fill = parseColor(computed.backgroundColor);
-        const parent = originals.get(element.parentElement);
-        const originalEffectiveBackground = fill[3] === 1 ? fill : parent?.originalEffectiveBackground || white;
         const borders = [];
         for (const side of ["top", "right", "bottom", "left"]) {
           const width = parseFloat(computed.getPropertyValue("border-" + side + "-width"));
@@ -252,23 +251,29 @@ export const buildMessageDocument = (
           background: fill[3] > 0 ? fill : null,
           backgroundImage: computed.backgroundImage !== "none",
           borders,
-          originalEffectiveBackground,
         });
       }
       sentinel.remove();
       if (bodyStyle === null) document.body.removeAttribute("style");
       else document.body.setAttribute("style", bodyStyle);
-      const effectiveBackground = (element) => {
+      const effectiveBackground = (element, adapted) => {
+        const layers = [];
         for (let current = element; current; current = current.parentElement) {
           const original = originals.get(current);
-          if (original?.backgroundImage) return original.originalEffectiveBackground;
-          if (original?.background?.[3] === 1) return adaptBackground(original.background);
+          // An unchanged image makes the surface below the text unknown.
+          if (original?.backgroundImage) return null;
+          if (!original?.background) continue;
+          layers.push(adapted ? adaptBackground(original.background) : original.background);
+          if (original.background[3] === 1) break;
         }
-        return background;
+        const surface = layers.reverse().reduce((below, layer) => mix(below, layer, layer[3]), adapted ? background : white);
+        return [...surface.slice(0, 3), 1];
       };
       const imageAnalysis = new Map();
       let currentMode = "light";
       const restoreStyle = (element, original) => {
+        // Reading first flushes pending inline style writes, which engines may otherwise serialize back as style="".
+        if (element.getAttribute("style") === original.style) return;
         if (original.style === null) element.removeAttribute("style");
         else element.setAttribute("style", original.style);
       };
@@ -277,11 +282,22 @@ export const buildMessageDocument = (
         const set = (property, value) => element.style.setProperty(property, cssColor(value), "important");
         if (original.background && !original.backgroundImage) set("background-color", adaptBackground(original.background));
         for (const [property, color] of original.borders) set(property, adaptBackground(color));
-        const effective = effectiveBackground(element);
+        const effective = effectiveBackground(element, true);
+        const isLink = element.tagName === "A";
+        if (effective === null) {
+          set("color", original.color || parseColor(isLink ? "#1677c8" : "#18181b"));
+          return;
+        }
         if (original.color) set("color", adaptText(original.color, effective));
-        if (imageAnalysis.get(element)?.needsPlate && luminance(original.originalEffectiveBackground) > 0.4 &&
-            cssColor(effective) !== cssColor(original.originalEffectiveBackground)) {
-          set("background-color", original.originalEffectiveBackground);
+        else if (isLink || [...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim())) {
+          const base = isLink ? parseColor(document.documentElement.style.getPropertyValue("--mail-dark-link")) : text;
+          if (contrast(base, effective) < 4.5) set("color", adaptText(base, effective));
+        }
+        if (imageAnalysis.get(element)?.needsPlate) {
+          const originalEffective = effectiveBackground(element, false);
+          if (originalEffective && luminance(originalEffective) > 0.4 && cssColor(effective) !== cssColor(originalEffective)) {
+            set("background-color", originalEffective);
+          }
         }
       };
       const analyzeImage = (image) => {
