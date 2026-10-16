@@ -55,13 +55,21 @@ export class PluginError extends Error {
 export type PackagePlugin = { package: string; version: string; digest: string; summary: string; source: string };
 export type PackagePlugins = Record<string, PackagePlugin>;
 
-/** Drop invalid records rather than treating them as installed modules. */
+/** Return empty records only for a missing file; throw on read/parse errors or a non-object, and drop invalid entries. */
 export const readPackagePlugins = async (root = pluginsDirectory()): Promise<PackagePlugins> => {
-  const raw: unknown = await readFile(join(root, PACKAGE_RECORDS), "utf8")
-    .then(JSON.parse)
-    .catch(() => null);
+  const path = join(root, PACKAGE_RECORDS);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(path, "utf8"));
+    if (!isRecord(raw)) throw new Error("expected a JSON object");
+  } catch (error) {
+    if (isRecord(error) && error.code === "ENOENT") return {};
+    const reason = (error instanceof Error ? error.message : String(error)).replace(/[\r\n]+/g, " ");
+    throw new PluginError(
+      `Cannot read the package plugin records ${path} (${reason}). Fix or delete the file; deleting it forgets every installed package plugin.`,
+    );
+  }
   const records: PackagePlugins = {};
-  if (!isRecord(raw)) return records;
   for (const [name, entry] of Object.entries(raw)) {
     if (
       !CLOUD_CLI_MODULE_NAME.test(name) ||

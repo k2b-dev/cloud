@@ -101,6 +101,32 @@ const installStaged = async (spec: string, root: string, registry?: string) => {
 };
 
 describe("package bundles", () => {
+  test("rejects invalid JSON in package plugin records", async () => {
+    const root = await tempDir();
+    const path = join(root, "packages.json");
+    await writeFile(path, "{invalid");
+    await expectPluginError(readPackagePlugins(root), "error", `Cannot read the package plugin records ${path} (`);
+    await expect(readPackagePlugins(root)).rejects.toThrow("Fix or delete the file; deleting it forgets every installed package plugin.");
+  });
+
+  test.each(["[]", "null", "42", '"text"', "true"])("rejects non-object package plugin records: %s", async (json) => {
+    const root = await tempDir();
+    const path = join(root, "packages.json");
+    await writeFile(path, json);
+    await expectPluginError(readPackagePlugins(root), "error", `Cannot read the package plugin records ${path} (`);
+  });
+
+  test("rejects package plugin record read errors other than ENOENT", async () => {
+    const root = await tempDir();
+    const path = join(root, "packages.json");
+    await mkdir(path);
+    await expectPluginError(readPackagePlugins(root), "error", `Cannot read the package plugin records ${path} (`);
+  });
+
+  test("returns no package plugin records when the file is missing", async () => {
+    expect(await readPackagePlugins(await tempDir())).toEqual({});
+  });
+
   test("stages metadata without importing and rejects old formats with incompatible status", async () => {
     const staged = await stagePlugin(echoBuild);
     expect(staged.manifest).toMatchObject({ name: "echo", app: "@k2b-test/cld-plugin-echo", version: "1.0.0" });
