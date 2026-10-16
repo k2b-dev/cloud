@@ -22,11 +22,12 @@ import { type AppSkillDefinition, skill as appSkill, appSkillManifestHash, regis
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
 import * as capabilityExecution from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
+import { aiTurnErrorText } from "./chat/turn-error";
 import { aiChatTasks } from "./chat-tasks";
 import { DEFAULT_COMPACTION_PROMPT } from "./compaction";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
-import { isMalformedToolCallId } from "./malformed-tool-call-repair";
+import { isMalformedToolCallId, newMalformedToolCallId } from "./malformed-tool-call-repair";
 import { aiMemories } from "./memories";
 import { migrateCloudAi } from "./migrate";
 import { aiModelAccess } from "./model-access";
@@ -213,6 +214,23 @@ const toolCallCompletion = (id: string, name: string, args: unknown): string[] =
   "data: [DONE]\n\n",
 ];
 
+/** A progress sentence and a tool call in one model answer, as a model streams them before it acts. */
+const textThenToolCallCompletion = (text: string, id: string, name: string, args: unknown): string[] => [
+  sseChunk({ choices: [{ delta: { role: "assistant", content: text } }] }),
+  sseChunk({
+    choices: [{ delta: { tool_calls: [{ index: 0, id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }],
+  }),
+  sseChunk({ choices: [{ delta: {}, finish_reason: "tool_calls" }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }),
+  "data: [DONE]\n\n",
+];
+
+/** A model answer that stops without text and without a tool call. */
+const emptyStopCompletion = (): string[] => [
+  sseChunk({ choices: [{ delta: { role: "assistant" } }] }),
+  sseChunk({ choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 0, total_tokens: 5 } }),
+  "data: [DONE]\n\n",
+];
+
 const malformedToolCallCompletion = (withValidCall = false): string[] => [
   sseChunk({ choices: [{ delta: { role: "assistant" } }] }),
   sseChunk({
@@ -391,7 +409,7 @@ const createExecutor = (
   });
 
 suite("AI executor integration", () => {
-  const resumeModes = ["unchanged", "changed", "revoked", "used"] as const;
+  const resumeModes = ["unchanged", "changed", "revoked", "used", "rejected_empty", "approved_empty", "failed_empty"] as const;
   test.each([...resumeModes])("resumed capability approval binds the live review (%s)", async (mode) => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["demo.write"] });
@@ -428,13 +446,19 @@ suite("AI executor integration", () => {
     const review = spyOn(capabilityExecution, "reviewAiCapability").mockResolvedValue({ message: "Original effect", approvalScope: "one" });
     const execute = spyOn(capabilityExecution, "executeAiCapability").mockResolvedValue({ data: { written: true } });
     try {
-      completionQueue = [toolCallCompletion("write-1", "demo__action__write", { value: "one" }), textCompletion("Done")];
+      const emptyStop = mode.endsWith("_empty");
+      if (mode === "failed_empty") execute.mockRejectedValue(new Error("Write failed"));
+      completionQueue = [
+        toolCallCompletion("write-1", "demo__action__write", { value: "one" }),
+        emptyStop ? emptyStopCompletion() : textCompletion("Done"),
+      ];
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
         modelProfileId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Write item",
+          locale: "en",
           actor: { kind: "user", user: actorUser(userId) },
           toolSource: { kind: "default", appTools: true },
         },
@@ -478,12 +502,12 @@ suite("AI executor integration", () => {
         });
         expect(response.status).toBe(200);
       } else {
-        await approvals.decide(first.approvalId, { approved: true }, { userId, via: "web_session" });
+        await approvals.decide(first.approvalId, { approved: mode !== "rejected_empty" }, { userId, via: "web_session" });
         await aiConversations.resolvePendingTurnAction({
           conversationId: conversation.id,
           turnId: turn.id,
           callId: first.callId,
-          event: { type: "approval_response", callId: first.callId, approved: true },
+          event: { type: "approval_response", callId: first.callId, approved: mode !== "rejected_empty" },
         });
       }
       if (mode === "changed") {
@@ -504,7 +528,21 @@ suite("AI executor integration", () => {
         ).toEqual({ ok: true });
       }
       await run("waiting");
-      if (mode === "used") {
+      if (emptyStop) {
+        const expectedStatus = mode === "failed_empty" ? "failed" : "completed";
+        const result = await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id });
+        expect(result).toMatchObject({
+          status: expectedStatus,
+          error: mode === "failed_empty" ? aiTurnErrorText({ code: "tool_failed" }, "en") : null,
+        });
+        const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+        expect(messages.at(-1)?.meta?.turnError ?? null).toEqual(mode === "failed_empty" ? { code: "tool_failed" } : null);
+        expect(messages.findLast(({ message }) => message.role === "assistant")?.loopDoneReason).toBe(
+          mode === "failed_empty" ? "error" : "stop",
+        );
+        if (mode === "rejected_empty") expect(execute).not.toHaveBeenCalled();
+        else expect(execute).toHaveBeenCalledTimes(1);
+      } else if (mode === "used") {
         expect(execute).not.toHaveBeenCalled();
         expect(await approvals.get(first.approvalId)).toMatchObject({ status: "consumed" });
         expect(await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id })).toEqual([]);
@@ -2382,6 +2420,93 @@ suite("AI executor integration", () => {
     }
   });
 
+  test.each(["empty", "text", "malformed"] as const)("a recovered worker restores a failed tool round (%s)", async (answer) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Find the report",
+          locale: "en",
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
+        userMessage: userMessage("Find the report"),
+      });
+      await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "failed-round-dead-worker",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      const earlier = aiConversations.createSessionStore({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "failed-round-dead-worker",
+      });
+      const malformed = answer === "malformed";
+      const callId = malformed ? newMalformedToolCallId() : "search-failed";
+      await earlier.append({
+        role: "assistant",
+        content: [
+          { type: "text", text: "I am searching for the report." },
+          { type: "tool_call", id: callId, name: "search_tools", args: malformed ? {} : { query: 42 } },
+        ],
+        stopReason: "tool_use",
+      });
+      if (malformed) {
+        // The worker died after the assistant append, before Cloud's repair wrapper saved its error result.
+        expect((await earlier.load()).some(({ message }) => message.role === "tool_result")).toBe(false);
+      } else {
+        await earlier.append({ role: "tool_result", callId, name: "search_tools", result: "Invalid query", isError: true });
+      }
+      await sql`UPDATE ai.turns SET lease_expires_at = now() - interval '1 second' WHERE id = ${turn.id}`;
+
+      nextCompletion = answer === "text" ? textCompletion("The requested tool is unavailable.") : emptyStopCompletion();
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "failed-round-live-worker",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      expect(claim?.turn.attempt).toBe(2);
+      await createExecutor("failed-round-live-worker", undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+
+      const failed = answer !== "text";
+      expect(await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id })).toMatchObject({
+        status: failed ? "failed" : "completed",
+        error: failed ? aiTurnErrorText({ code: "tool_failed" }, "en") : null,
+      });
+      const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+      if (malformed) {
+        expect(messages.find(({ message }) => message.role === "tool_result" && message.callId === callId)?.message).toMatchObject({
+          role: "tool_result",
+          callId,
+          isError: true,
+        });
+      }
+      expect(messages.at(-1)?.meta?.turnError ?? null).toEqual(failed ? { code: "tool_failed" } : null);
+      expect(messages.findLast(({ message }) => message.role === "assistant")?.loopDoneReason).toBe(failed ? "error" : "stop");
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("steering submitted during the final provider response continues the same turn", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
@@ -2782,6 +2907,86 @@ suite("AI executor integration", () => {
       expect(sent[2]).toMatchObject({ tool_call_id: "call-1" });
       expect(sent[4]).toMatchObject({ tool_call_id: "call-open", content: expect.stringContaining("may or may not have run") });
       expect(sent[5]).toMatchObject({ content: "Mach an der Stelle weiter, an der du aufgehört hast." });
+    } finally {
+      completionQueue = [];
+      rejectionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test.each([
+    ["a provider error after failed steps", "provider_400"],
+    ["an empty stop after a failed step", "empty_stop"],
+    ["a whitespace stop after a failed step", "whitespace_stop"],
+    ["an empty stop after a malformed call", "malformed_stop"],
+    ["a text answer after a failed step", "recovered"],
+    ["an empty stop after a later successful round", "successful_round"],
+  ] as const)("%s finalizes the turn with consistent failure metadata", async (_name, scenario) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const progress = "I am passing the text correctly now.";
+      const badCall = (n: number) => textThenToolCallCompletion(progress, `call-${n}`, "search_tools", { query: 42 });
+      if (scenario === "provider_400") {
+        completionQueue = [badCall(1), badCall(2), badCall(3)];
+        onCompletionRequest = () => {
+          if (completionQueue.length === 0)
+            rejectionQueue.push(() => Response.json({ error: { message: "Invalid schema for function 'x': tuple" } }, { status: 400 }));
+        };
+      } else if (scenario === "malformed_stop") {
+        completionQueue = [malformedToolCallCompletion(), emptyStopCompletion()];
+      } else {
+        completionQueue = [badCall(1)];
+        if (scenario === "successful_round") completionQueue.push(toolCallCompletion("search-ok", "search_tools", { query: "report" }));
+        completionQueue.push(
+          scenario === "recovered"
+            ? textCompletion("The requested tool is unavailable.")
+            : scenario === "whitespace_stop"
+              ? textCompletion("  \n ")
+              : emptyStopCompletion(),
+        );
+      }
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Edit the note",
+          locale: "en",
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
+        userMessage: userMessage("Edit the note"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: `failure-end-${scenario}`,
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      await createExecutor(`failure-end-${scenario}`, undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+      const finalTurn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id });
+      const history = await aiConversations.listMessages({ conversationId: conversation.id });
+      const completed = scenario === "recovered" || scenario === "successful_round";
+      const code = scenario === "provider_400" ? "model_unavailable" : "tool_failed";
+      expect(finalTurn).toMatchObject({
+        status: completed ? "completed" : "failed",
+        error: completed ? null : aiTurnErrorText({ code }, "en"),
+      });
+      const loopMessages = history.filter((message) => message.loopId === turn.id && message.kind === "message");
+      expect(loopMessages.at(-1)?.meta?.turnError ?? null).toEqual(completed ? null : { code });
+      expect(loopMessages.findLast(({ message }) => message.role === "assistant")?.loopDoneReason).toBe(completed ? "stop" : "error");
+      if (completed) expect(loopMessages.every((message) => !message.meta?.turnError)).toBe(true);
     } finally {
       completionQueue = [];
       rejectionQueue = [];

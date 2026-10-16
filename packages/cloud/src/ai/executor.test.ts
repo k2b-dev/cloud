@@ -71,12 +71,15 @@ describe("malformed tool call steering", () => {
       issue?: ToolStreamIssue;
       providerFailure?: boolean;
       validCall?: boolean;
+      emptyAnswer?: boolean;
+      steerAfterTextAnswer?: boolean;
     } = {},
   ) => {
     const appliedSteers: (AiTurnSteer | null)[] = [];
     const shownSteers: AiTurnSteer[] = [];
     const requests: ProviderRequest[] = [];
     let steeringReads = 0;
+    let lateSteerPending = options.steerAfterTextAnswer;
     let userPolicyResets = 0;
     const mapper = createEventMapper(1, []);
     const liveBlocks: AiTurnBlock[] = [];
@@ -99,6 +102,10 @@ describe("malformed tool call steering", () => {
         steeringReads++;
         // A real steer is returned alongside the repair, then another while its events are still in flight.
         const steers = withUserSteers && (steeringReads === 2 || steeringReads === 3) ? [userSteer(String(steeringReads))] : [];
+        if (lateSteerPending && requests.length === malformedResponses + 1) {
+          lateSteerPending = false;
+          steers.push(userSteer("late"));
+        }
         for (const steer of steers) await store.append({ role: "user", content: [{ type: "text", text: steer.text }] });
         return steers;
       },
@@ -140,7 +147,7 @@ describe("malformed tool call steering", () => {
             yield { type: "issue", issue: { kind: "provider_error", message: "Disconnected", retryable: false } };
             return;
           }
-        } else {
+        } else if (!options.emptyAnswer && (!options.steerAfterTextAnswer || requests.length === malformedResponses + 1)) {
           yield { type: "block_start", blockId: "answer", index: 0, kind: "text" };
           yield { type: "block_end", blockId: "answer", index: 0, block: { type: "text", text: "Done" } };
         }
@@ -194,6 +201,7 @@ describe("malformed tool call steering", () => {
       for (const mapped of mapper.translate(event)) {
         if (mapped.type === "block_set") liveBlocks.push(mapped.block);
       }
+      pipeline.blocks = [...new Map(liveBlocks.map((block) => [block.id, block])).values()];
     };
     pipeline.applySteer = async (steer) => {
       shownSteers.push(steer);
@@ -208,6 +216,7 @@ describe("malformed tool call steering", () => {
       const outcome = await executor["driveChatLoop"]({
         loop,
         pipeline,
+        initialRoundFailed: false,
         conversationId: "chat",
         turnId: "turn",
         abortController: new AbortController(),
@@ -233,12 +242,30 @@ describe("malformed tool call steering", () => {
         compactions,
         messages: (await store.load()).map((row) => ({ ...row, createdAt: at })),
         liveBlocks,
+        doneReason: aggregate.mock.calls.at(-1)?.[0].doneReason,
       };
     } finally {
       timing.mockRestore();
       aggregate.mockRestore();
     }
   };
+
+  test("an empty answer after a stored malformed call fails and stamps the assistant's loop as error", async () => {
+    const result = await run(1, false, { emptyAnswer: true });
+    expect(result.outcome).toMatchObject({ kind: "finished", status: "failed", failure: { error: { code: "tool_failed" } } });
+    expect(result.doneReason).toBe("error");
+  });
+
+  test("a text answer clears a failed tool round before late steering and an empty stop", async () => {
+    const result = await run(1, false, { steerAfterTextAnswer: true });
+    expect(result.requests).toHaveLength(3);
+    expect(result.requests[2]?.messages).toContainEqual(
+      expect.objectContaining({ role: "assistant", content: [{ type: "text", text: "Done" }], stopReason: "stop" }),
+    );
+    expect(result.shownSteers.map((steer) => steer.id)).toEqual(["late"]);
+    expect(result.outcome).toMatchObject({ kind: "finished", status: "completed", failure: null });
+    expect(result.doneReason).toBe("stop");
+  });
 
   test("a malformed issue before a valid call keeps live and history tool steps in the same order", async () => {
     const result = await run(1, false, { validCall: true });
@@ -1366,6 +1393,7 @@ for (const stopReason of ["tool_use", "error", "interrupted", "aborted"] as cons
     const input = {
       loop,
       pipeline,
+      initialRoundFailed: false,
       conversationId: "chat",
       turnId: "turn",
       abortController: new AbortController(),

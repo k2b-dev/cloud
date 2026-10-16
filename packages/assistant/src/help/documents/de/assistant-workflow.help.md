@@ -41,6 +41,7 @@ Nach sieben Tagen ohne Nutzung erscheinen Chats automatisch unter **Fertig**. Al
 :::reference
 - **Beenden:** Beendet die laufende Antwort des Assistenten im geöffneten Chat.
 - **Erneut versuchen:** Führt eine Benutzernachricht erneut aus und ersetzt spätere Nachrichten dieses Chat-Zweigs.
+- **Weiterarbeiten:** Wenn eine Antwort wegen eines fehlgeschlagenen Schritts oder eines Fehlers beim KI-Dienst endet, zeigt der Chat den Grund. **Weiterarbeiten** lässt den Assistenten dort fortfahren, wo er aufgehört hat; die bisherigen Ergebnisse bleiben erhalten.
 - **In neuem Chat fortsetzen:** Erstellt einen neuen Chat, der bis einschließlich der ausgewählten Antwort kopiert wird.
 - **Details zur Antwort:** Zeigt Modell, Zeit und Token-Verbrauch einer Antwort.
 - **Kontext kürzen:** Öffne die Kontextanzeige beim Eingabefeld und wähle **Kontext kürzen**, um den bisherigen Chat-Kontext zusammenzufassen. Alternativ kannst du `/compact` verwenden. Hover zeigt die Details; ein Klick hält sie offen. Escape oder ein Klick außerhalb schließt sie.
