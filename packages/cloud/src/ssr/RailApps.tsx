@@ -21,7 +21,7 @@ function RailIcon(props: { link: RailLink; currentPath: string }) {
         aria-current={active() ? "page" : undefined}
         style={appAccentStyle(props.link.accent)}
       >
-        <i class={props.link.iconClass} aria-hidden="true" />
+        <i class={`${props.link.iconClass} text-xl`} aria-hidden="true" />
         <span class="sr-only">{props.link.label}</span>
         <AppBadge endpoint={props.link.badge} appId={props.link.appId} />
       </a>

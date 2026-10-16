@@ -93,7 +93,7 @@ export function AppLaunchpadButton(props: AppLaunchpadContext & { variant: "rail
         onClick={open}
         aria-busy={action.busy() ? "true" : undefined}
       >
-        <i class={action.busy() ? "ti ti-loader-2 animate-spin" : "ti ti-grid-dots"} aria-hidden="true" />
+        <i class={`${action.busy() ? "ti ti-loader-2 animate-spin" : "ti ti-grid-dots"} text-xl`} aria-hidden="true" />
       </Tooltip.Trigger>
     );
   }

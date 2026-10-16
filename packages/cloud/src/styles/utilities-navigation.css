@@ -750,12 +750,12 @@
   @apply text-[0.6875rem] font-medium normal-case tracking-normal mb-5 text-dimmed select-none;
 }
 
-/* A rail control: a 44 px target with a 20 px icon, six of them across in the
-   56 px rail. */
+/* A rail control: a 44 px target in the 56 px rail. Its icon is 20 px
+   (`text-xl` on the icon). */
 @utility rail-item {
   border-right: 0;
   border-radius: var(--ui-radius-surface);
-  @apply w-11 h-11 text-xl;
+  @apply w-11 h-11;
   @apply flex items-center justify-center text-dimmed;
   @apply transition-[background-color,color] duration-150 ease-out;
 

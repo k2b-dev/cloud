@@ -657,10 +657,15 @@ describe("signed-in shell", () => {
             rail: { left: rail.left, right: rail.right },
             items: items.map(box),
             avatar: box(avatar),
+            // The apps, the app grid, search, and help draw a 20 px icon; the avatar is 32 px.
+            icons: items.map((item) => getComputedStyle(item.querySelector("i")!).fontSize),
+            avatarSize: avatar.querySelector(".k2b-avatar")!.getBoundingClientRect().width,
           };
         });
         expect(controls.rail).toEqual({ left: 0, right: 56 });
-        expect(controls.items.length).toBeGreaterThan(0);
+        expect(controls.items.length).toBeGreaterThanOrEqual(4);
+        expect(controls.icons).toEqual(controls.items.map(() => "20px"));
+        expect(controls.avatarSize).toBe(32);
         for (const box of [...controls.items, controls.avatar]) {
           expect(box.width).toBe(44);
           expect(box.height).toBe(44);
