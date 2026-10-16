@@ -102,7 +102,10 @@ a back step sits at the start of the first visible level's head, left of its
 title, at every width. It links to the parent of the selected level and its
 accessible name names the hidden level, for example "Back to AI". Its target is
 44 px. Pass `onLevelNavigate` for enhanced navigation when the owning island
-applies the destination state. Otherwise it is a normal document link.
+applies the destination state. Otherwise it is a normal document link. When a
+level change hides the focused control, such as the back step itself or a row
+of a list the phone no longer shows, focus moves to the title of the selected
+level.
 
 Each level head is a 46 px row without a line under it: the `label` as the
 title, an optional one-line `description`, and trailing `actions`. Every level

@@ -2121,6 +2121,11 @@
   line-height: 1.25rem;
 }
 
+/* The title takes focus only when a level change hid the focused control. */
+.k2b-ui .k2b-app-workspace__level-title > h2:focus {
+  outline: none;
+}
+
 .k2b-ui .k2b-app-workspace__level-title > p {
   color: var(--k2b-text-muted);
   font-size: 0.75rem;

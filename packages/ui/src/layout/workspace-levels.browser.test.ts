@@ -14,12 +14,15 @@ const directory = mkdtempSync(resolve(tmpdir(), "k2b-ui-levels-browser-"));
 process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
 const fixturePath = resolve(import.meta.dir, "workspace-levels.fixture.tsx");
 const fixture = (entry: string) => `
+import { createSignal } from "solid-js";
 import { AppWorkspace, serializeAppWorkspaceLayoutState } from ${JSON.stringify(entry)};
 export function Fixture(props) {
+  const [level, setLevel] = createSignal(props.level);
+  const navigate = (event) => { history.pushState(null, "", event.href); setLevel(event.url.searchParams.get("level") || "item"); };
   return <AppWorkspace.LayoutStateProvider state={props.state}>
     <AppWorkspace onLayoutChange={(state) => { document.cookie = "levels_layout=" + serializeAppWorkspaceLayoutState(state) + "; Path=/; SameSite=Lax"; }}>
       <AppWorkspace.Sidebar label="Navigation"><AppWorkspace.SidebarDesktop>Workspace</AppWorkspace.SidebarDesktop></AppWorkspace.Sidebar>
-      <AppWorkspace.Content><AppWorkspace.Main level={props.level}>
+      <AppWorkspace.Content><AppWorkspace.Main level={level()} onLevelNavigate={props.enhanced ? navigate : undefined}>
         <AppWorkspace.MainPane id="sections" label="Sections" href="/?level=sections" minSize={200} maxSize={720} description="Choose a section">
           <a href="/?level=items">Providers</a>
         </AppWorkspace.MainPane>
@@ -39,7 +42,7 @@ const serverBuild = await Bun.build({
     [serverEntry]: `import { createComponent } from "solid-js";
 import { renderToString, generateHydrationScript } from "solid-js/web";
 import { Fixture } from "./workspace-levels.fixture";
-export const render = (level, state, long) => renderToString(() => createComponent(Fixture, { level, state, long }));
+export const render = (level, state, long, enhanced) => renderToString(() => createComponent(Fixture, { level, state, long, enhanced }));
 export const hydrationScript = generateHydrationScript();`,
   },
   target: "node",
@@ -80,9 +83,8 @@ writeFileSync(modulePath, await serverBuild.outputs[0]!.text());
 const {
   render,
   hydrationScript,
-}: { render: (level: string, state: AppWorkspaceLayoutState | null, long: boolean) => string; hydrationScript: string } = await import(
-  modulePath
-);
+}: { render: (level: string, state: AppWorkspaceLayoutState | null, long: boolean, enhanced: boolean) => string; hydrationScript: string } =
+  await import(modulePath);
 const clientEntry = resolve(import.meta.dir, "workspace-levels.client-fixture.ts");
 const clientBuild = await Bun.build({
   entrypoints: [clientEntry],
@@ -96,7 +98,7 @@ import { parseAppWorkspaceLayoutState } from ${JSON.stringify(resolve(ui, "dist/
 import { Fixture } from "./workspace-levels.fixture";
 const state = parseAppWorkspaceLayoutState(document.body.dataset.layout);
 const params = new URL(location.href).searchParams;
-hydrate(() => createComponent(Fixture, { level: params.get("level") || "item", state, long: params.get("long") === "1" }), document.getElementById("app"));
+hydrate(() => createComponent(Fixture, { level: params.get("level") || "item", state, long: params.get("long") === "1", enhanced: params.get("nav") === "enhanced" }), document.getElementById("app"));
 document.body.dataset.ready = "true";`,
   },
   plugins: [
@@ -134,7 +136,12 @@ beforeAll(async () => {
       if (url.pathname === "/client.js") return new Response(script, { headers: { "Content-Type": "application/javascript" } });
       const encoded = request.headers.get("Cookie")?.match(/(?:^|;\s*)levels_layout=([^;]*)/)?.[1];
       const state = parseAppWorkspaceLayoutState(encoded);
-      const body = render(url.searchParams.get("level") || "item", state, url.searchParams.get("long") === "1");
+      const body = render(
+        url.searchParams.get("level") || "item",
+        state,
+        url.searchParams.get("long") === "1",
+        url.searchParams.get("nav") === "enhanced",
+      );
       return new Response(
         `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}html,body{margin:0;width:100%;height:100%;}#app{height:100%;}.k2b-app-workspace{height:100%;}</style></head><body class="k2b-ui" data-layout="${encoded ?? ""}"><div id="app" style="${appWorkspaceLayoutStyle(state) ?? ""}">${body}</div>${hydrationScript}${url.searchParams.get("hydrate") === "0" ? "" : '<script src="/client.js"></script>'}</body></html>`,
         { headers: { "Content-Type": "text/html" } },
@@ -422,3 +429,30 @@ test("a Main narrower than its shown levels scrolls to the selected level", asyn
     await page.close();
   }
 });
+for (const width of [390, 1024])
+  test(`${width}px: an enhanced back step that hides itself moves focus to the selected level's title`, async () => {
+    const page = await browser!.newPage({ viewport: { width, height: 900 } });
+    try {
+      await page.goto(`${origin}/?level=item&nav=enhanced`);
+      await page.waitForSelector('body[data-ready="true"]');
+      const back = page.locator(".k2b-app-workspace__level-back:visible");
+      await back.focus();
+      await page.keyboard.press("Enter");
+      await page.waitForURL("**/?level=items");
+      await frames(page);
+      // The pressed back step is hidden now; at 390 px the items level shows its own.
+      expect(await page.locator(".k2b-app-workspace__level-back:visible").count()).toBe(width < 768 ? 1 : 0);
+      const focused = await page.evaluate(() => {
+        const active = document.activeElement as HTMLElement | null;
+        return {
+          tag: active?.tagName,
+          text: active?.textContent,
+          level: active?.closest("[data-workspace-level]")?.getAttribute("data-workspace-main-region"),
+          visible: (active?.getClientRects().length ?? 0) > 0,
+        };
+      });
+      expect(focused).toEqual({ tag: "H2", text: "Items", level: "items", visible: true });
+    } finally {
+      await page.close();
+    }
+  });

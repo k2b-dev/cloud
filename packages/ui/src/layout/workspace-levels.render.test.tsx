@@ -140,7 +140,7 @@ describe("AppWorkspace ordered levels SSR", () => {
         { id: "one", label: "Title", description: "Quiet description", actions: "Controls", scroll: false, children: "Content" },
       ]),
     );
-    expect(html).toContain("<h2>Title</h2>");
+    expect(html).toContain('<h2 tabindex="-1">Title</h2>');
     expect(html).toContain("<p>Quiet description</p>");
     expect(html).toContain('class="k2b-app-workspace__level-actions">Controls');
     expect(html).toContain('class="k2b-app-workspace__level-body" data-scroll="false"');

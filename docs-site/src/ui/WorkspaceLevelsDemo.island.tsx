@@ -36,6 +36,7 @@ const providers: Provider[] = [
 ];
 
 const base = "/en/ui/demo/workspace-levels";
+const modelCount = (count: number) => `${count} ${count === 1 ? "model" : "models"}`;
 const href = (level: string, provider?: string, model?: string) =>
   `${base}?${new URLSearchParams({ level, ...(provider ? { provider } : {}), ...(model ? { model } : {}) }).toString()}`;
 
@@ -99,7 +100,7 @@ export default function WorkspaceLevelsDemo(props: {
                       <AppWorkspace.SidebarItem
                         href={href("providers", candidate.id)}
                         icon="ti ti-plug-connected"
-                        description={`${candidate.status} · ${candidate.models.length} models`}
+                        description={`${candidate.status} · ${modelCount(candidate.models.length)}`}
                         active={level() !== "areas" && candidate.id === provider().id}
                       >
                         {candidate.name}
@@ -145,7 +146,7 @@ export default function WorkspaceLevelsDemo(props: {
                       <Placeholder icon="ti ti-key" title="No models yet" description="Add an API key to load this provider's models." />
                     }
                   >
-                    <AppWorkspace.SidebarSection title={`${provider().models.length} models`}>
+                    <AppWorkspace.SidebarSection title={modelCount(provider().models.length)}>
                       <For each={provider().models}>
                         {(candidate) => (
                           <AppWorkspace.SidebarItem

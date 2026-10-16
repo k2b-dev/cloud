@@ -9,6 +9,7 @@ import {
   For,
   type JSX,
   mergeProps,
+  on,
   onCleanup,
   onMount,
   Show,
@@ -535,7 +536,7 @@ function LevelHead(props: { label: string; description?: JSX.Element; actions?: 
     <header class="k2b-app-workspace__level-head">
       {props.children}
       <div class="k2b-app-workspace__level-title">
-        <h2>{props.label}</h2>
+        <h2 tabIndex={-1}>{props.label}</h2>
         <Show when={description()}>
           <p>{description()}</p>
         </Show>
@@ -615,6 +616,24 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
       regions().find((candidate) => candidate.type === "primary") ??
       regions().find((candidate) => candidate.type === "pane" && candidate.slot.props.open !== false),
   );
+  // A level change can hide the control that made it: the back step, or a row
+  // of a list that a phone no longer shows. Focus then moves to the title of
+  // the selected level, so keyboard and screen reader users keep their place.
+  let mainElement: HTMLDivElement | undefined;
+  createEffect(
+    on(
+      () => (levelsMode() ? depth() : 0),
+      (current) => {
+        const focused = document.activeElement;
+        if (!current || !mainElement || !(focused instanceof HTMLElement) || !mainElement.contains(focused)) return;
+        if (focused.getClientRects().length > 0) return;
+        mainElement
+          .querySelector<HTMLElement>(`:scope > [data-workspace-level="${current}"] > .k2b-app-workspace__level-head h2`)
+          ?.focus({ preventScroll: true });
+      },
+      { defer: true },
+    ),
+  );
   // Presence of a MainPane slot — not of an *open* one — decides the split
   // layout. Deriving it from `regions()` made a workspace whose panes are all
   // closed fall back to `resolved()`, which renders the raw slot objects.
@@ -622,6 +641,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
 
   return (
     <div
+      ref={mainElement}
       class={`k2b-app-workspace__main ${hasPanes() ? "has-panes" : ""} ${props.class ?? ""}`}
       data-workspace-levels={levelsMode() ? "" : undefined}
       data-workspace-level-count={levelsMode() ? levels().length : undefined}
