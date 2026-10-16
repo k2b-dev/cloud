@@ -107,14 +107,16 @@ one line when the heads have the same form, all with or all without a
 description. Selecting a row keeps every visible level where it is.
 
 The levels draw no lines between them. The last visible level fills the
-remaining width; when another level shows before it, it is a raised surface
-with the 8 px inset, like a floating `Detail`. On a phone the one level is flat.
-Levels do not animate.
+remaining width, whatever its content: a long title or text in the selected
+item never narrows the levels before it. When another level shows before it,
+it is a raised surface with the 8 px inset, like a floating `Detail`. On a
+phone the one level is flat. Levels do not animate.
 
 Resize earlier levels by dragging their separators or using Left/Right (8 px),
 Shift+Left/Right (32 px), Home (minimum), and End (maximum). Double-click a
 separator to reset that pane to its default size. On a touch screen a separator
-is a 44 px target. `defaultSize`, `minSize`, and `maxSize` use pixels; the
+is a 44 px target, and level heads end 24 px before their edge so their
+actions stay clear of it. `defaultSize`, `minSize`, and `maxSize` use pixels; the
 default limits are 240–640 px. Available space may reduce the maximum, because
 the last level keeps 320 px.
 

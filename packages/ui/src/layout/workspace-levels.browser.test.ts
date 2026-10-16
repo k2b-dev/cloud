@@ -23,8 +23,10 @@ export function Fixture(props) {
         <AppWorkspace.MainPane id="sections" label="Sections" href="/?level=sections" minSize={200} maxSize={720} description="Choose a section">
           <a href="/?level=items">Providers</a>
         </AppWorkspace.MainPane>
-        <AppWorkspace.MainPane id="items" label="Items" href="/?level=items"><a href="/?level=item">Model</a></AppWorkspace.MainPane>
-        <AppWorkspace.MainPane id="item" label="Item">Selected model</AppWorkspace.MainPane>
+        <AppWorkspace.MainPane id="items" label="Items" href="/?level=items" actions={<button type="button" data-test-action style="width:44px;height:44px">+</button>}><a href="/?level=item">Model</a></AppWorkspace.MainPane>
+        <AppWorkspace.MainPane id="item" label={props.long ? "A selected item whose title is much longer than any column could show in one line ".repeat(3) : "Item"}>
+          {props.long ? <p>{"Unbroken_content_that_is_wider_than_the_column_".repeat(12)} {"A long paragraph of ordinary words that would fill a wide column many times over. ".repeat(40)}</p> : "Selected model"}
+        </AppWorkspace.MainPane>
       </AppWorkspace.Main></AppWorkspace.Content>
     </AppWorkspace>
   </AppWorkspace.LayoutStateProvider>;
@@ -37,7 +39,7 @@ const serverBuild = await Bun.build({
     [serverEntry]: `import { createComponent } from "solid-js";
 import { renderToString, generateHydrationScript } from "solid-js/web";
 import { Fixture } from "./workspace-levels.fixture";
-export const render = (level, state) => renderToString(() => createComponent(Fixture, { level, state }));
+export const render = (level, state, long) => renderToString(() => createComponent(Fixture, { level, state, long }));
 export const hydrationScript = generateHydrationScript();`,
   },
   target: "node",
@@ -75,8 +77,12 @@ export const hydrationScript = generateHydrationScript();`,
 if (!serverBuild.success) throw new AggregateError(serverBuild.logs, "Could not bundle levels SSR fixture");
 const modulePath = resolve(directory, "server.mjs");
 writeFileSync(modulePath, await serverBuild.outputs[0]!.text());
-const { render, hydrationScript }: { render: (level: string, state: AppWorkspaceLayoutState | null) => string; hydrationScript: string } =
-  await import(modulePath);
+const {
+  render,
+  hydrationScript,
+}: { render: (level: string, state: AppWorkspaceLayoutState | null, long: boolean) => string; hydrationScript: string } = await import(
+  modulePath
+);
 const clientEntry = resolve(import.meta.dir, "workspace-levels.client-fixture.ts");
 const clientBuild = await Bun.build({
   entrypoints: [clientEntry],
@@ -89,7 +95,8 @@ import { hydrate } from "solid-js/web";
 import { parseAppWorkspaceLayoutState } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 import { Fixture } from "./workspace-levels.fixture";
 const state = parseAppWorkspaceLayoutState(document.body.dataset.layout);
-hydrate(() => createComponent(Fixture, { level: new URL(location.href).searchParams.get("level") || "item", state }), document.getElementById("app"));
+const params = new URL(location.href).searchParams;
+hydrate(() => createComponent(Fixture, { level: params.get("level") || "item", state, long: params.get("long") === "1" }), document.getElementById("app"));
 document.body.dataset.ready = "true";`,
   },
   plugins: [
@@ -127,7 +134,7 @@ beforeAll(async () => {
       if (url.pathname === "/client.js") return new Response(script, { headers: { "Content-Type": "application/javascript" } });
       const encoded = request.headers.get("Cookie")?.match(/(?:^|;\s*)levels_layout=([^;]*)/)?.[1];
       const state = parseAppWorkspaceLayoutState(encoded);
-      const body = render(url.searchParams.get("level") || "item", state);
+      const body = render(url.searchParams.get("level") || "item", state, url.searchParams.get("long") === "1");
       return new Response(
         `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}html,body{margin:0;width:100%;height:100%;}#app{height:100%;}.k2b-app-workspace{height:100%;}</style></head><body class="k2b-ui" data-layout="${encoded ?? ""}"><div id="app" style="${appWorkspaceLayoutStyle(state) ?? ""}">${body}</div>${hydrationScript}${url.searchParams.get("hydrate") === "0" ? "" : '<script src="/client.js"></script>'}</body></html>`,
         { headers: { "Content-Type": "text/html" } },
@@ -312,3 +319,67 @@ test("at 1024px the selected middle level fills the rest and has no trailing sep
     await page.close();
   }
 });
+
+// The flexible last level takes the space that is left, whatever its content:
+// a long title or paragraph in the selected item never shrinks the levels
+// before it, so stored widths, resize steps and selection stay put.
+for (const width of [1440, 1920])
+  test(`${width}px: long content in the last level keeps stored widths, steps and selection in place`, async () => {
+    const page = await browser!.newPage({ viewport: { width, height: 900 } });
+    try {
+      await page.context().addCookies([
+        {
+          name: "levels_layout",
+          value: encodeURIComponent(JSON.stringify({ version: 2, paneWidths: { sections: 400, items: 400 } })),
+          url: origin,
+        },
+      ]);
+      const earlier = () =>
+        page
+          .locator('[data-workspace-level="1"], [data-workspace-level="2"]')
+          .evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().width)));
+      await page.goto(`${origin}/?level=item&hydrate=0`);
+      expect(await earlier()).toEqual([400, 400]);
+      await page.goto(`${origin}/?level=item&long=1&hydrate=0`);
+      expect(await earlier()).toEqual([400, 400]);
+      await checkFill(page);
+      await page.addScriptTag({ url: `${origin}/client.js` });
+      await page.waitForSelector('body[data-ready="true"]');
+      await frames(page);
+      expect(await earlier()).toEqual([400, 400]);
+      await page.locator('[data-app-workspace-resize="pane"][data-workspace-panel-id="sections"]').focus();
+      await page.keyboard.press("ArrowRight");
+      await frames(page);
+      expect(await earlier()).toEqual([408, 400]);
+      await page.waitForFunction(
+        () => JSON.parse(decodeURIComponent(document.cookie.match(/levels_layout=([^;]+)/)![1]!)).paneWidths.sections === 408,
+      );
+      expect(
+        JSON.parse(decodeURIComponent((await page.context().cookies()).find((c) => c.name === "levels_layout")!.value)).paneWidths,
+      ).toEqual({ sections: 408, items: 400 });
+    } finally {
+      await page.close();
+    }
+  }, 30000);
+
+// A separator between levels reaches half its target into the level before;
+// on a touch screen that is 22 px, so the head's actions must end before it.
+for (const touch of [false, true])
+  test(`${touch ? "touch" : "mouse"}: level head actions stay clear of the separator`, async () => {
+    const context = await browser!.newContext({ viewport: { width: 1440, height: 900 }, hasTouch: touch });
+    try {
+      const page = await context.newPage();
+      await page.goto(`${origin}/?level=item`);
+      await page.waitForSelector('body[data-ready="true"]');
+      const result = await page.evaluate(() => ({
+        coarse: matchMedia("(any-pointer: coarse)").matches,
+        action: document.querySelector("[data-test-action]")!.getBoundingClientRect().right,
+        separator: document.querySelector('[data-app-workspace-resize="pane"][data-workspace-panel-id="items"]')!.getBoundingClientRect(),
+      }));
+      expect(result.coarse).toBe(touch);
+      expect(Math.round(result.separator.width)).toBe(touch ? 44 : 20);
+      expect(result.action).toBeLessThanOrEqual(result.separator.left);
+    } finally {
+      await context.close();
+    }
+  });

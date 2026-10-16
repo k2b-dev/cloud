@@ -2146,6 +2146,9 @@
   scrollbar-gutter: auto;
 }
 
+/* The last shown level takes what is left. Its flex basis is 0, not its
+   content: a long title or paragraph in the selected item would otherwise
+   shrink the levels before it, away from their stored widths. */
 @media (max-width: 47.999rem) {
   .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown]:not([data-workspace-level-shown~="1"]) {
     display: none;
@@ -2158,7 +2161,7 @@
   .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="1"] {
     width: auto;
     min-width: 0;
-    flex: 1 1 auto;
+    flex: 1 1 0;
   }
 }
 
@@ -2174,7 +2177,7 @@
   .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="2"] {
     width: auto;
     min-width: min(320px, 100%);
-    flex: 1 1 auto;
+    flex: 1 1 0;
   }
 
   /* A fixed level without a separator keeps its width; when stored widths do
@@ -2211,7 +2214,7 @@
   .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="3"] {
     width: auto;
     min-width: min(320px, 100%);
-    flex: 1 1 auto;
+    flex: 1 1 0;
   }
 
   /* A fixed level without a separator keeps its width; when stored widths do
@@ -2237,11 +2240,17 @@
 }
 
 /* On a touch screen a separator between levels is a 44 px target; it still
-   takes no width of its own. */
+   takes no width of its own. Half of it reaches into the level before, so a
+   level head ends at least that far from its edge and its actions stay out
+   from under the separator. */
 @media (any-pointer: coarse) {
   .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > .k2b-app-workspace__resize[data-app-workspace-resize="pane"] {
     flex-basis: 2.75rem;
     margin-inline: -1.375rem;
+  }
+
+  .k2b-ui .k2b-app-workspace__level-head {
+    padding-inline-end: 1.5rem;
   }
 }
 
