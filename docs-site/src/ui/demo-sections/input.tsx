@@ -28,7 +28,13 @@ import {
   MultiSelectInput,
   NumberInput,
   PinInput,
+  RichSelect,
+  type RichSelectFact,
+  RichSelectFacts,
+  type RichSelectItem,
+  type RichSelectStatus,
   rememberEmoji,
+  SegmentedControl,
   Select,
   SelectChip,
   SignatureInput,
@@ -419,6 +425,177 @@ const MarkdownDemo = () => {
         }
       />
     </DemoCard>
+  );
+};
+
+const moveTargets: RichSelectItem[] = [
+  { value: "review", label: "Marketing · Review", color: "#8b5cf6", description: "2 tags are dropped" },
+  { value: "print", label: "Print orders · Inbox", color: "#f97316", description: "A guest can see it, one assignee is dropped" },
+  { value: "archive", label: "Archive 2026 · Done", color: "#64748b", description: "Nothing is dropped" },
+  { value: "support", label: "Support · Backlog", color: "#0ea5e9", disabledReason: "No write access" },
+];
+const moveFacts: Record<string, readonly RichSelectFact[]> = {
+  review: [
+    { icon: "ti ti-users", text: "Visible to 8 members" },
+    { icon: "ti ti-tag-off", text: "The tags “Print” and “Q4” are dropped", tone: "warning" },
+    { icon: "ti ti-paperclip", text: "Comments and attachments move along" },
+  ],
+  print: [
+    { icon: "ti ti-eye", text: "A guest can see this card", tone: "warning" },
+    { icon: "ti ti-user-minus", text: "One assignee is dropped", tone: "warning" },
+    { icon: "ti ti-tag-off", text: "The tags “Print” and “Q4” are dropped", tone: "warning" },
+  ],
+  archive: [
+    { icon: "ti ti-check", text: "Nothing is dropped" },
+    { icon: "ti ti-users", text: "Visible to archive members" },
+    { icon: "ti ti-paperclip", text: "Comments and attachments move along" },
+  ],
+  support: [
+    { icon: "ti ti-lock", text: "You need write access to move a card here", tone: "warning" },
+    { icon: "ti ti-users", text: "Ask a Support manager to grant you write access" },
+  ],
+};
+const senderItems: RichSelectItem[] = [
+  { value: "mara", label: "Mara Example", description: "mara@example.com" },
+  { value: "support", label: "Support team", description: "support@example.com" },
+  { value: "invoices", label: "Invoices", description: "invoices@example.com" },
+  { value: "info", label: "info@example.com", disabledReason: "Not enabled yet" },
+];
+const senderFacts: Record<string, readonly RichSelectFact[]> = {
+  mara: [
+    { icon: "ti ti-signature", text: "Mara's personal signature" },
+    { icon: "ti ti-eye", text: "Only Mara sees the sent mail" },
+    { icon: "ti ti-arrow-back", text: "Replies go to mara@example.com" },
+  ],
+  support: [
+    { icon: "ti ti-signature", text: "Support team signature" },
+    { icon: "ti ti-eye", text: "The support team sees the sent mail; a copy goes to the ticket system" },
+    { icon: "ti ti-arrow-back", text: "Replies go to support@example.com" },
+  ],
+  invoices: [
+    { icon: "ti ti-signature", text: "Billing signature with payment details" },
+    { icon: "ti ti-eye", text: "The billing team sees the sent mail" },
+    { icon: "ti ti-arrow-back", text: "Replies go to accounts@example.com" },
+  ],
+  info: [
+    { icon: "ti ti-lock", text: "This sender is not enabled yet", tone: "warning" },
+    { icon: "ti ti-settings", text: "Ask an administrator to enable info@example.com" },
+  ],
+};
+const sharingItems: RichSelectItem[] = [
+  { value: "view", label: "View", description: "Read content", disabledReason: "You are the last manager" },
+  { value: "edit", label: "Edit", description: "Change content", disabledReason: "You are the last manager" },
+  { value: "manage", label: "Manage", description: "Also members, settings and deleting" },
+];
+
+const RichSelectDemo = () => {
+  const [state, setState] = createSignal<"normal" | "loading" | "error" | "empty">("normal");
+  const [sender, setSender] = createSignal<string | null>("mara");
+  const [access, setAccess] = createSignal<string | null>("manage");
+  const [movedTo, setMovedTo] = createSignal<string>();
+  const status = (): RichSelectStatus => (state() === "loading" ? "loading" : state() === "error" ? "error" : "ready");
+  const reset = () => setState("normal");
+  const selectedSender = () => senderItems.find((item) => item.value === sender());
+  return (
+    <DemoGrid>
+      <SegmentedControl
+        ariaLabel="Picker state"
+        value={state}
+        onValueChange={setState}
+        options={[
+          { value: "normal", label: "Normal" },
+          { value: "loading", label: "Loading" },
+          { value: "error", label: "Error" },
+          { value: "empty", label: "Empty" },
+        ]}
+      />
+      <DemoCard
+        id="rich-select-move"
+        chip={[
+          { kind: "component", name: "RichSelect", from: "@k2b/ui" },
+          { kind: "component", name: "RichSelectFacts", from: "@k2b/ui" },
+        ]}
+        description="Move card: compare access, lost tags, and assignees. This action picker keeps its empty value; the demo reports the destination without moving a real card."
+        code={`<RichSelect
+  label="Move card"
+  placeholder="Move to …"
+  value={null}
+  onValueChange={moveCard}
+  items={moveTargets}
+  status={status()}
+  onRetry={retry}
+  empty="No targets are set up for this space."
+  renderPreview={(item) => <RichSelectFacts facts={moveFacts[item.value] ?? []} />}
+/>`}
+      >
+        <RichSelect
+          label="Move card"
+          title="Move card"
+          placeholder="Move to …"
+          value={null}
+          onValueChange={setMovedTo}
+          items={state() === "empty" ? [] : moveTargets}
+          status={status()}
+          onRetry={reset}
+          empty="No targets are set up for this space."
+          renderPreview={(item) => <RichSelectFacts facts={moveFacts[item.value] ?? []} />}
+        />
+        <p role="status" aria-live="polite">
+          {movedTo()
+            ? `Demo destination: ${moveTargets.find((item) => item.value === movedTo())?.label}`
+            : "Choose a destination to try the action."}
+        </p>
+      </DemoCard>
+      <DemoCard
+        id="rich-select-sender"
+        chip={{ kind: "component", name: "RichSelect", from: "@k2b/ui" }}
+        description="Send as: sender identity changes the signature, sent-mail visibility, copies, and replies."
+        code={`<RichSelect
+  label="Send as"
+  value={sender}
+  onValueChange={setSender}
+  triggerLabel={selectedSender() ? \`\${selectedSender()?.label} · \${selectedSender()?.description}\` : undefined}
+  items={senderItems}
+  renderPreview={(item) => <RichSelectFacts facts={senderFacts[item.value] ?? []} />}
+/>`}
+      >
+        <RichSelect
+          label="Send as"
+          title="Send as"
+          value={sender}
+          onValueChange={setSender}
+          triggerLabel={selectedSender() ? `${selectedSender()?.label} · ${selectedSender()?.description}` : undefined}
+          items={state() === "empty" ? [] : senderItems}
+          status={status()}
+          onRetry={reset}
+          empty="No senders are set up for this space."
+          renderPreview={(item) => <RichSelectFacts facts={senderFacts[item.value] ?? []} />}
+        />
+      </DemoCard>
+      <DemoCard
+        id="rich-select-sharing"
+        chip={{ kind: "component", name: "RichSelect", from: "@k2b/ui" }}
+        description="Sharing level: one short line explains each choice, so there is no preview. The last manager cannot reduce their own access."
+        code={`<RichSelect
+  label="Sharing level"
+  title="Your access"
+  value={access}
+  onValueChange={setAccess}
+  items={sharingItems}
+/>`}
+      >
+        <RichSelect
+          label="Sharing level"
+          title="Your access"
+          value={access}
+          onValueChange={setAccess}
+          items={state() === "empty" ? [] : sharingItems}
+          status={status()}
+          onRetry={reset}
+          empty="No sharing levels are available."
+        />
+      </DemoCard>
+    </DemoGrid>
   );
 };
 
@@ -1447,6 +1624,7 @@ const demos: DemoSection = {
       <DateDemo />
     </DemoGrid>
   ),
+  "rich-select": () => <RichSelectDemo />,
   select: () => (
     <DemoGrid columns="one">
       <SelectDemo />
