@@ -1233,7 +1233,6 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const kind = handle ? resizeKind(handle) : null;
     const root = handle ? workspaceRoot(handle) : null;
     if (!handle || !kind || !root || !workspaceResizable(root) || !controlsResizableRegion(root, handle, kind)) return;
-    if (kind === "pane" && ["Home", "End", "ArrowLeft", "ArrowRight"].includes(event.key)) settleLevels(root, handle);
     const current = currentSize(root, handle, kind);
     const { min, max } = sizeLimits(root, handle, kind);
     const step = event.shiftKey ? 32 : 8;
@@ -1259,6 +1258,11 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           : current + step * direction;
     if (requested === null) return;
     event.preventDefault();
+    if (kind === "pane" && handle.closest(".k2b-app-workspace__main")?.hasAttribute("data-workspace-levels")) {
+      // A step that the limits stop changes no preference, also not a sibling's.
+      if (clamp(requested, min, max) === Math.round(current)) return;
+      settleLevels(root, handle);
+    }
     persistSize(handle, kind, applySize(root, handle, kind, requested));
     if (kind === "sidebar" || kind === "detail") reconcilePanes(root, layoutState);
   };

@@ -1256,6 +1256,58 @@ describe("floating detail controller", () => {
       }
     });
 
+  test("a key step that the limits stop keeps every level preference", () => {
+    Object.defineProperty(window, "matchMedia", {
+      value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }),
+    });
+    const { root } = workspace({ width: 1440 });
+    const main = document.createElement("main");
+    main.className = "k2b-app-workspace__main";
+    main.dataset.workspaceLevels = "";
+    setRect(main, { width: 800, height: 700 });
+    // CSS has shrunk both stored widths (720 and 640) to the 240 px minimum.
+    const handles: HTMLButtonElement[] = [];
+    for (const [index, id] of ["sections", "items", "item"].entries()) {
+      const pane = document.createElement("section");
+      pane.id = id;
+      pane.className = `k2b-app-workspace__main-pane ${index === 2 ? "is-primary" : ""}`;
+      pane.dataset.workspaceLevel = String(index + 1);
+      pane.dataset.workspaceLevelLast = index === 2 ? "1 2 3" : "";
+      pane.dataset.workspacePanelId = id;
+      pane.dataset.workspaceResizable = index === 2 ? "false" : "true";
+      setRect(pane, { width: index === 2 ? 320 : 240, height: 700 });
+      main.append(pane);
+      if (index === 2) continue;
+      const handle = document.createElement("button");
+      handle.dataset.appWorkspaceResize = "pane";
+      handle.dataset.workspacePanelId = id;
+      handle.dataset.workspaceResizeEdge = "end";
+      handle.dataset.workspaceDefaultSize = "320";
+      handle.dataset.workspaceMinSize = "240";
+      handle.dataset.workspaceMaxSize = "720";
+      handle.setAttribute("aria-controls", id);
+      main.append(handle);
+      handles.push(handle);
+    }
+    root.append(main);
+    const written: unknown[] = [];
+    const dispose = installAppWorkspaceController({
+      root,
+      readState: () => ({ version: 2, paneWidths: { sections: 720, items: 640 } }),
+      writeState: (state) => written.push(state),
+    });
+    try {
+      flushFrames();
+      dispatchKey(handles[0]!, "ArrowLeft");
+      dispatchKey(handles[0]!, "Home");
+      expect(written).toEqual([]);
+      expect(root.style.getPropertyValue("--k2b-workspace-pane-sections-width")).toBe("720px");
+      expect(root.style.getPropertyValue("--k2b-workspace-pane-items-width")).toBe("640px");
+    } finally {
+      dispose();
+    }
+  });
+
   test("a level without a separator keeps its width while a sibling resizes, and a press alone stores nothing", () => {
     Object.defineProperty(window, "matchMedia", {
       value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }),
