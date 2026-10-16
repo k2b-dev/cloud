@@ -548,6 +548,8 @@ describe("readable HTML", () => {
     expect(await convert("<table><tbody><tr><td>One<tbody><tr><td>Two</table>")).toBe("| One |\n| --- |\n| Two |\n");
     expect(await convert("<table><tr><td>A<span>B<tr><td>C</table>")).toBe("| AB |\n| --- |\n| C |\n");
     expect(await convert("<p>Run<code> npm </code>now</p>")).toBe("Run `npm` now\n");
+    expect(await convert("<p><code>a</code><code>b</code></p>")).toBe("`a` `b`\n");
+    expect(await convert("<h2><code>a</code><code>b</code></h2>")).toBe("## `a` `b`\n");
   });
 
   test("keeps head templates inert and line breaks inside preformatted code", async () => {

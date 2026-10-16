@@ -293,6 +293,8 @@ const renderInline = async (
     const content = normalized.trim();
     if (content) {
       if (normalized.startsWith(" ")) pendingSpace = true;
+      // Two touching code spans would read as one span with stray backticks.
+      if (asCode && parts.at(-1)?.endsWith("`")) pendingSpace = true;
       const fence = ticks ? backticks(ticks, 1) : "";
       const pad = asCode && (content.startsWith("`") || content.endsWith("`")) ? " " : "";
       const markdown = asCode ? `${fence}${pad}${content}${pad}${fence}` : content;
@@ -826,8 +828,9 @@ const render = async (
         } else if (capture.name === "code") {
           const fence = backticks(capture.ticks, 1);
           const pad = value.startsWith("`") || value.endsWith("`") ? " " : "";
-          // Whitespace at the edges of the code separates it from the surrounding words.
-          if (value && /^\s/u.test(raw)) pendingSpace = true;
+          // Whitespace at the edges of the code separates it from the surrounding words; two touching code
+          // spans would read as one span with stray backticks.
+          if (value && (/^\s/u.test(raw) || (!pendingBreak && parts.at(-1)?.endsWith("`")))) pendingSpace = true;
           if (value) write(`${fence}${pad}${value}${pad}${fence}`);
           if (value && /\s$/u.test(raw)) pendingSpace = true;
         } else {
