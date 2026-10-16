@@ -41,6 +41,7 @@ Chats automatically move to **Done** after seven days without use. Sending a mes
 :::reference
 - **Stop:** Stop aborts the running assistant turn for the open chat.
 - **Retry:** Retry reruns a user message and replaces later messages in that chat branch.
+- **Continue:** When an answer stops because a step or the model service failed, the chat says why. **Continue** asks the assistant to resume where it stopped; the results so far are kept.
 - **Continue in a new chat:** Creates a new chat copied through the selected answer.
 - **Response details:** Shows the model, time, and token usage of one answer.
 - **Compact:** Open the context indicator beside the message input and choose **Compact context** to summarize the current chat context. You can also use `/compact`. Hover previews the details; clicking keeps them open. Press Escape or click outside to close.

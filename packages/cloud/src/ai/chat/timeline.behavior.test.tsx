@@ -6,6 +6,7 @@ import { createDomTestHarness } from "../../../../ui/test/dom";
 import { emptyProjection, mergeActiveTurn, reduceProjection, visibleMessages } from "../client/projection";
 import { type AiStreamEvent, type AiTurnBlock, type AiWireEvent, steerAppliedBlockId, steerMessageBlockId } from "../protocol";
 import type { AiStoredMessage } from "../types";
+import { aiTurnErrorText } from "./turn-error";
 
 (isServer ? test.skip : test)("streamed text and tool updates render each block exactly once", async () => {
   const dom = createDomTestHarness();
@@ -619,6 +620,109 @@ const renderFailedTurnTimeline = async (
     dom.root,
   );
 };
+
+(isServer ? test.skip : test).each([
+  { code: "model_unavailable", rounds: 3, locale: "en" },
+  { code: "tool_failed", rounds: 1, locale: "en" },
+  { code: "tool_failed", rounds: 1, locale: "de" },
+] as const)("failed steps end visibly live and after reload ($code, $locale)", async ({ code, rounds, locale }) => {
+  const dom = createDomTestHarness();
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
+  let dispose = await renderFailedTurnTimeline(
+    dom,
+    { messages: () => visibleMessages(state), activeTurn: () => state.activeTurn },
+    locale,
+    () => {},
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const progress = "I am passing the text correctly now.";
+  const reason =
+    locale === "de"
+      ? "Ein Schritt ist fehlgeschlagen, und das Modell hat danach nicht geantwortet."
+      : code === "tool_failed"
+        ? "A step failed, and the model stopped without an answer."
+        : "The model service did not answer.";
+  const history: AiStoredMessage[] = [storedMessage(10, { role: "user", content: [{ type: "text", text: "Edit the note" }] })];
+  let seq = 0;
+  // Work text may be read in the disclosure, but must never become the final answer.
+  const outsideWork = () => {
+    const copy = dom.document.createElement("div");
+    copy.innerHTML = dom.root.innerHTML;
+    for (const work of copy.querySelectorAll(".ai-turn-work")) work.remove();
+    return copy.textContent;
+  };
+  try {
+    emit({ ...base, seq: ++seq, type: "turn_started", modelProfileId: "model", providerModel: "model", blocks: [] });
+    await tick();
+    const turn = dom.root.querySelector(".ai-turn");
+    for (let round = 0; round < rounds; round++) {
+      const callId = `search-${round}`;
+      emit({ ...base, seq: ++seq, type: "block_delta", blockId: `text-${round}`, blockKind: "text", delta: progress });
+      emit({
+        ...base,
+        seq: ++seq,
+        type: "block_set",
+        block: {
+          id: `tool-${callId}`,
+          kind: "tool",
+          callId,
+          name: "search_tools",
+          args: { query: 42 },
+          status: "failed",
+          result: "Invalid query",
+          isError: true,
+        },
+      });
+      history.push(
+        storedMessage(
+          11 + round * 2,
+          {
+            role: "assistant",
+            content: [
+              { type: "text", text: progress },
+              { type: "tool_call", id: callId, name: "search_tools", args: { query: 42 } },
+            ],
+          },
+          round === rounds - 1 && code === "model_unavailable" ? { loopDoneReason: "error" } : {},
+        ),
+        storedMessage(12 + round * 2, { role: "tool_result", callId, name: "search_tools", result: "Invalid query", isError: true }),
+      );
+    }
+    if (code === "tool_failed") history.push(storedMessage(13, { role: "assistant", content: [] }, { loopDoneReason: "error" }));
+    history.at(-1)!.meta = { turnError: { code } };
+    await tick();
+    expect(dom.root.querySelector(".ai-turn__notice")).toBeNull();
+    emit({ ...base, seq: ++seq, type: "turn_finished", status: "failed", error: aiTurnErrorText({ code }, locale), messages: history });
+    await tick();
+    expect(dom.root.querySelector(".ai-turn")).toBe(turn);
+    const notice = dom.root.querySelector(".ai-turn__notice");
+    const noticeText = notice?.textContent;
+    expect(noticeText).toContain(locale === "de" ? "Die Antwort wurde abgebrochen." : "The answer was interrupted.");
+    expect(noticeText).toContain(reason);
+    expect(noticeText).toContain(locale === "de" ? "Weiterarbeiten" : "Continue");
+    expect(outsideWork()).not.toContain(progress);
+    expect(turn?.lastElementChild).toBe(notice);
+    // Unrelated later history must keep the same turn and notice nodes.
+    setState("messages", (messages) => [
+      ...messages,
+      storedMessage(20, { role: "user", content: [{ type: "text", text: "Next question" }] }, { loopId: "next" }),
+    ]);
+    await tick();
+    expect(dom.root.querySelector(".ai-turn")).toBe(turn);
+    expect(dom.root.querySelector(".ai-turn__notice")).toBe(notice);
+    dispose();
+    dispose = await renderFailedTurnTimeline(dom, { messages: () => history, activeTurn: () => null }, locale, () => {});
+    await tick();
+    expect(dom.root.querySelector(".ai-turn__notice")?.textContent).toBe(noticeText);
+    expect(outsideWork()).not.toContain(progress);
+    expect(dom.root.querySelector(".ai-turn")?.lastElementChild).toBe(dom.root.querySelector(".ai-turn__notice"));
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
 
 (isServer ? test.skip : test)("a failed turn keeps its elements and names its reason and next step in the reader's language", async () => {
   const dom = createDomTestHarness();
