@@ -1,6 +1,7 @@
 import type { ClientRequest, IncomingHttpHeaders, IncomingMessage } from "node:http";
 import { type RequestOptions as HttpsRequestOptions, request as httpsRequest } from "node:https";
 import { z } from "zod";
+import { DOCUMENT_EXTRACTION_MAX_INPUT_BYTES, DOCUMENT_EXTRACTION_MAX_OUTPUT_BYTES } from "../services/document-extraction";
 import { type PublicNetworkAddress, resolvePublicNetworkAddresses } from "../services/network-security";
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, aiFileStore, guessAiMediaType, normalizeAiFilePath } from "./files-store";
 import { authorizeWebRead } from "./firecrawl-tools";
@@ -318,7 +319,9 @@ export const runCloudAiFetchFile = async (
     const markdown = await htmlToReadableMarkdown(downloaded.bytes, {
       baseUrl: downloaded.url,
       contentType: Array.isArray(contentType) ? contentType[0] : contentType,
-      maxBytes: AI_FILES_MAX_FILE_BYTES_DEFAULT,
+      // The same bounds as any other document converted to Markdown for the model.
+      maxInputBytes: DOCUMENT_EXTRACTION_MAX_INPUT_BYTES,
+      maxBytes: DOCUMENT_EXTRACTION_MAX_OUTPUT_BYTES,
       signal: context.signal,
     });
     if (!markdown) return result;

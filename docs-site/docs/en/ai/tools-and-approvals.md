@@ -399,7 +399,10 @@ the user should receive the original file. For an HTML page, Cloud also stores
 readable Markdown of the main content next to the raw file: title, headings,
 paragraphs, lists, tables, and absolute links, without scripts, styles, or
 navigation. The result returns this copy as `readable.path` and tells the model
-to read it first. The raw HTML stays unchanged. If the copy cannot be stored
+to read it first. The raw HTML stays unchanged. The copy uses the same bounds
+as other documents converted to Markdown: Cloud reads at most the first 20 MiB
+of the page and keeps the copy within 1 MiB, ending a longer copy with a
+truncation note. If the copy cannot be stored
 (for example, because of the conversation quota), or the page has no readable
 text, the result contains only the raw file. Both copies are untrusted data.
 The tool does not clone or browse a repository, authenticate to a website, or

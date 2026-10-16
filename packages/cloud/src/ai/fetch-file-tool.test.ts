@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import type { ClientRequest, IncomingMessage } from "node:http";
+import { DOCUMENT_EXTRACTION_MAX_OUTPUT_BYTES } from "../services/document-extraction";
 import {
   buildPinnedFetchFileRequestOptions,
   CloudAiFetchFileInputSchema,
@@ -407,6 +408,40 @@ describe("fetch_file AI tool", () => {
       expect(writes).toBe(failure === "quota" ? 2 : 1);
       expect(result).toMatchObject({ path: "/imports/page.html", mediaType: "text/html" });
       expect(result.readable).toBeUndefined();
+    } finally {
+      aiFileStore.createAssistantFile = originalCreate;
+    }
+  });
+
+  test("bounds a large page's readable copy like any document converted to Markdown", async () => {
+    const originalCreate = aiFileStore.createAssistantFile;
+    const calls: Parameters<typeof originalCreate>[0][] = [];
+    aiFileStore.createAssistantFile = async (input) => {
+      calls.push(input);
+      return {
+        path: input.path,
+        size: input.bytes.byteLength,
+        mediaType: input.mediaType!,
+        origin: "assistant",
+        updatedAt: "2026-08-21T12:00:00.000Z",
+        version: 1,
+      };
+    };
+    try {
+      const result = await runCloudAiFetchFile(
+        { url: "https://files.example/long.html" },
+        { conversationId: "conversation-1" },
+        {
+          resolve: async () => [publicAddress],
+          requestPublicFile: async () => ({
+            statusCode: 200,
+            headers: { "content-type": "text/html" },
+            bytes: new TextEncoder().encode(`<p>${"word ".repeat(DOCUMENT_EXTRACTION_MAX_OUTPUT_BYTES / 2)}</p>`),
+          }),
+        },
+      );
+      expect(result.readable!.size).toBeLessThanOrEqual(DOCUMENT_EXTRACTION_MAX_OUTPUT_BYTES);
+      expect(new TextDecoder().decode(calls[1]!.bytes)).toEndWith("[Readable copy truncated at the file size limit.]\n");
     } finally {
       aiFileStore.createAssistantFile = originalCreate;
     }

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { htmlToReadableMarkdown } from "./readable-html";
 
 const baseUrl = new URL("https://example.test/articles/2026/page.html");
@@ -6,6 +6,99 @@ const convert = (html: string, options: { maxBytes?: number; signal?: AbortSigna
   htmlToReadableMarkdown(new TextEncoder().encode(html), { baseUrl, maxBytes: 1024 * 1024, ...options });
 
 describe("readable HTML", () => {
+  test("implicitly closes head before body elements or direct non-whitespace text", async () => {
+    expect(await convert("<head><title>Title</title><main><p>Body</p></main>")).toBe("# Title\n\nBody\n");
+    expect(await convert("<html><head><title>T</title>Hello <p>World</p>")).toBe("# T\n\nHello\n\nWorld\n");
+    expect(await convert('<head> \n<title>T</title><meta charset="utf-8"><style>hidden</style><p>Body')).toBe("# T\n\nBody\n");
+  });
+
+  test("aligns data table columns across rowspans and colspans", async () => {
+    expect(
+      await convert(
+        '<table><tr><th>Name</th><th>Value</th></tr><tr><td rowspan="2">A</td><td>10</td></tr><tr><td>20</td></tr><tr><td colspan="2">Total 30</td></tr></table>',
+      ),
+    ).toBe("| Name | Value |\n| --- | --- |\n| A | 10 |\n|  | 20 |\n| Total 30 |  |\n");
+    expect(await convert('<table><tr></tr><tr><th colspan="2">A</th></tr></table>')).toBe("| A |  |\n| --- | --- |\n");
+  });
+
+  test("keeps zero rowspans within their table and aligns trailing reserved columns", async () => {
+    expect(
+      await convert(
+        '<table><tr><th>X</th><th colspan="2" rowspan="0">A</th></tr><tr><td>B</td></tr><tr></tr></table><table><tr><td>C</td></tr></table>',
+      ),
+    ).toBe("| X | A |  |\n| --- | --- | --- |\n| B |  |  |\n|  |  |  |\n\n| C |\n| --- |\n");
+  });
+
+  test("parses integer spans, defaults invalid values and clamps colspans", async () => {
+    for (const value of ["invalid", "-2", "0"]) {
+      expect(await convert(`<table><tr><td colspan="${value}">A</td><td>B</td></tr></table>`)).toBe("| A | B |\n| --- | --- |\n");
+    }
+    for (const value of ["invalid", "-2", "1"]) {
+      expect(await convert(`<table><tr><td rowspan="${value}">A</td></tr><tr><td>B</td></tr></table>`)).toBe("| A |\n| --- |\n| B |\n");
+    }
+    expect(await convert('<table><tr><td colspan=" 2more">A</td></tr></table>')).toBe("| A |  |\n| --- | --- |\n");
+    for (const value of ["1000", "1001", "999999999999999999999"]) {
+      expect(await convert(`<table><tr><td colspan="${value}">A</td></tr></table>`)).toBe(
+        `| A${" | ".repeat(999)} |\n| ${Array(1000).fill("---").join(" | ")} |\n`,
+      );
+    }
+  });
+
+  test("clamps rowspans to 65534 without allocating per spanned row", async () => {
+    const result = await convert(
+      '<table><tr><td rowspan="65535">A</td></tr>' + "<tr></tr>".repeat(65533) + "<tr><td>Last</td></tr></table>",
+    );
+    expect(result).toBe("| A |\n| --- |\n" + "|  |\n".repeat(65533) + "| Last |\n");
+  });
+
+  test.each([
+    ["heading", "<h2>", "</h2>"],
+    ["table cell", "<table><tr><td>", "</td></tr></table>"],
+    ["caption", "<table><caption>", "</caption><tr><td>End</td></tr></table>"],
+    ["link with images", '<a href="outer">', "</a>"],
+  ])("bounds inline URL expansion inside a %s", async (_name, start, end) => {
+    const original = URL.prototype.toString;
+    const stringify = spyOn(URL.prototype, "toString").mockImplementation(function (this: URL) {
+      return original.call(this);
+    });
+    try {
+      for (const documentBase of [true, false]) {
+        stringify.mockClear();
+        const longBase = `https://example.test/${"x".repeat(2000)}/`;
+        const content = _name === "link with images" ? '<img src="x" alt="é">' : '<a href="x">é</a>';
+        const html = `${documentBase ? `<base href="${longBase}">` : ""}${start}${content.repeat(50_000)}${end}`;
+        const result = await htmlToReadableMarkdown(new TextEncoder().encode(html), {
+          baseUrl: documentBase ? baseUrl : new URL(longBase),
+          maxBytes: 64 * 1024,
+        });
+        expect(result).toEndWith("\n[Readable copy truncated at the file size limit.]\n");
+        expect(Buffer.byteLength(result, "utf8")).toBeLessThanOrEqual(64 * 1024);
+        expect(result).not.toContain("�");
+        // Each URL costs about 2 KiB. Stop resolving links when that output budget is full,
+        // even though thousands of links fit within the separately bounded input prefix.
+        expect(stringify.mock.calls.length).toBeLessThan(100);
+      }
+    } finally {
+      stringify.mockRestore();
+    }
+  });
+
+  test("stops assembling a data row when its expanded cells fill the remaining budget", async () => {
+    const stringify = spyOn(URL.prototype, "toString");
+    try {
+      const result = await convert(
+        `<p>${"ü".repeat(1000)}</p><base href="https://example.test/${"x".repeat(2000)}/"><table><tr>${'<td colspan="1000"><a href="x">é</a></td>'.repeat(1000)}</tr></table>`,
+        { maxBytes: 64 * 1024 },
+      );
+      expect(result).toStartWith("ü".repeat(1000));
+      expect(result).toEndWith("\n[Readable copy truncated at the file size limit.]\n");
+      expect(Buffer.byteLength(result, "utf8")).toBeLessThanOrEqual(64 * 1024);
+      expect(stringify.mock.calls.length).toBeLessThan(40);
+    } finally {
+      stringify.mockRestore();
+    }
+  });
+
   test("bundles htmlparser2 into the server output", async () => {
     const build = await Bun.build({
       entrypoints: [new URL("./readable-html.ts", import.meta.url).pathname],

@@ -8,6 +8,8 @@ const { Parser }: typeof Htmlparser2 = require("htmlparser2");
 
 const CHUNK_BYTES = 256 * 1024;
 const TRUNCATED = "[Readable copy truncated at the file size limit.]";
+const NOTICE_BYTES = Buffer.byteLength(TRUNCATED) + 3;
+const headTags = new Set("title meta link style script noscript base template head".split(" "));
 const droppedTags = new Set(
   "head script style noscript template svg math iframe object embed canvas video audio form button select textarea input dialog nav aside".split(
     " ",
@@ -194,6 +196,10 @@ const countBackticks = (text: string, run: BacktickRun): void => {
   }
 };
 const backticks = (run: BacktickRun, minimum: number): string => "`".repeat(Math.max(minimum, run.longest + 1));
+const cellSpan = (value: string | undefined, minimum: number, maximum: number): number => {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isNaN(parsed) || parsed < 0 ? 1 : Math.min(maximum, Math.max(minimum, parsed));
+};
 
 /** Render one inline span once. Placeholder delimiters avoid copying nested link text. */
 const renderInline = async (
@@ -202,16 +208,29 @@ const renderInline = async (
   end: number,
   baseUrl: URL,
   budget: WorkBudget,
-): Promise<{ markdown: string; text: string }> => {
+  maxBytes: number,
+): Promise<{ markdown: string; text: string; truncated: boolean }> => {
   const parts: string[] = [];
   const plain: string[] = [];
   let pendingSpace = false;
   let characters = 0;
+  let size = 0;
+  let truncated = false;
   let link:
-    | { index: number; url?: string; characters: number; plainIndex: number; leadingSpace: boolean; spaceBefore: boolean }
+    | { index: number; url?: string; characters: number; plainIndex: number; leadingSpace: boolean; spaceBefore: boolean; size: number }
     | undefined;
   let code: { depth: number; parts: string[]; ticks: BacktickRun } | undefined;
+  const fits = (bytes: number): boolean => {
+    if (size + bytes > maxBytes) {
+      truncated = true;
+      return false;
+    }
+    size += bytes;
+    return true;
+  };
   const append = (value: string) => {
+    const space = pendingSpace && parts.length && !(link && characters === link.characters);
+    if (!fits(Buffer.byteLength(value) + (space ? 1 : 0))) return;
     if (pendingSpace && parts.length) {
       if (link && characters === link.characters) link.leadingSpace = true;
       else parts.push(" ");
@@ -234,7 +253,7 @@ const renderInline = async (
     }
     if (normalized.endsWith(" ")) pendingSpace = true;
   };
-  for (let index = start; index < end; index++) {
+  for (let index = start; index < end && !truncated; index++) {
     const event = events[index]!;
     if (budget.used(event.kind === "text" ? event.text.length : 0)) await budget.yield();
     if (code) {
@@ -265,6 +284,7 @@ const renderInline = async (
             plainIndex: plain.length,
             leadingSpace: pendingSpace,
             spaceBefore: pendingSpace,
+            size,
           };
           pendingSpace = false;
           parts.push("");
@@ -274,10 +294,15 @@ const renderInline = async (
           parts.length = link.index;
           plain.length = link.plainIndex;
           characters = link.characters;
+          size = link.size;
           pendingSpace = link.spaceBefore;
         } else if (characters > link.characters) {
-          parts[link.index] = (link.leadingSpace && link.index > 0 ? " " : "") + (link.url ? "[" : "");
-          if (link.url) parts.push(`](${link.url})`);
+          const prefix = (link.leadingSpace && link.index > 0 ? " " : "") + (link.url ? "[" : "");
+          const suffix = link.url ? `](${link.url})` : "";
+          if (fits(Buffer.byteLength(prefix) + Buffer.byteLength(suffix))) {
+            parts[link.index] = prefix;
+            if (suffix) parts.push(suffix);
+          }
         } else pendingSpace ||= link.leadingSpace;
         link = undefined;
       }
@@ -294,13 +319,14 @@ const renderInline = async (
       plain.push(" ");
     }
   }
-  return { markdown: parts.join("").trim(), text: collapse(plain.join("")) };
+  return { markdown: parts.join("").trim(), text: collapse(plain.join("")), truncated };
 };
 
 /** A flat stream of parser events; no DOM, recursive rendering, or ancestor walks. */
 export const htmlToReadableMarkdown = async (
   bytes: Uint8Array,
-  options: { baseUrl: URL; contentType?: string; maxBytes: number; signal?: AbortSignal },
+  /** `maxBytes` caps the Markdown; `maxInputBytes` (default `maxBytes`) caps the HTML that is read. */
+  options: { baseUrl: URL; contentType?: string; maxBytes: number; maxInputBytes?: number; signal?: AbortSignal },
 ): Promise<string> => {
   options.signal?.throwIfAborted();
   const events: Event[] = [];
@@ -362,7 +388,12 @@ export const htmlToReadableMarkdown = async (
     if (frame.skip) skipDepth--;
     if (frame.region) regionDepth--;
   };
+  const closeHead = () => {
+    const index = lastOpen.get("head");
+    if (index !== undefined) while (stack.length > index) closeTop();
+  };
   const open = (name: string, attrs: Record<string, string>) => {
+    if (!headTags.has(name)) closeHead();
     if (name === "base" && attrs.href !== undefined && !hasBaseHref) {
       hasBaseHref = true;
       try {
@@ -429,6 +460,7 @@ export const htmlToReadableMarkdown = async (
   const parser = new FlatHtmlParser(
     open,
     (text) => {
+      if (stack.at(-1)?.name === "head" && /\S/u.test(text)) closeHead();
       if (titleDepth) titleParts.push(text);
       else if (!skipDepth) events.push({ kind: "text", text });
     },
@@ -452,8 +484,8 @@ export const htmlToReadableMarkdown = async (
     decodedLength += text.length;
     parser.write(text);
   };
-  const decoder = decoderFor(bytes.subarray(0, options.maxBytes), options.contentType);
-  const length = Math.min(bytes.byteLength, options.maxBytes);
+  const length = Math.min(bytes.byteLength, options.maxInputBytes ?? options.maxBytes);
+  const decoder = decoderFor(bytes.subarray(0, length), options.contentType);
   for (let offset = 0; offset < length; offset += CHUNK_BYTES) {
     options.signal?.throwIfAborted();
     feed(decoder.decode(bytes.subarray(offset, Math.min(offset + CHUNK_BYTES, length)), { stream: true }));
@@ -541,6 +573,7 @@ const render = async (
   const parts: string[] = [];
   let size = 0;
   let truncated = false;
+  let limited = false;
   let pendingBreak = 0;
   let pendingSpace = false;
   let lineStart = true;
@@ -552,10 +585,16 @@ const render = async (
     | { name: string; depth: number; parts: string[]; lang: string; firstCode: boolean; start: number; ticks: BacktickRun }
     | undefined;
   const tables: boolean[] = [];
-  let row: string[] | undefined;
+  let row: { cells: string[]; size: number; lastReserved: number } | undefined;
+  // Expiration row indexes avoid allocating or counting down one entry per spanned row.
+  const rowspans = new Map<number, number>();
   let cellStart: number | undefined;
+  let colspan = 1;
+  let rowspan = 1;
   let captionStart: number | undefined;
   let tableRows = 0;
+  let tableHeader = false;
+  const remaining = () => Math.max(0, options.maxBytes - size - NOTICE_BYTES);
   const append = (text: string) => {
     if (!text || truncated) return;
     const next = Buffer.byteLength(text);
@@ -607,11 +646,37 @@ const render = async (
     }
     if (normalized.endsWith(" ")) pendingSpace = true;
   };
+  const addCell = (markdown: string): boolean => {
+    if (!row) return false;
+    const bytes = Buffer.byteLength(markdown) + 3;
+    if (row.size + bytes > remaining()) {
+      limited = true;
+      return false;
+    }
+    row.cells.push(markdown);
+    row.size += bytes;
+    return true;
+  };
+  const finishRow = () => {
+    if (!row) return;
+    while (!limited && row.cells.length <= row.lastReserved) addCell("");
+    if (row.cells.length) {
+      write(`| ${row.cells.join(" | ")} |`);
+      boundary(1);
+      if (!tableHeader) {
+        write(`| ${row.cells.map(() => "---").join(" | ")} |`);
+        boundary(1);
+        tableHeader = true;
+      }
+    }
+    tableRows++;
+    row = undefined;
+  };
   if (title) {
     write(`# ${title}`);
     boundary();
   }
-  for (let index = span.start; index < span.end && !truncated; index++) {
+  for (let index = span.start; index < span.end && !truncated && !limited; index++) {
     const event = events[index]!;
     if (budget.used(event.kind === "text" ? event.text.length : 0)) await budget.yield();
     if (capture) {
@@ -647,6 +712,7 @@ const render = async (
             capture.name === "a" ? index + 1 : index,
             options.baseUrl,
             budget,
+            Math.max(0, remaining() - (capture.name === "a" ? 0 : Number(capture.name[1]) + 1)),
           );
           if (inline.text) {
             if (capture.name === "a" && /^\s/u.test(raw)) pendingSpace = true;
@@ -656,6 +722,7 @@ const render = async (
           }
           if (inline.text) readable = true;
           if (capture.name === "a" && /\s$/u.test(raw)) pendingSpace = true;
+          limited ||= inline.truncated;
         }
         if (value && (capture.name === "pre" || capture.name === "code")) readable = true;
         capture = undefined;
@@ -674,6 +741,8 @@ const render = async (
         tables.push(event.layout ?? false);
         if (!event.layout) {
           tableRows = 0;
+          tableHeader = false;
+          rowspans.clear();
           row = undefined;
           cellStart = undefined;
         }
@@ -684,7 +753,7 @@ const render = async (
       if (name === "caption") {
         if (open) captionStart = index + 1;
         else {
-          const inline = await renderInline(events, captionStart ?? index, index, options.baseUrl, budget);
+          const inline = await renderInline(events, captionStart ?? index, index, options.baseUrl, budget, remaining());
           if (inline.text) {
             boundary();
             write(inline.markdown);
@@ -692,25 +761,44 @@ const render = async (
             readable = true;
           }
           captionStart = undefined;
+          limited ||= inline.truncated;
         }
       } else if (name === "tr") {
-        if (open) row = [];
-        else if (row?.length) {
-          write(`| ${row.join(" | ")} |`);
-          boundary(1);
-          if (tableRows++ === 0) {
-            write(`| ${row.map(() => "---").join(" | ")} |`);
-            boundary(1);
+        if (open) {
+          row = { cells: [], size: 1, lastReserved: -1 };
+          for (const [column, until] of rowspans) {
+            if (until <= tableRows) rowspans.delete(column);
+            else row.lastReserved = Math.max(row.lastReserved, column);
           }
-          row = undefined;
-        }
+        } else finishRow();
       } else if (name === "td" || name === "th") {
-        if (open) cellStart = index + 1;
-        else {
-          const inline = await renderInline(events, cellStart ?? index, index, options.baseUrl, budget);
-          row?.push(inline.markdown.replace(/\|/g, "\\|"));
+        if (open) {
+          cellStart = index + 1;
+          colspan = cellSpan(attrs.colspan, 1, 1000);
+          rowspan = cellSpan(attrs.rowspan, 0, 65534);
+        } else if (row) {
+          while (rowspans.has(row.cells.length) && !limited) addCell("");
+          if (limited) {
+            finishRow();
+            continue;
+          }
+          const inline = await renderInline(
+            events,
+            cellStart ?? index,
+            index,
+            options.baseUrl,
+            budget,
+            Math.max(0, remaining() - row.size - 3),
+          );
+          for (let offset = 0; offset < colspan; offset++) {
+            const column = row.cells.length;
+            if (!addCell(offset === 0 ? inline.markdown.replace(/\|/g, "\\|") : "")) break;
+            if (rowspan !== 1) rowspans.set(column, rowspan === 0 ? Infinity : tableRows + rowspan);
+          }
           if (inline.text) readable = true;
           cellStart = undefined;
+          limited ||= inline.truncated;
+          if (limited) finishRow();
         }
       }
       continue;
@@ -759,11 +847,12 @@ const render = async (
     } else if (blocks.has(name) || name === "td" || name === "th") boundary();
   }
   options.signal?.throwIfAborted();
+  truncated ||= limited;
   if (!readable && !truncated) return "";
   const result = parts.join("").trim();
   if (!truncated && !options.inputTruncated && Buffer.byteLength(result) + 1 <= options.maxBytes) return `${result}\n`;
   // The notice itself is the minimum possible result when maxBytes is smaller than it.
-  const outputBudget = Math.max(0, options.maxBytes - Buffer.byteLength(TRUNCATED) - 3);
+  const outputBudget = Math.max(0, options.maxBytes - NOTICE_BYTES);
   const prefix = new TextDecoder().decode(Buffer.from(result).subarray(0, outputBudget), { stream: true }).trimEnd();
   return `${prefix ? `${prefix}\n\n` : ""}${TRUNCATED}\n`;
 };
