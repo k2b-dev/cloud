@@ -428,7 +428,8 @@ const assertOriginalColors = async (page: Page, frame: Frame) => {
   expect(await frame.locator("#paragraph").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(55, 65, 81)");
   expect(await frame.locator("#link").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(37, 99, 235)");
   expect(await frame.locator("#card").getAttribute("style")).toBe("background:#ffffff;border:1px solid #e5e7eb");
-  expect(await frame.locator('img[alt="logo"]').getAttribute("style")).toBeNull();
+  // Chromium may keep an emptied style attribute after CSSOM writes; an empty one restores the original as well.
+  expect((await frame.locator('img[alt="logo"]').getAttribute("style")) ?? "").toBe("");
   expect(
     await frame.locator("img").evaluateAll((elements) => elements.map((element) => getComputedStyle(element).backgroundColor)),
   ).toEqual(Array(5).fill("rgba(0, 0, 0, 0)"));
