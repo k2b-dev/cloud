@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, jest, mock, setSystemTime, spyOn, test } from "bun:test";
+import { setImmediate } from "node:timers";
 import { sha256 } from "@k2b/filegate/utils";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
@@ -13,7 +14,6 @@ let commitCode = "";
 const existingNames = new Set<string>();
 const starts: { path: string; onConflict: string; idempotencyKey: string }[] = [];
 let holdDirectories = false;
-const nativeTimeout = AbortSignal.timeout;
 let restoreTimeout = () => {};
 mock.module("../src/api/client", () => ({
   apiClient: {
@@ -98,6 +98,20 @@ const originalFetch = globalThis.fetch;
 const flush = async () => {
   for (let i = 0; i < 40; i++) await new Promise((resolve) => setTimeout(resolve, 5));
 };
+// Flush async work without advancing the retry clock.
+const flushRetry = async () => {
+  for (let i = 0; i < 40; i++) await Promise.resolve();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+};
+const until = async (condition: () => boolean) => {
+  const deadline = performance.now() + 1000;
+  while (!condition() && performance.now() < deadline) await flushRetry();
+  expect(condition()).toBe(true);
+};
+const advance = async (ms: number) => {
+  jest.advanceTimersByTime(ms);
+  await flushRetry();
+};
 let cleanup = () => {};
 type BrowserProps = Omit<Parameters<typeof import("../src/frontend/Browser").default>[0], "uploads">;
 /** Browser as the workspace mounts it: with the workspace's upload queue and its panel in the toast rail. */
@@ -117,8 +131,13 @@ async function mountWithUploads(root: HTMLElement, props: BrowserProps) {
 }
 beforeEach(() => setSystemTime(new Date("2026-10-15T00:00:00Z")));
 afterEach(async () => {
-  setSystemTime();
   cleanup();
+  cleanup = () => {};
+  restoreTimeout();
+  restoreTimeout = () => {};
+  if (jest.isFakeTimers()) jest.clearAllTimers();
+  jest.useRealTimers();
+  setSystemTime();
   // Let work a test left running settle before its calls are cleared, so it cannot leak into the next test.
   await flush();
   if (storageDescriptor) Object.defineProperty(globalThis, "localStorage", storageDescriptor);
@@ -131,7 +150,6 @@ afterEach(async () => {
   starts.length = 0;
   existingNames.clear();
   holdDirectories = false;
-  restoreTimeout();
   globalThis.fetch = originalFetch;
 });
 
@@ -566,17 +584,29 @@ test("a new empty file is created at once instead of waiting behind a running up
 
 test("a folder request with no response fails its group visibly and the next group continues", async () => {
   const dom = await mountBrowser();
+  jest.useFakeTimers();
   const deadlines: number[] = [];
   const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
     deadlines.push(ms);
-    return nativeTimeout(40);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException("Timed out", "TimeoutError")), ms);
+    return controller.signal;
   });
   restoreTimeout = () => timeout.mockRestore();
   holdDirectories = true;
   pickFolder(dom, ["Photos/first.txt", "Photos/second.txt"]);
-  await flush();
-  expect(deadlines).toEqual([60_000]);
-  expect(calls).toEqual(["mkdir Documents/Photos"]);
+  for (const [attempt, delay] of [2_000, 5_000, 15_000, 30_000, 60_000].entries()) {
+    await until(() => deadlines.length === attempt + 1);
+    expect(dom.document.querySelectorAll('.filesv2-upload-row[data-status="failed"]')).toHaveLength(0);
+    await advance(60_000);
+    await until(() => dom.document.querySelector(".filesv2-upload-row__reason")?.textContent === "No response, trying again soon");
+    await advance(delay);
+  }
+  await until(() => deadlines.length === 6);
+  await advance(60_000);
+  await until(() => dom.document.querySelector(".filesv2-upload")?.getAttribute("data-phase") === "errors");
+  expect(deadlines).toEqual(Array(6).fill(60_000));
+  expect(calls).toEqual(Array(6).fill("mkdir Documents/Photos"));
   const rows = [...dom.document.querySelectorAll('.filesv2-upload-row[data-status="failed"]')];
   expect(rows).toHaveLength(2);
   expect(rows.map((row) => row.querySelector(".filesv2-upload-row__reason")?.textContent)).toEqual([
@@ -587,8 +617,8 @@ test("a folder request with no response fails its group visibly and the next gro
   const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]:not([webkitdirectory])')!;
   Object.defineProperty(input, "files", { configurable: true, value: [new File([], "next.txt")] });
   input.dispatchEvent(new Event("change", { bubbles: true }));
-  await flush();
-  expect(calls).toEqual(["mkdir Documents/Photos", "open Documents/next.txt 0 error", "commit"]);
+  await until(() => dom.document.querySelectorAll('.filesv2-upload-row[data-status="success"]').length === 1);
+  expect(calls).toEqual([...Array(6).fill("mkdir Documents/Photos"), "open Documents/next.txt 0 error", "commit"]);
   expect(dom.document.querySelectorAll('.filesv2-upload-row[data-status="success"]')).toHaveLength(1);
 });
 
@@ -669,6 +699,7 @@ test("receipt_unknown fails visibly and Try again uses a new upload key", async 
 
 test("Filegate capacity preserves progress and Try again reuses the upload key", async () => {
   const dom = await mountBrowser();
+  jest.useFakeTimers();
   let busy = true;
   const accepted = new Map<number, string>();
   const puts: number[] = [];
@@ -690,26 +721,92 @@ test("Filegate capacity preserves progress and Try again reuses the upload key",
     { preconnect: originalFetch.preconnect },
   );
   pickFiles(dom, [new File(["abcdef"], "notes.txt", { lastModified: 123 })]);
-  await flush();
-  expect(dom.document.querySelector(".filesv2-upload-row__reason")?.textContent).toBe("The file server is busy");
+  await until(() => dom.document.querySelector(".filesv2-upload-row__reason")?.textContent === "File server busy, trying again soon");
   expect(calls).not.toContain("abort");
-  expect(uploadKeys()).toHaveLength(1);
+  const keys = uploadKeys();
+  expect(keys).toHaveLength(1);
   expect(received).toBe(4);
+  await advance(16);
+  const progress = () => dom.document.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow");
+  expect(progress()).toBe("66");
+  // Retry-After is a lower bound on the normal backoff; all five tries keep the acknowledged first segment.
+  for (const [attempt, delay] of [5_000, 5_000, 15_000, 30_000, 60_000].entries()) {
+    await advance(delay - (attempt === 0 ? 17 : 1));
+    expect(starts).toHaveLength(attempt + 1);
+    expect(progress()).toBe("66");
+    await advance(1);
+    await until(() => puts.length === attempt + 3);
+    await until(
+      () =>
+        dom.document.querySelector(".filesv2-upload-row__reason")?.textContent ===
+        (attempt === 4 ? "The file server is busy" : "File server busy, trying again soon"),
+    );
+    expect(uploadKeys()).toEqual(keys);
+    expect(starts.every((start) => start.idempotencyKey === starts[0]!.idempotencyKey)).toBe(true);
+    expect(received).toBe(4);
+  }
+  expect(dom.document.querySelectorAll('.filesv2-upload-row[data-status="failed"]')).toHaveLength(1);
+  expect(calls).not.toContain("abort");
   busy = false;
   retryFailed(dom);
-  await flush();
-  expect(starts).toHaveLength(2);
-  expect(puts).toEqual([0, 1, 1]);
-  expect(starts[1]!.idempotencyKey).toBe(starts[0]!.idempotencyKey);
+  await until(() => dom.document.querySelectorAll('.filesv2-upload-row[data-status="success"]').length === 1);
+  expect(starts).toHaveLength(7);
+  expect(puts).toEqual([0, 1, 1, 1, 1, 1, 1, 1]);
+  expect(starts[6]!.idempotencyKey).toBe(starts[0]!.idempotencyKey);
+  expect(uploadKeys()).toEqual([]);
+  expect(received).toBe(6);
   expect(dom.document.querySelectorAll('.filesv2-upload-row[data-status="success"]')).toHaveLength(1);
 });
 
 test("a platform rate limit names the cause and keeps the upload key", async () => {
   const dom = await mountBrowser();
+  jest.useFakeTimers();
   openStatus = 429;
   pickFiles(dom, [new File([], "notes.txt", { lastModified: 123 })]);
-  await flush();
-  expect(dom.document.querySelector(".filesv2-upload-row__reason")?.textContent).toBe("Too many uploads in a short time");
-  expect(uploadKeys()).toHaveLength(1);
+  await until(() => dom.document.querySelector(".filesv2-upload-row__reason")?.textContent === "Short pause after many uploads");
+  const keys = uploadKeys();
+  expect(keys).toHaveLength(1);
+  await advance(4_999);
+  expect(starts).toHaveLength(1);
+  expect(uploadKeys()).toEqual(keys);
+  openStatus = 200;
+  await advance(1);
+  await until(() => dom.document.querySelectorAll('.filesv2-upload-row[data-status="success"]').length === 1);
+  expect(starts).toHaveLength(2);
+  expect(starts[1]!.idempotencyKey).toBe(starts[0]!.idempotencyKey);
+  expect(uploadKeys()).toEqual([]);
+  expect(calls).not.toContain("abort");
+});
+
+test("a platform rate limit fails visibly after ten waits and keeps the upload key for Try again", async () => {
+  const dom = await mountBrowser();
+  jest.useFakeTimers();
+  openStatus = 429;
+  pickFiles(dom, [new File([], "notes.txt", { lastModified: 123 })]);
+  await until(() => dom.document.querySelector(".filesv2-upload-row__reason")?.textContent === "Short pause after many uploads");
+  const keys = uploadKeys();
+  expect(keys).toHaveLength(1);
+  for (let attempt = 1; attempt <= 10; attempt++) {
+    await advance(4_999);
+    expect(starts).toHaveLength(attempt);
+    expect(dom.document.querySelector(".filesv2-upload-row__reason")?.textContent).toBe("Short pause after many uploads");
+    expect(uploadKeys()).toEqual(keys);
+    await advance(1);
+    await until(() => starts.length === attempt + 1);
+    await until(
+      () =>
+        dom.document.querySelector(".filesv2-upload-row__reason")?.textContent ===
+        (attempt === 10 ? "Too many uploads in a short time" : "Short pause after many uploads"),
+    );
+  }
+  expect(dom.document.querySelectorAll('.filesv2-upload-row[data-status="failed"]')).toHaveLength(1);
+  expect(uploadKeys()).toEqual(keys);
+  expect(starts.every((start) => start.idempotencyKey === starts[0]!.idempotencyKey)).toBe(true);
+  openStatus = 200;
+  retryFailed(dom);
+  await until(() => dom.document.querySelectorAll('.filesv2-upload-row[data-status="success"]').length === 1);
+  expect(starts).toHaveLength(12);
+  expect(starts[11]!.idempotencyKey).toBe(starts[0]!.idempotencyKey);
+  expect(uploadKeys()).toEqual([]);
   expect(calls).not.toContain("abort");
 });

@@ -258,6 +258,117 @@ describe("upload panel in a browser", () => {
     }
   });
 
+  /** Contrast of an element's text against the toast surface, after the browser resolved both colors to sRGB. */
+  const contrast = (tab: Page, selector: string) =>
+    tab.evaluate((selector) => {
+      const element = document.querySelector<HTMLElement>(selector)!;
+      const canvas = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+      const rgb = (color: string) => {
+        canvas.clearRect(0, 0, 1, 1);
+        canvas.fillStyle = color;
+        canvas.fillRect(0, 0, 1, 1);
+        return [...canvas.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+      };
+      const luminance = (color: string) => {
+        const [r, g, b] = rgb(color).map((value) => {
+          const channel = value / 255;
+          return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+      };
+      const text = luminance(getComputedStyle(element).color);
+      const surface = luminance(getComputedStyle(element.closest("[data-k2b-toast]")!).backgroundColor);
+      return (Math.max(text, surface) + 0.05) / (Math.min(text, surface) + 0.05);
+    }, selector);
+
+  for (const [device, options] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    for (const theme of ["light", "dark"] as const) {
+      const lang = device === "phone" ? "de" : "en";
+      test(`waiting for the network or a busy server keeps every box in place (${device}, ${theme})`, async () => {
+        const tab = await open(options, theme, lang);
+        const text = {
+          en: {
+            title: "Waiting for network",
+            network: "Waiting for network",
+            busy: "File server busy, trying again soon",
+            retrying: "Trying again",
+            uploading: "Uploading to “Projects”",
+          },
+          de: {
+            title: "Wartet auf Netzwerk",
+            network: "Wartet auf Netzwerk",
+            busy: "Dateiserver ausgelastet, gleich neuer Versuch",
+            retrying: "Neuer Versuch",
+            uploading: "Hochladen nach „Projects“",
+          },
+        }[lang];
+        const shot = (state: string) => tab.screenshot({ path: `/tmp/filesv2-upload-wait-${device}-${theme}-${state}.png` });
+        const active = '.filesv2-upload-row[data-status="working"]';
+        const rowState = () =>
+          tab.$eval(active, (row) => {
+            const reason = row.querySelector<HTMLElement>(".filesv2-upload-row__reason");
+            return {
+              wait: (row as HTMLElement).dataset.wait ?? null,
+              reason: reason?.textContent ?? null,
+              // The reason fits its row: no ellipsis on a 390 px phone either.
+              fits: reason ? reason.scrollWidth <= reason.clientWidth : true,
+              box: (({ left, top, width, height }) => [left, top, width, height].map(Math.round))(row.getBoundingClientRect()),
+            };
+          });
+        try {
+          await run(tab, `window.uploads.add(${JSON.stringify(demo)})`);
+          for (let index = 0; index < 3; index++) await run(tab, "window.uploads.finish()");
+          await run(tab, "window.uploads.progress(100_000)");
+          const first = await boxes(tab);
+          const row = await rowState();
+          expect(row.wait).toBeNull();
+
+          // The network goes away: the file in flight waits, nothing else starts, nothing moves.
+          await tab.context().setOffline(true);
+          await run(tab, "window.uploads.interrupt('network')");
+          expect(await tab.textContent(".filesv2-upload__title")).toBe(text.title);
+          expect(await rowState()).toEqual({ ...row, wait: "network", reason: text.network, fits: true });
+          expect(await boxes(tab)).toEqual(first);
+          expect(await tab.$$eval('.filesv2-upload-row[data-status="pending"]', (rows) => rows.length)).toBeGreaterThan(0);
+          expect(await contrast(tab, `${active} .filesv2-upload-row__reason`)).toBeGreaterThanOrEqual(4.5);
+          expect(await contrast(tab, `${active} .filesv2-upload-row__status`)).toBeGreaterThanOrEqual(3);
+          await shot("network");
+
+          // Back online: the same file tries again at once, and the panel returns to the upload once Cloud answers.
+          await tab.context().setOffline(false);
+          await settle(tab);
+          await run(tab, "window.uploads.alive()");
+          expect(await tab.textContent(".filesv2-upload__title")).toBe(text.uploading);
+          expect(await rowState()).toEqual(row);
+          expect(await boxes(tab)).toEqual(first);
+
+          // A busy file server: a calm reason while the queue waits, then a new try on the same file.
+          await run(tab, "window.uploads.interrupt('busy')");
+          expect(await rowState()).toEqual({ ...row, wait: "busy", reason: text.busy, fits: true });
+          expect(await boxes(tab)).toEqual(first);
+          expect(await contrast(tab, `${active} .filesv2-upload-row__reason`)).toBeGreaterThanOrEqual(4.5);
+          await shot("busy");
+          await tab.waitForFunction(() => document.querySelector('[data-wait="retrying"]'), null, { timeout: 5_000 });
+          await settle(tab);
+          expect(await rowState()).toEqual({ ...row, wait: "retrying", reason: text.retrying, fits: true });
+          expect(await boxes(tab)).toEqual(first);
+          await shot("retrying");
+          await run(tab, "window.uploads.progress(200_000)");
+          expect(await rowState()).toEqual(row);
+          const heights = await tab.$$eval(".filesv2-upload-row", (rows) => [
+            ...new Set(rows.map((row) => row.getBoundingClientRect().height)),
+          ]);
+          expect(heights).toHaveLength(1);
+        } finally {
+          await tab.context().close();
+        }
+      });
+    }
+  }
+
   for (const theme of ["light", "dark"] as const) {
     test(`on a ${theme} phone the panel sits at the top edge, fits 390 px and takes taps on 44 px targets`, async () => {
       const tab = await open(phone, theme, "de");

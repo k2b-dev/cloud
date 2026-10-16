@@ -1,7 +1,7 @@
 import { prompts } from "@k2b/ui";
 import { apiClient } from "../api/client";
+import { uploadResponseFailure } from "../upload-transfer";
 import { useBrowserMessages } from "./browser-messages";
-import { apiFailure } from "./file-preview";
 import { useFilesMessages } from "./messages";
 import { uploadFailureReason, useUploadMessages } from "./upload-messages";
 import { createUploadQueue, type UploadQueue } from "./upload-queue";
@@ -49,15 +49,21 @@ export function createFilesUploads(): FilesUploads {
           { param: { baseId: group.baseId }, json: { path: group.root ? `${group.root}/${folder}` : folder } },
           { init: { signal: requestSignal(signal) } },
         );
-        if (!response.ok && (response.status as number) !== 409) await apiFailure(response, t().unavailable);
+        if (!response.ok && (response.status as number) !== 409) throw await uploadResponseFailure(response, t().unavailable);
       }
     },
-    upload: async (group, item, { signal, onProgress }) => {
+    upload: async (group, item, { signal, onProgress, alive }) => {
       const path = group.root ? `${group.root}/${item.path}` : item.path;
       let onConflict: "error" | "overwrite" = group.policy === "overwrite" ? "overwrite" : "error";
       for (;;) {
         try {
-          const result = await uploadFile(group.baseId, path, item.file, { onConflict, signal, fallback: u().failed, onProgress });
+          const result = await uploadFile(group.baseId, path, item.file, {
+            onConflict,
+            signal,
+            fallback: u().failed,
+            onProgress,
+            onStarted: alive,
+          });
           return { status: "uploaded", path: result.entry.path };
         } catch (error) {
           if (!(error instanceof UploadConflict) || onConflict !== "error") throw error;

@@ -60,6 +60,7 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
   const title = () => {
     switch (batch.phase) {
       case "running":
+        if (batch.active !== null && batch.rows[batch.active]?.wait === "network") return u().waitingForNetwork;
         return batch.target ? u().uploadingTo(batch.target.label) : u().uploading;
       case "done":
         // Every file already existed and was skipped: nothing was uploaded.
@@ -307,12 +308,16 @@ function UploadRowView(props: { row: UploadRow; folder: boolean; total: number; 
     <li
       class="filesv2-upload-row"
       data-status={props.row.status}
+      data-wait={props.row.status === "working" ? (props.row.wait ?? undefined) : undefined}
       style={{ "--filesv2-upload-index": props.row.id }}
       aria-posinset={props.row.id + 1}
       aria-setsize={props.total}
     >
       <span class="filesv2-upload-row__status">
         <Switch>
+          <Match when={props.row.status === "working" && props.row.wait !== null && props.row.wait !== "retrying"}>
+            <i class={`ti ${props.row.wait === "network" ? "ti-wifi-off" : "ti-clock-pause"}`} aria-hidden="true" />
+          </Match>
           <Match when={props.row.status === "working"}>
             <ProgressRing value={props.row.size ? (props.row.sent / props.row.size) * 100 : 0} />
           </Match>
@@ -350,8 +355,10 @@ function UploadRowView(props: { row: UploadRow; folder: boolean; total: number; 
           <span class="filesv2-upload-row__base">{props.row.name}</span>
           <span class="k2b-sr-only">, {u().status(props.row.status)}</span>
         </span>
-        <Show when={props.row.status === "failed"}>
-          <span class="filesv2-upload-row__reason">{props.row.reason}</span>
+        <Show when={props.row.status === "failed" || (props.row.status === "working" && props.row.wait)}>
+          <span class="filesv2-upload-row__reason">
+            {props.row.status === "working" && props.row.wait ? u().wait(props.row.wait) : props.row.reason}
+          </span>
         </Show>
       </span>
       <Show when={props.row.status === "failed"}>

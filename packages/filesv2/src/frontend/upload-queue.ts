@@ -1,5 +1,6 @@
 import { onCleanup, batch as together } from "solid-js";
 import { createStore, produce } from "solid-js/store";
+import { createUploadRetryBudget, nextUploadRetry, sleepUploadRetry } from "../upload-retry";
 import {
   appendFiles,
   cancelBatch,
@@ -13,6 +14,7 @@ import {
   startRow,
   type UploadAnnouncement,
   type UploadBatch,
+  waitRow,
 } from "./upload-batch";
 
 export type UploadItem = { file: File; path: string };
@@ -22,7 +24,16 @@ export type UploadOutcome = { status: "uploaded"; path: string } | { status: "sk
 export type UploadAdapter<G> = {
   /** Runs once before the first file of a group, again after a failure; folders are created here. */
   prepare?: (group: G, signal: AbortSignal) => Promise<void>;
-  upload: (group: G, item: UploadItem, options: { signal: AbortSignal; onProgress: (bytes: number) => void }) => Promise<UploadOutcome>;
+  upload: (
+    group: G,
+    item: UploadItem,
+    options: {
+      signal: AbortSignal;
+      onProgress: (bytes: number) => void;
+      /** Cloud answered this attempt, so the network is back; a new try after a busy or silent server waits for progress. */
+      alive: () => void;
+    },
+  ) => Promise<UploadOutcome>;
   /** The short reason a failed row shows. */
   reason: (error: unknown) => string;
 };
@@ -38,6 +49,31 @@ export type UploadQueue<G> = {
   /** Once the queue drains, hears each group that created or uploaded something since, with its last uploaded path. */
   onSettled: (listener: (group: G, last: string | null) => void) => () => void;
 };
+
+/** Offline browsers wait for a useful event; an online hint alone still needs a successful attempt. */
+function waitForNetwork(delay: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", finish);
+      window.removeEventListener("online", finish);
+      document.removeEventListener("visibilitychange", visible);
+      resolve();
+    };
+    const visible = () => {
+      if (document.visibilityState === "visible" && navigator.onLine !== false) finish();
+    };
+    signal.addEventListener("abort", finish, { once: true });
+    window.addEventListener("online", finish);
+    document.addEventListener("visibilitychange", visible);
+    if (navigator.onLine !== false)
+      timer = setTimeout(() => {
+        if (navigator.onLine !== false) finish();
+      }, delay);
+  });
+}
 
 /*
  * Files upload one at a time in the order they were added; files added meanwhile join the same batch. The batch
@@ -57,7 +93,7 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
   let generation = 0;
 
   const apply = (transition: (draft: UploadBatch) => UploadAnnouncement | null | void, of = generation) => {
-    if (of !== generation) return;
+    if (disposed || of !== generation) return;
     let announcement: UploadAnnouncement | null | void = null;
     setBatch(
       produce((draft) => {
@@ -80,46 +116,70 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
         apply((draft) => startRow(draft, id!));
         let frame = 0;
         let latest = 0;
+        const stale = () => request.signal.aborted || disposed || turn !== generation;
+        let attempting = false;
+        const clearWait = (only?: "network") => {
+          const wait = batch.rows[id!]?.wait;
+          if (stale() || !attempting || !wait || (only && wait !== only)) return;
+          apply((draft) => waitRow(draft, id!, null), turn);
+        };
+        const alive = () => clearWait("network");
         const onProgress = (bytes: number) => {
+          if (stale() || !attempting) return;
+          clearWait();
           latest = bytes;
           if (frame) return;
           frame = requestAnimationFrame(() => {
             frame = 0;
-            if (!request.signal.aborted) apply((draft) => reportProgress(draft, id!, latest), turn);
+            if (!stale()) apply((draft) => reportProgress(draft, id!, latest), turn);
           });
         };
+        const budget = createUploadRetryBudget();
         try {
-          if (!group.prepared) {
+          while (!stale()) {
+            attempting = true;
             try {
-              await adapter.prepare?.(group.value, request.signal);
+              if (!group.prepared) {
+                await adapter.prepare?.(group.value, request.signal);
+                if (stale()) break;
+                group.prepared = true;
+                group.changed = true;
+              }
+              const outcome = await adapter.upload(group.value, items[id]!, { signal: request.signal, onProgress, alive });
+              if (stale()) break;
+              if (outcome.status === "cancel") {
+                cancel();
+                break;
+              }
+              if (outcome.status === "uploaded") {
+                group.changed = true;
+                group.last = outcome.path;
+              }
+              apply((draft) => finishRow(draft, id!, { status: outcome.status === "uploaded" ? "success" : "skipped" }), turn);
+              break;
             } catch (error) {
-              if (request.signal.aborted) continue;
-              const reason = adapter.reason(error);
-              apply((draft) => {
-                const said = finishRow(draft, id!, { status: "failed", reason });
-                failGroup(draft, row.group, reason);
-                return said;
-              }, turn);
-              continue;
+              if (stale()) break;
+              attempting = false;
+              const retry = nextUploadRetry(error, budget, "browser");
+              if (!retry) {
+                const reason = adapter.reason(error);
+                apply((draft) => {
+                  const said = finishRow(draft, id!, { status: "failed", reason });
+                  if (!group.prepared) failGroup(draft, row.group, reason);
+                  return said;
+                }, turn);
+                break;
+              }
+              apply((draft) => waitRow(draft, id!, retry.kind), turn);
+              await (retry.kind === "network"
+                ? waitForNetwork(retry.delay, request.signal)
+                : sleepUploadRetry(retry.delay, request.signal));
+              if (stale()) break;
+              if (retry.kind !== "network") apply((draft) => waitRow(draft, id!, "retrying"), turn);
             }
-            group.prepared = true;
-            group.changed = true;
           }
-          const outcome = await adapter.upload(group.value, items[id]!, { signal: request.signal, onProgress });
-          if (request.signal.aborted) continue;
-          if (outcome.status === "cancel") {
-            cancel();
-            continue;
-          }
-          if (outcome.status === "uploaded") {
-            group.changed = true;
-            group.last = outcome.path;
-          }
-          apply((draft) => finishRow(draft, id!, { status: outcome.status === "uploaded" ? "success" : "skipped" }), turn);
-        } catch (error) {
-          // Cancelling already marked the row; its upload only unwinds.
-          if (!request.signal.aborted) apply((draft) => finishRow(draft, id!, { status: "failed", reason: adapter.reason(error) }), turn);
         } finally {
+          attempting = false;
           if (frame) cancelAnimationFrame(frame);
           if (controller === request) controller = null;
         }

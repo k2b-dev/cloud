@@ -219,3 +219,24 @@ test("a durable-key write failure happens before any start request", async () =>
     write.mockRestore();
   }
 });
+
+test("an OK start signals life before Filegate progress; a rejected start never signals life", async () => {
+  const events: string[] = [];
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      events.push("transfer");
+      return normalTransfer(input, init);
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const onStarted = () => {
+    events.push("started");
+  };
+  await uploadFile("base", "file", new Blob(["abc"]), { ...options(), onStarted });
+  expect(events[0]).toBe("started");
+  expect(events.filter((event) => event === "started")).toHaveLength(1);
+  events.length = 0;
+  openCode = "upload_changed";
+  await expect(uploadFile("base", "file", new Blob(["abc"]), { ...options(), onStarted })).rejects.toBeDefined();
+  expect(events).toEqual([]);
+});

@@ -143,8 +143,9 @@ Final failures, such as name or write conflicts, a closed or unknown session,
 a changed upload, or insufficient space, discard the failed upload and its ID.
 Files asks again whether to replace after a name or write conflict; an unknown
 upload record starts fresh on retry. Discarding an open, unpublished session
-requests an abort and removes its ID only after confirmation. An explicit cancel
-also requests an abort before commit. Once commit has been sent, a lost or
+requests an abort and removes its ID only after confirmation. An explicit
+cancel during an attempt also requests an abort before commit. Cancelling a wait stops retries and
+retains the session and key. Once commit has been sent, a lost or
 temporary answer keeps the ID and never triggers an abort, including cancellation.
 Only a definite name or write conflict at commit can abort that unpublished
 session. Filegate retains terminal receipts for seven days. Browser upload IDs
@@ -152,11 +153,39 @@ expire locally 24 hours plus seven days after their last attempt and are pruned
 at the next upload.
 
 Every transfer request has a deadline sized for the slowest supported uplink of
-about 0.5 Mbit/s (64 KiB/s). A request the file server never answers fails the
-file with a reason and the batch continues with the next file. Browser failures
-distinguish “No response from the server” for Cloud requests from
+about 0.5 Mbit/s (64 KiB/s). These per-request deadlines remain the stall
+detector; the queue adds no inactivity timer. After automatic retries are
+exhausted, the file fails with its reason and the batch continues with the
+next file. Browser failures distinguish “No response from the server” for Cloud requests from
 “No response from the file server” for transfers. HTTP 408, 502, 503, and 504
 report a busy file server; HTTP 429 reports too many uploads in a short time.
+
+The workspace and public inbox use the same automatic wait policy. Every
+attempt reopens the same session with the same idempotency key and resumes
+from acknowledged segments:
+
+- A network failure pauses the current file; pending files stay pending. When
+  the browser reports a connection, probes wait 2 s, double their interval,
+  and stop growing at 30 s. An online event or returning to a visible tab
+  while online starts a probe immediately. No probe timer runs while the
+  browser reports offline. There is no probe count limit; Cancel and the
+  Filegate session lifetime of 24 hours bound the wait. After expiry, the
+  session's start response is final.
+- A stalled or busy server gets five retries after 2, 5, 15, 30, and 60 s,
+  or a larger Retry-After. The row shows the reason while waiting and
+  “Trying again” during the next attempt until progress arrives. Network
+  probes keep “Waiting for network” until Cloud answers or progress arrives.
+- HTTP 429 with Retry-After waits as requested without spending those five
+  retries, at most ten times per file. Without Retry-After, it counts as
+  busy. Retry-After above five minutes is not waited out automatically.
+- Other server errors and final errors are not retried automatically. A
+  manual **Try again** starts a fresh retry budget. A successful probe or
+  attempt does not reset the budget within a run.
+
+The Filegate SDK's short request retries run inside each attempt; the queue
+is the only additional retry layer. Cancel or leaving the workspace ends a
+wait immediately. The panel announces loss and return of the connection once
+per transition, rather than once per failed probe.
 
 ## Create folders
 
