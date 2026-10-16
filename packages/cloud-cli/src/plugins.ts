@@ -17,9 +17,8 @@ import { lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile }
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
-import { CLOUD_CLI_MODULE_NAME, type CloudCliPluginManifest, parseCloudCliPluginManifest } from "@k2b/cloud/cli";
+import { CLOUD_CLI_API_VERSION, CLOUD_CLI_MODULE_NAME, type CloudCliPluginManifest, parseCloudCliPluginManifest } from "@k2b/cloud/cli";
 import { userConfigDirectory } from "./config";
-import { checkPluginApiVersion } from "./plugin-store";
 
 const execFileAsync = promisify(execFile);
 
@@ -50,6 +49,18 @@ export class PluginError extends Error {
     super(message);
   }
 }
+
+/** The same API compatibility contract for served and package bundles. */
+export const checkPluginApiVersion = (manifest: CloudCliPluginManifest): void => {
+  if (manifest.apiVersion !== CLOUD_CLI_API_VERSION) {
+    throw new PluginError(
+      manifest.apiVersion > CLOUD_CLI_API_VERSION
+        ? `Plugin "${manifest.name}" needs plugin API ${manifest.apiVersion}; this cld supports ${CLOUD_CLI_API_VERSION}. Run \`cld update\`.`
+        : `Plugin "${manifest.name}" uses plugin API ${manifest.apiVersion}; this cld supports ${CLOUD_CLI_API_VERSION}. Update the Cloud or install an older cld.`,
+      "incompatible",
+    );
+  }
+};
 
 /** One installed package plugin; `source` is the resolved path or `npm:name@version`. */
 export type PackagePlugin = { package: string; version: string; digest: string; summary: string; source: string };

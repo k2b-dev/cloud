@@ -14,7 +14,6 @@ import { lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "no
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  CLOUD_CLI_API_VERSION,
   CLOUD_CLI_MODULE_NAME,
   CLOUD_CLI_PLUGIN_ENTRY,
   CLOUD_CLI_PLUGIN_ROUTE,
@@ -28,7 +27,7 @@ import {
   sha512Hex,
   validateCloudCliModule,
 } from "@k2b/cloud/cli";
-import { PluginError, pluginsDirectory } from "./plugins";
+import { checkPluginApiVersion, PluginError, pluginsDirectory } from "./plugins";
 
 /** One locked plugin of a profile. `summary` lets `cld help` list it without loading it. */
 export type LockedPlugin = {
@@ -91,18 +90,6 @@ export const fetchPluginManifest = async (fetch: CloudFetch, name: string): Prom
   if (manifest.name !== name) throw new PluginError(`Plugin "${name}" answered with a manifest for "${manifest.name}".`);
   checkPluginApiVersion(manifest);
   return manifest;
-};
-
-/** The same API compatibility contract for served and package bundles. */
-export const checkPluginApiVersion = (manifest: CloudCliPluginManifest): void => {
-  if (manifest.apiVersion !== CLOUD_CLI_API_VERSION) {
-    throw new PluginError(
-      manifest.apiVersion > CLOUD_CLI_API_VERSION
-        ? `Plugin "${manifest.name}" needs plugin API ${manifest.apiVersion}; this cld supports ${CLOUD_CLI_API_VERSION}. Run \`cld update\`.`
-        : `Plugin "${manifest.name}" uses plugin API ${manifest.apiVersion}; this cld supports ${CLOUD_CLI_API_VERSION}. Update the Cloud or install an older cld.`,
-      "incompatible",
-    );
-  }
 };
 
 /** Read a response body of exactly `size` bytes; stop as soon as it is longer. */
