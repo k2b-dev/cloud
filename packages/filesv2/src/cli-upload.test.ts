@@ -7,9 +7,12 @@ import { sha256 } from "@k2b/filegate/utils";
 import type { Hono } from "hono";
 import { hc } from "hono/client";
 import filesCli from "./cli";
-import { uploadFile } from "./cli-upload";
+import { uploadFile as runUploadFile } from "./cli-upload";
 import type { EntryResult, UploadSession } from "./contracts";
 import { UploadTransferError, uploadResponseFailure } from "./upload-transfer";
+
+// Existing outcome tests exercise one attempt; retry regressions below supply their own budget.
+const uploadFile: typeof runUploadFile = (ctx, input, api, options = { retryDelays: [] }) => runUploadFile(ctx, input, api, options);
 
 const originalFetch = globalThis.fetch;
 const defaults = new Map<string, string>();
@@ -604,3 +607,208 @@ test.each([200, 500])("put removes its resume key only when the real abort callb
   expect(aborts).toBe(1);
   expect(defaults.size).toBe(abortStatus === 200 ? 0 : 1);
 });
+
+test.each(["network", "stalled", "busy", "rate_limited"] as const)(
+  "CLI retries %s on the same key with localized wait lines only in text mode",
+  async (kind) => {
+    const local = await file("");
+    for (const locale of ["en", "de"] as const) {
+      for (const output of ["text", "json", "jsonl"] as const) {
+        errors.length = 0;
+        const keys: string[] = [];
+        const error = new UploadTransferError("failed", kind, undefined, kind === "rate_limited" ? 0 : undefined);
+        await uploadFile(
+          { ...ctx, options: { ...ctx.options, locale, output } },
+          local,
+          {
+            scope: "retry-text",
+            open: async (_size, _signal, key) => {
+              keys.push(key);
+              if (keys.length === 1) throw error;
+              return { ...session("https://files.test/unused", 0), state: "committed" };
+            },
+            renew: async () => {
+              throw new Error("must not renew");
+            },
+            commit: async () => result,
+            abort: async () => {
+              throw new Error("must not abort");
+            },
+          },
+          { retryDelays: [1, 1, 1, 1, 1] },
+        );
+        expect(keys).toHaveLength(2);
+        expect(keys[1]).toBe(keys[0]!);
+        expect(defaults.size).toBe(0);
+        if (output !== "text") expect(errors).toEqual([]);
+        else {
+          const reasons =
+            locale === "en"
+              ? {
+                  network: "Waiting for the network",
+                  stalled: "No response from the file server",
+                  busy: "The file server is busy",
+                  rate_limited: "Too many uploads in a short time",
+                }
+              : {
+                  network: "Warte auf das Netzwerk",
+                  stalled: "Keine Antwort vom Dateiserver",
+                  busy: "Der Dateiserver ist ausgelastet",
+                  rate_limited: "Zu viele Uploads in kurzer Zeit",
+                };
+          const pause =
+            locale === "en"
+              ? `, retrying in ${kind === "rate_limited" ? 0 : 1} s`
+              : `, neuer Versuch in ${kind === "rate_limited" ? 0 : 1} s`;
+          const index = errors.findIndex((line) => line.startsWith(reasons[kind]));
+          expect(errors[index]).toBe(`${reasons[kind]}${pause}${kind === "rate_limited" ? "" : " (1/5)"}`);
+          expect(errors[index + 1]).toBe(locale === "en" ? "Uploading file" : "Hochladen file");
+        }
+      }
+    }
+  },
+);
+
+test("CLI exhaustion rejects after five retries, keeps its key, and a rerun resumes", async () => {
+  const local = await file("");
+  const keys: string[] = [];
+  let recovered = false;
+  let aborts = 0;
+  const api = {
+    scope: "bounded-retry",
+    open: async (_size: number, _signal: AbortSignal, key: string): Promise<UploadSession> => {
+      keys.push(key);
+      if (!recovered) throw new TypeError("network down");
+      return { ...session("https://files.test/unused", 0), state: "committed" };
+    },
+    renew: async () => ({ url: "https://files.test/unused" }),
+    commit: async () => result,
+    abort: async () => {
+      aborts++;
+    },
+  };
+  await expect(uploadFile(ctx, local, api, { retryDelays: [0, 0, 0, 0, 0] })).rejects.toMatchObject({
+    message: "No connection to Cloud.",
+    cause: { kind: "network", origin: "cloud" },
+  });
+  expect(keys).toHaveLength(6);
+  expect(new Set(keys).size).toBe(1);
+  expect([...defaults.values()]).toEqual([keys[0]!]);
+  expect(aborts).toBe(0);
+  recovered = true;
+  await expect(uploadFile(ctx, local, api)).resolves.toEqual(result);
+  expect(keys[6]).toBe(keys[0]!);
+  expect(defaults.size).toBe(0);
+});
+
+test("CLI rate-limit waits survive six consecutive 429s and leave the retry budget for a stalled commit", async () => {
+  const local = await file("");
+  let opens = 0,
+    commits = 0;
+  const keys: string[] = [];
+  await uploadFile(
+    ctx,
+    local,
+    {
+      scope: "rate-limit",
+      open: async (_size, _signal, key) => {
+        keys.push(key);
+        if (++opens <= 6) throw await uploadResponseFailure(Response.json({}, { status: 429, headers: { "Retry-After": "0" } }), "failed");
+        return { ...session("https://files.test/unused", 0), state: "committed" };
+      },
+      renew: async () => {
+        throw new Error("must not renew");
+      },
+      commit: async () => {
+        if (++commits === 1) throw new DOMException("deadline", "TimeoutError");
+        return result;
+      },
+      abort: async () => {
+        throw new Error("must not abort");
+      },
+    },
+    { retryDelays: [0] },
+  );
+  expect(opens).toBe(8);
+  expect(commits).toBe(2);
+  expect(new Set(keys).size).toBe(1);
+  expect(defaults.size).toBe(0);
+});
+
+test.each(["SIGINT", "SIGTERM"] as const)("CLI %s wakes a retry wait immediately and removes its process listeners", async (event) => {
+  const local = await file("");
+  const before = [process.listenerCount("SIGINT"), process.listenerCount("SIGTERM")];
+  let opens = 0;
+  await expect(
+    uploadFile(
+      {
+        ...ctx,
+        options: { ...ctx.options, output: "text" },
+        error: (line) => {
+          if (line.startsWith("Waiting for the network")) queueMicrotask(() => process.emit(event));
+        },
+      },
+      local,
+      {
+        scope: "cancel-retry",
+        open: async () => {
+          opens++;
+          throw new TypeError("network down");
+        },
+        renew: async () => {
+          throw new Error("must not renew");
+        },
+        commit: async () => {
+          throw new Error("must not commit");
+        },
+        abort: async () => {
+          throw new Error("must not abort without a session");
+        },
+      },
+      { retryDelays: [30_000] },
+    ),
+  ).rejects.toThrow("Upload cancelled.");
+  expect(opens).toBe(1);
+  expect([process.listenerCount("SIGINT"), process.listenerCount("SIGTERM")]).toEqual(before);
+});
+
+test.each(["en", "de"] as const)(
+  "a Cloud deadline wait names Cloud and TTY progress overwrites the new phase line (%s)",
+  async (locale) => {
+    const local = await file("");
+    const descriptor = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+    Object.defineProperty(process.stderr, "isTTY", { configurable: true, value: true });
+    let opens = 0;
+    try {
+      await uploadFile(
+        { ...ctx, options: { ...ctx.options, locale, output: "text" } },
+        local,
+        {
+          scope: "cloud-deadline-retry",
+          open: async () => {
+            if (++opens === 1) throw new DOMException("deadline", "TimeoutError");
+            return { ...session("https://files.test/unused", 0), state: "committed" };
+          },
+          renew: async () => {
+            throw new Error("must not renew");
+          },
+          commit: async () => result,
+          abort: async () => {
+            throw new Error("must not abort");
+          },
+        },
+        { retryDelays: [0] },
+      );
+      expect(opens).toBe(2);
+      expect(errors[1]).toBe(
+        locale === "en" ? "No response from Cloud, retrying in 0 s (1/1)" : "Keine Antwort von Cloud, neuer Versuch in 0 s (1/1)",
+      );
+      expect(errors[2]).toBe(locale === "en" ? "Uploading file" : "Hochladen file");
+      expect(errors[3]).toStartWith("\x1b[1A\x1b[2K");
+      expect(errors[3]).toEndWith("(100 %)");
+    } finally {
+      if (descriptor) Object.defineProperty(process.stderr, "isTTY", descriptor);
+      else Reflect.deleteProperty(process.stderr, "isTTY");
+    }
+  },
+);

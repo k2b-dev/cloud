@@ -4,6 +4,7 @@ import { basename, resolve } from "node:path";
 import { type CloudCliContext, cliText } from "@k2b/cloud/cli";
 import { REQUEST_TIMEOUT_MS } from "./cli-request";
 import type { EntryResult, UploadSession } from "./contracts";
+import { classifyUploadFailure, createUploadRetryBudget, nextUploadRetry, sleepUploadRetry, UPLOAD_RETRY_DELAYS_MS } from "./upload-retry";
 import { transferUpload, UploadTransferError, uploadFailureAction, uploadRequestFailure } from "./upload-transfer";
 
 /** Cloud opens and commits the session; disk-backed file slices go straight to Filegate. */
@@ -17,6 +18,7 @@ export async function uploadFile(
     commit: (id: string, signal: AbortSignal) => Promise<EntryResult>;
     abort: (id: string, signal: AbortSignal) => Promise<void>;
   },
+  options: { retryDelays?: readonly number[] } = {},
 ) {
   const controller = new AbortController();
   const signal = controller.signal;
@@ -71,43 +73,80 @@ export async function uploadFile(
       lastProgress = now;
       lastBytes = bytes;
     };
-    session = await api.open(info.size, AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]), idempotencyKey);
-    if (session.state === "aborted" || session.state === "expired") await ctx.setDefault(storageKey, undefined);
-    // Bun.file(fd) shares a mutable seek offset; a path-backed Blob supports SDK resume/hash rereads.
-    await transferUpload(Bun.file(sourcePath), session, {
-      signal,
-      renew: async (id, renewSignal) => {
-        try {
-          return await api.renew(id, renewSignal);
-        } catch (error) {
-          throw uploadRequestFailure(error, "", signal);
+    const budget = createUploadRetryBudget();
+    for (;;) {
+      try {
+        session = await api.open(info.size, AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]), idempotencyKey);
+        signal.throwIfAborted();
+        committing = false;
+        if (session.state === "aborted" || session.state === "expired") await ctx.setDefault(storageKey, undefined);
+        // Bun.file(fd) shares a mutable seek offset; a path-backed Blob supports SDK resume/hash rereads.
+        await transferUpload(Bun.file(sourcePath), session, {
+          signal,
+          renew: async (id, renewSignal) => {
+            try {
+              return await api.renew(id, renewSignal);
+            } catch (error) {
+              throw uploadRequestFailure(error, "", signal);
+            }
+          },
+          onProgress: progress,
+          failure: cliText(ctx, { en: "Filegate upload failed.", de: "Der Filegate-Upload ist fehlgeschlagen." }),
+        });
+        progress(info.size);
+        const finalInfo = await handle.stat();
+        const finalPath = await stat(sourcePath);
+        if (
+          finalInfo.size !== info.size ||
+          finalInfo.mtimeMs !== info.mtimeMs ||
+          finalInfo.ctimeMs !== info.ctimeMs ||
+          finalPath.ino !== info.ino ||
+          finalPath.dev !== info.dev ||
+          finalPath.ctimeMs !== info.ctimeMs
+        )
+          throw new Error(
+            cliText(ctx, { en: "The local file changed during upload.", de: "Die lokale Datei wurde während des Uploads verändert." }),
+          );
+        signal.throwIfAborted();
+        if (textProgress) ctx.error(cliText(ctx, { en: "Finishing upload…", de: "Upload abschließen…" }));
+        committing = true;
+        // A lost commit response is ambiguous. Do not issue an abort after publishing may have succeeded.
+        const result = await api.commit(session.id, AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]));
+        await ctx.setDefault(storageKey, undefined);
+        if (textProgress) ctx.error(cliText(ctx, { en: "Upload done.", de: "Upload abgeschlossen." }));
+        return result;
+      } catch (caught) {
+        signal.throwIfAborted();
+        const failure = classifyUploadFailure(caught);
+        const retry = nextUploadRetry(failure, budget, false, options.retryDelays ?? UPLOAD_RETRY_DELAYS_MS);
+        if (!retry) throw failure ?? caught;
+        if (textProgress) {
+          const seconds = Math.ceil(retry.delay / 1000);
+          const counter = ` (${retry.attempt}/${retry.of})`;
+          const reasons = {
+            network: { en: "Waiting for the network", de: "Warte auf das Netzwerk" },
+            stalled:
+              failure?.origin === "cloud"
+                ? { en: "No response from Cloud", de: "Keine Antwort von Cloud" }
+                : { en: "No response from the file server", de: "Keine Antwort vom Dateiserver" },
+            busy: { en: "The file server is busy", de: "Der Dateiserver ist ausgelastet" },
+            rate_limited: { en: "Too many uploads in a short time", de: "Zu viele Uploads in kurzer Zeit" },
+          };
+          ctx.error(
+            `${cliText(ctx, reasons[retry.kind])}${cliText(ctx, {
+              en: `, retrying in ${seconds} s`,
+              de: `, neuer Versuch in ${seconds} s`,
+            })}${retry.kind === "rate_limited" ? "" : counter}`,
+          );
         }
-      },
-      onProgress: progress,
-      failure: cliText(ctx, { en: "Filegate upload failed.", de: "Der Filegate-Upload ist fehlgeschlagen." }),
-    });
-    progress(info.size);
-    const finalInfo = await handle.stat();
-    const finalPath = await stat(sourcePath);
-    if (
-      finalInfo.size !== info.size ||
-      finalInfo.mtimeMs !== info.mtimeMs ||
-      finalInfo.ctimeMs !== info.ctimeMs ||
-      finalPath.ino !== info.ino ||
-      finalPath.dev !== info.dev ||
-      finalPath.ctimeMs !== info.ctimeMs
-    )
-      throw new Error(
-        cliText(ctx, { en: "The local file changed during upload.", de: "Die lokale Datei wurde während des Uploads verändert." }),
-      );
-    signal.throwIfAborted();
-    if (textProgress) ctx.error(cliText(ctx, { en: "Finishing upload…", de: "Upload abschließen…" }));
-    committing = true;
-    // A lost commit response is ambiguous. Do not issue an abort after publishing may have succeeded.
-    const result = await api.commit(session.id, AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]));
-    await ctx.setDefault(storageKey, undefined);
-    if (textProgress) ctx.error(cliText(ctx, { en: "Upload done.", de: "Upload abgeschlossen." }));
-    return result;
+        await sleepUploadRetry(retry.delay, signal);
+        signal.throwIfAborted();
+        // Progress replaces the phase line above it, never the reason for the wait.
+        if (textProgress) ctx.error(line());
+        lastProgress = -Infinity;
+        lastBytes = -1;
+      }
+    }
   } catch (caught) {
     const error = signal.aborted ? caught : uploadRequestFailure(caught, "", signal);
     const action = uploadFailureAction(error, { session, committing, cancelled: signal.aborted });

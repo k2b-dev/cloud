@@ -13,7 +13,7 @@ export class UploadConflict extends Error {
     super(message);
   }
 }
-/** One file: Cloud authorizes sessions; bytes go directly to Filegate. Three consecutive retries bound failures without limiting healthy long transfers. */
+/** One attempt: Cloud authorizes the session; bytes go directly to Filegate. The queue owns retries. */
 export async function uploadFile(
   baseId: string,
   path: string,
@@ -24,6 +24,7 @@ export async function uploadFile(
     signal: AbortSignal;
     fallback: string;
     onProgress?: (bytes: number) => void;
+    onStarted?: () => void;
   },
 ): Promise<EntryResult> {
   options.signal.throwIfAborted();
@@ -45,6 +46,7 @@ export async function uploadFile(
       { init: { signal: requestSignal(options.signal) } },
     );
     if (!opened.ok) throw await uploadResponseFailure(opened, options.fallback);
+    options.onStarted?.();
     session = await opened.json();
     if (session.state === "aborted" || session.state === "expired") start.finish();
     await transferUpload(file, session, {

@@ -16,6 +16,7 @@ import {
   startRow,
   type UploadAnnouncement,
   type UploadBatch,
+  waitRow,
 } from "./upload-batch";
 
 const target = { key: "home:Projects", label: "Projects" };
@@ -275,4 +276,41 @@ describe("upload batch presentation rules", () => {
     expect(complete(batch)).toEqual({ kind: "progress", percent: 50, done: 2, count: 3 });
     expect(complete(batch)).toBeNull();
   });
+});
+
+describe("upload waits", () => {
+  test("announces entering and leaving network once across failed probes", () => {
+    const batch = createBatch();
+    appendFiles(batch, target, 0, files(["a", 10], ["b", 10]));
+    expect(waitRow(batch, 0, "network")).toBeNull();
+    startRow(batch, 0);
+    expect(waitRow(batch, 0, "network")).toEqual({ kind: "offline" });
+    expect(waitRow(batch, 0, "network")).toBeNull();
+    expect(batch.rows[1]!.status).toBe("pending");
+    expect(waitRow(batch, 0, null)).toEqual({ kind: "online" });
+    expect(waitRow(batch, 0, null)).toBeNull();
+    expect(waitRow(batch, 0, "busy")).toBeNull();
+    expect(waitRow(batch, 0, "retrying")).toBeNull();
+    expect(batch.rows[0]!.wait).toBe("retrying");
+  });
+
+  test.each(["success", "failed", "skipped", "cancelled"] as const)(
+    "settling %s clears a wait; manual retry and start clear it too",
+    (status) => {
+      const batch = createBatch();
+      appendFiles(batch, target, 0, files(["a", 10]));
+      startRow(batch, 0);
+      waitRow(batch, 0, "network");
+      if (status === "cancelled") cancelBatch(batch);
+      else finishRow(batch, 0, status === "failed" ? { status, reason: "failed" } : { status });
+      expect(batch.rows[0]!.wait).toBeNull();
+      expect(waitRow(batch, 0, "busy")).toBeNull();
+      if (status === "failed") {
+        retryRows(batch);
+        expect(batch.rows[0]!.wait).toBeNull();
+        startRow(batch, 0);
+        expect(batch.rows[0]!.wait).toBeNull();
+      }
+    },
+  );
 });

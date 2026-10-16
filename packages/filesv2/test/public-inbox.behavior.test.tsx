@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, expect, mock, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, expect, jest, mock, setSystemTime, test } from "bun:test";
+import { setImmediate } from "node:timers";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { PublicShare } from "../src/contracts";
@@ -84,6 +85,10 @@ afterEach(() => {
   commitStatus = 200;
   openSession = false;
   cleanup();
+  if (jest.isFakeTimers()) {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+  }
   creates = 0;
   commits = 0;
   aborts = 0;
@@ -179,19 +184,24 @@ test("public inbox keeps an open session after transient commit failure and drop
     dispose();
     dom.cleanup();
   };
+  jest.useFakeTimers();
+  const settle = async (condition: () => boolean) => {
+    for (let i = 0; i < 500 && !condition(); i++) await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(condition()).toBe(true);
+  };
   openSession = true;
   commitStatus = 503;
   const input = dom.root.querySelector<HTMLInputElement>('input[type="file"]')!;
   Object.defineProperty(input, "files", { configurable: true, value: [new File([], "file.txt", { lastModified: 123 })] });
   input.dispatchEvent(new Event("change", { bubbles: true }));
-  await flush();
+  await settle(() => commits === 1 && !!dom.document.querySelector('[data-wait="busy"]'));
   expect(commits).toBe(1);
   expect(aborts).toBe(0);
   expect(resumeKeys()).toHaveLength(1);
   const original = startKey;
   startCode = "upload_changed";
-  dom.document.querySelector<HTMLButtonElement>('button[aria-label^="Try again:"]')!.click();
-  await flush();
+  jest.advanceTimersByTime(2000);
+  await settle(() => creates === 2 && !!dom.document.querySelector('[data-status="failed"]'));
   expect(creates).toBe(2);
   expect(startKey).toBe(original);
   expect(localStorage.length).toBe(0);
