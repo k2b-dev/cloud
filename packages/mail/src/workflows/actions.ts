@@ -32,7 +32,11 @@ import {
 import { ensureConversationReferenceInTransaction } from "../service/conversation-reference";
 import { updateWorkflowConversationSummaryInTransaction } from "../service/conversation-summary";
 import { createWorkflowDraftInTransaction, createWorkflowReviewReplyDraftInTransaction } from "../service/drafts";
-import { resolveIncomingAutomationPlacementTurn } from "../service/incoming-automation-order";
+import {
+  hasIncomingAutomationMessagePlacement,
+  resolveIncomingAutomationMessageTurn,
+  resolveIncomingAutomationPlacementTurn,
+} from "../service/incoming-automation-order";
 import { resolveIncomingAutomationMandateCaller } from "../service/incoming-automation-workload";
 import { updateWorkflowConversationLocalTagInTransaction } from "../service/local-tags";
 import { parseMessageProtocolFacts } from "../service/message-protocol";
@@ -299,6 +303,7 @@ const createCommand = async (ctx: WorkflowActionContext, scope: MailRunScope, in
   return command.ok ? commandOutcome(command.data) : resultFailure(command.error);
 };
 
+const MESSAGE_STATE_ACTIONS = new Set(["addFlag", "removeFlag", "addKeyword", "removeKeyword"]);
 /** Actions that change where a message sits, and therefore run one at a time. */
 const PLACEMENT_ACTIONS = new Set(["moveMessage", "archiveMessage", "trashMessage", "junkMessage"]);
 
@@ -353,14 +358,31 @@ const messageAction = (
         // takes the outcome of the command it already issued. That command may
         // have moved the message already, so the checks below would no longer
         // find it where the step did.
-        const [issued] = await tx<{ id: string; state: MailCommand["state"]; last_error_message: string | null }[]>`
-          SELECT id::text, state, last_error_message
+        const [issued] = await tx<
+          { id: string; state: MailCommand["state"]; last_error_code: string | null; last_error_message: string | null }[]
+        >`
+          SELECT id::text, state, last_error_code, last_error_message
           FROM mail.commands
           WHERE mailbox_id = ${scope.mailboxId}::uuid AND idempotency_key = ${ctx.effectKey} AND correlation_id = ${ctx.runId}
         `;
-        if (issued) return applied(commandOutcome({ id: issued.id, state: issued.state, lastError: issued.last_error_message }));
-        if (PLACEMENT_ACTIONS.has(kind)) {
-          const turn = await resolveIncomingAutomationPlacementTurn({
+        if (issued) {
+          if (
+            MESSAGE_STATE_ACTIONS.has(kind) &&
+            issued.state === "failed" &&
+            (issued.last_error_code === "REMOTE_MESSAGE_STALE" || issued.last_error_code === "REMOTE_MESSAGE_MISSING") &&
+            !(await hasIncomingAutomationMessagePlacement({ db: tx, messageId, folderId }))
+          ) {
+            const skipped: ActionResult = {
+              state: "succeeded",
+              output: { action: kind, applied: false, skipped: "message_moved", commandId: issued.id },
+            };
+            return skipped;
+          }
+          return applied(commandOutcome({ id: issued.id, state: issued.state, lastError: issued.last_error_message }));
+        }
+        if (PLACEMENT_ACTIONS.has(kind) || MESSAGE_STATE_ACTIONS.has(kind)) {
+          const resolveTurn = PLACEMENT_ACTIONS.has(kind) ? resolveIncomingAutomationPlacementTurn : resolveIncomingAutomationMessageTurn;
+          const turn = await resolveTurn({
             db: tx,
             runId: ctx.runId,
             mailboxId: scope.mailboxId,

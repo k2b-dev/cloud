@@ -14,6 +14,7 @@ import { sql } from "bun";
 import { Hono } from "hono";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import incomingAutomationRoutes from "../api/incoming-automations";
+import type { MailAutomationAction } from "../contracts";
 import type { MailApiContext } from "../api/public-resource-boundary";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
@@ -47,6 +48,7 @@ import { hydrateMessageFromSource } from "./message-hydration";
 import { ingestEnvelope } from "./sync-runtime";
 import { loadMailWorkflowCatalog } from "./workflow-catalog-service";
 import { workflowSnapshotQuery } from "./workflow-data";
+import { loadIncomingAutomationSiblingTransitions } from "./workflow-message-preconditions";
 import { runMailWorkflow } from "./workflow-runtime";
 
 const suite = suiteFor("database", "nats");
@@ -1165,27 +1167,42 @@ suite("incoming automations", () => {
       input: { expectedRevision: enabled.data.revision },
     });
   });
-  for (const ordering of ["read first", "move first"] as const) {
-    test(`records the cross-automation read/move race with ${ordering}`, async () => {
-      const [archive] = await sql<{ short_id: string }[]>`
-      SELECT short_id FROM mail.folders WHERE id = ${archiveFolderId}::uuid
-    `;
-      if (!archive) throw new Error("Failed to load the archive folder public id");
+  const siblingScenarios = [
+    "read first",
+    "move first",
+    "already moved",
+    "external move",
+    "keywords",
+    "external drift",
+    "external drift after read",
+  ] as const;
+  for (const [scenarioIndex, scenario] of siblingScenarios.entries()) {
+    test(`handles sibling incoming automations with ${scenario}`, async () => {
+      const [archive] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.folders WHERE id = ${archiveFolderId}::uuid`;
       const [inbox] = await sql<{ short_id: string }[]>`SELECT short_id FROM mail.folders WHERE id = ${inboxFolderId}::uuid`;
-      if (!inbox) throw new Error("Failed to load inbox public id");
-      const sender = `ordered-${ordering.replaceAll(" ", "-")}-${suffix}@external.test`;
+      if (!archive || !inbox) throw new Error("Failed to load folder public ids");
+      const sender = `ordered-${scenario.replaceAll(" ", "-")}-${suffix}@external.test`;
       const scope = {
         mode: "matching" as const,
         conditions: { mode: "all" as const, items: [{ field: "sender_address" as const, operator: "is" as const, value: sender }] },
       };
+      const olderAction: MailAutomationAction =
+        scenario === "keywords" ? { kind: "add_keyword", keyword: "alpha" } : { kind: "move_to_folder", folderId: archive.short_id };
+      const newerActions: MailAutomationAction[] =
+        scenario === "keywords"
+          ? [{ kind: "add_keyword", keyword: "beta" }]
+          : [
+              { kind: "mark_read" },
+              ...(["read first", "move first"].includes(scenario) ? [{ kind: "move_to_folder" as const, folderId: inbox.short_id }] : []),
+            ];
       const older = await createIncomingAutomation({
         context: ownerContext,
         mailboxId,
         input: {
-          name: `Ordered move ${suffix}`,
+          name: `Ordered older ${scenario} ${suffix}`,
           enabled: true,
           scope,
-          steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "move_to_folder", folderId: archive.short_id } }],
+          steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: olderAction }],
         },
       });
       if (!older.ok) throw new Error(older.error.message);
@@ -1193,13 +1210,10 @@ suite("incoming automations", () => {
         context: ownerContext,
         mailboxId,
         input: {
-          name: `Ordered read and move ${suffix}`,
+          name: `Ordered newer ${scenario} ${suffix}`,
           enabled: true,
           scope,
-          steps: [
-            { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } },
-            { id: crypto.randomUUID(), kind: "mail_action", action: { kind: "move_to_folder", folderId: inbox.short_id } },
-          ],
+          steps: newerActions.map((action) => ({ id: crypto.randomUUID(), kind: "mail_action" as const, action })),
         },
       });
       if (!newer.ok) throw new Error(newer.error.message);
@@ -1207,8 +1221,7 @@ suite("incoming automations", () => {
       const listed = await listIncomingAutomations(ownerContext, mailboxId);
       const listedIds = listed.ok ? listed.data.map((item) => item.id) : [];
       expect(listedIds.indexOf(older.data.id)).toBeLessThan(listedIds.indexOf(newer.data.id));
-
-      const uid = ordering === "read first" ? 8101 : 8102;
+      const uid = 8201 + scenarioIndex;
       await ingestEnvelope({
         db: sql,
         mailboxId,
@@ -1216,14 +1229,14 @@ suite("incoming automations", () => {
         folderId: inboxFolderId,
         message: {
           remoteRef: { folderStableKey: `incoming-automation-inbox-${suffix}`, uidValidity: "1", uid: String(uid), modseq: "1" },
-          providerMessageId: `ordered-${ordering.replaceAll(" ", "-")}-${suffix}`,
+          providerMessageId: `ordered-${scenario.replaceAll(" ", "-")}-${suffix}`,
           providerThreadId: null,
-          messageId: `<ordered-${ordering.replaceAll(" ", "-")}-${suffix}@external.test>`,
+          messageId: `<ordered-${scenario.replaceAll(" ", "-")}-${suffix}@external.test>`,
           inReplyTo: null,
           references: [],
           subject: "Ordered automations",
-          sentAt: new Date(),
-          internalDate: new Date(),
+          sentAt: new Date("2026-01-15T12:00:00Z"),
+          internalDate: new Date("2026-01-15T12:00:00Z"),
           sizeBytes: 128,
           flags: [],
           labels: [],
@@ -1235,7 +1248,7 @@ suite("incoming automations", () => {
             bcc: [],
           },
           mimeStructure: {},
-        } as never,
+        },
         captureWorkflowTriggers: true,
       });
       await dispatchPendingWorkflowEvents(100, { appId: "mail", scopeId: mailboxId });
@@ -1253,109 +1266,198 @@ suite("incoming automations", () => {
       const olderRunId = await runIdFor(older.data.workflowId);
       const newerRunId = await runIdFor(newer.data.workflowId);
 
-      // Each run issues its provider command and parks on it. The run the worker claims first queues its
-      // command first, and the mailbox executes commands in that order.
-      const commandsFor = async (runId: string) => sql<{ kind: string }[]>`
-      SELECT kind FROM mail.commands WHERE correlation_id = ${runId}
-    `;
-      for (const runId of ordering === "read first" ? [newerRunId, olderRunId] : [olderRunId, newerRunId]) {
-        expect(await runMailWorkflow(runId)).toMatchObject({ state: "finished", result: { state: "waiting" } });
-      }
-      expect((await commandsFor(olderRunId)).map((command) => command.kind)).toEqual(["move"]);
-      const [readCommand] = await sql<{ id: string; ref: string }[]>`
-        SELECT id, target ->> 'remoteMessageRefId' AS ref FROM mail.commands
-        WHERE correlation_id = ${newerRunId} AND kind = 'change_message_state'
-      `;
-      const [moveCommand] = await sql<{ id: string }[]>`
-        SELECT id FROM mail.commands WHERE correlation_id = ${olderRunId} AND kind = 'move'
-      `;
-      if (!readCommand || !moveCommand) throw new Error("Missing ordered automation commands");
+      const commandsFor = (runId: string) => sql<
+        {
+          id: string;
+          kind: string;
+          mailbox_id: string;
+          actor_kind: string;
+          actor_id: string | null;
+          correlation_id: string | null;
+          target: Record<string, unknown>;
+          last_error_code: string | null;
+        }[]
+      >`SELECT id, kind, mailbox_id, actor_kind, actor_id, correlation_id, target, last_error_code
+          FROM mail.commands WHERE correlation_id = ${runId} ORDER BY created_at, id`;
+      const outputFor = async (runId: string, action: string) => {
+        const [step] = await sql<{ output: Record<string, unknown> }[]>`
+          SELECT outcome #> '{outcome,output}' AS output FROM workflows.step_outcome
+          WHERE run_id = ${runId}::uuid AND outcome #>> '{outcome,output,action}' = ${action}
+        `;
+        return step?.output;
+      };
+      const runWaiting = async (id: string) =>
+        expect(await runMailWorkflow(id)).toMatchObject({ state: "finished", result: { state: "waiting" } });
+      const runSucceeded = async (id: string) =>
+        expect(await runMailWorkflow(id)).toMatchObject({ state: "finished", result: { state: "succeeded" } });
       let flags: string[] = [];
+      let keywords: string[] = [];
       let moved = false;
+      let modseq = 1;
       const state = () => ({
         exists: !moved,
-        flags,
-        keywords: [],
-        messageId: `<ordered-${ordering.replaceAll(" ", "-")}-${suffix}@external.test>`,
-        modseq: flags.length ? "2" : "1",
+        flags: [...flags],
+        keywords: [...keywords],
+        messageId: `<ordered-${scenario.replaceAll(" ", "-")}-${suffix}@external.test>`,
+        modseq: String(modseq),
       });
       const getState = spyOn(imapSmtpConnector, "getMessageState").mockImplementation(async () => state());
       const getStates = spyOn(imapSmtpConnector, "getMessageStates").mockImplementation(
         async (_config, messages) => new Map(moved ? [] : messages.uids.map((uid) => [uid, state()] as const)),
       );
       const change = spyOn(imapSmtpConnector, "changeMessageState").mockImplementation(async (_config, _target, requested) => {
-        flags = requested.addFlags;
+        flags = [...new Set([...flags, ...requested.addFlags])].filter((flag) => !requested.removeFlags.includes(flag));
+        keywords = [...new Set([...keywords, ...requested.addKeywords])].filter((keyword) => !requested.removeKeywords.includes(keyword));
+        modseq++;
         return state();
       });
       const status = spyOn(imapSmtpConnector, "getFolderStatus").mockResolvedValue({
         uidValidity: "1",
-        uidNext: 9001,
+        uidNext: 9201 + scenarioIndex,
         highestModseq: null,
         messages: 0,
       });
       const move = spyOn(imapSmtpConnector, "moveMessages").mockImplementation(async (_config, messages) => {
         moved = true;
-        return { completed: true, destinationUidValidity: "1", destinationUids: new Map(messages.uids.map((uid) => [uid, 9001])) };
+        return {
+          completed: true,
+          destinationUidValidity: "1",
+          destinationUids: new Map(messages.uids.map((uid) => [uid, 9201 + scenarioIndex])),
+        };
       });
       try {
-        if (ordering === "read first") {
-          // #1036: a confirmed read invalidates the older move's frozen provider precondition.
-          expect(await executeMutationCommand(readCommand.id)).toBe("confirmed");
-          expect(await runMailWorkflow(newerRunId)).toMatchObject({ state: "finished", result: { state: "succeeded" } });
-          const [skipped] = await sql<{ output: Record<string, unknown> }[]>`
-            SELECT outcome #> '{outcome,output}' AS output FROM workflows.step_outcome
-            WHERE run_id = ${newerRunId}::uuid AND outcome #>> '{outcome,output,action}' = 'moveMessage'
-          `;
-          expect(skipped?.output).toEqual({ action: "moveMessage", applied: false, skipped: "earlier_automation" });
-          const [readStep] = await sql<{ output: Record<string, unknown> }[]>`
-            SELECT outcome #> '{outcome,output}' AS output FROM workflows.step_outcome
-            WHERE run_id = ${newerRunId}::uuid AND outcome #>> '{outcome,output,action}' = 'addFlag'
-          `;
-          expect(readStep?.output).toMatchObject({ applied: true, value: "seen" });
-          expect(await executeMutationCommand(moveCommand.id)).toBe("failed");
-          const [failed] = await sql<{ last_error_code: string }[]>`
-            SELECT last_error_code FROM mail.commands WHERE id = ${moveCommand.id}::uuid
-          `;
-          expect(failed?.last_error_code).toBe("REMOTE_STATE_CHANGED");
-          expect(await runMailWorkflow(olderRunId)).toMatchObject({ state: "finished", result: { state: "failed" } });
-          expect(change).toHaveBeenCalledTimes(1);
-          expect(move).not.toHaveBeenCalled();
-        } else {
-          // #1036: the older move removes the source before the newer read executes.
-          expect(await executeMutationCommand(moveCommand.id)).toBe("confirmed");
-          expect(await runMailWorkflow(olderRunId)).toMatchObject({ state: "finished", result: { state: "succeeded" } });
-          expect(await executeMutationCommand(readCommand.id)).toBe("failed");
-          const [failed] = await sql<{ last_error_code: string }[]>`
-            SELECT last_error_code FROM mail.commands WHERE id = ${readCommand.id}::uuid
-          `;
-          expect(failed?.last_error_code).toBe("REMOTE_MESSAGE_STALE");
-          expect(await runMailWorkflow(newerRunId)).toMatchObject({ state: "finished", result: { state: "failed" } });
+        if (scenario === "already moved" || scenario === "move first") {
+          await runWaiting(olderRunId);
+          const [moveCommand] = await commandsFor(olderRunId);
+          if (!moveCommand) throw new Error("Missing move command");
+          if (scenario === "already moved") {
+            expect(await executeMutationCommand(moveCommand.id)).toBe("confirmed");
+            await runSucceeded(olderRunId);
+          }
+          // A pending move skips the read immediately; a completed move skips it as message_moved.
+          await runSucceeded(newerRunId);
+          expect(await outputFor(newerRunId, "addFlag")).toEqual({
+            action: "addFlag",
+            applied: false,
+            skipped: scenario === "already moved" ? "message_moved" : "earlier_automation",
+          });
+          expect(await commandsFor(newerRunId)).toEqual([]);
+          if (scenario === "move first") {
+            expect(await outputFor(newerRunId, "moveMessage")).toEqual({
+              action: "moveMessage",
+              applied: false,
+              skipped: "earlier_automation",
+            });
+            expect(await executeMutationCommand(moveCommand.id)).toBe("confirmed");
+            await runSucceeded(olderRunId);
+          }
           expect(change).not.toHaveBeenCalled();
           expect(move).toHaveBeenCalledTimes(1);
+        } else if (scenario === "external move") {
+          await runWaiting(newerRunId);
+          const [readCommand] = await commandsFor(newerRunId);
+          if (!readCommand) throw new Error("Missing read command");
+          // Sync retires the remote ref and its placement without issuing a command.
+          await sql`UPDATE mail.remote_message_refs SET stale_at = now() WHERE id = ${String(readCommand.target.remoteMessageRefId)}::uuid`;
+          await sql`UPDATE mail.message_placements SET deleted_at = now() WHERE remote_message_ref_id = ${String(readCommand.target.remoteMessageRefId)}::uuid`;
+          moved = true;
+          expect(await executeMutationCommand(readCommand.id)).toBe("failed");
+          expect((await commandsFor(newerRunId))[0]?.last_error_code).toBe("REMOTE_MESSAGE_STALE");
+          await runSucceeded(newerRunId);
+          expect(await outputFor(newerRunId, "addFlag")).toEqual({
+            action: "addFlag",
+            applied: false,
+            skipped: "message_moved",
+            commandId: readCommand.id,
+          });
+          await runSucceeded(olderRunId);
+          expect(await commandsFor(olderRunId)).toEqual([]);
+          expect(change).not.toHaveBeenCalled();
+          expect(move).not.toHaveBeenCalled();
+        } else if (scenario === "keywords") {
+          await runWaiting(olderRunId);
+          await runWaiting(newerRunId);
+          const [first] = await commandsFor(olderRunId);
+          const [second] = await commandsFor(newerRunId);
+          if (!first || !second) throw new Error("Missing keyword commands");
+          expect(await executeMutationCommand(first.id)).toBe("confirmed");
+          await runSucceeded(olderRunId);
+          expect(keywords).toEqual(["alpha"]);
+          expect((await loadIncomingAutomationSiblingTransitions(sql, [second])).get(second.id)).toEqual([
+            { field: "keywords", add: true, value: "alpha" },
+          ]);
+          // User commands and malformed workflow correlations are never sibling writes.
+          for (const correlation of [first.correlation_id, "not-a-run-id"]) {
+            await sql`UPDATE mail.commands SET actor_kind = ${correlation === first.correlation_id ? "user" : "workflow"}, correlation_id = ${correlation} WHERE id = ${first.id}::uuid`;
+            expect((await loadIncomingAutomationSiblingTransitions(sql, [second])).size).toBe(0);
+          }
+          await sql`UPDATE mail.commands SET actor_kind = 'workflow', correlation_id = ${first.correlation_id} WHERE id = ${first.id}::uuid`;
+          expect(
+            (await loadIncomingAutomationSiblingTransitions(sql, [{ ...second, actor_kind: "user", correlation_id: olderRunId }])).size,
+          ).toBe(0);
+          expect(await executeMutationCommand(second.id)).toBe("confirmed");
+          await runSucceeded(newerRunId);
+          expect(keywords).toEqual(["alpha", "beta"]);
+          expect(change).toHaveBeenCalledTimes(2);
+          expect(move).not.toHaveBeenCalled();
+        } else {
+          // Queue the read first so per-message serialization permits it before the move.
+          if (scenario !== "external drift") await runWaiting(newerRunId);
+          await runWaiting(olderRunId);
+          const [moveCommand] = await commandsFor(olderRunId);
+          if (!moveCommand) throw new Error("Missing move command");
+          if (scenario !== "external drift") {
+            const [readCommand] = await commandsFor(newerRunId);
+            if (!readCommand) throw new Error("Missing read command");
+            expect(await executeMutationCommand(readCommand.id)).toBe("confirmed");
+            await runSucceeded(newerRunId);
+          }
+          if (scenario === "read first") {
+            expect(await outputFor(newerRunId, "moveMessage")).toEqual({
+              action: "moveMessage",
+              applied: false,
+              skipped: "earlier_automation",
+            });
+            expect(await executeMutationCommand(moveCommand.id)).toBe("confirmed");
+            await runSucceeded(olderRunId);
+            expect(change).toHaveBeenCalledTimes(1);
+            expect(move).toHaveBeenCalledTimes(1);
+          } else {
+            // A provider change with no confirmed sibling command remains unexpected.
+            flags.push("\\Flagged");
+            modseq++;
+            expect(await executeMutationCommand(moveCommand.id)).toBe("failed");
+            expect((await commandsFor(olderRunId))[0]?.last_error_code).toBe("REMOTE_STATE_CHANGED");
+            expect(await runMailWorkflow(olderRunId)).toMatchObject({ state: "finished", result: { state: "failed" } });
+            expect(move).not.toHaveBeenCalled();
+          }
+        }
+        if (["read first", "move first", "already moved"].includes(scenario)) {
+          const placements = await sql<{ folder_id: string; flags: string[] }[]>`
+            SELECT placement.folder_id, placement.flags FROM mail.message_placements placement
+            JOIN mail.remote_message_refs ref ON ref.message_id = placement.message_id
+            WHERE ref.folder_id = ${inboxFolderId}::uuid AND ref.uid = ${uid} AND placement.deleted_at IS NULL
+          `;
+          expect(placements).toEqual([{ folder_id: archiveFolderId, flags: scenario === "read first" ? ["\\Seen"] : [] }]);
+          expect(moved).toBe(true);
+          expect(flags).toEqual(scenario === "read first" ? ["\\Seen"] : []);
         }
         const [olderRun] = await sql<{ state: string; effects_used: Record<string, number> | string }[]>`
           SELECT state, effects_used FROM workflows.run WHERE id = ${olderRunId}::uuid
         `;
-        expect(olderRun?.state).toBe(ordering === "read first" ? "failed" : "succeeded");
-        const used = typeof olderRun?.effects_used === "string" ? JSON.parse(olderRun.effects_used) : olderRun?.effects_used;
-        expect(used?.maxMoves).toBe(1);
-        expect((await commandsFor(olderRunId)).map((command) => command.kind)).toEqual(["move"]);
-        expect(await commandsFor(newerRunId)).toEqual([{ kind: "change_message_state" }]);
-        const [newerRun] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id = ${newerRunId}::uuid`;
-        expect(newerRun?.state).toBe(ordering === "read first" ? "succeeded" : "failed");
-        const placements = await sql<{ folder_id: string; flags: string[] }[]>`
-          SELECT folder_id, flags FROM mail.message_placements WHERE message_id = (
-            SELECT message_id FROM mail.remote_message_refs WHERE id = ${readCommand.ref}::uuid
-          ) AND deleted_at IS NULL
-        `;
-        expect(placements).toEqual([
-          {
-            folder_id: ordering === "read first" ? inboxFolderId : archiveFolderId,
-            flags: ordering === "read first" ? ["\\Seen"] : [],
-          },
-        ]);
-        expect(moved).toBe(ordering === "move first");
-        expect(flags).toEqual(ordering === "read first" ? ["\\Seen"] : []);
+        expect(olderRun?.state).toBe(scenario.startsWith("external drift") ? "failed" : "succeeded");
+        if (["read first", "move first", "already moved"].includes(scenario)) {
+          const used = typeof olderRun?.effects_used === "string" ? JSON.parse(olderRun.effects_used) : olderRun?.effects_used;
+          expect(used?.maxMoves).toBe(1);
+          expect((await commandsFor(olderRunId)).map((command) => command.kind)).toEqual(["move"]);
+          expect((await commandsFor(newerRunId)).map((command) => command.kind)).toEqual(
+            scenario === "read first" ? ["change_message_state"] : [],
+          );
+        }
+        if (scenario !== "external drift") {
+          const [newerRun] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id = ${newerRunId}::uuid`;
+          expect(newerRun?.state).toBe("succeeded");
+        }
       } finally {
         move.mockRestore();
         status.mockRestore();
@@ -1363,9 +1465,9 @@ suite("incoming automations", () => {
         getStates.mockRestore();
         getState.mockRestore();
         for (const automation of [newer.data, older.data]) {
-          const [current] = await sql<{ revision: string | number }[]>`
-            SELECT revision FROM mail.incoming_automations WHERE id = ${automation.id}::uuid
-          `;
+          const [current] = await sql<
+            { revision: string | number }[]
+          >`SELECT revision FROM mail.incoming_automations WHERE id = ${automation.id}::uuid`;
           await deleteIncomingAutomation({
             context: ownerContext,
             mailboxId,

@@ -20,15 +20,19 @@ const parseSteps = (value: MailAutomationStep[] | string): MailAutomationStep[] 
 const changesPlacement = (steps: MailAutomationStep[]): boolean =>
   incomingAutomationActions(steps).some((action) => action.kind === "junk" || action.kind === "trash" || action.kind === "move_to_folder");
 
-export const resolveIncomingAutomationPlacementTurn = async (params: {
+type IncomingAutomationMessageTurnParams = {
   db: SqlClient;
   runId: string;
   mailboxId: string;
   messageId: string;
   folderId: string;
-}): Promise<IncomingAutomationPlacementTurn> => {
-  const [placement] = await params.db<{ id: string }[]>`
-    SELECT remote_ref.id
+};
+
+type MessagePlacementParams = Pick<IncomingAutomationMessageTurnParams, "db" | "messageId" | "folderId">;
+
+const loadIncomingAutomationMessagePlacement = async (params: MessagePlacementParams) => {
+  const [placement] = await params.db<{ id: string; first_seen_at: string }[]>`
+    SELECT remote_ref.id, remote_ref.first_seen_at::text
     FROM mail.remote_message_refs remote_ref
     JOIN mail.message_placements placement
       ON placement.remote_message_ref_id = remote_ref.id
@@ -38,6 +42,16 @@ export const resolveIncomingAutomationPlacementTurn = async (params: {
       AND remote_ref.stale_at IS NULL
     LIMIT 1
   `;
+  return placement;
+};
+
+export const hasIncomingAutomationMessagePlacement = async (params: MessagePlacementParams): Promise<boolean> =>
+  Boolean(await loadIncomingAutomationMessagePlacement(params));
+
+export const resolveIncomingAutomationMessageTurn = async (
+  params: IncomingAutomationMessageTurnParams,
+): Promise<IncomingAutomationPlacementTurn> => {
+  const placement = await loadIncomingAutomationMessagePlacement(params);
   if (!placement) return { state: "skip", reason: "message_moved" };
 
   // A move another run already ordered has not reached the provider yet, so
@@ -46,13 +60,21 @@ export const resolveIncomingAutomationPlacementTurn = async (params: {
     SELECT id
     FROM mail.commands
     WHERE mailbox_id = ${params.mailboxId}::uuid
+      AND created_at >= ${placement.first_seen_at}::timestamptz
       AND kind = 'move'
       AND target ->> 'remoteMessageRefId' = ${placement.id}
       AND state NOT IN ('failed', 'cancelled')
       AND correlation_id IS DISTINCT FROM ${params.runId}
     LIMIT 1
   `;
-  if (claimed) return { state: "skip", reason: "earlier_automation" };
+  return claimed ? { state: "skip", reason: "earlier_automation" } : { state: "ready" };
+};
+
+export const resolveIncomingAutomationPlacementTurn = async (
+  params: IncomingAutomationMessageTurnParams,
+): Promise<IncomingAutomationPlacementTurn> => {
+  const turn = await resolveIncomingAutomationMessageTurn(params);
+  if (turn.state === "skip") return turn;
 
   // A workflow that is not an incoming automation has no place in that order.
   const [self] = await params.db<{ id: string }[]>`
