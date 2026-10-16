@@ -594,7 +594,10 @@ const copy = i18n.define({
       commandTaskOffline: "no connection to the server",
       commandTaskNoAnswer: "the server gave no clear answer",
       commandTaskRunUnconfirmed: ({ title, reason }: { title: string; reason: string }) =>
-        `Not sure whether “${title}” started: ${reason}. Choose it again; it will not start twice.`,
+        `Not sure whether “${title}” started: ${reason}. Choose it here again to check; that does not start it twice.`,
+      commandTaskAlreadyRan: ({ title }: { title: string }) => `“${title}” already ran. The result is in the scheduled task's chat.`,
+      commandTaskAlreadyFailed: ({ title }: { title: string }) =>
+        `“${title}” already ran but failed. The scheduled task's chat has the details.`,
       commandModelNow: ({ name }: { name: string }) => `Now: ${name}`,
       commandModelChosen: ({ name }: { name: string }) => `Model for this chat: ${name}`,
       commandAllSkills: ({ count }: { count: number }) => `All ${count} Skills`,
@@ -690,7 +693,11 @@ const copy = i18n.define({
       commandTaskOffline: "keine Verbindung zum Server",
       commandTaskNoAnswer: "der Server hat keine klare Antwort gegeben",
       commandTaskRunUnconfirmed: ({ title, reason }: { title: string; reason: string }) =>
-        `Ob „${title}“ gestartet ist, ist unklar: ${reason}. Wähle sie noch einmal, sie startet dabei nicht doppelt.`,
+        `Ob „${title}“ gestartet ist, ist unklar: ${reason}. Wähle sie hier noch einmal, um nachzusehen; das startet sie nicht doppelt.`,
+      commandTaskAlreadyRan: ({ title }: { title: string }) =>
+        `„${title}“ ist schon gelaufen. Das Ergebnis steht im Chat der geplanten Aufgabe.`,
+      commandTaskAlreadyFailed: ({ title }: { title: string }) =>
+        `„${title}“ ist schon gelaufen, aber fehlgeschlagen. Mehr dazu steht im Chat der geplanten Aufgabe.`,
       commandModelNow: ({ name }: { name: string }) => `Jetzt: ${name}`,
       commandModelChosen: ({ name }: { name: string }) => `Modell für diesen Chat: ${name}`,
       commandAllSkills: ({ count }: { count: number }) => `Alle ${count} Skills`,

@@ -522,6 +522,135 @@ test("session loader reuses promises, merges states newest first, and aborts onl
   }
 });
 
+const createRunKeyStorage = (initial: string | null = null) => {
+  let value = initial;
+  return {
+    getItem: mock((_key: string) => value),
+    setItem: mock((_key: string, next: string) => {
+      value = next;
+    }),
+  };
+};
+
+test("task run keys load lazily and preserve uncertain starts across a page reload", () => {
+  const storage = createRunKeyStorage();
+  const first = createAssistantTaskRunKeys(storage);
+  const reloaded = createAssistantTaskRunKeys(storage);
+  expect(storage.getItem).not.toHaveBeenCalled();
+  const key = first.runKey("task-1");
+  expect(key).toMatch(/^[a-f0-9]{32}$/);
+  expect(first.runKey("task-1")).toBe(key);
+  expect(storage.setItem).toHaveBeenCalledTimes(1);
+  first.runUncertain("task-1");
+  expect(reloaded.isUncertain("task-1")).toBe(true);
+  expect(reloaded.runKey("task-1")).toBe(key);
+  expect(storage.getItem).toHaveBeenCalledTimes(2);
+  expect(storage.getItem).toHaveBeenCalledWith("k2b.assistant.taskRunKeys");
+  reloaded.settleRun("task-1");
+  expect(createAssistantTaskRunKeys(storage).runKey("task-1")).toBe(key);
+  reloaded.settleRun("task-1", { force: true });
+  const settled = createAssistantTaskRunKeys(storage);
+  expect(settled.isUncertain("task-1")).toBe(false);
+  expect(settled.runKey("task-1")).not.toBe(key);
+  settled.settleRun("task-1");
+  expect(storage.getItem("k2b.assistant.taskRunKeys")).toBe("[]");
+});
+
+test.each(["invalid JSON", "null", "{}", "42"])("task run keys ignore corrupt storage: %s", (content) => {
+  const storage = createRunKeyStorage(content);
+  const runKeys = createAssistantTaskRunKeys(storage);
+  const key = runKeys.runKey("task-1");
+  expect(key).toMatch(/^[a-f0-9]{32}$/);
+  expect(runKeys.isUncertain("task-1")).toBe(false);
+  expect(createAssistantTaskRunKeys(storage).runKey("task-1")).toBe(key);
+});
+
+test("task run keys drop invalid entries while keeping valid stored entries", () => {
+  const valid = { taskId: "valid", key: "a".repeat(32), uncertain: true };
+  const invalid = [
+    null,
+    [],
+    "wrong shape",
+    {},
+    { ...valid, taskId: 1 },
+    { ...valid, taskId: "missing-key", key: undefined },
+    { ...valid, taskId: "short-key", key: "a".repeat(31) },
+    { ...valid, taskId: "long-key", key: "a".repeat(33) },
+    { ...valid, taskId: "uppercase-key", key: "A".repeat(32) },
+    { ...valid, taskId: "non-hex-key", key: "g".repeat(32) },
+    { ...valid, taskId: "missing-uncertain", uncertain: undefined },
+    { ...valid, taskId: "wrong-uncertain", uncertain: "true" },
+  ];
+  const storage = createRunKeyStorage(JSON.stringify([...invalid, valid]));
+  const runKeys = createAssistantTaskRunKeys(storage);
+  expect(runKeys.isUncertain(valid.taskId)).toBe(true);
+  expect(runKeys.runKey(valid.taskId)).toBe(valid.key);
+  for (const taskId of ["missing-key", "short-key", "long-key", "uppercase-key", "non-hex-key", "missing-uncertain", "wrong-uncertain"]) {
+    expect(runKeys.isUncertain(taskId)).toBe(false);
+    expect(runKeys.runKey(taskId)).not.toBe(valid.key);
+  }
+  const entries: unknown = JSON.parse(storage.getItem("k2b.assistant.taskRunKeys") ?? "null");
+  expect(entries).toHaveLength(8);
+});
+
+test.each(["getItem", "setItem"] as const)("task run keys keep working in memory when storage.%s throws", (method) => {
+  const storage = createRunKeyStorage();
+  storage[method].mockImplementation(() => {
+    throw new Error("Storage unavailable");
+  });
+  const runKeys = createAssistantTaskRunKeys(storage);
+  const key = runKeys.runKey("task-1");
+  runKeys.runUncertain("task-1");
+  expect(runKeys.isUncertain("task-1")).toBe(true);
+  runKeys.settleRun("task-1");
+  expect(runKeys.runKey("task-1")).toBe(key);
+  runKeys.settleRun("task-1", { force: true });
+  expect(runKeys.isUncertain("task-1")).toBe(false);
+  expect(runKeys.runKey("task-1")).not.toBe(key);
+});
+
+test("task run keys retain at most 50 tasks and evict by insertion order", () => {
+  const storage = createRunKeyStorage();
+  const runKeys = createAssistantTaskRunKeys(storage);
+  const oldest = runKeys.runKey("task-0");
+  const nextOldest = runKeys.runKey("task-1");
+  for (let i = 2; i < 50; i++) runKeys.runKey(`task-${i}`);
+  // Reading or updating an old entry does not make it a newer insertion.
+  expect(runKeys.runKey("task-0")).toBe(oldest);
+  runKeys.runUncertain("task-0");
+  runKeys.runKey("task-50");
+  expect(runKeys.isUncertain("task-0")).toBe(false);
+  expect(runKeys.runKey("task-1")).toBe(nextOldest);
+  const entries: unknown = JSON.parse(storage.getItem("k2b.assistant.taskRunKeys") ?? "null");
+  expect(entries).toHaveLength(50);
+  const reloaded = createAssistantTaskRunKeys(storage);
+  expect(reloaded.runKey("task-1")).toBe(nextOldest);
+  expect(reloaded.runKey("task-0")).not.toBe(oldest);
+});
+
+test("task run keys also bound entries loaded from storage", () => {
+  const entries = Array.from({ length: 52 }, (_, i) => ({ taskId: `task-${i}`, key: i.toString(16).padStart(32, "0"), uncertain: true }));
+  const storage = createRunKeyStorage(JSON.stringify(entries));
+  const runKeys = createAssistantTaskRunKeys(storage);
+  expect(runKeys.isUncertain("task-0")).toBe(false);
+  expect(runKeys.isUncertain("task-1")).toBe(false);
+  expect(runKeys.isUncertain("task-2")).toBe(true);
+  expect(runKeys.runKey("task-51")).toBe(entries[51]!.key);
+});
+
+test.each([{}, null, { state: "unknown" }, { state: 1 }, { state: null }])(
+  "task starts default invalid response states to queued: %j",
+  async (body) => {
+    spyOn(globalThis, "fetch").mockResolvedValue(Response.json(body));
+    expect(await assistantApi.runChatTask("task-1", { idempotencyKey: "a".repeat(32) })).toBe("queued");
+  },
+);
+
+test("task starts default an empty response body to queued", async () => {
+  spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
+  expect(await assistantApi.runChatTask("task-1", { idempotencyKey: "a".repeat(32) })).toBe("queued");
+});
+
 for (const retryOpening of [1, 2]) {
   for (const [statuses, reusesKey] of [
     [["offline"], true],

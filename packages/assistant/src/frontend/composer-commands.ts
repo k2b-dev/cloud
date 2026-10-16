@@ -159,27 +159,79 @@ export function assistantBuiltInCommands(input: {
 export const OVERVIEW_SKILL_COUNT = 4;
 export const overviewSkills = (skills: readonly AiSkillSummary[]) => skills.filter((skill) => skill.enabled).slice(0, OVERVIEW_SKILL_COUNT);
 
-/** Keeps pending task starts across composer remounts within one workspace. */
-export function createAssistantTaskRunKeys() {
+/** Keeps pending task starts across composer remounts and reloads in one tab. */
+export function createAssistantTaskRunKeys(storage?: Pick<Storage, "getItem" | "setItem">) {
+  const storageKey = "k2b.assistant.taskRunKeys";
   const pendingRunKeys = new Map<string, { key: string; uncertain: boolean }>();
+  let loaded = false;
+  const trim = () => {
+    for (const taskId of pendingRunKeys.keys()) {
+      if (pendingRunKeys.size <= 50) break;
+      pendingRunKeys.delete(taskId);
+    }
+  };
+  const load = () => {
+    if (loaded) return;
+    loaded = true;
+    try {
+      storage ??= globalThis.sessionStorage;
+      const entries: unknown = JSON.parse(storage?.getItem(storageKey) ?? "null");
+      if (!Array.isArray(entries)) return;
+      for (const candidate of entries) {
+        const entry: unknown = candidate;
+        if (
+          entry &&
+          typeof entry === "object" &&
+          "taskId" in entry &&
+          typeof entry.taskId === "string" &&
+          "key" in entry &&
+          typeof entry.key === "string" &&
+          /^[a-f0-9]{32}$/.test(entry.key) &&
+          "uncertain" in entry &&
+          typeof entry.uncertain === "boolean"
+        ) {
+          pendingRunKeys.set(entry.taskId, { key: entry.key, uncertain: entry.uncertain });
+          trim();
+        }
+      }
+    } catch {
+      // Storage can be unavailable, or contain invalid JSON; memory still works.
+    }
+  };
+  const save = () => {
+    trim();
+    try {
+      storage?.setItem(storageKey, JSON.stringify([...pendingRunKeys].map(([taskId, pending]) => ({ taskId, ...pending }))));
+    } catch {
+      // Privacy settings and quota failures must not prevent a task start.
+    }
+  };
   return {
     runKey(taskId: string) {
+      load();
       let pending = pendingRunKeys.get(taskId);
       if (!pending) {
         pending = { key: crypto.randomUUID().replaceAll("-", ""), uncertain: false };
         pendingRunKeys.set(taskId, pending);
+        save();
       }
       return pending.key;
     },
     runUncertain(taskId: string) {
+      load();
       const pending = pendingRunKeys.get(taskId);
-      if (pending) pending.uncertain = true;
+      if (pending && !pending.uncertain) {
+        pending.uncertain = true;
+        save();
+      }
     },
     isUncertain(taskId: string) {
+      load();
       return pendingRunKeys.get(taskId)?.uncertain === true;
     },
     settleRun(taskId: string, { force = false }: { force?: boolean } = {}) {
-      if (force || !pendingRunKeys.get(taskId)?.uncertain) pendingRunKeys.delete(taskId);
+      load();
+      if ((force || !pendingRunKeys.get(taskId)?.uncertain) && pendingRunKeys.delete(taskId)) save();
     },
   };
 }
@@ -452,9 +504,16 @@ export async function assistantComposerCommands(input: {
             task.state === "active"
               ? async () => {
                   try {
-                    await assistantApi.runChatTask(task.id, { idempotencyKey: input.runKeys.runKey(task.id) });
+                    const state = await assistantApi.runChatTask(task.id, { idempotencyKey: input.runKeys.runKey(task.id) });
                     input.runKeys.settleRun(task.id, { force: true });
-                    return { done: copy.commandTaskRunning({ title }) };
+                    return {
+                      done:
+                        state === "completed"
+                          ? copy.commandTaskAlreadyRan({ title })
+                          : state === "failed"
+                            ? copy.commandTaskAlreadyFailed({ title })
+                            : copy.commandTaskRunning({ title }),
+                    };
                   } catch (error) {
                     const status = error instanceof AssistantTaskRunError ? error.status : undefined;
                     // A lost answer (network, 5xx) may hide an accepted start: keep its key and mark it uncertain.

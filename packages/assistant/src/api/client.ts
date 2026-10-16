@@ -1,4 +1,5 @@
 import type {
+  AiChatTaskOccurrenceView,
   AiConversation,
   AiConversationPage,
   AiConversationResourceOccurrence,
@@ -362,13 +363,22 @@ export const assistantApi = {
     return response.json();
   },
 
-  runChatTask: async (taskId: string, input: { idempotencyKey: string; signal?: AbortSignal }): Promise<void> => {
+  runChatTask: async (
+    taskId: string,
+    input: { idempotencyKey: string; signal?: AbortSignal },
+  ): Promise<AiChatTaskOccurrenceView["state"]> => {
     const response = await coreTasksRequest(`/${encodeURIComponent(taskId)}/run`, {
       method: "POST",
       signal: input.signal,
       headers: { "Idempotency-Key": input.idempotencyKey },
     });
     if (!response.ok) throw new AssistantTaskRunError(await readError(response, "Scheduled task request failed"), response.status);
+    const body: unknown = await response.json().catch(() => null);
+    if (body && typeof body === "object" && "state" in body) {
+      const { state } = body;
+      if (state === "queued" || state === "running" || state === "completed" || state === "failed") return state;
+    }
+    return "queued";
   },
 
   listResources: async (

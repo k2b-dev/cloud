@@ -1219,8 +1219,9 @@ run. The result arrives in the scheduled task's chat. A failed request restores
 `/…` and explains the failure in plain words: the task already runs, no longer
 exists, was started too often, or was not accepted. If the server is
 unreachable or gives no clear answer, the composer says it cannot tell whether
-the task started. Choosing the task again then does not start it a second
-time. Paused tasks ask you to resume them first;
+the task started. Choosing the task again in the same browser tab, also after a
+reload, checks the earlier start instead of starting it a second time. If that
+run already finished, the status says so and points to the task's chat. Paused tasks ask you to resume them first;
 tasks that need attention explain that you must intervene before they can run.
 Selecting either sends no run request.
 

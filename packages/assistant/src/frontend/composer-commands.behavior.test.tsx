@@ -135,7 +135,13 @@ const mount = async (
   );
   cleanups.push(() => fetchMock.mockRestore());
   const loader = createAssistantCommandSession();
-  const runKeys = createAssistantTaskRunKeys();
+  let storedRunKeys: string | null = null;
+  const runKeys = createAssistantTaskRunKeys({
+    getItem: () => storedRunKeys,
+    setItem: (_key, value) => {
+      storedRunKeys = value;
+    },
+  });
   cleanups.push(() => loader.dispose());
   const [value, setValue] = createSignal(options.value ?? "/");
   const [selectedModel, setSelectedModel] = createSignal("alpha");
@@ -358,6 +364,51 @@ test("task running status appears only after the deferred server acceptance", as
   expect(h.status()).toBe("„Bericht 6“ läuft. Das Ergebnis kommt in den Chat der geplanten Aufgabe.");
   expect(h.value()).toBe("");
 });
+
+test.each(["completed", "failed", "running", "queued"] as const)(
+  "a successful replay with state %s reports its outcome and settles the key",
+  async (state) => {
+    const { assistantCopyFor } = await import("./ui-copy");
+    const copy = assistantCopyFor("de");
+    let attempt = 0;
+    const h = await mount({
+      value: "/routine Bericht 6",
+      post: async () => {
+        if (attempt++ === 0) throw new TypeError("Response lost");
+        return Response.json({ state });
+      },
+    });
+    for (let i = 0; i < 3; i++) {
+      if (i > 0) {
+        h.type("");
+        h.type("/routine Bericht 6");
+        await settled();
+      }
+      h.mark("Bericht 6");
+      h.key("Enter");
+      await flush();
+      if (i === 0) {
+        expect(h.value()).toBe("/routine Bericht 6");
+        expect(h.status()).toBe(
+          copy.commandTaskRunUnconfirmed({ title: "Bericht 6", reason: copy.commandTaskOffline }) + " " + copy.draftUnchanged,
+        );
+      } else {
+        expect(h.value()).toBe("");
+        expect(h.status()).toBe(
+          (state === "completed"
+            ? copy.commandTaskAlreadyRan
+            : state === "failed"
+              ? copy.commandTaskAlreadyFailed
+              : copy.commandTaskRunning)({ title: "Bericht 6" }),
+        );
+      }
+    }
+    const keys = h.posts().map(({ init }) => new Headers(init?.headers).get("Idempotency-Key"));
+    expect(keys).toHaveLength(3);
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[1]);
+  },
+);
 
 test.each([409, 404, 429, 403, 500, 408, "offline"] as const)(
   "task failure %s restores the token and reports the localized reason",
