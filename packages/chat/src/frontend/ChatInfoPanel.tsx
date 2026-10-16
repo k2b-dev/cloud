@@ -64,6 +64,8 @@ export default function ChatInfoPanel(props: {
     const depth = preserveDepth ? rows.length : 0;
     const mine = ++request;
     setStatus("loading");
+    // A page of the previous list no longer belongs here; its answer is dropped.
+    setLoadingMore(false);
     setMoreFailed(false);
     try {
       let page = await read();
@@ -99,8 +101,9 @@ export default function ChatInfoPanel(props: {
       // The failure stays where the next page would have come, with its retry.
       if (mine === request) setMoreFailed(true);
     } finally {
-      setLoadingMore(false);
+      if (mine === request) setLoadingMore(false);
     }
+    if (mine !== request) return;
     // The button leaves after the last page, and the retry after it worked; reading goes on in the list. A failure
     // takes the button's place, so focus moves to its retry.
     if (moreFailed()) {

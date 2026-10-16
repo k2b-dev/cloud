@@ -871,6 +871,55 @@ describe("chat dialogs and info", () => {
       expect(members.mock.calls[2]).toEqual([conversation.id, { q: "No", cursor: newCursor }]);
       expect([...dom.root.querySelectorAll(".chat-member-row__name")].map((row) => row.textContent)).toEqual(["Noah", "Nora"]);
     });
+    test(`info lets a new search page while an obsolete Show more is pending in ${locale}`, async () => {
+      const second = { ...nora, accessId: "44444444-4444-4444-8444-444444444444", displayName: "Noah" };
+      const oldCursor = JSON.stringify({ name: "nora", id: nora.accessId });
+      const newCursor = JSON.stringify({ name: "noah", id: second.accessId });
+      const obsolete = Promise.withResolvers<Awaited<ReturnType<ChatDialogStore["members"]>>>();
+      const search = Promise.withResolvers<Awaited<ReturnType<ChatDialogStore["members"]>>>();
+      const next = Promise.withResolvers<Awaited<ReturnType<ChatDialogStore["members"]>>>();
+      const members = mock<ChatDialogStore["members"]>(async (_id, query) => {
+        if (query.cursor === oldCursor) return obsolete.promise;
+        if (query.cursor === newCursor) return next.promise;
+        if (query.q) return search.promise;
+        return { items: [nora], self, managers: 2, nextCursor: oldCursor };
+      });
+      await mount(locale, () => info(conversation, store({ members })));
+      button(t.showMoreMembers).click();
+      await settle();
+      try {
+        expect(button(t.showMoreMembers).disabled).toBe(true);
+        expect(button(t.showMoreMembers).getAttribute("aria-busy")).toBe("true");
+        type(input('input[type="search"]'), "No");
+        await Bun.sleep(280);
+        expect(members.mock.calls).toEqual([
+          [conversation.id, {}],
+          [conversation.id, { cursor: oldCursor }],
+          [conversation.id, { q: "No" }],
+        ]);
+        search.resolve({ items: [second], self, managers: 2, nextCursor: newCursor });
+        await settle();
+        const more = button(t.showMoreMembers);
+        expect(more.disabled).toBe(false);
+        expect(more.getAttribute("aria-busy")).not.toBe("true");
+        more.click();
+        await settle();
+        expect(members.mock.calls[3]).toEqual([conversation.id, { q: "No", cursor: newCursor }]);
+        expect(more.disabled).toBe(true);
+        expect(more.getAttribute("aria-busy")).toBe("true");
+        obsolete.resolve({ items: [nora], self, managers: 2, nextCursor: null });
+        await settle();
+        expect([...dom.root.querySelectorAll(".chat-member-row__name")].map((row) => row.textContent)).toEqual(["Noah"]);
+        expect(button(t.showMoreMembers)).toBe(more);
+        expect(more.disabled).toBe(true);
+        expect(more.getAttribute("aria-busy")).toBe("true");
+      } finally {
+        obsolete.resolve({ items: [nora], self, managers: 2, nextCursor: null });
+        search.resolve({ items: [second], self, managers: 2, nextCursor: newCursor });
+        next.resolve({ items: [], self, managers: 2, nextCursor: null });
+        await settle();
+      }
+    });
     test(`info disables paging after a new search fails and Retry starts its first page in ${locale}`, async () => {
       let fail = true;
       const members = mock<ChatDialogStore["members"]>(async (_id, query) => {
