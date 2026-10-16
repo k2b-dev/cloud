@@ -72,7 +72,7 @@ and durable data.
 ## Reuse public building blocks
 
 Choose documented Cloud entry points and services before creating a parallel
-mechanism. Public application code must work outside the Cloud monorepo. For app mail, read **Outgoing mail** (`/en/docs/platform/outgoing-mail`), declare `platformPermissions: ["mail:send"]` and send through `mail.send` or `mail.enqueue` for bulk mail from `@k2b/cloud/services`; never configure app-owned SMTP. To show mail across related apps, declare `mail:read` and let the operator grant the apps; your app still authorizes which of its users see it. Strip content image uploads in the owning service with `@k2b/cloud/services/image-metadata`; Files keeps originals. Request a URL that a person, an administrator, or remote content chooses only through `requestPublicHttps` from `@k2b/cloud/services`, never `fetch()`, which reaches internal networks; when operators must reach internal targets, read an explicit allowlist from the app's env registry and resolve through `resolveAllowedNetworkAddresses`, and never let a person widen it.
+mechanism. Public application code must work outside the Cloud monorepo. For app mail, read **Outgoing mail** (`/en/docs/platform/outgoing-mail`), declare `platformPermissions: ["mail:send"]` and send through `mail.send` or `mail.enqueue` for bulk mail from `@k2b/cloud/services`; never configure app-owned SMTP. To show mail across related apps, declare `mail:read` and let the operator grant the apps; your app still authorizes which of its users see it. Strip content image uploads in the owning service with `@k2b/cloud/services/image-metadata`; Files keeps originals. Request a URL that a person, an administrator, or remote content chooses only through `requestPublicHttps` from `@k2b/cloud/services`, never `fetch()`, which reaches internal networks; when operators must reach internal targets, read an explicit allowlist from the app's env registry and resolve through `resolveAllowedNetworkAddresses`, and never let a person widen it. SDK clients that resolve hosts on their own, such as `Bun.S3Client`, never send to a person-chosen endpoint; use them only to sign, then send through `pinnedNetworkLookup`.
 
 Prefer the documented K2B foundations before building an application-local
 alternative:
@@ -98,7 +98,7 @@ Cloud and every application are equal consumers of `@k2b/ui`. The standalone
 SolidJS library remains independent of Cloud and application domains.
 
 - Use existing `@k2b/ui` components whenever they express the required
-  control, feedback, surface, or layout behavior.
+  control, feedback, surface, or layout behavior. A hierarchy of columns (settings areas, list and reader) uses `AppWorkspace.Main level` with the selection in the URL.
 - Do not recreate generic component contracts inside an application. If no
   primitive fits, surface the gap and agree with the application author
   whether to extend `@k2b/ui` or build application-owned UI.

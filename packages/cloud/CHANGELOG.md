@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.36.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.35.0...npm-cloud-v0.36.0) (2026-10-16)
+
+
+### Features
+
+* **pulse:** scrape only public metrics endpoints unless the operator allows internal targets ([#1218](https://github.com/k2b-dev/cloud/issues/1218)) ([9bdeaaf](https://github.com/k2b-dev/cloud/commit/9bdeaaf281855a8237617b9900c4f01cc22846e8))
+
+
+### Bug Fixes
+
+* **spaces:** keep the space settings open when a person is added ([#1222](https://github.com/k2b-dev/cloud/issues/1222)) ([3de096b](https://github.com/k2b-dev/cloud/commit/3de096badaa71c54d0f7ca5ef3acf6668f2c003c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @k2b/ui bumped from 0.25.0 to 0.26.0
+
 ## [0.35.0](https://github.com/k2b-dev/cloud/compare/npm-cloud-v0.34.0...npm-cloud-v0.35.0) (2026-10-15)
 
 

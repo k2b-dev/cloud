@@ -51,6 +51,8 @@ export const notebookServiceMessages = i18n.define({
       snapshotFieldSecretAccessKey: "secret access key",
       snapshotCronEmpty: "The snapshot schedule must not be empty.",
       snapshotsDisabled: "S3 notebook snapshots are disabled.",
+      snapshotTargetBlocked:
+        "This S3 endpoint is on an internal network. Notebook snapshots go only to public storage unless an operator allows this target.",
       snapshotUploaded: "Notebook snapshot uploaded to S3",
       snapshotUploadFailed: "The notebook snapshot could not be uploaded to S3.",
       editInvalid: "The requested edit is invalid.",
@@ -107,6 +109,8 @@ export const notebookServiceMessages = i18n.define({
       snapshotFieldSecretAccessKey: "geheimer Zugriffsschlüssel",
       snapshotCronEmpty: "Der Zeitplan für Snapshots darf nicht leer sein.",
       snapshotsDisabled: "S3-Snapshots für Notizbücher sind deaktiviert.",
+      snapshotTargetBlocked:
+        "Dieser S3-Endpunkt liegt in einem internen Netz. Notizbuch-Snapshots gehen nur an öffentlichen Speicher, außer ein Betreiber gibt dieses Ziel frei.",
       snapshotUploaded: "Notizbuch-Snapshot zu S3 hochgeladen",
       snapshotUploadFailed: "Der Notizbuch-Snapshot konnte nicht zu S3 hochgeladen werden.",
       editInvalid: "Die angeforderte Änderung ist ungültig.",

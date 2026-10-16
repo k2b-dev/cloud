@@ -1,4 +1,3 @@
-import type { CloudTheme } from "@k2b/cloud/shared";
 import { type DateContext, dates, i18n } from "@k2b/stdlib";
 import type { StatusTone } from "@k2b/ui";
 import type { MessageDeliveryState, MessageDetail } from "../../service/messages";
@@ -12,6 +11,10 @@ type PlainMessageSegment = {
 export type PlainTextLinkSegment = { kind: "text"; text: string } | { kind: "link"; text: string; href: string };
 
 export type MessageBodyFormat = "html" | "plain";
+export type MessageColors = "adapted" | "original";
+
+export const resolveMessageColors = (preferred: MailReadingFormat, override: MessageColors | null): MessageColors =>
+  override ?? (preferred === "html" ? "original" : "adapted");
 
 export { attachmentPreviewKind } from "../../attachment-preview-policy";
 
@@ -143,11 +146,10 @@ export const messagePreviewText = (plainText: string | null, forwardText: string
 export const resolveMessageBodyFormat = (
   preferred: MailReadingFormat,
   override: MessageBodyFormat | null,
-  theme: CloudTheme,
   htmlAvailable: boolean,
   plainAvailable: boolean,
 ): MessageBodyFormat | null => {
-  const requested = override ?? (preferred === "automatic" ? (theme === "dark" ? "plain" : "html") : preferred);
+  const requested = override ?? (preferred === "plain" ? "plain" : "html");
   if (requested === "html" && htmlAvailable) return "html";
   if (requested === "plain" && plainAvailable) return "plain";
   if (htmlAvailable) return "html";

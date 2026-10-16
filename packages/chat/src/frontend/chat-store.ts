@@ -4,19 +4,29 @@
  */
 import { createApiClient } from "@k2b/cloud/browser";
 import { type LiveConnection, type LiveSubscription, liveConnection } from "@k2b/cloud/browser/live";
-import type { z } from "zod";
+import { z } from "zod";
 import type { ApiType } from "../api";
+import { chatMessages } from "../messages";
 import {
+  ChangeSchema,
   ChangesPageSchema,
   ChatLiveEventSchema,
   ChatSnapshotSchema,
   ConversationPageSchema,
   ConversationSchema,
+  CreateOutcomeSchema,
+  MemberPageSchema,
+  MemberPreviewSchema,
+  type MemberPrincipal,
+  MemberRemovalSchema,
   MessagePageSchema,
   MessageSchema,
+  PeoplePageSchema,
+  type PermissionSchema,
   ReadAllOutcomeSchema,
   ReadUpdateSchema,
   readStart,
+  SuccessSchema,
   UNREAD_CAP,
 } from "../service/contracts";
 
@@ -27,6 +37,15 @@ type MessagePage = z.infer<typeof MessagePageSchema>;
 type ChangesPage = z.infer<typeof ChangesPageSchema>;
 type Summary = Extract<z.infer<typeof ChatLiveEventSchema>, { type: "summary" }>;
 export type ChatStoreApi = {
+  create(input: { members: MemberPrincipal[]; name?: string; allowDuplicate?: boolean }): Promise<z.infer<typeof CreateOutcomeSchema>>;
+  updateDetails(id: string, patch: { name?: string | null; icon?: string | null; purpose?: string | null }): Promise<Conversation>;
+  members(id: string, query: { q?: string; cursor?: string }): Promise<z.infer<typeof MemberPageSchema>>;
+  previewMembers(id: string, members: MemberPrincipal[]): Promise<z.infer<typeof MemberPreviewSchema>>;
+  addMembers(id: string, members: MemberPrincipal[]): Promise<z.infer<typeof ChangeSchema>>;
+  updateMember(id: string, accessId: string, permission: z.infer<typeof PermissionSchema>): Promise<z.infer<typeof SuccessSchema>>;
+  removeMember(id: string, accessId: string): Promise<z.infer<typeof MemberRemovalSchema>>;
+  leave(id: string, successor?: string): Promise<z.infer<typeof MemberRemovalSchema>>;
+  people(search: string, cursor?: string, signal?: AbortSignal): Promise<z.infer<typeof PeoplePageSchema>>;
   read(id: string, seq: number): Promise<z.infer<typeof ReadUpdateSchema>>;
   markUnread(id: string, message?: string): Promise<z.infer<typeof ReadUpdateSchema>>;
   readAll(confirmed: boolean): Promise<z.infer<typeof ReadAllOutcomeSchema>>;
@@ -48,25 +67,79 @@ export type OpenChat = {
   status: "live" | "no-access" | "stopped";
   conversation: Conversation | null;
   messages: readonly Message[];
+  membershipRev: number;
   watermark: number;
   seqHead: number;
   hasOlder: boolean;
   hasNewer: boolean;
 };
 
+export class ChatRequestError extends Error {
+  constructor(
+    message: string,
+    readonly code: string | undefined,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ChatRequestError";
+  }
+}
+const requestError = async (response: Pick<Response, "status" | "json">) => {
+  const body = z.object({ code: z.string().optional(), message: z.string() }).safeParse(await response.json().catch(() => null));
+  const generic = chatMessages.resolve(typeof document === "undefined" ? [] : [document.documentElement.lang]).t.requestFailed;
+  return new ChatRequestError(body.success ? body.data.message : generic, body.success ? body.data.code : undefined, response.status);
+};
 const parseResponse = async <T>(response: Pick<Response, "status" | "ok" | "json">, schema: z.ZodType<T>): Promise<T | null> => {
   if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`Chat request failed (${response.status})`);
+  if (!response.ok) throw await requestError(response);
   return schema.parse(await response.json());
 };
 export const createChatStoreApi = (): ChatStoreApi => {
   const client = createApiClient<ApiType>({ baseUrl: "/api/chat" });
   const requiredResponse = async <T>(response: Pick<Response, "status" | "ok" | "json">, schema: z.ZodType<T>) => {
-    const result = await parseResponse(response, schema);
-    if (result === null) throw new Error("Chat request failed (404)");
-    return result;
+    if (!response.ok) throw await requestError(response);
+    return schema.parse(await response.json());
   };
   return {
+    create: async (input) => requiredResponse(await client.conversations.$post({ json: input }), CreateOutcomeSchema),
+    updateDetails: async (id, patch) =>
+      requiredResponse(
+        await client.conversations[":conversation"].$patch({ param: { conversation: id }, json: patch }),
+        ConversationSchema,
+      ),
+    members: async (id, query) =>
+      requiredResponse(await client.conversations[":conversation"].members.$get({ param: { conversation: id }, query }), MemberPageSchema),
+    previewMembers: async (id, members) =>
+      requiredResponse(
+        await client.conversations[":conversation"].members.preview.$post({ param: { conversation: id }, json: { members } }),
+        MemberPreviewSchema,
+      ),
+    addMembers: async (id, members) =>
+      requiredResponse(
+        await client.conversations[":conversation"].members.$post({ param: { conversation: id }, json: { members } }),
+        ChangeSchema,
+      ),
+    updateMember: async (id, accessId, permission) =>
+      requiredResponse(
+        await client.conversations[":conversation"].members[":accessId"].$patch({
+          param: { conversation: id, accessId },
+          json: { permission },
+        }),
+        SuccessSchema,
+      ),
+    removeMember: async (id, accessId) =>
+      requiredResponse(
+        await client.conversations[":conversation"].members[":accessId"].$delete({ param: { conversation: id, accessId } }),
+        MemberRemovalSchema,
+      ),
+    leave: async (id, successor) =>
+      requiredResponse(
+        await client.conversations[":conversation"].leave.$post({ param: { conversation: id }, json: { successor } }),
+        MemberRemovalSchema,
+      ),
+    people: async (search, cursor, signal) =>
+      requiredResponse(await client.people.$get({ query: { search, cursor } }, { init: { signal } }), PeoplePageSchema),
+
     read: async (id, seq) =>
       requiredResponse(
         await client.conversations[":conversation"].read.$post({ param: { conversation: id }, json: { seq } }),
@@ -79,11 +152,7 @@ export const createChatStoreApi = (): ChatStoreApi => {
       ),
     readAll: async (confirmed) =>
       requiredResponse(await client.conversations["read-all"].$post({ json: { confirmed } }), ReadAllOutcomeSchema),
-    conversations: async (cursor) => {
-      const page = await parseResponse(await client.conversations.$get({ query: { cursor } }), ConversationPageSchema);
-      if (!page) throw new Error("Chat request failed (404)");
-      return page;
-    },
+    conversations: async (cursor) => requiredResponse(await client.conversations.$get({ query: { cursor } }), ConversationPageSchema),
     conversation: async (id) =>
       parseResponse(await client.conversations[":conversation"].$get({ param: { conversation: id } }), ConversationSchema),
     messages: async (id, query) =>
@@ -105,13 +174,28 @@ export const createChatStoreApi = (): ChatStoreApi => {
         query: { afterRev: String(afterRev) },
       });
       if (response.status === 409) {
-        const result = await response.json();
-        if (result.code === "RESYNC_REQUIRED") return "RESYNC_REQUIRED";
+        const result = z.object({ code: z.string().optional() }).safeParse(
+          await response
+            .clone()
+            .json()
+            .catch(() => null),
+        );
+        if (result.success && result.data.code === "RESYNC_REQUIRED") return "RESYNC_REQUIRED";
       }
       return parseResponse(response, ChangesPageSchema);
     },
   };
 };
+
+const membershipCodes = new Set([
+  "members_added",
+  "groups_added",
+  "group_removed",
+  "manager_assigned",
+  "member_removed",
+  "member_left",
+  "permission_changed",
+]);
 
 // The live client's maximum waiting backlog; larger catch-ups load the latest page.
 const MAX_CATCHUP_ROWS = 1_000;
@@ -270,17 +354,27 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       const delta = await api.changes(chat.view.id, after);
       if (!active(chat)) return;
       if (delta === null) return noAccess(chat);
-      if (delta === "RESYNC_REQUIRED" || count + delta.messages.length > MAX_CATCHUP_ROWS) return replaceMessages(chat);
-      if (!delta.more && delta.rev < chat.view.watermark) return replaceMessages(chat);
+      if (
+        delta === "RESYNC_REQUIRED" ||
+        count + delta.messages.length > MAX_CATCHUP_ROWS ||
+        (!delta.more && delta.rev < chat.view.watermark)
+      ) {
+        await replaceMessages(chat);
+        break;
+      }
       count += delta.messages.length;
       if (delta.conversation) metadata(chat, delta.conversation);
       for (const message of delta.messages) applyMessage(chat, MessageSchema.parse(message));
       chat.view = { ...chat.view, watermark: Math.max(chat.view.watermark, delta.rev) };
       chat.metadataRev = Math.max(chat.metadataRev, delta.rev);
       publishMessages(chat);
-      if (!delta.more) return;
+      if (!delta.more) break;
       if (delta.rev <= after) throw new Error("Chat changes did not advance the watermark");
       after = delta.rev;
+    }
+    if (active(chat)) {
+      chat.view = { ...chat.view, membershipRev: chat.view.membershipRev + 1 };
+      notify();
     }
   };
   const open = (next: OpenChatSnapshot) => {
@@ -292,6 +386,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         id: next.conversation.id,
         status: "live",
         conversation: next.conversation,
+        membershipRev: 0,
         watermark: next.page.rev,
         seqHead: Math.max(next.page.seqHead, ...next.page.items.map((message) => message.seq)),
         hasOlder: (next.page.items[0]?.seq ?? 0) > 1,
@@ -317,14 +412,19 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         parse: (data) => ChatLiveEventSchema.parse(data),
         apply: async (events) => {
           let system = false,
+            membership = false,
             highestRev = 0;
           for (const { data } of events) {
             if (!active(chat)) return;
             if (data.type !== "message" || data.message.conversationId !== chat.view.id) continue;
             applyMessage(chat, data.message);
-            if (data.message.kind === "system") system = true;
+            if (data.message.kind === "system") {
+              system = true;
+              if (data.message.system && membershipCodes.has(data.message.system.code)) membership = true;
+            }
             highestRev = Math.max(highestRev, data.message.rev);
           }
+          if (membership) chat.view = { ...chat.view, membershipRev: chat.view.membershipRev + 1 };
           if (system) await refreshMetadata(chat);
           if (active(chat)) chat.metadataRev = Math.max(chat.metadataRev, highestRev);
           publishMessages(chat);
@@ -475,6 +575,45 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   );
   if (snapshot.open) open({ ...snapshot.open, cursor: snapshot.cursor });
   return {
+    // A change the reader made shows at once: its chat's row is read again instead of waiting for the live event.
+    // Refresh failures leave committed changes successful; live updates and resync repair the row.
+    // A chat the reader left answers 404, which removes the row and ends an open view in "No access".
+    create: async (input: Parameters<ChatStoreApi["create"]>[0]) => {
+      const result = await api.create(input);
+      if (result.outcome === "created") await sidebar(() => refetchRow(result.conversation.id)).catch(() => {});
+      return result;
+    },
+    updateDetails: async (id: string, patch: Parameters<ChatStoreApi["updateDetails"]>[1]) => {
+      const result = await api.updateDetails(id, patch);
+      await sidebar(() => refetchRow(id)).catch(() => {});
+      return result;
+    },
+    members: (id: string, query: Parameters<ChatStoreApi["members"]>[1]) => api.members(id, query),
+    previewMembers: (id: string, members: MemberPrincipal[]) => api.previewMembers(id, members),
+    addMembers: async (id: string, members: MemberPrincipal[]) => {
+      const result = await api.addMembers(id, members);
+      await sidebar(() => refetchRow(id)).catch(() => {});
+      return result;
+    },
+    // The changed entry may be the reader's own, so the chat's effective permission is read again.
+    updateMember: async (id: string, accessId: string, permission: z.infer<typeof PermissionSchema>) => {
+      const result = await api.updateMember(id, accessId, permission);
+      await sidebar(() => refetchRow(id)).catch(() => {});
+      return result;
+    },
+    removeMember: async (id: string, accessId: string) => {
+      const result = await api.removeMember(id, accessId);
+      await sidebar(() => refetchRow(id)).catch(() => {});
+      return result;
+    },
+    leave: async (id: string, successor?: string) => {
+      const result = await api.leave(id, successor);
+      // A chat stays readable after leaving when another grant allows it, but it is no longer the reader's chat:
+      // only the membership-filtered list says whether it belongs in the sidebar.
+      await sidebar(reloadSidebar).catch(() => {});
+      return result;
+    },
+    people: (search: string, signal?: AbortSignal) => api.people(search, undefined, signal),
     // Only the FIFO personal live channel applies write results; HTTP responses never change local state.
     markRead: (id: string, seq: number) => api.read(id, seq),
     markUnread: (id: string, message?: string) => api.markUnread(id, message),
@@ -542,7 +681,17 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       }
       current?.subscription?.close();
       const chat: Current = {
-        view: { id, status: "live", conversation: null, messages: [], watermark: 0, seqHead: 0, hasOlder: false, hasNewer: false },
+        view: {
+          id,
+          status: "live",
+          conversation: null,
+          messages: [],
+          membershipRev: 0,
+          watermark: 0,
+          seqHead: 0,
+          hasOlder: false,
+          hasNewer: false,
+        },
         metadataRev: 0,
         messages: new Map(),
         subscription: null,

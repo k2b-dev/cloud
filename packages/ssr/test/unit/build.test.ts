@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { routes as honoRoutes } from "../../src/adapter/hono";
+import type { AssetManifest } from "../../src/adapter/utils";
 import { buildIslands, dedupeSharedChunkExports } from "../../src/build";
 import { createConfig } from "../../src/index";
 import { islandIdFromFile } from "../../src/island-id";
@@ -418,7 +419,13 @@ describe("buildIslands()", () => {
   test("an explicit empty selection scans nothing and missing roots fail clearly", async () => {
     const workspaceRoot = makeTempRoot();
     writeTempFile(join(workspaceRoot, "Invalid.island.tsx"), "invalid source");
-    const options = { pattern: "**/*.{island,client}.tsx", cwd: workspaceRoot, outdir: join(workspaceRoot, "out"), verbose: false };
+    const options = {
+      pattern: "**/*.{island,client}.tsx",
+      cwd: workspaceRoot,
+      outdir: join(workspaceRoot, "out"),
+      verbose: false,
+      dev: true,
+    };
     await buildIslands({ ...options, componentRoots: [] });
     expect(existsSync(options.outdir)).toBe(false);
     writeTempFile(join(options.outdir, "chunk-stale.js"), "stale");
@@ -532,5 +539,91 @@ export { b, a };
     expect(rewritten).toContain("export { b };");
     expect(rewritten.indexOf("export { a };")).toBeLessThan(rewritten.indexOf("//# debugId=abc123"));
     expect(rewritten.indexOf("export { b };")).toBeLessThan(rewritten.indexOf("//# debugId=abc123"));
+  });
+});
+
+describe("buildIslands() asset manifest", () => {
+  test("static closures, stable manifests, and versions cover the final JavaScript including lazy-only chunks", async () => {
+    const cwd = makeTempRoot();
+    const outdir = join(cwd, "_ssr");
+    const files = ["First.island.tsx", "Second.client.tsx"];
+    for (const file of files) {
+      writeTempFile(
+        join(cwd, file),
+        `import { label } from "./shared"; export default () => <button onClick={async () => (await import("./lazy")).load()}>{label}</button>;`,
+      );
+    }
+    writeTempFile(join(cwd, "shared.ts"), `export const label = "Shared";`);
+    writeTempFile(join(cwd, "lazy.ts"), `export const load = () => console.log("Lazy-only code");`);
+    const build = () => buildIslands({ pattern: "**/*.{island,client}.tsx", cwd, outdir, dev: false, verbose: false });
+    await build();
+    const text = readFileSync(join(outdir, "manifest.json"), "utf8");
+    const manifest: AssetManifest = JSON.parse(text);
+    const ids = files.map((file) => islandIdFromFile(join(cwd, file), cwd)).sort();
+    expect(Object.keys(manifest.entries)).toEqual(ids);
+    const scanner = new Bun.Transpiler({ loader: "js" });
+    const emitted = [...new Bun.Glob("*.js").scanSync({ cwd: outdir })].sort();
+    const lazy = new Set<string>();
+    for (const file of emitted) {
+      for (const edge of scanner.scanImports(readFileSync(join(outdir, file), "utf8"))) {
+        if (edge.kind === "dynamic-import") lazy.add(edge.path.replace(/^\.\//, ""));
+      }
+    }
+    expect(lazy.size).toBeGreaterThan(0);
+    for (const id of ids) {
+      const closure = manifest.entries[id]!;
+      expect(closure[0]).toBe(`${id}.js`);
+      expect(closure.slice(1)).toEqual(closure.slice(1).sort());
+      expect(closure.some((file) => file.startsWith("chunk-"))).toBe(true);
+      for (const file of closure) expect(existsSync(join(outdir, file))).toBe(true);
+      for (const file of lazy) {
+        expect(existsSync(join(outdir, file))).toBe(true);
+        expect(closure).not.toContain(file);
+      }
+    }
+    const hash = new Bun.CryptoHasher("sha256");
+    for (const file of emitted)
+      hash
+        .update(file)
+        .update("\0")
+        .update(readFileSync(join(outdir, file)))
+        .update("\0");
+    expect(manifest.version).toBe(hash.digest("hex").slice(0, 16));
+    await build();
+    expect(readFileSync(join(outdir, "manifest.json"), "utf8")).toBe(text);
+    writeTempFile(join(cwd, "lazy.ts"), `export const load = () => console.log("Changed lazy-only code");`);
+    await build();
+    expect(JSON.parse(readFileSync(join(outdir, "manifest.json"), "utf8")).version).not.toBe(manifest.version);
+  });
+
+  test("production with zero islands writes an empty manifest after removing stale assets", async () => {
+    const cwd = makeTempRoot();
+    const outdir = join(cwd, "_ssr");
+    const options = { pattern: "**/*.{island,client}.tsx", cwd, outdir, verbose: false, dev: false };
+    await buildIslands(options);
+    const manifest: AssetManifest = JSON.parse(readFileSync(join(outdir, "manifest.json"), "utf8"));
+    expect(manifest).toEqual({ version: new Bun.CryptoHasher("sha256").digest("hex").slice(0, 16), entries: {} });
+    expect(manifest.version).toMatch(/^[a-f0-9]{16}$/);
+    writeTempFile(join(outdir, "chunk-stale.js"), "stale");
+    await buildIslands(options);
+    expect(existsSync(join(outdir, "chunk-stale.js"))).toBe(false);
+    expect(JSON.parse(readFileSync(join(outdir, "manifest.json"), "utf8"))).toEqual(manifest);
+  });
+
+  test("development neither writes nor deletes a manifest with or without islands", async () => {
+    const cwd = makeTempRoot();
+    const outdir = join(cwd, "_ssr");
+    const options = { pattern: "**/*.{island,client}.tsx", cwd, outdir, verbose: false, dev: true };
+    await buildIslands(options);
+    expect(existsSync(join(outdir, "manifest.json"))).toBe(false);
+    writeTempFile(join(cwd, "App.island.tsx"), `export default () => <b>App</b>;`);
+    await buildIslands(options);
+    expect(existsSync(join(outdir, "manifest.json"))).toBe(false);
+    writeTempFile(join(outdir, "manifest.json"), "preserved");
+    await buildIslands(options);
+    expect(readFileSync(join(outdir, "manifest.json"), "utf8")).toBe("preserved");
+    rmSync(join(cwd, "App.island.tsx"));
+    await buildIslands(options);
+    expect(readFileSync(join(outdir, "manifest.json"), "utf8")).toBe("preserved");
   });
 });

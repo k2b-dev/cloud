@@ -84,6 +84,13 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     );
   });
 
+  test("phone page detail publishes its layout mode before hydration and leaves the sheet as the default", () => {
+    const page = renderToString(() => createComponent(AppWorkspace.Detail, { id: "info", open: true, phone: "page", children: "Info" }));
+    expect(page).toContain('data-workspace-detail-phone="page"');
+    const sheet = renderToString(() => createComponent(AppWorkspace.Detail, { id: "info", open: true, children: "Info" }));
+    expect(sheet).not.toContain("data-workspace-detail-phone");
+  });
+
   test("renders the complete workspace compound composition", () => {
     const html = renderToString(() =>
       createComponent(AppWorkspace, {
@@ -457,6 +464,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       detailWidths: { contact: 420 },
       drawerHeights: { activity: 160 },
     });
+  });
+
+  test("preserves custom pane limits within the persistence envelope", () => {
+    const state = normalizeAppWorkspaceLayoutState({ version: 2, paneWidths: { narrow: 200, wide: 720, low: 80, high: 1200 } });
+    expect(state?.paneWidths).toEqual({ narrow: 200, wide: 720, low: 160, high: 960 });
+    expect(parseAppWorkspaceLayoutState(serializeAppWorkspaceLayoutState(state!))?.paneWidths).toEqual(state?.paneWidths);
   });
 
   test("preserves the remembered sidebar width while deriving its collapsed first-paint style", () => {

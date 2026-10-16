@@ -193,6 +193,7 @@ Do not return an async render function. The render function is called by `render
 
 - missing `rootDir` in a monorepo leads to missing island discovery
 - missing SSR route mounting leads to 404s for island chunks
+- `Missing .../_ssr/manifest.json` means the production island build is incomplete: rebuild with the same `@k2b/ssr` version and ship the whole `_ssr` directory next to the server bundle
 - placing `${scripts}` outside the rendered HTML body can break client loading
 - returning direct JSX from `ssr()` is invalid; return `() => <Page />`
 - passing callbacks or event handlers as island/client props fails because props must be serialized

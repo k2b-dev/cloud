@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { runInNewContext } from "node:vm";
 import { buildMessageDocument, estimateInitialMessageBodyHeight, normalizeMessageBodyHeight } from "./mail-message-document";
 
 describe("MailMessageBody sizing", () => {
@@ -64,7 +65,9 @@ describe("MailMessageBody sizing", () => {
   test("allows only the app-owned iframe bridge script", () => {
     const document = buildMessageDocument("<p>Safe content</p>", "channel-123");
 
-    expect(document).toContain("script-src 'nonce-channel123'");
+    expect(document).toContain(
+      "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'nonce-channel123'; form-action 'none'; base-uri 'none'; object-src 'none'",
+    );
     expect(document).toContain('<script nonce="channel123">');
     expect(document).toContain('data.source !== "cloud-mail-host"');
     expect(document).toContain('data.type === "measure"');
@@ -72,11 +75,50 @@ describe("MailMessageBody sizing", () => {
     expect(document).not.toContain("script-src 'unsafe-inline'");
   });
 
-  test("keeps HTML mail on an opaque light canvas in every app theme", () => {
+  test("keeps the light canvas as the default and lets the dark class override it", () => {
     const document = buildMessageDocument("<p>Readable content</p>", "test-channel");
 
-    expect(document).toContain(":root { color-scheme: only light; }");
+    expect(document).toContain("html:not(.mail-dark) { color-scheme: only light; }");
     expect(document).toContain("background: #fff; color: #18181b;");
+  });
+
+  test("embeds the initial appearance safely and leaves the dark class to the script", () => {
+    for (const mode of ["light", "dark", "auto"] as const) {
+      const document = buildMessageDocument("<p>Hello</p>", "test", false, "en", undefined, mode);
+      expect(document).toContain(`const initialMode = "${mode}";`);
+      expect(document).toContain('document.documentElement.classList.toggle("mail-dark", mode === "dark")');
+      expect(document).toContain('matchMedia("(prefers-color-scheme: dark)").matches');
+      expect(document).not.toContain('<html class="mail-dark"');
+    }
+    const document = Reflect.apply(buildMessageDocument, null, ["", "test", false, "en", undefined, "</script><script>alert(1)</script>"]);
+    expect(document).toContain('const initialMode = "\\u003c/script>\\u003cscript>alert(1)\\u003c/script>"');
+    expect(document).not.toContain("<script>alert(1)");
+  });
+
+  test("ignores invalid appearance modes and color payloads", () => {
+    const document = buildMessageDocument("", "test");
+    const start = document.indexOf("const setAppearance =");
+    const end = document.indexOf("      applyMode(initialMode", start);
+    const applied: string[] = [];
+    runInNewContext(
+      `let text, background; ${document.slice(start, end)}
+      for (const value of values) setAppearance(value);`,
+      {
+        applyMode: (mode: string) => applied.push(mode),
+        parseColor: (value: string) => value,
+        values: [
+          null,
+          { mode: "auto", text: null, background: null },
+          { mode: "invalid", text: null, background: null },
+          { mode: "dark", text: 123, background: null },
+          { mode: "dark", text: "x".repeat(200), background: null },
+          { mode: "dark", text: null },
+          { mode: "dark", text: null, background: null },
+          { mode: "light", text: "#18181b", background: "#fff" },
+        ],
+      },
+    );
+    expect(applied).toEqual(["dark", "light"]);
   });
 
   test("disables navigation inside contained messages", () => {

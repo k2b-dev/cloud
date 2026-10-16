@@ -88,6 +88,60 @@ describe("@k2b/ui AppWorkspace behavior", () => {
     }
   });
 
+  test("level navigation preserves mounted content and forwards enhanced back steps", async () => {
+    const dom = createDomTestHarness();
+    delegateEvents(["click"], dom.document);
+    const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
+    const [level, setLevel] = createSignal("item");
+    const navigated: string[] = [];
+    let mounts = 0;
+    const Draft = () => {
+      mounts++;
+      return <input aria-label="Level draft" />;
+    };
+    const dispose = render(
+      () => (
+        <AppWorkspace.Main
+          level={level()}
+          onLevelNavigate={(event) => {
+            navigated.push(event.href);
+            setLevel(event.url.searchParams.get("level") ?? "sections");
+          }}
+        >
+          <AppWorkspace.MainPane id="sections" label="Sections" href="/?level=sections">
+            Areas
+          </AppWorkspace.MainPane>
+          <AppWorkspace.MainPane id="items" label="Items" href="/?level=items">
+            Providers
+          </AppWorkspace.MainPane>
+          <AppWorkspace.MainPane id="item" label="Item">
+            <Draft />
+          </AppWorkspace.MainPane>
+        </AppWorkspace.Main>
+      ),
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector<HTMLInputElement>("input")!;
+      input.value = "Keep this draft";
+      input.focus();
+      setLevel("sections");
+      expect(dom.root.querySelector("input") === input).toBe(true);
+      expect(dom.document.activeElement === input).toBe(true);
+      expect(dom.root.querySelector('[data-workspace-level="1"]')?.getAttribute("data-workspace-mobile-active")).toBe("true");
+      setLevel("item");
+      dom.root.querySelector<HTMLAnchorElement>('[aria-label="Back to Items"]')!.click();
+      expect(navigated).toEqual(["/?level=items"]);
+      expect(level()).toBe("items");
+      expect(dom.root.querySelector("input") === input).toBe(true);
+      expect(input.value).toBe("Keep this draft");
+      expect(mounts).toBe(1);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("keeps sidebar active state and aria-current reactive", async () => {
     const dom = createDomTestHarness();
     const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");

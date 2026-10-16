@@ -1236,8 +1236,28 @@
 }
 
 @media (max-width: 47.999rem) {
+  /* `phone="page"`: the panel is a destination of its own, so it covers the
+     window like a page instead of rising as a sheet: the page surface, the
+     safe areas, no grabber, and no space reserved in `Main`. It lies above a
+     layer the application fixes over the workspace on a phone, such as an
+     open chat. */
+  .k2b-ui .k2b-app-workspace__detail[data-workspace-detail-phone="page"] {
+    z-index: 30;
+    inset: 0;
+    height: auto;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-inline: max(1rem, env(safe-area-inset-left, 0px)) max(1rem, env(safe-area-inset-right, 0px));
+    border-radius: 0;
+    background: var(--k2b-surface);
+    box-shadow: none;
+  }
+
+  .k2b-ui .k2b-app-workspace__detail[data-workspace-detail-phone="page"] .k2b-app-workspace__detail-grabber {
+    display: none;
+  }
+
   /* The header drags the sheet, so the browser must not claim a pan first. */
-  .k2b-ui .k2b-app-workspace__detail .k2b-detail-panel__header {
+  .k2b-ui .k2b-app-workspace__detail:not([data-workspace-detail-phone="page"]) .k2b-detail-panel__header {
     touch-action: none;
   }
 
@@ -1249,14 +1269,14 @@
      240 px the main area always reserves. */
   .k2b-ui
     .k2b-app-workspace__content:has(
-      > .k2b-app-workspace__detail:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+      > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"])
     )
     > .k2b-app-workspace__main::after,
   .k2b-ui
     .k2b-app-workspace__content:has(
-      > .k2b-app-workspace__detail:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+      > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"])
     )
     > :is(solid-island, solid-client)
     > .k2b-app-workspace__main::after {
@@ -1268,14 +1288,14 @@
 
   .k2b-ui
     .k2b-app-workspace__content:has(
-      > .k2b-app-workspace__detail:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+      > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"])
     )
     > .k2b-app-workspace__main,
   .k2b-ui
     .k2b-app-workspace__content:has(
-      > .k2b-app-workspace__detail:not([hidden]),
-      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden])
+      > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"]),
+      > :is(solid-island, solid-client) > .k2b-app-workspace__detail:not([hidden], [data-workspace-detail-phone="page"])
     )
     > :is(solid-island, solid-client)
     > .k2b-app-workspace__main {
@@ -2038,6 +2058,242 @@
 
   .k2b-ui .k2b-app-workspace__drawer:not([hidden]) {
     max-height: 50%;
+  }
+}
+
+/* Ordered workspace levels (`Main level`). The width decides how many levels
+   show: one below 48 rem, two below 80 rem, three from 80 rem. The selection
+   decides which: the deepest selected level and the ones above it. Each
+   decision is an attribute of the server-rendered markup, so the first frame
+   is already final and the controller moves nothing. Hidden levels stay
+   mounted. Levels never animate, so reduced motion needs no rule. When Main
+   has less room than the shown levels need, for example beside an open
+   Detail, it scrolls sideways instead of cutting off the selected level. */
+.k2b-ui .k2b-app-workspace__main[data-workspace-levels] {
+  flex-direction: row;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-gutter: auto;
+}
+
+/* Every level keeps its own width while the flexible one keeps 320 px, and
+   starts below the same top inset as a raised level, so the titles of side by
+   side levels share one line. */
+.k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level] {
+  --k2b-workspace-pane-fit: clamp(var(--k2b-workspace-panel-min, 0px), 100% - 320px, var(--k2b-workspace-panel-size, 100%));
+  display: flex;
+  width: var(--k2b-workspace-pane-fit);
+  min-width: min(var(--k2b-workspace-panel-min, 320px), 100%);
+  flex: 0 1 var(--k2b-workspace-pane-fit);
+  flex-direction: column;
+  overflow: hidden;
+  padding-top: var(--k2b-workspace-detail-inset);
+  scrollbar-gutter: auto;
+  border-right: 0;
+}
+
+/* The head: one row of the workspace head's height, no line under it. The
+   back step sits at its start in whichever level shows first. */
+.k2b-ui .k2b-app-workspace__level-head {
+  display: flex;
+  min-width: 0;
+  min-height: 2.875rem;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding-inline: 1rem;
+}
+
+/* A 44 px target whose icon lines up with the head's content edge. */
+.k2b-ui .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+  display: none;
+  width: 2.75rem;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  min-height: 2.75rem;
+  flex: 0 0 2.75rem;
+  margin-inline: -0.75rem -0.5rem;
+}
+
+.k2b-ui .k2b-app-workspace__level-back .ti {
+  width: 1.25rem;
+  height: 1.25rem;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.k2b-ui .k2b-app-workspace__level-title {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.k2b-ui .k2b-app-workspace__level-title > :is(h2, p) {
+  overflow: hidden;
+  margin: 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.k2b-ui .k2b-app-workspace__level-title > h2 {
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+/* The title takes focus only when a level change hid the focused control. */
+.k2b-ui .k2b-app-workspace__level-title > h2:focus {
+  outline: none;
+}
+
+.k2b-ui .k2b-app-workspace__level-title > p {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.k2b-ui .k2b-app-workspace__level-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-app-workspace__level-body {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.k2b-ui .k2b-app-workspace__level-body[data-scroll="false"] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+/* The last shown level takes what is left. Its flex basis is 0, not its
+   content: a long title or paragraph in the selected item would otherwise
+   shrink the levels before it, away from their stored widths. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown]:not([data-workspace-level-shown~="1"]) {
+    display: none;
+  }
+
+  .k2b-ui [data-workspace-level-first~="1"] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+    display: inline-flex;
+  }
+
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="1"] {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 0;
+  }
+}
+
+@media (min-width: 48rem) and (max-width: 79.999rem) {
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown]:not([data-workspace-level-shown~="2"]) {
+    display: none;
+  }
+
+  .k2b-ui [data-workspace-level-first~="2"] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+    display: inline-flex;
+  }
+
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="2"] {
+    width: auto;
+    min-width: min(320px, 100%);
+    flex: 1 1 0;
+  }
+
+  /* A fixed level without a separator keeps its width; when stored widths do
+     not fit, only levels a person can resize give way, so a step stays exact. */
+  .k2b-ui
+    .k2b-app-workspace__main[data-workspace-levels]
+    > [data-workspace-level-shown~="2"][data-workspace-resizable="false"]:not([data-workspace-level-last~="2"]) {
+    flex-shrink: 0;
+  }
+
+  /* The last level is raised when another level shows before it. Its
+     margin box keeps the 320 px the flexible level keeps. */
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown~="2"] ~ [data-workspace-level-last~="2"] {
+    min-width: min(320px - 2 * var(--k2b-workspace-detail-inset), 100%);
+    margin: var(--k2b-workspace-detail-inset);
+    margin-bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
+    padding-top: 0;
+    border-bottom: 0;
+    border-radius: var(--k2b-radius-surface);
+    background: var(--k2b-surface-elevated);
+    box-shadow: var(--k2b-shadow-frame);
+  }
+}
+
+@media (min-width: 80rem) {
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown]:not([data-workspace-level-shown~="3"]) {
+    display: none;
+  }
+
+  .k2b-ui [data-workspace-level-first~="3"] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+    display: inline-flex;
+  }
+
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="3"] {
+    width: auto;
+    min-width: min(320px, 100%);
+    flex: 1 1 0;
+  }
+
+  /* A fixed level without a separator keeps its width; when stored widths do
+     not fit, only levels a person can resize give way, so a step stays exact. */
+  .k2b-ui
+    .k2b-app-workspace__main[data-workspace-levels]
+    > [data-workspace-level-shown~="3"][data-workspace-resizable="false"]:not([data-workspace-level-last~="3"]) {
+    flex-shrink: 0;
+  }
+
+  /* The last level is raised when another level shows before it. Its
+     margin box keeps the 320 px the flexible level keeps. */
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-shown~="3"] ~ [data-workspace-level-last~="3"] {
+    min-width: min(320px - 2 * var(--k2b-workspace-detail-inset), 100%);
+    margin: var(--k2b-workspace-detail-inset);
+    margin-bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
+    padding-top: 0;
+    border-bottom: 0;
+    border-radius: var(--k2b-radius-surface);
+    background: var(--k2b-surface-elevated);
+    box-shadow: var(--k2b-shadow-frame);
+  }
+}
+
+/* On a touch screen a separator between levels is a 44 px target with a
+   width of its own, so a tap on a row's edge never lands on it. Before a
+   raised level it takes the place of that level's leading inset. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > .k2b-app-workspace__resize[data-app-workspace-resize="pane"] {
+    flex-basis: 2.75rem;
+    margin-inline: 0;
+  }
+}
+
+@media (any-pointer: coarse) and (min-width: 48rem) and (max-width: 79.999rem) {
+  .k2b-ui
+    .k2b-app-workspace__main[data-workspace-levels]
+    > [data-workspace-level-shown~="2"]
+    ~ .k2b-app-workspace__resize
+    + [data-workspace-level-last~="2"] {
+    margin-inline-start: 0;
+  }
+}
+
+@media (any-pointer: coarse) and (min-width: 80rem) {
+  .k2b-ui
+    .k2b-app-workspace__main[data-workspace-levels]
+    > [data-workspace-level-shown~="3"]
+    ~ .k2b-app-workspace__resize
+    + [data-workspace-level-last~="3"] {
+    margin-inline-start: 0;
   }
 }
 

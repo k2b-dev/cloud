@@ -122,7 +122,7 @@ Conversation details also shows a small **Related mail** section for the convers
 
 When you open an unread conversation, Mail marks it as read. Use **More conversation actions** to mark it unread again, add or remove a flag, or print the conversation. A conversation that you mark unread stays unread in already open tabs until you open its row again. A live update alone does not mark it read.
 
-By default, Mail adapts message bodies to the current theme: safe HTML in light mode and plain text in dark mode when both versions exist. To change one message, open its actions and choose **View as plain text** or **View as HTML**. To keep one mode in this browser, use **Settings → Reading → Default message format**.
+By default, Mail shows the HTML version of a message and adapts its colors to dark mode: light backgrounds become dark, text stays readable, and images keep their original colors. To change one message, open its actions and choose **View as plain text**, **View as HTML**, or in dark mode **Show original colors**. To keep one mode in this browser, use **Settings → Reading → Default message format**; **HTML with original colors** always shows the sender's colors.
 
 HTML messages keep a limited set of layout, typography, color, spacing, and table styles. Scripts, forms, embedded objects, external stylesheets, and other active content are removed. Remote images stay blocked separately until you choose to load them.
 

@@ -200,6 +200,7 @@ export default function MailConversationReader(props: {
   const closeHref = () => buildMailListHref(mailRouteUrl(props.requestUrl));
   let closeDraftDialog: ((value: ConversationDraftSummary | null | undefined) => void) | null = null;
   let cleanupPrint: (() => void) | null = null;
+  const [printing, setPrinting] = createSignal(false);
   let historyScroller: HTMLDivElement | undefined;
   let readerScrollFrame: number | null = null;
   let followingNewest = true;
@@ -710,6 +711,7 @@ export default function MailConversationReader(props: {
     const cleanup = () => {
       if (!active) return;
       active = false;
+      setPrinting(false);
       root.classList.remove("mail-printing-conversation");
       if (props.selectionKey === printSelection) setExpandedMessages(expandedBeforePrint);
       window.removeEventListener("afterprint", cleanup);
@@ -718,6 +720,7 @@ export default function MailConversationReader(props: {
       if (cleanupPrint === cleanup) cleanupPrint = null;
     };
     cleanupPrint = cleanup;
+    setPrinting(true);
     setExpandedMessages(new Set(props.messages.map((message) => message.id)));
     root.classList.add("mail-printing-conversation");
     window.addEventListener("afterprint", cleanup, { once: true });
@@ -1301,7 +1304,7 @@ export default function MailConversationReader(props: {
                               identities: props.identities,
                               dateConfig: props.dateConfig,
                               readingFormat: props.readingFormat,
-                              theme: props.theme,
+                              theme: printing() ? "light" : props.theme,
                               calendarIntegrationAvailable: props.calendarIntegrationAvailable,
                               composerBusy: composerBusy(),
                             }}

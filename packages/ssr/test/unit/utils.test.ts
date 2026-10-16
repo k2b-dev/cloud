@@ -3,10 +3,12 @@ import { join } from "path";
 import {
   createPingResponse,
   createReloadStream,
+  getAssetPrefix,
   getCacheHeaders,
   getReloadId,
   getSsrDir,
   normalizeBasePath,
+  readAssetManifest,
   safePath,
   toSsrPath,
 } from "../../src/adapter/utils";
@@ -126,5 +128,15 @@ describe("toSsrPath()", () => {
 
   test("prefixes the SSR path with the base path", () => {
     expect(toSsrPath("/docs")).toBe("/docs/_ssr");
+  });
+});
+
+describe("asset manifests", () => {
+  test("dev prefixes do not need island build output", () => {
+    expect(getAssetPrefix({ dev: true, rootDir: import.meta.dir, basePath: "", ssrPath: "/_ssr" })).toBe("");
+  });
+
+  test("a process without island build output gets version 0", () => {
+    expect(readAssetManifest({ dev: false, basePath: "", ssrPath: "/_ssr" })).toEqual({ version: "0", entries: {} });
   });
 });
