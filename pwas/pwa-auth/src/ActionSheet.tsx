@@ -45,6 +45,11 @@ export function ActionSheet(props: {
   createEffect(() => {
     if (!result() && !busy() && expired()) finish("expired");
   });
+  let done: HTMLButtonElement | undefined;
+  // The result replaces the pressed button with Done; focus moves there instead of falling to the page.
+  createEffect(() => {
+    if (result()) queueMicrotask(() => done?.focus());
+  });
   const decide = async (decision: "approve" | "deny") => {
     if (!armed() || disabled() || result()) return;
     setBusy(true);
@@ -153,7 +158,7 @@ export function ActionSheet(props: {
           when={!result()}
           fallback={
             <div class="auth-action-actions auth-action-actions--one">
-              <Button size="lg" onClick={props.close}>
+              <Button size="lg" ref={done} onClick={props.close}>
                 {t().done}
               </Button>
             </div>

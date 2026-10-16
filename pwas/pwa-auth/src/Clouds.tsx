@@ -2,7 +2,7 @@ import { dates } from "@k2b/stdlib";
 import {
   BottomSheet,
   Button,
-  bottomSheetOptions,
+  bottomSheetAdaptiveOptions,
   Checkbox,
   IconButton,
   LocaleProvider,
@@ -50,29 +50,64 @@ function Decision(props: {
     const pending = props.auth.states()[props.binding.id]?.requests.some((r) => r.requestId === props.request.requestId);
     if (!busy() && !error() && (!pending || expired())) props.close();
   });
+  const ending = (): "uncertain" | "expired" | undefined => (error() ? "uncertain" : expired() ? "expired" : undefined);
+  const endings = {
+    uncertain: { icon: "ti ti-alert-triangle", title: () => t().actionUncertainTitle, text: () => t().loginUncertain },
+    expired: { icon: "ti ti-clock", title: () => t().actionExpiredTitle, text: () => t().requestExpired },
+  } as const;
+  let done: HTMLButtonElement | undefined;
+  // An ending replaces both choices with Done; focus moves there instead of staying on a disabled button.
+  createEffect(() => {
+    if (ending()) queueMicrotask(() => done?.focus());
+  });
+  const groups = () => props.request.comparison.match(/.{1,3}/g) ?? [props.request.comparison];
+  const off = () => busy() || error() || expired() || !props.auth.online();
+  const Ending = (ending: { kind: keyof typeof endings }) => (
+    <>
+      <span class="auth-action-result__icon">
+        <i class={endings[ending.kind].icon} aria-hidden="true" />
+      </span>
+      <h3>{endings[ending.kind].title()}</h3>
+      <p>{endings[ending.kind].text()}</p>
+    </>
+  );
   return (
     <BottomSheet onDismiss={props.dismiss}>
       <PanelDialog.Header title={props.binding.label} subtitle={props.total > 1 ? `${props.position} / ${props.total}` : undefined} />
       <PanelDialog.Body>
-        <div class="auth-flow">
-          <p>{t().loginComparison}</p>
-          <output class="auth-comparison">{props.request.comparison}</output>
-          <Show when={expired()}>
-            <p role="status">{t().requestExpired}</p>
-          </Show>
-          <Show when={error()}>
-            <p role="alert">{t().uncertain}</p>
-          </Show>
+        {/* The request and its ending share one grid cell, sized from the first frame by the longest ending, so the
+            dialog keeps its height when the ending replaces the request. */}
+        <div class="auth-decision" data-ended={ending() ? "" : undefined}>
+          <div class="auth-decision__request" aria-hidden={ending() ? true : undefined}>
+            <p>{t().loginComparison}</p>
+            <output class="auth-comparison" aria-label={groups().join(" ")}>
+              <For each={groups()}>{(group) => <span>{group}</span>}</For>
+            </output>
+          </div>
+          <div class="auth-action-result auth-decision__sizer" aria-hidden="true">
+            <Ending kind="uncertain" />
+          </div>
+          <div class="auth-action-result" data-outcome={ending()} role={error() ? "alert" : "status"}>
+            <Show when={ending()}>{(kind) => <Ending kind={kind()} />}</Show>
+          </div>
         </div>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <div class="auth-dialog-actions">
-          <Button variant="secondary" disabled={busy() || error() || expired() || !props.auth.online()} onClick={() => void decide("deny")}>
-            {t().deny}
-          </Button>
-          <Button disabled={busy() || error() || expired() || !props.auth.online()} onClick={() => void decide("approve")}>
-            {t().approve}
-          </Button>
+        {/* The choices and Done share one place too, so the footer keeps its height. */}
+        <div class="auth-decision-actions" data-ended={ending() ? "" : undefined}>
+          <div class="auth-decision-actions__choices" inert={ending() ? true : undefined}>
+            <Button size="lg" variant="secondary" disabled={off()} onClick={() => void decide("deny")}>
+              {t().deny}
+            </Button>
+            <Button size="lg" disabled={off()} loading={busy()} onClick={() => void decide("approve")}>
+              {t().approve}
+            </Button>
+          </div>
+          <div class="auth-decision-actions__done" inert={ending() ? undefined : true}>
+            <Button size="lg" ref={done} onClick={() => props.close()}>
+              {t().done}
+            </Button>
+          </div>
         </div>
       </PanelDialog.Footer>
     </BottomSheet>
@@ -184,7 +219,7 @@ export function Clouds(props: {
             />
           </LocaleProvider>
         );
-      }, bottomSheetOptions);
+      }, bottomSheetAdaptiveOptions);
     } finally {
       if (!disposed) setSheetOpen(false);
     }
@@ -216,7 +251,7 @@ export function Clouds(props: {
             <ActionSheet auth={props.auth} binding={binding} view={view} dismiss={context.requestDismiss} close={() => close()} />
           </LocaleProvider>
         ),
-        bottomSheetOptions,
+        bottomSheetAdaptiveOptions,
       );
     } finally {
       if (!disposed) setSheetOpen(false);

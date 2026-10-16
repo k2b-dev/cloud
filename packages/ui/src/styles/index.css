@@ -11688,8 +11688,42 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   from { transform: translate(-50%, 24px); opacity: 0; }
   to { transform: translate(-50%, 0); opacity: 1; }
 }
+/* An adaptive sheet (`bottomSheetAdaptiveOptions`) stays a sheet on phones and
+ * becomes a centered dialog from 48rem up, the width where AppWorkspace stops
+ * being a phone layout. The media query decides, so server markup, the first
+ * frame, and a rotation agree without measuring. The dialog has no handle and
+ * no bottom safe area, and keeps a width that fits a decision or a short form. */
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive {
+    top: 50%;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+    width: min(var(--k2b-dialog-available-width), 32rem);
+    max-height: min(86dvh, var(--k2b-dialog-available-height));
+    border-bottom: 1px solid var(--k2b-border-strong);
+    border-radius: var(--k2b-radius-dialog);
+    animation-name: k2b-sheet-dialog-enter;
+  }
+  .k2b-ui .k2b-bottom-sheet-frame.is-adaptive > .k2b-bottom-sheet-viewport {
+    max-height: min(86dvh, var(--k2b-dialog-available-height));
+  }
+  .k2b-ui .k2b-bottom-sheet-frame.is-adaptive > .k2b-bottom-sheet-viewport > .k2b-panel-dialog {
+    padding-bottom: 0;
+  }
+  .k2b-ui .k2b-bottom-sheet-frame.is-adaptive > .k2b-bottom-sheet-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
+    padding-bottom: 1.25rem;
+  }
+  .k2b-ui .k2b-bottom-sheet-frame.is-adaptive .k2b-bottom-sheet__handle {
+    display: none;
+  }
+}
+@keyframes k2b-sheet-dialog-enter {
+  from { transform: translate(-50%, calc(-50% + 8px)); opacity: 0; }
+  to { transform: translate(-50%, -50%); opacity: 1; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame { animation: none; }
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame,
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive { animation: none; }
 }
 
 .k2b-ui .k2b-navigation__list { list-style: none; margin: 0; padding: 0; }
