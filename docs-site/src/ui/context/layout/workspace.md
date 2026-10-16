@@ -90,7 +90,11 @@ Hidden levels stay mounted; CSS hides them without losing local state.
 The width classes count the viewport, not the room beside the sidebar: from
 64 rem the sidebar column takes its width from all of them, and between 48 and
 64 rem it is an overlay. The server render and the first client frame therefore
-show the same levels, and nothing is measured to decide.
+show the same levels, and nothing is measured to decide. Give `Main level` the
+workspace's full width: the deepest level takes the place of a `Detail`, so do
+not open one beside it, and do not use levels in a workspace narrower than the
+viewport. If Main still has less room than the shown levels need, it scrolls
+sideways, so the selected level stays reachable.
 
 Keep the selection in the URL and pass its level id to `level`. Reload and
 back/forward then restore the same selection. When a shallower level is hidden,

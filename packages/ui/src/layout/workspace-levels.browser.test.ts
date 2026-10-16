@@ -174,14 +174,17 @@ const checkFill = async (page: Page) => {
         const style = getComputedStyle(element);
         return { left: box.left - Number.parseFloat(style.marginLeft), right: box.right + Number.parseFloat(style.marginRight) };
       });
+    const scroller = document.querySelector("[data-workspace-levels]")!;
     return {
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      mainOverflow: scroller.scrollWidth - scroller.clientWidth,
       left: shown[0]!.left - main.left,
       right: shown.at(-1)!.right - main.right,
       gaps: shown.slice(1).map((box, index) => box.left - shown[index]!.right),
     };
   });
   expect(result.overflow).toBeLessThanOrEqual(0);
+  expect(result.mainOverflow).toBeLessThanOrEqual(0);
   expect(Math.abs(result.left)).toBeLessThanOrEqual(1);
   expect(Math.abs(result.right)).toBeLessThanOrEqual(1);
   for (const gap of result.gaps) expect(Math.abs(gap)).toBeLessThanOrEqual(1);
@@ -383,3 +386,39 @@ for (const touch of [false, true])
       await context.close();
     }
   });
+
+// The viewport decides how many levels show. When Main has less room than
+// they need, for example in a narrower host, it scrolls sideways and the
+// selected level stays reachable instead of being cut off.
+test("a Main narrower than its shown levels scrolls to the selected level", async () => {
+  const page = await browser!.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await page.goto(`${origin}/?level=item`);
+    await page.waitForSelector('body[data-ready="true"]');
+    await page.addStyleTag({ content: "#app{width:900px}" });
+    await frames(page);
+    const result = await page.evaluate(() => {
+      const main = document.querySelector<HTMLElement>("[data-workspace-levels]")!;
+      const shown = [...document.querySelectorAll<HTMLElement>("[data-workspace-level]")].filter(
+        (element) => getComputedStyle(element).display !== "none",
+      );
+      const before = { scroll: main.scrollWidth - main.clientWidth, overflowX: getComputedStyle(main).overflowX };
+      main.scrollLeft = main.scrollWidth;
+      const box = main.getBoundingClientRect();
+      const last = shown.at(-1)!.getBoundingClientRect();
+      return {
+        ...before,
+        count: shown.length,
+        lastInside: last.left >= box.left - 1 && last.right <= box.right + 1,
+        page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      };
+    });
+    expect(result.count).toBe(3);
+    expect(result.overflowX).toBe("auto");
+    expect(result.scroll).toBeGreaterThan(0);
+    expect(result.lastInside).toBe(true);
+    expect(result.page).toBeLessThanOrEqual(0);
+  } finally {
+    await page.close();
+  }
+});

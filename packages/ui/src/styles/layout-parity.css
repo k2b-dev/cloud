@@ -2046,10 +2046,13 @@
    decides which: the deepest selected level and the ones above it. Each
    decision is an attribute of the server-rendered markup, so the first frame
    is already final and the controller moves nothing. Hidden levels stay
-   mounted. Levels never animate, so reduced motion needs no rule. */
+   mounted. Levels never animate, so reduced motion needs no rule. When Main
+   has less room than the shown levels need, for example beside an open
+   Detail, it scrolls sideways instead of cutting off the selected level. */
 .k2b-ui .k2b-app-workspace__main[data-workspace-levels] {
   flex-direction: row;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-gutter: auto;
 }
 

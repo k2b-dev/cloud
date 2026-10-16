@@ -126,6 +126,7 @@ const flexibleLevel = (pane: HTMLElement) => {
   const widthClass = window.matchMedia("(min-width: 80rem)").matches ? "3" : window.matchMedia("(min-width: 48rem)").matches ? "2" : "1";
   return pane.dataset.workspaceLevelLast?.split(" ").includes(widthClass) ?? false;
 };
+const levelsMain = (handle: HTMLElement) => handle.closest(".k2b-app-workspace__main")?.hasAttribute("data-workspace-levels") ?? false;
 const controlsResizableRegion = (root: HTMLElement, handle: HTMLElement, kind: AppWorkspaceResizeKind) => {
   const panel = kind === "sidebar" ? sidebarElement(root) : controlledPanel(root, handle);
   return (
@@ -1142,10 +1143,15 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (!active || pendingClient === null) return;
     const client = pendingClient;
     pendingClient = null;
-    // A press without movement changes no preference.
-    if (!active.moved && client !== active.startClient && active.kind === "pane") settleLevels(active.root, active.handle);
-    active.moved ||= client !== active.startClient;
     const requested = active.startSize + (client - active.startClient) * active.direction;
+    // A press without movement, or a drag that the limits stop, changes no
+    // level preference, also not a sibling's.
+    if (!active.moved && client !== active.startClient && active.kind === "pane" && levelsMain(active.handle)) {
+      const { min, max } = sizeLimits(active.root, active.handle, "pane");
+      if (clamp(requested, min, max) === Math.round(currentSize(active.root, active.handle, "pane"))) return;
+      settleLevels(active.root, active.handle);
+    }
+    active.moved ||= client !== active.startClient;
     // Below half the smallest visible width a hideable sidebar stays at its
     // minimum and previews hiding; dragging back out resumes the live width.
     const hiding =
@@ -1258,7 +1264,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           : current + step * direction;
     if (requested === null) return;
     event.preventDefault();
-    if (kind === "pane" && handle.closest(".k2b-app-workspace__main")?.hasAttribute("data-workspace-levels")) {
+    if (kind === "pane" && levelsMain(handle)) {
       // A step that the limits stop changes no preference, also not a sibling's.
       if (clamp(requested, min, max) === Math.round(current)) return;
       settleLevels(root, handle);

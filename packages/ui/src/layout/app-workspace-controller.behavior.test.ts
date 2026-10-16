@@ -1256,7 +1256,7 @@ describe("floating detail controller", () => {
       }
     });
 
-  test("a key step that the limits stop keeps every level preference", () => {
+  test("a key step or drag that the limits stop keeps every level preference", () => {
     Object.defineProperty(window, "matchMedia", {
       value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }),
     });
@@ -1300,6 +1300,13 @@ describe("floating detail controller", () => {
       flushFrames();
       dispatchKey(handles[0]!, "ArrowLeft");
       dispatchKey(handles[0]!, "Home");
+      for (const clientX of [610, 590]) {
+        handles[0]!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 1, clientX: 600 }));
+        window.dispatchEvent(new window.PointerEvent("pointermove", { pointerId: 1, clientX }));
+        flushFrames();
+        window.dispatchEvent(new window.PointerEvent("pointerup", { pointerId: 1, clientX }));
+        flushFrames();
+      }
       expect(written).toEqual([]);
       expect(root.style.getPropertyValue("--k2b-workspace-pane-sections-width")).toBe("720px");
       expect(root.style.getPropertyValue("--k2b-workspace-pane-items-width")).toBe("640px");
