@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, mock, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import { type ClientRequest, IncomingMessage, type RequestOptions } from "node:http";
 import { Socket } from "node:net";
@@ -14,16 +14,15 @@ const config = {
   secretAccessKey: "test-secret",
 };
 const objects = [{ path: "notebooks/nb1234/latest.zip", contentType: "application/zip", content: new Uint8Array([1, 2, 255]) }];
-const fixture = (
-  status = 200,
-  chunks = [""],
-  options: { stall?: boolean; error?: boolean; aborted?: boolean; noResponse?: boolean } = {},
-) => {
+type Failure = { stall?: boolean; error?: boolean | Error; aborted?: boolean; noResponse?: boolean };
+const fixture = (status: number | Array<number | Failure> = 200, chunks = [""], options: Failure = {}) => {
   const sent: RequestOptions[] = [];
   const bodies: Buffer[] = [];
   let timeout: (() => void) | undefined;
   let destroyed = 0;
   const request = (opts: RequestOptions, callback: (response: IncomingMessage) => void): ClientRequest => {
+    const outcome = Array.isArray(status) ? status[Math.min(sent.length, status.length - 1)]! : status;
+    const behavior = typeof outcome === "number" ? options : outcome;
     sent.push(opts);
     const outgoing = new EventEmitter() as ClientRequest;
     outgoing.destroy = (() => {
@@ -38,23 +37,23 @@ const fixture = (
     outgoing.end = ((body: Buffer) => {
       bodies.push(body);
       queueMicrotask(() => {
-        if (options.error) {
-          outgoing.emit("error", new Error("SECRET"));
+        if (behavior.error) {
+          outgoing.emit("error", behavior.error instanceof Error ? behavior.error : new Error("SECRET"));
           return;
         }
-        if (options.noResponse) return;
+        if (behavior.noResponse) return;
         const response = new IncomingMessage(new Socket());
-        response.statusCode = status;
+        response.statusCode = typeof outcome === "number" ? outcome : 500;
         callback(response);
         for (const chunk of chunks) response.push(Buffer.from(chunk));
-        if (options.aborted) response.emit("aborted");
-        else if (!options.stall) response.push(null);
+        if (behavior.aborted) response.emit("aborted");
+        else if (!behavior.stall) response.push(null);
       });
       return outgoing;
     }) as ClientRequest["end"];
     return outgoing;
   };
-  return { request, sent, bodies, expire: () => timeout?.(), destroyed: () => destroyed };
+  return { request, sent, bodies, sleep: mock(async (_ms: number) => {}), expire: () => timeout?.(), destroyed: () => destroyed };
 };
 const allowlist = parseNetworkAllowlist(["snapshots.test"]);
 const lookup = async () => [{ address: "127.0.0.1", family: 4 }];
@@ -105,10 +104,53 @@ test("signed PUT keeps Host, SNI, content headers and a lookup containing only c
   });
 });
 
-test("redirects fail after one request", async () => {
-  const f = fixture(307);
-  await expect(uploadSnapshotObjects(config, objects, { ...f, allowlist, lookup })).rejects.toThrow("HTTP 307");
+for (const status of [307, 403]) {
+  test(`HTTP ${status} fails after one request`, async () => {
+    const f = fixture(status);
+    await expect(uploadSnapshotObjects(config, objects, { ...f, allowlist, lookup })).rejects.toThrow(`HTTP ${status}`);
+    expect(f.sent).toHaveLength(1);
+    expect(f.sleep).not.toHaveBeenCalled();
+  });
+  test(`HTTP ${status} with an aborted error body is not retried`, async () => {
+    const f = fixture(status, [], { aborted: true });
+    await expect(uploadSnapshotObjects(config, objects, { ...f, allowlist, lookup })).rejects.toThrow("S3 response connection failed");
+    expect(f.sent).toHaveLength(1);
+    expect(f.sleep).not.toHaveBeenCalled();
+  });
+}
+
+test("a transport guard refusal is never retried", async () => {
+  const blocked = new NetworkTargetBlockedError("Network target host is not allowed");
+  const f = fixture([{ error: blocked }]);
+  await expect(uploadSnapshotObjects(config, objects, { ...f, allowlist, lookup })).rejects.toBe(blocked);
   expect(f.sent).toHaveLength(1);
+  expect(f.sleep).not.toHaveBeenCalled();
+});
+
+for (const outcome of [503, 500, 599, 429, 408, { error: true }, { aborted: true }]) {
+  test(`transient ${JSON.stringify(outcome)} retries once then succeeds`, async () => {
+    const f = fixture([outcome, 200]);
+    expect(await uploadSnapshotObjects(config, objects, { ...f, allowlist, lookup })).toEqual([{ path: objects[0]!.path, bytes: 3 }]);
+    expect(f.sent).toHaveLength(2);
+    expect(f.sleep.mock.calls).toEqual([[200]]);
+  });
+}
+
+test("four 503s exhaust the per-object retry budget with exponential backoff", async () => {
+  const f = fixture([503, 503, 503, 503]);
+  await expect(uploadSnapshotObjects(config, objects, { ...f, allowlist, lookup })).rejects.toThrow(
+    `Failed to upload ${objects[0]!.path}. HTTP 503`,
+  );
+  expect(f.sent).toHaveLength(4);
+  expect(f.sleep.mock.calls).toEqual([[200], [400], [800]]);
+});
+
+test("the final error uses the last attempt's reason", async () => {
+  const f = fixture([503, 503, 503, 429]);
+  await expect(uploadSnapshotObjects(config, objects, { ...f, allowlist, lookup })).rejects.toThrow(
+    `Failed to upload ${objects[0]!.path}. HTTP 429`,
+  );
+  expect(f.sent).toHaveLength(4);
 });
 
 test("S3 error messages are readable and bounded", async () => {
@@ -121,7 +163,7 @@ test("S3 error messages are readable and bounded", async () => {
   await expect(uploadSnapshotObjects(config, objects, { ...unclosed, allowlist, lookup })).rejects.toThrow(/^Failed to upload .*HTTP 503$/);
   const large = fixture(503, [" ".repeat(64 * 1024)], { stall: true });
   await expect(uploadSnapshotObjects(config, objects, { ...large, allowlist, lookup })).rejects.toThrow("HTTP 503");
-  expect(large.destroyed()).toBe(1);
+  expect(large.destroyed()).toBe(4);
 });
 
 test("a 2xx answer settles at its headers even when the endpoint keeps sending", async () => {
@@ -133,10 +175,13 @@ test("a 2xx answer settles at its headers even when the endpoint keeps sending",
 test("idle timeout destroys a stalled upload; failures do not expose transport errors", async () => {
   const f = fixture(200, [], { noResponse: true });
   const promise = uploadSnapshotObjects(config, objects, { ...f, allowlist, lookup });
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  f.expire();
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    f.expire();
+  }
   await expect(promise).rejects.toThrow("S3 upload connection failed or timed out");
-  expect(f.destroyed()).toBe(1);
+  expect(f.sent).toHaveLength(4);
+  expect(f.destroyed()).toBe(4);
   for (const options of [{ error: true }, { aborted: true }]) {
     await expect(uploadSnapshotObjects(config, objects, { ...fixture(500, [], options), allowlist, lookup })).rejects.toThrow(
       /S3 .*connection failed/,
@@ -145,12 +190,14 @@ test("idle timeout destroys a stalled upload; failures do not expose transport e
 });
 
 test("signs each object right before its request so long uploads never send an expired signature", async () => {
-  const f = fixture();
+  const f = fixture([503, 200, 503, 200]);
   const events: string[] = [];
+  const resolveTarget = mock(lookup);
   const many = [objects[0]!, { ...objects[0]!, path: "notebooks/nb1234/latest-manifest.json" }];
   await uploadSnapshotObjects(config, many, {
     allowlist,
-    lookup,
+    lookup: resolveTarget,
+    sleep: f.sleep,
     presign: (signing, path) => {
       events.push(`sign ${path}`);
       return presignSnapshotObject(signing, path);
@@ -164,7 +211,42 @@ test("signs each object right before its request so long uploads never send an e
     "sign notebooks/nb1234/latest.zip",
     "sign notebooks/nb1234/latest.zip",
     "send /bucket/notebooks/nb1234/latest.zip",
+    "sign notebooks/nb1234/latest.zip",
+    "send /bucket/notebooks/nb1234/latest.zip",
+    "sign notebooks/nb1234/latest-manifest.json",
+    "send /bucket/notebooks/nb1234/latest-manifest.json",
     "sign notebooks/nb1234/latest-manifest.json",
     "send /bucket/notebooks/nb1234/latest-manifest.json",
   ]);
+  expect(resolveTarget).toHaveBeenCalledTimes(1);
+  expect(f.sent).toHaveLength(4);
+  expect(f.sleep.mock.calls).toEqual([[200], [200]]);
+  for (const sent of f.sent) {
+    if (!sent.lookup) throw new Error("Missing pinned lookup");
+    sent.lookup("snapshots.test", { family: 4, all: false }, (error, address, family) => {
+      expect(error).toBeNull();
+      expect(address).toBe("127.0.0.1");
+      expect(family).toBe(4);
+    });
+  }
+});
+
+test("a changed target stops before the retry request", async () => {
+  const f = fixture(503);
+  let signatures = 0;
+  await expect(
+    uploadSnapshotObjects(config, objects, {
+      ...f,
+      allowlist,
+      lookup,
+      presign: (signing, path) => {
+        const url = presignSnapshotObject(signing, path);
+        if (++signatures === 3) url.hostname = "other.test";
+        return url;
+      },
+    }),
+  ).rejects.toThrow("S3 upload target changed between objects");
+  expect(signatures).toBe(3);
+  expect(f.sent).toHaveLength(1);
+  expect(f.sleep.mock.calls).toEqual([[200]]);
 });

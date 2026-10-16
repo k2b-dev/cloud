@@ -2,6 +2,7 @@ import { type ClientRequest, request as httpRequest, type IncomingMessage, type 
 import { request as httpsRequest } from "node:https";
 import {
   type NetworkLookup,
+  NetworkTargetBlockedError,
   type PublicNetworkAddress,
   pinnedNetworkLookup,
   resolveAllowedNetworkAddresses,
@@ -11,12 +12,15 @@ import type { NotebookBackupConfig, NotebookBackupObject, NotebookBackupUploadRe
 
 const MAX_ERROR_BYTES = 64 * 1024;
 const IDLE_TIMEOUT_MS = 60_000;
+// Match the replaced Bun.S3Client default retry: 3.
+const SNAPSHOT_UPLOAD_RETRIES = 3;
 type RequestFactory = (options: RequestOptions, callback: (response: IncomingMessage) => void) => ClientRequest;
 export type SnapshotHttpDeps = {
   allowlist?: NetworkAllowlist;
   lookup?: NetworkLookup;
   request?: RequestFactory;
   presign?: typeof presignSnapshotObject;
+  sleep?: (ms: number) => Promise<void>;
 };
 type SigningConfig = Pick<NotebookBackupConfig, "bucket" | "endpoint" | "region" | "accessKeyId" | "secretAccessKey">;
 
@@ -32,7 +36,18 @@ export const presignSnapshotObject = (config: SigningConfig, path: string): URL 
   return new URL(client.presign(path, { method: "PUT", expiresIn: 900, acl: "private" }));
 };
 
-const providerError = (status: number, body: Buffer): Error => {
+class SnapshotUploadError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+  }
+}
+
+const isTransientStatus = (status: number): boolean => (status >= 500 && status < 600) || status === 429 || status === 408;
+
+const providerError = (status: number, body: Buffer): SnapshotUploadError => {
   const xml = body.toString("utf8");
   const decode = (value: string) =>
     value.replace(
@@ -46,11 +61,12 @@ const providerError = (status: number, body: Buffer): Error => {
     .filter((text): text is string => Boolean(text))
     .map(decode)
     .join(": ");
-  return new Error(`HTTP ${status}${detail ? `: ${detail}` : ""}`);
+  return new SnapshotUploadError(`HTTP ${status}${detail ? `: ${detail}` : ""}`, isTransientStatus(status));
 };
 
 const putObject = (url: URL, object: NotebookBackupObject, addresses: PublicNetworkAddress[], deps: SnapshotHttpDeps): Promise<number> =>
   new Promise((resolve, reject) => {
+    let retryable = true;
     const body = Buffer.from(object.content);
     const factory = deps.request ?? (url.protocol === "https:" ? httpsRequest : httpRequest);
     const request = factory(
@@ -67,6 +83,7 @@ const putObject = (url: URL, object: NotebookBackupObject, addresses: PublicNetw
       } satisfies RequestOptions & { servername?: string },
       (response) => {
         const status = response.statusCode ?? 0;
+        retryable = isTransientStatus(status);
         if (status >= 200 && status < 300) {
           // S3 answers a PUT with headers only; never wait for a body the endpoint might keep sending.
           resolve(body.length);
@@ -91,16 +108,20 @@ const putObject = (url: URL, object: NotebookBackupObject, addresses: PublicNetw
           if (size === MAX_ERROR_BYTES) finish();
         });
         response.once("end", finish);
-        const failed = () => {
+        const failed = (error?: Error) => {
           clearTimeout(deadline);
-          reject(new Error("S3 response connection failed"));
+          reject(error instanceof NetworkTargetBlockedError ? error : new SnapshotUploadError("S3 response connection failed", retryable));
         };
         response.once("error", failed);
         response.once("aborted", failed);
       },
     );
     request.setTimeout(IDLE_TIMEOUT_MS, () => request.destroy(new Error("S3 upload timed out without progress")));
-    request.once("error", () => reject(new Error("S3 upload connection failed or timed out")));
+    request.once("error", (error: Error) =>
+      reject(
+        error instanceof NetworkTargetBlockedError ? error : new SnapshotUploadError("S3 upload connection failed or timed out", retryable),
+      ),
+    );
     request.end(body);
   });
 
@@ -111,18 +132,26 @@ export const uploadSnapshotObjects = async (
 ): Promise<NotebookBackupUploadResult[]> => {
   if (!objects.length) return [];
   const presign = deps.presign ?? presignSnapshotObject;
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const target = presign(config, objects[0]!.path);
   const addresses = await resolveAllowedNetworkAddresses(target.hostname, deps.allowlist ?? EMPTY_NETWORK_ALLOWLIST, deps.lookup);
   const uploaded: NotebookBackupUploadResult[] = [];
   for (const object of objects) {
-    // Sign right before each request so a long upload never sends an expired signature.
-    const url = presign(config, object.path);
-    if (url.origin !== target.origin) throw new Error("S3 upload target changed between objects");
-    try {
-      const bytes = await putObject(url, object, addresses, deps);
-      uploaded.push({ path: object.path, bytes });
-    } catch (error) {
-      throw new Error(`Failed to upload ${object.path}. ${error instanceof Error ? error.message : "S3 upload failed"}`);
+    for (let attempt = 0; attempt <= SNAPSHOT_UPLOAD_RETRIES; attempt++) {
+      // Sign right before each request so long uploads and retries never send an expired signature.
+      const url = presign(config, object.path);
+      if (url.origin !== target.origin) throw new Error("S3 upload target changed between objects");
+      try {
+        const bytes = await putObject(url, object, addresses, deps);
+        uploaded.push({ path: object.path, bytes });
+        break;
+      } catch (error) {
+        if (error instanceof NetworkTargetBlockedError) throw error;
+        if (!(error instanceof SnapshotUploadError) || !error.retryable || attempt === SNAPSHOT_UPLOAD_RETRIES) {
+          throw new Error(`Failed to upload ${object.path}. ${error instanceof SnapshotUploadError ? error.message : "S3 upload failed"}`);
+        }
+        await sleep(200 * 2 ** attempt);
+      }
     }
   }
   return uploaded;

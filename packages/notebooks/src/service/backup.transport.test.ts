@@ -204,6 +204,7 @@ test("provider errors are bounded to 64 KiB", async () => {
       await expect(
         uploadSnapshotObjects({ ...config, endpoint: `http://127.0.0.1:${port}` }, objects, {
           allowlist: parseNetworkAllowlist(["127.0.0.1"]),
+          sleep: async () => {},
         }),
       ).rejects.toThrow("HTTP 503");
     },

@@ -394,6 +394,8 @@ and code `NOTEBOOK_SNAPSHOT_TARGET_BLOCKED` until the operator allows the
 target. Settings and credentials stay stored. Snapshots now upload with
 presigned PUT requests; object identities and paths stay the same. Redirects
 are refused.
+Transient storage failures (5xx, 429, 408, or connection loss) are retried up to
+three times per object.
 
 ### Keep Gotenberg offline
 
