@@ -8,7 +8,6 @@ import {
   Dropdown,
   type DropdownItem,
   IconButton,
-  IconButtonLink,
   type NavigationItem,
   NoticeCard,
   Placeholder,
@@ -27,7 +26,6 @@ import { notebookWorkspaceMessages } from "../../messages";
 import { NOTE_SOFT_NAVIGATED_EVENT, SIDEBAR_FILTER_CHANGED_EVENT } from "../detail/events";
 import { resolveSameNotebookNoteTarget } from "../editor/note-navigation";
 import { openNoteSearchPrompt } from "../search/openNoteSearchPrompt";
-import NotebookSettingsButton from "../settings/NotebookSettingsButton";
 import { openNotebookSettingsDialog } from "../settings/NotebookSettingsPanel";
 import { writeSettings } from "../settings/NotebookSettingsStore";
 import { showRestoredVersionNotice } from "../versions/restore-notice";
@@ -45,6 +43,8 @@ type Props = {
   ctx: NotebookContext;
   /** The page's editor toolbar shows the navigation toggle, so the sidebar adds no control of its own. */
   editorToolbar?: boolean;
+  /** The notebook page this sidebar stands beside, when it is one of the footer's items. */
+  current?: "attachments";
 };
 
 /** The filter in the address; showing a hidden navigation mounts the sidebar again after the address may have changed. */
@@ -89,6 +89,14 @@ export default function NotebookSidebar(props: Props) {
     writeSettings(notebook().id, { treeSort: value });
   };
   const attachmentsHref = () => buildAttachmentsUrl(notebook().id, props.ctx.presentationMode);
+  const openSettings = () =>
+    openNotebookSettingsDialog({
+      notebook: notebook(),
+      tree: noteTree(),
+      isAdmin: props.ctx.permission === "admin",
+      canWrite,
+      dateConfig: props.ctx.dateConfig,
+    });
   const navigationHidden = createNavigationHidden(props.ctx.navigationHidden);
   followStoredNavigationHidden(navigationHidden);
 
@@ -319,7 +327,14 @@ export default function NotebookSidebar(props: Props) {
               ...sortedTree().map((node) => noteEntry(node, sortedTree())),
             ],
           },
-      { id: "attachments", label: t().attachments, icon: "ti ti-paperclip", href: attachmentsHref(), badge: attachmentCount() },
+      {
+        id: "attachments",
+        label: t().attachments,
+        icon: "ti ti-paperclip",
+        href: attachmentsHref(),
+        badge: attachmentCount(),
+        active: props.current === "attachments",
+      },
       { id: "settings", label: t().settings, icon: "ti ti-settings", action: "settings" },
     ],
     onNavigate: handleSameNotebookNoteNavigate,
@@ -333,13 +348,7 @@ export default function NotebookSidebar(props: Props) {
         return;
       }
       if (action === "settings") {
-        await openNotebookSettingsDialog({
-          notebook: notebook(),
-          tree: noteTree(),
-          isAdmin: props.ctx.permission === "admin",
-          canWrite,
-          dateConfig: props.ctx.dateConfig,
-        });
+        await openSettings();
         return;
       }
       if (action === "search") {
@@ -556,19 +565,19 @@ export default function NotebookSidebar(props: Props) {
             </Show>
           </AppWorkspace.SidebarBody>
 
-          <AppWorkspace.SidebarFooter>
-            {/* The start of the footer stays free for who is in the notebook. */}
-            <div class="notebook-sidebar-foot">
-              <IconButtonLink href={attachmentsHref()} label={t().attachments} tooltip={t().attachmentCount({ count: attachmentCount() })}>
-                <i class="ti ti-paperclip" />
-              </IconButtonLink>
-              <NotebookSettingsButton
-                notebook={notebook()}
-                tree={noteTree()}
-                permission={props.ctx.permission}
-                dateConfig={props.ctx.dateConfig}
-              />
-            </div>
+          {/* Marking the attachments as the current page also names it, so the workspace head shows no way up beside it. */}
+          <AppWorkspace.SidebarFooter class="notebook-sidebar-foot">
+            <AppWorkspace.SidebarItem
+              icon="ti ti-paperclip"
+              href={attachmentsHref()}
+              active={props.current === "attachments"}
+              meta={attachmentCount() > 0 ? attachmentCount() : undefined}
+            >
+              {t().attachments}
+            </AppWorkspace.SidebarItem>
+            <AppWorkspace.SidebarItem icon="ti ti-settings" onClick={() => void openSettings()}>
+              {t().settings}
+            </AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarFooter>
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>

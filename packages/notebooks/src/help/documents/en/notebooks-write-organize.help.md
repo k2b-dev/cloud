@@ -254,6 +254,7 @@ In the editor, the controls appear when you point at the diagram or focus it. Af
 - **Preview actions:** The preview has **Download**. PDFs add **Open in new tab**, and text and JSON files add **Copy**.
 - **Other files:** Notebooks downloads other files, such as archives, audio, and video, after you confirm. The same applies to very large files and to images that the note cannot display.
 - **Where this works:** You can open attachments in the editor, in Book view, in the details panel, and in the attachments view.
+- **All notebook files:** Open **Attachments** at the bottom of the notebook sidebar to list and search all files in the notebook.
 :::
 
 **Hub note with links**

@@ -168,9 +168,10 @@
   font-size: 0.6875rem;
   font-weight: 400;
 }
+/* Attachments and settings stand below the tree as two rows of the sidebar's own items. */
 .notebook-sidebar-foot {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
   gap: 0.125rem;
 }
 @media (forced-colors: active) {

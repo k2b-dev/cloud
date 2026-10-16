@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { NavigationItem } from "@k2b/ui";
 import { createComponent } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 import type { NotebookContext, NoteTreeNode } from "./types";
 
@@ -75,11 +75,12 @@ describe("notebook sidebar", () => {
     ...overrides,
   });
 
-  const mount = async (value: NotebookContext, href = "/app/notebooks/Book01") => {
+  const mount = async (value: NotebookContext, href = "/app/notebooks/Book01", current?: "attachments") => {
     const dom = createDomTestHarness();
+    delegateEvents(["click"], dom.document);
     window.history.replaceState({}, "", href);
     const { default: NotebookSidebar } = await import("./NotebookSidebar.island");
-    const dispose = render(() => createComponent(NotebookSidebar, { ctx: value }), dom.root);
+    const dispose = render(() => createComponent(NotebookSidebar, { ctx: value, current }), dom.root);
     const rows = (parent: string | null) =>
       Array.from(dom.root.querySelectorAll<HTMLElement>("[data-k2b-nav-tree-id]"))
         .filter((item) => (item.dataset.k2bNavTreeParentId ?? null) === parent)
@@ -116,6 +117,43 @@ describe("notebook sidebar", () => {
       },
     };
   };
+
+  test.each([undefined, "attachments"] as const)(
+    "desktop and phone destinations agree on the current attachments page (%s)",
+    async (current) => {
+      const view = await mount(ctx(null), "/app/notebooks/Book01/attachments", current);
+      try {
+        const active = view.dom.root.querySelectorAll('.notebook-sidebar-foot [aria-current="page"]');
+        expect(Array.from(active, (row) => row.textContent?.trim())).toEqual(current ? ["Attachments"] : []);
+        expect(view.phoneItems().find((item) => item.id === "attachments")?.active).toBe(current === "attachments");
+        expect(view.phoneItems().find((item) => item.id === "settings")?.active).toBeUndefined();
+      } finally {
+        view.cleanup();
+      }
+    },
+  );
+
+  test("choosing Settings in the footer opens the notebook settings dialog", async () => {
+    const view = await mount(ctx(null, { permission: "write" }));
+    const { dialogCore } = await import("@k2b/ui");
+    try {
+      expect(view.dom.document.querySelector("dialog[open]")).toBeNull();
+      view.dom.root.querySelector<HTMLButtonElement>(".notebook-sidebar-foot button")!.click();
+      // The shared dialog mounts after the action, without an API preflight; wait for it rather than for a fixed time.
+      let dialog: Element | null = null;
+      for (let tick = 0; tick < 200 && !dialog; tick++) {
+        await Promise.resolve();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        dialog = view.dom.document.querySelector("dialog[open]");
+      }
+      expect(dialog).not.toBeNull();
+      expect(dialog?.querySelector('[role="region"]')?.getAttribute("aria-label")).toBe("Notebook settings");
+      expect(dialog?.querySelector<HTMLInputElement>('input[aria-label="Name"]')?.value).toBe("Journal");
+    } finally {
+      while (dialogCore.isOpen()) dialogCore.close();
+      view.cleanup();
+    }
+  });
 
   test("the note tree lists the homepage first in its level with a named home icon, and notes with sub-notes as stacks", async () => {
     const view = await mount(ctx("Home01"));

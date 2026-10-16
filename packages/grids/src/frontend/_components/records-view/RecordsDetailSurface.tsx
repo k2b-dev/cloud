@@ -62,7 +62,6 @@ export default function RecordsDetailSurface(props: Props) {
           fallback={
             <Placeholder
               state="error"
-              surface="paper"
               title={t().loadRecordFailed}
               description={props.recordFailure?.message}
               class="h-full"
@@ -79,10 +78,7 @@ export default function RecordsDetailSurface(props: Props) {
             />
           }
         >
-          <Show
-            when={props.record()}
-            fallback={<Placeholder state="loading" surface="paper" variant="panel" title={t().loadingRecord} class="m-3" />}
-          >
+          <Show when={props.record()} fallback={<Placeholder state="loading" variant="panel" title={t().loadingRecord} class="m-3" />}>
             <RecordDetailPanel
               cloudUrl={props.cloudUrl}
               baseId={props.baseId}
