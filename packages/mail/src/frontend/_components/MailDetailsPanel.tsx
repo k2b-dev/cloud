@@ -679,7 +679,7 @@ export default function MailDetailsPanel(props: {
                   title={t().draftsAvailable({ count: props.conversationDrafts.length })}
                   icon="ti ti-file-pencil"
                   tone="accent"
-                  meta={props.conversationDrafts.length}
+                  count={props.conversationDrafts.length}
                 >
                   <DetailPanel.Action
                     href={mailDraftHref(props.mailboxId, draft().id, props.requestUrl)}
@@ -827,7 +827,7 @@ export default function MailDetailsPanel(props: {
             </Show>
 
             <Show when={attachments().length > 0}>
-              <DetailPanel.Section title={t().attachments} icon="ti ti-paperclip" tone="neutral" meta={attachments().length}>
+              <DetailPanel.Section title={t().attachments} icon="ti ti-paperclip" tone="neutral" count={attachments().length}>
                 <div class="flex flex-col gap-1">
                   <For each={attachments()}>
                     {(attachment) => {

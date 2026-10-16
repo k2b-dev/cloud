@@ -21,9 +21,12 @@ const slugify = (text: string): string =>
 const HEADING_LINE_REGEX = /^(#{1,6})\s+(.+?)\s*$/;
 const INLINE_MARKUP_REGEX = /[*_`~]/g;
 
-export const extractTocFromMarkdown = (md: string | null, options: { minDepth?: number; maxDepth?: number } = {}): TocItem[] => {
+export type HeadingLine = TocItem & { line: number };
+
+/** One-based source lines; literal blocks and duplicate ids follow the TOC rules. */
+export const extractHeadingLines = (md: string | null, options: { minDepth?: number; maxDepth?: number } = {}): HeadingLine[] => {
   if (!md || !/^#{1,6}\s/m.test(md)) return [];
-  const items: TocItem[] = [];
+  const items: HeadingLine[] = [];
   const seen = new Map<string, number>();
   const minDepth = options.minDepth ?? 1;
   const maxDepth = options.maxDepth ?? 6;
@@ -39,9 +42,22 @@ export const extractTocFromMarkdown = (md: string | null, options: { minDepth?: 
     const n = seen.get(baseSlug) ?? 0;
     seen.set(baseSlug, n + 1);
     const id = n === 0 ? baseSlug : `${baseSlug}-${n}`;
-    items.push({ level, text, id });
+    items.push({ level, text, id, line: index + 1 });
   }
   return items;
+};
+
+export const extractTocFromMarkdown = (md: string | null, options: { minDepth?: number; maxDepth?: number } = {}): TocItem[] =>
+  extractHeadingLines(md, options).map(({ line: _line, ...item }) => item);
+
+/** The last heading at or above a one-based source line; null before the first heading. */
+export const headingAtLine = (headings: readonly HeadingLine[], line: number): HeadingLine | null => {
+  let active: HeadingLine | null = null;
+  for (const heading of headings) {
+    if (heading.line > line) break;
+    active = heading;
+  }
+  return active;
 };
 
 export const injectHeadingIds = (html: string, items: TocItem[]): string => {

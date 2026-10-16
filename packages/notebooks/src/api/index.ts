@@ -43,7 +43,7 @@ import { NOTE_PATH_MAX_LENGTH, NOTE_PATH_MAX_SEGMENTS } from "@/lib/note-path";
 import { PRESENTATION_MODES } from "@/lib/presentation-mode";
 import { notebooksService, reindexRuntime } from "../service";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "../service/access";
-import { InvalidActivityCursorError } from "../service/activity";
+import { NOTEBOOK_ACTIVITY_ACTIONS, InvalidActivityCursorError } from "../service/activity";
 import { loadBookBlockPreview } from "../service/book";
 import { loadBookRoute } from "../service/book-route";
 import { localizeNotebookSnapshotField, notebookServiceMessages } from "../service/messages";
@@ -353,7 +353,7 @@ const NotebookActivitySchema = z.object({
     displayName: z.string(),
     avatarHash: z.string().nullable(),
   }),
-  action: z.string(),
+  action: z.enum(NOTEBOOK_ACTIVITY_ACTIONS),
   metadata: z.record(z.string(), z.unknown()),
   occurrenceCount: z.number().int().positive(),
   createdAt: z.string(),

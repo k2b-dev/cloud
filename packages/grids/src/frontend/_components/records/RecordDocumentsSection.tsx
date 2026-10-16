@@ -252,7 +252,7 @@ export default function RecordDocumentsSection(props: {
           <DetailPanel.Section
             title={t().snapshots}
             icon="ti ti-camera"
-            meta={manualSnapshots().length}
+            count={manualSnapshots().length}
             actions={
               <Show when={props.live}>
                 <Button
@@ -298,7 +298,8 @@ export default function RecordDocumentsSection(props: {
           <DetailPanel.Section
             title={t().documents}
             icon="ti ti-file-type-pdf"
-            meta={hasMoreDocuments() ? `${generatedDocuments().length}+` : generatedDocuments().length}
+            count={hasMoreDocuments() ? undefined : generatedDocuments().length}
+            meta={hasMoreDocuments() ? `${generatedDocuments().length}+` : undefined}
             actions={
               <Show when={props.live && props.canWrite && availableTemplates().length > 0}>
                 <Dropdown.Root position="bottom-left" width="16rem" items={generationActions()}>

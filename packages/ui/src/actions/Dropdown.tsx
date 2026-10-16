@@ -13,8 +13,10 @@ import {
 } from "solid-js";
 import { Tooltip, type TooltipPlacement, useLabelTooltip } from "../feedback/Tooltip";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
+import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant, iconTitle } from "./Button";
+import { openMenuSheet, prefersMenuSheet } from "./menu-sheet";
 
 // Resolved outside JSX: a conditional attribute compiles to a lazy memo, which would be created inside the click handler.
 const selectAction = (item: { action?: () => void }) => item.action;
@@ -101,6 +103,11 @@ export type DropdownProps = {
   disabled?: boolean;
   label?: string;
   align?: "start" | "end";
+  /**
+   * `sheet` opens the same items as a bottom sheet on phones (below 48rem) instead of a menu beside the trigger.
+   * Defaults to `menu`. A controlled menu (`open`) always stays a menu.
+   */
+  phone?: "menu" | "sheet";
 };
 
 export type DropdownTriggerProps = Omit<
@@ -479,6 +486,8 @@ function DropdownTrigger(props: DropdownTriggerProps): JSX.Element {
 /** Accessible top-layer menu with explicit trigger ownership. */
 function DropdownRoot(props: DropdownProps): JSX.Element {
   const messages = useUiMessages();
+  const locale = useLocale();
+  let sheetOpen = false;
   const id = createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "-");
   const menuId = `k2b-dropdown-${id}`;
   const [internalOpen, setInternalOpen] = createSignal(false);
@@ -550,6 +559,14 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
     if (props.disabled && next) return;
     if (props.open !== undefined) {
       props.onOpenChange?.(next);
+      return;
+    }
+    if (next && props.phone === "sheet" && prefersMenuSheet()) {
+      if (sheetOpen) return;
+      sheetOpen = true;
+      void openMenuSheet({ items: props.items, label: props.label ?? messages().dropdownMenu, locale: locale() }).finally(() => {
+        sheetOpen = false;
+      });
       return;
     }
     if (next) open(focus);

@@ -223,7 +223,7 @@ export default function RecordHistorySection(props: HistoryProps) {
   const t = () => recordMessages.resolve([locale()]).t;
   return (
     <DetailPanel.Group label={t().recordHistory}>
-      <DetailPanel.Section title={t().history} icon="ti ti-history" meta={props.entries.length} collapsible>
+      <DetailPanel.Section title={t().history} icon="ti ti-history" collapsible>
         <RecordHistoryList {...props} />
       </DetailPanel.Section>
     </DetailPanel.Group>

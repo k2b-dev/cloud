@@ -199,7 +199,7 @@ export default function RecordComments(props: Props) {
       <DetailPanel.Section
         title={props.title ?? t().comments}
         icon="ti ti-messages"
-        meta={comments().length}
+        count={comments().length}
         actions={
           permissions().canWrite && !composerOpen() ? (
             <Button type="button" variant="ghost" size="xs" onClick={() => setComposerOpen(true)}>

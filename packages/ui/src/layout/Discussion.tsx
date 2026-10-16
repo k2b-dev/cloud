@@ -1,8 +1,10 @@
-import { createEffect, createSignal, createUniqueId, type JSX, onCleanup, onMount, Show, splitProps } from "solid-js";
+import { children, createEffect, createSignal, createUniqueId, type JSX, onCleanup, onMount, Show, splitProps } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { useChatMessages } from "../chat/chat-messages";
 import { MarkdownEditor } from "../inputs/markdown/MarkdownEditor";
 import { useUiMessages } from "../intl/messages";
+import { DetailPanelCount } from "./DetailPanel";
+import { useDetailPanelMessages } from "./detail-panel-messages";
 
 export type DiscussionProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | "class"> & {
   label: JSX.Element;
@@ -37,6 +39,14 @@ export type DiscussionListProps = {
   loadingMore?: boolean;
   loadMoreLabel?: string;
   onLoadMore?: () => boolean | void | Promise<boolean | void>;
+  /**
+   * Shows only the newest `fold` entries and a "Show n older" toggle above them. Expanded, the toggle reads "Show less"
+   * and earlier pages load as usual. Omit it to show every loaded entry.
+   */
+  fold?: number;
+  /** Controls the fold, for example to reveal an older entry; `onExpandedChange` requests a change. */
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
   class?: string;
 };
 
@@ -83,7 +93,7 @@ const DiscussionRoot = (props: DiscussionProps): JSX.Element => {
           <h2 id={headingId}>{local.label}</h2>
         </Show>
         <Show when={local.count !== undefined}>
-          <span class="k2b-discussion__count">{local.count}</span>
+          <DetailPanelCount count={local.count ?? 0} />
         </Show>
         <Show when={local.actions !== undefined}>
           <div class="k2b-discussion__actions">{local.actions}</div>
@@ -200,6 +210,18 @@ const scrollOwner = (element: HTMLElement): HTMLElement | null => {
 const DiscussionList = (props: DiscussionListProps): JSX.Element => {
   const messages = useUiMessages();
   const chatMessages = useChatMessages();
+  const foldMessages = useDetailPanelMessages();
+  const [internalExpanded, setInternalExpanded] = createSignal(false);
+  const expanded = () => props.expanded ?? internalExpanded();
+  const setExpanded = (next: boolean) => {
+    if (props.expanded === undefined) setInternalExpanded(next);
+    props.onExpandedChange?.(next);
+  };
+  const resolved = children(() => props.children);
+  const entries = () => resolved.toArray();
+  const hidden = () => (props.fold !== undefined && !expanded() ? Math.max(0, entries().length - props.fold) : 0);
+  const folded = () => props.fold !== undefined && entries().length > props.fold;
+  const visible = () => (hidden() > 0 ? entries().slice(hidden()) : entries());
   const [loadingMoreInternally, setLoadingMoreInternally] = createSignal(false);
   const [loadMoreError, setLoadMoreError] = createSignal<string | null>(null);
   const [sentinelVisible, setSentinelVisible] = createSignal(false);
@@ -212,10 +234,11 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
 
   const loadingMore = () => Boolean(props.loadingMore || loadingMoreInternally());
   const canLoadMore = () =>
-    Boolean(!props.loading && !props.error && !loadMoreError() && props.hasMore && props.onLoadMore && !loadingMore());
+    Boolean(!props.loading && !props.error && !loadMoreError() && hidden() === 0 && props.hasMore && props.onLoadMore && !loadingMore());
 
   const loadMore = async (retry = false): Promise<boolean> => {
-    if (props.loading || props.error || (!retry && loadMoreError()) || !props.onLoadMore || !props.hasMore || loadingMore()) return false;
+    if (props.loading || props.error || (!retry && loadMoreError()) || hidden() > 0 || !props.onLoadMore || !props.hasMore || loadingMore())
+      return false;
     const owner = listRef ? scrollOwner(listRef) : null;
     const previousScrollHeight = owner?.scrollHeight ?? 0;
     setLoadMoreError(null);
@@ -296,6 +319,13 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
           </div>
         )}
       </Show>
+      {/* The toggle stays above the entries in both states, so nothing above it moves. */}
+      <Show when={folded() && !props.loading && !props.error}>
+        <button type="button" class="k2b-discussion__fold" aria-expanded={hidden() === 0} onClick={() => setExpanded(hidden() > 0)}>
+          <i class={`ti ${hidden() > 0 ? "ti-chevron-down" : "ti-chevron-up"}`} aria-hidden="true" />
+          {hidden() > 0 ? foldMessages().showOlder({ count: hidden() }) : foldMessages().showLess}
+        </button>
+      </Show>
       <Show when={!props.loading && !props.error && !loadMoreError() && (canLoadMore() || loadingMore())}>
         <button type="button" class="k2b-discussion__load-more" disabled={loadingMore()} onClick={() => void loadMore()}>
           <i class={`ti ${loadingMore() ? "ti-loader-2 k2b-spin" : "ti-history"}`} aria-hidden="true" />
@@ -303,7 +333,7 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
         </button>
       </Show>
       <ol ref={listRef} class="k2b-discussion__list">
-        {props.children}
+        {visible()}
       </ol>
     </div>
   );
@@ -333,16 +363,17 @@ const DiscussionItem = (props: DiscussionItemProps): JSX.Element => {
       <div class="k2b-discussion__entry">
         <header>
           <strong>{local.author}</strong>
-          <Show when={local.timestamp !== undefined}>
-            <span class="k2b-discussion__timestamp">{local.timestamp}</span>
-          </Show>
           <Show when={local.meta !== undefined}>
             <span class="k2b-discussion__meta">{local.meta}</span>
           </Show>
+          {/* Times end on the panel's trailing edge; item actions sit just before them. */}
           <Show when={local.actions !== undefined}>
             <div class="k2b-discussion__item-actions" data-visibility={local.actionVisibility ?? "progressive"}>
               {local.actions}
             </div>
+          </Show>
+          <Show when={local.timestamp !== undefined}>
+            <span class="k2b-discussion__timestamp">{local.timestamp}</span>
           </Show>
         </header>
         <Show when={local.replyContext !== undefined}>

@@ -1,5 +1,7 @@
-export type { AvatarProps, AvatarRing, AvatarSize } from "./Avatar";
+export type { AvatarProps, AvatarRing, AvatarShape, AvatarSize } from "./Avatar";
 export { Avatar } from "./Avatar";
+export type { AvatarStackPerson, AvatarStackProps } from "./AvatarStack";
+export { AvatarStack } from "./AvatarStack";
 export type { DescriptionListItem, DescriptionListProps } from "./DescriptionList";
 export { DescriptionList } from "./DescriptionList";
 export type { LinkCardColor, LinkCardProps } from "./LinkCard";

@@ -39,6 +39,10 @@ const user = {
   manages: [],
   managesGroupIds: [],
 } satisfies User;
+const noteAuthors = {
+  createdBy: { kind: "user" as const, id: user.id, displayName: "Jana Berger", avatarHash: "avatar" },
+  lastEditedBy: { kind: "user" as const, id: user.id, displayName: "Jana Berger", avatarHash: "avatar" },
+};
 const timestamp = "2026-09-27T08:00:00.000Z";
 const notebook = {
   id: "22222222-2222-4222-8222-222222222222",
@@ -340,6 +344,7 @@ const renderNotebookWithNotes = async (preferences: Record<string, unknown>, mod
     spies.push(
       spyOn(routeState, "loadSelectedNoteRouteState").mockResolvedValue({
         note: { ...note("note01", "Private folder"), id: "note01", yjsSnapshot: null },
+        noteAuthors,
         readonlyMode: mode === "readonly",
         tocItems: [],
         namedBlocks: [],
@@ -447,6 +452,7 @@ const renderEditorPage = async (
   spies.push(
     spyOn(routeState, "loadSelectedNoteRouteState").mockResolvedValue({
       note: { ...note, id: note.shortId },
+      noteAuthors,
       readonlyMode: !!options.locked,
       tocItems: [],
       taskProgress: { done: 0, total: 0 },
@@ -751,3 +757,13 @@ for (const permission of ["write", "read"] as const) {
     expect(navigation.items.find((item) => item.id === "graph")?.href).toBe(href);
   });
 }
+
+test.each(["write", "readonly"] as const)("%s: SSR supplies author identities to the panel", async (mode) => {
+  const html = await renderEditorPage({ mode });
+  const [panel] = await select(html, '[data-file="NotebookDetailPanel.island.tsx"]');
+  expect(panel).toBeDefined();
+  const props = islandProps(panel?.attributes["data-props"]);
+  expect(props.noteAuthors).toEqual(noteAuthors);
+  const [editor] = await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]');
+  expect(islandProps(editor?.attributes["data-props"]).initialDetail).toHaveProperty("noteAuthors", noteAuthors);
+});

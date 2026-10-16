@@ -1,12 +1,20 @@
+import { toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
+import {
+  isNotebookActivityAction,
+  type NotebookActivityAction,
+  type NotebookActivityActor,
+  type NoteAuthors,
+} from "../lib/activity-actions";
 import { buildNotebookVisibleAccessCondition } from "./access";
 
-export type NotebookActivityActor = {
-  kind: "user" | "service_account" | "system";
-  id: string | null;
-  displayName: string;
-  avatarHash: string | null;
-};
+export {
+  NOTEBOOK_ACTIVITY_ACTIONS,
+  isNotebookActivityAction,
+  type NotebookActivityAction,
+  type NotebookActivityActor,
+  type NoteAuthors,
+} from "../lib/activity-actions";
 
 export type NotebookActivityEvent = {
   id: string;
@@ -23,7 +31,7 @@ export type NotebookActivityEvent = {
   } | null;
   noteVersionId: string | null;
   actor: NotebookActivityActor;
-  action: string;
+  action: NotebookActivityAction;
   metadata: Record<string, unknown>;
   occurrenceCount: number;
   createdAt: string;
@@ -116,7 +124,7 @@ export const record = async (params: {
   noteId?: string | null;
   noteVersionId?: string | null;
   actor: NotebookActivityIdentity;
-  action: string;
+  action: NotebookActivityAction;
   metadata?: Record<string, unknown>;
   bucketStartedAt?: Date | null;
   occurredAt?: Date;
@@ -170,6 +178,7 @@ export const list = async (params: {
   noteId?: string | null;
   cursor?: string;
   limit?: number;
+  actions?: readonly NotebookActivityAction[];
 }): Promise<NotebookActivityPage> => {
   const principalMatch = buildNotebookVisibleAccessCondition({
     userId: params.userId,
@@ -177,6 +186,7 @@ export const list = async (params: {
   });
   const cursor = decodeActivityCursor(params.cursor);
   const limit = Math.min(Math.max(params.limit ?? 30, 1), MAX_PAGE_SIZE);
+  const actions = params.actions ? toPgTextArray([...params.actions]) : null;
   const rows = await sql<ActivityRow[]>`
     SELECT
       activity.id,
@@ -225,6 +235,7 @@ export const list = async (params: {
     }
       AND (${params.notebookId ?? null}::uuid IS NULL OR activity.notebook_id = ${params.notebookId ?? null}::uuid)
       AND (${params.noteId ?? null}::uuid IS NULL OR activity.note_id = ${params.noteId ?? null}::uuid)
+      AND (${actions}::text[] IS NULL OR activity.action = ANY(${actions}::text[]))
       AND (
         ${cursor?.lastOccurredAt ?? null}::timestamptz IS NULL
         OR (activity.last_occurred_at, activity.id) <
@@ -235,34 +246,85 @@ export const list = async (params: {
   `;
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
-  const items = pageRows.map<NotebookActivityEvent>((row) => ({
-    id: String(row.id),
-    notebook: {
-      id: row.notebook_id,
-      shortId: row.notebook_short_id,
-      name: row.notebook_name,
-      icon: row.notebook_icon,
-    },
-    note:
-      row.note_id !== null && row.note_short_id !== null && row.note_title !== null
-        ? { id: row.note_id, shortId: row.note_short_id, title: row.note_title }
-        : null,
-    noteVersionId: row.note_version_id,
-    actor: {
-      kind: row.actor_kind,
-      id: row.actor_id,
-      displayName: row.actor_display_name,
-      avatarHash: row.actor_avatar_hash,
-    },
-    action: row.action,
-    metadata: parseMetadata(row.metadata),
-    occurrenceCount: row.occurrence_count,
-    createdAt: toIso(row.created_at),
-    lastOccurredAt: toIso(row.last_occurred_at),
-  }));
-  const last = items.at(-1);
+  const items = pageRows.flatMap<NotebookActivityEvent>((row) =>
+    isNotebookActivityAction(row.action)
+      ? [
+          {
+            id: String(row.id),
+            notebook: {
+              id: row.notebook_id,
+              shortId: row.notebook_short_id,
+              name: row.notebook_name,
+              icon: row.notebook_icon,
+            },
+            note:
+              row.note_id !== null && row.note_short_id !== null && row.note_title !== null
+                ? { id: row.note_id, shortId: row.note_short_id, title: row.note_title }
+                : null,
+            noteVersionId: row.note_version_id,
+            actor: {
+              kind: row.actor_kind,
+              id: row.actor_id,
+              displayName: row.actor_display_name,
+              avatarHash: row.actor_avatar_hash,
+            },
+            action: row.action,
+            metadata: parseMetadata(row.metadata),
+            occurrenceCount: row.occurrence_count,
+            createdAt: toIso(row.created_at),
+            lastOccurredAt: toIso(row.last_occurred_at),
+          },
+        ]
+      : [],
+  );
+  const last = pageRows.at(-1);
   return {
     items,
-    nextCursor: hasMore && last ? encodeActivityCursor({ id: last.id, lastOccurredAt: last.lastOccurredAt }) : null,
+    nextCursor: hasMore && last ? encodeActivityCursor({ id: String(last.id), lastOccurredAt: toIso(last.last_occurred_at) }) : null,
   };
+};
+
+/** Call only after the caller has authorized access to this note. */
+export const noteAuthors = async ({ noteId }: { noteId: string }): Promise<NoteAuthors> => {
+  const rows = await sql<
+    {
+      role: "creator" | "editor";
+      actor_kind: NotebookActivityActor["kind"];
+      actor_id: string | null;
+      display_name: string;
+      avatar_hash: string | null;
+    }[]
+  >`
+    WITH authors AS (
+      SELECT 'creator' AS role, COALESCE(creation.actor_kind, 'user') AS actor_kind,
+        CASE WHEN creation.actor_kind IS NOT NULL THEN creation.actor_id ELSE note.created_by END AS actor_id
+      FROM notebooks.notes note
+      LEFT JOIN LATERAL (
+        SELECT actor_kind, actor_id FROM notebooks.activity_events
+        WHERE note_id = note.id AND action = 'note.created'
+        ORDER BY last_occurred_at ASC, id ASC LIMIT 1
+      ) creation ON true
+      WHERE note.id = ${noteId}::uuid AND (creation.actor_kind IS NOT NULL OR note.created_by IS NOT NULL)
+      UNION ALL
+      SELECT 'editor', actor_kind, actor_id FROM (
+        SELECT actor_kind, actor_id FROM notebooks.activity_events
+        WHERE note_id = ${noteId}::uuid AND action IN ('note.edited', 'note.restored', 'note.created')
+        ORDER BY last_occurred_at DESC, id DESC LIMIT 1
+      ) latest
+    )
+    SELECT authors.role, authors.actor_kind, authors.actor_id,
+      COALESCE(NULLIF(actor_user.display_name, ''), actor_user.uid, actor_service.name,
+        CASE authors.actor_kind WHEN 'system' THEN 'System' WHEN 'user' THEN 'Former user'
+          ELSE 'Former service account' END) AS display_name,
+      actor_user.avatar_hash
+    FROM authors
+    LEFT JOIN auth.users actor_user ON authors.actor_kind = 'user' AND actor_user.id = authors.actor_id
+    LEFT JOIN auth.service_accounts actor_service ON authors.actor_kind = 'service_account' AND actor_service.id = authors.actor_id
+  `;
+  const actor = (role: "creator" | "editor"): NotebookActivityActor | null => {
+    const row = rows.find((row) => row.role === role);
+    return row ? { kind: row.actor_kind, id: row.actor_id, displayName: row.display_name, avatarHash: row.avatar_hash } : null;
+  };
+  const createdBy = actor("creator");
+  return { createdBy, lastEditedBy: actor("editor") ?? createdBy };
 };
