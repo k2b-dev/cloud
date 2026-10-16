@@ -1147,20 +1147,40 @@ tasks restore the plan automatically; switching chats resets the disclosure.
 
 ## Select commands and inline context
 
-Assistant recognizes `/` at a word boundary anywhere in the composer. Type a
-name, or narrow the suggestions with `/skill`, `/app`, `/file`, or `/project`
-followed by a search term. Move with the arrow keys and choose with plain Enter
-or Tab. Shift+Enter adds a line, Shift+Tab moves focus back, and Ctrl/⌘+Enter
-sends. Escape closes the menu for this `/`, even if you keep typing in the same
-command. URLs, paths, and code remain text. Suggestions temporarily replace the
-task list; closing the menu restores it and its open state. Results stay visible
-while the next search loads.
+Assistant recognizes `/` at a word boundary anywhere in the composer. Its
+sections stay in this order: **Skills**, **Files in this chat**, **Studio apps**,
+**This chat**. Files appear when searching or narrowing to files. Type a name,
+or narrow by typing one of these words followed by a space:
 
-The built-in actions are **Compact chat**, **Fork chat**, and **New chat**.
+| List | German and English words |
+| --- | --- |
+| Skills | `skill`, `skills` |
+| Files in this chat | `datei`, `dateien`, `file`, `files` |
+| Projects | `projekt`, `projekte`, `project`, `projects` |
+| Studio apps | `app`, `apps`, `studio` |
+
+For example, `/skill invoice` searches Skills. Exact words win; from three
+letters, the shortest completion wins when unique. Move with the arrow keys
+and choose with plain Enter or Tab. Tab on a narrowing row writes its word;
+Enter runs its action, or narrows if it only offers a list. Shift+Enter adds a
+line, Shift+Tab moves focus back, and Ctrl/⌘+Enter sends. Escape closes the menu
+for this `/`, even if you keep typing. `/ ` opens nothing, so `50 / 2` stays
+arithmetic. An unmatched search shows its query; adding a space closes the menu
+and leaves the text. URLs, paths, and code remain text.
+
+Suggestions temporarily replace the task list; closing restores it and its open
+state. Matching previous results stay visible while the next search loads.
+Switching lists clears previous results. Screen readers announce the number
+of suggestions once the search settles.
+
+The built-in actions are **Assign to project**, **Compact chat**, **Fork chat**,
+and **New chat**. Assign to project opens the Project list.
 Their old names `/compact`, `/fork`, and `/new` still find them. Compact chat
 summarizes older history to free up room. Fork chat starts from the latest
 assistant response and brings your draft along. New chat starts empty and keeps
-the previous chat in the list. An unavailable command explains why. Selecting
+the previous chat in the list. Compact and Fork are absent from the overview
+until their prerequisites are met; searching finds them with a reason. While a response runs, they remain
+visible with a waiting reason. An unavailable command explains why. Selecting
 it leaves the menu open. Cancelling a command keeps `/…` in your unchanged
 draft; failures restore it too and show a message above the composer until the
 next edit or command.
@@ -1171,8 +1191,9 @@ reopening a draft preserves references, including versioned conversation files.
 Project file references name a read-only path in the current Project.
 
 Selecting a Project permanently assigns a previously unassigned chat. Future
-turns use that Project's instructions and files. Project results disappear once
-the chat belongs to a Project. A stale selection cannot replace an existing
+turns use that Project's instructions and files. Once the chat belongs to a
+Project, assignment leaves the overview. Searching for it explains the existing assignment; the narrowed Project list also shows
+why another Project cannot be chosen. A stale selection cannot replace an existing
 assignment, and assignment waits until active and queued work has finished.
 
 Projects can explicitly link Skills. Current members inherit read/use access,
@@ -1190,7 +1211,16 @@ error; the runtime does not silently ignore the selection. Mentioning an app
 never executes it or grants access.
 
 `Chat.Composer` accepts controlled `mentions` and `onMentionsChange`, asynchronous
-`searchCommands(query, signal)`, and an `accessory` for the shared task surface.
+`searchCommands(query, signal, { scope })`, and an `accessory` for the shared task surface.
+Application authors define fixed sections with `commandSections` and assign
+rows through `section`. Define narrowing words with `commandScopes` and give
+a row a `scope` to let Tab write its first word. Resolved scopes send only the
+remaining search text and the scope id to the callback. Use `hiddenUntilSearch`
+with `reason` for commands that do not apply, `keywords` for alternate names,
+and `app` for a searchable application name. Titles and one description or
+reason wrap without truncation; title matches appear in bold. See the
+[Chat component](/en/ui/ai/chat#commands-and-file-selection) for ranking and
+loading rules.
 Set `draftKey` to the conversation or draft identity to isolate undo history.
 A command can supply an action or a `mention` containing a `ChatAttachment`;
 its payload stays application-owned. Mention offsets use the untrimmed text's

@@ -56,7 +56,8 @@ render(
           }),
           createComponent(Chat.Composer, {
             variant: options.mode === "slash" ? "default" : "conversation",
-            commands: options.mode === "slash" ? [
+            commandSections: options.sections ? [{ id: "local", label: "Local commands" }, { id: "remote", label: "Results", searched: true }] : undefined,
+            commands: options.sections ? Array.from({ length: 24 }, (_, index) => ({ id: "local-" + index, name: "Query " + index, description: "Local command", section: "local" })) : options.mode === "slash" ? [
               { id: "alpha", name: "alpha", label: "Alpha", description: "First local command", keywords: ["q", "qu"] },
               { id: "blocked", name: "blocked", label: "Blocked", description: "Unused", keywords: ["q", "qu"], reason: "Available after the first response" },
               { name: "fail", description: "Reject this action", action: async () => { throw new Error("Please try again"); } },
@@ -102,7 +103,7 @@ if (!build.success) throw new AggregateError(build.logs, "Could not bundle the C
 const script = await build.outputs[0]!.text();
 
 type Fixture = {
-  resolveSearch: (rows: { id?: string; name: string; description: string }[]) => void;
+  resolveSearch: (rows: { id?: string; name: string; description: string; section?: string; keywords?: string[] }[]) => void;
   searchCount: () => number;
   setHint: (hint: string | undefined) => void;
   setDictation: (state: string | null) => void;
@@ -124,6 +125,7 @@ const height = 800;
 const open = async (
   options: {
     mode?: "slash";
+    sections?: boolean;
     /** Installs Playwright's clock before the page loads; it follows real time until a test moves it. */
     clock?: boolean;
     width?: number;
@@ -499,7 +501,9 @@ describe(`default slash ChatComposer in ${browserName}`, () => {
         const field = page.locator("textarea").first();
         await field.fill("/q");
         await page.waitForFunction(() => fixture.searchCount() === 1);
-        await page.evaluate(() => fixture.resolveSearch([{ id: "server", name: "Server", description: "Previous result" }]));
+        await page.evaluate(() =>
+          fixture.resolveSearch([{ id: "server", name: "Server", keywords: ["qu"], description: "Previous result" }]),
+        );
         await page.locator('[role="option"]').filter({ hasText: "Previous result" }).waitFor();
         await frames(page, 2);
         const ids = await page.locator('[role="option"]').evaluateAll((rows) => rows.map((row) => row.id));
@@ -555,3 +559,48 @@ describe(`default slash ChatComposer in ${browserName}`, () => {
     }, 30_000);
   }
 });
+
+test(`section headings stick while scrolled and arriving server rows preserve the visible row in ${browserName}`, async () => {
+  for (const width of [1440, 390]) {
+    const page = await open({ mode: "slash", sections: true, width });
+    try {
+      await page.locator("textarea").first().fill("/q");
+      await page.waitForFunction(() => fixture.searchCount() === 1);
+      const list = page.locator('[role="listbox"]');
+      await list.evaluate((element) => {
+        element.scrollTop = 120;
+      });
+      await frames(page, 2);
+      const heading = page.locator(".k2b-chat-composer__command-heading").first();
+      const listBefore = await list.boundingBox();
+      const headingBox = await heading.boundingBox();
+      expect(Math.abs(headingBox!.y - listBefore!.y)).toBeLessThanOrEqual(1.5);
+      const visibleId = await list.evaluate((element) => {
+        const top = element.getBoundingClientRect().top;
+        const heading = element.querySelector(".k2b-chat-composer__command-heading")!.getBoundingClientRect();
+        return [...element.querySelectorAll('[role="option"]')].find(
+          (row) => row.getBoundingClientRect().top >= Math.max(top, heading.bottom),
+        )!.id;
+      });
+      const row = page.locator(`[id="${visibleId}"]`);
+      const before = await row.boundingBox();
+      await page.evaluate(() =>
+        fixture.resolveSearch(
+          Array.from({ length: 8 }, (_, index) => ({
+            id: "server-" + index,
+            name: "Query server " + index,
+            description: "Loaded result",
+            section: "remote",
+          })),
+        ),
+      );
+      await page.locator('[role="option"]').filter({ hasText: "Query server 0" }).waitFor();
+      await frames(page, 2);
+      expect(await list.boundingBox()).toEqual(listBefore);
+      expect(await row.boundingBox()).toEqual(before);
+      expect(Math.abs((await heading.boundingBox())!.y - listBefore!.y)).toBeLessThanOrEqual(1.5);
+    } finally {
+      await page.close();
+    }
+  }
+}, 30_000);

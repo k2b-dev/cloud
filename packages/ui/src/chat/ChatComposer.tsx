@@ -35,7 +35,6 @@ import { useUiMessages } from "../intl/messages";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
 import {
   chatCommandKey,
-  chatCommandRank,
   conversationEnterAction,
   executeChatAction,
   nextChatCommandIndex,
@@ -43,6 +42,7 @@ import {
   runChatSubmission,
 } from "./chat-behavior";
 import { useChatMessages } from "./chat-messages";
+import { chatCommandListModel, parseChatCommandQuery } from "./command-search";
 import { chatCommandQuery, chatMentionSegments, reconcileChatMentions } from "./composer-document";
 import type {
   ChatAction,
@@ -72,7 +72,29 @@ export type ChatCommandContext = {
 /** An action can cancel and restore its token, or report a short completion message. */
 export type ChatCommandResult = void | "cancelled" | { done: string };
 
+/** A fixed place in the slash list. Sections keep the given order, also while searching. */
+export type ChatCommandSection = {
+  id: string;
+  label: string;
+  /** Rows come from `searchCommands`: loading shows a quiet heading indicator and a placeholder when no rows remain. */
+  searched?: boolean;
+  /** Only while searching or narrowed: absent from the overview (empty query), including its loading placeholder. */
+  searchOnly?: boolean;
+};
+/** First-word narrowing; Tab writes `words[0]` followed by a space. */
+export type ChatCommandScope = { id: string; title: string; words: readonly string[] };
+/** Passed as the third argument to `searchCommands`. */
+export type ChatCommandSearch = { scope?: string };
+
 export type ChatCommand = {
+  /** Section id; unknown or missing ids render in a trailing part without a heading. */
+  section?: string;
+  /** Tab writes this scope's first word; a row without an action or mention also narrows on Enter. */
+  scope?: string;
+  /** Absent from the overview; appears when searched, including its unavailable reason. */
+  hiddenUntilSearch?: boolean;
+  /** Application name, searchable but not displayed. */
+  app?: string;
   /** Stable row key for option ids, marking and de-duplication. Defaults to `name`. */
   id?: string;
   name: string;
@@ -130,7 +152,9 @@ export type ChatComposerProps = {
   /** Compact application-owned details immediately after the model selector. */
   modelDetails?: JSX.Element;
   commands?: readonly ChatCommand[];
-  searchCommands?: (query: string, signal: AbortSignal) => Promise<readonly ChatCommand[]>;
+  commandSections?: readonly ChatCommandSection[];
+  commandScopes?: readonly ChatCommandScope[];
+  searchCommands?: (query: string, signal: AbortSignal, search: ChatCommandSearch) => Promise<readonly ChatCommand[]>;
   mentions?: readonly ChatMention[];
   onMentionsChange?: (mentions: readonly ChatMention[]) => void;
   /** Shared surface above the editor; suggestions temporarily replace this content. */
@@ -275,6 +299,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const [composing, setComposing] = createSignal(false);
   const [searchResults, setSearchResults] = createSignal<readonly ChatCommand[]>([]);
   const [searchResultsQuery, setSearchResultsQuery] = createSignal<string>();
+  const [searchResultsScope, setSearchResultsScope] = createSignal<string>();
+  const [suggestionAnnouncement, setSuggestionAnnouncement] = createSignal<{ text: string }>();
   const [searching, setSearching] = createSignal(false);
   const [searchError, setSearchError] = createSignal(false);
   const [executing, setExecuting] = createSignal(false);
@@ -313,26 +339,25 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const token = caretCommandToken();
     return dismissed() || composing() || token?.start === closedAt() ? null : token;
   });
-  // Matches by label, name or keyword come first, so the top row (what Enter picks) is the command the person named.
-  const localCommandMatches = createMemo(() => {
-    const token = commandQuery();
-    if (!token) return [];
-    return (props.commands ?? [])
-      .map((command) => ({ command, rank: chatCommandRank(command, token.query) }))
-      .filter(({ rank }) => rank >= 0)
-      .sort((a, b) => a.rank - b.rank)
-      .map(({ command }) => command);
+  const parsedCommandQuery = createMemo(() => parseChatCommandQuery(commandQuery()?.query ?? "", props.commandScopes ?? []));
+  const currentCommandScope = createMemo(() => parsedCommandQuery().scope?.id);
+  createEffect(() => {
+    currentCommandScope();
+    setSearchResults([]);
+    setSearchResultsQuery(undefined);
   });
-  const commandMatches = createMemo(() => {
-    if (!commandQuery()) return [];
-    const seen = new Set<string>();
-    return [...localCommandMatches(), ...searchResults()].filter((command) => {
-      const key = chatCommandKey(command);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  });
+  const commandModel = createMemo(() =>
+    chatCommandListModel({
+      query: commandQuery()?.query ?? "",
+      scopes: props.commandScopes,
+      sections: props.commandSections,
+      commands: props.commands ?? [],
+      searchResults: searchResultsScope() === parsedCommandQuery().scope?.id ? searchResults() : [],
+      searchResultsFresh: searchResultsQuery() === commandQuery()?.query && searchResultsScope() === parsedCommandQuery().scope?.id,
+      searching: searching(),
+    }),
+  );
+  const commandMatches = createMemo(() => (commandQuery() ? commandModel().rows.map((row) => row.command) : []));
   const currentCommandQuery = createMemo(() => caretCommandToken()?.query);
   // Arrow marking belongs to one token in one draft; another draft or `/` starts at the top row again.
   createEffect(() => {
@@ -376,16 +401,18 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       setSearching(false);
       return;
     }
+    const parsed = parsedCommandQuery();
     const abort = new AbortController();
     setSearching(true);
     const timer = setTimeout(() => {
       Promise.resolve()
-        .then(() => props.searchCommands!(token.query, abort.signal))
+        .then(() => props.searchCommands!(parsed.query, abort.signal, { scope: parsed.scope?.id }))
         .then((results) => {
           if (!abort.signal.aborted) {
             batch(() => {
               setSearchResults(results);
               setSearchResultsQuery(token.query);
+              setSearchResultsScope(parsed.scope?.id);
             });
           }
         })
@@ -404,6 +431,42 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       clearTimeout(timer);
       abort.abort();
     });
+  });
+  let settledEmpty: { start: number; query: string } | undefined;
+  createEffect(() => {
+    const token = commandQuery();
+    if (!token || parsedCommandQuery().scope || searchError()) {
+      settledEmpty = undefined;
+      return;
+    }
+    const previous = settledEmpty;
+    if (/\s$/.test(token.query) && previous?.start === token.start && previous.query.trimEnd() === token.query.trimEnd()) {
+      setClosedAt(token.start);
+      return;
+    }
+    const settled = !searching() && (!props.searchCommands || searchResultsQuery() === token.query);
+    if (settled && commandModel().empty) {
+      settledEmpty = { start: token.start, query: token.query };
+      if (/\s$/.test(token.query)) setClosedAt(token.start);
+    } else if (!searching()) settledEmpty = undefined;
+  });
+  let lastSuggestion: { query: string; text: string } | undefined;
+  createEffect(() => {
+    const model = commandModel();
+    const query = commandQuery()?.query;
+    if (!commandsOpen()) {
+      setSuggestionAnnouncement(undefined);
+      lastSuggestion = undefined;
+      return;
+    }
+    if (searching() || searchError() || (props.searchCommands && searchResultsQuery() !== query)) return;
+    const text = chatMessages().commandSuggestions({ count: model.rows.length });
+    const timer = setTimeout(() => {
+      if (lastSuggestion && lastSuggestion.query === query && lastSuggestion.text === text) return;
+      lastSuggestion = { query: query ?? "", text };
+      setSuggestionAnnouncement({ text });
+    }, 350);
+    onCleanup(() => clearTimeout(timer));
   });
   const history: { value: string; mentions: readonly ChatMention[]; caret: number }[] = [];
   let historyIndex = -1;
@@ -561,10 +624,14 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       const list = commandListRef;
       const item = id ? list?.querySelector<HTMLElement>(`[id="${id}"]`) : undefined;
       if (!list || !item?.isConnected) return;
-      if (item.offsetTop < list.scrollTop) list.scrollTop = item.offsetTop;
-      else if (item.offsetTop + item.offsetHeight > list.scrollTop + list.clientHeight) {
-        list.scrollTop = item.offsetTop + item.offsetHeight - list.clientHeight;
-      }
+      // Measured against the visible part of the list: a sticky section heading covers the top of it.
+      const heading = item.closest(".k2b-chat-composer__command-group")?.querySelector<HTMLElement>(".k2b-chat-composer__command-heading");
+      const listTop = list.getBoundingClientRect().top + list.clientTop;
+      const box = item.getBoundingClientRect();
+      const top = box.top - listTop - (heading?.offsetHeight ?? 0);
+      const bottom = box.bottom - listTop - list.clientHeight;
+      if (top < 0) list.scrollTop += top;
+      else if (bottom > 0) list.scrollTop += bottom;
     });
   });
 
@@ -678,7 +745,16 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     }
   };
 
-  const executeCommand = async (command: ChatCommand) => {
+  const narrowCommand = (command: ChatCommand): boolean => {
+    const scope = props.commandScopes?.find((scope) => scope.id === command.scope);
+    const word = scope?.words[0];
+    const token = commandQuery();
+    if (!word || !token || !textareaRef) return false;
+    replaceTextareaRange(textareaRef, token.start + 1, token.end, `${word} `);
+    syncCaret();
+    return true;
+  };
+  const executeCommand = async (command: ChatCommand, tab = false) => {
     const token = commandQuery();
     if (!token || blocked()) return;
     if (command.disabled || command.reason) {
@@ -686,6 +762,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       setAnnouncement(command.reason ? { text: command.reason } : undefined);
       return;
     }
+    if (command.scope && (tab || (!command.action && !command.mention)) && narrowCommand(command)) return;
     const previous = snapshot();
     const key = props.draftKey;
     const replacement = command.mention ? command.mention.name + " " : "";
@@ -834,9 +911,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         event.preventDefault();
         const command = selectedCommand();
         // A server row answering an earlier query may no longer match; wait for fresh results. Local rows match now.
-        const staleServerRow = command && !localCommandMatches().includes(command) && searchResultsQuery() !== commandQuery()?.query;
+        const staleServerRow =
+          command && (commandModel().scope || !(props.commands ?? []).includes(command)) && searchResultsQuery() !== commandQuery()?.query;
         if (staleServerRow) return;
-        if (command) void executeCommand(command);
+        if (command) void executeCommand(command, event.key === "Tab");
         return;
       }
       if (event.key === "Escape") {
@@ -1258,6 +1336,50 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     </div>
   );
 
+  const commandRowMap = createMemo(() => new Map(commandModel().rows.map((row) => [row.command, row])));
+  const commandGroupKey = (group: ReturnType<typeof commandModel>["groups"][number]) =>
+    group.scopeTitle ? "scope" : group.section ? `section:${group.section.id}` : "flat";
+  const renderCommandRow = (command: ChatCommand) => {
+    const highlight = () => commandRowMap().get(command)?.highlight;
+    const title = () => command.label ?? command.name;
+    return (
+      <button
+        class="k2b-chat-composer__command"
+        id={commandOptionId(command)}
+        type="button"
+        role="option"
+        tabIndex={-1}
+        aria-selected={selectedCommand() === command}
+        aria-disabled={Boolean(command.disabled || command.reason)}
+        aria-describedby={command.reason ? `${commandOptionId(command)}-reason` : undefined}
+        data-reason={command.reason ? "true" : undefined}
+        data-active={selectedCommand() === command ? "true" : undefined}
+        onPointerDown={(event) => event.preventDefault()}
+        onClick={(event) => {
+          event.preventDefault();
+          void executeCommand(command);
+        }}
+      >
+        <i class={command.icon ?? "ti ti-slash"} aria-hidden="true" />
+        <span class="k2b-chat-composer__command-text">
+          <strong>
+            <Show when={highlight()} fallback={title()}>
+              {(range) => (
+                <>
+                  {title().slice(0, range()[0])}
+                  <b>{title().slice(range()[0], range()[1])}</b>
+                  {title().slice(range()[1])}
+                </>
+              )}
+            </Show>
+          </strong>
+          <Show when={command.reason ?? command.description}>
+            <small id={command.reason ? `${commandOptionId(command)}-reason` : undefined}>{command.reason ?? command.description}</small>
+          </Show>
+        </span>
+      </button>
+    );
+  };
   return (
     <div class="k2b-chat-composer-shell">
       <Show when={suggestionsOpen() || hasAccessory()}>
@@ -1309,33 +1431,43 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                 aria-label={chatMessages().commands}
                 aria-busy={searching() ? "true" : undefined}
               >
-                <For each={commandMatches()}>
-                  {(command) => (
-                    <button
-                      id={commandOptionId(command)}
-                      type="button"
-                      role="option"
-                      tabIndex={-1}
-                      aria-selected={selectedCommand() === command}
-                      aria-disabled={Boolean(command.disabled || command.reason)}
-                      aria-describedby={command.reason ? `${commandOptionId(command)}-reason` : undefined}
-                      data-reason={command.reason ? "true" : undefined}
-                      data-active={selectedCommand() === command ? "true" : undefined}
-                      onPointerDown={(event) => event.preventDefault()}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        void executeCommand(command);
-                      }}
-                    >
-                      <i class={command.icon ?? "ti ti-slash"} aria-hidden="true" />
-                      <strong>{command.label ?? `/${command.name}`}</strong>
-                      <small id={command.reason ? `${commandOptionId(command)}-reason` : undefined}>
-                        {command.reason ?? command.description}
-                      </small>
-                    </button>
-                  )}
+                <For each={commandModel().groups.map(commandGroupKey)}>
+                  {(key) => {
+                    const group = createMemo(() => commandModel().groups.find((group) => commandGroupKey(group) === key));
+                    const headingId = () =>
+                      `${commandListId}-g-${key === "scope" ? "scope" : props.commandSections?.findIndex((section) => section.id === group()?.section?.id)}`;
+                    const rows = () => group()?.rows.map((row) => row.command) ?? [];
+                    return (
+                      <Show when={key !== "flat"} fallback={<For each={rows()}>{renderCommandRow}</For>}>
+                        <div class="k2b-chat-composer__command-group" role="group" aria-labelledby={headingId()}>
+                          <div class="k2b-chat-composer__command-heading" id={headingId()} role="presentation">
+                            <span>{group()?.scopeTitle ?? group()?.section?.label}</span>
+                            <Show when={group()?.loading}>
+                              <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
+                            </Show>
+                          </div>
+                          <For each={rows()}>{renderCommandRow}</For>
+                          <Show when={group()?.placeholder}>
+                            <div class="k2b-chat-composer__command-placeholder" aria-hidden="true">
+                              <span />
+                              <span>
+                                <span />
+                                <span />
+                              </span>
+                            </div>
+                          </Show>
+                        </div>
+                      </Show>
+                    );
+                  }}
                 </For>
-                <Show when={searching() && commandMatches().length === 0}>
+                <Show
+                  when={
+                    searching() &&
+                    commandMatches().length === 0 &&
+                    !commandModel().groups.some((group) => group.section || group.scopeTitle)
+                  }
+                >
                   <div role="status" class="k2b-chat-composer__loading">
                     <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
                     <strong>{messages().loading}</strong>
@@ -1347,7 +1479,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                   </div>
                 </Show>
                 <Show when={!searching() && !searchError() && commandMatches().length === 0}>
-                  <div role="status">{messages().noResults}</div>
+                  <div role="status">
+                    {!parsedCommandQuery().query.trim()
+                      ? messages().noResults
+                      : chatMessages().commandsNothingFound({ query: parsedCommandQuery().query.trim() })}
+                  </div>
                 </Show>
               </div>
             </div>
@@ -1580,6 +1716,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           )}
         </Show>
       </section>
+      <div class="k2b-sr-only" role="status" aria-live="polite">
+        <Show when={suggestionAnnouncement()} keyed>
+          {(announced) => <span>{announced.text}</span>}
+        </Show>
+      </div>
       <div class="k2b-chat-composer__status" role="status">
         <Show when={!suggestionsOpen() && commandStatus()}>
           {(status) => (

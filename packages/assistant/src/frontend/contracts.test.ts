@@ -95,7 +95,7 @@ describe("Assistant frontend contracts", () => {
 
     expect(workspace).not.toContain("type ChatCommand");
     expect(workspace).not.toContain("const slashCommands");
-    expect(workspace).toMatch(/searchCommands=\{\(query, signal\) =>\s*assistantComposerCommands\(/);
+    expect(workspace).toMatch(/searchCommands=\{\(query, signal, search\) =>\s*assistantComposerCommands\(/);
     expect(workspace).not.toContain("type / ...");
     expect(workspace).toContain('id: "attach-resource"');
     expect(workspace).toContain("onPaste={(event) => pasteComposerContent");

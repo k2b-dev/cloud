@@ -14,6 +14,9 @@ const chatMessages = i18n.define({
       chat: "Chat",
       chooseModel: "Choose model",
       commands: "Commands",
+      commandsNothingFound: ({ query }: { query: string }) => `Nothing found for “${query}”`,
+      commandSuggestions: ({ count }: { count: number }) =>
+        count === 0 ? "No suggestions" : count === 1 ? "1 suggestion" : `${count} suggestions`,
       dropFilesToAttach: "Drop to attach to the message",
       conversation: "Conversation",
       jumpToLatest: "Jump to latest",
@@ -106,6 +109,8 @@ const chatMessages = i18n.define({
       chat: "Chat",
       chooseModel: "Modell auswählen",
       commands: "Befehle",
+      commandsNothingFound: ({ query }) => `Nichts gefunden für „${query}“`,
+      commandSuggestions: ({ count }) => (count === 0 ? "Keine Vorschläge" : count === 1 ? "1 Vorschlag" : `${count} Vorschläge`),
       dropFilesToAttach: "Ablegen, um an die Nachricht anzuhängen",
       conversation: "Unterhaltung",
       jumpToLatest: "Zur neuesten Nachricht",
