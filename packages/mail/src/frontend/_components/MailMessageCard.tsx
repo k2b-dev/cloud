@@ -238,6 +238,7 @@ export default function MailMessageCard(props: {
           type="button"
           class="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-[var(--ui-radius-control)] p-2 text-left"
           aria-expanded={props.expanded}
+          data-mail-message-header
           onClick={() => props.actions.toggle(props.message.id)}
         >
           <span class="min-w-0 flex-1">
@@ -280,7 +281,7 @@ export default function MailMessageCard(props: {
             <time class="shrink-0 text-xs text-dimmed" dateTime={props.message.internalDate}>
               {formatMailMessageDateTime(props.message.internalDate, props.context.dateConfig)}
             </time>
-            <i class={`ti ${props.expanded ? "ti-chevron-up" : "ti-chevron-down"} text-dimmed`} aria-hidden="true" />
+            <i class={`ti ${props.expanded ? "ti-chevron-up" : "ti-chevron-down"} text-dimmed print:hidden`} aria-hidden="true" />
           </span>
         </button>
         <div class="flex h-10 shrink-0 items-center">

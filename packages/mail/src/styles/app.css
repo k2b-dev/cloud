@@ -730,13 +730,11 @@
 }
 
 @media print {
-  body.mail-printing-conversation * {
+  /* Only the page outside the reader is hidden. The reader's own content
+     inherits its visibility, so what it hides on purpose, such as the
+     inactive label of the quoted-text toggle, stays hidden on paper. */
+  body.mail-printing-conversation :not([data-mail-print-root], [data-mail-print-root] *) {
     visibility: hidden !important;
-  }
-
-  body.mail-printing-conversation [data-mail-print-root],
-  body.mail-printing-conversation [data-mail-print-root] * {
-    visibility: visible !important;
   }
 
   body.mail-printing-conversation [data-mail-print-root] {
@@ -744,11 +742,25 @@
     inset: 0;
     height: auto !important;
     overflow: visible !important;
+    visibility: visible !important;
     background: white !important;
     color: black !important;
   }
 
-  body.mail-printing-conversation [data-mail-print-root] :where(button, [role="menu"], [role="tooltip"]) {
+  /* Paper is white in both themes. The dark theme's light text and dark
+     surfaces would land on it, so a dark page prints the reader as black ink
+     on the paper itself, also with the browser's "Background graphics"
+     option; the light theme prints as it shows. HTML message frames switch
+     to their original colors on their own. Cloud has no light theme scope
+     to use here yet (#1274). */
+  .dark body.mail-printing-conversation [data-mail-print-root] * {
+    color: inherit !important;
+    background-color: transparent !important;
+  }
+
+  /* Controls do not print. The message header is a button too, but it carries
+     the sender, recipients and date, so it stays on paper. */
+  body.mail-printing-conversation [data-mail-print-root] :where(button:not([data-mail-message-header]), [role="menu"], [role="tooltip"]) {
     display: none !important;
   }
 }

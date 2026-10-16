@@ -29,6 +29,8 @@ export type MailListHarnessOptions = {
   toolbarActions?: MailConversationToolbarActionId[];
   /** The mail server deleted the messages of kept conversations, so the reader shows Cloud's copies. */
   deletedOnServer?: boolean;
+  /** Makes plain text conversations a reply with this body, for example quoted text, after an earlier message. */
+  plainText?: string;
 };
 
 declare global {
@@ -51,7 +53,7 @@ const mailbox = { id: "Box001", name: "Example Club", health: "healthy" } as unk
 const noop = () => {};
 
 /** One message per conversation; even rows have an HTML body in its frame, odd rows a plain text body. */
-const detailFor = (item: MailListItem | undefined, deletedOnServer = false) => {
+const detailFor = (item: MailListItem | undefined, deletedOnServer = false, plainText?: string) => {
   if (!item?.conversationId) return { selectedConversationId: null, subject: "", messages: [] as MessageDetail[] };
   const html = Number(item.conversationId.slice(2)) % 2 === 0;
   const message: MessageDetail = {
@@ -84,7 +86,22 @@ const detailFor = (item: MailListItem | undefined, deletedOnServer = false) => {
     delivery: null,
     attachments: [],
   };
-  return { selectedConversationId: item.conversationId, subject: item.subject, messages: [message] };
+  const reply = !html && plainText;
+  const messages = reply
+    ? [
+        message,
+        {
+          ...message,
+          id: `Re${item.conversationId.slice(2)}`,
+          messageId: `<re-${item.conversationId}@example.test>`,
+          from: [{ name: "Mara Example", address: "mara@example.test" }],
+          internalDate: new Date(Date.parse(item.latestMessageAt) + 60_000).toISOString(),
+          sentAt: new Date(Date.parse(item.latestMessageAt) + 60_000).toISOString(),
+          plainText: reply,
+        },
+      ]
+    : [message];
+  return { selectedConversationId: item.conversationId, subject: item.subject, messages };
 };
 
 window.mountMailList = (options) => {
@@ -102,6 +119,7 @@ window.mountMailList = (options) => {
     detailFor(
       options.items.find((item) => item.conversationId === selected()),
       options.deletedOnServer,
+      options.plainText,
     ),
   );
   // Keeping arrives with the next snapshot, like the workspace's: the open row's state decides the reader's.
@@ -123,6 +141,7 @@ window.mountMailList = (options) => {
           detailFor(
             list.items.find((item) => item.conversationId === conversationId),
             options.deletedOnServer,
+            options.plainText,
           ),
         ),
       );
