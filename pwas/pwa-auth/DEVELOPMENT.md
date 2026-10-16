@@ -45,16 +45,19 @@ desktop browsers still needs device acceptance with a deployed HTTPS origin.
 Use public `@k2b/ui` controls and tokens. English and German messages live in
 `src/i18n.ts`, using Cloud's `i18n.define()` pattern and the inherited UI locale.
 The menu groups account management, settings, notifications, and installation.
-Sign-ins open a bottom sheet and require an explicit choice after comparing
-the code. Actions appear per Cloud and open a review sheet only on a tap or a
-tapped notification. The row's **Review** button loads a fresh SDK-checked view
-first and opens the sheet only with it, so the sheet never grows after its
-first frame; a load failure replaces the row's origin line. A tapped
-notification names its Cloud and loads the Action directly, also when the
-inbox left it out. The sheet renders app text without HTML or links and arms
-approve/deny after 500 ms. Every ending (approved, denied, **Not applied** for
-HTTP 409, **Not confirmed** for an uncertain result, **Expired**) replaces the
-request at the same height. A 409 also removes the row. An uncertain result
+Sign-ins and Actions open as a sheet on phones and as a centered dialog from
+tablet width (48rem), through `bottomSheetAdaptiveOptions`. A sign-in shows its
+code in groups of three and requires an explicit choice after comparing it.
+Actions appear per Cloud and open a review only on a tap or a tapped
+notification. The row's **Review** button loads a fresh SDK-checked view first
+and opens the review only with it, so it never grows after its first frame; a
+load failure replaces the row's origin line. A tapped notification names its
+Cloud and loads the Action directly, also when the inbox left it out. The
+review renders app text without HTML or links and arms approve/deny after
+500 ms. Every ending of an Action (approved, denied, **Not applied** for HTTP
+409, **Not confirmed** for an uncertain result, **Expired**) and of a sign-in
+(**Not confirmed**, **Expired**) replaces the request in place at the same
+height, with a focused **Done** button. A 409 also removes the row. An uncertain result
 is never sent again, including from another tab. Language and theme
 preferences are local.
 
