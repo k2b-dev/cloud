@@ -29,7 +29,7 @@ export type MailListHarnessOptions = {
   toolbarActions?: MailConversationToolbarActionId[];
   /** The mail server deleted the messages of kept conversations, so the reader shows Cloud's copies. */
   deletedOnServer?: boolean;
-  /** Replaces the body of plain text messages, for example with quoted text. */
+  /** Makes plain text conversations a reply with this body, for example quoted text, after an earlier message. */
   plainText?: string;
 };
 
@@ -76,7 +76,7 @@ const detailFor = (item: MailListItem | undefined, deletedOnServer = false, plai
     deletedOnServer: deletedOnServer && item.kept,
     contentType: html ? "text/html" : "text/plain",
     sizeBytes: 64,
-    plainText: (!html && plainText) || `Body of ${item.subject}`,
+    plainText: `Body of ${item.subject}`,
     sanitizedHtml: html ? `<p>Body of ${item.subject}</p>` : null,
     forwardText: "",
     selectedHeaders: {},
@@ -86,7 +86,22 @@ const detailFor = (item: MailListItem | undefined, deletedOnServer = false, plai
     delivery: null,
     attachments: [],
   };
-  return { selectedConversationId: item.conversationId, subject: item.subject, messages: [message] };
+  const reply = !html && plainText;
+  const messages = reply
+    ? [
+        message,
+        {
+          ...message,
+          id: `Re${item.conversationId.slice(2)}`,
+          messageId: `<re-${item.conversationId}@example.test>`,
+          from: [{ name: "Mara Example", address: "mara@example.test" }],
+          internalDate: new Date(Date.parse(item.latestMessageAt) + 60_000).toISOString(),
+          sentAt: new Date(Date.parse(item.latestMessageAt) + 60_000).toISOString(),
+          plainText: reply,
+        },
+      ]
+    : [message];
+  return { selectedConversationId: item.conversationId, subject: item.subject, messages };
 };
 
 window.mountMailList = (options) => {

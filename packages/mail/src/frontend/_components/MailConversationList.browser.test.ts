@@ -1200,8 +1200,9 @@ describe("Mail search returns to the view it started from", () => {
 });
 
 describe("Mail conversation printing", () => {
+  /** The newest message replies with quoted text to an earlier one, whose header keeps a tinted surface. */
   const plainText = "Thanks, see below.\n\n> Earlier question about the invoice\n> with a second line";
-  /** What the reader prints, as the conversation's Print action prepares the page for it. */
+  /** What the reader prints: the subject, every message header, and every plain text body. */
   const printed = {
     subject: "[data-mail-print-root] h1",
     sender: "[data-mail-print-root] [data-mail-message-header] .font-semibold",
@@ -1209,34 +1210,53 @@ describe("Mail conversation printing", () => {
     body: "[data-mail-print-root] [data-mail-message-id] pre:not(details pre)",
     quote: "[data-mail-print-root] [data-mail-message-id] details pre",
   };
-  /** Whether each part takes part in the rendering, and its text color as red, green, and blue. */
+  type Ink = { shown: boolean; ink: number[]; paper: number[] };
+  /**
+   * Every printed part: whether it takes part in the rendering, its text color, and the surface behind it, both as
+   * red, green, and blue. The surface counts as printed, as with the browser's "Background graphics" option.
+   */
   const inks = (page: Page) =>
     page.evaluate((selectors) => {
       const canvas = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
-      const ink = (color: string) => {
-        // The canvas resolves every CSS color syntax, oklch() included, to sRGB.
-        canvas.clearRect(0, 0, 1, 1);
-        canvas.fillStyle = color;
+      // The canvas resolves every CSS color syntax, oklch() included, to sRGB, and lays it over white paper.
+      const onPaper = (...colors: string[]) => {
+        canvas.fillStyle = "white";
         canvas.fillRect(0, 0, 1, 1);
+        for (const color of colors) {
+          canvas.fillStyle = color;
+          canvas.fillRect(0, 0, 1, 1);
+        }
         return [...canvas.getImageData(0, 0, 1, 1).data.slice(0, 3)];
       };
+      const surfaces = (element: Element) => {
+        const colors: string[] = [];
+        for (let current: Element | null = element; current; current = current.parentElement) {
+          colors.unshift(getComputedStyle(current).backgroundColor);
+        }
+        return colors;
+      };
       return Object.fromEntries(
-        Object.entries(selectors).map(([part, selector]) => {
-          const element = document.querySelector(selector);
-          return [
-            part,
-            element ? { shown: element.checkVisibility({ visibilityProperty: true }), ink: ink(getComputedStyle(element).color) } : null,
-          ];
-        }),
-      );
+        Object.entries(selectors).map(([part, selector]) => [
+          part,
+          [...document.querySelectorAll(selector)].map((element) => ({
+            shown: element.checkVisibility({ visibilityProperty: true }),
+            ink: onPaper(getComputedStyle(element).color),
+            paper: onPaper(...surfaces(element)),
+          })),
+        ]),
+      ) as Record<keyof typeof printed, Ink[]>;
     }, printed);
-  /** WCAG contrast of a text color against white paper. */
-  const contrastOnPaper = (ink: number[]) => {
-    const [red, green, blue] = ink.map((channel) => {
+  const luminance = (color: number[]) => {
+    const [red, green, blue] = color.map((channel) => {
       const value = channel / 255;
       return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
     }) as [number, number, number];
-    return 1.05 / (0.2126 * red + 0.7152 * green + 0.0722 * blue + 0.05);
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  /** WCAG contrast of the text against the surface it prints on. */
+  const contrast = ({ ink, paper }: Ink) => {
+    const [light, dark] = [luminance(ink), luminance(paper)].sort((a, b) => b - a) as [number, number];
+    return (light + 0.05) / (dark + 0.05);
   };
   /** The labels of the quoted-text toggle that a reader of the paper would see. */
   const quoteLabels = (page: Page) =>
@@ -1250,24 +1270,39 @@ describe("Mail conversation printing", () => {
     await page.waitForSelector(printed.body);
     return page;
   };
+  /** Prints through the conversation's Print action, as a person does, up to the browser's print dialog. */
   const print = async (page: Page) => {
-    await page.evaluate(() => document.body.classList.add("mail-printing-conversation"));
+    await page.evaluate(() => {
+      window.print = () => document.body.setAttribute("data-printed", "");
+    });
+    await page.getByRole("button", { name: "More conversation actions" }).click();
+    await page.getByRole("menuitem", { name: "Print conversation" }).click();
+    // The reader opens every message, then asks for the dialog two frames later.
+    await page.clock.runFor(100);
+    await page.waitForSelector("body.mail-printing-conversation[data-printed]", { state: "attached" });
     await page.emulateMedia({ media: "print" });
   };
 
-  test("prints a dark conversation as dark text on white paper, with its sender row and one quote label", async () => {
+  test("prints a dark conversation as dark text on white paper, with its sender rows and one quote label", async () => {
     const page = await open("dark");
     try {
+      // The print rules change nothing on screen.
       const screen = await inks(page);
       await page.evaluate(() => document.body.classList.add("mail-printing-conversation"));
-      // Nothing changes on screen while the print dialog is open.
       expect(await inks(page)).toEqual(screen);
-      await page.emulateMedia({ media: "print" });
+      await page.evaluate(() => document.body.classList.remove("mail-printing-conversation"));
 
+      await print(page);
       const paper = await inks(page);
+      expect(paper.sender).toHaveLength(2);
+      expect(paper.body).toHaveLength(2);
       for (const part of ["subject", "sender", "date", "body"] as const) {
-        expect({ part, shown: paper[part]?.shown }).toEqual({ part, shown: true });
-        expect(contrastOnPaper(paper[part]!.ink)).toBeGreaterThanOrEqual(7);
+        for (const [index, printedPart] of paper[part].entries()) {
+          expect({ part, index, shown: printedPart.shown }).toEqual({ part, index, shown: true });
+          expect(contrast(printedPart)).toBeGreaterThanOrEqual(7);
+          // Dark text on light paper, never light text on a dark surface.
+          expect(luminance(printedPart.paper)).toBeGreaterThan(luminance(printedPart.ink));
+        }
       }
       expect(await quoteLabels(page)).toEqual(["Show quoted text"]);
 
@@ -1276,9 +1311,9 @@ describe("Mail conversation printing", () => {
         document.querySelector<HTMLDetailsElement>("[data-mail-print-root] details")!.open = true;
       });
       expect(await quoteLabels(page)).toEqual(["Hide quoted text"]);
-      const quote = (await inks(page)).quote!;
-      expect(quote.shown).toBe(true);
-      expect(contrastOnPaper(quote.ink)).toBeGreaterThanOrEqual(7);
+      const [quote] = (await inks(page)).quote;
+      expect(quote?.shown).toBe(true);
+      expect(contrast(quote!)).toBeGreaterThanOrEqual(7);
       expect(page.errors).toEqual([]);
     } finally {
       await close(page);
@@ -1288,15 +1323,19 @@ describe("Mail conversation printing", () => {
   test("prints a light conversation in the colors it shows", async () => {
     const page = await open("light");
     try {
-      const screen = await inks(page);
       await print(page);
       const paper = await inks(page);
-      expect(paper.subject).toEqual(screen.subject);
-      expect(paper.body).toEqual(screen.body);
-      // The sender row prints in its own colors; the secondary date stays lighter than the name.
-      expect(paper.sender).toEqual({ ...screen.sender!, shown: true });
-      expect(paper.date).toEqual({ ...screen.date!, shown: true });
-      expect(paper.date!.ink).not.toEqual(paper.sender!.ink);
+      await page.emulateMedia({ media: "screen" });
+      // The same open conversation on screen: the print rules only add the message headers to the paper.
+      const screen = await inks(page);
+      expect(paper).toEqual({
+        ...screen,
+        sender: screen.sender.map((sender) => ({ ...sender, shown: true })),
+        date: screen.date.map((date) => ({ ...date, shown: true })),
+      });
+      expect(paper.sender).toHaveLength(2);
+      // The secondary date stays lighter than the sender's name.
+      expect(paper.date[0]!.ink).not.toEqual(paper.sender[0]!.ink);
       expect(await quoteLabels(page)).toEqual(["Show quoted text"]);
     } finally {
       await close(page);

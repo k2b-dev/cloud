@@ -747,12 +747,14 @@
     color: black !important;
   }
 
-  /* Paper is white in both themes. The dark theme's light text colors would
-     land on it, so a dark page prints the reader as black ink; the light
-     theme prints as it shows. HTML message frames switch to their original
-     colors on their own. */
+  /* Paper is white in both themes. The dark theme's light text and dark
+     surfaces would land on it, so a dark page prints the reader as black ink
+     on the paper itself, also with the browser's "Background graphics"
+     option; the light theme prints as it shows. HTML message frames switch
+     to their original colors on their own. */
   .dark body.mail-printing-conversation [data-mail-print-root] * {
     color: inherit !important;
+    background-color: transparent !important;
   }
 
   /* Controls do not print. The message header is a button too, but it carries
