@@ -183,11 +183,10 @@ After a key change, `secrets.decrypt` throws for existing encrypted application
 values. Settings reads silently ignore rows they cannot decrypt and use
 `envFallback` or the default instead.
 
-At startup, Cloud overwrites an unreadable setting when its `envBootstrap`
-returns a value from the environment. It encrypts that value with the current
-key, losing the old stored value. Examples include `app.url` from `APP_URL` and
-`gotenberg.url` from `GOTENBERG_URL`. A single container started with a different
-`APP_SECRET` can do this to shared platform settings.
+At startup, Cloud leaves a setting row it cannot decrypt unchanged. It logs
+the key, never the value. Environment bootstrap, such as `app.url` from
+`APP_URL`, only fills settings that have no stored row. Reads under the wrong
+key still use `envFallback` or the default.
 
 Some applications also derive short-lived signatures from `APP_SECRET`, such as
 Grids pagination cursors and Files editor links. Those stop working after a key

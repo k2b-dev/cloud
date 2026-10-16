@@ -6,7 +6,8 @@
  * Custom DB values are encrypted at rest using APP_SECRET. All read/write
  * goes through the Redis cache-aside layer in `./store.ts` (5-minute TTL).
  * `loadCache()` runs once at boot to normalize legacy rows and bootstrap
- * env-backed entries into Postgres.
+ * env-backed entries into Postgres. Startup never replaces an existing row;
+ * env bootstrap only fills missing keys.
  */
 
 import { redis, sql } from "bun";
@@ -17,11 +18,12 @@ import { bulkRead, deleteKey, readKey, writeKey } from "./store";
 type SqlClient = typeof sql;
 
 type StoredRow = { key: string; value: string };
-type PendingRow = { key: string; value: unknown; rewrite: boolean; existed: boolean };
+type PendingRow = { value: unknown; originalCiphertext: string };
 type NormalizationStats = {
   encryptedLoaded: number;
   normalizedUpdated: number;
   envBootstrapped: number;
+  undecryptable: number;
   invalidSkipped: number;
 };
 
@@ -58,23 +60,18 @@ const shouldBootstrapValue = (def: SettingDef, value: unknown): boolean => {
   }
 };
 
-const upsertEncryptedRow = async (key: string, value: unknown): Promise<void> => {
-  const encryptedValue = await encryptValue(value);
-  await sql`
-    INSERT INTO settings.entries (key, value, updated_at)
-    VALUES (${key}, ${encryptedValue}, now())
-    ON CONFLICT (key)
-    DO UPDATE SET value = ${encryptedValue}, updated_at = now()
-  `;
-  await redis.del(REDIS_KEY(key));
-};
-
-const normalizeStoredEntries = async (): Promise<{ rows: Array<{ key: string; value: unknown }>; stats: NormalizationStats }> => {
+const normalizeStoredEntries = async (): Promise<{
+  rows: Array<{ key: string; value: unknown }>;
+  storedKeys: Set<string>;
+  stats: NormalizationStats;
+}> => {
   const rows = await sql<StoredRow[]>`SELECT key, value FROM settings.entries`;
+  const storedKeys = new Set(rows.map((row) => row.key));
   const stats: NormalizationStats = {
     encryptedLoaded: 0,
     normalizedUpdated: 0,
     envBootstrapped: 0,
+    undecryptable: 0,
     invalidSkipped: 0,
   };
   const pendingRows = new Map<string, PendingRow>();
@@ -82,11 +79,17 @@ const normalizeStoredEntries = async (): Promise<{ rows: Array<{ key: string; va
   for (const row of rows) {
     try {
       const value = await decryptValue(row.value);
-      pendingRows.set(row.key, { key: row.key, value, rewrite: false, existed: true });
+      pendingRows.set(row.key, { value, originalCiphertext: row.value });
       stats.encryptedLoaded += 1;
     } catch {
-      console.warn(`[settings] skipping invalid stored value for "${row.key}"`);
-      stats.invalidSkipped += 1;
+      // An unreadable value is not a missing value (#1295). Usually this
+      // process runs with another APP_SECRET than the writer; applications
+      // with the right key still read this row. Keep its key in `storedKeys`
+      // so env bootstrap never replaces it, and never log the value.
+      console.warn(
+        `[settings] cannot decrypt stored value for "${row.key}" with this APP_SECRET; keeping the row unchanged, reads use the environment fallback or default`,
+      );
+      stats.undecryptable += 1;
     }
   }
 
@@ -109,28 +112,47 @@ const normalizeStoredEntries = async (): Promise<{ rows: Array<{ key: string; va
 
     normalized.push({ key, value: validated.value });
 
-    if (row.rewrite || !row.existed || !isEqual(row.value, validated.value)) {
-      await upsertEncryptedRow(key, validated.value);
-      stats.normalizedUpdated += 1;
+    if (!isEqual(row.value, validated.value)) {
+      const encryptedValue = await encryptValue(validated.value);
+      const updated = await sql<{ key: string }[]>`
+        UPDATE settings.entries SET value = ${encryptedValue}, updated_at = now()
+        WHERE key = ${key} AND value = ${row.originalCiphertext}
+        RETURNING key
+      `;
+      if (updated.length > 0) {
+        await redis.del(REDIS_KEY(key));
+        stats.normalizedUpdated += 1;
+      }
     }
   }
 
-  return { rows: normalized, stats };
+  return { rows: normalized, storedKeys, stats };
 };
 
 const bootstrapEnvBackedEntries = async (config: {
   rows: Array<{ key: string; value: unknown }>;
+  storedKeys: Set<string>;
   stats: NormalizationStats;
 }): Promise<Array<{ key: string; value: unknown }>> => {
   const rowsByKey = new Map(config.rows.map((row) => [row.key, row.value]));
 
   for (const def of SETTINGS) {
-    if (rowsByKey.has(def.key)) continue;
+    // Existing rows block bootstrap even if unreadable, unknown, or invalid.
+    if (config.storedKeys.has(def.key)) continue;
 
     const envValue = resolveEnvValue(def, "bootstrap");
     if (!shouldBootstrapValue(def, envValue)) continue;
 
-    await upsertEncryptedRow(def.key, envValue);
+    const encryptedValue = await encryptValue(envValue);
+    const inserted = await sql<{ key: string }[]>`
+      INSERT INTO settings.entries (key, value, updated_at)
+      VALUES (${def.key}, ${encryptedValue}, now())
+      ON CONFLICT (key) DO NOTHING
+      RETURNING key
+    `;
+    if (inserted.length === 0) continue;
+
+    await redis.del(REDIS_KEY(def.key));
     rowsByKey.set(def.key, envValue);
     config.stats.envBootstrapped += 1;
   }
@@ -145,11 +167,11 @@ const bootstrapEnvBackedEntries = async (config: {
  */
 export async function loadCache(): Promise<void> {
   getAppSecret();
-  const { rows, stats } = await normalizeStoredEntries();
-  const bootstrappedRows = await bootstrapEnvBackedEntries({ rows, stats });
+  const { rows, storedKeys, stats } = await normalizeStoredEntries();
+  const bootstrappedRows = await bootstrapEnvBackedEntries({ rows, storedKeys, stats });
 
   console.log(
-    `[settings] loaded ${bootstrappedRows.length} custom setting(s) (${stats.encryptedLoaded} encrypted, ${stats.normalizedUpdated} normalized, ${stats.envBootstrapped} env-bootstrapped, ${stats.invalidSkipped} skipped)`,
+    `[settings] loaded ${bootstrappedRows.length} custom setting(s) (${stats.encryptedLoaded} encrypted, ${stats.normalizedUpdated} normalized, ${stats.envBootstrapped} env-bootstrapped, ${stats.undecryptable} undecryptable, ${stats.invalidSkipped} skipped)`,
   );
 }
 
