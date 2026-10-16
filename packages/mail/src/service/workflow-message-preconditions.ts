@@ -89,9 +89,9 @@ const parseCommandJson = (value: unknown): unknown => {
 };
 
 /**
- * Confirmed flag and keyword writes of the other incoming automations started by the same receipt,
- * per command and in confirmation order. Only these are expected changes; a change by a person,
- * another client, or another workflow stays drift.
+ * Flag and keyword writes that other incoming automations confirmed on the message after this run
+ * froze its state, per command and in confirmation order. Only these are expected changes; a change
+ * by a person, another client, or another workflow stays drift.
  */
 export const loadIncomingAutomationSiblingTransitions = async (
   db: SqlClient,
@@ -121,6 +121,8 @@ export const loadIncomingAutomationSiblingTransitions = async (
     JOIN mail.incoming_automations a
       ON a.workflow_id = run.workflow_id
      AND a.mailbox_id = command.mailbox_id
+    -- The run's event froze the message state; writes confirmed before it are part of that state.
+    JOIN workflows.event frozen ON frozen.id = run.event_id
     JOIN mail.remote_message_refs ref
       ON ref.id = (command.target ->> 'remoteMessageRefId')::uuid
     JOIN mail.commands sibling
@@ -128,6 +130,7 @@ export const loadIncomingAutomationSiblingTransitions = async (
      AND sibling.created_at >= ref.first_seen_at
      AND sibling.kind = 'change_message_state'
      AND sibling.state IN ('confirmed', 'reconciled')
+     AND sibling.finished_at > frozen.created_at
      AND sibling.actor_kind = 'workflow'
      AND sibling.target ->> 'remoteMessageRefId' = command.target ->> 'remoteMessageRefId'
      AND sibling.correlation_id IS DISTINCT FROM command.correlation_id
@@ -141,9 +144,6 @@ export const loadIncomingAutomationSiblingTransitions = async (
       ON sibling_a.workflow_id = sibling_run.workflow_id
      AND sibling_a.mailbox_id = command.mailbox_id
     WHERE command.id = ANY(${toPgUuidArray(qualifying.map((command) => command.id))}::uuid[])
-      -- The same receipt: both runs froze the message from one event. A backfill
-      -- event froze a later state that already holds earlier writes.
-      AND sibling_run.event_id = run.event_id
     ORDER BY command.id, sibling.finished_at, sibling.id
   `;
   for (const sibling of siblings) {

@@ -1409,11 +1409,15 @@ suite("incoming automations", () => {
             expect((await loadIncomingAutomationSiblingTransitions(sql, [second])).size).toBe(0);
           }
           await sql`UPDATE mail.commands SET actor_kind = 'workflow', correlation_id = ${first.correlation_id} WHERE id = ${first.id}::uuid`;
-          // A run from another event, such as a backfill, froze a later state and is no sibling.
-          const [olderEvent] = await sql<{ event_id: string }[]>`SELECT event_id FROM workflows.run WHERE id = ${olderRunId}::uuid`;
-          await sql`UPDATE workflows.run SET event_id = NULL WHERE id = ${olderRunId}::uuid`;
+          // A run that froze the message after that write, such as a backfill, already holds it.
+          const [frozen] = await sql<{ id: string; created_at: string }[]>`
+            SELECT event.id, event.created_at::text FROM workflows.event event
+            JOIN workflows.run run ON run.event_id = event.id
+            WHERE run.id = ${newerRunId}::uuid
+          `;
+          await sql`UPDATE workflows.event SET created_at = clock_timestamp() WHERE id = ${frozen!.id}::uuid`;
           expect((await loadIncomingAutomationSiblingTransitions(sql, [second])).size).toBe(0);
-          await sql`UPDATE workflows.run SET event_id = ${olderEvent!.event_id}::uuid WHERE id = ${olderRunId}::uuid`;
+          await sql`UPDATE workflows.event SET created_at = ${frozen!.created_at}::timestamptz WHERE id = ${frozen!.id}::uuid`;
           expect(
             (await loadIncomingAutomationSiblingTransitions(sql, [{ ...second, actor_kind: "user", correlation_id: olderRunId }])).size,
           ).toBe(0);
