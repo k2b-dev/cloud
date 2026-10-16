@@ -50,6 +50,18 @@ const readError = async (response: Pick<Response, "json">, fallback: string): Pr
   return body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback;
 };
 
+/** Scheduled tasks live in Core's `/api/ai/tasks`, outside this app's typed client; this is its only raw request. */
+const coreTasksRequest = (path: string, init?: RequestInit): Promise<Response> => fetch(`/api/ai/tasks${path}`, init);
+
+export class AssistantTaskRunError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 /** Typed conversation-management facade used by the Assistant UI. */
 export const assistantApi = {
   listChatFiles: async (conversationId: string, signal?: AbortSignal) => {
@@ -93,6 +105,12 @@ export const assistantApi = {
   },
   listSkills: async (signal?: AbortSignal, query?: string): Promise<AiSkillSummary[]> => {
     const response = await skillsClient.index.$get({ query: query === undefined ? {} : { q: query } }, { init: { signal } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to load skills"));
+    return (await response.json()).skills;
+  },
+
+  findSkillsByName: async (name: string, signal?: AbortSignal): Promise<AiSkillSummary[]> => {
+    const response = await skillsClient.index.$get({ query: { name } }, { init: { signal } });
     if (!response.ok) throw new Error(await readError(response, "Failed to load skills"));
     return (await response.json()).skills;
   },
@@ -330,11 +348,27 @@ export const assistantApi = {
     return (await response.json()).files;
   },
 
-  listChatTasks: async (input: { chatId: string; limit?: number; signal?: AbortSignal }): Promise<AssistantChatTask[]> => {
-    const query = new URLSearchParams({ chatId: input.chatId, limit: String(input.limit ?? 50) });
-    const response = await fetch(`/api/ai/tasks?${query}`, { signal: input.signal });
+  listChatTasks: async (input: {
+    chatId?: string;
+    state?: AssistantChatTask["state"];
+    limit?: number;
+    signal?: AbortSignal;
+  }): Promise<AssistantChatTask[]> => {
+    const query = new URLSearchParams({ limit: String(input.limit ?? 50) });
+    if (input.chatId) query.set("chatId", input.chatId);
+    if (input.state) query.set("state", input.state);
+    const response = await coreTasksRequest(`?${query}`, { signal: input.signal });
     if (!response.ok) throw new Error(await readError(response, "Failed to load scheduled tasks"));
     return response.json();
+  },
+
+  runChatTask: async (taskId: string, signal?: AbortSignal): Promise<void> => {
+    const response = await coreTasksRequest(`/${encodeURIComponent(taskId)}/run`, {
+      method: "POST",
+      signal,
+      headers: { "Idempotency-Key": crypto.randomUUID().replaceAll("-", "") },
+    });
+    if (!response.ok) throw new AssistantTaskRunError(await readError(response, "Scheduled task request failed"), response.status);
   },
 
   listResources: async (

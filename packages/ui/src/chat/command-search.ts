@@ -144,3 +144,6 @@ export function chatCommandListModel(input: {
   const rows = visible.flatMap((group) => group.rows);
   return { scope, groups: visible, rows, empty: rows.length === 0 && !input.searching };
 }
+
+/** Use the composer ranking rules to filter consumer-owned server rows. */
+export const matchesChatCommand = (command: ChatCommand, query: string): boolean => rankChatCommand(command, query) !== null;

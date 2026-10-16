@@ -7,9 +7,10 @@ import { query } from "@k2b/stdlib/solid";
 import { Button, Chat, MarkdownView, NoticeCard, Placeholder, prompts, renderSafeMarkdown, StatusBadge, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { openAssistantCloudReference } from "./AssistantContextContent";
-import { formatAssistantTaskSchedule, occurrencePresentation, openAssistantTask } from "./AssistantTasksDialog";
+import { occurrencePresentation, openAssistantTask } from "./AssistantTasksDialog";
 import { type AssistantLiveHub, AssistantLiveProvider, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
 import { assistantConversationHref } from "./assistant-navigation";
+import { formatAssistantTaskSchedule } from "./scheduled-task-format";
 import { assistantBrowserText, useAssistantText } from "./ui-copy";
 
 export type AssistantActivity = { task: AiChatTaskView; occurrence: AiChatTaskOccurrenceView; chatTitle: string | null; unread: boolean };

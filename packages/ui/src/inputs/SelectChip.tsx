@@ -30,6 +30,8 @@ export type SelectChipProps<T extends string | number = string> = ValueFieldProp
    *  its size, cannot be opened, is marked busy, and shows a spinner where its
    *  chevron (or, icon-only, its icon) is. */
   loading?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
 export function SelectChip<T extends string | number = string>(props: SelectChipProps<T>): JSX.Element {
@@ -90,6 +92,8 @@ export function SelectChip<T extends string | number = string>(props: SelectChip
       disabled={disabled()}
     >
       <Dropdown.Root
+        open={props.open}
+        onOpenChange={props.onOpenChange}
         position={props.position ?? "bottom-right"}
         /* Cloud opens this menu at `w-40`; the stylesheet keeps that as its floor. */
         width={props.menuWidth}

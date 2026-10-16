@@ -8,6 +8,7 @@ import { assistantApi } from "../api/client";
 import { taskTab, workspaceSelectionHref } from "../artifacts/workspace-state";
 import { type AssistantLiveInvalidation, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
 import { assistantConversationHref } from "./assistant-navigation";
+import { assistantTaskTitle, formatAssistantTaskSchedule } from "./scheduled-task-format";
 import { assistantBrowserText, useAssistantCopy, useAssistantText } from "./ui-copy";
 
 const request = async <T,>(path: string, init?: RequestInit): Promise<T> => {
@@ -16,7 +17,6 @@ const request = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   if (!response.ok || !body) throw new Error(body?.message || assistantBrowserText("Scheduled task request failed"));
   return body;
 };
-export const assistantTaskTitle = (task: AssistantChatTask) => task.prompt.split(/\n|:\s/u)[0]!.slice(0, 80);
 export const openAssistantTask = (task: AssistantChatTask) =>
   navigateTo(workspaceSelectionHref(assistantConversationHref("/app/assistant", task.chatId), taskTab(task.id, assistantTaskTitle(task))));
 export const occurrencePresentation = (state: AssistantChatTaskOccurrence["state"], text: (value: string) => string) => {
@@ -24,31 +24,6 @@ export const occurrencePresentation = (state: AssistantChatTaskOccurrence["state
   if (state === "failed") return { label: text("Failed"), tone: "error" as const };
   if (state === "running") return { label: text("Running"), tone: "running" as const };
   return { label: text("Queued"), tone: "neutral" as const };
-};
-export const formatAssistantTaskSchedule = (task: AssistantChatTask, locale = "en"): string => {
-  if (task.schedule.kind === "once") return locale.startsWith("de") ? "Einmalig" : "One-time";
-  const [minute, hour, day, month, weekday] = task.schedule.cron.split(" ");
-  const de = locale.startsWith("de");
-  if (/^\d+$/.test(minute ?? "") && /^\d+$/.test(hour ?? "") && day === "*" && month === "*") {
-    const time = `${hour!.padStart(2, "0")}:${minute!.padStart(2, "0")}`;
-    const weekdays = de
-      ? ["Sonntags", "Montags", "Dienstags", "Mittwochs", "Donnerstags", "Freitags", "Samstags", "Sonntags"]
-      : ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays"];
-    const label =
-      weekday === "*"
-        ? de
-          ? "Täglich"
-          : "Daily"
-        : weekday === "1-5"
-          ? de
-            ? "Montag–Freitag"
-            : "Monday–Friday"
-          : /^\d$/.test(weekday ?? "")
-            ? weekdays[Number(weekday)]
-            : null;
-    if (label) return `${de ? (weekday === "*" ? "Täglich" : "Immer " + label.toLowerCase()) : label} ${time}`;
-  }
-  return de ? "Wiederkehrend" : "Recurring";
 };
 
 const useTaskClock = () => {
