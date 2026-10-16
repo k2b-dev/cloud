@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import { batch, createComponent, createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
 import type { ChatCommand, ChatCommandResult, ChatComposerProps } from "../src/chat/ChatComposer";
@@ -398,6 +398,57 @@ const deferredSearch = () => {
   };
 };
 
+test.each(["Enter", "Tab"])("%s cannot choose a retained server row until fresh results arrive", async (key) => {
+  const chosen: string[] = [];
+  const search = deferredSearch();
+  const h = await slash({ ...search, value: "/project inv" });
+  await Bun.sleep(140);
+  search.requests[0]!.resolve([{ name: "Invoices", description: "Old project", action: () => void chosen.push("Invoices") }]);
+  await flush();
+  const rows = h.rows();
+  expect(rows).toHaveLength(1);
+  h.type("/project mkt");
+  const unchanged = () => {
+    expect(h.key(key).defaultPrevented).toBe(true);
+    expect(chosen).toEqual([]);
+    expect(h.value()).toBe("/project mkt");
+    expect(h.rows()).toEqual(rows);
+    expect(h.status().textContent).toBe("");
+    expect(h.errors).toEqual([]);
+    expect(h.submitted()).toBe(0);
+  };
+  unchanged();
+  await Bun.sleep(140);
+  unchanged();
+  search.requests[1]!.resolve([{ name: "Marketing", description: "Current project", action: () => void chosen.push("Marketing") }]);
+  await flush();
+  h.key("Enter");
+  await flush();
+  expect(chosen).toEqual(["Marketing"]);
+  expect(h.value()).toBe("");
+});
+
+test("pending searches still allow local keyboard choices and clicks on retained rows", async () => {
+  for (const choice of ["local", "pointer"]) {
+    const chosen: string[] = [];
+    const search = deferredSearch();
+    const h = await slash({
+      ...search,
+      value: "/q",
+      commands: [{ name: "run", description: "Local", action: () => void chosen.push("local") }],
+    });
+    await Bun.sleep(140);
+    search.requests[0]!.resolve([{ name: "Remote", description: "Retained", action: () => void chosen.push("pointer") }]);
+    await flush();
+    h.type("/run");
+    if (choice === "local") h.key("Enter");
+    else h.rows().at(-1)!.click();
+    await flush();
+    expect(chosen).toEqual([choice]);
+    expect(h.value()).toBe("");
+  }
+});
+
 test("retains rows and safe ids through debounce, preserves arrow marking on results, resets on typing", async () => {
   const search = deferredSearch();
   const h = await slash({ ...search, value: "/q" });
@@ -518,8 +569,15 @@ test("rejection restores token, announces once in the persistent status, and cle
     ],
   });
   const status = h.status();
-  h.key("Enter");
-  await flush();
+  const timer = spyOn(globalThis, "setTimeout");
+  try {
+    h.key("Enter");
+    await flush();
+    // No expiry timer means the error survives both the 3 s done window and the former 6 s error window, without sleeping.
+    expect(timer).not.toHaveBeenCalled();
+  } finally {
+    timer.mockRestore();
+  }
   expect(h.value()).toBe("/fail");
   expect(h.input.selectionStart).toBe(5);
   expect(h.rows()).toHaveLength(0);

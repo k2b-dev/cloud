@@ -155,6 +155,9 @@ updates; static matches precede server results, with the first row per key
 winning. `searchCommands` supplies already filtered rows. The list keeps its
 previous server rows while loading the next results. Arrow selection stays on
 the same key when results arrive; typing selects the top match again.
+While the next results load, Enter and Tab ignore a server row from the
+previous query; clicking a visible row still chooses it, and static matches stay
+available.
 
 Set `reason` when a command is unavailable. It replaces the description and is
 associated with the option for screen readers. Enter, Tab, and click keep the
@@ -166,8 +169,8 @@ when the draft is unchanged. Rejections use the same restoration guard, and a
 restored draft leaves no undo step behind. The caret returns after the token
 and the list stays closed until the next edit.
 The persistent status line shows `busyLabel` while working, `{ done }` for
-about three seconds, and a failure message for about six seconds or until the
-next edit. Command failures are reported once there, without calling `onError`.
+about three seconds, and a failure message until the next edit or command.
+Command failures are reported once there, without calling `onError`.
 The visible status hides while suggestions are open and takes no layout space.
 
 Only plain Enter or Tab chooses a command. Shift+Enter breaks the line,

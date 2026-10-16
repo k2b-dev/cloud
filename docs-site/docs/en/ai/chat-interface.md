@@ -1156,7 +1156,8 @@ summarizes older history to free up room. Fork chat starts from the latest
 assistant response and brings your draft along. New chat starts empty and keeps
 the previous chat in the list. An unavailable command explains why. Selecting
 it leaves the menu open. Cancelling a command keeps `/…` in your unchanged
-draft; failures restore it too and show a short message above the composer.
+draft; failures restore it too and show a message above the composer until the
+next edit or command.
 Commands preserve the surrounding draft. Skills, Studio apps, and files insert
 highlighted references. Editing a reference's
 label turns it into ordinary text; undo restores its identity. Saving and

@@ -1368,6 +1368,8 @@ export default function AssistantWorkspace(props: Props) {
   const AssistantComposer = (composerProps: { projectId?: string; projectName?: string }) => {
     const sessionKey = () => (composerProps.projectId ? projectComposerKey(composerProps.projectId) : composerSessionKey());
     const projectComposer = () => Boolean(composerProps.projectId);
+    const commandFailure = (key: string, failed: string) =>
+      new Error(sessionKey() === key ? `${failed} ${commandCopy().draftUnchanged}` : failed);
     return (
       <>
         <Show when={!projectComposer() ? chat.activeConversationId() : null}>
@@ -1455,23 +1457,24 @@ export default function AssistantWorkspace(props: Props) {
             hasMessages: chat.messages().length > 0,
             hasAssistantMessage: chat.messages().some((message) => message.message.role === "assistant"),
             compact: async () => {
+              const key = sessionKey();
               if (!(await chat.compactConversation({ modelProfileId: selectedModelId() || undefined }))) {
                 const reason = (chat.error() ?? t().chatActionFailed).replace(/\.+$/, "");
                 chat.setError(null);
-                throw new Error(commandCopy().compactFailed({ reason }));
+                throw commandFailure(key, commandCopy().compactFailed({ reason }));
               }
               // The request queues a compaction turn; the chat shows its progress and result, so this only says it started.
               return { done: commandCopy().compactDone };
             },
             fork: async () => {
+              const key = sessionKey();
               const fail = () => {
                 const reason = (chat.error() ?? t().chatActionFailed).replace(/\.+$/, "");
                 chat.setError(null);
-                return new Error(commandCopy().forkFailed({ reason }));
+                return commandFailure(key, commandCopy().forkFailed({ reason }));
               };
               const target = [...chat.messages()].reverse().find((message) => message.message.role === "assistant");
               if (!target) return "cancelled";
-              const key = sessionKey();
               const saved = await saveComposer(key, key);
               if (!saved) throw fail();
               if (sessionKey() !== key) return "cancelled";
@@ -1494,7 +1497,7 @@ export default function AssistantWorkspace(props: Props) {
               if (!(await createAndFocusConversation())) {
                 const reason = (chat.error() ?? t().chatActionFailed).replace(/\.+$/, "");
                 chat.setError(null);
-                throw new Error(commandCopy().newChatFailed({ reason }));
+                throw commandFailure(key, commandCopy().newChatFailed({ reason }));
               }
               if (title && hasRemainingDraft) return { done: commandCopy().newChatDraftKept({ title }) };
             },

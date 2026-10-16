@@ -58,7 +58,6 @@ import type {
 
 const composerMaxInputHeight = 309;
 const commandDoneMs = 3_000;
-const commandErrorMs = 6_000;
 /** Emoji suggestions for a `:shortcode`, as many as fit the list without scrolling on a phone. */
 const emojiSuggestionLimit = 8;
 // Keep editor undo text within approximately 2 MiB, plus the current edit.
@@ -243,8 +242,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     if (disposed) return;
     clearTimeout(statusTimer);
     setCommandStatus(status);
-    if (status && status.tone !== "busy") {
-      statusTimer = setTimeout(() => setCommandStatus(undefined), status.tone === "done" ? commandDoneMs : commandErrorMs);
+    if (status?.tone === "done") {
+      statusTimer = setTimeout(() => setCommandStatus(undefined), commandDoneMs);
     }
   };
   onCleanup(() => {
@@ -275,6 +274,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const [dismissed, setDismissed] = createSignal(false);
   const [composing, setComposing] = createSignal(false);
   const [searchResults, setSearchResults] = createSignal<readonly ChatCommand[]>([]);
+  const [searchResultsQuery, setSearchResultsQuery] = createSignal<string>();
   const [searching, setSearching] = createSignal(false);
   const [searchError, setSearchError] = createSignal(false);
   const [executing, setExecuting] = createSignal(false);
@@ -302,6 +302,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   createEffect(() => {
     caretCommandStart();
     setSearchResults([]);
+    setSearchResultsQuery(undefined);
   });
   // Escape closes the list for one `/` character, wherever the caret or selection goes; only that `/` going away ends it.
   createEffect(() => {
@@ -375,11 +376,17 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       Promise.resolve()
         .then(() => props.searchCommands!(token.query, abort.signal))
         .then((results) => {
-          if (!abort.signal.aborted) setSearchResults(results);
+          if (!abort.signal.aborted) {
+            batch(() => {
+              setSearchResults(results);
+              setSearchResultsQuery(token.query);
+            });
+          }
         })
         .catch(() => {
           if (!abort.signal.aborted) {
             setSearchResults([]);
+            setSearchResultsQuery(undefined);
             setSearchError(true);
           }
         })
@@ -402,6 +409,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       setDismissed(true);
       setClosedAt(undefined);
       setSearchResults([]);
+      setSearchResultsQuery(undefined);
     });
   });
   const snapshot = () => ({ value: props.value, mentions: [...mentions()], caret: textareaRef?.selectionStart ?? 0 });
@@ -814,6 +822,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       if (plain && (event.key === "Tab" || event.key === "Enter") && matches.length > 0) {
         event.preventDefault();
         const command = selectedCommand();
+        if (command && searchResults().includes(command) && searchResultsQuery() !== commandQuery()?.query) return;
         if (command) void executeCommand(command);
         return;
       }

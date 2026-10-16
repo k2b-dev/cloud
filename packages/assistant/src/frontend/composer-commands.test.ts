@@ -165,10 +165,25 @@ test("built-in reasons reflect prerequisites before a running response, and acti
     const commands = assistantBuiltInCommands(input);
     expect(await commands[0]!.action!({ setValue() {}, submit() {}, focus() {} })).toEqual({ done: copy.compactDone });
     expect(await commands[1]!.action!({ setValue() {}, submit() {}, focus() {} })).toEqual({ done: copy.forkDone });
-    expect(copy.compactFailed({ reason: "Oops" })).toBe(
+    expect([
+      copy.compactFailed({ reason: "Oops" }),
+      copy.forkFailed({ reason: "Oops" }),
+      copy.newChatFailed({ reason: "Oops" }),
+      copy.draftUnchanged,
+    ]).toEqual(
       locale === "de"
-        ? "Kompaktieren hat nicht geklappt: Oops. Dein Entwurf ist unverändert."
-        : "Compacting did not work: Oops. Your draft is unchanged.",
+        ? [
+            "Kompaktieren hat nicht geklappt: Oops.",
+            "Abzweigen hat nicht geklappt: Oops.",
+            "Neuen Chat starten hat nicht geklappt: Oops.",
+            "Dein Entwurf ist unverändert.",
+          ]
+        : [
+            "Compacting did not work: Oops.",
+            "Forking did not work: Oops.",
+            "Starting a new chat did not work: Oops.",
+            "Your draft is unchanged.",
+          ],
     );
   }
 });
