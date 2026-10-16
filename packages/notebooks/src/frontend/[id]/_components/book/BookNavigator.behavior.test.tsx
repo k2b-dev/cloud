@@ -1,10 +1,11 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import type { NavigationItem } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../../../ui/test/dom";
 import { dispatchWorkspaceEvent } from "../sidebar/workspace-events";
-import type { BookTreeNode } from "./BookNavigator.island";
-import type { BookSnapshot } from "./book-state";
+import type { BookNavigatorProps, BookTreeNode } from "./BookNavigator.island";
+import { BOOK_SNAPSHOT_EVENT, type BookMetadata, type BookSnapshot } from "./book-state";
 
 const tree: BookTreeNode[] = [
   { id: "note01", title: "Guide", children: [{ id: "note02", title: "Setup", children: [] }] },
@@ -32,11 +33,16 @@ describe("Book navigation tree", () => {
   }
 
   // The reading shell as the page renders it: the tree and the controller share one document click path.
-  const mount = async (selectedNoteId: string) => {
+  const mount = async (selectedNoteId: string, options: Partial<Pick<BookNavigatorProps, "canWrite" | "locked" | "currentHref">> = {}) => {
     const dom = createDomTestHarness();
     // Solid binds delegated events to the document that existed at first import.
     delegateEvents(["click", "keydown"], dom.document);
-    const { html: _html, ...initial } = snapshot(selectedNoteId);
+    const { html: _html, ...initial } = {
+      ...snapshot(selectedNoteId),
+      canWrite: options.canWrite ?? false,
+      locked: options.locked ?? false,
+      href: options.currentHref ?? snapshot(selectedNoteId).href,
+    };
     dom.window.history.replaceState({}, "", initial.href);
     const globals = ["HTMLInputElement", "HTMLFormElement", "FormData", "CSS", "PointerEvent"] as const;
     const previous = globals.map((key) => Object.getOwnPropertyDescriptor(globalThis, key));
@@ -61,6 +67,9 @@ describe("Book navigation tree", () => {
           notebookName: "Handbook",
           notebookIcon: null,
           selectedNoteId,
+          currentHref: initial.href,
+          canWrite: initial.canWrite,
+          locked: initial.locked,
           tree,
           tags: [],
           navigationHidden: false,
@@ -75,6 +84,15 @@ describe("Book navigation tree", () => {
     const row = (id: string) => item(id).firstElementChild as HTMLElement;
     return {
       requests,
+      sidebarLinks: (label: string) =>
+        Array.from(dom.root.querySelectorAll<HTMLAnchorElement>("#navigator a")).filter((link) => link.textContent?.trim() === label),
+      // Public provider snapshot: the same items Cloud consumes before the phone sheet opens.
+      mobileItems: () => {
+        const value: { items: NavigationItem[] } = JSON.parse(
+          dom.root.querySelector("script[data-cloud-workspace-navigation]")!.textContent!,
+        );
+        return value.items;
+      },
       item,
       label: (id: string) => row(id).querySelector<HTMLElement>(".k2b-app-workspace__sidebar-item-label")!,
       chevron: (id: string) => row(id).querySelector<HTMLElement>("[data-k2b-nav-tree-toggle]")!,
@@ -135,6 +153,105 @@ describe("Book navigation tree", () => {
       },
     };
   };
+
+  const currentHref = "/app/notebooks/book01/notes/note01?mode=book&tag=guide";
+  const expectTarget = (href: string, noteId: string, mode: string, tag?: string) => {
+    const url = new URL(href, "http://localhost");
+    expect(url.pathname).toBe(`/app/notebooks/book01/notes/${noteId}`);
+    expect(url.searchParams.get("mode")).toBe(mode);
+    expect(url.searchParams.get("tag")).toBe(tag ?? null);
+  };
+
+  test("a writer gets exactly one Write sidebar link to the current note and keeps its filter", async () => {
+    // No provider or document language is set by the DOM harness: useLocale falls back to English.
+    const app = await mount("note01", { canWrite: true, currentHref });
+    try {
+      const links = app.sidebarLinks("Write");
+      expect(links).toHaveLength(1);
+      expectTarget(links[0]!.href, "note01", "write", "guide");
+      expect(app.sidebarLinks("Open workspace")).toHaveLength(0);
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  test("a reader gets neither Write nor Open workspace in the sidebar", async () => {
+    const app = await mount("note01", { canWrite: false, currentHref });
+    try {
+      expect(app.sidebarLinks("Write")).toHaveLength(0);
+      expect(app.sidebarLinks("Open workspace")).toHaveLength(0);
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  test("a locked note offers its writer Open workspace in readonly mode instead of Write", async () => {
+    const app = await mount("note01", { canWrite: true, locked: true, currentHref });
+    try {
+      const links = app.sidebarLinks("Open workspace");
+      expect(links).toHaveLength(1);
+      expectTarget(links[0]!.href, "note01", "readonly");
+      expect(app.sidebarLinks("Write")).toHaveLength(0);
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  test("snapshots retarget Write, remove it for readers and swap it for locked notes without remounting", async () => {
+    const app = await mount("note01", { canWrite: true, currentHref });
+    const next: BookMetadata = { ...snapshot("note03"), canWrite: true };
+    const update = (detail: BookMetadata) => window.dispatchEvent(new CustomEvent(BOOK_SNAPSHOT_EVENT, { detail }));
+    try {
+      update(next);
+      expect(app.sidebarLinks("Write")).toHaveLength(1);
+      expectTarget(app.sidebarLinks("Write")[0]!.href, "note03", "write");
+      expect(app.sidebarLinks("Open workspace")).toHaveLength(0);
+
+      update({ ...next, canWrite: false });
+      expect(app.sidebarLinks("Write")).toHaveLength(0);
+      expect(app.sidebarLinks("Open workspace")).toHaveLength(0);
+      expect(app.mobileItems().find((item) => item.id === "workspace")).toBeUndefined();
+
+      update({ ...next, locked: true });
+      expect(app.sidebarLinks("Write")).toHaveLength(0);
+      expect(app.sidebarLinks("Open workspace")).toHaveLength(1);
+      expectTarget(app.sidebarLinks("Open workspace")[0]!.href, "note03", "readonly");
+      expect(app.mobileItems().find((item) => item.id === "workspace")).toMatchObject({ label: "Open workspace" });
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  test.each([true, false])("the phone navigation exposes the Write workspace item only for writers (canWrite=%s)", async (canWrite) => {
+    const app = await mount("note01", { canWrite, currentHref });
+    try {
+      const workspace = app.mobileItems().filter((item) => item.id === "workspace");
+      expect(workspace).toHaveLength(canWrite ? 1 : 0);
+      if (canWrite) {
+        expect(workspace[0]).toEqual({
+          id: "workspace",
+          label: "Write",
+          icon: "ti ti-pencil",
+          href: "/app/notebooks/book01/notes/note01?mode=write&tag=guide",
+        });
+      }
+      const sheet = await openSheet();
+      try {
+        const links = Array.from(document.querySelectorAll<HTMLAnchorElement>("dialog .k2b-navigation a"));
+        const write = links.filter((link) => link.textContent?.trim() === "Write");
+        expect(write).toHaveLength(canWrite ? 1 : 0);
+        expect(links.some((link) => link.textContent?.trim() === "Open workspace")).toBe(false);
+        if (canWrite) {
+          expectTarget(write[0]!.href, "note01", "write", "guide");
+          expect(write[0]!.querySelector("i.ti-pencil")).not.toBeNull();
+        }
+      } finally {
+        await sheet.close();
+      }
+    } finally {
+      app.cleanup();
+    }
+  });
 
   test("the row opens a note and the chevron folds it without navigating, and the fold survives live snapshots", async () => {
     const app = await mount("note02");
@@ -364,6 +481,7 @@ describe("Book view with the notebook navigation hidden", () => {
           notebookName: "Handbook",
           notebookIcon: null,
           selectedNoteId: "note02",
+          currentHref: snapshot("note02").href,
           tree,
           tags: [],
           navigationHidden: false,

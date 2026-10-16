@@ -63,6 +63,7 @@ describe("independent Book live metadata regression", () => {
           notebookName: "Handbook",
           notebookIcon: null,
           selectedNoteId: "note03",
+          currentHref: "/app/notebooks/book01/notes/note03?mode=book",
           tree: [{ id: "note03", title: "Deleted", children: [] }],
           tags: [{ tag: "obsolete", count: 1 }],
           navigationHidden: false,
@@ -76,7 +77,7 @@ describe("independent Book live metadata regression", () => {
       expect(dom.root.textContent).toContain("Second");
       expect(dom.root.querySelector('a[href="/app/notebooks/book01/notes/note02?mode=book"]')).not.toBeNull();
       expect(dom.root.querySelector('a[href="/app/notebooks/book01/tags/team?mode=book"]')).not.toBeNull();
-      window.dispatchEvent(new CustomEvent(BOOK_SNAPSHOT_EVENT, { detail: { ...metadata, tree: [], tags: [] } }));
+      window.dispatchEvent(new CustomEvent(BOOK_SNAPSHOT_EVENT, { detail: { ...metadata, selectedNoteId: null, tree: [], tags: [] } }));
       expect(dom.root.querySelector('a[href*="/notes/"]')).toBeNull();
       expect(dom.root.querySelector('a[href*="/tags/"]')).toBeNull();
     } finally {
