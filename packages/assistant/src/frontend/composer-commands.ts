@@ -466,16 +466,19 @@ export async function assistantComposerCommands(input: {
                     } else {
                       input.runKeys.runUncertain(task.id);
                     }
+                    // Without an answer the start may have happened; say so instead of "did not start".
+                    if (!(error instanceof AssistantTaskRunError) || error.status >= 500 || error.status === 408) {
+                      const reason = error instanceof AssistantTaskRunError ? copy.commandTaskNoAnswer : copy.commandTaskOffline;
+                      throw new Error(copy.commandTaskRunUnconfirmed({ title, reason }) + " " + copy.draftUnchanged);
+                    }
                     const reason =
-                      error instanceof AssistantTaskRunError
-                        ? error.status === 409
-                          ? copy.commandTaskAlreadyRunning
-                          : error.status === 404
-                            ? copy.commandTaskGone
-                            : error.status === 429
-                              ? copy.commandTaskTooMany
-                              : copy.commandTaskNotAccepted
-                        : copy.commandTaskOffline;
+                      error.status === 409
+                        ? copy.commandTaskAlreadyRunning
+                        : error.status === 404
+                          ? copy.commandTaskGone
+                          : error.status === 429
+                            ? copy.commandTaskTooMany
+                            : copy.commandTaskNotAccepted;
                     throw new Error(copy.commandTaskRunFailed({ title, reason }) + " " + copy.draftUnchanged);
                   }
                 }

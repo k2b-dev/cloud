@@ -359,7 +359,7 @@ test("task running status appears only after the deferred server acceptance", as
   expect(h.value()).toBe("");
 });
 
-test.each([409, 404, 429, 500, "offline"] as const)(
+test.each([409, 404, 429, 403, 500, 408, "offline"] as const)(
   "task failure %s restores the token and reports the localized reason",
   async (status) => {
     const { assistantCopyFor } = await import("./ui-copy");
@@ -376,20 +376,24 @@ test.each([409, 404, 429, 500, "offline"] as const)(
     h.key("Enter");
     await flush();
     expect(h.value()).toBe("/routine Bericht 6");
+    const unconfirmed = status === 500 || status === 408 || status === "offline";
     expect(h.status()).toBe(
-      copy.commandTaskRunFailed({
-        title: "Bericht 6",
-        reason:
-          status === 409
-            ? copy.commandTaskAlreadyRunning
-            : status === 404
-              ? copy.commandTaskGone
-              : status === 429
-                ? copy.commandTaskTooMany
-                : status === 500
-                  ? copy.commandTaskNotAccepted
-                  : copy.commandTaskOffline,
-      }) +
+      (unconfirmed
+        ? copy.commandTaskRunUnconfirmed({
+            title: "Bericht 6",
+            reason: status === "offline" ? copy.commandTaskOffline : copy.commandTaskNoAnswer,
+          })
+        : copy.commandTaskRunFailed({
+            title: "Bericht 6",
+            reason:
+              status === 409
+                ? copy.commandTaskAlreadyRunning
+                : status === 404
+                  ? copy.commandTaskGone
+                  : status === 429
+                    ? copy.commandTaskTooMany
+                    : copy.commandTaskNotAccepted,
+          })) +
         " " +
         copy.draftUnchanged,
     );

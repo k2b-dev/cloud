@@ -592,6 +592,9 @@ const copy = i18n.define({
       commandTaskTooMany: "too many starts right now. Try again in a moment",
       commandTaskNotAccepted: "the server did not accept the start",
       commandTaskOffline: "no connection to the server",
+      commandTaskNoAnswer: "the server gave no clear answer",
+      commandTaskRunUnconfirmed: ({ title, reason }: { title: string; reason: string }) =>
+        `Not sure whether “${title}” started: ${reason}. Choose it again; it will not start twice.`,
       commandModelNow: ({ name }: { name: string }) => `Now: ${name}`,
       commandModelChosen: ({ name }: { name: string }) => `Model for this chat: ${name}`,
       commandAllSkills: ({ count }: { count: number }) => `All ${count} Skills`,
@@ -685,6 +688,9 @@ const copy = i18n.define({
       commandTaskTooMany: "gerade zu viele Starts. Versuche es gleich noch einmal",
       commandTaskNotAccepted: "der Server hat den Start nicht angenommen",
       commandTaskOffline: "keine Verbindung zum Server",
+      commandTaskNoAnswer: "der Server hat keine klare Antwort gegeben",
+      commandTaskRunUnconfirmed: ({ title, reason }: { title: string; reason: string }) =>
+        `Ob „${title}“ gestartet ist, ist unklar: ${reason}. Wähle sie noch einmal, sie startet dabei nicht doppelt.`,
       commandModelNow: ({ name }: { name: string }) => `Jetzt: ${name}`,
       commandModelChosen: ({ name }: { name: string }) => `Modell für diesen Chat: ${name}`,
       commandAllSkills: ({ count }: { count: number }) => `Alle ${count} Skills`,
