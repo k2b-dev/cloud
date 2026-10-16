@@ -398,7 +398,7 @@ selected while the value is empty, so arrow keys reach it.
 
 ## Runtime
 
-Triggers and selected values render in server HTML. Dropdown positioning, keyboard navigation, remote loading, selection, and clearing require hydrated Solid client code. `MultiSelectInput` measures its pills in the browser, so server HTML shows every pill until hydration collapses those that do not fit.
+Triggers and selected values render in server HTML. Dropdown positioning, keyboard navigation, remote loading, selection, and clearing require browser code. `MultiSelectInput` measures its pills in the browser, so server HTML shows every pill until browser measurements collapse those that do not fit.
 
 ## Example
 

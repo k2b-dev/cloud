@@ -44,7 +44,7 @@ Pass a task-specific `label`. Tone supplements the numeric value and must not ca
 
 ## Runtime
 
-`ProgressBar` and `ProgressRing` render on the server and need no hydration for their initial value.
+`ProgressBar` and `ProgressRing` render on the server and need no browser code for their initial value.
 
 ## Example
 

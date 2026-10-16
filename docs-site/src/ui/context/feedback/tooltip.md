@@ -43,7 +43,7 @@ Placement is a preference. The surface flips to the opposite side when the reque
 
 ## Accessibility
 
-The target receives `aria-describedby` after hydration, unless the tooltip only repeats the target's `aria-label`, as a default icon-control tooltip does. Keep the control's own accessible name; a tooltip description does not replace `aria-label`.
+The target receives `aria-describedby` after mount, unless the tooltip only repeats the target's `aria-label`, as a default icon-control tooltip does. Keep the control's own accessible name; a tooltip description does not replace `aria-label`.
 
 Tooltips open on hover and on visible focus, as from the keyboard. Focus without a focus ring, such as after a click or tap or when a closing menu or dialog returns it to a pointer user, opens no hint. Escape dismisses the current hint. Pointer down, pointer leave, focus out, scrolling, and resizing also close it. Touch input never opens a tooltip; on touch devices the label stays the accessible name.
 
@@ -52,10 +52,10 @@ Keep content short and non-interactive. Do not communicate required state throug
 ## Runtime
 
 The target and tooltip surface render on the server. Icon-only controls with a
-text tooltip also render it as a native `title`, the hint of a page that never
-hydrates. Hydration removes that `title`, attaches `aria-describedby` to the
-explicitly owned target, opens the Popover API surface, positions it, and
-handles dismissal.
+text tooltip also render it as a native `title`, the hint of a page that has no
+browser code. On mount, the component removes that `title` and attaches
+`aria-describedby` to the explicitly owned target. Browser code opens the
+Popover API surface, positions it, and handles dismissal.
 
 Long content wraps within the maximum tooltip width. Keep hints concise.
 

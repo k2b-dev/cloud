@@ -46,7 +46,7 @@ The server must clamp or reject invalid page numbers before rendering the compon
 
 Pagination renders fully during SSR and works without JavaScript.
 
-With `onNavigate`, link enhancement requires hydration. The server route remains the reload and fallback path.
+With `onNavigate`, link enhancement requires browser code. The server route remains the reload and fallback path.
 
 ## Example
 

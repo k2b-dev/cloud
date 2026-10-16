@@ -94,7 +94,7 @@ through `title`.
 
 ## Runtime
 
-`StatGrid` and `StatCell` render on the server. Static links work without hydration. Trend sparklines are rendered by the shared `Chart` component within the cell.
+`StatGrid` and `StatCell` render on the server. Static links work without browser code. Trend sparklines are rendered by the shared `Chart` component within the cell.
 
 ## Example
 

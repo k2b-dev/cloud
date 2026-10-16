@@ -45,7 +45,7 @@ Every variant retains an accessible label. The component does not register or as
 
 ## Runtime
 
-The button renders during SSR; opening and resolving the prompt require hydration.
+The button renders during SSR; opening and resolving the prompt require browser code.
 
 ## Shortcut caps
 

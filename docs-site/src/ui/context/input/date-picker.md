@@ -151,7 +151,7 @@ October 9, 2026". Without a value the calendar's tab stop starts on today.
 
 ## Runtime
 
-The trigger and current value render in server HTML. Opening the calendar, navigating dates, selecting presets, and applying time or range values require hydrated Solid client code.
+The trigger and current value render in server HTML. Opening the calendar, navigating dates, selecting presets, and applying time or range values require browser code.
 
 ## Example
 

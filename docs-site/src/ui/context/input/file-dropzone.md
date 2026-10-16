@@ -78,7 +78,7 @@ Do not communicate file restrictions only through an icon or invalid-drag color.
 
 ## Runtime
 
-File selection and drag events require hydrated Solid client code. Server-rendered markup provides the initial field surface.
+File selection and drag events require browser code. Server-rendered markup provides the initial field surface.
 
 ## Example
 

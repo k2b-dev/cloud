@@ -268,7 +268,7 @@ separate button in the tab order, named by `label`.
 ## Runtime
 
 The composition and its initial open state are server-renderable. Toggling a
-collapsible section requires hydration. Interactive children keep their own
+collapsible section requires browser code. Interactive children keep their own
 state and remain mounted when the section closes.
 
 ## Example

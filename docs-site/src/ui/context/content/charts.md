@@ -299,7 +299,7 @@ A domain-specific scatter tooltip can use raw values directly:
 />
 ```
 
-Formatter and selection callbacks run in the hydrated component. In an islands
+Formatter and selection callbacks run in browser code. In an islands
 app, define them inside the island; do not serialize functions through server
 props. Pass serializable source data into the island. The SVG remains fully
 server-rendered. Keep callbacks synchronous and free of render-time effects;
@@ -344,7 +344,7 @@ Always provide the same conclusion in text. Do not make color, pointer hover, or
 
 ## Runtime
 
-The complete SVG renders on the server and fits its container before JavaScript loads. Hydration and resizing keep the same chart geometry, so range navigation does not briefly show a smaller chart.
+The complete SVG renders on the server and fits its container before JavaScript loads. Mounting in the browser and resizing keep the same chart geometry, so range navigation does not briefly show a smaller chart.
 
 Cartesian plots fill the available width and height while labels and markers retain their size. At zoom zero, maps fit the complete world without cropping or distortion; shallow containers leave space on either side. Each zoom level doubles the geographic scale from that fitted world view, without changing the fitting mode. Zoomed content can use the full plot width and is clipped only at its edges. Titles and legends stay outside the geographic crop. Pies, donuts, and gauges preserve their aspect ratio. Load `@k2b/ui/styles.css` in the page head so this layout applies to the first frame.
 
@@ -354,7 +354,7 @@ including logarithmic axes, nested map viewports, and responsive sizing.
 
 Reactive data rebuilds the complete SVG. This suits dashboard polling and normal realtime updates, not frame-by-frame animation.
 
-Interactive charts require hydration. Static charts remain readable in the server response.
+Interactive charts require browser code. Static charts remain readable in the server response.
 
 ## Example
 
@@ -488,7 +488,7 @@ Treat snapshots as immutable trusted renderer output. Never accept arbitrary
 user-supplied SVG for `chart.svg`. Across SSR/JSON boundaries, row data must also be
 serializable; TypeScript row types alone do not enforce JSON serialization. Layout
 uses a fixed logical width of 480 and height of 280, except row-derived timeline
-height. CSS sizes the SVG before hydration without measuring/rebuilding it.
+height. CSS sizes the SVG in the server HTML without measuring/rebuilding it.
 
 ### One controller for local and remote data
 

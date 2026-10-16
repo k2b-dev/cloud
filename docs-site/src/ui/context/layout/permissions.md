@@ -82,7 +82,7 @@ The API-key creation flow must explain that the token is shown once.
 
 ## Runtime
 
-These components are interactive and require hydration.
+These components are interactive and require browser code.
 
 `PermissionEditor` and `EntitySearch` query Cloud identity in the browser. A group row in `PermissionEditor` also loads the first page of its members from Accounts, with the viewer's directory visibility, and shows the count and the list when the viewer expands it. API-key creation and revocation call the application callbacks. Server-side authorization must run again in every callback target.
 

@@ -416,7 +416,7 @@ Search results need unique, descriptive labels. A preview or icon may supplement
 
 ## Runtime
 
-Prompts are browser interactions and must be called from hydrated code. Their content is mounted through the shared `@k2b/ui` portal into one modal dialog stack at runtime.
+Prompts are browser interactions and must be called from browser code. Their content is mounted through the shared `@k2b/ui` portal into one modal dialog stack at runtime.
 
 Do not call a prompt during server rendering. Await it from an event handler, then start the mutation only after a confirmed result.
 

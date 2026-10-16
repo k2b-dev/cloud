@@ -8,8 +8,8 @@ fade only where more content remains. Set `scrollFade={false}` when a
 specialized view needs an unmasked surface. Scrolling, resizing, and content
 changes update the hint; forced-color mode leaves content unmasked.
 
-Hydrated components initialize themselves. Server-rendered scroll areas inside
-a workspace are also initialized by `installAppWorkspaceController`; Cloud
+Components with browser code initialize themselves. Server-rendered scroll areas
+inside a workspace are also initialized by `installAppWorkspaceController`; Cloud
 already installs that controller. Arbitrary elements with `overflow: auto`
 are not modified.
 
@@ -88,8 +88,8 @@ scrollport.
 ## Runtime
 
 The scrollport is server-renderable and native scrolling works without client
-JavaScript. Overflow hints require hydration or the workspace controller. Native
-disclosures inside it continue to work before hydration.
+JavaScript. Overflow hints require browser code or the workspace controller. Native
+disclosures inside it continue to work before mount.
 
 ## Example
 

@@ -62,8 +62,8 @@ it still appears at the pull distance and shows a static loader icon while busy.
 ## Runtime
 
 The wrapper is server-renderable in its idle state. The gesture, the
-indicator movement, and the busy state need hydration; before that, the child
-scrolls natively and nothing else happens.
+indicator movement, and the busy state require browser code; before mount, the
+child scrolls natively and nothing else happens.
 
 ## Example
 

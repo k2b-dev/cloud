@@ -104,7 +104,7 @@ hints must make sense without color alone.
 
 ## Runtime
 
-The editor requires hydrated Solid client code. Completion resolution, cancellation, caret positioning, keyboard navigation, and the optional overlay depend on browser APIs.
+The editor requires browser code. Completion resolution, cancellation, caret positioning, keyboard navigation, and the optional overlay depend on browser APIs.
 
 ## Example
 

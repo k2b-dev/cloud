@@ -220,7 +220,7 @@ Tabs use tab triggers inside a labelled tab list. Pass `ariaLabel` when the defa
 ## Runtime
 
 `PanelDialog` can render layout on the server, but the dialog host, tabs, close
-controls, hideable sections, and form mutations require hydrated client code.
+controls, hideable sections, and form mutations require browser code.
 
 `confirmDiscardIfDirty` returns immediately when its boolean or accessor is
 false. Otherwise it opens the package confirmation prompt and resolves to the

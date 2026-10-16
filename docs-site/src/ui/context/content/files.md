@@ -215,7 +215,7 @@ remain keyboard reachable.
 
 The static tree and preview shells render on the server. Resource loading,
 selection, editing, drag and drop, media controls, prompts, and dialogs
-require hydration.
+require browser code.
 
 ## Example
 
@@ -392,7 +392,7 @@ The heading stays in the document, and `null` is reported, when it contains a
 link or an image, which a plain-text title would lose, and when nothing follows
 it, so the preview is never empty. The title reaches the host from an effect,
 so only in the browser; a server render shows the document without its leading
-heading until it hydrates.
+heading before mount.
 
 Pass the file name as a constant subtitle, as below, so the header does not
 gain a line when the title arrives. A title that may wrap onto more lines than

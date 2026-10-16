@@ -113,7 +113,7 @@ window events. It removes its listeners when its owner is disposed, so create
 it under an owner that lives as long as the page. `installationPlatform()` is a
 pure function of its arguments and also runs on the server, so a page can
 render the right guide with its first response and the browser computes the
-same value. Render the guide in a hydrated island or a dialog.
+same value. Render the guide in an island or a dialog.
 
 ## Example
 

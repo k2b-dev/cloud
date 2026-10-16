@@ -117,7 +117,7 @@ system text size: do not set fixed pixel heights on text rows.
 ## Runtime
 
 The shell renders on the server in its final structure, so the header, the
-content, and the footer stay in place when it hydrates. Only the end padding
+content, and the footer stay in place when the shell mounts. Only the end padding
 of the content and the place of the toast rail settle after mount: in the
 browser, the shell measures the footer and watches the toast rail to keep the
 footer height and the toast padding current. It removes the footer
@@ -152,8 +152,8 @@ restored from the back/forward cache shows its own frame again. Give each
 tab's page the title of its tab item, so the header does not change when the
 page arrives.
 
-A page that renders the shell on the server and hydrates only islands inside
-it calls `observeMobileShell(root)` once in the browser instead, with the
+A page that renders the shell only on the server, with islands inside
+it, calls `observeMobileShell(root)` once in the browser instead, with the
 shell's root element. It keeps the same measurements, the scroll fade, and link
 taps working and returns the cleanup:
 

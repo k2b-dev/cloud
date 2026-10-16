@@ -47,7 +47,7 @@ Descriptions and reactive errors are connected to the editable field. Added and 
 ## Runtime
 
 `TagsInput` uses a native text field. Its complete initial value renders on the
-server; live editing and commit callbacks require hydrated Solid client code.
+server; live editing and commit callbacks require browser code.
 
 ## Example
 
