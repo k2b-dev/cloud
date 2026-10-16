@@ -1,9 +1,16 @@
 import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Filegate, FilegateError, type RootClient } from "@k2b/filegate";
 import { DirectSession, putDirect } from "@k2b/filegate/utils";
 import { suiteFor, testInfra } from "../../../scripts/fixtures/test-infra";
-import { transferUpload, UploadTransferError } from "../src/upload-transfer";
+import { apiError } from "../src/api/api-error";
+import { errorMessage } from "../src/api/messages";
+import { uploadFile } from "../src/cli-upload";
+import type { EntryResult } from "../src/contracts";
+import { transferUpload, UploadTransferError, uploadResponseFailure } from "../src/upload-transfer";
 import { localFilegateToken } from "./private-database";
 
 // Runs against the configured test Filegate in its own prefix. Never use application fixtures.
@@ -203,6 +210,166 @@ suite("actual Filegate 7.0.0 transfer contract (isolated local prefix)", () => {
     expect(status.state).toBe("open");
     expect(status.received).toBe(opened.session.chunkSize);
   }, 15_000);
+
+  test("CLI rerun resumes acknowledged segments after a network failure without aborting", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "filesv2-resume-"));
+    const local = join(directory, "resume.bin");
+    const path = `${prefix}/cli-network-resume.bin`;
+    const bytes = Uint8Array.from({ length: 8 * 1024 * 1024 + 17 }, (_, index) => index % 251);
+    const defaults = new Map<string, string>();
+    const ctx = {
+      options: { profile: "test", server: "https://cloud.test", token: "test", output: "json" as const },
+      getDefault: async (key: string) => defaults.get(key),
+      setDefault: async (key: string, value: string | undefined) => {
+        if (value === undefined) defaults.delete(key);
+        else defaults.set(key, value);
+      },
+      error: () => {},
+    };
+    const openedIds: string[] = [];
+    const keys: string[] = [];
+    let chunkSize = 0;
+    let aborts = 0;
+    const result: EntryResult = {
+      base: {
+        id: "base",
+        area: "cloud",
+        kind: "users",
+        name: "Home",
+        status: "existing",
+        reason: null,
+        indexEnabled: false,
+        versioningEnabled: false,
+      },
+      entry: { name: "resume.bin", path, directory: false, size: bytes.length, modified: "" },
+    };
+    const api = {
+      scope: path,
+      open: async (size: number, _signal: AbortSignal, idempotencyKey: string) => {
+        keys.push(idempotencyKey);
+        const opened = await root.createSession(path, size, { allowAbort: true, idempotencyKey });
+        pending.add(opened.session.id);
+        openedIds.push(opened.session.id);
+        chunkSize = opened.session.chunkSize;
+        return { ...opened.session, url: opened.lease?.url };
+      },
+      renew: (id: string) => root.sessionLease(id, { allowAbort: true }),
+      commit: async (id: string) => {
+        await root.commitSession(id);
+        pending.delete(id);
+        return result;
+      },
+      abort: async (id: string) => {
+        aborts++;
+        await root.abortSession(id);
+      },
+    };
+    const nativeFetch = globalThis.fetch;
+    let fail = true;
+    const puts: number[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "PUT") {
+          const segment = Number(new URL(String(input)).searchParams.get("segment"));
+          if (fail && segment === 1) throw new TypeError("fetch failed");
+          if (!fail) puts.push(segment);
+        }
+        return nativeFetch(input, init);
+      },
+      { preconnect: nativeFetch.preconnect },
+    );
+    try {
+      await writeFile(local, bytes);
+      const failed = uploadFile(ctx, local, api);
+      await expect(failed).rejects.toHaveProperty("cause", expect.any(UploadTransferError));
+      await expect(failed).rejects.toMatchObject({ cause: { kind: "network", origin: "filegate" } });
+      expect(bytes.length).toBeGreaterThan(chunkSize);
+      expect(await root.session(openedIds[0]!)).toMatchObject({ state: "open", received: chunkSize });
+      expect([...defaults.values()]).toEqual([keys[0]!]);
+      expect(aborts).toBe(0);
+      fail = false;
+      await uploadFile(ctx, local, api);
+      expect(openedIds).toEqual([openedIds[0]!, openedIds[0]!]);
+      expect(keys[1]).toBe(keys[0]!);
+      expect(puts).toEqual([1]);
+      expect((await root.session(openedIds[0]!)).state).toBe("committed");
+      expect(new Uint8Array(await (await root.contentRaw(path)).arrayBuffer())).toEqual(bytes);
+      expect(defaults.size).toBe(0);
+      expect(aborts).toBe(0);
+    } finally {
+      globalThis.fetch = nativeFetch;
+      await rm(directory, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  test("CLI discards a managed-root write conflict and preserves the concurrent writer", async () => {
+    expect((await root.info()).managed).toBe(true);
+    const directory = await mkdtemp(join(tmpdir(), "filesv2-conflict-"));
+    const local = join(directory, "conflict.txt");
+    const path = `${prefix}/cli-write-conflict.txt`;
+    const defaults = new Map<string, string>();
+    const ctx = {
+      options: { profile: "test", server: "https://cloud.test", token: "test", output: "json" as const },
+      getDefault: async (key: string) => defaults.get(key),
+      setDefault: async (key: string, value: string | undefined) => {
+        if (value === undefined) defaults.delete(key);
+        else defaults.set(key, value);
+      },
+      error: () => {},
+    };
+    let sessionId = "";
+    let aborts = 0;
+    try {
+      await writeFile(local, "stale");
+      let caught: unknown;
+      try {
+        await uploadFile(ctx, local, {
+          scope: path,
+          open: async (size, _signal, idempotencyKey) => {
+            const opened = await root.createSession(path, size, {
+              onConflict: "error",
+              precondition: { ifNoneMatch: true },
+              allowAbort: true,
+              idempotencyKey,
+            });
+            sessionId = opened.session.id;
+            pending.add(sessionId);
+            return { ...opened.session, url: opened.lease!.url };
+          },
+          renew: (id) => root.sessionLease(id, { allowAbort: true }),
+          commit: async (id) => {
+            await root.put(path, new Blob(["concurrent writer"]));
+            try {
+              await root.commitSession(id);
+            } catch (error) {
+              expect(error).toBeInstanceOf(FilegateError);
+              expect(error).toHaveProperty("status", 412);
+              const { code, status } = apiError(error);
+              throw await uploadResponseFailure(Response.json({ code, message: errorMessage(code, "en") }, { status }), "Upload failed");
+            }
+            throw new Error("Expected Filegate to reject publication");
+          },
+          abort: async (id) => {
+            aborts++;
+            await root.abortSession(id);
+          },
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      expect(caught).toHaveProperty("cause", expect.any(UploadTransferError));
+      expect(caught).toHaveProperty("cause.kind", "final");
+      expect(caught).toHaveProperty("cause.code", "write_conflict");
+      expect(aborts).toBe(1);
+      expect((await root.session(sessionId)).state).toBe("aborted");
+      pending.delete(sessionId);
+      expect(defaults.size).toBe(0);
+      expect(await (await root.contentRaw(path)).text()).toBe("concurrent writer");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 
   test("abort retains an explicit terminal receipt and cannot be committed", async () => {
     const opened = await root.createSession(`${prefix}/aborted.txt`, 0, { allowAbort: true });

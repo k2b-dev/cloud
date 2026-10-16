@@ -50,6 +50,7 @@ const messages = i18n.define({
       stalled: "No response from the file server",
       serverStalled: "No response from the server",
       busy: "The file server is busy",
+      rateLimited: "Too many uploads in a short time",
       announce: (said: UploadAnnouncement | { kind: "failures"; count: number }): string => {
         switch (said.kind) {
           case "started":
@@ -113,6 +114,7 @@ const messages = i18n.define({
       stalled: "Keine Antwort vom Dateiserver",
       serverStalled: "Keine Antwort vom Server",
       busy: "Der Dateiserver ist ausgelastet",
+      rateLimited: "Zu viele Uploads in kurzer Zeit",
       announce: (said: UploadAnnouncement | { kind: "failures"; count: number }): string => {
         switch (said.kind) {
           case "started":
@@ -141,9 +143,10 @@ const messages = i18n.define({
 });
 
 export function uploadFailureReason(error: unknown, t: ReturnType<typeof messages.resolve>["t"]): string {
-  if (typeof navigator !== "undefined" && !navigator.onLine) return t.offline;
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return t.offline;
   if (error instanceof UploadTransferError) {
-    if (error.kind === "stalled") return t.stalled;
+    if (error.kind === "stalled") return error.origin === "cloud" ? t.serverStalled : t.stalled;
+    if (error.kind === "rate_limited") return t.rateLimited;
     if (error.kind === "busy") return t.busy;
     if (error.kind === "network") return t.offline;
     return error.message || t.failed;

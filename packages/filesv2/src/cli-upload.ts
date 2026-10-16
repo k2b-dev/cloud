@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { open, stat } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { type CloudCliContext, cliText } from "@k2b/cloud/cli";
-import { cloudRequestError, REQUEST_TIMEOUT_MS } from "./cli-request";
+import { REQUEST_TIMEOUT_MS } from "./cli-request";
 import type { EntryResult, UploadSession } from "./contracts";
-import { transferUpload, UploadTransferError } from "./upload-transfer";
+import { transferUpload, UploadTransferError, uploadFailureAction, uploadRequestFailure } from "./upload-transfer";
 
 /** Cloud opens and commits the session; disk-backed file slices go straight to Filegate. */
 export async function uploadFile(
@@ -76,7 +76,13 @@ export async function uploadFile(
     // Bun.file(fd) shares a mutable seek offset; a path-backed Blob supports SDK resume/hash rereads.
     await transferUpload(Bun.file(sourcePath), session, {
       signal,
-      renew: api.renew,
+      renew: async (id, renewSignal) => {
+        try {
+          return await api.renew(id, renewSignal);
+        } catch (error) {
+          throw uploadRequestFailure(error, "", signal);
+        }
+      },
       onProgress: progress,
       failure: cliText(ctx, { en: "Filegate upload failed.", de: "Der Filegate-Upload ist fehlgeschlagen." }),
     });
@@ -102,25 +108,43 @@ export async function uploadFile(
     await ctx.setDefault(storageKey, undefined);
     if (textProgress) ctx.error(cliText(ctx, { en: "Upload done.", de: "Upload abgeschlossen." }));
     return result;
-  } catch (error) {
-    if (session?.state === "open" && !committing)
+  } catch (caught) {
+    const error = signal.aborted ? caught : uploadRequestFailure(caught, "", signal);
+    const action = uploadFailureAction(error, { session, committing, cancelled: signal.aborted });
+    if (action === "drop" && storageKey) await ctx.setDefault(storageKey, undefined);
+    // The key goes only after Cloud confirmed the abort; otherwise a rerun resumes or retries the abort.
+    if (action === "abort" && session)
       await api
         .abort(session.id, AbortSignal.timeout(5_000))
         .then(async () => {
           if (storageKey) await ctx.setDefault(storageKey, undefined);
         })
         .catch(() => {});
-    if (signal.aborted) throw new Error(cliText(ctx, { en: "Upload cancelled.", de: "Upload abgebrochen." }));
+    if (signal.aborted) throw new Error(cliText(ctx, { en: "Upload cancelled.", de: "Upload abgebrochen." }), { cause: error });
     if (error instanceof UploadTransferError) {
       const reasons = {
-        stalled: { en: "No response from the file server.", de: "Keine Antwort vom Dateiserver." },
+        stalled:
+          error.origin === "cloud"
+            ? { en: "No response from Cloud within 60 seconds.", de: "Keine Antwort von Cloud innerhalb von 60 Sekunden." }
+            : { en: "No response from the file server.", de: "Keine Antwort vom Dateiserver." },
         busy: { en: "The file server is busy. Try again later.", de: "Der Dateiserver ist ausgelastet. Versuche es später erneut." },
-        network: { en: "No connection to the file server.", de: "Keine Verbindung zum Dateiserver." },
+        network:
+          error.origin === "cloud"
+            ? { en: "No connection to Cloud.", de: "Keine Verbindung zu Cloud." }
+            : { en: "No connection to the file server.", de: "Keine Verbindung zum Dateiserver." },
+        rate_limited: {
+          en: "Too many uploads in a short time. Try again later.",
+          de: "Zu viele Uploads in kurzer Zeit. Versuche es später erneut.",
+        },
+        server: { en: "Filegate upload failed.", de: "Der Filegate-Upload ist fehlgeschlagen." },
         final: { en: "Filegate upload failed.", de: "Der Filegate-Upload ist fehlgeschlagen." },
       };
-      throw new Error(cliText(ctx, reasons[error.kind]));
+      throw new Error(
+        error.origin === "cloud" && (error.kind === "final" || error.kind === "server") ? error.message : cliText(ctx, reasons[error.kind]),
+        { cause: error },
+      );
     }
-    cloudRequestError(ctx, error);
+    throw error;
   } finally {
     process.off("SIGINT", abort);
     process.off("SIGTERM", abort);
