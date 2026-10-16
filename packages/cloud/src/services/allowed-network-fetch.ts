@@ -34,8 +34,9 @@ export const createAllowedNetworkFetch =
       if (signal.aborted) abort();
     });
     signal.throwIfAborted();
-    // Like fetch(), send a body of known size with Content-Length; only a caller's stream goes out chunked.
-    const payload = request.body && !(init?.body instanceof ReadableStream) ? new Uint8Array(await request.arrayBuffer()) : undefined;
+    // A body of known size goes out with Content-Length; only a caller's stream (in init or an input Request) is chunked.
+    const streamed = init?.body != null ? init.body instanceof ReadableStream : input instanceof Request && input.body !== null;
+    const payload = request.body && !streamed ? new Uint8Array(await request.arrayBuffer()) : undefined;
     signal.throwIfAborted();
     return new Promise<Response>((resolve, reject) => {
       const headers = new Headers(request.headers);

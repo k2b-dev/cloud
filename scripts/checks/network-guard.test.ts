@@ -165,6 +165,13 @@ for (const file of guardedServerRoots.filter((root) => root.endsWith(".ts"))) {
     expect(await lines("fetch(url);", file.replace(/[^/]+$/, "other.ts"))).toEqual([]);
   });
 }
+test("the shared allowlisted transport must keep its pinned lookup on node:http", async () => {
+  const file = "packages/cloud/src/services/allowed-network-fetch.ts";
+  expect(await lines('import { request } from "node:http";\nrequest({ hostname, agent: false });', file)).toEqual([1]);
+  expect(
+    await lines('import { request } from "node:http";\nrequest({ lookup: pinnedNetworkLookup(addresses), agent: false });', file),
+  ).toEqual([]);
+});
 for (const client of [
   "new ImapFlow(options)",
   "nodemailer.createTransport(options)",

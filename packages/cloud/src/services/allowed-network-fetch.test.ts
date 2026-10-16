@@ -271,29 +271,34 @@ test("abort before response headers destroys the connected socket", async () => 
   await closed;
 });
 
-test("streams an upload before the producer finishes", async () => {
-  let arrived!: () => void;
-  const firstChunk = new Promise<void>((resolve) => {
-    arrived = resolve;
+for (const via of ["init", "Request"] as const) {
+  test(`streams an upload from ${via} before the producer finishes`, async () => {
+    let arrived!: () => void;
+    const firstChunk = new Promise<void>((resolve) => {
+      arrived = resolve;
+    });
+    const chunks: Buffer[] = [];
+    const { url } = await serve(async (req, res) => {
+      for await (const chunk of req) {
+        chunks.push(chunk);
+        arrived();
+      }
+      res.end(Buffer.concat(chunks));
+    });
+    let producer!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        producer = controller;
+      },
+    });
+    const pending =
+      via === "init"
+        ? createAllowedNetworkFetch(allow("127.0.0.1"))(url, { method: "POST", body })
+        : createAllowedNetworkFetch(allow("127.0.0.1"))(new Request(url, { method: "POST", body, duplex: "half" } as RequestInit));
+    producer.enqueue(new TextEncoder().encode("first"));
+    await firstChunk;
+    producer.enqueue(new TextEncoder().encode("last"));
+    producer.close();
+    expect(await (await pending).text()).toBe("firstlast");
   });
-  const chunks: Buffer[] = [];
-  const { url } = await serve(async (req, res) => {
-    for await (const chunk of req) {
-      chunks.push(chunk);
-      arrived();
-    }
-    res.end(Buffer.concat(chunks));
-  });
-  let producer!: ReadableStreamDefaultController<Uint8Array>;
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      producer = controller;
-    },
-  });
-  const pending = createAllowedNetworkFetch(allow("127.0.0.1"))(url, { method: "POST", body });
-  producer.enqueue(new TextEncoder().encode("first"));
-  await firstChunk;
-  producer.enqueue(new TextEncoder().encode("last"));
-  producer.close();
-  expect(await (await pending).text()).toBe("firstlast");
-});
+}

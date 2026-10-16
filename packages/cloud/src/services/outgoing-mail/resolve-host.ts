@@ -21,7 +21,9 @@ export const resolveMailHost = async (host: string, signal?: AbortSignal, resolv
         if (cancellation.aborted) abort();
       }),
     ]);
-    return { address: addresses[0]!.address, servername: networkAddressFamily(hostname) ? undefined : hostname };
+    // Nodemailer preferred IPv4 before it got a pinned literal; keep that so an AAAA-first answer on an IPv4-only host still connects.
+    const target = addresses.find((entry) => entry.family === 4) ?? addresses[0]!;
+    return { address: target.address, servername: networkAddressFamily(hostname) ? undefined : hostname };
   } catch (error) {
     if (error instanceof NetworkTargetBlockedError)
       throw new NetworkTargetBlockedError(

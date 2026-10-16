@@ -25,16 +25,23 @@ test("allows explicit IP and CIDR entries and omits IP TLS servername", async ()
     expect(await resolveMailHost("127.0.0.1")).toEqual({ address: "127.0.0.1", servername: undefined });
   }
 });
-test("pins a hostname's first checked answer and preserves TLS identity", async () => {
+test("pins a hostname's first checked IPv4 answer and preserves TLS identity", async () => {
   process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "smtp.example.org";
   const lookup = mock(async () => [
-    { address: "127.0.0.1", family: 4 },
     { address: "::1", family: 6 },
+    { address: "127.0.0.1", family: 4 },
+    { address: "127.0.0.2", family: 4 },
   ]);
   const resolve = (host: string, allowlist: ReturnType<typeof outgoingMailAllowlist>) =>
     resolveAllowedNetworkAddresses(host, allowlist, lookup);
   expect(await resolveMailHost("SMTP.example.org", undefined, resolve)).toEqual({ address: "127.0.0.1", servername: "smtp.example.org" });
   expect(lookup).toHaveBeenCalledTimes(1);
+});
+test("falls back to the first IPv6 answer when no IPv4 answer exists", async () => {
+  process.env.OUTGOING_MAIL_ALLOWED_TARGETS = "smtp.example.org";
+  const resolve = (host: string, allowlist: ReturnType<typeof outgoingMailAllowlist>) =>
+    resolveAllowedNetworkAddresses(host, allowlist, async () => [{ address: "::1", family: 6 }]);
+  expect(await resolveMailHost("smtp.example.org", undefined, resolve)).toEqual({ address: "::1", servername: "smtp.example.org" });
 });
 test("cancellation stops a pending resolver", async () => {
   const controller = new AbortController();
