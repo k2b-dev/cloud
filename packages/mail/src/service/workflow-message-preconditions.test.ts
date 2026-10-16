@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
 import { sql } from "bun";
 import type { RemoteMessagePrecondition } from "../contracts";
 import {
   loadIncomingAutomationSiblingTransitions,
   mailMessageStatePayloadTransitions,
+  mailWorkflowConversationLinkSnapshot,
   mailWorkflowMessagePrecondition,
   projectMailWorkflowMessagePrecondition,
 } from "./workflow-message-preconditions";
@@ -243,5 +245,51 @@ describe("incoming automation sibling transition loading", () => {
       { field: "keywords", add: true, value: "alpha" },
     ]);
     expect(loaded.get(second.id)).toEqual([{ field: "keywords", add: true, value: "beta" }]);
+  });
+});
+
+describe("Mail workflow conversation link snapshots", () => {
+  const conversationId = "00000000-0000-4000-8000-000000000001";
+  test("returns a valid snapshot only for the matching internal conversation", () => {
+    for (const linkSnapshot of ["10:20:", "10:20:11", "10:20:11,15"]) {
+      const context = { preconditions: { conversation: { id: conversationId, revision: 1, linkSnapshot } } };
+      expect(mailWorkflowConversationLinkSnapshot(context, conversationId)).toBe(linkSnapshot);
+      expect(mailWorkflowConversationLinkSnapshot(context, "other-conversation")).toBeNull();
+    }
+  });
+
+  test("returns null for contexts captured without a snapshot", () => {
+    const contexts: (Record<string, WorkflowJsonValue> | undefined)[] = [
+      undefined,
+      {},
+      { preconditions: {} },
+      { preconditions: { conversation: null } },
+      { preconditions: { conversation: { id: conversationId, revision: 1 } } },
+    ];
+    for (const context of contexts) {
+      expect(mailWorkflowConversationLinkSnapshot(context, conversationId)).toBeNull();
+    }
+  });
+
+  test("rejects malformed snapshot values", () => {
+    for (const linkSnapshot of [
+      null,
+      42,
+      {},
+      [],
+      "",
+      "10:20",
+      "10:20:\n",
+      "-1:20:",
+      "10:20:11,",
+      "10:20:11,,15",
+      "10:20:11:15",
+      " 10:20:",
+      "10:20:sql",
+    ]) {
+      expect(
+        mailWorkflowConversationLinkSnapshot({ preconditions: { conversation: { id: conversationId, linkSnapshot } } }, conversationId),
+      ).toBeNull();
+    }
   });
 });

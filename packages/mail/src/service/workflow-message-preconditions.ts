@@ -13,6 +13,16 @@ export const mailWorkflowTriggerMessageId = (context: Record<string, WorkflowJso
   return typeof message?.id === "string" ? message.id : null;
 };
 
+export const mailWorkflowConversationLinkSnapshot = (
+  context: Record<string, WorkflowJsonValue> | undefined,
+  conversationId: string,
+): string | null => {
+  const conversation = object(object(context?.preconditions)?.conversation);
+  if (conversation?.id !== conversationId || typeof conversation.linkSnapshot !== "string") return null;
+  // pg_snapshot text: xmin:xmax:xip,...
+  return /^\d+:\d+:(\d+(,\d+)*)?$/u.test(conversation.linkSnapshot) ? conversation.linkSnapshot : null;
+};
+
 export const mailWorkflowMessagePrecondition = (
   context: Record<string, WorkflowJsonValue> | undefined,
   target: { messageId: string; remoteMessageRefId: string; folderId: string },

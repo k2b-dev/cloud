@@ -77,7 +77,7 @@ export type FrozenMailWorkflowPreconditions = {
     flags: string[];
     keywords: string[];
   };
-  conversation: { id: string; revision: number } | null;
+  conversation: { id: string; revision: number; linkSnapshot: string } | null;
   triggerKind?: "messageReceived";
 };
 
@@ -122,6 +122,7 @@ type WorkflowSnapshotRow = {
   conversation_summary: string | null;
   summary_revision: string | number | null;
   collaboration_revision: string | number | null;
+  link_snapshot: string;
   assignee_user_ids: string[];
   work_status: "needs_action" | "waiting" | "done" | null;
   latest_message_at: Date | string | null;
@@ -182,6 +183,7 @@ const snapshotColumns = sql`
   conversation.summary AS conversation_summary,
   conversation.summary_revision,
   conversation.revision AS collaboration_revision,
+  pg_current_snapshot()::text AS link_snapshot,
   COALESCE((SELECT array_agg(a.user_id::text ORDER BY a.assigned_at, a.user_id) FROM mail.conversation_assignees a WHERE a.conversation_id = conversation.id), ARRAY[]::text[]) AS assignee_user_ids,
   conversation.work_status,
   conversation.latest_message_at
@@ -294,7 +296,10 @@ const mapSnapshot = (row: WorkflowSnapshotRow): MailWorkflowTargetSnapshot => {
         flags: flags.filter((flag) => ["seen", "answered", "flagged", "draft"].includes(flag)),
         keywords: normalizeWorkflowKeywords(keywords),
       },
-      conversation: row.conversation_id && conversation ? { id: row.conversation_id, revision: conversation.revision } : null,
+      conversation:
+        row.conversation_id && conversation
+          ? { id: row.conversation_id, revision: conversation.revision, linkSnapshot: row.link_snapshot }
+          : null,
     },
     internalDate,
   };

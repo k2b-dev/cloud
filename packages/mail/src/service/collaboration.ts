@@ -487,13 +487,21 @@ export const recordConversationStatusDecision = async (
  * Locks a conversation for a workflow status step and returns its live state. `revision` is the
  * revision the step may act at, or null when the conversation changed since the run's view. The
  * step may act at the run's revision, or one revision later when Mail hydrated the message that
- * triggered the run and no other message of the conversation still waits for hydration. Linking a
- * message does not change the revision, so a message that joined after the run's view is either
- * still unhydrated or hydrated with its own revision. Returns null when the conversation is gone.
+ * triggered the run and every other unhydrated message was already linked in the run's view.
+ * Linking a message does not change the revision. Snapshot visibility tells whether a link was
+ * committed before the view; a timestamp or sequence cannot tell when its transaction committed.
+ * Older runs without a snapshot still conflict on any other unhydrated message. Returns null when
+ * the conversation is gone.
  */
 export const lockWorkflowConversationStatus = async (
   db: SqlClient,
-  params: { mailboxId: string; conversationId: string; expectedRevision: number; triggerMessageId: string | null },
+  params: {
+    mailboxId: string;
+    conversationId: string;
+    expectedRevision: number;
+    triggerMessageId: string | null;
+    viewLinkSnapshot: string | null;
+  },
 ): Promise<{ revision: number | null; workStatus: ConversationCollaboration["workStatus"] } | null> => {
   // Same lock order as updateWorkflowConversationCollaborationInTransaction: mailbox, then conversation.
   const [mailbox] = await db<{ id: string }[]>`
@@ -514,20 +522,28 @@ export const lockWorkflowConversationStatus = async (
   if (revision !== params.expectedRevision + 1 || !params.triggerMessageId) return { revision: null, workStatus: current.work_status };
   // A new statement after the lock: a link that a sync committed while this step waited is visible
   // here, and the lock keeps further links out until this transaction ends.
-  const [links] = await db<{ hydrated_revision: string | number | null; others_hydrated: boolean }[]>`
-    SELECT (
-      SELECT link.hydrated_revision FROM mail.conversation_messages link
-      WHERE link.conversation_id = ${params.conversationId}::uuid AND link.message_id = ${params.triggerMessageId}::uuid
-    ) AS hydrated_revision, NOT EXISTS (
+  const [links] = await db<{ hydrated_revision: string | number | null; others_seen: boolean }[]>`
+    SELECT trigger_link.hydrated_revision, NOT EXISTS (
       SELECT 1 FROM mail.conversation_messages link
       JOIN mail.message_contents message ON message.id = link.message_id
       WHERE link.conversation_id = ${params.conversationId}::uuid
         AND link.message_id <> ${params.triggerMessageId}::uuid
         AND message.hydration_status <> 'complete'
-    ) AS others_hydrated
+        AND NOT COALESCE(
+          ${params.viewLinkSnapshot}::text IS NOT NULL AND (
+            link.linked_xid IS NULL
+            -- The view can see links in its own transaction, which snapshot visibility may omit.
+            OR link.linked_xid = trigger_link.linked_xid
+            OR pg_visible_in_snapshot(link.linked_xid, ${params.viewLinkSnapshot}::pg_snapshot)
+          ), false
+        )
+    ) AS others_seen
+    FROM mail.conversation_messages trigger_link
+    WHERE trigger_link.conversation_id = ${params.conversationId}::uuid
+      AND trigger_link.message_id = ${params.triggerMessageId}::uuid
   `;
   const onlyTriggerHydrated =
-    links?.others_hydrated === true && links.hydrated_revision !== null && Number(links.hydrated_revision) === revision;
+    links?.others_seen === true && links.hydrated_revision !== null && Number(links.hydrated_revision) === revision;
   return { revision: onlyTriggerHydrated ? revision : null, workStatus: current.work_status };
 };
 

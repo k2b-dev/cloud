@@ -33,7 +33,7 @@ describe("Mail workflow event context", () => {
         sourceHash: "source-hash",
         message: { id: "message-uuid", remoteMessageRefId: "remote-message", folderId: "folder-uuid" },
         remoteState: { modseq: "42", flags: ["seen"], keywords: ["review"] },
-        conversation: null,
+        conversation: { id: "conversation-uuid", revision: 3, linkSnapshot: "10:20:11,15" },
         triggerKind: "messageReceived",
       },
       internalDate: "2026-07-26T12:00:00.000Z",

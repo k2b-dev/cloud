@@ -68,6 +68,10 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
   // The conversation revision this message's hydration produced, so a workflow that the message
   // triggered can tell that change apart from others. Moving the message clears it too.
   await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS hydrated_revision bigint`.simple();
+  // The transaction that linked the message to this conversation. Add the default separately so
+  // existing links stay NULL (linked before this column) without a table rewrite.
+  await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS linked_xid xid8`.simple();
+  await tx`ALTER TABLE mail.conversation_messages ALTER COLUMN linked_xid SET DEFAULT pg_current_xact_id()`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
     REFERENCES mail.compose_templates(id) ON DELETE SET NULL`.simple();
   await tx`

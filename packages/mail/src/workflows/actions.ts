@@ -46,6 +46,7 @@ import { mailWorkflowActionFailure } from "../service/workflow-action-errors";
 import { withMailWorkflowCollaborationEvent } from "../service/workflow-collaboration-events";
 import { mailWorkflowDependencyDeadline } from "../service/workflow-dependencies";
 import {
+  mailWorkflowConversationLinkSnapshot,
   mailWorkflowMessagePrecondition,
   mailWorkflowTriggerMessageId,
   projectMailWorkflowMessagePrecondition,
@@ -493,6 +494,7 @@ const conversationMutation = (
                 conversationId,
                 expectedRevision,
                 triggerMessageId,
+                viewLinkSnapshot: mailWorkflowConversationLinkSnapshot(ctx.invocation.context, conversationId),
               })
             : null;
         // Done or Waiting that already holds still covers its triggering message during hydration.
