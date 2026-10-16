@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Workspace-only export | A published package imports code that exists only in the workspace copy of a pinned sibling; workspace links hide the missing export. | Check: the `packed` CI job runs with `--release` on the release pull request and in the merge queue, resolving already published sibling pins from npm. Convention: [refresh the release PR after the last feature PR merges](/en/docs/contributing/release-process#let-release-please-cut-the-release). |
 | Time | A test or a render depends on today's date, the time zone, or randomness, so it passes on one day and fails on another. | Test: the Assistant sidebar test from [#1121](https://github.com/k2b-dev/cloud/pull/1121) freezes its clock. No repository check finds other tests that compare fixed dates with the real clock yet. |
 | Lease starvation under a continuous competing workload | A class of work keeps the lease while competing work retains places and retries without progress. | Test: Mail’s `provider-lease-fairness.integration.test.ts` checks command progress during continuous folder syncs, sync progress under old command backlogs, and a total order with one first waiter ([#1268](https://github.com/k2b-dev/cloud/issues/1268)). |
 | Shared subprocess lost after timeout | Bun kills a shared browser when one test times out, so later tests fail too. | Test: `packages/ui/test/browser.browser.test.ts` runs a child suite with one hung test and checks that three later tests still open pages ([#1254](https://github.com/k2b-dev/cloud/issues/1254)). |
@@ -38,6 +39,13 @@ convention still needs a check or a test.
 | Breakpoint gap | Two neighbouring media queries end at `max-width: 1023px` and start at `min-width: 1024px`. A fractional width between them, such as a zoomed window, matches neither, and the page falls back to its base rules. | Test: `packages/cloud/src/styles/shell-modes.test.ts` pins the shell queries to `min-width` and its negation `not all and (min-width: …)` ([#1255](https://github.com/k2b-dev/cloud/issues/1255)). Range syntax such as `width < 64rem` is no guard: the build lowers it to `max-width: calc(64rem - .001px)`. No check covers other style sheets yet. |
 
 ## Lessons
+
+### Published Cloud imports an export missing from its pinned UI
+
+- **What happened:** Standalone apps using `@k2b/cloud` 0.35.0 from `cloud-v0.42.0` failed typechecking and bundling because `@k2b/ui` 0.25.0 lacked `prefersReducedMotion` ([#1221](https://github.com/k2b-dev/cloud/issues/1221)).
+- **Root cause:** The release PR was not refreshed after #1208 merged, so it left UI unbumped. Cloud imported the new export but pinned the already published UI version. Workspace links and the packed check's unconditional workspace tarball overrides hid the mismatch.
+- **Error class:** Workspace-only export.
+- **Guard:** Check: `packed` runs with `--release` on the release PR and in the merge queue, using npm for already published sibling pins and failing when npm is unreachable. Test: `packed-consumer-pins.test.ts` checks published pins, unpublished release versions, invalid pins, and registry failures. Convention: refresh the release PR after the last feature PR merges and verify its parent against `origin/main` before merging.
 
 ### Folder syncs starve Mail commands on busy mailboxes
 

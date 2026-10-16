@@ -1,17 +1,59 @@
 import { mkdir, mkdtemp, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
+import { z } from "zod";
 import { checkPackedRuntime } from "./fixtures/packed-consumer-infrastructure";
+import { packedSiblings, resolvePackedConsumerPins } from "./fixtures/packed-consumer-pins";
+
+const args = process.argv.slice(2);
+const unknown = args.filter((arg) => arg !== "--help" && arg !== "--release");
+if (unknown.length) throw new Error(`Unknown argument(s): ${unknown.join(", ")}. Run with --help for usage.`);
+if (args.includes("--help")) {
+  console.log(`Usage: bun scripts/check-cloud-packed-consumer.ts [--release] [--help]
+
+Pack @k2b/cloud, @k2b/ui and @k2b/ssr with npm, then install, typecheck,
+build an island page and run it against disposable services outside the workspace.
+Build UI first: bun run --cwd packages/ui build. Requires npm and Docker.
+
+Default: use workspace tarballs for siblings, including unreleased changes.
+--release: use exact sibling pins from npm when already published; otherwise
+use a tarball only when its workspace version matches the pin. Registry failures
+fail the check; release mode never falls back to workspace copies.
+--help: print this usage and exit.`);
+  process.exit(0);
+}
+const mode = args.includes("--release") ? "release" : "workspace";
+const exactVersion = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/);
+const versionManifest = z.object({ version: exactVersion });
+const packOutput = z.array(z.object({ filename: z.string().regex(/^[^/\\]+\.tgz$/) })).length(1);
+const registryMetadata = z.object({ versions: z.record(z.string(), z.object({})) });
+
+const isPublished = async (name: string, version: string): Promise<boolean> => {
+  try {
+    const response = await fetch(`https://registry.npmjs.org/${name.replaceAll("/", "%2f")}`, {
+      headers: { Accept: "application/vnd.npm.install-v1+json" },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (response.status === 404) return false;
+    if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+    const metadata = registryMetadata.parse(await response.json());
+    return Object.hasOwn(metadata.versions, version);
+  } catch (cause) {
+    throw new Error(
+      `The npm registry is unreachable for ${name}@${version}. The release check resolves @k2b pins from npm like an app author and never falls back to workspace copies. Cause: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
+    );
+  }
+};
 
 // No inherited service credentials or repository aliases. Runtime acceptance uses
-// fresh disposable infrastructure and the exact locally packed artifacts.
+// fresh disposable infrastructure and the resolved release artifacts.
 const root = resolve(import.meta.dir, "..");
 const temporaryRoot = await mkdtemp(join(tmpdir(), "cloud-packed-consumer-"));
 const consumer = join(temporaryRoot, "consumer");
 const cloudRoot = join(root, "packages/cloud");
 const uiRoot = join(root, "packages/ui");
 const ssrRoot = join(root, "packages/ssr");
-const cloudManifest = await Bun.file(join(cloudRoot, "package.json")).json();
 const cleanEnv = {
   PATH: process.env.PATH,
   HOME: process.env.HOME,
@@ -26,41 +68,76 @@ const releaseAgePolicy = async (): Promise<string> => {
   if (!policy?.some((line) => line.startsWith("minimumReleaseAge ="))) {
     throw new Error("bunfig.toml no longer sets install.minimumReleaseAge");
   }
+  const index = policy.findIndex((line) => line.startsWith("minimumReleaseAgeExcludes ="));
+  const line = policy[index];
+  if (!line) throw new Error("bunfig.toml no longer sets install.minimumReleaseAgeExcludes");
+  const excludes = z.object({ minimumReleaseAgeExcludes: z.array(z.string()) }).parse(Bun.TOML.parse(line)).minimumReleaseAgeExcludes;
+  // App authors have no repository age policy for newly published @k2b release pins.
+  policy[index] = `minimumReleaseAgeExcludes = ${JSON.stringify([...new Set([...excludes, "@k2b/cloud", ...packedSiblings])])}`;
   return `[install]\n${policy.join("\n")}\n`;
 };
 
-const run = async (label: string, cmd: string[], cwd: string): Promise<void> => {
+const run = async (label: string, cmd: string[], cwd: string): Promise<string> => {
   console.log(label);
   const child = Bun.spawn(cmd, { cwd, env: cleanEnv, stdout: "pipe", stderr: "pipe" });
   const timer = setTimeout(() => child.kill(), 300_000);
   try {
     const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
     if (code !== 0) throw new Error(`${label} failed (${code})\n${stdout}\n${stderr}`);
+    return stdout;
   } finally {
     clearTimeout(timer);
   }
 };
 
 try {
+  const cloudManifest = z
+    .object({
+      dependencies: z.object({ "@k2b/ui": exactVersion, "@k2b/ssr": exactVersion }),
+      peerDependencies: z.record(z.string(), z.string()),
+      devDependencies: z.object({ "@types/bun": z.string(), typescript: z.string() }),
+    })
+    .parse(await Bun.file(join(cloudRoot, "package.json")).json());
+  const uiManifest = versionManifest.parse(await Bun.file(join(uiRoot, "package.json")).json());
+  const ssrManifest = versionManifest.parse(await Bun.file(join(ssrRoot, "package.json")).json());
   await mkdir(join(consumer, "src"), { recursive: true });
-  const cloudArchive = join(temporaryRoot, "cloud.tgz");
-  const uiArchive = join(temporaryRoot, "ui.tgz");
-  const ssrArchive = join(temporaryRoot, "ssr.tgz");
   // The caller builds UI first. Never silently rebuild a shared local dist tree.
   if (!(await Bun.file(join(uiRoot, "dist/.build-complete")).exists())) {
     throw new Error("Build @k2b/ui before running this check: bun run --cwd packages/ui build");
   }
   const uiBuildTime = (await stat(join(uiRoot, "dist/.build-complete"))).mtimeMs;
-  for (const [name, packageRoot, archive] of [
-    ["Cloud", cloudRoot, cloudArchive],
-    ["UI", uiRoot, uiArchive],
-    ["SSR", ssrRoot, ssrArchive],
-  ] as const) {
-    await run(`Pack current ${name}`, [process.execPath, "pm", "pack", "--ignore-scripts", "--quiet", "--filename", archive], packageRoot);
-  }
+  const pack = async (name: string, packageRoot: string): Promise<string> => {
+    const output = await run(
+      `Pack current ${name}`,
+      ["npm", "pack", "--ignore-scripts", "--json", "--pack-destination", temporaryRoot],
+      packageRoot,
+    );
+    const [archive] = packOutput.parse(JSON.parse(output));
+    if (!archive) throw new Error(`npm pack produced no archive for ${name}`);
+    return join(temporaryRoot, archive.filename);
+  };
+  const cloudArchive = await pack("Cloud", cloudRoot);
+  const uiArchive = await pack("UI", uiRoot);
+  const ssrArchive = await pack("SSR", ssrRoot);
   if ((await stat(join(uiRoot, "dist/.build-complete"))).mtimeMs !== uiBuildTime) {
     throw new Error("UI was rebuilt while packing; rerun after the build finishes");
   }
+  const pins = await resolvePackedConsumerPins({
+    pins: cloudManifest.dependencies,
+    workspaceVersions: { "@k2b/ui": uiManifest.version, "@k2b/ssr": ssrManifest.version },
+    archives: { "@k2b/ui": uiArchive, "@k2b/ssr": ssrArchive },
+    mode,
+    isPublished,
+  });
+  for (const name of packedSiblings) {
+    const pin = pins[name];
+    const origin =
+      pin.source === "npm"
+        ? "npm (already published)"
+        : `packed tarball (${mode === "release" ? "published by this release" : "workspace"})`;
+    console.log(`${name}@${pin.pin} from ${origin}`);
+  }
+  const siblingSpecs = { "@k2b/ui": pins["@k2b/ui"].spec, "@k2b/ssr": pins["@k2b/ssr"].spec };
   await Bun.write(
     join(consumer, "package.json"),
     JSON.stringify(
@@ -69,12 +146,11 @@ try {
         private: true,
         type: "module",
         dependencies: {
-          "@k2b/cloud": cloudArchive,
-          "@k2b/ui": uiArchive,
-          "@k2b/ssr": ssrArchive,
           ...cloudManifest.peerDependencies,
+          "@k2b/cloud": cloudArchive,
+          ...siblingSpecs,
         },
-        overrides: { "@k2b/ui": uiArchive, "@k2b/ssr": ssrArchive },
+        overrides: siblingSpecs,
         devDependencies: {
           "@types/bun": cloudManifest.devDependencies["@types/bun"],
           typescript: cloudManifest.devDependencies.typescript,
@@ -147,13 +223,25 @@ export const app = defineApp({
 `,
   );
   await Bun.write(
+    join(consumer, "src/shelf-counter.island.tsx"),
+    `import { Button } from "@k2b/ui";
+import { createSignal } from "solid-js";
+export default function ShelfCounter() {
+  const [count, setCount] = createSignal(0);
+  return <Button onClick={() => setCount(count() + 1)}>Count: {count()}</Button>;
+}
+`,
+  );
+  await Bun.write(
     join(consumer, "src/shelf.page.tsx"),
     `import type { AuthContext } from "@k2b/cloud/server";
 import { PwaLayout } from "@k2b/cloud/ssr";
 import { app } from "./config";
+import ShelfCounter from "./shelf-counter.island.tsx";
 export default app.ssr<AuthContext>((c) => () => (
   <PwaLayout c={c} title="Inventory">
     <p>Shelf A</p>
+    <ShelfCounter />
   </PwaLayout>
 ));
 `,
@@ -172,19 +260,22 @@ const router = new Hono<AuthContext>()
 export default await app.start({ fetch: router.fetch, port: Number(process.env.PORT ?? 3000) });
 `,
   );
-  // A fresh resolve would otherwise pick versions published minutes ago, whose
-  // tarballs the registry may not serve yet. The packed archives are local files
-  // and have no release age.
   await Bun.write(join(consumer, "bunfig.toml"), await releaseAgePolicy());
   await run(
     "Install in fresh external repository",
     [process.execPath, "install", "--ignore-scripts", "--registry=https://registry.npmjs.org"],
     consumer,
   );
-  for (const name of ["cloud", "ui", "ssr"]) {
-    const installed = await realpath(join(consumer, "node_modules/@k2b", name));
-    if (!installed.startsWith(`${await realpath(temporaryRoot)}${sep}`)) {
+  for (const name of ["@k2b/cloud", ...packedSiblings]) {
+    const installed = await realpath(join(consumer, "node_modules", name));
+    const pin = name === "@k2b/ui" || name === "@k2b/ssr" ? pins[name] : undefined;
+    const isolatedRoot = pin?.source === "npm" ? join(consumer, "node_modules") : temporaryRoot;
+    if (!installed.startsWith(`${await realpath(isolatedRoot)}${sep}`)) {
       throw new Error(`${name} resolved outside the isolated consumer: ${installed}`);
+    }
+    if (pin?.source === "npm") {
+      const manifest = versionManifest.parse(await Bun.file(join(installed, "package.json")).json());
+      if (manifest.version !== pin.pin) throw new Error(`${name} installed ${manifest.version}, expected npm pin ${pin.pin}`);
     }
   }
   if (!(await Bun.file(join(consumer, "node_modules/@k2b/ui/dist/types/index.d.ts")).exists())) {
@@ -202,6 +293,12 @@ export default await app.start({ fetch: router.fetch, port: Number(process.env.P
     consumer,
   );
   await run("Build with the installed Cloud production script", [process.execPath, "node_modules/@k2b/cloud/scripts/build.ts"], consumer);
+  // SSR names island entries with the first 12 hex digits of the relative path's MD5.
+  const islandId = new Bun.CryptoHasher("md5").update("src/shelf-counter.island.tsx").digest("hex").slice(0, 12);
+  const islandBundle = Bun.file(join(consumer, "dist/_ssr", `${islandId}.js`));
+  if (!(await islandBundle.exists()) || islandBundle.size === 0) {
+    throw new Error(`Production build did not emit a hydration bundle for shelf-counter.island.tsx: dist/_ssr/${islandId}.js`);
+  }
   if ((await Bun.file(join(consumer, "dist/server.js")).size) === 0) throw new Error("Production server bundle is empty");
   await checkPackedRuntime(root, consumer, cleanEnv);
   // Gateway shares these scripts but provides its plugin without defineApp().

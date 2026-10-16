@@ -546,6 +546,22 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
+The `packed` job packs `@k2b/cloud`, `@k2b/ui`, and `@k2b/ssr` with
+`npm pack`, using the same file list as `npm publish`. It installs them in a
+fresh project outside the workspace, typechecks the public source, builds a
+page with an island using the installed production build script, and starts
+the app against disposable services. Normal pull requests use the workspace
+tarballs. On a release pull request, whose diff changes
+`.release-please-manifest.json`, it runs with `--release`, also in the merge
+queue: each pinned `@k2b/ui` and `@k2b/ssr` version already on npm comes from
+npm; only a version this release publishes comes from its tarball. The check
+fails when npm cannot be reached. Run it locally with Docker and npm available:
+
+```bash
+bun run --cwd packages/ui build
+bun --no-env-file scripts/heavy.ts bun scripts/check-cloud-packed-consumer.ts --release
+```
+
 Every job of the CI and nightly workflows installs dependencies through
 `.github/actions/install`. It restores the Bun install cache that `main.yml`
 writes for the current `bun.lock`. With that cache, `bun ci` needs no
