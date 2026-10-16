@@ -2768,7 +2768,7 @@ const specialistCommands = {
     message: "Inspect and manage individual messages",
     operator: "Inspect and run bounded mailbox operator actions",
     provider: "Discover and manage mail provider connections",
-    reference: "Resolve and manage immutable conversation references",
+    "reference-number": "Resolve and manage immutable conversation reference numbers",
     reminder: "Manage personal conversation reminders",
     "remote-content": "Manage personal remote image preferences",
     repair: "Repair mailbox folder and message hydration state",
@@ -2797,7 +2797,7 @@ const specialistCommands = {
     "identity transport": "Manage custom SMTP transports for identities",
     "mailbox deleted": "Inspect recoverable deleted mailboxes",
     "message keyword": "Add or remove provider keywords on messages",
-    "reference config": "Inspect and manage mailbox reference settings",
+    "reference-number config": "Inspect and manage mailbox reference number settings",
     "automation backfill": "Run and inspect incoming-automation backfills",
     "workflow version": "Create, inspect, and restore workflow versions",
     "admin mailbox access": "Manage direct access to a mailbox",
@@ -6920,7 +6920,7 @@ const specialistCommands = {
         ctx.print(result.disposition === "draft" ? `Restored draft ${result.draftId}.` : `Discarded message ${result.draftId}.`);
       },
     }),
-    command("reference config show", {
+    command("reference-number config show", {
       summary: "Show mailbox reference number settings",
       flags: mailboxFlag,
       run: async ({ ctx, flags }) => {
@@ -6941,7 +6941,7 @@ const specialistCommands = {
         ctx.print(`Revision: ${configuration.revision}`);
       },
     }),
-    command("reference config set", {
+    command("reference-number config set", {
       summary: "Create or update mailbox reference number settings",
       flags: {
         ...mailboxFlag,
@@ -6990,7 +6990,7 @@ const specialistCommands = {
         ctx.print(`Saved reference number settings at revision ${configuration.revision}.`);
       },
     }),
-    command("reference list", {
+    command("reference-number list", {
       summary: "List immutable references for a conversation",
       args: {
         conversationId: arg.required({ description: "Conversation id" }),
@@ -7018,7 +7018,7 @@ const specialistCommands = {
         );
       },
     }),
-    command("reference ensure", {
+    command("reference-number ensure", {
       summary: "Idempotently ensure a conversation reference",
       args: {
         conversationId: arg.required({ description: "Conversation id" }),
@@ -7043,7 +7043,7 @@ const specialistCommands = {
         ctx.print(`${result.created ? "Allocated" : "Found"} ${result.reference.value} (${result.reference.role}).`);
       },
     }),
-    command("reference find", {
+    command("reference-number find", {
       summary: "Resolve an exact conversation reference",
       args: { value: arg.required({ description: "Exact reference value" }) },
       flags: mailboxFlag,

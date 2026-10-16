@@ -217,12 +217,12 @@ Spaces actions use an encrypted, revocable delegation created for the configurin
 A mailbox has one optional reference-number configuration. Set its permanent format before a workflow allocates references:
 
 ```bash
-cld --json mail reference config set \
+cld --json mail reference-number config set \
   --pattern 'SUP-{{ year }}-{{ sequence | pad_start: 6 }}' \
   --enable \
   --include-in-reply-subjects
 
-cld --json mail reference config show
+cld --json mail reference-number config show
 ```
 
 The pattern uses Liquid and must output exactly one identity value: `short_id`, `uuid`, `uuid_v7`, `ulid`, or `sequence`. Date values `year`, `month`, `month_name`, and `day` may appear alongside it. Use `{{ sequence | pad_start: 6 }}` to pad a sequence. The default is `REF-{{ short_id }}`. Changing the pattern affects only future allocations; existing references remain immutable and searchable.
@@ -230,9 +230,9 @@ The pattern uses Liquid and must output exactly one identity value: `short_id`, 
 Allocation is idempotent for each conversation:
 
 ```bash
-cld --json mail reference ensure <conversation-id> --idempotency-key support-import-42
-cld --json mail reference list <conversation-id>
-cld --json mail reference find SUP-2026-000042
+cld --json mail reference-number ensure <conversation-id> --idempotency-key support-import-42
+cld --json mail reference-number list <conversation-id>
+cld --json mail reference-number find SUP-2026-000042
 ```
 
 Use `--disable` to stop new allocations without removing existing values. Use `--exclude-from-reply-subjects` when new human and automatic replies should keep their original subject. A workflow controls when allocation happens; the mailbox configuration controls only the sequence and reply-subject behavior.
@@ -592,6 +592,6 @@ The Mail API manages definitions and activations only. Runtime observability and
 | Automatic replies | `automatic-reply list|create|update` |
 | Sender cleanup | `sender preview`, `sender move` |
 | Incoming automations | `automation catalog|list|get|create|update|delete`, `automation backfill start|status|cancel` |
-| References | `reference config show|set`, `reference list|ensure|find` |
+| References | `reference-number config show|set`, `reference-number list|ensure|find` |
 | Workflow lifecycle | `workflow list|get|validate|create|update|export|activate|deactivate`, `workflow version list|get|create|restore` |
 | Runtime operations | `cld admin workflows health|runs|show|cancel|effects|resolve|events` |

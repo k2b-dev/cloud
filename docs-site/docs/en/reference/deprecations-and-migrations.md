@@ -5,10 +5,44 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-13
+updated: 2026-10-14
 ---
 
 # Deprecations and migrations
+
+## Package plugins ship as verified bundles
+
+Package plugins now use the same verified manifest, bundled module, references,
+and content-addressed store as plugins served by a Cloud application.
+`cld <module> reference [file]` works for both sources. Package modules appear
+with profile `*` in the generated agent skill table.
+
+Packages with the old `cld.apiVersion` and `cld.entry` format are refused.
+Existing `plugins/<id>/` directories are listed as `incompatible` and never
+loaded. There is no compatibility path.
+
+Authors re-pack from their package directory and republish the output:
+
+```sh
+bun run node_modules/@k2b/cloud/scripts/cli-pack.ts src/cli.ts --references references --out dist/plugin
+npm publish dist/plugin
+```
+
+The references directory needs `index.md`. The pack script writes
+`cld.manifest` in the output's `package.json`.
+
+Users install the new package with `cld plugins install <source>`. To remove an
+old installation, run `cld plugins remove <id>`. See
+[Application CLI modules](/en/docs/platform/cli-modules).
+
+## Mail reference number commands moved
+
+`reference` is reserved as the first argument of every `cld` module: it prints
+the module's skill references. Mail's reference number commands therefore
+moved from `cld mail reference …` to `cld mail reference-number config show`,
+`config set`, `list`, `ensure`, and `find`, with unchanged flags and output.
+`defineCliCommands()` now refuses a module that declares a top-level
+`reference` command.
 
 ## @k2b/ui Calendar month reads range
 

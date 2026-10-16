@@ -61,10 +61,14 @@ cld notebooks reference
 ```
 
 Package plugins install for every profile from a path, a `.tgz`, or
-`npm:<package>`. Served plugins live content-addressed in
-`~/.config/cloud/cld/plugins/store/<digest>/`, package plugins in
-`~/.config/cloud/cld/plugins/<id>/`. Both run unsandboxed with your Cloud
-credentials. See
+`npm:<package>`. Authors build them with
+`bun run node_modules/@k2b/cloud/scripts/cli-pack.ts`. Both sources use the same
+verified bundle with skill references and live in
+`~/.config/cloud/cld/plugins/store/<digest>/`. Global package records are in
+`plugins/packages.json`; old-format packages are refused.
+`cld <module> reference [file]` works for every installed module. Package modules
+appear with profile `*` in the skill table, which syncs after install and
+removal. Both run unsandboxed with your Cloud credentials. See
 [Application CLI modules](../../docs-site/docs/en/platform/cli-modules.md) for
 the manifest and the security model.
 
