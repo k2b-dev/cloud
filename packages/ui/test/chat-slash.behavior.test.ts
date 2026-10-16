@@ -276,6 +276,10 @@ const slash = async (options: Partial<ChatComposerProps> = {}) => {
     type,
     key,
     errors,
+    unmount: () => {
+      slashCleanups.splice(slashCleanups.indexOf(dispose), 1);
+      dispose();
+    },
     submitted: () => submitted,
     rows: () => [...dom.root.querySelectorAll<HTMLButtonElement>('[role="option"]')],
     status: () => dom.root.querySelector(".k2b-chat-composer__status")!,
@@ -601,6 +605,38 @@ test("rejection restores token, announces once in the persistent status, and cle
   expect(h.errors).toEqual([]);
   h.type("/failx");
   expect(status.textContent).toBe("");
+});
+
+test("a failure after the composer unmounted reaches onError instead of disappearing", async () => {
+  let reject!: (error: Error) => void;
+  const h = await slash({
+    value: "/fail",
+    commands: [
+      {
+        name: "fail",
+        description: "Fails",
+        action: () =>
+          new Promise((_resolve, fail) => {
+            reject = fail;
+          }),
+      },
+    ],
+  });
+  h.key("Enter");
+  h.unmount();
+  const failure = new Error("Gone");
+  reject(failure);
+  await flush();
+  expect(h.errors).toEqual([failure]);
+});
+
+test("arrow marking does not carry over to another draft with the same slash query", async () => {
+  const h = await slash({ value: "/", commands: [compactCommand, { name: "fork", description: "Fork" }] });
+  h.key("ArrowDown");
+  expect(h.rows()[1]!.getAttribute("aria-selected")).toBe("true");
+  h.setDraftKey("second");
+  h.type("/");
+  expect(h.rows()[0]!.getAttribute("aria-selected")).toBe("true");
 });
 
 test("a failure stays with its draft: switching drafts clears it, a later failure still shows", async () => {

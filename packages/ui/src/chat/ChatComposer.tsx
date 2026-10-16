@@ -334,7 +334,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     });
   });
   const currentCommandQuery = createMemo(() => caretCommandToken()?.query);
+  // Arrow marking belongs to one token in one draft; another draft or `/` starts at the top row again.
   createEffect(() => {
+    props.draftKey;
+    caretCommandStart();
     currentCommandQuery();
     setCommandMoved(false);
   });
@@ -725,7 +728,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     } catch (error) {
       submitRequested = false;
       restore();
-      showCommandStatus({ tone: "error", text: error instanceof Error && error.message ? error.message : chatMessages().commandFailed });
+      // An unmounted composer has no status line left; the app's error channel keeps the failure from going silent.
+      if (disposed) props.onError?.(error);
+      else
+        showCommandStatus({ tone: "error", text: error instanceof Error && error.message ? error.message : chatMessages().commandFailed });
     } finally {
       if (commandStatus()?.tone === "busy") showCommandStatus();
       setExecuting(false);

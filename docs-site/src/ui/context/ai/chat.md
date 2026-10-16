@@ -171,7 +171,8 @@ and the list stays closed until the next edit.
 The persistent status line shows `busyLabel` while working, `{ done }` for
 about three seconds, and a failure message until the next edit, the next
 command, or a switch to another draft.
-Command failures are reported once there, without calling `onError`.
+Command failures are reported once there, without calling `onError`; only a
+failure that arrives after the composer unmounted goes to `onError`.
 The visible status hides while suggestions are open and takes no layout space.
 
 Only plain Enter or Tab chooses a command. Shift+Enter breaks the line,
