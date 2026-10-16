@@ -145,7 +145,7 @@ convention still needs a check or a test.
 - **What happened:** Matching incoming automations could fail when one marked a message read and another moved it ([#1036](https://github.com/k2b-dev/cloud/issues/1036)).
 - **Root cause:** Flag and keyword steps did not check another run's move, and provider preconditions projected only the current run's writes.
 - **Error class:** Ordering and concurrency.
-- **Guard:** `incoming-automations.integration.test.ts` covers both read/move orders, already moved messages, queued reads that find the message gone before and after sync, and sibling keywords. Only writes that other incoming automations confirmed after the run captured the message extend expected state; external drift still fails. `workflow-message-preconditions.test.ts` checks transition order and modseq retention without writes.
+- **Guard:** `incoming-automations.integration.test.ts` covers both read/move orders, already moved messages, queued reads that find the message gone, and sibling keywords. Another client's move that sync has not seen yet still fails the read. Only writes that other incoming automations confirmed after the run captured the message extend expected state; external drift still fails. `workflow-message-preconditions.test.ts` checks transition order and modseq retention without writes.
 
 ## Add a lesson
 

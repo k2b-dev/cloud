@@ -33,7 +33,6 @@ import { ensureConversationReferenceInTransaction } from "../service/conversatio
 import { updateWorkflowConversationSummaryInTransaction } from "../service/conversation-summary";
 import { createWorkflowDraftInTransaction, createWorkflowReviewReplyDraftInTransaction } from "../service/drafts";
 import {
-  incomingAutomationCommandFoundMessageGone,
   incomingAutomationMessageLeft,
   resolveIncomingAutomationMessageStateTurn,
   resolveIncomingAutomationPlacementTurn,
@@ -372,11 +371,12 @@ const messageAction = (
           output: { action: kind, applied: false, skipped: reason, ...(commandId ? { commandId } : {}) },
         });
         if (issued) {
-          // The command found the message gone: another automation or client moved it after this step checked.
+          // The command found the message gone: another automation moved it after this step checked.
           if (
             MESSAGE_STATE_ACTIONS.has(kind) &&
             issued.state === "failed" &&
-            (await incomingAutomationCommandFoundMessageGone(turnParams, issued.last_error_code))
+            (issued.last_error_code === "REMOTE_MESSAGE_STALE" || issued.last_error_code === "REMOTE_MESSAGE_MISSING") &&
+            (await incomingAutomationMessageLeft(turnParams))
           ) {
             return skipped("message_moved", issued.id);
           }

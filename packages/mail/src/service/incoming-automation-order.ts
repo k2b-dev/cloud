@@ -94,19 +94,6 @@ export const resolveIncomingAutomationMessageStateTurn = async (
 export const incomingAutomationMessageLeft = async (params: Omit<IncomingAutomationMessageTurnParams, "mailboxId">): Promise<boolean> =>
   Boolean(await incomingAutomationOfRun(params.db, params.runId)) && !(await loadIncomingAutomationMessagePlacement(params));
 
-/**
- * Whether an incoming automation's failed flag or keyword command found its message gone from the frozen folder.
- * A missing UID is the provider's proof, also before sync retires the local copy. A stale reference can also mean
- * the folder was reset with the message still in it, so it counts only once the placement is gone.
- */
-export const incomingAutomationCommandFoundMessageGone = async (
-  params: Omit<IncomingAutomationMessageTurnParams, "mailboxId">,
-  errorCode: string | null,
-): Promise<boolean> => {
-  if (errorCode === "REMOTE_MESSAGE_MISSING") return Boolean(await incomingAutomationOfRun(params.db, params.runId));
-  return errorCode === "REMOTE_MESSAGE_STALE" && incomingAutomationMessageLeft(params);
-};
-
 export const resolveIncomingAutomationPlacementTurn = async (
   params: IncomingAutomationMessageTurnParams,
 ): Promise<IncomingAutomationPlacementTurn> => {

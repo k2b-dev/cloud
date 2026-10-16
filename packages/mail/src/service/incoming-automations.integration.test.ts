@@ -26,7 +26,6 @@ import type { ConnectorEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors/imap-smtp";
 import { updateConversationCollaboration } from "./conversation-assignments";
 import {
-  incomingAutomationCommandFoundMessageGone,
   incomingAutomationMessageLeft,
   resolveIncomingAutomationMessageStateTurn,
   resolveIncomingAutomationPlacementTurn,
@@ -1376,21 +1375,13 @@ suite("incoming automations", () => {
           await runWaiting(newerRunId);
           const [readCommand] = await commandsFor(newerRunId);
           if (!readCommand) throw new Error("Missing read command");
-          // Another client moved the message; the provider no longer has the UID before sync catches up.
+          // Another client moved the message and sync has not retired its placement yet. A missing UID alone
+          // is no proof that the message left: an exhausted provider throttle also reads as missing.
           moved = true;
           expect(await executeMutationCommand(readCommand.id)).toBe("failed");
           expect((await commandsFor(newerRunId))[0]?.last_error_code).toBe("REMOTE_MESSAGE_MISSING");
-          const turn = { db: sql, folderId: inboxFolderId, messageId: "unused" };
-          expect(await incomingAutomationCommandFoundMessageGone({ ...turn, runId: crypto.randomUUID() }, "REMOTE_MESSAGE_MISSING")).toBe(
-            false,
-          );
-          await runSucceeded(newerRunId);
-          expect(await outputFor(newerRunId, "addFlag")).toEqual({
-            action: "addFlag",
-            applied: false,
-            skipped: "message_moved",
-            commandId: readCommand.id,
-          });
+          expect(await runMailWorkflow(newerRunId)).toMatchObject({ state: "finished", result: { state: "failed" } });
+          expect(await outputFor(newerRunId, "addFlag")).toBeUndefined();
           expect(change).not.toHaveBeenCalled();
           expect(move).not.toHaveBeenCalled();
         } else if (scenario === "external move") {
@@ -1505,7 +1496,7 @@ suite("incoming automations", () => {
             scenario === "read first" ? ["change_message_state"] : [],
           );
         }
-        if (scenario !== "external drift") {
+        if (scenario !== "external drift" && scenario !== "external move before sync") {
           const [newerRun] = await sql<{ state: string }[]>`SELECT state FROM workflows.run WHERE id = ${newerRunId}::uuid`;
           expect(newerRun?.state).toBe("succeeded");
         }
