@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { LocaleProvider } from "@k2b/ui";
+import { LocaleProvider, type NavigationItem } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { selectHtml } from "../../../../../../../tests/fixtures/select-html";
@@ -36,6 +36,53 @@ describe("Notebook workspace container head", () => {
     workspaceCursor: null,
     dateConfig: { locale: "en", timeZone: "UTC" },
     sidebarFilter: {},
+  });
+
+  const renderSidebar = (value = ctx(), current?: "attachments", locale = "en") =>
+    renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale,
+        get children() {
+          return createComponent(NotebookSidebar, { ctx: value, current });
+        },
+      }),
+    );
+
+  test.each([
+    ["en", "Attachments", "Settings"],
+    ["de", "Anhänge", "Einstellungen"],
+  ])("the footer has two labelled sidebar rows (%s)", async (locale, attachments, settings) => {
+    for (const presentationMode of [undefined, "write", "readonly"] as const) {
+      const html = renderSidebar({ ...ctx(), presentationMode }, undefined, locale);
+      const rows = await selectHtml(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
+      expect(rows.map((row) => row.text.trim())).toEqual([attachments, settings]);
+      const links = await selectHtml(html, ".notebook-sidebar-foot a");
+      expect(links).toHaveLength(1);
+      expect(links[0]?.attributes.href).toBe(`/app/notebooks/Book01/attachments${presentationMode ? `?mode=${presentationMode}` : ""}`);
+      const buttons = await selectHtml(html, ".notebook-sidebar-foot button");
+      expect(buttons).toHaveLength(1);
+      expect(buttons[0]?.text.trim()).toBe(settings);
+      expect(await selectHtml(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item-icon i")).toHaveLength(2);
+    }
+  });
+
+  test.each([undefined, "attachments"] as const)(
+    "only the attachments page marks its desktop and mobile destination current (%s)",
+    async (current) => {
+      const html = renderSidebar(ctx(), current);
+      const active = await selectHtml(html, '.notebook-sidebar-foot [aria-current="page"]');
+      expect(active.map((row) => row.text.trim())).toEqual(current ? ["Attachments"] : []);
+      const snapshot = (await selectHtml(html, "script[data-cloud-workspace-navigation]"))[0]!.text;
+      const navigation: { items: NavigationItem[] } = JSON.parse(snapshot);
+      expect(navigation.items.find((item) => item.id === "attachments")?.active).toBe(current === "attachments");
+      expect(navigation.items.find((item) => item.id === "settings")?.active).toBeUndefined();
+    },
+  );
+
+  test.each([0, 7])("the attachments row shows positive counts only, as metadata (%s)", async (attachmentCount) => {
+    const html = renderSidebar({ ...ctx(), attachmentCount });
+    const meta = await selectHtml(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item-meta");
+    expect(meta.map((item) => item.text.trim())).toEqual(attachmentCount > 0 ? [String(attachmentCount)] : []);
   });
 
   test.each([
