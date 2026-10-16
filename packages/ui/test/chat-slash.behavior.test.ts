@@ -449,6 +449,20 @@ test("pending searches still allow local keyboard choices and clicks on retained
   }
 });
 
+test("a static command that the search also returns stays choosable while the next search loads", async () => {
+  const chosen: string[] = [];
+  const shared: ChatCommand = { name: "run", description: "Local and remote", action: () => void chosen.push("run") };
+  const search = deferredSearch();
+  const h = await slash({ ...search, value: "/r", commands: [shared] });
+  await Bun.sleep(140);
+  search.requests[0]!.resolve([shared]);
+  await flush();
+  h.type("/ru");
+  h.key("Enter");
+  await flush();
+  expect(chosen).toEqual(["run"]);
+});
+
 test("retains rows and safe ids through debounce, preserves arrow marking on results, resets on typing", async () => {
   const search = deferredSearch();
   const h = await slash({ ...search, value: "/q" });

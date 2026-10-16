@@ -313,17 +313,20 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const token = caretCommandToken();
     return dismissed() || composing() || token?.start === closedAt() ? null : token;
   });
-  const commandMatches = createMemo(() => {
+  // Matches by label, name or keyword come first, so the top row (what Enter picks) is the command the person named.
+  const localCommandMatches = createMemo(() => {
     const token = commandQuery();
     if (!token) return [];
-    const seen = new Set<string>();
-    // Matches by label, name or keyword come first, so the top row (what Enter picks) is the command the person named.
-    const local = (props.commands ?? [])
+    return (props.commands ?? [])
       .map((command) => ({ command, rank: chatCommandRank(command, token.query) }))
       .filter(({ rank }) => rank >= 0)
       .sort((a, b) => a.rank - b.rank)
       .map(({ command }) => command);
-    return [...local, ...searchResults()].filter((command) => {
+  });
+  const commandMatches = createMemo(() => {
+    if (!commandQuery()) return [];
+    const seen = new Set<string>();
+    return [...localCommandMatches(), ...searchResults()].filter((command) => {
       const key = chatCommandKey(command);
       if (seen.has(key)) return false;
       seen.add(key);
@@ -824,7 +827,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       if (plain && (event.key === "Tab" || event.key === "Enter") && matches.length > 0) {
         event.preventDefault();
         const command = selectedCommand();
-        if (command && searchResults().includes(command) && searchResultsQuery() !== commandQuery()?.query) return;
+        // A server row answering an earlier query may no longer match; wait for fresh results. Local rows match now.
+        const staleServerRow = command && !localCommandMatches().includes(command) && searchResultsQuery() !== commandQuery()?.query;
+        if (staleServerRow) return;
         if (command) void executeCommand(command);
         return;
       }
