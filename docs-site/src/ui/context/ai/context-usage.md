@@ -53,7 +53,7 @@ The trigger has a complete accessible label. The popup repeats values as text an
 
 ## Runtime
 
-The trigger renders on the server. Opening and positioning the popup requires hydration. The package never queries a provider or infers a model limit.
+The trigger renders on the server. Opening and positioning the popup requires browser code. The package never queries a provider or infers a model limit.
 
 ## Example
 

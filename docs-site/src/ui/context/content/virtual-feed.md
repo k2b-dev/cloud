@@ -221,7 +221,7 @@ feed are dropped.
 ## Runtime
 
 The server renders the empty scroll area with its label; rows appear after
-hydration, because they need the browser to measure them. Pass `empty` for
+mount, because they need the browser to measure them. Pass `empty` for
 content shown while `items` is empty.
 
 ## Example

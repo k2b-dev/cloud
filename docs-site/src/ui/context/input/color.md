@@ -40,7 +40,7 @@ The transparent action exposes a pressed state and named switch-back action. Do 
 
 ## Runtime
 
-The swatch and current value render in server HTML. Opening the native picker, changing the value, and toggling transparency require hydrated Solid client code. The picker UI varies by browser and operating system.
+The swatch and current value render in server HTML. Opening the native picker, changing the value, and toggling transparency require browser code. The picker UI varies by browser and operating system.
 
 ## Example
 

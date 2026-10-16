@@ -87,7 +87,7 @@ The preview iframe has the accessible name **Template preview**. Keep source edi
 
 ## Runtime
 
-Editing, completion, sample values, pane resizing, and reactive preview updates require hydration.
+Editing, completion, sample values, pane resizing, and reactive preview updates require browser code.
 
 The host may produce a local preview when its renderer is browser-safe. PDF
 generation and final delivery normally remain server operations.

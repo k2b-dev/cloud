@@ -37,7 +37,7 @@ Source remains selectable text. Titles and copy controls have text labels. Highl
 
 ## Runtime
 
-Highlighting renders on the server. Copy requires hydration and the Clipboard API.
+Highlighting renders on the server. Copy requires browser code and the Clipboard API.
 
 ## Example
 

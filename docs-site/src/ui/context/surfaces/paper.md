@@ -53,7 +53,7 @@ navigation and a shared button component for actions.
 ## Runtime
 
 `Paper` renders on the server and requires no browser state. An anchor works
-without hydration. Its appearance comes from `@k2b/ui/styles.css` below the
+without browser code. Its appearance comes from `@k2b/ui/styles.css` below the
 nearest `.k2b-ui` scope.
 
 `LinkCard`, `DataPanel`, `DataTable.Panel`, paper placeholders, statistics,

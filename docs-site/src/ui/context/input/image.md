@@ -55,7 +55,7 @@ File type and size restrictions still need validation in the owning upload path.
 
 ## Runtime
 
-The browser file picker and image transformation require hydrated Solid client code.
+The browser file picker and image transformation require browser code.
 
 ## Example
 

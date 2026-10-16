@@ -46,6 +46,8 @@ automatic clear after selection.
 
 Loading keeps the previous results visible. A failed lookup replaces the list with its error and a retry action.
 
+Unlike `disabled`, `readOnly` keeps focus while blocking new picks, for example while the control’s own pick is being saved.
+
 ## API reference
 
 See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
@@ -54,6 +56,7 @@ See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldPr
 type ComboboxOption = { id: string; label: string; description?: string; icon?: string };
 
 type ComboboxProps = FieldProps & {
+  readOnly?: boolean;
   query?: MaybeAccessor<string>; onQueryChange?: (query: string) => void; placeholder?: string;
   fetchData: (query: string, signal: AbortSignal) => Promise<ComboboxOption[]>;
   onSelect: (option: ComboboxOption) => void; debounceMs?: number;
@@ -76,7 +79,7 @@ a persistent label.
 
 ## Runtime
 
-`Combobox` requires hydrated Solid client code. It uses browser focus, the Popover API, measured viewport placement that matches the field width, request cancellation, and keyboard events.
+`Combobox` requires browser code. It uses browser focus, the Popover API, measured viewport placement that matches the field width, request cancellation, and keyboard events.
 
 ## Example
 

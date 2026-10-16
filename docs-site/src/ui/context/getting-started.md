@@ -105,7 +105,7 @@ Most themes only need the font and accent stack. Override semantic tokens such a
 
 ## Solid and SSR
 
-Import components directly from `@k2b/ui`. Package conditions select the SSR build on the server and the interactive build in the browser. State remains controlled by your application and continues seamlessly during hydration:
+Import components directly from `@k2b/ui`. Package conditions select the SSR build on the server and the interactive build in the browser. State remains controlled by your application:
 
 ```tsx
 import { createSignal } from "solid-js";
@@ -122,6 +122,8 @@ export function ProjectSections() {
   );
 }
 ```
+
+Components that change state require browser code: an island, a client component, or a page that a hydrating framework hydrates. A component mounts when it first renders in the browser; Solid's `onMount` runs right after that render. Render the same markup from the same initial values on the server and in the browser. Depending on the host, the browser hydrates the server HTML or replaces it with a new render, so do not rely on state that exists only in the server HTML, such as text typed before mount.
 
 ## Set the render locale
 

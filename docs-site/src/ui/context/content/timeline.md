@@ -30,8 +30,9 @@ add it with `customViews` and render it as the calendar's body.
 
 Without `now`, the timeline reads the clock and moves the now line every 30
 seconds. Pass `now` for a fixed time, for example in tests. The server and
-the browser read their own clocks, so a page rendered just before midnight
-can hydrate on the next day. Where that matters, pass the request's time as
+the browser read their own clocks, so a page rendered on the server just before
+midnight can show the next day once it renders in the browser. Where that
+matters, pass the request's time as
 `now` and update it in the browser if the now line should move.
 
 ### Items
@@ -78,7 +79,8 @@ the item has one. An item that cannot be opened but whose checkbox the reader
 may change gets a checkbox row instead.
 
 Positions come only from the times and the items, never from measurement, so
-nothing moves when the page hydrates, fonts load, or the now line advances.
+nothing moves when the timeline mounts in the browser, fonts load, or the now
+line advances.
 The now line moves with a transform.
 
 ### Axis

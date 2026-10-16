@@ -68,7 +68,7 @@ Edit and delete buttons name the affected tag. Forms use the common field contra
 
 ## Runtime
 
-Interactive editing and selection require hydration. The initial list and tags render on the server.
+Interactive editing and selection require browser code. The initial list and tags render on the server.
 
 ## Example
 

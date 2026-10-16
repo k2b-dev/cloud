@@ -50,7 +50,7 @@ Arrow keys move and select with wrapping. Home and End select the first and last
 
 ## Runtime
 
-Selection and focus movement require hydrated Solid client code.
+Selection and focus movement require browser code.
 
 ## Example
 

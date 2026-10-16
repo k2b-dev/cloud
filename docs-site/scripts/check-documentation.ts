@@ -1,7 +1,14 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { catalogContextFiles, standaloneUiContextFiles } from "../src/ui/context";
-import { conventionCatalogErrors, headingContractErrors, metadataErrors, uiHeadingIds, uiLinkError } from "./documentation-rules";
+import {
+  conventionCatalogErrors,
+  conventionCoverageErrors,
+  headingContractErrors,
+  metadataErrors,
+  uiHeadingIds,
+  uiLinkError,
+} from "./documentation-rules";
 import { withoutFencedCode } from "./markdown";
 
 type Page = {
@@ -232,14 +239,11 @@ export const checkDocumentation = async ({
     }
   }
 
-  errors.push(
-    ...conventionCatalogErrors(
-      [...pages.values()]
-        .filter((page) => page.route.startsWith("/en/docs/conventions"))
-        // Pad the frontmatter back in so catalog findings report file line numbers.
-        .map((page) => ({ file: page.relativePath, prose: "\n".repeat(page.frontmatterLines) + page.prose })),
-    ),
-  );
+  // Pad the frontmatter back in so catalog findings report file line numbers.
+  const conventionPages = [...pages.values()]
+    .filter((page) => page.route === "/en/docs/conventions" || page.route.startsWith("/en/docs/conventions/"))
+    .map((page) => ({ file: page.relativePath, route: page.route, prose: "\n".repeat(page.frontmatterLines) + page.prose }));
+  errors.push(...conventionCatalogErrors(conventionPages), ...conventionCoverageErrors(conventionPages));
 
   return { errors, checked: selectedPages.length, indexed: pages.size };
 };

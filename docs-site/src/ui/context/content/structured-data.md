@@ -47,7 +47,7 @@ Give the preview a nearby heading, or use `title`, so the value has context. A h
 
 ## Runtime
 
-The selected initial mode and its content render on the server. Switching modes and copying raw JSON require hydration.
+The selected initial mode and its content render on the server. Switching modes and copying raw JSON require browser code.
 
 The component does not fetch, redact, or persist data. Its `data` prop stays
 strict; runtime validation is available separately through

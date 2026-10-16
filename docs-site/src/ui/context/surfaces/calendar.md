@@ -96,7 +96,7 @@ stops beside the hour gutter, not under it.
 
 Limit the switcher with `views`. `getDateHref`, `getViewHref`, and
 `getEventHref` keep navigation functional in the server response.
-`onNavigate` progressively enhances those links after hydration.
+`onNavigate` progressively enhances those links after mount.
 
 ### Add a view
 
@@ -424,7 +424,7 @@ drawer.
 
 ## Interaction
 
-The following callbacks enable matching hydrated interactions:
+The following callbacks enable matching interactions in browser code:
 
 - `onEventDrop` moves an event;
 - `onEventResize` changes a timed event duration;
@@ -584,7 +584,7 @@ Defaults: `view="month"`, week starts Monday unless overridden, `visibleStartHou
 
 ## Accessibility
 
-Canonical links remain available before hydration. Date cells, navigation,
+Canonical links remain available before mount. Date cells, navigation,
 events, and interaction handles have text or accessible labels. Color is
 supplementary to event title, time, and metadata.
 A timed event's accessible name combines its title and time range in the
@@ -614,10 +614,10 @@ checkbox checks it off.
 
 All views, labels, dates, and links render on the server. Drag, resize,
 pointer-slot selection, day selection, the month menu and popovers, measured
-month lanes, prefetch, and callback navigation require hydration. With
+month lanes, prefetch, and callback navigation require browser code. With
 `dayHours` the server renders the shown day or week; the earlier loaded days,
 the first scroll position, the stops, the sideways strip, free-time actions,
-and dragging in require hydration.
+and dragging in require browser code.
 
 ## Example
 

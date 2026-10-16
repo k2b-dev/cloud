@@ -115,7 +115,7 @@ Action labels must say what happens next, such as **Retry** or **Open settings**
 
 ## Runtime
 
-Notice content renders on the server. Actions require hydration only when implemented as client callbacks.
+Notice content renders on the server. Actions require browser code only when implemented as client callbacks.
 
 ## Example
 

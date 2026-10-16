@@ -136,7 +136,7 @@ type GestureMenuProps = {
 
 ## Runtime
 
-Gestures need hydrated browser code; the server renders the element and its
+Gestures require browser code; the server renders the element and its
 menu semantics. The sheet opens through the shared `dialogCore`, so only one
 modal stack exists.
 

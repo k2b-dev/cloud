@@ -39,7 +39,7 @@ own scrolling. Set `scrollFade={false}` to opt out. A split `Main` wrapper
 never masks its panes; each scrolling pane owns its hint. Regions with
 `scroll={false}` do not add a hint around their child scrollport. The workspace
 controller also initializes marked server-rendered scrollports and cleans them
-up during navigation, sharing observers with hydrated components.
+up during navigation, sharing observers with components with browser code.
 
 Set `scroll={false}` when a bounded child such as `ScrollArea`, `DataTable`, a reader, editor, or an explicit `overflow-auto` region owns scrolling. Do the same on `MainPane` when its child owns the pane's scrollport. Keep exactly one vertical scroll owner for each region; do not place another scrollport inside a still-scrolling `Main` or `MainPane`.
 
@@ -181,8 +181,9 @@ A tree folder that only expands, a row that opens its preview, a section
 toggle, and an item's own actions keep it open. The head, the overlay, and the
 scrim draw no border lines. A sidebar collapsed to its rail on a wide screen
 opens expanded. The shared controller binds the button, so a server-rendered
-workspace gets the overlay without hydrating; the button does nothing before a
-controller runs. In a nested workspace, its own button opens its own overlay.
+workspace gets the overlay without browser code of its own; the button does
+nothing before a controller runs. In a nested workspace, its own button opens
+its own overlay.
 
 ### Head
 
@@ -562,7 +563,7 @@ communicated without horizontal nesting.
 Expansion can be uncontrolled with `defaultExpandedIds`, or controlled with
 `expandedIds` and `onExpandedIdsChange`. Persistence remains application-owned:
 if an application stores expansion in a cookie or another store, pass the same
-initial ids during SSR to avoid a hydration layout shift.
+initial ids during SSR to avoid a layout shift when the component mounts.
 
 Branches normally keep their leading icon and receive a trailing disclosure
 chevron. For folder navigation, set both `icon` and `expandedIcon`; the leading
@@ -852,7 +853,7 @@ replace them with application-specific handles.
 ## Activate resizing
 
 The complete workspace and its separator metadata render on the server. The
-component installs a controller scoped to its root after hydration. Pointer and
+component installs a controller scoped to its root after mount. Pointer and
 keyboard resizing therefore work by default without an additional island or
 installer call.
 
@@ -934,7 +935,7 @@ reimplementing those lower-level rules.
 ## Runtime
 
 Rendering and state normalization are SSR-safe. `AppWorkspace` installs and
-disposes its controller after hydration.
+disposes its controller after mount.
 
 The package exports parse, normalize, serialize, and style helpers for layout state. The application decides where that state is stored and can apply the same state during SSR to avoid geometry jumps.
 

@@ -38,7 +38,7 @@ const items: TabBarItem[] = [
   them to one short word.
 
 The bar is a set of links, not a tab widget: each item loads a page. The server
-marks the current item, so the bar never changes after hydration.
+marks the current item, so the bar stays the same when the component mounts.
 
 A tap switches tabs at the first touch, as on a native tab bar: the item takes
 the current item's colour, and the shell shows the item's page frame with its
@@ -59,7 +59,7 @@ decorative; the visible label is the accessible name. Each item is at least
 ## Runtime
 
 `TabBar` is plain server-rendered markup with native links and needs no
-hydration. Each link carries its page's title as `data-k2b-title`. The page
+browser code. Each link carries its page's title as `data-k2b-title`. The page
 frame and the loading state need a mounted `MobileShell` or
 `observeMobileShell()`; without either, the links still work, with the
 pressed colour only.

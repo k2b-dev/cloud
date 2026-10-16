@@ -464,6 +464,11 @@ public recipients and `["read", "admin"]` for users and groups. A single allowed
 level renders as a fixed badge. Enforce the same restriction in the resource's
 service; the editor does not authorize requests.
 
+A pick appears at once as a pending row. The picker keeps focus but accepts no
+new pick until the server answers, so `grantAccess`, `updateAccess`, and
+`revokeAccess` never run concurrently from one editor. A failed grant removes
+its row and shows the error, also when the dialog closed meanwhile.
+
 ### Offer a level on part of the resource
 
 An `allowedLevels` entry may carry a `scope`: the level then applies to a

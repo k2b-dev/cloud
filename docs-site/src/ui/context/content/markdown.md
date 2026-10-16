@@ -207,10 +207,10 @@ Preview and edit modes need visible names when both are present.
 
 ## Runtime
 
-`MarkdownView` is server-renderable and needs no hydration for ordinary Markdown.
-Optional client enhancements belong to the hydrated host.
+`MarkdownView` is server-renderable and needs no browser code for ordinary Markdown.
+Optional client enhancements belong to the host's browser code.
 
-`MarkdownEditor` and a reactive live preview require hydration. The initial preview can still be rendered on the server from the initial Markdown value.
+`MarkdownEditor` and a reactive live preview require browser code. The initial preview can still be rendered on the server from the initial Markdown value.
 
 ## Example
 
