@@ -118,6 +118,10 @@ test("Notebooks server requests require the guard, including S3 SDK I/O", async 
     "Bun.s3.write(key, body);",
     'import { s3 } from "bun";',
     'import { S3Client } from "bun";\nnew S3Client(options).file(key);',
+    "await Bun.write(Bun.file(`s3://${bucket}/${key}`), body);",
+    "await Bun.write(Bun.file(path, { endpoint, accessKeyId, secretAccessKey }), body);",
+    "const { S3Client: Client } = Bun;\nnew Client(options).write(key, body);",
+    'import * as bun from "bun";\nnew bun.S3Client(options).write(key, body);',
   ]) {
     expect((await lines(source, file)).length).toBeGreaterThan(0);
   }

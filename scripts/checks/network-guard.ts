@@ -92,12 +92,13 @@ export const rule: Rule = {
       }
       // SDK clients resolve independently. In these roots allow S3 only for local
       // presigning beside a pinned transport, with no SDK I/O methods in the file.
+      // Any S3Client reference counts (aliased, destructured, namespace import), and so
+      // do Bun's s3 client, s3:// files, and Bun.file with options.
       if (isPersonChosenServer(path)) {
-        const s3 = /\bBun\.s3\b|\bBun\.S3Client\b|\bnew\s+S3Client\b|\bimport\s*\{[^}]*\b(?:s3|S3Client)\b[^}]*\}\s*from\s*["']bun["']/g;
+        const s3 = /\bS3Client\b|\bBun\.s3\b|\bimport\s*\{[^}]*\bs3\b[^}]*\}\s*from\s*["']bun["']|s3:\/\/|\bBun\.file\s*\([^()]*,/g;
         const sdkIO = /\.(?:write|file|delete|exists|list|stat|size|unlink)\s*\(/;
         for (const match of source.matchAll(s3)) {
-          if (!/\bBun\.s3\b|\bs3\b/.test(match[0]) && source.match(pinnedCall) && /\.presign\s*\(/.test(source) && !sdkIO.test(source))
-            continue;
+          if (match[0] === "S3Client" && source.match(pinnedCall) && /\.presign\s*\(/.test(source) && !sdkIO.test(source)) continue;
           findings.push({
             file,
             line: lineOf(source, match.index),
