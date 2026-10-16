@@ -116,7 +116,7 @@ Name a label-free `RangePicker` with `ariaLabel`. Keep diagnostic titles specifi
 
 ## Runtime
 
-All five components render on the server. `RangePicker` works without hydration. Interactive search or filter controls passed into `DataPanel` belong to the consuming island.
+All five components render on the server. `RangePicker` works without browser code. Interactive search or filter controls passed into `DataPanel` belong to the consuming island.
 
 ## Example
 

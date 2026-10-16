@@ -91,7 +91,7 @@ heading around it.
 ## Runtime
 
 Both components render on the server. An anchor action works without
-hydration; an island owns any callback-based action.
+browser code; an island owns any callback-based action.
 
 ## Example
 

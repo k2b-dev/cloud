@@ -103,7 +103,7 @@ nothing change only paint. On a coarse pointer, cells and controls are
 
 ## Runtime
 
-Search, keyboard use, and the popover need hydrated Solid client code; on the
+Search, keyboard use, and the popover require browser code; on the
 server the picker renders its frame with the loading state.
 
 The emoji names come from [Emojibase](https://emojibase.dev) (MIT), up to

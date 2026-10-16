@@ -90,7 +90,7 @@ The options are menu items: on touch devices each option is at least 44 px (2.75
 
 ## Runtime
 
-`FilterChip` is interactive and must run in hydrated Solid client code. The parent page can remain server rendered.
+`FilterChip` is interactive and requires browser code. The parent page can remain server rendered.
 
 ## Example
 

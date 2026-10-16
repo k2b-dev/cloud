@@ -116,7 +116,7 @@ The input exposes spinbutton semantics and finite minimum, maximum, and current 
 
 ## Runtime
 
-The field renders in server HTML. Input filtering, raw-text preservation, steppers, clearing, and callbacks require hydrated Solid client code.
+The field renders in server HTML. Input filtering, raw-text preservation, steppers, clearing, and callbacks require browser code.
 
 ## Example
 

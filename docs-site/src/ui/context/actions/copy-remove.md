@@ -41,7 +41,7 @@ If removal is destructive or difficult to reverse, confirm it before calling the
 
 ## Runtime
 
-Both components require hydrated client code. `CopyButton` uses the browser clipboard helper and transient state; `RemoveButton` delegates to its click handler.
+Both components require browser code. `CopyButton` uses the browser clipboard helper and transient state; `RemoveButton` delegates to its click handler.
 
 ## Example
 

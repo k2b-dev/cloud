@@ -96,7 +96,7 @@ message", and localize it like every other application string.
 
 ## Runtime
 
-Drag tracking needs hydrated Solid client code. One tracker per document serves
+Drag tracking requires browser code. One tracker per document serves
 every target. Server-rendered markup contains only the closed overlay.
 
 ## API reference

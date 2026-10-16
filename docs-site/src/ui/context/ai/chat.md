@@ -81,7 +81,7 @@ scrollbar treatment.
 
 Pass `timeLabel` for visible localized timestamps and `createdAt` for the
 machine-readable `dateTime` value. `createdAt` alone intentionally renders no
-runtime-locale text, which keeps SSR and hydration stable.
+runtime-locale text, which keeps the server HTML and the browser render identical.
 
 ## API reference
 
@@ -246,7 +246,7 @@ User metadata appears on hover or keyboard focus and remains visible on devices 
 
 ## Runtime
 
-Initial messages render on the server. Editing, commands, scrolling, file selection, menus, model changes, and submission require hydration.
+Initial messages render on the server. Editing, commands, scrolling, file selection, menus, model changes, and submission require browser code.
 
 Raw files selected, dropped, or pasted are handed to
 `fileSelection.onSelect`. With `fileSelection.choose`, **Attach files** calls it
@@ -381,7 +381,7 @@ untrimmed so UTF-16 range offsets remain valid. A modified reference becomes
 plain text; undo/redo restores both text and reference identity.
 
 Pass the task list through `accessory`. An empty conditional accessory reserves no
-row or spacing, including after hydration. Suggestions use that same location and
+row or spacing, including after mount. Suggestions use that same location and
 restore the task list without changing its open state. Without an accessory, they
 float above the composer, which does not move when they open or close. Set `draftKey` when
 switching conversations so undo cannot bring content from another chat back.

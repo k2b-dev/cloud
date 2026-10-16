@@ -140,7 +140,7 @@ valid submitted value. On touch devices each suggestion is at least 44 px
 
 The committed value and display render in server HTML. Searching, inline
 completion, cancellation, popover navigation, and snapshot restoration require
-hydrated Solid client code. The component calls `search` only after interaction;
+browser code. The component calls `search` only after interaction;
 it does not fetch during server rendering.
 
 ## Example

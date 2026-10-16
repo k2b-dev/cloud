@@ -76,7 +76,7 @@ a persistent label.
 
 ## Runtime
 
-`Combobox` requires hydrated Solid client code. It uses browser focus, the Popover API, measured viewport placement that matches the field width, request cancellation, and keyboard events.
+`Combobox` requires browser code. It uses browser focus, the Popover API, measured viewport placement that matches the field width, request cancellation, and keyboard events.
 
 ## Example
 

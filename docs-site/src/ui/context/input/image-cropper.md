@@ -82,7 +82,7 @@ Give the generated preview a useful `alt` value in the owning UI.
 
 ## Runtime
 
-Image loading, pointer interaction, canvas export, and object URLs require hydrated browser code. Revoke and replacement of temporary object URLs is handled by the component.
+Image loading, pointer interaction, canvas export, and object URLs require browser code. Revoke and replacement of temporary object URLs is handled by the component.
 
 ## Example
 

@@ -61,7 +61,7 @@ The card remains one native link with a visible focus indicator. A `ResourceCard
 
 ## Runtime
 
-All three components render on the server. Link navigation works without hydration; enhanced navigation needs hydration and keeps native modified-click behavior; a `ResourceCard` with `onOpen` and the avatar image-failure fallback need hydration.
+All three components render on the server. Link navigation works without browser code; enhanced navigation requires browser code and keeps native modified-click behavior; a `ResourceCard` with `onOpen` and the avatar image-failure fallback require browser code.
 
 ## Example
 

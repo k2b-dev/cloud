@@ -272,7 +272,7 @@ label rather than relying on color.
 ## Runtime
 
 The active panel renders on the server. Tab selection, close controls, form
-callbacks, and saving require hydrated Solid code.
+callbacks, and saving require browser code.
 
 ## Example
 

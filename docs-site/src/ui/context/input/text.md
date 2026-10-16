@@ -119,7 +119,7 @@ Descriptions and errors are connected to the input. The error message is announc
 
 ## Runtime
 
-The field renders in server HTML. Editing, clearing, password visibility, markdown behavior, and callbacks require hydrated Solid client code.
+The field renders in server HTML. Editing, clearing, password visibility, markdown behavior, and callbacks require browser code.
 
 ## Example
 

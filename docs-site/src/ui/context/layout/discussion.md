@@ -100,4 +100,4 @@ The root is a labelled `section`, the entries are an ordered list, and the compo
 
 ## Runtime
 
-The root, list, and existing items are server-renderable. Composer state and automatic history loading activate after hydration. Applications should seed the first authorized page during SSR and use an owner-local query for subsequent pages.
+The root, list, and existing items are server-renderable. Composer state and automatic history loading activate after mount. Applications should seed the first authorized page during SSR and use an owner-local query for subsequent pages.

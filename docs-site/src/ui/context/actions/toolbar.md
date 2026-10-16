@@ -32,7 +32,7 @@ Set `aria-pressed="true"` or `"false"` on toggle buttons. Pressed buttons use th
 
 ## Runtime
 
-The layout renders on the server without roving `tabindex` attributes. Keyboard navigation and child action handlers require hydration.
+The layout renders on the server without roving `tabindex` attributes. Keyboard navigation and child action handlers require browser code.
 
 ## Example
 

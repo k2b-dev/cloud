@@ -96,7 +96,7 @@ compact layouts and phones. Mark only the exact page, never its ancestor.
 The host's document title and Alt+Up shortcut remain available.
 
 Once the host runs `followPageTrail()`, a
-server-rendered title of the host's trail that never hydrates follows
+server-rendered title of the host's trail that has no browser code follows
 `setPageTrail()`: a workspace head and a page's own header title alike. The
 live title takes the same place, element, class, and subtitle, and the
 head's hidden heading follows. When a way-up link of the server title has
@@ -105,7 +105,8 @@ focus, the matching link of the live title takes it over.
 ## Collapse paths outside components
 
 A `PageTitle` measures its own path. A host whose page titles are rendered on
-the server and never hydrate runs `installPageTitleController(document)` once.
+the server and have no browser code runs `installPageTitleController(document)`
+once.
 A controller owns the titles whose nearest controller is its own: a title that
 mounts later uses the document's, and one that mounted first keeps its own.
 It fits a path again only when the path or its size changes, so a busy page
@@ -124,7 +125,7 @@ costs no extra layout. Both return a disposer.
 ## Runtime
 
 `PageTitle` renders on the server, and its links work without JavaScript.
-Collapsing a path that does not fit needs a hydrated `PageTitle` or
+Collapsing a path that does not fit requires a `PageTitle` with browser code or
 `installPageTitleController()`. The phone arrow and the row above the title
 switch with CSS at 48 rem, so a page arrives in its final form. A trail
 published with `PageTrailProvider` travels as JSON in a

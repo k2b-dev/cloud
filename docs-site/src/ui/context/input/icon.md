@@ -81,7 +81,7 @@ needs its own accessible name.
 ## Runtime
 
 The picker uses the interactive `Select` component and local fuzzy search, so
-it must run in hydrated Solid client code. It performs no network request.
+it requires browser code. It performs no network request.
 
 ## Example
 

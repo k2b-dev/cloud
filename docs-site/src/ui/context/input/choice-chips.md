@@ -40,7 +40,7 @@ The row is a radio group named by `label`, or by `aria-label` without a visible 
 
 ## Runtime
 
-Selection and focus movement require hydrated Solid client code. Without it the chips render with their checked state.
+Selection and focus movement require browser code. Without it the chips render with their checked state.
 
 ## Example
 

@@ -98,7 +98,7 @@ its presentation contract.
 ## Runtime
 
 Widgets render complete server HTML and make no network requests. Native links
-work without hydration. Client-side navigation enhancement remains the host's
+work without browser code. Client-side navigation enhancement remains the host's
 responsibility.
 
 ## Example

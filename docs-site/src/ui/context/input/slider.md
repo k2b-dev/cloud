@@ -36,7 +36,7 @@ Browser keyboard controls remain available because the component uses `<input ty
 
 ## Runtime
 
-Value updates and double-click reset require hydrated Solid client code.
+Value updates and double-click reset require browser code.
 
 ## Example
 

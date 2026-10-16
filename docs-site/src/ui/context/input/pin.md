@@ -41,7 +41,7 @@ Do not use the separated visual fields as a security boundary. Validate the comp
 
 ## Runtime
 
-Focus movement and paste handling require hydrated Solid client code.
+Focus movement and paste handling require browser code.
 
 ## Example
 

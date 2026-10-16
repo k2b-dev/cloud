@@ -200,7 +200,7 @@ Do not make an entire row interactive when it contains unrelated controls. Give 
 
 ## Runtime
 
-Rows, headers, sort links, selection, empty state, and footer render on the server. Row callbacks, column hover, and infinite loading require hydration.
+Rows, headers, sort links, selection, empty state, and footer render on the server. Row callbacks, column hover, and infinite loading require browser code.
 
 Prefer normal links for navigation. Use callbacks only when the interaction cannot be represented by a URL.
 
@@ -210,7 +210,7 @@ Prefer normal links for navigation. Use callbacks only when the interaction cann
 contains `currentPage`, `totalPages`, `baseUrl`, and optional `onNavigate`.
 The component appends each page number to `baseUrl` and renders native previous,
 next, and bounded page links. Invalid page values are clamped to the available
-range, and the control reacts when the total changes after hydration.
+range, and the control reacts when the total changes after mount.
 
 ```tsx
 <Pagination

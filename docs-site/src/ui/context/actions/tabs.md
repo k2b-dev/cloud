@@ -56,11 +56,11 @@ Defaults: `orientation="horizontal"`, `variant="line"`. Supply `options` or `Tab
 
 ## Accessibility
 
-Tabs link triggers and panels with ARIA ids. Arrow keys move by orientation; Home and End select the edges. Selection and roving focus require hydration.
+Tabs link triggers and panels with ARIA ids. Arrow keys move by orientation; Home and End select the edges. Selection and roving focus require browser code.
 
 ## Runtime
 
-Tabs render complete server HTML. Selection and roving focus require hydration.
+Tabs render complete server HTML. Selection and roving focus require browser code.
 
 ## Workspace tabs
 
