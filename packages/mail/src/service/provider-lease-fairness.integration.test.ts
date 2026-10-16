@@ -6,6 +6,7 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, type RemoteFolder, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
+import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { rediscoverProviderBinding } from "./bindings";
 import { sha256Json } from "./canonical";
@@ -18,6 +19,7 @@ import {
 } from "./command-runtime";
 import { createActorCommand, createMailCommand } from "./commands";
 import { type ConnectorEnvelope, imapSmtpConnector, type RemoteMessageState } from "./connectors";
+import { keepConversation } from "./conversation-keeps";
 import { createDraft } from "./drafts";
 import { createMailbox, updateMailbox } from "./mailboxes";
 import { runMaintenanceJob, startMaintenanceRuntime, stopMaintenanceRuntime, submitDueMaintenanceCommands } from "./maintenance-runtime";
@@ -607,6 +609,41 @@ suite("mail provider lease fairness", () => {
     return async () => {
       await sql.begin(async (tx) => {
         await tx.unsafe(`DROP TRIGGER ${name} ON mail.commands`);
+        await tx.unsafe(`DROP FUNCTION mail.${name}()`);
+      });
+    };
+  };
+
+  /** Delay only statements that changed matching mailbox rows, including zero-row UPDATEs safely. */
+  const slowStatements = async (
+    mailbox: Mailbox,
+    table: "commands" | "message_placements",
+    seconds: number,
+    condition: string,
+  ): Promise<() => Promise<void>> => {
+    const name = `test_slow_statement_${suffix}_${++slowCommandTrigger}`;
+    const key = table === "commands" ? "id" : "remote_message_ref_id";
+    const mailboxCondition =
+      table === "commands"
+        ? `new_row.mailbox_id = '${mailbox.mailboxId}'::uuid`
+        : `EXISTS (SELECT 1 FROM mail.message_contents content WHERE content.id = new_row.message_id AND content.mailbox_id = '${mailbox.mailboxId}'::uuid)`;
+    await sql.begin(async (tx) => {
+      await tx.unsafe(`CREATE FUNCTION mail.${name}() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM old_rows old_row JOIN new_rows new_row USING (${key})
+            WHERE ${mailboxCondition} AND (${condition})) THEN
+            PERFORM pg_sleep(${seconds});
+          END IF;
+          RETURN NULL;
+        END;
+        $$`);
+      await tx.unsafe(`CREATE TRIGGER ${name} AFTER UPDATE ON mail.${table}
+        REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT
+        EXECUTE FUNCTION mail.${name}()`);
+    });
+    return async () => {
+      await sql.begin(async (tx) => {
+        await tx.unsafe(`DROP TRIGGER ${name} ON mail.${table}`);
         await tx.unsafe(`DROP FUNCTION mail.${name}()`);
       });
     };
@@ -1204,6 +1241,164 @@ suite("mail provider lease fairness", () => {
     expect(await placedIn(mailbox, ARCHIVE, messageIds)).toBe(150);
     expect(await placedIn(mailbox, INBOX, messageIds)).toBe(0);
   }, 120_000);
+
+  test("a folder sync waits for at most one move set's two seconds and a few slow statements while each marker and settle statement is slow", async () => {
+    const mailbox = await connect("slow-statements");
+    const messageIds = await deliverAndSync(mailbox, 150, "slow-statements");
+    const removeCommands = await slowStatements(
+      mailbox,
+      "commands",
+      1,
+      "old_row.provider_effect_attempt IS DISTINCT FROM new_row.provider_effect_attempt OR (old_row.state = 'executing' AND new_row.state = 'confirmed')",
+    );
+    let removePlacements: (() => Promise<void>) | undefined;
+    let moves: string[] = [];
+    let sync: Promise<number> | undefined;
+    try {
+      removePlacements = await slowStatements(
+        mailbox,
+        "message_placements",
+        1,
+        "old_row.deleted_at IS NULL AND new_row.deleted_at IS NOT NULL",
+      );
+      moves = await queueMoves(mailbox, messageIds, "slow-statements", { startTogether: true });
+      await waitFor(async () => ((await commandStates(moves)).executing ?? 0) >= 2, "the statement-slow move set to start");
+      const [newMail] = deliver(mailbox, 1, "slow-statements-new");
+      const timing: { firstLeaseTurnMs?: number } = {};
+      // Three slow statements: effect marker, source placement deletion, confirmation; K=4 adds one second of slack.
+      const longestWaitMs = MOVE_SET_ADMISSION_MS * 5 + 3_000 + 4 * 1_000;
+      sync = runFolderSyncJob(mailbox.folderId(INBOX), { timing });
+      // Bound failure too: remove triggers before waiting for the old per-command implementation to drain.
+      await waitFor(async () => timing.firstLeaseTurnMs !== undefined, "the sync's turn after a statement-slow set", longestWaitMs);
+      await sync;
+      expect(timing.firstLeaseTurnMs ?? Number.POSITIVE_INFINITY).toBeLessThan(longestWaitMs);
+      expect(await imported(mailbox, newMail!)).toBe(true);
+    } finally {
+      await removeCommands();
+      if (removePlacements) await removePlacements();
+      await sync;
+    }
+    await waitFor(async () => (await pending(moves)) === 0, "all statement-slow moves to finish", 90_000);
+    expect(await confirmed(moves)).toBe(150);
+    const activity = await sql<{ command_id: string; events: number }[]>`
+      SELECT command_id, count(*)::int AS events FROM mail.activity_events
+      WHERE command_id IN ${sql(moves)} AND action = 'command.execute'
+      GROUP BY command_id ORDER BY command_id
+    `;
+    expect(activity).toEqual(moves.toSorted().map((command_id) => ({ command_id, events: 1 })));
+    const sets = moveSets.filter((entry) => entry.label === "slow-statements").map((entry) => entry.uids);
+    expect(sets.every((count) => count <= 50)).toBe(true);
+    expect(sets.reduce((sum, count) => sum + count, 0)).toBe(150);
+    const queued = await sql<{ id: string }[]>`SELECT id FROM mail.commands WHERE id IN ${sql(moves)} ORDER BY queue_position`;
+    const finished = await sql<
+      { id: string }[]
+    >`SELECT id FROM mail.commands WHERE id IN ${sql(moves)} ORDER BY finished_at, queue_position`;
+    expect(finished).toEqual(queued);
+    expect(await placedIn(mailbox, ARCHIVE, messageIds)).toBe(150);
+    expect(await placedIn(mailbox, INBOX, messageIds)).toBe(0);
+  }, 120_000);
+
+  test("a move set member whose access is revoked after admission fails before the provider while its siblings confirm", async () => {
+    const mailbox = await connect("set-revoked");
+    const messageIds = await deliverAndSync(mailbox, 3, "set-revoked");
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name, admin)
+      VALUES (${`set-revoked-${suffix}`}, 'local', 'user', 'Revoked set member', false) RETURNING id`;
+    if (!user || context.actor.kind !== "user") throw new Error("Missing revoked member user");
+    const memberContext: MailRequestContext = {
+      ...context,
+      actor: { ...context.actor, user: { ...context.actor.user, id: user.id } },
+      accessSubject: { type: "user", userId: user.id },
+    };
+    const grant = await grantMailboxAccess({
+      context,
+      mailboxId: mailbox.mailboxId,
+      principal: { type: "user", userId: user.id },
+      permission: "write",
+    });
+    if (!grant.ok) throw new Error(grant.error.message);
+    const [message] = await sql<{ id: string }[]>`SELECT id FROM mail.message_contents
+      WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND message_id = ${messageIds[0]!}`;
+    const revoked = await createActorCommand({
+      context: memberContext,
+      mailboxId: mailbox.mailboxId,
+      enqueue: false,
+      input: {
+        kind: "move",
+        messageId: message!.id,
+        sourceFolderId: mailbox.folderId(INBOX),
+        destinationFolderId: mailbox.folderId(ARCHIVE),
+        idempotencyKey: `set-revoked-${suffix}`,
+      },
+    });
+    if (!revoked.ok) throw new Error(revoked.error.message);
+    afterStatus = async (account, path) => {
+      if (account !== mailbox.account || path !== ARCHIVE) return;
+      afterStatus = null;
+      await sql`UPDATE auth.users SET account_expires = now() - interval '1 minute' WHERE id = ${user.id}::uuid`;
+    };
+    try {
+      const siblings = await queueMoves(mailbox, messageIds.slice(1), "set-revoked-siblings", { startTogether: true });
+      await waitFor(async () => (await pending([revoked.data.id, ...siblings])) === 0, "the revoked set member and siblings");
+      const [row] =
+        await sql`SELECT state, last_error_code, provider_effect_started_at FROM mail.commands WHERE id = ${revoked.data.id}::uuid`;
+      expect(row).toMatchObject({ state: "failed", last_error_code: "ACCESS_REVOKED", provider_effect_started_at: null });
+      expect(await confirmed(siblings)).toBe(2);
+      expect(moveSets.filter((entry) => entry.label === "set-revoked").map((entry) => entry.uids)).toEqual([2]);
+      expect(await placedIn(mailbox, INBOX, [messageIds[0]!])).toBe(1);
+      expect(await placedIn(mailbox, ARCHIVE, messageIds.slice(1))).toBe(2);
+      expect([...folderOf(mailbox.account, INBOX).entries.values()].map((message) => message.messageId)).toEqual([messageIds[0]!]);
+    } finally {
+      afterStatus = null;
+      await sql`DELETE FROM mail.mailbox_access WHERE access_id = ${grant.data.id}::uuid`;
+      await sql`DELETE FROM auth.access WHERE id = ${grant.data.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user.id}::uuid`;
+    }
+  }, 60_000);
+
+  test.each([true, false])(
+    "a kept move set preserves one destination placement per message with COPYUID=%s",
+    async (uidplus) => {
+      const label = `set-kept-${uidplus}`;
+      const mailbox = await connect(label, { uidplus });
+      // IMAP UIDs are unsigned 32-bit values, so the set projection must also handle values above INT_MAX.
+      folderOf(mailbox.account, ARCHIVE).nextUid = 4_000_000_000;
+      const messageIds = await deliverAndSync(mailbox, 3, label);
+      const messages = await sql<{ id: string }[]>`SELECT id FROM mail.message_contents
+      WHERE mailbox_id = ${mailbox.mailboxId}::uuid AND message_id IN ${sql(messageIds)}`;
+      for (const message of messages) {
+        const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations (short_id, mailbox_id, subject, latest_message_at)
+        VALUES (${newShortId()}, ${mailbox.mailboxId}::uuid, 'Kept move set', '2026-10-16T00:00:00Z') RETURNING id`;
+        await sql`INSERT INTO mail.conversation_messages (conversation_id, message_id, position)
+        VALUES (${conversation!.id}::uuid, ${message.id}::uuid, 0)`;
+        expect((await keepConversation({ context, mailboxId: mailbox.mailboxId, conversationId: conversation!.id })).ok).toBe(true);
+      }
+      const moves = await queueMoves(mailbox, messageIds, label, { startTogether: true });
+      await waitFor(async () => (await pending(moves)) === 0, "the kept set to finish");
+      expect(await confirmed(moves)).toBe(3);
+      expect(moveSets.filter((entry) => entry.label === label).map((entry) => entry.uids)).toEqual([3]);
+      const placements = () => sql<{ message_id: string; folder_id: string; stale: boolean }[]>`
+      SELECT placement.message_id, placement.folder_id, ref.stale_at IS NOT NULL AS stale
+      FROM mail.message_placements placement JOIN mail.remote_message_refs ref ON ref.id = placement.remote_message_ref_id
+      WHERE placement.message_id IN ${sql(messages.map((message) => message.id))} AND placement.deleted_at IS NULL
+      ORDER BY placement.message_id`;
+      // As for a lone kept move: COPYUID projects the new ref; otherwise the stale kept copy shows in Archive.
+      expect(await placements()).toEqual(
+        messages
+          .map((message) => ({ message_id: message.id, folder_id: mailbox.folderId(ARCHIVE), stale: !uidplus }))
+          .toSorted((a, b) => a.message_id.localeCompare(b.message_id)),
+      );
+      if (!uidplus) {
+        await runFolderSyncJob(mailbox.folderId(ARCHIVE));
+        expect(await placements()).toEqual(
+          messages
+            .map((message) => ({ message_id: message.id, folder_id: mailbox.folderId(ARCHIVE), stale: false }))
+            .toSorted((a, b) => a.message_id.localeCompare(b.message_id)),
+        );
+      }
+      expect(await placedIn(mailbox, INBOX, messageIds)).toBe(0);
+    },
+    60_000,
+  );
 
   test("a move a set leaves out stays queued as it was and runs with the next set", async () => {
     const mailbox = await connect("left-out");

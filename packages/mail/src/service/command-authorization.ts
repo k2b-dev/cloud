@@ -188,11 +188,11 @@ const loadMailboxGrant = async (command: StoredCommandAuthorization, db: SqlClie
   return grant?.permission ?? null;
 };
 
-export const commandStillAuthorized = async (
+const commandPrincipalAuthorization = async (
   command: StoredCommandAuthorization,
   permission: "write" | "admin",
   db: SqlClient = sql,
-): Promise<boolean> => {
+): Promise<boolean | MailboxAccess> => {
   if (command.access_subject_kind === "system") {
     if (command.actor_kind === "system") return true;
     if (command.actor_kind !== "workflow" || !command.actor_id) return false;
@@ -223,7 +223,6 @@ export const commandStillAuthorized = async (
     !command.access_subject_id ||
     !command.kind ||
     !conversationCommandKinds.has(command.kind) ||
-    !command.target ||
     (command.actor_kind !== "user" && command.actor_kind !== "service_account")
   )
     return false;
@@ -236,7 +235,51 @@ export const commandStillAuthorized = async (
       WHERE assigned.mailbox_id = ${command.mailbox_id}::uuid
         AND a.permission IN ('write', 'admin')
         AND ${mailboxAccessPrincipalCondition(subject)}
-    ) AND ${commandTargetVisibleTo({ scope: "assigned", permission: "write", userId: command.access_subject_id }, sql`${command.kind}`, sql`${typeof command.target === "string" ? JSON.parse(command.target) : command.target}::jsonb`, command.mailbox_id, sql`${command.id}::uuid`)} AS authorized
+    ) AS authorized
   `;
-  return grant?.authorized === true;
+  return grant?.authorized === true ? { scope: "assigned", permission: "write", userId: command.access_subject_id } : false;
 };
+
+/** Share principal checks; only assigned access depends on each command's current target. */
+export const commandsStillAuthorized = async (
+  commands: StoredCommandAuthorization[],
+  permission: "write" | "admin",
+  db: SqlClient = sql,
+): Promise<Set<string>> => {
+  const principals = new Map<string, boolean | MailboxAccess>();
+  const authorized = new Set<string>();
+  for (const command of commands) {
+    const key = JSON.stringify([
+      command.mailbox_id,
+      command.kind,
+      command.actor_kind,
+      command.actor_id,
+      command.initiator_actor_kind,
+      command.initiator_actor_id,
+      command.access_subject_kind,
+      command.access_subject_id,
+      command.credential_id,
+      command.credential_scopes,
+      command.credential_expires_at,
+    ]);
+    let access = principals.get(key);
+    if (access === undefined) {
+      access = await commandPrincipalAuthorization(command, permission, db);
+      principals.set(key, access);
+    }
+    if (access === true) authorized.add(command.id);
+    else if (access && command.target) {
+      const [target] = await db<{ authorized: boolean }[]>`
+        SELECT ${commandTargetVisibleTo(access, sql`${command.kind}`, sql`${typeof command.target === "string" ? JSON.parse(command.target) : command.target}::jsonb`, command.mailbox_id, sql`${command.id}::uuid`)} AS authorized
+      `;
+      if (target?.authorized === true) authorized.add(command.id);
+    }
+  }
+  return authorized;
+};
+
+export const commandStillAuthorized = async (
+  command: StoredCommandAuthorization,
+  permission: "write" | "admin",
+  db: SqlClient = sql,
+): Promise<boolean> => (await commandsStillAuthorized([command], permission, db)).has(command.id);

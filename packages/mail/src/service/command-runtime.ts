@@ -9,11 +9,17 @@ import { z } from "zod";
 import type { CommandState, MailCommand, RemoteMessagePrecondition } from "../contracts";
 import { remoteMessagePreconditionSchema } from "../contracts";
 import { rediscoverProviderBinding } from "./bindings";
-import { commandStillAuthorized } from "./command-authorization";
+import { commandsStillAuthorized, commandStillAuthorized } from "./command-authorization";
 import { resolveUndoRequests } from "./command-undo";
 import { imapSmtpConnector, type RemoteMessageSet, type RemoteMessageState, type RemoteMutationTarget } from "./connectors";
 import type { SmtpConnectionConfig } from "./connectors/contract";
-import { checkCommandKeepProtection, keepLastKeptPlacements, retireKeptCopyPlacements } from "./conversation-keep-rules";
+import {
+  checkCommandKeepProtection,
+  checkMoveSetKeepProtection,
+  keepError,
+  keepLastKeptPlacements,
+  retireKeptCopyPlacements,
+} from "./conversation-keep-rules";
 import { isMailReceivedSinceSend, refreshConversationTimeline } from "./conversation-timeline";
 import { deriveConversationWorkState } from "./conversation-work-state";
 import { isTransientDatabaseError } from "./database-errors";
@@ -278,6 +284,13 @@ type CommandStateTarget = {
   transport_metadata: JsonRecord | string;
 };
 
+/** Shared activity shape for single outcomes and set confirmation. The input relation is `command`. */
+const commandStateEvent = (state: CommandState, code: string | null) => sql`
+  command.mailbox_id, command.id, command.actor_kind, command.actor_id, 'command.execute',
+  ${state === "confirmed" || state === "reconciled" ? "confirmed" : state === "ambiguous" ? "requested" : "failed"},
+  'command', command.id, ${{ state, code }}::jsonb
+`;
+
 export const recordCommandState = async (
   tx: typeof sql,
   command: CommandStateTarget,
@@ -292,17 +305,9 @@ export const recordCommandState = async (
     INSERT INTO mail.activity_events (
       mailbox_id, command_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata
     )
-    VALUES (
-      ${command.mailbox_id}::uuid,
-      ${command.id}::uuid,
-      ${command.actor_kind},
-      ${command.actor_id}::uuid,
-      'command.execute',
-      ${state === "confirmed" || state === "reconciled" ? "confirmed" : state === "ambiguous" ? "requested" : "failed"},
-      'command',
-      ${command.id}::uuid,
-      ${{ state, code }}::jsonb
-    )
+    SELECT ${commandStateEvent(state, code)}
+    FROM (SELECT ${command.mailbox_id}::uuid AS mailbox_id, ${command.id}::uuid AS id,
+      ${command.actor_kind}::text AS actor_kind, ${command.actor_id}::uuid AS actor_id) command
   `;
 };
 
@@ -540,7 +545,7 @@ const updateMutationProjection = async (params: {
               deleted_at = NULL,
               updated_at = now()
           `;
-          await retireKeptCopyPlacements(tx, params.source.message_content_id, remoteRef.id);
+          await retireKeptCopyPlacements(tx, [{ messageId: params.source.message_content_id, remoteRefId: remoteRef.id }]);
           destinationProjected = true;
         }
       }
@@ -641,6 +646,132 @@ const noLeaseAssertion: LeaseAssertion = async () => undefined;
 const providerEffectPermission = (kind: DbCommandExecution["kind"]): "write" | "admin" =>
   ["create_folder", "rename_folder", "delete_folder", "set_folder_subscription"].includes(kind) ? "admin" : "write";
 
+/** Mailbox and workflow run locks must already be held before locking commands. */
+const lockProviderEffectCommands = async (tx: SqlClient, candidates: DbCommandExecution[]): Promise<Set<string>> => {
+  // A command without a pinned secret revision matches no binding, as `= NULL` matched none before.
+  const commands = candidates.filter((command) => Number.isInteger(command.selected_secret_revision));
+  if (!commands.length) return new Set();
+  const rows = await tx<{ id: string }[]>`
+      SELECT command.id
+      FROM mail.commands command
+      JOIN mail.provider_bindings binding ON binding.id = command.selected_binding_id
+      JOIN mail.remote_resources resource ON resource.id = binding.remote_resource_id
+      JOIN mail.provider_connections connection ON connection.id = binding.connection_id
+      JOIN mail.mailboxes mailbox ON mailbox.id = command.mailbox_id
+      JOIN unnest(
+        ${toPgUuidArray(commands.map((command) => command.id))}::uuid[],
+        ${toPgIntArray(commands.map((command) => command.attempt))}::int[],
+        ${toPgIntArray(commands.map((command) => command.selected_secret_revision))}::int[]
+      ) AS fence(id, attempt, secret_revision) ON fence.id = command.id
+      WHERE command.state = 'executing'
+        AND command.attempt = fence.attempt
+        AND command.selected_secret_revision = fence.secret_revision
+        AND binding.state IN ('active', 'degraded')
+        AND binding.verified_scope_fingerprint = resource.scope_fingerprint
+        AND binding.verified_secret_revision = command.selected_secret_revision
+        AND connection.secret_revision = command.selected_secret_revision
+        AND connection.status IN ('active', 'degraded')
+        AND connection.encrypted_secret IS NOT NULL
+        AND resource.status IN ('active', 'degraded')
+        AND mailbox.sync_enabled = true
+        AND mailbox.health NOT IN ('auth_required', 'connection_required', 'paused')
+        AND mailbox.deleted_at IS NULL
+      ORDER BY command.id
+      FOR UPDATE OF command
+    `;
+  return new Set(rows.map((row) => row.id));
+};
+
+const effectLeaseLost = () => commandError("Mail command lease was lost before the provider effect", "COMMAND_JOB_LEASE_LOST");
+
+/** Marks a move set in one transaction; command failures leave the other members eligible. */
+const beginMoveSetEffects = async (
+  commands: DbCommandExecution[],
+): Promise<{
+  started: DbCommandExecution[];
+  failures: { command: DbCommandExecution; error: unknown }[];
+}> => {
+  if (!commands.length) return { started: [], failures: [] };
+  try {
+    return await sql.begin(async (tx) => {
+      const failures: { command: DbCommandExecution; error: unknown }[] = [];
+      const reject = (command: DbCommandExecution, error: unknown) => {
+        failures.push({ command, error });
+      };
+      const [mailbox] = await tx<{ id: string }[]>`
+        SELECT id FROM mail.mailboxes WHERE id = ${commands[0]!.mailbox_id}::uuid AND deleted_at IS NULL FOR UPDATE
+      `;
+      if (!mailbox)
+        return {
+          started: [],
+          failures: commands.map((command) => ({
+            command,
+            error: commandError("Mailbox access was revoked before the provider effect", "ACCESS_REVOKED"),
+          })),
+        };
+      const unwanted = new Set<string>();
+      for (const command of commands
+        .filter((command) => command.actor_kind === "workflow")
+        .toSorted((a, b) => (a.correlation_id ?? "").localeCompare(b.correlation_id ?? "") || a.id.localeCompare(b.id))) {
+        if (!(await workflowCommandStillWanted(tx, command))) {
+          unwanted.add(command.id);
+          reject(
+            command,
+            commandError(
+              "The workflow run was canceled, ended, or moved past this command before the provider effect",
+              "WORKFLOW_CANCELED",
+            ),
+          );
+        }
+      }
+      let eligible = commands.filter((command) => !unwanted.has(command.id));
+      if (!eligible.length) return { started: [], failures };
+      const locked = await lockProviderEffectCommands(tx, eligible);
+      eligible = eligible.filter((command) => {
+        if (locked.has(command.id)) return true;
+        reject(command, effectLeaseLost());
+        return false;
+      });
+      const authorized = await commandsStillAuthorized(eligible, "write", tx);
+      eligible = eligible.filter((command) => {
+        if (authorized.has(command.id)) return true;
+        reject(command, commandError("Mailbox write access was revoked before the provider effect", "ACCESS_REVOKED"));
+        return false;
+      });
+      if (!eligible.length) return { started: [], failures };
+      const blocked = await checkMoveSetKeepProtection(
+        tx,
+        sourceTargetSchema.parse(parseJsonRecord(eligible[0]!.target)).destinationFolderId ?? null,
+        eligible.map((command) => sourceTargetSchema.parse(parseJsonRecord(command.target)).remoteMessageRefId),
+      );
+      eligible = eligible.filter((command) => {
+        if (!blocked.has(sourceTargetSchema.parse(parseJsonRecord(command.target)).remoteMessageRefId)) return true;
+        const error = keepError("CONVERSATION_KEPT");
+        reject(command, Object.assign(new Error(error.message), error));
+        return false;
+      });
+      if (!eligible.length) return { started: [], failures };
+      const updated = await tx<{ id: string }[]>`
+        UPDATE mail.commands command
+        SET provider_effect_started_at = COALESCE(command.provider_effect_started_at, now()), provider_effect_attempt = fence.attempt
+        FROM unnest(${toPgUuidArray(eligible.map((command) => command.id))}::uuid[],
+          ${toPgIntArray(eligible.map((command) => command.attempt))}::int[]) AS fence(id, attempt)
+        WHERE command.id = fence.id AND command.attempt = fence.attempt AND command.state = 'executing'
+        RETURNING command.id
+      `;
+      const marked = new Set(updated.map((row) => row.id));
+      const started = eligible.filter((command) => {
+        if (marked.has(command.id)) return true;
+        reject(command, effectLeaseLost());
+        return false;
+      });
+      return { started, failures };
+    });
+  } catch (error) {
+    return { started: [], failures: commands.map((command) => ({ command, error })) };
+  }
+};
+
 const beginProviderEffect = async (
   command: DbCommandExecution,
   senderIdentityId?: string,
@@ -661,29 +792,7 @@ const beginProviderEffect = async (
         code: "WORKFLOW_CANCELED",
       });
     }
-    const [current] = await tx<{ id: string }[]>`
-      SELECT command.id
-      FROM mail.commands command
-      JOIN mail.provider_bindings binding ON binding.id = command.selected_binding_id
-      JOIN mail.remote_resources resource ON resource.id = binding.remote_resource_id
-      JOIN mail.provider_connections connection ON connection.id = binding.connection_id
-      JOIN mail.mailboxes mailbox ON mailbox.id = command.mailbox_id
-      WHERE command.id = ${command.id}::uuid
-        AND command.state = 'executing'
-        AND command.attempt = ${command.attempt}
-        AND command.selected_secret_revision = ${command.selected_secret_revision}
-        AND binding.state IN ('active', 'degraded')
-        AND binding.verified_scope_fingerprint = resource.scope_fingerprint
-        AND binding.verified_secret_revision = command.selected_secret_revision
-        AND connection.secret_revision = command.selected_secret_revision
-        AND connection.status IN ('active', 'degraded')
-        AND connection.encrypted_secret IS NOT NULL
-        AND resource.status IN ('active', 'degraded')
-        AND mailbox.sync_enabled = true
-        AND mailbox.health NOT IN ('auth_required', 'connection_required', 'paused')
-        AND mailbox.deleted_at IS NULL
-      FOR UPDATE OF command
-    `;
+    const current = (await lockProviderEffectCommands(tx, [command])).has(command.id);
     if (!current) {
       throw Object.assign(new Error("Mail command lease was lost before the provider effect"), { code: "COMMAND_JOB_LEASE_LOST" });
     }
@@ -996,17 +1105,24 @@ type FreshMove = { command: DbCommandExecution; target: MutationTarget; source: 
 
 const MISSING_REMOTE_MESSAGE: RemoteMessageState = { exists: false, flags: [], keywords: [], messageId: null, modseq: null };
 
+/** Every set writer locks command rows in the same order, including the lease heartbeat. */
+const executingCommandRows = (fences: { id: string; attempt: number }[]) => sql`
+  SELECT command.id FROM mail.commands command
+  JOIN unnest(${toPgUuidArray(fences.map((fence) => fence.id))}::uuid[],
+    ${toPgIntArray(fences.map((fence) => fence.attempt))}::int[]) AS fence(id, attempt)
+    ON command.id = fence.id AND command.attempt = fence.attempt
+  WHERE command.state = 'executing'
+  ORDER BY command.id FOR UPDATE OF command
+`;
+
 /** Records the destination's UIDNEXT before a move: every destination UID of that generation from there on is new. */
 const storeMoveBaseline = async (commands: DbCommandExecution[], status: { uidValidity: string; uidNext: number }): Promise<void> => {
   const baseline = { destinationUidValidity: status.uidValidity, destinationUidNext: status.uidNext };
   await sql`
     UPDATE mail.commands command
     SET transport_metadata = command.transport_metadata || ${baseline}::jsonb
-    FROM unnest(
-      ${toPgUuidArray(commands.map((entry) => entry.id))}::uuid[],
-      ${toPgIntArray(commands.map((entry) => entry.attempt))}::int[]
-    ) AS fence(id, attempt)
-    WHERE command.id = fence.id AND command.attempt = fence.attempt AND command.state = 'executing'
+    FROM (${executingCommandRows(commands)}) active
+    WHERE command.id = active.id
   `;
 };
 
@@ -1049,6 +1165,8 @@ const prepareFreshMove = async (command: DbCommandExecution): Promise<FreshMove>
  * one UID MOVE, and one FETCH for the messages that stayed in the source. Each command keeps its
  * own effect marker and outcome, as if it ran alone. A command whose own step fails goes to `fail`
  * and the others go on; a failure of the whole set, such as a connection lost during MOVE, is thrown.
+ * Marking and settling use set-wide statements: per-row costs grow with the set, while a slow
+ * statement costs once per set.
  */
 const executeFreshMoves = async (moves: FreshMove[], assertLeaseActive: LeaseAssertion, fail: MoveFailure): Promise<void> => {
   const [head] = moves;
@@ -1070,6 +1188,113 @@ const executeFreshMoves = async (moves: FreshMove[], assertLeaseActive: LeaseAss
   );
 };
 
+type SettledMove = FreshMove & { destinationRef: { uid: number; uidValidity: string } | null };
+
+/** Project and confirm all still-owned moves atomically, with a fixed number of statements. */
+const settleMoveSet = async (members: SettledMove[], destination: DbDestinationFolder): Promise<void> => {
+  if (!members.length) return;
+  const confirmed = await persistMutationOutcome(async () => {
+    // Queue before confirmation: a failed settle may leave an extra sync, never a confirmed invisible move.
+    if (members.some((member) => !member.destinationRef)) await enqueueFolderSync(destination.folder_id);
+    return sql.begin(async (tx) => {
+      const locked = await tx<{ id: string }[]>`${executingCommandRows(members.map((member) => member.command))}`;
+      const ids = new Set(locked.map((row) => row.id));
+      const active = members.filter((member) => ids.has(member.command.id));
+      if (!active.length) return [];
+      const withRef = active.filter((member) => member.destinationRef !== null);
+      const projectedSourceRefs: string[] = [];
+      if (withRef.length) {
+        const refs = await tx<{ id: string; uid: number }[]>`
+          INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid, connector_ref, first_seen_at, last_seen_at)
+          SELECT ${destination.folder_id}::uuid, member.message_id, member.uid_validity, member.uid,
+            jsonb_build_object('source', 'command', 'commandId', member.command_id), now(), now()
+          FROM unnest(
+            ${toPgUuidArray(withRef.map((member) => member.command.id))}::uuid[],
+            ${toPgUuidArray(withRef.map((member) => member.source.message_content_id))}::uuid[],
+            ${toPgTextArray(withRef.map((member) => member.destinationRef!.uidValidity))}::numeric[],
+            ${toPgTextArray(withRef.map((member) => String(member.destinationRef!.uid)))}::numeric[]
+          ) AS member(command_id, message_id, uid_validity, uid)
+          WHERE true
+          ON CONFLICT (folder_id, uid_validity, uid) DO UPDATE SET
+            message_id = EXCLUDED.message_id, last_seen_at = now(), stale_at = NULL
+          RETURNING id, uid
+        `;
+        const byUid = new Map(refs.map((ref) => [Number(ref.uid), ref]));
+        const projected = withRef.flatMap((member) => {
+          const ref = byUid.get(member.destinationRef!.uid);
+          return ref ? [{ member, ref }] : [];
+        });
+        if (projected.length) {
+          await tx`
+            INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags, keywords)
+            SELECT member.ref_id, ${destination.folder_id}::uuid, member.message_id, source.flags, source.keywords
+            FROM unnest(
+              ${toPgUuidArray(projected.map(({ ref }) => ref.id))}::uuid[],
+              ${toPgUuidArray(projected.map(({ member }) => member.source.message_content_id))}::uuid[],
+              ${toPgUuidArray(projected.map(({ member }) => member.source.remote_message_ref_id))}::uuid[]
+            ) AS member(ref_id, message_id, source_ref_id)
+            JOIN mail.message_placements source ON source.remote_message_ref_id = member.source_ref_id
+            WHERE true
+            ON CONFLICT (remote_message_ref_id) DO UPDATE SET
+              folder_id = EXCLUDED.folder_id, message_id = EXCLUDED.message_id, flags = EXCLUDED.flags,
+              keywords = EXCLUDED.keywords, deleted_at = NULL, updated_at = now()
+          `;
+          await retireKeptCopyPlacements(
+            tx,
+            projected.map(({ member, ref }) => ({
+              messageId: member.source.message_content_id,
+              remoteRefId: ref.id,
+            })),
+          );
+          projectedSourceRefs.push(...projected.map(({ member }) => member.source.remote_message_ref_id));
+        }
+      }
+      const sourceRefs = active.map((member) => member.source.remote_message_ref_id);
+      await tx`UPDATE mail.remote_message_refs SET stale_at = now(), last_seen_at = now()
+        WHERE id = ANY(${toPgUuidArray(sourceRefs)}::uuid[])`;
+      await tx`UPDATE mail.message_placements SET deleted_at = now(), updated_at = now()
+        WHERE remote_message_ref_id = ANY(${toPgUuidArray(sourceRefs)}::uuid[])`;
+      const projected = new Set(projectedSourceRefs);
+      await keepLastKeptPlacements(tx, projectedSourceRefs);
+      await keepLastKeptPlacements(
+        tx,
+        sourceRefs.filter((id) => !projected.has(id)),
+        destination.folder_id,
+      );
+      return tx<{ id: string; mailbox_id: string }[]>`
+        WITH confirmed AS (
+          UPDATE mail.commands command
+          SET state = 'confirmed', finished_at = now(), worker_heartbeat_at = NULL,
+            last_error_code = NULL, last_error_message = NULL, updated_at = now()
+          FROM unnest(${toPgUuidArray(active.map((member) => member.command.id))}::uuid[],
+            ${toPgIntArray(active.map((member) => member.command.attempt))}::int[]) AS fence(id, attempt)
+          WHERE command.id = fence.id AND command.attempt = fence.attempt AND command.state = 'executing'
+          RETURNING command.id, command.mailbox_id, command.actor_kind, command.actor_id
+        )
+        INSERT INTO mail.activity_events (
+          mailbox_id, command_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata
+        )
+        SELECT ${commandStateEvent("confirmed", null)} FROM confirmed command
+        RETURNING command_id AS id, mailbox_id
+      `;
+    });
+  });
+  for (const command of confirmed) {
+    try {
+      await notifyCommandState(command, "confirmed");
+    } catch (error) {
+      log.warn("Move confirmation notification failed", {
+        commandId: command.id,
+        code: normalizeCode(error, "COMMAND_NOTIFICATION_FAILED"),
+      });
+    }
+  }
+};
+
+/**
+ * Checks identities first, then marks, moves, and settles the set. Marking and settling use a
+ * constant number of set-wide statements; their per-row costs still grow with the set size.
+ */
 const moveMessageSet = async (params: {
   runtime: MutationRuntime;
   moves: FreshMove[];
@@ -1095,7 +1320,7 @@ const moveMessageSet = async (params: {
     sql,
     moves.map((move) => move.command),
   );
-  const started: FreshMove[] = [];
+  const checked: FreshMove[] = [];
   for (const move of moves) {
     try {
       const state = current.get(Number(move.source.uid)) ?? MISSING_REMOTE_MESSAGE;
@@ -1105,21 +1330,23 @@ const moveMessageSet = async (params: {
         state,
         expected ? projectMailWorkflowMessagePrecondition(expected, siblingTransitions.get(move.command.id) ?? []) : undefined,
       );
-      // Checks the command's lease, workflow run, and access once more and marks its effect.
-      await beginProviderEffect(move.command);
-      started.push(move);
+      checked.push(move);
     } catch (error) {
       await fail(move.command, error);
     }
   }
+  const marker = await beginMoveSetEffects(checked.map((move) => move.command));
+  for (const { command, error } of marker.failures) await fail(command, error);
+  const marked = new Set(marker.started.map((command) => command.id));
+  const started = checked.filter((move) => marked.has(move.command.id));
   if (started.length === 0) return;
-  // Marking the effects took a database round trip per move; the set must still hold the lease to move.
+  // The set must still hold the lease after marking its effects.
   await assertLeaseActive();
   const result = await imapSmtpConnector.moveMessages(runtime, sourceSet(started), destination.folder_path);
   await assertLeaseActive();
   // A refused or partly failed move leaves some messages in the source: exactly those did not move.
   const remaining = await imapSmtpConnector.getMessageStates(runtime, sourceSet(started));
-  let destinationSyncQueued = false;
+  const settled: SettledMove[] = [];
   for (const move of started) {
     const uid = Number(move.source.uid);
     if (remaining.has(uid)) {
@@ -1142,29 +1369,12 @@ const moveMessageSet = async (params: {
       continue;
     }
     const destinationRef = confirmedDestinationRef(destination, { destinationUid, destinationUidValidity: result.destinationUidValidity });
-    try {
-      await persistMutationOutcome(async () => {
-        if (
-          !(await updateMutationProjection({
-            command: move.command,
-            source: move.source,
-            destination,
-            destinationUid: destinationRef?.uid ?? null,
-            destinationUidValidity: destinationRef?.uidValidity ?? null,
-          }))
-        ) {
-          return;
-        }
-        // The destination placement is unknown locally, so the folder sync has to make the message visible again.
-        if (!destinationRef && !destinationSyncQueued) {
-          await enqueueFolderSync(destination.folder_id);
-          destinationSyncQueued = true;
-        }
-        await commandState(move.command, "confirmed");
-      });
-    } catch (error) {
-      await fail(move.command, error);
-    }
+    settled.push({ ...move, destinationRef });
+  }
+  try {
+    await settleMoveSet(settled, destination);
+  } catch (error) {
+    for (const move of settled) await fail(move.command, error);
   }
 };
 
@@ -2173,11 +2383,8 @@ const heartbeatExecutingCommands = async (fences: CommandFence[]): Promise<void>
   await sql`
     UPDATE mail.commands command
     SET worker_heartbeat_at = now(), updated_at = now()
-    FROM unnest(
-      ${toPgUuidArray(fences.map((fence) => fence.id))}::uuid[],
-      ${toPgIntArray(fences.map((fence) => fence.attempt))}::int[]
-    ) AS fence(id, attempt)
-    WHERE command.id = fence.id AND command.attempt = fence.attempt AND command.state = 'executing'
+    FROM (${executingCommandRows(fences)}) active
+    WHERE command.id = active.id
   `;
 };
 
@@ -3891,19 +4098,16 @@ const nextMailboxMutation = async (mailboxId: string): Promise<{ id: string; wai
 
 /**
  * Moves one turn carries at most. Their UID set takes at most 550 octets, ten digits and a comma
- * per UID, far inside the 8,192-octet command line RFC 7162 asks clients to stay under. How long the
- * turn holds the provider lease is bounded by `MOVE_SET_ADMISSION_MS`.
+ * per UID, far inside the 8,192-octet command line RFC 7162 asks clients to stay under. Admission
+ * uses `MOVE_SET_ADMISSION_MS`; marking and settling use set-wide statements.
  */
 const MOVE_SET_LIMIT = 50;
 
 /**
- * How long a move set takes in moves once it holds the provider lease. A set should give the
- * provider back after about two seconds, the longest a folder sync that starts waiting during it
- * waits. After the cut, each taken move still marks its effect and settles after the one UID MOVE;
- * under load that measured two to four times what taking it in cost (about 40 ms against 12-16 ms
- * per move), so a fifth of the two seconds keeps the whole turn near two. While taking a move in
- * costs less than 8 ms, all 50 fit. This bounds the turn when the per-move statements slow down
- * together; a statement that is slow only when a move settles still costs once per taken move.
+ * Admission budget while a move set holds the provider lease. A fifth of two seconds leaves the
+ * rest for per-row marking and settling costs, which still grow with the set size. After the cut,
+ * marking and settling use a constant number of set-wide statements, so a per-statement slowdown
+ * adds a constant cost per set. While admission costs less than 8 ms per move, all 50 fit.
  */
 export const MOVE_SET_ADMISSION_MS = 2_000 / 5;
 
@@ -3974,7 +4178,9 @@ const pendingMoveSet = async (mailboxId: string, headId: string): Promise<string
 /**
  * Runs a set of fresh moves under one provider lease and over one session. Each move is claimed and
  * settled as its own command, so idempotency, activity, and reconciliation stay those of one move.
- * The set stops taking in moves after `MOVE_SET_ADMISSION_MS`, so it holds the lease about two seconds.
+ * Admission stops after `MOVE_SET_ADMISSION_MS`, reserving the rest of about two seconds for
+ * per-row costs. Marking and settling use a constant number of set-wide statements, so a slow
+ * statement adds a constant cost per set.
  */
 const runMoveSet = async (commandIds: string[], jobHeartbeat?: () => Promise<void>): Promise<LeaseOutcome> => {
   const [headId] = commandIds;
