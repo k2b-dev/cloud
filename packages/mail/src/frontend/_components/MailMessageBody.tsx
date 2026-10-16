@@ -229,12 +229,26 @@ export default function MailMessageBody(props: {
   };
   createEffect(sendFrameAppearance);
 
+  // The sandboxed document cannot inherit the person's motion choice from the host.
+  const sendFrameMotion = () => {
+    frame?.contentWindow?.postMessage(
+      {
+        source: "cloud-mail-host",
+        channel,
+        type: "motion",
+        value: { reduced: document.documentElement.getAttribute("data-k2b-motion") === "reduced" },
+      },
+      "*",
+    );
+  };
+
   const handleFrameLoad = () => {
     sendFrameAppearance();
     if (openQuotes.size > 0) {
       frame?.contentWindow?.postMessage({ source: "cloud-mail-host", channel, type: "quotes", value: [...openQuotes] }, "*");
     }
     sendFrameImages(frameImages);
+    sendFrameMotion();
     requestFrameMeasurement();
   };
 
@@ -297,6 +311,9 @@ export default function MailMessageBody(props: {
 
   onMount(() => {
     window.addEventListener("message", receiveMessage);
+    sendFrameMotion();
+    const motionObserver = new MutationObserver(sendFrameMotion);
+    motionObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-k2b-motion"] });
     requestAnimationFrame(requestFrameMeasurement);
     if (props.format === "plain" && props.plainText?.trim()) document.addEventListener("selectionchange", reportPlainSelection);
     onCleanup(() => {
@@ -304,6 +321,7 @@ export default function MailMessageBody(props: {
       allowRemoteContent.abort();
       remoteController?.abort();
       frameImages.length = 0;
+      motionObserver.disconnect();
       window.removeEventListener("message", receiveMessage);
       document.removeEventListener("selectionchange", reportPlainSelection);
       props.onSelectionChange("");

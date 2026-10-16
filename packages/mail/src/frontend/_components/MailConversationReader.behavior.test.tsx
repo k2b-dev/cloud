@@ -107,6 +107,53 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   onClose: () => undefined,
 };
 
+test.skipIf(isServer)("jumping to newest reads the person's motion choice at click time", async () => {
+  const dom = createDomTestHarness();
+  const originalCss = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+  Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
+  const { MailConversationReader } = modules!;
+  const [messages, setMessages] = createSignal<MessageDetail[]>([envelopeOnly]);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get messages() {
+          return messages();
+        },
+      }),
+    dom.root,
+  );
+  const scroller = dom.root.querySelector<HTMLElement>('[data-scroll-preserve="mail-reader-Conv01"]')!;
+  const scrollTo = spyOn(scroller, "scrollTo").mockImplementation(() => {});
+  try {
+    expect(dom.window.matchMedia("(prefers-reduced-motion: reduce)").matches).toBe(false);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    for (const [index, behavior] of ["auto", "smooth"].entries()) {
+      scroller.scrollTop = 200;
+      scroller.dispatchEvent(new Event("scroll"));
+      setMessages((current) => [...current, { ...envelopeOnly, id: `Msg00${index + 2}`, internalDate: "2026-08-16T13:00:00.000Z" }]);
+      const jump = () =>
+        [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("1 new message"));
+      await waitFor(() => jump() !== undefined);
+      // Change the choice after render so the click must read the current attribute.
+      if (behavior === "auto") document.documentElement.setAttribute("data-k2b-motion", "reduced");
+      else document.documentElement.removeAttribute("data-k2b-motion");
+      scrollTo.mockClear();
+      jump()!.click();
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      expect(scrollTo).toHaveBeenCalledTimes(1);
+      expect(scrollTo.mock.calls[0]?.[0]).toMatchObject({ behavior });
+    }
+  } finally {
+    document.documentElement.removeAttribute("data-k2b-motion");
+    scrollTo.mockRestore();
+    dispose();
+    if (originalCss) Object.defineProperty(globalThis, "CSS", originalCss);
+    else Reflect.deleteProperty(globalThis, "CSS");
+    dom.cleanup();
+  }
+});
+
 test.skipIf(isServer)(
   "the open reader replaces the pending body once hydration completes and offers a local refresh meanwhile",
   async () => {
