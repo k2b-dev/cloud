@@ -268,9 +268,10 @@ export async function assistantComposerCommands(input: {
     mention: aiChatAttachments([attachment])[0]!,
   });
   const overview = !category && !query;
+  const fullSkillScope = category === "skill" && !query;
   const [sessionData, searchedSkills, apps, chatFiles, project] = await Promise.all([
-    wants("task") ? input.sessionLoader.load(input.session) : null,
-    wants("skill") && !overview ? assistantApi.listSkills(input.signal, query.slice(0, 200)) : [],
+    wants("task") || fullSkillScope ? input.sessionLoader.load(input.session) : null,
+    wants("skill") && !overview && !fullSkillScope ? assistantApi.listSkills(input.signal, query.slice(0, 200)) : [],
     wants("app") ? artifactClient.list(1, query.slice(0, 120), input.signal, input.conversationId) : null,
     (category === "file" || (!category && query.length > 0)) && input.conversationId
       ? assistantApi.listChatFiles(input.conversationId, input.signal)
@@ -281,7 +282,7 @@ export async function assistantComposerCommands(input: {
   ]);
   const allSkills = sessionData?.skills;
   const results: ChatCommand[] = [];
-  if (overview && allSkills === null)
+  if ((overview || fullSkillScope) && allSkills === null)
     results.push({
       id: "skills-retry",
       name: "skills-retry",
@@ -291,7 +292,7 @@ export async function assistantComposerCommands(input: {
       icon: "ti ti-alert-circle",
       searchAgain: true,
     });
-  for (const skill of overview ? overviewSkills(allSkills ?? []) : searchedSkills) {
+  for (const skill of overview ? overviewSkills(allSkills ?? []) : fullSkillScope ? (allSkills ?? []) : searchedSkills) {
     if (!skill.enabled) continue;
     results.push(
       reference("skills", skill.name, `Skill · ${skill.description}`, {
@@ -371,7 +372,7 @@ export async function assistantComposerCommands(input: {
     }
 
   const taskRows: ChatCommand[] = [];
-  if (sessionData) {
+  if (sessionData && wants("task")) {
     // Task discovery and its Skill lookup fail independently of the overview’s full Skill list.
     if (sessionData.tasks === null || sessionData.scheduledTaskSkills === null) {
       taskRows.push({
@@ -447,5 +448,8 @@ export async function assistantComposerCommands(input: {
     }
   }
   // Tasks have their own overview bound and never lose rows to the reference limit.
-  return [...results.slice(0, 30), ...taskRows.filter((row) => row.searchAgain || matchesChatCommand(row, query))];
+  return [
+    ...(fullSkillScope ? results : results.slice(0, 30)),
+    ...taskRows.filter((row) => row.searchAgain || matchesChatCommand(row, query)),
+  ];
 }

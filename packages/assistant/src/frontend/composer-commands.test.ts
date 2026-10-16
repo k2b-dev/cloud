@@ -390,7 +390,7 @@ test("files stay out of overview and return through file scope or a search; app 
   expect((await assistantComposerCommands({ ...input, query: "app" }))[0]?.section).toBe("apps");
   expect(apps).toHaveBeenCalled();
   await assistantComposerCommands({ ...input, query: "skill" });
-  expect(listSkills).toHaveBeenLastCalledWith(input.signal, "");
+  expect(listSkills).toHaveBeenLastCalledWith(expect.any(AbortSignal));
 });
 
 test("assigned chats hide project assignment until searched and project scope explains the assignment in German", async () => {
@@ -562,6 +562,69 @@ test("task matches append after thirty references; overview limits tasks indepen
   }
 });
 
+test.each(["en", "de"])("All Skills lists every enabled Skill from the opening's full catalog (%s)", async (locale) => {
+  const { artifactClient } = await import("../artifacts/client");
+  spyOn(artifactClient, "list").mockResolvedValue({ items: [], page: 1, hasNext: false });
+  const skills = Array.from({ length: 41 }, (_, i) => ({ ...skillFixture(i), enabled: i !== 1 }));
+  const listSkills = spyOn(assistantApi, "listSkills").mockResolvedValue(skills);
+  const loader = createAssistantCommandSession();
+  const input = {
+    session: 1,
+    sessionLoader: loader,
+    models: [],
+    chooseModel() {},
+    isRunning: () => false,
+    query: "",
+    signal: new AbortController().signal,
+    locale,
+    projects: [],
+    running: false,
+    assignProject: async () => {},
+  };
+  try {
+    const overview = await searchCommands(input);
+    expect(overview.find((row) => row.id === "skills-all")).toMatchObject({
+      label: assistantCopyFor(locale).commandAllSkills({ count: 40 }),
+      scope: "skill",
+    });
+    const rows = await searchCommands({ ...input, scope: "skill" });
+    expect(rows).toHaveLength(40);
+    expect(rows.map((row) => row.id)).toEqual(skills.filter((skill) => skill.enabled).map((skill) => `skill:${skill.id}`));
+    expect(listSkills).toHaveBeenCalledTimes(1);
+    // Only the full-list request is made: a second argument would send a q parameter.
+    expect(listSkills.mock.calls[0]).toHaveLength(1);
+  } finally {
+    loader.dispose();
+  }
+});
+
+test.each(["en", "de"])("empty Skill scope offers retry when the full catalog fails (%s)", async (locale) => {
+  const listSkills = spyOn(assistantApi, "listSkills").mockRejectedValue(new Error("Skills offline"));
+  const rows = await assistantComposerCommands({
+    query: "",
+    scope: "skill",
+    signal: new AbortController().signal,
+    locale,
+    projects: [],
+    running: false,
+    assignProject: async () => {},
+  });
+  const copy = assistantCopyFor(locale);
+  expect(rows).toEqual([
+    {
+      id: "skills-retry",
+      name: "skills-retry",
+      section: "skills",
+      label: copy.commandSkillsFailed,
+      description: copy.commandTryAgain,
+      icon: "ti ti-alert-circle",
+      searchAgain: true,
+    },
+  ]);
+  expect(listSkills).toHaveBeenCalledTimes(1);
+  expect(listSkills.mock.calls[0]).toHaveLength(1);
+});
+
 test("Skills retry stays ahead of the reference limit and preserves task rows", async () => {
   const { artifactClient } = await import("../artifacts/client");
   spyOn(artifactClient, "list").mockResolvedValue({
@@ -653,7 +716,7 @@ test("model scope shares forgiving matching and runs the injected setter", async
   }
 });
 
-test.each(["model", "project", "skill", "file", "app"])("%s scope does not call or await session discovery", async (scope) => {
+test.each(["model", "project", "skill", "file", "app"])("%s scope does not await session discovery for search", async (scope) => {
   const { artifactClient } = await import("../artifacts/client");
   spyOn(artifactClient, "list").mockResolvedValue({ items: [], page: 1, hasNext: false });
   spyOn(assistantApi, "listChatFiles").mockResolvedValue([]);
@@ -663,7 +726,7 @@ test.each(["model", "project", "skill", "file", "app"])("%s scope does not call 
     const rows = await searchCommands({
       session: 1,
       sessionLoader: loader,
-      query: "",
+      query: scope === "skill" ? "invoice" : "",
       scope,
       signal: new AbortController().signal,
       locale: "en",
