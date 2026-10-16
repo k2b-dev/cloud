@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { memoryStore, nessi, type Provider } from "@k2b/nessi";
 import { openAICompatible } from "@k2b/nessi/ai";
-import { aiTurnErrorText } from "./chat/turn-error";
+import { aiTurnErrorCanContinue, aiTurnErrorText } from "./chat/turn-error";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
 import { completeThroughStream } from "./provider";
 import { AiQuotaError } from "./quotas";
@@ -261,4 +261,14 @@ test("nessi provider stops are classified before the loop-only issue and never e
     }
   }
   expect(ended).toBe(true);
+});
+
+test("an unanswered failed step explains the failure in EN and DE and offers Continue", () => {
+  expect(aiTurnErrorCanContinue({ code: "tool_failed" })).toBe(true);
+  expect(aiTurnErrorText({ code: "tool_failed" }, "en")).toBe(
+    "A step failed, and the model stopped without an answer. The results so far are kept. Send a new message to continue.",
+  );
+  expect(aiTurnErrorText({ code: "tool_failed" }, "de")).toBe(
+    "Ein Schritt ist fehlgeschlagen, und das Modell hat danach nicht geantwortet. Die bisherigen Ergebnisse bleiben erhalten. Mit einer neuen Nachricht geht es weiter.",
+  );
 });

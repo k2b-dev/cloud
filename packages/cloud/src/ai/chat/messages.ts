@@ -34,6 +34,7 @@ const messages = i18n.define({
       turnErrorReason: ({ code, limitMinutes }: AiTurnError) => {
         if (code === "model_unavailable") return "The model service did not answer.";
         if (code === "provider_stopped") return "The model provider ended this answer early.";
+        if (code === "tool_failed") return "A step failed, and the model stopped without an answer.";
         if (code === "quota_exhausted") return "Your AI usage limit for this period is reached. You can continue once it resets.";
         if (code === "context_full") return "This chat is too long for the model. Start a new chat to continue; this one stays as it is.";
         if (code === "time_limit")
@@ -336,6 +337,7 @@ const messages = i18n.define({
       turnErrorReason: ({ code, limitMinutes }) => {
         if (code === "model_unavailable") return "Der KI-Dienst hat nicht geantwortet.";
         if (code === "provider_stopped") return "Der KI-Anbieter hat diese Antwort vorzeitig beendet.";
+        if (code === "tool_failed") return "Ein Schritt ist fehlgeschlagen, und das Modell hat danach nicht geantwortet.";
         if (code === "quota_exhausted")
           return "Dein KI-Kontingent für diesen Zeitraum ist aufgebraucht. Du kannst weiterarbeiten, sobald es sich erneuert.";
         if (code === "context_full")

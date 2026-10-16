@@ -445,6 +445,8 @@ provider's own message never appears. A turn that failed before the model
 answered, or right after an accepted survey answer, shows the notice where its
 progress stood, under the same timeline id; this includes a request forwarded
 from another chat.
+A turn whose last step failed and that ends without an answer also fails and
+shows this notice.
 Screen readers hear the notice once when the turn they followed fails.
 
 When the failed turn is the chat's newest, no turn runs, and a new turn can
