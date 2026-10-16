@@ -33,7 +33,7 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
         delay={0}
         content={t().searchShortcut}
       >
-        <i class={`${action.busy() ? "ti ti-loader-2 animate-spin" : "ti ti-search"} text-base`} />
+        <i class={`${action.busy() ? "ti ti-loader-2 animate-spin" : "ti ti-search"} text-xl`} />
       </Tooltip.Trigger>
     );
 

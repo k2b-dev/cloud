@@ -5,6 +5,7 @@ const chatMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      commandFailed: "That did not work.",
       attachments: "Attachments",
       assistant: "Assistant",
       addToChat: "Add to chat",
@@ -96,6 +97,7 @@ const chatMessages = i18n.define({
       stopping: "Stopping",
     },
     de: {
+      commandFailed: "Das hat nicht geklappt.",
       attachments: "Anhänge",
       assistant: "Assistent",
       addToChat: "Zum Chat hinzufügen",

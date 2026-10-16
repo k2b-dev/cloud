@@ -264,8 +264,7 @@ follows the viewport width:
 | --- | --- | --- |
 | Below 48 rem (768 px) | Hidden; the host renders its mobile navigation | One pane at a time; Detail is a sheet over the lower 55% of the window, and Main scrolls its rows above it; full height covers Main |
 | 48 to 64 rem (768 to 1023 px) | An overlay that a button in the head opens; a `mobile="stacked"` sidebar stays above the content | Panes side by side; Detail floats with reflow, or overlays Main as a closable drawer on coarse pointers |
-| From 64 rem (1024 px) | A column beside the work area | Panes side by side; Detail spans the workspace height with an 8 px inset and Main makes room |
-| From 96 rem (1536 px) | Same navigation | Same workspace geometry inside the host’s app card |
+| From 64 rem (1024 px) | A column beside the work area | Panes side by side; Detail spans the workspace height with an 8 px inset and Main makes room; the host’s app card surrounds this geometry |
 
 Below 48 rem the host renders its mobile navigation using
 [createNavigation and Navigation](/en/ui/layout/navigation), usually inside a
@@ -328,7 +327,7 @@ Set `flat` on a workspace that is the page itself, such as an app's overview.
 It removes the workspace's own border, corner radius, and shadow. Where the
 host shows the app area as a card, the outermost workspace is that card and
 gets its radius and frame, flat or not, so every app shows the same rounded
-card. Cloud does this from 1536 px for signed-in people and from 768 px on
+card. Cloud does this from 1024 px for signed-in people and from 768 px on
 anonymous pages.
 
 Sidebar links use document navigation by default. Set `navigation="enhanced"`

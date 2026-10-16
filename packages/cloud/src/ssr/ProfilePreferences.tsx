@@ -18,7 +18,7 @@ type ProfilePreferencesProps = {
 export default function ProfilePreferences(props: ProfilePreferencesProps) {
   const { preferences, items, signOut, signingOut } = createProfileActions(props.initialTheme, props.appHref);
 
-  const avatar = () => <Avatar name={props.name} src={props.avatarSrc} size="xs" />;
+  const avatar = () => <Avatar name={props.name} src={props.avatarSrc} size="sm" />;
 
   return (
     <div class="layout-profile-preferences">

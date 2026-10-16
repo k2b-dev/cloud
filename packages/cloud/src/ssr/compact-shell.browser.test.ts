@@ -297,11 +297,18 @@ afterAll(async () => {
 
 type Device = { name: string; width: number; height: number; touch: boolean };
 const phone: Device = { name: "phone", width: 390, height: 844, touch: true };
-const ipadPortrait: Device = { name: "iPad portrait", width: 820, height: 1180, touch: true };
-const ipadLandscape: Device = { name: "iPad landscape", width: 1180, height: 820, touch: true };
-const laptop: Device = { name: "laptop", width: 1366, height: 900, touch: false };
+const ipadSplitView: Device = { name: "iPad Split View", width: 694, height: 834, touch: true };
+const ipadPortrait: Device = { name: "iPad portrait", width: 834, height: 1194, touch: true };
+const smallLaptop: Device = { name: "small laptop", width: 1024, height: 768, touch: false };
+const ipadLandscape: Device = { name: "iPad landscape", width: 1194, height: 834, touch: true };
+const laptop: Device = { name: "laptop", width: 1440, height: 900, touch: false };
 const desktop: Device = { name: "desktop", width: 1920, height: 1080, touch: false };
-const devices = [phone, ipadPortrait, ipadLandscape, laptop, desktop];
+const devices = [phone, ipadSplitView, ipadPortrait, smallLaptop, ipadLandscape, laptop, desktop];
+const flushBoundary: Device = { name: "flush boundary", width: 1023, height: 768, touch: false };
+
+// The signed-in card's spacing and radius in whole pixels: 4 and 10 px at 1024 px, 8 and 14 px from 1440 px.
+const cardInset = (width: number) => Math.round(Math.min(8, Math.max(4, 4 + (width - 1024) / 104)));
+const cardRadius = (width: number) => Math.round(Math.min(14, Math.max(10, 10 + (width - 1024) / 104)));
 
 type Options = { language?: "en" | "de"; theme?: "light" | "dark"; notice?: boolean; style?: string };
 const html = async (path: string, options: Options = {}) => {
@@ -359,17 +366,18 @@ type Geometry = {
   hairlines: string[];
 };
 
-const geometry = (page: Page): Promise<Geometry> =>
-  page.evaluate(() => {
+const geometry = (page: Page, rounded = true): Promise<Geometry> =>
+  page.evaluate((rounded) => {
+    const coordinate = (value: number) => (rounded ? Math.round(value) : value);
     const box = (element: Element): Box => {
       const rect = element.getBoundingClientRect();
       return {
-        left: Math.round(rect.left),
-        top: Math.round(rect.top),
-        right: Math.round(rect.right),
-        bottom: Math.round(rect.bottom),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
+        left: coordinate(rect.left),
+        top: coordinate(rect.top),
+        right: coordinate(rect.right),
+        bottom: coordinate(rect.bottom),
+        width: coordinate(rect.width),
+        height: coordinate(rect.height),
       };
     };
     const borders = (element: Element) => {
@@ -436,10 +444,10 @@ const geometry = (page: Page): Promise<Geometry> =>
       avatar: avatar ? { box: box(avatar), visible: true } : null,
       hairlines,
     };
-  });
+  }, rounded);
 
 const none = [0, 0, 0, 0];
-const flush = (device: Device) => device.width >= 768 && device.width < 1536;
+const flush = (device: Device) => device.width >= 768 && device.width < 1024;
 const compact = (device: Device) => device.width >= 768 && device.width < 1024;
 
 describe("signed-in shell", () => {
@@ -457,12 +465,14 @@ describe("signed-in shell", () => {
             expect(shape.sidebar?.display).toBe("none");
             expect(shape.workspace?.borders).toEqual(none);
             expect(shape.workspace?.radius).toBe("0px");
+            expect(shape.workspace?.box).toMatchObject({ right: device.width, bottom: device.height });
             return;
           }
           expect(shape.header).toBe("none");
           expect(shape.rail?.display).toBe("flex");
           expect(shape.rail?.box.left).toBe(0);
-          expect(shape.rail?.box.width).toBe(48);
+          expect(shape.rail?.box.width).toBe(56);
+          expect(shape.rail?.box.right).toBe(56);
           // Nothing draws the rail/app boundary: no border on either side and no divider element.
           expect(shape.rail?.borders).toEqual(none);
           expect(shape.shell?.borders).toEqual(none);
@@ -470,22 +480,38 @@ describe("signed-in shell", () => {
           // The avatar is the rail's last control.
           expect(shape.avatar).not.toBeNull();
           expect(shape.avatar!.box.left).toBeGreaterThanOrEqual(0);
-          expect(shape.avatar!.box.right).toBeLessThanOrEqual(48);
+          expect(shape.avatar!.box.right).toBeLessThanOrEqual(56);
           expect(shape.rail!.box.bottom - shape.avatar!.box.bottom).toBeLessThanOrEqual(12);
           if (flush(device)) {
             // Flush: the app area meets the top, right, and bottom window edges and has no frame.
-            expect(shape.shell?.box).toMatchObject({ left: 48, top: 0, right: device.width, bottom: device.height });
+            expect(shape.shell?.box).toMatchObject({ left: 56, top: 0, right: device.width, bottom: device.height });
             expect(shape.rail?.box).toMatchObject({ top: 0, bottom: device.height });
-            expect(shape.workspace?.box).toMatchObject({ left: 48, top: 0, right: device.width, bottom: device.height });
+            expect(shape.workspace?.box).toMatchObject({ left: 56, top: 0, right: device.width, bottom: device.height });
             expect(shape.workspace?.borders).toEqual(none);
             expect(shape.workspace?.radius).toBe("0px");
             expect(shape.workspace?.shadow).toBe("none");
             // An opaque surface, so the app canvas shows only behind the rail.
             expect(shape.shell?.background).toMatch(/^rgb\(/);
           } else {
-            // From 1536 px the app is a card with the shell spacing, still without a header.
-            expect(shape.workspace?.box).toMatchObject({ left: 48, top: 8, right: device.width - 8, bottom: device.height - 8 });
-            expect(shape.workspace?.radius).not.toBe("0px");
+            // From 1024 px the card's spacing and radius grow until 1440 px.
+            const precise = await geometry(page, false);
+            const box = precise.workspace!.box;
+            const gaps = [box.top, device.width - box.right, device.height - box.bottom];
+            const radius = Number.parseFloat(precise.workspace!.radius);
+            expect(box.left).toBe(56);
+            for (const gap of gaps) expect(Math.abs(gap - cardInset(device.width))).toBeLessThanOrEqual(0.5);
+            expect(Math.abs(radius - cardRadius(device.width))).toBeLessThanOrEqual(0.05);
+            if (device.width === 1024) {
+              for (const gap of gaps) expect(gap).toBe(4);
+              expect(radius).toBe(10);
+            } else if (device.width >= 1440) {
+              for (const gap of gaps) expect(gap).toBe(8);
+              expect(radius).toBe(14);
+            } else if (device.width === 1194) {
+              // The dense tablet mockup's card: 6 px spacing and a 12 px radius.
+              for (const gap of gaps) expect(gap).toBe(6);
+              expect(radius).toBe(12);
+            }
             expect(shape.workspace?.shadow).not.toBe("none");
           }
           // Sidebar and Main draw no lines. List/reader panes keep their
@@ -500,7 +526,9 @@ describe("signed-in shell", () => {
           if (compact(device)) {
             expect(shape.bar?.display).toBe("flex");
             expect(shape.bar?.borders).toEqual(none);
-            expect(shape.bar?.box).toMatchObject({ left: 48, top: 0, right: device.width - 328, height: 46 });
+            // The 320 px detail and its 8 px right inset still reserve a 328 px track.
+            expect(shape.detail!.box.width).toBe(320);
+            expect(shape.bar?.box).toMatchObject({ left: 56, top: 0, right: device.width - (320 + 8), height: 46 });
             expect(shape.bar?.title).toBe("Inbox");
             expect(shape.sidebar?.visibility).toBe("hidden");
             expect(shape.pane!.box.top).toBe(46);
@@ -516,8 +544,8 @@ describe("signed-in shell", () => {
     }
   }
 
-  test("a notice above the app is a flush strip in the flush range", async () => {
-    for (const device of [ipadPortrait, laptop]) {
+  test("a notice above the app is a flush strip in the flush range and a card from 1024 px", async () => {
+    for (const device of [ipadPortrait, flushBoundary, ipadLandscape]) {
       const { context, page } = await open(device, "/app/mail/inbox?notice=1");
       try {
         const notice = await page.evaluate(() => {
@@ -525,14 +553,22 @@ describe("signed-in shell", () => {
           const style = getComputedStyle(card);
           const rect = card.getBoundingClientRect();
           return {
-            left: Math.round(rect.left),
-            right: Math.round(rect.right),
-            top: Math.round(rect.top),
+            left: rect.left,
+            right: rect.right,
+            top: rect.top,
             radius: style.borderTopLeftRadius,
             border: style.borderTopWidth,
           };
         });
-        expect(notice).toEqual({ left: 48, right: device.width, top: 0, radius: "0px", border: "0px" });
+        expect(notice.left).toBe(56);
+        if (flush(device)) {
+          expect(notice).toEqual({ left: 56, right: device.width, top: 0, radius: "0px", border: "0px" });
+        } else {
+          expect(Math.abs(notice.top - cardInset(device.width))).toBeLessThanOrEqual(0.5);
+          expect(Math.abs(device.width - notice.right - cardInset(device.width))).toBeLessThanOrEqual(0.5);
+          expect(Number.parseFloat(notice.radius)).toBeGreaterThan(0);
+          expect(notice.border).toBe("1px");
+        }
       } finally {
         await context.close();
       }
@@ -543,28 +579,104 @@ describe("signed-in shell", () => {
     const keys = ["rail", "shell", "workspace", "bar", "sidebar", "pane", "main", "detail", "avatar"] as const;
     const same = (device: Device, step: string, actual: Geometry, expected: Geometry) => {
       for (const key of keys) {
-        expect({ device: device.name, step, key, box: actual[key]?.box }).toEqual({
-          device: device.name,
-          step,
-          key,
-          box: expected[key]?.box,
-        });
+        const box = actual[key]?.box;
+        const reference = expected[key]?.box;
+        expect({ device: device.name, step, key, present: !!box }).toEqual({ device: device.name, step, key, present: !!reference });
+        if (box && reference) {
+          for (const edge of ["left", "top", "right", "bottom", "width", "height"] as const)
+            expect(Math.abs(box[edge] - reference[edge]), `${device.name} ${step} ${key}.${edge}`).toBeLessThanOrEqual(0.01);
+        }
       }
+    };
+    const noOverflow = async (page: Page) => {
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     };
     for (const device of devices) {
       const { context, page } = await open(device, "/app/mail/inbox", { attached: false });
       try {
-        const served = await geometry(page);
+        const served = await geometry(page, false);
+        await noOverflow(page);
         await attach(page);
-        same(device, "attach", await geometry(page), served);
+        same(device, "attach", await geometry(page, false), served);
+        await noOverflow(page);
+        // Reload the same server path and attach again, without relying on a live HTTP server.
+        await page.setContent(await html("/app/mail/inbox"));
+        same(device, "reload served", await geometry(page, false), served);
+        await attach(page);
+        same(device, "reload attached", await geometry(page, false), served);
+        await noOverflow(page);
         await page.setContent(await html("/app/mail/archive"));
         await attach(page);
-        same(device, "navigate", await geometry(page), served);
+        same(device, "navigate", await geometry(page, false), served);
+        await noOverflow(page);
       } finally {
         await context.close();
       }
     }
   });
+
+  for (const device of [ipadPortrait, smallLaptop, ipadLandscape, laptop, desktop]) {
+    test(`${device.name}: a page without a workspace follows the card rule`, async () => {
+      const { context, page } = await open(device, "/app/mail/inbox?cards=1");
+      try {
+        const shape = await geometry(page, false);
+        expect(shape.workspace).toBeNull();
+        expect(shape.shell!.box.left).toBe(56);
+        if (flush(device)) {
+          expect(shape.shell!.box).toMatchObject({ top: 0, right: device.width, bottom: device.height });
+          expect(shape.shell!.background).toMatch(/^rgb\(/);
+        } else {
+          const box = shape.shell!.box;
+          for (const gap of [box.top, device.width - box.right, device.height - box.bottom])
+            expect(Math.abs(gap - cardInset(device.width))).toBeLessThanOrEqual(0.5);
+          expect(shape.shell!.background).toBe("rgba(0, 0, 0, 0)");
+        }
+      } finally {
+        await context.close();
+      }
+    });
+  }
+
+  for (const device of [{ name: "rail boundary", width: 768, height: 1024, touch: true }, ipadPortrait, ipadLandscape, laptop, desktop]) {
+    test(`${device.width}×${device.height}: rail controls are 44 px targets inside the 56 px rail`, async () => {
+      const { context, page } = await open(device, "/app/mail/inbox");
+      try {
+        const controls = await page.evaluate(() => {
+          const rail = document.querySelector(".layout-rail")!.getBoundingClientRect();
+          const items = [...document.querySelectorAll(".layout-rail .rail-item")].filter((item) => item.checkVisibility());
+          const avatar = [
+            ...document.querySelectorAll(
+              ".layout-rail .layout-profile-preferences__link, .layout-rail .layout-profile-preferences__dropdown-trigger",
+            ),
+          ].find((item) => item.checkVisibility())!;
+          const box = (element: Element) => {
+            const { left, right, width, height } = element.getBoundingClientRect();
+            return { left, right, width, height };
+          };
+          return {
+            rail: { left: rail.left, right: rail.right },
+            items: items.map(box),
+            avatar: box(avatar),
+            // The apps, the app grid, search, and help draw a 20 px icon; the avatar is 32 px.
+            icons: items.map((item) => getComputedStyle(item.querySelector("i")!).fontSize),
+            avatarSize: avatar.querySelector(".k2b-avatar")!.getBoundingClientRect().width,
+          };
+        });
+        expect(controls.rail).toEqual({ left: 0, right: 56 });
+        expect(controls.items.length).toBeGreaterThanOrEqual(4);
+        expect(controls.icons).toEqual(controls.items.map(() => "20px"));
+        expect(controls.avatarSize).toBe(32);
+        for (const box of [...controls.items, controls.avatar]) {
+          expect(box.width).toBe(44);
+          expect(box.height).toBe(44);
+          expect(box.left).toBeGreaterThanOrEqual(controls.rail.left);
+          expect(box.right).toBeLessThanOrEqual(controls.rail.right);
+        }
+      } finally {
+        await context.close();
+      }
+    });
+  }
 });
 
 describe("the app card keeps its rounded corners", () => {
@@ -589,7 +701,10 @@ describe("the app card keeps its rounded corners", () => {
       const pageMain = document.querySelector<HTMLElement>(".layout-content-main")!;
       // Resolve the host's tokens on the workspace, including var() and rem values.
       const probe = document.createElement("span");
-      probe.style.cssText = "position:absolute;pointer-events:none;width:var(--ui-space-shell);border-radius:var(--k2b-radius-dialog)";
+      const signedIn = !!workspace.closest("[data-layout-authenticated]");
+      probe.style.cssText = signedIn
+        ? "position:absolute;pointer-events:none;width:var(--cloud-card-inset);border-radius:var(--cloud-card-radius)"
+        : "position:absolute;pointer-events:none;width:var(--ui-space-shell);border-radius:var(--k2b-radius-dialog)";
       workspace.append(probe);
       const expectedRadius = getComputedStyle(probe).borderTopLeftRadius;
       const shellSpacing = Number.parseFloat(getComputedStyle(probe).width);
@@ -601,12 +716,12 @@ describe("the app card keeps its rounded corners", () => {
       await new Promise<void>((settle) => requestAnimationFrame(() => settle()));
       return {
         box: {
-          left: Math.round(rect.left),
-          top: Math.round(rect.top),
-          right: Math.round(rect.right),
-          bottom: Math.round(rect.bottom),
-          width: Math.round(rect.width),
-          height: Math.round(rect.height),
+          left: rect.left,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+          width: rect.width,
+          height: rect.height,
         },
         railRight: document.querySelector(".layout-rail")?.getBoundingClientRect().right ?? null,
         radii: [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomRightRadius, style.borderBottomLeftRadius],
@@ -721,7 +836,7 @@ describe("the app card keeps its rounded corners", () => {
     return difference(served, empty);
   };
 
-  for (const device of [{ name: "card boundary", width: 1536, height: 900, touch: false }, desktop]) {
+  for (const device of [smallLaptop, ipadLandscape, laptop, desktop]) {
     test(`${device.width}×${device.height}: flat and framed cards share their frame, spacing, and corner clipping`, async () => {
       let framed: CardGeometry | undefined;
       let framedShadow: number[][] | undefined;
@@ -741,13 +856,13 @@ describe("the app card keeps its rounded corners", () => {
           expect(shape.radii).toEqual(Array(4).fill(shape.expectedRadius));
           for (const radius of shape.radii) expect(Number.parseFloat(radius)).toBeGreaterThan(0);
           expect(shape.shadow).not.toBe("none");
-          expect(shape.shellSpacing).toBeGreaterThan(0);
-          expect(shape.box).toMatchObject({
-            left: shape.railRight,
-            top: shape.shellSpacing,
-            right: device.width - shape.shellSpacing,
-            bottom: device.height - shape.shellSpacing,
-          });
+          expect(Math.abs(shape.shellSpacing - cardInset(device.width))).toBeLessThanOrEqual(0.05);
+          for (const radius of shape.radii)
+            expect(Math.abs(Number.parseFloat(radius) - cardRadius(device.width))).toBeLessThanOrEqual(0.05);
+          expect(shape.railRight).toBe(56);
+          expect(shape.box.left).toBe(56);
+          for (const gap of [shape.box.top, device.width - shape.box.right, device.height - shape.box.bottom])
+            expect(Math.abs(gap - cardInset(device.width))).toBeLessThanOrEqual(0.5);
           expect(shape.workspaceScroll.top).toBeGreaterThan(0);
           expect(shape.workspaceScroll.top).toBeCloseTo(shape.workspaceScroll.end, 0);
           for (const corner of await cornerPaint(page, shape.box))
@@ -766,10 +881,7 @@ describe("the app card keeps its rounded corners", () => {
     });
   }
 
-  for (const device of [
-    { name: "flush boundary", width: 1535, height: 900, touch: false },
-    { name: "flush laptop", width: 1024, height: 768, touch: false },
-  ]) {
+  for (const device of [flushBoundary, ipadPortrait]) {
     test(`${device.width}×${device.height}: flat and framed workspaces fill the flush app area without a frame`, async () => {
       let framed: CardGeometry | undefined;
       for (const { path } of pages) {
@@ -827,6 +939,7 @@ describe("the app card keeps its rounded corners", () => {
       const shape = await cardGeometry(page);
       expect(Number.parseFloat(shape.expectedRadius)).toBeGreaterThan(0);
       expect(shape.radii).toEqual(Array(4).fill(shape.expectedRadius));
+      expect(shape.shellSpacing).toBe(8);
       expect(shape.shadow).not.toBe("none");
       expect((await shadowPaint(page, shape.box, shape.shellSpacing)).shadowDepth).toBeGreaterThanOrEqual(2);
     } finally {
@@ -864,7 +977,7 @@ describe("a page that scrolls its content in a ScrollArea", () => {
   });
 
   test("1024×768: the area scrolls and keeps its stable gutter", async () => {
-    const { context, page } = await open({ name: "flush laptop", width: 1024, height: 768, touch: false }, "/app/mail/inbox?cards=1", {
+    const { context, page } = await open({ name: "small laptop", width: 1024, height: 768, touch: false }, "/app/mail/inbox?cards=1", {
       style,
     });
     try {
@@ -905,7 +1018,7 @@ describe("compact workspace navigation", () => {
         await page.locator("[data-app-workspace-sidebar-toggle]").tap();
         const opened = await state(page);
         expect(opened).toMatchObject({ open: true, expanded: "true", contentInert: true, focus: "Inbox", main: closed.main });
-        expect(opened.sidebar.left).toBe(48);
+        expect(opened.sidebar.left).toBe(56);
         expect(opened.sidebar.width).toBe(280);
         expect(opened.sidebar.borders).toBe("0px");
 
@@ -972,6 +1085,10 @@ describe("profile menu in the rail", () => {
             top: Math.round(rect.top),
             avatarBottom: Math.round(avatar.bottom),
             avatarTop: Math.round(avatar.top),
+            avatarWidth: avatar.width,
+            avatarHeight: avatar.height,
+            avatarLeft: avatar.left,
+            avatarRight: avatar.right,
             railRight: Math.round(document.querySelector(".layout-rail")!.getBoundingClientRect().right),
             appearanceLabel: panel.querySelector(".menu-item")?.getAttribute("aria-label"),
             radios: panel.querySelectorAll('[role="radio"]').length,
@@ -979,6 +1096,11 @@ describe("profile menu in the rail", () => {
           };
         });
         expect(menu.visible).toBe("visible");
+        expect(menu.railRight).toBe(56);
+        expect(menu.avatarWidth).toBe(44);
+        expect(menu.avatarHeight).toBe(44);
+        expect(menu.avatarLeft).toBeGreaterThanOrEqual(0);
+        expect(menu.avatarRight).toBeLessThanOrEqual(56);
         expect(menu.left).toBeGreaterThanOrEqual(menu.railRight - 8);
         expect(menu.bottom).toBe(menu.avatarBottom);
         expect(menu.top).toBeLessThan(menu.avatarTop);
@@ -1011,6 +1133,10 @@ describe("profile menu in the rail", () => {
         // Beside the rail, the avatar's menu cannot open below the window's bottom edge, so it grows upward.
         const avatar = await trigger.evaluate((element) => element.getBoundingClientRect().toJSON() as DOMRect);
         const menu = dropdownPosition(avatar, { width: 224, height: 220 }, "right-start", { width: device.width, height: device.height });
+        expect(avatar.width).toBe(44);
+        expect(avatar.height).toBe(44);
+        expect(avatar.left).toBeGreaterThanOrEqual(0);
+        expect(avatar.right).toBeLessThanOrEqual(56);
         expect(menu.left).toBeGreaterThanOrEqual(avatar.right);
         expect(menu.top + 220).toBeLessThanOrEqual(device.height - 8);
         expect(menu.top).toBeLessThan(avatar.top);

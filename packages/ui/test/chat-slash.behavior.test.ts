@@ -1,7 +1,7 @@
-import { expect, test } from "bun:test";
-import { createComponent, createSignal } from "solid-js";
+import { afterEach, expect, spyOn, test } from "bun:test";
+import { batch, createComponent, createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
-import type { ChatCommand } from "../src/chat/ChatComposer";
+import type { ChatCommand, ChatCommandResult, ChatComposerProps } from "../src/chat/ChatComposer";
 import type { ChatMention, ChatSubmitInput } from "../src/chat/types";
 import { createDomTestHarness } from "./dom";
 
@@ -213,4 +213,615 @@ test("an empty reactive accessory does not add a composer row after hydration", 
     dispose();
     dom.cleanup();
   }
+});
+
+const slashCleanups: (() => void)[] = [];
+afterEach(() => {
+  for (const cleanup of slashCleanups.splice(0).reverse()) cleanup();
+});
+const flush = async () => {
+  for (let n = 0; n < 8; n++) await Promise.resolve();
+};
+const slash = async (options: Partial<ChatComposerProps> = {}) => {
+  const dom = createHarness();
+  slashCleanups.push(dom.cleanup);
+  const { ChatComposer } = await import("../src/chat/ChatComposer");
+  const [value, setValue] = createSignal(options.value ?? "/");
+  const [draftKey, setDraftKey] = createSignal("first");
+  let submitted = 0;
+  const errors: unknown[] = [];
+  const dispose = render(
+    () =>
+      createComponent(ChatComposer, {
+        ...options,
+        get value() {
+          return value();
+        },
+        onValueChange: setValue,
+        get draftKey() {
+          return draftKey();
+        },
+        onSubmit() {
+          submitted++;
+        },
+        onError(error) {
+          errors.push(error);
+        },
+      }),
+    dom.root,
+  );
+  slashCleanups.push(dispose);
+  const input = dom.root.querySelector("textarea")!;
+  input.setSelectionRange(value().length, value().length);
+  input.click();
+  const type = (text: string) => {
+    // A native edit updates text and selection together before its input event.
+    batch(() => {
+      input.value = text;
+      input.setSelectionRange(text.length, text.length);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const key = (key: string, modifiers: KeyboardEventInit = {}) => {
+    const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...modifiers });
+    input.dispatchEvent(event);
+    return event;
+  };
+  return {
+    ...dom,
+    input,
+    value,
+    setValue,
+    setDraftKey,
+    type,
+    key,
+    errors,
+    unmount: () => {
+      slashCleanups.splice(slashCleanups.indexOf(dispose), 1);
+      dispose();
+    },
+    submitted: () => submitted,
+    rows: () => [...dom.root.querySelectorAll<HTMLButtonElement>('[role="option"]')],
+    status: () => dom.root.querySelector(".k2b-chat-composer__status")!,
+  };
+};
+const compactCommand: ChatCommand = {
+  name: "compact",
+  label: "Chat kompaktieren",
+  description: "Älteren Verlauf zusammenfassen",
+  keywords: ["compact", "kompaktieren", "zusammenfassen"],
+};
+
+test("slash discovery matches labels, names, keywords and accents", async () => {
+  const h = await slash({ commands: [compactCommand] });
+  for (const query of ["kompakt", "compact", "zusammenfassen", "alter"]) {
+    h.type(`/${query}`);
+    expect(h.rows()[0]?.querySelector("strong")?.textContent).toBe("Chat kompaktieren");
+  }
+});
+
+test("a command named by the query outranks one whose description only mentions it, so Enter picks it", async () => {
+  const chosen: string[] = [];
+  const command = (name: string, label: string, description: string, keywords: string[]): ChatCommand => ({
+    name,
+    label,
+    description,
+    keywords,
+    action: () => void chosen.push(name),
+  });
+  for (const [query, fork, newChat] of [
+    [
+      "new",
+      command("fork", "Fork chat", "New chat from the latest response, with this draft", ["fork"]),
+      command("new", "New chat", "Start empty", ["new"]),
+    ],
+    [
+      "neu",
+      command("fork", "Chat abzweigen", "Neuer Chat ab der letzten Antwort", ["abzweigen"]),
+      command("new", "Neuer Chat", "Leer anfangen", ["neu"]),
+    ],
+  ] as const) {
+    const h = await slash({ commands: [fork, newChat] });
+    h.type(`/${query}`);
+    expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual([newChat.label, fork.label]);
+    h.key("Enter");
+    await Promise.resolve();
+    expect(chosen.pop()).toBe("new");
+  }
+});
+
+test("unavailable rows explain themselves, remain reachable, and announce instead of acting or sending", async () => {
+  let calls = 0;
+  const h = await slash({
+    commands: [
+      compactCommand,
+      {
+        name: "fork",
+        description: "Original description",
+        reason: "Wait for the first response",
+        action() {
+          calls++;
+        },
+      },
+    ],
+  });
+  const row = h.rows()[1]!;
+  const reason = row.querySelector("small")!;
+  expect(reason.textContent).toBe("Wait for the first response");
+  expect(row.getAttribute("aria-disabled")).toBe("true");
+  expect(row.getAttribute("aria-describedby")).toBe(reason.id);
+  expect(row.dataset.reason).toBe("true");
+  h.key("ArrowDown");
+  expect(h.input.getAttribute("aria-activedescendant")).toBe(row.id);
+  for (const key of ["Enter", "Tab"]) {
+    expect(h.key(key).defaultPrevented).toBe(true);
+    expect(h.status().textContent).toBe(reason.textContent);
+    expect(h.rows()).toHaveLength(2);
+  }
+  row.click();
+  expect(h.status().querySelector(".k2b-sr-only")?.textContent).toBe(reason.textContent);
+  expect(calls).toBe(0);
+  expect(h.submitted()).toBe(0);
+  h.key("ArrowUp");
+  expect(h.status().textContent).toBe("");
+  h.key("Escape");
+  expect(h.status().textContent).toBe("");
+});
+
+test("legacy disabled rows still show descriptions and never choose", async () => {
+  let calls = 0;
+  const h = await slash({
+    commands: [
+      {
+        name: "legacy",
+        disabled: true,
+        description: "Legacy description",
+        action() {
+          calls++;
+        },
+      },
+    ],
+  });
+  expect(h.rows()[0]?.getAttribute("aria-disabled")).toBe("true");
+  expect(h.rows()[0]?.querySelector("small")?.textContent).toBe("Legacy description");
+  h.key("Enter");
+  h.key("Tab");
+  h.rows()[0]!.click();
+  expect(calls).toBe(0);
+  expect(h.submitted()).toBe(0);
+});
+
+const deferredSearch = () => {
+  const requests: { signal: AbortSignal; resolve: (rows: readonly ChatCommand[]) => void; reject: (error: Error) => void }[] = [];
+  return {
+    requests,
+    searchCommands: (_query: string, signal: AbortSignal) =>
+      new Promise<readonly ChatCommand[]>((resolve, reject) => {
+        requests.push({ signal, resolve, reject });
+      }),
+  };
+};
+
+test.each(["Enter", "Tab"])("%s cannot choose a retained server row until fresh results arrive", async (key) => {
+  const chosen: string[] = [];
+  const search = deferredSearch();
+  const h = await slash({ ...search, value: "/project inv" });
+  await Bun.sleep(140);
+  search.requests[0]!.resolve([{ name: "Invoices", description: "Old project", action: () => void chosen.push("Invoices") }]);
+  await flush();
+  const rows = h.rows();
+  expect(rows).toHaveLength(1);
+  h.type("/project mkt");
+  const unchanged = () => {
+    expect(h.key(key).defaultPrevented).toBe(true);
+    expect(chosen).toEqual([]);
+    expect(h.value()).toBe("/project mkt");
+    expect(h.rows()).toEqual(rows);
+    expect(h.status().textContent).toBe("");
+    expect(h.errors).toEqual([]);
+    expect(h.submitted()).toBe(0);
+  };
+  unchanged();
+  await Bun.sleep(140);
+  unchanged();
+  search.requests[1]!.resolve([{ name: "Marketing", description: "Current project", action: () => void chosen.push("Marketing") }]);
+  await flush();
+  h.key("Enter");
+  await flush();
+  expect(chosen).toEqual(["Marketing"]);
+  expect(h.value()).toBe("");
+});
+
+test("pending searches still allow local keyboard choices and clicks on retained rows", async () => {
+  for (const choice of ["local", "pointer"]) {
+    const chosen: string[] = [];
+    const search = deferredSearch();
+    const h = await slash({
+      ...search,
+      value: "/q",
+      commands: [{ name: "run", description: "Local", action: () => void chosen.push("local") }],
+    });
+    await Bun.sleep(140);
+    search.requests[0]!.resolve([{ name: "Remote", description: "Retained", action: () => void chosen.push("pointer") }]);
+    await flush();
+    h.type("/run");
+    if (choice === "local") h.key("Enter");
+    else h.rows().at(-1)!.click();
+    await flush();
+    expect(chosen).toEqual([choice]);
+    expect(h.value()).toBe("");
+  }
+});
+
+test("a static command that the search also returns stays choosable while the next search loads", async () => {
+  const chosen: string[] = [];
+  const shared: ChatCommand = { name: "run", description: "Local and remote", action: () => void chosen.push("run") };
+  const search = deferredSearch();
+  const h = await slash({ ...search, value: "/r", commands: [shared] });
+  await Bun.sleep(140);
+  search.requests[0]!.resolve([shared]);
+  await flush();
+  h.type("/ru");
+  h.key("Enter");
+  await flush();
+  expect(chosen).toEqual(["run"]);
+});
+
+test("retains rows and safe ids through debounce, preserves arrow marking on results, resets on typing", async () => {
+  const search = deferredSearch();
+  const h = await slash({ ...search, value: "/q" });
+  await Bun.sleep(140);
+  const rows = [
+    { id: 'a" ]#ü', name: "A", description: "First" },
+    { id: "b", name: "B", description: "Second" },
+  ];
+  search.requests[0]!.resolve(rows);
+  await flush();
+  const ids = h.rows().map((row) => row.id);
+  expect(ids.every((id) => /^[A-Za-z0-9_-]+$/.test(id))).toBe(true);
+  h.key("ArrowDown");
+  expect(h.input.getAttribute("aria-activedescendant")).toBe(ids[1]!);
+  h.type("/qu");
+  expect(h.rows().map((row) => row.id)).toEqual(ids);
+  expect(h.input.getAttribute("aria-activedescendant")).toBe(ids[0]!);
+  expect(h.root.querySelector('[role="listbox"]')?.getAttribute("aria-busy")).toBe("true");
+  expect(h.root.querySelector(".k2b-chat-composer__loading")).toBeNull();
+  h.key("ArrowDown");
+  await Bun.sleep(140);
+  search.requests[1]!.resolve([
+    { id: "top", name: "New", description: "New top" },
+    { ...rows[1]!, label: "Still B" },
+  ]);
+  await flush();
+  expect(h.rows().map((row) => row.textContent)).toEqual(["/NewNew top", "Still BSecond"]);
+  expect(h.input.getAttribute("aria-activedescendant")).toBe(ids[1]!);
+  h.type("/que");
+  expect(h.input.getAttribute("aria-activedescendant")).toBe(h.rows()[0]!.id);
+});
+
+test("deduplicates static then server rows by key and leaves filtering of server results to the server", async () => {
+  const h = await slash({
+    value: "/compact",
+    commands: [compactCommand],
+    searchCommands: async () => [
+      { ...compactCommand, label: "Duplicate" },
+      { name: "unrelated", description: "Server result" },
+    ],
+  });
+  await Bun.sleep(140);
+  await flush();
+  expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual(["Chat kompaktieren", "/unrelated"]);
+});
+
+test("drops retained rows on draft change, token removal and search failure", async () => {
+  const search = deferredSearch();
+  const h = await slash({ ...search, value: "/q" });
+  await Bun.sleep(140);
+  search.requests[0]!.resolve([{ name: "old", description: "Old draft" }]);
+  await flush();
+  expect(h.rows()).toHaveLength(1);
+  h.setDraftKey("second");
+  h.input.click();
+  expect(h.rows()).toHaveLength(0);
+  await Bun.sleep(140);
+  search.requests.at(-1)!.resolve([{ name: "next", description: "Second draft" }]);
+  await flush();
+  expect(h.rows()).toHaveLength(1);
+  h.type("plain");
+  h.type("/q");
+  expect(h.rows()).toHaveLength(0);
+  await Bun.sleep(140);
+  search.requests.at(-1)!.resolve([{ name: "retained", description: "Current" }]);
+  await flush();
+  h.type("/qu");
+  expect(h.rows()).toHaveLength(1);
+  await Bun.sleep(140);
+  search.requests.at(-1)!.reject(new Error("Search failed"));
+  await flush();
+  expect(h.rows()).toHaveLength(0);
+  expect(h.root.querySelector('[role="listbox"]')?.textContent).toContain("Error");
+});
+
+test("cancel restores the exact token with the caret after it and stays closed until editing", async () => {
+  const h = await slash({
+    value: "/notiz q3",
+    commands: [{ name: "notiz", description: "Note", keywords: ["notiz q3"], action: async (): Promise<ChatCommandResult> => "cancelled" }],
+  });
+  h.key("Enter");
+  await flush();
+  expect(h.value()).toBe("/notiz q3");
+  expect(h.input.selectionStart).toBe(9);
+  expect(h.rows()).toHaveLength(0);
+  expect(h.status().textContent).toBe("");
+  h.type("/notiz q3x");
+  expect(h.root.querySelector('[role="listbox"]')).not.toBeNull();
+});
+
+test("a cancelled or failed command leaves no undo step: undo goes back to the edit before it", async () => {
+  for (const action of [async (): Promise<ChatCommandResult> => "cancelled", async () => Promise.reject(new Error("No"))]) {
+    const h = await slash({ value: "Before", commands: [{ name: "cancel", description: "Cancel", action }] });
+    h.type("Before /cancel after");
+    h.input.setSelectionRange(14, 14);
+    h.input.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    h.key("Enter");
+    await flush();
+    expect(h.value()).toBe("Before /cancel after");
+    h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(h.value()).toBe("Before");
+    h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    expect(h.value()).toBe("Before /cancel after");
+  }
+});
+
+test("rejection restores token, announces once in the persistent status, and clears error on edit", async () => {
+  const h = await slash({
+    value: "/fail",
+    commands: [
+      {
+        name: "fail",
+        description: "Fails",
+        action() {
+          throw new Error("Try again later");
+        },
+      },
+    ],
+  });
+  const status = h.status();
+  const timer = spyOn(globalThis, "setTimeout");
+  try {
+    h.key("Enter");
+    await flush();
+    // No expiry timer means the error survives both the 3 s done window and the former 6 s error window, without sleeping.
+    expect(timer).not.toHaveBeenCalled();
+  } finally {
+    timer.mockRestore();
+  }
+  expect(h.value()).toBe("/fail");
+  expect(h.input.selectionStart).toBe(5);
+  expect(h.rows()).toHaveLength(0);
+  expect(h.status()).toBe(status);
+  expect(status.getAttribute("role")).toBe("status");
+  expect(status.querySelector('[data-tone="error"]')?.textContent).toBe("Try again later");
+  expect(h.errors).toEqual([]);
+  h.type("/failx");
+  expect(status.textContent).toBe("");
+});
+
+test("a failure after the composer unmounted reaches onError instead of disappearing", async () => {
+  let reject!: (error: Error) => void;
+  const h = await slash({
+    value: "/fail",
+    commands: [
+      {
+        name: "fail",
+        description: "Fails",
+        action: () =>
+          new Promise((_resolve, fail) => {
+            reject = fail;
+          }),
+      },
+    ],
+  });
+  h.key("Enter");
+  h.unmount();
+  const failure = new Error("Gone");
+  reject(failure);
+  await flush();
+  expect(h.errors).toEqual([failure]);
+});
+
+test("arrow marking does not carry over to another draft with the same slash query", async () => {
+  const h = await slash({ value: "/", commands: [compactCommand, { name: "fork", description: "Fork" }] });
+  h.key("ArrowDown");
+  expect(h.rows()[1]!.getAttribute("aria-selected")).toBe("true");
+  h.setDraftKey("second");
+  h.type("/");
+  expect(h.rows()[0]!.getAttribute("aria-selected")).toBe("true");
+});
+
+test("a failure stays with its draft: switching drafts clears it, a later failure still shows", async () => {
+  let reject!: (error: Error) => void;
+  const h = await slash({
+    value: "/fail",
+    commands: [
+      {
+        name: "fail",
+        description: "Fails",
+        action: () =>
+          new Promise((_resolve, fail) => {
+            reject = fail;
+          }),
+      },
+    ],
+  });
+  h.key("Enter");
+  reject(new Error("First failure"));
+  await flush();
+  expect(h.status().querySelector('[data-tone="error"]')?.textContent).toBe("First failure");
+  h.setDraftKey("second");
+  await flush();
+  expect(h.status().textContent).toBe("");
+  h.type("/fail");
+  h.key("Enter");
+  h.setDraftKey("third");
+  reject(new Error("Late failure"));
+  await flush();
+  // Reported where the person is now rather than lost; the draft it came from is not restored.
+  expect(h.status().querySelector('[data-tone="error"]')?.textContent).toBe("Late failure");
+});
+
+test("a rejected command never overwrites an edited draft or a different draft", async () => {
+  for (const change of ["edit", "draft"] as const) {
+    let reject!: (error: Error) => void;
+    const h = await slash({
+      value: "/fail",
+      commands: [
+        {
+          name: "fail",
+          description: "Fails",
+          action: () =>
+            new Promise<void>((_, fail) => {
+              reject = fail;
+            }),
+        },
+      ],
+    });
+    h.key("Enter");
+    h.setValue("New work");
+    if (change === "draft") {
+      h.setValue("");
+      h.setDraftKey("elsewhere");
+    }
+    reject(new Error("Failure"));
+    await flush();
+    expect(h.value()).toBe(change === "edit" ? "New work" : "");
+    expect(h.errors).toEqual([]);
+  }
+});
+
+test("only plain Enter and Tab choose; Shift keys fall through and Ctrl+Enter sends", async () => {
+  let calls = 0;
+  const h = await slash({
+    value: "/run",
+    commands: [
+      {
+        name: "run",
+        description: "Run",
+        action() {
+          calls++;
+        },
+      },
+    ],
+  });
+  expect(h.key("Enter", { shiftKey: true }).defaultPrevented).toBe(false);
+  expect(h.key("Tab", { shiftKey: true }).defaultPrevented).toBe(false);
+  h.key("Tab", { altKey: true });
+  h.key("Tab", { ctrlKey: true });
+  h.key("Tab", { metaKey: true });
+  expect(calls).toBe(0);
+  expect(h.submitted()).toBe(0);
+  h.key("Enter", { ctrlKey: true });
+  await flush();
+  expect(h.submitted()).toBe(1);
+  expect(calls).toBe(0);
+});
+
+test("Escape closes this slash through more typing; another slash opens", async () => {
+  let ran = 0;
+  const h = await slash({ value: "/c", commands: [{ ...compactCommand, action: () => void ran++ }] });
+  h.key("Escape");
+  h.type("/com");
+  expect(Boolean(h.root.querySelector('[role="listbox"]'))).toBe(false);
+  // Moving the caret inside the same token keeps it closed, so Enter cannot run the dismissed command.
+  h.input.setSelectionRange(2, 2);
+  h.input.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowLeft", bubbles: true }));
+  expect(Boolean(h.root.querySelector('[role="listbox"]'))).toBe(false);
+  // A selection, or leaving the token and coming back, does not reopen it either.
+  h.input.setSelectionRange(1, 4);
+  h.input.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowLeft", shiftKey: true, bubbles: true }));
+  h.input.setSelectionRange(4, 4);
+  h.input.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowRight", bubbles: true }));
+  expect(Boolean(h.root.querySelector('[role="listbox"]'))).toBe(false);
+  // Tab would choose if the list had reopened; Enter would also send the draft here.
+  h.key("Tab");
+  expect(ran).toBe(0);
+  h.type("/com /c");
+  expect(h.rows()).toHaveLength(1);
+});
+
+test("busy and done use the status line; done survives draft switching and hides behind suggestions", async () => {
+  let resolve!: (result: ChatCommandResult) => void;
+  const h = await slash({
+    value: "/done",
+    commands: [
+      {
+        name: "done",
+        description: "Done",
+        busyLabel: "Working",
+        action: () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      },
+    ],
+  });
+  h.key("Enter");
+  expect(h.status().querySelector('[data-tone="busy"]')?.textContent).toBe("Working");
+  h.setDraftKey("next");
+  resolve({ done: "Finished" });
+  await flush();
+  expect(h.status().querySelector('[data-tone="done"]')?.textContent).toBe("Finished");
+  h.type("/done");
+  expect(h.status().querySelector(".k2b-chat-composer__status-line")).toBeNull();
+  h.key("Escape");
+  expect(h.status().textContent).toBe("Finished");
+});
+
+test("cancel restores surrounding text and mention ranges as well as the token", async () => {
+  const [mentions, setMentions] = createSignal<readonly ChatMention[]>([{ start: 0, end: 3, attachment: { id: "doc", name: "Doc" } }]);
+  const h = await slash({
+    value: "Doc /cancel suffix",
+    get mentions() {
+      return mentions();
+    },
+    onMentionsChange: setMentions,
+    commands: [{ name: "cancel", description: "Cancel", action: () => "cancelled" }],
+  });
+  h.input.setSelectionRange(11, 11);
+  h.input.click();
+  const previous = [...mentions()];
+  h.key("Enter");
+  await flush();
+  expect(h.value()).toBe("Doc /cancel suffix");
+  expect(mentions()).toEqual(previous);
+  expect(h.input.selectionStart).toBe(11);
+  expect(h.rows()).toHaveLength(0);
+});
+
+test("non-Error rejection uses the localized fallback and cancelling after edits never restores", async () => {
+  const h = await slash({ value: "/fail", commands: [{ name: "fail", description: "Fail", action: () => Promise.reject(null) }] });
+  h.key("Enter");
+  await flush();
+  expect(h.status().textContent).toBe("That did not work.");
+  expect(h.errors).toEqual([]);
+  let resolve!: (result: ChatCommandResult) => void;
+  const cancelled = await slash({
+    value: "/cancel",
+    commands: [
+      {
+        name: "cancel",
+        description: "Cancel",
+        action: () =>
+          new Promise((done) => {
+            resolve = done;
+          }),
+      },
+    ],
+  });
+  cancelled.key("Enter");
+  cancelled.setValue("Edited draft");
+  resolve("cancelled");
+  await flush();
+  expect(cancelled.value()).toBe("Edited draft");
+  expect(cancelled.status().textContent).toBe("");
 });

@@ -107,7 +107,7 @@ afterAll(async () => {
 const load = async (width: number, height: number, params = "", options: BrowserContextOptions = {}) => {
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce", ...options });
   await page.setContent(
-    // Flush by default, as Cloud's shell is up to 1535 px; `card` frames the workspace as Cloud does from 1536 px.
+    // Flush by default, as Cloud's shell is up to 1023 px; `card` frames the workspace as Cloud does from 1024 px.
     `<!doctype html><html lang="en"><head><style>${css}</style><style>${
       new URLSearchParams(params).has("card")
         ? "#app{box-sizing:border-box;padding:0.5rem}"
