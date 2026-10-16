@@ -138,7 +138,7 @@ convention still needs a check or a test.
 - **What happened:** Pulse metrics sources could reach internal endpoints without an operator exception.
 - **Root cause:** The metrics scraper called `fetch()` on the source endpoint without the platform guard.
 - **Error class:** Server-side request forgery.
-- **Guard:** Pulse validates and pins each request and redirect through `resolveAllowedNetworkAddresses` and `pinnedNetworkLookup`. Only the operator env registry can allow internal targets. The `network-guard` check rejects global `fetch()` in Pulse server code. Platform and Pulse tests cover allowlist parsing, all DNS answers, blocked targets, redirect credentials, byte limits, and the total deadline.
+- **Guard:** Pulse validates and pins each request and redirect through `resolveAllowedNetworkAddresses` and `pinnedNetworkLookup`. Only the operator env registry can allow internal targets. The `network-guard` check rejects global `fetch()` in Pulse and Notebooks server code. SDK clients that resolve their own hosts cannot be pinned: use them only to sign locally, then send through a pinned transport. Platform and Pulse tests cover allowlist parsing, all DNS answers, blocked targets, redirect credentials, byte limits, and the total deadline.
 
 ### Incoming Mail automations invalidate each other's commands
 

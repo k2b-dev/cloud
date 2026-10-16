@@ -7,6 +7,7 @@ import {
   networkAddressFamily,
   parseNetworkAddress,
   parseNetworkAllowlist,
+  parseNetworkAllowlistEnv,
 } from "./network-address";
 
 describe("network address policy", () => {
@@ -193,4 +194,14 @@ describe("operator network allowlist", () => {
     expect(isAllowlistedNetworkAddress(EMPTY_NETWORK_ALLOWLIST, "127.0.0.1")).toBe(false);
     expect(isAllowlistedNetworkAddress(parseNetworkAllowlist(["[::ffff:10.0.0.5]"]), "::ffff:a00:5")).toBe(true);
   });
+});
+
+test("env allowlist parsing retains the policy and names invalid configuration", () => {
+  expect(parseNetworkAllowlistEnv("APP_ALLOWED_TARGETS", ["storage.test", "10.20.0.0/16"])).toEqual(
+    parseNetworkAllowlist(["storage.test", "10.20.0.0/16"]),
+  );
+  expect(parseNetworkAllowlistEnv("APP_ALLOWED_TARGETS", [])).toEqual(EMPTY_NETWORK_ALLOWLIST);
+  expect(() => parseNetworkAllowlistEnv("APP_ALLOWED_TARGETS", ["0.0.0.0/0"])).toThrow(
+    "APP_ALLOWED_TARGETS: Invalid network allowlist entry",
+  );
 });

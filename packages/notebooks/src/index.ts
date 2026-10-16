@@ -9,6 +9,7 @@ import pageRoutes, { adminPages as adminPageRoutes } from "./frontend";
 import { notebookHelp } from "./help";
 import { migrate } from "./migrate";
 import { notebooksService, reindexRuntime, snapshotRuntime, yjsSnapshotWorker } from "./service";
+import { snapshotAllowlist } from "./service/backup";
 import { drainNotebookConnections } from "./ws";
 
 const router = new Hono<AuthContext>()
@@ -32,6 +33,7 @@ const result = await app.start({
       await migrate();
     },
     start: async () => {
+      snapshotAllowlist();
       await yjsSnapshotWorker.start();
       try {
         await reindexRuntime.start();

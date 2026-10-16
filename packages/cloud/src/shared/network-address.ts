@@ -163,6 +163,15 @@ export const parseNetworkAllowlist = (entries: readonly string[]): NetworkAllowl
   return { hosts, networks };
 };
 
+/** Parse operator configuration with the variable name in startup errors. */
+export const parseNetworkAllowlistEnv = (variable: string, entries: readonly string[]): NetworkAllowlist => {
+  try {
+    return parseNetworkAllowlist(entries);
+  } catch (error) {
+    throw new Error(`${variable}: ${error instanceof Error ? error.message : "Invalid allowlist"}`);
+  }
+};
+
 export const isAllowlistedNetworkAddress = (allowlist: NetworkAllowlist, rawAddress: string): boolean => {
   const literal = parseNetworkAddress(rawAddress);
   if (!literal) return false;

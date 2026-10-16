@@ -651,6 +651,9 @@ const fallbackServiceMessage = (locale: string, status: number, current: string)
 
 const localizeResult = <T>(result: Result<T>, locale: string): Result<T> => {
   if (result.ok) return result;
+  if (result.error.code === "NOTEBOOK_SNAPSHOT_TARGET_BLOCKED") {
+    return fail({ ...result.error, message: notebookServiceMessages.resolve([locale]).t.snapshotTargetBlocked });
+  }
   return fail({ ...result.error, message: fallbackServiceMessage(locale, result.error.status, result.error.message) });
 };
 
@@ -3310,7 +3313,7 @@ const appWithExport = appWithAttachments
       ...requiresAuth,
       responses: {
         200: jsonResponse(NotebookBackupRunSchema, "Backup uploaded"),
-        400: jsonResponse(ErrorResponseSchema, "Backup disabled or incomplete"),
+        400: jsonResponse(ErrorResponseSchema, "Backup disabled, incomplete, or target blocked"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Notebook not found"),
       },
