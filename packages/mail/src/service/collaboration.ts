@@ -487,10 +487,11 @@ export const recordConversationStatusDecision = async (
  * Locks a conversation and returns the revision a workflow status step may act at.
  * The exact revision always applies. One revision later applies only after the trigger's
  * hydration, when every other unhydrated link was seen by the view.
- * Seen links committed before the view or were linked earlier by its own transaction.
- * Links without an xid predate tracking. Snapshot visibility gives commit order.
- * The link sequence orders the view's own writes.
- * A link or view from another cluster after a logical restore keeps the conflict.
+ * A seen link got its sequence number before the view read the sequence, and either its
+ * transaction committed before the view's snapshot or it is the view's own write. Links without
+ * an xid predate tracking. Neither a timestamp nor the sequence alone gives commit order; the
+ * snapshot does. The sequence survives a logical restore, transaction IDs do not, so a link
+ * created after the view never counts as seen, and an xid from another cluster keeps the conflict.
  * A wrong admission could only give the result the exact-revision path already gives.
  * An unknown keeps the conflict. Returns null when the conversation is gone.
  */
@@ -536,12 +537,12 @@ export const lockWorkflowConversationStatus = async (
           AND (
             link.linked_xid IS NULL
             OR (
-              link.linked_xid = ${params.viewLinks?.xid ?? null}::xid8
-              AND link.link_seq <= ${params.viewLinks?.seq ?? null}::bigint
-            )
-            OR (
-              link.linked_xid IS DISTINCT FROM ${params.viewLinks?.xid ?? null}::xid8
-              AND pg_visible_in_snapshot(link.linked_xid, ${params.viewLinks?.snapshot ?? null}::pg_snapshot)
+              -- Linked before the view read the sequence, and by then committed or its own write.
+              link.link_seq <= ${params.viewLinks?.seq ?? null}::bigint
+              AND (
+                link.linked_xid = ${params.viewLinks?.xid ?? null}::xid8
+                OR pg_visible_in_snapshot(link.linked_xid, ${params.viewLinks?.snapshot ?? null}::pg_snapshot)
+              )
             )
           ), false
         )

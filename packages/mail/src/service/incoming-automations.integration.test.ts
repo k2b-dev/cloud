@@ -3131,10 +3131,10 @@ suite("incoming automations", () => {
     }
   }, 30_000);
 
-  for (const restored of ["link", "view", "both"] as const) {
+  for (const restored of ["link", "view", "both", "new-link"] as const) {
     test(`keeps the conflict for restored transaction IDs (${restored})`, async () => {
       const key = `linked-restore-${restored}`;
-      const uid = { link: 14061, view: 14071, both: 14081 }[restored];
+      const uid = { link: 14061, view: 14071, both: 14081, "new-link": 14091 }[restored];
       const first = statusEnvelope(uid, key);
       const firstId = await ingestEnvelope({
         db: sql,
@@ -3148,7 +3148,7 @@ suite("incoming automations", () => {
       try {
         // Exercise the real A/B status path without restoring a cluster: only persisted xid metadata
         // is changed. Unknown link or view provenance must keep the conflict.
-        if (restored !== "view") {
+        if (restored === "link" || restored === "both") {
           await sql`
             UPDATE mail.conversation_messages
             SET linked_xid = ((pg_snapshot_xmax(pg_current_snapshot())::text::numeric + 1000000)::text)::xid8
@@ -3182,6 +3182,24 @@ suite("incoming automations", () => {
             UPDATE workflows.run
             SET context = jsonb_set(context, '{preconditions,conversation,linkView,snapshot}',
               to_jsonb(format('%s:%s:', 1, 2)))
+            WHERE id = ${runId}::uuid
+          `;
+        } else if (restored === "new-link") {
+          // A link created after a restored view can carry a lower xid than the view's snapshot.
+          const third = statusEnvelope(uid + 2, key, first.messageId);
+          const thirdId = await ingestEnvelope({
+            db: sql,
+            mailboxId,
+            remoteResourceId,
+            folderId: inboxFolderId,
+            message: third,
+            captureWorkflowTriggers: false,
+          });
+          expect((await statusConversation(thirdId)).id).toBe(conversation.id);
+          await sql`
+            UPDATE workflows.run
+            SET context = jsonb_set(context, '{preconditions,conversation,linkView,snapshot}',
+              to_jsonb(format('%s:%s:', pg_snapshot_xmax(pg_current_snapshot()), pg_snapshot_xmax(pg_current_snapshot()))))
             WHERE id = ${runId}::uuid
           `;
         }
