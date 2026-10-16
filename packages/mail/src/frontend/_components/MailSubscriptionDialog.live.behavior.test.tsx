@@ -127,10 +127,10 @@ describe("Mail subscription dialog live updates", () => {
     expect(listRequests).toBe(3);
   });
 
-  test("an ended session says in the open dialog that updates are paused and reloads once it closes", async () => {
+  test("an ended session says in the open dialog that updates are paused and offers the reload once it closes", async () => {
     const reload = spyOn(dom.window.location, "reload").mockImplementation(() => {});
+    const { dialogCore, toast } = await import("@k2b/ui");
     try {
-      const { dialogCore } = await import("@k2b/ui");
       const { openMailSubscriptionDialog } = await import("./MailSubscriptionDialog");
       const dialog = openMailSubscriptionDialog({ mailboxId: MAILBOX_ID, canWrite: false, liveCursor: "s6t.mail.4" });
       await settle();
@@ -142,15 +142,19 @@ describe("Mail subscription dialog live updates", () => {
       socket().message({ t: "error", code: "login_required", message: "Sign in again to receive live updates." });
       socket().close(1008, "login_required");
       await settle();
-      // The reload waits for the dialog, so the dialog itself says that its list is stale.
-      expect(reload).not.toHaveBeenCalled();
+      // The page does not reload under the open dialog, so the dialog itself says that its list is stale.
       expect(updatesPaused()).toBe(true);
 
       dialogCore.close();
       await dialog;
       await settle();
+      expect(reload).not.toHaveBeenCalled();
+      const notice = dom.document.querySelector<HTMLElement>("[data-k2b-toast]:not([data-closing])");
+      expect(notice?.textContent).toContain("This page changed.");
+      notice!.querySelector<HTMLButtonElement>(".k2b-toast__action")!.click();
       expect(reload).toHaveBeenCalledTimes(1);
     } finally {
+      toast.dismissAll();
       reload.mockRestore();
     }
   });

@@ -92,8 +92,8 @@ function MailSubscriptionDialog(props: {
       resync: () => subscriptions.invalidate(),
       revoked: () => void documentNavigate("/app/mail", { replace: true }),
       // A reload lets the route policy send an ended session to sign-in. A failure that survives it must not
-      // reload in a loop. The reload waits until this dialog closes, so the dialog says meanwhile that its list
-      // no longer updates.
+      // reload in a loop. The page does not reload under this open dialog, so the dialog says that its list no
+      // longer updates.
       unavailable: () => {
         setLiveUnavailable(true);
         reloadOnce(`mail:live:${props.mailboxId}`);

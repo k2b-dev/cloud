@@ -79,8 +79,16 @@ const send = (socket: ServerWebSocket<SocketData>, frame: LiveServerMessage) => 
 let grant = Promise.withResolvers<void>();
 let postHeld = false;
 let eventsSent = 0;
+let subscriptions = 0;
 let css = "";
 let server: ReturnType<typeof Bun.serve<SocketData>>;
+const pushAccessChanged = () => {
+  for (const socket of sockets) {
+    if (!socket.data.subscription) continue;
+    send(socket, { t: "event", id: socket.data.subscription, cursor: "c1", data: { type: "access.changed" } });
+    eventsSent += 1;
+  }
+};
 let browser: Browser;
 
 beforeAll(async () => {
@@ -109,11 +117,7 @@ beforeAll(async () => {
         expect(await request.json()).toEqual({ principal: added.principal, permission: "read" });
         postHeld = true;
         await grant.promise;
-        for (const socket of sockets) {
-          if (!socket.data.subscription) continue;
-          send(socket, { t: "event", id: socket.data.subscription, cursor: "c1", data: { type: "access.changed" } });
-          eventsSent += 1;
-        }
+        pushAccessChanged();
         return Response.json(added);
       }
       if (url.pathname.startsWith("/api/")) return Response.json({ message: "Not part of the settings flow" }, { status: 404 });
@@ -138,6 +142,7 @@ beforeAll(async () => {
         expect(frame.scope).toEqual({ space: "Space1" });
         expect(frame.after).toBe("c0");
         socket.data.subscription = frame.id;
+        subscriptions += 1;
         send(socket, { t: "ready", id: frame.id, cursor: "c0" });
       },
     },
@@ -185,7 +190,7 @@ describe(`Space settings survive access changes in ${browserName}`, () => {
     ["phone-en", 390, 844, true, "en"],
     ["phone-de", 390, 844, true, "de"],
   ] as const) {
-    test(`${label}: the grant keeps the dialog and focus until closing triggers the deferred reload`, async () => {
+    test(`${label}: the grant keeps the dialog and focus, and a live change offers the reload after closing`, async () => {
       grant = Promise.withResolvers<void>();
       postHeld = false;
       eventsSent = 0;
@@ -208,7 +213,9 @@ describe(`Space settings survive access changes in ${browserName}`, () => {
           return document.fonts.ready;
         });
         await page.waitForFunction(() => Boolean(Reflect.get(document.querySelector("main button") ?? {}, "$$click")));
-        await page.getByRole("button", { name: locale === "de" ? "Space-Einstellungen" : "Space settings", exact: true }).click();
+        const settingsLabel = locale === "de" ? "Space-Einstellungen" : "Space settings";
+        const closeLabel = locale === "de" ? "Einstellungen schließen" : "Close settings";
+        await page.getByRole("button", { name: settingsLabel, exact: true }).click();
         const dialog = page.locator("dialog[open]");
         await dialog.getByRole("tab", { name: locale === "de" ? "Zugriff" : "Access", exact: true }).click();
         const input = dialog.getByRole("combobox");
@@ -245,11 +252,47 @@ describe(`Space settings survive access changes in ${browserName}`, () => {
         expect(await dialog.boundingBox()).toEqual(before);
         await shoot(page, `${label}-added`);
 
-        const loaded = page.waitForEvent("load");
-        await dialog.getByRole("button", { name: locale === "de" ? "Einstellungen schließen" : "Close settings", exact: true }).click();
+        // The person changed access, so Spaces itself loads the page again once they close the settings.
+        const subscribedBefore = subscriptions;
+        let loaded = page.waitForEvent("load");
+        const reconnection = page.waitForEvent("websocket", (socket) => socket.url().endsWith("/api/spaces/live"));
+        await dialog.getByRole("button", { name: closeLabel, exact: true }).click();
+        await loaded;
+        const secondSocket = await reconnection;
+        await page.waitForFunction(() => Reflect.get(window, "__page") === undefined);
+
+        // Someone else's change while the settings are open: the page neither reloads under the dialog nor
+        // after it closes, because the person may have confirmed work there; it offers the reload instead.
+        await waitFor(() => subscriptions > subscribedBefore, "the second live subscription");
+        await page.evaluate(() => {
+          sessionStorage.clear();
+          Reflect.set(window, "__page", "second");
+        });
+        await page.waitForFunction(() => Boolean(Reflect.get(document.querySelector("main button") ?? {}, "$$click")));
+        await page.getByRole("button", { name: settingsLabel, exact: true }).click();
+        await dialog.waitFor();
+        await settle(page);
+        const othersChange = secondSocket.waitForEvent(
+          "framereceived",
+          (frame) => typeof frame.payload === "string" && JSON.parse(frame.payload).t === "event",
+        );
+        pushAccessChanged();
+        await othersChange;
+        await settle(page);
+        expect(await dialog.count()).toBe(1);
+        expect(await pageMarker(page)).toBe("second");
+        const notice = page.locator("[data-k2b-toast]:not([data-closing])");
+        expect(await notice.count()).toBe(0);
+        await dialog.getByRole("button", { name: closeLabel, exact: true }).click();
+        await notice.waitFor();
+        expect(await dialog.count()).toBe(0);
+        expect(await notice.textContent()).toContain(locale === "de" ? "Diese Seite hat sich geändert." : "This page changed.");
+        expect(await pageMarker(page)).toBe("second");
+        await shoot(page, `${label}-reload-offered`);
+        loaded = page.waitForEvent("load");
+        await notice.getByRole("button", { name: locale === "de" ? "Neu laden" : "Reload", exact: true }).click();
         await loaded;
         await page.waitForFunction(() => Reflect.get(window, "__page") === undefined);
-        expect(await pageMarker(page)).toBeUndefined();
       } finally {
         grant.resolve();
         await context.close();

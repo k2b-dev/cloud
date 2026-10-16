@@ -60,8 +60,7 @@ export default function ContactsLiveEvents(props: Props) {
       reloading = true;
       lifecycle.abort();
       subscription.close();
-      // A dialog can hold the reload while an editor opens beside it, so the reload waits for both.
-      if (reloadOnce(`contacts:live:${window.location.pathname}`, { waitWhile: ACTIVE_EDITOR_SELECTOR })) return;
+      if (reloadOnce(`contacts:live:${window.location.pathname}`)) return;
       toast(t().liveUpdatesStopped, { duration: 0, action: { label: t().reload, onClick: () => window.location.reload() } });
     };
 

@@ -19,8 +19,10 @@ const missingChunk = () => Promise.reject(new TypeError("Failed to fetch dynamic
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
+  const notices = () => [...document.querySelectorAll<HTMLElement>(OPEN_TOAST)];
+
   for (const coalesce of [false, true]) {
-    test(`waits for a real prompt dialog to close${coalesce ? " and coalesces other reload keys" : ""}`, async () => {
+    test(`keeps a real prompt dialog and offers the reload once it closes${coalesce ? ", one notice for every key" : ""}`, async () => {
       const { ui, reload } = modules!;
       const dom = createDomTestHarness();
       let reloads = 0;
@@ -38,21 +40,27 @@ else {
         expect(dom.document.querySelector("dialog[open]")).not.toBeNull();
         expect(reload.reloadOnce("x")).toBe(true);
         if (coalesce) expect(reload.reloadOnce("another-key")).toBe(true);
-        expect(reloads).toBe(0);
+        expect(notices()).toHaveLength(0);
         closeDialog();
         await dialog;
         await Bun.sleep(10);
+        // The page never reloads by itself after a dialog: the person may have confirmed work in it.
+        expect(reloads).toBe(0);
+        expect(notices()).toHaveLength(1);
+        expect(notices()[0]!.textContent).toContain("This page changed.");
+        notices()[0]!.querySelector<HTMLButtonElement>(".k2b-toast__action")!.click();
         expect(reloads).toBe(1);
       } finally {
         closeDialog();
         await dialog;
         await Bun.sleep(10);
+        ui.toast.dismissAll();
         dom.cleanup();
       }
     });
   }
 
-  test("lets the code that waited for a confirmation start its request before the reload", async () => {
+  test("does not cancel the request of work confirmed in the dialog", async () => {
     const { ui, reload } = modules!;
     const dom = createDomTestHarness();
     const order: string[] = [];
@@ -61,25 +69,34 @@ else {
         order.push("reload");
       },
     });
+    const request = Promise.withResolvers<void>();
     let answer: (ok: boolean) => void = () => {};
     const confirmed = ui.prompts
       .dialog<boolean>((close) => {
         answer = close;
         return "Delete the item?";
       })
-      .then((ok) => {
-        if (ok) order.push("delete request");
+      .then(async (ok) => {
+        if (!ok) return;
+        order.push("delete request");
+        await request.promise;
+        order.push("delete answered");
       });
     try {
       expect(reload.reloadOnce("confirm")).toBe(true);
       answer(true);
+      await Bun.sleep(10);
+      request.resolve();
       await confirmed;
       await Bun.sleep(10);
-      expect(order).toEqual(["delete request", "reload"]);
+      expect(order).toEqual(["delete request", "delete answered"]);
+      expect(notices()).toHaveLength(1);
     } finally {
       answer(false);
+      request.resolve();
       await confirmed;
       await Bun.sleep(10);
+      ui.toast.dismissAll();
       dom.cleanup();
     }
   });
@@ -106,80 +123,46 @@ else {
     }
   });
 
-  test("keeps waiting after the dialog closes while a draft the caller names is open", async () => {
-    const { reload } = modules!;
+  test("waits for the last dialog, in the page's language, and starts the window at the deferred reload", async () => {
+    const { ui, reload } = modules!;
     const dom = createDomTestHarness();
+    dom.document.documentElement.lang = "de";
     let reloads = 0;
+    const now = 1_000_000;
+    const clock = spyOn(Date, "now").mockImplementation(() => now);
     Object.assign(dom.window.location, {
       reload: () => {
         reloads += 1;
       },
     });
-    const dialog = dom.document.createElement("dialog");
-    dialog.setAttribute("open", "");
-    const editor = dom.document.createElement("div");
-    dom.document.body.append(dialog, editor);
+    const first = dom.document.createElement("dialog");
+    const second = dom.document.createElement("dialog");
+    first.setAttribute("open", "");
+    second.setAttribute("open", "");
+    dom.document.body.append(first, second);
     try {
-      expect(reload.reloadOnce("draft", { waitWhile: '[data-draft="true"]' })).toBe(true);
-      // A modeless window leaves the page usable, so an editor can open while the reload waits.
-      editor.setAttribute("data-draft", "true");
-      dialog.remove();
+      expect(reload.reloadOnce("last-dialog")).toBe(true);
+      expect(dom.window.sessionStorage.getItem("cloud.reload.last-dialog")).toBe(String(now));
+      first.removeAttribute("open");
+      await Bun.sleep(10);
+      expect(notices()).toHaveLength(0);
+      second.remove();
       await Bun.sleep(10);
       expect(reloads).toBe(0);
-      editor.setAttribute("data-draft", "false");
-      await Bun.sleep(10);
-      expect(reloads).toBe(1);
+      expect(notices()).toHaveLength(1);
+      expect(notices()[0]!.textContent).toContain("Diese Seite hat sich geändert.");
+      expect(notices()[0]!.querySelector(".k2b-toast__action")!.textContent).toBe("Neu laden");
+      // The same reason within the window does not reload again; the caller offers its own reload.
+      expect(reload.reloadOnce("last-dialog")).toBe(false);
     } finally {
-      dialog.remove();
-      editor.remove();
+      first.remove();
+      second.remove();
       await Bun.sleep(10);
+      ui.toast.dismissAll();
+      clock.mockRestore();
       dom.cleanup();
     }
   });
-
-  for (const storageFails of [false, true]) {
-    test(`waits for the last dialog and ${storageFails ? "reloads even if storage later fails" : "starts the window at the deferred reload"}`, async () => {
-      const { reload } = modules!;
-      const dom = createDomTestHarness();
-      let reloads = 0;
-      let now = 1_000_000;
-      const clock = spyOn(Date, "now").mockImplementation(() => now);
-      Object.assign(dom.window.location, {
-        reload: () => {
-          reloads += 1;
-        },
-      });
-      const first = dom.document.createElement("dialog");
-      const second = dom.document.createElement("dialog");
-      first.setAttribute("open", "");
-      second.setAttribute("open", "");
-      dom.document.body.append(first, second);
-      let write: ReturnType<typeof spyOn> | undefined;
-      try {
-        expect(reload.reloadOnce("last-dialog")).toBe(true);
-        expect(dom.window.sessionStorage.getItem("cloud.reload.last-dialog")).toBe(String(now));
-        first.removeAttribute("open");
-        await Bun.sleep(10);
-        expect(reloads).toBe(0);
-        now += reload.AUTOMATIC_RELOAD_WINDOW_MS;
-        if (storageFails)
-          write = spyOn(dom.window.sessionStorage, "setItem").mockImplementation(() => {
-            throw new Error("QuotaExceededError");
-          });
-        second.remove();
-        await Bun.sleep(10);
-        expect(reloads).toBe(1);
-        if (!storageFails) expect(dom.window.sessionStorage.getItem("cloud.reload.last-dialog")).toBe(String(now));
-      } finally {
-        first.remove();
-        second.remove();
-        await Bun.sleep(10);
-        write?.mockRestore();
-        clock.mockRestore();
-        dom.cleanup();
-      }
-    });
-  }
 
   test("reloads immediately when no dialog is open", () => {
     const { reload } = modules!;

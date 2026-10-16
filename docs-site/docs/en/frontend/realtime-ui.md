@@ -144,18 +144,14 @@ const replacePage = () => {
 };
 ```
 
-`reloadOnce` waits while a modal dialog is open and reloads once the last
-one closes. An automatic reload never discards a modal dialog. A modeless
-window, such as global search moved aside, leaves the page usable and does
-not hold the reload. It reloads one task after the close, so the code that waited for the
-dialog, such as a confirmed delete, starts its request first; the reload does
-not wait for that request to finish. While it waits, `reloadOnce` returns
-`true` and the page gets no live updates. A dialog that shows live data says
-itself that its updates are paused. For editors outside a dialog, pass a
-selector that matches an open draft as `waitWhile`, for example
-`reloadOnce(key, { waitWhile: '[data-contacts-editor="true"]' })`. The reload
-then also waits while that selector matches, including when an editor opens
-while a dialog holds the reload.
+`reloadOnce` never reloads under an open modal dialog. Once the last one
+closes, it shows a notice with a Reload action instead, because the person
+may have confirmed work in that dialog, and a reload would cancel its request.
+A modeless window, such as global search moved aside, leaves the page usable
+and does not hold the reload. While a dialog holds it, `reloadOnce` returns
+`true`, so a dialog that shows live data says itself that its updates are
+paused. Wait for open editors outside a dialog to close before you call
+`reloadOnce`, so an automatic reload does not discard a draft.
 `reloadOnce` also returns `false` when `sessionStorage` is unavailable. A
 reload that follows an explicit user action does not need the guard.
 
