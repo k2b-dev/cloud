@@ -241,9 +241,11 @@ export const buildMessageDocument = (
           ":root { --mail-quote-text: currentColor; --mail-quote-border: currentColor; } * { transition: none !important; } a { color: rgb(1, 2, 4); }";
         document.head.append(sentinel);
         const captured = new Map();
+        const colors = new Map();
         for (const element of elements) {
           const computed = getComputedStyle(element);
           const color = computed.color;
+          colors.set(element, color);
           const fill = parseColor(computed.backgroundColor);
           // Borders and decorations without their own color follow the text and need no change.
           const own = (value) => (value === color ? null : parseColor(value));
@@ -257,6 +259,8 @@ export const buildMessageDocument = (
           captured.set(element, {
             style: element.getAttribute("style"),
             color: color === "rgb(1, 2, 3)" || color === "rgb(1, 2, 4)" ? null : parseColor(color),
+            // The same color as the parent may be inherited, so it follows the parent's adapted color.
+            followsParent: colors.get(element.parentElement) === color,
             decoration: own(computed.textDecorationColor),
             textShadow: computed.textShadow !== "none",
             background: fill[3] > 0 ? fill : null,
@@ -315,14 +319,24 @@ export const buildMessageDocument = (
         }
         if (original.background) set("background-color", adaptBackground(original.background));
         for (const [property, color] of original.borders) set(property, adaptBackground(color));
-        const inherited = foregrounds.get(element.parentElement) || text;
-        // Quoted history is dimmed by the frame's own rule, which keeps following the adapted text.
-        const quotePart = element.parentElement?.matches("details.mail-quoted-history");
-        const base = original.color || (isLink
-          ? parseColor(document.documentElement.style.getPropertyValue("--mail-dark-link"))
-          : quotePart ? [...inherited.slice(0, 3), inherited[3] * 0.65] : inherited);
+        const parent = element.parentElement;
+        const inherited = foregrounds.get(parent) || text;
+        const follows = original.color === null || original.followsParent;
+        // Quoted history is dimmed by the frame's own rule; it gets the dimmed adapted color
+        // through its custom property, so the toggle keeps its hover color.
+        const quoteDimmed = follows && parent?.matches("details.mail-quoted-history");
+        // The toggle's own contents carry no colors and simply inherit.
+        const frameOwned = Boolean(parent?.closest("details.mail-quoted-history > summary"));
+        const base = quoteDimmed
+          ? [...inherited.slice(0, 3), inherited[3] * 0.65]
+          : original.color === null && isLink
+            ? parseColor(document.documentElement.style.getPropertyValue("--mail-dark-link"))
+            : follows
+              ? inherited
+              : original.color;
         const color = adaptText(base, effective);
-        if (original.color || color !== base) set("color", color);
+        if (quoteDimmed && color === base) parent.style.setProperty("--mail-quote-text", cssColor(base));
+        else if (color !== base || (original.color !== null && !frameOwned)) set("color", color);
         foregrounds.set(element, color);
         if (original.decoration) set("text-decoration-color", adaptText(original.decoration, effective));
         // A shadow drawn for light text on a light surface turns into a halo around adapted text.

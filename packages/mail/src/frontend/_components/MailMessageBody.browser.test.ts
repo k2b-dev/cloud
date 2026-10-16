@@ -648,7 +648,8 @@ describe("HTML mail colors", () => {
     const content = `<p id="reply">Reply</p><blockquote type="cite"><p id="quoted">Earlier message</p></blockquote>
 <div id="plain-border" style="border:1px solid">Plain border</div>
 <a id="underlined" href="https://example.com" style="color:#111111;text-decoration:underline;text-decoration-color:#000000">Underlined</a>
-<p id="embossed" style="color:#333333;text-shadow:0 1px 0 #ffffff">Embossed</p>`;
+<p id="embossed" style="color:#333333;text-shadow:0 1px 0 #ffffff">Embossed</p>
+<div style="color:#1f2937"><p id="authored-reply">Authored reply</p><blockquote type="cite"><p id="authored-quoted">Authored quote</p></blockquote></div>`;
     await withOpenedMessage(
       false,
       async ({ page, frame, errors }) => {
@@ -697,6 +698,24 @@ describe("HTML mail colors", () => {
         expect(followers.border).toBe(followers.text);
         expect(followers.underline).toBe("rgb(255, 255, 255)");
         expect(followers.shadow).toBe("none");
+        // Under a sender color the quote is dimmed from the adapted color, and its toggle still lights up on hover.
+        const authoredReply = await frame.locator("#authored-reply").evaluate((element) => getComputedStyle(element).color);
+        expect(authoredReply).toMatch(/^rgb\(/);
+        expect(await frame.locator("#authored-quoted").evaluate((element) => getComputedStyle(element).color)).toBe(
+          authoredReply.replace("rgb(", "rgba(").replace(")", ", 0.65)"),
+        );
+        const authoredToggle = frame.locator("details.mail-quoted-history").nth(1).locator("summary");
+        await frame.waitForFunction(
+          (expected) =>
+            getComputedStyle(document.querySelectorAll("details.mail-quoted-history > summary .mail-quoted-show")[1]!).color === expected,
+          authoredReply.replace("rgb(", "rgba(").replace(")", ", 0.65)"),
+        );
+        await authoredToggle.hover();
+        await frame.waitForFunction(
+          (expected) =>
+            getComputedStyle(document.querySelectorAll("details.mail-quoted-history > summary .mail-quoted-show")[1]!).color === expected,
+          authoredReply,
+        );
         await assertAdaptedContrast(frame);
         await updateTheme(page, "light");
         await waitForMode(frame, false);
