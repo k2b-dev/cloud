@@ -1489,7 +1489,12 @@ export default function AssistantWorkspace(props: Props) {
               if (chat.activeConversationId() && !projectComposer() && !(await saveComposer(key, key)))
                 throw new Error(t().chatActionFailed);
               if (sessionKey() !== key) return "cancelled";
-              await createAndFocusConversation();
+              // A failed creation resolves to null; report it instead of a success line.
+              if (!(await createAndFocusConversation())) {
+                const reason = (chat.error() ?? t().chatActionFailed).replace(/\.+$/, "");
+                chat.setError(null);
+                throw new Error(commandCopy().newChatFailed({ reason }));
+              }
               if (title && hasRemainingDraft) return { done: commandCopy().newChatDraftKept({ title }) };
             },
           })}
