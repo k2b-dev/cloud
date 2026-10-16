@@ -466,6 +466,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     });
   });
 
+  test("preserves custom pane limits within the persistence envelope", () => {
+    const state = normalizeAppWorkspaceLayoutState({ version: 2, paneWidths: { narrow: 200, wide: 720, low: 80, high: 1200 } });
+    expect(state?.paneWidths).toEqual({ narrow: 200, wide: 720, low: 160, high: 960 });
+    expect(parseAppWorkspaceLayoutState(serializeAppWorkspaceLayoutState(state!))?.paneWidths).toEqual(state?.paneWidths);
+  });
+
   test("preserves the remembered sidebar width while deriving its collapsed first-paint style", () => {
     const state = normalizeAppWorkspaceLayoutState({ version: 2, sidebarWidth: 248, sidebarCollapsed: true });
 

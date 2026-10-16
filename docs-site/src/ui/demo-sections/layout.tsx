@@ -5,6 +5,7 @@ import {
   Avatar,
   addPanesItem,
   Button,
+  ButtonLink,
   DataPanel,
   DescriptionList,
   DetailPanel,
@@ -46,11 +47,102 @@ import {
   TextInput,
   Toolbar,
 } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { BottomSheetDemo, MobileShellDemo, NavigationDemo, TabBarDemo } from "./mobile-navigation";
 import { DemoGrid, type DemoSection } from "./types";
 import { LiveWorkspaceDemo } from "./workspace-live";
+
+const workspaceLevelsFrameHeight = 560;
+const workspaceLevelsCode = `const level = new URL(request.url).searchParams.get("level") ?? "areas";
+
+<AppWorkspace.Main level={level}>
+  <AppWorkspace.MainPane id="areas" label="AI" href="?level=areas">{areas}</AppWorkspace.MainPane>
+  <AppWorkspace.MainPane id="providers" label={provider.name} description={provider.kind} href="?level=providers"
+    actions={<Button size="sm" variant="secondary">Add models</Button>}>
+    {models}
+  </AppWorkspace.MainPane>
+  <AppWorkspace.MainPane id="model" label={model.name}>{details}</AppWorkspace.MainPane>
+</AppWorkspace.Main>`;
+
+/**
+ * Levels follow the viewport, so the card frames a full page of its own at a
+ * chosen width and scales it to the card. The frame keeps its height, so
+ * switching widths moves nothing on this page.
+ */
+const WorkspaceLevelsDemo = () => {
+  const [width, setWidth] = createSignal("1024");
+  const [available, setAvailable] = createSignal<number>();
+  let frame: HTMLDivElement | undefined;
+  onMount(() => {
+    if (!frame) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setAvailable(entry.contentRect.width);
+    });
+    observer.observe(frame);
+    onCleanup(() => observer.disconnect());
+  });
+  const scale = () => {
+    const room = available();
+    return room === undefined ? 1 : Math.min(1, room / Number(width()));
+  };
+  return (
+    <DemoCard
+      id="workspace-levels"
+      chip={[
+        { kind: "component", name: "AppWorkspace.Main level", from: "@k2b/ui" },
+        { kind: "component", name: "AppWorkspace.MainPane", from: "@k2b/ui" },
+      ]}
+      description="A settings area in three levels. 1440 px shows all three, 1024 px the two deepest, 390 px one with the back step. Follow a row, go back, or drag or arrow-key a separator; the width survives a reload."
+      code={workspaceLevelsCode}
+    >
+      <div class="flex flex-col gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <SegmentedControl
+            ariaLabel="Viewport width"
+            size="sm"
+            value={width}
+            onValueChange={setWidth}
+            options={[
+              { value: "390", label: "390 px" },
+              { value: "1024", label: "1024 px" },
+              { value: "1440", label: "1440 px" },
+            ]}
+          />
+          <ButtonLink href="/en/ui/demo/workspace-levels" target="_blank" rel="noopener" size="sm" variant="ghost">
+            <i class="ti ti-external-link" aria-hidden="true" />
+            Open full page
+          </ButtonLink>
+        </div>
+        <div
+          ref={frame}
+          style={{
+            height: `${workspaceLevelsFrameHeight}px`,
+            overflow: "hidden",
+            "border-radius": "var(--k2b-radius-surface)",
+            "box-shadow": "inset 0 0 0 1px var(--k2b-border)",
+            background: "var(--k2b-surface)",
+          }}
+        >
+          <iframe
+            title={`Workspace levels at ${width()} px`}
+            src="/en/ui/demo/workspace-levels"
+            style={{
+              display: "block",
+              border: "0",
+              width: `${width()}px`,
+              height: `${workspaceLevelsFrameHeight / scale()}px`,
+              "max-width": "none",
+              transform: `scale(${scale()})`,
+              "transform-origin": "top left",
+              visibility: available() === undefined ? "hidden" : undefined,
+            }}
+          />
+        </div>
+      </div>
+    </DemoCard>
+  );
+};
 
 const WorkspaceDemo = () => {
   const [activeView, setActiveView] = createSignal("available");
@@ -1727,6 +1819,7 @@ const items = [
     <DemoGrid columns="one">
       <NavigationDemo />
       <LiveWorkspaceDemo />
+      <WorkspaceLevelsDemo />
       <WorkspaceDemo />
     </DemoGrid>
   ),

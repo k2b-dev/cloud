@@ -122,7 +122,7 @@ Die Unterhaltungsdetails zeigen außerdem einen kleinen Abschnitt **Verwandte E-
 
 Öffnest du eine ungelesene Unterhaltung, markiert Mail sie als gelesen. Über **Weitere Unterhaltungsaktionen** markierst du sie wieder als ungelesen, fügst eine Fahne hinzu oder entfernst sie oder druckst die Unterhaltung. Eine Unterhaltung, die du als ungelesen markierst, bleibt in bereits geöffneten Tabs ungelesen, bis du ihre Zeile erneut öffnest. Eine Live-Aktualisierung allein markiert sie nicht als gelesen.
 
-Standardmäßig passt Mail Nachrichtentexte an das aktuelle Farbschema an: sicheres HTML im hellen Modus und reiner Text im dunklen Modus, wenn beide Fassungen vorhanden sind. Um eine einzelne Nachricht zu ändern, öffne ihre Aktionen und wähle **Als reinen Text anzeigen** oder **Als HTML anzeigen**. Um in diesem Browser einen festen Modus zu nutzen, wähle **Einstellungen → Lesen → Standardformat für Nachrichten**.
+Standardmäßig zeigt Mail die HTML-Fassung einer Nachricht und passt ihre Farben an den dunklen Modus an: Helle Hintergründe werden dunkel, Text bleibt lesbar und Bilder behalten ihre Originalfarben. Um eine einzelne Nachricht zu ändern, öffne ihre Aktionen und wähle **Als reinen Text anzeigen**, **Als HTML anzeigen** oder im dunklen Modus **Originalfarben anzeigen**. Um in diesem Browser einen festen Modus zu nutzen, wähle **Einstellungen → Lesen → Standardformat für Nachrichten**; **HTML mit Originalfarben** zeigt immer die Farben des Absenders.
 
 HTML-Nachrichten behalten eine begrenzte Auswahl an Layout-, Typografie-, Farb-, Abstands- und Tabellenstilen. Skripte, Formulare, eingebettete Objekte, externe Stylesheets und andere aktive Inhalte werden entfernt. Externe Bilder bleiben zusätzlich blockiert, bis du sie lädst.
 

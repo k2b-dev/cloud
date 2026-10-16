@@ -43,7 +43,7 @@ up during navigation, sharing observers with components with browser code.
 
 Set `scroll={false}` when a bounded child such as `ScrollArea`, `DataTable`, a reader, editor, or an explicit `overflow-auto` region owns scrolling. Do the same on `MainPane` when its child owns the pane's scrollport. Keep exactly one vertical scroll owner for each region; do not place another scrollport inside a still-scrolling `Main` or `MainPane`.
 
-Use `MainPane` for a stable peer region such as a list beside a reader. Use `Detail` for contextual information about the current selection. Use `BottomDrawer` for activity, preview, or a composer below the work area.
+Use `MainPane` for a stable peer region such as a list beside a reader, or for each column in levels mode. Use `Detail` for contextual information about the current selection. Use `BottomDrawer` for activity, preview, or a composer below the work area.
 
 Give every pane, detail, and drawer a stable purpose-based `id`. Do not use the selected record id. The host can use these ids with the exported layout-state helpers to restore geometry.
 
@@ -64,6 +64,105 @@ home indicator. A scrolling `Main` or pane fades its last rows above the
 inset, and the inset keeps the end of that fade. A floating `Detail` keeps its 0.5 rem inset above it. Cloud
 sets the property on the outermost workspace of its tablet and laptop shell, so
 applications need nothing.
+
+## Levels
+
+Use `Main level` for a hierarchy of columns, such as settings areas, a list,
+and a reader. Every child must be a `MainPane`. Their DOM order runs from
+shallowest to deepest. Only open panes count as levels. Give every level except
+the last an `href` that selects it.
+
+The viewport decides how many levels fit:
+
+| Class | Viewport width | Levels shown |
+| --- | --- | --- |
+| 1 | Below 48 rem (768 px) | 1 |
+| 2 | 48 to below 80 rem (768–1279 px) | Up to 2 |
+| 3 | From 80 rem (1280 px) | Up to 3 |
+
+The window rule is: **the deepest levels that fit, the selection decides**.
+The selected level ends the window unless the first levels already fit.
+For three levels, selecting level 3 shows level 3 on a phone, levels 2–3 at
+1024 px, and levels 1–3 at 1440 px. Selecting level 1 shows levels 1, 1–2,
+or 1–3 at those widths. An unknown id selects the first level.
+Hidden levels stay mounted; CSS hides them without losing local state.
+
+The width classes count the viewport, not the room beside the sidebar: from
+64 rem the sidebar column takes its width from all of them, and between 48 and
+64 rem it is an overlay. The server render and the first client frame therefore
+show the same levels, and nothing is measured to decide. Give `Main level` the
+workspace's full width: the deepest level takes the place of a `Detail`, so do
+not open one beside it, and do not use levels in a workspace narrower than the
+viewport. If Main still has less room than the shown levels need, it scrolls
+sideways, so the selected level stays reachable.
+
+Keep the selection in the URL and pass its level id to `level`. Reload and
+back/forward then restore the same selection. When a shallower level is hidden,
+a back step sits at the start of the first visible level's head, left of its
+title, at every width. It links to the parent of the selected level and its
+accessible name names the hidden level, for example "Back to AI". Its target is
+44 px. Pass `onLevelNavigate` for enhanced navigation when the owning island
+applies the destination state. Otherwise it is a normal document link. When a
+level change hides the focused control, such as the back step itself or a row
+of a list the phone no longer shows, focus moves to the title of the selected
+level.
+
+Each level head is a 46 px row without a line under it: the `label` as the
+title, an optional one-line `description`, and trailing `actions`. Every level
+starts below the same 8 px top inset, so the titles of side by side heads share
+one line when the heads have the same form, all with or all without a
+description. Selecting a row keeps every visible level where it is.
+
+The levels draw no lines between them. The last visible level fills the
+remaining width, whatever its content: a long title or text in the selected
+item never narrows the levels before it. When another level shows before it,
+it is a raised surface with the 8 px inset, like a floating `Detail`. On a
+phone the one level is flat. Levels do not animate.
+
+Resize earlier levels by dragging their separators or using Left/Right (8 px),
+Shift+Left/Right (32 px), Home (minimum), and End (maximum). Double-click a
+separator to reset that pane to its default size. On a touch screen a separator
+is a 44 px gap of its own between two levels, so a tap on the edge of a row
+never starts a resize. `defaultSize`, `minSize`, and `maxSize` use pixels; the
+default limits are 240–640 px. Available space may reduce the maximum, because
+the last level keeps 320 px.
+
+A resize starts from the widths on screen. When the window is too narrow for
+the stored widths, the shown levels give way; the first step on a separator
+then stores the widths they show, so the step moves by exactly its size and a
+reload shows the same columns. Their wider widths from a larger window are
+replaced.
+
+Persist the full state from `onLayoutChange`. Restore it through `layoutState`
+or `AppWorkspace.LayoutStateProvider`, and apply `appWorkspaceLayoutStyle`
+to an ancestor during SSR. The widths are then right in the first frame,
+before any browser code runs. Pane widths are stored by stable pane id; the
+persistence envelope is 160–960 px and each pane still applies its declared
+limits. Cloud persists this state automatically
+in its per-app workspace cookie.
+
+```tsx
+<AppWorkspace.Content>
+  <AppWorkspace.Main level={levelFromUrl}>
+    <AppWorkspace.MainPane id="areas" label="Areas" href="?level=areas">
+      <a href="?level=providers">AI providers</a>
+    </AppWorkspace.MainPane>
+    <AppWorkspace.MainPane
+      id="providers" label="Providers" href="?level=providers"
+      description="Available services"
+    >
+      <a href="?level=model">Atlas</a>
+    </AppWorkspace.MainPane>
+    <AppWorkspace.MainPane id="model" label="Model" actions={<ModelActions />}>
+      <ModelDetails />
+    </AppWorkspace.MainPane>
+  </AppWorkspace.Main>
+</AppWorkspace.Content>
+```
+
+The phone-only `mobilePane` remains available for Mains without `level`.
+Levels mode ignores it. In levels mode each pane body owns scrolling below its
+head; `scroll={false}` lets a bounded child own scrolling instead.
 
 ## Floating detail
 
@@ -645,6 +744,7 @@ type AppWorkspaceContentProps = { children: JSX.Element; class?: string };
 type AppWorkspaceMainProps = {
   children: JSX.Element; class?: string; width?: "full" | "content"; mobilePane?: string; scroll?: boolean; scrollFade?: boolean;
   scrollPreserveKey?: string | false;
+  level?: string; onLevelNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
   "aria-busy"?: boolean | "true" | "false";
 };
 
@@ -652,6 +752,7 @@ type AppWorkspaceMainPaneProps = {
   id: string; label: string; surface?: "default" | "navigation"; open?: boolean; resizable?: boolean;
   resizeShadow?: boolean; defaultSize?: number; minSize?: number; maxSize?: number; class?: string;
   scroll?: boolean; scrollFade?: boolean; children: JSX.Element;
+  href?: string; description?: JSX.Element; actions?: JSX.Element;
 };
 
 type AppWorkspaceDetailProps = {
@@ -820,7 +921,7 @@ The prop names map to compound members (`AppWorkspaceMainPaneProps` → `AppWork
 | Region | Default | Minimum | Maximum |
 | --- | --- | --- | --- |
 | Sidebar | 208 | 176 | 360 |
-| MainPane | 320 | 240 | 640 |
+| MainPane (peer pane or hierarchy level) | 320 | 240 | 640 |
 | Detail | 416 | 320 | 640 |
 | BottomDrawer | 240 | 160 | 560 |
 
@@ -1006,8 +1107,8 @@ down to its minimum; the stylesheet applies the same fit as the controller, so
 a server-rendered split arrives at its final widths. Detail floats within
 Content. Its width fits while Main keeps 320 px and the two 8 px gaps. If both
 minimum widths cannot fit, the panel overlaps Main.
-Double-click the detail resize handle to clear its saved width and return to
-its preset.
+Double-click a pane or detail resize handle to clear its saved width and return
+to its default size.
 
 ### Live rows and detail previews
 

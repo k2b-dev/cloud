@@ -1,12 +1,15 @@
 import { createFibelApp } from "@k2b/fibel";
 import { routes as ssrRoutes } from "@k2b/ssr/hono";
+import { parseAppWorkspaceLayoutState } from "@k2b/ui";
 import { Hono } from "hono";
+import { getCookie } from "hono/cookie";
 import { extname, join, normalize, resolve } from "path";
 import fibelConfig from "../fibel.config";
 import HomePage from "./home/HomePage";
 import { siteTheme } from "./site-config";
 import { html, config as ssrConfig } from "./ssr";
 import { linkedChartSnapshot, parseGroupRequest } from "./ui/chart-group-data";
+import WorkspaceLevelsDemo from "./ui/WorkspaceLevelsDemo.island";
 
 const fibelApp = await createFibelApp(fibelConfig);
 const app = new Hono();
@@ -88,6 +91,25 @@ UI: SolidJS
 
 Try: g then d, or g then u
 `),
+);
+app.get("/en/ui/demo/workspace-levels", (c) =>
+  html(
+    () => (
+      <WorkspaceLevelsDemo
+        level={c.req.query("level") ?? "model"}
+        provider={c.req.query("provider") ?? "northstar"}
+        model={c.req.query("model") ?? "atlas"}
+        layoutState={parseAppWorkspaceLayoutState(getCookie(c, "ui_demo_workspace_levels"))}
+      />
+    ),
+    {
+      title: "Workspace levels — Cloud UI",
+      description: "A settings area in three levels: areas, a provider with its models, and one model.",
+      path: "/en/ui/demo/workspace-levels",
+      theme: themeFromRequest(c.req.raw),
+      styles: ["/assets/generated/cloud-ui.css"],
+    },
+  ),
 );
 app.mount("/", fibelApp.fetch, { replaceRequest: false });
 app.notFound((c) => c.text("Not found", 404));
