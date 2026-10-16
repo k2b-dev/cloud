@@ -416,7 +416,9 @@ const assertAdaptedContrast = async (frame: Frame) => {
         const alpha = layer[3]! / 255;
         return below.map((value, index) => (index < 3 ? value * (1 - alpha) + layer[index]! * alpha : 255));
       }, parse("#11151b"));
-      const foreground = parse(getComputedStyle(element).color);
+      const text = parse(getComputedStyle(element).color);
+      const alpha = text[3]! / 255;
+      const foreground = background.map((value, index) => (index < 3 ? value * (1 - alpha) + text[index]! * alpha : 255));
       const first = luminance(foreground),
         second = luminance(background);
       const contrast = (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
@@ -461,7 +463,10 @@ describe("HTML mail colors", () => {
 <div id="gray" style="background:#999999">Default text <a id="gray-link" href="https://example.com">Default link</a></div>
 <div id="outer-gray" style="background:#999999">Outer text<div id="inner-white" style="background:#ffffff">Inner text</div></div>
 <div id="translucent-gray" style="background:rgba(153,153,153,.9);color:#000000">Translucent gray</div>
-<div id="nested-gray" style="background:#999999"><div id="translucent-black" style="background:rgba(0,0,0,.8);color:#ffffff">Nested translucent black</div></div>`;
+<div id="nested-gray" style="background:#999999"><div id="translucent-black" style="background:rgba(0,0,0,.8);color:#ffffff">Nested translucent black</div></div>
+<div id="clear-gradient" style="background:linear-gradient(rgba(255,255,255,.2),rgba(255,255,255,.2))"><span id="clear-gradient-text">Clear gradient</span></div>
+<div id="fade-gradient" style="background:linear-gradient(transparent,rgba(255,255,255,.1));color:#18181b">Fade gradient</div>
+<p id="translucent-text" style="color:rgba(0,0,195,.6)">Translucent text</p>`;
     await withOpenedMessage(
       false,
       async ({ page, frame, errors }) => {
@@ -474,6 +479,11 @@ describe("HTML mail colors", () => {
         expect(await frame.locator("#dark-gradient").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(255, 255, 255)");
         expect(await frame.locator("#gradient-text").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(24, 24, 27)");
         expect(await frame.locator("#gradient-link").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(22, 119, 200)");
+        // A gradient keeps the light surface it was designed on, also when it is translucent.
+        for (const id of ["#light-gradient", "#clear-gradient", "#fade-gradient"]) {
+          expect(await frame.locator(id).evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgb(255, 255, 255)");
+        }
+        expect(await frame.locator("#clear-gradient-text").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(24, 24, 27)");
         await assertAdaptedContrast(frame);
         await updateTheme(page, "light");
         await waitForMode(frame, false);
@@ -634,7 +644,7 @@ describe("HTML mail colors", () => {
         });
         expect(gradient.image).toContain("linear-gradient");
         expect(gradient.color).toBe("rgb(55, 65, 81)");
-        expect(gradient.background).toBe("rgba(0, 0, 0, 0)");
+        expect(gradient.background).toBe("rgb(254, 243, 199)");
         expect(await frame.locator("a").evaluate((element) => getComputedStyle(element).color)).toBe("rgb(55, 65, 81)");
         expect(errors).toEqual([]);
       },

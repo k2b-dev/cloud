@@ -212,15 +212,17 @@ export const buildMessageDocument = (
         return mix(background, hslToRgb([h, s * 0.6, 0.35], color[3]), Math.max(0, Math.min((1 - l) * 2.5, 1)));
       };
       const adaptText = (color, effectiveBackground) => {
-        if (contrast(color, effectiveBackground) >= 4.5) return color;
-        const [h, s, l] = rgbToHsl(color);
+        // Translucent text shows its surface through, so judge and adapt the color as painted.
+        const painted = color[3] < 1 ? [...mix(effectiveBackground, color, color[3]).slice(0, 3), 1] : color;
+        if (contrast(painted, effectiveBackground) >= 4.5) return color;
+        const [h, s, l] = rgbToHsl(painted);
         let lightness = 1 - l;
-        let result = hslToRgb([h, s, lightness], color[3]);
+        let result = hslToRgb([h, s, lightness], 1);
         // Mid-tone surfaces reach more contrast with dark text, so move toward the stronger extreme.
         const direction = contrast([255, 255, 255], effectiveBackground) >= contrast([0, 0, 0], effectiveBackground) ? 1 : -1;
         while (contrast(result, effectiveBackground) < 4.5 && (direction > 0 ? lightness < 1 : lightness > 0)) {
           lightness = Math.max(0, Math.min(1, lightness + direction * 0.05));
-          result = hslToRgb([h, s, lightness], color[3]);
+          result = hslToRgb([h, s, lightness], 1);
         }
         return result;
       };
@@ -260,8 +262,8 @@ export const buildMessageDocument = (
         const layers = [];
         for (let current = element; current; current = current.parentElement) {
           const original = originals.get(current);
-          // An unchanged image makes the surface below the text unknown.
-          if (original?.backgroundImage) return null;
+          // An unchanged image makes the adapted surface below the text unknown.
+          if (adapted && original?.backgroundImage) return null;
           if (!original?.background) continue;
           layers.push(adapted ? adaptBackground(original.background) : original.background);
           if (original.background[3] === 1) break;
@@ -288,6 +290,8 @@ export const buildMessageDocument = (
         restoreStyle(element, original);
         const set = (property, value) => element.style.setProperty(property, cssColor(value), "important");
         if (original.background && !original.backgroundImage) set("background-color", adaptBackground(original.background));
+        // A background image stays as authored, so it keeps the light surface it was designed on.
+        if (original.backgroundImage) set("background-color", effectiveBackground(element, false));
         for (const [property, color] of original.borders) set(property, adaptBackground(color));
         const effective = effectiveBackground(element, true);
         const isLink = element.tagName === "A";
@@ -301,11 +305,11 @@ export const buildMessageDocument = (
           ? parseColor(document.documentElement.style.getPropertyValue("--mail-dark-link"))
           : foregrounds.get(element.parentElement) || text);
         const color = adaptText(base, effective);
-        if (original.color || contrast(base, effective) < 4.5) set("color", color);
+        if (original.color || color !== base) set("color", color);
         foregrounds.set(element, color);
         if (needsImagePlate(element)) {
           const originalEffective = effectiveBackground(element, false);
-          if (originalEffective && luminance(originalEffective) > 0.4 && cssColor(effective) !== cssColor(originalEffective)) {
+          if (luminance(originalEffective) > 0.4 && cssColor(effective) !== cssColor(originalEffective)) {
             set("background-color", originalEffective);
           }
         }
