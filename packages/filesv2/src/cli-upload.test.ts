@@ -9,7 +9,7 @@ import { hc } from "hono/client";
 import filesCli from "./cli";
 import { uploadFile as runUploadFile } from "./cli-upload";
 import type { EntryResult, UploadSession } from "./contracts";
-import { UploadTransferError, uploadResponseFailure } from "./upload-transfer";
+import { UPLOAD_COMMIT_DEADLINE_MS, UploadTransferError, uploadResponseFailure } from "./upload-transfer";
 
 // Existing outcome tests exercise one attempt; retry regressions below supply their own budget.
 const uploadFile: typeof runUploadFile = (ctx, input, api, options = { retryDelays: [] }) => runUploadFile(ctx, input, api, options);
@@ -425,8 +425,18 @@ test.each(["open", "commit"])("CLI localizes a Cloud %s deadline without abortin
     });
   try {
     for (const [locale, message] of [
-      ["en", "No response from Cloud within 60 seconds."],
-      ["de", "Keine Antwort von Cloud innerhalb von 60 Sekunden."],
+      [
+        "en",
+        phase === "commit"
+          ? "Cloud did not finish the upload in time. Run the command again to continue."
+          : "No response from Cloud within 60 seconds.",
+      ],
+      [
+        "de",
+        phase === "commit"
+          ? "Cloud hat den Upload nicht rechtzeitig abgeschlossen. Führe den Befehl erneut aus, um fortzufahren."
+          : "Keine Antwort von Cloud innerhalb von 60 Sekunden.",
+      ],
     ]) {
       await expect(
         uploadFile({ ...ctx, options: { ...ctx.options, locale } }, local, {
@@ -443,7 +453,7 @@ test.each(["open", "commit"])("CLI localizes a Cloud %s deadline without abortin
         }),
       ).rejects.toThrow(message);
     }
-    expect(deadlines).toEqual(phase === "open" ? [60_000, 60_000] : [60_000, 60_000, 60_000, 60_000]);
+    expect(deadlines).toEqual(phase === "open" ? [60_000, 60_000] : [60_000, UPLOAD_COMMIT_DEADLINE_MS, 60_000, UPLOAD_COMMIT_DEADLINE_MS]);
   } finally {
     timeout.mockRestore();
   }
@@ -699,6 +709,71 @@ test("CLI exhaustion rejects after five retries, keeps its key, and a rerun resu
   await expect(uploadFile(ctx, local, api)).resolves.toEqual(result);
   expect(keys[6]).toBe(keys[0]!);
   expect(defaults.size).toBe(0);
+});
+
+test.each(["timeout", "504"])("CLI recovers a %s commit with the long deadline, same key and no abort", async (failure) => {
+  const local = await file("abc");
+  const keys: string[] = [];
+  const ids: string[] = [];
+  const deadlines: number[] = [];
+  let published = false;
+  let puts = 0;
+  let aborts = 0;
+  globalThis.fetch = Object.assign(
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      if (String(input).includes("segments")) return Response.json({ items: [] });
+      if (init?.method === "PUT") puts++;
+      return Response.json({ id: "session", root: "cloud", size: 3, chunkSize: 4, state: "open", received: puts ? 3 : 0 });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const nativeTimeout = AbortSignal.timeout;
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+    deadlines.push(ms);
+    return nativeTimeout(ms === UPLOAD_COMMIT_DEADLINE_MS ? 10 : ms);
+  });
+  try {
+    await expect(
+      uploadFile(
+        ctx,
+        local,
+        {
+          scope: "commit-recovery",
+          open: async (_size, _signal, key) => {
+            keys.push(key);
+            expect([...defaults.values()]).toEqual([key]);
+            return { ...session("https://files.test/lease", 3), state: published ? "committed" : "open" };
+          },
+          renew: async () => {
+            throw new Error("must not renew");
+          },
+          commit: async (id, signal) => {
+            ids.push(id);
+            if (published) return result;
+            published = true;
+            if (failure === "504") throw await uploadResponseFailure(Response.json({}, { status: 504 }), "failed");
+            return new Promise<never>((_, reject) => {
+              signal.throwIfAborted();
+              signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+            });
+          },
+          abort: async () => {
+            aborts++;
+          },
+        },
+        { retryDelays: [0] },
+      ),
+    ).resolves.toEqual(result);
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).toBe(keys[0]!);
+    expect(ids).toEqual(["session", "session"]);
+    expect(deadlines.filter((ms) => ms === UPLOAD_COMMIT_DEADLINE_MS)).toHaveLength(2);
+    expect(puts).toBe(1);
+    expect(aborts).toBe(0);
+    expect(defaults.size).toBe(0);
+  } finally {
+    timeout.mockRestore();
+  }
 });
 
 test("CLI rate-limit waits survive six consecutive 429s and leave the retry budget for a stalled commit", async () => {

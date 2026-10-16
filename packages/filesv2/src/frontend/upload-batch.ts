@@ -25,6 +25,8 @@ export type UploadRow = {
   reason: string | null;
   /** Set only while the row is working and its upload waits or tries again; cleared when the row settles. */
   wait: UploadWait | null;
+  /** Set only while the row is working and Cloud is publishing its received bytes; cleared on progress or settlement. */
+  phase: "finishing" | null;
   group: number;
 };
 
@@ -132,7 +134,18 @@ export const appendFiles = (
   for (const file of files) {
     const id = batch.rows.length;
     const name = baseName(file.path);
-    batch.rows.push({ id, path: file.path, name, size: file.size, sent: 0, status: "pending", reason: null, wait: null, group });
+    batch.rows.push({
+      id,
+      path: file.path,
+      name,
+      size: file.size,
+      sent: 0,
+      status: "pending",
+      reason: null,
+      wait: null,
+      phase: null,
+      group,
+    });
     batch.names[name] = (batch.names[name] ?? 0) + 1;
     batch.queue.push(id);
     batch.count++;
@@ -159,6 +172,7 @@ export const startRow = (batch: UploadBatch, id: number) => {
   row.status = "working";
   row.sent = 0;
   row.wait = null;
+  row.phase = null;
   batch.active = id;
 };
 
@@ -172,9 +186,16 @@ export const waitRow = (batch: UploadBatch, id: number, wait: UploadWait | null)
   return was === "network" ? { kind: "online" } : null;
 };
 
+/** The publication phase belongs only to the file in flight. */
+export const phaseRow = (batch: UploadBatch, id: number, phase: UploadRow["phase"]) => {
+  const row = batch.rows[id]!;
+  if (row.status === "working") row.phase = phase;
+};
+
 export const reportProgress = (batch: UploadBatch, id: number, bytes: number): UploadAnnouncement | null => {
   const row = batch.rows[id]!;
   if (row.status !== "working") return null;
+  row.phase = null;
   row.sent = Math.max(0, Math.min(row.size, bytes));
   return milestone(batch);
 };
@@ -189,6 +210,7 @@ export const finishRow = (
   if (batch.active === id) batch.active = null;
   row.status = outcome.status;
   row.wait = null;
+  row.phase = null;
   if (outcome.status !== "failed") row.reason = null;
   if (outcome.status === "success") {
     row.sent = row.size;
@@ -229,6 +251,7 @@ export const retryRows = (batch: UploadBatch, ids?: readonly number[]): UploadAn
     row.status = "pending";
     row.sent = 0;
     row.wait = null;
+    row.phase = null;
     batch.failed--;
     batch.failedBytes -= row.size;
     batch.queue.push(row.id);
@@ -248,6 +271,7 @@ export const cancelBatch = (batch: UploadBatch): UploadAnnouncement | null => {
     if (row.status !== "pending" && row.status !== "working") continue;
     row.sent = 0;
     row.wait = null;
+    row.phase = null;
     if (row.reason === null) {
       row.status = "cancelled";
       continue;

@@ -1042,8 +1042,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* A wait is not a failure: a calm reason under the name, and a still warning icon where the ring turns while it waits. */
-.filesv2-upload-row[data-wait] .filesv2-upload-row__reason {
+/* A wait or the publication in progress is not a failure: a calm line under the name, and a still warning icon where the ring turns while it waits. */
+.filesv2-upload-row:is([data-wait], [data-phase]) .filesv2-upload-row__reason {
   color: var(--k2b-text-secondary);
 }
 .filesv2-upload-row[data-wait]:not([data-wait="retrying"]) .filesv2-upload-row__status {

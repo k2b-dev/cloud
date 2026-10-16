@@ -10,6 +10,7 @@ import { apiError } from "../src/api/api-error";
 import { errorMessage } from "../src/api/messages";
 import { uploadFile } from "../src/cli-upload";
 import type { EntryResult } from "../src/contracts";
+import { filegateApiFetch } from "../src/service";
 import { transferUpload, UploadTransferError, uploadResponseFailure } from "../src/upload-transfer";
 import { localFilegateToken } from "./private-database";
 
@@ -100,6 +101,63 @@ suite("actual Filegate 7.0.0 transfer contract (isolated local prefix)", () => {
     };
     expect(abort?.status).toBe(409);
     expect((await root.session(opened.session.id)).state).toBe("committed");
+    expect(await (await root.contentRaw(path)).text()).toBe("abc");
+  });
+
+  test("the production Filegate wrapper keeps a delayed upload commit connected", async () => {
+    const nativeFetch = globalThis.fetch;
+    let forwardedCommits = 0;
+    const transport: typeof fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+        if (init?.method === "POST" && /\/uploads\/sessions\/[^/]+\/commit$/.test(url.pathname)) {
+          await new Promise<void>((resolve, reject) => {
+            const signal = init.signal;
+            signal?.throwIfAborted();
+            const abort = () => {
+              clearTimeout(timer);
+              reject(signal?.reason);
+            };
+            const timer = setTimeout(() => {
+              signal?.removeEventListener("abort", abort);
+              resolve();
+            }, 1000);
+            signal?.addEventListener("abort", abort, { once: true });
+          });
+          forwardedCommits++;
+        }
+        return nativeFetch(input, init);
+      },
+      { preconnect: nativeFetch.preconnect },
+    );
+    const delayed = new Filegate({
+      baseUrl: testInfra.filegate!,
+      token: await localFilegateToken(),
+      fetch: filegateApiFetch(transport),
+    }).root("cloud");
+    const path = `${prefix}/delayed-commit.txt`;
+    const opened = await delayed.createSession(path, 3, { allowAbort: true, idempotencyKey: randomUUID() });
+    pending.add(opened.session.id);
+    await new DirectSession(opened.lease!.url, transfer).upload(new Blob(["abc"]));
+    const nativeTimeout = AbortSignal.timeout;
+    // Control: the old short budget disconnects before Filegate ever receives the commit.
+    const short = spyOn(AbortSignal, "timeout").mockImplementation((ms) => nativeTimeout(ms === 600_000 || ms === 10_000 ? 200 : ms));
+    try {
+      await expect(delayed.commitSession(opened.session.id)).rejects.toMatchObject({ name: "TimeoutError" });
+    } finally {
+      short.mockRestore();
+    }
+    expect(forwardedCommits).toBe(0);
+    expect(await root.session(opened.session.id)).toMatchObject({ state: "open", received: 3 });
+    const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => nativeTimeout(ms === 10_000 ? 200 : ms));
+    try {
+      await delayed.commitSession(opened.session.id);
+    } finally {
+      timeout.mockRestore();
+    }
+    expect((await root.session(opened.session.id)).state).toBe("committed");
+    expect(forwardedCommits).toBe(1);
+    pending.delete(opened.session.id);
     expect(await (await root.contentRaw(path)).text()).toBe("abc");
   });
 

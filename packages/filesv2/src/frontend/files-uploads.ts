@@ -56,7 +56,7 @@ export function createFilesUploads(): FilesUploads {
         if (!response.ok && (response.status as number) !== 409) throw await uploadResponseFailure(response, t().unavailable);
       }
     },
-    upload: async (group, item, { signal, onProgress, alive }) => {
+    upload: async (group, item, { signal, onProgress, onPhase, alive }) => {
       const path = group.root ? `${group.root}/${item.path}` : item.path;
       let onConflict: "error" | "overwrite" = group.policy === "overwrite" ? "overwrite" : "error";
       for (;;) {
@@ -66,6 +66,7 @@ export function createFilesUploads(): FilesUploads {
             signal,
             fallback: u().failed,
             onProgress,
+            onPhase,
             onStarted: alive,
           });
           return { status: "uploaded", path: result.entry.path };

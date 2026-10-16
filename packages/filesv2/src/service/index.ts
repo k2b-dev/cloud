@@ -85,8 +85,26 @@ const EDITOR_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 /** Collabora hands over whole documents; Cloud holds one in memory while forwarding it to Filegate. */
 export const EDITOR_DOCUMENT_LIMIT = 256 * 1024 * 1024;
 const EDITOR_TRANSFER_TIMEOUT_MS = 5 * 60 * 1000;
-/** Tree moves, recursive removes, index rebuilds and statistics walk whole roots. */
+/** Tree operations walk whole roots; upload commits copy all received bytes. */
 const SLOW_CALL_TIMEOUT_MS = 10 * 60 * 1000;
+export function filegateCallTimeoutMs(input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]): number {
+  const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+  const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+  const slow =
+    method === "DELETE" ||
+    url.pathname.endsWith("/transfers") ||
+    (method === "POST" && /\/uploads\/sessions\/[^/]+\/commit$/.test(url.pathname));
+  return slow ? SLOW_CALL_TIMEOUT_MS : 10_000;
+}
+
+export function filegateApiFetch(transport: typeof fetch = fetch): typeof fetch {
+  return Object.assign(
+    (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
+      transport(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(filegateCallTimeoutMs(input, init)) }),
+    { preconnect: transport.preconnect },
+  );
+}
+
 const withWopiSrc = (action: string, wopiSrc: string) =>
   `${action}${action.endsWith("?") || action.endsWith("&") ? "" : action.includes("?") ? "&" : "?"}WOPISrc=${encodeURIComponent(wopiSrc)}`;
 /** Filesystem scans without an index stop here; Filegate answers 413 beyond it. */
@@ -146,15 +164,7 @@ export function createFilesService(
         baseUrl: config.url,
         token: config.token,
         transferBaseUrl: config.url,
-        fetch: Object.assign(
-          // API calls get a short timeout; transfers and recursive removes may walk whole trees, byte streams bring their own signal.
-          (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
-            const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-            const slow = init?.method === "DELETE" || /\/transfers(\?|$)/.test(url);
-            return fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(slow ? SLOW_CALL_TIMEOUT_MS : 10_000) });
-          },
-          { preconnect: fetch.preconnect },
-        ),
+        fetch: filegateApiFetch(),
       }),
   },
 ) {

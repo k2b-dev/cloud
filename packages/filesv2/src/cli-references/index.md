@@ -185,7 +185,9 @@ replacing. A stale `--expected-revision` is a `write_conflict`. Unmanaged
 upload ID was reused with different parameters; inspect the original operation.
 `operation_conflict` and `write_conflict` do not authorize overwriting.
 Retries and lease renewal are bounded. Target resolution, folder creation with
-`--parents`, session opening, and commit have a 60 s deadline. Transfer control
+`--parents`, and session opening have a 60 s deadline. To finish a large upload,
+`put` waits up to about four minutes for Cloud. A run that stops there resumes
+with the same upload identity when run again. Transfer control
 requests have a 30 s deadline; each segment PUT gets 60 s plus its body size at
 64 KiB/s (about 0.5 Mbit/s), the slowest supported uplink. The deadline covers
 the whole request, including its response body. A deadline ends that attempt.
@@ -200,7 +202,9 @@ server errors and final answers are not retried automatically. When the
 budget is exhausted, the command exits non-zero and keeps the upload ID, so
 rerunning the unchanged command resumes. A rerun starts a fresh retry budget.
 
-A Cloud deadline reports "No response from Cloud within 60 seconds."
+A Cloud deadline before commit reports "No response from Cloud within 60 seconds."
+A commit deadline reports "Cloud did not finish the upload in time. Run the command
+again to continue."
 Transfer failures report "No response from the file server.", "No connection
 to the file server.", or "The file server is busy. Try again later."
 The busy message covers HTTP 408, 502, 503, and 504. HTTP 429 reports
