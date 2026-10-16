@@ -37,6 +37,37 @@ const mount = () => {
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
+  test("records input mode on every shell variant and stops after disposal", () => {
+    const dom = createDomTestHarness();
+    const html = dom.document.documentElement;
+    // Avoid timezone reload work so this test isolates the unconditional controller.
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    dom.document.cookie = `cloud.timezone=${encodeURIComponent(zone)}; Path=/`;
+    const dispose = render(() => createComponent(ShellRuntime!, {}), dom.root);
+    const pointer = (type: string, pointerType: string) => {
+      const event = new dom.window.Event(type, { bubbles: true });
+      Object.defineProperty(event, "pointerType", { value: pointerType });
+      dom.window.document.dispatchEvent(event);
+    };
+    try {
+      expect(html.hasAttribute("data-k2b-input")).toBe(false);
+      expect(html.hasAttribute("data-k2b-kbd")).toBe(false);
+      pointer("pointerdown", "touch");
+      expect(html.getAttribute("data-k2b-input")).toBe("touch");
+      pointer("pointermove", "mouse");
+      expect(html.getAttribute("data-k2b-input")).toBe("trackpad");
+      dispose();
+      pointer("pointerdown", "touch");
+      dom.document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+      expect(html.getAttribute("data-k2b-input")).toBe("trackpad");
+      expect(html.hasAttribute("data-k2b-kbd")).toBe(false);
+    } finally {
+      dispose();
+      html.removeAttribute("data-k2b-input");
+      html.removeAttribute("data-k2b-kbd");
+      dom.cleanup();
+    }
+  });
   test("Help opens once when invoked twice while its module is loading", async () => {
     const dom = createDomTestHarness();
     const reload = await import("../browser/reload");

@@ -11,11 +11,21 @@ const styleSources = shippedStyleFiles(stylesDir).map((file) => ({
 const shippedCss = styleSources.map(({ source }) => source).join("\n");
 
 describe("@k2b/ui stylesheet hygiene", () => {
-  test("hides row actions only while some pointer can hover and keeps the current row's actions", () => {
+  test("pairs input-mode rest rules and keeps the current row's actions", () => {
     const rules = readShippedCssRules(stylesDir);
     const hoverPointer = "@media (any-hover: hover)";
+    const fallback = ':where(html:not([data-k2b-input="touch"])) ';
+    const trackpad = ':where(html[data-k2b-input="trackpad"]) ';
+    // Where any pointer can hover, sidebar row actions overlay the label and counts. Touch input keeps their reveal
+    // set (hover, focus, current row, open menu); showing them on every row would hide every row's text and counts.
+    const overlaid: ReadonlySet<string> = new Set([
+      '.k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]',
+      '.k2b-ui .k2b-app-workspace__sidebar-item > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]',
+    ]);
+    const restPrefix = (selector: string) => (overlaid.has(selector) ? "" : fallback);
     for (const [selector, property, value] of [
       [".k2b-ui .k2b-app-workspace__sidebar-section-actions", "opacity", "0"],
+      ['.k2b-ui .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"]', "visibility", "hidden"],
       ['.k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]', "visibility", "hidden"],
       ['.k2b-ui .k2b-app-workspace__sidebar-item > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]', "opacity", "0"],
       [".k2b-ui .k2b-detail-panel__action-secondary", "opacity", "0"],
@@ -25,28 +35,75 @@ describe("@k2b/ui stylesheet hygiene", () => {
       [".k2b-ui .k2b-tabs__list .k2b-tabs__close", "opacity", "0"],
       [".k2b-ui .k2b-progressive-action", "opacity", "0"],
     ] as const) {
-      const rule = rules.find((candidate) => candidate.selector === selector && candidate.context === hoverPointer);
+      const rule = rules.find((candidate) => candidate.selector === restPrefix(selector) + selector && candidate.context === hoverPointer);
       expect(rule, selector).toBeDefined();
       expect(cssDeclarations(rule!.body).get(property)).toEqual([value]);
+      const twin = rules.find((candidate) => candidate.selector === trackpad + selector && candidate.context === "");
+      expect(twin, selector).toBeDefined();
+      expect(cssDeclarations(twin!.body)).toEqual(cssDeclarations(rule!.body));
     }
 
     const rowAction =
-      /sidebar-section-actions|sidebar-item-actions|sidebar-item-action\[|detail-panel__action-secondary|detail-panel__action-menu-trigger|discussion__item-actions|description-list__action|tabs__close|progressive-action/;
+      /sidebar-section-actions|sidebar-item-actions|sidebar-item-action\b|sidebar-item-meta\[data-visibility|detail-panel__action-secondary|detail-panel__action-menu-trigger|discussion__item-actions|description-list__action|tabs__close|progressive-action/;
     // A primary-pointer query misses a tablet with a mouse, whether it hides or shows the actions.
     const primaryPointer = /\((?:hover:\s*(?:hover|none)|pointer:\s*(?:fine|coarse))\)/;
     expect(rules.filter((rule) => rowAction.test(rule.selector) && primaryPointer.test(rule.context))).toEqual([]);
-    // Hiding anywhere else would hide the actions on touch-only screens too.
-    expect(
-      rules.filter((rule) => {
-        if (!rowAction.test(rule.selector) || rule.context.startsWith(hoverPointer)) return false;
-        const declarations = cssDeclarations(rule.body);
-        return declarations.get("opacity")?.includes("0") || declarations.get("visibility")?.includes("hidden");
-      }),
-    ).toEqual([]);
+    // Without a coarse pointer a preview opens on hover, so its button and the action before it share one slot and
+    // only one of them shows. That follows the pointer capability, never the input mode: a pen on such a screen
+    // records touch and would otherwise show both buttons in one place.
+    const previewSlot = (rule: (typeof rules)[number]) =>
+      rule.selector.includes("sidebar-preview-trigger") && rule.context.includes("not all and (any-pointer: coarse)");
+    const previewSlotHides = rules.filter((rule) => previewSlot(rule) && cssDeclarations(rule.body).get("opacity")?.includes("0"));
+    expect(previewSlotHides.length).toBeGreaterThanOrEqual(2);
+    for (const rule of previewSlotHides) expect(rule.selector, rule.selector).not.toContain("data-k2b-input");
+    const hides = rules.filter((rule) => {
+      const declarations = cssDeclarations(rule.body);
+      return (
+        !previewSlot(rule) &&
+        // Object-row counts yield to overlaid actions; they are not actions themselves.
+        !rule.selector.endsWith(" .k2b-app-workspace__sidebar-item-meta") &&
+        rowAction.test(rule.selector) &&
+        (declarations.get("opacity")?.includes("0") ||
+          declarations.get("visibility")?.includes("hidden") ||
+          declarations.get("pointer-events")?.includes("none"))
+      );
+    });
+    for (const rule of hides) {
+      const isMedia = !rule.selector.startsWith(trackpad);
+      const base = isMedia ? rule.selector.replace(fallback, "") : rule.selector.slice(trackpad.length);
+      expect(rule.selector, rule.selector).toBe(isMedia ? restPrefix(base) + base : trackpad + base);
+      expect(rule.context.includes(hoverPointer), rule.selector).toBe(isMedia);
+      const twin = rules.find(
+        (candidate) =>
+          candidate.file === rule.file &&
+          candidate.selector === (isMedia ? trackpad + base : restPrefix(base) + base) &&
+          candidate.context ===
+            (isMedia
+              ? rule.context
+                  .split(" > ")
+                  .filter((context) => context !== hoverPointer)
+                  .join(" > ")
+              : [rule.context, hoverPointer].filter(Boolean).join(" > ")),
+      );
+      expect(twin, rule.selector).toBeDefined();
+      expect(cssDeclarations(twin!.body)).toEqual(cssDeclarations(rule.body));
+    }
+    // Only paint may depend on mode; boxes stay reserved. The sidebar fade and object-row counts follow the overlaid
+    // actions, never the mode, so touch input cannot hide every row's text.
+    const paint = ["opacity", "visibility", "pointer-events", "transition"];
+    expect(rules.filter((rule) => /data-k2b-input/.test(rule.selector) && /sidebar-item-(?:main|meta)$/.test(rule.selector))).toEqual([]);
+    for (const rule of rules.filter((rule) => /data-k2b-(?:input|kbd)/.test(rule.selector))) {
+      const declarations = cssDeclarations(rule.body);
+      expect(
+        [...declarations.keys()].every((key) => paint.includes(key)),
+        rule.selector,
+      ).toBe(true);
+      for (const transition of declarations.get("transition") ?? []) expect(transition).toStartWith("opacity ");
+    }
 
     const reveal = rules.find(
       (rule) =>
-        rule.context === hoverPointer &&
+        rule.context === "" &&
         rule.selector.endsWith(' .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]') &&
         rule.selector.includes(".k2b-app-workspace__sidebar-item:is("),
     );

@@ -20,6 +20,19 @@ formatShortcut("mod+k", { platform: "apple", locale: "en" }).label; // ⌘K
 keyboardPlatform("MacIntel"); // apple
 ```
 
+## Keyboard hints
+
+Use `class="k2b-kbd-hint"` for an optional shortcut hint, for example in a
+toolbar. It reserves its space with `visibility: hidden` and shows after the
+first qualifying key press. Typing and lone modifiers do not count. The host
+starts `installInputModeController()`; see [Input mode](/en/ui/input-mode).
+
+```tsx
+<Kbd keys="mod+k" class="k2b-kbd-hint" />
+```
+
+Keep shortcut lists and help visible; do not apply this utility to them.
+
 ## Input grammar
 
 Separate modifiers with `+`, then write exactly one key. Modifiers are `mod`,

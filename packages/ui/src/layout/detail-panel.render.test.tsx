@@ -260,10 +260,13 @@ describe("DetailPanel", () => {
     expect(css).toMatch(/@media \(any-hover: hover\)[\s\S]*\.k2b-detail-panel__action-menu-trigger \{[^}]*opacity: 0/);
     expect(css).toContain(".k2b-detail-panel__action-row:focus-within .k2b-detail-panel__action-menu-trigger");
     expect(css).toContain('.k2b-detail-panel__action-menu-trigger[aria-expanded="true"]');
-    // The secondary action shares the progressive reveal; touch devices without hover always see it.
+    // Touch input keeps secondary actions visible, regardless of pointer capabilities.
     const hoverHidden =
-      css.match(/@media \(any-hover: hover\) \{\s*\.k2b-ui \.k2b-detail-panel__action-secondary,[^{]+\{([^}]*)\}/)?.[1] ?? "";
+      css.match(
+        /@media \(any-hover: hover\) \{\s*:where\(html:not\(\[data-k2b-input="touch"\]\)\) \.k2b-ui \.k2b-detail-panel__action-secondary,[^{]+\{([^}]*)\}/,
+      )?.[1] ?? "";
     expect(hoverHidden).toContain("opacity: 0;");
+    expect(css).toContain(':where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-detail-panel__action-secondary');
     expect(css).toContain(".k2b-detail-panel__action-row:hover .k2b-detail-panel__action-secondary");
     expect(css).toContain(".k2b-detail-panel__action-row:focus-within .k2b-detail-panel__action-secondary");
     expect(css).not.toMatch(/\.k2b-detail-panel__action-secondary[^{]*\{[^}]*transform/);
