@@ -1376,6 +1376,8 @@ export default function AssistantWorkspace(props: Props) {
   const AssistantComposer = (composerProps: { projectId?: string; projectName?: string }) => {
     const sessionKey = () => (composerProps.projectId ? projectComposerKey(composerProps.projectId) : composerSessionKey());
     const projectComposer = () => Boolean(composerProps.projectId);
+    // A Project composer starts new chats; a response still running in the previous chat does not block it.
+    const composerRunning = () => !projectComposer() && chat.running();
     const commandSession = createAssistantCommandSession();
     onCleanup(() => commandSession.dispose());
     const searchChat = () => {
@@ -1481,7 +1483,7 @@ export default function AssistantWorkspace(props: Props) {
               (chat.conversation()?.projectId
                 ? (projects().find((project) => project.id === chat.conversation()?.projectId)?.name ?? "")
                 : undefined),
-            running: chat.running(),
+            running: composerRunning(),
             recording: dictation.recording(),
             models: aiChatModelOptions(props.models),
             selectedModelId: selectedModelId(),
@@ -1534,13 +1536,13 @@ export default function AssistantWorkspace(props: Props) {
               models: aiChatModelOptions(props.models),
               selectedModelId: selectedModelId(),
               chooseModel: setSelectedModelId,
-              isRunning: () => chat.running(),
+              isRunning: () => composerRunning(),
               signal,
               locale: locale(),
               conversationId: projectComposer() ? undefined : (chat.activeConversationId() ?? undefined),
               projectId: composerProps.projectId ?? chat.conversation()?.projectId,
               projects: projects(),
-              running: chat.running(),
+              running: composerRunning(),
               assignProject: async (projectId) => {
                 const key = sessionKey();
                 const text = composerDraft(key),
