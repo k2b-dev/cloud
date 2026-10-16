@@ -542,7 +542,8 @@ test("only plain Enter and Tab choose; Shift keys fall through and Ctrl+Enter se
 });
 
 test("Escape closes this slash through more typing; another slash opens", async () => {
-  const h = await slash({ value: "/c", commands: [compactCommand] });
+  let ran = 0;
+  const h = await slash({ value: "/c", commands: [{ ...compactCommand, action: () => void ran++ }] });
   h.key("Escape");
   h.type("/com");
   expect(Boolean(h.root.querySelector('[role="listbox"]'))).toBe(false);
@@ -550,7 +551,15 @@ test("Escape closes this slash through more typing; another slash opens", async 
   h.input.setSelectionRange(2, 2);
   h.input.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowLeft", bubbles: true }));
   expect(Boolean(h.root.querySelector('[role="listbox"]'))).toBe(false);
+  // A selection, or leaving the token and coming back, does not reopen it either.
+  h.input.setSelectionRange(1, 4);
+  h.input.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowLeft", shiftKey: true, bubbles: true }));
   h.input.setSelectionRange(4, 4);
+  h.input.dispatchEvent(new KeyboardEvent("keyup", { key: "ArrowRight", bubbles: true }));
+  expect(Boolean(h.root.querySelector('[role="listbox"]'))).toBe(false);
+  // Tab would choose if the list had reopened; Enter would also send the draft here.
+  h.key("Tab");
+  expect(ran).toBe(0);
   h.type("/com /c");
   expect(h.rows()).toHaveLength(1);
 });

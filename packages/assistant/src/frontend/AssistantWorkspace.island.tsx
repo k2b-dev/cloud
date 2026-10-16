@@ -1460,6 +1460,7 @@ export default function AssistantWorkspace(props: Props) {
                 chat.setError(null);
                 throw new Error(commandCopy().compactFailed({ reason }));
               }
+              // The request queues a compaction turn; the chat shows its progress and result, so this only says it started.
               return { done: commandCopy().compactDone };
             },
             fork: async () => {

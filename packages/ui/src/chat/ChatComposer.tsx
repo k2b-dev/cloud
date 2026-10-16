@@ -300,8 +300,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const caretCommandStart = createMemo(() => caretCommandToken()?.start);
   // Retained server rows belong to one `/`: they go when it does or when another `/` starts.
   createEffect(() => {
-    if (caretCommandStart() === undefined) setClosedAt(undefined);
+    caretCommandStart();
     setSearchResults([]);
+  });
+  // Escape closes the list for one `/` character, wherever the caret or selection goes; only that `/` going away ends it.
+  createEffect(() => {
+    const closed = closedAt();
+    if (closed !== undefined && props.value[closed] !== "/") setClosedAt(undefined);
   });
   const commandQuery = createMemo(() => {
     const token = caretCommandToken();
