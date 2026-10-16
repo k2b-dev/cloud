@@ -134,18 +134,29 @@ Uploads report progress in one toast and resolve name conflicts once per
 batch (replace existing or upload only new). Uploads, folder uploads and new
 files open a Filegate upload session per file: Cloud authorizes the target, the browser streams segments to the
 session lease and renews it through Cloud, and Cloud commits after re-checking
-the target. The client retains one upload ID for a retry, while Cloud records
-the bound destination, write options, and execution identity before issuing the
-session. Retrying that same upload recovers the existing session or its retained
-result instead of publishing a second file. Filegate retains terminal receipts
-for seven days; after that, a missing receipt remains an uncertain outcome.
-Existing names ask before being replaced. Every transfer request has a deadline
-sized for the slowest supported uplink of about 0.5 Mbit/s (64 KiB/s), so a
-request the file server never answers fails the file with a reason and the batch
-continues with the next file.
-Browser failures distinguish “No response from the server” for Cloud requests
-from “No response from the file server” for transfers. Only HTTP 408, 429, 502,
-503, and 504 report that the file server is busy; other HTTP failures are final.
+the target. Temporary failures (no connection, no answer, a busy server, rate
+limits, or other server errors) keep the session and its upload ID. Retrying the
+same unchanged file resumes from acknowledged segments. Cloud records the bound
+destination, write options, and execution identity before issuing the session.
+A lost commit answer keeps the ID so a retry can recover the retained result.
+Final failures, such as name or write conflicts, a closed or unknown session,
+a changed upload, or insufficient space, discard the failed upload and its ID.
+Files asks again whether to replace after a name or write conflict; an unknown
+upload record starts fresh on retry. Discarding an open, unpublished session
+requests an abort and removes its ID only after confirmation. An explicit cancel
+also requests an abort before commit. Once commit has been sent, a lost or
+temporary answer keeps the ID and never triggers an abort, including cancellation.
+Only a definite name or write conflict at commit can abort that unpublished
+session. Filegate retains terminal receipts for seven days. Browser upload IDs
+expire locally 24 hours plus seven days after their last attempt and are pruned
+at the next upload.
+
+Every transfer request has a deadline sized for the slowest supported uplink of
+about 0.5 Mbit/s (64 KiB/s). A request the file server never answers fails the
+file with a reason and the batch continues with the next file. Browser failures
+distinguish “No response from the server” for Cloud requests from
+“No response from the file server” for transfers. HTTP 408, 502, 503, and 504
+report a busy file server; HTTP 429 reports too many uploads in a short time.
 
 ## Create folders
 

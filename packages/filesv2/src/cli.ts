@@ -52,6 +52,7 @@ import {
 import { DOCUMENT_KINDS } from "./documents";
 import { editorUrl } from "./frontend/urls";
 import { entryRefId } from "./resource-ref";
+import { uploadRequestFailure, uploadResponseFailure } from "./upload-transfer";
 
 /** The server's scan budget for one listing or search; `tree` stops at the same size instead of paging forever. */
 const TREE_LIMIT = 10_000;
@@ -514,11 +515,23 @@ function filesCommands(locale?: string) {
           const path = target.folder ? joinPath(target.path, basename(args.local)) : target.path;
           if (flags.parents && parentOf(path)) await mkdirParents(ctx, target.baseId, [parentOf(path)]);
           const baseParam = param(target);
+          const readUpload = async <T>(
+            signal: AbortSignal,
+            send: Promise<Parameters<typeof ctx.readJson>[0] & { headers: Headers }>,
+          ): Promise<T> => {
+            const response = await send;
+            if (!response.ok) {
+              const error = await uploadResponseFailure(response, "Request failed");
+              signal.throwIfAborted();
+              error.message = `${response.status} ${error.message}`;
+              throw error;
+            }
+            return readWithin<T>(ctx, signal, Promise.resolve(response));
+          };
           const result = await uploadFile(ctx, args.local, {
             scope: JSON.stringify([ctx.options.profile, target.baseId, path, flags.replace, flags.expectedRevision]),
             open: async (size, signal, idempotencyKey) =>
-              readWithin<UploadSession>(
-                ctx,
+              readUpload<UploadSession>(
                 signal,
                 api(ctx).bases[":baseId"].uploads.$post(
                   {
@@ -535,19 +548,26 @@ function filesCommands(locale?: string) {
                 ),
               ),
             renew: async (id, signal) =>
-              readWithin<UploadLease>(
-                ctx,
+              readUpload<UploadLease>(
                 signal,
                 api(ctx).bases[":baseId"].uploads[":id"].lease.$post({ param: { ...baseParam, id } }, { init: { signal } }),
               ),
             commit: async (id, signal) =>
-              readWithin<EntryResult>(
-                ctx,
+              readUpload<EntryResult>(
                 signal,
                 api(ctx).bases[":baseId"].uploads[":id"].commit.$post({ param: { ...baseParam, id } }, { init: { signal } }),
               ),
             abort: async (id, signal) => {
-              await api(ctx).bases[":baseId"].uploads[":id"].abort.$post({ param: { ...baseParam, id } }, { init: { signal } });
+              try {
+                const response = await api(ctx).bases[":baseId"].uploads[":id"].abort.$post(
+                  { param: { ...baseParam, id } },
+                  { init: { signal } },
+                );
+                if (!response.ok) throw await uploadResponseFailure(response, "Request failed");
+                signal.throwIfAborted();
+              } catch (error) {
+                throw uploadRequestFailure(error, "Request failed", signal);
+              }
             },
           });
           const linked = withEntryResultPermalink(ctx, result);

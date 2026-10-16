@@ -6,13 +6,14 @@ import {
   serializeAppWorkspaceLayoutState,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, onCleanup, onMount } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { appWorkspaceCookieName, readAppWorkspaceLayoutCookie } from "../_internal/app-workspace-state";
 import { registerContextAwareCommand } from "../browser/command-bridge";
 import { attachCommandShortcuts } from "../browser/command-shortcuts";
 import { navigationSearchItems } from "../browser/navigation-search";
 import { importOnDemand } from "../browser/reload";
 import { registerGlobalSearchHost } from "../browser/search-bridge";
+import { attachShellFocusControls, readShellFocus, SHELL_FOCUS_CHANGE_EVENT, toggleShellFocus } from "../browser/shell-focus";
 import {
   ANNOUNCEMENTS_COOKIE,
   ANNOUNCEMENTS_COOKIE_MAX_AGE_SECONDS,
@@ -37,6 +38,8 @@ export type ShellRuntimeProps = {
   help?: { documents: readonly HelpDocumentManifest[]; pageBase: string };
   /** Layout pages outside focus mode: the search host, Cmd/Ctrl+K, the Help command (Shift+/) and command shortcuts. */
   commands?: { searchResources: boolean };
+  /** Signed-in Layout pages: the sidebar buttons, Cmd/Ctrl+\ and the left-edge drag hide and show the app bar and the app's navigation. */
+  focus?: boolean;
   /** Signed-in pages: refresh this browser's push endpoint. */
   push?: boolean;
   /** Announcements the person has not seen yet; a dialog shows them once. */
@@ -93,6 +96,38 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
         disposeFollow();
         disposeRuntime();
       });
+    });
+  }
+  if (props.focus) {
+    const [hidden, setHidden] = createSignal(false);
+    const [available, setAvailable] = createSignal(false);
+    onMount(() => {
+      setHidden(readShellFocus());
+      const media = window.matchMedia("(min-width: 768px)");
+      const resize = () => setAvailable(media.matches);
+      const change = (event: Event) => setHidden((event as CustomEvent<{ hidden: boolean }>).detail.hidden);
+      const dispose = attachShellFocusControls();
+      resize();
+      media.addEventListener("change", resize);
+      window.addEventListener(SHELL_FOCUS_CHANGE_EVENT, change);
+      onCleanup(() => {
+        dispose();
+        media.removeEventListener("change", resize);
+        window.removeEventListener(SHELL_FOCUS_CHANGE_EVENT, change);
+      });
+    });
+    createEffect(() => {
+      if (!available()) return;
+      onCleanup(
+        registerContextAwareCommand({
+          id: "cloud.shell.focus",
+          title: hidden() ? t().showSidebar : t().hideSidebar,
+          description: t().sidebarCommandDescription,
+          icon: hidden() ? "ti ti-layout-sidebar-left-expand" : "ti ti-layout-sidebar-left-collapse",
+          shortcut: "mod+\\",
+          action: toggleShellFocus,
+        }),
+      );
     });
   }
   if (props.commands) {

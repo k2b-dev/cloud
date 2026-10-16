@@ -425,6 +425,102 @@ solid-island {
   }
 }
 
+/* Focus: the app bar and the outermost workspace's navigation hide together
+   (Cmd/Ctrl+\ or the sidebar buttons). The canvas carries the state from the
+   `cloud_shell_focus` cookie, so the server renders the same first frame.
+   Phones ignore it. The app area takes the app bar's place and starts at the
+   card spacing, or at the window's edge where it is flush. The button that
+   shows them again floats at the app area's bottom start corner; on touch
+   screens a drag from the 18 px strip at the left edge does the same. From
+   768 to 1023 px the navigation is already an overlay behind the
+   workspace head's button, so there only the app bar hides. */
+.cloud-shell-show,
+.cloud-shell-reveal {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-rail {
+    display: none;
+  }
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] .cloud-shell-show {
+    position: absolute;
+    left: calc(env(safe-area-inset-left, 0px) + 0.75rem);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
+    z-index: 15;
+    display: flex;
+  }
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] .cloud-shell-show .k2b-icon-button {
+    box-shadow: var(--k2b-shadow-float);
+  }
+}
+
+@media (min-width: 768px) and (pointer: coarse) {
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .cloud-shell-reveal {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 16;
+    display: block;
+    width: calc(1.125rem + env(safe-area-inset-left, 0px));
+    touch-action: pan-y;
+  }
+}
+
+@media (min-width: 768px) {
+  @media not all and (min-width: 1024px) {
+    .cloud-app-canvas[data-layout-authenticated][data-shell-focus] > .layout-shell-content {
+      padding-left: env(safe-area-inset-left, 0px);
+    }
+  }
+}
+
+@media (min-width: 1024px) {
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] {
+    padding-left: max(var(--cloud-card-inset), env(safe-area-inset-left, 0px));
+  }
+  .cloud-app-canvas[data-layout-authenticated][data-shell-focus] .cloud-shell-show {
+    left: calc(max(var(--cloud-card-inset), env(safe-area-inset-left, 0px)) + 0.75rem);
+    bottom: calc(var(--cloud-card-inset) + var(--cloud-card-inset-bottom) + 0.75rem);
+  }
+  /* The navigation leaves like a hidden sidebar: its track, its resize
+     handle, and navigation panes go, and the work area rounds its start
+     corners with the card. An island may wrap the sidebar or Main, as in
+     Grids. */
+  .cloud-app-canvas[data-shell-focus] .k2b-app-workspace:not(.k2b-app-workspace *) {
+    --k2b-workspace-start-radius: var(--k2b-workspace-inner-radius);
+  }
+  .cloud-app-canvas[data-shell-focus]
+    .k2b-app-workspace:not(.k2b-app-workspace *)
+    > :is(.k2b-app-workspace__sidebar, .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"]),
+  .cloud-app-canvas[data-shell-focus]
+    .k2b-app-workspace:not(.k2b-app-workspace *)
+    > :is(solid-island, solid-client)
+    > :is(.k2b-app-workspace__sidebar, .k2b-app-workspace__resize[data-app-workspace-resize="sidebar"]),
+  .cloud-app-canvas[data-shell-focus]
+    .k2b-app-workspace:not(.k2b-app-workspace *)
+    > .k2b-app-workspace__content
+    > .k2b-app-workspace__main
+    > :is(
+      .k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary),
+      .k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary) + .k2b-app-workspace__resize,
+      .k2b-app-workspace__resize:has(+ .k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary))
+    ),
+  .cloud-app-canvas[data-shell-focus]
+    .k2b-app-workspace:not(.k2b-app-workspace *)
+    > .k2b-app-workspace__content
+    > :is(solid-island, solid-client)
+    > .k2b-app-workspace__main
+    > :is(
+      .k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary),
+      .k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary) + .k2b-app-workspace__resize,
+      .k2b-app-workspace__resize:has(+ .k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary))
+    ) {
+    display: none;
+  }
+}
+
 .cloud-mobile-menu .k2b-panel-dialog__header {
   gap: .5rem;
   padding-inline: 1rem;

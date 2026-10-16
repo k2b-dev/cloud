@@ -25,15 +25,14 @@ export const mailProviderOperationMutex = lazySync((sync) =>
 );
 
 /**
- * Which waiting job takes the provider lease of a remote mailbox first: a folder sync, which
- * brings in new mail, then user commands such as moves and sends, then background work such as
- * body hydration.
+ * User commands such as moves and sends take turns with other provider work. Within that other
+ * work, folder syncs that bring in new mail get a head start over background body hydration.
  */
 export type ProviderLeasePriority = "sync" | "command" | "background";
 
 // A waiter counts as having waited this much longer than it has. A lower priority therefore lets
-// a higher one that starts waiting after it go first for at most the difference, 30 seconds per
-// step, and then takes its turn: no waiter starves.
+// a higher one that starts waiting after it keep an earlier natural place for at most the
+// difference, 30 seconds per step. Commands and other work alternate over this natural order.
 const LEASE_HEAD_START_MS: Record<ProviderLeasePriority, number> = { sync: 60_000, command: 30_000, background: 0 };
 
 // Waiters retry while they wait, the next in line most often. A waiter counts as present until
@@ -83,10 +82,10 @@ const BREAKER_JITTER_FRACTION = 0.25;
 const BREAKER_OPEN = 1;
 const BREAKER_PROBE = 2;
 
-// KEYS: the waiters' places, until when each counts as present, and the mailbox's breaker. ARGV:
+// KEYS: places, presence, breaker, priorities, and last turn, all for one mailbox. ARGV:
 // waiter, head start, retry step, retry maximum, jitter, presence grace, place TTL, breaker
-// memory. Registers the waiter, keeping the better of its place from an earlier try and the new
-// one, and returns its position among the present waiters, when it should retry, whether the
+// memory, priority. Registers the waiter, keeping the better of its earlier place and the new
+// one, and returns its position among present waiters, when it should retry, whether the
 // breaker is open, remembers a window that ended, or neither, and its place.
 const enterLeaseLineScript = `
   local time = redis.call("TIME")
@@ -96,13 +95,45 @@ const enterLeaseLineScript = `
   for _, waiter in ipairs(gone) do
     redis.call("ZREM", KEYS[1], waiter)
     redis.call("ZREM", KEYS[2], waiter)
+    redis.call("HDEL", KEYS[4], waiter)
   end
   redis.call("ZADD", KEYS[1], "LT", now - tonumber(ARGV[2]), ARGV[1])
-  local position = 0
-  for _, waiter in ipairs(redis.call("ZRANGE", KEYS[1], 0, -1)) do
-    if waiter == ARGV[1] then break end
+  redis.call("HSET", KEYS[4], ARGV[1], ARGV[9])
+  local function class(priority)
+    if priority == "command" then return "command" end
+    if priority == "sync" or priority == "background" then return "other" end
+  end
+  local lastWaiter = redis.call("HGET", KEYS[5], "waiter")
+  local demoted = class(redis.call("HGET", KEYS[5], "priority"))
+  local present = {}
+  local asking
+  local demotedMin
+  local places = redis.call("ZRANGE", KEYS[1], 0, -1, "WITHSCORES")
+  for rank = 1, #places, 2 do
+    local waiter = places[rank]
     local presentUntil = redis.call("ZSCORE", KEYS[2], waiter)
-    if presentUntil and tonumber(presentUntil) >= now then position = position + 1 end
+    if waiter == ARGV[1] or (presentUntil and tonumber(presentUntil) >= now) then
+      local entry = { score = tonumber(places[rank + 1]), rank = rank, class = class(redis.call("HGET", KEYS[4], waiter)) }
+      table.insert(present, entry)
+      if waiter == ARGV[1] then asking = entry end
+      -- The last holder's continuation keeps its natural place between batches.
+      if demoted and entry.class == demoted and waiter ~= lastWaiter then
+        demotedMin = math.min(demotedMin or entry.score, entry.score)
+      end
+    end
+  end
+  local function effective(entry)
+    if demotedMin and entry.class and entry.class ~= demoted then
+      return math.min(entry.score, demotedMin - 1)
+    end
+    return entry.score
+  end
+  -- Effective score, then natural rank, gives every present waiter the same total order.
+  local askingScore = effective(asking)
+  local position = 0
+  for _, entry in ipairs(present) do
+    local score = effective(entry)
+    if score < askingScore or (score == askingScore and entry.rank < asking.rank) then position = position + 1 end
   end
   local retryAfter = math.min(tonumber(ARGV[3]) * (position + 1), tonumber(ARGV[4])) + tonumber(ARGV[5])
   local breaker = 0
@@ -117,6 +148,7 @@ const enterLeaseLineScript = `
   redis.call("ZADD", KEYS[2], now + retryAfter + tonumber(ARGV[6]), ARGV[1])
   redis.call("PEXPIRE", KEYS[1], placeTtl)
   redis.call("PEXPIRE", KEYS[2], placeTtl)
+  redis.call("PEXPIRE", KEYS[4], placeTtl)
   return { position, retryAfter, breaker, redis.call("ZSCORE", KEYS[1], ARGV[1]) }
 `;
 
@@ -134,18 +166,20 @@ const openBreakerScript = `
   return openFor
 `;
 
-// One hash tag, so the line and the breaker of a mailbox live together.
-const leaseLineKeys = (resource: string): [string, string, string] => [
+// One hash tag, so the line, its last turn, and the breaker of a mailbox live together.
+const leaseLineKeys = (resource: string): [string, string, string, string, string] => [
   `mail:provider-lease-line:{${resource}}:places`,
   `mail:provider-lease-line:{${resource}}:present`,
   `mail:provider-lease-line:{${resource}}:breaker`,
+  `mail:provider-lease-line:{${resource}}:priorities`,
+  `mail:provider-lease-line:{${resource}}:turn`,
 ];
 
 /** Lines `waiter` up for the provider lease of `resource` with the script above and returns its reply. */
 const enterLeaseLine = (resource: string, waiter: string, priority: ProviderLeasePriority): Promise<unknown> =>
   redis.send("EVAL", [
     enterLeaseLineScript,
-    "3",
+    "5",
     ...leaseLineKeys(resource),
     waiter,
     String(LEASE_HEAD_START_MS[priority]),
@@ -155,11 +189,42 @@ const enterLeaseLine = (resource: string, waiter: string, priority: ProviderLeas
     String(LEASE_PRESENCE_GRACE_MS),
     String(LEASE_PLACE_TTL_MS),
     String(BREAKER_MAX_WINDOW_MS),
+    priority,
   ]);
 
-const leaveLeaseLine = async (resource: string, waiter: string): Promise<void> => {
-  const [places, present] = leaseLineKeys(resource);
-  await Promise.all([redis.send("ZREM", [places, waiter]), redis.send("ZREM", [present, waiter])]);
+// KEYS: places, presence, priorities, last turn. ARGV: waiter, acquired priority or empty,
+// place TTL, keep place. Record an acquired turn and leave the line together, unless the caller
+// needs to keep its place while taking another lock. Leaving later does not change the turn.
+const leaveLeaseLineScript = `
+  if ARGV[2] ~= "" then
+    redis.call("HSET", KEYS[4], "waiter", ARGV[1], "priority", ARGV[2])
+    redis.call("PEXPIRE", KEYS[4], ARGV[3])
+  end
+  if ARGV[4] ~= "1" then
+    redis.call("ZREM", KEYS[1], ARGV[1])
+    redis.call("ZREM", KEYS[2], ARGV[1])
+    redis.call("HDEL", KEYS[3], ARGV[1])
+  end
+`;
+
+const leaveLeaseLine = async (
+  resource: string,
+  waiter: string,
+  acquired?: { priority: ProviderLeasePriority; keepPlace?: boolean },
+): Promise<void> => {
+  const [places, present, , priorities, turn] = leaseLineKeys(resource);
+  await redis.send("EVAL", [
+    leaveLeaseLineScript,
+    "4",
+    places,
+    present,
+    priorities,
+    turn,
+    waiter,
+    acquired?.priority ?? "",
+    String(LEASE_PLACE_TTL_MS),
+    acquired?.keepPlace ? "1" : "0",
+  ]);
 };
 
 export type ProviderLeaseTurn = { lock: Lock; place: number; retryAfterMs: null } | { lock: null; retryAfterMs: number };
@@ -172,16 +237,20 @@ let probeLeaseUntil = 0;
 
 /**
  * Takes the provider lease of a remote mailbox when it is `waiter`'s turn. Waiters line up by
- * priority and by how long they have waited, so a job that releases the lease and asks again
- * lines up anew instead of taking it straight back. A job that does not get the lease keeps its
- * place and retries after `retryAfterMs`; `waiter` must stay the same across those tries. A
+ * priority and by how long they have waited. Each acquired lease records a turn: commands and
+ * other provider work alternate while both are present. The last holder keeps its natural place
+ * when it asks again, so a folder's next batch, or the mailbox's next command after a command
+ * turn, is not moved back; other jobs line up anew after their turn. A waiting
+ * command waits for at most the running operation and one further sync or background batch;
+ * a waiting folder sync waits for at most one command turn. A job that does not get the lease
+ * keeps its place and retries after `retryAfterMs`; `waiter` must stay the same across those tries. A
  * waiter that comes back late is passed over until it returns, without losing its place. While
  * the mailbox's provider breaker is open, nobody takes the lease; after it, the waiter next in
  * line takes it once no other mailbox's probe holds this process's probe. Release the lease with
  * `releaseProviderLease`, passing `next` when the job continues with another turn so it lines up
- * before letting go. The line and the breaker are ephemeral Valkey state: losing them only
- * loses the order and the pause, never the lease. With `keepPlace`, the waiter stays in line with
- * its lease, for a caller in this module that needs another lock before it can use the lease and
+ * before letting go. The line, its last turn, and the breaker are ephemeral Valkey state: losing
+ * them only loses the order and the pause, never the lease. With `keepPlace`, the waiter stays in
+ * line with its lease, for a caller in this module that needs another lock before using it and
  * leaves the line once it holds both.
  */
 export const acquireProviderLease = async (params: {
@@ -205,7 +274,7 @@ export const acquireProviderLease = async (params: {
   let lock: Lock | null = null;
   try {
     lock = await mailProviderOperationMutex().acquire({ resource: params.resource, ttlMs: params.ttlMs });
-    if (lock && !params.keepPlace) await leaveLeaseLine(params.resource, params.waiter);
+    if (lock) await leaveLeaseLine(params.resource, params.waiter, params);
   } catch (error) {
     if (lock) await releaseProviderLease(lock);
     lock = null;
