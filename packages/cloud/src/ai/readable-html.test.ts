@@ -606,6 +606,17 @@ describe("readable HTML", () => {
       expect(await convert(html)).toBe("");
   });
 
+  test("keeps backslashes before label brackets and cell pipes from consuming their escapes", async () => {
+    expect(await convert(String.raw`<p><a href="/x">a\] b\\[ c\d</a><img alt="p\]" src="/i"></p>`)).toBe(
+      String.raw`[a\\\] b\\\\\[ c\d](https://example.test/x)![p\\\]](https://example.test/i)` + "\n",
+    );
+    expect(await convert(String.raw`<table><tr><th>h</th></tr><tr><td>a\|b \\| c\d</td></tr></table>`)).toBe(
+      String.raw`| h |
+| --- |
+| a\\\|b \\\\\| c\d |` + "\n",
+    );
+  });
+
   test("filters unsafe and same-page fragment links and renders escaped labels and images", async () => {
     const result = await convert(`<p><a href="javascript:alert(1)">safe text</a> <a href="data:text/html,x">data</a>
       <a href="#here">here</a> <a href="mailto:a@example.test">Mail</a> <a href="/a(b) c">[label]</a>

@@ -57,7 +57,13 @@ const normalizeSpace = (text: string): string => {
   return parts.join("");
 };
 const collapse = (text: string): string => normalizeSpace(text).trim();
-const escapeLabel = (text: string): string => text.replace(/[\[\]]/g, "\\$&");
+// Doubles a backslash run before a delimiter so it cannot consume the delimiter's escape. Matching whole runs
+// keeps the scan linear.
+const escapeRun =
+  (delimiters: string) =>
+  (match: string, offset: number, source: string): string =>
+    match[0] !== "\\" ? `\\${match}` : delimiters.includes(source[offset + match.length] || " ") ? match + match : match;
+const escapeLabel = (text: string): string => text.replace(/\\+|[[\]]/g, escapeRun("[]"));
 const language = (classes = ""): string => {
   for (const [token] of classes.matchAll(/\S+/gu)) {
     if (token.length <= 100 && /^(?:language|lang)-[\w+-]+$/.test(token)) return token.slice(token.indexOf("-") + 1);
@@ -981,7 +987,7 @@ const render = async (
           );
           for (let offset = 0; offset < colspan; offset++) {
             const column = row.cells.length;
-            if (!addCell(offset === 0 ? inline.markdown.replace(/\|/g, "\\|") : "")) break;
+            if (!addCell(offset === 0 ? inline.markdown.replace(/\\+|\|/g, escapeRun("|")) : "")) break;
             if (rowspan !== 1) rowspans.set(column, rowspan === 0 ? Infinity : tableRows + rowspan);
           }
           if (inline.text) readable = true;
