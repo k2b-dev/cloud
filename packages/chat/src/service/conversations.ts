@@ -8,7 +8,6 @@ import {
   type PermissionLevel,
   type Result,
   ratelimit,
-  resolveDisplayNames,
   type ServiceError,
   updateAccess,
 } from "@k2b/cloud/server";
@@ -123,21 +122,22 @@ const authorizeManagement = async (
 };
 
 /** Validate only requested IDs, without returning directory details to the caller. */
-const validateMembers = async (principals: MemberPrincipal[], context: ChatContext, db: typeof sql): Promise<Result<void>> => {
+const validateMembers = async (principals: MemberPrincipal[], context: ChatContext, db: typeof sql, lock = true): Promise<Result<void>> => {
   if (!principals.length) return ok();
   const t = messages(context);
   const [caller] =
     context.accessSubject.type === "user"
       ? await db<{ profile: string }[]>`
-    SELECT profile FROM auth.users WHERE id = ${context.accessSubject.userId}::uuid FOR SHARE`
+    SELECT profile FROM auth.users WHERE id = ${context.accessSubject.userId}::uuid ${lock ? db`FOR SHARE` : db``}`
       : [];
   const groups = principals.filter((principal) => principal.type === "group");
-  if (caller?.profile === "guest" && groups.length) return fail(err.badInput(t.guestGroups));
+  if ((context.accessSubject.type !== "user" || caller?.profile === "guest") && groups.length)
+    return fail(err.badInput(t.fullAccountGroups));
   const ids = principals.filter((principal) => principal.type === "user").map((principal) => principal.userId);
   const rows = await db<{ id: string; active: boolean; co_member: boolean }[]>`
     SELECT id, (account_expires IS NULL OR account_expires > now()) AS active,
       ${caller?.profile === "guest" ? db`u.id IN (${coMemberIds(context.accessSubject, db)})` : db`true`} AS co_member
-    FROM auth.users u WHERE id = ANY(${toPgUuidArray(ids)}::uuid[]) FOR SHARE
+    FROM auth.users u WHERE id = ANY(${toPgUuidArray(ids)}::uuid[]) ${lock ? db`FOR SHARE` : db``}
   `;
   const missing = ids.filter((id) => !rows.some((row) => row.id === id));
   if (missing.length) {
@@ -148,7 +148,7 @@ const validateMembers = async (principals: MemberPrincipal[], context: ChatConte
   if (rows.some((row) => !row.active)) return fail(err.badInput(t.memberUnavailable));
   if (rows.some((row) => !row.co_member)) return fail(err.badInput(t.guestCoMembers));
   for (const group of groups) {
-    const [found] = await db<{ id: string }[]>`SELECT id FROM auth.groups WHERE id = ${group.groupId}::uuid FOR SHARE`;
+    const [found] = await db<{ id: string }[]>`SELECT id FROM auth.groups WHERE id = ${group.groupId}::uuid ${lock ? db`FOR SHARE` : db``}`;
     if (!found) return fail(err.badInput(t.groupUnavailable));
     const users = await db<{ id: string }[]>`${groupUsers(group.groupId, db)} LIMIT ${MAX_GROUP_MEMBERS + 1}`;
     if (users.length > MAX_GROUP_MEMBERS) return fail(err.badInput(t.groupTooLarge));
@@ -583,27 +583,130 @@ const guardManagers = (before: MemberRow[], after: MemberRow[], input: ChatConte
   return result.ok ? result : fail({ ...result.error, message: messages(input).lastManager });
 };
 const listMembers = async (input: ChatContext & { conversationId: string; query?: unknown }) => {
-  const allowed = await requireConversation({ ...input, required: "read" });
-  if (!allowed.ok) return allowed;
-  const parsed = parse(MemberQuerySchema, input.query ?? {}, input);
-  if (!parsed.ok) return parsed;
-  const cursor = parsed.data.cursor;
-  const rows = await sql<
-    { access_id: string; user_id: string | null; group_id: string | null; permission: Exclude<PermissionLevel, "none">; added_at: Date }[]
-  >`SELECT ca.access_id, a.user_id, a.group_id, a.permission, ca.added_at
-    FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
-    WHERE ca.conversation_id = ${allowed.data.id}::uuid AND ca.role = 'member' AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL)
-      AND ${cursor ? sql`ca.access_id > ${cursor}::uuid` : sql`true`} ORDER BY ca.access_id LIMIT ${MEMBER_PAGE_SIZE + 1}`;
-  const page = rows.slice(0, MEMBER_PAGE_SIZE);
-  const entries = await resolveDisplayNames(
-    page.map((row) => ({
-      accessId: row.access_id,
-      principal: row.user_id ? { type: "user" as const, userId: row.user_id } : { type: "group" as const, groupId: row.group_id! },
-      permission: row.permission,
-      addedAt: row.added_at.toISOString(),
-    })),
+  return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
+    const allowed = await requireConversation({ ...input, required: "read" }, db);
+    if (!allowed.ok) return allowed;
+    const parsed = parse(MemberQuerySchema, input.query ?? {}, input);
+    if (!parsed.ok) return parsed;
+    const { q, cursor } = parsed.data;
+    const [caller] =
+      input.accessSubject.type === "user"
+        ? await db<{ profile: string }[]>`SELECT profile FROM auth.users WHERE id = ${input.accessSubject.userId}::uuid`
+        : [];
+    const pattern = q ? `%${q.replace(/[\\%_]/g, (character) => "\\" + character)}%` : null;
+    const rows = await db<
+      {
+        access_id: string;
+        user_id: string | null;
+        group_id: string | null;
+        permission: Exclude<PermissionLevel, "none">;
+        added_at: Date;
+        name: string;
+        cursor_name: string;
+        avatar_hash: string | null;
+        guest: boolean;
+        deactivated: boolean;
+        group_size: number | null;
+      }[]
+    >`
+      WITH page AS (
+        SELECT entries.*, lower(name) AS cursor_name FROM (
+          SELECT ca.access_id, a.user_id, a.group_id, a.permission, ca.added_at,
+            COALESCE(COALESCE(NULLIF(u.display_name, ''), u.uid), COALESCE(NULLIF(g.name, ''), g.cn)) AS name,
+            u.uid, g.cn, u.avatar_hash, COALESCE(u.profile = 'guest', false) AS guest,
+            COALESCE(u.account_expires <= now(), false) AS deactivated
+          FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+          LEFT JOIN auth.users u ON u.id = a.user_id LEFT JOIN auth.groups g ON g.id = a.group_id
+          WHERE ca.conversation_id = ${allowed.data.id}::uuid AND ca.role = 'member'
+            AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL)
+        ) entries
+        WHERE ${pattern ? db`(name ILIKE ${pattern} OR uid ILIKE ${pattern} OR cn ILIKE ${pattern})` : db`true`}
+          AND ${cursor ? db`(lower(name), access_id) > (${cursor.name}, ${cursor.id}::uuid)` : db`true`}
+        ORDER BY lower(name), access_id LIMIT ${MEMBER_PAGE_SIZE + 1}
+      )
+      SELECT page.*, ${
+        input.accessSubject.type !== "user" || caller?.profile === "guest"
+          ? db`NULL::int`
+          : db`CASE WHEN group_id IS NULL THEN NULL ELSE (
+        SELECT COUNT(*)::int FROM (${groupUsers(db`page.group_id`, db)} LIMIT ${MAX_GROUP_MEMBERS + 1}) people
+      ) END`
+      } AS group_size FROM page ORDER BY cursor_name, access_id
+    `;
+    const [count] = await db<{ managers: number }[]>`
+      SELECT COUNT(*)::int AS managers FROM chat.conversation_access ca
+      JOIN auth.access a ON a.id = ca.access_id JOIN auth.users u ON u.id = a.user_id
+      WHERE ca.conversation_id = ${allowed.data.id}::uuid AND ca.role = 'member' AND a.permission = 'admin'
+        AND (u.account_expires IS NULL OR u.account_expires > now())
+    `;
+    const page = rows.slice(0, MEMBER_PAGE_SIZE);
+    const [self] =
+      input.accessSubject.type === "user"
+        ? await db<{ accessId: string; permission: Exclude<PermissionLevel, "none">; active: boolean }[]>`
+            SELECT ca.access_id AS "accessId", a.permission,
+              (u.account_expires IS NULL OR u.account_expires > now()) AS active
+            FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+            JOIN auth.users u ON u.id = a.user_id
+            WHERE ca.conversation_id = ${allowed.data.id}::uuid AND ca.role = 'member'
+              AND a.user_id = ${input.accessSubject.userId}::uuid
+            LIMIT 1
+          `
+        : [];
+    const last = page.at(-1);
+    return ok({
+      items: page.map((row) => ({
+        accessId: row.access_id,
+        principal: row.user_id ? { type: "user" as const, userId: row.user_id } : { type: "group" as const, groupId: row.group_id! },
+        displayName: row.name,
+        ...(row.user_id ? { avatarHash: row.avatar_hash } : {}),
+        guest: row.guest,
+        deactivated: row.deactivated,
+        groupSize: row.group_size,
+        permission: row.permission,
+        addedAt: row.added_at.toISOString(),
+      })),
+      nextCursor: rows.length > MEMBER_PAGE_SIZE && last ? JSON.stringify({ name: last.cursor_name, id: last.access_id }) : null,
+      managers: count!.managers,
+      self: self ?? null,
+    });
+  });
+};
+const newMembers = async (db: typeof sql, conversationId: string, members: MemberPrincipal[]) => {
+  const requested = members.map((principal) => (principal.type === "user" ? principal.userId : principal.groupId));
+  const existing = await db<{ user_id: string | null; group_id: string | null }[]>`
+      SELECT a.user_id, a.group_id FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+      WHERE ca.conversation_id = ${conversationId}::uuid AND ca.role = 'member'
+        AND (a.user_id = ANY(${toPgUuidArray(requested)}::uuid[]) OR a.group_id = ANY(${toPgUuidArray(requested)}::uuid[]))`;
+  // Existing entries are a no-op, so a group that has grown since it was added does not block the request.
+  return members.filter(
+    (principal) =>
+      !existing.some((entry) => (principal.type === "user" ? entry.user_id === principal.userId : entry.group_id === principal.groupId)),
   );
-  return ok({ items: entries, nextCursor: rows.length > MEMBER_PAGE_SIZE ? page.at(-1)!.access_id : null });
+};
+const previewMembers = async (input: ChatContext & { conversationId: string; input: unknown }) => {
+  const parsed = parse(AddMembersSchema, input.input, input);
+  if (!parsed.ok) return parsed;
+  return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
+    const allowed = await requireConversation({ ...input, required: "admin" }, db);
+    if (!allowed.ok) return allowed;
+    const principals = await newMembers(db, allowed.data.id, parsed.data.members);
+    const valid = await validateMembers(principals, input, db, false);
+    if (!valid.ok) return valid;
+    const direct = new Set(principals.filter((principal) => principal.type === "user").map((principal) => principal.userId));
+    const joining = new Set(direct);
+    for (const principal of principals) {
+      if (principal.type !== "group") continue;
+      const people = await db<{ id: string }[]>`${groupUsers(principal.groupId, db)} LIMIT ${MAX_GROUP_MEMBERS}`;
+      for (const person of people) joining.add(person.id);
+    }
+    const existing = await db<{ id: string }[]>`
+      SELECT id FROM (${memberUsers(allowed.data.id, db)}) members WHERE id = ANY(${toPgUuidArray([...joining])}::uuid[])
+    `;
+    for (const person of existing) joining.delete(person.id);
+    const current = await db<{ id: string }[]>`${memberUsers(allowed.data.id, db)} LIMIT ${MAX_PARTICIPANTS + 1}`;
+    const memberCount = current.length + joining.size;
+    if (memberCount > MAX_PARTICIPANTS) return fail(err.badInput(messages(input).participantLimit));
+    return ok({ joining: joining.size, throughGroups: [...joining].filter((id) => !direct.has(id)).length, memberCount });
+  });
 };
 const addMembers = async (input: ChatContext & { conversationId: string; input: unknown }) => {
   const parsed = parse(AddMembersSchema, input.input, input);
@@ -612,16 +715,7 @@ const addMembers = async (input: ChatContext & { conversationId: string; input: 
     await lockConversation(db, input.conversationId);
     const allowed = await authorizeManagement(db, input, input.conversationId, "chat.member.add");
     if (!allowed.ok) return allowed;
-    const requested = parsed.data.members.map((principal) => (principal.type === "user" ? principal.userId : principal.groupId));
-    const existing = await db<{ user_id: string | null; group_id: string | null }[]>`
-      SELECT a.user_id, a.group_id FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
-      WHERE ca.conversation_id = ${allowed.data.id}::uuid AND ca.role = 'member'
-        AND (a.user_id = ANY(${toPgUuidArray(requested)}::uuid[]) OR a.group_id = ANY(${toPgUuidArray(requested)}::uuid[]))`;
-    // Existing entries are a no-op, so a group that has grown since it was added does not block the request.
-    const principals = parsed.data.members.filter(
-      (principal) =>
-        !existing.some((entry) => (principal.type === "user" ? entry.user_id === principal.userId : entry.group_id === principal.groupId)),
-    );
+    const principals = await newMembers(db, allowed.data.id, parsed.data.members);
     const valid = await validateMembers(principals, input, db);
     if (!valid.ok) return valid;
     const ids = principals.filter((principal) => principal.type === "user").map((principal) => principal.userId);
@@ -687,6 +781,7 @@ const deleteDirect = async (db: typeof sql, row: ConversationRow, member: Member
   else
     await db`DELETE FROM chat.participants WHERE conversation_id = ${row.id}::uuid AND principal_type = 'user' AND principal_id = ${member.user_id}::uuid`;
   await repairMemberCount(row.id, db);
+  return Boolean(remaining);
 };
 const removeMember = async (input: ChatContext & { conversationId: string; accessId: string }) => {
   if (!z.uuid().safeParse(input.accessId).success) return notMember(input);
@@ -715,7 +810,7 @@ const removeMember = async (input: ChatContext & { conversationId: string; acces
         resolved.map((person) => person.id),
       );
       await record(db, input, allowed.data.short_id, "chat.member.remove", { count: 1 });
-      return ok({ success: true as const });
+      return ok({ success: true as const, keptThroughGroup: false });
     }
     const before = await directEntries(db, allowed.data.id);
     const member = before.find((row) => row.access_id === input.accessId.toLowerCase());
@@ -727,12 +822,12 @@ const removeMember = async (input: ChatContext & { conversationId: string; acces
     );
     if (!guarded.ok) return guarded;
     const [snapshot] = await personSnapshots(db, [member.user_id]);
-    await deleteDirect(db, allowed.data, member);
+    const keptThroughGroup = await deleteDirect(db, allowed.data, member);
     await appendMessage(db, allowed.data, input, { kind: "system", system: { code: "member_removed", params: { member: snapshot! } } }, [
       member.user_id,
     ]);
     await record(db, input, allowed.data.short_id, "chat.member.remove", { count: 1 });
-    return ok({ success: true as const });
+    return ok({ success: true as const, keptThroughGroup });
   });
 };
 const leave = async (input: ChatContext & { conversationId: string; input: unknown }) => {
@@ -766,7 +861,7 @@ const leave = async (input: ChatContext & { conversationId: string; input: unkno
     if (needsSuccessor && successor) value(await updateAccess({ id: successor, permission: "admin" }, db));
     const successorMember = needsSuccessor ? others.find((row) => row.access_id === successor) : undefined;
     const [snapshot] = successorMember ? await personSnapshots(db, [successorMember.user_id]) : [];
-    await deleteDirect(db, allowed.data, own);
+    const keptThroughGroup = await deleteDirect(db, allowed.data, own);
     await appendMessage(
       db,
       allowed.data,
@@ -781,7 +876,7 @@ const leave = async (input: ChatContext & { conversationId: string; input: unkno
       [own.user_id, ...(successorMember ? [successorMember.user_id] : [])],
     );
     await record(db, input, allowed.data.short_id, "chat.member.leave", { count: 1, ...(needsSuccessor ? { permission: "admin" } : {}) });
-    return ok({ success: true as const });
+    return ok({ success: true as const, keptThroughGroup });
   });
 };
 
@@ -814,6 +909,6 @@ export const conversations = {
   list,
   get,
   update,
-  members: { list: listMembers, add: addMembers, update: updateMember, remove: removeMember },
+  members: { list: listMembers, preview: previewMembers, add: addMembers, update: updateMember, remove: removeMember },
   leave,
 };

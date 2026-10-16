@@ -406,27 +406,45 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (control.matches("a[href]") || control.closest(ITEM_SELECTOR)) closeOverlay("kept");
   };
   const onOverlayKeyDown = (event: KeyboardEvent) => {
-    if (!overlay || event.defaultPrevented) return;
+    if (event.defaultPrevented) return;
     const target = eventElement(event);
     if (!target) return;
     // Escape also closes it when a click left focus on nothing, so on the body.
-    if (event.key === "Escape" && (overlay.sidebar.contains(target) || target === ownerDocument.body)) {
+    if (overlay && event.key === "Escape" && (overlay.sidebar.contains(target) || target === ownerDocument.body)) {
       event.preventDefault();
       closeOverlay("button");
       return;
     }
-    if (event.key !== "Tab" || !overlay.sidebar.contains(target)) return;
-    const stops = tabStopsIn(overlay.sidebar);
+    const aside = target.closest<HTMLElement>(detailSelector);
+    const panel =
+      overlay?.sidebar ?? (phone?.matches && aside && !aside.hidden && phonePage(aside) && eventRoot.contains(aside) ? aside : null);
+    if (event.key !== "Tab") return;
+    if (!panel) {
+      // Focus outside an open phone page, on the body after a load or on chrome the page covers, enters the page.
+      // Dialogs and popovers keep their own Tab order.
+      const page = phone?.matches ? allRoots().flatMap(openDetails).find(phonePage) : undefined;
+      if (!page || ownerDocument.querySelector("dialog[open], [aria-modal='true']") || target.closest("[popover]")) return;
+      const stops = tabStopsIn(page);
+      event.preventDefault();
+      (event.shiftKey ? stops.at(-1) : stops[0])?.focus();
+      return;
+    }
+    if (!panel.contains(target)) return;
+    const stops = tabStopsIn(panel);
     const first = stops[0];
     const last = stops.at(-1);
     if (!first || !last) {
       event.preventDefault();
       return;
     }
-    if (event.shiftKey && (document.activeElement === first || document.activeElement === overlay.sidebar)) {
+    // Focus can also rest on an element that is no tab stop, such as a title focused as the panel opened.
+    const active = document.activeElement;
+    const before = (element: Element | null, other: Element | null) =>
+      Boolean(element && other && element.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING);
+    if (event.shiftKey && !stops.some((stop) => before(stop, active))) {
       event.preventDefault();
       last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
+    } else if (!event.shiftKey && !stops.some((stop) => before(active, stop))) {
       event.preventDefault();
       first.focus();
     }
@@ -589,7 +607,9 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     // An element-scoped controller cannot see its own root leave the document.
     observer.observe(ownerDocument, { childList: true, subtree: true });
   };
+  const phonePage = (aside: HTMLElement) => aside.dataset.workspaceDetailPhone === "page";
   const setDetent = (aside: HTMLElement, full: boolean) => {
+    if (phonePage(aside)) return;
     touchedDetails.add(aside);
     if (full) aside.dataset.workspaceDetailSheet = "full";
     else delete aside.dataset.workspaceDetailSheet;
@@ -637,6 +657,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     root.dataset.workspaceDetailSliding = "";
   };
   const revealItem = (root: HTMLElement, aside: HTMLElement, snapshot: RememberedItem) => {
+    if (phone?.matches && phonePage(aside)) return;
     const pending = revealFrames.get(root);
     if (pending !== undefined) cancelAnimationFrame(pending);
     revealFrames.set(
@@ -905,6 +926,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const aside = target?.closest<HTMLElement>(detailSelector);
     const root = aside?.closest<HTMLElement>(ROOT_SELECTOR);
     if (!target || !aside || !root || aside.hidden || !observedRoots.has(root) || target.closest(ROOT_SELECTOR) !== root) return;
+    if (phonePage(aside)) return;
     const grabber = target.closest<HTMLElement>(grabberSelector);
     if (
       !grabber &&
@@ -935,7 +957,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const target = eventElement(event);
     const grabber = target?.closest(grabberSelector);
     const aside = grabber?.closest<HTMLElement>(detailSelector);
-    if (!aside || aside.hidden || !phone?.matches || claimedToggleClicks.has(event)) return;
+    if (!aside || aside.hidden || phonePage(aside) || !phone?.matches || claimedToggleClicks.has(event)) return;
     claimedToggleClicks.add(event);
     if (suppressedClick === aside && event instanceof MouseEvent && event.detail !== 0) {
       event.preventDefault();
@@ -970,6 +992,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const touch = event.touches[0];
     const root = aside?.closest<HTMLElement>(ROOT_SELECTOR);
     if (!target || !aside || !root || aside.hidden || !touch || !observedRoots.has(root) || target.closest(ROOT_SELECTOR) !== root) return;
+    if (phone?.matches && phonePage(aside)) return;
     if (phone?.matches && (verticalScroller(target, aside) ?? aside).scrollTop <= 0) {
       if (!ownsTouchGesture(target, aside, "sheet"))
         beginDetailDrag(aside, target, "sheet", touch.clientX, touch.clientY, touch.identifier);
@@ -1201,6 +1224,32 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const nested = Array.from(eventRoot.querySelectorAll<HTMLElement>(ROOT_SELECTOR));
     return eventRoot instanceof HTMLElement && eventRoot.matches(ROOT_SELECTOR) ? [eventRoot, ...nested] : nested;
   };
+  // Remember only attributes we own; application-set inert survives every transition.
+  const phonePageInerted = new Set<HTMLElement>();
+  const syncPhonePages = () => {
+    const regions = new Set<HTMLElement>();
+    if (phone?.matches) {
+      for (const root of allRoots()) {
+        if (!root.isConnected) continue;
+        for (const aside of openDetails(root).filter(phonePage)) {
+          for (let node: HTMLElement | null = aside; node && node !== root; node = node.parentElement) {
+            const parent: HTMLElement | null = node.parentElement;
+            if (parent) overlayRegions(parent, aside).forEach((region) => regions.add(region));
+          }
+        }
+      }
+    }
+    phonePageInerted.forEach((region) => {
+      if (regions.has(region)) return;
+      region.removeAttribute("inert");
+      phonePageInerted.delete(region);
+    });
+    regions.forEach((region) => {
+      if (region.hasAttribute("inert")) return;
+      region.setAttribute("inert", "");
+      phonePageInerted.add(region);
+    });
+  };
   const roots = () => {
     // A hidden or zero-width workspace measures 0, which drives every limit
     // down to its minimum — reconciling one would overwrite its variables and
@@ -1339,6 +1388,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     typeof MutationObserver === "undefined"
       ? null
       : new MutationObserver((records) => {
+          syncPhonePages();
           if (pendingTitle && (pendingTitle.aside.hidden || !pendingTitle.aside.isConnected)) cancelTitle();
           // Hiding or removing the sidebar, or its button, ends the overlay.
           if (overlay && (overlay.sidebar.hidden || !overlay.sidebar.isConnected || !overlay.toggle.isConnected)) closeOverlay("kept");
@@ -1385,9 +1435,11 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   eventRoot.addEventListener("touchend", onDetailTouchEnd);
   eventRoot.addEventListener("touchcancel", onDetailTouchEnd);
   compact?.addEventListener("change", onCompactChange);
+  phone?.addEventListener("change", syncPhonePages);
   eventRoot.addEventListener("keydown", onKeyDown as EventListener);
   eventRoot.addEventListener("focusin", onFocusIn as EventListener);
   window.addEventListener("resize", onResize);
+  syncPhonePages();
   syncObservedRoots();
   mutationObserver?.observe(eventRoot, {
     attributes: true,
@@ -1398,6 +1450,9 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   });
   scheduleReconcile();
   return () => {
+    phonePageInerted.forEach((region) => region.removeAttribute("inert"));
+    phonePageInerted.clear();
+    phone?.removeEventListener("change", syncPhonePages);
     cancelTitle();
     pendingAnchors.forEach((cancel) => cancel());
     slides.forEach((end) => end());

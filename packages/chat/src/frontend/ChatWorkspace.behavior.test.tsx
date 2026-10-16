@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
+import { chatMessages } from "../messages";
 import { ChatSnapshotSchema, MessageViewSchema, SendMessageSchema } from "../service/contracts";
 import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 
@@ -39,12 +40,35 @@ class FakeWebSocket {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 3;
+  static instances: FakeWebSocket[] = [];
   readyState = 0;
-  onopen = null;
-  onmessage = null;
+  onopen: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent) => void) | null = null;
   onclose = null;
   onerror = null;
-  send() {}
+  conversationSubscription: string | undefined;
+  constructor() {
+    FakeWebSocket.instances.push(this);
+  }
+  send(data: string) {
+    const frame: unknown = JSON.parse(data);
+    if (
+      frame &&
+      typeof frame === "object" &&
+      "channel" in frame &&
+      frame.channel === "conversation" &&
+      "id" in frame &&
+      typeof frame.id === "string"
+    )
+      this.conversationSubscription = frame.id;
+  }
+  open() {
+    this.readyState = FakeWebSocket.OPEN;
+    this.onopen?.(new Event("open"));
+  }
+  message(data: unknown) {
+    this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(data) }));
+  }
   close() {
     this.readyState = 3;
   }
@@ -77,13 +101,24 @@ describe("ChatWorkspace interactions", () => {
   const originalConsoleError = console.error;
   const consoleErrors: unknown[][] = [];
   const posted: { clientId: string; body: string }[] = [];
+  const readPosts: number[] = [];
+  const leavePosts: unknown[] = [];
   const snapshots = new Map<string, ReturnType<typeof ChatSnapshotSchema.parse>>();
+  const pendingSnapshots = new Map<string, Promise<Response>>();
+  let membersRequests = 0;
+  let memberName: string | null = null;
   let answer: (response: Response) => void;
   beforeEach(() => {
     dom = createDomTestHarness();
     delegateEvents(["click", "input", "keydown"], dom.document);
     posted.length = 0;
+    readPosts.length = 0;
+    leavePosts.length = 0;
     snapshots.clear();
+    pendingSnapshots.clear();
+    membersRequests = 0;
+    memberName = null;
+    FakeWebSocket.instances = [];
     consoleErrors.length = 0;
     console.error = (...args: unknown[]) => {
       consoleErrors.push(args);
@@ -97,9 +132,44 @@ describe("ChatWorkspace interactions", () => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
         const snapshot = /^\/api\/chat\/conversations\/([^/]+)\/snapshot$/.exec(url.pathname);
         if (snapshot) {
+          const pending = pendingSnapshots.get(snapshot[1]!);
+          if (pending) return pending;
           const body = snapshots.get(snapshot[1]!);
           return body ? Response.json(ChatSnapshotSchema.parse(body)) : Response.json({}, { status: 404 });
         }
+        if (url.pathname === "/api/chat/conversations/Chat01/members") {
+          membersRequests++;
+          return Response.json({
+            items: memberName
+              ? [
+                  {
+                    accessId: "33333333-3333-4333-8333-333333333333",
+                    principal: { type: "user", userId: "22222222-2222-4222-8222-222222222222" },
+                    displayName: memberName,
+                    guest: false,
+                    deactivated: false,
+                    groupSize: null,
+                    permission: "write",
+                    addedAt: now,
+                  },
+                ]
+              : [],
+            managers: 1,
+            self: { accessId: "11111111-1111-4111-8111-111111111111", permission: "admin", active: true },
+            nextCursor: null,
+          });
+        }
+        if (url.pathname === "/api/chat/conversations/Chat01/leave" && init?.method === "POST") {
+          leavePosts.push(JSON.parse(String(init.body)));
+          return Response.json({ success: true, keptThroughGroup: false });
+        }
+        if (url.pathname === "/api/chat/conversations") return Response.json({ items: [], nextCursor: null });
+        if (url.pathname === "/api/chat/conversations/Chat01/read" && init?.method === "POST") {
+          const { seq } = JSON.parse(String(init.body));
+          readPosts.push(seq);
+          return Response.json({ lastReadSeq: seq, unreadFromSeq: null, joinedSeq: 0 });
+        }
+        if (url.pathname === "/api/chat/conversations/Chat01") return Response.json({ ...conversation, permission: "admin" });
         if (url.pathname === "/api/chat/conversations/Chat01/messages" && init?.method === "POST") {
           posted.push(SendMessageSchema.parse(JSON.parse(String(init.body))));
           return new Promise<Response>((resolve) => {
@@ -124,14 +194,29 @@ describe("ChatWorkspace interactions", () => {
     else Reflect.deleteProperty(globalThis, "WebSocket");
     dom.cleanup();
   });
-  const mount = async (open: boolean, sidebar = [conversation]) => {
+  const mount = async (
+    open: boolean,
+    sidebar = [conversation],
+    panel: "info" | null = null,
+    locale = "en",
+    permission: typeof conversation.permission = "write",
+    initial: { url?: string; page?: NonNullable<ChatWorkspaceProps["open"]>["page"]; focus?: string | null } = {},
+  ) => {
     const { ChatWorkspace, LocaleProvider } = modules!;
-    dom.window.history.replaceState(null, "", open ? "/app/chat/c/Chat01" : "/app/chat");
+    dom.window.history.replaceState(null, "", initial.url ?? (open ? `/app/chat/c/Chat01${panel ? "?panel=info" : ""}` : "/app/chat"));
     const props: ChatWorkspaceProps = {
       cursor: "c.0",
       sidebar: { items: sidebar, nextCursor: null },
-      open: open ? { conversation, page: { items: [], seqHead: 0, rev: 0 }, focus: null } : null,
+      open: open
+        ? {
+            conversation: { ...conversation, permission },
+            page: initial.page ?? { items: [], seqHead: 0, rev: 0 },
+            focus: initial.focus ?? null,
+          }
+        : null,
       chatId: open ? conversation.id : null,
+      guest: false,
+      panel,
       viewerId,
       dateConfig: { timeZone: "UTC" },
       now,
@@ -139,7 +224,7 @@ describe("ChatWorkspace interactions", () => {
     dispose = render(
       () =>
         createComponent(LocaleProvider, {
-          locale: "en",
+          locale,
           get children() {
             return createComponent(ChatWorkspace, props);
           },
@@ -148,13 +233,60 @@ describe("ChatWorkspace interactions", () => {
     );
     await settle();
   };
-  const button = (label: string) => {
-    const found = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(
+  const button = (label: string, root: ParentNode = dom.root) => {
+    const found = [...root.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent?.trim() === label || button.getAttribute("aria-label") === label,
     );
     if (!found) throw new Error(`Missing button ${label}`);
     return found;
   };
+  const mountVisibleUnread = async (phoneWidth: boolean) => {
+    const changes = new dom.window.EventTarget();
+    const phone = {
+      matches: phoneWidth,
+      addEventListener: changes.addEventListener.bind(changes),
+      removeEventListener: changes.removeEventListener.bind(changes),
+    };
+    Object.defineProperty(dom.window, "matchMedia", {
+      value: (query: string) =>
+        query === "(max-width: 47.999rem)" ? phone : { matches: false, addEventListener() {}, removeEventListener() {} },
+    });
+    Object.defineProperty(dom.document, "visibilityState", { configurable: true, value: "visible" });
+    Object.defineProperty(dom.document, "hasFocus", { configurable: true, value: () => true });
+    const unread = MessageViewSchema.parse({
+      ...message(1),
+      author: { type: "user", id: "22222222-2222-4222-8222-222222222222", name: "Alex" },
+    });
+    await mount(true, [conversation], "info", "en", "write", {
+      page: { items: [unread], seqHead: 1, rev: 1 },
+    });
+    const feed = dom.root.querySelector<HTMLElement>(".k2b-virtual-feed__viewport")!;
+    Object.defineProperty(feed, "clientHeight", { configurable: true, value: 600 });
+    feed.dispatchEvent(new Event("scroll"));
+    await settle();
+    return () => {
+      phone.matches = false;
+      changes.dispatchEvent(new dom.window.Event("change"));
+    };
+  };
+  for (const uncover of ["close", "resize"] as const) {
+    test(`phone info pauses visible unread reporting until ${uncover}`, async () => {
+      const resizeToDesktop = await mountVisibleUnread(true);
+      expect(readPosts).toEqual([]);
+      if (uncover === "close") {
+        dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
+      } else resizeToDesktop();
+      await settle();
+      expect(readPosts).toEqual([1]);
+      expect(consoleErrors).toEqual([]);
+    });
+  }
+  test("desktop info keeps reporting visible unread messages", async () => {
+    await mountVisibleUnread(false);
+    expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
+    expect(readPosts).toEqual([1]);
+    expect(consoleErrors).toEqual([]);
+  });
   test("failed send retries the same client ID and body, then shows one sent row", async () => {
     await mount(true);
     const field = dom.root.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
@@ -329,5 +461,272 @@ describe("ChatWorkspace interactions", () => {
     dom.window.dispatchEvent(sentLeave);
     expect(sentLeave.defaultPrevented).toBe(false);
   });
+  test("SSR info state survives mounting and popstate clears and restores it without reloading the chat", async () => {
+    await mount(true, [conversation], "info");
+    expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
+    expect(
+      dom.root.querySelector('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')?.getAttribute("aria-expanded"),
+    ).toBe("true");
+    dom.window.history.pushState(null, "", "/app/chat/c/Chat01");
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await settle();
+    expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(true);
+    dom.window.history.pushState(null, "", "/app/chat/c/Chat01?panel=info");
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await settle();
+    expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
+    expect(
+      dom.root.querySelector('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')?.getAttribute("aria-expanded"),
+    ).toBe("true");
+    expect(consoleErrors).toEqual([]);
+  });
+  for (const initialPanel of [null, "info"] as const) {
+    test(`info link keeps ${initialPanel ?? "the closed panel"} unchanged while another chat opens`, async () => {
+      const other = { ...conversation, id: "Chat02", title: "Other chat" };
+      const pending = Promise.withResolvers<Response>();
+      pendingSnapshots.set(other.id, pending.promise);
+      await mount(true, [conversation, other], initialPanel);
+      const url = dom.window.location.href;
+      const historyLength = dom.window.history.length;
+      dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat02"]')!.click();
+      await settle();
+      expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("true");
+      expect(dom.root.querySelector(".chat-conversation__header")?.textContent).toContain(conversation.title);
+      dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
+      await settle();
+      try {
+        expect(dom.window.location.href).toBe(url);
+        expect(dom.window.history.length).toBe(historyLength);
+        expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(initialPanel === null);
+      } finally {
+        pending.resolve(Response.json({ cursor: "c.0", conversation: other, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+        await settle();
+      }
+      expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat02");
+      expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(true);
+      expect(dom.window.history.length).toBe(historyLength + 1);
+      expect(consoleErrors).toEqual([]);
+    });
+  }
+  test("returning to info supersedes a pending open of another chat", async () => {
+    const other = { ...conversation, id: "Chat02", title: "Other chat" };
+    const pending = Promise.withResolvers<Response>();
+    pendingSnapshots.set(other.id, pending.promise);
+    snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0 }, focus: null });
+    await mount(true, [conversation, other], "info");
+    // A panel-only return must differ from the route still showing while the next chat loads.
+    dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
+    await settle();
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat02"]')!.click();
+    await settle();
+    expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("true");
+    dom.window.history.pushState(null, "", "/app/chat/c/Chat01?panel=info");
+    dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+    await settle();
+    pending.resolve(Response.json({ cursor: "c.0", conversation: other, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+    await settle();
+    expect(dom.root.querySelector(".chat-conversation__header")?.textContent).toContain("Secret board");
+    expect(dom.window.location.pathname).toBe("/app/chat/c/Chat01");
+    expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
+    expect(consoleErrors).toEqual([]);
+  });
+  test("a superseded open does not clear busy while the next open is pending", async () => {
+    const second = { ...conversation, id: "Chat02", title: "Second chat" };
+    const third = { ...conversation, id: "Chat03", title: "Third chat" };
+    const pendingSecond = Promise.withResolvers<Response>();
+    const pendingThird = Promise.withResolvers<Response>();
+    pendingSnapshots.set(second.id, pendingSecond.promise);
+    pendingSnapshots.set(third.id, pendingThird.promise);
+    await mount(true, [conversation, second, third]);
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat02"]')!.click();
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat03"]')!.click();
+    pendingSecond.resolve(Response.json({ cursor: "c.0", conversation: second, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+    await settle();
+    expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("true");
+    pendingThird.resolve(Response.json({ cursor: "c.0", conversation: third, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+    await settle();
+    expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("false");
+    expect(dom.window.location.pathname).toBe("/app/chat/c/Chat03");
+    expect(consoleErrors).toEqual([]);
+  });
+  test("a newer open that finishes first ends busy and leaves info usable while the superseded one is pending", async () => {
+    const second = { ...conversation, id: "Chat02", title: "Second chat" };
+    const third = { ...conversation, id: "Chat03", title: "Third chat" };
+    const pendingSecond = Promise.withResolvers<Response>();
+    const pendingThird = Promise.withResolvers<Response>();
+    pendingSnapshots.set(second.id, pendingSecond.promise);
+    pendingSnapshots.set(third.id, pendingThird.promise);
+    await mount(true, [conversation, second, third]);
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat02"]')!.click();
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat03"]')!.click();
+    pendingThird.resolve(Response.json({ cursor: "c.0", conversation: third, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+    await settle();
+    try {
+      expect(dom.window.location.pathname).toBe("/app/chat/c/Chat03");
+      expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("false");
+      dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
+      await settle();
+      expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat03?panel=info");
+      expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);
+    } finally {
+      pendingSecond.resolve(Response.json({ cursor: "c.0", conversation: second, page: { items: [], seqHead: 0, rev: 0 }, focus: null }));
+      await settle();
+    }
+    expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat03?panel=info");
+    expect(dom.root.querySelector(".k2b-app-workspace__main")?.getAttribute("aria-busy")).toBe("false");
+    expect(consoleErrors).toEqual([]);
+  });
+  for (const historical of [false, true]) {
+    test(`info reflects live membership changes by every author${historical ? " outside the displayed history" : ""}`, async () => {
+      const otherId = "22222222-2222-4222-8222-222222222222";
+      const membership = (seq: number, authorId: string) =>
+        MessageViewSchema.parse({
+          ...message(seq),
+          kind: "system",
+          author: { type: "user", id: authorId, name: "Member" },
+          body: null,
+          system: { code: "member_left", params: {} },
+          systemText: "Member left the chat.",
+        });
+      memberName = "Initial member";
+      const seqHead = historical ? 10 : 1;
+      await mount(true, [conversation], "info", "en", "admin", {
+        page: { items: [membership(1, otherId)], seqHead, rev: seqHead },
+      });
+      // The initial history belongs to the snapshot and does not trigger another member read.
+      expect(membersRequests).toBe(1);
+      expect(dom.root.querySelector(".chat-member-row__name")?.textContent).toBe("Initial member");
+      const socket = FakeWebSocket.instances[0]!;
+      socket.open();
+      expect(socket.conversationSubscription).toBeDefined();
+      memberName = "Changed by someone else";
+      socket.message({
+        t: "event",
+        id: socket.conversationSubscription,
+        cursor: "c.2",
+        data: { type: "message", message: membership(seqHead + 1, otherId) },
+      });
+      await settle();
+      expect(dom.root.querySelectorAll(".k2b-message-system-row")).toHaveLength(historical ? 1 : 2);
+      expect(membersRequests).toBe(2);
+      expect(dom.root.querySelector(".chat-member-row__name")?.textContent).toBe("Changed by someone else");
+      memberName = "Changed by the viewer elsewhere";
+      socket.message({
+        t: "event",
+        id: socket.conversationSubscription,
+        cursor: "c.3",
+        data: { type: "message", message: membership(seqHead + 2, viewerId) },
+      });
+      await settle();
+      expect(dom.root.querySelectorAll(".k2b-message-system-row")).toHaveLength(historical ? 1 : 3);
+      expect(membersRequests).toBe(3);
+      expect(dom.root.querySelector(".chat-member-row__name")?.textContent).toBe("Changed by the viewer elsewhere");
+      expect(consoleErrors).toEqual([]);
+    });
+  }
+  test("the way up from info returns to the list in one action", async () => {
+    snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0 }, focus: null });
+    await mount(false);
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat01"]')!.click();
+    await settle();
+    expect(dom.window.history.state).toEqual({ chatFromList: true });
+    dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
+    await settle();
+    expect(dom.window.location.search).toBe("?panel=info");
+    const up = new dom.window.CustomEvent("cloud:page-up", { detail: { href: "/app/chat" }, cancelable: true });
+    dom.window.dispatchEvent(up);
+    await settle();
+    expect(up.defaultPrevented).toBe(true);
+    expect(dom.window.location.pathname).toBe("/app/chat");
+    expect(dom.root.querySelector(".chat-conversation__header")).toBeNull();
+    expect(consoleErrors).toEqual([]);
+  });
+  test("leaving info opened from the chat keeps one Back action to the list", async () => {
+    const t = chatMessages.resolve(["en"]).t;
+    snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0 }, focus: null });
+    await mount(false);
+    const listLength = dom.window.history.length;
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat01"]')!.click();
+    await settle();
+    expect(dom.window.history.length).toBe(listLength + 1);
+    dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
+    await settle();
+    expect(dom.window.location.search).toBe("?panel=info");
+    expect(dom.window.history.length).toBe(listLength + 2);
+    button(t.leaveChat).click();
+    await settle();
+    const dialog = dom.document.querySelector('[role="dialog"], dialog')!;
+    expect(dialog).not.toBeNull();
+    expect(button(t.leaveChat, dialog).disabled).toBe(false);
+    button(t.leaveChat, dialog).click();
+    await settle();
+    expect(leavePosts).toEqual([{}]);
+    expect(dom.window.history.length).toBe(listLength + 2);
+    expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat01");
+    dom.window.history.back();
+    await settle();
+    expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat");
+    expect(dom.root.querySelector(".chat-conversation__header")).toBeNull();
+    expect(consoleErrors).toEqual([]);
+  });
+  test("leaving directly mounted info replaces its history entry", async () => {
+    const t = chatMessages.resolve(["en"]).t;
+    await mount(true, [conversation], "info");
+    const infoLength = dom.window.history.length;
+    expect(dom.window.history.state).toBeNull();
+    expect(dom.window.location.search).toBe("?panel=info");
+    button(t.leaveChat).click();
+    await settle();
+    const dialog = dom.document.querySelector('[role="dialog"], dialog')!;
+    expect(dialog).not.toBeNull();
+    expect(button(t.leaveChat, dialog).disabled).toBe(false);
+    button(t.leaveChat, dialog).click();
+    await settle();
+    expect(leavePosts).toEqual([{}]);
+    expect(dom.window.history.length).toBe(infoLength);
+    expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat01");
+    expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(true);
+    expect(consoleErrors).toEqual([]);
+  });
+  for (const initialPanel of [null, "info"] as const) {
+    test(`info preserves the linked message window when opened from ${initialPanel ?? "the chat"}`, async () => {
+      const linked = message(1, "Linked message");
+      const path = `/app/chat/c/Chat01/m/${linked.id}`;
+      await mount(true, [conversation], initialPanel, "en", "write", {
+        url: `${path}${initialPanel ? "?panel=info" : ""}`,
+        page: { items: [linked], seqHead: 1, rev: 1 },
+        focus: linked.id,
+      });
+      const infoLink = () =>
+        dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!;
+      if (initialPanel === null) {
+        expect(infoLink().getAttribute("href")).toBe(`${path}?panel=info`);
+        infoLink().click();
+        await settle();
+      }
+      expect(dom.window.location.pathname + dom.window.location.search).toBe(`${path}?panel=info`);
+      expect(infoLink().getAttribute("href")).toBe(path);
+      infoLink().click();
+      await settle();
+      expect(dom.window.location.pathname + dom.window.location.search).toBe(path);
+      expect(dom.root.querySelector(".k2b-message-row")?.textContent).toContain("Linked message");
+      expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(true);
+      expect(consoleErrors).toEqual([]);
+    });
+  }
+  for (const locale of ["en", "de"]) {
+    const t = chatMessages.resolve([locale]).t;
+    for (const permission of ["admin", "write", "read"] as const) {
+      test(`the open chat header offers Add people only to admin: ${permission} in ${locale}`, async () => {
+        await mount(true, [conversation], null, locale, permission);
+        const header = dom.root.querySelector(".chat-conversation__header");
+        expect(header).not.toBeNull();
+        expect(header?.querySelector(`button[aria-label="${t.addPeople}"]`) !== null).toBe(permission === "admin");
+        // The companion info action proves the feature header mounted for every permission.
+        expect(header?.querySelector(`a[aria-label="${t.chatInfo}"]`)).not.toBeNull();
+        expect(consoleErrors).toEqual([]);
+      });
+    }
+  }
   // happy-dom has no viewport layout; the 120-message deep link is verified in the browser suite.
 });

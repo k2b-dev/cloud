@@ -360,6 +360,46 @@ describe("@k2b/ui choice and date browser behavior", () => {
     dom.cleanup();
   });
 
+  test("Enter with open Combobox results never reaches an enclosing form", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { Combobox } = await import("../src/inputs/Combobox");
+    const selected: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Combobox, {
+          label: "Add team",
+          debounceMs: 0,
+          fetchData: async () => [{ id: "platform", label: "Platform" }],
+          onSelect: (option) => selected.push(option.id),
+        }),
+      dom.root,
+    );
+    const input = dom.root.querySelector<HTMLInputElement>('[role="combobox"]')!;
+    const enter = () => {
+      const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+      input.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+
+    // Closed results leave Enter to the form.
+    expect(enter()).toBe(false);
+    input.value = "pla";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await Bun.sleep(0);
+    // Typing opened the results without an active option: Enter neither submits nor selects.
+    expect(input.getAttribute("aria-expanded")).toBe("true");
+    expect(enter()).toBe(true);
+    expect(selected).toEqual([]);
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    expect(enter()).toBe(true);
+    expect(selected).toEqual(["platform"]);
+
+    dispose();
+    popover.restore();
+    dom.cleanup();
+  });
+
   test("hides a Select listbox before publishing the selected value", async () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);

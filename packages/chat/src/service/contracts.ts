@@ -108,7 +108,10 @@ export const PeoplePageSchema = z.object({
   items: z.array(z.object({ id: z.uuid(), displayName: z.string() })),
   nextCursor: z.string().nullable(),
 });
-export const MemberQuerySchema = z.object({ cursor: z.uuid().optional() });
+export const MemberQuerySchema = z.strictObject({
+  q: z.string().trim().max(100).optional(),
+  cursor: PeopleQuerySchema.shape.cursor,
+});
 export const MessageIdSchema = z.string().regex(/^[0-9A-Za-z]{10}$/);
 const AuthorSchema = z.object({ type: z.enum(["user", "service_account"]), id: z.uuid(), name: z.string() });
 export const ReadStateSchema = z.object({
@@ -163,11 +166,27 @@ export const MemberSchema = z.object({
   accessId: z.uuid(),
   principal: MemberPrincipalSchema,
   displayName: z.string(),
+  avatarHash: z.string().nullable().optional(),
+  guest: z.boolean(),
+  deactivated: z.boolean(),
+  groupSize: z.number().int().nonnegative().nullable(),
   permission: PermissionSchema,
   addedAt: z.string(),
 });
-export const MemberPageSchema = z.object({ items: z.array(MemberSchema), nextCursor: z.string().nullable() });
+export const MemberPageSchema = z.object({
+  items: z.array(MemberSchema),
+  nextCursor: z.string().nullable(),
+  managers: z.number().int().nonnegative(),
+  /** The access subject's direct user membership, independent of search and pagination. */
+  self: z.object({ accessId: z.uuid(), permission: PermissionSchema, active: z.boolean() }).nullable(),
+});
+export const MemberPreviewSchema = z.object({
+  joining: z.number().int().nonnegative(),
+  throughGroups: z.number().int().nonnegative(),
+  memberCount: z.number().int().nonnegative(),
+});
 export const ChangeSchema = z.object({ added: z.number().int() });
+export const MemberRemovalSchema = z.object({ success: z.literal(true), keptThroughGroup: z.boolean() });
 export const SuccessSchema = z.object({ success: z.literal(true) });
 
 const personSnapshot = z.object({ id: z.uuid(), name: z.string() });

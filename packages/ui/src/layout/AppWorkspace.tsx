@@ -208,6 +208,8 @@ export type AppWorkspaceDetailProps = {
   id: string;
   class?: string;
   width?: AppWorkspaceDetailWidth;
+  /** Below 48rem, a full page without sheet gestures for a destination such as chat info; defaults to "sheet". */
+  phone?: "sheet" | "page";
   viewTransitionName?: string;
   resizable?: boolean;
   minWidth?: number;
@@ -678,6 +680,7 @@ function AppWorkspaceDetail(props: AppWorkspaceDetailProps): JSX.Element {
         id={domId()}
         class={`k2b-app-workspace__detail ${props.class ?? ""}`}
         data-width={props.width ?? "md"}
+        data-workspace-detail-phone={props.phone === "page" ? "page" : undefined}
         data-workspace-panel-id={panelId()}
         data-workspace-resizable={resizable() ? "true" : "false"}
         data-workspace-detail-closable={props.onClose ? "true" : undefined}

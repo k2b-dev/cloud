@@ -2,7 +2,7 @@
 /**
  * Chat browser regression smoke against a loopback Cloud stack.
  *
- * Two people sign in through Core and exchange messages through the composer.
+ * Two people sign in through Core, start and reopen chats, add members, and exchange messages through the UI.
  * Accounts creates and deletes the disposable person. Only chat cleanup uses
  * SQL, because Chat has no public delete API; its access grants go with it.
  */
@@ -11,7 +11,7 @@ import { parseArgs } from "node:util";
 import { sql } from "bun";
 import { type BrowserContext, chromium, type Page, webkit } from "playwright";
 import { z } from "zod";
-import { SEND_CONVERSATION_WINDOW_SECONDS } from "../src/service/contracts";
+import { CreateOutcomeSchema, SEND_CONVERSATION_WINDOW_SECONDS } from "../src/service/contracts";
 
 const { values: options } = parseArgs({
   args: Bun.argv.slice(2),
@@ -29,13 +29,17 @@ const { values: options } = parseArgs({
 if (options.help) {
   console.log(`Usage: bun packages/chat/scripts/browser-smoke.ts [options]
 
+Checks: UI chat creation, duplicate reopening, live membership on another browser,
+        messaging, unread state, and layout in light and dark themes.
+With DATABASE_URL set, cleanup removes every chat the run created and its access grants.
+
 Options:
   --base-url <url>             Running Cloud server (default http://localhost:3000)
   --app-url <url>              Public Cloud origin for legal consent (default base URL)
   --admin-token-file <path>    File containing the admin token (default token "dev-admin")
   --webkit-endpoint <ws-url>   Connect to a \`playwright run-server\` for WebKit instead of launching it
   --headed                     Show the browser windows
-  --keep                       Keep the person and chat after the run
+  --keep                       Keep the person and all created chats after the run
   --timeout-ms <n>             Per-step timeout in milliseconds (default 20000)
   --help                       Show this help without contacting the stack
 `);
@@ -114,6 +118,7 @@ const SessionSchema = z.object({ session_token: z.string().min(1) });
 let adminToken: string | null = null;
 let personId: string | null = null;
 let chatId: string | null = null;
+const createdChats = new Set<string>();
 
 const createFixture = async () => {
   const tokenFile = options["admin-token-file"];
@@ -123,6 +128,7 @@ const createFixture = async () => {
   ok("admin session ready");
 
   const suffix = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+  const personName = `Chat smoke ${suffix}`;
   personId = z.object({ id: z.uuid() }).parse(
     await api(
       "POST",
@@ -132,7 +138,7 @@ const createFixture = async () => {
         profile: "user",
         givenname: "Chat smoke",
         sn: suffix,
-        displayName: `Chat smoke ${suffix}`,
+        displayName: personName,
         email: `chat-smoke-${suffix}@example.test`,
         autoSendNotification: false,
       },
@@ -147,12 +153,7 @@ const createFixture = async () => {
   await acceptLegal(personToken);
   ok("disposable person signed in and accepted the legal documents");
 
-  chatId = z
-    .object({ outcome: z.literal("created"), conversation: z.object({ id: z.string().regex(/^[0-9A-Za-z]{6}$/) }) })
-    .parse(await api("POST", "/api/chat/conversations", { members: [{ type: "user", userId: personId }] }, adminToken, 201))
-    .conversation.id;
-  ok(`chat ${chatId} created`);
-  return { adminToken, personToken, chatId };
+  return { adminToken, personToken, personId, personName };
 };
 
 const addCookies = async (context: BrowserContext, sessionToken: string, theme: string) => {
@@ -166,6 +167,7 @@ const addCookies = async (context: BrowserContext, sessionToken: string, theme: 
 
 declare global {
   interface Window {
+    chatSmokeMembershipMarker: string;
     chatSmokeShifts: { sum: number; observer: PerformanceObserver; supported: boolean };
   }
 }
@@ -263,6 +265,128 @@ const assertGeometryKept = async (page: Page, before: Awaited<ReturnType<typeof 
   }
 };
 
+/** Every successful UI creation is tracked before asserting navigation, so failed steps still clean up. */
+const startThroughDialog = async (page: Page, personName?: string) => {
+  await page.locator(".k2b-app-workspace__sidebar").getByRole("button", { name: "New chat", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "New chat", exact: true });
+  if (personName) {
+    await dialog.getByRole("combobox").fill(personName);
+    await page
+      .getByRole("option")
+      .filter({ has: page.getByText(personName, { exact: true }) })
+      .click();
+  }
+  const result = async (action: "Start chat" | "Create a new chat anyway") => {
+    const response = page.waitForResponse(
+      (response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/chat/conversations",
+    );
+    await dialog.getByRole("button", { name: action, exact: true }).click();
+    const answer = await response;
+    if (![200, 201].includes(answer.status())) fail(`new chat returned ${answer.status()}`);
+    const outcome = CreateOutcomeSchema.parse(await answer.json());
+    if (outcome.outcome === "created") createdChats.add(outcome.conversation.id);
+    return outcome;
+  };
+  let outcome = await result("Start chat");
+  // The admin can already have a self-chat on this disposable stack.
+  if (outcome.outcome === "existing" && !personName) outcome = await result("Create a new chat anyway");
+  if (outcome.outcome !== "created") fail("first chat with the disposable person unexpectedly exists");
+  await page.waitForURL(`**/app/chat/c/${outcome.conversation.id}`);
+  await composer(page).waitFor();
+  await dialog.waitFor({ state: "hidden" });
+  return outcome.conversation.id;
+};
+
+const startAndManage = async (
+  adminPage: Page,
+  desktop: Awaited<ReturnType<typeof chromium.launch>>,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+  theme: string,
+) => {
+  chatId = await startThroughDialog(adminPage, fixture.personName);
+  const pair = chatId;
+  ok(`chat ${pair} created through New chat and opened`);
+  await adminPage.locator(".k2b-app-workspace__sidebar").getByRole("button", { name: "New chat", exact: true }).click();
+  const duplicate = adminPage.getByRole("dialog", { name: "New chat", exact: true });
+  await duplicate.getByRole("combobox").fill(fixture.personName);
+  await adminPage
+    .getByRole("option")
+    .filter({ has: adminPage.getByText(fixture.personName, { exact: true }) })
+    .click();
+  const checked = adminPage.waitForResponse(
+    (response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/chat/conversations",
+  );
+  await duplicate.getByRole("button", { name: "Start chat", exact: true }).click();
+  const response = await checked;
+  const outcome = CreateOutcomeSchema.parse(await response.json());
+  // A regression that creates instead of matching must still clean up that chat.
+  if (outcome.outcome === "created") createdChats.add(outcome.conversation.id);
+  if (response.status() !== 200) fail("duplicate lookup did not return 200");
+  if (outcome.outcome !== "existing" || outcome.matches[0]?.id !== pair) fail("duplicate lookup did not find the UI-created chat");
+  const open = duplicate.getByRole("button", { name: "Open existing", exact: true });
+  await open.waitFor();
+  if ((await open.getAttribute("data-variant")) !== "primary") fail("Open existing is not the primary action");
+  await open.click();
+  await duplicate.waitFor({ state: "hidden" });
+  await composer(adminPage).waitFor();
+  if (new URL(adminPage.url()).pathname !== `/app/chat/c/${pair}`) fail("Open existing did not land in the same chat");
+  ok("New chat with the same person offers Open existing and returns to the same chat");
+
+  const self = await startThroughDialog(adminPage);
+  await adminPage.locator(".chat-conversation__header").getByText("You", { exact: true }).waitFor();
+  const secondPerson = await desktop.newContext({
+    baseURL: BASE_URL,
+    viewport: { width: 1440, height: 900 },
+    locale: "en",
+    timezoneId: "UTC",
+  });
+  try {
+    await addCookies(secondPerson, fixture.personToken, theme);
+    await relayLiveSocket(secondPerson, fixture.personToken);
+    const listPage = await secondPerson.newPage();
+    listPage.setDefaultTimeout(TIMEOUT);
+    const errors: string[] = [];
+    listPage.on("pageerror", (error) => errors.push(error.message));
+    await listPage.goto("/app/chat", { waitUntil: "load" });
+    await listPage.locator('.k2b-app-workspace[data-workspace-motion="true"]').waitFor();
+    await listPage.locator(".k2b-app-workspace__sidebar").getByRole("button", { name: "New chat", exact: true }).waitFor();
+    await settle(listPage);
+    const link = listPage.locator(`.k2b-app-workspace__sidebar a[href="/app/chat/c/${self}"]`);
+    if (await link.count()) fail("person B sees the self-chat before being added");
+    await listPage.evaluate(() => {
+      window.chatSmokeMembershipMarker = "waiting-for-membership";
+    });
+    await adminPage.locator(".chat-conversation__header").getByRole("button", { name: "Add people", exact: true }).click();
+    const addition = adminPage.getByRole("dialog", { name: "Add people", exact: true });
+    await addition.getByRole("combobox").fill(fixture.personName);
+    await adminPage
+      .getByRole("option")
+      .filter({ has: adminPage.getByText(fixture.personName, { exact: true }) })
+      .click();
+    await addition.getByText("1 person joins and can read the whole chat history.", { exact: true }).waitFor();
+    const added = adminPage.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" && new URL(response.url()).pathname === `/api/chat/conversations/${self}/members`,
+    );
+    await addition.getByRole("button", { name: "Add", exact: true }).click();
+    if ((await added).status() !== 200) fail("Add people did not return 200");
+    await addition.waitFor({ state: "hidden" });
+    await link.waitFor();
+    if ((await listPage.evaluate(() => window.chatSmokeMembershipMarker)) !== "waiting-for-membership")
+      fail("person B's list reloaded to discover the new membership");
+    if (errors.length) fail(`person B's second browser errors: ${errors.join("\n")}`);
+    ok("a self-chat opens as You; Add people makes it appear live in person B's second browser context");
+  } finally {
+    await secondPerson.close();
+  }
+  await adminPage.goto(`/app/chat/c/${pair}?panel=info`, { waitUntil: "load" });
+  const info = adminPage.locator("#k2b-workspace-detail-chat-info");
+  await info.waitFor({ state: "visible" });
+  await info.getByRole("heading", { name: "Members", exact: true }).waitFor({ state: "visible" });
+  ok("Chat info opens from its address after a reload");
+  await adminPage.goto(`/app/chat/c/${pair}`, { waitUntil: "load" });
+};
+
 const runSmoke = async (fixture: Awaited<ReturnType<typeof createFixture>>) => {
   const desktop = await chromium.launch({ headless: !options.headed, timeout: TIMEOUT });
   try {
@@ -304,7 +428,13 @@ const runSmoke = async (fixture: Awaited<ReturnType<typeof createFixture>>) => {
             ]) {
               page.setDefaultTimeout(TIMEOUT);
               page.on("pageerror", (error) => errors.push(`${name}: ${error.message}`));
-              await page.goto(`/app/chat/c/${fixture.chatId}`, { waitUntil: "load" });
+              if (name === "admin" && theme === "light") {
+                await page.goto("/app/chat", { waitUntil: "load" });
+                // The controller marks its mounted layout after two frames; the
+                // SSR entry alone does not prove its click handler is installed.
+                await page.locator('.k2b-app-workspace[data-workspace-motion="true"]').waitFor();
+                await startAndManage(page, desktop, fixture, theme);
+              } else await page.goto(`/app/chat/c/${chatId}`, { waitUntil: "load" });
               await composer(page).waitFor();
               // followVisualViewport installs this style on mount, after SSR was replaced with the interactive view.
               await page.waitForFunction(() =>
@@ -365,11 +495,11 @@ const runSmoke = async (fixture: Awaited<ReturnType<typeof createFixture>>) => {
               listPage.on("pageerror", (error) => errors.push(`second device: ${error.message}`));
               await adminPage
                 .getByRole("link", { name: /unread/ })
-                .and(adminPage.locator(`a[href="/app/chat/c/${fixture.chatId}"]`))
+                .and(adminPage.locator(`a[href="/app/chat/c/${chatId}"]`))
                 .waitFor({ state: "hidden" });
               await adminPage.goto("/app/chat", { waitUntil: "load" });
               await listPage.goto("/app/chat", { waitUntil: "load" });
-              const chatLink = listPage.getByRole("link").and(listPage.locator(`a[href="/app/chat/c/${fixture.chatId}"]`));
+              const chatLink = listPage.getByRole("link").and(listPage.locator(`a[href="/app/chat/c/${chatId}"]`));
               await chatLink.waitFor();
               await sendMessage(personPage, `${theme} another device unread`, true);
               await listPage
@@ -379,12 +509,11 @@ const runSmoke = async (fixture: Awaited<ReturnType<typeof createFixture>>) => {
               await adminPage.bringToFront();
               const reading = adminPage.waitForResponse(
                 (response) =>
-                  response.request().method() === "POST" &&
-                  new URL(response.url()).pathname === `/api/chat/conversations/${fixture.chatId}/read`,
+                  response.request().method() === "POST" && new URL(response.url()).pathname === `/api/chat/conversations/${chatId}/read`,
               );
               await adminPage
                 .getByRole("link")
-                .and(adminPage.locator(`a[href="/app/chat/c/${fixture.chatId}"]`))
+                .and(adminPage.locator(`a[href="/app/chat/c/${chatId}"]`))
                 .click();
               if ((await reading).status() !== 200) fail("opening the chat did not report visible messages read");
               await listPage
@@ -421,20 +550,26 @@ const cleanup = async () => {
       ok("disposable person deleted");
     }
   } finally {
-    if (chatId) {
-      if (process.env.DATABASE_URL) {
+    const failures: unknown[] = [];
+    if (createdChats.size && !process.env.DATABASE_URL)
+      console.log(`DATABASE_URL is unset; chats ${[...createdChats].join(", ")} stay (Chat has no delete API).`);
+    for (const createdId of process.env.DATABASE_URL ? createdChats : []) {
+      try {
         await sql.begin(async (tx) => {
           // Deleting a conversation cascades to messages, participants and conversation_access, but not auth.access.
           const accessRows = await tx<{ access_id: string }[]>`
             SELECT access_id FROM chat.conversation_access
-            WHERE conversation_id = (SELECT id FROM chat.conversations WHERE short_id = ${chatId})
+            WHERE conversation_id = (SELECT id FROM chat.conversations WHERE short_id = ${createdId})
           `;
-          await tx`DELETE FROM chat.conversations WHERE short_id = ${chatId}`;
+          await tx`DELETE FROM chat.conversations WHERE short_id = ${createdId}`;
           for (const access of accessRows) await tx`DELETE FROM auth.access WHERE id = ${access.access_id}::uuid`;
         });
-        ok("chat and its access grants deleted");
-      } else console.log(`DATABASE_URL is unset; chat ${chatId} stays (Chat has no delete API).`);
+        ok(`chat ${createdId} and its access grants deleted`);
+      } catch (error) {
+        failures.push(error);
+      }
     }
+    if (failures.length) throw new AggregateError(failures, "chat cleanup failed");
   }
 };
 
