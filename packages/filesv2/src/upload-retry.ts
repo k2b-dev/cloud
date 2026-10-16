@@ -31,12 +31,12 @@ export type UploadRetry = {
 export function nextUploadRetry(
   error: unknown,
   budget: ReturnType<typeof createUploadRetryBudget>,
-  mode: "browser" | "cli",
+  pause: boolean,
   delays: readonly number[] = UPLOAD_RETRY_DELAYS_MS,
 ): UploadRetry | null {
   const failure = classifyUploadFailure(error);
   if (!failure || failure.kind === "server" || failure.kind === "final") return null;
-  if (failure.kind === "network" && mode === "browser") {
+  if (failure.kind === "network" && pause) {
     const delay = Math.min(UPLOAD_NETWORK_PROBE_MS.ceiling, UPLOAD_NETWORK_PROBE_MS.initial * 2 ** Math.min(budget.probes, 4));
     budget.probes++;
     return { kind: "network", delay };

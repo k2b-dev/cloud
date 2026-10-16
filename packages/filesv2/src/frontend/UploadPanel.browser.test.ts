@@ -63,9 +63,11 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (options: BrowserContextOptions, theme: "light" | "dark" = "light", lang = "en") => {
+const open = async (options: BrowserContextOptions, theme: "light" | "dark" = "light", lang = "en", clock = false) => {
   const context = await browser.newContext({ ...options, reducedMotion: "reduce" });
   const tab = await context.newPage();
+  // A flowing fake clock lets a test skip a retry delay instead of waiting for it in real time.
+  if (clock) await tab.clock.install();
   await tab.route("http://upload.test/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/") return route.fulfill({ contentType: "text/html", body: page(theme, lang) });
@@ -288,7 +290,7 @@ describe("upload panel in a browser", () => {
     for (const theme of ["light", "dark"] as const) {
       const lang = device === "phone" ? "de" : "en";
       test(`waiting for the network or a busy server keeps every box in place (${device}, ${theme})`, async () => {
-        const tab = await open(options, theme, lang);
+        const tab = await open(options, theme, lang, true);
         const text = {
           en: {
             title: "Waiting for network",
@@ -316,6 +318,8 @@ describe("upload panel in a browser", () => {
               // The reason fits its row: no ellipsis on a 390 px phone either.
               fits: reason ? reason.scrollWidth <= reason.clientWidth : true,
               box: (({ left, top, width, height }) => [left, top, width, height].map(Math.round))(row.getBoundingClientRect()),
+              // Once a wait line is there, it stays until the file settles, so the name never jumps between tries.
+              name: Math.round(row.querySelector(".filesv2-upload-row__base")!.getBoundingClientRect().top),
             };
           });
         try {
@@ -330,7 +334,8 @@ describe("upload panel in a browser", () => {
           await tab.context().setOffline(true);
           await run(tab, "window.uploads.interrupt('network')");
           expect(await tab.textContent(".filesv2-upload__title")).toBe(text.title);
-          expect(await rowState()).toEqual({ ...row, wait: "network", reason: text.network, fits: true });
+          const waiting = await rowState();
+          expect(waiting).toEqual({ ...row, wait: "network", reason: text.network, fits: true, name: waiting.name });
           expect(await boxes(tab)).toEqual(first);
           expect(await tab.$$eval('.filesv2-upload-row[data-status="pending"]', (rows) => rows.length)).toBeGreaterThan(0);
           expect(await contrast(tab, `${active} .filesv2-upload-row__reason`)).toBeGreaterThanOrEqual(4.5);
@@ -342,22 +347,25 @@ describe("upload panel in a browser", () => {
           await settle(tab);
           await run(tab, "window.uploads.alive()");
           expect(await tab.textContent(".filesv2-upload__title")).toBe(text.uploading);
-          expect(await rowState()).toEqual(row);
+          const retrying = { ...waiting, wait: "retrying", reason: text.retrying };
+          expect(await rowState()).toEqual(retrying);
           expect(await boxes(tab)).toEqual(first);
 
           // A busy file server: a calm reason while the queue waits, then a new try on the same file.
           await run(tab, "window.uploads.interrupt('busy')");
-          expect(await rowState()).toEqual({ ...row, wait: "busy", reason: text.busy, fits: true });
+          expect(await rowState()).toEqual({ ...waiting, wait: "busy", reason: text.busy });
           expect(await boxes(tab)).toEqual(first);
           expect(await contrast(tab, `${active} .filesv2-upload-row__reason`)).toBeGreaterThanOrEqual(4.5);
           await shot("busy");
-          await tab.waitForFunction(() => document.querySelector('[data-wait="retrying"]'), null, { timeout: 5_000 });
+          // The first busy retry waits 2 s; skip it instead of spending it in real time.
+          await tab.clock.fastForward(2_000);
           await settle(tab);
-          expect(await rowState()).toEqual({ ...row, wait: "retrying", reason: text.retrying, fits: true });
+          expect(await rowState()).toEqual(retrying);
           expect(await boxes(tab)).toEqual(first);
           await shot("retrying");
           await run(tab, "window.uploads.progress(200_000)");
-          expect(await rowState()).toEqual(row);
+          expect(await rowState()).toEqual(retrying);
+          expect(await boxes(tab)).toEqual(first);
           const heights = await tab.$$eval(".filesv2-upload-row", (rows) => [
             ...new Set(rows.map((row) => row.getBoundingClientRect().height)),
           ]);

@@ -164,23 +164,26 @@ The workspace and public inbox use the same automatic wait policy. Every
 attempt reopens the same session with the same idempotency key and resumes
 from acknowledged segments:
 
-- A network failure pauses the current file; pending files stay pending. When
-  the browser reports a connection, probes wait 2 s, double their interval,
-  and stop growing at 30 s. An online event or returning to a visible tab
+- When the browser is offline or Cloud cannot be reached, a network failure
+  pauses the current file; pending files stay pending. When the browser reports
+  a connection, probes wait 2 s, double their interval, and stop growing at
+  30 s. An online event or returning to a visible tab
   while online starts a probe immediately. No probe timer runs while the
   browser reports offline. There is no probe count limit; Cancel and the
   Filegate session lifetime of 24 hours bound the wait. After expiry, the
   session's start response is final.
 - A stalled or busy server gets five retries after 2, 5, 15, 30, and 60 s,
   or a larger Retry-After. The row shows the reason while waiting and
-  “Trying again” during the next attempt until progress arrives. Network
-  probes keep “Waiting for network” until Cloud answers or progress arrives.
+  “Trying again” during subsequent attempts until the file finishes. The
+  network wait ends when Cloud answers or progress arrives. A network failure
+  after Cloud answered (the file server cannot be reached) counts toward the
+  five retries.
 - HTTP 429 with Retry-After waits as requested without spending those five
   retries, at most ten times per file. Without Retry-After, it counts as
   busy. Retry-After above five minutes is not waited out automatically.
 - Other server errors and final errors are not retried automatically. A
   manual **Try again** starts a fresh retry budget. A successful probe or
-  attempt does not reset the budget within a run.
+  attempt does not reset the retry or rate-limit budget within a run.
 
 The Filegate SDK's short request retries run inside each attempt; the queue
 is the only additional retry layer. Cancel or leaving the workspace ends a

@@ -118,7 +118,7 @@ export async function uploadFile(
       } catch (caught) {
         signal.throwIfAborted();
         const failure = classifyUploadFailure(caught);
-        const retry = nextUploadRetry(failure, budget, "cli", options.retryDelays ?? UPLOAD_RETRY_DELAYS_MS);
+        const retry = nextUploadRetry(failure, budget, false, options.retryDelays ?? UPLOAD_RETRY_DELAYS_MS);
         if (!retry) throw failure ?? caught;
         if (textProgress) {
           const seconds = Math.ceil(retry.delay / 1000);

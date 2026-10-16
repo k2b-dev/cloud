@@ -1,6 +1,6 @@
 import { prompts } from "@k2b/ui";
 import { apiClient } from "../api/client";
-import { uploadResponseFailure } from "../upload-transfer";
+import { uploadRequestFailure, uploadResponseFailure } from "../upload-transfer";
 import { useBrowserMessages } from "./browser-messages";
 import { useFilesMessages } from "./messages";
 import { uploadFailureReason, useUploadMessages } from "./upload-messages";
@@ -45,10 +45,14 @@ export function createFilesUploads(): FilesUploads {
   return createUploadQueue<FilesUploadGroup>({
     prepare: async (group, signal) => {
       for (const folder of group.folders) {
-        const response = await apiClient.bases[":baseId"].directories.$post(
-          { param: { baseId: group.baseId }, json: { path: group.root ? `${group.root}/${folder}` : folder } },
-          { init: { signal: requestSignal(signal) } },
-        );
+        const response = await apiClient.bases[":baseId"].directories
+          .$post(
+            { param: { baseId: group.baseId }, json: { path: group.root ? `${group.root}/${folder}` : folder } },
+            { init: { signal: requestSignal(signal) } },
+          )
+          .catch((error) => {
+            throw uploadRequestFailure(error, t().unavailable, signal);
+          });
         if (!response.ok && (response.status as number) !== 409) throw await uploadResponseFailure(response, t().unavailable);
       }
     },

@@ -4,8 +4,10 @@ import { createRoot } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { PublicShare } from "../src/contracts";
-import type { FilesUploads } from "../src/frontend/files-uploads";
+import type { FilesUploadGroup, FilesUploads } from "../src/frontend/files-uploads";
 import type { UploadAnnouncement } from "../src/frontend/upload-batch";
+import type { UploadAdapter } from "../src/frontend/upload-queue";
+import { UploadTransferError } from "../src/upload-transfer";
 
 const nativeFetch = globalThis.fetch;
 const nativeTimeout = AbortSignal.timeout;
@@ -122,7 +124,7 @@ const advance = async (ms: number) => {
 };
 const file = (name: string) => new File(["x"], name, { lastModified: 123 });
 
-function mount(inbox = false) {
+function mount(inbox = false, adapter?: UploadAdapter<FilesUploadGroup>) {
   const dom = createDomTestHarness();
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: dom.window.localStorage });
   Object.defineProperty(navigator, "onLine", { configurable: true, get: () => online });
@@ -131,7 +133,7 @@ function mount(inbox = false) {
   const said: UploadAnnouncement[] = [];
   const dispose = render(() => {
     if (inbox) return <PublicInbox token="public-secret" share={share} />;
-    queue = createFilesUploads();
+    queue = adapter ? createUploadQueue(adapter) : createFilesUploads();
     queue.listen((event) => said.push(event));
     return <UploadSurface queue={queue} />;
   }, dom.root);
@@ -356,7 +358,7 @@ test("several failed probes announce offline once; an OK start announces online 
     { preconnect: nativeFetch.preconnect },
   );
   window.dispatchEvent(new Event("online"));
-  await until(() => ui.queue().batch.rows[0]?.wait === null);
+  await until(() => ui.queue().batch.rows[0]?.wait === "retrying");
   await advance(60);
   expect(live()).toBe("Connection is back. The upload continues.");
   expect(ui.said.filter((said) => said.kind === "online")).toHaveLength(1);
@@ -436,7 +438,7 @@ test("a late attempt cannot update or settle the batch added immediately after c
             resolve = done;
           });
         }
-        throw new TypeError("network");
+        throw new UploadTransferError("network", "network", undefined);
       },
     });
     queue.add(null, { key: "home", label: "Home" }, [{ file: file("old"), path: "old" }]);
@@ -466,7 +468,6 @@ test.each(["network", "busy"] as const)("Cancel and dispose remove the %s wait t
   const addedDocument = spyOn(document, "addEventListener");
   const removedDocument = spyOn(document, "removeEventListener");
   let calls = 0;
-  const { UploadTransferError } = await import("../src/upload-transfer");
   const state = createRoot((dispose) => ({
     dispose,
     queue: createUploadQueue<null>({
@@ -501,23 +502,24 @@ test.each(["network", "busy"] as const)("Cancel and dispose remove the %s wait t
   expect(calls).toBe(2);
 });
 
-test.each(["alive", "progress"] as const)("a new try after a busy server stays marked retrying until progress, not on %s", async (life) => {
+test.each(["alive", "progress"] as const)("a busy retry stays marked retrying until finished, including on %s", async (life) => {
   const dom = createDomTestHarness();
   let calls = 0;
   let alive!: () => void;
   let progress!: (bytes: number) => void;
-  const { UploadTransferError } = await import("../src/upload-transfer");
+  let finish!: () => void;
   const state = createRoot((dispose) => ({
     dispose,
     queue: createUploadQueue<null>({
       reason: () => "failed",
-      upload: async (_group, _item, options) => {
+      upload: async (_group, item, options) => {
         if (++calls === 1) throw new UploadTransferError("busy", "busy", undefined);
         alive = options.alive;
         progress = options.onProgress;
-        return new Promise((_resolve, reject) =>
-          options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }),
-        );
+        return new Promise((resolve, reject) => {
+          finish = () => resolve({ status: "uploaded", path: item.path });
+          options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+        });
       },
     }),
   }));
@@ -533,5 +535,98 @@ test.each(["alive", "progress"] as const)("a new try after a busy server stays m
   expect(state.queue.batch.rows[0]!.wait).toBe("retrying");
   if (life === "alive") alive();
   else progress(1);
-  expect(state.queue.batch.rows[0]!.wait).toBe(life === "alive" ? "retrying" : null);
+  expect(state.queue.batch.rows[0]!.wait).toBe("retrying");
+  finish();
+  await until(() => state.queue.batch.phase === "done");
+  expect(state.queue.batch.rows[0]!.wait).toBeNull();
+});
+
+test.each(["filegate", "TypeError"] as const)("%s failures while online spend five retries and let the next file finish", async (kind) => {
+  const attempts: string[] = [];
+  const ui = mount(false, {
+    reason: () => "Adapter failure reason",
+    upload: async (_group, item, { alive }) => {
+      attempts.push(item.path);
+      if (item.path === "next.txt") return { status: "uploaded", path: item.path };
+      if (kind === "TypeError") throw new TypeError("crypto.subtle is missing");
+      alive();
+      throw new UploadTransferError("Connection refused", "network", undefined, undefined, "filegate");
+    },
+  });
+  ui.add(file("first.txt"), file("next.txt"));
+  for (const [i, delay] of [2000, 5000, 15000, 30000, 60000].entries()) {
+    await until(() => ui.queue().batch.rows[0]?.wait === "stalled" && attempts.length === i + 1);
+    expect(ui.reason()).toBe("No response, trying again soon");
+    expect(ui.title()).not.toBe("Waiting for network");
+    expect(ui.queue().batch.rows[1]!.status).toBe("pending");
+    await advance(delay - 1);
+    expect(attempts).toHaveLength(i + 1);
+    await advance(1);
+  }
+  await until(() => ui.queue().batch.phase === "errors");
+  expect(attempts).toEqual([...Array(6).fill("first.txt"), "next.txt"]);
+  expect(ui.queue().batch.rows.map((row) => row.status)).toEqual(["failed", "success"]);
+  expect(ui.panel().querySelector(".filesv2-upload-row__reason")?.textContent).toBe("Adapter failure reason");
+  await advance(60);
+  expect(ui.said.filter((said) => said.kind === "offline" || said.kind === "online")).toEqual([]);
+  expect(ui.panel().querySelector('[role="status"]')?.textContent).not.toMatch(/Waiting for network|Connection is back/);
+});
+
+test.each(["alive", "progress"] as const)("%s resets network probe delays after recovery", async (recovery) => {
+  let calls = 0;
+  let drop!: () => void;
+  const ui = mount(false, {
+    reason: () => "failed",
+    upload: async (_group, item, { alive, onProgress }) => {
+      calls++;
+      if (calls === 4) {
+        if (recovery === "alive") alive();
+        else onProgress(1);
+        await new Promise<void>((_resolve, reject) => {
+          drop = () => reject(new UploadTransferError("busy after recovery", "busy", undefined));
+        });
+      }
+      if (calls >= 6) return { status: "uploaded", path: item.path };
+      throw new UploadTransferError("offline", "network", undefined);
+    },
+  });
+  ui.add(file("first.txt"));
+  for (const [i, delay] of [2000, 4000, 8000].entries()) {
+    await until(() => calls === i + 1 && ui.queue().batch.rows[0]?.wait === "network");
+    await advance(delay - 1);
+    expect(calls).toBe(i + 1);
+    await advance(1);
+  }
+  await until(() => !!drop);
+  expect(ui.queue().batch.rows[0]!.wait).toBe("retrying");
+  drop();
+  await until(() => ui.queue().batch.rows[0]?.wait === "busy");
+  // A fresh attempt has not heard Cloud; the second drop must start at 2 s.
+  await advance(2000);
+  await until(() => calls === 5 && ui.queue().batch.rows[0]?.wait === "network");
+  await advance(1999);
+  expect(calls).toBe(5);
+  await advance(1);
+  await until(() => ui.queue().batch.phase === "done");
+});
+
+test("folder preparation fetch failures pause while online until Cloud can be reached", async () => {
+  const ui = mount();
+  let prepares = 0;
+  prepareOverride = async () => {
+    prepares++;
+    throw new TypeError("Cloud unreachable");
+  };
+  ui.queue().add({ baseId: "home", root: "", folders: ["Photos"], policy: "overwrite", total: 1 }, { key: "home", label: "Home" }, [
+    { file: file("first.txt"), path: "first.txt" },
+  ]);
+  for (const [i, delay] of [2000, 4000, 8000].entries()) {
+    await until(() => prepares === i + 1 && ui.queue().batch.rows[0]?.wait === "network");
+    await advance(delay);
+  }
+  await until(() => prepares === 4 && ui.queue().batch.rows[0]?.wait === "network");
+  expect(starts).toHaveLength(0);
+  prepareOverride = undefined;
+  window.dispatchEvent(new Event("online"));
+  await until(() => ui.queue().batch.phase === "done");
 });

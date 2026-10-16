@@ -1,6 +1,7 @@
 import { onCleanup, batch as together } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { createUploadRetryBudget, nextUploadRetry, sleepUploadRetry } from "../upload-retry";
+import { UploadTransferError } from "../upload-transfer";
 import {
   appendFiles,
   cancelBatch,
@@ -117,15 +118,23 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
         let frame = 0;
         let latest = 0;
         const stale = () => request.signal.aborted || disposed || turn !== generation;
+        const budget = createUploadRetryBudget();
         let attempting = false;
+        let answered = false;
         const clearWait = (only?: "network") => {
           const wait = batch.rows[id!]?.wait;
           if (stale() || !attempting || !wait || (only && wait !== only)) return;
-          apply((draft) => waitRow(draft, id!, null), turn);
+          apply((draft) => waitRow(draft, id!, "retrying"), turn);
         };
-        const alive = () => clearWait("network");
+        const alive = () => {
+          if (stale() || !attempting) return;
+          answered = true;
+          budget.probes = 0;
+          clearWait("network");
+        };
         const onProgress = (bytes: number) => {
           if (stale() || !attempting) return;
+          budget.probes = 0;
           clearWait();
           latest = bytes;
           if (frame) return;
@@ -134,10 +143,10 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
             if (!stale()) apply((draft) => reportProgress(draft, id!, latest), turn);
           });
         };
-        const budget = createUploadRetryBudget();
         try {
           while (!stale()) {
             attempting = true;
+            answered = false;
             try {
               if (!group.prepared) {
                 await adapter.prepare?.(group.value, request.signal);
@@ -160,7 +169,8 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
             } catch (error) {
               if (stale()) break;
               attempting = false;
-              const retry = nextUploadRetry(error, budget, "browser");
+              const pause = navigator.onLine === false || (error instanceof UploadTransferError && error.kind === "network" && !answered);
+              const retry = nextUploadRetry(error, budget, pause);
               if (!retry) {
                 const reason = adapter.reason(error);
                 apply((draft) => {
@@ -170,12 +180,11 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
                 }, turn);
                 break;
               }
-              apply((draft) => waitRow(draft, id!, retry.kind), turn);
-              await (retry.kind === "network"
-                ? waitForNetwork(retry.delay, request.signal)
-                : sleepUploadRetry(retry.delay, request.signal));
+              const wait = retry.kind === "network" && !pause ? "stalled" : retry.kind;
+              apply((draft) => waitRow(draft, id!, wait), turn);
+              await (wait === "network" ? waitForNetwork(retry.delay, request.signal) : sleepUploadRetry(retry.delay, request.signal));
               if (stale()) break;
-              if (retry.kind !== "network") apply((draft) => waitRow(draft, id!, "retrying"), turn);
+              if (wait !== "network") apply((draft) => waitRow(draft, id!, "retrying"), turn);
             }
           }
         } finally {

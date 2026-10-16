@@ -26,58 +26,58 @@ test("fetch and control deadlines are classified without changing structured tra
     expect(classifyUploadFailure(error)).toBeUndefined();
 });
 
-test("stalled, busy, and CLI network share exactly five delays and one budget", () => {
+test("stalled, busy, and bounded network share exactly five delays and one budget", () => {
   expect(UPLOAD_RETRY_DELAYS_MS).toEqual([2000, 5000, 15000, 30000, 60000]);
   const budget = createUploadRetryBudget();
   const kinds = ["stalled", "busy", "network", "busy", "stalled"] as const;
-  expect(kinds.map((kind) => nextUploadRetry(failure(kind), budget, "cli"))).toEqual(
+  expect(kinds.map((kind) => nextUploadRetry(failure(kind), budget, false))).toEqual(
     UPLOAD_RETRY_DELAYS_MS.map((delay, i) => ({ kind: kinds[i]!, delay, attempt: i + 1, of: 5 })),
   );
-  expect(nextUploadRetry(failure("busy"), budget, "cli")).toBeNull();
+  expect(nextUploadRetry(failure("busy"), budget, false)).toBeNull();
   expect(createUploadRetryBudget()).toEqual({ retries: 0, rateLimited: 0, probes: 0 });
 });
 
-test.each(["browser", "cli"] as const)("Retry-After is a minimum, with a five-minute automatic ceiling (%s)", (mode) => {
+test.each([true, false] as const)("Retry-After is a minimum, with a five-minute automatic ceiling (%s)", (pause) => {
   for (const [hint, delay] of [
     [1000, 2000],
     [3000, 3000],
     [300_000, 300_000],
   ] as const)
-    expect(nextUploadRetry(failure("busy", hint), createUploadRetryBudget(), mode)?.delay).toBe(delay);
+    expect(nextUploadRetry(failure("busy", hint), createUploadRetryBudget(), pause)?.delay).toBe(delay);
   expect(RETRY_AFTER_CEILING_MS).toBe(300_000);
   for (const kind of ["busy", "stalled", "rate_limited"] as const) {
     const budget = createUploadRetryBudget();
-    expect(nextUploadRetry(failure(kind, 300_001), budget, mode)).toBeNull();
+    expect(nextUploadRetry(failure(kind, 300_001), budget, pause)).toBeNull();
     expect(budget).toEqual(createUploadRetryBudget());
   }
 });
 
-test.each(["browser", "cli"] as const)("rate limits have ten separate waits, including zero, without spending retries (%s)", (mode) => {
+test.each([true, false] as const)("rate limits have ten separate waits, including zero, without spending retries (%s)", (pause) => {
   const budget = createUploadRetryBudget();
   expect(RATE_LIMIT_WAITS).toBe(10);
   for (let i = 0; i < 10; i++)
-    expect(nextUploadRetry(failure("rate_limited", i), budget, mode)).toEqual({ kind: "rate_limited", delay: i });
+    expect(nextUploadRetry(failure("rate_limited", i), budget, pause)).toEqual({ kind: "rate_limited", delay: i });
   expect(budget.retries).toBe(0);
-  expect(nextUploadRetry(failure("rate_limited", 0), budget, mode)).toBeNull();
-  expect(nextUploadRetry(failure("rate_limited"), budget, mode)).toEqual({ kind: "busy", delay: 2000, attempt: 1, of: 5 });
+  expect(nextUploadRetry(failure("rate_limited", 0), budget, pause)).toBeNull();
+  expect(nextUploadRetry(failure("rate_limited"), budget, pause)).toEqual({ kind: "busy", delay: 2000, attempt: 1, of: 5 });
   expect(budget.rateLimited).toBe(10);
 });
 
-test("browser network probes double to 30 seconds without spending or resetting any budget", () => {
+test("paused network probes double to 30 seconds without spending or resetting any budget", () => {
   const budget = createUploadRetryBudget();
-  nextUploadRetry(failure("busy"), budget, "browser");
-  nextUploadRetry(failure("rate_limited", 10), budget, "browser");
-  const probes = Array.from({ length: 100 }, () => nextUploadRetry(failure("network"), budget, "browser"));
+  nextUploadRetry(failure("busy"), budget, true);
+  nextUploadRetry(failure("rate_limited", 10), budget, true);
+  const probes = Array.from({ length: 100 }, () => nextUploadRetry(failure("network"), budget, true));
   expect(probes.slice(0, 6)).toEqual([2000, 4000, 8000, 16000, 30000, 30000].map((delay) => ({ kind: "network", delay })));
   expect(probes.at(-1)).toEqual({ kind: "network", delay: 30000 });
   expect(budget).toEqual({ probes: 100, retries: 1, rateLimited: 1 });
-  expect(nextUploadRetry(failure("busy"), budget, "browser")?.delay).toBe(5000);
+  expect(nextUploadRetry(failure("busy"), budget, true)?.delay).toBe(5000);
 });
 
-test.each(["browser", "cli"] as const)("server, final and unknown errors never retry (%s)", (mode) => {
+test.each([true, false] as const)("server, final and unknown errors never retry (%s)", (pause) => {
   const budget = createUploadRetryBudget();
   for (const error of [failure("server"), failure("final"), undefined, new Error("failed")])
-    expect(nextUploadRetry(error, budget, mode)).toBeNull();
+    expect(nextUploadRetry(error, budget, pause)).toBeNull();
   expect(budget).toEqual(createUploadRetryBudget());
 });
 
