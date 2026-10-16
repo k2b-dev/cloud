@@ -26,6 +26,7 @@ import type { ConnectorEnvelope } from "./connectors";
 import { imapSmtpConnector } from "./connectors/imap-smtp";
 import { updateConversationCollaboration } from "./conversation-assignments";
 import {
+  incomingAutomationCommandFoundMessageGone,
   incomingAutomationMessageLeft,
   resolveIncomingAutomationMessageStateTurn,
   resolveIncomingAutomationPlacementTurn,
@@ -1176,6 +1177,7 @@ suite("incoming automations", () => {
     "move first",
     "already moved",
     "external move",
+    "external move before sync",
     "keywords",
     "external drift",
     "external drift after read",
@@ -1370,6 +1372,27 @@ suite("incoming automations", () => {
           }
           expect(change).not.toHaveBeenCalled();
           expect(move).toHaveBeenCalledTimes(1);
+        } else if (scenario === "external move before sync") {
+          await runWaiting(newerRunId);
+          const [readCommand] = await commandsFor(newerRunId);
+          if (!readCommand) throw new Error("Missing read command");
+          // Another client moved the message; the provider no longer has the UID before sync catches up.
+          moved = true;
+          expect(await executeMutationCommand(readCommand.id)).toBe("failed");
+          expect((await commandsFor(newerRunId))[0]?.last_error_code).toBe("REMOTE_MESSAGE_MISSING");
+          const turn = { db: sql, folderId: inboxFolderId, messageId: "unused" };
+          expect(await incomingAutomationCommandFoundMessageGone({ ...turn, runId: crypto.randomUUID() }, "REMOTE_MESSAGE_MISSING")).toBe(
+            false,
+          );
+          await runSucceeded(newerRunId);
+          expect(await outputFor(newerRunId, "addFlag")).toEqual({
+            action: "addFlag",
+            applied: false,
+            skipped: "message_moved",
+            commandId: readCommand.id,
+          });
+          expect(change).not.toHaveBeenCalled();
+          expect(move).not.toHaveBeenCalled();
         } else if (scenario === "external move") {
           await runWaiting(newerRunId);
           const [readCommand] = await commandsFor(newerRunId);
@@ -1471,7 +1494,9 @@ suite("incoming automations", () => {
         const [olderRun] = await sql<{ state: string; effects_used: Record<string, number> | string }[]>`
           SELECT state, effects_used FROM workflows.run WHERE id = ${olderRunId}::uuid
         `;
-        expect(olderRun?.state).toBe(scenario.startsWith("external drift") ? "failed" : "succeeded");
+        if (scenario !== "external move before sync") {
+          expect(olderRun?.state).toBe(scenario.startsWith("external drift") ? "failed" : "succeeded");
+        }
         if (["read first", "move first", "already moved"].includes(scenario)) {
           const used = typeof olderRun?.effects_used === "string" ? JSON.parse(olderRun.effects_used) : olderRun?.effects_used;
           expect(used?.maxMoves).toBe(1);
