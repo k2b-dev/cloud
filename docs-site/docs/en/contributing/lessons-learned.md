@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-15
+updated: 2026-10-16
 ---
 
 # Lessons learned
@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Workspace-only export | A published package imports code that exists only in the workspace copy of a pinned sibling; workspace links hide the missing export. | Check: the `packed` CI job runs with `--release` on the release pull request and in the merge queue, resolving already published sibling pins from npm. Convention: [refresh the release PR after the last feature PR merges](/en/docs/contributing/release-process#let-release-please-cut-the-release). |
 | Time | A test or a render depends on today's date, the time zone, or randomness, so it passes on one day and fails on another. | Test: the Assistant sidebar test from [#1121](https://github.com/k2b-dev/cloud/pull/1121) freezes its clock. No repository check finds other tests that compare fixed dates with the real clock yet. |
 | Server render vs. mount | An island replaces the server HTML when it mounts; see [Know how an island mounts](/en/docs/frontend/islands-and-hydration#know-how-an-island-mounts). When the server and the browser render different markup or styles, the page moves on mount or after a reload, and WebKit can keep stale styles from before the mount. | Convention: [Know how an island mounts](/en/docs/frontend/islands-and-hydration#know-how-an-island-mounts). Test: the month view browser tests from [#1157](https://github.com/k2b-dev/cloud/pull/1157) check row places right after mount. The `@k2b/ui` sidebar reload test from [#1154](https://github.com/k2b-dev/cloud/issues/1154) compares the server frame, the frame right after mount, and the settled frame after a reload. No shared test does this for other islands yet. |
 | Layout shift | A transient state, such as a status text, a notice, or a loader, appears in the layout flow and moves its neighbors. | Convention: [Keep the layout still](/en/docs/frontend/styling-and-accessibility#keep-the-layout-still) ([#1143](https://github.com/k2b-dev/cloud/pull/1143)). Each change applies its browser-test pattern, which compares bounding boxes before and after each state change. No automatic check yet. |
@@ -34,6 +35,13 @@ convention still needs a check or a test.
 | Escaped text input | An agent writes `\n` as two characters through a shell argument or double-escaped JSON, and the text is stored and shown with a literal backslash. | Test: Spaces rejects such inline CLI text and capability text inputs ([#1178](https://github.com/k2b-dev/cloud/issues/1178)). No shared guard covers inline text in other apps, such as `cld notebooks write --content`, yet ([#1193](https://github.com/k2b-dev/cloud/issues/1193)). |
 
 ## Lessons
+
+### Published Cloud imports an export missing from its pinned UI
+
+- **What happened:** Standalone apps using `@k2b/cloud` 0.35.0 from `cloud-v0.42.0` failed typechecking and bundling because `@k2b/ui` 0.25.0 lacked `prefersReducedMotion` ([#1221](https://github.com/k2b-dev/cloud/issues/1221)).
+- **Root cause:** The release PR was not refreshed after #1208 merged, so it left UI unbumped. Cloud imported the new export but pinned the already published UI version. Workspace links and the packed check's unconditional workspace tarball overrides hid the mismatch.
+- **Error class:** Workspace-only export.
+- **Guard:** Check: `packed` runs with `--release` on the release PR and in the merge queue, using npm for already published sibling pins and failing when npm is unreachable. Test: `packed-consumer-pins.test.ts` checks published pins, unpublished release versions, invalid pins, and registry failures. Convention: refresh the release PR after the last feature PR merges and verify its parent against `origin/main` before merging.
 
 ### Spaces showed a literal backslash-n on a card
 

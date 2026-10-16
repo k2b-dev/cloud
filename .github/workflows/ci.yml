@@ -54,6 +54,7 @@ jobs:
       docs: ${{ steps.filter.outputs.docs }}
       images: ${{ steps.filter.outputs.images }}
       packed: ${{ steps.filter.outputs.packed }}
+      release: ${{ steps.filter.outputs.release }}
       webkit: ${{ steps.filter.outputs.webkit }}
       bundles: ${{ steps.filter.outputs.bundles }}
     steps:
@@ -93,6 +94,7 @@ jobs:
             echo "docs=$(match '^(docs-site/|skills/)')"
             echo "images=$(match '^(Dockerfile|\.dockerignore|docs-site/Dockerfile|pwas/|compose[^/]*\.yml)')"
             echo "packed=$(match '^(packages/cloud/|packages/gateway/src/config\.ts|packages/ui/|packages/ssr/|packages/core/src/|scripts/check-cloud-packed-consumer\.ts|scripts/fixtures/packed-consumer-)')"
+            echo "release=$(match '^\.release-please-manifest\.json$')"
             echo "webkit=$(match "$shared|^tests/fixtures/|^($browser)/")"
             echo "bundles=${bundles[*]}"
           } | tee -a "$GITHUB_OUTPUT"
@@ -437,9 +439,11 @@ jobs:
           cat "$RUNNER_TEMP/docs-site.log"
           exit 1
 
+  # Release PRs resolve already published sibling pins from npm, as app authors do.
+  # Normal PRs use workspace tarballs because their changes get version bumps in the release PR.
   packed:
     needs: [changes, setup, mirror]
-    if: needs.changes.outputs.packed == 'true' || needs.changes.outputs.cloud == 'true'
+    if: needs.changes.outputs.packed == 'true' || needs.changes.outputs.cloud == 'true' || needs.changes.outputs.release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
@@ -480,7 +484,14 @@ jobs:
         with:
           name: ui-dist
           path: packages/ui/dist
-      - run: bun scripts/check-cloud-packed-consumer.ts
+      - env:
+          RELEASE: ${{ needs.changes.outputs.release }}
+        run: |
+          if [[ "$RELEASE" == "true" ]]; then
+            bun scripts/check-cloud-packed-consumer.ts --release
+          else
+            bun scripts/check-cloud-packed-consumer.ts
+          fi
       - if: always()
         run: docker rm --force packed-nats
 
