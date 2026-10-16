@@ -677,6 +677,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     const nextMentions = reconcileChatMentions(props.value, nextValue, mentions());
     if (command.mention)
       nextMentions.push({ start: token.start, end: token.start + command.mention.name.length, attachment: command.mention });
+    // A cancelled or failed command leaves no undo step behind: restoring puts the history back as well.
+    const previousHistory = { entries: [...history], index: historyIndex };
     edit(nextValue, nextMentions);
     setDismissed(true);
     setExecuting(true);
@@ -687,6 +689,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       setDismissed(true);
       props.onValueChange(previous.value);
       props.onMentionsChange?.(previous.mentions);
+      history.splice(0, history.length, ...previousHistory.entries);
+      historyIndex = previousHistory.index;
       restored = true;
     };
     showCommandStatus(command.busyLabel ? { tone: "busy", text: command.busyLabel } : undefined);

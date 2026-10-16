@@ -488,6 +488,22 @@ test("cancel restores the exact token with the caret after it and stays closed u
   expect(h.root.querySelector('[role="listbox"]')).not.toBeNull();
 });
 
+test("a cancelled or failed command leaves no undo step: undo goes back to the edit before it", async () => {
+  for (const action of [async (): Promise<ChatCommandResult> => "cancelled", async () => Promise.reject(new Error("No"))]) {
+    const h = await slash({ value: "Before", commands: [{ name: "cancel", description: "Cancel", action }] });
+    h.type("Before /cancel after");
+    h.input.setSelectionRange(14, 14);
+    h.input.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    h.key("Enter");
+    await flush();
+    expect(h.value()).toBe("Before /cancel after");
+    h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+    expect(h.value()).toBe("Before");
+    h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    expect(h.value()).toBe("Before /cancel after");
+  }
+});
+
 test("rejection restores token, announces once in the persistent status, and clears error on edit", async () => {
   const h = await slash({
     value: "/fail",
