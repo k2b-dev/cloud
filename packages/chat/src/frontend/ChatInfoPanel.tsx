@@ -51,9 +51,11 @@ export default function ChatInfoPanel(props: {
   const [cursor, setCursor] = createSignal<string | null>(null);
   const [status, setStatus] = createSignal<"loading" | "ready" | "error">("loading");
   const [loadingMore, setLoadingMore] = createSignal(false);
+  const [moreFailed, setMoreFailed] = createSignal(false);
   const [changing, setChanging] = createSignal(false);
   const manager = () => props.conversation.permission === "admin";
   let list: HTMLUListElement | undefined;
+  let retryMore: HTMLButtonElement | undefined;
   let request = 0;
 
   const read = (after?: string) =>
@@ -62,6 +64,7 @@ export default function ChatInfoPanel(props: {
     const depth = preserveDepth ? rows.length : 0;
     const mine = ++request;
     setStatus("loading");
+    setMoreFailed(false);
     try {
       let page = await read();
       if (!page || mine !== request) return;
@@ -83,6 +86,7 @@ export default function ChatInfoPanel(props: {
     const after = cursor();
     if (!after || status() !== "ready" || loadingMore()) return;
     const mine = request;
+    const retry = moreFailed();
     setLoadingMore(true);
     try {
       const page = await read(after);
@@ -90,13 +94,18 @@ export default function ChatInfoPanel(props: {
       setRows(produce((current) => current.push(...page.items)));
       setManagers(page.managers);
       setCursor(page.nextCursor);
-    } catch (failure) {
-      toast.error(errorMessage(failure, t().membersFailed));
+      setMoreFailed(false);
+    } catch {
+      // The failure stays where the next page would have come, with its retry.
+      if (mine === request) setMoreFailed(true);
     } finally {
       setLoadingMore(false);
     }
-    // The button leaves after the last page; reading goes on in the list.
-    if (!cursor() && list?.contains(document.activeElement) === false) list.focus();
+    // The button leaves after the last page, and the retry after it worked; reading goes on in the list. A failure
+    // takes the button's place, so focus moves to its retry.
+    if (moreFailed()) {
+      if (!document.activeElement || document.activeElement === document.body) retryMore?.focus();
+    } else if ((!cursor() || retry) && list?.contains(document.activeElement) === false) list.focus();
   };
   createEffect(
     on(input, (value) => {
@@ -249,16 +258,28 @@ export default function ChatInfoPanel(props: {
               </For>
             </ul>
             <Show when={cursor()}>
-              <Button
-                variant="text"
-                size="xs"
-                class="self-start"
-                loading={loadingMore()}
-                disabled={status() !== "ready"}
-                onClick={() => void more()}
+              <Show
+                when={moreFailed()}
+                fallback={
+                  <Button
+                    variant="text"
+                    size="xs"
+                    class="self-start"
+                    loading={loadingMore()}
+                    disabled={status() !== "ready"}
+                    onClick={() => void more()}
+                  >
+                    {t().showMoreMembers}
+                  </Button>
+                }
               >
-                {t().showMoreMembers}
-              </Button>
+                <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+                  {t().membersFailed}{" "}
+                  <Button ref={retryMore} variant="text" size="xs" loading={loadingMore()} onClick={() => void more()}>
+                    {t().retry}
+                  </Button>
+                </InlineGuidance>
+              </Show>
             </Show>
           </div>
         </DetailPanel.Section>

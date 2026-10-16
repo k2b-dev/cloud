@@ -102,6 +102,7 @@ describe("ChatWorkspace interactions", () => {
   const consoleErrors: unknown[][] = [];
   const posted: { clientId: string; body: string }[] = [];
   const readPosts: number[] = [];
+  const leavePosts: unknown[] = [];
   const snapshots = new Map<string, ReturnType<typeof ChatSnapshotSchema.parse>>();
   const pendingSnapshots = new Map<string, Promise<Response>>();
   let membersRequests = 0;
@@ -112,6 +113,7 @@ describe("ChatWorkspace interactions", () => {
     delegateEvents(["click", "input", "keydown"], dom.document);
     posted.length = 0;
     readPosts.length = 0;
+    leavePosts.length = 0;
     snapshots.clear();
     pendingSnapshots.clear();
     membersRequests = 0;
@@ -157,6 +159,11 @@ describe("ChatWorkspace interactions", () => {
             nextCursor: null,
           });
         }
+        if (url.pathname === "/api/chat/conversations/Chat01/leave" && init?.method === "POST") {
+          leavePosts.push(JSON.parse(String(init.body)));
+          return Response.json({ success: true, keptThroughGroup: false });
+        }
+        if (url.pathname === "/api/chat/conversations") return Response.json({ items: [], nextCursor: null });
         if (url.pathname === "/api/chat/conversations/Chat01/read" && init?.method === "POST") {
           const { seq } = JSON.parse(String(init.body));
           readPosts.push(seq);
@@ -226,8 +233,8 @@ describe("ChatWorkspace interactions", () => {
     );
     await settle();
   };
-  const button = (label: string) => {
-    const found = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(
+  const button = (label: string, root: ParentNode = dom.root) => {
+    const found = [...root.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent?.trim() === label || button.getAttribute("aria-label") === label,
     );
     if (!found) throw new Error(`Missing button ${label}`);
@@ -632,6 +639,53 @@ describe("ChatWorkspace interactions", () => {
     expect(up.defaultPrevented).toBe(true);
     expect(dom.window.location.pathname).toBe("/app/chat");
     expect(dom.root.querySelector(".chat-conversation__header")).toBeNull();
+    expect(consoleErrors).toEqual([]);
+  });
+  test("leaving info opened from the chat keeps one Back action to the list", async () => {
+    const t = chatMessages.resolve(["en"]).t;
+    snapshots.set(conversation.id, { cursor: "c.0", conversation, page: { items: [], seqHead: 0, rev: 0 }, focus: null });
+    await mount(false);
+    const listLength = dom.window.history.length;
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/app/chat/c/Chat01"]')!.click();
+    await settle();
+    expect(dom.window.history.length).toBe(listLength + 1);
+    dom.root.querySelector<HTMLAnchorElement>('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]')!.click();
+    await settle();
+    expect(dom.window.location.search).toBe("?panel=info");
+    expect(dom.window.history.length).toBe(listLength + 2);
+    button(t.leaveChat).click();
+    await settle();
+    const dialog = dom.document.querySelector('[role="dialog"], dialog')!;
+    expect(dialog).not.toBeNull();
+    expect(button(t.leaveChat, dialog).disabled).toBe(false);
+    button(t.leaveChat, dialog).click();
+    await settle();
+    expect(leavePosts).toEqual([{}]);
+    expect(dom.window.history.length).toBe(listLength + 2);
+    expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat01");
+    dom.window.history.back();
+    await settle();
+    expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat");
+    expect(dom.root.querySelector(".chat-conversation__header")).toBeNull();
+    expect(consoleErrors).toEqual([]);
+  });
+  test("leaving directly mounted info replaces its history entry", async () => {
+    const t = chatMessages.resolve(["en"]).t;
+    await mount(true, [conversation], "info");
+    const infoLength = dom.window.history.length;
+    expect(dom.window.history.state).toBeNull();
+    expect(dom.window.location.search).toBe("?panel=info");
+    button(t.leaveChat).click();
+    await settle();
+    const dialog = dom.document.querySelector('[role="dialog"], dialog')!;
+    expect(dialog).not.toBeNull();
+    expect(button(t.leaveChat, dialog).disabled).toBe(false);
+    button(t.leaveChat, dialog).click();
+    await settle();
+    expect(leavePosts).toEqual([{}]);
+    expect(dom.window.history.length).toBe(infoLength);
+    expect(dom.window.location.pathname + dom.window.location.search).toBe("/app/chat/c/Chat01");
+    expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(true);
     expect(consoleErrors).toEqual([]);
   });
   for (const initialPanel of [null, "info"] as const) {

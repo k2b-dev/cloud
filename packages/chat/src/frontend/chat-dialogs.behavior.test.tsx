@@ -792,6 +792,55 @@ describe("chat dialogs and info", () => {
       expect([...dom.root.querySelectorAll(".chat-member-row__name")].map((row) => row.textContent)).toEqual(["Nora", "Noah"]);
       expect(dom.root.textContent).not.toContain(t.showMoreMembers);
     });
+    test(`info retries a failed member page inline without losing its alert in ${locale}`, async () => {
+      const second = { ...nora, accessId: "44444444-4444-4444-8444-444444444444", displayName: "Noah" };
+      const pending = Promise.withResolvers<Awaited<ReturnType<ChatDialogStore["members"]>>>();
+      let pages = 0;
+      const members = mock<ChatDialogStore["members"]>(async (_id, query) => {
+        if (!query.cursor) return { items: [nora], self, managers: 2, nextCursor: "page-2" };
+        if (++pages === 1) throw new Error("Page unavailable");
+        return pending.promise;
+      });
+      await mount(locale, () => info(conversation, store({ members })));
+      const more = button(t.showMoreMembers);
+      const list = dom.root.querySelector("ul")!;
+      const pagingArea = more.parentElement;
+      more.focus();
+      more.click();
+      await settle();
+      const alert = dom.root.querySelector('[role="alert"]');
+      expect(alert?.textContent).toContain(t.membersFailed);
+      expect(alert?.parentElement).toBe(pagingArea);
+      expect(list.nextElementSibling).toBe(alert);
+      expect(more.isConnected).toBe(false);
+      expect(dom.document.querySelector("[data-k2b-toast]")).toBeNull();
+      const retry = button(t.retry, alert!);
+      expect(dom.document.activeElement).toBe(retry);
+      expect([...list.querySelectorAll(".chat-member-row__name")].map((row) => row.textContent)).toEqual(["Nora"]);
+      retry.click();
+      await settle();
+      try {
+        expect(members.mock.calls).toEqual([
+          [conversation.id, {}],
+          [conversation.id, { cursor: "page-2" }],
+          [conversation.id, { cursor: "page-2" }],
+        ]);
+        expect(dom.root.querySelector('[role="alert"]')).toBe(alert);
+        expect(alert?.textContent).toContain(t.membersFailed);
+        expect(button(t.retry, alert!)).toBe(retry);
+        expect(retry.getAttribute("aria-busy")).toBe("true");
+        expect(retry.disabled).toBe(true);
+        expect(list.querySelectorAll(".chat-member-row__name")).toHaveLength(1);
+      } finally {
+        pending.resolve({ items: [second], self, managers: 2, nextCursor: null });
+        await settle();
+      }
+      expect([...list.querySelectorAll(".chat-member-row__name")].map((row) => row.textContent)).toEqual(["Nora", "Noah"]);
+      expect(dom.root.querySelector('[role="alert"]')).toBeNull();
+      expect(dom.root.textContent).not.toContain(t.retry);
+      expect(dom.document.querySelector("[data-k2b-toast]")).toBeNull();
+      expect(dom.document.activeElement).toBe(list);
+    });
     test(`info keeps Show more disabled while a new search loads and then uses its new cursor in ${locale}`, async () => {
       const second = { ...nora, accessId: "44444444-4444-4444-8444-444444444444", displayName: "Noah" };
       const oldCursor = JSON.stringify({ name: "nora", id: nora.accessId });

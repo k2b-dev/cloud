@@ -380,12 +380,15 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if (navigation) navigation.push(panelHref(id, "info", messageId), options);
     else navigate(panelHref(id, "info", messageId), options);
   };
+  const infoFromChat = () => {
+    const state: unknown = history.state;
+    return !!state && typeof state === "object" && "chatInfoFromChat" in state && state.chatInfoFromChat === true;
+  };
   const closeInfo = (navigation?: LinkNavigateEvent) => {
     if (pendingOpen !== 0) return;
     const id = route().chatId;
     if (!id || panel() === null) return;
-    const state: unknown = history.state;
-    if (state && typeof state === "object" && "chatInfoFromChat" in state && state.chatInfoFromChat === true) {
+    if (infoFromChat()) {
       history.back();
       return;
     }
@@ -432,7 +435,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const current = conversation();
     if (!store || !current) return;
     if (!(await openLeaveChatDialog({ store, conversation: current, viewerId: props.viewerId, locale: locale() }))) return;
-    // The chat now shows "No access"; its address drops the panel that went with it.
+    // The chat now shows "No access"; its address drops the panel that went with it. Info opened from the chat goes
+    // back to the chat's own entry, so one Back press still leaves the chat.
+    if (route().chatId === current.id && infoFromChat()) {
+      history.back();
+      return;
+    }
     setPanel(null);
     if (route().chatId === current.id) {
       setRoute({ chatId: current.id, messageId: null, panel: null });
