@@ -482,6 +482,11 @@ argument and to `updateAccess` as the third; a whole-resource level passes
 grant never counts as a manager. The application stores the scope and enforces
 it in its service.
 
+While a change saves, rows keep their permission pickers, disabled until it
+finishes; only the changed row shows progress and, for a level change, the
+chosen level. If the update fails, it returns to the stored level and shows
+an error.
+
 ### Show the last manager
 
 When exactly one entry is a manager, as defined in

@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
@@ -50,12 +51,51 @@ const render = (locale: string, initialEntries: AccessEntry[] = entries) =>
 
 let browser: Browser;
 let css: string;
+let harness: string;
+let icons: { css: string; font: string };
+
+const buildHarness = async () => {
+  const ui = resolve(import.meta.dir, "../../../ui");
+  const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
+  const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
+  const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
+  const build = await Bun.build({
+    entrypoints: [resolve(import.meta.dir, "PermissionEditor.browser-harness.tsx")],
+    target: "browser",
+    format: "iife",
+    conditions: ["browser"],
+    plugins: [
+      {
+        name: "solid-permission-editor-test",
+        setup(builder) {
+          builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+            const result = await transformAsync(await Bun.file(path).text(), {
+              filename: path,
+              babelrc: false,
+              configFile: false,
+              presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+            });
+            return { contents: result.code, loader: "js" };
+          });
+        },
+      },
+    ],
+  });
+  if (!build.success) throw new AggregateError(build.logs, "PermissionEditor harness build failed");
+  return build.outputs[0]!.text();
+};
 beforeAll(async () => {
   const build = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
   if (!build.success) throw new AggregateError(build.logs, "Could not compile the global stylesheet.");
   css = await build.outputs[0]!.text();
+  harness = await buildHarness();
+  const iconCss = fileURLToPath(import.meta.resolve("@k2b/ui/icons/tabler.css"));
+  const source = await Bun.file(iconCss).text();
+  const font = source.match(/url\((\.\/[^)"']+\.woff2)[^)]*\)/)?.[1];
+  if (!font) throw new Error("Missing Tabler WOFF2 file");
+  icons = { css: source.replace(font, "/tabler.woff2"), font: resolve(dirname(iconCss), font) };
   browser = await launchBrowser();
-}, 30_000);
+}, 60_000);
 afterAll(async () => {
   await browser?.close();
 });
@@ -204,4 +244,68 @@ describe("PermissionEditor group coverage in a browser", () => {
       }
     }
   });
+});
+
+describe("PermissionEditor pending layout and focus", () => {
+  for (const width of [390, 1280]) {
+    test(`${width} px: a pending update keeps every control, box, and keyboard return target`, async () => {
+      const tab = await browser.newPage({ viewport: { width, height: 800 }, reducedMotion: "reduce" });
+      const origin = "https://permission-editor.test";
+      await tab.route(`${origin}/**`, (route) => {
+        const path = new URL(route.request().url()).pathname;
+        if (path === "/tabler.woff2") return route.fulfill({ path: icons.font });
+        if (path === "/tabler.css") return route.fulfill({ contentType: "text/css; charset=utf-8", body: icons.css });
+        return route.fulfill({
+          contentType: "text/html; charset=utf-8",
+          body: `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/tabler.css"><style>${css}</style></head><body class="k2b-ui"><div id="root" style="padding:16px;max-width:48rem"></div></body></html>`,
+        });
+      });
+      try {
+        await tab.goto(origin);
+        await tab.addScriptTag({ content: harness });
+        const controls = tab.locator("button.k2b-select-chip");
+        await controls.first().waitFor();
+        await tab.evaluate(() => document.fonts.ready);
+        const originals = await controls.elementHandles();
+        const measure = () =>
+          tab.evaluate(() =>
+            Array.from(document.querySelectorAll(".group\\/access-row"), (row) => {
+              // A badge in place of a picker is deliberately measured too, so the old implementation fails.
+              const control = row.querySelector("button.k2b-select-chip, span.cursor-default")!;
+              const box = (element: Element) => {
+                const rect = element.getBoundingClientRect();
+                return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+              };
+              return { tag: control.tagName, class: control.className, row: box(row), control: box(control) };
+            }),
+          );
+        const before = await measure();
+        expect(before).toHaveLength(3);
+        await controls.nth(1).focus();
+        await tab.keyboard.press("Enter");
+        await tab.getByRole("menuitemradio", { name: "Level 2", exact: true }).press("Enter");
+        await tab.waitForFunction(() => document.documentElement.dataset.saving === "true");
+        expect(await measure()).toEqual(before);
+        expect(await controls.nth(1).textContent()).toBe("Level 2");
+        expect(await controls.evaluateAll((elements) => elements.every((element) => (element as HTMLButtonElement).disabled))).toBe(true);
+        for (let index = 0; index < originals.length; index++) {
+          expect(
+            await originals[index]!.evaluate((element, i) => element === document.querySelectorAll("button.k2b-select-chip")[i], index),
+          ).toBe(true);
+        }
+        await tab.evaluate(() => document.dispatchEvent(new Event("settle-access")));
+        await tab.waitForFunction(() => document.querySelector(".group\\/access-row[aria-busy]") === null);
+        expect(await measure()).toEqual(before);
+        expect(await controls.evaluateAll((elements) => elements.every((element) => !(element as HTMLButtonElement).disabled))).toBe(true);
+        expect(await controls.nth(1).evaluate((element) => element === document.activeElement)).toBe(true);
+        for (let index = 0; index < originals.length; index++) {
+          expect(
+            await originals[index]!.evaluate((element, i) => element === document.querySelectorAll("button.k2b-select-chip")[i], index),
+          ).toBe(true);
+        }
+      } finally {
+        await tab.close();
+      }
+    }, 20_000);
+  }
 });

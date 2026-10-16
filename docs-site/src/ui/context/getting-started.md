@@ -155,6 +155,13 @@ Reference types use `JSX.Element` for Solid content and `MaybeAccessor<T>` for
 no extra behavior unless a default is stated. Native attributes pass through
 only where the component explicitly inherits them.
 
+### Pending states keep the control
+
+While a change saves, keep the same control in the same place and size.
+Disable it or mark it loading; never swap it for a badge, text, or placeholder.
+Only the changed item shows progress. Keyboard focus stays with the control, or returns
+to it when the change ends.
+
 ### Shared field props
 
 Input pages use these public types from `@k2b/ui`:
