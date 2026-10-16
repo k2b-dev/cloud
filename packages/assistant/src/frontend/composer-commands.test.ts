@@ -520,6 +520,67 @@ test("session loader reuses promises, merges states newest first, and aborts onl
   }
 });
 
+for (const retryOpening of [1, 2]) {
+  test.each(["offline", 500, 200, 404, 409, 429, 400] as const)(
+    `task start after %s uses the correct key in opening ${retryOpening}`,
+    async (status) => {
+      const task = taskFixture(0);
+      spyOn(assistantApi, "listChatTasks").mockImplementation(async ({ state }) => (state === "active" ? [task] : []));
+      let attempts = 0;
+      const post = spyOn(globalThis, "fetch").mockImplementation(
+        Object.assign(
+          async () => {
+            if (attempts++ > 0) return Response.json({});
+            if (status === "offline") throw new TypeError("Response lost");
+            return Response.json({}, { status });
+          },
+          { preconnect: globalThis.fetch.preconnect },
+        ),
+      );
+      const loader = createAssistantCommandSession();
+      const input = {
+        sessionLoader: loader,
+        models: [],
+        chooseModel() {},
+        isRunning: () => false,
+        query: "",
+        scope: "task",
+        signal: new AbortController().signal,
+        locale: "en",
+        projects: [],
+        running: false,
+        assignProject: async () => {},
+      };
+      const run = async (session: number) => {
+        const rows = await searchCommands({ ...input, session });
+        return rows.find((row) => row.id === `task:${task.id}`)!.action!(context);
+      };
+      const key = (attempt: number) => {
+        const [url, init] = post.mock.calls[attempt]!;
+        expect(url).toBe(`/api/ai/tasks/${task.id}/run`);
+        expect(init?.method).toBe("POST");
+        const value = new Headers(init?.headers).get("Idempotency-Key");
+        expect(value).toMatch(/^[a-f0-9]{32}$/);
+        return value;
+      };
+      try {
+        if (status === 200) await run(1);
+        else await expect(run(1)).rejects.toThrow();
+        const firstKey = key(0);
+        await run(retryOpening);
+        const retryKey = key(1);
+        if (status === "offline" || status >= 500) expect(retryKey).toBe(firstKey);
+        else expect(retryKey).not.toBe(firstKey);
+        // The successful retry settles the logical start, including a replayed occurrence.
+        await run(retryOpening + 1);
+        expect(key(2)).not.toBe(retryKey);
+      } finally {
+        loader.dispose();
+      }
+    },
+  );
+}
+
 test("task matches append after thirty references; overview limits tasks independently", async () => {
   const { artifactClient } = await import("../artifacts/client");
   spyOn(artifactClient, "list").mockResolvedValue({ items: [], page: 1, hasNext: false });

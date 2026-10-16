@@ -159,8 +159,9 @@ export function assistantBuiltInCommands(input: {
 export const OVERVIEW_SKILL_COUNT = 4;
 export const overviewSkills = (skills: readonly AiSkillSummary[]) => skills.filter((skill) => skill.enabled).slice(0, OVERVIEW_SKILL_COUNT);
 
-/** Owns discovery for one list opening, independently of per-keystroke cancellation. */
+/** Owns discovery per opening and pending task starts across openings for one composer. */
 export function createAssistantCommandSession() {
+  const pendingRunKeys = new Map<string, string>();
   let latest:
     | {
         session: number;
@@ -169,6 +170,14 @@ export function createAssistantCommandSession() {
       }
     | undefined;
   return {
+    runKey(taskId: string) {
+      const key = pendingRunKeys.get(taskId) ?? crypto.randomUUID().replaceAll("-", "");
+      pendingRunKeys.set(taskId, key);
+      return key;
+    },
+    settleRun(taskId: string) {
+      pendingRunKeys.delete(taskId);
+    },
     load(session: number) {
       if (latest?.session === session) return latest.data;
       latest?.abort.abort();
@@ -194,6 +203,7 @@ export function createAssistantCommandSession() {
     },
     dispose() {
       latest?.abort.abort();
+      pendingRunKeys.clear();
     },
   };
 }
@@ -426,9 +436,12 @@ export async function assistantComposerCommands(input: {
             task.state === "active"
               ? async () => {
                   try {
-                    await assistantApi.runChatTask(task.id);
+                    await assistantApi.runChatTask(task.id, { idempotencyKey: input.sessionLoader.runKey(task.id) });
+                    input.sessionLoader.settleRun(task.id);
                     return { done: copy.commandTaskRunning({ title }) };
                   } catch (error) {
+                    // Network failures and 5xx responses leave the outcome unknown; retries must replay the same start.
+                    if (error instanceof AssistantTaskRunError && error.status < 500) input.sessionLoader.settleRun(task.id);
                     const reason =
                       error instanceof AssistantTaskRunError
                         ? error.status === 409

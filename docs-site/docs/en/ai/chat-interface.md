@@ -1217,7 +1217,9 @@ Choosing an active task runs it now. The composer shows a starting status while
 the request is pending and a running status only after the server accepts the
 run. The result arrives in the scheduled task's chat. A failed request restores
 `/…` and explains the failure in plain words: the task already runs, no longer
-exists, was started too often, was not accepted, or the server is unreachable. Paused tasks ask you to resume them first;
+exists, was started too often, was not accepted, or the server is unreachable.
+If the connection dropped before the answer arrived, choosing the task again
+does not start it a second time. Paused tasks ask you to resume them first;
 tasks that need attention explain that you must intervene before they can run.
 Selecting either sends no run request.
 

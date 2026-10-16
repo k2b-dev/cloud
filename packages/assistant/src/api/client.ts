@@ -362,11 +362,11 @@ export const assistantApi = {
     return response.json();
   },
 
-  runChatTask: async (taskId: string, signal?: AbortSignal): Promise<void> => {
+  runChatTask: async (taskId: string, input: { idempotencyKey: string; signal?: AbortSignal }): Promise<void> => {
     const response = await coreTasksRequest(`/${encodeURIComponent(taskId)}/run`, {
       method: "POST",
-      signal,
-      headers: { "Idempotency-Key": crypto.randomUUID().replaceAll("-", "") },
+      signal: input.signal,
+      headers: { "Idempotency-Key": input.idempotencyKey },
     });
     if (!response.ok) throw new AssistantTaskRunError(await readError(response, "Scheduled task request failed"), response.status);
   },
