@@ -1,4 +1,4 @@
-import type { ChatDictationState, ChatMention } from "@k2b/ui";
+import type { ChatCommand, ChatDictationState, ChatMention } from "@k2b/ui";
 import {
   Button,
   Chat,
@@ -100,6 +100,23 @@ const initialItems = (): ChatTimelineItem[] => [
   },
 ];
 
+const demoSkills: ChatCommand[] = [
+  {
+    id: "release-notes",
+    name: "release-notes",
+    label: "Release notes",
+    section: "skills",
+    description: "Write concise release notes",
+    icon: "ti ti-sparkles",
+    mention: { id: "release-notes", name: "Release notes", kind: "resource", icon: "ti ti-sparkles" },
+  },
+];
+const demoSections = [
+  { id: "skills", label: "Skills", searched: true },
+  { id: "chat", label: "This chat" },
+];
+const demoScopes = [{ id: "skill", title: "Skills", words: ["skill", "skills"] }];
+
 const ChatDemo = () => {
   const [draft, setDraft] = createSignal("");
   const [mentions, setMentions] = createSignal<readonly ChatMention[]>([]);
@@ -131,6 +148,9 @@ const ChatDemo = () => {
     fileSelection={{ onSelect: addFiles }}
     menuActions={menuActions}
     commands={commands}
+    commandSections={sections}
+    commandScopes={scopes}
+    searchCommands={async (query, signal, { scope }) => findCommands(query, signal, scope)}
     contextUsage={{ usage: usage(), contextWindow: 128_000 }}
   />
 </Chat>`}
@@ -140,7 +160,7 @@ const ChatDemo = () => {
         <Chat.Composer
           value={draft()}
           onValueChange={setDraft}
-          placeholder="Try: Please use /release-notes"
+          placeholder="Try / or /skill release"
           mentions={mentions()}
           onMentionsChange={setMentions}
           accessory={
@@ -189,18 +209,19 @@ const ChatDemo = () => {
               onSelect: () => undefined,
             },
           ]}
+          commandSections={demoSections}
+          commandScopes={demoScopes}
+          searchCommands={async (query, _signal, { scope }) =>
+            !scope || scope === "skill" ? demoSkills.filter((row) => row.label?.toLowerCase().includes(query.toLowerCase())) : []
+          }
           commands={[
-            {
-              name: "release-notes",
-              label: "Release notes",
-              description: "Skill · Write concise release notes",
-              icon: "ti ti-sparkles",
-              mention: { id: "release-notes", name: "Release notes", kind: "resource", icon: "ti ti-sparkles" },
-            },
+            { name: "skills", label: "Choose a skill", description: "Search the Skills list", section: "chat", scope: "skill" },
             {
               name: "summarize",
+              label: "Summarize chat",
               description: "Summarize the current conversation",
-              action: ({ setValue }) => setValue("Summarize this conversation"),
+              section: "chat",
+              reason: "Available once the chat has more messages",
             },
           ]}
           contextUsage={{

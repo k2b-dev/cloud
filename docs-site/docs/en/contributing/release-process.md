@@ -5,7 +5,7 @@ section: Contributing
 order: 1302
 description: How a change on a feature branch becomes a versioned Cloud release with images, CLI, website, PWA, and npm packages.
 tags: [contributing, release, versioning, ci]
-updated: 2026-10-14
+updated: 2026-10-16
 ---
 
 # Release process
@@ -74,6 +74,23 @@ release-please runs on every push to `main`:
    them, the workflow waits up to 20 minutes in total; otherwise the pinned
    version must already be on npm, or `@k2b/cloud` stays unpublished and the
    release fails.
+
+The release PR runs the `packed` check with `--release`, including in the
+merge queue, to test already published sibling pins from npm and versions
+this release publishes from their tarballs. See
+[What CI runs](/en/docs/contributing/testing#what-ci-runs).
+
+Merge the release PR only after release-please has refreshed it after the last
+feature PR merged. Check that its parent is the current `main`:
+
+```bash
+git fetch origin && test "$(git rev-parse origin/release-please--branches--main^)" = "$(git rev-parse origin/main)"
+```
+
+If it differs, wait for the `release-please` job of the latest `main.yml` run.
+In [#1221](https://github.com/k2b-dev/cloud/issues/1221), a stale release PR
+left `@k2b/ui` unbumped, so published Cloud code imported an export its pinned
+UI version did not have.
 
 Each package publishes through an npm Trusted Publisher for `k2b-dev/cloud`
 with the workflow file `main.yml`. `release.yml` runs the publish, but it is a

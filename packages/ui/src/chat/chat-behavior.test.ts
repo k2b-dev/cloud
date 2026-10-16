@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   chatCommandKey,
-  chatCommandMatches,
-  chatCommandRank,
   conversationEnterAction,
   executeChatAction,
   foldChatSearchText,
@@ -188,20 +186,6 @@ describe("conversation Enter", () => {
 describe("command discovery", () => {
   test("folds case, accents, combining marks and German sharp s", () => {
     expect(foldChatSearchText("ÄLTEREN Café Straße e\u0301")).toBe("alteren cafe strasse e");
-  });
-  test("matches every search field and treats empty trimmed queries as all commands", () => {
-    const command = { name: "compact", label: "Chat kompaktieren", description: "Älteren Verlauf", keywords: ["zusammenfassen"] };
-    for (const query of ["kompakt", "COMPACT", "alter", "zusammenfassen", "  ", " compact "])
-      expect(chatCommandMatches(command, query)).toBe(true);
-    expect(chatCommandMatches(command, "fork")).toBe(false);
-    expect(chatCommandMatches({ name: "a", description: "", keywords: ["älter"] }, "alter")).toBe(true);
-  });
-  test("ranks label, name and keyword matches before description-only matches", () => {
-    const fork = { name: "fork", label: "Fork chat", description: "New chat from the latest response", keywords: ["fork"] };
-    expect(chatCommandRank(fork, "fork")).toBe(0);
-    expect(chatCommandRank(fork, "new")).toBe(1);
-    expect(chatCommandRank(fork, "xyz")).toBe(-1);
-    expect(chatCommandRank(fork, " ")).toBe(0);
   });
   test("uses the explicit stable key, defaulting to name", () => {
     expect(chatCommandKey({ id: "stable", name: "compact", description: "" })).toBe("stable");

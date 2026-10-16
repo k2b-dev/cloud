@@ -1,13 +1,36 @@
 import type { AiProject } from "@k2b/cloud/ai";
 import { type AiComposerAttachment, aiChatAttachments } from "@k2b/cloud/ai/ui";
-import type { ChatCommand, ChatCommandResult } from "@k2b/ui";
+import type { ChatCommand, ChatCommandResult, ChatCommandScope, ChatCommandSection } from "@k2b/ui";
 import { assistantApi } from "../api/client";
 import { artifactClient } from "../artifacts/client";
 import { type AssistantCopy, assistantCopyFor } from "./ui-copy";
 
+export const assistantCommandSections = (copy: AssistantCopy): ChatCommandSection[] => [
+  { id: "skills", label: copy.commandSkills, searched: true },
+  { id: "files", label: copy.commandFiles, searched: true, searchOnly: true },
+  { id: "apps", label: copy.commandApps, searched: true },
+  { id: "chat", label: copy.commandChat },
+];
+
+export const assistantCommandScopes = (copy: AssistantCopy, locale: string): ChatCommandScope[] => [
+  { id: "skill", title: copy.commandSkills, words: ["skill", "skills"] },
+  {
+    id: "file",
+    title: copy.commandFiles,
+    words: locale.startsWith("de") ? ["datei", "dateien", "file", "files"] : ["file", "files", "datei", "dateien"],
+  },
+  {
+    id: "project",
+    title: copy.commandProjects,
+    words: locale.startsWith("de") ? ["projekt", "projekte", "project", "projects"] : ["project", "projects", "projekt", "projekte"],
+  },
+  { id: "app", title: copy.commandApps, words: ["app", "apps", "studio"] },
+];
+
 export function assistantBuiltInCommands(input: {
   copy: AssistantCopy;
   projectComposer: boolean;
+  projectName?: string | null;
   running: boolean;
   hasMessages: boolean;
   hasAssistantMessage: boolean;
@@ -18,41 +41,59 @@ export function assistantBuiltInCommands(input: {
   const t = input.copy;
   return [
     {
+      id: "project",
+      name: "project",
+      label: t.assignProjectLabel,
+      description: t.assignProjectHint,
+      icon: "ti ti-folders",
+      keywords: ["project", "projekt", "zuordnen", "assign"],
+      scope: "project",
+      section: "chat",
+      hiddenUntilSearch: input.projectName != null,
+      reason:
+        input.projectName != null ? t.commandAlreadyProject({ name: input.projectName }) : input.running ? t.commandNeedsIdle : undefined,
+    },
+    {
       id: "compact",
+      section: "chat",
+      hiddenUntilSearch: !input.running && (input.projectComposer || !input.hasMessages),
       name: "compact",
       icon: "ti ti-fold",
       label: t.compactLabel,
       keywords: ["compact", "kompaktieren", "kontext", "zusammenfassen", "platz"],
       description: t.compactDescription,
       busyLabel: t.compactBusy,
-      reason: input.projectComposer
-        ? t.commandNeedsChat
-        : !input.hasMessages
-          ? t.commandNeedsMessages
-          : input.running
-            ? t.commandNeedsIdle
+      reason: input.running
+        ? t.commandNeedsIdle
+        : input.projectComposer
+          ? t.commandNeedsChat
+          : !input.hasMessages
+            ? t.commandNeedsMessages
             : undefined,
       action: input.compact,
     },
     {
       id: "fork",
+      section: "chat",
+      hiddenUntilSearch: !input.running && (input.projectComposer || !input.hasAssistantMessage),
       name: "fork",
       icon: "ti ti-git-fork",
       label: t.forkLabel,
       keywords: ["fork", "abzweigen", "kopie", "verzweigen", "branch"],
       description: t.forkDescription,
       busyLabel: t.forkBusy,
-      reason: input.projectComposer
-        ? t.commandNeedsChat
-        : !input.hasAssistantMessage
-          ? t.commandNeedsAnswer
-          : input.running
-            ? t.commandNeedsIdle
+      reason: input.running
+        ? t.commandNeedsIdle
+        : input.projectComposer
+          ? t.commandNeedsChat
+          : !input.hasAssistantMessage
+            ? t.commandNeedsAnswer
             : undefined,
       action: input.fork,
     },
     {
       id: "new",
+      section: "chat",
       name: "new",
       icon: "ti ti-plus",
       label: t.newChatLabel,
@@ -66,6 +107,7 @@ export function assistantBuiltInCommands(input: {
 /** Only explicit selection inserts a reference or performs an action. */
 export async function assistantComposerCommands(input: {
   query: string;
+  scope?: string;
   signal: AbortSignal;
   locale: string;
   conversationId?: string;
@@ -75,13 +117,16 @@ export async function assistantComposerCommands(input: {
   running: boolean;
 }): Promise<ChatCommand[]> {
   const copy = assistantCopyFor(input.locale);
-  const match = /^(skill|app|file|project)(?:\s+(.*))?$/i.exec(input.query);
-  const category = match?.[1]?.toLowerCase();
-  const query = (match ? (match[2] ?? "") : input.query).trim().toLowerCase();
+  const legacyScope = !input.scope
+    ? assistantCommandScopes(copy, input.locale).find((scope) => scope.words.includes(input.query.trim().toLowerCase()))
+    : undefined;
+  const category = input.scope ?? legacyScope?.id;
+  const query = (legacyScope ? "" : input.query).trim().toLowerCase();
   const includes = (text: string) => text.toLowerCase().includes(query);
   const wants = (kind: string) => !category || category === kind;
   // The attachment id is the row key: two files named "report.md" in different folders stay two rows.
-  const reference = (name: string, description: string, attachment: AiComposerAttachment): ChatCommand => ({
+  const reference = (section: string, name: string, description: string, attachment: AiComposerAttachment): ChatCommand => ({
+    section,
     id: attachment.id,
     name,
     label: name,
@@ -92,14 +137,18 @@ export async function assistantComposerCommands(input: {
   const [skills, apps, chatFiles, project] = await Promise.all([
     wants("skill") ? assistantApi.listSkills(input.signal, query.slice(0, 200)) : [],
     wants("app") ? artifactClient.list(1, query.slice(0, 120), input.signal, input.conversationId) : null,
-    wants("file") && input.conversationId ? assistantApi.listChatFiles(input.conversationId, input.signal) : [],
-    wants("file") && input.projectId ? assistantApi.loadProjectContext(input.projectId, input.signal) : null,
+    (category === "file" || (!category && query.length > 0)) && input.conversationId
+      ? assistantApi.listChatFiles(input.conversationId, input.signal)
+      : [],
+    (category === "file" || (!category && query.length > 0)) && input.projectId
+      ? assistantApi.loadProjectContext(input.projectId, input.signal)
+      : null,
   ]);
   const results: ChatCommand[] = [];
   for (const skill of skills) {
     if (!skill.enabled) continue;
     results.push(
-      reference(skill.name, `Skill · ${skill.description}`, {
+      reference("skills", skill.name, `Skill · ${skill.description}`, {
         kind: "resource",
         id: `skill:${skill.id}`,
         name: skill.name,
@@ -111,7 +160,7 @@ export async function assistantComposerCommands(input: {
   for (const app of apps?.items ?? []) {
     if (app.kind !== "app") continue;
     results.push(
-      reference(app.title, `App · ${app.description ?? ""}`, {
+      reference("apps", app.title, `App · ${app.description ?? ""}`, {
         kind: "resource",
         id: `app:${app.id}`,
         name: app.title,
@@ -124,7 +173,7 @@ export async function assistantComposerCommands(input: {
   for (const file of chatFiles) {
     if (!includes(file.path)) continue;
     results.push(
-      reference(file.path.split("/").at(-1) || file.path, `${copy.chatFileDescription} · ${file.path}`, {
+      reference("files", file.path.split("/").at(-1) || file.path, `${copy.chatFileDescription} · ${file.path}`, {
         kind: "stored-file",
         id: `file:${file.path}:${file.version}`,
         name: file.path.split("/").at(-1) || file.path,
@@ -139,9 +188,12 @@ export async function assistantComposerCommands(input: {
   for (const file of project?.files ?? []) {
     if (!includes(file.path)) continue;
     const path = `/project/${file.path.replace(/^\/+/, "")}`;
-    results.push(reference(path, copy.projectFileDescription, { kind: "project-file", id: path, path, name: path, icon: "ti ti-file" }));
+    results.push(
+      reference("files", path, copy.projectFileDescription, { kind: "project-file", id: path, path, name: path, icon: "ti ti-file" }),
+    );
   }
-  if (wants("project") && !input.projectId)
+  const assignedProject = input.projectId ? input.projects.find((project) => project.id === input.projectId) : undefined;
+  if (category === "project")
     for (const project of input.projects) {
       if (!includes(`${project.name} ${project.description}`)) continue;
       results.push({
@@ -149,7 +201,13 @@ export async function assistantComposerCommands(input: {
         name: project.name,
         label: project.name,
         icon: project.icon || "ti ti-folders",
-        reason: input.running ? copy.commandNeedsIdle : undefined,
+        reason: input.projectId
+          ? copy.commandChatAlreadyProject({
+              name: assignedProject?.name,
+            })
+          : input.running
+            ? copy.commandNeedsIdle
+            : undefined,
         description: copy.assignProjectDescription,
         action: () => input.assignProject(project.id),
       });

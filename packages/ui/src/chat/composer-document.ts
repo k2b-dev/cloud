@@ -8,7 +8,7 @@ export function chatCommandQuery(text: string, caret: number, selectionEnd = car
   const before = text.slice(0, caret);
   if ((before.match(/`/g)?.length ?? 0) % 2) return null;
   const match = /(?:^|[\s(])\/([^\n/`]*)$/.exec(before);
-  if (!match) return null;
+  if (!match || /^\s/.test(match[1]!)) return null;
   return { start: caret - match[1]!.length - 1, end: caret, query: match[1]! };
 }
 

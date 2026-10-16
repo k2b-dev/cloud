@@ -142,7 +142,7 @@ test("shows a labelled loading row and ignores results from an aborted search", 
   pending[0]!.resolve([{ name: "Old", description: "Stale", action() {} }]);
   await Promise.resolve();
   await Promise.resolve();
-  expect(dom.root.querySelector('[role="option"]')?.textContent).toBe("/NewCurrent");
+  expect(dom.root.querySelector('[role="option"]')?.textContent).toBe("NewCurrent");
   dispose();
   expect(pending[1]?.signal.aborted).toBe(true);
   dom.cleanup();
@@ -234,6 +234,9 @@ const slash = async (options: Partial<ChatComposerProps> = {}) => {
     () =>
       createComponent(ChatComposer, {
         ...options,
+        get commands() {
+          return options.commands;
+        },
         get value() {
           return value();
         },
@@ -402,12 +405,82 @@ const deferredSearch = () => {
   };
 };
 
+test("search completion preserves manually scrolled local options from a commands getter", async () => {
+  const search = deferredSearch();
+  const h = await slash({
+    ...search,
+    get commands() {
+      return Array.from({ length: 20 }, (_, index) => ({ name: `Command ${index}`, description: "Local" }));
+    },
+  });
+  const list = h.root.querySelector<HTMLDivElement>('[role="listbox"]')!;
+  Object.defineProperty(list, "clientHeight", { value: 200 });
+  // Happy DOM has no layout; options move with the list's scroll position, including after a remount.
+  const geometry = spyOn(h.window.HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    const index = h.rows().findIndex((row) => row === this);
+    return new h.window.DOMRect(0, index < 0 ? 0 : index * 40 - list.scrollTop, 320, index < 0 ? 200 : 40);
+  });
+  slashCleanups.push(() => geometry.mockRestore());
+  await Bun.sleep(140);
+  await flush();
+  expect(search.requests).toHaveLength(1);
+  const rows = h.rows();
+  expect(rows).toHaveLength(20);
+  list.scrollTop = 120;
+  list.dispatchEvent(new Event("scroll"));
+  search.requests[0]!.resolve([]);
+  await flush();
+  expect(list.scrollTop).toBe(120);
+  expect(h.rows()).toHaveLength(rows.length);
+  h.rows().forEach((row, index) => expect(row).toBe(rows[index]!));
+});
+
+test.each(["Enter", "Tab"])("%s chooses a static command from a getter while search is pending", async (key) => {
+  let chosen = 0;
+  const make = (): ChatCommand[] => [{ name: "new", label: "Neuer Chat", description: "", action: () => void chosen++ }];
+  const search = deferredSearch();
+  const h = await slash({
+    ...search,
+    get commands() {
+      return make();
+    },
+  });
+  h.type("/neu");
+  await Bun.sleep(140);
+  expect(search.requests).toHaveLength(1);
+  expect(h.rows()).toHaveLength(1);
+  expect(h.key(key).defaultPrevented).toBe(true);
+  await flush();
+  expect(chosen).toBe(1);
+  expect(h.value()).toBe("");
+});
+
+test("settled empty sections stay hidden while searching, show Loading, and reset for another slash token", async () => {
+  const search = deferredSearch();
+  const h = await slash({ ...search, value: "/a", commandSections: [{ id: "skills", label: "Skills", searched: true }] });
+  expect(h.root.querySelector(".k2b-chat-composer__command-placeholder")).not.toBeNull();
+  expect(h.root.querySelector(".k2b-chat-composer__loading")).toBeNull();
+  await Bun.sleep(140);
+  search.requests[0]!.resolve([]);
+  await flush();
+  h.type("/ab");
+  expect(h.root.querySelectorAll('[role="listbox"] [role="group"]')).toHaveLength(0);
+  expect(h.root.querySelector(".k2b-chat-composer__loading")?.textContent).toBe("Loading...");
+  h.type("plain");
+  h.type("/");
+  expect(h.root.querySelector('[role="group"] [role="presentation"]')?.textContent).toBe("Skills");
+  expect(h.root.querySelector(".k2b-chat-composer__command-placeholder")).not.toBeNull();
+  expect(h.root.querySelector(".k2b-chat-composer__loading")).toBeNull();
+});
+
 test.each(["Enter", "Tab"])("%s cannot choose a retained server row until fresh results arrive", async (key) => {
   const chosen: string[] = [];
   const search = deferredSearch();
   const h = await slash({ ...search, value: "/project inv" });
   await Bun.sleep(140);
-  search.requests[0]!.resolve([{ name: "Invoices", description: "Old project", action: () => void chosen.push("Invoices") }]);
+  search.requests[0]!.resolve([
+    { name: "Invoices", keywords: ["project mkt"], description: "Old project", action: () => void chosen.push("Invoices") },
+  ]);
   await flush();
   const rows = h.rows();
   expect(rows).toHaveLength(1);
@@ -442,7 +515,9 @@ test("pending searches still allow local keyboard choices and clicks on retained
       commands: [{ name: "run", description: "Local", action: () => void chosen.push("local") }],
     });
     await Bun.sleep(140);
-    search.requests[0]!.resolve([{ name: "Remote", description: "Retained", action: () => void chosen.push("pointer") }]);
+    search.requests[0]!.resolve([
+      { name: "Remote", keywords: ["run"], description: "Retained", action: () => void chosen.push("pointer") },
+    ]);
     await flush();
     h.type("/run");
     if (choice === "local") h.key("Enter");
@@ -472,8 +547,8 @@ test("retains rows and safe ids through debounce, preserves arrow marking on res
   const h = await slash({ ...search, value: "/q" });
   await Bun.sleep(140);
   const rows = [
-    { id: 'a" ]#ü', name: "A", description: "First" },
-    { id: "b", name: "B", description: "Second" },
+    { id: 'a" ]#ü', name: "A", keywords: ["que"], description: "First" },
+    { id: "b", name: "B", keywords: ["que"], description: "Second" },
   ];
   search.requests[0]!.resolve(rows);
   await flush();
@@ -489,11 +564,11 @@ test("retains rows and safe ids through debounce, preserves arrow marking on res
   h.key("ArrowDown");
   await Bun.sleep(140);
   search.requests[1]!.resolve([
-    { id: "top", name: "New", description: "New top" },
+    { id: "top", name: "New", keywords: ["que"], description: "New top" },
     { ...rows[1]!, label: "Still B" },
   ]);
   await flush();
-  expect(h.rows().map((row) => row.textContent)).toEqual(["/NewNew top", "Still BSecond"]);
+  expect(h.rows().map((row) => row.textContent)).toEqual(["NewNew top", "Still BSecond"]);
   expect(h.input.getAttribute("aria-activedescendant")).toBe(ids[1]!);
   h.type("/que");
   expect(h.input.getAttribute("aria-activedescendant")).toBe(h.rows()[0]!.id);
@@ -510,7 +585,7 @@ test("deduplicates static then server rows by key and leaves filtering of server
   });
   await Bun.sleep(140);
   await flush();
-  expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual(["Chat kompaktieren", "/unrelated"]);
+  expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual(["Chat kompaktieren", "unrelated"]);
 });
 
 test("drops retained rows on draft change, token removal and search failure", async () => {
@@ -531,7 +606,7 @@ test("drops retained rows on draft change, token removal and search failure", as
   h.type("/q");
   expect(h.rows()).toHaveLength(0);
   await Bun.sleep(140);
-  search.requests.at(-1)!.resolve([{ name: "retained", description: "Current" }]);
+  search.requests.at(-1)!.resolve([{ name: "retained", keywords: ["qu"], description: "Current" }]);
   await flush();
   h.type("/qu");
   expect(h.rows()).toHaveLength(1);
@@ -825,3 +900,226 @@ test("non-Error rejection uses the localized fallback and cancelling after edits
   expect(cancelled.value()).toBe("Edited draft");
   expect(cancelled.status().textContent).toBe("");
 });
+
+test("sections keep prop order across keystrokes with labelled groups, deduplication, bold matches and wrapping arrows", async () => {
+  const h = await slash({
+    commandSections: [
+      { id: "skills", label: "Skills" },
+      { id: "chat", label: "This chat" },
+    ],
+    commands: [
+      { id: "chat", name: "Rechnung", description: "Chat action", section: "chat" },
+      { id: "same", name: "Rechnungen", description: "Skill", section: "skills" },
+      { id: "same", name: "Duplicate", description: "Ignored", section: "chat" },
+      { name: "Rechner", description: "Trailing", section: "unknown" },
+    ],
+  });
+  for (const query of ["/", "/rech", "/rechn", "/rech"]) {
+    h.type(query);
+    const groups = [...h.root.querySelectorAll('[role="listbox"] [role="group"]')];
+    expect(groups.map((group) => group.querySelector('[role="presentation"]')?.textContent)).toEqual(["Skills", "This chat"]);
+    groups.forEach((group) =>
+      expect(group.getAttribute("aria-labelledby")).toBe(group.querySelector('[role="presentation"]')?.id ?? "missing"),
+    );
+    expect(h.rows().map((row) => row.querySelector("strong")?.textContent)).toEqual(["Rechnungen", "Rechnung", "Rechner"]);
+    expect(h.rows().at(-1)?.parentElement?.getAttribute("role")).toBe("listbox");
+  }
+  expect(h.rows()[0]?.querySelector("b")?.textContent).toBe("Rech");
+  h.key("ArrowUp");
+  expect(h.input.getAttribute("aria-activedescendant")).toBe(h.rows()[2]!.id);
+  h.key("ArrowDown");
+  expect(h.input.getAttribute("aria-activedescendant")).toBe(h.rows()[0]!.id);
+});
+
+const skillScopes = [{ id: "skill", title: "Skills", words: ["skill", "skills"] }];
+
+test("first-word scope passes the rest and scope id to search, hides static rows and labels its group", async () => {
+  const calls: { query: string; signal: AbortSignal; scope?: string }[] = [];
+  const h = await slash({
+    value: "/skill rech",
+    commandScopes: skillScopes,
+    commands: [{ name: "Rechnung", description: "Static" }],
+    searchCommands: async (query, signal, search) => {
+      calls.push({ query, signal, ...search });
+      return [{ name: "Rechnungen", description: "Skill" }];
+    },
+  });
+  await Bun.sleep(140);
+  await flush();
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({ query: "rech", scope: "skill" });
+  expect(calls[0]?.signal).toBeInstanceOf(AbortSignal);
+  expect(h.root.querySelector('[role="group"] [role="presentation"]')?.textContent).toBe("Skills");
+  expect(h.rows().map((row) => row.textContent)).toEqual(["RechnungenSkill"]);
+});
+
+test("Tab writes a scope through undoable editing; Enter runs an action, and scope-only Enter narrows", async () => {
+  let actions = 0;
+  const row: ChatCommand = {
+    name: "skill",
+    label: "Choose skills",
+    description: "Narrow",
+    scope: "skill",
+    action: () => {
+      actions++;
+    },
+  };
+  const h = await slash({ commandScopes: skillScopes, commands: [row] });
+  h.key("Tab");
+  await flush();
+  expect(h.value()).toBe("/skill ");
+  expect(h.rows()).toHaveLength(0);
+  expect(h.root.querySelector('[role="listbox"]')).not.toBeNull();
+  expect(actions).toBe(0);
+  h.key("z", { ctrlKey: true });
+  expect(h.value()).toBe("/");
+  await flush();
+  h.key("Enter");
+  await flush();
+  expect(actions).toBe(1);
+  expect(h.value()).toBe("");
+  const only = await slash({ commands: [{ ...row, action: undefined }], commandScopes: skillScopes });
+  only.key("Enter");
+  await flush();
+  expect(only.value()).toBe("/skill ");
+});
+
+test("arithmetic opens nothing; a settled unmatched word followed by a space closes only this slash", async () => {
+  const h = await slash({ value: "50 / 2", commands: [compactCommand] });
+  expect(h.root.querySelector('[role="listbox"]')).toBeNull();
+  h.type("/xylo");
+  expect(h.root.querySelector('[role="listbox"]')?.textContent).toBe("Nothing found for “xylo”");
+  h.type("/xylo ");
+  expect(h.root.querySelector('[role="listbox"]')).toBeNull();
+  expect(h.value()).toBe("/xylo ");
+  h.type("/xylo more");
+  expect(h.root.querySelector('[role="listbox"]')).toBeNull();
+  h.type("/xylo more /");
+  expect(h.rows()).toHaveLength(1);
+});
+
+test("space before search settles closes on empty results, but a resolved scope stays open", async () => {
+  const search = deferredSearch();
+  const h = await slash({ ...search, value: "/xylo ", commandScopes: skillScopes });
+  await Bun.sleep(140);
+  expect(h.root.querySelector('[role="listbox"]')).not.toBeNull();
+  search.requests[0]!.resolve([]);
+  await flush();
+  expect(h.value()).toBe("/xylo ");
+  expect(h.root.querySelector('[role="listbox"]')).toBeNull();
+  h.type("plain");
+  h.type("/skill ");
+  await Bun.sleep(140);
+  search.requests[1]!.resolve([]);
+  await flush();
+  expect(h.root.querySelector('[role="listbox"]')).not.toBeNull();
+  expect(h.root.querySelector('[role="listbox"]')?.textContent).toContain("No results");
+});
+
+test("not applicable rows are absent from overview and searched rows announce reasons instead of narrowing", async () => {
+  const h = await slash({
+    commandScopes: skillScopes,
+    commands: [{ name: "skill", description: "Choose skills", scope: "skill", hiddenUntilSearch: true, reason: "Needs a chat" }],
+  });
+  expect(h.rows()).toHaveLength(0);
+  h.type("/skill");
+  expect(h.rows()).toHaveLength(1);
+  expect(h.rows()[0]?.querySelector("small")?.textContent).toBe("Needs a chat");
+  h.key("Tab");
+  h.key("Enter");
+  expect(h.value()).toBe("/skill");
+  expect(h.status().textContent).toBe("Needs a chat");
+});
+
+test("scope changes immediately drop retained rows, abort the old request and never restore another scope's rows", async () => {
+  const search = deferredSearch();
+  const h = await slash({ ...search, value: "/skill a", commandScopes: [...skillScopes, { id: "file", title: "Files", words: ["file"] }] });
+  await Bun.sleep(140);
+  search.requests[0]!.resolve([{ name: "Alpha", description: "Skill" }]);
+  await flush();
+  expect(h.rows()).toHaveLength(1);
+  h.type("/file a");
+  expect(h.rows()).toHaveLength(0);
+  expect(search.requests[0]?.signal.aborted).toBe(true);
+  expect(h.root.querySelector(".k2b-chat-composer__command-placeholder")).not.toBeNull();
+  h.type("/skill a");
+  expect(h.rows()).toHaveLength(0);
+});
+
+test("suggestion counts debounce in a separate polite region, wait for loading, and count deduplicated rows", async () => {
+  const search = deferredSearch();
+  const h = await slash({ ...search, commands: [{ id: "one", name: "Alpha", description: "Local" }] });
+  const live = () => h.root.querySelector('[role="status"][aria-live="polite"]')!;
+  await Bun.sleep(370);
+  expect(live().textContent).toBe("");
+  search.requests[0]!.resolve([
+    { id: "one", name: "Duplicate", description: "Ignored" },
+    { name: "Beta", description: "Remote" },
+  ]);
+  await flush();
+  expect(live().textContent).toBe("");
+  await Bun.sleep(370);
+  expect(live().textContent).toBe("2 suggestions");
+  expect(h.status().textContent).toBe("");
+  h.type("/alph");
+  await Bun.sleep(140);
+  search.requests[1]!.resolve([]);
+  await flush();
+  await Bun.sleep(370);
+  expect(live().textContent).toBe("1 suggestion");
+  h.type("/xylo");
+  await Bun.sleep(140);
+  search.requests[2]!.resolve([]);
+  await flush();
+  await Bun.sleep(370);
+  expect(live().textContent).toBe("No suggestions");
+  h.key("Escape");
+  expect(h.input.getAttribute("aria-activedescendant")).toBeNull();
+  expect(live().textContent).toBe("");
+});
+
+test("a new query announces an unchanged count again; the same query does not repeat it", async () => {
+  const h = await slash({ value: "/rech", commands: [{ name: "Rechnung", description: "Invoice" }] });
+  const live = h.root.querySelector('[aria-live="polite"]')!;
+  await Bun.sleep(370);
+  expect(live.textContent).toBe("1 suggestion");
+  let changes = 0;
+  const observer = new MutationObserver(() => {
+    changes++;
+  });
+  observer.observe(live, { childList: true, subtree: true, characterData: true });
+  slashCleanups.push(() => observer.disconnect());
+  h.type("/rechn");
+  await Bun.sleep(370);
+  expect(live.textContent).toBe("1 suggestion");
+  expect(changes).toBeGreaterThan(0);
+  changes = 0;
+  h.type("/rechn");
+  await Bun.sleep(370);
+  expect(changes).toBe(0);
+});
+
+test.each(["Enter", "Tab"])(
+  "%s guards a stale scoped server row even when the consumer also declared that object statically",
+  async (key) => {
+    let chosen = 0;
+    const row: ChatCommand = {
+      name: "Alpha",
+      description: "Skill",
+      action: () => {
+        chosen++;
+      },
+    };
+    const search = deferredSearch();
+    const h = await slash({ ...search, commandScopes: skillScopes, commands: [row], value: "/skill a" });
+    await Bun.sleep(140);
+    search.requests[0]!.resolve([row]);
+    await flush();
+    h.type("/skill al");
+    expect(h.rows()).toHaveLength(1);
+    expect(h.key(key).defaultPrevented).toBe(true);
+    await flush();
+    expect(chosen).toBe(0);
+    expect(h.value()).toBe("/skill al");
+  },
+);

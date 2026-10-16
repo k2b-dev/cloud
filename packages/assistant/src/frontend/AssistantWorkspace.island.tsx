@@ -111,7 +111,7 @@ import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
 import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
-import { assistantBuiltInCommands, assistantComposerCommands } from "./composer-commands";
+import { assistantBuiltInCommands, assistantCommandScopes, assistantCommandSections, assistantComposerCommands } from "./composer-commands";
 import {
   confirmComposerSave,
   editComposerSession,
@@ -1456,9 +1456,17 @@ export default function AssistantWorkspace(props: Props) {
           draftKey={sessionKey()}
           mentions={mentionsFor(sessionKey())}
           onMentionsChange={(mentions) => setMentionsFor(sessionKey(), mentions)}
+          commandSections={assistantCommandSections(commandCopy())}
+          commandScopes={assistantCommandScopes(commandCopy(), locale())}
           commands={assistantBuiltInCommands({
             copy: commandCopy(),
             projectComposer: projectComposer(),
+            // A chat in a project counts as assigned even before the project list has its name.
+            projectName:
+              composerProps.projectName ??
+              (chat.conversation()?.projectId
+                ? (projects().find((project) => project.id === chat.conversation()?.projectId)?.name ?? "")
+                : undefined),
             running: chat.running(),
             hasMessages: chat.messages().length > 0,
             hasAssistantMessage: chat.messages().some((message) => message.message.role === "assistant"),
@@ -1498,9 +1506,10 @@ export default function AssistantWorkspace(props: Props) {
               if (title && hasRemainingDraft) return { done: commandCopy().newChatDraftKept({ title }) };
             },
           })}
-          searchCommands={(query, signal) =>
+          searchCommands={(query, signal, search) =>
             assistantComposerCommands({
               query,
+              scope: search.scope,
               signal,
               locale: locale(),
               conversationId: projectComposer() ? undefined : (chat.activeConversationId() ?? undefined),
