@@ -35,8 +35,16 @@ convention still needs a check or a test.
 | Server-side request forgery | A person-chosen address reaches the server’s private network or changes between validation and connection. | Check: `network-guard` lets only the platform guard resolve host names. It also rejects global `fetch()` in Pulse server code. Test: platform allowlist and resolution tests, plus Tools and Pulse refusal, redirect, and pinned-transport tests. |
 | Escaped text input | An agent writes `\n` as two characters through a shell argument or double-escaped JSON, and the text is stored and shown with a literal backslash. | Test: Spaces rejects such inline CLI text and capability text inputs ([#1178](https://github.com/k2b-dev/cloud/issues/1178)). No shared guard covers inline text in other apps, such as `cld notebooks write --content`, yet ([#1193](https://github.com/k2b-dev/cloud/issues/1193)). |
 | Breakpoint gap | Two neighbouring media queries end at `max-width: 1023px` and start at `min-width: 1024px`. A fractional width between them, such as a zoomed window, matches neither, and the page falls back to its base rules. | Test: `packages/cloud/src/styles/shell-modes.test.ts` pins the shell queries to `min-width` and its negation `not all and (min-width: …)` ([#1255](https://github.com/k2b-dev/cloud/issues/1255)). Range syntax such as `width < 64rem` is no guard: the build lowers it to `max-width: calc(64rem - .001px)`. No check covers other style sheets yet. |
+| Theme in print | The screen theme reaches paper: dark-theme text and surfaces print on white paper, or print rules show what the screen hides on purpose. | Test: the Mail printing browser test in `MailConversationList.browser.test.ts` prints a dark and a light conversation through Print conversation in Chromium and WebKit. It checks contrast against the printed surface, the sender rows, and the single quote label ([#1175](https://github.com/k2b-dev/cloud/issues/1175)). No shared guard yet: native printing still prints the dark theme on every other page ([#1274](https://github.com/k2b-dev/cloud/issues/1274)). |
 
 ## Lessons
+
+### Mail printed a dark conversation as light text on white paper
+
+- **What happened:** In dark mode, Print conversation printed the subject and plain-text bodies in near-white text on white paper. Both labels of the quoted-text toggle printed on top of each other, and the sender rows were missing in both themes ([#1175](https://github.com/k2b-dev/cloud/issues/1175)).
+- **Root cause:** The print rules made only the reader root white and black, so its content kept the dark theme's text colors. They forced `visibility: visible` on every element in the reader, which also showed the hidden toggle label. They also hid every button, and the message header with the sender and date is a button. Cloud has no light theme scope that also covers the Tailwind `dark` variant and the `@k2b/ui` component rules.
+- **Error class:** Theme in print.
+- **Guard:** Mail hides only what lies outside the reader, keeps the message header on paper, and prints a dark reader as black ink without dark surfaces. The Mail printing browser test runs the real Print action in Chromium and WebKit. [#1274](https://github.com/k2b-dev/cloud/issues/1274) proposes a light print theme for every page.
 
 ### Signed-in shell fell between its two modes
 
