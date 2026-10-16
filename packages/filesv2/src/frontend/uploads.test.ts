@@ -142,7 +142,7 @@ test("a transient transfer keeps its key and never aborts", async () => {
   );
   await expect(uploadFile("base", "file", new Blob(["abc"]), options())).rejects.toHaveProperty("kind", "busy");
   expect(aborts).toBe(0);
-  expect(storage.size).toBe(1);
+  expect([...storage.keys()].filter((key) => key.startsWith("filesv2:upload:"))).toHaveLength(1);
   await expect(uploadFile("base", "file", new Blob(["abc"]), options())).rejects.toHaveProperty("kind", "busy");
   expect(startKeys[1]).toBe(startKeys[0]!);
 });
@@ -193,7 +193,7 @@ test("a rejected abort retains the key after a final transfer error", async () =
   });
   await expect(uploadFile("base", "file", new Blob(["abc"]), options())).rejects.toHaveProperty("kind", "final");
   expect(aborts).toBe(1);
-  expect(storage.size).toBe(1);
+  expect([...storage.keys()].filter((key) => key.startsWith("filesv2:upload:"))).toHaveLength(1);
 });
 
 test.each(["upload_closed", "receipt_unknown", "upload_changed"])("lease %s drops its dead key without an abort", async (code) => {

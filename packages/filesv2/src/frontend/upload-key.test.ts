@@ -39,34 +39,48 @@ test("changed files and scopes receive distinct durable logical identities", asy
   expect(new Set([first.idempotencyKey, changed.idempotencyKey, elsewhere.idempotencyKey]).size).toBe(3);
 });
 
+const keyOf = () => [...storage.keys()].find((key) => key.startsWith("filesv2:upload:"))!;
+const atOf = (key: string) => Number(storage.get(key.replace("filesv2:upload:", "filesv2:upload-at:")));
+
 test("retention keeps the exact boundary, prunes older entries and preserves other apps", async () => {
   const id = crypto.randomUUID();
-  storage.set("filesv2:upload:boundary", JSON.stringify({ id, at: now - UPLOAD_KEY_RETENTION_MS }));
-  storage.set("filesv2:upload:old", JSON.stringify({ id, at: now - UPLOAD_KEY_RETENTION_MS - 1 }));
+  storage.set("filesv2:upload:boundary", id);
+  storage.set("filesv2:upload-at:boundary", String(now - UPLOAD_KEY_RETENTION_MS));
+  storage.set("filesv2:upload:old", id);
+  storage.set("filesv2:upload-at:old", String(now - UPLOAD_KEY_RETENTION_MS - 1));
   storage.set("other:upload:old", "untouched");
   await browserUploadKey(["new"], new Blob([]));
   expect(storage.has("filesv2:upload:boundary")).toBe(true);
   expect(storage.has("filesv2:upload:old")).toBe(false);
+  expect(storage.has("filesv2:upload-at:old")).toBe(false);
   expect(storage.get("other:upload:old")).toBe("untouched");
 });
 
-test("legacy UUIDs are adopted as created now and expire a full retention after the last start", async () => {
+test("stored keys stay bare UUIDs, so a tab running the previous client keeps resuming", async () => {
+  const first = await browserUploadKey(["private"], new Blob(["a"]));
+  await browserUploadKey(["other"], new Blob(["b"]));
+  // The previous client read the value verbatim as its idempotency key.
+  expect(storage.get(keyOf())).toBe(first.idempotencyKey);
+  for (const [key, value] of storage) if (key.startsWith("filesv2:upload:")) expect(value).toMatch(/^[0-9a-f-]{36}$/);
+});
+
+test("keys without a start time are adopted as started now and expire a full retention after the last start", async () => {
   const file = new Blob(["a"]);
   const first = await browserUploadKey(["private"], file);
-  const key = [...storage.keys()][0]!;
-  storage.set(key, first.idempotencyKey);
+  const key = keyOf();
+  storage.delete(key.replace("filesv2:upload:", "filesv2:upload-at:"));
   expect((await browserUploadKey(["private"], file)).idempotencyKey).toBe(first.idempotencyKey);
-  expect(JSON.parse(storage.get(key)!)).toEqual({ id: first.idempotencyKey, at: now });
+  expect(atOf(key)).toBe(now);
   setSystemTime(now + UPLOAD_KEY_RETENTION_MS + 1);
   expect((await browserUploadKey(["private"], file)).idempotencyKey).not.toBe(first.idempotencyKey);
 });
 
-test("a full storage still adopts legacy keys and reuses existing ones without throwing", async () => {
+test("a full storage still reuses existing keys without throwing", async () => {
   const legacy = crypto.randomUUID();
   storage.set("filesv2:upload:legacy", legacy);
   const first = await browserUploadKey(["private"], new Blob(["a"]));
   const setItem = localStorage.setItem;
-  storage.set("filesv2:upload:legacy", legacy);
+  storage.delete("filesv2:upload-at:legacy");
   localStorage.setItem = () => {
     throw new DOMException("full", "QuotaExceededError");
   };
@@ -80,26 +94,29 @@ test("a full storage still adopts legacy keys and reuses existing ones without t
   }
 });
 
-test("corrupt entries are removed without skipping keys during pruning", async () => {
-  for (const [index, value] of [
-    "not-json",
-    "{}",
-    "null",
-    JSON.stringify({ id: "invalid", at: now }),
-    JSON.stringify({ id: crypto.randomUUID(), at: "yesterday" }),
-  ].entries())
+test("corrupt and orphaned entries are removed without skipping keys during pruning", async () => {
+  for (const [index, value] of ["not-a-uuid", "", JSON.stringify({ id: crypto.randomUUID(), at: now })].entries())
     storage.set(`filesv2:upload:bad-${index}`, value);
+  storage.set("filesv2:upload-at:orphan", String(now));
   await browserUploadKey(["new"], new Blob([]));
-  expect(storage.size).toBe(1);
-  expect([...storage.keys()].some((key) => key.includes("bad-"))).toBe(false);
+  expect(storage.size).toBe(2);
+  expect([...storage.keys()].some((key) => key.includes("bad-") || key.includes("orphan"))).toBe(false);
 });
 
-test("each start refreshes the timestamp, so a session opened by a late retry is never pruned early", async () => {
+test("finish removes the key and its start time", async () => {
+  const start = await browserUploadKey(["private"], new Blob(["a"]));
+  expect(storage.size).toBe(2);
+  start.finish();
+  expect(storage.size).toBe(0);
+});
+
+test("each start refreshes the start time, so a session opened by a late retry is never pruned early", async () => {
+  const day = 24 * 60 * 60 * 1000;
   const first = await browserUploadKey(["private"], new Blob(["a"]));
-  setSystemTime(now + 3 * 24 * 60 * 60 * 1000);
+  setSystemTime(now + 3 * day);
   const retry = await browserUploadKey(["private"], new Blob(["a"]));
   expect(retry.idempotencyKey).toBe(first.idempotencyKey);
-  expect(JSON.parse([...storage.values()][0]!).at).toBe(now + 3 * 24 * 60 * 60 * 1000);
-  setSystemTime(now + 3 * 24 * 60 * 60 * 1000 + UPLOAD_KEY_RETENTION_MS);
+  expect(atOf(keyOf())).toBe(now + 3 * day);
+  setSystemTime(now + 3 * day + UPLOAD_KEY_RETENTION_MS);
   expect((await browserUploadKey(["private"], new Blob(["a"]))).idempotencyKey).toBe(first.idempotencyKey);
 });

@@ -72,6 +72,8 @@ const share: PublicShare = {
   uploadedNames: [],
 };
 let cleanup = () => {};
+const resumeKeys = () =>
+  Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)!).filter((key) => key.startsWith("filesv2:upload:"));
 const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
 const nativeFetch = globalThis.fetch;
 beforeEach(() => setSystemTime(new Date("2026-10-15T00:00:00Z")));
@@ -132,7 +134,7 @@ test("public inbox keeps its durable start key after an ambiguous commit and nev
   expect(commits).toBe(1);
   expect(aborts).toBe(0);
   const key = startKey;
-  expect(localStorage.length).toBe(1);
+  expect(resumeKeys()).toHaveLength(1);
   commitFails = false;
   input.dispatchEvent(new Event("change", { bubbles: true }));
   await flush();
@@ -185,7 +187,7 @@ test("public inbox keeps an open session after transient commit failure and drop
   await flush();
   expect(commits).toBe(1);
   expect(aborts).toBe(0);
-  expect(localStorage.length).toBe(1);
+  expect(resumeKeys()).toHaveLength(1);
   const original = startKey;
   startCode = "upload_changed";
   dom.document.querySelector<HTMLButtonElement>('button[aria-label^="Try again:"]')!.click();

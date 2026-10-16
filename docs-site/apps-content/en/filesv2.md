@@ -148,7 +148,8 @@ also requests an abort before commit. Once commit has been sent, a lost or
 temporary answer keeps the ID and never triggers an abort, including cancellation.
 Only a definite name or write conflict at commit can abort that unpublished
 session. Filegate retains terminal receipts for seven days. Browser upload IDs
-expire locally after 24 hours plus seven days and are pruned at the next upload.
+expire locally 24 hours plus seven days after their last attempt and are pruned
+at the next upload.
 
 Every transfer request has a deadline sized for the slowest supported uplink of
 about 0.5 Mbit/s (64 KiB/s). A request the file server never answers fails the
