@@ -228,6 +228,23 @@ for (const [width, height, touch, inset] of [
     }
   });
 }
+test("1194x834: an island-wrapped Main hides its navigation pane with the sidebar", async () => {
+  const context = await browser.newContext({ viewport: { width: 1194, height: 834 }, timezoneId: "UTC" });
+  try {
+    await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: origin }]);
+    const page = await context.newPage();
+    await page.goto(`${origin}/app/focus/panes`);
+    await settle(page);
+    const pane = page.locator('.k2b-app-workspace__main-pane[data-surface="navigation"]');
+    expect(await pane.isVisible()).toBe(true);
+    await page.locator(hide).click();
+    await settle(page);
+    expect(await pane.isVisible()).toBe(false);
+    expect(await page.locator(".k2b-app-workspace__sidebar").isVisible()).toBe(false);
+  } finally {
+    await context.close();
+  }
+});
 for (const [width, height] of [
   [694, 834],
   [390, 844],

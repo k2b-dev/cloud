@@ -1,5 +1,6 @@
 import { AppWorkspace } from "@k2b/ui";
 import { Hono } from "hono";
+import { Dynamic } from "solid-js/web";
 import { defineApp } from "../_internal/define-app";
 import { person } from "../_internal/define-app.test-fixture";
 import type { User } from "../contracts/shared";
@@ -48,6 +49,33 @@ export const server = new Hono<Environment>()
             <AppWorkspace.Main>
               <textarea aria-label="Editor" />
             </AppWorkspace.Main>
+          </AppWorkspace.Content>
+        </AppWorkspace>
+      </Layout>
+    )),
+  )
+  // Grids wraps Main in an island inside Content and gives it a navigation pane.
+  .get(
+    "/app/focus/panes",
+    ...probe.ssr<Environment>((c) => () => (
+      <Layout c={c} fullWidth fullPage title={[{ title: "Focus probe", href: "/app/focus" }, { title: "Pages" }]}>
+        <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1">
+          <AppWorkspace.Sidebar id="focus-navigation" label="Navigation">
+            <AppWorkspace.SidebarDesktop>
+              <AppWorkspace.SidebarItem href="/app/focus/panes" active>
+                Pages
+              </AppWorkspace.SidebarItem>
+            </AppWorkspace.SidebarDesktop>
+          </AppWorkspace.Sidebar>
+          <AppWorkspace.Content>
+            <Dynamic component="solid-island">
+              <AppWorkspace.Main mobilePane="main" scroll={false}>
+                <AppWorkspace.MainPane id="focus-pages" label="Pages" surface="navigation" defaultSize={280}>
+                  Page list
+                </AppWorkspace.MainPane>
+                <div>Page</div>
+              </AppWorkspace.Main>
+            </Dynamic>
           </AppWorkspace.Content>
         </AppWorkspace>
       </Layout>

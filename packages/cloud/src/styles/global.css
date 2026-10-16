@@ -486,7 +486,8 @@ solid-island {
   }
   /* The navigation leaves like a hidden sidebar: its track, its resize
      handle, and navigation panes go, and the work area rounds its start
-     corners with the card. */
+     corners with the card. An island may wrap the sidebar or Main, as in
+     Grids. */
   .cloud-app-canvas[data-shell-focus] .k2b-app-workspace:not(.k2b-app-workspace *) {
     --k2b-workspace-start-radius: var(--k2b-workspace-inner-radius);
   }
@@ -500,6 +501,16 @@ solid-island {
   .cloud-app-canvas[data-shell-focus]
     .k2b-app-workspace:not(.k2b-app-workspace *)
     > .k2b-app-workspace__content
+    > .k2b-app-workspace__main
+    > :is(
+      .k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary),
+      .k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary) + .k2b-app-workspace__resize,
+      .k2b-app-workspace__resize:has(+ .k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary))
+    ),
+  .cloud-app-canvas[data-shell-focus]
+    .k2b-app-workspace:not(.k2b-app-workspace *)
+    > .k2b-app-workspace__content
+    > :is(solid-island, solid-client)
     > .k2b-app-workspace__main
     > :is(
       .k2b-app-workspace__main-pane[data-surface="navigation"]:not(.is-primary),
