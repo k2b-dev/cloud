@@ -228,6 +228,30 @@ test.each([
   expect(requests).toBe(attempts);
 });
 
+test.each([
+  { code: 429, header: "60", attempts: 1, retryAfter: 60_000 },
+  { code: 503, header: "0", attempts: 3, retryAfter: 0 },
+])("HTTP $code with an unreadable body is busy after $attempts attempts", async ({ code, header, attempts, retryAfter }) => {
+  let requests = 0;
+  mockFetch(async () => {
+    requests++;
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"error":'));
+          controller.error(new TypeError("reset"));
+        },
+      }),
+      { status: code, headers: { "Retry-After": header } },
+    );
+  });
+  const error = await transferError(transferUpload(new Blob([]), session, options()));
+  expect(error.kind).toBe("busy");
+  expect(error.retryAfter).toBe(retryAfter);
+  expect(error.cause).toBeInstanceOf(FilegateError);
+  expect(requests).toBe(attempts);
+});
+
 test.each([204, 205, 304])("an empty HTTP %s response is buffered without retrying a constructor error", async (code) => {
   let requests = 0;
   mockFetch(async () => {

@@ -76,7 +76,10 @@ export async function transferUpload(
           const milliseconds = Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : Date.parse(requested) - Date.now();
           if (Number.isFinite(milliseconds)) retryAfter = Math.max(0, milliseconds);
         }
-        const body = await response.arrayBuffer();
+        const body = await response.arrayBuffer().catch((error: unknown) => {
+          if (response.ok) throw error;
+          return null;
+        });
         signal.throwIfAborted();
         return new Response([204, 205, 304].includes(response.status) ? null : body, {
           status: response.status,

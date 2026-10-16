@@ -730,6 +730,7 @@ test.each(
   ].flatMap((target) => [
     { ...target, stall: "response" },
     { ...target, stall: "body" },
+    { ...target, stall: "503 body" },
   ]),
 )("$name has a localized Cloud deadline when the $stall stalls", async ({ route, command, parents, stall }) => {
   const local = join(await directory(), "report.txt");
@@ -744,7 +745,7 @@ test.each(
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       if (new URL(String(input)).pathname.includes(route)) {
-        if (stall === "body")
+        if (stall === "body" || stall === "503 body")
           return new Response(
             new ReadableStream({
               start(controller) {
@@ -752,7 +753,7 @@ test.each(
                 init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason), { once: true });
               },
             }),
-            { headers: { "content-type": "application/json" } },
+            { status: stall === "503 body" ? 503 : 200, headers: { "content-type": "application/json" } },
           );
         return new Promise<Response>((_, reject) => {
           init?.signal?.throwIfAborted();

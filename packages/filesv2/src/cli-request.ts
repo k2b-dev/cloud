@@ -23,7 +23,10 @@ export async function readWithin<T>(
   signal: AbortSignal,
   response: Promise<CloudResponse>,
 ): Promise<T> {
-  const result = await ctx.readJson<T>(await response);
+  const result = await ctx.readJson<T>(await response).catch((error: unknown) => {
+    signal.throwIfAborted();
+    throw error;
+  });
   signal.throwIfAborted();
   return result;
 }
