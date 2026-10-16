@@ -126,9 +126,10 @@ the last level keeps 320 px.
 
 Persist the full state from `onLayoutChange`. Restore it through `layoutState`
 or `AppWorkspace.LayoutStateProvider`, and apply `appWorkspaceLayoutStyle`
-to an ancestor during SSR. This restores widths before hydration. Pane widths
-are stored by stable pane id; the persistence envelope is 160–960 px and each
-pane still applies its declared limits. Cloud persists this state automatically
+to an ancestor during SSR. The widths are then right in the first frame,
+before any browser code runs. Pane widths are stored by stable pane id; the
+persistence envelope is 160–960 px and each pane still applies its declared
+limits. Cloud persists this state automatically
 in its per-app workspace cookie.
 
 ```tsx
