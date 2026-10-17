@@ -185,8 +185,12 @@ test(`${browserName}: the graph is one tab stop with arrows, Home and Enter insi
     expect(await page.evaluate(() => document.activeElement?.closest(".notebook-graph__svg") ?? null)).toBeNull();
     await page.keyboard.press("Shift+Tab");
     expect(await activeNode()).toBe(WAREHOUSE);
+    // A pointer resting on another note does not take the highlight from the focused one.
+    const rest = await nodeCenter(page, HANDBOOK_IDS.start!);
+    await page.mouse.move(rest.x, rest.y);
     await page.keyboard.press("ArrowRight");
     const moved = await activeNode();
+    expect(await page.locator(`[data-label="${moved}"]`).getAttribute("data-kind")).toBe("hover");
     expect(moved).not.toBeNull();
     expect(moved).not.toBe(WAREHOUSE);
     expect(await page.locator('[data-node][tabindex="0"]').getAttribute("data-node")).toBe(moved);

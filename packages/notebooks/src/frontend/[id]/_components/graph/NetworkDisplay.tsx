@@ -120,7 +120,8 @@ export default function NetworkDisplay(props: Props) {
     return nodes;
   });
 
-  const highlight = () => hovered() ?? focused() ?? selected();
+  // Keyboard focus wins over a pointer that rests on another note, so the focused note is the one labelled.
+  const highlight = () => (keyboard() ? focused() : null) ?? hovered() ?? focused() ?? selected();
   const near = createMemo(() => {
     const id = highlight();
     const note = id ? props.model.byId.get(id) : undefined;
@@ -460,6 +461,7 @@ export default function NetworkDisplay(props: Props) {
         const visible = (event.target as Element).matches(":focus-visible");
         setFocused(visible ? id : null);
         setKeyboard(visible);
+        if (visible) setHovered(null);
       }}
       onFocusOut={(event) => {
         if (container.contains(event.relatedTarget as Node | null)) return;
