@@ -2479,6 +2479,10 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
+  /* Phones hide Changed like the prototype, unless the list is sorted by it: then the order keeps its cause. */
+  .notebook-graph__list:not([data-sorted]) .notebook-graph__list-changed {
+    display: none;
+  }
   /* Phones: a narrow lane, taller rows for touch, and only the title and the link counts. */
   .notebook-graph__timeline {
     --notebook-graph-lane: 4rem;

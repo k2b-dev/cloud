@@ -1505,6 +1505,37 @@ test(`${browserName}: Timeline returns to the scrolled rows after opening a note
   }
 }, 30_000);
 
+test(`${browserName}: Reset filters into a scrolled Timeline keeps the focused row in view`, async () => {
+  const page = await open(graphPath("big001", "&display=timeline"));
+  const model = buildGraphModel(bigGraph(), "en");
+  try {
+    await timelineReady(page, model.edges.length);
+    await page.locator(".notebook-graph__timeline").evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await page.waitForFunction(() => (history.state?.notebookGraphTimelineScroll ?? 0) > 1000);
+    // The same history entry, now with every area hidden: the reload keeps the saved scroll and shows the empty state.
+    await page.evaluate(
+      (hide) => history.replaceState(history.state, "", `${location.pathname}${location.search}&hide=${hide}`),
+      [...new Set(model.areas.map((area) => area.key))].join(","),
+    );
+    await page.reload();
+    await page.waitForFunction(() => window.notebookGraphFixture?.mounted);
+    await page.getByRole("button", { name: "Reset filters", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await timelineReady(page, model.edges.length);
+    await page.waitForFunction(() => document.activeElement?.hasAttribute("data-row"));
+    const inView = await page.evaluate(() => {
+      const row = document.activeElement!.getBoundingClientRect();
+      const box = document.querySelector(".notebook-graph__timeline")!.getBoundingClientRect();
+      return row.top >= box.top && row.bottom <= box.bottom;
+    });
+    expect(inView).toBe(true);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
+
 test(`${browserName}: a list sorted by Changed shows the Changed column on a phone, without horizontal overflow`, async () => {
   const page = await open(graphPath("hand01", "&list=1&sort=changed"), { width: 390, height: 844 });
   try {
@@ -1540,7 +1571,15 @@ test(`${browserName}: Changed sorts the list through the URL and survives reload
     expect(search(page).get("sort")).toBe("changed");
     expect(await changed.getAttribute("aria-sort")).toBe("descending");
     expect(await ids()).toEqual(changedOrder("desc").map((note) => note.id));
-    await changed.getByRole("button").click();
+    // The keyboard keeps its place on the sort button, so Enter turns the order again.
+    await changed.getByRole("button").focus();
+    await page.keyboard.press("Enter");
+    expect(search(page).get("sort")).toBe("changed-asc");
+    expect(await changed.getAttribute("aria-sort")).toBe("ascending");
+    expect(await page.evaluate(() => document.activeElement?.closest("th")?.textContent?.trim())).toBe("Changed");
+    await page.keyboard.press("Enter");
+    expect(search(page).get("sort")).toBe("changed");
+    await page.keyboard.press("Enter");
     expect(search(page).get("sort")).toBe("changed-asc");
     expect(await changed.getAttribute("aria-sort")).toBe("ascending");
     const oldest = changedOrder("asc").map((note) => note.id);

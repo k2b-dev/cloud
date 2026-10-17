@@ -57,11 +57,11 @@ export default function GraphList(props: Props) {
     { id: "area", header: t().graphColumnArea, class: "max-md:hidden" },
     { id: "out", header: t().graphLinksTo },
     { id: "in", header: t().graphLinkedFrom },
-    // Phones hide Changed like the prototype, unless the address sorts by it: then the order stays explained.
-    { id: "changed", header: t().graphColumnChanged, sortable: true, class: props.sort ? undefined : "max-md:hidden", nowrap: true },
+    // The sort must not rebuild the columns: DataTable keys them by identity, and the focused sort button would go.
+    { id: "changed", header: t().graphColumnChanged, sortable: true, class: "notebook-graph__list-changed", nowrap: true },
   ];
   return (
-    <div class="notebook-graph__list">
+    <div class="notebook-graph__list" data-sorted={props.sort ? "" : undefined}>
       <p class="notebook-graph__list-caption">{props.caption}</p>
       <DataTable
         surface="plain"

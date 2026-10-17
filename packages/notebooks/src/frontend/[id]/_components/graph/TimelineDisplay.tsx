@@ -92,11 +92,12 @@ export default function TimelineDisplay(props: Props) {
     mounted = true;
     props.controls(null);
     measure();
-    if (props.claimFocus() && tabTarget()) focusRow(tabTarget()!);
     const saved = historyState()[SCROLL_KEY];
     const current = props.currentId ? row(props.currentId) : null;
     if (typeof saved === "number") scroller.scrollTop = saved;
     else if (current) scroller.scrollTop = Math.max(0, current.offsetTop + current.offsetHeight / 2 - scroller.clientHeight / 3);
+    // After the scroll position, so a row that takes the focus is scrolled into view.
+    if (props.claimFocus() && tabTarget()) focusRow(tabTarget()!);
     scroller.addEventListener("scroll", onScroll, { passive: true });
     const observer = new ResizeObserver(measure);
     observer.observe(wrap);
