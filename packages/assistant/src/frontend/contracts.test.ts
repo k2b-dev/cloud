@@ -95,7 +95,8 @@ describe("Assistant frontend contracts", () => {
 
     expect(workspace).not.toContain("type ChatCommand");
     expect(workspace).not.toContain("const slashCommands");
-    expect(workspace).toMatch(/searchCommands=\{\(query, signal, search\) =>\s*assistantComposerCommands\(/);
+    expect(workspace).toMatch(/searchCommands=\{\(query, signal, search\) => \{[\s\S]*?return assistantComposerCommands\(/);
+    expect(workspace).toContain("commandFallback={insert().fallback}");
     expect(workspace).not.toContain("type / ...");
     expect(workspace).toContain('id: "attach-resource"');
     expect(workspace).toContain("onPaste={(event) => pasteComposerContent");
@@ -105,7 +106,9 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).toContain("onShowText:");
     expect(page).toContain('coreSettings.get<string>("app.url")');
     expect(page).toContain("cloudUrl={publicCloudOrigin(appUrl)}");
-    expect(workspace).toContain("composerAttachmentsFor(sessionKey).length >= AI_TURN_ATTACHMENT_MAX_ITEMS");
+    // The server counts references in the text with attachments, so every limit check does too.
+    expect(workspace).toContain("composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS");
+    expect(workspace).not.toMatch(/composerAttachmentsFor\([^)]*\)\.length >= AI_TURN_ATTACHMENT_MAX_ITEMS/);
     expect(workspace).toContain('id: "search-chat"');
     expect(workspace).toContain('id: "compact-context"');
     expect(workspace).toContain("openGlobalSearch(assistantSearchOptions(locale(), conversation))");
@@ -134,7 +137,7 @@ describe("Assistant frontend contracts", () => {
     const workspace = await read("./AssistantWorkspace.island.tsx");
 
     expect(workspace).toContain("choose: () => chooseComposerFiles(sessionKey())");
-    expect(workspace).toContain("aiComposerChooseMaxBytes(composerAttachmentsFor(sessionKey).length)");
+    expect(workspace).toContain("aiComposerChooseMaxBytes(composerPartCount(sessionKey))");
     expect(workspace).toContain("chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxBytes })");
   });
 
