@@ -48,6 +48,8 @@ The menu groups account management, settings, notifications, and installation.
 Sign-ins and Actions open as a sheet on phones and as a centered dialog from
 tablet width (48rem), through `bottomSheetAdaptiveOptions`. A sign-in shows its
 code in groups of three and requires an explicit choice after comparing it.
+Terminal sign-ins also show the client name in the title, the Cloud host, the
+login lifetime and every scope in plain words (unknown codes verbatim).
 Actions appear per Cloud and open a review only on a tap or a tapped
 notification. The row's **Review** button loads a fresh SDK-checked view first
 and opens the review only with it, so it never grows after its first frame; a
