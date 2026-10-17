@@ -9,8 +9,8 @@ import HomePage from "./home/HomePage";
 import { siteTheme } from "./site-config";
 import { html, config as ssrConfig } from "./ssr";
 import { linkedChartSnapshot, parseGroupRequest } from "./ui/chart-group-data";
-import WorkspaceLevelsDemo from "./ui/WorkspaceLevelsDemo.island";
 import WorkspaceHostDemo from "./ui/WorkspaceHostDemo.island";
+import WorkspaceLevelsDemo from "./ui/WorkspaceLevelsDemo.island";
 
 const fibelApp = await createFibelApp(fibelConfig);
 const app = new Hono();

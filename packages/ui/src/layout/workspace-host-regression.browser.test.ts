@@ -49,8 +49,10 @@ for (const scenario of ["open", "closed", "levels", "touch"]) {
         const shape = await page.evaluate(workspaceGeometry);
         // The added, hidden toggle is not part of origin/main's geometry.
         delete shape.toggle;
-        if (recording) (recorded[scenario] ??= {})[width] = shape;
-        else {
+        if (recording) {
+          recorded[scenario] ??= {};
+          recorded[scenario][width] = shape;
+        } else {
           const baseline = expected[engine]?.[scenario]?.[width];
           expect(baseline, `Missing ${engine}/${scenario}/${width}; record from origin/main`).toBeDefined();
           expect(Object.keys(shape)).toEqual(Object.keys(baseline!));
