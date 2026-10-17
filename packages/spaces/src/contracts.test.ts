@@ -12,6 +12,7 @@ import {
   MAX_TASK_ATTACHMENT_SIZE_BYTES,
   MoveItemSchema,
   OverlapQuerySchema,
+  ReactionEmojiSchema,
   ReorderColumnsSchema,
   ReorderWormholesSchema,
   SpaceItemAttachmentSchema,
@@ -199,4 +200,9 @@ describe("attachment media types", () => {
       expect(attachmentMediaType(`notes.${extension}`, "")).toBe("application/octet-stream");
     }
   });
+});
+
+test("reaction emoji accepts exactly one fully-qualified RGI emoji", () => {
+  for (const emoji of ["👍", "👍🏽", "❤️", "👩‍💻", "🇩🇪", "1️⃣"]) expect(ReactionEmojiSchema.safeParse(emoji).success).toBe(true);
+  for (const emoji of ["❤", "ab", "👍👍", "", " ", "👍\n"]) expect(ReactionEmojiSchema.safeParse(emoji).success).toBe(false);
 });

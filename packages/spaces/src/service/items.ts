@@ -33,6 +33,7 @@ import { publishDependentsChange } from "./item-dependencies";
 import { insertMany as insertItemResourceReferences } from "./item-resource-references";
 import { publishSpaceChange, spacesLive } from "./live";
 import { rank } from "./rank";
+import { getReactionsByItemIds, type ReactionViewer } from "./reactions";
 import {
   CalendarReadLimitError,
   type ExpandedRecurringEvent,
@@ -667,22 +668,26 @@ const getClaimsByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceI
   );
 };
 
-const hydrateRelations = async (items: SpaceItem[]): Promise<SpaceItem[]> => {
+/** Reactions are attached only for a viewer, because their `own` state and people list are personal. */
+const hydrateRelations = async (items: SpaceItem[], viewer?: ReactionViewer): Promise<SpaceItem[]> => {
   if (items.length === 0) return items;
   const itemIds = items.map((item) => item.id);
-  const [assigneesByItemId, tagsByItemId, blockerCountsByItemId, lastActivityByItemId, claimsByItemId] = await Promise.all([
-    getAssigneesByItemIds(itemIds),
-    getTagsByItemIds(itemIds),
-    getActiveBlockerCountsByItemIds(itemIds),
-    getLastActivityByItemIds(itemIds),
-    getClaimsByItemIds(itemIds),
-  ]);
+  const [assigneesByItemId, tagsByItemId, blockerCountsByItemId, lastActivityByItemId, claimsByItemId, reactionsByItemId] =
+    await Promise.all([
+      getAssigneesByItemIds(itemIds),
+      getTagsByItemIds(itemIds),
+      getActiveBlockerCountsByItemIds(itemIds),
+      getLastActivityByItemIds(itemIds),
+      getClaimsByItemIds(itemIds),
+      viewer ? getReactionsByItemIds(itemIds, viewer) : null,
+    ]);
   for (const item of items) {
     item.assignees = assigneesByItemId.get(item.id) ?? [];
     item.tags = tagsByItemId.get(item.id) ?? [];
     item.activeBlockerCount = blockerCountsByItemId.get(item.id) ?? 0;
     item.lastActivityAt = lastActivityByItemId.get(item.id) ?? item.updatedAt;
     item.claim = claimsByItemId.get(item.id) ?? null;
+    if (reactionsByItemId) item.reactions = reactionsByItemId.get(item.id) ?? [];
   }
   return items;
 };
@@ -883,7 +888,7 @@ export const dashboardSnapshot = async (params: {
 /**
  * List items for a space as a plain board snapshot.
  */
-export const list = async (params: { spaceId: string; includeCompleted?: boolean }): Promise<SpaceItem[]> => {
+export const list = async (params: { spaceId: string; includeCompleted?: boolean; viewer?: ReactionViewer }): Promise<SpaceItem[]> => {
   const { spaceId, includeCompleted = false } = params;
 
   let rows: DbItem[];
@@ -913,7 +918,7 @@ export const list = async (params: { spaceId: string; includeCompleted?: boolean
     `;
   }
 
-  return hydrateRelations(rows.map(mapToItem));
+  return hydrateRelations(rows.map(mapToItem), params.viewer);
 };
 
 /**
@@ -923,6 +928,7 @@ export const list = async (params: { spaceId: string; includeCompleted?: boolean
 export const listFiltered = async (params: {
   spaceId: string;
   filter: ItemFilter;
+  viewer?: ReactionViewer;
   currentUserId?: string;
   dateConfig?: DateContext;
 }): Promise<ItemListResult> => {
@@ -1176,7 +1182,7 @@ export const listFiltered = async (params: {
     ORDER BY ${groupBy === "tag" ? sortClause : orderClause}
   `;
 
-  const items = await hydrateRelations(rows.map(mapToItem));
+  const items = await hydrateRelations(rows.map(mapToItem), params.viewer);
 
   return {
     items,
@@ -1444,7 +1450,7 @@ export const findByTitle = async (params: { spaceId: string; title: string; limi
     LIMIT ${params.limit}
   `;
 
-export const get = async (params: { id: string }): Promise<SpaceItem | null> => {
+export const get = async (params: { id: string; viewer?: ReactionViewer }): Promise<SpaceItem | null> => {
   const [row] = await sql<DbItem[]>`
     SELECT
       i.id,
@@ -1477,28 +1483,34 @@ export const get = async (params: { id: string }): Promise<SpaceItem | null> => 
   if (!row) return null;
 
   const item = mapToItem(row);
-  const [assignees, tags, blockerCounts, claims] = await Promise.all([
+  const [assignees, tags, blockerCounts, claims, reactions] = await Promise.all([
     getAssignees(item.id),
     getTags(item.id),
     getActiveBlockerCountsByItemIds([item.id]),
     getClaimsByItemIds([item.id]),
+    params.viewer ? getReactionsByItemIds([item.id], params.viewer) : null,
   ]);
   item.assignees = assignees;
   item.tags = tags;
   item.activeBlockerCount = blockerCounts.get(item.id) ?? 0;
   item.claim = claims.get(item.id) ?? null;
+  if (reactions) item.reactions = reactions.get(item.id) ?? [];
 
   return item;
 };
 
-export const getRecurringOverride = async (params: { recurringEventId: string; recurrenceId: string }): Promise<SpaceItem | null> => {
+export const getRecurringOverride = async (params: {
+  recurringEventId: string;
+  recurrenceId: string;
+  viewer?: ReactionViewer;
+}): Promise<SpaceItem | null> => {
   const [row] = await sql<{ id: string }[]>`
     SELECT id
     FROM spaces.items
     WHERE recurring_event_id = ${params.recurringEventId}
       AND recurrence_id = ${params.recurrenceId}::timestamptz
   `;
-  return row ? get({ id: row.id }) : null;
+  return row ? get({ id: row.id, viewer: params.viewer }) : null;
 };
 
 /**

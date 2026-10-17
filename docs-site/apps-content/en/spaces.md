@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-10
+updated: 2026-10-17
 ---
 
 # Spaces
@@ -97,12 +97,29 @@ Rows do not open the item. Read and edit details in Spaces on the web.
 | Space | Permission-scoped work area with columns, tags, items, and settings |
 | Item | Task or event with shared content and workflow fields |
 | Column and tag | Ordered workflow stage and cross-cutting label |
+| Reaction | One emoji reaction per person on an item |
 | Comment, checklist entry, and assignee | Collaboration context attached to one item |
 | Link | A Cloud resource reference or an external URL on one item; GitHub issue and pull request links show a cached preview |
 | Calendar surface | Time-based view, invitation integration, and optional iCal export |
 
 Tasks use deadlines; events use a schedule and may recur. Views, filters, and
 grouping change how items are presented, not which resource owns them.
+
+Each person can react once per emoji. Reacting needs write access; seeing reactions
+needs read access. Standalone and agent accounts react under their own name.
+Reactions send no notifications and record no activity, so they do not reset the
+inactive marker. An item holds at most 20 different emoji, ordered by the first
+remaining reaction. Counts do not change this order. A reaction on a series belongs
+to the series item. Generated occurrences have none; saved overrides have their own.
+
+Item reads include `reactions`: each summary has an `emoji`, `count`, `own`, and
+up to three other `people` in reaction order. Responses to other item changes
+leave `reactions` out, so keep the summary you already have. Add your reaction with
+`PUT /api/spaces/:id/items/:itemId/reactions/:emoji`; remove it with `DELETE`
+of the same path. Percent-encode the emoji, for example `👍🏽` or `❤️`.
+Both return `{ reactions }`. Repeating either intent succeeds without a change.
+An invalid emoji returns 400; a 21st different emoji returns 409 with
+`REACTION_LIMIT_REACHED`. These routes do not accept `recurrence_id`.
 
 The item details read top to bottom. A task starts with **Planning**: due date,
 estimate, priority, and tags, plus a hint that jumps to the first active blocker
@@ -298,6 +315,8 @@ cld spaces ls "Product" --mine --due-before 2026-10-01 --json
 cld spaces show "Product":"Fix mobile dialog" --json
 cld spaces add "Product":"Write release notes" --deadline 2026-10-20 --assignee me
 cld spaces done "Product":"Fix mobile dialog"
+cld spaces reactions add "Product":"Fix mobile dialog" "👍🏽"
+cld spaces reactions remove "Product":"Fix mobile dialog" "👍🏽"
 ```
 
 `cld spaces templates ls <space>` and `templates show <space>:<template>`
@@ -314,7 +333,7 @@ its space.
 
 The commands follow the shared `cld` verbs: `ls`, `show`, `add`, `set`, `mv`,
 and `rm`, the quick actions `done`, `reopen`, `assign`, and `due`, `deps` for
-blockers, and the groups `comments`, `attachments`, `checklist`, `references`, `links`,
+blockers, and the groups `reactions`, `comments`, `attachments`, `checklist`, `references`, `links`,
 `invitation`, and `access`. `calendar` and `overlap` query a time range across
 spaces. Every command supports `--json`; destructive commands need `--yes`,
 and long text comes from `--from <file|->`. Run `cld spaces help` for the
@@ -472,6 +491,8 @@ links, and blockers, plus explicit pages of comments and dependent tasks. Follow
 in those pages using `comments list` and `deps`; use `activity --cursor` to read
 older work notes. Pages are fresh reads and may change during collaboration.
 The `comments list` output and the `blocks` field of `deps` are paginated objects.
+
+Agents use `reaction.add` and `reaction.remove` with `{ itemId, emoji }` for the same reaction intents. Item read and list capabilities include reactions.
 
 For capabilities, use `task.work.read`, `task.claim`, `task.release` and
 `task.progress`; `task.release` and `task.set-completed` accept `force` to take

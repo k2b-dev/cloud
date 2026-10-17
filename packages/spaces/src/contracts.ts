@@ -110,6 +110,31 @@ export const SpaceItemClaimSchema = z.object({
 });
 export type SpaceItemClaim = z.infer<typeof SpaceItemClaimSchema>;
 
+// The detail panel shows every chip in wrapping rows at 26 px; keep card payloads small too.
+export const MAX_ITEM_REACTION_EMOJI = 20;
+export const ReactionEmojiSchema = z
+  .string()
+  .regex(/^\p{RGI_Emoji}$/v, "Expected one fully-qualified RGI emoji")
+  .describe("Exactly one fully-qualified RGI emoji, including any skin tone or presentation selector");
+export const SpaceItemReactionSchema = z.object({
+  emoji: ReactionEmojiSchema,
+  count: z.number().int().min(1),
+  own: z.boolean(),
+  people: z
+    .array(
+      z.object({
+        kind: z.enum(["user", "service_account"]),
+        id: UuidSchema,
+        displayName: z.string(),
+      }),
+    )
+    .max(3),
+});
+export type SpaceItemReaction = z.infer<typeof SpaceItemReactionSchema>;
+export const SpaceItemReactionsResponseSchema = z.object({
+  reactions: z.array(SpaceItemReactionSchema).max(MAX_ITEM_REACTION_EMOJI),
+});
+
 export const SpaceItemSchema = z.object({
   id: ResourceShortIdSchema.describe("Item ID"),
   spaceId: ResourceShortIdSchema.describe("Parent space ID"),
@@ -134,6 +159,13 @@ export const SpaceItemSchema = z.object({
   createdAt: z.string().describe("Creation timestamp (ISO)"),
   updatedAt: z.string().describe("Last update timestamp (ISO)"),
   lastActivityAt: z.string().optional().describe("Most recent item, comment, or checklist activity timestamp (ISO)"),
+  reactions: z
+    .array(SpaceItemReactionSchema)
+    .max(MAX_ITEM_REACTION_EMOJI)
+    .optional()
+    .describe(
+      "Emoji reactions in first-reaction order, personalized for the reading account; absent in write responses, empty on generated occurrences",
+    ),
   // Optional relations (loaded on demand)
   assignees: z.array(SpaceItemAssigneeSchema).optional().describe("Assigned users"),
   tags: z.array(SpaceTagSchema).optional().describe("Attached tags"),

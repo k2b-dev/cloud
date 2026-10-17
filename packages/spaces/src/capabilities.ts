@@ -61,6 +61,8 @@ import {
   ItemResourceReferenceRemoveDataSchema,
   ItemResourceReferenceRemoveInputSchema,
   ItemTagsSetInputSchema,
+  ReactionDataSchema,
+  ReactionInputSchema,
   SpaceAssigneeListDataSchema,
   SpaceAssigneeListInputSchema,
   SpaceBrowseDataSchema,
@@ -133,6 +135,7 @@ import { isSpaceResourceId, resolveSpaceApiKeyPermission, SPACE_RESOURCE_TYPE, S
 import type { CommentAuthor } from "./service/comments";
 import { localizeSpacesError, type SpacesMessages, spacesMessages } from "./service/messages";
 import { spacesPublicResources } from "./service/public-resources";
+import type { ReactionViewer } from "./service/reactions";
 import { CalendarReadLimitError } from "./service/recurrence";
 import * as taskWork from "./service/task-work";
 import { isTaskOverdue } from "./task-overdue";
@@ -312,7 +315,7 @@ const requireSpace = async (shortId: string, context: CapabilityExecutionContext
 };
 
 const requireItemUuid = async (internalId: string, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
-  const item = await spacesService.item.get({ id: internalId });
+  const item = await spacesService.item.get({ id: internalId, viewer: reactionViewer(context) });
   if (!item) return capabilityFail(context, err.notFound("Item"), "itemNotFound");
   const access = await requireSpaceUuid(item.spaceId, context, required);
   if (!access.ok) return capabilityFail(context, err.notFound("Item"), "itemNotFound");
@@ -389,6 +392,7 @@ const reviewTaskWork = async (
 };
 
 const mapRelations = (item: SpaceItem) => ({
+  reactions: item.reactions,
   assignees: (item.assignees ?? [])
     .slice(0, 100)
     .map((entry) => ({ id: entry.id, displayName: truncateText(entry.displayName, 200).text })),
@@ -403,6 +407,7 @@ const mapRelations = (item: SpaceItem) => ({
 });
 
 const mapListRelations = (item: SpaceItem) => ({
+  reactions: item.reactions,
   assignees: (item.assignees ?? []).slice(0, 3).map((entry) => ({ id: entry.id, displayName: truncateText(entry.displayName, 100).text })),
   assigneeCount: item.assignees?.length ?? 0,
   tags: (item.tags ?? [])
@@ -676,9 +681,9 @@ const runItemReferenceFind = async (input: z.infer<typeof ItemResourceReferenceF
     limit: input.limit + 1,
   });
   const truncated = itemIds.length > input.limit;
-  const items = (await Promise.all(itemIds.slice(0, input.limit).map((id) => spacesService.item.get({ id })))).filter(
-    (item): item is SpaceItem => item !== null,
-  );
+  const items = (
+    await Promise.all(itemIds.slice(0, input.limit).map((id) => spacesService.item.get({ id, viewer: reactionViewer(context) })))
+  ).filter((item): item is SpaceItem => item !== null);
   const [publicItems, publicSpaces] = await Promise.all([
     spacesPublicResources.projectItems(items),
     spacesPublicResources.projectSpaces(spaces.items),
@@ -855,6 +860,7 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
   const page = await spacesService.item.listFiltered({
     spaceId: access.data.internalId,
     currentUserId: context.user?.id,
+    viewer: reactionViewer(context),
     ...(dateConfig ? { dateConfig } : {}),
     filter: {
       type: kind,
@@ -1868,6 +1874,14 @@ const commentAuthor = (context: CapabilityExecutionContext): CommentAuthor | nul
     ? { kind: "service_account", id: context.actor.serviceAccount.id }
     : null;
 };
+
+/** Reads personalize reactions for the account behind the call, also for accounts that cannot react. */
+const reactionViewer = (context: CapabilityExecutionContext): ReactionViewer =>
+  context.user
+    ? { kind: "user", id: context.user.id }
+    : context.actor.kind === "user"
+      ? { kind: "user", id: context.actor.user.id }
+      : { kind: "service_account", id: context.actor.serviceAccount.id };
 
 const runCommentCreate = async (input: z.infer<typeof CommentCreateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "comment.create", "space_item", input.itemId), async () => {
@@ -2960,6 +2974,78 @@ export const spacesCapabilities = defineCapabilities({
         });
       },
       run: runItemDelete,
+    },
+    "reaction.add": {
+      title: "Add reaction",
+      description: "Add your own emoji reaction on an item in a writable Space. No notifications or activity.",
+      input: ReactionInputSchema,
+      data: ReactionDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const t = spacesMessages(context.locale);
+        if (!commentAuthor(context))
+          return capabilityFail(context, err.forbidden("Reactions require a user-backed actor"), "reactionsNeedUser");
+        const resolved = await requireItem(input.itemId, context, "write");
+        if (!resolved.ok) return resolved;
+        return ok({
+          message: t.reviewAddReaction({ title: resolved.data.item.title }),
+          details: [
+            { label: t.item, value: resolved.data.item.title },
+            { label: t.emoji, value: input.emoji },
+          ],
+          links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+          approvalScope: itemApprovalScope(input.itemId),
+        });
+      },
+      run: async (input, context) =>
+        audited(actionAudit(context, "reaction.add", "space_item", input.itemId), async () => {
+          const actor = commentAuthor(context);
+          if (!actor) return capabilityFail(context, err.forbidden("Reactions require a user-backed actor"), "reactionsNeedUser");
+          const resolved = await requireItem(input.itemId, context, "write");
+          if (!resolved.ok) return resolved;
+          const result = await spacesService.item.reactions.add({ itemId: resolved.data.internalId, emoji: input.emoji, actor });
+          if (!result.ok) return fail(localizeSpacesError(result.error, context.locale));
+          return ok({ data: result.data, summary: spacesMessages(context.locale).addedReaction({ title: resolved.data.item.title }) });
+        }),
+    },
+    "reaction.remove": {
+      title: "Remove reaction",
+      description: "Remove your own emoji reaction on an item in a writable Space. No notifications or activity.",
+      input: ReactionInputSchema,
+      data: ReactionDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const t = spacesMessages(context.locale);
+        if (!commentAuthor(context))
+          return capabilityFail(context, err.forbidden("Reactions require a user-backed actor"), "reactionsNeedUser");
+        const resolved = await requireItem(input.itemId, context, "write");
+        if (!resolved.ok) return resolved;
+        return ok({
+          message: t.reviewRemoveReaction({ title: resolved.data.item.title }),
+          details: [
+            { label: t.item, value: resolved.data.item.title },
+            { label: t.emoji, value: input.emoji },
+          ],
+          links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+          approvalScope: itemApprovalScope(input.itemId),
+        });
+      },
+      run: async (input, context) =>
+        audited(actionAudit(context, "reaction.remove", "space_item", input.itemId), async () => {
+          const actor = commentAuthor(context);
+          if (!actor) return capabilityFail(context, err.forbidden("Reactions require a user-backed actor"), "reactionsNeedUser");
+          const resolved = await requireItem(input.itemId, context, "write");
+          if (!resolved.ok) return resolved;
+          const result = await spacesService.item.reactions.remove({ itemId: resolved.data.internalId, emoji: input.emoji, actor });
+          if (!result.ok) return fail(localizeSpacesError(result.error, context.locale));
+          return ok({ data: result.data, summary: spacesMessages(context.locale).removedReaction({ title: resolved.data.item.title }) });
+        }),
     },
     "comment.create": {
       title: "Create comment",

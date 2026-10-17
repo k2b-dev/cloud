@@ -84,6 +84,8 @@ test("declares remembered approval for bounded Space changes", () => {
     "item.reference.add",
     "item.reference.remove",
     "item.tags.set",
+    "reaction.add",
+    "reaction.remove",
     "task.blocker.add",
     "task.blocker.remove",
     "task.checklist.create",
@@ -794,6 +796,8 @@ describe("spaces capabilities", () => {
       "item.reference.add",
       "item.reference.remove",
       "item.tags.set",
+      "reaction.add",
+      "reaction.remove",
       "task.blocker.add",
       "task.blocker.remove",
       "task.checklist.create",
@@ -831,6 +835,8 @@ describe("spaces capabilities", () => {
       "item.reference.add",
       "item.reference.remove",
       "item.tags.set",
+      "reaction.add",
+      "reaction.remove",
       "task.blocker.add",
       "task.blocker.remove",
       "task.checklist.create",
@@ -1322,6 +1328,8 @@ describe("spaces capabilities", () => {
     });
 
     const results: CapabilityActionReviewResult[] = [
+      await spacesCapabilities.actions["reaction.add"].review({ itemId, emoji: "👍" }, userContext),
+      await spacesCapabilities.actions["reaction.remove"].review({ itemId, emoji: "👍" }, userContext),
       await spacesCapabilities.actions["task.checklist.create"].review({ itemId, label: "New" }, userContext),
       await spacesCapabilities.actions["task.checklist.update"].review({ itemId, entryId: "Chk001", completed: true }, userContext),
       await spacesCapabilities.actions["item.reference.add"].review!(
@@ -2273,4 +2281,64 @@ test("every declared Type has a reader open-link case or an explicit reason", as
     if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
     assertResourceOpenLink(result.data);
   }
+});
+
+test("reaction actions enforce write permission, use actor identity and preserve coded service failures", async () => {
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  const get = spyOn(spacesService.item, "get").mockResolvedValue({
+    ...task,
+    reactions: [{ emoji: "👍", count: 1, own: true, people: [] }],
+  });
+  const permission = spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  const add = spyOn(spacesService.item.reactions, "add").mockResolvedValue({ ok: true, data: { reactions: [] } });
+  const remove = spyOn(spacesService.item.reactions, "remove").mockResolvedValue({ ok: true, data: { reactions: [] } });
+  const input = { itemId, emoji: "👍🏽" };
+  for (const operation of ["reaction.add", "reaction.remove"] as const) {
+    expect((await spacesCapabilities.actions[operation].run(input, userContext)).ok).toBe(false);
+    expect((await spacesCapabilities.actions[operation].review(input, userContext)).ok).toBe(false);
+  }
+  expect(add).not.toHaveBeenCalled();
+  expect(remove).not.toHaveBeenCalled();
+  permission.mockResolvedValue("write");
+  expect((await spacesCapabilities.actions["reaction.add"].run(input, userContext)).ok).toBe(true);
+  expect(add).toHaveBeenLastCalledWith({ itemId: itemUuid, emoji: input.emoji, actor: { kind: "user", id: userId } });
+  const agent = {
+    ...serviceAccountContext,
+    actor: {
+      ...serviceAccountContext.actor,
+      scopes: ["read", "write"],
+      serviceAccount: {
+        ...serviceAccountContext.actor.serviceAccount,
+        kind: "agent" as const,
+        appId: null,
+        resourceType: null,
+        resourceId: null,
+      },
+    },
+  };
+  expect((await spacesCapabilities.actions["reaction.remove"].run(input, agent)).ok).toBe(true);
+  expect(remove).toHaveBeenLastCalledWith({
+    itemId: itemUuid,
+    emoji: input.emoji,
+    actor: { kind: "service_account", id: serviceAccountId },
+  });
+  expect((await spacesCapabilities.actions["reaction.add"].run(input, serviceAccountContext)).ok).toBe(false);
+  // A delegated call uses the person even though its access principal is an account.
+  const delegated = { ...agent, actor: { ...agent.actor, delegatedUser: user }, user };
+  expect((await spacesCapabilities.actions["reaction.add"].run(input, delegated)).ok).toBe(true);
+  expect(add).toHaveBeenLastCalledWith({ itemId: itemUuid, emoji: input.emoji, actor: { kind: "user", id: userId } });
+  add.mockResolvedValue({
+    ok: false,
+    error: { code: "REACTION_LIMIT_REACHED", status: 409, message: "An item can have at most 20 different emoji reactions" },
+  });
+  expect(await spacesCapabilities.actions["reaction.add"].run(input, userContext)).toMatchObject({
+    ok: false,
+    error: { code: "REACTION_LIMIT_REACHED", status: 409 },
+  });
+  spyOn(spacesService.item.attachments, "list").mockResolvedValue([]);
+  const read = await spacesCapabilities.queries["item.read"].run({ id: itemId }, userContext);
+  expect(read).toMatchObject({ ok: true, data: { data: { reactions: [{ emoji: "👍", count: 1, own: true, people: [] }] } } });
+  expect(get).toHaveBeenLastCalledWith({ id: itemUuid, viewer: { kind: "user", id: userId } });
 });

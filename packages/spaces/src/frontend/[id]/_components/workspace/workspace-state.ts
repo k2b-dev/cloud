@@ -14,6 +14,7 @@ import {
 import { spacesService } from "@/service";
 import { spacesLive } from "@/service/live";
 import { spacesPublicResources } from "@/service/public-resources";
+import type { ReactionViewer } from "@/service/reactions";
 import { resolveRecurringOccurrence } from "@/service/recurrence";
 import { resolveReferenceViews } from "@/service/resource-reference-views";
 import { spaceMessages } from "../../messages";
@@ -196,6 +197,7 @@ const loadListItems = async (params: {
     // The table shows flat rows, so only the list orders and counts by group.
     filter: { ...toListFilter(params.filter), groupBy: params.currentView === "list" ? params.filter.groupBy : "none" },
     currentUserId: params.userId,
+    viewer: { kind: "user", id: params.userId },
     dateConfig: params.dateConfig,
   });
 };
@@ -220,6 +222,7 @@ const loadKanbanBuckets = async (params: {
         spaceId: params.spaceId,
         filter: kanbanBucketFilter({ bucket: config, virtualKinds, filter, page: 1, pageSize }),
         currentUserId: params.userId,
+        viewer: { kind: "user", id: params.userId },
         dateConfig: params.dateConfig,
       });
     // A filtered column also reports its unfiltered size, so the count says what the filter hides.
@@ -338,6 +341,7 @@ const loadCalendarTray = async (params: {
       spaceId: params.spaceId,
       filter: { ...toListFilter(query), pageSize: TASK_TRAY_SIZE },
       currentUserId: params.userId,
+      viewer: { kind: "user", id: params.userId },
       dateConfig: params.dateConfig,
     });
     return { items, total };
@@ -421,6 +425,7 @@ const loadCalendarState = async (params: {
 const resolveRecurringDetail = async (params: {
   item: SpaceItem;
   occurrenceId: string;
+  viewer?: ReactionViewer;
   spaceId: string;
   dateConfig?: DateContext;
 }): Promise<{ item: SpaceItem; context: NonNullable<SpaceItemDetail["recurringContext"]> } | null> => {
@@ -430,7 +435,7 @@ const resolveRecurringDetail = async (params: {
 
   if (params.item.recurringEventId) {
     if (params.item.recurrenceId !== recurrenceId || !params.item.startsAt || !params.item.endsAt) return null;
-    const series = await spacesService.item.get({ id: params.item.recurringEventId });
+    const series = await spacesService.item.get({ id: params.item.recurringEventId, viewer: params.viewer });
     if (!series || series.spaceId !== params.spaceId || !series.recurrence || !series.startsAt || !series.endsAt) return null;
     const occurrence = resolveRecurringOccurrence({
       event: {
@@ -484,6 +489,7 @@ const resolveRecurringDetail = async (params: {
   const override = await spacesService.item.getRecurringOverride({
     recurringEventId: params.item.id,
     recurrenceId,
+    viewer: params.viewer,
   });
   if (override) {
     if (override.spaceId !== params.spaceId || !override.startsAt || !override.endsAt) return null;
@@ -501,7 +507,7 @@ const resolveRecurringDetail = async (params: {
   }
 
   return {
-    item: params.item,
+    item: { ...params.item, reactions: [] },
     context: {
       seriesItemId: params.item.id,
       recurrenceId,
@@ -529,7 +535,7 @@ const loadSelectedItemState = async (params: {
 
   let selectedItem = params.itemsResult.items.find((item) => item.id === selectedItemId) ?? null;
   if (!selectedItem) {
-    selectedItem = await spacesService.item.get({ id: selectedItemId });
+    selectedItem = await spacesService.item.get({ id: selectedItemId, viewer: { kind: "user", id: params.userId } });
     if (selectedItem?.spaceId !== params.spaceId) selectedItem = null;
   }
   if (!selectedItem) return null;
@@ -537,6 +543,7 @@ const loadSelectedItemState = async (params: {
   const recurringDetail = params.selectedOccurrenceId
     ? await resolveRecurringDetail({
         item: selectedItem,
+        viewer: { kind: "user", id: params.userId },
         occurrenceId: params.selectedOccurrenceId,
         spaceId: params.spaceId,
         dateConfig: params.dateConfig,
@@ -826,11 +833,12 @@ export const loadSpaceItemDetail = async (params: {
   if (!space) return { kind: "notFound", title: t.notFound, message: t.spaceNotFound };
   if (!permissions) return { kind: "accessDenied", title: t.accessDenied, message: t.spaceAccessDenied };
 
-  const item = await spacesService.item.get({ id: params.itemId });
+  const item = await spacesService.item.get({ id: params.itemId, viewer: { kind: "user", id: params.user.id } });
   if (!item || item.spaceId !== params.spaceId) return { kind: "notFound", title: t.notFound, message: t.itemNotFound };
   const recurringDetail = params.occurrenceId
     ? await resolveRecurringDetail({
         item,
+        viewer: { kind: "user", id: params.user.id },
         occurrenceId: params.occurrenceId,
         spaceId: params.spaceId,
         dateConfig: params.dateConfig,

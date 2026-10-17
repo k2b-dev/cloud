@@ -32,6 +32,7 @@ import type {
   SpaceItem,
   SpaceItemAttachment,
   SpaceItemLink,
+  SpaceItemReaction,
   SpaceItemResourceReference,
   SpaceItemTemplate,
   SpaceTaskChecklistEntry,
@@ -411,6 +412,7 @@ function spacesCommands(locale?: string) {
     }),
     groupSummaries: {
       access: t({ en: "Manage direct access to spaces", de: "Direkten Zugriff auf Spaces verwalten" }),
+      reactions: t({ en: "React to an item", de: "Auf einen Eintrag reagieren" }),
       comments: t({ en: "Discuss an item", de: "Einen Eintrag diskutieren" }),
       attachments: t({
         en: "List, upload, download, and delete task images",
@@ -609,6 +611,10 @@ function spacesCommands(locale?: string) {
           if (item.startsAt) ctx.print(`${t({ en: "time", de: "Zeit" })}: ${item.startsAt} – ${item.endsAt ?? ""}`);
           if (item.assignees?.length)
             ctx.print(`${t({ en: "assignees", de: "zugewiesen" })}: ${item.assignees.map((a) => a.displayName).join(", ")}`);
+          if (item.reactions?.length)
+            ctx.print(
+              `${t({ en: "reactions", de: "Reaktionen" })}: ${item.reactions.map((r) => `${r.emoji} ${r.count}${r.own ? " *" : ""}`).join("  ")}`,
+            );
           if (item.activeBlockerCount > 0) ctx.print(`${t({ en: "blocked by", de: "blockiert von" })}: ${item.activeBlockerCount}`);
           if (attachments?.length)
             ctx.print(`${t({ en: "attachments", de: "Anhänge" })}: ${attachments.map((a) => a.filename).join(", ")}`);
@@ -1087,6 +1093,34 @@ function spacesCommands(locale?: string) {
           );
           if (ctx.options.output === "text" && page.hasNext)
             ctx.error(`${t({ en: "More comments", de: "Weitere Kommentare" })}: --page ${page.page + 1}`);
+        },
+      }),
+      command("reactions add", {
+        summary: t({ en: "Add your reaction to an item", de: "Deine Reaktion zu einem Eintrag hinzufügen" }),
+        args: { ...itemArg, emoji: arg.required({ description: t({ en: "One emoji", de: "Ein Emoji" }) }) },
+        async run({ ctx, args }) {
+          const item = await resolveItem(ctx, args.item);
+          const result = await readApi<{ reactions: SpaceItemReaction[] }>(
+            ctx,
+            itemApi(item, `/reactions/${encodeURIComponent(args.emoji)}`),
+            { method: "PUT" },
+          );
+          if (!printStructured(ctx, result))
+            ctx.print(result.reactions.map((r) => `${r.emoji} ${r.count}${r.own ? " *" : ""}`).join("  ") || "-");
+        },
+      }),
+      command("reactions remove", {
+        summary: t({ en: "Remove your reaction from an item", de: "Deine Reaktion von einem Eintrag entfernen" }),
+        args: { ...itemArg, emoji: arg.required({ description: t({ en: "One emoji", de: "Ein Emoji" }) }) },
+        async run({ ctx, args }) {
+          const item = await resolveItem(ctx, args.item);
+          const result = await readApi<{ reactions: SpaceItemReaction[] }>(
+            ctx,
+            itemApi(item, `/reactions/${encodeURIComponent(args.emoji)}`),
+            { method: "DELETE" },
+          );
+          if (!printStructured(ctx, result))
+            ctx.print(result.reactions.map((r) => `${r.emoji} ${r.count}${r.own ? " *" : ""}`).join("  ") || "-");
         },
       }),
       command("comments add", {

@@ -8,6 +8,7 @@ import {
   EventCreateInputSchema,
   EventListItemDataSchema,
   EventUpdateInputSchema,
+  ReactionInputSchema,
   SpaceBrowseDataSchema,
   TaskChecklistListDataSchema,
   TaskChecklistUpdateInputSchema,
@@ -178,3 +179,10 @@ for (const { name, schema, input, field, nullable, optional } of textInputs) {
     expect(z.fromJSONSchema(json).safeParse({ ...input, [field]: "Caption:\\nText" }).success).toBeTrue();
   });
 }
+
+test("reaction capability requires one emoji and an item, without recurrence scope", () => {
+  for (const emoji of ["👍🏽", "❤️", "👩‍💻", "🇩🇪", "1️⃣"])
+    expect(ReactionInputSchema.safeParse({ itemId: "Item01", emoji }).success).toBe(true);
+  for (const emoji of ["❤", "ab", "👍👍", "", " "]) expect(ReactionInputSchema.safeParse({ itemId: "Item01", emoji }).success).toBe(false);
+  expect(ReactionInputSchema.safeParse({ itemId: "Item01", emoji: "👍", recurrenceId: "2026-10-17T10:00:00Z" }).success).toBe(false);
+});
