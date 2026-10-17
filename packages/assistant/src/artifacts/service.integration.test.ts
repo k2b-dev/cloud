@@ -1532,7 +1532,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         await decline(reader, id);
       }
       // Revoked from a receipt, the next view asks again.
-      expect(await revokeAiToolApprovalPreference(owner.user.id, receipts[0]!)).toBe(true);
+      expect(await revokeAiToolApprovalPreference({ actorUserId: owner.user.id }, receipts[0]!)).toBe(true);
       const again = await prepare(owner, quote("NVDA"));
       expect((await website(owner, "session", again, false)).body).toMatchObject({ offer: true, allowed: false });
       await decline(owner, again);

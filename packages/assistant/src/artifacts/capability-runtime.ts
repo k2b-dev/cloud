@@ -286,7 +286,10 @@ async function resolveCapability(
   if (!updated) throw new ArtifactError("CONFLICT");
   if (!decision.approved) return { status: "denied" as const };
   if (decision.remember && prepared.scope)
-    await rememberAiToolApproval({ actorUserId: actor.id }, { toolName: request.name, approvalScope: prepared.scope });
+    await rememberAiToolApproval(
+      { actorUserId: actor.id, actor: identity.actor, accessSubject: identity.accessSubject, requestId: caller.requestId },
+      { toolName: request.name, approvalScope: prepared.scope },
+    );
   const result = await invokeCapability(
     {
       appId: prepared.appId,
