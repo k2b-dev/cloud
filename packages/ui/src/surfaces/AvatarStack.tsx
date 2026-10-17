@@ -90,7 +90,8 @@ const PersonRows = (props: { people: readonly AvatarStackPerson[]; choose: (pers
         <Show when={Boolean(person().onSelect)} fallback={<div class="k2b-avatar-stack__row">{content}</div>}>
           {(() => {
             let button!: HTMLButtonElement;
-            onCleanup(() => keepFocus(button));
+            // Browser only: a server render never mounts the button.
+            onMount(() => onCleanup(() => keepFocus(button)));
             return (
               <button ref={button} type="button" class="k2b-avatar-stack__row" onClick={() => props.choose(person())}>
                 {content}

@@ -2,7 +2,7 @@ import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { useLocale } from "../intl/locale";
 import { prefersReducedMotion } from "../motion";
 import { ContextMenu } from "./ContextMenu";
-import type { DropdownAction, DropdownActionBase, DropdownChoice, DropdownSection } from "./Dropdown";
+import { type DropdownAction, type DropdownActionBase, type DropdownChoice, DropdownItems, type DropdownSection } from "./Dropdown";
 import { openMenuSheet } from "./menu-sheet";
 
 /** A finger held this long without moving opens the menu, as the platforms' own long press does. */
@@ -113,7 +113,6 @@ type Press = {
   direction?: SwipeDirection;
 };
 
-
 const gestureAction = (items: readonly GestureMenuItem[], kind: GestureKind): GestureMenuAction | undefined => {
   for (const item of items)
     for (const entry of "items" in item ? item.items : [item])
@@ -160,11 +159,16 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
     if (sheetOpen || !active()) return;
     sheetOpen = true;
     props.onOpen?.();
-    void openMenuSheet({ items: props.items, label: props.label, locale: locale(), top: props.sheetTop, signal: disposed.signal }).finally(
-      () => {
-        sheetOpen = false;
-      },
-    );
+    void openMenuSheet({
+      Items: DropdownItems,
+      items: props.items,
+      label: props.label,
+      locale: locale(),
+      top: props.sheetTop,
+      signal: disposed.signal,
+    }).finally(() => {
+      sheetOpen = false;
+    });
   };
 
   /** Another pointer that goes down anywhere while a finger presses, as in a pinch, ends the gesture. */

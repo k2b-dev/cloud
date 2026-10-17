@@ -175,7 +175,8 @@ describe("@k2b/ui action runtime behavior", () => {
 
   test("choice links keep selection semantics, native modified clicks and row focus", async () => {
     const dom = createDomTestHarness();
-    const { DropdownItems, focusRowSegment } = await import("../src/actions/Dropdown");
+    const { DropdownItems } = await import("../src/actions/Dropdown");
+    const { focusRowSegment } = await import("../src/actions/menu-rows");
     const closed: (boolean | undefined)[] = [];
     const selected: string[] = [];
     const dispose = render(

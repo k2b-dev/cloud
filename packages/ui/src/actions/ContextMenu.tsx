@@ -2,7 +2,8 @@ import { createMemo, createSignal, createUniqueId, type JSX, onCleanup, onMount,
 import { Portal } from "solid-js/web";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useUiMessages } from "../intl/messages";
-import { type DropdownItem, DropdownItems, type DropdownPosition, dropdownPosition, focusRowSegment } from "./Dropdown";
+import { type DropdownItem, DropdownItems, type DropdownPosition, dropdownPosition } from "./Dropdown";
+import { focusRowSegment } from "./menu-rows";
 
 export type ContextMenuProps = {
   items: readonly DropdownItem[];

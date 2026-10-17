@@ -17,6 +17,7 @@ import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant, iconTitle } from "./Button";
+import { focusRowSegment } from "./menu-rows";
 import { openMenuSheet, prefersMenuSheet } from "./menu-sheet";
 
 // Resolved outside JSX: a conditional attribute compiles to a lazy memo, which would be created inside the click handler.
@@ -185,21 +186,6 @@ const focusMenuItem = (menu: HTMLElement | undefined, index: number): void => {
   const items = actionableItems(menu);
   if (items.length === 0) return;
   items[(index + items.length) % items.length]?.focus();
-};
-
-/**
- * Left and Right cycle through the segments of a row section; Up and Down leave it like any item. Returns whether
- * the key moved focus.
- */
-export const focusRowSegment = (items: HTMLElement[], key: string): boolean => {
-  if (key !== "ArrowLeft" && key !== "ArrowRight") return false;
-  const active = document.activeElement as HTMLElement | null;
-  const row = active?.closest(".k2b-dropdown__row");
-  if (!active || !row) return false;
-  const segments = items.filter((item) => row.contains(item));
-  const next = segments.indexOf(active) + (key === "ArrowRight" ? 1 : -1);
-  segments[(next + segments.length) % segments.length]?.focus();
-  return true;
 };
 
 export const dropdownPosition = (
@@ -593,6 +579,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
       setInternalOpen(true);
       props.onOpenChange?.(true);
       void openMenuSheet({
+        Items: DropdownItems,
         items: props.items,
         label: props.label ?? messages().dropdownMenu,
         locale: locale(),

@@ -2,7 +2,8 @@ import { type JSX, onCleanup, onMount } from "solid-js";
 import { dialogCore } from "../feedback/dialog-core";
 import { LocaleProvider } from "../intl/locale";
 import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";
-import { type DropdownAction, type DropdownChoice, type DropdownItem, DropdownItems, focusRowSegment } from "./Dropdown";
+import type { DropdownAction, DropdownChoice, DropdownItem } from "./Dropdown";
+import { focusRowSegment } from "./menu-rows";
 
 /** Phones, where a menu opens as a bottom sheet instead of beside its trigger. */
 export const PHONE_SHEET_QUERY = "(max-width: 47.999rem)";
@@ -56,7 +57,13 @@ const menuItems = (menu: HTMLElement): HTMLElement[] =>
  * The menu inside the sheet: the same items, at touch size, with arrow keys for a connected keyboard. Focus starts on
  * the sheet itself, which shows no ring on a phone; the first arrow key moves it into the menu.
  */
-function SheetMenu(props: { items: readonly DropdownItem[]; label: string; close: () => void; dialog: HTMLDialogElement }): JSX.Element {
+function SheetMenu(props: {
+  Items: MenuSheetOptions["Items"];
+  items: readonly DropdownItem[];
+  label: string;
+  close: () => void;
+  dialog: HTMLDialogElement;
+}): JSX.Element {
   let menu!: HTMLDivElement;
   const focus = (index: number) => {
     const items = menuItems(menu);
@@ -81,12 +88,14 @@ function SheetMenu(props: { items: readonly DropdownItem[]; label: string; close
   });
   return (
     <div ref={menu} class="k2b-gesture-menu__sheet-menu" role="menu" aria-label={props.label} onKeyDown={onKeyDown}>
-      <DropdownItems items={props.items} close={() => props.close()} />
+      <props.Items items={props.items} close={() => props.close()} />
     </div>
   );
 }
 
 export type MenuSheetOptions = {
+  /** Renders the rows: the dropdown's own `DropdownItems`, passed in so this module does not import it back. */
+  Items: (props: { items: readonly DropdownItem[]; close: (restoreFocus?: boolean) => void }) => JSX.Element;
   items: readonly DropdownItem[];
   /** Names the sheet and its menu. */
   label: string;
@@ -110,7 +119,13 @@ export const openMenuSheet = (options: MenuSheetOptions): Promise<void> => {
           <BottomSheet onDismiss={context.requestDismiss}>
             <BottomSheet.Body>
               {options.top?.(() => close())}
-              <SheetMenu items={afterClose(options.items, choose)} label={options.label} close={() => close()} dialog={context.dialog} />
+              <SheetMenu
+                Items={options.Items}
+                items={afterClose(options.items, choose)}
+                label={options.label}
+                close={() => close()}
+                dialog={context.dialog}
+              />
             </BottomSheet.Body>
           </BottomSheet>
         </LocaleProvider>

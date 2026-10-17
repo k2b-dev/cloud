@@ -52,4 +52,17 @@ describe("AvatarStack", () => {
     expect(list).toContain("2 tabs");
     expect(list).toContain("Click a person to jump to them.");
   });
+
+  test("renders selectable people as buttons on the server, and disposes without browser code", async () => {
+    const html = renderToString(() =>
+      createComponent(AvatarStack, {
+        people: [{ id: "jana", name: "Jana Berger", detail: "writing · Intake", onSelect: () => {} }],
+        title: "Here now",
+        label: "Here now",
+      }),
+    );
+    expect(html).toMatch(/<button type="button" class="k2b-avatar-stack__row"/);
+    // The server disposes the render after it returns; a row's focus cleanup must not run there.
+    await Bun.sleep(0);
+  });
 });
