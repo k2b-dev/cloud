@@ -974,7 +974,8 @@ rewrite. See
 
 This release expires finished scheduled task runs after 90 days. It needs no
 configuration change. The first Core start adds the indexes
-`idx_ai_chat_task_occurrences_finished` and `idx_ai_turns_background_finished`.
+`idx_ai_chat_task_occurrences_finished`, `idx_ai_chat_task_occurrences_turn`,
+and `idx_ai_turns_background_finished`.
 The latter uses a plain `CREATE INDEX` on `ai.turns`, briefly blocking writes
 to `ai.turns` while it builds; allow for a longer build on large installations.
 The scheduled task recovery tick then
@@ -982,6 +983,8 @@ deletes completed and failed runs older than 90 days, their background turns
 with tool calls, and their run transcripts (`ai.task_messages`) in batches of
 100 per minute. Queued and running runs, finished runs whose turns are still
 active, and chat result messages stay.
+The run holding a one-off task's scheduled time stays, even after completion,
+until the task gets a new time or is deleted, so that time never runs twice.
 Background turns and transcripts of runs whose task was deleted expire on the
 same 90-day clock, measured from when the turn finished.
 

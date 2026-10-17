@@ -2,7 +2,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { mandates } from "../services/mandates";
-import { AiChatTaskIdempotencyConflictError, aiChatTasks } from "./chat-tasks";
+import { AiChatTaskIdempotencyConflictError, type AiChatTaskSchedule, aiChatTasks } from "./chat-tasks";
 import { authorizeCodeExecution } from "./code-execution";
 import { migrateCloudAi } from "./migrate";
 import { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";
@@ -19,6 +19,7 @@ suite("AI chat tasks", () => {
     conversation: { id: string; shortId: string };
     now: Date;
     ageDays: number;
+    schedule?: AiChatTaskSchedule;
     state?: "completed" | "failed" | "running";
     turnStatus?: "completed" | "failed" | "aborted" | "running";
   }) => {
@@ -29,7 +30,7 @@ suite("AI chat tasks", () => {
       userId: input.userId,
       chatId: input.conversation.shortId,
       prompt: "Retention evidence",
-      schedule: { kind: "cron", cron: "0 9 * * *" },
+      schedule: input.schedule ?? { kind: "cron", cron: "0 9 * * *" },
       timezone: "UTC",
     }))!;
     const occurrence = (await aiChatTasks.createOccurrence({
@@ -88,6 +89,63 @@ suite("AI chat tasks", () => {
         WHERE conversation_id = ${conversation.id}::uuid AND meta->'scheduledTask'->>'occurrenceId' = ${run.occurrence.shortId}`;
       expect(results).toEqual([{ loop_id: null }]);
       expect(await aiConversations.listMessages({ conversationId: conversation.id })).toEqual(before);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
+    }
+  });
+
+  test("keeps a one-off task's current slot and evidence until its scheduled time changes, even after completion", async () => {
+    const now = new Date("2001-01-01T00:00:00.000Z");
+    const suffix = crypto.randomUUID();
+    const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name, mail, given_name, sn)
+      VALUES (${`retention-once-${suffix}`}, 'local', 'user', 'Retention', ${`${suffix}@example.test`}, 'AI', 'Test') RETURNING id`;
+    const conversation = await aiConversations.createConversation({ ownerUserId: user!.id, title: "One-off retention guard" });
+    try {
+      const run = await createRetentionRun({
+        userId: user!.id,
+        conversation,
+        now,
+        ageDays: 91,
+        schedule: { kind: "once", runAt: "2099-01-01T09:00:00.000Z" },
+      });
+      // Simulate a revision change during the run: the finished task stays active at the same slot.
+      await sql`UPDATE ai.chat_tasks SET state = 'active', run_at = ${run.occurrence.scheduledFor}::timestamptz
+        WHERE id = ${run.task.id}::uuid`;
+      const expectKept = async () => {
+        expect(await aiChatTasks.pruneExpiredRuns({ now })).toBe(0);
+        expect(await sql`SELECT id FROM ai.chat_task_occurrences WHERE id = ${run.occurrence.id}::uuid`).toHaveLength(1);
+        expect(await sql`SELECT id FROM ai.turns WHERE id = ${run.turnId}::uuid`).toHaveLength(1);
+        expect(await sql`SELECT id FROM ai.task_messages WHERE loop_id = ${run.turnId}`).toHaveLength(2);
+      };
+      await expectKept();
+      // Exercise materialization's task-scoped insert; materializeDueOnce would affect other tests' tasks.
+      expect(
+        await aiChatTasks.createOccurrence({
+          taskId: run.task.id,
+          scheduledFor: run.occurrence.scheduledFor,
+          trigger: "scheduled",
+          requestKey: `once:${run.task.id}:${run.occurrence.scheduledFor}`,
+        }),
+      ).toBeNull();
+      await sql`UPDATE ai.chat_tasks SET state = 'completed' WHERE id = ${run.task.id}::uuid`;
+      await expectKept();
+      // A timezone edit with the same timestamp can reactivate a completed task without changing its slot.
+      const reactivated = await aiChatTasks.update({
+        userId: user!.id,
+        taskId: run.task.shortId,
+        schedule: { kind: "once", runAt: run.occurrence.scheduledFor },
+        timezone: "Europe/Berlin",
+      });
+      expect(reactivated?.state).toBe("active");
+      expect(reactivated?.schedule).toEqual({ kind: "once", runAt: run.occurrence.scheduledFor });
+      await expectKept();
+      await sql`UPDATE ai.chat_tasks SET run_at = '2099-01-02T09:00:00.000Z'::timestamptz WHERE id = ${run.task.id}::uuid`;
+      expect(await aiChatTasks.pruneExpiredRuns({ now })).toBe(1);
+      expect(await sql`SELECT id FROM ai.chat_task_occurrences WHERE id = ${run.occurrence.id}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT id FROM ai.turns WHERE id = ${run.turnId}::uuid`).toHaveLength(0);
+      expect(await sql`SELECT id FROM ai.task_messages WHERE loop_id = ${run.turnId}`).toHaveLength(0);
+      expect(await aiChatTasks.pruneExpiredRuns({ now })).toBe(0);
     } finally {
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${user!.id}::uuid`;
