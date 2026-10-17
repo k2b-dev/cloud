@@ -4,7 +4,7 @@ import { pipeline } from "node:stream/promises";
 import { logger } from "@k2b/cloud/services";
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
 import type { Headers } from "@zone-eu/mailsplit";
-import { sql } from "bun";
+import { sql, type TransactionSQL } from "bun";
 import { type AttachmentStream, MailParser, type MessageText } from "mailparser";
 import sanitizeHtml from "sanitize-html";
 import { withShortIdDb } from "../lib/short-id";
@@ -627,13 +627,21 @@ const lockMessageConversations = async (db: typeof sql, messageIds: string[]): P
 };
 
 /** Applies the work-state transition of messages whose hydration just failed for the last time. */
-const applyTerminalHydrationFailureTransitions = async (db: typeof sql, messageIds: string[]): Promise<MailActivityChange[]> => {
+const applyTerminalHydrationFailureTransitions = async (db: TransactionSQL, messageIds: string[]): Promise<MailActivityChange[]> => {
   if (messageIds.length === 0) return [];
   await lockMessageConversations(db, messageIds);
   const events: MailActivityChange[] = [];
   for (const messageId of [...messageIds].sort()) {
-    const event = await applyVerifiedConversationTransition({ db, messageId });
-    if (event) events.push(event);
+    try {
+      const event = await db.savepoint(async (sp) => applyVerifiedConversationTransition({ db: sp, messageId }));
+      if (event) events.push(event);
+    } catch (error) {
+      // `cld mail repair hydration` retries the message and its transition.
+      log.error("Mail could not set the work status for a message it cannot load", {
+        messageId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
   return events;
 };
