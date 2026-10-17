@@ -178,6 +178,53 @@ describe("Notebook detail panel recovery and pagination", () => {
     }
   });
 
+  test("a saved change by someone else names them in the header, and a failed refresh retries the refresh", async () => {
+    const { WORKSPACE_EVENT } = await import("../sidebar/workspace-events");
+    let editor = { name: "Alice Example", at: "2026-10-16T19:18:00.000Z" };
+    let failing = false;
+    answer = () =>
+      failing
+        ? Response.json({ message: "Unavailable" }, { status: 503 })
+        : Response.json({
+            data: [{ ...activity(0), actor: { ...activity(0).actor, displayName: editor.name }, lastOccurredAt: editor.at }],
+            nextCursor: null,
+          });
+    const updated = () =>
+      window.dispatchEvent(
+        new CustomEvent(WORKSPACE_EVENT, {
+          detail: {
+            cursor: null,
+            event: { v: 1, type: "note.updated", notebookId: "Book01", note: { id: "Note01" } },
+            // The workspace socket owns a failed coverage; the panel shows its own error row.
+            cover: (coverage: Promise<void>) => void coverage.catch(() => undefined),
+          },
+        }),
+      );
+    const header = () => dom.root.querySelector(".k2b-detail-panel__supporting > p")?.textContent ?? "";
+    const dispose = await renderPanel();
+    try {
+      await until(() => header().includes("Alice Example"));
+      editor = { name: "Bob Example", at: "2026-10-16T19:25:00.000Z" };
+      updated();
+      await until(() => header().includes("Bob Example"));
+      expect(dom.root.querySelector('time[datetime="2026-10-16T19:25:00.000Z"]')).not.toBeNull();
+
+      // The refresh fails: the rows stay, and Retry reads the newest page again, not an older one.
+      failing = true;
+      updated();
+      await until(() => Boolean(dom.root.querySelector('[role="alert"]')));
+      expect(authors()).toEqual(["Bob Example"]);
+      failing = false;
+      editor = { name: "Cleo Example", at: "2026-10-16T19:28:00.000Z" };
+      button("Erneut versuchen")!.click();
+      await until(() => header().includes("Cleo Example"));
+      expect(dom.root.querySelector('[role="alert"]')).toBeNull();
+      expect(requests.every((url) => !url.searchParams.has("cursor"))).toBe(true);
+    } finally {
+      dispose();
+    }
+  });
+
   test("a failed older activity page keeps loaded rows and retries the same cursor", async () => {
     let olderAttempts = 0;
     answer = (url) => {

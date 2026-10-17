@@ -131,6 +131,8 @@ type NoteActivityItem = {
 };
 
 type ActivityPage = { data: NoteActivityItem[]; nextCursor: string | null };
+/** The actions that change a note's text, as the server's last-editor query counts them. */
+const EDIT_ACTIONS = new Set(["note.edited", "note.restored", "note.created"]);
 
 /** Activity rows before "n more": enough to see what happened lately without pushing the panel's end away. */
 const NEWEST_ACTIVITY = 4;
@@ -184,6 +186,8 @@ export default function NotebookDetailPanel(props: Props) {
   const [reconnecting, setReconnecting] = createSignal(false);
   const [activityExpanded, setActivityExpanded] = createSignal(false);
 
+  /** What the activity read last asked for, so Retry repeats a failed refresh or a failed older page. */
+  let activityRead: "fresh" | "older" = "fresh";
   const noteActivity = query.createInfinite<string, ActivityPage, string>({
     source: noteId,
     loadPage: async (currentNoteId, { cursor, abortSignal }) => {
@@ -209,7 +213,9 @@ export default function NotebookDetailPanel(props: Props) {
         const changed =
           (event.type === "note.comments.changed" && event.noteId === noteId()) ||
           (event.type === "note.updated" && event.note.id === noteId());
-        if (changed && event.notebookId === props.notebookId) cover(invalidate());
+        if (!changed || event.notebookId !== props.notebookId) return;
+        activityRead = "fresh";
+        cover(invalidate());
       };
       window.addEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
       return () => window.removeEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
@@ -222,6 +228,16 @@ export default function NotebookDetailPanel(props: Props) {
       .flatMap((page) => page.data)
       .filter((item) => item.action !== "note.created"),
   );
+  /**
+   * The newest edit in the log, which a refresh keeps current when someone else saves; the server's snapshot covers
+   * the time before the log loads and edits older than its first page.
+   */
+  const newestEdit = createMemo(() => noteActivity.pages()[0]?.data.find((item) => EDIT_ACTIONS.has(item.action)));
+  const lastEditor = () => newestEdit()?.actor ?? authors().lastEditedBy;
+  const editedAt = () => {
+    const logged = newestEdit()?.lastOccurredAt;
+    return logged && Date.parse(logged) > Date.parse(updatedAt()) ? logged : updatedAt();
+  };
   const visibleActivity = () => (activityExpanded() ? activityItems() : activityItems().slice(0, NEWEST_ACTIVITY));
   const hiddenActivity = () => Math.max(0, activityItems().length - NEWEST_ACTIVITY);
 
@@ -631,7 +647,7 @@ export default function NotebookDetailPanel(props: Props) {
   const metaLine = (): JSX.Element => {
     const edited = (lead: boolean) => (
       <>
-        {lead ? t().editedAtStart : t().editedAt} <Time value={updatedAt()} focusable />
+        {lead ? t().editedAtStart : t().editedAt} <Time value={editedAt()} focusable />
       </>
     );
     if (offline())
@@ -670,7 +686,7 @@ export default function NotebookDetailPanel(props: Props) {
           {edited(false)}
         </>
       );
-    const editor = authors().lastEditedBy;
+    const editor = lastEditor();
     return (
       <Show when={editor} fallback={edited(true)}>
         {(person) => (
@@ -947,7 +963,11 @@ export default function NotebookDetailPanel(props: Props) {
                 <div class="notebook-activity-error" role="alert">
                   <i class="ti ti-alert-circle" aria-hidden="true" />
                   <span>{t().activityLoadShort}</span>
-                  <Button variant="text" size="xs" onClick={() => void noteActivity.loadMore()}>
+                  <Button
+                    variant="text"
+                    size="xs"
+                    onClick={() => void (activityRead === "older" ? noteActivity.loadMore() : noteActivity.refresh())}
+                  >
                     {t().retry}
                   </Button>
                 </div>
@@ -962,6 +982,7 @@ export default function NotebookDetailPanel(props: Props) {
                   onClick={() => {
                     // Loaded older rows should show, so a collapsed list opens first.
                     setActivityExpanded(true);
+                    activityRead = "older";
                     void noteActivity.loadMore();
                   }}
                 />
