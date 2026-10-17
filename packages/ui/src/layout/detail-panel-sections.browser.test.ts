@@ -201,10 +201,12 @@ const avatarPanel = () =>
           return createComponent(DetailPanel.Body, {
             get children() {
               return [
-                section("Working", "ti ti-user", undefined, () =>
+                // Without a section icon, so the avatar sits on the body's content edge, as close to the scrollport as
+                // panel content gets.
+                section("Working", "", undefined, () =>
                   createComponent(Avatar, { name: "Grace Hopper", size: "xs", ring: "success", alt: "Grace Hopper is working on it" }),
                 ),
-                section("Online", "ti ti-users", undefined, () =>
+                section("Online", "", undefined, () =>
                   createComponent(Avatar, {
                     name: "Ada Lovelace",
                     size: "xs",
@@ -359,6 +361,8 @@ describe("DetailPanel sections and Discussion share one frame", () => {
             const body = document.querySelector<HTMLElement>(".k2b-detail-panel__body")!;
             const bodyRect = body.getBoundingClientRect();
             const left = bodyRect.left + body.clientLeft;
+            // The body keeps a gutter for row hover fills; content starts after it.
+            const contentLeft = left + parseFloat(getComputedStyle(body).paddingLeft);
             const top = bodyRect.top + body.clientTop;
             const probe = document.createElement("span");
             probe.style.color = "var(--k2b-success-text)";
@@ -403,7 +407,7 @@ describe("DetailPanel sections and Discussion share one frame", () => {
                 shadow: style.boxShadow,
                 border: style.borderTopWidth,
                 color: style.borderTopColor,
-                flush: Math.abs(rect.left - left) <= 0.5,
+                flush: Math.abs(rect.left - contentLeft) <= 0.5,
                 inside: inside(rect),
                 paintedInside: inside(painted),
                 size: [rect.width, rect.height],
