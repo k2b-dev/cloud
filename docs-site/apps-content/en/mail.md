@@ -461,10 +461,12 @@ removes everyone. `cld mail conversation users` lists who can be assigned.
 `done` and `reopen` need no revision. Done also covers messages Mail still
 loads. Each result reports `ok` with the resulting status and revision, or
 `not_found` for a missing or invisible conversation. Partial results exit with
-status 1. To mark a page of Needs action conversations done in batches of 50:
+status 1. To mark a page of Needs action conversations done in batches of 50,
+select the mailbox with `cld mail use` first:
 
 ```bash
-cld --json mail ls <mailbox> --view needs_action --limit 100 | jq -r '.items[].id' | xargs -r -n 50 cld mail done --mailbox <mailbox>
+cld mail use <mailbox>
+cld --json mail ls <mailbox> --view needs_action --limit 100 | jq -r '.items[].id' | xargs -r -n 50 cld mail done
 ```
 
 Done conversations leave that view, so re-running the pipeline continues.

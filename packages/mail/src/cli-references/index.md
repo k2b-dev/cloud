@@ -132,10 +132,11 @@ A batch continues when one conversation fails and then exits with status 1. The 
 
 `assign` returns `{ "assignees": [...], "results": [{ "conversationId", "status": "ok" | "not_found" }] }`. The `assignees` array resolves the users named in the request, not the final set of each conversation. Read `conversation collaboration` to inspect that set. `tag add` returns `updatedConversationIds` and `unchangedConversationIds`; `tag rm` adds `failed`.
 
-Mark a page of Needs action conversations done in batches of 50:
+Mark a page of Needs action conversations done in batches of 50. `mail use` selects the mailbox that `done` changes:
 
 ```bash
-cld --json mail ls <mailbox> --view needs_action --limit 100 | jq -r '.items[].id' | xargs -r -n 50 cld mail done --mailbox <mailbox>
+cld mail use <mailbox>
+cld --json mail ls <mailbox> --view needs_action --limit 100 | jq -r '.items[].id' | xargs -r -n 50 cld mail done
 ```
 
 Done conversations leave the Needs action view, so re-running the pipeline
