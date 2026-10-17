@@ -297,7 +297,8 @@ test(`${browserName}: filters, an area toggle and the search change the notes an
     // Enter in the search moves focus to the first match.
     await page.keyboard.press("Enter");
     expect(await page.evaluate(() => document.activeElement?.getAttribute("data-node"))).toBe(HANDBOOK_IDS.kuehl!);
-    expect(search(page).get("q")).toBe("Kühl");
+    // The search reaches the address once typing pauses.
+    await page.waitForFunction(() => new URL(location.href).searchParams.get("q") === "Kühl");
     expect(search(page).get("note")).toBeNull();
     expect(search(page).get("mode")).toBe("graph");
 
@@ -328,8 +329,8 @@ test(`${browserName}: searching keeps the zoom, and the sidebar's view filter st
     await page.getByRole("searchbox", { name: "Find a note in the graph" }).fill("Lager");
     await page.waitForFunction(() => document.querySelectorAll("[data-node][data-match]").length > 0);
     expect(await positions(page)).toEqual(zoomed);
+    await page.waitForFunction(() => new URL(location.href).searchParams.get("q") === "Lager");
     expect(search(page).get("view")).toBe("favorites");
-    expect(search(page).get("q")).toBe("Lager");
     expect(search(page).has("display")).toBe(false);
   } finally {
     await close(page);
@@ -357,10 +358,15 @@ test(`${browserName}: As list shows the same notes as a table as wide as Main, a
     expect(search(page).get("list")).toBe("1");
     expect(await table.locator('a[aria-current="page"]').textContent()).toBe("Wareneingang");
 
+    // A search typed just before leaving is in the address when Back returns.
+    await page.getByRole("searchbox", { name: "Find a note in the graph" }).fill("Kühl");
     await table.getByRole("link", { name: "Kühlkette", exact: true }).first().click();
     await page.waitForURL(`**/app/notebooks/hand01/notes/${HANDBOOK_IDS.kuehl}?mode=book`);
     await page.goBack();
     await page.waitForFunction(() => window.notebookGraphFixture?.mounted === true);
+    expect(search(page).get("q")).toBe("Kühl");
+    await page.getByRole("searchbox", { name: "Find a note in the graph" }).fill("");
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has("q"));
     expect(search(page).get("list")).toBe("1");
     expect(search(page).get("links")).toBe("linked");
     expect(await page.getByRole("table").locator("tbody tr.k2b-data-table__row").count()).toBe(45);

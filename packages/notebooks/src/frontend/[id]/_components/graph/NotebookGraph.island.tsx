@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { Button, ButtonLink, IconButton, IconButtonLink, Placeholder, SelectChip, TextInput, Toolbar, Tooltip, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, Match, Show, Switch, untrack } from "solid-js";
+import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { NoteGraph } from "../../../../service/links";
 import { buildNoteUrl } from "../../../params";
@@ -11,6 +11,9 @@ import { GraphDisplaySwitcher, graphDisplayLabel } from "./graph-displays";
 import { buildGraphModel, type GraphLinksFilter, matchesQuery, visibleEdges, visibleNotes } from "./model";
 import NetworkDisplay, { type GraphZoomControls } from "./NetworkDisplay";
 import { GRAPH_QUERY_MAX, type GraphViewState, normalizeGraphViewState, writeGraphViewState } from "./view-state";
+
+const SEARCH_URL_DELAY_MS = 300;
+const URL_RETRY_MS = 1000;
 
 type Props = {
   notebookId: string;
@@ -43,13 +46,37 @@ export default function NotebookGraph(props: Props) {
   let focusNote: ((id: string) => void) | undefined;
   let navigationToggle: HTMLDivElement | undefined;
 
+  // The address follows the state. Typing in the search writes it once the typing pauses, since Safari limits how
+  // often a page may replace its history entry; a write it refuses is tried again, and leaving the page writes first.
+  let urlTimer: ReturnType<typeof setTimeout> | undefined;
+  const writeUrl = () => {
+    clearTimeout(urlTimer);
+    urlTimer = undefined;
+    const url = writeGraphViewState(new URL(window.location.href), state());
+    try {
+      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    } catch {
+      urlTimer = setTimeout(writeUrl, URL_RETRY_MS);
+    }
+  };
+  const flushUrl = () => {
+    if (urlTimer !== undefined) writeUrl();
+  };
   // The state is normalized with the URL's own limits first, so what renders is what a reload restores.
   const update = (patch: Partial<GraphViewState>) => {
-    const next = normalizeGraphViewState({ ...state(), ...patch });
-    setState(next);
-    const url = writeGraphViewState(new URL(window.location.href), next);
-    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    setState(normalizeGraphViewState({ ...state(), ...patch }));
+    if (Object.keys(patch).every((key) => key === "q")) {
+      clearTimeout(urlTimer);
+      urlTimer = setTimeout(writeUrl, SEARCH_URL_DELAY_MS);
+    } else writeUrl();
   };
+  onMount(() => {
+    window.addEventListener("pagehide", flushUrl);
+    onCleanup(() => {
+      window.removeEventListener("pagehide", flushUrl);
+      clearTimeout(urlTimer);
+    });
+  });
 
   // The search changes neither the visible notes nor the view; only the filters do.
   const filterKey = createMemo(() => `${state().links}|${state().hide.join(",")}`);
@@ -65,7 +92,10 @@ export default function NotebookGraph(props: Props) {
   const currentId = () => (props.selectedNoteId && model.byId.has(props.selectedNoteId) ? props.selectedNoteId : null);
   const current = () => (currentId() ? model.byId.get(currentId()!) : undefined);
   const noteHref = (id: string) => buildNoteUrl(props.notebookId, id, props.from);
-  const open = (id: string) => navigateTo(noteHref(id));
+  const open = (id: string) => {
+    flushUrl();
+    navigateTo(noteHref(id));
+  };
   const closeHref = () =>
     props.backHref ??
     (current()
