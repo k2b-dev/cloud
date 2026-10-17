@@ -59,7 +59,26 @@ COPY styles.css ./
 RUN bun run packages/cloud/scripts/build.ts
 
 # ──────────────────────────────────────────────────────────────────────
-# Stage 4: runtime — only the bundled output + bun runtime.
+# Stage 4: geoip — pinned snapshot, independent of application sources.
+# ──────────────────────────────────────────────────────────────────────
+FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS geoip
+ARG APP_ID
+# DB-IP Lite, CC BY 4.0; attribution in THIRD_PARTY_NOTICES.md.
+# Only Core reads it; gating on APP_ID keeps other images and their caches small.
+# DB-IP keeps only the current and previous month; bun scripts/geoip-snapshot.ts moves the pin.
+RUN set -eu; mkdir -p /geoip; \
+    if [ "$APP_ID" = "core" ]; then \
+      download() { for attempt in 1 2 3; do if wget -q -T 60 -O "$2" "$1"; then return 0; fi; sleep 2; done; return 1; }; \
+      download https://download.db-ip.com/free/dbip-city-lite-2026-10.mmdb.gz /geoip/dbip-city-lite.mmdb.gz; \
+      download https://download.db-ip.com/free/dbip-asn-lite-2026-10.mmdb.gz /geoip/dbip-asn-lite.mmdb.gz; \
+      echo "c839d407f85a1e0bddba354cef16b2c398182d1c34ed8d985555dce134b36b14  /geoip/dbip-city-lite.mmdb.gz" | sha256sum -c -; \
+      echo "6cdde02baa8c1bd619ab84c2e505ecd91d45288b5a87faadf1b7c41525a17a94  /geoip/dbip-asn-lite.mmdb.gz" | sha256sum -c -; \
+      gunzip /geoip/dbip-city-lite.mmdb.gz /geoip/dbip-asn-lite.mmdb.gz; \
+      chmod 0444 /geoip/*.mmdb; \
+    fi; chmod 0555 /geoip
+
+# ──────────────────────────────────────────────────────────────────────
+# Stage 5: runtime — only the bundled output + bun runtime.
 # ──────────────────────────────────────────────────────────────────────
 FROM ghcr.io/k2b-dev/mirror/oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f AS runtime
 WORKDIR /app
@@ -74,6 +93,7 @@ ENV NODE_ENV=production \
     CLOUD_RELEASE=${CLOUD_RELEASE} \
     CLOUD_CLI_CHROMIUM=/usr/bin/chromium
 COPY --from=build --chown=bun:bun /app/dist ./
+COPY --from=geoip /geoip /app/geoip
 USER bun
 
 EXPOSE 3000

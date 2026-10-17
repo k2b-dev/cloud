@@ -58,6 +58,14 @@ demo data, never a person's real data, and show only the states that changed
 or that a decision depends on. Pull requests are public, and one baseline
 theme lets reviewers compare screenshots across changes.
 
+## Refresh the bundled location snapshot
+
+DB-IP serves only the current and previous month. Before a release whose
+snapshot pin is older than the previous month, run
+`bun scripts/geoip-snapshot.ts <YYYY-MM>` and review the Dockerfile pin and
+[sign-in location snapshot details](/en/docs/operations/sign-in-locations).
+A cold build with an older pin fails at the download or checksum step.
+
 ## Let release-please cut the release
 
 release-please runs on every push to `main`:

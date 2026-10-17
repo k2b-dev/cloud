@@ -122,6 +122,7 @@
     "liquidjs": "10.29.0",
     "marked": "18.0.14",
     "mermaid": "12.0.0",
+    "mmdb-lib": "3.0.3",
     "nodemailer": "10.0.10",
     "postcss": "8.5.28",
     "reflect-metadata": "0.2.2",
