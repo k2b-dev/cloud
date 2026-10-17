@@ -918,6 +918,7 @@ export const aiChatTasks = {
     return occurrences;
   },
 
+  /** Removes expired runs and their evidence, including background turns and transcripts left by deleted tasks. */
   pruneExpiredRuns: async (input: { now?: Date; limit?: number } = {}): Promise<number> => {
     const cutoff = new Date((input.now ?? new Date()).getTime() - AI_CHAT_TASK_RUN_RETENTION_DAYS * 86_400_000);
     const limit = Math.min(Math.max(input.limit ?? 100, 1), 500);
@@ -934,16 +935,38 @@ export const aiChatTasks = {
         LIMIT ${limit}
         FOR UPDATE OF occurrence SKIP LOCKED
       `;
-      if (occurrences.length === 0) return 0;
-      const occurrenceIds = toPgUuidArray(occurrences.map((occurrence) => occurrence.id));
-      const turnIds = toPgUuidArray(occurrences.flatMap((occurrence) => (occurrence.turn_id ? [occurrence.turn_id] : [])));
-      await tx`DELETE FROM ai.task_messages WHERE loop_id = ANY(${turnIds}::text[])`;
-      await tx`DELETE FROM ai.chat_task_occurrences WHERE id = ANY(${occurrenceIds}::uuid[])`;
-      await tx`
-        DELETE FROM ai.turns WHERE id = ANY(${turnIds}::uuid[])
-          AND status IN ('completed', 'failed', 'aborted') AND run_config ? 'background'
+      if (occurrences.length > 0) {
+        const occurrenceIds = toPgUuidArray(occurrences.map((occurrence) => occurrence.id));
+        const turnIds = toPgUuidArray(occurrences.flatMap((occurrence) => (occurrence.turn_id ? [occurrence.turn_id] : [])));
+        await tx`DELETE FROM ai.task_messages WHERE loop_id = ANY(${turnIds}::text[])`;
+        await tx`DELETE FROM ai.chat_task_occurrences WHERE id = ANY(${occurrenceIds}::uuid[])`;
+        await tx`
+          DELETE FROM ai.turns WHERE id = ANY(${turnIds}::uuid[])
+            AND status IN ('completed', 'failed', 'aborted') AND run_config ? 'background'
+        `;
+      }
+      const remaining = limit - occurrences.length;
+      if (remaining === 0) return occurrences.length;
+      const orphanedTurns = await tx<{ id: string }[]>`
+        SELECT turn.id FROM ai.turns turn
+        WHERE turn.run_config ? 'background' AND turn.status IN ('completed', 'failed', 'aborted')
+          AND turn.completed_at < ${cutoff}
+          AND NOT EXISTS (
+            SELECT 1 FROM ai.chat_task_occurrences occurrence WHERE occurrence.turn_id = turn.id
+          )
+        ORDER BY turn.completed_at, turn.id
+        LIMIT ${remaining}
+        FOR UPDATE OF turn SKIP LOCKED
       `;
-      return occurrences.length;
+      if (orphanedTurns.length === 0) return occurrences.length;
+      const orphanedTurnIds = toPgUuidArray(orphanedTurns.map((turn) => turn.id));
+      await tx`DELETE FROM ai.task_messages WHERE loop_id = ANY(${orphanedTurnIds}::text[])`;
+      const removedTurns = await tx<{ id: string }[]>`
+        DELETE FROM ai.turns WHERE id = ANY(${orphanedTurnIds}::uuid[])
+          AND status IN ('completed', 'failed', 'aborted') AND run_config ? 'background'
+        RETURNING id
+      `;
+      return occurrences.length + removedTurns.length;
     });
   },
 

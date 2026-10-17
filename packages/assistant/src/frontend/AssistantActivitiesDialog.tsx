@@ -73,14 +73,17 @@ function AssistantTaskRun(props: { taskId: string; occurrenceId: string; transcr
         : "";
     return content.replace(/^Scheduled task [^\n]+:\s*\n/u, "").trim() || value?.task.prompt || "";
   });
+  // A refresh after expiry answers 404 while the query keeps its last data; removal wins over that copy.
+  const unavailable = () => detail.error() instanceof RunUnavailableError;
+  const available = () => (unavailable() ? undefined : detail.data());
   return (
     <div class="assistant-activity-dialog">
       <div class="assistant-activity-dialog__body">
         <Show
-          when={detail.data()}
+          when={available()}
           fallback={
             <Show
-              when={detail.error() instanceof RunUnavailableError}
+              when={unavailable()}
               fallback={
                 <Placeholder
                   state={detail.error() ? "error" : "loading"}
@@ -134,7 +137,7 @@ function AssistantTaskRun(props: { taskId: string; occurrenceId: string; transcr
           )}
         </Show>
       </div>
-      <Show when={detail.data()}>
+      <Show when={available()}>
         {(value) => (
           <div class="assistant-activity-dialog__actions">
             <Show when={!props.transcript}>

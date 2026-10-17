@@ -517,6 +517,12 @@ export const migrateCloudAi = async (): Promise<void> => {
   `.simple();
 
   await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_turns_background_finished
+    ON ai.turns(completed_at, id)
+    WHERE run_config ? 'background' AND status IN ('completed', 'failed', 'aborted')
+  `.simple();
+
+  await sql`
     CREATE TABLE IF NOT EXISTS ai.conversation_resource_refs (
       conversation_id UUID NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE,
       resource_type TEXT NOT NULL,

@@ -135,27 +135,74 @@ test("global task dialogs provide live context through activity, run detail and 
   }
 });
 
-test("a run removed after 90 days explains that its result stays in the chat instead of failing", async () => {
+test("a run removed after 90 days explains that its result stays in the chat, also when it expires while open", async () => {
   const dom = createDomTestHarness();
   dom.root.className = "k2b-ui";
   const { dialogCore } = await import("@k2b/ui");
   const { openAssistantTaskRun } = await import("./AssistantActivitiesDialog");
   const { createAssistantLiveHub } = await import("./assistant-live");
+  const task: AiChatTaskView = {
+    id: "task01",
+    chatId: "chat01",
+    chatTitle: "Morning chat",
+    grants: [],
+    prompt: "Morning overview",
+    schedule: { kind: "cron", cron: "0 9 * * *" },
+    timezone: "UTC",
+    state: "active",
+    lastError: null,
+    createdAt: "2026-06-20T09:00:00Z",
+    updatedAt: "2026-06-20T09:00:00Z",
+  };
+  const occurrence: AiChatTaskOccurrenceView = {
+    id: "run001",
+    taskId: task.id,
+    scheduledFor: "2026-06-20T09:00:00Z",
+    trigger: "scheduled",
+    state: "completed",
+    error: null,
+    resultText: "Your morning overview is ready.",
+    createdAt: "2026-06-20T09:00:00Z",
+    startedAt: null,
+    completedAt: null,
+  };
+  let removed = false;
   const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
-    Object.assign(async () => Response.json({ error: { code: "NOT_FOUND", message: "Task run not found" } }, { status: 404 }), {
-      preconnect: globalThis.fetch.preconnect,
-    }),
+    Object.assign(
+      async () =>
+        removed
+          ? Response.json({ error: { code: "NOT_FOUND", message: "Task run not found" } }, { status: 404 })
+          : Response.json({ task, occurrence, messages: [] }),
+      { preconnect: globalThis.fetch.preconnect },
+    ),
   );
-  try {
-    const result = openAssistantTaskRun("task01", "run001", createAssistantLiveHub());
-    await tick();
+  const unavailable = () => {
     const placeholder = dom.document.querySelector(".k2b-placeholder");
     expect(placeholder?.getAttribute("data-state")).toBe("empty");
     expect(placeholder?.textContent).toContain("This run is no longer available");
     expect(placeholder?.textContent).toContain("Its result stays in the chat.");
     expect(dom.document.body.textContent).not.toContain("Could not load background activity");
+    expect(dom.document.body.textContent).not.toContain("Your morning overview is ready.");
+    expect(dom.document.querySelector(".assistant-activity-dialog__actions")).toBeNull();
+  };
+  try {
+    // Expires while the run is open: the live refresh answers 404 and must replace the stale run.
+    const live = createAssistantLiveHub();
+    const open = openAssistantTaskRun(task.id, occurrence.id, live);
+    await tick();
+    expect(dom.document.body.textContent).toContain("Your morning overview is ready.");
+    removed = true;
+    await live.resync().catch(() => undefined);
+    await tick();
+    unavailable();
     dialogCore.close();
-    await result;
+    await open;
+    // Opened after removal, for example from the result message in the chat.
+    const later = openAssistantTaskRun(task.id, occurrence.id, createAssistantLiveHub());
+    await tick();
+    unavailable();
+    dialogCore.close();
+    await later;
   } finally {
     while (dialogCore.isOpen()) dialogCore.close();
     await tick();
