@@ -41,9 +41,29 @@ else
       // The editor and its unsent text stay: no navigation for the current mode.
       choice("Bearbeiten").click();
       expect(visits).toEqual([]);
-      choice("Lesen").click();
-      expect(visits).toHaveLength(1);
-      expect(visits[0]).toContain("/app/notebooks/Book01/notes/Note01");
+      // Another mode asks the open editor first; a cancelled leave confirmation keeps the page.
+      const { SOFT_NOTE_NAVIGATION_REQUEST_EVENT } = await import("../../../lib/soft-navigation");
+      const asked: string[] = [];
+      let answer: "superseded" | "fallback" = "superseded";
+      const editor = (event: Event) => {
+        const detail = (event as CustomEvent<{ href: string; handled?: Promise<{ kind: string }> }>).detail;
+        asked.push(detail.href);
+        detail.handled = Promise.resolve({ kind: answer });
+      };
+      window.addEventListener(SOFT_NOTE_NAVIGATION_REQUEST_EVENT, editor);
+      try {
+        choice("Lesen").click();
+        await new Promise((done) => setTimeout(done, 0));
+        expect(asked).toEqual(["/app/notebooks/Book01/notes/Note01?mode=readonly"]);
+        expect(visits).toEqual([]);
+        // Confirmed, or no editor to ask: the page opens in the chosen mode.
+        answer = "fallback";
+        choice("Lesen").click();
+        await new Promise((done) => setTimeout(done, 0));
+        expect(visits).toEqual(["/app/notebooks/Book01/notes/Note01?mode=readonly"]);
+      } finally {
+        window.removeEventListener(SOFT_NOTE_NAVIGATION_REQUEST_EVENT, editor);
+      }
     } finally {
       dispose();
       dom.cleanup();

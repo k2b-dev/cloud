@@ -1,6 +1,6 @@
-import { navigateTo } from "@k2b/ssr/nav";
 import { Dropdown, type DropdownItem, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
+import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { changeFullWidth, createFullWidth } from "../full-width";
@@ -38,11 +38,12 @@ export function ViewMenu(props: ViewMenuProps) {
     onCleanup(() => query.removeEventListener("change", update));
   });
 
-  // Choosing the mode already shown keeps the page, the editor and its unsent text as they are.
+  // Choosing the mode already shown keeps the page, the editor and its unsent text as they are. Another mode goes
+  // through the editor's leave guard, as a link click does, so unsent text is never dropped without asking.
   const current = (mode: "write" | "readonly" | "book") =>
     (mode === "write" && props.mode === "edit") || (mode === "readonly" && props.mode === "read");
   const open = (mode: "write" | "readonly" | "book") => () => {
-    if (!current(mode)) void navigateTo(buildNoteUrl(props.notebookId, props.noteId, mode));
+    if (!current(mode)) void navigateToNotebookNote(buildNoteUrl(props.notebookId, props.noteId, mode));
   };
   const items = (): DropdownItem[] => [
     {
