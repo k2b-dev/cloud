@@ -6,8 +6,9 @@ export const DEFAULT_GRAPH_DISPLAY: GraphDisplay = "network";
 export const GRAPH_QUERY_MAX = 200;
 export type GraphViewState = { display: GraphDisplay; list: boolean; links: GraphLinksFilter; hide: string[]; q: string };
 
+/** Valid, deduplicated area keys. No count cap: the toggles only add areas that exist, and the request URL limit bounds the rest. */
 function areaKeys(values: readonly string[]): string[] {
-  return [...new Set(values.filter((key) => key === "top" || /^[0-9A-Za-z]{6}$/.test(key)))].slice(0, 64);
+  return [...new Set(values.filter((key) => key === "top" || /^[0-9A-Za-z]{6}$/.test(key)))];
 }
 export function normalizeGraphViewState(state: GraphViewState): GraphViewState {
   return {

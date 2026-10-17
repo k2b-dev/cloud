@@ -65,10 +65,10 @@ test("search is capped at 200 characters and remains untrimmed", () => {
   const next = writeGraphViewState(new URL("https://cloud.example/"), { ...defaults, q: "x".repeat(250) });
   expect(next.searchParams.get("q")).toHaveLength(GRAPH_QUERY_MAX);
 });
-test("hidden area keys are validated, deduped and capped in first-seen order", () => {
+test("hidden area keys are validated and deduped in first-seen order, also beyond 64 areas", () => {
   const keys = Array.from({ length: 70 }, (_, index) => index.toString(36).padStart(6, "0"));
   const hide = ["top", "bad", "Abc123", "top", "Abc123", "!bad", "ümlaut", "top ", ...keys];
-  const expected = ["top", "Abc123", ...keys].slice(0, 64);
+  const expected = ["top", "Abc123", ...keys];
   expect(parse(`hide=${hide.join(",")}`).hide).toEqual(expected);
   const next = writeGraphViewState(new URL("https://cloud.example/"), { ...defaults, hide });
   expect(parseGraphViewState(next.searchParams).hide).toEqual(expected);
@@ -87,7 +87,7 @@ test("normalization applies parser limits without mutating the input", () => {
   expect(normalized).toEqual({
     ...state,
     q: state.q.slice(0, GRAPH_QUERY_MAX),
-    hide: ["top", "Abc123", ...keys].slice(0, 64),
+    hide: ["top", "Abc123", ...keys],
   });
   expect(normalizeGraphViewState(normalized)).toEqual(normalized);
   expect(parse(`q=${encodeURIComponent(state.q)}&hide=${state.hide.join(",")}&display=network&list=1&links=linked`)).toEqual(normalized);
@@ -121,7 +121,7 @@ test("normalizing applies the URL limits, so a reload restores exactly what rend
   const state: GraphViewState = { ...defaults, list: true, hide: ["!bad", ...hide], q: "y".repeat(250) };
   const normalized = normalizeGraphViewState(state);
   expect(normalized.q).toHaveLength(200);
-  expect(normalized.hide).toEqual(hide.slice(0, 64));
+  expect(normalized.hide).toEqual(hide);
   expect(parseGraphViewState(writeGraphViewState(new URL("https://cloud.example/"), state).searchParams)).toEqual(normalized);
   expect(normalizeGraphViewState(normalized)).toEqual(normalized);
 });
