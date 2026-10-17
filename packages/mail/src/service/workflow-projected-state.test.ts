@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import type { WorkflowBoundPlan, WorkflowStepOutcome } from "@k2b/cloud/workflows";
+import { describe, expect, mock, test } from "bun:test";
+import type { WorkflowBoundPlan, WorkflowJsonValue, WorkflowStepOutcome } from "@k2b/cloud/workflows";
 import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
 import type { FrozenMailWorkflowSource } from "./workflow-data";
 import {
@@ -143,6 +143,26 @@ describe("Mail workflow projected state", () => {
 
     expect(projected.source).toEqual({});
     expect(projected.inputs).toEqual({ slot: "2026-07-22T08:00:00.000Z" });
+  });
+
+  test("evaluates a restored message action config at its live action path", async () => {
+    const message: { id: string; flags: string[] } = { id: "message", flags: [] };
+    const evaluate = mock(async (_value: WorkflowJsonValue, _path?: Array<string | number>) => ({ message }));
+    const ctx = { evaluate } as unknown as WorkflowExecuteActionContext;
+    const step: WorkflowActionStep = {
+      kind: "action",
+      action: "addFlag",
+      config: { message: "${{ inputs.message }}", flag: "\\Seen" },
+      sourcePath: ["steps", 1, "if", "then", 0],
+    };
+
+    await restoreMailWorkflowProjectedState(ctx, step, {
+      state: "completed",
+      output: { action: "addFlag", applied: true, value: "\\Seen" },
+    });
+
+    expect(evaluate.mock.calls).toEqual([[step.config, ["steps", 1, "if", "then", 0, "addFlag"]]]);
+    expect(message.flags).toEqual(["\\Seen"]);
   });
 
   test("restores completed message and conversation projections before later steps", async () => {

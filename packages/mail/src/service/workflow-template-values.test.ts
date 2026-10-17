@@ -91,6 +91,23 @@ describe("Mail workflow template body access", () => {
     expect(message.body).toBe("x plain");
   });
 
+  test.each(["first", "second"])("preserves shared message identity when reading the %s input body", async (name) => {
+    const { ctx, message, resolveReference } = fixture();
+    ctx.plan.inputs = [
+      { name: "first", type: "mailMessage", config: {} },
+      { name: "second", type: "mailMessage", config: {} },
+    ];
+    ctx.invocation.inputs = { first: message, second: message };
+    const source = `{% if inputs.first == inputs.second %}{{ inputs.${name}.bodyText }}{% endif %}`;
+
+    await resolveMailWorkflowTemplateBodies(ctx, step(source));
+
+    expect(resolveReference.mock.calls).toEqual([["inputs.first.bodyText", ["steps", 0, "succeed", "message"]]]);
+    expect(ctx.invocation.inputs.first).toBe(ctx.invocation.inputs.second);
+    expect(message.bodyText).toBe("x plain");
+    expect(renderMailWorkflowTemplate({ invocation: ctx.invocation, variableSnapshot: () => ({}) }, source)).toBe("x plain");
+  });
+
   test("resolves newly reached body fields across passes", async () => {
     const { ctx, message, resolveReference } = fixture();
     const source = '{% if inputs.message.bodyText contains "x" %}{{ inputs.message.bodyHtml }}{% endif %}';
