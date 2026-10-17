@@ -15,6 +15,18 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
       rejected: "Did not create the event {input.title}",
       notRun: "Event {input.title} not created",
     },
+    "reaction.add": {
+      approval: "React with {input.emoji}",
+      done: "Reacted with {input.emoji}",
+      rejected: "Did not react",
+      notRun: "Reaction not added",
+    },
+    "reaction.remove": {
+      approval: "Remove your {input.emoji} reaction",
+      done: "Removed your {input.emoji} reaction",
+      rejected: "Did not remove the reaction",
+      notRun: "Reaction not removed",
+    },
     "comment.create": {
       approval: "Add a comment",
       rejected: "Did not add the comment",
@@ -492,6 +504,36 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
             messageId: "Quelle Mail-Nachricht ID.",
             participationStatus: "Antwort in Spaces gespeichert.",
             draftId: "Mail-Entwurf ID erstellt aus der vorbereiteten Antwort.",
+          },
+        },
+        "reaction.add": {
+          title: "Reaktion hinzufügen",
+          sentences: {
+            approval: "Mit {input.emoji} reagieren",
+            done: "Mit {input.emoji} reagiert",
+            rejected: "Nicht reagiert",
+            notRun: "Reaktion nicht hinzugefügt",
+          },
+          description:
+            "Die eigene Emoji-Reaktion zu einem Eintrag in einem beschreibbaren Space hinzufügen. Ohne Benachrichtigung und Aktivität.",
+          input: {
+            itemId: "Aufgabe oder Ereignis ID, zurückgegeben durch Elementsuche/Liste/Lesen oder ein spaces.item ref.",
+            emoji: "Genau ein vollständig qualifiziertes Emoji, auch mit Hautton.",
+          },
+        },
+        "reaction.remove": {
+          title: "Reaktion entfernen",
+          sentences: {
+            approval: "Eigene {input.emoji}-Reaktion entfernen",
+            done: "Eigene {input.emoji}-Reaktion entfernt",
+            rejected: "Reaktion nicht entfernt",
+            notRun: "Reaktion nicht entfernt",
+          },
+          description:
+            "Die eigene Emoji-Reaktion von einem Eintrag in einem beschreibbaren Space entfernen. Ohne Benachrichtigung und Aktivität.",
+          input: {
+            itemId: "Aufgabe oder Ereignis ID, zurückgegeben durch Elementsuche/Liste/Lesen oder ein spaces.item ref.",
+            emoji: "Genau ein vollständig qualifiziertes Emoji, auch mit Hautton.",
           },
         },
         "comment.create": {

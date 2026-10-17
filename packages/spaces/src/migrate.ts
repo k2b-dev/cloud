@@ -673,6 +673,24 @@ export const migrate = async (): Promise<void> => {
   console.log("  ✓ spaces.comments table");
 
   await sql`
+    CREATE TABLE IF NOT EXISTS spaces.item_reactions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      item_id UUID NOT NULL REFERENCES spaces.items(id) ON DELETE CASCADE,
+      emoji TEXT NOT NULL,
+      user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+      service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+      CONSTRAINT item_reactions_one_reactor CHECK (num_nonnulls(user_id, service_account_id) = 1)
+    )
+  `.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_item_reactions_user
+    ON spaces.item_reactions(item_id, emoji, user_id) WHERE user_id IS NOT NULL`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_item_reactions_service_account
+    ON spaces.item_reactions(item_id, emoji, service_account_id) WHERE service_account_id IS NOT NULL`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_item_reactions_item_emoji_created
+    ON spaces.item_reactions(item_id, emoji, created_at)`.simple();
+
+  await sql`
     CREATE OR REPLACE FUNCTION spaces.check_overlap(
       p_start TIMESTAMPTZ,
       p_end TIMESTAMPTZ,

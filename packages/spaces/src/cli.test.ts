@@ -247,6 +247,13 @@ beforeAll(async () => {
           return json(request.method === "DELETE" ? { message: "ok" } : { id: "Cmt001", ...(body as object) });
         if (suffix === "/attachments" && request.method === "GET") return json([attachment]);
         if (suffix === "/attachments") return json({ ...attachment, id: "File02", filename: "bug.png" });
+        if (suffix.startsWith("/reactions/"))
+          return json({
+            reactions:
+              request.method === "DELETE"
+                ? []
+                : [{ emoji: decodeURIComponent(suffix.slice("/reactions/".length)), count: 1, own: true, people: [] }],
+          });
         if (suffix === "/attachments/File01/content") return new Response("image-bytes");
         if (suffix === "/attachments/File01") return json({ message: "Attachment deleted" });
         if (["/work", "/claim", "/release", "/progress"].includes(suffix)) return json(work);
@@ -591,6 +598,23 @@ describe("changes", () => {
 });
 
 describe("secondary resources", () => {
+  test("reaction intents encode emoji and print the fresh summary", async () => {
+    for (const emoji of ["👍🏽", "❤️"]) {
+      const added = await run(["reactions", "add", "Item01", emoji]);
+      expect(writes(added.requests)[0]).toMatchObject({
+        method: "PUT",
+        path: `/api/spaces/Space1/items/Item01/reactions/${encodeURIComponent(emoji)}`,
+      });
+      expect(added.json).toEqual({ reactions: [{ emoji, count: 1, own: true, people: [] }] });
+      const removed = await run(["reactions", "remove", "Item01", emoji]);
+      expect(writes(removed.requests)[0]).toMatchObject({
+        method: "DELETE",
+        path: `/api/spaces/Space1/items/Item01/reactions/${encodeURIComponent(emoji)}`,
+      });
+      expect(removed.json).toEqual({ reactions: [] });
+    }
+  });
+
   test("comments list, add, update and delete", async () => {
     expect((await run(["comments", "list", "Item01", "--page", "2", "--per-page", "10"])).json).toEqual({
       ...commentsPage,

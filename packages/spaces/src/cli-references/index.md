@@ -247,6 +247,7 @@ Run `cld spaces <command> --help` for every flag.
 | Quick actions | `done`, `reopen`, `assign <item> <user\|me\|none>`, `due <item> <date\|none>` |
 | Dependencies | `deps <item> [--add <item>] [--rm <item>]` |
 | Agent work | `work`, `claim`, `release`, `progress`, `activity`, `show --context` |
+| Reactions | `reactions add <item> <emoji>`, `reactions remove <item> <emoji>` |
 | Comments | `comments list`, `add`, `update`, `delete` |
 | Attachments | `attachments list`, `add`, `download`, `delete` |
 | Checklists | `checklist list`, `add`, `update`, `delete` |
@@ -258,6 +259,8 @@ Run `cld spaces <command> --help` for every flag.
 Inline text containing the two characters `\n` and no real line break is rejected; pass multi-line text with `--from <file|->`.
 
 Every command takes `--json` (and `--jsonl` for lists), destructive commands need `--yes`, and long text comes from `--from <file|->`. A command exits `0` only when it did everything it was asked to do.
+
+React with exactly one fully-qualified emoji (for example `👍🏽` or `❤️`). Each person or standalone/agent account has one reaction per emoji. Adding and removing are idempotent intents affecting only your own reaction and need write access. Viewing needs read access. In text output, `*` marks your own reaction. Reads include `reactions` with `emoji`, `count`, `own`, and up to three other `people`. At most 20 different emoji fit on an item. Reactions send no notifications and record no activity. Series reactions belong to the series item; generated occurrences have none.
 
 ## JSON contracts
 
@@ -277,6 +280,7 @@ Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link 
 | `add`, `set`, `mv`, `done`, `reopen`, `assign`, `due` | The resulting item |
 | `rm` | `{ deleted: { id, spaceId, title } }` |
 | `deps` | `{ item: { id, title }, blockers, blocks }`; `blocks` is a page `{ items, page, perPage, total, hasNext }` |
+| `reactions add`, `reactions remove` | `{ reactions: [{ emoji, count, own, people }] }` in first-reaction order |
 | `comments list` | Page `{ items, page, perPage, total, hasNext }` |
 | `comments add`, `comments update` | The comment |
 | `comments delete` | `{ deleted: { id, itemId } }` |
