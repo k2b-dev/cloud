@@ -83,7 +83,13 @@ const waitFor = async (condition: () => boolean) => {
   throw new Error("Condition did not settle");
 };
 const mount = async (
-  options: { conflict?: boolean; project?: boolean; newChat?: boolean; content?: AiConversation["draft"]["content"] } = {},
+  options: {
+    conflict?: boolean;
+    project?: boolean;
+    newChat?: boolean;
+    content?: AiConversation["draft"]["content"];
+    saveGate?: Promise<void>;
+  } = {},
 ) => {
   setSystemTime(new Date(now));
   const initial = { ...conversation, draft: { ...conversation.draft, content: options.content ?? [] } };
@@ -169,6 +175,7 @@ const mount = async (
         events.push("save");
         const body: { content: AiConversation["draft"]["content"] } = JSON.parse(String(init.body));
         saves.push(body);
+        await options.saveGate;
         return options.conflict
           ? Response.json({ message: "Draft conflict" }, { status: 409 })
           : Response.json({ content: body.content, revision: 5, updatedAt: now });
@@ -298,11 +305,12 @@ test("a project composer creates a chat without navigating, saves there, and ret
   expect(h.window.location.search).toBe("?project=Proj01");
 });
 
-test("a plain new chat creates its target before saving", async () => {
+test("a plain new chat creates its target before saving and keeps the saved draft on screen", async () => {
   const h = await mount({ newChat: true });
   h.choose();
   await waitFor(() => openCommand.mock.calls.length === 1);
   expect(events).toEqual(["create", "save", "open"]);
+  expect(h.root.querySelector("textarea")?.value).toBe("Plan ");
   expect(openCommand).toHaveBeenCalledWith("spaces.task.compose", {}, { returnTo: "/app/assistant?conversation=new001" });
 });
 
@@ -310,9 +318,10 @@ test("an unreachable app from a plain new chat names the failure in the status l
   openCommand.mockRejectedValueOnce(new Error("Offline"));
   const h = await mount({ newChat: true });
   h.choose();
-  // The draft moved to the new chat, so the list it was chosen in is gone; the status line says what happened.
+  // The draft moved to the new chat as it was saved, without "/…", so the list it was chosen in is gone; the status
+  // line says what happened.
   await waitFor(() => Boolean(h.status()?.includes("Spaces ist gerade nicht erreichbar.")));
-  expect(h.root.querySelector("textarea")?.value).toBe("Plan /");
+  expect(h.root.querySelector("textarea")?.value).toBe("Plan ");
 });
 
 test("retrying from a project reuses its pending chat", async () => {
@@ -342,4 +351,23 @@ test("saving an app-opening draft preserves inline references and attachments th
   expect(h.saves).toEqual([
     { expectedRevision: 4, content: [{ type: "text", text: "Read " }, reference, { type: "text", text: " " }, { ...file, inline: false }] },
   ]);
+});
+
+test("moving to another chat while the draft saves opens nothing and says why", async () => {
+  let release!: () => void;
+  const saveGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const h = await mount({ saveGate });
+  h.choose();
+  await waitFor(() => events.includes("save"));
+  const newChat = [...h.root.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Neuer Chat" || button.getAttribute("aria-label") === "Neuer Chat",
+  );
+  expect(newChat).toBeDefined();
+  newChat!.click();
+  await waitFor(() => h.window.location.search !== "?conversation=chat01");
+  release();
+  await waitFor(() => Boolean(h.status()?.includes("anderen Chat")));
+  expect(openCommand).not.toHaveBeenCalled();
 });

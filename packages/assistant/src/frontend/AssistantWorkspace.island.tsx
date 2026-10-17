@@ -1424,9 +1424,9 @@ export default function AssistantWorkspace(props: Props) {
       let target = projectId ? pendingProjectChats()[projectId]?.id : chat.activeConversationId();
       try {
         if (!target) {
-          const text = composerDraft(key),
-            attachments = composerAttachmentsFor(key),
-            mentions = mentionsFor(key);
+          // The new chat starts with the draft as it is saved, without "/…": its key changes, so the composer cannot
+          // take the token out there itself.
+          const attachments = composerAttachmentsFor(key);
           const created = await createConversation(false, projectId, !projectId);
           if (!created) throw new Error("Chat not created");
           target = created.id;
@@ -1435,20 +1435,28 @@ export default function AssistantWorkspace(props: Props) {
             setPendingProjectChats((all) => ({ ...all, [projectId]: created }));
           } else {
             key = created.id;
-            setComposerDraft(key, text);
+            setComposerDraft(key, draft.value);
             setComposerAttachmentsFor(key, attachments);
-            setMentionsFor(key, mentions);
+            setMentionsFor(key, draft.mentions);
             session(key).baseRevision = created.draft.revision;
           }
         }
+        const opened = key;
         // A failed save answers null for a revision conflict and for any other failure alike; a conflict also
         // shows the composer's conflict notice.
         if (!(await saveComposer(key, target, { text: draft.value, mentions: draft.mentions }))) throw new Error("Draft not saved");
+        // The person moved to another chat while it saved: the app does not open over that one.
+        if (sessionKey() !== opened) {
+          commandTarget = undefined;
+          throw new Error(commandCopy().commandSuperseded);
+        }
         commandTarget = target;
-      } catch {
+      } catch (error) {
         // The composer's status line names the failure once.
         chat.setError(null);
-        throw new Error(commandCopy().commandDraftNotSaved);
+        throw error instanceof Error && error.message === commandCopy().commandSuperseded
+          ? error
+          : new Error(commandCopy().commandDraftNotSaved);
       }
     };
     const appCommands = createMemo(() =>

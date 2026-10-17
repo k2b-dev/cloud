@@ -69,7 +69,10 @@ const catalog = createCloudComposerCatalog();
 if (params.has("commands")) {
   const shell = document.createElement("script");
   shell.id = "cloud-shell-data";
-  shell.textContent = JSON.stringify({ apps: ["spaces", "notebooks", "contacts", "mail", "assistant"].map((id) => ({ id })), appId: "assistant" });
+  shell.textContent = JSON.stringify({
+    apps: ["spaces", "notebooks", "contacts", "mail", "assistant"].map((id) => ({ id })),
+    appId: "assistant",
+  });
   document.body.append(shell);
 }
 const appCommands = createMemo(() =>
