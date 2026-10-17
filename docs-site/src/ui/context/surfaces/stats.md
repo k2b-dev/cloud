@@ -103,7 +103,7 @@ through `title`.
 
 ## Runtime
 
-`StatGrid` and `StatCell` render on the server. Static links work without browser code. Trend sparklines are rendered by the shared `Chart` component within the cell.
+`StatGrid` and `StatCell` render on the server. Static links work without browser code. Trend sparklines are rendered by the shared `Chart` component within the cell. Render a cell with `trend` inside an island.
 
 ## Example
 

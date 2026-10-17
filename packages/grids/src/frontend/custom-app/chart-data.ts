@@ -1,6 +1,9 @@
 import type { BarItem, Point, Series, SliceItem } from "@k2b/stdlib";
 import type { PublicField as Field } from "../../api/public-dto";
 import type { AggregationSpec, GroupBySpec } from "../../contracts";
+import type { CustomAppChartData } from "../../service/custom-app-insights";
+
+export type ChartType = "bar" | "line" | "donut";
 
 /**
  * Transforms `record.group()` buckets into the shapes the platform
@@ -253,3 +256,18 @@ export const buildChartRenderData = (input: ChartRenderInput): ChartRenderData =
       };
   }
 };
+
+export const customAppChartRenderData = (
+  chartType: ChartType,
+  data: Extract<CustomAppChartData, { kind: "chart" }>,
+  categoryFormat: { locale?: string; unknownRecordLabel?: string },
+): ChartRenderData =>
+  buildChartRenderData({
+    widget: { chartType },
+    groupBy: data.viewQuery.groupBy,
+    aggregations: data.viewQuery.aggregations,
+    buckets: data.buckets,
+    fieldsById: new Map(data.fields.map((field) => [field.id, field])),
+    relationLabels: data.relationLabels,
+    categoryFormat,
+  });
