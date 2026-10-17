@@ -1582,7 +1582,7 @@ suite("incoming automations", () => {
     });
   }
 
-  test("re-runs only failed or canceled incoming automation attempts with an opt-in backfill", async () => {
+  test("re-runs only failed or canceled incoming automation attempts, including expired events, with an opt-in backfill", async () => {
     const [archive] = await sql<{ short_id: string }[]>`
       SELECT short_id FROM mail.folders WHERE id = ${archiveFolderId}::uuid
     `;
@@ -1614,7 +1614,7 @@ suite("incoming automations", () => {
         input: { operationId, expectedRevision: automation.data.revision, retryFailed },
       };
     };
-    const events = () => sql<{ dedupe_key: string; ref: string }[]>`
+    const events = () => sql<{ dedupe_key: string; ref: string | null }[]>`
       SELECT dedupe_key, context #>> '{preconditions,message,remoteMessageRefId}' AS ref
       FROM workflows.event
       WHERE app_id = 'mail' AND scope_id = ${mailboxId}
@@ -1672,17 +1672,19 @@ suite("incoming automations", () => {
         state: "completed",
       });
       await dispatchPendingWorkflowEvents(100, { appId: "mail", scopeId: mailboxId });
+      const expiredEventIds: string[] = [];
       for (const message of messages) {
         // Simulate #876's terminal outcomes without executing the original move runs.
-        const runs = await sql<{ id: string }[]>`
+        const runs = await sql<{ id: string; event_id: string }[]>`
           UPDATE workflows.run run SET state = ${message.state}, finished_at = now()
           FROM workflows.event event
           WHERE run.event_id = event.id AND run.workflow_id = ${automation.data.workflowId}::uuid
             AND run.parent_run_id IS NULL
             AND event.context #>> '{preconditions,message,remoteMessageRefId}' = ${message.ref}
-          RETURNING run.id
+          RETURNING run.id, run.event_id
         `;
         expect(runs).toHaveLength(1);
+        if (message.state === "failed" || message.state === "succeeded") expiredEventIds.push(runs[0]!.event_id);
       }
       const originalEvents = await events();
       expect(originalEvents).toHaveLength(3);
@@ -1693,6 +1695,16 @@ suite("incoming automations", () => {
         state: "completed",
       });
       expect(await events()).toEqual(originalEvents);
+
+      for (const eventId of expiredEventIds) {
+        // Mirror expireWorkflowEventPayloadsBatch for exactly this event; other suites share the database.
+        await sql`DELETE FROM workflows.event_delivery WHERE event_id = ${eventId}::uuid`;
+        await sql`
+          UPDATE workflows.event
+          SET data = '{}'::jsonb, context = '{}'::jsonb, authorization_snapshot = '{}'::jsonb, payload_expired_at = now()
+          WHERE id = ${eventId}::uuid
+        `;
+      }
 
       // Normal backfills also re-run live messages: acceptance matches incoming-automation-existing: keys, not message: keys.
       for (const [index, state] of [

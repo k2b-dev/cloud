@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-13
+updated: 2026-10-17
 ---
 
 # Deployment requirements
@@ -631,6 +631,10 @@ the table `approvals.requests`, adds `approval_id` to `ai.pending_actions` and
 `approval_decided_via` to `ai.tool_calls`, and gives every chat approval that
 is still open a request. Assistant adds `approval_id` to
 `assistant.capability_calls`. Core deletes a request 90 days after it expired.
+Core also expires workflow event payloads after a fixed 30 days from dispatch
+or dead-lettering, once no resumable run references the event, and keeps slim
+rows for deduplication; see
+[Size and retention](/en/docs/automation/emit-events-and-start-runs#size-and-retention).
 
 Update Core before Assistant. Until Core has created the table, Studio code
 that calls an Action which asks for approval fails. One behavior changes for

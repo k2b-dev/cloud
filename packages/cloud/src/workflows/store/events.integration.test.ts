@@ -6,6 +6,7 @@
  * stops firing with no error anywhere is the bug this whole slice exists to
  * make impossible.
  */
+import { Buffer } from "node:buffer";
 import { expect, test } from "bun:test";
 import { sql } from "bun";
 import { suiteFor } from "../../../../../scripts/fixtures/test-infra";
@@ -13,7 +14,14 @@ import { migrate } from "../../../../core/src/migrate/core/workflows";
 import { createWorkflowIntegrationFixture } from "../../../test/workflows/integration-fixture";
 import type { WorkflowBoundPlan, WorkflowJsonValue } from "../contracts";
 import { createWorkflow, deleteWorkflowScope, publishWorkflowVersion } from "./definitions";
-import { dispatchPendingWorkflowEvents, emitWorkflowEvent, listUndispatchedWorkflowEvents } from "./events";
+import {
+  dispatchPendingWorkflowEvents,
+  emitWorkflowEvent,
+  listUndispatchedWorkflowEvents,
+  WORKFLOW_EVENT_MAX_PAYLOAD_BYTES,
+  WorkflowEventTooLargeError,
+} from "./events";
+import { expireWorkflowEventPayloads, expireWorkflowEventPayloadsBatch, WORKFLOW_EVENT_RETENTION_DAYS } from "./retention";
 import { claimWorkflowRun } from "./runs";
 
 let readiness: Promise<boolean> | null = null;
@@ -41,11 +49,14 @@ const PLAN: WorkflowBoundPlan = {
   bindings: {},
 };
 const testData = createWorkflowIntegrationFixture();
+const NOW = new Date("2026-06-15T12:00:00.000Z");
+const daysAgo = (days: number) => new Date(NOW.getTime() - days * 86_400_000);
+const OLDER_THAN = daysAgo(WORKFLOW_EVENT_RETENTION_DAYS);
 
 /** A workflow listening for one event type, isolated by a unique scope. */
-const listeningInScope = async (scopeId: string, eventType: string, options: { activations?: number } = {}) => {
+const listeningInScope = async (scopeId: string, eventType: string, options: { activations?: number; appId?: string } = {}) => {
   const workflow = await createWorkflow({
-    appId: "probe",
+    appId: options.appId ?? "probe",
     scopeId,
     key: `wf-${crypto.randomUUID().slice(0, 8)}`,
     name: "Probe",
@@ -63,6 +74,14 @@ const listeningInScope = async (scopeId: string, eventType: string, options: { a
 
 const listening = (eventType: string, options: { activations?: number } = {}) => listeningInScope(testData.scope(), eventType, options);
 
+const retentionScope = async () => {
+  const appId = `retention-${crypto.randomUUID()}`;
+  const scopeId = testData.scope(appId);
+  const type = "probe.retention";
+  await listeningInScope(scopeId, type, { appId });
+  return { appId, scopeId, type };
+};
+
 suiteFor("database")("workflow events", () => {
   test("current workflow schema setup is idempotent and includes runtime columns", async () => {
     expect(await ready()).toBe(true);
@@ -74,6 +93,7 @@ suiteFor("database")("workflow events", () => {
         AND (table_name, column_name) IN (
           ('version', 'effect_budget'),
           ('event', 'context'),
+          ('event', 'payload_expired_at'),
           ('event', 'authorization_snapshot'),
           ('run', 'context'),
           ('run', 'effects_used'),
@@ -81,7 +101,13 @@ suiteFor("database")("workflow events", () => {
           ('step_outcome', 'effect_output')
         )
     `;
-    expect(rows).toHaveLength(7);
+    expect(rows).toHaveLength(8);
+    const indexes = await sql<{ indexname: string }[]>`
+      SELECT indexname FROM pg_indexes WHERE schemaname = 'workflows'
+        AND indexname IN ('idx_workflows_event_retention', 'idx_workflows_run_event')
+      ORDER BY indexname
+    `;
+    expect(indexes.map((row) => row.indexname)).toEqual(["idx_workflows_event_retention", "idx_workflows_run_event"]);
   });
 
   test("an event starts one run per activation listening for it", async () => {
@@ -480,5 +506,176 @@ suiteFor("database")("workflow events", () => {
 
     const emission = await emitWorkflowEvent({ appId: "probe", scopeId, type: "probe.disabled" }, { dispatch: "now" });
     expect(emission.runIds).toEqual([]);
+  });
+
+  for (const field of ["data", "context"] as const) {
+    test(`${field} is bounded in serialized bytes before any SQL, including inside a transaction`, async () => {
+      expect(await ready()).toBe(true);
+      const appId = `payload-${crypto.randomUUID()}`;
+      const scopeId = testData.scope(appId);
+      const limit = WORKFLOW_EVENT_MAX_PAYLOAD_BYTES;
+      const tooLarge = { x: "a".repeat(limit - 8 + 1) };
+      const exact = { x: "a".repeat(limit - 8) };
+      expect(Buffer.byteLength(JSON.stringify(tooLarge), "utf8")).toBe(limit + 1);
+      expect(Buffer.byteLength(JSON.stringify(exact), "utf8")).toBe(limit);
+
+      await sql.begin(async (tx) => {
+        // Even a savepoint is SQL: reject before asking the caller's handle
+        // to do anything, and leave the outer transaction usable.
+        const noSql = new Proxy(tx, {
+          get() {
+            throw new Error("oversized emit touched the database");
+          },
+          apply() {
+            throw new Error("oversized emit executed SQL");
+          },
+        });
+        const error: unknown = await emitWorkflowEvent({ appId, scopeId, type: "probe.size", [field]: tooLarge }, { db: noSql }).catch(
+          (error: unknown) => error,
+        );
+        expect(error).toBeInstanceOf(WorkflowEventTooLargeError);
+        expect(error).toMatchObject({ code: "WORKFLOW_EVENT_TOO_LARGE", field, bytes: limit + 1, limitBytes: limit });
+        expect(error instanceof Error ? error.message : "").toBe(
+          `Workflow event ${field} is ${limit + 1} bytes; the limit is ${limit} bytes (16 MiB).`,
+        );
+        const rows = await tx`SELECT id FROM workflows.event WHERE app_id = ${appId} AND scope_id = ${scopeId}`;
+        expect(rows).toHaveLength(0);
+        const accepted = await emitWorkflowEvent({ appId, scopeId, type: "probe.size", [field]: exact }, { db: tx });
+        expect(accepted.duplicate).toBe(false);
+        expect(await tx`SELECT id FROM workflows.event WHERE id = ${accepted.eventId}::uuid`).toHaveLength(1);
+      });
+    });
+  }
+
+  test("the payload limit counts UTF-8 bytes rather than JavaScript characters", async () => {
+    expect(await ready()).toBe(true);
+    const appId = `utf8-${crypto.randomUUID()}`;
+    const scopeId = testData.scope(appId);
+    const data = { x: "é".repeat(WORKFLOW_EVENT_MAX_PAYLOAD_BYTES / 2) };
+    const serialized = JSON.stringify(data);
+    expect(serialized.length).toBeLessThan(WORKFLOW_EVENT_MAX_PAYLOAD_BYTES);
+    expect(Buffer.byteLength(serialized, "utf8")).toBe(WORKFLOW_EVENT_MAX_PAYLOAD_BYTES + 8);
+    const rejection = emitWorkflowEvent({ appId, scopeId, type: "probe.bytes", data });
+    await expect(rejection).rejects.toBeInstanceOf(WorkflowEventTooLargeError);
+    await expect(rejection).rejects.toMatchObject({ field: "data", bytes: WORKFLOW_EVENT_MAX_PAYLOAD_BYTES + 8 });
+    expect(await sql`SELECT id FROM workflows.event WHERE app_id = ${appId} AND scope_id = ${scopeId}`).toHaveLength(0);
+  });
+
+  test("retention removes deliveries and payloads but preserves the cause and run copies", async () => {
+    expect(await ready()).toBe(true);
+    const input = await retentionScope();
+    const data = { message: "body" };
+    const context = { captured: "facts" };
+    const authorization = { actor: "sender" };
+    const emission = await emitWorkflowEvent({ ...input, data, context, authorization, dedupeKey: "retained" }, { dispatch: "now" });
+    await sql`UPDATE workflows.run SET state = 'succeeded', finished_at = ${daysAgo(31)} WHERE event_id = ${emission.eventId}::uuid`;
+    await sql`
+      UPDATE workflows.event SET dispatched_at = ${daysAgo(31)}, occurred_at = ${daysAgo(90)}, created_at = ${daysAgo(32)}
+      WHERE id = ${emission.eventId}::uuid
+    `;
+    const [before] = await sql`SELECT id, app_id, scope_id, type, dedupe_key, occurred_at, dispatched_at, dispatch_failed_at,
+      created_at, target_workflow_id, matched_count, attempts, last_error, dispatch_after
+      FROM workflows.event WHERE id = ${emission.eventId}::uuid`;
+    expect(await sql`SELECT event_id FROM workflows.event_delivery WHERE event_id = ${emission.eventId}::uuid`).toHaveLength(1);
+
+    await expireWorkflowEventPayloads({ now: NOW });
+    const [after] = await sql`SELECT id, app_id, scope_id, type, dedupe_key, occurred_at, dispatched_at, dispatch_failed_at,
+      created_at, target_workflow_id, matched_count, attempts, last_error, dispatch_after
+      FROM workflows.event WHERE id = ${emission.eventId}::uuid`;
+    expect(after).toEqual(before);
+    const [payload] = await sql`SELECT data, context, authorization_snapshot, payload_expired_at FROM workflows.event
+      WHERE id = ${emission.eventId}::uuid`;
+    expect(payload).toMatchObject({ data: {}, context: {}, authorization_snapshot: {}, payload_expired_at: expect.any(Date) });
+    expect(await sql`SELECT event_id FROM workflows.event_delivery WHERE event_id = ${emission.eventId}::uuid`).toHaveLength(0);
+    const [run] = await sql`SELECT inputs, context, authorization_snapshot FROM workflows.run WHERE event_id = ${emission.eventId}::uuid`;
+    expect(run).toMatchObject({ inputs: data, context, authorization_snapshot: authorization });
+  });
+
+  test("dead-lettered events expire by dispatch failure time", async () => {
+    expect(await ready()).toBe(true);
+    const input = await retentionScope();
+    const emission = await emitWorkflowEvent({ ...input, data: { body: "failed" } });
+    await sql`UPDATE workflows.event SET dispatch_failed_at = ${daysAgo(31)}, occurred_at = ${daysAgo(90)}, created_at = ${daysAgo(32)}
+      WHERE id = ${emission.eventId}::uuid`;
+    await expireWorkflowEventPayloads({ now: NOW });
+    const [row] = await sql`SELECT data, payload_expired_at, dispatch_failed_at FROM workflows.event WHERE id = ${emission.eventId}::uuid`;
+    expect(row).toMatchObject({ data: {}, payload_expired_at: expect.any(Date), dispatch_failed_at: daysAgo(31) });
+    expect(await sql`SELECT event_id FROM workflows.event_delivery WHERE event_id = ${emission.eventId}::uuid`).toHaveLength(0);
+  });
+
+  test("dedupe still answers with the original event and runs after payload expiration", async () => {
+    expect(await ready()).toBe(true);
+    const input = { ...(await retentionScope()), dedupeKey: "permanent-key", data: { body: "original" } };
+    const first = await emitWorkflowEvent(input, { dispatch: "now" });
+    await sql`UPDATE workflows.run SET state = 'succeeded' WHERE event_id = ${first.eventId}::uuid`;
+    await sql`UPDATE workflows.event SET dispatched_at = ${daysAgo(31)}, occurred_at = ${daysAgo(90)}, created_at = ${daysAgo(32)}
+      WHERE id = ${first.eventId}::uuid`;
+    await expireWorkflowEventPayloads({ now: NOW });
+    const second = await emitWorkflowEvent(input, { dispatch: "now" });
+    expect(second).toEqual({ eventId: first.eventId, runIds: first.runIds, duplicate: true });
+    expect(await sql`SELECT id FROM workflows.run WHERE event_id = ${first.eventId}::uuid`).toHaveLength(1);
+    const [row] = await sql`SELECT data, payload_expired_at FROM workflows.event WHERE id = ${first.eventId}::uuid`;
+    expect(row).toMatchObject({ data: {}, payload_expired_at: expect.any(Date) });
+  });
+
+  test("recent dispatch, pending dispatch and every resumable run keep their event payload", async () => {
+    expect(await ready()).toBe(true);
+    const input = await retentionScope();
+    const ids: string[] = [];
+    for (const state of ["recent", "boundary", "undispatched", "queued", "running", "waiting", "needs_attention"] as const) {
+      const emission = await emitWorkflowEvent(
+        { ...input, data: { state }, context: { keep: true }, authorization: { keep: true } },
+        { dispatch: state === "undispatched" ? "deferred" : "now" },
+      );
+      ids.push(emission.eventId);
+      if (state !== "undispatched") {
+        await sql`UPDATE workflows.run SET state = ${state === "recent" || state === "boundary" ? "succeeded" : state}
+          WHERE event_id = ${emission.eventId}::uuid`;
+      }
+      await sql`UPDATE workflows.event
+        SET dispatched_at = ${state === "undispatched" ? null : daysAgo(state === "recent" ? 29 : state === "boundary" ? 30 : 31)},
+            occurred_at = ${daysAgo(90)}, created_at = ${daysAgo(90)}
+        WHERE id = ${emission.eventId}::uuid`;
+    }
+    await expireWorkflowEventPayloads({ now: NOW });
+    const rows = await sql`SELECT id, data, context, authorization_snapshot, payload_expired_at FROM workflows.event
+      WHERE app_id = ${input.appId} AND scope_id = ${input.scopeId}`;
+    expect(rows).toHaveLength(ids.length);
+    for (const row of rows) {
+      expect(row.data).not.toEqual({});
+      expect(row).toMatchObject({ context: { keep: true }, authorization_snapshot: { keep: true }, payload_expired_at: null });
+      expect(await sql`SELECT event_id FROM workflows.event_delivery WHERE event_id = ${row.id}::uuid`).toHaveLength(1);
+    }
+  });
+
+  test("small batches eventually expire all rows and another sweep leaves their expiration timestamps unchanged", async () => {
+    expect(await ready()).toBe(true);
+    const input = await retentionScope();
+    for (let index = 0; index < 5; index++) {
+      const emission = await emitWorkflowEvent({ ...input, data: { index } }, { dispatch: "now" });
+      await sql`UPDATE workflows.run SET state = 'canceled' WHERE event_id = ${emission.eventId}::uuid`;
+      await sql`UPDATE workflows.event SET dispatched_at = ${daysAgo(31)}, occurred_at = ${daysAgo(90)}, created_at = ${daysAgo(32)}
+        WHERE id = ${emission.eventId}::uuid`;
+    }
+    let previous = 0;
+    let passes = 0;
+    while (previous < 5) {
+      // Global batches may expire another suite's old rows as well. Assert
+      // progress and idempotence only for this test's app and scope.
+      expect(await expireWorkflowEventPayloadsBatch({ olderThan: OLDER_THAN, limit: 2 })).toBeLessThanOrEqual(2);
+      const rows = await sql`SELECT id FROM workflows.event WHERE app_id = ${input.appId} AND scope_id = ${input.scopeId}
+        AND payload_expired_at IS NOT NULL`;
+      expect(rows.length - previous).toBeLessThanOrEqual(2);
+      previous = rows.length;
+      passes++;
+      if (passes > 100) throw new Error("Retention did not reach this test's five rows within 100 batches");
+    }
+    expect(passes).toBeGreaterThanOrEqual(3);
+    const before = await sql`SELECT id, payload_expired_at FROM workflows.event
+      WHERE app_id = ${input.appId} AND scope_id = ${input.scopeId} ORDER BY id`;
+    await expireWorkflowEventPayloads({ now: NOW });
+    const after = await sql`SELECT id, payload_expired_at FROM workflows.event
+      WHERE app_id = ${input.appId} AND scope_id = ${input.scopeId} ORDER BY id`;
+    expect(after).toEqual(before);
   });
 });

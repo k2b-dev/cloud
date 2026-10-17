@@ -4,7 +4,7 @@ import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJo
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { evaluateWorkflowTriggerInputs } from "@k2b/cloud/workflows/runtime";
-import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
+import { emitWorkflowEvent, notifyWorkflowWorker, WorkflowEventTooLargeError } from "@k2b/cloud/workflows/store";
 import type { JobContext, JobFailureDecision, Worker } from "@k2b/sync";
 import { redis, sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
@@ -981,19 +981,29 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
         config.with !== null && typeof config.with === "object" && !Array.isArray(config.with)
           ? (config.with as Record<string, WorkflowJsonValue>)
           : {};
-      await emitWorkflowEvent(
-        {
-          appId: MAIL_WORKFLOW_APP_ID,
-          scopeId: params.mailboxId,
-          type: MAIL_WORKFLOW_EVENT.messageReceived,
-          targetWorkflowId: activation.workflow_id,
-          data: evaluateWorkflowTriggerInputs(triggerValues, withValues, occurredAt),
-          context: mailWorkflowEventContext(snapshot),
-          dedupeKey: `${deliveryKey}:${activation.workflow_id}`,
-          occurredAt: new Date(occurredAt),
-        },
-        { db: params.db },
-      );
+      try {
+        await emitWorkflowEvent(
+          {
+            appId: MAIL_WORKFLOW_APP_ID,
+            scopeId: params.mailboxId,
+            type: MAIL_WORKFLOW_EVENT.messageReceived,
+            targetWorkflowId: activation.workflow_id,
+            data: evaluateWorkflowTriggerInputs(triggerValues, withValues, occurredAt),
+            context: mailWorkflowEventContext(snapshot),
+            dedupeKey: `${deliveryKey}:${activation.workflow_id}`,
+            occurredAt: new Date(occurredAt),
+          },
+          { db: params.db },
+        );
+      } catch (error) {
+        if (!(error instanceof WorkflowEventTooLargeError)) throw error;
+        log.warn("Skipped oversized message workflow event", {
+          mailboxId: params.mailboxId,
+          workflowId: activation.workflow_id,
+          field: error.field,
+          bytes: error.bytes,
+        });
+      }
     }
   };
   // An incoming message whose first copy is in All Mail waits for its first copy in another folder:
