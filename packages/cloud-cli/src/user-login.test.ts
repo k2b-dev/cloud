@@ -366,6 +366,12 @@ describe("cld login --user", () => {
       "Cloud Login kann die Anmeldung gerade nicht annehmen.",
     ],
     [
+      400,
+      "unauthorized_client",
+      "Cloud Login sign-in could not start (unauthorized_client).",
+      "Die Anmeldung über Cloud Login konnte nicht starten (unauthorized_client).",
+    ],
+    [
       404,
       "not_found",
       "This Cloud cannot send sign-ins to Cloud Login yet.",
@@ -559,17 +565,36 @@ describe("cld login --ttl", () => {
     });
   }
 
-  for (const options of [{ discoveryStatus: 503 }, { discoveryJson: "invalid JSON" }]) {
-    test(`reports a discovery failure as a CLI error (${JSON.stringify(options)})`, async () => {
+  for (const [options, en, de] of [
+    [{ discoveryStatus: 503 }, "(HTTP 503).", "(HTTP 503)."],
+    [{ discoveryJson: "<html>" }, "(invalid JSON).", "(kein gültiges JSON)."],
+  ] as const) {
+    test(`reports a discovery failure as a localised CLI error (${JSON.stringify(options)})`, async () => {
       const { state, origin } = startServer([], options);
-      const config = await configPath();
-      const result = await runCli(config, userArgs(origin));
-      expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain(`Could not read the Cloud's OAuth discovery document (${options.discoveryStatus ?? 200}).`);
+      for (const locale of ["en", "de"]) {
+        const config = await configPath();
+        const result = await runCli(config, ["--locale", locale, ...userArgs(origin)]);
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain(
+          locale === "en"
+            ? `Could not read the Cloud's OAuth discovery document ${en}`
+            : `Das OAuth-Discovery-Dokument der Cloud konnte nicht gelesen werden ${de}`,
+        );
+        expect(await Bun.file(config).exists()).toBe(false);
+      }
       expect(state.starts).toHaveLength(0);
-      expect(await Bun.file(config).exists()).toBe(false);
     });
   }
+
+  test("an unreachable Cloud names a network error in the person's language", async () => {
+    const { server, origin } = startServer();
+    server.stop(true);
+    const config = await configPath();
+    const result = await runCli(config, ["--locale", "de", ...userArgs(origin)]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("Das OAuth-Discovery-Dokument der Cloud konnte nicht gelesen werden (Netzwerkfehler).");
+    expect(await Bun.file(config).exists()).toBe(false);
+  });
 
   for (const locale of ["en", "de"]) {
     test(`invalid durations and conflicting or missing usernames fail before discovery (${locale})`, async () => {

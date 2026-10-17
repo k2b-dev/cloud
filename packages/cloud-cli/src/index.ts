@@ -3045,19 +3045,20 @@ const cloudLoginUnsupported = (deviceCommand: string): CliError =>
   );
 
 const readLoginDiscovery = async (server: string) => {
-  let status = "network error";
+  let reason = ["network error", "Netzwerkfehler"];
   try {
     const response = await fetchOAuth(joinUrl(server, "/.well-known/oauth-authorization-server"), {});
-    status = String(response.status);
     if (response.status === 404) return {};
+    reason = [`HTTP ${response.status}`, `HTTP ${response.status}`];
     if (!response.ok) throw new Error();
+    reason = ["invalid JSON", "kein gültiges JSON"];
     const payload: unknown = await response.json();
     return (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
   } catch {
     throw new CliError(
-      `Could not read the Cloud's OAuth discovery document (${status}).`,
+      `Could not read the Cloud's OAuth discovery document (${reason[0]}).`,
       1,
-      `Das OAuth-Discovery-Dokument der Cloud konnte nicht gelesen werden (${status}).`,
+      `Das OAuth-Discovery-Dokument der Cloud konnte nicht gelesen werden (${reason[1]}).`,
     );
   }
 };
@@ -3115,7 +3116,7 @@ const signInWithCloudLogin = async (
     });
     if (started.status === 404) throw cloudLoginUnsupported(deviceCommand);
     if (!started.ok) {
-      const { error, description } = await oauthErrorCode(started);
+      const { error } = await oauthErrorCode(started);
       if (started.status === 503 || error === "temporarily_unavailable") {
         throw new CliError(
           `Cloud Login cannot take the sign-in right now. Try again later, or sign in with \`${deviceCommand}\` or in the browser.`,
@@ -3137,10 +3138,11 @@ const signInWithCloudLogin = async (
           `Diese Cloud nimmt gerade keine Anmeldungen über Cloud Login an. Melde dich mit \`${deviceCommand}\` oder im Browser an.`,
         );
       }
+      // Only the error code: a server description could reveal whether the account exists.
       throw new CliError(
-        `Cloud Login sign-in could not start: ${description ?? error}`,
+        `Cloud Login sign-in could not start (${error}). Sign in with \`${deviceCommand}\` or in the browser.`,
         1,
-        `Die Anmeldung über Cloud Login konnte nicht starten: ${description ?? error}`,
+        `Die Anmeldung über Cloud Login konnte nicht starten (${error}). Melde dich mit \`${deviceCommand}\` oder im Browser an.`,
       );
     }
     const device = parseCloudLoginAuthorization(await readJson<unknown>(started));
