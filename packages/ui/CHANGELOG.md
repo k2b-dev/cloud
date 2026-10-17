@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.29.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.28.0...npm-ui-v0.29.0) (2026-10-17)
+
+
+### Features
+
+* **spaces:** react to items with emoji through the API, capabilities and cld ([#1362](https://github.com/k2b-dev/cloud/issues/1362)) ([fc55f73](https://github.com/k2b-dev/cloud/commit/fc55f73496f2a838cbab908f733d249b804df53d))
+* **ui:** every Chart shows tooltips by default ([#1357](https://github.com/k2b-dev/cloud/issues/1357)) ([a2605a0](https://github.com/k2b-dev/cloud/commit/a2605a065473f9824463fc45cbe8129c9ff2e9b2))
+* **ui:** one drag and drop for rows, tasks, events and paragraphs, with a keyboard and menu path ([#1376](https://github.com/k2b-dev/cloud/issues/1376)) ([682e08b](https://github.com/k2b-dev/cloud/commit/682e08babc1500275b413e30336a9a7a9b474ffb)), closes [#1255](https://github.com/k2b-dev/cloud/issues/1255)
+
+
+### Bug Fixes
+
+* **spaces:** keep kanban cards and columns in place while a refresh updates them ([#1396](https://github.com/k2b-dev/cloud/issues/1396)) ([0cd224d](https://github.com/k2b-dev/cloud/commit/0cd224d99cd9c952916a83d4a2eafdb0a9ea8085))
+
 ## [0.28.0](https://github.com/k2b-dev/cloud/compare/npm-ui-v0.27.0...npm-ui-v0.28.0) (2026-10-17)
 
 

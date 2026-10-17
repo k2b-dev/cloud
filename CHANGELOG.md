@@ -3,6 +3,48 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.46.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.45.0...cloud-v0.46.0) (2026-10-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **contacts:** Contacts refuses to start on a database whose short IDs were never finished, such as one coming straight from the June 23, 2026 production baseline. Start Contacts once on Cloud v0.45.0 until it is ready, then upgrade. Installations that started Contacts on any Cloud release since v0.7.0 need no action.
+* ` in the
+
+### Features
+
+* **cloud:** approve terminal sign-ins in Cloud Login, with client, rights and lifetime ([#1395](https://github.com/k2b-dev/cloud/issues/1395)) ([1dcf324](https://github.com/k2b-dev/cloud/commit/1dcf324abb4952c6e9137f232a8e4b049e278dea))
+* **grids:** custom-app charts show named, formatted tooltips in the browser ([#1399](https://github.com/k2b-dev/cloud/issues/1399)) ([854dc4e](https://github.com/k2b-dev/cloud/commit/854dc4ec4eb24a142cf75a400960e227f00d1e41))
+* **notebooks:** show a note's neighborhood with In die Mitte, the default on phones ([#1374](https://github.com/k2b-dev/cloud/issues/1374)) ([8297885](https://github.com/k2b-dev/cloud/commit/829788503c8871903f3683a8b14427e2a0a67842))
+* **notebooks:** show all notes on a circle with links as chords per area ([#1393](https://github.com/k2b-dev/cloud/issues/1393)) ([edf8438](https://github.com/k2b-dev/cloud/commit/edf8438caf24c13ce0228c1a2e0e5afb759eae41))
+* **notebooks:** the PDF export says what it left out ([#1369](https://github.com/k2b-dev/cloud/issues/1369)) ([ec9f208](https://github.com/k2b-dev/cloud/commit/ec9f208fc18ba53fee09c01cbc906f76f67ad002))
+* **oauth:** end a sign-in sooner with a requested lifetime, capped at the session length ([#1368](https://github.com/k2b-dev/cloud/issues/1368)) ([aa84d15](https://github.com/k2b-dev/cloud/commit/aa84d15ede5bc8c10976a31d7db63d0eaebb9bdc))
+* **pulse:** dashboard charts name and format their values in tooltips ([#1389](https://github.com/k2b-dev/cloud/issues/1389)) ([9f66703](https://github.com/k2b-dev/cloud/commit/9f66703a642410a1395cf40a57d417f55ffe92b8))
+* **spaces:** let service accounts be assignees so an agent that claims a task is responsible like a person ([#1384](https://github.com/k2b-dev/cloud/issues/1384)) ([c3199d1](https://github.com/k2b-dev/cloud/commit/c3199d15a96ee54007a00a9d81c0d75d5d9a6751)), closes [#1269](https://github.com/k2b-dev/cloud/issues/1269)
+* **spaces:** react to items with emoji through the API, capabilities and cld ([#1362](https://github.com/k2b-dev/cloud/issues/1362)) ([fc55f73](https://github.com/k2b-dev/cloud/commit/fc55f73496f2a838cbab908f733d249b804df53d))
+* **spaces:** react to tasks with emoji on Kanban cards and in the item ([#1400](https://github.com/k2b-dev/cloud/issues/1400)) ([8adf09c](https://github.com/k2b-dev/cloud/commit/8adf09c4db20be4f0eab36325f2a5b8c65841546))
+* **ui:** every Chart shows tooltips by default ([#1357](https://github.com/k2b-dev/cloud/issues/1357)) ([a2605a0](https://github.com/k2b-dev/cloud/commit/a2605a065473f9824463fc45cbe8129c9ff2e9b2))
+* **ui:** one drag and drop for rows, tasks, events and paragraphs, with a keyboard and menu path ([#1376](https://github.com/k2b-dev/cloud/issues/1376)) ([682e08b](https://github.com/k2b-dev/cloud/commit/682e08babc1500275b413e30336a9a7a9b474ffb)), closes [#1255](https://github.com/k2b-dev/cloud/issues/1255)
+
+
+### Bug Fixes
+
+* **access:** keep keyboard focus and open member lists when access settings refresh after a change ([#1346](https://github.com/k2b-dev/cloud/issues/1346)) ([da4353b](https://github.com/k2b-dev/cloud/commit/da4353bef18a5cac5ff8ec058dfd6224c6c35f9d))
+* **ai:** audit remembered approvals and their revocation ([#1378](https://github.com/k2b-dev/cloud/issues/1378)) ([1771214](https://github.com/k2b-dev/cloud/commit/1771214a2921186a3ec4b127e8e9319a92578b2b))
+* **cli:** keep plugin version labels current and update the other profiles when one cannot sign in ([#1392](https://github.com/k2b-dev/cloud/issues/1392)) ([239a561](https://github.com/k2b-dev/cloud/commit/239a5618e9490ae584ee9752d60c255b950a099f)), closes [#1265](https://github.com/k2b-dev/cloud/issues/1265) [#1266](https://github.com/k2b-dev/cloud/issues/1266)
+* **cloud:** keep app-colored text readable and give each app its selection fills ([#1398](https://github.com/k2b-dev/cloud/issues/1398)) ([c486eb9](https://github.com/k2b-dev/cloud/commit/c486eb93a1f463ae2c525e92f65cd784aedae489))
+* **contacts:** document the 401, 403, and 404 answers of the Contacts API ([#1386](https://github.com/k2b-dev/cloud/issues/1386)) ([2a27b5b](https://github.com/k2b-dev/cloud/commit/2a27b5babfad3053e5f86a57565d8fee49bb122e)), closes [#1239](https://github.com/k2b-dev/cloud/issues/1239)
+* **contacts:** drop the startup short-ID backfill and refuse a database that never finished it ([#1242](https://github.com/k2b-dev/cloud/issues/1242)) ([#1385](https://github.com/k2b-dev/cloud/issues/1385)) ([4d3f8b9](https://github.com/k2b-dev/cloud/commit/4d3f8b9d0fa0e2317ada7c3b008996bc0f636072))
+* **contacts:** keep books with the same name in one stable order across pages ([#1372](https://github.com/k2b-dev/cloud/issues/1372)) ([a6ce1ab](https://github.com/k2b-dev/cloud/commit/a6ce1ab91a65276d89976685ac0a9fe05ca9f07c)), closes [#1240](https://github.com/k2b-dev/cloud/issues/1240)
+* **contacts:** keep localized row labels in the quick editor and name the next step in each empty list ([#1397](https://github.com/k2b-dev/cloud/issues/1397)) ([e12cca4](https://github.com/k2b-dev/cloud/commit/e12cca4053f5a52b46e8e32f8c0ed9de5edaccfb)), closes [#1237](https://github.com/k2b-dev/cloud/issues/1237) [#1238](https://github.com/k2b-dev/cloud/issues/1238)
+* **mail:** fail a hand-written workflow's move step when the message already moved ([#1401](https://github.com/k2b-dev/cloud/issues/1401)) ([418483a](https://github.com/k2b-dev/cloud/commit/418483a3e1798419c9bfb2d5acc3df9021c1b89b))
+* **spaces:** keep kanban cards and columns in place while a refresh updates them ([#1396](https://github.com/k2b-dev/cloud/issues/1396)) ([0cd224d](https://github.com/k2b-dev/cloud/commit/0cd224d99cd9c952916a83d4a2eafdb0a9ea8085))
+
+
+### Continuous Integration
+
+* fail a release PR whose body release-please cannot parse into every bumped component ([#1340](https://github.com/k2b-dev/cloud/issues/1340)) ([1d7db0c](https://github.com/k2b-dev/cloud/commit/1d7db0ce5ee5317a2d5285e5cb434921eaf015f6))
+
 ## [0.45.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.44.0...cloud-v0.45.0) (2026-10-17)
 
 
