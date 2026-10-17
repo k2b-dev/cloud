@@ -17,8 +17,8 @@ import {
 import { type AuthContext, auth, rateLimit, v } from "../server";
 import {
   type AppApprovalActor,
-  type AppTerminalLogins,
   AppApprovalError,
+  type AppTerminalLogins,
   appApproval,
   type createAppApprovalService,
 } from "../services/app-approval";
