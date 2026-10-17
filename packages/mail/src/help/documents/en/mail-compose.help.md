@@ -5,6 +5,7 @@ icon: ti ti-pencil
 description: Compose, recover drafts, use templates, attach files, and control delivery.
 updated: 2026-10-16
 order: 30
+kind: task
 ---
 
 ## Start a message {icon="square-plus"}

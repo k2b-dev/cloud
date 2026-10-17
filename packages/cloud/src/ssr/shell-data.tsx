@@ -1,3 +1,4 @@
+import type { KeyboardPlatform } from "@k2b/ui";
 import { createContext, type JSX, useContext } from "solid-js";
 import type { AppSearchLink } from "../contracts/app";
 import type { RailSnapshot } from "../contracts/rail-preferences";
@@ -20,6 +21,10 @@ export type ShellData = {
   searchLinks: Record<string, readonly AppSearchLink[]>;
   /** The current app, for links inside its Help. */
   appId?: string;
+  /** The reader's keyboard platform, resolved from the request User-Agent for server-rendered key caps. */
+  platform?: KeyboardPlatform;
+  /** "For this view" article ids, already filtered for the reader. */
+  help?: string[];
 };
 
 const ShellDataContext = createContext<() => ShellData>();

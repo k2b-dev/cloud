@@ -338,3 +338,60 @@ test("typing keeps the same focused search input at the same position and reserv
     await page.close();
   }
 }, 30_000);
+
+for (const [surface, viewport] of [
+  ["page", { width: 1440, height: 900 }],
+  ["modal", { width: 1440, height: 900 }],
+  ["modal", { width: 390, height: 844 }],
+] as const) {
+  test(`${surface} ${viewport.width}: the search box stays fixed across start, article and results`, async () => {
+    const page = await open(`?start&commands${surface === "modal" ? "&modal" : ""}`, viewport);
+    try {
+      await page.locator('[data-help-shortcut-group="selection"]').waitFor();
+      await page.evaluate(() => document.fonts.ready);
+      const input = page.locator("[data-help-search]");
+      const start = await input.boundingBox();
+      expect(start).not.toBeNull();
+      const originalInput = await input.elementHandle();
+      await page.locator('[data-help-tiles] [data-help-topic="share-space"]').click();
+      await page.locator(".help-document #section-0").waitFor();
+      expect(await input.boundingBox()).toEqual(start);
+      await input.fill("share");
+      await page.locator('[data-help-search-results] [data-help-topic="share-space"]').waitFor();
+      // Wait for the debounced request to start and finish, including its final layout.
+      await page.waitForFunction(() => !!document.querySelector("[data-help-search-results] .animate-spin"));
+      await page.waitForFunction(() => !document.querySelector("[data-help-search-results] .animate-spin"));
+      expect(await input.boundingBox()).toEqual(start);
+      expect(await page.locator(".help-article").count()).toBe(0);
+      expect(await input.count()).toBe(1);
+      expect(await originalInput!.evaluate((element) => element === document.querySelector("[data-help-search]"))).toBe(true);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+}
+
+for (const surface of ["page", "modal"] as const) {
+  test(`${surface} 390: every task tile fits its grid without horizontal scrolling`, async () => {
+    const page = await open(`?start&commands${surface === "modal" ? "&modal" : ""}`, { width: 390, height: 844 });
+    try {
+      await page.locator('[data-help-shortcut-group="selection"]').waitFor();
+      const grid = page.locator("[data-help-tiles]");
+      expect(await grid.locator(".help-start-tile").count()).toBe(8);
+      const dimensions = await grid.evaluate((element) => ({
+        width: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+        right: element.getBoundingClientRect().right,
+        tiles: [...element.querySelectorAll(".help-start-tile")].map((tile) => tile.getBoundingClientRect().right),
+        documentWidth: document.documentElement.clientWidth,
+        documentScrollWidth: document.documentElement.scrollWidth,
+      }));
+      expect(dimensions.width).toBeGreaterThan(0);
+      expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width);
+      for (const right of dimensions.tiles) expect(right).toBeLessThanOrEqual(dimensions.right);
+      expect(dimensions.documentScrollWidth).toBeLessThanOrEqual(dimensions.documentWidth);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+}

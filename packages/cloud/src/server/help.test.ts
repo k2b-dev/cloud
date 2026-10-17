@@ -49,6 +49,7 @@ describe("defineHelpCollection", () => {
         id: "getting-started",
         title: "Getting started",
         order: 10,
+        kind: "task",
         searchUrl: "/api/example/help/search",
         url: "/api/example/help/getting-started",
       }),
@@ -66,6 +67,11 @@ describe("defineHelpCollection", () => {
     expect(payload.html).not.toContain("data-script-source");
     expect(payload.html).toContain('href="/app/example"');
     expect(payload.html).not.toContain('target="_blank"');
+  });
+
+  test("includes the declared article kind in manifests", () => {
+    const collection = defineHelpCollection({ basePath: "/help", sources: [source.replace("order: 10", "order: 10\nkind: start")] });
+    expect(collection.manifest[0]?.kind).toBe("start");
   });
 
   test("rejects duplicate ids at startup", () => {

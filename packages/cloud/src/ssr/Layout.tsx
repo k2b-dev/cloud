@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { AppWorkspace, appWorkspaceLayoutStyle, LocaleProvider, NoticeCard, PageTrailProvider } from "@k2b/ui";
+import { AppWorkspace, appWorkspaceLayoutStyle, keyboardPlatform, LocaleProvider, NoticeCard, PageTrailProvider } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { readAppWorkspaceLayoutCookie, resolveAppWorkspaceLayoutForSidebar } from "../_internal/app-workspace-state";
 import { readShellFocusCookie } from "../_internal/shell-focus";
@@ -19,6 +19,7 @@ import LayoutFooter from "./LayoutFooter";
 import LayoutHeader from "./LayoutHeader";
 import LayoutRail, { type LayoutAppLink } from "./LayoutRail";
 import type { LayoutContext } from "./layout-context";
+import { HELP_VIEW_LIMIT } from "./layout-help-start";
 import type { LayoutBreadcrumb } from "./layout-runtime";
 import PageTrailRow from "./PageTrailRow";
 import { derivePageTrail } from "./page-trail";
@@ -36,6 +37,8 @@ type LayoutProps = {
   children: JSX.Element;
   c: LayoutContext;
   title?: string | Breadcrumb[];
+  /** Up to three ids of the current app's Help articles that fit this page; Help lists them first under "For this view". Unknown ids and articles the reader may not see are ignored. */
+  help?: readonly string[];
   fullPage?: boolean /** Keep the shell viewport-bound and suppress its footer. */;
   fullWidth?: boolean /** Delegate scrolling and clipping to the page's work surface. */;
   focusMode?: boolean /** Render only the app canvas and content for dedicated editors or pop-out windows. */;
@@ -208,7 +211,11 @@ export default function Layout(props: LayoutProps) {
       .filter(Boolean)
       .join(";") || undefined;
   const appLabel = currentApp?.name ?? (pathname.startsWith("/admin") ? t.admin : undefined);
+  const helpIds = new Set(registeredHelp?.documents.map((topic) => topic.id));
+  const viewHelp = [...new Set(props.help)].filter((id) => helpIds.has(id)).slice(0, HELP_VIEW_LIMIT);
   const shellData: ShellData = {
+    platform: keyboardPlatform(c.req.raw.headers.get("User-Agent") ?? ""),
+    ...(viewHelp.length ? { help: viewHelp } : {}),
     apps: allApps,
     ...(user
       ? { rail: c.get("railPreferences") ?? defaultRailPreferences(), profile: { name: profileName, avatarSrc: profileAvatarSrc, appHref } }

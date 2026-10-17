@@ -107,6 +107,7 @@ const server = new Hono()
           fullPage: mode === "fullPage",
           fullWidth: mode === "fullWidth",
           title: "Public tools",
+          help: c.req.queries("help"),
           children: "Anonymous content",
         });
     }),
@@ -395,3 +396,62 @@ for (const focusMode of [false, true]) {
     }
   });
 }
+
+describe("Layout page Help payload", () => {
+  const documents = ["first", "second", "third", "fourth"].map((id) => ({
+    id,
+    title: id,
+    order: 100,
+    searchUrl: "/search",
+    url: `/documents/${id}`,
+  }));
+  for (const [name, manifest, requested, expected] of [
+    [
+      "keeps declared order, deduplicates and caps at three",
+      true,
+      ["unknown", "third", "third", "first", "fourth", "second"],
+      ["third", "first", "fourth"],
+    ],
+    ["drops ids outside the reader's manifest", true, ["private", "other-app", "second"], ["second"]],
+    ["omits Help when every id is unknown", true, ["private"], undefined],
+    ["omits Help without an authorized manifest", false, ["first"], undefined],
+    ["omits Help without page ids", true, [], undefined],
+  ] as const) {
+    test(name, async () => {
+      const spy = spyOn(help, "getLayoutHelp").mockReturnValue(
+        manifest
+          ? {
+              documents,
+              pageBase: "/help/apps/probe",
+              baseLocale: "en",
+              locale: "en",
+              manifestHash: "test",
+            }
+          : null,
+      );
+      try {
+        const query = new URLSearchParams();
+        for (const id of requested) query.append("help", id);
+        const html = await (await server.request(`/layout?${query}`)).text();
+        const data = JSON.parse(html.match(/<script id="cloud-shell-data" type="application\/json">([^<]*)<\/script>/)?.[1] ?? "null");
+        expect(data).not.toBeNull();
+        if (expected) expect(data.help).toEqual([...expected]);
+        else expect(data).not.toHaveProperty("help");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  }
+
+  for (const [userAgent, platform] of [
+    ["Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)", "apple"],
+    ["Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "other"],
+    ["", "other"],
+  ]) {
+    test(`resolves keyboard platform ${platform} from ${userAgent || "an absent User-Agent"}`, async () => {
+      const html = await (await server.request("/layout", { headers: { "User-Agent": userAgent! } })).text();
+      const data = JSON.parse(html.match(/<script id="cloud-shell-data" type="application\/json">([^<]*)<\/script>/)?.[1] ?? "null");
+      expect(data?.platform).toBe(platform);
+    });
+  }
+});

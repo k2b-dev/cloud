@@ -4,6 +4,7 @@ title: Start with Spaces
 icon: ti ti-layout-sidebar
 description: Learn the basic terms, set up a Space, and connect it to Mail invitations and other resources.
 order: 100
+kind: start
 ---
 
 Spaces is for shared work that needs tasks, events, lists, assignees, comments, and lightweight planning. The Spaces overview lists every Space that you can access. There you create, find, or return to a Space.

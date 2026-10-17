@@ -4,6 +4,7 @@ title: Fix problems in Spaces
 icon: ti ti-lifebuoy
 description: Find missing Spaces or items, fix unexpected views and assignment problems, and repair calendar exports and Mail invitations.
 order: 140
+kind: troubleshoot
 ---
 
 ## Fix common problems {icon="lifebuoy"}

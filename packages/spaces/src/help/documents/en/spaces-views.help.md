@@ -4,6 +4,7 @@ title: Use views and filters
 icon: ti ti-filter
 description: Choose between the List, Table, Kanban, and Calendar views, filter the items, and plan in the day and month views.
 order: 110
+kind: task
 ---
 
 Views show the same items in the shape that fits the current job. A good view reduces scanning effort and does not hide important complexity.

@@ -27,6 +27,7 @@ else {
     initialTopic?: string,
     path = "/help/apps/spaces/first",
     articleHtml = html,
+    options: { documents?: HelpDocumentManifest[]; help?: string[]; searchFails?: boolean } = {},
   ) => {
     const dom = createDomTestHarness();
     Object.assign(dom.window.happyDOM.settings.navigation, {
@@ -44,6 +45,8 @@ else {
     const fetch = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
         async (input: URL | RequestInfo) => {
+          if (String(input).includes("/search?"))
+            return options.searchFails ? new Response("Unavailable", { status: 503 }) : Response.json({ ids: ["second"] });
           const id = String(input).split("/").at(-1) ?? "first";
           const link = (appId: string, documentId: string) => ({
             appId,
@@ -70,12 +73,24 @@ else {
     // The shell data's script carries the current app to the dialog, which renders outside this tree.
     const dispose = render(
       () => (
-        <ShellDataProvider data={{ apps: [], legalLinks: [], searchLinks: {}, theme: "light", appId: "spaces", accent: "#16a34a" }}>
+        <ShellDataProvider
+          data={{
+            apps: [
+              { id: "spaces", label: "Spaces", iconClass: "ti ti-box", href: "/app/spaces", match: "/app/spaces", defaultVisible: true },
+            ],
+            legalLinks: [],
+            searchLinks: {},
+            theme: "light",
+            appId: "spaces",
+            accent: "#16a34a",
+            help: options.help,
+          }}
+        >
           {surface === "modal" ? (
-            <LayoutHelpDocuments documents={documents} pageBase="/app/spaces/help" />
+            <LayoutHelpDocuments documents={options.documents ?? documents} pageBase="/app/spaces/help" />
           ) : (
             <LayoutHelpPage
-              documents={documents}
+              documents={options.documents ?? documents}
               initialTopic={initialTopic}
               embedded={surface === "embedded"}
               pageBase="/app/spaces/help"
@@ -106,6 +121,7 @@ else {
       button,
       clickLink,
       title,
+      fetch,
       cleanup: async () => {
         dialogCore.close();
         await Bun.sleep(20);
@@ -173,7 +189,7 @@ else {
         expect(reader.clickLink("Section").defaultPrevented).toBe(true);
         if (surface !== "page") expect(location.href).toBe(initialHref);
         expect(reader.clickLink("Hub").defaultPrevented).toBe(true);
-        await until(() => !!reader.dom.document.querySelector("[data-help-search]"));
+        await until(() => !!reader.dom.document.querySelector("[data-help-results]"));
         if (surface === "page") expect(location.pathname).toBe("/app/spaces/help");
       } finally {
         await reader.cleanup();
@@ -182,8 +198,8 @@ else {
   }
 
   for (const surface of ["modal", "page"] as const) {
-    test(`${surface}: Search help in Shortcuts focuses the hub input`, async () => {
-      const reader = await setup(surface, "shortcuts");
+    test(`${surface}: Back reveals shortcuts beside the persistent, usable search`, async () => {
+      const reader = await setup(surface, "first");
       const { registerContextAwareCommand } = await import("../browser/command-bridge");
       const unregister = registerContextAwareCommand({
         id: "test.keys",
@@ -195,14 +211,17 @@ else {
       try {
         if (surface === "modal") {
           await until(() => !!reader.dom.document.querySelector("[data-help-search]"));
-          reader.button("Shortcuts").click();
+          reader.button("Article first").click();
         }
-        await until(() => reader.title() === "Shortcuts");
-        expect(reader.dom.document.querySelector(".k2b-kbd__key")).not.toBeNull();
-        reader.button("Search help").click();
-        await until(() => !!reader.dom.document.querySelector("[data-help-search]"));
-        await until(() => document.activeElement === reader.dom.document.querySelector("[data-help-search]"));
-        expect(document.activeElement).toBe(reader.dom.document.querySelector("[data-help-search]"));
+        await until(() => reader.title() === "Article first");
+        const input = search(reader);
+        const back = reader.dom.document.querySelector<HTMLButtonElement>(".help-head-back");
+        expect(back).not.toBeNull();
+        back!.click();
+        await until(() => !!reader.dom.document.querySelector("[data-help-shortcuts] .k2b-kbd__key"));
+        input.focus();
+        expect(document.activeElement).toBe(input);
+        expect(search(reader)).toBe(input);
         expect(reader.dom.document.querySelectorAll("dialog")).toHaveLength(surface === "modal" ? 1 : 0);
         if (surface === "page") expect(location.pathname).toBe("/app/spaces/help");
       } finally {
@@ -267,7 +286,7 @@ else {
       await until(() => reader.title() === "Article second");
       expect(location.pathname).toBe("/app/spaces/help/second");
       history.back();
-      await until(() => !!reader.dom.document.querySelector("[data-help-search]"));
+      await until(() => !!reader.dom.document.querySelector("[data-help-results]"));
       expect(location.pathname).toBe("/app/spaces/help");
       expect(search(reader).value).toBe("second");
     } finally {
@@ -282,7 +301,7 @@ else {
       reader.button("Article first").click();
       await until(() => reader.title() === "Article first");
       history.back();
-      await until(() => !!reader.dom.document.querySelector("[data-help-search]"));
+      await until(() => !!reader.dom.document.querySelector("[data-help-results]"));
       expect(location.pathname).toBe("/help/apps/spaces/does-not-exist");
       expect(reader.dom.document.querySelector("article h3")).toBeNull();
     } finally {
@@ -309,6 +328,179 @@ else {
       await until(() => !!reader.dom.document.querySelector(".help-article-related-link"));
       expect(click('.help-article-related-link[href="/help/apps/spaces/third"]').defaultPrevented).toBe(true);
       await until(() => reader.title() === "Article third");
+    } finally {
+      await reader.cleanup();
+    }
+  });
+
+  const topicIds = (reader: Awaited<ReturnType<typeof setup>>, selector: string) =>
+    [...reader.dom.document.querySelectorAll(`${selector} [data-help-topic]`)].map((element) => element.getAttribute("data-help-topic"));
+
+  const startDocuments: HelpDocumentManifest[] = [
+    // Reverse input order, and put the omitted kind among the tiles.
+    ...Array.from({ length: 10 }, (_, index) => ({
+      id: `task-${index}`,
+      title: `Task ${9 - index}`,
+      order: index * 10,
+      ...(index === 2 ? {} : { kind: "task" as const }),
+      url: `/api/help/task-${index}`,
+      searchUrl: "/api/help/search",
+    })).reverse(),
+    ...(["troubleshoot", "reference", "start"] as const).flatMap((kind) =>
+      [2, 1].map((order) => ({
+        id: `${kind}-${order}`,
+        title: `${kind} ${order}`,
+        kind,
+        order,
+        url: `/api/help/${kind}-${order}`,
+        searchUrl: "/api/help/search",
+      })),
+    ),
+  ];
+
+  test("start: only task articles become eight ordered tiles; every remaining task follows in the overflow list", async () => {
+    const reader = await setup("page", undefined, "/app/spaces/help", html, { documents: startDocuments });
+    try {
+      const tiles = topicIds(reader, "[data-help-tiles]");
+      const overflow = topicIds(reader, "[data-help-more-tasks]");
+      expect(tiles).toEqual(Array.from({ length: 8 }, (_, index) => `task-${index}`));
+      expect(overflow).toEqual(["task-8", "task-9"]);
+      expect([...tiles, ...overflow]).toEqual(Array.from({ length: 10 }, (_, index) => `task-${index}`));
+    } finally {
+      await reader.cleanup();
+    }
+  });
+
+  for (const reference of [true, false]) {
+    test(`start: kind groups keep their fixed order and ordered articles (reference=${reference})`, async () => {
+      const reader = await setup("page", undefined, "/app/spaces/help", html, {
+        documents: startDocuments.filter((document) => reference || document.kind !== "reference"),
+      });
+      try {
+        const groups = [...reader.dom.document.querySelectorAll("[data-help-group]")];
+        const kinds = reference ? ["start", "reference", "troubleshoot"] : ["start", "troubleshoot"];
+        expect(groups.map((group) => group.getAttribute("data-help-group"))).toEqual(kinds);
+        expect(groups.map((group) => group.querySelector("h3")?.textContent?.trim())).toEqual(
+          reference ? ["Get started", "Look up", "Solve problems"] : ["Get started", "Solve problems"],
+        );
+        for (const kind of kinds) expect(topicIds(reader, `[data-help-group="${kind}"]`)).toEqual([`${kind}-1`, `${kind}-2`]);
+        if (!reference) expect(reader.dom.document.querySelector('[data-help-group="reference"]')).toBeNull();
+      } finally {
+        await reader.cleanup();
+      }
+    });
+  }
+
+  for (const surface of ["modal", "page"] as const) {
+    test(`${surface}: For this view uses declared shell ids only in the modal`, async () => {
+      const reader = await setup(surface, undefined, "/app/spaces/help", html, { help: ["third", "missing", "first", "second"] });
+      try {
+        await until(() => !!reader.dom.document.querySelector("[data-help-results]"));
+        expect(reader.dom.document.querySelector("#layout-help-title")?.textContent).toBe("Help for Spaces");
+        expect(topicIds(reader, "[data-help-view]")).toEqual(surface === "modal" ? ["third", "first", "second"] : []);
+        if (surface === "modal")
+          expect(reader.dom.document.querySelector("[data-help-view] h3")?.textContent?.trim()).toBe("For this view");
+        else expect(reader.dom.document.querySelector("[data-help-view]")).toBeNull();
+      } finally {
+        await reader.cleanup();
+      }
+    });
+  }
+
+  test("start: registered shortcuts group by scope with shell search and help first", async () => {
+    const reader = await setup("page", undefined, "/app/spaces/help");
+    const { registerContextAwareCommand } = await import("../browser/command-bridge");
+    const unregister = [
+      { id: "spaces.complete", title: "Complete selected", shortcut: "x", scope: "selection" as const },
+      { id: "spaces.new", title: "New task", shortcut: "n" },
+      { id: "cloud.shell.focus", title: "Hide sidebar", shortcut: "mod+\\" },
+      { id: "cloud.help", title: "Open shortcut help", shortcut: "shift+/" },
+      { id: "cloud.search", title: "Open global search", shortcut: "mod+k" },
+      { id: "spaces.no-shortcut", title: "No shortcut" },
+    ].map((command) => registerContextAwareCommand({ ...command, description: "", action() {} }));
+    try {
+      await until(() => reader.dom.document.querySelectorAll("[data-help-shortcut-group]").length === 3);
+      const groups = [...reader.dom.document.querySelectorAll("[data-help-shortcut-group]")];
+      expect(groups.map((group) => group.getAttribute("data-help-shortcut-group"))).toEqual(["everywhere", "app", "selection"]);
+      expect(groups.map((group) => group.getAttribute("aria-label"))).toEqual(["Everywhere", "In Spaces", "With a selection"]);
+      expect(groups.map((group) => [...group.querySelectorAll(".help-shortcut-title")].map((row) => row.textContent))).toEqual([
+        ["Open global search", "Open shortcut help", "Hide sidebar"],
+        ["New task"],
+        ["Complete selected"],
+      ]);
+      expect(reader.dom.document.querySelector("[data-help-results]")?.lastElementChild?.hasAttribute("data-help-shortcuts")).toBe(true);
+    } finally {
+      unregister.forEach((dispose) => dispose());
+      await reader.cleanup();
+    }
+  });
+
+  for (const surface of ["modal", "page"] as const) {
+    test(`${surface}: searching from an article and clearing returns to the same article and input`, async () => {
+      const reader = await setup(surface, "first");
+      try {
+        if (surface === "modal") {
+          await until(() => !!reader.dom.document.querySelector("[data-help-search]"));
+          reader.button("Article first").click();
+        }
+        await until(() => !!reader.dom.document.querySelector(".help-document a"));
+        const input = search(reader);
+        type(input, "second");
+        await until(() => !!reader.dom.document.querySelector("[data-help-search-results]"));
+        expect(reader.dom.document.querySelector(".help-article")).toBeNull();
+        expect(topicIds(reader, "[data-help-search-results]")).toEqual(["second"]);
+        expect(search(reader)).toBe(input);
+        type(input, "");
+        await until(() => reader.title() === "Article first" && !!reader.dom.document.querySelector(".help-document a"));
+        expect(reader.dom.document.querySelector("[data-help-results]")).toBeNull();
+        expect(search(reader)).toBe(input);
+      } finally {
+        await reader.cleanup();
+      }
+    });
+
+    test(`${surface}: More Help actions offers Markdown copy and a modal-only page link for the current view`, async () => {
+      const reader = await setup(surface, undefined, "/app/spaces/help");
+      const openMenu = async (expectedHref = "/app/spaces/help") => {
+        reader.dom.document.querySelector<HTMLButtonElement>("[data-help-menu]")!.click();
+        await until(() => !!reader.dom.document.querySelector('[role="menuitem"]'));
+        const items = [...reader.dom.document.querySelectorAll('[role="menuitem"]')];
+        expect(items.map((item) => item.textContent?.trim())).toEqual(
+          surface === "modal" ? ["Copy as Markdown", "Open as page"] : ["Copy as Markdown"],
+        );
+        const link = items.find((item) => item.textContent?.includes("Open as page"));
+        if (surface === "modal") expect(link?.getAttribute("href")).toBe(expectedHref);
+      };
+      try {
+        await until(() => !!reader.dom.document.querySelector("[data-help-menu]"));
+        await openMenu();
+        reader.dom.document.querySelector('[role="menu"]')!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        reader.button("Article first").click();
+        await until(() => !!reader.dom.document.querySelector(".help-document a"));
+        await openMenu("/app/spaces/help/first");
+      } finally {
+        await reader.cleanup();
+      }
+    });
+  }
+
+  test("search: a failed full-text request warns above metadata matches and Try again repeats the request", async () => {
+    const reader = await setup("page", undefined, "/app/spaces/help", html, { searchFails: true });
+    try {
+      type(search(reader), "second");
+      await until(() => !!reader.dom.document.querySelector("[data-help-search-failed]"));
+      const warning = reader.dom.document.querySelector("[data-help-search-failed]")!;
+      expect(warning.textContent).toContain("Full-text search is not available right now");
+      expect(warning.getAttribute("data-tone")).toBe("warning");
+      expect(topicIds(reader, "[data-help-search-results]")).toEqual(["second"]);
+      expect([...warning.parentElement!.children].indexOf(warning)).toBeLessThan(
+        [...warning.parentElement!.children].findIndex((element) => element.matches(".help-start-rows")),
+      );
+      const requests = () => reader.fetch.mock.calls.filter(([input]) => String(input).includes("/search?q=second"));
+      expect(requests()).toHaveLength(1);
+      reader.button("Try again").click();
+      await until(() => requests().length === 2 && !!reader.dom.document.querySelector("[data-help-search-failed]"));
+      expect(requests()).toHaveLength(2);
     } finally {
       await reader.cleanup();
     }
