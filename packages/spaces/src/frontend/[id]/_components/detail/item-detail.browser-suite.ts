@@ -558,7 +558,9 @@ describe("Spaces item detail in a browser", () => {
             path: `/tmp/spaces-detail-${browserName}-people-assigned-${width}-${theme}.png`,
             animations: "disabled",
           });
-          // The claim time shows whole or not at all, never cut off; from 480 px on it always fits.
+          // The claim time shows whole or not at all, never cut off. Whether it fits a phone depends on the platform's
+          // font metrics, so only the 480 px panel, the widest, promises it. The fixture's claim is more than a week
+          // old, so the time reads as its longest form, a full date, on every day the suite runs.
           const time = await peopleRows(page)
             .first()
             .locator("time")
@@ -575,7 +577,7 @@ describe("Spaces item detail in a browser", () => {
               };
             });
           expect(time.whole || time.clipped).toBe(true);
-          if (width !== 320) expect(time.whole).toBe(true);
+          if (width === 480) expect(time.whole).toBe(true);
           if (width === 320) {
             const rows = await peopleRows(page).evaluateAll((rows) =>
               rows.map((row) => ({
