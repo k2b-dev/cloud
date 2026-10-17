@@ -514,6 +514,20 @@ restore the task list without changing its open state. Without an accessory, the
 float above the composer, which does not move when they open or close. Set `draftKey` when
 switching conversations so undo cannot bring content from another chat back.
 
+On touch-only phones (narrow screens, or low screens in landscape), command
+suggestions form a column-wide sheet directly above and flush with the composer.
+Rows are at least 48px tall, with the name above the description. The sheet can
+grow up to the scroll container or visual viewport, minus the top safe area.
+A tap beside it closes only the list and reaches nothing beneath; the field
+keeps focus and the keyboard stays open. Back closes the list first through one
+same-URL history entry, removed on every other close path. A Back or Forward
+that only moves onto or off this entry does not reach application `popstate`
+listeners when the browser supports the Navigation API. Without it, only the
+synthetic Back on close is suppressed. Submitting on a touch-only device waits
+for the sheet's entry to leave before calling `onSubmit`, including when a tap
+on Send has already closed the list. With a mouse or trackpad, an outside click
+closes the list and then acts normally. Emoji suggestions keep their floating list.
+
 When changing a controlled draft outside the composer, use
 `reconcileChatMentions(before, after, mentions)` from `@k2b/ui` to update its
 reference ranges alongside the text. Edits before a reference shift its offsets;

@@ -428,6 +428,31 @@
   }
 }
 
+/* On a phone the resource picker is a full-screen sheet: the whole width, from
+   below the status bar to the bottom edge, rounded at the top. Its results
+   take the room the search field and footer leave. Global search keeps its
+   floating card. */
+@media (max-width: 47.999rem) {
+  .cloud-search-dialog.cloud-search-dialog--picker {
+    --search-top: max(0.5rem, env(safe-area-inset-top, 0px));
+    --search-max-height: calc(100dvh - var(--search-top));
+    inset: var(--search-top) 0 auto;
+    transform: none;
+    width: 100%;
+    height: var(--search-max-height);
+    border-width: 1px 0 0;
+    border-radius: var(--ui-radius-frame) var(--ui-radius-frame) 0 0;
+  }
+  .cloud-search-dialog--picker > .cloud-search-dialog__content,
+  .cloud-search-dialog--picker .cloud-resource-search {
+    height: 100%;
+  }
+  .cloud-search-dialog--picker .cloud-resource-search {
+    --search-body-height: max(0px, calc(var(--search-max-height) - 12rem));
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+  }
+}
+
 /* Border grips belong only to desktop Spotlight, never the resource picker. */
 .cloud-search-dialog:has(.cloud-global-search) {
   overflow: visible;
