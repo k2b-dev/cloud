@@ -156,9 +156,10 @@ const resolveAuthorityState = async (params: { request: OAuthTokenRequest; db?: 
           WHERE device_authorization_id=${params.request.grant.deviceAuthorizationId}::uuid
             AND kind='terminal' AND state='approved'`;
         if (login) {
-          // Lock user, device, then login, matching sign-out everywhere and signed decisions.
+          // Lock user, device, then login, matching sign-out everywhere and signed decisions. FOR SHARE holds the
+          // epoch still without blocking the key-share lock a concurrent decision's grant update takes on the user.
           const [user] = await db`SELECT id FROM auth.users WHERE id=${grant.user_id}::uuid
-            AND id=${login.user_id}::uuid AND auth_epoch=${login.auth_epoch}::bigint FOR UPDATE`;
+            AND id=${login.user_id}::uuid AND auth_epoch=${login.auth_epoch}::bigint FOR SHARE`;
           if (!user) return null;
           const [device] = await db`SELECT id FROM auth.app_devices
             WHERE id=${login.approved_by}::uuid AND revoked_at IS NULL

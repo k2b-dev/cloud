@@ -696,6 +696,7 @@ withDatabase("Core terminal approval issuance boundary", () => {
     const userId = crypto.randomUUID(),
       deviceId = crypto.randomUUID(),
       authorizationId = crypto.randomUUID(),
+      otherAuthorizationId = crypto.randomUUID(),
       loginId = crypto.randomUUID(),
       nonce = crypto.randomUUID(),
       clientId = `issuance-lock-order-${crypto.randomUUID()}`;
@@ -728,6 +729,9 @@ withDatabase("Core terminal approval issuance boundary", () => {
       await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,status,user_id,expires_at,authority_nonce)
         VALUES (${authorizationId}::uuid,${authorizationId},${authorizationId},${clientId},ARRAY['openid','profile'],ARRAY['cloud'],
           'consumed',${userId}::uuid,now()+interval '10 minutes',${nonce}::uuid)`;
+      await sql`INSERT INTO oauth.device_authorizations(id,device_code_hash,user_code_hash,client_id,scopes,audiences,expires_at)
+        VALUES (${otherAuthorizationId}::uuid,${otherAuthorizationId},${otherAuthorizationId},${clientId},ARRAY['openid'],ARRAY['cloud'],
+          now()+interval '10 minutes')`;
       await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted)
         VALUES (${deviceId}::uuid,'https://cloud.example.test',${userId}::uuid,'Phone','{}',false)`;
       await sql`INSERT INTO auth.app_logins(id,issuer,user_id,auth_epoch,category,browser_hash,challenge,comparison,state,approved_by,expires_at,
@@ -766,6 +770,9 @@ withDatabase("Core terminal approval issuance boundary", () => {
           await Bun.sleep(10);
         }
         expect(blocked).toBe(true);
+        // The decision hook approves another grant of this user; its foreign key takes a key-share lock on the user.
+        await tx`UPDATE oauth.device_authorizations SET status='approved',user_id=${userId}::uuid,decided_at=now()
+          WHERE id=${otherAuthorizationId}::uuid`;
         // With the inverted order, issuance already holds this row and A deadlocks.
         const locked = await tx`SELECT id FROM auth.app_logins WHERE id=${loginId}::uuid FOR UPDATE`;
         expect(locked).toHaveLength(1);
