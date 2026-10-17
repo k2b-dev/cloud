@@ -21,9 +21,12 @@ export function installPanelSlot(): () => void {
   const panel = readShellData()?.panel;
   if (!canvas || !slot || !body || !panel?.providers.length) return () => {};
   const t = platformMessages.resolve([document.documentElement.lang || "en"]).t;
-  const phone = window.matchMedia("(max-width: 47.999rem)");
+  // The mode uses the same px breakpoint as panel.css and the shell, read fresh, so CSS and the controller always
+  // agree; `phoneChange` only tells when to look again.
+  const isPhone = () => !window.matchMedia("(min-width: 768px)").matches;
+  const phoneChange = window.matchMedia("(max-width: 767.98px)");
   const column = window.matchMedia("(min-width: 1024px)");
-  const attribute = () => (phone.matches ? "data-panel-sheet" : "data-panel");
+  const attribute = () => (isPhone() ? "data-panel-sheet" : "data-panel");
   const isOpen = () => canvas.getAttribute(attribute()) === "open";
   const status = slot.querySelector<HTMLElement>("[data-cloud-panel-status]");
   const separator = slot.querySelector<HTMLElement>(".cloud-panel__resize");
@@ -50,7 +53,7 @@ export function installPanelSlot(): () => void {
     separator?.setAttribute("aria-valuenow", String(Math.round(width * 100) / 100));
   };
   const writeCookie = () => {
-    if (phone.matches) return;
+    if (isPhone()) return;
     document.cookie = serializePanelCookie(
       { open: canvas.dataset.panel === "open", provider: provider.id, widthRem: committedWidth },
       location.protocol === "https:",
@@ -165,7 +168,7 @@ export function installPanelSlot(): () => void {
     else if (event.target.closest("[data-cloud-panel-retry]") && isOpen()) {
       load(true);
       frame?.focus();
-    } else if (event.target.closest("[data-cloud-panel-grow]") && phone.matches) {
+    } else if (event.target.closest("[data-cloud-panel-grow]") && isPhone()) {
       const full = slot.dataset.panelSize !== "full";
       if (full) slot.dataset.panelSize = "full";
       else delete slot.dataset.panelSize;
@@ -207,7 +210,7 @@ export function installPanelSlot(): () => void {
   const closeSheet = () => {
     const wasOpen = canvas.dataset.panelSheet === "open";
     canvas.removeAttribute("data-panel-sheet");
-    if (wasOpen && phone.matches) {
+    if (wasOpen && isPhone()) {
       unload();
       update();
     }
@@ -277,7 +280,7 @@ export function installPanelSlot(): () => void {
   window.addEventListener("message", message);
   window.addEventListener("keydown", key);
   slot.addEventListener("click", click);
-  phone.addEventListener("change", modeChange);
+  phoneChange.addEventListener("change", modeChange);
   column.addEventListener("change", modeChange);
   window.addEventListener("pageshow", pageShow);
   window.addEventListener("popstate", closeSheet);
@@ -301,7 +304,7 @@ export function installPanelSlot(): () => void {
     window.removeEventListener("message", message);
     window.removeEventListener("keydown", key);
     slot.removeEventListener("click", click);
-    phone.removeEventListener("change", modeChange);
+    phoneChange.removeEventListener("change", modeChange);
     column.removeEventListener("change", modeChange);
     window.removeEventListener("pageshow", pageShow);
     window.removeEventListener("popstate", closeSheet);

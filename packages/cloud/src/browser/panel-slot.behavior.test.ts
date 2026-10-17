@@ -15,7 +15,7 @@ else {
     cleanup();
     jest.useRealTimers();
   });
-  function setup(viewport = 1440, initialOpen = false, storedWidth = true) {
+  function setup(viewport = 1440, initialOpen = false, storedWidth = true, beforeInstall?: (frame: HTMLIFrameElement) => void) {
     const dom = createDomTestHarness();
     dom.window.innerWidth = viewport;
     document.documentElement.style.fontSize = "16px";
@@ -36,6 +36,7 @@ else {
       value: () => ({ width: dom.window.innerWidth < 1280 ? 344 : 416 }),
     });
     const serverFrame = document.querySelector<HTMLIFrameElement>("iframe");
+    if (serverFrame) beforeInstall?.(serverFrame);
     const dispose = installPanelSlot();
     cleanup = () => {
       dispose();
@@ -272,16 +273,31 @@ else {
       }
     });
 
-  test("SSR-open restarts the iframe after installing its listener, so an earlier ready cannot be lost", () => {
+  test("SSR-open keeps the server iframe and still hears its later ready", () => {
     const h = setup(1440, true);
     expect(h.serverFrame).not.toBeNull();
-    expect(h.serverFrame?.isConnected).toBe(false);
-    expect(h.frame()).not.toBe(h.serverFrame);
+    expect(h.frame()).toBe(h.serverFrame);
     expect(h.slot.querySelectorAll("iframe")).toHaveLength(1);
+    expect(h.slot.dataset.state).toBe("loading");
     expect(document.cookie).toBe("");
     h.message({ type: "cloud.panel.ready", v: 1, provider: "fixture" });
     expect(h.slot.dataset.state).toBe("ready");
     expect(h.canvas.style.getPropertyValue("--cloud-panel-width-set")).toBe("24rem");
+  });
+
+  test("SSR-open reads the ready mark a provider set before the controller arrived", () => {
+    const h = setup(1440, true, true, (frame) => {
+      frame.contentDocument!.documentElement.dataset.cloudPanelReady = "fixture";
+    });
+    expect(h.frame()).toBe(h.serverFrame);
+    expect(h.slot.dataset.state).toBe("ready");
+  });
+
+  test("SSR-open ignores a ready mark of another provider", () => {
+    const h = setup(1440, true, true, (frame) => {
+      frame.contentDocument!.documentElement.dataset.cloudPanelReady = "second";
+    });
+    expect(h.slot.dataset.state).toBe("loading");
   });
 
   test("without a stored width, viewport resize keeps ARIA and the next key step on the CSS default", () => {

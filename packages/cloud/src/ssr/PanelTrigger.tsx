@@ -15,7 +15,7 @@ export default function PanelTrigger(props: { variant: "rail" | "header"; open?:
       ? !!props.open
       : document
           .querySelector(".cloud-app-canvas")
-          ?.getAttribute(window.matchMedia("(max-width: 47.999rem)").matches ? "data-panel-sheet" : "data-panel") === "open";
+          ?.getAttribute(window.matchMedia("(min-width: 768px)").matches ? "data-panel" : "data-panel-sheet") === "open";
   const toggle = () => window.dispatchEvent(new CustomEvent<PanelRequest>("cloud.panel.request", { detail: { action: "toggle" } }));
   if (props.variant === "rail")
     return (
