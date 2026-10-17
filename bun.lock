@@ -510,6 +510,7 @@
         "@types/sanitize-html": "catalog:",
         "bun-plugin-tailwind": "catalog:",
         "playwright": "catalog:",
+        "sharp": "catalog:",
         "typescript": "catalog:",
       },
     },

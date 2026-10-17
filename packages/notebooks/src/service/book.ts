@@ -57,12 +57,15 @@ export const resolveBookQueries = async (params: {
  * Titles of the notes whose headings this note links to, and the attachments it links to, both in the same
  * notebook. One query each, bounded by the distinct links in the note; the reader can already read the notebook.
  */
-export const resolveBookReferences = async (params: { notebookId: string; markdown: string }): Promise<BookReferences> => {
+export const resolveBookReferences = async (
+  params: { notebookId: string; markdown: string },
+  attachmentMetadata?: readonly attachments.Attachment[],
+): Promise<BookReferences> => {
   const headingNoteIds = [...params.markdown.matchAll(/note:\/\/([0-9a-zA-Z]{6})#/g)].map((match) => match[1]!);
   const attachmentIds = attachments.extractIds(params.markdown);
   const [titles, files] = await Promise.all([
     notes.titlesByShortIds({ notebookId: params.notebookId, shortIds: headingNoteIds }),
-    attachments.listByShortIds({ shortIds: attachmentIds, notebookId: params.notebookId }),
+    attachmentMetadata ?? attachments.listByShortIds({ shortIds: attachmentIds, notebookId: params.notebookId }),
   ]);
   return {
     notes: titles,

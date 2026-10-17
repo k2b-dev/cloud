@@ -20,6 +20,22 @@ Bevor du die Struktur einer Notiz änderst, prüfe ihren Markdown-Quelltext und 
 - **Ein altes Skript läuft nicht mehr:** Ausführbare Skripte werden nicht mehr unterstützt. Vorhandene Skriptblöcke bleiben lesbarer Code. Ersetze Seitenlisten durch :::query und Inhaltsverzeichnisse durch :::toc. Für Skriptbuttons und Schreibaktionen gibt es keinen Ersatz.
 :::
 
+## Ein Bild fehlt im PDF {icon="photo"}
+
+Das PDF markiert jedes fehlende Bild mit **Bild nicht enthalten: …** und einem Grund. Der Download-Dialog listet dieselben Auslassungen auf.
+
+:::reference
+- **Datei nicht gefunden:** Hänge die Datei erneut an dieses Notizbuch an. Ein Anhang aus einem anderen Notizbuch ist hier nicht verfügbar.
+- **Format kann nicht gedruckt werden:** Verwende JPEG, PNG, WebP oder GIF. SVG-Dateien bleiben als Download verfügbar.
+- **Datei konnte nicht gelesen werden:** Öffne und prüfe die Datei. Exportiere sie erneut und hänge die neue Kopie an.
+- **Datei zu groß:** Hänge ein kleineres Bild an. Die Größenbegrenzung für Anhänge gilt auch für Bilder im PDF.
+- **Kein Platz mehr im PDF:** Verwende kleinere Bilder oder teile die Notiz auf. Bilder teilen sich die **Maximale Eingabegröße** mit dem Dokument. Ein Administrator kann diese Grenze erhöhen. Große Bilder werden mit 300, 200 oder 150 dpi gedruckt.
+- **Vorbereitung dauerte zu lange:** Versuche es erneut oder verwende kleinere Bilder.
+- **Adresse nicht erlaubt:** Hänge das Bild an dieses Notizbuch an und verwende seinen Anhang-Link.
+- **Wird noch nicht im PDF gedruckt:** Externe HTTP(S)-Bilder werden noch nicht aufgenommen. Hänge das Bild stattdessen an oder öffne die Notiz, um es anzusehen.
+- **Adresse nicht erreichbar:** Prüfe die Adresse oder versuche es später erneut.
+:::
+
 ## Aktualisierungen prüfen {icon="refresh"}
 
 **Bearbeiten** synchronisiert den Notiztext mit anderen Personen, die ihn bearbeiten. Gespeicherte Änderungen aktualisieren Abfragevorschauen und Buchinhalte. **Schreibgeschützt** empfängt keine gemeinsamen Textänderungen. Lade die Ansicht neu, nachdem sich der gespeicherte Quelltext geändert hat.
