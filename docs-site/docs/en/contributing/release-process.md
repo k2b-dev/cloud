@@ -5,7 +5,7 @@ section: Contributing
 order: 1302
 description: How a change on a feature branch becomes a versioned Cloud release with images, CLI, website, PWA, and npm packages.
 tags: [contributing, release, versioning, ci]
-updated: 2026-10-16
+updated: 2026-10-17
 ---
 
 # Release process
@@ -34,6 +34,12 @@ the form `type(scope): outcome`:
 A `BREAKING CHANGE:` footer in the PR body has the same effect as `!`. Use
 either only with explicit maintainer approval, because it moves every
 application image to a new major version.
+
+release-please copies the PR title and each `BREAKING CHANGE:` or
+`BREAKING-CHANGE:` paragraph into the release PR body and parses it as HTML.
+Write placeholders without angle brackets: use `DIR` or `{dir}` instead of
+`<word>`, even inside backticks. The `check` job refuses HTML-like markup in
+these parts of the PR ([#1298](https://github.com/k2b-dev/cloud/issues/1298)).
 
 A change to a runtime contract (configuration, routes, permissions, data
 format, deployment) needs a `feat` or `feat!` title and a note on the matching
@@ -80,6 +86,17 @@ merge queue, to test already published sibling pins from npm and versions
 this release publishes from their tarballs. See
 [What CI runs](/en/docs/contributing/testing#what-ci-runs).
 
+The `release-body` job checks the release PR and its merge queue run. It parses
+the live PR body with the release-please version and dependency tree pinned by
+the action in `main.yml`. It fails when a bumped component is missing, has a
+different version, or has swallowed another release section into its notes.
+
+When this guard fails on an open release PR, the cause is already in a commit
+on `main`. The maintainer must edit the release PR body as described below,
+right before merging: release-please rewrites the body on every push to
+`main`. Re-run the failed job after saving the body; a body edit does not
+start CI.
+
 Merge the release PR only after release-please has refreshed it after the last
 feature PR merged. Check that its parent is the current `main`:
 
@@ -117,6 +134,58 @@ Docker Hub image. See
 
 Every push to `main` also builds `sha-<12>` images for staging. Those tags are
 not releases: they carry no changelog entry and no support commitment.
+
+### Recover a release that release-please skipped
+
+This is a maintainer procedure. Agents never perform these steps:
+`AGENTS.md` forbids agents from creating tags or triggering releases.
+
+For `cloud-v0.44.0`, HTML-like placeholders swallowed the Cloud section of
+release PR #1248, so release-please created only the npm releases
+([#1298](https://github.com/k2b-dev/cloud/issues/1298)). Recover a skipped
+release in this order:
+
+1. Edit the merged release PR body. Replace each `<` that starts markup in
+   the release notes with `&amp;lt;`; keep the structural `details` and
+   `summary` tags. The GitHub release then shows `<`. Do not use `&lt;`:
+   release-please decodes it to `<`, and the GitHub release hides the text
+   as an HTML tag. Check the edited file before saving it on GitHub:
+
+   ```bash
+   bun scripts/check-release-pr-body.ts --pr <n> --body <file>
+   ```
+
+   After saving, run `bun scripts/check-release-pr-body.ts --pr <n>` to check
+   the live body.
+2. Change the PR label from `autorelease: tagged` back to
+   `autorelease: pending`.
+3. Push a branch pointing at the release commit and dispatch `main.yml` on it:
+
+   ```bash
+   git push origin <release-sha>:refs/heads/chore/recover-release-X-Y-Z
+   gh workflow run main.yml --ref chore/recover-release-X-Y-Z
+   ```
+
+   release-please creates the missing tag and GitHub release at that commit
+   and skips existing releases as duplicates. The run builds images from the
+   release commit. CLI asset signing fails on this branch because its
+   signature identity must use `refs/heads/main`. If the `release-please` job
+   still logs `Pull request contains releases, but not for component`, it has
+   set the label to `autorelease: tagged` again: check the live body, repeat
+   step 2, and dispatch again. The first 0.44.0 attempt needed this.
+4. Finish the release from `main`:
+
+   ```bash
+   gh workflow run main.yml --ref main -f version=X.Y.Z
+   ```
+
+   This checks out the release tag and publishes the CLI assets and
+   `release.json`.
+5. Delete the recovery branch:
+
+   ```bash
+   git push origin --delete chore/recover-release-X-Y-Z
+   ```
 
 ## Verify the CLI assets
 
@@ -178,5 +247,5 @@ marks such releases.
 - edit `version` fields, `CHANGELOG.md`, or `.release-please-manifest.json`;
 - create, move, or delete tags;
 - push to `main` directly;
-- re-run a release for a tag that already exists. Fix forward with a new
-  patch release.
+- re-run a release for a tag that already exists, except for the maintainer
+  recovery procedure above. Otherwise, fix forward with a new patch release.
