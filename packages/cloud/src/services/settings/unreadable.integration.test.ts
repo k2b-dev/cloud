@@ -11,11 +11,13 @@ const suite = suiteFor("database", "valkey");
 const prefix = `test.unreadable_${globalThis.crypto.randomUUID().replaceAll("-", "")}`;
 const key = `${prefix}.url`;
 const secretKey = `${prefix}.secret`;
+const lockKey = `${prefix}.lock_order`;
 const stamp = "2026-01-02T03:04:05.000Z";
 const fallback = "https://fallback.test";
 registerSettings([
   { key, kind: "url", default: "", envFallback: () => fallback, description: "Test only.", label: "Unreadable probe", group: prefix },
   { key: secretKey, kind: "secret", default: "", description: "Test only.", label: "Secret probe", group: prefix },
+  { key: lockKey, kind: "url", default: "", description: "Test only.", label: "Lock order probe", group: prefix },
 ]);
 
 suite("unreadable settings preserve stored data", () => {
@@ -39,9 +41,41 @@ suite("unreadable settings preserve stored data", () => {
   const clear = async () => {
     await settings.remove(key);
     await settings.remove(secretKey);
+    await settings.remove(lockKey);
   };
   beforeEach(clear);
   afterAll(clear);
+
+  test("a table SHARE lock and concurrent settings writes do not deadlock", async () => {
+    await settings.set(lockKey, "https://initial.test");
+    let concurrentWrite: Promise<PromiseSettledResult<void>[]> | undefined;
+    try {
+      await sql.begin(async (tx) => {
+        await tx`LOCK TABLE settings.entries IN SHARE MODE`;
+        // Observe rejection immediately and drain the writer even if A rolls back.
+        concurrentWrite = Promise.allSettled([settings.set(lockKey, "https://b.test")]);
+        let blocked = false;
+        for (let poll = 0; poll < 100; poll++) {
+          const [row] = await tx<{ count: number }[]>`
+            SELECT count(*)::int AS count FROM pg_locks
+            WHERE NOT granted AND relation = 'settings.entries'::regclass
+          `;
+          if (row && row.count > 0) {
+            blocked = true;
+            break;
+          }
+          await Bun.sleep(20);
+        }
+        if (!blocked) throw new Error("Concurrent settings write did not block on the table lock");
+        await settings.set(lockKey, "https://a.test", tx);
+      });
+      await settings.invalidateSettingsCache([lockKey]);
+      expect(await concurrentWrite).toEqual([{ status: "fulfilled", value: undefined }]);
+      expect(await settings.read(lockKey)).toEqual({ stored: "readable", value: "https://b.test" });
+    } finally {
+      await concurrentWrite;
+    }
+  });
 
   for (const invalid of [false, true])
     test(`decrypt${invalid ? "able but invalid" : "ion failure"} rows require explicit recovery`, async () => {

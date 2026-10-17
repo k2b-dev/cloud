@@ -5,6 +5,8 @@ import { registerSettings } from "./defaults";
 import { SettingUnreadableError, writeKey } from "./store";
 
 const key = "test.write_key_conflict";
+const lockQuery = "UPDATE settings.entries SET value = value WHERE key = ? RETURNING value";
+const writeQuery = "UPDATE settings.entries SET value = ?, updated_at = now() WHERE key = ?";
 registerSettings([{ key, kind: "url", default: "", description: "Write conflict probe", group: "test" }]);
 const previousSecret = process.env.APP_SECRET;
 beforeAll(() => {
@@ -37,7 +39,7 @@ test("a missing setting is inserted without an overwrite on conflict", async () 
   try {
     await writeKey(key, "https://replacement.test", tx.db);
     expect(tx.queries).toHaveLength(2);
-    expect(tx.queries[0]).toContain("FOR UPDATE");
+    expect(tx.queries[0]).toBe(lockQuery);
     expect(tx.queries[1]).toContain("ON CONFLICT (key) DO NOTHING RETURNING key");
   } finally {
     await tx.close();
@@ -51,7 +53,8 @@ for (const attempt of [2, 3]) {
       await writeKey(key, "https://replacement.test", tx.db);
       expect(tx.queries).toHaveLength((attempt - 1) * 3 + 2);
       expect(tx.queries.filter((query) => query.startsWith("INSERT"))).toHaveLength(attempt);
-      expect(tx.queries.some((query) => query.startsWith("UPDATE"))).toBe(false);
+      expect(tx.queries.filter((query) => query === lockQuery)).toHaveLength((attempt - 1) * 2 + 1);
+      expect(tx.queries).not.toContain(writeQuery);
     } finally {
       await tx.close();
     }
@@ -63,7 +66,8 @@ test("a retry still refuses an unreadable row after a reset deleted the first wi
   try {
     await expect(writeKey(key, "https://replacement.test", tx.db)).rejects.toBeInstanceOf(SettingUnreadableError);
     expect(tx.queries).toHaveLength(4);
-    expect(tx.queries.some((query) => query.startsWith("UPDATE"))).toBe(false);
+    expect(tx.queries.filter((query) => query === lockQuery)).toHaveLength(3);
+    expect(tx.queries).not.toContain(writeQuery);
   } finally {
     await tx.close();
   }
@@ -80,7 +84,8 @@ for (const replaceUnreadable of [false, true]) {
       expect(error).toHaveProperty("message", expect.stringContaining(key));
       expect(tx.queries).toHaveLength(9);
       expect(tx.queries.filter((query) => query.startsWith("INSERT"))).toHaveLength(3);
-      expect(tx.queries.some((query) => query.startsWith("UPDATE"))).toBe(false);
+      expect(tx.queries.filter((query) => query === lockQuery)).toHaveLength(6);
+      expect(tx.queries).not.toContain(writeQuery);
     } finally {
       await tx.close();
     }
@@ -94,8 +99,9 @@ for (const invalid of [false, true]) {
     try {
       await expect(writeKey(key, "https://replacement.test", tx.db)).rejects.toBeInstanceOf(SettingUnreadableError);
       expect(tx.queries).toHaveLength(3);
-      expect(tx.queries[2]).toBe(tx.queries[0]);
-      expect(tx.queries.some((query) => query.startsWith("UPDATE"))).toBe(false);
+      expect(tx.queries[0]).toBe(lockQuery);
+      expect(tx.queries[2]).toBe(lockQuery);
+      expect(tx.queries).not.toContain(writeQuery);
     } finally {
       await tx.close();
     }
@@ -106,8 +112,9 @@ test("an insert conflict permits an explicit replacement after locking the winne
   const tx = transaction([[], [], [{ value: "foreign-ciphertext" }], []]);
   try {
     await writeKey(key, "https://replacement.test", tx.db, { replaceUnreadable: true });
-    expect(tx.queries[2]).toBe(tx.queries[0]);
-    expect(tx.queries[3]).toBe("UPDATE settings.entries SET value = ?, updated_at = now() WHERE key = ?");
+    expect(tx.queries[0]).toBe(lockQuery);
+    expect(tx.queries[2]).toBe(lockQuery);
+    expect(tx.queries[3]).toBe(writeQuery);
   } finally {
     await tx.close();
   }
@@ -120,7 +127,9 @@ for (const conflict of [false, true]) {
     try {
       await writeKey(key, "https://replacement.test", tx.db);
       expect(tx.queries).toHaveLength(conflict ? 4 : 2);
-      expect(tx.queries.at(-1)).toStartWith("UPDATE settings.entries");
+      expect(tx.queries[0]).toBe(lockQuery);
+      if (conflict) expect(tx.queries[2]).toBe(lockQuery);
+      expect(tx.queries.at(-1)).toBe(writeQuery);
     } finally {
       await tx.close();
     }

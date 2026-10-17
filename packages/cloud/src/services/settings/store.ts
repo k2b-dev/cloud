@@ -231,6 +231,8 @@ export const deleteLegacyKeys = async (extraKnownKeys: readonly string[] = []): 
  *
  * Validate new values and refuse to overwrite unreadable stored rows unless
  * the caller explicitly replaces them. The row check and write share a transaction.
+ * Lock with a no-op UPDATE so ROW EXCLUSIVE is acquired before the row lock,
+ * preserving lock order with table-level SHARE locks (#1303 review).
  */
 export const writeKey = async (key: string, value: unknown, db?: SqlClient, options?: { replaceUnreadable?: boolean }): Promise<void> => {
   const def = SETTINGS_MAP.get(key);
@@ -243,7 +245,7 @@ export const writeKey = async (key: string, value: unknown, db?: SqlClient, opti
   const encrypted = await encryptValue(storedValue);
   const write = async (tx: SqlClient) => {
     for (let attempt = 0; attempt < 3; attempt++) {
-      let [row] = await tx<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = ${key} FOR UPDATE`;
+      let [row] = await tx<{ value: string }[]>`UPDATE settings.entries SET value = value WHERE key = ${key} RETURNING value`;
       if (!row) {
         const inserted = await tx<{ key: string }[]>`
           INSERT INTO settings.entries (key, value, updated_at)
@@ -252,7 +254,7 @@ export const writeKey = async (key: string, value: unknown, db?: SqlClient, opti
         `;
         if (inserted.length > 0) return;
         // A concurrent insert can win after the missing-row read; lock and check its value before updating.
-        [row] = await tx<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = ${key} FOR UPDATE`;
+        [row] = await tx<{ value: string }[]>`UPDATE settings.entries SET value = value WHERE key = ${key} RETURNING value`;
         if (!row) continue;
       }
       if (options?.replaceUnreadable !== true) {

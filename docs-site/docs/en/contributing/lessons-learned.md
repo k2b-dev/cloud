@@ -428,6 +428,7 @@ convention still needs a check or a test.
 - **Error class:** Read fallback written back.
 - **Guard:** The settings store locks and checks the existing row in the write transaction and refuses unreadable rows with `setting_unreadable` unless replacement is explicit. `packages/cloud/src/services/settings/unreadable.integration.test.ts` preserves ciphertext and timestamps, checks read/list state even with shared plaintext cache entries, checks secret redaction, and covers replacement and reset. Stored-state reads bypass the shared cache because decryption depends on each process's `APP_SECRET`. Files configuration unit and integration tests refuse token retention over unreadable data and verify recovery.
 - **Concurrent inserts:** A missing-row lock does not prevent another writer from inserting; `write-key.test.ts` covers the insert-conflict recheck before any update, including unreadable winners and explicit replacement.
+- **Lock order and startup:** The store takes its row lock with an `UPDATE`, so it waits behind a table-level `SHARE` lock instead of deadlocking with it (`unreadable.integration.test.ts`). Core startup leaves Web Push off instead of failing when its key rows cannot be read (`browser-settings.test.ts`).
 
 ## Add a lesson
 
