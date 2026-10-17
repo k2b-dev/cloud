@@ -1,7 +1,13 @@
 import { Button, FileDropTarget, FileDropzone, Format, InlineGuidance, toast } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import type { PublicShare, UploadSession } from "../contracts";
-import { transferUpload, uploadFailureAction, uploadRequestFailure, uploadResponseFailure } from "../upload-transfer";
+import {
+  transferUpload,
+  UPLOAD_COMMIT_DEADLINE_MS,
+  uploadFailureAction,
+  uploadRequestFailure,
+  uploadResponseFailure,
+} from "../upload-transfer";
 import { useBrowserMessages } from "./browser-messages";
 import { apiFailure } from "./file-preview";
 import { useFilesMessages } from "./messages";
@@ -44,7 +50,7 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
   // The same queue and panel as in the workspace: one batch, byte-weighted progress, failed files retried in place.
   const uploads = createUploadQueue<null>({
     reason: (error) => uploadFailureReason(error, u()),
-    upload: async (_, { file }, { signal, onProgress, alive }) => {
+    upload: async (_, { file }, { signal, onProgress, onPhase, alive }) => {
       const start = await browserUploadKey(["public", props.token], file);
       let session: UploadSession | undefined;
       let committing = false;
@@ -76,9 +82,10 @@ export default function PublicInbox(props: { token: string; share: PublicShare }
         });
         signal.throwIfAborted();
         committing = true;
+        onPhase("finishing");
         const committed = await publicClient.inbox[":token"].api.uploads[":id"].commit.$post(
           { param: { ...param, id: session.id } },
-          { init: { signal: AbortSignal.any([signal, AbortSignal.timeout(60_000)]) } },
+          { init: { signal: AbortSignal.any([signal, AbortSignal.timeout(UPLOAD_COMMIT_DEADLINE_MS)]) } },
         );
         if (!committed.ok) throw await uploadResponseFailure(committed, u().failed);
         const result = await committed.json();

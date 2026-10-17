@@ -9,6 +9,7 @@ import {
   finishRow,
   nextRow,
   percent,
+  phaseRow,
   reportProgress,
   retryRows,
   settleBatch,
@@ -29,6 +30,32 @@ const complete = (batch: UploadBatch, outcome: Parameters<typeof finishRow>[2] =
   startRow(batch, id);
   return finishRow(batch, id, outcome);
 };
+
+test("finishing belongs only to a working attempt and clears on progress, settlement, retry and cancel", () => {
+  const batch = createBatch();
+  appendFiles(batch, target, 0, files(["large.bin", 100]));
+  const row = batch.rows[0]!;
+  expect(row.phase).toBeNull();
+  phaseRow(batch, 0, "finishing");
+  expect(row.phase).toBeNull();
+  startRow(batch, 0);
+  phaseRow(batch, 0, "finishing");
+  expect(row.phase).toBe("finishing");
+  reportProgress(batch, 0, 100);
+  expect(row.phase).toBeNull();
+  phaseRow(batch, 0, "finishing");
+  finishRow(batch, 0, { status: "failed", reason: "deadline" });
+  expect(row.phase).toBeNull();
+  retryRows(batch);
+  expect(row.phase).toBeNull();
+  startRow(batch, 0);
+  expect(row.phase).toBeNull();
+  phaseRow(batch, 0, "finishing");
+  cancelBatch(batch);
+  expect(row.phase).toBeNull();
+  phaseRow(batch, 0, "finishing");
+  expect(row.phase).toBeNull();
+});
 
 describe("upload batch totals", () => {
   test("weigh files by bytes, so a large file in flight dominates the percent", () => {

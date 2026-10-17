@@ -44,3 +44,9 @@ Notebooks are Markdown workspaces for knowledge. Your text stays readable first.
 - **Track small structured data:** Use Markdown tables and named blocks for small data sets that belong next to their text.
 - **Build an index:** Query notes by tags and by your own named data. Results refresh after saved changes and run no code.
 :::
+
+## Print an open note {icon="printer"}
+
+Press **Cmd/Ctrl+P** to print the open note like Book, without the editor and side panel. Diagrams print as drawn; queries print their definition.
+
+For the print styles **Document**, **Report**, **Compact**, and **Custom**, use **Download PDF** in the note's details.

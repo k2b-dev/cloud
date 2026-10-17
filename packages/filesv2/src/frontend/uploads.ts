@@ -1,6 +1,13 @@
 import { apiClient } from "../api/client";
 import type { EntryResult, UploadSession } from "../contracts";
-import { transferUpload, UploadTransferError, uploadFailureAction, uploadRequestFailure, uploadResponseFailure } from "../upload-transfer";
+import {
+  transferUpload,
+  UPLOAD_COMMIT_DEADLINE_MS,
+  UploadTransferError,
+  uploadFailureAction,
+  uploadRequestFailure,
+  uploadResponseFailure,
+} from "../upload-transfer";
 import { browserUploadKey } from "./upload-key";
 
 export const requestSignal = (signal: AbortSignal) => AbortSignal.any([signal, AbortSignal.timeout(60_000)]);
@@ -25,6 +32,7 @@ export async function uploadFile(
     fallback: string;
     onProgress?: (bytes: number) => void;
     onStarted?: () => void;
+    onPhase?: (phase: "finishing") => void;
   },
 ): Promise<EntryResult> {
   options.signal.throwIfAborted();
@@ -65,9 +73,10 @@ export async function uploadFile(
     });
     options.signal.throwIfAborted();
     committing = true;
+    options.onPhase?.("finishing");
     const committed = await apiClient.bases[":baseId"].uploads[":id"].commit.$post(
       { param: { baseId, id: session.id } },
-      { init: { signal: requestSignal(options.signal) } },
+      { init: { signal: AbortSignal.any([options.signal, AbortSignal.timeout(UPLOAD_COMMIT_DEADLINE_MS)]) } },
     );
     if (!committed.ok) throw await uploadResponseFailure(committed, options.fallback);
     const result = await committed.json();

@@ -119,7 +119,12 @@ const portableSections = [
       page("segmented-control", "SegmentedControl", "ti ti-layout-grid", "A controlled radio-group toolbar with roving focus."),
       page("tabs", "Tabs", "ti ti-folders", "Accessible controlled peer views with compositional or data-driven items."),
       page("disclosure", "Disclosure", "ti ti-chevron-down", "Native optional-detail disclosure with controlled and uncontrolled state."),
-      page("toolbar", "Toolbar", "ti ti-tools", "Semantic action groups, separators, spacing, and responsive wrapping."),
+      page(
+        "toolbar",
+        "Toolbar",
+        "ti ti-tools",
+        "Semantic action groups, floating selection actions, priority overflow, and keyboard hints.",
+      ),
       page("spotlight", "Spotlight search", "ti ti-search", "Portable search launchers and keyboard shortcut behavior."),
     ],
   },
@@ -128,6 +133,7 @@ const portableSections = [
     title: "Layout",
     icon: "ti ti-layout",
     pages: [
+      page("print", "Browser printing", "ti ti-printer", "Print readable content or an application export hint without clipping."),
       page(
         "workspace",
         "AppWorkspace",

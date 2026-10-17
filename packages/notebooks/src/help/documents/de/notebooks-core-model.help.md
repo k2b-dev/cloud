@@ -32,6 +32,8 @@ Ein Notizbuch ist ein gemeinsamer Arbeitsbereich. Eine Notiz ist ein Markdown-Qu
 
 Zugriff **Ansehen** öffnet immer die Buchansicht. Mit Zugriff **Bearbeiten** oder **Verwalten** wechselst du die Ansicht. Personen mit Zugriff **Verwalten** wählen die gemeinsame Standardansicht in den Einstellungen. Eine Ansicht in der URL hat Vorrang vor der Standardansicht. Gesperrte Notizen öffnen in **Schreibgeschützt** statt in **Bearbeiten**. In **Buch** öffnet **Bearbeiten** oben in der Navigation die Notiz zum Bearbeiten. Personen mit Zugriff **Bearbeiten** oder **Verwalten** sehen den Eintrag.
 
+**Verknüpfungen** unten in der Navigation öffnet den Graphen in jeder Ansicht, auch mit Zugriff **Ansehen**.
+
 In **Bearbeiten** zeigt ein farbiger Cursor, wo eine andere Person arbeitet. Ihr Name steht als kleines Fähnchen über dem Cursor. Er erscheint, während sie tippt oder den Cursor bewegt. Nach einigen Sekunden ohne Aktivität bleibt nur ein Punkt oben am Cursor. Mit Maus oder Trackpad zeigst du auf den Punkt, um den Namen wieder zu sehen.
 
 Halte wichtige Informationen im Markdown sichtbar. Abfragen lesen gespeicherte Notizdaten. Sie führen keinen Code aus, ändern keine Seiten und erzeugen keinen versteckten Zustand.

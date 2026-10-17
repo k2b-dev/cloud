@@ -16,11 +16,12 @@ const CONFLICTS = [
 
 /**
  * The code and status a thrown error answers with. Files and identity errors
- * carry their own; Filegate failures describe storage; anything else is a
- * Cloud defect (`internal`), not a storage outage, and belongs in the log.
+ * carry their own; Filegate failures and deadlines describe storage. Anything
+ * else is a Cloud defect (`internal`), not a storage outage, and belongs in the log.
  */
 export function apiError(error: unknown): { code: string; status: FilesError["status"] | AccountIdentityError["status"] | 500 } {
   if (error instanceof FilesError || error instanceof AccountIdentityError) return { code: error.code, status: error.status };
+  if (error instanceof DOMException && error.name === "TimeoutError") return { code: "unavailable", status: 503 };
   if (!(error instanceof FilegateError)) return { code: "internal", status: 500 };
   const code = filegateErrorCode(error);
   return { code, status: code === "forbidden" ? 403 : code === "not_found" ? 404 : CONFLICTS.includes(code) ? 409 : 503 };

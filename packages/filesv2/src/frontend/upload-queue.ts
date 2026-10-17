@@ -9,6 +9,7 @@ import {
   failGroup,
   finishRow,
   nextRow,
+  phaseRow,
   reportProgress,
   retryRows,
   settleBatch,
@@ -17,6 +18,8 @@ import {
   type UploadBatch,
   waitRow,
 } from "./upload-batch";
+
+export const FINISHING_NOTICE_DELAY_MS = 1_000;
 
 export type UploadItem = { file: File; path: string };
 export type UploadOutcome = { status: "uploaded"; path: string } | { status: "skipped" } | { status: "cancel" };
@@ -31,6 +34,7 @@ export type UploadAdapter<G> = {
     options: {
       signal: AbortSignal;
       onProgress: (bytes: number) => void;
+      onPhase: (phase: "finishing" | null) => void;
       /** Cloud answered this attempt, so the network is back; a new try after a busy or silent server waits for progress. */
       alive: () => void;
     },
@@ -119,6 +123,13 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
         let latest = 0;
         const stale = () => request.signal.aborted || disposed || turn !== generation;
         const budget = createUploadRetryBudget();
+        let finishingTimer: ReturnType<typeof setTimeout> | undefined;
+        const clearFinishing = () => {
+          clearTimeout(finishingTimer);
+          finishingTimer = undefined;
+        };
+        request.signal.addEventListener("abort", clearFinishing);
+        let attempt = 0;
         let attempting = false;
         let answered = false;
         const clearWait = (only?: "network") => {
@@ -134,6 +145,9 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
         };
         const onProgress = (bytes: number) => {
           if (stale() || !attempting) return;
+          // A new transfer is no longer finishing; only a shown notice costs a store update.
+          clearFinishing();
+          if (batch.rows[id!]?.phase) apply((draft) => phaseRow(draft, id!, null), turn);
           budget.probes = 0;
           clearWait();
           latest = bytes;
@@ -145,8 +159,11 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
         };
         try {
           while (!stale()) {
+            const current = ++attempt;
             attempting = true;
             answered = false;
+            apply((draft) => phaseRow(draft, id!, null), turn);
+            const active = () => !stale() && attempting && current === attempt;
             try {
               if (!group.prepared) {
                 await adapter.prepare?.(group.value, request.signal);
@@ -154,7 +171,33 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
                 group.prepared = true;
                 group.changed = true;
               }
-              const outcome = await adapter.upload(group.value, items[id]!, { signal: request.signal, onProgress, alive });
+              const outcome = await adapter.upload(group.value, items[id]!, {
+                signal: request.signal,
+                onProgress: (bytes) => {
+                  if (active()) onProgress(bytes);
+                },
+                alive: () => {
+                  if (active()) alive();
+                },
+                onPhase: (phase) => {
+                  if (!active()) return;
+                  // Flush transferred bytes before the notice, including in a background tab.
+                  if (frame) {
+                    cancelAnimationFrame(frame);
+                    frame = 0;
+                    apply((draft) => reportProgress(draft, id!, latest), turn);
+                  }
+                  clearFinishing();
+                  if (phase === null) {
+                    apply((draft) => phaseRow(draft, id!, null), turn);
+                    return;
+                  }
+                  finishingTimer = setTimeout(() => {
+                    finishingTimer = undefined;
+                    if (active()) apply((draft) => phaseRow(draft, id!, phase), turn);
+                  }, FINISHING_NOTICE_DELAY_MS);
+                },
+              });
               if (stale()) break;
               if (outcome.status === "cancel") {
                 cancel();
@@ -169,6 +212,8 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
             } catch (error) {
               if (stale()) break;
               attempting = false;
+              clearFinishing();
+              apply((draft) => phaseRow(draft, id!, null), turn);
               const pause = navigator.onLine === false || (error instanceof UploadTransferError && error.kind === "network" && !answered);
               const retry = nextUploadRetry(error, budget, pause);
               if (!retry) {
@@ -189,6 +234,8 @@ export function createUploadQueue<G>(adapter: UploadAdapter<G>): UploadQueue<G> 
           }
         } finally {
           attempting = false;
+          clearFinishing();
+          request.signal.removeEventListener("abort", clearFinishing);
           if (frame) cancelAnimationFrame(frame);
           if (controller === request) controller = null;
         }

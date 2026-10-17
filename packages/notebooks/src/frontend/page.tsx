@@ -46,7 +46,7 @@ export default ssr<AuthContext>(async (c) => {
   );
 
   return () => (
-    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.notebooks }]}>
+    <Layout printHint={t.printHint} c={c} title={[{ title: t.start, href: "/" }, { title: t.notebooks }]}>
       <NotebooksOverview
         notebooks={notebooks.map((notebook) => {
           const { id, name, description, icon } = projectNotebook(notebook);

@@ -4,6 +4,8 @@
 
 The application owns the content and which regions are open.
 
+For browser printing, mark the complete readable content with `data-print-region`, or provide an export hint through Cloud Layout `printHint`. See [Browser printing](/en/ui/layout/print) for the region and fallback contract.
+
 The frame owns its surface hierarchy: `Main` uses the base surface, while the
 navigation and bottom drawer use the subtle surface. Detail is a raised floating
 surface.

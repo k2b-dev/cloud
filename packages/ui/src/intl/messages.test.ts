@@ -53,6 +53,7 @@ const catalogs = {
   Toast: (await import("../feedback/toast-messages")).checkToastMessages,
   Spotlight: (await import("../actions/spotlight-messages")).checkSpotlightMessages,
   PanelDialog: (await import("../layout/panel-dialog-messages")).checkPanelDialogMessages,
+  Toolbar: (await import("../actions/toolbar-messages")).checkToolbarMessages,
   Filter: (await import("../actions/filter-messages")).checkFilterMessages,
   RenderError: (await import("../internal/render-error-messages")).checkRenderErrorMessages,
   Feed: (await import("../content/feed-messages")).checkFeedMessages,

@@ -17,6 +17,7 @@ describe("@k2b/ui shipped stylesheet ownership", () => {
       "surfaces-widgets-parity.css",
       "content-parity.css",
       "editors-parity.css",
+      "print.css",
     ]);
     for (const file of files)
       expect(

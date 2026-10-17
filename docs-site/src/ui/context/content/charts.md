@@ -356,6 +356,57 @@ Reactive data rebuilds the complete SVG. This suits dashboard polling and normal
 
 Interactive charts require browser code. Static charts remain readable in the server response.
 
+## Inspection without Solid
+
+Use `@k2b/ui/chart-inspection` when your host renders stdlib chart SVG itself,
+for example in a sandboxed HTML document that cannot load a framework.
+The module contains no Solid.
+
+```ts
+import { inspectChart } from "@k2b/ui/chart-inspection";
+
+// inspectChart(container, { kind, format, select?, cursor? })
+// returns { invalidate, close, destroy }.
+```
+
+`kind` is the rendered chart kind. `format(selection)` returns a `ChartTooltip`
+with an optional `title` and `rows: { label, value }[]` of strings.
+Optional `select(selection)` receives click, tap, or Enter selections.
+Optional `cursor` links line charts; import `createChartCursor` from the same module.
+
+```ts
+import { charts } from "@k2b/stdlib";
+import { inspectChart } from "@k2b/ui/chart-inspection";
+
+const data = [{ label: "Jobs", value: 42 }];
+// The inspector adds its tooltip to the container; keep the SVG in a child.
+const plot = container.appendChild(document.createElement("div"));
+plot.innerHTML = charts.bar({ data, inspect: true, width: 480, height: 280 });
+const inspection = inspectChart(container, {
+  kind: "bar",
+  format: ({ datum }) => ({
+    title: data[datum.index]!.label,
+    rows: [{ label: "Completed", value: String(data[datum.index]!.value) }],
+  }),
+});
+
+// After a redraw, replace only the SVG and refresh the datum metadata:
+plot.innerHTML = charts.bar({ data, inspect: true, width: 480, height: 280 });
+inspection.invalidate();
+// On teardown:
+inspection.destroy();
+```
+
+The markup must come from the stdlib renderer with `inspect: true`.
+Only valid `data-chart-datum` metadata participates. Tooltip content is inserted
+as text. Inspection uses the same keyboard, pointer, pin, and close behavior as
+`Chart`; see [Accessibility](#accessibility). The host gives the container its
+role and accessible name, and loads `@k2b/ui/styles.css` for the tooltip and
+inspection paint. Use the `k2b-ui` scope and `k2b-chart` container class.
+The inspector adds a keyboard entry point if no `tabindex` exists and removes
+it on teardown. `close()` dismisses inspection; `invalidate()` refreshes datum
+metadata after a redraw; `destroy()` removes the listeners and added elements.
+
 ## Example
 
 ```tsx

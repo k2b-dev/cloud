@@ -39,5 +39,5 @@ export {
 } from "./SpotlightSearch";
 export type { TabOption, TabsItemProps, TabsProps } from "./Tabs";
 export { Tabs } from "./Tabs";
-export type { ToolbarGroupProps, ToolbarProps, ToolbarSeparatorProps } from "./Toolbar";
+export type { ToolbarActionProps, ToolbarGroupProps, ToolbarLabelProps, ToolbarProps, ToolbarSeparatorProps } from "./Toolbar";
 export { Toolbar } from "./Toolbar";

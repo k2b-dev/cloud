@@ -68,11 +68,17 @@ export default function BookSurface(props: BookSurfaceProps) {
                   }}
                 />
                 <WorkspaceEventBridge notebookId={props.notebookId} appUrl={props.appUrl} initialCursor={props.cursor} />
-                <div id="notebook-book-history-warning" hidden={!props.historyIncomplete} role="status">
+                <div
+                  id="notebook-book-history-warning"
+                  hidden={!props.historyIncomplete}
+                  role="status"
+                  data-print-region={props.historyIncomplete && props.html !== null ? "" : undefined}
+                >
                   <NoticeCard tone="warning" title={noteText().historyIncompleteTitle} detail={noteText().historyIncompleteDetail} />
                 </div>
                 {props.html !== null ? (
                   <article
+                    data-print-region=""
                     id="notebook-book-content"
                     aria-label={props.noteTitle ?? undefined}
                     tabIndex={-1}

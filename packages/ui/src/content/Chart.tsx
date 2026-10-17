@@ -8,7 +8,14 @@ import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import type { ChartCursor } from "./chart-cursor";
-import { type ChartDatumRef, type ChartSelection, type ChartTooltipFormatter, createChartInspection } from "./chart-inspection";
+import { createChartInspection } from "./chart-inspection";
+import {
+  type ChartDatumRef,
+  type ChartKind,
+  type ChartSelection,
+  type ChartTooltipFormatter,
+  closeChartInspectionOnOutside,
+} from "./chart-inspection-core";
 import { lineGapsSvg } from "./chart-line-gaps";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
 import { useChartMessages } from "./chart-messages";
@@ -70,7 +77,7 @@ import { useViewportMessages } from "./viewport-messages";
  */
 
 /** All chart kinds shipped by `stdlib.charts`. */
-export type ChartKind = keyof typeof charts;
+export type { ChartKind } from "./chart-inspection-core";
 
 export type ChartLabels = Partial<{
   empty: string;
@@ -523,21 +530,13 @@ const Chart = (props: ChartProps): JSX.Element => {
 
   onMount(() => {
     if (!containerRef) return;
-    const outside = (event: PointerEvent) => {
-      if (event.target instanceof Node && !containerRef?.contains(event.target)) closeChartTooltip();
-    };
-    window.addEventListener("pointerdown", outside);
-    const scroll = (event: Event) => {
-      if (event.target instanceof Node && chartTooltipRef?.contains(event.target)) return;
-      closeChartTooltip();
-    };
-    window.addEventListener("scroll", scroll, true);
-    window.addEventListener("resize", closeChartTooltip);
-    onCleanup(() => {
-      window.removeEventListener("pointerdown", outside);
-      window.removeEventListener("scroll", scroll, true);
-      window.removeEventListener("resize", closeChartTooltip);
-    });
+    onCleanup(
+      closeChartInspectionOnOutside({
+        container: () => containerRef,
+        tooltip: () => chartTooltipRef,
+        close: closeChartTooltip,
+      }),
+    );
   });
 
   const chartStyle = () =>

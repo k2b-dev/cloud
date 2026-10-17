@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { splitTopLevel } from "../styles/css-contract-test-helpers";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-surfaces-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -173,6 +174,25 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(link).toContain('data-color="cyan"');
     expect(link).toContain("Open runtime details");
     expect(link).not.toContain("k2b-link-card__meta");
+  });
+
+  test("renders Avatar rings on images and initials while preserving caller styles", () => {
+    for (const src of [undefined, "/ada.webp"]) {
+      const render = (props: Partial<Parameters<typeof Avatar>[0]> = {}) =>
+        renderToString(() => createComponent(Avatar, { name: "Ada Lovelace", src, ...props }));
+      const success = render({ ring: "success" });
+      expect(success).toContain(src ? "<img " : "<span ");
+      expect(success).toContain('data-ring="success"');
+      expect(render()).not.toContain("data-ring");
+
+      for (const style of [undefined, "opacity:0.5", { opacity: 0.5 }]) {
+        const color = render({ ring: { color: "#123456" }, style });
+        expect(color).toContain(src ? "<img " : "<span ");
+        expect(color).toContain('data-ring="color"');
+        expect(color).toContain("--k2b-avatar-ring:#123456");
+        if (style !== undefined) expect(color).toContain("opacity:0.5");
+      }
+    }
   });
 
   test("enhanced LinkCard navigation preserves the document anchor markup", () => {
@@ -482,8 +502,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     for (const file of stylesheets.filter((name) => ownedSelectorFiles.has(name))) {
       const css = readFileSync(resolve(stylesDir, file), "utf8");
       for (const rule of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
-        const selectors = (rule[1]?.replace(/\/\*[\s\S]*?\*\//g, "") ?? "")
-          .split(",")
+        const selectors = splitTopLevel(rule[1]?.replace(/\/\*[\s\S]*?\*\//g, "") ?? "", ",")
           .map((raw) => raw.split(/\s+/).filter(Boolean).join(" "))
           .filter(Boolean);
         for (const selector of selectors) {
@@ -511,7 +530,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
       for (const rule of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
         const selectors = rule[1]?.replace(/\/\*[\s\S]*?\*\//g, "").trim() ?? "";
         if (!selectors || selectors.startsWith("@")) continue;
-        for (const raw of selectors.split(",")) {
+        for (const raw of splitTopLevel(selectors, ",")) {
           const scoped = raw.split(/\s+/).filter(Boolean).join(" ").replace(themePrefix, "");
           // `.k2b-data-panel > .k2b-placeholder` is composition: the container's
           // stylesheet owns it. Only rules headed by one of our own components

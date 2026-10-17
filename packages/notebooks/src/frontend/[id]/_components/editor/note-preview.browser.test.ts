@@ -70,9 +70,12 @@ const chartMarkdown = [
   "",
   "Danach geht es weiter.",
 ].join("\n");
+// A note of paragraphs far longer than the editor draws at once, for printing.
+const printMarkdown = `# Feldnotizen\n\n${Array.from({ length: 150 }, (_, index) => `Absatz ${index + 1}: Das Team notiert Beobachtungen für den nächsten Besuch.`).join("\n\n")}`;
 const notes = {
   markdown: { text: markdown, snapshot: snapshot(markdown) },
   chart: { text: chartMarkdown, snapshot: snapshot(chartMarkdown) },
+  print: { text: printMarkdown, snapshot: snapshot(printMarkdown) },
   headings: { text: headingMarkdown, snapshot: snapshot(headingMarkdown) },
   long: { text: longMarkdown, snapshot: snapshot(longMarkdown) },
   many: { text: manyMarkdown, snapshot: snapshot(manyMarkdown) },
@@ -135,7 +138,7 @@ beforeAll(async () => {
         return Response.json({ markdown: draft, blocks, diagnostics: [], headings: [] });
       }
       const { text: note, snapshot: initialSnapshot } =
-        notes[(["many", "long", "headings", "chart"] as const).find((name) => url.searchParams.has(name)) ?? "markdown"];
+        notes[(["many", "long", "headings", "chart", "print"] as const).find((name) => url.searchParams.has(name)) ?? "markdown"];
       const mode = url.searchParams.get("mode") === "source" ? "source" : "rich";
       const readOnly = url.searchParams.has("readonly");
       const historyIncomplete = url.searchParams.has("historyIncomplete");
@@ -499,3 +502,35 @@ for (const width of [375, 1280]) {
     }
   }, 30_000);
 }
+
+// The editor draws only what is near the viewport, so the page prints the note's Book copy instead (#1281).
+for (const readOnly of [false, true])
+  test(`prints the whole note from its Book copy, with text typed just before: ${readOnly ? "read-only" : "write"}`, async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    try {
+      await page.goto(`${server.url}?print${readOnly ? "&readonly" : ""}`);
+      await page.waitForSelector(".cm-content");
+      const copy = page.locator(".notebook-note-print");
+      await copy.waitFor({ state: "attached" });
+      expect(await copy.boundingBox()).toBeNull();
+      if (!readOnly) {
+        await page.locator(".cm-content").focus();
+        await page.keyboard.press("Control+End");
+        await page.keyboard.type(" Zuletzt getippt.");
+      }
+      await page.emulateMedia({ media: "print" });
+      await page.waitForSelector(".notebook-note-print[data-print-region]", { state: "attached" });
+      for (const selector of ["#navigation", ".cm-editor"]) expect(await page.locator(selector).boundingBox(), selector).toBeNull();
+      const paragraphs = copy.locator("p");
+      expect(await paragraphs.count()).toBe(150);
+      for (const paragraph of await paragraphs.all()) expect(await paragraph.boundingBox()).not.toBeNull();
+      expect((await paragraphs.last().boundingBox())!.y).toBeGreaterThan(800);
+      expect(await copy.locator("h1").textContent()).toBe("Feldnotizen");
+      if (!readOnly) expect(await paragraphs.last().textContent()).toContain("Zuletzt getippt.");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);

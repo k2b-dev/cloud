@@ -5,7 +5,13 @@ import { type CloudCliContext, cliText } from "@k2b/cloud/cli";
 import { REQUEST_TIMEOUT_MS } from "./cli-request";
 import type { EntryResult, UploadSession } from "./contracts";
 import { classifyUploadFailure, createUploadRetryBudget, nextUploadRetry, sleepUploadRetry, UPLOAD_RETRY_DELAYS_MS } from "./upload-retry";
-import { transferUpload, UploadTransferError, uploadFailureAction, uploadRequestFailure } from "./upload-transfer";
+import {
+  transferUpload,
+  UPLOAD_COMMIT_DEADLINE_MS,
+  UploadTransferError,
+  uploadFailureAction,
+  uploadRequestFailure,
+} from "./upload-transfer";
 
 /** Cloud opens and commits the session; disk-backed file slices go straight to Filegate. */
 export async function uploadFile(
@@ -111,7 +117,7 @@ export async function uploadFile(
         if (textProgress) ctx.error(cliText(ctx, { en: "Finishing upload…", de: "Upload abschließen…" }));
         committing = true;
         // A lost commit response is ambiguous. Do not issue an abort after publishing may have succeeded.
-        const result = await api.commit(session.id, AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]));
+        const result = await api.commit(session.id, AbortSignal.any([signal, AbortSignal.timeout(UPLOAD_COMMIT_DEADLINE_MS)]));
         await ctx.setDefault(storageKey, undefined);
         if (textProgress) ctx.error(cliText(ctx, { en: "Upload done.", de: "Upload abgeschlossen." }));
         return result;
@@ -164,7 +170,12 @@ export async function uploadFile(
       const reasons = {
         stalled:
           error.origin === "cloud"
-            ? { en: "No response from Cloud within 60 seconds.", de: "Keine Antwort von Cloud innerhalb von 60 Sekunden." }
+            ? committing
+              ? {
+                  en: "Cloud did not finish the upload in time. Run the command again to continue.",
+                  de: "Cloud hat den Upload nicht rechtzeitig abgeschlossen. Führe den Befehl erneut aus, um fortzufahren.",
+                }
+              : { en: "No response from Cloud within 60 seconds.", de: "Keine Antwort von Cloud innerhalb von 60 Sekunden." }
             : { en: "No response from the file server.", de: "Keine Antwort vom Dateiserver." },
         busy: { en: "The file server is busy. Try again later.", de: "Der Dateiserver ist ausgelastet. Versuche es später erneut." },
         network:

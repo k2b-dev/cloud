@@ -1,4 +1,4 @@
-export type { AvatarProps, AvatarSize } from "./Avatar";
+export type { AvatarProps, AvatarRing, AvatarSize } from "./Avatar";
 export { Avatar } from "./Avatar";
 export type { DescriptionListItem, DescriptionListProps } from "./DescriptionList";
 export { DescriptionList } from "./DescriptionList";

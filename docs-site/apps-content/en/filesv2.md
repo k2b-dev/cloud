@@ -152,6 +152,19 @@ session. Filegate retains terminal receipts for seven days. Browser upload IDs
 expire locally 24 hours plus seven days after their last attempt and are pruned
 at the next upload.
 
+The working row in the upload panel shows the transferred bytes on its second
+line. After transfer, a commit still pending after one second shows
+**Finishing…** on that line; waits replace it there too, so the row never moves.
+Filegate commit calls have up to ten minutes; the Cloud request allows 240 s,
+and browser and CLI commit deadlines allow 255 s so Cloud or the gateway can
+answer first. A commit that outlasts the request budget is recovered by the
+automatic retry with the same upload ID. While that commit still holds the
+Filegate root ([filegate#6](https://github.com/k2b-dev/filegate/issues/6)),
+Filegate calls on the root can reach their 10 s deadline; Files answers such a
+deadline with `unavailable` (503), which upload clients retry like a busy file
+server. Filegate needs free space for a second copy while committing
+([filegate#9](https://github.com/k2b-dev/filegate/issues/9)).
+
 Every transfer request has a deadline sized for the slowest supported uplink of
 about 0.5 Mbit/s (64 KiB/s). These per-request deadlines remain the stall
 detector; the queue adds no inactivity timer. After automatic retries are
@@ -537,7 +550,10 @@ revision and Filegate atomically rejects a changed destination at publication.
 Cloud serializes document publication, private upload commits, moves, and
 version restores with the existing database root lock, shared with trash and
 administrative lifecycle operations. Busy publications return a retryable error;
-no process-local lock or extra lease state is required. WOPI timestamp checks
+no process-local lock or extra lease state is required. Large upload commits
+hold both Filegate's root mutex and Cloud's root lock, so other changes in that
+storage wait or retry until [filegate#6](https://github.com/k2b-dev/filegate/issues/6)
+is fixed. WOPI timestamp checks
 retain microsecond precision. Collabora's explicit **Overwrite** choice remains
 supported, while changes during that save still conflict. Unmanaged roots also
 recheck timestamp and size before writing. External NFS writers do not participate

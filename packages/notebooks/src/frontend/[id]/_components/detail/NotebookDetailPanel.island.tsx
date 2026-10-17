@@ -24,9 +24,10 @@ import { apiClient } from "@/api/client";
 import type { PublicNoteComment } from "@/api/public-resources";
 import { notebookCommandMessages } from "../../../../commands";
 import type { NamedBlockSummary } from "../../../../lib/named-blocks";
+import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { Backlink } from "../../../../service/links";
 import { openAttachment } from "../../../lib/attachment-preview";
-import { buildNoteUrl, buildVersionsUrl } from "../../../params";
+import { buildGraphUrl, buildNoteUrl, buildVersionsUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { bookMessages } from "../book/messages";
 import type { Attachment } from "../editor/attachments-client";
@@ -59,6 +60,7 @@ import type { TaskProgress } from "./tasks";
 import type { TocItem } from "./toc";
 
 type Props = {
+  presentationMode?: PresentationMode;
   mode: "edit" | "read";
   initiallyOpen: boolean;
   fullWidth: boolean;
@@ -477,7 +479,7 @@ export default function NotebookDetailPanel(props: Props) {
               <Tooltip.Anchor content={t().graphView}>
                 <IconButtonLink
                   tooltip={false}
-                  href={`/app/notebooks/${props.notebookId}?mode=graph&note=${noteId()}`}
+                  href={buildGraphUrl(props.notebookId, noteId(), props.presentationMode)}
                   size="sm"
                   label={t().openGraphView}
                 >
@@ -670,7 +672,7 @@ export default function NotebookDetailPanel(props: Props) {
                               : undefined
                           }
                           size="xs"
-                          style={`outline: 2px solid ${p.color}; outline-offset: 1px`}
+                          ring={{ color: p.color }}
                         />
                         <span class="truncate">{p.displayName}</span>
                         {p.peerCount > 1 && <span class="ml-auto text-[11px] text-dimmed">{t().tabs({ count: p.peerCount })}</span>}

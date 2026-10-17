@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -136,6 +136,15 @@ const renderReader = (
 };
 
 describe("Mail conversation reader", () => {
+  test("leaves conversations and empty readers to the shell print fallback until prepared", () => {
+    setSystemTime(new Date(now));
+    try {
+      expect(renderReader([])).not.toContain("data-print-region");
+      expect(renderReader([], { messages: [] })).not.toContain("data-print-region");
+    } finally {
+      setSystemTime();
+    }
+  });
   test("renders one HTML body with a whitespace-only alternative in every theme", () => {
     for (const theme of [null, "light", "dark"] as const) {
       for (const plainText of ["\n", " ", "\t\n "]) {

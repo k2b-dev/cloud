@@ -9,6 +9,7 @@ type Transfer = {
   path: string;
   progress: (bytes: number) => void;
   alive: () => void;
+  finishing: () => void;
   resolve: (outcome: UploadOutcome) => void;
   reject: (error: Error) => void;
 };
@@ -24,6 +25,8 @@ declare global {
       interrupt: (kind: UploadTransferKind, retryAfter?: number) => void;
       /** The current try heard from Cloud. */
       alive: () => void;
+      /** The current try has sent every byte and waits for Cloud to publish the file. */
+      finishing: () => void;
       /** Any other toast, shown while the panel is in the rail. */
       notify: (text: string) => void;
       queue: UploadQueue<null>;
@@ -40,9 +43,9 @@ render(
       {(() => {
         const queue = createUploadQueue<null>({
           reason: (error) => (error instanceof Error ? error.message : "failed"),
-          upload: (_, item, { signal, onProgress, alive }) =>
+          upload: (_, item, { signal, onProgress, onPhase, alive }) =>
             new Promise((resolve, reject) => {
-              transfers.push({ path: item.path, progress: onProgress, alive, resolve, reject });
+              transfers.push({ path: item.path, progress: onProgress, alive, finishing: () => onPhase("finishing"), resolve, reject });
               signal.addEventListener("abort", () => reject(signal.reason), { once: true });
             }),
         });
@@ -59,6 +62,7 @@ render(
           fail: (reason) => current().reject(new Error(reason)),
           interrupt: (kind, retryAfter) => current().reject(new UploadTransferError("failed", kind, null, retryAfter)),
           alive: () => current().alive(),
+          finishing: () => current().finishing(),
           notify: (text) => toast(text),
           queue,
         };

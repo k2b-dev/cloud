@@ -4,6 +4,8 @@ export const platformMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      printFallbackTitle: "This view does not print well.",
+      printFallbackHint: "Open the item you want to print, or use the app's export.",
       admin: "Admin",
       platformAdministration: "Platform administration.",
       start: "Start",
@@ -76,6 +78,8 @@ export const platformMessages = i18n.define({
       clearSearch: "Clear search",
     },
     de: {
+      printFallbackTitle: "Diese Ansicht lässt sich nicht gut drucken.",
+      printFallbackHint: "Öffne den Eintrag, den du drucken möchtest, oder nutze den Export der App.",
       admin: "Administration",
       platformAdministration: "Plattform verwalten.",
       start: "Start",

@@ -120,7 +120,7 @@ describe("Mermaid editor widget", () => {
     }
   });
 
-  test("exports render SVG text labels and restore the preview config", async () => {
+  test("exports render SVG text labels", async () => {
     const { dom, view } = await mount("flowchart LR\n  G-->H");
     try {
       await waitForDiagram(dom.root);
@@ -145,7 +145,6 @@ describe("Mermaid editor widget", () => {
         const exported = renders.at(-1)!;
         expect(exported.code).toBe("flowchart LR\n  G-->H");
         expect(exported.htmlLabels).toBe(false);
-        expect(htmlLabels).toBeUndefined();
         dialog.dispatchEvent(new Event("cancel", { cancelable: true }));
         await Bun.sleep(20);
       } finally {

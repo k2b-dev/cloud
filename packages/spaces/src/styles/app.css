@@ -104,10 +104,6 @@
 .spaces-priority-value { display: inline-flex; align-items: center; gap: .5rem; }
 .spaces-priority-value__dot { width: .5rem; height: .5rem; flex: none; border-radius: 999px; }
 
-/* Who is working on a task: a ring behind a small gap, outside the avatar, so it takes no space and nothing moves. The gap
-   is transparent, so it matches any card or panel background, hovered or selected. */
-.k2b-ui .k2b-avatar.spaces-claim-ring { outline: 2px solid var(--k2b-success-text); outline-offset: 2px; }
-
 /* Mobile app, "My tasks": one column of flat rows that spacing alone separates. A task leads with its 44 px check
    button; an event keeps the same slot for its icon, so every title starts at the same edge. */
 .spaces-pwa { display: flex; max-width: 32rem; flex-direction: column; gap: 1rem; margin: 0 auto; }

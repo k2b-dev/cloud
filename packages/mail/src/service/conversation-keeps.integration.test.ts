@@ -292,7 +292,7 @@ suite("Mail conversation keeps", () => {
       VALUES (${folderId}::uuid, ${item.id}::uuid, 1, ${nextUid++}) RETURNING id`;
     await sql.begin(async (db) => {
       await db`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id) VALUES (${newRef!.id}::uuid, ${folderId}::uuid, ${item.id}::uuid)`;
-      await retireKeptCopyPlacements(db, item.id, newRef!.id);
+      await retireKeptCopyPlacements(db, [{ messageId: item.id, remoteRefId: newRef!.id }]);
     });
     expect(await getMessage({ context: reader, mailboxId, messageId: item.id })).toMatchObject({
       ok: true,

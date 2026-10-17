@@ -124,6 +124,7 @@ const server = new Hono()
           c: c as unknown as LayoutContextArg,
           title: [{ title: "Badges", href: "/app/badges" }, { title: c.req.query("title") ?? "Badges" }],
           focusMode: c.req.query("focusMode") === "true",
+          printHint: c.req.query("printHint"),
           children: "Signed-in content",
         }),
     ),
@@ -377,3 +378,20 @@ describe("Cloud layouts SSR", () => {
     expect(html).not.toContain("<footer");
   });
 });
+
+for (const focusMode of [false, true]) {
+  test(`renders the app print hint last in the canvas (focus=${focusMode})`, async () => {
+    const spy = spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences());
+    const announcements = spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined);
+    try {
+      const html = await (await server.request(`/signed-in?focusMode=${focusMode}&printHint=Download%20the%20PDF`)).text();
+      expect(html).toMatch(/data-print-fallback(?:="")?>/);
+      expect(html).toContain("This view does not print well.");
+      expect(html).toContain("Download the PDF");
+      expect(html).toMatch(/Download the PDF<\/p><\/div><\/div>/);
+    } finally {
+      spy.mockRestore();
+      announcements.mockRestore();
+    }
+  });
+}

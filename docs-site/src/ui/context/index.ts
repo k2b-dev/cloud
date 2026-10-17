@@ -73,6 +73,7 @@ import contentPagination from "./layout/pagination.md" with { type: "text" };
 import layoutPanelDialog from "./layout/panel-dialog.md" with { type: "text" };
 import layoutPanes from "./layout/panes.md" with { type: "text" };
 import layoutPermissions from "./layout/permissions.md" with { type: "text" };
+import layoutPrint from "./layout/print.md" with { type: "text" };
 import layoutPullToRefresh from "./layout/pull-to-refresh.md" with { type: "text" };
 import layoutScrollArea from "./layout/scroll-area.md" with { type: "text" };
 import layoutSettingsModal from "./layout/settings-modal.md" with { type: "text" };
@@ -132,6 +133,7 @@ const catalogContextSources = {
   "layout/bottom-sheet": { file: "layout/bottom-sheet.md", content: layoutBottomSheet },
   "layout/mobile-shell": { file: "layout/mobile-shell.md", content: layoutMobileShell },
   "layout/tab-bar": { file: "layout/tab-bar.md", content: layoutTabBar },
+  "layout/print": { file: "layout/print.md", content: layoutPrint },
   "layout/workspace": { file: "layout/workspace.md", content: layoutWorkspace },
   "layout/detail-panel": { file: "layout/detail-panel.md", content: layoutDetailPanel },
   "layout/discussion": { file: "layout/discussion.md", content: layoutDiscussion },

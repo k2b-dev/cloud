@@ -318,7 +318,7 @@ describe("upload panel in a browser", () => {
               // The reason fits its row: no ellipsis on a 390 px phone either.
               fits: reason ? reason.scrollWidth <= reason.clientWidth : true,
               box: (({ left, top, width, height }) => [left, top, width, height].map(Math.round))(row.getBoundingClientRect()),
-              // Once a wait line is there, it stays until the file settles, so the name never jumps between tries.
+              // A working row always has its second line (bytes, a wait or Finishing…), so the name never moves.
               name: Math.round(row.querySelector(".filesv2-upload-row__base")!.getBoundingClientRect().top),
             };
           });
@@ -335,7 +335,7 @@ describe("upload panel in a browser", () => {
           await run(tab, "window.uploads.interrupt('network')");
           expect(await tab.textContent(".filesv2-upload__title")).toBe(text.title);
           const waiting = await rowState();
-          expect(waiting).toEqual({ ...row, wait: "network", reason: text.network, fits: true, name: waiting.name });
+          expect(waiting).toEqual({ ...row, wait: "network", reason: text.network, fits: true });
           expect(await boxes(tab)).toEqual(first);
           expect(await tab.$$eval('.filesv2-upload-row[data-status="pending"]', (rows) => rows.length)).toBeGreaterThan(0);
           expect(await contrast(tab, `${active} .filesv2-upload-row__reason`)).toBeGreaterThanOrEqual(4.5);
@@ -365,6 +365,92 @@ describe("upload panel in a browser", () => {
           await shot("retrying");
           await run(tab, "window.uploads.progress(200_000)");
           expect(await rowState()).toEqual(retrying);
+          expect(await boxes(tab)).toEqual(first);
+          const heights = await tab.$$eval(".filesv2-upload-row", (rows) => [
+            ...new Set(rows.map((row) => row.getBoundingClientRect().height)),
+          ]);
+          expect(heights).toHaveLength(1);
+        } finally {
+          await tab.context().close();
+        }
+      });
+
+      test(`finishing a large file keeps every box in place (${device}, ${theme})`, async () => {
+        const tab = await open(options, theme, lang, true);
+        const text = {
+          en: { finishing: "Finishing…", status: "Finishing", busy: "File server busy, trying again soon" },
+          de: { finishing: "Wird abgeschlossen…", status: "Wird abgeschlossen", busy: "Dateiserver ausgelastet, gleich neuer Versuch" },
+        }[lang];
+        const shot = (state: string) => tab.screenshot({ path: `/tmp/filesv2-upload-finishing-${device}-${theme}-${state}.png` });
+        const active = '.filesv2-upload-row[data-status="working"]';
+        const rowState = () =>
+          tab.$eval(active, (row) => {
+            const reason = row.querySelector<HTMLElement>(".filesv2-upload-row__reason");
+            const round = (box: DOMRect) => [box.left, box.top, box.width, box.height].map(Math.round);
+            return {
+              phase: (row as HTMLElement).dataset.phase ?? null,
+              reason: reason?.textContent ?? null,
+              progress: row.querySelector(".filesv2-upload-row__progress")?.textContent ?? null,
+              fits: reason ? reason.scrollWidth <= reason.clientWidth : true,
+              spoken: row.querySelector(".filesv2-upload-row__name .k2b-sr-only:last-child")?.textContent ?? null,
+              box: round(row.getBoundingClientRect()),
+              ring: round(row.querySelector(".filesv2-upload-row__status")!.getBoundingClientRect()),
+              name: Math.round(row.querySelector(".filesv2-upload-row__base")!.getBoundingClientRect().top),
+            };
+          });
+        try {
+          await run(tab, `window.uploads.add(${JSON.stringify(demo)})`);
+          for (let index = 0; index < 3; index++) await run(tab, "window.uploads.finish()");
+          await run(tab, "window.uploads.progress(8_600_000)");
+          const first = await boxes(tab);
+          const sending = await rowState();
+          expect(sending.reason).toBeNull();
+          // While bytes travel, the second line counts them; it is already there, so later lines move nothing.
+          expect(sending.progress).toMatch(lang === "de" ? / von / : / of /);
+          await shot("sending");
+
+          // A commit that answers within a second says nothing, so small files do not flicker.
+          await run(tab, "window.uploads.finishing()");
+          await tab.clock.fastForward(500);
+          await settle(tab);
+          expect(await rowState()).toEqual(sending);
+
+          // A longer commit shows the calm line in the reason slot; the row, its ring and the panel stay where they are.
+          await tab.clock.fastForward(500);
+          await settle(tab);
+          const finishing = await rowState();
+          expect(finishing).toEqual({
+            ...sending,
+            phase: "finishing",
+            reason: text.finishing,
+            progress: null,
+            fits: true,
+            spoken: `, ${text.status}`,
+          });
+          expect(await boxes(tab)).toEqual(first);
+          expect(await contrast(tab, `${active} .filesv2-upload-row__reason`)).toBeGreaterThanOrEqual(4.5);
+          await shot("finishing");
+
+          // A busy answer to the commit replaces the line in the same slot, and the new try finishes in it again.
+          await run(tab, "window.uploads.interrupt('busy')");
+          expect(await rowState()).toMatchObject({
+            phase: null,
+            reason: text.busy,
+            progress: null,
+            box: sending.box,
+            ring: sending.ring,
+            name: sending.name,
+          });
+          expect(await boxes(tab)).toEqual(first);
+          await tab.clock.fastForward(2_000);
+          await settle(tab);
+          await run(tab, "window.uploads.finishing()");
+          await tab.clock.fastForward(1_000);
+          await settle(tab);
+          expect(await rowState()).toEqual(finishing);
+          expect(await boxes(tab)).toEqual(first);
+
+          await run(tab, "window.uploads.finish()");
           expect(await boxes(tab)).toEqual(first);
           const heights = await tab.$$eval(".filesv2-upload-row", (rows) => [
             ...new Set(rows.map((row) => row.getBoundingClientRect().height)),

@@ -19,6 +19,7 @@ const { default: DetailPanel } = await import("./DetailPanel");
 const { default: Discussion } = await import("./Discussion");
 const { Button } = await import("../actions/Button");
 const { TextInput } = await import("../inputs/TextInput");
+const { Avatar } = await import("../surfaces/Avatar");
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 const viewports = {
@@ -169,19 +170,47 @@ const standalone = () =>
     }),
   )}</div>`;
 
-const open = async (viewport: { width: number; height: number }, theme: "light" | "dark") => {
+const avatarPanel = () =>
+  `<div class="k2b-app-workspace" style="height:40rem;--k2b-detail-size:416px;--k2b-detail-min:320px;--k2b-detail-max:640px"><div class="k2b-app-workspace__content"><div class="k2b-app-workspace__main"></div><aside class="k2b-app-workspace__detail" style="--k2b-workspace-panel-size:416px;--k2b-workspace-panel-min:320px;--k2b-workspace-panel-max:640px">${renderToString(
+    () =>
+      createComponent(DetailPanel, {
+        get children() {
+          return createComponent(DetailPanel.Body, {
+            get children() {
+              return [
+                section("Working", "ti ti-user", undefined, () =>
+                  createComponent(Avatar, { name: "Grace Hopper", size: "xs", ring: "success", alt: "Grace Hopper is working on it" }),
+                ),
+                section("Online", "ti ti-users", undefined, () =>
+                  createComponent(Avatar, {
+                    name: "Ada Lovelace",
+                    size: "xs",
+                    ring: { color: "#7c3aed" },
+                    src: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" fill="skyblue"/></svg>')}`,
+                    loading: "eager",
+                  }),
+                ),
+              ];
+            },
+          });
+        },
+      }),
+  )}</aside></div></div>`;
+
+const open = async (viewport: { width: number; height: number }, theme: "light" | "dark", content?: string) => {
   const page = await browser.newPage({ viewport });
   await page.setContent(
     `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style>` +
       `<style>*, *::before, *::after { transition: none !important }</style></head>` +
       `<body class="k2b-ui" data-theme="${theme}" style="margin:0">` +
-      panel("loading", "loading") +
-      panel("one", "one") +
-      panel("two", "two") +
-      panel("composer", "one", true) +
-      nested() +
-      hosted() +
-      standalone() +
+      (content ??
+        panel("loading", "loading") +
+          panel("one", "one") +
+          panel("two", "two") +
+          panel("composer", "one", true) +
+          nested() +
+          hosted() +
+          standalone()) +
       `</body></html>`,
   );
   return page;
@@ -286,6 +315,85 @@ const measure = () => {
 describe("DetailPanel sections and Discussion share one frame", () => {
   for (const [name, viewport] of Object.entries(viewports)) {
     for (const theme of ["light", "dark"] as const) {
+      test(`${name} ${theme} avatar rings stay inside the scrollport without changing size`, async () => {
+        const page = await open(viewport, theme, avatarPanel());
+        try {
+          await page.locator("img.k2b-avatar").evaluate((image: HTMLImageElement) => image.decode());
+          const result = await page.evaluate(() => {
+            const body = document.querySelector<HTMLElement>(".k2b-detail-panel__body")!;
+            const bodyRect = body.getBoundingClientRect();
+            const left = bodyRect.left + body.clientLeft;
+            const top = bodyRect.top + body.clientTop;
+            const probe = document.createElement("span");
+            probe.style.color = "var(--k2b-success-text)";
+            body.append(probe);
+            const success = getComputedStyle(probe).color;
+            probe.remove();
+            return Array.from(body.querySelectorAll<HTMLElement>(".k2b-avatar")).map((avatar) => {
+              const rect = avatar.getBoundingClientRect();
+              const style = getComputedStyle(avatar);
+              const ring = avatar.getAttribute("data-ring")!;
+              // Include outside paint: an outline can be clipped even when its border box fits.
+              const outline =
+                style.outlineStyle === "none" ? 0 : Math.max(0, parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset));
+              const outset = { left: outline, right: outline, top: outline, bottom: outline };
+              for (const shadow of style.boxShadow.split(/,(?![^()]*\))/)) {
+                if (shadow === "none" || shadow.includes("inset")) continue;
+                const [x = 0, y = 0, blur = 0, spread = 0] = (shadow.match(/-?[\d.]+px/g) ?? []).map(parseFloat);
+                outset.left = Math.max(outset.left, spread + blur - x);
+                outset.right = Math.max(outset.right, spread + blur + x);
+                outset.top = Math.max(outset.top, spread + blur - y);
+                outset.bottom = Math.max(outset.bottom, spread + blur + y);
+              }
+              const inside = (paint: { left: number; right: number; top: number; bottom: number }) =>
+                paint.left >= left - 0.5 &&
+                paint.right <= left + body.clientWidth + 0.5 &&
+                paint.top >= top - 0.5 &&
+                paint.bottom <= top + body.clientHeight + 0.5;
+              const painted = {
+                left: rect.left - outset.left,
+                right: rect.right + outset.right,
+                top: rect.top - outset.top,
+                bottom: rect.bottom + outset.bottom,
+              };
+              avatar.removeAttribute("data-ring");
+              const without = avatar.getBoundingClientRect();
+              avatar.setAttribute("data-ring", ring);
+              const restored = avatar.getBoundingClientRect();
+              return {
+                ring,
+                expectedColor: ring === "success" ? success : "rgb(124, 58, 237)",
+                outline: style.outlineStyle,
+                shadow: style.boxShadow,
+                border: style.borderTopWidth,
+                color: style.borderTopColor,
+                flush: Math.abs(rect.left - left) <= 0.5,
+                inside: inside(rect),
+                paintedInside: inside(painted),
+                size: [rect.width, rect.height],
+                without: [without.width, without.height],
+                restored: [restored.width, restored.height],
+              };
+            });
+          });
+          expect(result.map((avatar) => avatar.ring)).toEqual(["success", "color"]);
+          for (const avatar of result) {
+            expect(avatar.flush).toBe(true);
+            expect(avatar.inside).toBe(true);
+            expect(avatar.paintedInside).toBe(true);
+            expect(avatar.outline).toBe("none");
+            expect(avatar.shadow).toBe("none");
+            expect(avatar.border).toBe("2px");
+            expect(avatar.color).toBe(avatar.expectedColor);
+            expect(avatar.size).toEqual([24, 24]);
+            expect(avatar.without).toEqual(avatar.size);
+            expect(avatar.restored).toEqual(avatar.size);
+          }
+        } finally {
+          await page.close();
+        }
+      }, 30_000);
+
       test(`${name} ${theme}`, async () => {
         const page = await open(viewport, theme);
         try {

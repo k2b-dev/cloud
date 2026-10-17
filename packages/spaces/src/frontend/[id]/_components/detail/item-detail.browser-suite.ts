@@ -465,20 +465,41 @@ describe("Spaces item detail in a browser", () => {
             await page.keyboard.press("Escape");
           }
 
-          // The worker: an outer ring with a gap and a label that says it, beside the same-sized avatar as the others.
+          // The worker: a ring inside the avatar with a small gap and a label, beside the same-sized assignee avatars.
           const worker = await page.evaluate(() => {
             const holder = window.document.querySelector("[data-spaces-claim-holder]")!;
             const avatar = holder.querySelector(".k2b-avatar")!;
             const other = window.document.querySelectorAll(".k2b-detail-panel .k2b-avatar")[1]!;
+            const body = avatar.closest<HTMLElement>(".k2b-detail-panel__body")!;
+            avatar.scrollIntoView({ block: "center" });
+            const rect = avatar.getBoundingClientRect();
+            const bodyRect = body.getBoundingClientRect();
+            const left = bodyRect.left + body.clientLeft;
+            const top = bodyRect.top + body.clientTop;
+            const style = getComputedStyle(avatar);
             return {
-              ring: (({ outlineStyle, outlineWidth, outlineOffset, boxShadow }) =>
-                [outlineStyle, outlineWidth, outlineOffset, boxShadow].join(" "))(getComputedStyle(avatar)),
-              size: avatar.getBoundingClientRect().width,
+              ring: avatar.getAttribute("data-ring"),
+              outline: style.outlineStyle,
+              shadow: style.boxShadow,
+              border: style.borderTopWidth,
+              // The holder sits flush at the body's left edge, where an outside ring would be cut off.
+              flush: Math.abs(rect.left - left) <= 0.5,
+              inside:
+                rect.left >= left - 0.5 &&
+                rect.right <= left + body.clientWidth + 0.5 &&
+                rect.top >= top - 0.5 &&
+                rect.bottom <= top + body.clientHeight + 0.5,
+              size: rect.width,
               otherSize: other.getBoundingClientRect().width,
               label: holder.querySelector(".k2b-status-badge")?.textContent,
             };
           });
-          expect(worker.ring).toBe("solid 2px 2px none");
+          expect(worker.ring).toBe("success");
+          expect(worker.outline).toBe("none");
+          expect(worker.shadow).toBe("none");
+          expect(worker.border).toBe("2px");
+          expect(worker.flush).toBe(true);
+          expect(worker.inside).toBe(true);
           expect(worker.size).toBe(worker.otherSize);
           expect(worker.label).toBe("arbeitet daran");
         } finally {
