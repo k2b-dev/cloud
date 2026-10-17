@@ -38,8 +38,11 @@ render(() => {
             get children() { return createComponent(AppWorkspace.SidebarBody, {
               get children() { return (["row", "card", "object"] as const).map(variant =>
                 createComponent(AppWorkspace.SidebarItem, {
-                  variant, href: "#" + variant, get active() { return active(); },
-                  get children() { return createComponent(AppWorkspace.SidebarItemLabel, { children: "Project notes" }); },
+                  variant, href: "#" + variant, get active() { return active(); }, description: "12 notes",
+                  get children() { return [
+                    createComponent(AppWorkspace.SidebarItemLabel, { children: "Project notes" }),
+                    createComponent(AppWorkspace.SidebarItemMeta, { children: "3" }),
+                  ]; },
                 })
               ); },
             }); },
@@ -164,9 +167,21 @@ describe("selection colors in the browser", () => {
             await page.locator(".k2b-settings__tabs button").first().waitFor();
             await page.mouse.move(1400, 1100);
             const targets = [
-              { element: page.locator('[href="#row"]'), kind: "nav" },
-              { element: page.locator('[href="#card"]'), kind: "nav" },
-              { element: page.locator('[href="#object"]'), kind: "nav" },
+              {
+                element: page.locator('[href="#row"]'),
+                kind: "nav",
+                secondary: [".k2b-app-workspace__sidebar-item-description", ".k2b-app-workspace__sidebar-item-meta"],
+              },
+              {
+                element: page.locator('[href="#card"]'),
+                kind: "nav",
+                secondary: [".k2b-app-workspace__sidebar-item-description", ".k2b-app-workspace__sidebar-item-meta"],
+              },
+              {
+                element: page.locator('[href="#object"]'),
+                kind: "nav",
+                secondary: [".k2b-app-workspace__sidebar-item-description", ".k2b-app-workspace__sidebar-item-meta"],
+              },
               { element: page.getByRole("tab", { name: "Preferences", exact: true }), kind: "nav" },
               { element: page.locator(".k2b-data-table__row").first(), kind: "row", text: "td" },
               { element: page.locator(".k2b-file-grid__item").first(), kind: "row", text: ".k2b-file-grid__name" },
@@ -184,6 +199,12 @@ describe("selection colors in the browser", () => {
               const selected = await paint(target.element, "text" in target ? target.text : undefined);
               expect(await box(target.element), `${target.kind} geometry`).toEqual(before[index]!.box);
               expect(contrast(selected.ink, selected.background), `${target.kind} contrast`).toBeGreaterThanOrEqual(4.5);
+              // Descriptions and counts on a navigation fill keep AA as well.
+              if ("secondary" in target)
+                for (const selector of target.secondary) {
+                  const secondary = await paint(target.element, selector);
+                  expect(contrast(secondary.ink, selected.background), `${selector} contrast`).toBeGreaterThanOrEqual(4.5);
+                }
               if (colors) {
                 expect(selected.background).toEqual(rgb(colors[target.kind]));
                 if (target.kind === "nav") expect(selected.ink).toEqual(rgb(colors.ink));
